@@ -1,0 +1,29 @@
+{
+  "name": "jokas-agribusiness-erp",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Multi-farm agribusiness ERP monorepo for poultry, feed mill, soya processing, inventory, sales, finance, HR, maintenance, QC, marketing, and AI decision support.",
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "dev": "pnpm --parallel --filter @jokas/api --filter @jokas/web dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "lint:eslint": "eslint .",
+    "test": "pnpm -r test",
+    "format": "prettier --write \"**/*.{ts,tsx,js,json,md,yml,yaml,prisma}\"",
+    "db:generate": "pnpm --filter @jokas/db prisma:generate",
+    "db:migrate": "pnpm --filter @jokas/db prisma:migrate",
+    "db:seed": "pnpm --filter @jokas/db prisma:seed"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.18.0",
+    "@typescript-eslint/eslint-plugin": "^8.20.0",
+    "@typescript-eslint/parser": "^8.20.0",
+    "@types/node": "^22.10.2",
+    "eslint": "^9.18.0",
+    "eslint-config-prettier": "^10.0.1",
+    "globals": "^15.14.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2"
+  }
+}

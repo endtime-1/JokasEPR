@@ -1,0 +1,72 @@
+import { Logger, ValidationPipe, VersioningType } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { NestFactory } from "@nestjs/core";
+import cookieParser from "cookie-parser";
+import helmet from "helmet";
+import { AppModule } from "./app.module";
+import { HttpExceptionFilter } from "./common/filters/http-exception.filter";
+import { RequestLoggingInterceptor } from "./common/interceptors/request-logging.interceptor";
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  const config = app.get(ConfigService);
+  const port = config.get<number>("API_PORT", 4001);
+  const prefix = config.get<string>("API_PREFIX", "api");
+  const version = config.get<string>("API_VERSION", "1");
+  const isProduction = config.get("NODE_ENV") === "production";
+
+  app.setGlobalPrefix(prefix);
+  app.enableVersioning({ type: VersioningType.URI, defaultVersion: version });
+
+  app.use(cookieParser());
+
+  app.use(
+    helmet({
+      contentSecurityPolicy: isProduction
+        ? {
+            directives: {
+              defaultSrc: ["'self'"],
+              scriptSrc: ["'self'"],
+              styleSrc: ["'self'", "'unsafe-inline'"],
+              imgSrc: ["'self'", "data:"],
+              connectSrc: ["'self'"],
+              fontSrc: ["'self'"],
+              objectSrc: ["'none'"],
+              frameSrc: ["'none'"],
+              upgradeInsecureRequests: []
+            }
+          }
+        : false,
+      hsts: isProduction ? { maxAge: 31536000, includeSubDomains: true, preload: true } : false,
+      crossOriginEmbedderPolicy: false
+    })
+  );
+
+  const allowedOrigins = config
+    .get<string>("WEB_ORIGIN", "http://localhost:3000")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  app.enableCors({
+    origin: allowedOrigins,
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["content-type", "authorization"]
+  });
+
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true
+    })
+  );
+  app.useGlobalFilters(new HttpExceptionFilter());
+  app.useGlobalInterceptors(new RequestLoggingInterceptor());
+
+  await app.listen(port);
+  Logger.log(`API listening on http://localhost:${port}/${prefix}/v${version}`, "Bootstrap");
+}
+
+void bootstrap();

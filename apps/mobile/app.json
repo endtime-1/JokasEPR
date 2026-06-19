@@ -1,0 +1,39 @@
+{
+  "expo": {
+    "name": "Jokas ERP",
+    "slug": "jokas-erp",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Used to scan QR codes and barcodes for inventory and production tracking.",
+        "NSFaceIDUsageDescription": "Used for secure authentication."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#256f5f"
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT"
+      ]
+    },
+    "plugins": [
+      "expo-sqlite",
+      "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Jokas ERP to access your camera to scan QR codes and barcodes."
+        }
+      ]
+    ]
+  }
+}

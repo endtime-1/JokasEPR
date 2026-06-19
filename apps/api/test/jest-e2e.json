@@ -1,0 +1,16 @@
+{
+  "moduleFileExtensions": ["js", "json", "ts"],
+  "rootDir": "../",
+  "testRegex": "test/e2e/.*\\.e2e-spec\\.ts$",
+  "transform": {
+    "^.+\\.(t|j)s$": ["ts-jest", { "tsconfig": "tsconfig.test.json" }]
+  },
+  "testEnvironment": "node",
+  "setupFiles": ["<rootDir>/test/setup/env.ts"],
+  "moduleNameMapper": {
+    "^@jokas/shared/(.*)$": "<rootDir>/../../packages/shared/src/$1",
+    "^@jokas/shared$": "<rootDir>/../../packages/shared/src",
+    "^@jokas/db$": "<rootDir>/../../packages/db/src"
+  },
+  "testTimeout": 30000
+}

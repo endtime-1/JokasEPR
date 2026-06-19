@@ -1,0 +1,11 @@
+node_modules
+.pnpm-store
+dist
+.next
+.expo
+coverage
+.env
+.env.local
+*.log
+uploads
+tmp

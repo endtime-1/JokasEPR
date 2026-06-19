@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(cd \"c:\\\\Users\\\\Gabriel Kwaku Kusi\\\\Downloads\\\\Jokas\\\\packages\\\\db\"; $env:DATABASE_URL = \"postgresql://jokas:jokas_dev_password@localhost:15432/jokas_erp?schema=public\"; npx prisma db push --accept-data-loss 2>&1 | Select-Object -Last 20)",
+      "Bash(curl -s http://localhost:4001/api/v1/auth/me -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJmZjRmMTE4Zi0zMTUzLTQzM2MtOTc3MC01ODBmNGVmMzQ3YmYiLCJvcmciOiIxMTExMTExMS0xMTExLTQxMTEtODExMS0xMTExMTExMTExMTEiLCJlbWFpbCI6ImFkbWluQGpva2FzLmxvY2FsIiwicm9sZXMiOlsiU3VwZXIgQWRtaW4iXSwicGVybWlzc2lvbnMiOlsiaW52ZW50b3J5Lm1hbmFnZSIsImlkZW50aXR5LnJlYWQiLCJwb3VsdHJ5LnJlY29yZCIsInF1YWxpdHkucmVhZCIsInBvdWx0cnkubWFuYWdlIiwicXVhbGl0eS5tYW5hZ2UiLCJoZWFsdGgucmVhZCIsInJlcG9ydHMuZXhwb3J0IiwiYXVkaXQucmVhZCIsImhlYWx0aC5tYW5hZ2UiLCJzZXR0aW5ncy5tYW5hZ2UiLCJmZWVkLm1hbmFnZSIsImlkZW50aXR5Lm1hbmFnZSIsInBsYXRmb3JtLm1hbmFnZSIsInBsYXRmb3JtLnJlYWQiLCJwb3VsdHJ5LnJlYWQiLCJpbnZlbnRvcnkucmVhZCIsImZlZWQucmVhZCIsInNveWEucmVhZCIsImZpbmFuY2UubWFuYWdlIiwiZmluYW5jZS5yZWFkIiwic295YS5tYW5hZ2UiLCJzYWxlcy5tYW5hZ2UiLCJwcm9jdXJlbWVudC5tYW5hZ2UiLCJwcm9jdXJlbWVudC5yZWFkIiwic2FsZXMucmVhZCIsImhyLm1hbmFnZSIsImhyLnJlYWQiLCJtYWludGVuYW5jZS5yZWFkIiwibWFpbnRlbmFuY2UubWFuYWdlIl0sImlhdCI6MTc4MTYwNjg5MCwiZXhwIjoxNzgxNjA3NzkwfQ.Cyq76SeYcF7xwuC1QDByUBYHjNSzbLkHgyAsye3i_pQ')",
+      "PowerShell(Stop-Process -Id 65696 -Force)",
+      "Bash(curl -s http://localhost:4001/api/v1/auth/login -X POST -H 'content-type: application/json' -H 'Origin: http://192.168.1.101:3000' -d '{\"email\":\"admin@jokas.local\",\"password\":\"Admin@12345\"}' -v)",
+      "PowerShell(Set-Location \"C:\\\\Users\\\\Gabriel Kwaku Kusi\\\\Downloads\\\\Jokas\\\\packages\\\\db\"; $env:DATABASE_URL=\"postgresql://jokas:jokas_dev_password@localhost:15432/jokas_erp?schema=public\"; .\\\\node_modules\\\\.bin\\\\prisma migrate dev --name add_notification_system --skip-seed 2>&1)",
+      "PowerShell(New-Item -ItemType Directory -Path \"C:\\\\Users\\\\Gabriel Kwaku Kusi\\\\Downloads\\\\Jokas\\\\packages\\\\db\\\\prisma\\\\migrations\\\\20260616200000_notification_system\" -Force)",
+      "PowerShell(New-Item -ItemType Directory -Path \"C:\\\\Users\\\\Gabriel Kwaku Kusi\\\\Downloads\\\\Jokas\\\\apps\\\\web\\\\app\\\\notifications\" -Force)",
+      "PowerShell(New-Item -ItemType Directory -Path \"C:\\\\Users\\\\Gabriel Kwaku Kusi\\\\Downloads\\\\Jokas\\\\apps\\\\web\\\\app\\\\notifications\\\\preferences\" -Force)",
+      "PowerShell(New-Item -ItemType Directory -Path \"C:\\\\Users\\\\Gabriel Kwaku Kusi\\\\Downloads\\\\Jokas\\\\apps\\\\web\\\\app\\\\platform\\\\notifications\" -Force)",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\Gabriel Kwaku Kusi\\\\Downloads\\\\Jokas\\\\apps\\\\mobile\" -Recurse -Depth 3 | Where-Object { !$_.FullName.Contains\\(\"node_modules\"\\) -and !$_.FullName.Contains\\(\".expo\"\\) } | Select-Object FullName | Format-Table -AutoSize)",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\Gabriel Kwaku Kusi\\\\Downloads\\\\Jokas\\\\apps\\\\api\\\\src\\\\modules\" -Recurse -Directory | ForEach-Object { $_.FullName.Replace\\(\"C:\\\\Users\\\\Gabriel Kwaku Kusi\\\\Downloads\\\\Jokas\\\\\", \"\"\\) } | Sort-Object)"
+    ]
+  }
+}

@@ -1,0 +1,151 @@
+import { Body, Controller, Get, Headers, Ip, Post, Put, UseGuards } from "@nestjs/common";
+import { AuthenticatedUser, PERMISSIONS } from "@jokas/shared";
+import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import { RequirePermissions } from "../../common/decorators/permissions.decorator";
+import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
+import { PermissionsGuard } from "../../common/guards/permissions.guard";
+import { UpdateNotificationConfigDto } from "../notifications/dto/notifications.dto";
+import {
+  AiSettingsDto,
+  BackupSettingsDto,
+  CreateBranchSettingDto,
+  CreateDepartmentSettingDto,
+  CreateExpenseCategorySettingDto,
+  CreateFarmSettingDto,
+  CreateProductCategorySettingDto,
+  CreateProductionSiteSettingDto,
+  CreateUnitOfMeasureSettingDto,
+  CreateWarehouseSettingDto,
+  DomainListSettingsDto,
+  NumberingSettingsDto,
+  TaxSettingsDto,
+  UpdateCompanyProfileDto,
+  UserAccessSettingsDto
+} from "./dto/settings.dto";
+import { SettingsService } from "./settings.service";
+
+function ctx(ipAddress: string, userAgent?: string) {
+  return { ipAddress, userAgent };
+}
+
+@Controller("settings")
+@UseGuards(JwtAuthGuard, PermissionsGuard)
+@RequirePermissions(PERMISSIONS.SETTINGS_MANAGE)
+export class SettingsController {
+  constructor(private readonly settings: SettingsService) {}
+
+  @Get("overview")
+  overview(@CurrentUser() user: AuthenticatedUser) {
+    return this.settings.overview(user);
+  }
+
+  @Get("company")
+  company(@CurrentUser() user: AuthenticatedUser) {
+    return this.settings.company(user);
+  }
+
+  @Put("company")
+  updateCompany(@CurrentUser() user: AuthenticatedUser, @Body() dto: UpdateCompanyProfileDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.settings.updateCompany(user, dto, ctx(ipAddress, userAgent));
+  }
+
+  @Get("master-data")
+  masterData(@CurrentUser() user: AuthenticatedUser) {
+    return this.settings.masterData(user);
+  }
+
+  @Get("options")
+  options(@CurrentUser() user: AuthenticatedUser) {
+    return this.settings.options(user);
+  }
+
+  @Post("branches")
+  createBranch(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateBranchSettingDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.settings.createBranch(user, dto, ctx(ipAddress, userAgent));
+  }
+
+  @Post("farms")
+  createFarm(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateFarmSettingDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.settings.createFarm(user, dto, ctx(ipAddress, userAgent));
+  }
+
+  @Post("warehouses")
+  createWarehouse(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateWarehouseSettingDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.settings.createWarehouse(user, dto, ctx(ipAddress, userAgent));
+  }
+
+  @Post("production-sites")
+  createProductionSite(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateProductionSiteSettingDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.settings.createProductionSite(user, dto, ctx(ipAddress, userAgent));
+  }
+
+  @Post("departments")
+  createDepartment(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateDepartmentSettingDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.settings.createDepartment(user, dto, ctx(ipAddress, userAgent));
+  }
+
+  @Post("units-of-measure")
+  createUnitOfMeasure(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateUnitOfMeasureSettingDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.settings.createUnitOfMeasure(user, dto, ctx(ipAddress, userAgent));
+  }
+
+  @Post("product-categories")
+  createProductCategory(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateProductCategorySettingDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.settings.createProductCategory(user, dto, ctx(ipAddress, userAgent));
+  }
+
+  @Post("expense-categories")
+  createExpenseCategory(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateExpenseCategorySettingDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.settings.createExpenseCategory(user, dto, ctx(ipAddress, userAgent));
+  }
+
+  @Get("system")
+  system(@CurrentUser() user: AuthenticatedUser) {
+    return this.settings.settingsMap(user);
+  }
+
+  @Put("system/tax")
+  updateTax(@CurrentUser() user: AuthenticatedUser, @Body() dto: TaxSettingsDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.settings.updateTax(user, dto, ctx(ipAddress, userAgent));
+  }
+
+  @Put("system/numbering")
+  updateNumbering(@CurrentUser() user: AuthenticatedUser, @Body() dto: NumberingSettingsDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.settings.updateNumbering(user, dto, ctx(ipAddress, userAgent));
+  }
+
+  @Put("system/ai")
+  updateAi(@CurrentUser() user: AuthenticatedUser, @Body() dto: AiSettingsDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.settings.updateAi(user, dto, ctx(ipAddress, userAgent));
+  }
+
+  @Put("system/backup")
+  updateBackup(@CurrentUser() user: AuthenticatedUser, @Body() dto: BackupSettingsDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.settings.updateBackup(user, dto, ctx(ipAddress, userAgent));
+  }
+
+  @Put("system/user-access")
+  updateUserAccess(@CurrentUser() user: AuthenticatedUser, @Body() dto: UserAccessSettingsDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.settings.updateUserAccess(user, dto, ctx(ipAddress, userAgent));
+  }
+
+  @Put("system/poultry-types")
+  updatePoultryTypes(@CurrentUser() user: AuthenticatedUser, @Body() dto: DomainListSettingsDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.settings.updatePoultryTypes(user, dto, ctx(ipAddress, userAgent));
+  }
+
+  @Put("system/feed-types")
+  updateFeedTypes(@CurrentUser() user: AuthenticatedUser, @Body() dto: DomainListSettingsDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.settings.updateFeedTypes(user, dto, ctx(ipAddress, userAgent));
+  }
+
+  @Get("notifications")
+  notificationConfig(@CurrentUser() user: AuthenticatedUser) {
+    return this.settings.notificationConfig(user);
+  }
+
+  @Put("notifications")
+  updateNotificationConfig(@CurrentUser() user: AuthenticatedUser, @Body() dto: UpdateNotificationConfigDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.settings.updateNotificationConfig(user, dto, ctx(ipAddress, userAgent));
+  }
+}
