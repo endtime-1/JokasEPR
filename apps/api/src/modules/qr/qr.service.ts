@@ -436,7 +436,7 @@ export class QrService {
               openingBirdCount: row.openingBirdCount,
               status: row.status,
               farm: row.farm.name,
-              poultryHouse: `${row.poultryHouse.code} - ${row.poultryHouse.name}`,
+              poultryHouse: row.poultryHouse ? `${row.poultryHouse.code} - ${row.poultryHouse.name}` : "multi-house",
               startDate: row.startDate
             }
           };

@@ -2,7 +2,8 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, ArrowRight, Building2, KeyRound, ShieldCheck } from "lucide-react";
+import { AlertCircle, ArrowRight, Building2, ShieldCheck } from "lucide-react";
+import { BrandLogo } from "../../components/brand-logo";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -57,11 +58,9 @@ export default function LoginPage() {
       <section className="relative hidden overflow-hidden bg-brand px-10 py-12 text-white lg:flex lg:flex-col lg:justify-between">
         <div>
           <div className="flex items-center gap-3">
-            <div className="grid h-12 w-12 place-items-center rounded-xl bg-white text-lg font-black text-brand shadow-soft">
-              J
-            </div>
+            <BrandLogo className="h-14 w-14 rounded-xl bg-white shadow-soft" />
             <div>
-              <p className="text-xs font-bold uppercase tracking-wide text-white/75">Jokas ERP</p>
+              <p className="text-xs font-bold uppercase tracking-wide text-white/75">Akoko ERP</p>
               <h1 className="text-2xl font-bold tracking-tight">Agribusiness Command Center</h1>
             </div>
           </div>
@@ -110,9 +109,6 @@ export default function LoginPage() {
           ))}
         </div>
 
-        {/* Decorative circles */}
-        <div className="pointer-events-none absolute -right-20 -top-20 h-64 w-64 rounded-full bg-white/5" />
-        <div className="pointer-events-none absolute -bottom-10 -left-10 h-48 w-48 rounded-full bg-white/5" />
       </section>
 
       {/* ── Login form ───────────────────────────────────────────────────── */}
@@ -124,15 +120,13 @@ export default function LoginPage() {
         >
           <div className="mb-8">
             <div className="mb-5 flex items-center justify-between gap-3">
-              <div className="grid h-12 w-12 place-items-center rounded-xl bg-brand text-white shadow-soft">
-                <KeyRound aria-hidden className="h-5 w-5" />
-              </div>
+              <BrandLogo className="h-14 w-14 rounded-xl shadow-soft" />
               <span className="inline-flex items-center gap-2 rounded-full border border-line bg-field px-3 py-1 text-xs font-semibold text-ink/65">
                 <ShieldCheck aria-hidden className="h-3.5 w-3.5 text-brand" />
                 Secure access
               </span>
             </div>
-            <p className="app-kicker">Jokas ERP</p>
+            <p className="app-kicker">Akoko Solutions</p>
             <h2 className="mt-2 text-3xl font-bold tracking-tight">
               Sign in to your workspace
             </h2>

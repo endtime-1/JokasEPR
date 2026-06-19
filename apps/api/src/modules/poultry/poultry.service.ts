@@ -3,6 +3,7 @@ import { AuthenticatedUser } from "@jokas/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
 import {
+  AddPenDto,
   CreateBirdWeightRecordDto,
   CreateDailyPoultryRecordDto,
   CreateEggProductionRecordDto,
@@ -16,6 +17,7 @@ import {
   CreatePoultryTransferDto,
   CreateVaccinationRecordDto,
   PoultryQueryDto,
+  UpdateBatchStatusDto,
   UpdatePoultryTransferStatusDto
 } from "./dto/poultry.dto";
 
@@ -29,7 +31,7 @@ type BatchContext = {
   companyId: string;
   branchId: string;
   farmId: string;
-  poultryHouseId: string;
+  poultryHouseId: string | null;
   openingBirdCount: number;
   birdType: string;
 };
@@ -71,12 +73,13 @@ export class PoultryService {
   }
 
   async options(user: AuthenticatedUser) {
-    const [farms, houses, batches] = await Promise.all([
+    const [farms, houses, pens, batches] = await Promise.all([
       this.prisma.farm.findMany({ where: this.farmWhere(user), select: { id: true, code: true, name: true, branchId: true }, orderBy: { name: "asc" } }),
       this.prisma.poultryHouse.findMany({ where: this.houseWhere(user), select: { id: true, code: true, name: true, farmId: true }, orderBy: { name: "asc" } }),
-      this.prisma.flockBatch.findMany({ where: this.batchWhere(user), select: { id: true, code: true, name: true, farmId: true, poultryHouseId: true, birdType: true }, orderBy: { createdAt: "desc" } })
+      this.prisma.pen.findMany({ where: { companyId: user.companyId, deletedAt: null, isActive: true }, select: { id: true, code: true, name: true, penNumber: true, poultryHouseId: true, farmId: true, capacity: true }, orderBy: [{ poultryHouseId: "asc" }, { penNumber: "asc" }] }),
+      this.prisma.flockBatch.findMany({ where: this.batchWhere(user), select: { id: true, code: true, name: true, farmId: true, birdType: true }, orderBy: { createdAt: "desc" } })
     ]);
-    return { data: { farms, houses, batches } };
+    return { data: { farms, houses, pens, batches } };
   }
 
   async farmOverview(user: AuthenticatedUser, farmId: string) {
@@ -101,7 +104,10 @@ export class PoultryService {
   async listHouses(user: AuthenticatedUser, query: PoultryQueryDto) {
     const data = await this.prisma.poultryHouse.findMany({
       where: { ...this.houseWhere(user), farmId: query.farmId },
-      include: { farm: { select: { id: true, code: true, name: true } }, flockBatches: { where: { deletedAt: null }, select: { id: true, status: true } } },
+      include: {
+        farm: { select: { id: true, code: true, name: true } },
+        pens: { where: { deletedAt: null }, orderBy: { penNumber: "asc" }, include: { batchAllocations: { include: { flockBatch: { select: { id: true, code: true, name: true, status: true, birdType: true } } } } } }
+      },
       orderBy: { code: "asc" }
     });
     return { data };
@@ -110,6 +116,8 @@ export class PoultryService {
   async createHouse(user: AuthenticatedUser, dto: CreatePoultryHouseDto, context: RequestContext) {
     this.assertFarmAccess(user, dto.farmId);
     const farm = await this.getFarm(user.companyId, dto.farmId);
+    const penCount = dto.defaultPenCount ?? 5;
+
     const house = await this.prisma.poultryHouse.create({
       data: {
         companyId: user.companyId,
@@ -118,11 +126,58 @@ export class PoultryService {
         name: dto.name,
         code: dto.code.toUpperCase(),
         capacity: dto.capacity,
+        createdById: user.id,
+        pens: {
+          create: Array.from({ length: penCount }, (_, i) => ({
+            companyId: user.companyId,
+            branchId: farm.branchId,
+            farmId: farm.id,
+            penNumber: i + 1,
+            code: `PEN-${String(i + 1).padStart(2, "0")}`,
+            createdById: user.id
+          }))
+        }
+      },
+      include: { pens: true }
+    });
+    await this.writeAudit(user, "CREATE", "PoultryHouse", house.id, `Created poultry house ${house.code} with ${penCount} pens`, context, farm.id);
+    return { data: house };
+  }
+
+  async listPens(user: AuthenticatedUser, houseId: string) {
+    const house = await this.getHouse(user.companyId, houseId);
+    const data = await this.prisma.pen.findMany({
+      where: { companyId: user.companyId, poultryHouseId: houseId, deletedAt: null },
+      orderBy: { penNumber: "asc" },
+      include: {
+        batchAllocations: {
+          include: { flockBatch: { select: { id: true, code: true, name: true, status: true, birdType: true, startDate: true } } }
+        }
+      }
+    });
+    return { data, house };
+  }
+
+  async addPen(user: AuthenticatedUser, houseId: string, dto: AddPenDto, context: RequestContext) {
+    const house = await this.getHouse(user.companyId, houseId);
+    this.assertFarmAccess(user, house.farmId);
+    const lastPen = await this.prisma.pen.findFirst({ where: { poultryHouseId: houseId, deletedAt: null }, orderBy: { penNumber: "desc" } });
+    const nextNumber = (lastPen?.penNumber ?? 0) + 1;
+    const pen = await this.prisma.pen.create({
+      data: {
+        companyId: user.companyId,
+        branchId: house.branchId,
+        farmId: house.farmId,
+        poultryHouseId: houseId,
+        penNumber: nextNumber,
+        code: `PEN-${String(nextNumber).padStart(2, "0")}`,
+        name: dto.name,
+        capacity: dto.capacity,
         createdById: user.id
       }
     });
-    await this.writeAudit(user, "CREATE", "PoultryHouse", house.id, `Created poultry house ${house.code}`, context, farm.id);
-    return { data: house };
+    await this.writeAudit(user, "CREATE", "Pen", pen.id, `Added pen ${pen.code} to house ${house.code}`, context, house.farmId);
+    return { data: pen };
   }
 
   async listBatches(user: AuthenticatedUser, query: PoultryQueryDto) {
@@ -167,17 +222,36 @@ export class PoultryService {
   }
 
   async createBatch(user: AuthenticatedUser, dto: CreateFlockBatchDto, context: RequestContext) {
-    this.assertFarmAccess(user, dto.farmId);
-    const house = await this.getHouse(user.companyId, dto.poultryHouseId);
-    if (house.farmId !== dto.farmId) {
-      throw new BadRequestException("Poultry house does not belong to the selected farm.");
+    if (!dto.penAllocations?.length) {
+      throw new BadRequestException("At least one pen allocation is required.");
     }
+    const totalAllocated = dto.penAllocations.reduce((sum, a) => sum + a.birdCount, 0);
+    if (totalAllocated !== dto.openingBirdCount) {
+      throw new BadRequestException(`Pen allocations total (${totalAllocated}) must equal opening bird count (${dto.openingBirdCount}).`);
+    }
+
+    const penIds = dto.penAllocations.map((a) => a.penId);
+    const pens = await this.prisma.pen.findMany({ where: { companyId: user.companyId, id: { in: penIds }, deletedAt: null } });
+    if (pens.length !== penIds.length) {
+      throw new BadRequestException("One or more pens were not found.");
+    }
+
+    const farmIds = [...new Set(pens.map((p) => p.farmId))];
+    farmIds.forEach((fid) => this.assertFarmAccess(user, fid));
+
+    const activeBatchCheck = await this.prisma.batchPenAllocation.findFirst({
+      where: { penId: { in: penIds }, flockBatch: { status: "ACTIVE", deletedAt: null } }
+    });
+    if (activeBatchCheck) {
+      throw new BadRequestException("One or more selected pens already have an active batch.");
+    }
+
+    const firstPen = pens[0];
     const batch = await this.prisma.flockBatch.create({
       data: {
         companyId: user.companyId,
-        branchId: house.branchId,
-        farmId: dto.farmId,
-        poultryHouseId: dto.poultryHouseId,
+        branchId: firstPen.branchId,
+        farmId: firstPen.farmId,
         code: dto.code.toUpperCase(),
         name: dto.name,
         birdType: dto.birdType,
@@ -186,47 +260,64 @@ export class PoultryService {
         expectedCloseDate: dto.expectedCloseDate ? new Date(dto.expectedCloseDate) : undefined,
         status: dto.status ?? "ACTIVE",
         notes: dto.notes,
-        createdById: user.id
+        createdById: user.id,
+        penAllocations: {
+          create: dto.penAllocations.map((alloc) => {
+            const pen = pens.find((p) => p.id === alloc.penId)!;
+            return {
+              companyId: user.companyId,
+              branchId: pen.branchId,
+              penId: alloc.penId,
+              poultryHouseId: pen.poultryHouseId,
+              farmId: pen.farmId,
+              birdCount: alloc.birdCount,
+              notes: alloc.notes,
+              createdById: user.id
+            };
+          })
+        }
+      },
+      include: { penAllocations: { include: { pen: true } } }
+    });
+    await this.writeAudit(user, "CREATE", "FlockBatch", batch.id, `Created flock batch ${batch.code} across ${penIds.length} pen(s)`, context, batch.farmId);
+    return { data: batch };
+  }
+
+  async updateBatchStatus(user: AuthenticatedUser, id: string, dto: UpdateBatchStatusDto, context: RequestContext) {
+    const batch = await this.getBatchContext(user, id);
+    const data = await this.prisma.flockBatch.update({
+      where: { id },
+      data: {
+        status: dto.status,
+        actualCloseDate: dto.actualCloseDate ? new Date(dto.actualCloseDate) : dto.status !== "ACTIVE" ? new Date() : undefined,
+        notes: dto.notes ?? undefined,
+        updatedById: user.id
       }
     });
-    await this.writeAudit(user, "CREATE", "FlockBatch", batch.id, `Created flock batch ${batch.code}`, context, batch.farmId);
-    return { data: batch };
+    await this.writeAudit(user, "UPDATE", "FlockBatch", id, `Updated batch status to ${dto.status}`, context, batch.farmId);
+    return { data };
   }
 
   async createDailyRecord(user: AuthenticatedUser, dto: CreateDailyPoultryRecordDto, context: RequestContext) {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
-    const record = await this.prisma.dailyPoultryRecord.upsert({
-      where: { companyId_flockBatchId_recordDate: { companyId: user.companyId, flockBatchId: batch.id, recordDate: new Date(dto.recordDate) } },
-      update: {
-        openingBirdCount: dto.openingBirdCount,
-        mortalityCount: dto.mortalityCount,
-        culledCount: dto.culledCount,
-        feedConsumedKg: dto.feedConsumedKg,
-        totalEggs: dto.totalEggs,
-        notes: dto.notes,
-        status: dto.status ?? "SUBMITTED",
-        updatedById: user.id
-      },
-      create: {
-        ...this.batchRecordBase(user, batch),
-        recordDate: new Date(dto.recordDate),
-        openingBirdCount: dto.openingBirdCount,
-        mortalityCount: dto.mortalityCount,
-        culledCount: dto.culledCount,
-        feedConsumedKg: dto.feedConsumedKg,
-        totalEggs: dto.totalEggs,
-        notes: dto.notes,
-        status: dto.status ?? "SUBMITTED"
-      }
+    const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
+    const recordDate = new Date(dto.recordDate);
+    const payload = { openingBirdCount: dto.openingBirdCount, mortalityCount: dto.mortalityCount, culledCount: dto.culledCount, feedConsumedKg: dto.feedConsumedKg, totalEggs: dto.totalEggs, notes: dto.notes, status: dto.status ?? "SUBMITTED" };
+    const existing = await this.prisma.dailyPoultryRecord.findFirst({
+      where: { companyId: user.companyId, flockBatchId: batch.id, penId: dto.penId ?? null, recordDate }
     });
+    const record = existing
+      ? await this.prisma.dailyPoultryRecord.update({ where: { id: existing.id }, data: { ...payload, updatedById: user.id } })
+      : await this.prisma.dailyPoultryRecord.create({ data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), recordDate, ...payload } });
     await this.writeAudit(user, "CREATE", "DailyPoultryRecord", record.id, "Submitted daily poultry record", context, batch.farmId);
     return { data: record };
   }
 
   async createMortality(user: AuthenticatedUser, dto: CreateMortalityRecordDto, context: RequestContext) {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
+    const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
     const data = await this.prisma.mortalityRecord.create({
-      data: { ...this.batchRecordBase(user, batch), recordDate: new Date(dto.recordDate), birdCount: dto.birdCount, isCulling: dto.isCulling ?? false, reason: dto.reason, notes: dto.notes, status: dto.status ?? "SUBMITTED" }
+      data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), recordDate: new Date(dto.recordDate), birdCount: dto.birdCount, isCulling: dto.isCulling ?? false, reason: dto.reason, notes: dto.notes, status: dto.status ?? "SUBMITTED" }
     });
     await this.writeAudit(user, "CREATE", "MortalityRecord", data.id, dto.isCulling ? "Recorded poultry culling" : "Recorded poultry mortality", context, batch.farmId);
     return { data };
@@ -234,8 +325,9 @@ export class PoultryService {
 
   async createFeed(user: AuthenticatedUser, dto: CreateFeedConsumptionRecordDto, context: RequestContext) {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
+    const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
     const data = await this.prisma.feedConsumptionRecord.create({
-      data: { ...this.batchRecordBase(user, batch), recordDate: new Date(dto.recordDate), feedProductId: dto.feedProductId, quantityKg: dto.quantityKg, costAmount: dto.costAmount, notes: dto.notes, status: dto.status ?? "SUBMITTED" }
+      data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), recordDate: new Date(dto.recordDate), feedProductId: dto.feedProductId, quantityKg: dto.quantityKg, costAmount: dto.costAmount, notes: dto.notes, status: dto.status ?? "SUBMITTED" }
     });
     await this.writeAudit(user, "CREATE", "FeedConsumptionRecord", data.id, "Recorded poultry feed consumption", context, batch.farmId);
     return { data };
@@ -243,8 +335,9 @@ export class PoultryService {
 
   async createEggs(user: AuthenticatedUser, dto: CreateEggProductionRecordDto, context: RequestContext) {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
+    const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
     const data = await this.prisma.eggProductionRecord.create({
-      data: { ...this.batchRecordBase(user, batch), recordDate: new Date(dto.recordDate), goodEggs: dto.goodEggs, crackedEggs: dto.crackedEggs, dirtyEggs: dto.dirtyEggs, brokenEggs: dto.brokenEggs, rejectedEggs: dto.rejectedEggs, notes: dto.notes, status: dto.status ?? "SUBMITTED" }
+      data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), recordDate: new Date(dto.recordDate), goodEggs: dto.goodEggs, crackedEggs: dto.crackedEggs, dirtyEggs: dto.dirtyEggs, brokenEggs: dto.brokenEggs, rejectedEggs: dto.rejectedEggs, notes: dto.notes, status: dto.status ?? "SUBMITTED" }
     });
     await this.writeAudit(user, "CREATE", "EggProductionRecord", data.id, "Recorded egg production", context, batch.farmId);
     return { data };
@@ -252,8 +345,9 @@ export class PoultryService {
 
   async createWeight(user: AuthenticatedUser, dto: CreateBirdWeightRecordDto, context: RequestContext) {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
+    const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
     const data = await this.prisma.birdWeightRecord.create({
-      data: { ...this.batchRecordBase(user, batch), recordDate: new Date(dto.recordDate), sampleSize: dto.sampleSize, averageWeightKg: dto.averageWeightKg, notes: dto.notes, status: dto.status ?? "SUBMITTED" }
+      data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), recordDate: new Date(dto.recordDate), sampleSize: dto.sampleSize, averageWeightKg: dto.averageWeightKg, notes: dto.notes, status: dto.status ?? "SUBMITTED" }
     });
     await this.writeAudit(user, "CREATE", "BirdWeightRecord", data.id, "Recorded bird weight", context, batch.farmId);
     return { data };
@@ -261,8 +355,9 @@ export class PoultryService {
 
   async createMedication(user: AuthenticatedUser, dto: CreateMedicationRecordDto, context: RequestContext) {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
+    const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
     const data = await this.prisma.medicationRecord.create({
-      data: { ...this.batchRecordBase(user, batch), medicationName: dto.medicationName, dosage: dto.dosage, route: dto.route, startDate: new Date(dto.startDate), endDate: dto.endDate ? new Date(dto.endDate) : undefined, withdrawalUntil: dto.withdrawalUntil ? new Date(dto.withdrawalUntil) : undefined, notes: dto.notes }
+      data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), medicationName: dto.medicationName, dosage: dto.dosage, route: dto.route, startDate: new Date(dto.startDate), endDate: dto.endDate ? new Date(dto.endDate) : undefined, withdrawalUntil: dto.withdrawalUntil ? new Date(dto.withdrawalUntil) : undefined, notes: dto.notes }
     });
     await this.writeAudit(user, "CREATE", "MedicationRecord", data.id, "Recorded poultry medication", context, batch.farmId);
     return { data };
@@ -270,8 +365,9 @@ export class PoultryService {
 
   async createVaccination(user: AuthenticatedUser, dto: CreateVaccinationRecordDto, context: RequestContext) {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
+    const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
     const data = await this.prisma.vaccinationRecord.create({
-      data: { ...this.batchRecordBase(user, batch), vaccineName: dto.vaccineName, dose: dto.dose, vaccinationDate: new Date(dto.vaccinationDate), nextDueDate: dto.nextDueDate ? new Date(dto.nextDueDate) : undefined, notes: dto.notes }
+      data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), vaccineName: dto.vaccineName, dose: dto.dose, vaccinationDate: new Date(dto.vaccinationDate), nextDueDate: dto.nextDueDate ? new Date(dto.nextDueDate) : undefined, notes: dto.notes }
     });
     await this.writeAudit(user, "CREATE", "VaccinationRecord", data.id, "Recorded poultry vaccination", context, batch.farmId);
     return { data };
@@ -279,8 +375,9 @@ export class PoultryService {
 
   async createHealthObservation(user: AuthenticatedUser, dto: CreateHealthObservationDto, context: RequestContext) {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
+    const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
     const data = await this.prisma.poultryHealthObservation.create({
-      data: { ...this.batchRecordBase(user, batch), observationDate: new Date(dto.observationDate), severity: dto.severity, observation: dto.observation, vetVisitDate: dto.vetVisitDate ? new Date(dto.vetVisitDate) : undefined, veterinarianName: dto.veterinarianName, recommendation: dto.recommendation }
+      data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), observationDate: new Date(dto.observationDate), severity: dto.severity, observation: dto.observation, vetVisitDate: dto.vetVisitDate ? new Date(dto.vetVisitDate) : undefined, veterinarianName: dto.veterinarianName, recommendation: dto.recommendation }
     });
     await this.writeAudit(user, "CREATE", "PoultryHealthObservation", data.id, "Recorded poultry health observation", context, batch.farmId);
     return { data };
@@ -293,15 +390,20 @@ export class PoultryService {
     if (toHouse.farmId !== dto.toFarmId) {
       throw new BadRequestException("Destination poultry house does not belong to the destination farm.");
     }
+    const fromPen = dto.fromPenId ? await this.prisma.pen.findFirst({ where: { id: dto.fromPenId, companyId: user.companyId } }) : null;
+    const fromHouseId = fromPen?.poultryHouseId ?? batch.poultryHouseId;
+    if (!fromHouseId) throw new BadRequestException("Cannot determine source house. Specify fromPenId.");
     const data = await this.prisma.poultryTransferRecord.create({
       data: {
         companyId: user.companyId,
         branchId: batch.branchId,
         flockBatchId: batch.id,
         fromFarmId: batch.farmId,
-        fromPoultryHouseId: batch.poultryHouseId,
+        fromPoultryHouseId: fromHouseId,
+        fromPenId: dto.fromPenId,
         toFarmId: dto.toFarmId,
         toPoultryHouseId: dto.toPoultryHouseId,
+        toPenId: dto.toPenId,
         birdCount: dto.birdCount,
         transferDate: new Date(dto.transferDate),
         reason: dto.reason,
@@ -333,8 +435,9 @@ export class PoultryService {
 
   async createCost(user: AuthenticatedUser, dto: CreatePoultryCostRecordDto, context: RequestContext) {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
+    const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
     const data = await this.prisma.poultryCostRecord.create({
-      data: { ...this.batchRecordBase(user, batch), costDate: new Date(dto.costDate), costType: dto.costType, amount: dto.amount, description: dto.description, status: dto.status ?? "SUBMITTED" }
+      data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), costDate: new Date(dto.costDate), costType: dto.costType, amount: dto.amount, description: dto.description, status: dto.status ?? "SUBMITTED" }
     });
     await this.writeAudit(user, "CREATE", "PoultryCostRecord", data.id, "Recorded poultry batch cost", context, batch.farmId);
     return { data };
@@ -448,15 +551,28 @@ export class PoultryService {
     return house;
   }
 
-  private batchRecordBase(user: AuthenticatedUser, batch: BatchContext) {
+  private batchRecordBase(user: AuthenticatedUser, batch: BatchContext, poultryHouseId: string, penId?: string) {
     return {
       companyId: user.companyId,
       branchId: batch.branchId,
       farmId: batch.farmId,
-      poultryHouseId: batch.poultryHouseId,
+      poultryHouseId,
+      penId: penId ?? undefined,
       flockBatchId: batch.id,
       createdById: user.id
     };
+  }
+
+  private async resolvePenHouseId(companyId: string, penId: string | undefined, batch: BatchContext): Promise<string> {
+    if (penId) {
+      const pen = await this.prisma.pen.findFirst({ where: { id: penId, companyId, deletedAt: null } });
+      if (!pen) throw new BadRequestException("Pen not found.");
+      return pen.poultryHouseId;
+    }
+    if (batch.poultryHouseId) return batch.poultryHouseId;
+    const firstAlloc = await this.prisma.batchPenAllocation.findFirst({ where: { flockBatchId: batch.id }, include: { pen: true } });
+    if (!firstAlloc) throw new BadRequestException("Batch has no pen allocations. Specify penId.");
+    return firstAlloc.pen.poultryHouseId;
   }
 
   private farmWhere(user: AuthenticatedUser) {

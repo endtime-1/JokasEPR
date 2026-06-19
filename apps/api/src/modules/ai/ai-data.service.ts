@@ -54,7 +54,7 @@ export class AiDataService {
         const badEggs = (eggs?.crackedEggs ?? 0) + (eggs?.brokenEggs ?? 0);
         const mortality = mortalityMap.get(f.id) ?? 0;
         const feed = feedMap.get(f.id) ?? 0;
-        return `  - ${f.name} (${f.birdType}, ${f.farm.name}, ${f.poultryHouse.name}): opening=${f.openingBirdCount} birds, 7d eggs=${goodEggs} good/${badEggs} bad, 7d mortality=${mortality}, 7d feed=${feed}kg`;
+        return `  - ${f.name} (${f.birdType}, ${f.farm.name}, ${f.poultryHouse?.name ?? "multi-house"}): opening=${f.openingBirdCount} birds, 7d eggs=${goodEggs} good/${badEggs} bad, 7d mortality=${mortality}, 7d feed=${feed}kg`;
       });
 
       const healthObs = await this.prisma.poultryHealthObservation.findMany({

@@ -1,5 +1,6 @@
 import { BirdType, FlockBatchStatus, PoultryCostType, PoultryHealthSeverity, PoultryRecordStatus, PoultryTransferStatus } from "@prisma/client";
-import { IsBoolean, IsDateString, IsEnum, IsInt, IsNumber, IsOptional, IsString, IsUUID, MaxLength, Min, ValidateIf } from "class-validator";
+import { Type } from "class-transformer";
+import { IsArray, IsBoolean, IsDateString, IsEnum, IsInt, IsNumber, IsOptional, IsString, IsUUID, MaxLength, Min, ValidateIf, ValidateNested } from "class-validator";
 
 export class PoultryQueryDto {
   @IsOptional()
@@ -9,6 +10,10 @@ export class PoultryQueryDto {
   @IsOptional()
   @IsUUID()
   poultryHouseId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  penId?: string;
 
   @IsOptional()
   @IsUUID()
@@ -39,15 +44,39 @@ export class CreatePoultryHouseDto {
   @IsInt()
   @Min(1)
   capacity?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  defaultPenCount?: number;
+}
+
+export class AddPenDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  name?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  capacity?: number;
+}
+
+class PenAllocationDto {
+  @IsUUID()
+  penId!: string;
+
+  @IsInt()
+  @Min(1)
+  birdCount!: number;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
 }
 
 export class CreateFlockBatchDto {
-  @IsUUID()
-  farmId!: string;
-
-  @IsUUID()
-  poultryHouseId!: string;
-
   @IsString()
   @MaxLength(40)
   code!: string;
@@ -77,11 +106,20 @@ export class CreateFlockBatchDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => PenAllocationDto)
+  penAllocations!: PenAllocationDto[];
 }
 
 class FlockRecordDto {
   @IsUUID()
   flockBatchId!: string;
+
+  @IsOptional()
+  @IsUUID()
+  penId?: string;
 
   @IsDateString()
   recordDate!: string;
@@ -183,6 +221,10 @@ export class CreateMedicationRecordDto {
   @IsUUID()
   flockBatchId!: string;
 
+  @IsOptional()
+  @IsUUID()
+  penId?: string;
+
   @IsString()
   @MaxLength(120)
   medicationName!: string;
@@ -216,6 +258,10 @@ export class CreateVaccinationRecordDto {
   @IsUUID()
   flockBatchId!: string;
 
+  @IsOptional()
+  @IsUUID()
+  penId?: string;
+
   @IsString()
   @MaxLength(120)
   vaccineName!: string;
@@ -239,6 +285,10 @@ export class CreateVaccinationRecordDto {
 export class CreateHealthObservationDto {
   @IsUUID()
   flockBatchId!: string;
+
+  @IsOptional()
+  @IsUUID()
+  penId?: string;
 
   @IsDateString()
   observationDate!: string;
@@ -266,11 +316,19 @@ export class CreatePoultryTransferDto {
   @IsUUID()
   flockBatchId!: string;
 
+  @IsOptional()
+  @IsUUID()
+  fromPenId?: string;
+
   @IsUUID()
   toFarmId!: string;
 
   @IsUUID()
   toPoultryHouseId!: string;
+
+  @IsOptional()
+  @IsUUID()
+  toPenId?: string;
 
   @IsInt()
   @Min(1)
@@ -293,6 +351,10 @@ export class CreatePoultryCostRecordDto {
   @IsUUID()
   flockBatchId!: string;
 
+  @IsOptional()
+  @IsUUID()
+  penId?: string;
+
   @IsDateString()
   costDate!: string;
 
@@ -310,4 +372,17 @@ export class CreatePoultryCostRecordDto {
   @IsOptional()
   @IsEnum(PoultryRecordStatus)
   status?: PoultryRecordStatus;
+}
+
+export class UpdateBatchStatusDto {
+  @IsEnum(FlockBatchStatus)
+  status!: FlockBatchStatus;
+
+  @IsOptional()
+  @IsDateString()
+  actualCloseDate?: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
 }

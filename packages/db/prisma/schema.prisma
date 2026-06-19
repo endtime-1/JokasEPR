@@ -624,6 +624,8 @@ model Company {
   poultryTransferRecords   PoultryTransferRecord[]
   poultryHealthObservations PoultryHealthObservation[]
   poultryCostRecords       PoultryCostRecord[]
+  pens                     Pen[]
+  batchPenAllocations      BatchPenAllocation[]
   feedFormulas             FeedFormula[]
   feedFormulaVersions      FeedFormulaVersion[]
   feedProductionOrders     FeedProductionOrder[]
@@ -774,6 +776,8 @@ model Branch {
   poultryTransferRecords PoultryTransferRecord[]
   poultryHealthObservations PoultryHealthObservation[]
   poultryCostRecords PoultryCostRecord[]
+  pens               Pen[]
+  batchPenAllocations BatchPenAllocation[]
   feedFormulas       FeedFormula[]
   feedProductionOrders FeedProductionOrder[]
   feedProductionBatches FeedProductionBatch[]
@@ -884,6 +888,8 @@ model Farm {
   poultryTransferRecordsTo PoultryTransferRecord[] @relation("PoultryTransferToFarm")
   poultryHealthObservations PoultryHealthObservation[]
   poultryCostRecords PoultryCostRecord[]
+  pens               Pen[]
+  batchPenAllocations BatchPenAllocation[]
   feedInternalTransfersToFarm FeedInternalTransfer[]
   stockReservations StockReservation[]
   machines          Machine[]
@@ -1011,6 +1017,8 @@ model PoultryHouse {
   poultryHealthObservations PoultryHealthObservation[]
   poultryCostRecords PoultryCostRecord[]
   feedInternalTransfersToHouse FeedInternalTransfer[]
+  pens                         Pen[]
+  batchPenAllocations          BatchPenAllocation[]
 
   @@unique([companyId, farmId, code])
   @@index([companyId])
@@ -2877,7 +2885,7 @@ model FlockBatch {
   companyId        String           @db.Uuid
   branchId         String           @db.Uuid
   farmId           String           @db.Uuid
-  poultryHouseId   String           @db.Uuid
+  poultryHouseId   String?          @db.Uuid
   code             String
   name             String
   birdType         BirdType
@@ -2893,20 +2901,21 @@ model FlockBatch {
   updatedAt        DateTime         @updatedAt
   deletedAt        DateTime?
 
-  company      Company      @relation(fields: [companyId], references: [id])
-  branch       Branch       @relation(fields: [branchId], references: [id])
-  farm         Farm         @relation(fields: [farmId], references: [id])
-  poultryHouse PoultryHouse @relation(fields: [poultryHouseId], references: [id])
-  dailyRecords DailyPoultryRecord[]
-  mortalityRecords MortalityRecord[]
-  feedConsumptionRecords FeedConsumptionRecord[]
-  eggProductionRecords EggProductionRecord[]
-  birdWeightRecords BirdWeightRecord[]
-  medicationRecords MedicationRecord[]
-  vaccinationRecords VaccinationRecord[]
-  poultryTransferRecords PoultryTransferRecord[]
-  healthObservations PoultryHealthObservation[]
-  costRecords PoultryCostRecord[]
+  company      Company       @relation(fields: [companyId], references: [id])
+  branch       Branch        @relation(fields: [branchId], references: [id])
+  farm         Farm          @relation(fields: [farmId], references: [id])
+  poultryHouse PoultryHouse? @relation(fields: [poultryHouseId], references: [id])
+  penAllocations             BatchPenAllocation[]
+  dailyRecords               DailyPoultryRecord[]
+  mortalityRecords           MortalityRecord[]
+  feedConsumptionRecords     FeedConsumptionRecord[]
+  eggProductionRecords       EggProductionRecord[]
+  birdWeightRecords          BirdWeightRecord[]
+  medicationRecords          MedicationRecord[]
+  vaccinationRecords         VaccinationRecord[]
+  poultryTransferRecords     PoultryTransferRecord[]
+  healthObservations         PoultryHealthObservation[]
+  costRecords                PoultryCostRecord[]
 
   @@unique([companyId, code])
   @@index([companyId])
@@ -2925,6 +2934,7 @@ model DailyPoultryRecord {
   branchId         String              @db.Uuid
   farmId           String              @db.Uuid
   poultryHouseId   String              @db.Uuid
+  penId            String?             @db.Uuid
   flockBatchId     String              @db.Uuid
   recordDate       DateTime
   openingBirdCount Int?
@@ -2944,9 +2954,10 @@ model DailyPoultryRecord {
   branch       Branch       @relation(fields: [branchId], references: [id])
   farm         Farm         @relation(fields: [farmId], references: [id])
   poultryHouse PoultryHouse @relation(fields: [poultryHouseId], references: [id])
+  pen          Pen?         @relation(fields: [penId], references: [id])
   flockBatch   FlockBatch   @relation(fields: [flockBatchId], references: [id])
 
-  @@unique([companyId, flockBatchId, recordDate])
+  @@unique([companyId, flockBatchId, penId, recordDate])
   @@index([companyId])
   @@index([branchId])
   @@index([farmId])
@@ -2963,6 +2974,7 @@ model MortalityRecord {
   branchId       String              @db.Uuid
   farmId         String              @db.Uuid
   poultryHouseId String              @db.Uuid
+  penId          String?             @db.Uuid
   flockBatchId   String              @db.Uuid
   recordDate     DateTime
   birdCount      Int
@@ -2980,6 +2992,7 @@ model MortalityRecord {
   branch       Branch       @relation(fields: [branchId], references: [id])
   farm         Farm         @relation(fields: [farmId], references: [id])
   poultryHouse PoultryHouse @relation(fields: [poultryHouseId], references: [id])
+  pen          Pen?         @relation(fields: [penId], references: [id])
   flockBatch   FlockBatch   @relation(fields: [flockBatchId], references: [id])
 
   @@index([companyId])
@@ -2998,6 +3011,7 @@ model FeedConsumptionRecord {
   branchId       String              @db.Uuid
   farmId         String              @db.Uuid
   poultryHouseId String              @db.Uuid
+  penId          String?             @db.Uuid
   flockBatchId   String              @db.Uuid
   feedProductId  String?             @db.Uuid
   recordDate     DateTime
@@ -3015,6 +3029,7 @@ model FeedConsumptionRecord {
   branch       Branch       @relation(fields: [branchId], references: [id])
   farm         Farm         @relation(fields: [farmId], references: [id])
   poultryHouse PoultryHouse @relation(fields: [poultryHouseId], references: [id])
+  pen          Pen?         @relation(fields: [penId], references: [id])
   flockBatch   FlockBatch   @relation(fields: [flockBatchId], references: [id])
   feedProduct  Product?     @relation(fields: [feedProductId], references: [id])
 
@@ -3035,6 +3050,7 @@ model EggProductionRecord {
   branchId       String              @db.Uuid
   farmId         String              @db.Uuid
   poultryHouseId String              @db.Uuid
+  penId          String?             @db.Uuid
   flockBatchId   String              @db.Uuid
   recordDate     DateTime
   goodEggs       Int                 @default(0)
@@ -3054,6 +3070,7 @@ model EggProductionRecord {
   branch       Branch       @relation(fields: [branchId], references: [id])
   farm         Farm         @relation(fields: [farmId], references: [id])
   poultryHouse PoultryHouse @relation(fields: [poultryHouseId], references: [id])
+  pen          Pen?         @relation(fields: [penId], references: [id])
   flockBatch   FlockBatch   @relation(fields: [flockBatchId], references: [id])
 
   @@index([companyId])
@@ -3072,6 +3089,7 @@ model BirdWeightRecord {
   branchId        String              @db.Uuid
   farmId          String              @db.Uuid
   poultryHouseId  String              @db.Uuid
+  penId           String?             @db.Uuid
   flockBatchId    String              @db.Uuid
   recordDate      DateTime
   sampleSize      Int
@@ -3088,6 +3106,7 @@ model BirdWeightRecord {
   branch       Branch       @relation(fields: [branchId], references: [id])
   farm         Farm         @relation(fields: [farmId], references: [id])
   poultryHouse PoultryHouse @relation(fields: [poultryHouseId], references: [id])
+  pen          Pen?         @relation(fields: [penId], references: [id])
   flockBatch   FlockBatch   @relation(fields: [flockBatchId], references: [id])
 
   @@index([companyId])
@@ -3106,6 +3125,7 @@ model MedicationRecord {
   branchId       String              @db.Uuid
   farmId         String              @db.Uuid
   poultryHouseId String              @db.Uuid
+  penId          String?             @db.Uuid
   flockBatchId   String              @db.Uuid
   medicationName String
   dosage         String
@@ -3125,6 +3145,7 @@ model MedicationRecord {
   branch       Branch       @relation(fields: [branchId], references: [id])
   farm         Farm         @relation(fields: [farmId], references: [id])
   poultryHouse PoultryHouse @relation(fields: [poultryHouseId], references: [id])
+  pen          Pen?         @relation(fields: [penId], references: [id])
   flockBatch   FlockBatch   @relation(fields: [flockBatchId], references: [id])
 
   @@index([companyId])
@@ -3143,6 +3164,7 @@ model VaccinationRecord {
   branchId       String              @db.Uuid
   farmId         String              @db.Uuid
   poultryHouseId String              @db.Uuid
+  penId          String?             @db.Uuid
   flockBatchId   String              @db.Uuid
   vaccineName    String
   dose           String
@@ -3160,6 +3182,7 @@ model VaccinationRecord {
   branch       Branch       @relation(fields: [branchId], references: [id])
   farm         Farm         @relation(fields: [farmId], references: [id])
   poultryHouse PoultryHouse @relation(fields: [poultryHouseId], references: [id])
+  pen          Pen?         @relation(fields: [penId], references: [id])
   flockBatch   FlockBatch   @relation(fields: [flockBatchId], references: [id])
 
   @@index([companyId])
@@ -3179,8 +3202,10 @@ model PoultryTransferRecord {
   flockBatchId       String                @db.Uuid
   fromFarmId         String                @db.Uuid
   fromPoultryHouseId String                @db.Uuid
+  fromPenId          String?               @db.Uuid
   toFarmId           String                @db.Uuid
   toPoultryHouseId   String                @db.Uuid
+  toPenId            String?               @db.Uuid
   birdCount          Int
   transferDate       DateTime
   status             PoultryTransferStatus @default(PENDING)
@@ -3200,6 +3225,8 @@ model PoultryTransferRecord {
   toFarm           Farm         @relation("PoultryTransferToFarm", fields: [toFarmId], references: [id])
   fromPoultryHouse PoultryHouse @relation("PoultryTransferFromHouse", fields: [fromPoultryHouseId], references: [id])
   toPoultryHouse   PoultryHouse @relation("PoultryTransferToHouse", fields: [toPoultryHouseId], references: [id])
+  fromPen          Pen?         @relation("TransferFromPen", fields: [fromPenId], references: [id])
+  toPen            Pen?         @relation("TransferToPen", fields: [toPenId], references: [id])
 
   @@index([companyId])
   @@index([branchId])
@@ -3219,6 +3246,7 @@ model PoultryHealthObservation {
   branchId       String                @db.Uuid
   farmId         String                @db.Uuid
   poultryHouseId String                @db.Uuid
+  penId          String?               @db.Uuid
   flockBatchId   String                @db.Uuid
   observationDate DateTime
   severity       PoultryHealthSeverity @default(LOW)
@@ -3237,6 +3265,7 @@ model PoultryHealthObservation {
   branch       Branch       @relation(fields: [branchId], references: [id])
   farm         Farm         @relation(fields: [farmId], references: [id])
   poultryHouse PoultryHouse @relation(fields: [poultryHouseId], references: [id])
+  pen          Pen?         @relation(fields: [penId], references: [id])
   flockBatch   FlockBatch   @relation(fields: [flockBatchId], references: [id])
 
   @@index([companyId])
@@ -3256,6 +3285,7 @@ model PoultryCostRecord {
   branchId       String              @db.Uuid
   farmId         String              @db.Uuid
   poultryHouseId String              @db.Uuid
+  penId          String?             @db.Uuid
   flockBatchId   String              @db.Uuid
   costDate       DateTime
   costType       PoultryCostType
@@ -3274,6 +3304,7 @@ model PoultryCostRecord {
   branch       Branch       @relation(fields: [branchId], references: [id])
   farm         Farm         @relation(fields: [farmId], references: [id])
   poultryHouse PoultryHouse @relation(fields: [poultryHouseId], references: [id])
+  pen          Pen?         @relation(fields: [penId], references: [id])
   flockBatch   FlockBatch   @relation(fields: [flockBatchId], references: [id])
 
   @@index([companyId])
@@ -3285,6 +3316,77 @@ model PoultryCostRecord {
   @@index([companyId, status])
   @@index([companyId, costDate])
   @@index([deletedAt])
+}
+
+model Pen {
+  id             String    @id @default(uuid()) @db.Uuid
+  companyId      String    @db.Uuid
+  branchId       String    @db.Uuid
+  farmId         String    @db.Uuid
+  poultryHouseId String    @db.Uuid
+  penNumber      Int
+  code           String    @db.VarChar(20)
+  name           String?   @db.VarChar(100)
+  capacity       Int?
+  isActive       Boolean   @default(true)
+  createdById    String?   @db.Uuid
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  company      Company      @relation(fields: [companyId], references: [id])
+  branch       Branch       @relation(fields: [branchId], references: [id])
+  farm         Farm         @relation(fields: [farmId], references: [id])
+  poultryHouse PoultryHouse @relation(fields: [poultryHouseId], references: [id])
+
+  batchAllocations       BatchPenAllocation[]
+  dailyRecords           DailyPoultryRecord[]
+  mortalityRecords       MortalityRecord[]
+  feedConsumptionRecords FeedConsumptionRecord[]
+  eggProductionRecords   EggProductionRecord[]
+  birdWeightRecords      BirdWeightRecord[]
+  medicationRecords      MedicationRecord[]
+  vaccinationRecords     VaccinationRecord[]
+  healthObservations     PoultryHealthObservation[]
+  costRecords            PoultryCostRecord[]
+  transfersFrom          PoultryTransferRecord[] @relation("TransferFromPen")
+  transfersTo            PoultryTransferRecord[] @relation("TransferToPen")
+
+  @@unique([poultryHouseId, penNumber])
+  @@index([companyId])
+  @@index([branchId])
+  @@index([farmId])
+  @@index([poultryHouseId])
+  @@index([isActive])
+  @@index([deletedAt])
+}
+
+model BatchPenAllocation {
+  id             String   @id @default(uuid()) @db.Uuid
+  companyId      String   @db.Uuid
+  branchId       String   @db.Uuid
+  flockBatchId   String   @db.Uuid
+  penId          String   @db.Uuid
+  poultryHouseId String   @db.Uuid
+  farmId         String   @db.Uuid
+  birdCount      Int
+  notes          String?
+  allocatedAt    DateTime @default(now())
+  createdById    String?  @db.Uuid
+
+  company      Company      @relation(fields: [companyId], references: [id])
+  branch       Branch       @relation(fields: [branchId], references: [id])
+  flockBatch   FlockBatch   @relation(fields: [flockBatchId], references: [id])
+  pen          Pen          @relation(fields: [penId], references: [id])
+  poultryHouse PoultryHouse @relation(fields: [poultryHouseId], references: [id])
+  farm         Farm         @relation(fields: [farmId], references: [id])
+
+  @@unique([flockBatchId, penId])
+  @@index([companyId])
+  @@index([flockBatchId])
+  @@index([penId])
+  @@index([poultryHouseId])
+  @@index([farmId])
 }
 
 model FeedFormula {

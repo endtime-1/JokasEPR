@@ -6,6 +6,7 @@ import { RequirePermissions } from "../../common/decorators/permissions.decorato
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { PermissionsGuard } from "../../common/guards/permissions.guard";
 import {
+  AddPenDto,
   CreateBirdWeightRecordDto,
   CreateDailyPoultryRecordDto,
   CreateEggProductionRecordDto,
@@ -19,6 +20,7 @@ import {
   CreatePoultryTransferDto,
   CreateVaccinationRecordDto,
   PoultryQueryDto,
+  UpdateBatchStatusDto,
   UpdatePoultryTransferStatusDto
 } from "./dto/poultry.dto";
 import { PoultryService } from "./poultry.service";
@@ -46,6 +48,8 @@ export class PoultryController {
     return this.poultryService.farmOverview(user, farmId);
   }
 
+  // ─── Houses ───────────────────────────────────────────────────────────────
+
   @Get("houses")
   @RequirePermissions(PERMISSIONS.POULTRY_READ)
   houses(@CurrentUser() user: AuthenticatedUser, @Query() query: PoultryQueryDto) {
@@ -57,6 +61,22 @@ export class PoultryController {
   createHouse(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreatePoultryHouseDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.poultryService.createHouse(user, dto, { ipAddress, userAgent });
   }
+
+  // ─── Pens ─────────────────────────────────────────────────────────────────
+
+  @Get("houses/:houseId/pens")
+  @RequirePermissions(PERMISSIONS.POULTRY_READ)
+  listPens(@CurrentUser() user: AuthenticatedUser, @Param("houseId") houseId: string) {
+    return this.poultryService.listPens(user, houseId);
+  }
+
+  @Post("houses/:houseId/pens")
+  @RequirePermissions(PERMISSIONS.POULTRY_MANAGE)
+  addPen(@CurrentUser() user: AuthenticatedUser, @Param("houseId") houseId: string, @Body() dto: AddPenDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.poultryService.addPen(user, houseId, dto, { ipAddress, userAgent });
+  }
+
+  // ─── Batches ──────────────────────────────────────────────────────────────
 
   @Get("batches")
   @RequirePermissions(PERMISSIONS.POULTRY_READ)
@@ -75,6 +95,14 @@ export class PoultryController {
   createBatch(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateFlockBatchDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.poultryService.createBatch(user, dto, { ipAddress, userAgent });
   }
+
+  @Patch("batches/:id/status")
+  @RequirePermissions(PERMISSIONS.POULTRY_MANAGE)
+  updateBatchStatus(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateBatchStatusDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.poultryService.updateBatchStatus(user, id, dto, { ipAddress, userAgent });
+  }
+
+  // ─── Records ──────────────────────────────────────────────────────────────
 
   @Get("records/:type")
   @RequirePermissions(PERMISSIONS.POULTRY_READ)

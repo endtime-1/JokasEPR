@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { BrandLogo } from "./brand-logo";
 import { NotificationBell } from "./notification-bell";
 import {
   AlertTriangle,
@@ -107,7 +108,7 @@ type Profile = {
 };
 
 function initials(name?: string) {
-  return (name ?? "Jokas")
+  return (name ?? "Akoko")
     .split(" ")
     .filter(Boolean)
     .slice(0, 2)
@@ -263,11 +264,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <aside className="hidden border-r border-line bg-white px-5 py-5 shadow-soft lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col">
         <div className="mb-5 flex items-center gap-3">
           <Link href="/dashboard" className="flex min-w-0 items-center gap-3">
-            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-brand text-base font-black text-white shadow-soft">
-              J
-            </span>
+            <BrandLogo className="h-12 w-12 shrink-0 rounded-xl shadow-soft" />
             <span className="min-w-0">
-              <span className="app-kicker block">Jokas ERP</span>
+              <span className="app-kicker block">Akoko ERP</span>
               <span className="block truncate text-[17px] font-bold tracking-tight">
                 Operations Console
               </span>
@@ -303,10 +302,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <aside className="fixed inset-y-0 left-0 z-50 flex w-[280px] animate-slide-in flex-col border-r border-line bg-white px-5 py-5 shadow-panel lg:hidden">
             <div className="mb-4 flex items-center justify-between">
               <Link href="/dashboard" className="flex items-center gap-3" onClick={() => setMobileOpen(false)}>
-                <span className="grid h-9 w-9 place-items-center rounded-xl bg-brand text-sm font-black text-white">
-                  J
-                </span>
-                <span className="text-sm font-bold">Jokas ERP</span>
+                <BrandLogo className="h-10 w-10 shrink-0 rounded-xl" />
+                <span className="text-sm font-bold">Akoko ERP</span>
               </Link>
               <button
                 className="grid h-8 w-8 place-items-center rounded-lg text-ink/50 transition hover:bg-field"
