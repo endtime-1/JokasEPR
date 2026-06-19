@@ -44,30 +44,111 @@ export class PoultryService {
   ) {}
 
   async dashboard(user: AuthenticatedUser) {
-    const batches = await this.prisma.flockBatch.findMany({
-      where: this.batchWhere(user),
-      include: {
-        farm: { select: { name: true, code: true } },
-        poultryHouse: { select: { name: true, code: true } },
-        mortalityRecords: { where: { deletedAt: null }, select: { birdCount: true } },
-        feedConsumptionRecords: { where: { deletedAt: null }, select: { quantityKg: true } },
-        eggProductionRecords: { where: { deletedAt: null }, select: { goodEggs: true, crackedEggs: true, dirtyEggs: true, brokenEggs: true, rejectedEggs: true } },
-        birdWeightRecords: { where: { deletedAt: null }, orderBy: { recordDate: "desc" }, take: 1 },
-        costRecords: { where: { deletedAt: null }, select: { amount: true } }
-      },
-      orderBy: { createdAt: "desc" }
-    });
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const since7 = new Date(Date.now() - 7 * 86400000);
 
-    const rows = batches.map((batch) => this.batchMetrics(batch));
+    const [batches, weekEggs, weekMortality, weekFeed, recentHealth, houses] = await Promise.all([
+      this.prisma.flockBatch.findMany({
+        where: this.batchWhere(user),
+        include: {
+          farm: { select: { name: true, code: true } },
+          poultryHouse: { select: { name: true, code: true } },
+          mortalityRecords: { where: { deletedAt: null }, select: { birdCount: true, isCulling: true } },
+          feedConsumptionRecords: { where: { deletedAt: null }, select: { quantityKg: true } },
+          eggProductionRecords: { where: { deletedAt: null }, select: { goodEggs: true, crackedEggs: true, dirtyEggs: true, brokenEggs: true, rejectedEggs: true } },
+          birdWeightRecords: { where: { deletedAt: null }, orderBy: { recordDate: "desc" }, take: 1 },
+          costRecords: { where: { deletedAt: null }, select: { amount: true } },
+          dailyRecords: { where: { deletedAt: null, recordDate: { gte: todayStart } }, select: { id: true } },
+          penAllocations: { select: { birdCount: true, pen: { select: { code: true, name: true } } } }
+        },
+        orderBy: { createdAt: "desc" }
+      }),
+      this.prisma.eggProductionRecord.groupBy({
+        by: ["recordDate"],
+        where: { companyId: user.companyId, recordDate: { gte: since7 }, deletedAt: null },
+        _sum: { goodEggs: true, crackedEggs: true, dirtyEggs: true, brokenEggs: true, rejectedEggs: true },
+        orderBy: { recordDate: "asc" }
+      }),
+      this.prisma.mortalityRecord.groupBy({
+        by: ["recordDate"],
+        where: { companyId: user.companyId, recordDate: { gte: since7 }, deletedAt: null, isCulling: false },
+        _sum: { birdCount: true },
+        orderBy: { recordDate: "asc" }
+      }),
+      this.prisma.feedConsumptionRecord.groupBy({
+        by: ["recordDate"],
+        where: { companyId: user.companyId, recordDate: { gte: since7 }, deletedAt: null },
+        _sum: { quantityKg: true },
+        orderBy: { recordDate: "asc" }
+      }),
+      this.prisma.poultryHealthObservation.findMany({
+        where: { companyId: user.companyId, deletedAt: null, observationDate: { gte: since7 }, severity: { in: ["HIGH", "CRITICAL"] } },
+        select: { id: true, severity: true, observation: true, observationDate: true, flockBatch: { select: { code: true, name: true } } },
+        orderBy: { observationDate: "desc" },
+        take: 5
+      }),
+      this.prisma.poultryHouse.findMany({
+        where: this.houseWhere(user),
+        select: {
+          id: true, code: true, name: true,
+          pens: {
+            where: { deletedAt: null, isActive: true },
+            select: {
+              id: true, code: true, penNumber: true,
+              batchAllocations: {
+                where: { flockBatch: { status: "ACTIVE", deletedAt: null } },
+                select: { birdCount: true, flockBatch: { select: { code: true } } }
+              }
+            },
+            orderBy: { penNumber: "asc" }
+          }
+        },
+        orderBy: { code: "asc" }
+      })
+    ]);
+
+    const rows = batches.map((batch) => ({
+      ...this.batchMetrics(batch),
+      hasTodayRecord: (batch.dailyRecords ?? []).length > 0,
+      penCount: (batch.penAllocations ?? []).length,
+      penCodes: (batch.penAllocations ?? []).map((a: any) => a.pen.code).join(", ")
+    }));
+    const activeRows = rows.filter((r) => r.status === "ACTIVE");
+
     return {
       data: {
-        totalOpeningBirds: rows.reduce((sum, row) => sum + row.openingBirdCount, 0),
-        currentLiveBirds: rows.reduce((sum, row) => sum + row.currentLiveBirds, 0),
-        activeBatches: rows.filter((row) => row.status === "ACTIVE").length,
-        totalEggs: rows.reduce((sum, row) => sum + row.totalEggs, 0),
-        totalFeedKg: rows.reduce((sum, row) => sum + row.totalFeedKg, 0),
-        totalCosts: rows.reduce((sum, row) => sum + row.totalCosts, 0),
-        batches: rows
+        summary: {
+          totalOpeningBirds: rows.reduce((s, r) => s + r.openingBirdCount, 0),
+          currentLiveBirds: rows.reduce((s, r) => s + r.currentLiveBirds, 0),
+          activeBatches: activeRows.length,
+          totalBatches: rows.length,
+          totalEggs: rows.reduce((s, r) => s + r.totalEggs, 0),
+          totalFeedKg: Number(rows.reduce((s, r) => s + r.totalFeedKg, 0).toFixed(2)),
+          totalCosts: Number(rows.reduce((s, r) => s + r.totalCosts, 0).toFixed(2)),
+          totalProfitability: Number(rows.reduce((s, r) => s + r.profitability, 0).toFixed(2))
+        },
+        batches: rows,
+        alerts: {
+          noTodayRecord: activeRows.filter((r) => !r.hasTodayRecord).map((r) => ({ id: r.id, code: r.code, name: r.name })),
+          highMortality: activeRows.filter((r) => r.mortalityRate > 5).map((r) => ({ id: r.id, code: r.code, name: r.name, mortalityRate: r.mortalityRate })),
+          criticalHealth: recentHealth
+        },
+        trends: {
+          eggs: weekEggs.map((r) => ({ date: r.recordDate, total: (r._sum.goodEggs ?? 0) + (r._sum.crackedEggs ?? 0) + (r._sum.dirtyEggs ?? 0) + (r._sum.brokenEggs ?? 0) + (r._sum.rejectedEggs ?? 0), good: r._sum.goodEggs ?? 0 })),
+          mortality: weekMortality.map((r) => ({ date: r.recordDate, count: r._sum.birdCount ?? 0 })),
+          feed: weekFeed.map((r) => ({ date: r.recordDate, kg: Number(r._sum.quantityKg ?? 0) }))
+        },
+        houses: houses.map((h) => ({
+          id: h.id, code: h.code, name: h.name,
+          totalPens: h.pens.length,
+          occupiedPens: h.pens.filter((p) => p.batchAllocations.length > 0).length,
+          pens: h.pens.map((p) => ({
+            id: p.id, code: p.code, penNumber: p.penNumber,
+            isOccupied: p.batchAllocations.length > 0,
+            activeBatch: p.batchAllocations[0] ? { code: p.batchAllocations[0].flockBatch.code, birdCount: p.batchAllocations[0].birdCount } : null
+          }))
+        }))
       }
     };
   }
@@ -212,7 +293,8 @@ export class PoultryService {
         vaccinationRecords: { where: { deletedAt: null }, orderBy: { vaccinationDate: "desc" } },
         healthObservations: { where: { deletedAt: null }, orderBy: { observationDate: "desc" } },
         poultryTransferRecords: { where: { deletedAt: null }, orderBy: { transferDate: "desc" } },
-        costRecords: { where: { deletedAt: null }, orderBy: { costDate: "desc" } }
+        costRecords: { where: { deletedAt: null }, orderBy: { costDate: "desc" } },
+        penAllocations: { include: { pen: { select: { code: true, name: true, penNumber: true, poultryHouse: { select: { name: true, code: true } } } } } }
       }
     });
     if (!batch) {
@@ -479,8 +561,8 @@ export class PoultryService {
       ["batch", "farm", "house", "bird_type", "opening_birds", "current_live_birds", "mortality_rate", "egg_production_percent", "feed_conversion_ratio", "cost_per_bird", "profitability"],
       ...batches.data.map((batch) => [
         batch.code,
-        batch.farm.name,
-        batch.poultryHouse.name,
+        batch.farm?.name ?? "",
+        batch.poultryHouse?.name ?? "multi-house",
         batch.birdType,
         String(batch.openingBirdCount),
         String(batch.currentLiveBirds),

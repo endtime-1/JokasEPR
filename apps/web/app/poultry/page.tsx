@@ -1,3 +1,3 @@
-import { PoultryDashboardPage } from "../../components/poultry-pages";
+import { PoultryDashboardPage } from "../../components/poultry-dashboard";
 
 export default PoultryDashboardPage;

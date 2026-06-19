@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Download, Plus } from "lucide-react";
-import { AppShell } from "./app-shell";
+import { PoultryShell } from "./poultry-shell";
 import { DataTable } from "./data-table";
 import { FormField } from "./form-field";
 import { ApiEnvelope, apiFetch, downloadReport } from "../lib/api";
@@ -74,47 +74,6 @@ function PageHeader({ title, subtitle }: { title: string; subtitle: string }) {
   );
 }
 
-export function PoultryDashboardPage() {
-  const [dashboard, setDashboard] = useState<{
-    currentLiveBirds: number;
-    activeBatches: number;
-    totalEggs: number;
-    totalFeedKg: number;
-    totalCosts: number;
-    batches: BatchRow[];
-  } | null>(null);
-
-  useEffect(() => {
-    apiFetch<ApiEnvelope<typeof dashboard>>("/poultry/dashboard")
-      .then((response) => setDashboard(response.data))
-      .catch(() => undefined);
-  }, []);
-
-  const cards = [
-    ["Current live birds", dashboard?.currentLiveBirds ?? 0],
-    ["Active batches", dashboard?.activeBatches ?? 0],
-    ["Eggs recorded", dashboard?.totalEggs ?? 0],
-    ["Feed consumed kg", dashboard?.totalFeedKg ?? 0],
-    ["Batch costs", dashboard?.totalCosts ?? 0]
-  ];
-
-  return (
-    <AppShell>
-      <PageHeader title="Poultry Dashboard" subtitle="Live flock, production, mortality, feed, and cost performance across assigned farms." />
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-        {cards.map(([label, value]) => (
-          <article key={label} className="rounded-md border border-line bg-white p-4 shadow-panel">
-            <p className="text-sm text-ink/65">{label}</p>
-            <strong className="mt-3 block text-2xl font-semibold">{Number(value).toLocaleString()}</strong>
-          </article>
-        ))}
-      </section>
-      <section className="mt-6">
-        <BatchTable rows={dashboard?.batches ?? []} />
-      </section>
-    </AppShell>
-  );
-}
 
 export function FarmPoultryOverviewPage() {
   const options = usePoultryOptions();
@@ -130,7 +89,7 @@ export function FarmPoultryOverviewPage() {
   }, [selectedFarmId]);
 
   return (
-    <AppShell>
+    <PoultryShell>
       <PageHeader title="Farm Poultry Overview" subtitle="Farm-level poultry operating totals for assigned farms." />
       <FormField label="Farm">
         <select className={inputClass} value={selectedFarmId} onChange={(event) => setFarmId(event.target.value)}>
@@ -149,7 +108,7 @@ export function FarmPoultryOverviewPage() {
           </article>
         ))}
       </section>
-    </AppShell>
+    </PoultryShell>
   );
 }
 
@@ -196,7 +155,7 @@ export function PoultryHousesPage({ create = false }: { create?: boolean }) {
   }
 
   return (
-    <AppShell>
+    <PoultryShell>
       <PageHeader title={create ? "Create Poultry House" : "Poultry Houses"} subtitle="Manage poultry houses by farm. Each house auto-creates 5 pens." />
       {create ? (
         <PoultryHouseForm options={options} form={form} setForm={setForm} submit={submit} />
@@ -248,7 +207,7 @@ export function PoultryHousesPage({ create = false }: { create?: boolean }) {
           );
         })}
       </div>
-    </AppShell>
+    </PoultryShell>
   );
 }
 
@@ -315,7 +274,7 @@ export function FlockBatchesPage({ create = false }: { create?: boolean }) {
   }, []);
 
   return (
-    <AppShell>
+    <PoultryShell>
       <PageHeader title={create ? "Create Flock Batch" : "Flock Batches"} subtitle="Register and monitor flock batches distributed across houses and pens." />
       {create ? (
         <FlockBatchForm options={options} onSaved={load} />
@@ -325,7 +284,7 @@ export function FlockBatchesPage({ create = false }: { create?: boolean }) {
         </Link>
       )}
       <BatchTable rows={rows} />
-    </AppShell>
+    </PoultryShell>
   );
 }
 
@@ -545,7 +504,7 @@ export function FlockBatchDetailsPage() {
   const metricKeys = ["currentLiveBirds", "mortalityRate", "eggProductionPercent", "feedConversionRatio", "costPerBird", "profitability"] as const;
 
   return (
-    <AppShell>
+    <PoultryShell>
       <PageHeader title={batch?.name ?? "Flock Batch"} subtitle={batch ? `${batch.code} · ${batch.birdType} · ${batch.farm?.name ?? ""}` : "Loading…"} />
       {batch && (
         <>
@@ -619,7 +578,7 @@ export function FlockBatchDetailsPage() {
           )}
         </>
       )}
-    </AppShell>
+    </PoultryShell>
   );
 }
 
@@ -655,11 +614,11 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
   }
 
   return (
-    <AppShell>
+    <PoultryShell>
       <PageHeader title={title} subtitle={health ? "Veterinary and health workflow entries for assigned farms." : "Operational record entry and history for assigned flock batches."} />
       <GenericRecordForm options={options} batchPens={batchPens} form={form} setForm={setForm} submit={submit} type={type} />
       <SimpleRecordTable rows={rows} />
-    </AppShell>
+    </PoultryShell>
   );
 }
 
@@ -774,7 +733,7 @@ export function PoultryTransferPage() {
   }
 
   return (
-    <AppShell>
+    <PoultryShell>
       <PageHeader title="Poultry Transfers" subtitle="Move birds between pens, houses, or farms with full transfer audit tracking." />
       <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-3">
         <FormField label="Batch">
@@ -816,7 +775,7 @@ export function PoultryTransferPage() {
         <button className="min-h-11 rounded-md bg-brand px-4 text-sm font-semibold text-white md:col-span-3">Create transfer</button>
       </form>
       <SimpleRecordTable rows={rows} />
-    </AppShell>
+    </PoultryShell>
   );
 }
 
@@ -824,11 +783,11 @@ export function PoultryTransferPage() {
 
 export function PoultryReportsPage() {
   return (
-    <AppShell>
+    <PoultryShell>
       <PageHeader title="Poultry Reports" subtitle="Export poultry flock performance, health, production, and cost reports." />
       <button className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" onClick={() => downloadReport("/poultry/reports/summary.csv", "poultry-summary.csv")}>
         <Download aria-hidden className="h-4 w-4" /> Download poultry summary CSV
       </button>
-    </AppShell>
+    </PoultryShell>
   );
 }
