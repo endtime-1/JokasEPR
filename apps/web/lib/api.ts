@@ -1,4 +1,4 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4001/api/v1";
+const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4001/api/v1").trim();
 
 export type ApiEnvelope<T> = {
   data: T;
@@ -17,9 +17,10 @@ export function setSession(_accessToken: string, _refreshToken: string): void {}
 export function clearSession(): void {}
 
 async function refreshSession(): Promise<boolean> {
-  const response = await fetch(`${API_URL}/auth/refresh`, {
+  // Must go through the Next.js proxy so the refreshed cookie is set on the
+  // same origin (3000) and remains visible to the middleware.
+  const response = await fetch("/api/auth/refresh", {
     method: "POST",
-    credentials: "include",
     headers: { "content-type": "application/json" }
   });
   return response.ok;

@@ -4,10 +4,10 @@ import "./globals.css";
 import { Providers } from "../components/providers";
 
 export const metadata: Metadata = {
-  title: "Akoko ERP",
-  description: "Akoko Solutions agribusiness ERP",
+  title: "AKOKO SOLUTIONS ERP",
+  description: "AKOKO SOLUTIONS agribusiness ERP",
   icons: {
-    icon: "/brand/akoko-mark.svg",
+    icon: "/brand/akoko-icon.png",
     shortcut: "/brand/akoko-icon.png",
     apple: "/brand/akoko-icon.png"
   }
@@ -15,8 +15,8 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
-    <html lang="en">
-      <body>
+    <html lang="en" suppressHydrationWarning>
+      <body suppressHydrationWarning>
         <Providers>{children}</Providers>
       </body>
     </html>

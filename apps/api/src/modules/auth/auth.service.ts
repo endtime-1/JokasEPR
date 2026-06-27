@@ -264,29 +264,37 @@ export class AuthService {
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + refreshTtlDays);
 
-    const stored = await this.prisma.refreshToken.create({
-      data: {
-        companyId: user.companyId,
-        userId: user.id,
-        tokenHash: "pending",
-        expiresAt,
-        userAgent: context.userAgent,
-        ipAddress: context.ipAddress
-      }
-    });
+    // Create a placeholder record first to obtain the ID (used as JWT jti claim),
+    // then sign and hash the token, and update atomically in a transaction so an
+    // interrupted process never leaves a row with tokenHash="pending".
+    const [stored, refreshToken] = await this.prisma.$transaction(async (tx) => {
+      const record = await tx.refreshToken.create({
+        data: {
+          companyId: user.companyId,
+          userId: user.id,
+          tokenHash: "pending",
+          expiresAt,
+          userAgent: context.userAgent,
+          ipAddress: context.ipAddress
+        }
+      });
 
-    const refreshToken = await this.jwtService.signAsync(
-      { sub: user.id, org: user.companyId, jti: stored.id, typ: "refresh" },
-      {
-        secret: this.config.getOrThrow<string>("JWT_REFRESH_SECRET"),
-        expiresIn: `${refreshTtlDays}d`
-      }
-    );
+      const token = await this.jwtService.signAsync(
+        { sub: user.id, org: user.companyId, jti: record.id, typ: "refresh" },
+        {
+          secret: this.config.getOrThrow<string>("JWT_REFRESH_SECRET"),
+          expiresIn: `${refreshTtlDays}d`
+        }
+      );
 
-    await this.prisma.refreshToken.update({
-      where: { id: stored.id },
-      data: { tokenHash: await bcrypt.hash(refreshToken, 12) }
+      await tx.refreshToken.update({
+        where: { id: record.id },
+        data: { tokenHash: await bcrypt.hash(token, 12) }
+      });
+
+      return [record, token] as const;
     });
+    void stored;
 
     return { accessToken, refreshToken, tokenType: "Bearer", refreshTtlDays };
   }

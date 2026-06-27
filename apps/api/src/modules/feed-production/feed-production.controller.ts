@@ -16,7 +16,9 @@ import {
   CreateFeedProductionOrderDto,
   CreateFeedQualityCheckDto,
   FeedProductionQueryDto,
+  HiproPredictiveQueryDto,
   RecordExternalFeedSaleDto,
+  SimulatePredictiveDto,
   UpdateFeedQualityCheckStatusDto
 } from "./dto/feed-production.dto";
 import { FeedProductionService } from "./feed-production.service";
@@ -192,6 +194,18 @@ export class FeedProductionController {
   @RequirePermissions(PERMISSIONS.INVENTORY_MANAGE)
   recordExternalSale(@CurrentUser() user: AuthenticatedUser, @Body() dto: RecordExternalFeedSaleDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.feedProductionService.recordExternalSale(user, dto, { ipAddress, userAgent });
+  }
+
+  @Get("hipro-predictive")
+  @RequirePermissions(PERMISSIONS.FEED_READ)
+  hiproPredictive(@CurrentUser() user: AuthenticatedUser, @Query() query: HiproPredictiveQueryDto) {
+    return this.feedProductionService.hiproPredictive(user, query.warehouseId);
+  }
+
+  @Post("hipro-predictive/simulate")
+  @RequirePermissions(PERMISSIONS.FEED_READ)
+  simulatePredictive(@CurrentUser() user: AuthenticatedUser, @Body() dto: SimulatePredictiveDto) {
+    return this.feedProductionService.simulatePredictive(user, dto);
   }
 
   @Get("reports/summary.csv")

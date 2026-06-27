@@ -31,13 +31,19 @@ export class InventoryService {
   ) {}
 
   async dashboard(user: AuthenticatedUser) {
-    const [items, movements, lowStock, expiryAlerts, valuation, pendingApprovals] = await Promise.all([
+    const sevenDaysAgo = new Date(Date.now() - 7 * 86400000);
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const [items, movements, lowStock, expiryAlerts, valuation, pendingApprovals, weekMovements, adjustmentStats, movementsToday] = await Promise.all([
       this.prisma.inventoryItem.findMany({ where: this.itemWhere(user, {}), include: { product: true, warehouse: true } }),
-      this.prisma.stockMovement.findMany({ where: this.movementWhere(user, {}), orderBy: { movementDate: "desc" }, take: 10, include: { product: true } }),
+      this.prisma.stockMovement.findMany({ where: this.movementWhere(user, {}), orderBy: { movementDate: "desc" }, take: 10, include: { product: { select: { sku: true, name: true } }, warehouse: { select: { name: true } } } }),
       this.lowStockRows(user),
-      this.prisma.stockExpiryAlert.findMany({ where: this.expiryWhere(user, {}), include: { product: true, warehouse: true, stockBatch: true }, orderBy: { expiryDate: "asc" }, take: 10 }),
+      this.prisma.stockExpiryAlert.findMany({ where: this.expiryWhere(user, {}), include: { product: { select: { sku: true, name: true } }, warehouse: { select: { name: true } }, stockBatch: { select: { batchNumber: true, quantityRemaining: true } } }, orderBy: { expiryDate: "asc" }, take: 10 }),
       this.valuationRows(user, {}),
-      this.prisma.stockApproval.count({ where: { companyId: user.companyId, status: "PENDING_APPROVAL", deletedAt: null } })
+      this.prisma.stockApproval.count({ where: { companyId: user.companyId, status: "PENDING_APPROVAL", deletedAt: null } }),
+      this.prisma.stockMovement.findMany({ where: { ...this.movementWhere(user, {}), movementDate: { gte: sevenDaysAgo } }, select: { movementDate: true, movementType: true }, orderBy: { movementDate: "asc" } }),
+      this.prisma.stockAdjustment.groupBy({ by: ["status"], where: { companyId: user.companyId, deletedAt: null }, _count: { status: true } }),
+      this.prisma.stockMovement.count({ where: { ...this.movementWhere(user, {}), movementDate: { gte: todayStart } } })
     ]);
     return {
       data: {
@@ -48,9 +54,12 @@ export class InventoryService {
         lowStockCount: lowStock.length,
         expiryAlertCount: expiryAlerts.length,
         pendingApprovals,
+        movementsToday,
         recentMovements: movements,
         lowStock: lowStock.slice(0, 8),
-        expiryAlerts
+        expiryAlerts,
+        weekMovements: weekMovements.map((m) => ({ date: m.movementDate, type: m.movementType })),
+        adjustmentStats: adjustmentStats.map((r) => ({ status: r.status, count: r._count.status }))
       }
     };
   }

@@ -1,4 +1,4 @@
-import { CustomerStatus, PaymentMethod, SalesReturnStatus } from "@prisma/client";
+import { CustomerStatus, PaymentMethod, ProspectVisitOutcome, ProspectVisitType, SalesReturnStatus } from "@prisma/client";
 import { Type } from "class-transformer";
 import { IsArray, IsDateString, IsEmail, IsEnum, IsNumber, IsOptional, IsString, IsUUID, MaxLength, Min, ValidateNested } from "class-validator";
 
@@ -224,5 +224,28 @@ export class CreateSalesReturnDto {
   @IsOptional()
   @IsEnum(SalesReturnStatus)
   status?: SalesReturnStatus;
+}
+
+export class CreateProspectVisitDto {
+  @IsString() @MaxLength(160) prospectName!: string;
+  @IsOptional() @IsString() @MaxLength(30) phone?: string;
+  @IsOptional() @IsString() @MaxLength(300) address?: string;
+  @IsOptional() @IsNumber() latitude?: number;
+  @IsOptional() @IsNumber() longitude?: number;
+  @IsOptional() @IsEnum(ProspectVisitType) visitType?: ProspectVisitType;
+  @IsOptional() @IsEnum(ProspectVisitOutcome) outcome?: ProspectVisitOutcome;
+  @IsOptional() @IsString() @MaxLength(500) notes?: string;
+  @IsOptional() @IsDateString() visitedAt?: string;
+  @IsOptional() @IsUUID() branchId?: string;
+}
+
+export class ProspectVisitQueryDto {
+  @IsOptional() @IsUUID() repId?: string;
+  @IsOptional() @IsUUID() branchId?: string;
+  @IsOptional() @IsEnum(ProspectVisitOutcome) outcome?: ProspectVisitOutcome;
+  @IsOptional() @IsString() dateFrom?: string;
+  @IsOptional() @IsString() dateTo?: string;
+  @IsOptional() @IsString() page?: string;
+  @IsOptional() @IsString() limit?: string;
 }
 

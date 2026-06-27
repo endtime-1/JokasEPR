@@ -1,7 +1,8 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState, type ReactNode } from "react";
-import { Building2, DatabaseBackup, LockKeyhole, Plus, Save, Settings2, Sparkles } from "lucide-react";
+import { Building2, ChevronRight, DatabaseBackup, LockKeyhole, Package, Plus, Save, Settings2, Sparkles } from "lucide-react";
+import Link from "next/link";
 import { AppShell } from "../../components/app-shell";
 import { ApiEnvelope, apiFetch } from "../../lib/api";
 
@@ -152,6 +153,23 @@ export default function SettingsPage() {
             <button className="app-button-primary md:w-max" disabled={saving === "company"}><Save className="h-4 w-4" />Save company</button>
           </form>
         </SettingCard>
+
+        {/* Product Catalog shortcut */}
+        <Link
+          href="/settings/catalog"
+          className="flex items-center justify-between rounded-xl border border-line bg-white p-5 shadow-panel transition hover:-translate-y-0.5 hover:border-brand/30 hover:shadow-soft"
+        >
+          <div className="flex items-center gap-4">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-50">
+              <Package className="h-5 w-5 text-amber-600" />
+            </div>
+            <div>
+              <h2 className="text-base font-semibold text-ink">Product Catalog</h2>
+              <p className="mt-0.5 text-sm text-ink/55">Manage raw materials (ingredients), finished goods, and consumables</p>
+            </div>
+          </div>
+          <ChevronRight className="h-5 w-5 shrink-0 text-ink/30" />
+        </Link>
 
         <SettingCard title="Master Data" icon={Settings2}>
           <div className="mb-4 flex flex-wrap gap-2">

@@ -8,6 +8,7 @@ import { HRService } from "./hr.service";
 import {
   AssignTaskDto,
   BulkAttendanceDto,
+  CheckInSelfDto,
   CreateDepartmentAssignmentDto,
   CreateEmployeeDto,
   CreateEmployeeRoleDto,
@@ -29,7 +30,7 @@ function ctx(req: Request) {
 }
 
 @UseGuards(JwtAuthGuard, PermissionsGuard)
-@Controller("api/v1/hr")
+@Controller("hr")
 export class HRController {
   constructor(private readonly svc: HRService) {}
 
@@ -95,6 +96,12 @@ export class HRController {
     return this.svc.listAttendance(user, query);
   }
 
+  @Post("attendance/me")
+  @RequirePermissions(PERMISSIONS.PLATFORM_READ)
+  checkInSelf(@CurrentUser() user: AuthenticatedUser, @Body() dto: CheckInSelfDto, @Req() req: Request) {
+    return this.svc.checkInSelf(user, dto, ctx(req));
+  }
+
   @Post("attendance")
   @RequirePermissions(PERMISSIONS.HR_MANAGE)
   recordAttendance(@CurrentUser() user: AuthenticatedUser, @Body() dto: RecordAttendanceDto, @Req() req: Request) {
@@ -127,6 +134,12 @@ export class HRController {
   @RequirePermissions(PERMISSIONS.HR_READ)
   listTasks(@CurrentUser() user: AuthenticatedUser, @Query() query: HRQueryDto) {
     return this.svc.listTasks(user, query);
+  }
+
+  @Get("tasks/my")
+  @RequirePermissions(PERMISSIONS.PLATFORM_READ)
+  myTasks(@CurrentUser() user: AuthenticatedUser) {
+    return this.svc.myTasks(user);
   }
 
   @Get("tasks/:id")

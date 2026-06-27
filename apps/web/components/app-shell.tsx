@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useAuth } from "./auth-context";
 import { BrandLogo } from "./brand-logo";
 import { NotificationBell } from "./notification-bell";
 import {
   AlertTriangle,
-  Bell,
   BellRing,
   Bird,
   BookOpen,
@@ -90,6 +90,7 @@ const navGroups: { title: string; items: NavItem[] }[] = [
       { href: "/identity/users", label: "Users", icon: Users, permission: "identity.read" },
       { href: "/identity/roles", label: "Roles", icon: ShieldCheck, permission: "identity.read" },
       { href: "/settings", label: "Settings", icon: Settings, permission: "settings.manage" },
+      { href: "/settings/catalog", label: "Catalog", icon: PackageSearch, permission: "settings.manage" },
       { href: "/audit", label: "Audit", icon: ClipboardList, permission: "audit.read" },
       { href: "/notifications", label: "Notifications", icon: BellRing },
       { href: "/platform/mobile-sync", label: "Mobile Sync", icon: Smartphone, permission: "platform.manage" },
@@ -99,16 +100,8 @@ const navGroups: { title: string; items: NavItem[] }[] = [
   }
 ];
 
-type Profile = {
-  fullName: string;
-  email: string;
-  roles?: string[];
-  permissions?: string[];
-  hasGlobalAccess?: boolean;
-};
-
 function initials(name?: string) {
-  return (name ?? "Akoko")
+  return (name ?? "AKOKO SOLUTIONS")
     .split(" ")
     .filter(Boolean)
     .slice(0, 2)
@@ -144,7 +137,7 @@ function NavLink({
     <Link
       href={item.href}
       onClick={onClick}
-      className={`group flex min-h-10 items-center gap-3 rounded-lg px-3 text-sm font-semibold transition ${
+      className={`group flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${
         active
           ? "bg-brand text-white shadow-soft"
           : "text-ink/70 hover:bg-field hover:text-ink"
@@ -166,34 +159,55 @@ function NavLink({
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [ready, setReady] = useState(false);
+  const { profile, ready, signOut } = useAuth();
   const [unreadAlerts, setUnreadAlerts] = useState(0);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const signOutRef = useRef(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchFocus, setSearchFocus] = useState(0);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setMobileOpen(false);
   }, [pathname]);
 
   useEffect(() => {
-    apiFetch<ApiEnvelope<Profile>>("/auth/me")
-      .then((res) => setProfile(res.data))
-      .catch(() => {
-        router.replace("/login");
-      })
-      .finally(() => setReady(true));
-
     apiFetch<ApiEnvelope<{ count: number }>>("/alerts/unread-count")
       .then((res) => setUnreadAlerts(res.data.count))
       .catch(() => undefined);
-  }, [router]);
+  }, []);
+
+  function openSearch() {
+    setSearchQuery("");
+    setSearchFocus(0);
+    setSearchOpen(true);
+  }
+
+  function closeSearch() {
+    setSearchOpen(false);
+    setSearchQuery("");
+    setSearchFocus(0);
+  }
+
+  // Global keyboard shortcut: Ctrl+K / Cmd+K opens search
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+        e.preventDefault();
+        searchOpen ? closeSearch() : openSearch();
+      }
+      if (e.key === "Escape" && searchOpen) closeSearch();
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [searchOpen]);
+
+  useEffect(() => {
+    if (searchOpen) setTimeout(() => searchInputRef.current?.focus(), 20);
+  }, [searchOpen]);
 
   async function handleSignOut() {
-    if (signOutRef.current) return;
-    signOutRef.current = true;
-    await apiFetch("/auth/logout", { method: "POST" }).catch(() => undefined);
-    router.push("/login");
+    await signOut();
   }
 
   if (!ready) {
@@ -221,7 +235,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <nav aria-label="Main navigation">
       {visibleGroups.map((group) => (
         <div key={group.title} className="mb-1">
-          <p className="px-3 pb-1.5 pt-4 text-[11px] font-bold uppercase tracking-wide text-ink/40">
+          <p className="px-3 pb-1 pt-3 text-[10px] font-bold uppercase tracking-wide text-ink/40">
             {group.title}
           </p>
           <div className="space-y-0.5">
@@ -266,7 +280,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <Link href="/dashboard" className="flex min-w-0 items-center gap-3">
             <BrandLogo className="h-12 w-12 shrink-0 rounded-xl shadow-soft" />
             <span className="min-w-0">
-              <span className="app-kicker block">Akoko ERP</span>
+              <span className="app-kicker block">AKOKO SOLUTIONS ERP</span>
               <span className="block truncate text-[17px] font-bold tracking-tight">
                 Operations Console
               </span>
@@ -274,12 +288,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </Link>
         </div>
 
-        <div className="mb-4">
+        <div className="mb-3">
           {renderUserCard()}
         </div>
 
-        <div className="flex-1 overflow-y-auto">
+        <div className="relative flex-1 overflow-y-auto">
           {renderNav()}
+          {/* fade hint that sidebar scrolls */}
+          <div className="pointer-events-none sticky bottom-0 h-6 bg-gradient-to-t from-white to-transparent" />
         </div>
 
         <button
@@ -303,7 +319,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <div className="mb-4 flex items-center justify-between">
               <Link href="/dashboard" className="flex items-center gap-3" onClick={() => setMobileOpen(false)}>
                 <BrandLogo className="h-10 w-10 shrink-0 rounded-xl" />
-                <span className="text-sm font-bold">Akoko ERP</span>
+                <span className="text-sm font-bold">AKOKO SOLUTIONS ERP</span>
               </Link>
               <button
                 className="grid h-8 w-8 place-items-center rounded-lg text-ink/50 transition hover:bg-field"
@@ -356,25 +372,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
 
             <div className="flex items-center gap-2">
-              {/* Search hint — large screens */}
-              <div className="hidden min-h-10 w-[240px] items-center gap-2 rounded-lg border border-line bg-white px-3 text-sm text-ink/40 xl:flex">
-                <Search aria-hidden className="h-4 w-4 shrink-0" />
-                <span>Search modules, records</span>
-              </div>
-
-              {/* Alerts bell */}
-              <Link
-                href="/alerts"
-                className="relative grid h-10 w-10 place-items-center rounded-lg border border-line bg-white text-ink/70 transition hover:bg-field"
-                aria-label={`AI alerts${unreadAlerts > 0 ? `, ${unreadAlerts} unread` : ""}`}
+              {/* Search button */}
+              <button
+                onClick={openSearch}
+                className="hidden min-h-10 w-[220px] items-center gap-2 rounded-lg border border-line bg-white px-3 text-sm text-ink/40 transition hover:border-brand/30 hover:text-ink/60 xl:flex"
+                aria-label="Search"
               >
-                <Bell aria-hidden className="h-4 w-4" />
-                {unreadAlerts > 0 && (
-                  <span className="absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-brand px-1 text-[10px] font-bold text-white">
-                    {unreadAlerts > 99 ? "99+" : unreadAlerts}
-                  </span>
-                )}
-              </Link>
+                <Search aria-hidden className="h-4 w-4 shrink-0" />
+                <span className="flex-1 text-left">Search modules…</span>
+                <kbd className="hidden rounded border border-line bg-field px-1.5 py-0.5 text-[10px] font-semibold text-ink/30 sm:block">⌃K</kbd>
+              </button>
+              <button
+                onClick={openSearch}
+                className="grid h-10 w-10 place-items-center rounded-lg border border-line bg-white text-ink/70 transition hover:bg-field xl:hidden"
+                aria-label="Search"
+              >
+                <Search aria-hidden className="h-4 w-4" />
+              </button>
 
               <NotificationBell />
             </div>
@@ -383,6 +397,138 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         <main className="px-4 py-6 lg:px-8">{children}</main>
       </div>
+
+      {/* ── Global Search Modal ──────────────────────────────────────────── */}
+      {searchOpen && (() => {
+        const allItems = visibleGroups.flatMap((g) =>
+          g.items.map((item) => ({ ...item, group: g.title }))
+        );
+        const q = searchQuery.toLowerCase().trim();
+        const filtered = q
+          ? allItems.filter(
+              (item) =>
+                item.label.toLowerCase().includes(q) ||
+                item.group.toLowerCase().includes(q)
+            )
+          : allItems;
+        const clamped = Math.min(Math.max(searchFocus, 0), Math.max(filtered.length - 1, 0));
+
+        function onSearchKey(e: React.KeyboardEvent) {
+          if (e.key === "ArrowDown") { e.preventDefault(); setSearchFocus((f) => Math.min(f + 1, filtered.length - 1)); }
+          else if (e.key === "ArrowUp") { e.preventDefault(); setSearchFocus((f) => Math.max(f - 1, 0)); }
+          else if (e.key === "Enter" && filtered[clamped]) {
+            closeSearch();
+            router.push(filtered[clamped].href);
+          }
+          else if (e.key === "Escape") closeSearch();
+        }
+
+        return (
+          <div className="fixed inset-0 z-[100] flex items-start justify-center px-4 pt-[12vh]">
+            {/* Backdrop */}
+            <div
+              className="absolute inset-0 bg-ink/30 backdrop-blur-sm"
+              onClick={closeSearch}
+              aria-hidden
+            />
+
+            {/* Panel */}
+            <div className="relative z-10 w-full max-w-lg overflow-hidden rounded-2xl border border-line bg-white shadow-2xl">
+              {/* Search input */}
+              <div className="flex items-center gap-3 border-b border-line px-4 py-3">
+                <Search className="h-4 w-4 shrink-0 text-ink/40" />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  placeholder="Search modules, pages…"
+                  value={searchQuery}
+                  onChange={(e) => { setSearchQuery(e.target.value); setSearchFocus(0); }}
+                  onKeyDown={onSearchKey}
+                  className="flex-1 bg-transparent text-sm text-ink placeholder:text-ink/35 focus:outline-none"
+                  autoComplete="off"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => { setSearchQuery(""); setSearchFocus(0); searchInputRef.current?.focus(); }}
+                    className="rounded p-0.5 text-ink/40 hover:text-ink"
+                    aria-label="Clear"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+                <kbd className="rounded border border-line bg-field px-1.5 py-0.5 text-[10px] font-semibold text-ink/30">ESC</kbd>
+              </div>
+
+              {/* Results */}
+              <div className="max-h-[380px] overflow-y-auto">
+                {filtered.length === 0 ? (
+                  <p className="py-10 text-center text-sm text-ink/40">No results for "{searchQuery}"</p>
+                ) : (
+                  (() => {
+                    let globalIdx = -1;
+                    const groups = visibleGroups
+                      .map((g) => ({
+                        title: g.title,
+                        items: filtered.filter((item) => item.group === g.title)
+                      }))
+                      .filter((g) => g.items.length > 0);
+
+                    return groups.map((g) => (
+                      <div key={g.title}>
+                        <p className="px-4 pb-1 pt-3 text-[10px] font-bold uppercase tracking-wide text-ink/35">
+                          {g.title}
+                        </p>
+                        {g.items.map((item) => {
+                          globalIdx++;
+                          const idx = globalIdx;
+                          const Icon = item.icon;
+                          const isFocused = idx === clamped && filtered.length > 0;
+                          return (
+                            <Link
+                              key={item.href}
+                              href={item.href}
+                              onClick={closeSearch}
+                              onMouseEnter={() => setSearchFocus(idx)}
+                              className={`flex items-center gap-3 px-4 py-2.5 text-sm transition ${
+                                isFocused
+                                  ? "bg-brand text-white"
+                                  : "text-ink hover:bg-field"
+                              }`}
+                            >
+                              <Icon
+                                className={`h-4 w-4 shrink-0 ${isFocused ? "text-white" : "text-ink/50"}`}
+                                aria-hidden
+                              />
+                              <span className="flex-1 font-medium">{item.label}</span>
+                              <ChevronRight
+                                className={`h-3.5 w-3.5 shrink-0 ${isFocused ? "text-white/70" : "text-ink/25"}`}
+                                aria-hidden
+                              />
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    ));
+                  })()
+                )}
+              </div>
+
+              {/* Footer hint */}
+              <div className="flex items-center gap-4 border-t border-line bg-field/60 px-4 py-2">
+                <span className="text-[10px] text-ink/40">
+                  <kbd className="rounded border border-line bg-white px-1 font-semibold">↑↓</kbd> navigate
+                </span>
+                <span className="text-[10px] text-ink/40">
+                  <kbd className="rounded border border-line bg-white px-1 font-semibold">↵</kbd> open
+                </span>
+                <span className="text-[10px] text-ink/40">
+                  <kbd className="rounded border border-line bg-white px-1 font-semibold">ESC</kbd> close
+                </span>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

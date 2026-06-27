@@ -1,11 +1,12 @@
-import { Body, Controller, Get, Headers, Ip, Param, Patch, Post, Query, Res, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Headers, Ip, Param, Patch, Post, Query, Req, Res, UseGuards } from "@nestjs/common";
+import { Request } from "express";
 import { Response } from "express";
 import { AuthenticatedUser, PERMISSIONS } from "@jokas/shared";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { RequirePermissions } from "../../common/decorators/permissions.decorator";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { PermissionsGuard } from "../../common/guards/permissions.guard";
-import { CreateCustomerDto, CreateCustomerGroupDto, CreatePaymentDto, CreatePriceListDto, CreateSalesOrderDto, CreateSalesReturnDto, SalesQueryDto } from "./dto/sales.dto";
+import { CreateCustomerDto, CreateCustomerGroupDto, CreatePaymentDto, CreatePriceListDto, CreateProspectVisitDto, CreateSalesOrderDto, CreateSalesReturnDto, ProspectVisitQueryDto, SalesQueryDto } from "./dto/sales.dto";
 import { SalesService } from "./sales.service";
 
 @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -152,6 +153,26 @@ export class SalesController {
     response.setHeader("content-type", "text/csv");
     response.setHeader("content-disposition", "attachment; filename=sales-summary.csv");
     response.send(csv);
+  }
+
+  // ── Prospect Visits ──────────────────────────────────────────────────────
+
+  @Get("prospect-visits/my")
+  @RequirePermissions(PERMISSIONS.PLATFORM_READ)
+  myProspectVisits(@CurrentUser() user: AuthenticatedUser, @Query() query: ProspectVisitQueryDto) {
+    return this.salesService.myProspectVisits(user, query);
+  }
+
+  @Get("prospect-visits")
+  @RequirePermissions(PERMISSIONS.SALES_READ)
+  listProspectVisits(@CurrentUser() user: AuthenticatedUser, @Query() query: ProspectVisitQueryDto) {
+    return this.salesService.listProspectVisits(user, query);
+  }
+
+  @Post("prospect-visits")
+  @RequirePermissions(PERMISSIONS.PLATFORM_READ)
+  logProspectVisit(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateProspectVisitDto, @Req() req: Request) {
+    return this.salesService.logProspectVisit(user, dto, { ipAddress: req.ip, userAgent: req.headers["user-agent"] });
   }
 }
 

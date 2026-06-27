@@ -1,3 +1,3 @@
-import { SoyaDashboardPage } from "../../components/soya-processing-pages";
+import { SoyaDashboardPage } from "../../components/soya-dashboard";
 
 export default SoyaDashboardPage;

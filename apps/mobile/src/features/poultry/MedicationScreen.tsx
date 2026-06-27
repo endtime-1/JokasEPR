@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import { Alert, StyleSheet, Text, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { ScreenWrapper } from "../../components/ScreenWrapper";
@@ -6,7 +6,8 @@ import { FormField } from "../../components/FormField";
 import { SelectField, SelectOption } from "../../components/SelectField";
 import { Button } from "../../components/Button";
 import { useSubmit } from "../../hooks/useSubmit";
-import { fetchFlockBatches, fetchFarms } from "../../api/endpoints";
+import { useLookup } from "../../hooks/useLookup";
+import { fetchFlockBatches, fetchFarms, fetchWarehouses, fetchProducts } from "../../api/endpoints";
 import { useAuth } from "../../auth/AuthContext";
 import { colors, font, spacing } from "../../constants/theme";
 
@@ -24,29 +25,45 @@ export function MedicationScreen() {
   const [farmId, setFarmId] = useState("");
   const [batchId, setBatchId] = useState("");
   const [startDate, setStartDate] = useState(new Date().toISOString().split("T")[0]);
+  const [endDate, setEndDate] = useState("");
   const [medicationName, setMedicationName] = useState("");
   const [dosage, setDosage] = useState("");
   const [route, setRoute] = useState("");
-  const [durationDays, setDurationDays] = useState("1");
-  const [purpose, setPurpose] = useState("");
-  const [farms, setFarms] = useState<SelectOption[]>([]);
-  const [batches, setBatches] = useState<SelectOption[]>([]);
+  const [notes, setNotes] = useState("");
+  // inventory link (optional)
+  const [warehouseId, setWarehouseId] = useState("");
+  const [medicineProductId, setMedicineProductId] = useState("");
+  const [quantityUsed, setQuantityUsed] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  useEffect(() => {
-    fetchFarms().then((r) => {
-      const all = (r.data as any[]) ?? [];
-      const assigned = user?.hasGlobalAccess ? all : all.filter((f) => user?.farmIds?.includes(f.id));
-      setFarms(assigned.map((f) => ({ label: f.name, value: f.id })));
-    }).catch(() => {});
-  }, [user]);
+  const { data: rawFarms } = useLookup("farms", async () => { const r = await fetchFarms(); return (r.data as any[]) ?? []; });
+  const farms: SelectOption[] = useMemo(() => {
+    const all = rawFarms ?? [];
+    const assigned = user?.hasGlobalAccess ? all : all.filter((f: any) => user?.farmIds?.includes(f.id));
+    return assigned.map((f: any) => ({ label: f.name, value: f.id }));
+  }, [rawFarms, user]);
 
-  useEffect(() => {
-    if (!farmId) return;
-    fetchFlockBatches(farmId).then((r) => {
-      setBatches(((r.data as any[]) ?? []).map((b) => ({ label: b.batchCode, value: b.id })));
-    }).catch(() => {});
-  }, [farmId]);
+  const { data: rawBatches } = useLookup(
+    `flockBatches:${farmId}`,
+    async () => { const r = await fetchFlockBatches(farmId); return (r.data as any[]) ?? []; },
+    !farmId
+  );
+  const batches: SelectOption[] = useMemo(
+    () => (rawBatches ?? []).map((b: any) => ({ label: b.code ?? b.batchCode ?? b.name, value: b.id })),
+    [rawBatches]
+  );
+
+  const { data: rawWarehouses } = useLookup("warehouses", async () => { const r = await fetchWarehouses(); return (r.data as any[]) ?? []; });
+  const warehouses: SelectOption[] = useMemo(
+    () => (rawWarehouses ?? []).map((w: any) => ({ label: w.name, value: w.id })),
+    [rawWarehouses]
+  );
+
+  const { data: rawProducts } = useLookup("products", async () => { const r = await fetchProducts(); return (r.data as any[]) ?? []; });
+  const products: SelectOption[] = useMemo(
+    () => (rawProducts ?? []).map((p: any) => ({ label: `${p.sku} — ${p.name}`, value: p.id })),
+    [rawProducts]
+  );
 
   function validate() {
     const e: Record<string, string> = {};
@@ -71,7 +88,7 @@ export function MedicationScreen() {
       <Text style={styles.title}>Medication Record</Text>
       <Text style={styles.sub}>Record treatment administered to flock</Text>
 
-      <SelectField label="Farm" value={farmId} options={farms} onChange={(v) => { setFarmId(v); setBatches([]); setBatchId(""); }} error={errors.farmId} required />
+      <SelectField label="Farm" value={farmId} options={farms} onChange={(v) => { setFarmId(v); setBatchId(""); }} error={errors.farmId} required />
       <SelectField label="Flock Batch" value={batchId} options={batches} onChange={setBatchId} error={errors.batchId} required placeholder={farmId ? "Select batch…" : "Select farm first"} />
       <FormField label="Start Date" required value={startDate} onChangeText={setStartDate} error={errors.startDate} keyboardType="numeric" placeholder="YYYY-MM-DD" />
       <FormField label="Medication Name" required value={medicationName} onChangeText={(v) => { setMedicationName(v); setErrors((e) => ({ ...e, medicationName: "" })); }} error={errors.medicationName} placeholder="e.g. Amoxicillin 20%" />
@@ -85,18 +102,29 @@ export function MedicationScreen() {
         </View>
       </View>
 
-      <View style={styles.row}>
-        <View style={styles.half}>
-          <FormField label="Duration (days)" value={durationDays} onChangeText={setDurationDays} keyboardType="numeric" placeholder="1" />
-        </View>
-        <View style={styles.half}>
-          <FormField label="Purpose / Diagnosis" value={purpose} onChangeText={setPurpose} placeholder="e.g. Respiratory infection" />
-        </View>
-      </View>
+      <FormField label="End Date" value={endDate} onChangeText={setEndDate} keyboardType="numeric" placeholder="YYYY-MM-DD (optional)" />
+      <FormField label="Notes / Diagnosis" value={notes} onChangeText={setNotes} multiline numberOfLines={2} style={{ minHeight: 70, textAlignVertical: "top" } as any} placeholder="e.g. Respiratory infection treatment…" />
+
+      <Text style={styles.sectionLabel}>Inventory Link (Optional)</Text>
+      <Text style={styles.sectionHint}>Select warehouse and medicine to auto-deduct stock when saved.</Text>
+      <SelectField label="Warehouse" value={warehouseId} options={warehouses} onChange={setWarehouseId} placeholder="No warehouse selected" />
+      <SelectField label="Medicine Product" value={medicineProductId} options={products} onChange={setMedicineProductId} placeholder="No product selected" />
+      <FormField label="Quantity Used" value={quantityUsed} onChangeText={setQuantityUsed} keyboardType="decimal-pad" placeholder="e.g. 0.5 (kg / litres / units)" />
 
       <Button label="Save Medication" loading={loading} onPress={async () => {
         if (!validate()) return;
-        await submit({ farmId, flockBatchId: batchId, startDate, medicationName, dosage, administrationRoute: route, durationDays: Number(durationDays), purpose: purpose || undefined });
+        await submit({
+          flockBatchId: batchId,
+          startDate,
+          endDate: endDate || undefined,
+          medicationName,
+          dosage,
+          route,
+          notes: notes || undefined,
+          warehouseId: warehouseId || undefined,
+          medicineProductId: medicineProductId || undefined,
+          quantityUsed: quantityUsed ? Number(quantityUsed) : undefined,
+        });
       }} size="lg" />
     </ScreenWrapper>
   );
@@ -106,5 +134,7 @@ const styles = StyleSheet.create({
   title: { fontSize: font.size.xl, fontWeight: font.weight.bold, color: colors.ink },
   sub: { fontSize: font.size.sm, color: colors.inkMid, marginTop: -spacing.sm },
   row: { flexDirection: "row", gap: spacing.md },
-  half: { flex: 1 }
+  half: { flex: 1 },
+  sectionLabel: { fontSize: font.size.sm, fontWeight: font.weight.bold, color: colors.inkMid, marginTop: spacing.sm },
+  sectionHint: { fontSize: font.size.xs, color: colors.inkLight, marginTop: -spacing.sm }
 });

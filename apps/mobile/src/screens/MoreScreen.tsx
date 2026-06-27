@@ -1,10 +1,9 @@
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
-import { Card } from "../components/Card";
 import { useAuth } from "../auth/AuthContext";
 import { useSync } from "../hooks/useSync";
-import { colors, font, radius, spacing } from "../constants/theme";
+import { colors, font, radius, shadow, spacing } from "../constants/theme";
 
 type MenuItem = {
   icon: string;
@@ -13,13 +12,16 @@ type MenuItem = {
   onPress: () => void;
   badge?: string;
   danger?: boolean;
+  color?: string;
 };
 
-function MenuRow({ icon, label, description, onPress, badge, danger }: MenuItem) {
+function MenuRow({ icon, label, description, onPress, badge, danger, color }: MenuItem) {
+  const iconBg = danger ? "#fef2f2" : color ? color + "18" : colors.brandLight;
+  const iconColor = danger ? "#dc2626" : color ?? colors.brand;
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
       <View style={styles.menuRow}>
-        <View style={[styles.menuIconWrap, danger && styles.menuIconDanger]}>
+        <View style={[styles.menuIconWrap, { backgroundColor: iconBg }]}>
           <Text style={styles.menuIcon}>{icon}</Text>
         </View>
         <View style={styles.menuText}>
@@ -36,30 +38,31 @@ function MenuRow({ icon, label, description, onPress, badge, danger }: MenuItem)
   );
 }
 
+function SectionHeader({ title }: { title: string }) {
+  return <Text style={styles.sectionLabel}>{title}</Text>;
+}
+
 export function MoreScreen() {
   const navigation = useNavigation<any>();
   const { user, logout } = useAuth();
   const { pending, syncing } = useSync();
 
   function confirmLogout() {
-    Alert.alert(
-      "Log Out",
-      "Are you sure you want to log out?",
-      [
-        { text: "Cancel", style: "cancel" },
-        { text: "Log Out", style: "destructive", onPress: logout }
-      ]
-    );
+    Alert.alert("Log Out", "Are you sure you want to log out?", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Log Out", style: "destructive", onPress: logout }
+    ]);
   }
 
-  const roleLabel = user?.roles?.[0]?.replace(/_/g, " ") ?? "—";
   const initials = user?.fullName?.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase() ?? "??";
+  const roleLabel = user?.roles?.[0]?.replace(/_/g, " ") ?? "—";
 
   return (
     <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+
         {/* Profile card */}
-        <Card style={styles.profileCard}>
+        <View style={styles.profileCard}>
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>{initials}</Text>
           </View>
@@ -70,50 +73,53 @@ export function MoreScreen() {
               <Text style={styles.rolePillText}>{roleLabel}</Text>
             </View>
           </View>
-        </Card>
+        </View>
 
-        {/* Management */}
-        <Text style={styles.sectionLabel}>Management</Text>
-        <Card style={styles.menuCard} padded={false}>
+        {/* Management section */}
+        <SectionHeader title="MANAGEMENT" />
+        <View style={styles.menuCard}>
           <MenuRow
             icon="📊"
             label="Dashboard"
             description="Business overview and key metrics"
             onPress={() => navigation.navigate("Dashboard")}
+            color="#f58220"
           />
           <View style={styles.divider} />
           <MenuRow
             icon="🔄"
             label="Sync Status"
-            description="View and manage offline submissions"
+            description={syncing ? "Syncing…" : `${pending} pending record${pending !== 1 ? "s" : ""}`}
             onPress={() => navigation.navigate("SyncStatus")}
             badge={pending > 0 ? String(pending) : undefined}
+            color="#4ade80"
           />
-        </Card>
+        </View>
 
-        {/* Tools */}
-        <Text style={styles.sectionLabel}>Tools</Text>
-        <Card style={styles.menuCard} padded={false}>
+        {/* Tools section */}
+        <SectionHeader title="TOOLS" />
+        <View style={styles.menuCard}>
           <MenuRow
             icon="📷"
-            label="Scanner"
+            label="QR Scanner"
             description="Scan QR codes and barcodes"
             onPress={() => navigation.navigate("Scanner")}
+            color="#a78bfa"
           />
-        </Card>
+        </View>
 
-        {/* Account */}
-        <Text style={styles.sectionLabel}>Account</Text>
-        <Card style={styles.menuCard} padded={false}>
+        {/* Account section */}
+        <SectionHeader title="ACCOUNT" />
+        <View style={styles.menuCard}>
           <MenuRow
             icon="🚪"
             label="Log Out"
             onPress={confirmLogout}
             danger
           />
-        </Card>
+        </View>
 
-        <Text style={styles.version}>Jokas ERP Mobile · v1.0.0</Text>
+        <Text style={styles.version}>AKOKO SOLUTIONS ERP · v1.0.0</Text>
       </ScrollView>
     </SafeAreaView>
   );
@@ -122,62 +128,82 @@ export function MoreScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   container: { padding: spacing.xl, gap: spacing.md, paddingBottom: spacing.xxxl },
-  profileCard: { flexDirection: "row", alignItems: "center", gap: spacing.lg },
+
+  profileCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.lg,
+    backgroundColor: colors.bgCard,
+    borderRadius: radius.xl,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: spacing.sm,
+    ...shadow.md
+  },
   avatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     backgroundColor: colors.brand,
     alignItems: "center",
-    justifyContent: "center"
+    justifyContent: "center",
+    ...shadow.brand
   },
-  avatarText: { color: "#fff", fontSize: font.size.xl, fontWeight: font.weight.bold },
+  avatarText: { color: colors.white, fontSize: font.size.xl, fontWeight: font.weight.bold },
   profileInfo: { flex: 1, gap: 3 },
   profileName: { fontSize: font.size.lg, fontWeight: font.weight.bold, color: colors.ink },
-  profileEmail: { fontSize: font.size.sm, color: colors.inkMid },
+  profileEmail: { fontSize: font.size.sm, color: colors.inkLight },
   rolePill: {
     alignSelf: "flex-start",
     backgroundColor: colors.brandLight,
     paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
+    paddingVertical: 3,
     borderRadius: radius.full,
     marginTop: 2
   },
   rolePillText: { fontSize: font.size.xs, color: colors.brand, fontWeight: font.weight.bold },
+
   sectionLabel: {
     fontSize: font.size.xs,
     fontWeight: font.weight.bold,
-    color: colors.inkMid,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginTop: spacing.sm
+    color: colors.inkLight,
+    letterSpacing: 1,
+    marginTop: spacing.sm,
+    marginBottom: spacing.xs,
+    paddingLeft: spacing.xs
   },
-  menuCard: { overflow: "hidden" },
+  menuCard: {
+    backgroundColor: colors.bgCard,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: "hidden",
+    ...shadow.sm
+  },
   menuRow: { flexDirection: "row", alignItems: "center", padding: spacing.lg, gap: spacing.md },
   menuIconWrap: {
-    width: 36,
-    height: 36,
+    width: 40,
+    height: 40,
     borderRadius: radius.md,
-    backgroundColor: colors.brandLight,
     alignItems: "center",
     justifyContent: "center"
   },
-  menuIconDanger: { backgroundColor: "#fef2f2" },
   menuIcon: { fontSize: 20 },
   menuText: { flex: 1, gap: 2 },
-  menuLabel: { fontSize: font.size.md, fontWeight: font.weight.medium, color: colors.ink },
+  menuLabel: { fontSize: font.size.md, fontWeight: font.weight.semibold, color: colors.ink },
   menuLabelDanger: { color: "#dc2626" },
-  menuDesc: { fontSize: font.size.xs, color: colors.inkMid },
-  chevron: { fontSize: font.size.xl, color: colors.inkLight },
+  menuDesc: { fontSize: font.size.xs, color: colors.inkLight },
+  chevron: { fontSize: 22, color: colors.inkLight, fontWeight: "300" },
   menuBadge: {
     backgroundColor: colors.brand,
     paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
+    paddingVertical: 3,
     borderRadius: radius.full,
-    minWidth: 20,
+    minWidth: 22,
     alignItems: "center"
   },
-  menuBadgeText: { color: "#fff", fontSize: font.size.xs, fontWeight: font.weight.bold },
-  divider: { height: 1, backgroundColor: colors.border, marginLeft: spacing.xl + 36 + spacing.md },
+  menuBadgeText: { color: colors.white, fontSize: font.size.xs, fontWeight: font.weight.bold },
+  divider: { height: 1, backgroundColor: colors.border, marginLeft: spacing.xl + 40 + spacing.md },
   version: { fontSize: font.size.xs, color: colors.inkLight, textAlign: "center", marginTop: spacing.lg }
 });

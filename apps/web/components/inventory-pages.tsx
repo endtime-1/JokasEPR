@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { Download, Plus } from "lucide-react";
-import { AppShell } from "./app-shell";
+import { InventoryShell } from "./inventory-shell";
 import { DataTable } from "./data-table";
 import { FormField } from "./form-field";
 import { ApiEnvelope, apiFetch, downloadReport } from "../lib/api";
@@ -53,50 +53,6 @@ function PageHeader({ title, subtitle }: { title: string; subtitle: string }) {
   );
 }
 
-function number(value: unknown) {
-  return Number(value ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
-}
-
-export function InventoryDashboardPage() {
-  const [dashboard, setDashboard] = useState<Record<string, unknown> | null>(null);
-  useEffect(() => {
-    apiFetch<ApiEnvelope<Record<string, unknown>>>("/inventory/dashboard")
-      .then((response) => setDashboard(response.data))
-      .catch(() => undefined);
-  }, []);
-  const cards: Array<[string, unknown]> = [
-    ["SKUs", dashboard?.skuCount],
-    ["Inventory items", dashboard?.itemCount],
-    ["Total quantity", dashboard?.totalQuantity],
-    ["Inventory value", dashboard?.inventoryValue],
-    ["Low stock", dashboard?.lowStockCount],
-    ["Expiry alerts", dashboard?.expiryAlertCount],
-    ["Pending approvals", dashboard?.pendingApprovals]
-  ];
-  return (
-    <AppShell>
-      <PageHeader title="Inventory Dashboard" subtitle="Central stock balances, valuation, low stock, expiry, movement, and approval visibility." />
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {cards.map(([label, value]) => (
-          <article key={label} className="rounded-md border border-line bg-white p-4 shadow-panel">
-            <p className="text-sm text-ink/65">{label}</p>
-            <strong className="mt-3 block text-2xl font-semibold">{number(value)}</strong>
-          </article>
-        ))}
-      </section>
-      <section className="mt-6 grid gap-6 xl:grid-cols-2">
-        <div>
-          <h3 className="mb-3 text-lg font-semibold">Recent movements</h3>
-          <SimpleRowsTable rows={(dashboard?.recentMovements as Record<string, unknown>[]) ?? []} />
-        </div>
-        <div>
-          <h3 className="mb-3 text-lg font-semibold">Low stock</h3>
-          <SimpleRowsTable rows={(dashboard?.lowStock as Record<string, unknown>[]) ?? []} />
-        </div>
-      </section>
-    </AppShell>
-  );
-}
 
 export function InventoryItemsPage({ create = false }: { create?: boolean }) {
   const options = useInventoryOptions();
@@ -113,7 +69,7 @@ export function InventoryItemsPage({ create = false }: { create?: boolean }) {
     await load();
   }
   return (
-    <AppShell>
+    <InventoryShell>
       <PageHeader title={create ? "Create Inventory Item" : "Product and Item List"} subtitle="Warehouse-specific stock balances across poultry, feed, soya, eggs, medicine, packaging, spares, equipment, and supplies." />
       {create ? (
         <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-4">
@@ -125,7 +81,7 @@ export function InventoryItemsPage({ create = false }: { create?: boolean }) {
         </form>
       ) : <Link className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" href="/inventory/items/create"><Plus aria-hidden className="h-4 w-4" /> Create item</Link>}
       <SimpleRowsTable rows={rows} />
-    </AppShell>
+    </InventoryShell>
   );
 }
 
@@ -146,7 +102,7 @@ export function StockOperationPage({ mode }: { mode: "stock-in" | "stock-out" | 
     setForm({ ...form, batchNumber: "", quantity: "", unitCost: "", reason: "" });
   }
   return (
-    <AppShell>
+    <InventoryShell>
       <PageHeader title={title} subtitle="Validated stock workflow with FIFO issue, stock balance protection, audit trail, and movement records." />
       <form onSubmit={submit} className="grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-4">
         {mode === "transfers" ? (
@@ -165,7 +121,7 @@ export function StockOperationPage({ mode }: { mode: "stock-in" | "stock-out" | 
         {mode === "adjustments" ? <FormField label="Reason"><input className={inputClass} value={form.reason} onChange={(event) => setForm({ ...form, reason: event.target.value })} required /></FormField> : null}
         <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white md:col-span-4">Submit {title.toLowerCase()}</button>
       </form>
-    </AppShell>
+    </InventoryShell>
   );
 }
 
@@ -177,10 +133,10 @@ export function InventoryListPage({ title, endpoint, subtitle }: { title: string
       .catch(() => undefined);
   }, [endpoint]);
   return (
-    <AppShell>
+    <InventoryShell>
       <PageHeader title={title} subtitle={subtitle} />
       <SimpleRowsTable rows={rows} />
-    </AppShell>
+    </InventoryShell>
   );
 }
 
@@ -197,24 +153,24 @@ export function ScopedInventoryViewPage({ scope }: { scope: "warehouses" | "farm
       .catch(() => undefined);
   }, [id, scope]);
   return (
-    <AppShell>
+    <InventoryShell>
       <PageHeader title={scope === "warehouses" ? "Warehouse Stock View" : scope === "farms" ? "Farm Stock View" : "Production Site Stock View"} subtitle="Scoped inventory balances for the selected operating location." />
       <div className="mb-6 max-w-md">
         <SelectField label="Scope" value={id} options={source} onChange={setSelectedId} />
       </div>
       <SimpleRowsTable rows={rows} />
-    </AppShell>
+    </InventoryShell>
   );
 }
 
 export function InventoryReportsPage() {
   return (
-    <AppShell>
+    <InventoryShell>
       <PageHeader title="Inventory Valuation Report" subtitle="FIFO inventory valuation by warehouse, SKU, quantity, unit cost, and total value." />
       <button className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" onClick={() => downloadReport("/inventory/reports/valuation.csv", "inventory-valuation.csv")}>
         <Download aria-hidden className="h-4 w-4" /> Download valuation CSV
       </button>
-    </AppShell>
+    </InventoryShell>
   );
 }
 

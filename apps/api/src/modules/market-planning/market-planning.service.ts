@@ -45,7 +45,7 @@ export class MarketPlanningService {
 
   async dashboard(user: AuthenticatedUser, query: MarketPlanningQueryDto) {
     const targetWhere = this.targetWhere(user, query);
-    const [targets, plans, mrps, recommendations, batches, finishedInventory, sales] = await Promise.all([
+    const [targets, plans, mrps, recommendations, batches, finishedInventory, sales, openShortages, targetStats, planStats] = await Promise.all([
       this.prisma.marketTarget.findMany({ where: targetWhere, orderBy: { periodStart: "desc" }, take: 8 }),
       this.prisma.productionPlan.findMany({ where: this.productionPlanWhere(user, query), orderBy: { createdAt: "desc" }, take: 20 }),
       this.prisma.materialRequirementPlan.findMany({ where: this.mrpWhere(user, query), orderBy: { createdAt: "desc" }, take: 20 }),
@@ -67,7 +67,15 @@ export class MarketPlanningService {
       this.prisma.salesOrder.findMany({
         where: { companyId: user.companyId, deletedAt: null, marketTargetId: { not: null } },
         include: { items: true }
-      })
+      }),
+      this.prisma.materialRequirementPlan.findMany({
+        where: { ...this.mrpWhere(user, query), totalShortageKg: { gt: 0 } },
+        select: { id: true, mrpNumber: true, totalShortageKg: true, status: true, createdAt: true },
+        orderBy: { totalShortageKg: "desc" },
+        take: 5
+      }),
+      this.prisma.marketTarget.groupBy({ by: ["status"], where: { companyId: user.companyId, deletedAt: null }, _count: { status: true } }),
+      this.prisma.productionPlan.groupBy({ by: ["status"], where: { companyId: user.companyId, deletedAt: null }, _count: { status: true } })
     ]);
 
     const currentTarget = targets[0];
@@ -101,7 +109,13 @@ export class MarketPlanningService {
         recentTargets: targets,
         recentPlans: plans,
         recentMrps: mrps,
-        recentRecommendations: recommendations
+        recentRecommendations: recommendations,
+        alerts: {
+          openShortages: openShortages.map((m) => ({ id: m.id, mrpNumber: m.mrpNumber, totalShortageKg: Number(m.totalShortageKg), status: m.status })),
+          procurementPendingCount: recommendations.filter((row) => row.status === "OPEN").length
+        },
+        targetStats: targetStats.map((row) => ({ status: row.status, count: row._count.status })),
+        planStats: planStats.map((row) => ({ status: row.status, count: row._count.status }))
       }
     };
   }

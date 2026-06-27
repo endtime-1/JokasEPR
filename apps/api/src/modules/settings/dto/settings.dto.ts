@@ -1,4 +1,4 @@
-import { FarmType, ProductionSiteType, WarehouseType } from "@prisma/client";
+import { FarmType, ProductionSiteType, ProductStatus, ProductType, WarehouseType } from "@prisma/client";
 import { Type } from "class-transformer";
 import { IsArray, IsBoolean, IsEnum, IsInt, IsNumber, IsObject, IsOptional, IsString, IsUrl, IsUUID, Max, MaxLength, Min, ValidateNested } from "class-validator";
 
@@ -154,4 +154,34 @@ export class DomainListSettingsDto {
 export class UpdateSettingGroupDto {
   @IsObject()
   value!: Record<string, unknown>;
+}
+
+export class CreateProductDto {
+  @IsString() @MaxLength(160) name!: string;
+  @IsString() @MaxLength(48) sku!: string;
+  @IsEnum(ProductType) type!: ProductType;
+  @IsUUID() uomId!: string;
+  @IsOptional() @IsUUID() categoryId?: string;
+  @IsOptional() @IsUUID() branchId?: string;
+  @IsOptional() @IsString() @MaxLength(500) description?: string;
+}
+
+export class UpdateProductDto {
+  @IsOptional() @IsString() @MaxLength(160) name?: string;
+  @IsOptional() @IsString() @MaxLength(48) sku?: string;
+  @IsOptional() @IsEnum(ProductType) type?: ProductType;
+  @IsOptional() @IsUUID() uomId?: string;
+  @IsOptional() @IsUUID() categoryId?: string;
+  @IsOptional() @IsUUID() branchId?: string;
+  @IsOptional() @IsString() @MaxLength(500) description?: string;
+  @IsOptional() @IsEnum(ProductStatus) status?: ProductStatus;
+}
+
+export class ProductListQueryDto {
+  @IsOptional() @IsEnum(ProductType) type?: ProductType;
+  @IsOptional() @IsEnum(ProductStatus) status?: ProductStatus;
+  @IsOptional() @IsUUID() categoryId?: string;
+  @IsOptional() @IsString() @MaxLength(120) search?: string;
+  @IsOptional() @IsInt() @Min(1) page?: number;
+  @IsOptional() @IsInt() @Min(1) @Max(200) limit?: number;
 }

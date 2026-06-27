@@ -14,7 +14,9 @@ import {
   CreateFeedProductionOrderDto,
   CreateFeedQualityCheckDto,
   FeedProductionQueryDto,
+  HiproPredictiveQueryDto,
   RecordExternalFeedSaleDto,
+  SimulatePredictiveDto,
   UpdateFeedQualityCheckStatusDto
 } from "./dto/feed-production.dto";
 
@@ -41,7 +43,8 @@ export class FeedProductionService {
   ) {}
 
   async dashboard(user: AuthenticatedUser) {
-    const [formulas, orders, batches, qualityChecks, finishedStocks, usage, costs] = await Promise.all([
+    const sevenDaysAgo = new Date(Date.now() - 7 * 86400000);
+    const [formulas, orders, batches, qualityChecks, finishedStocks, usage, costs, stalledOrders, weekBatches, formulaStats, orderStats] = await Promise.all([
       this.prisma.feedFormula.count({ where: this.formulaWhere(user, {}) }),
       this.prisma.feedProductionOrder.findMany({ where: this.orderWhere(user, {}), orderBy: { createdAt: "desc" }, take: 8 }),
       this.prisma.feedProductionBatch.findMany({
@@ -53,7 +56,20 @@ export class FeedProductionService {
       this.prisma.feedQualityCheck.count({ where: { ...this.qualityWhere(user, {}), status: "PENDING" } }),
       this.prisma.finishedFeedStock.findMany({ where: this.finishedStockWhere(user, {}), select: { quantityKg: true, bag50KgCount: true, unitCost: true } }),
       this.prisma.feedRawMaterialUsage.findMany({ where: this.usageWhere(user, {}), select: { quantityKg: true, unitCost: true, wastageKg: true } }),
-      this.prisma.feedProductionCost.findMany({ where: this.costWhere(user, {}), select: { rawMaterialCost: true, laborCost: true, packagingCost: true, overheadCost: true, expectedSalesValue: true } })
+      this.prisma.feedProductionCost.findMany({ where: this.costWhere(user, {}), select: { rawMaterialCost: true, laborCost: true, packagingCost: true, overheadCost: true, expectedSalesValue: true } }),
+      this.prisma.feedProductionOrder.findMany({
+        where: { ...this.orderWhere(user, {}), status: { in: ["DRAFT", "APPROVED"] }, scheduledDate: { lt: new Date() } },
+        select: { id: true, orderNumber: true, status: true, scheduledDate: true, plannedQuantityKg: true, formula: { select: { name: true, code: true } } },
+        orderBy: { scheduledDate: "asc" },
+        take: 5
+      }),
+      this.prisma.feedProductionBatch.findMany({
+        where: { ...this.batchWhere(user, {}), productionDate: { gte: sevenDaysAgo } },
+        select: { productionDate: true, producedQuantityKg: true, wastageKg: true },
+        orderBy: { productionDate: "asc" }
+      }),
+      this.prisma.feedFormula.groupBy({ by: ["status"], where: { companyId: user.companyId, deletedAt: null }, _count: { status: true } }),
+      this.prisma.feedProductionOrder.groupBy({ by: ["status"], where: { companyId: user.companyId, deletedAt: null }, _count: { status: true } })
     ]);
 
     const totalProducedKg = batches.reduce((sum, batch) => sum + Number(batch.producedQuantityKg), 0);
@@ -77,7 +93,16 @@ export class FeedProductionService {
         wastageKg: Number(wastageKg.toFixed(2)),
         productionProfitMargin: this.margin(expectedSalesValue, productionCost),
         recentOrders: orders,
-        recentBatches: batches
+        recentBatches: batches,
+        alerts: {
+          stalledOrders: stalledOrders.map((o) => ({ id: o.id, orderNumber: o.orderNumber, status: o.status, scheduledDate: o.scheduledDate, plannedQuantityKg: Number(o.plannedQuantityKg), formula: o.formula })),
+          pendingQC: qualityChecks
+        },
+        trends: {
+          production: weekBatches.map((b) => ({ date: b.productionDate, producedKg: Number(b.producedQuantityKg), wastageKg: Number(b.wastageKg) }))
+        },
+        formulaStats: formulaStats.map((row) => ({ status: row.status, count: row._count.status })),
+        orderStats: orderStats.map((row) => ({ status: row.status, count: row._count.status }))
       }
     };
   }
@@ -721,6 +746,129 @@ export class FeedProductionService {
     ];
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "EXPORT", entityType: "Report", entityId: "feed-production.summary", summary: "Exported feed production summary report", ipAddress: context.ipAddress, userAgent: context.userAgent });
     return rows.map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(",")).join("\n");
+  }
+
+  async hiproPredictive(user: AuthenticatedUser, warehouseId?: string) {
+    const formulas = await this.prisma.feedFormula.findMany({
+      where: this.formulaWhere(user, {}),
+      include: {
+        finishedProduct: { select: { name: true, sku: true } },
+        ingredients: { where: { deletedAt: null }, include: { ingredient: { select: { id: true, name: true, sku: true } } }, orderBy: { sortOrder: "asc" } }
+      },
+      orderBy: { name: "asc" }
+    });
+
+    const ingredientIds = [...new Set(formulas.flatMap((f) => f.ingredients.map((i) => i.ingredientId)))];
+
+    const inventoryItems = await this.prisma.inventoryItem.findMany({
+      where: { companyId: user.companyId, productId: { in: ingredientIds }, deletedAt: null, ...(warehouseId ? { warehouseId } : user.hasGlobalAccess ? {} : { warehouseId: { in: user.warehouseIds } }) },
+      select: { productId: true, quantityOnHand: true }
+    });
+
+    const stockMap = new Map<string, number>();
+    for (const item of inventoryItems) {
+      stockMap.set(item.productId, (stockMap.get(item.productId) ?? 0) + Number(item.quantityOnHand));
+    }
+
+    const consumedRows = await this.prisma.feedRawMaterialUsage.groupBy({
+      by: ["rawMaterialId"],
+      where: { companyId: user.companyId, deletedAt: null },
+      _sum: { quantityKg: true }
+    });
+    const consumedMap = new Map(consumedRows.map((r) => [r.rawMaterialId, Number(r._sum.quantityKg ?? 0)]));
+
+    const formulaData = formulas.map((formula) => {
+      const targetBatchKg = Number(formula.targetBatchKg);
+      const ingredientRows = formula.ingredients.map((ing) => {
+        const availableKg = stockMap.get(ing.ingredientId) ?? 0;
+        const kgsPerTon = targetBatchKg > 0 ? (Number(ing.quantityKg) / targetBatchKg) * 1000 : 0;
+        const maxProducibleKg = kgsPerTon > 0 ? (availableKg / kgsPerTon) * 1000 : null;
+        return {
+          ingredientId: ing.ingredientId,
+          name: ing.ingredient.name,
+          sku: ing.ingredient.sku,
+          kgsPerTon: Number(kgsPerTon.toFixed(2)),
+          unitCost: Number(ing.unitCost ?? 0),
+          availableKg: Number(availableKg.toFixed(3)),
+          bagsOnHand: Math.floor(availableKg / 50),
+          tonsOnHand: Number((availableKg / 1000).toFixed(3)),
+          maxProducibleKg: maxProducibleKg !== null ? Number(maxProducibleKg.toFixed(0)) : null,
+          maxProducibleTons: maxProducibleKg !== null ? Number((maxProducibleKg / 1000).toFixed(3)) : null,
+          feedConsumedKg: Number((consumedMap.get(ing.ingredientId) ?? 0).toFixed(3))
+        };
+      });
+
+      const finite = ingredientRows.filter((r) => r.maxProducibleKg !== null);
+      const limiting = finite.length > 0 ? finite.reduce((min, r) => (r.maxProducibleKg! < min.maxProducibleKg! ? r : min)) : null;
+
+      return {
+        formulaId: formula.id,
+        formulaCode: formula.code,
+        formulaName: formula.name,
+        feedType: formula.feedType,
+        finishedProduct: formula.finishedProduct,
+        targetBatchKg,
+        maxProducibleKg: limiting?.maxProducibleKg ?? null,
+        maxProducibleTons: limiting?.maxProducibleTons ?? null,
+        maxProducibleBags: limiting?.maxProducibleKg != null ? Math.floor(limiting.maxProducibleKg / 50) : null,
+        limitingIngredient: limiting ? { name: limiting.name, sku: limiting.sku } : null,
+        ingredients: ingredientRows
+      };
+    });
+
+    const ingredientMap = new Map<string, { ingredientId: string; name: string; sku: string; unitCost: number; availableKg: number; bagsOnHand: number; tonsOnHand: number; feedConsumedKg: number; formulaUsages: { formulaId: string; formulaName: string; feedType: string; kgsPerTon: number; maxProducibleKg: number | null }[] }>();
+    for (const formula of formulaData) {
+      for (const ing of formula.ingredients) {
+        if (!ingredientMap.has(ing.ingredientId)) {
+          ingredientMap.set(ing.ingredientId, { ingredientId: ing.ingredientId, name: ing.name, sku: ing.sku, unitCost: ing.unitCost, availableKg: ing.availableKg, bagsOnHand: ing.bagsOnHand, tonsOnHand: ing.tonsOnHand, feedConsumedKg: ing.feedConsumedKg, formulaUsages: [] });
+        }
+        ingredientMap.get(ing.ingredientId)!.formulaUsages.push({ formulaId: formula.formulaId, formulaName: formula.formulaName, feedType: formula.feedType, kgsPerTon: ing.kgsPerTon, maxProducibleKg: ing.maxProducibleKg });
+      }
+    }
+
+    return { data: { asOf: new Date(), warehouseId: warehouseId ?? null, formulas: formulaData, ingredientView: Array.from(ingredientMap.values()) } };
+  }
+
+  async simulatePredictive(user: AuthenticatedUser, dto: SimulatePredictiveDto) {
+    this.assertWarehouseAccess(user, dto.warehouseId);
+    const runningStock = new Map<string, number>();
+
+    const plans = [];
+    for (const plan of dto.plans) {
+      const formula = await this.getFormulaForCosting(user, plan.formulaId);
+      const targetBatchKg = Number(formula.targetBatchKg);
+      const scale = (plan.plannedTons * 1000) / Math.max(targetBatchKg, 1);
+
+      const ingredients = [];
+      let canProduce = true;
+      for (const ing of formula.ingredients) {
+        const inventoryRow = await this.prisma.inventoryItem.findFirst({ where: { companyId: user.companyId, warehouseId: dto.warehouseId, productId: ing.ingredientId, deletedAt: null }, select: { quantityOnHand: true } });
+        const totalAvailable = Number(inventoryRow?.quantityOnHand ?? 0);
+        const alreadyAllocated = runningStock.get(ing.ingredientId) ?? 0;
+        const effectiveAvailable = Math.max(0, totalAvailable - alreadyAllocated);
+        const required = Number((Number(ing.quantityKg) * scale).toFixed(4));
+        const shortageKg = Number(Math.max(0, required - effectiveAvailable).toFixed(4));
+        if (shortageKg > 0) canProduce = false;
+        ingredients.push({ ingredientId: ing.ingredientId, productName: ing.ingredient.name, sku: ing.ingredient.sku, quantityKg: required, availableKg: effectiveAvailable, shortageKg, unitCost: Number(ing.unitCost), bagsRequired: Math.ceil(required / 50), tonsRequired: Number((required / 1000).toFixed(3)), bagsAvailable: Math.floor(effectiveAvailable / 50), tonsAvailable: Number((effectiveAvailable / 1000).toFixed(3)) });
+        runningStock.set(ing.ingredientId, alreadyAllocated + required);
+      }
+      plans.push({ formulaId: plan.formulaId, formulaName: formula.name, formulaCode: formula.code, feedType: formula.feedType, plannedTons: plan.plannedTons, plannedKg: plan.plannedTons * 1000, canProduce, ingredients });
+    }
+
+    const summaryMap = new Map<string, { ingredientId: string; name: string; sku: string; totalRequired: number; totalAvailable: number; shortfall: number }>();
+    for (const plan of plans) {
+      for (const ing of plan.ingredients) {
+        const existing = summaryMap.get(ing.ingredientId);
+        if (!existing) {
+          summaryMap.set(ing.ingredientId, { ingredientId: ing.ingredientId, name: ing.productName, sku: ing.sku, totalRequired: ing.quantityKg, totalAvailable: ing.availableKg + (runningStock.get(ing.ingredientId) ?? 0), shortfall: ing.shortageKg });
+        } else {
+          existing.totalRequired += ing.quantityKg;
+          existing.shortfall += ing.shortageKg;
+        }
+      }
+    }
+
+    return { data: { plans, ingredientSummary: Array.from(summaryMap.values()), allCanProduce: plans.every((p) => p.canProduce) } };
   }
 
   private async materialAvailability(user: AuthenticatedUser, formulaId: string, warehouseId: string, totalQuantityKg: number) {

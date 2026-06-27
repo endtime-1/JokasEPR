@@ -1,8 +1,8 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { ComponentType, FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
-import { Download, Plus, Save } from "lucide-react";
+import { Activity, AlertTriangle, Calendar, ChevronRight, Clock, Cpu, DollarSign, Download, Plus, RefreshCw, Save, User, Wrench } from "lucide-react";
 import { AppShell } from "./app-shell";
 import { DataTable } from "./data-table";
 import { FormField } from "./form-field";
@@ -28,6 +28,53 @@ type MaintenanceOptions = {
   technicians: Option[];
 };
 
+type AssetRef = { id: string; code: string; name: string };
+
+type Schedule = {
+  id: string;
+  scheduleNumber: string;
+  title: string;
+  maintenanceType: string;
+  priority: string;
+  status: string;
+  nextDueDate: string;
+  machine?: AssetRef | null;
+  equipment?: AssetRef | null;
+};
+
+type Breakdown = {
+  id: string;
+  breakdownNumber: string;
+  severity: string;
+  status: string;
+  description: string;
+  reportedAt: string;
+  machine?: AssetRef | null;
+  equipment?: AssetRef | null;
+};
+
+type Assignment = {
+  id: string;
+  status: string;
+  assignedAt: string;
+  dueDate?: string | null;
+  technician: { fullName: string; email: string };
+  machine?: AssetRef | null;
+  equipment?: AssetRef | null;
+};
+
+type DashboardData = {
+  machineCount: number;
+  activeMachines: number;
+  maintenanceAlerts: number;
+  openBreakdowns: number;
+  downtimeHours: number;
+  maintenanceCost: number;
+  schedules: Schedule[];
+  breakdowns: Breakdown[];
+  assignments: Assignment[];
+};
+
 const inputClass = "min-h-11 rounded-md border border-line px-3";
 
 function useOptions() {
@@ -42,65 +89,286 @@ function useOptions() {
 
 function PageHeader({ title, subtitle }: { title: string; subtitle: string }) {
   return (
-    <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-      <div>
-        <h2 className="text-2xl font-semibold">{title}</h2>
-        <p className="text-sm text-ink/65">{subtitle}</p>
-      </div>
-      <div className="flex flex-wrap gap-2">
-        <Link className="inline-flex min-h-10 items-center rounded-md border border-line px-3 text-sm font-semibold hover:bg-field" href="/maintenance/machines">Machines</Link>
-        <Link className="inline-flex min-h-10 items-center rounded-md border border-line px-3 text-sm font-semibold hover:bg-field" href="/maintenance/schedules">Schedules</Link>
-        <Link className="inline-flex min-h-10 items-center rounded-md border border-line px-3 text-sm font-semibold hover:bg-field" href="/maintenance/breakdowns">Breakdowns</Link>
-        <Link className="inline-flex min-h-10 items-center rounded-md border border-line px-3 text-sm font-semibold hover:bg-field" href="/maintenance/costs">Costs</Link>
+    <div className="mb-6 overflow-hidden rounded-2xl border border-line bg-gradient-to-br from-white via-white to-field shadow-panel">
+      <div className="flex flex-wrap items-start justify-between gap-4 px-6 py-5">
+        <div>
+          <p className="app-kicker flex items-center gap-1.5">
+            <span className="h-1.5 w-1.5 rounded-full bg-brand" />
+            Operations · Maintenance
+          </p>
+          <h1 className="mt-2 text-[28px] font-extrabold leading-tight tracking-tight text-ink">{title}</h1>
+          <p className="mt-1.5 text-sm leading-relaxed text-ink/55">{subtitle}</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Link className="app-button-secondary text-xs" href="/maintenance/machines">Machines</Link>
+          <Link className="app-button-secondary text-xs" href="/maintenance/schedules">Schedules</Link>
+          <Link className="app-button-secondary text-xs" href="/maintenance/breakdowns">Breakdowns</Link>
+          <Link className="app-button-secondary text-xs" href="/maintenance/costs">Costs</Link>
+        </div>
       </div>
     </div>
   );
 }
 
-function number(value: unknown) {
+function fmt(value: unknown) {
   return Number(value ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
-function money(value: unknown) {
-  return `GHS ${number(value)}`;
+type KpiColor = "blue" | "emerald" | "amber" | "red" | "purple" | "brand";
+const KPI_STYLES: Record<KpiColor, { wrap: string; icon: string; dot: string }> = {
+  blue:    { wrap: "from-blue-50",    icon: "bg-blue-100 text-blue-600",       dot: "bg-blue-500" },
+  emerald: { wrap: "from-emerald-50", icon: "bg-emerald-100 text-emerald-600", dot: "bg-emerald-500" },
+  amber:   { wrap: "from-amber-50",   icon: "bg-amber-100 text-amber-600",     dot: "bg-amber-500" },
+  red:     { wrap: "from-red-50",     icon: "bg-red-100 text-red-600",         dot: "bg-red-500" },
+  purple:  { wrap: "from-purple-50",  icon: "bg-purple-100 text-purple-600",   dot: "bg-purple-500" },
+  brand:   { wrap: "from-brand/10",   icon: "bg-brand/15 text-brand",          dot: "bg-brand" },
+};
+
+function KpiCard({ label, value, Icon, color, sub }: { label: string; value: string; Icon: ComponentType<{ className?: string }>; color: KpiColor; sub?: string }) {
+  const s = KPI_STYLES[color];
+  return (
+    <article className={`rounded-2xl border border-line bg-gradient-to-b ${s.wrap} to-white p-5 shadow-card`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${s.icon}`}>
+          <Icon className="h-5 w-5" />
+        </div>
+        <span className={`mt-1 h-2 w-2 rounded-full ${s.dot}`} />
+      </div>
+      <p className="mt-3 text-[11px] font-bold uppercase tracking-wide text-ink/45">{label}</p>
+      <strong className="mt-1 block text-[26px] font-extrabold leading-none tracking-tight text-ink">{value}</strong>
+      {sub && <p className="mt-1 text-xs text-ink/45">{sub}</p>}
+    </article>
+  );
+}
+
+function PriorityBadge({ priority }: { priority: string }) {
+  const c: Record<string, string> = {
+    CRITICAL: "bg-red-100 text-red-700 border-red-200",
+    HIGH:     "bg-amber-100 text-amber-700 border-amber-200",
+    MEDIUM:   "bg-blue-100 text-blue-700 border-blue-200",
+    LOW:      "bg-gray-100 text-gray-600 border-gray-200",
+  };
+  return <span className={`rounded-md border px-2 py-0.5 text-[10px] font-bold uppercase ${c[priority] ?? c.LOW}`}>{priority}</span>;
+}
+
+function SeverityBadge({ severity }: { severity: string }) {
+  const c: Record<string, string> = {
+    CRITICAL: "bg-red-100 text-red-700 border-red-200",
+    HIGH:     "bg-amber-100 text-amber-700 border-amber-200",
+    MEDIUM:   "bg-blue-100 text-blue-700 border-blue-200",
+    LOW:      "bg-gray-100 text-gray-600 border-gray-200",
+  };
+  return <span className={`rounded-md border px-2 py-0.5 text-[10px] font-bold uppercase ${c[severity] ?? c.LOW}`}>{severity}</span>;
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const c: Record<string, string> = {
+    OPEN:        "bg-red-100 text-red-700",
+    REPORTED:    "bg-red-100 text-red-700",
+    IN_PROGRESS: "bg-amber-100 text-amber-700",
+    ASSIGNED:    "bg-blue-100 text-blue-700",
+    RESOLVED:    "bg-emerald-100 text-emerald-700",
+    CLOSED:      "bg-emerald-100 text-emerald-700",
+    COMPLETED:   "bg-emerald-100 text-emerald-700",
+    CANCELLED:   "bg-gray-100 text-gray-600",
+    SCHEDULED:   "bg-blue-100 text-blue-700",
+  };
+  return <span className={`rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase ${c[status] ?? "bg-gray-100 text-gray-600"}`}>{status.replace(/_/g, " ")}</span>;
 }
 
 export function MaintenanceDashboardPage() {
-  const [dashboard, setDashboard] = useState<Record<string, unknown> | null>(null);
-  useEffect(() => {
-    apiFetch<ApiEnvelope<Record<string, unknown>>>("/maintenance/dashboard")
-      .then((response) => setDashboard(response.data))
-      .catch(() => undefined);
-  }, []);
-  const cards: Array<[string, unknown, "money" | "number"]> = [
-    ["Machines", dashboard?.machineCount, "number"],
-    ["Active machines", dashboard?.activeMachines, "number"],
-    ["Maintenance alerts", dashboard?.maintenanceAlerts, "number"],
-    ["Open breakdowns", dashboard?.openBreakdowns, "number"],
-    ["Downtime hours", dashboard?.downtimeHours, "number"],
-    ["Maintenance cost", dashboard?.maintenanceCost, "money"]
-  ];
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const r = await apiFetch<ApiEnvelope<DashboardData>>("/maintenance/dashboard");
+      setData(r.data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load maintenance dashboard.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { void load(); }, []);
+
+  const today = new Date();
+  const overdueCount = (data?.schedules ?? []).filter((s) => new Date(s.nextDueDate) < today && s.status !== "COMPLETED").length;
+  const hasAlerts = (data?.maintenanceAlerts ?? 0) > 0 || (data?.openBreakdowns ?? 0) > 0;
+  const utilPct = data && data.machineCount > 0 ? `${Math.round((data.activeMachines / data.machineCount) * 100)}% utilisation` : undefined;
+
   return (
     <AppShell>
-      <PageHeader title="Maintenance Dashboard" subtitle="Machine status, preventive maintenance, breakdowns, spare parts, downtime, and repair cost visibility." />
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {cards.map(([label, value, type]) => (
-          <article key={label} className="rounded-md border border-line bg-white p-4 shadow-panel">
-            <p className="text-sm text-ink/65">{label}</p>
-            <strong className="mt-3 block text-2xl font-semibold">{type === "money" ? money(value) : number(value)}</strong>
-          </article>
-        ))}
-      </section>
-      <section className="mt-6 grid gap-6 xl:grid-cols-2">
-        <div>
-          <h3 className="mb-3 text-lg font-semibold">Upcoming schedules</h3>
-          <SimpleRowsTable rows={(dashboard?.schedules as Record<string, unknown>[]) ?? []} />
+      {/* Hero header */}
+      <div className="mb-6 overflow-hidden rounded-2xl border border-line bg-gradient-to-br from-white via-white to-field shadow-panel">
+        <div className="flex flex-wrap items-start justify-between gap-4 px-6 py-5">
+          <div>
+            <p className="app-kicker flex items-center gap-1.5">
+              <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-brand" />
+              Operations · Maintenance
+            </p>
+            <h1 className="mt-2 text-[28px] font-extrabold leading-tight tracking-tight text-ink">
+              Maintenance Dashboard
+            </h1>
+            <p className="mt-1.5 max-w-lg text-sm leading-relaxed text-ink/55">
+              Machine status, preventive maintenance schedules, breakdown records, spare parts usage, downtime, and repair cost visibility.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-start gap-2 pt-1">
+            <button onClick={load} disabled={loading} className="app-button-secondary text-xs">
+              <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+              {loading ? "Loading…" : "Refresh"}
+            </button>
+            <Link className="app-button-secondary text-xs" href="/maintenance/machines">Machines</Link>
+            <Link className="app-button-secondary text-xs" href="/maintenance/schedules">Schedules</Link>
+            <Link className="app-button-secondary text-xs" href="/maintenance/breakdowns">Breakdowns</Link>
+            <Link className="app-button-secondary text-xs" href="/maintenance/costs">Costs</Link>
+          </div>
         </div>
-        <div>
-          <h3 className="mb-3 text-lg font-semibold">Recent breakdowns</h3>
-          <SimpleRowsTable rows={(dashboard?.breakdowns as Record<string, unknown>[]) ?? []} />
+      </div>
+
+      {error && <div className="app-alert-warning mb-6">{error}</div>}
+
+      {/* Alert banner */}
+      {hasAlerts && data && (
+        <div className="mb-6 rounded-2xl border border-amber-200 border-l-[3px] border-l-amber-500 bg-white p-4 shadow-card">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
+            <div className="min-w-0">
+              <p className="font-semibold text-ink">Maintenance attention needed</p>
+              <p className="mt-0.5 text-sm text-ink/60">
+                {data.maintenanceAlerts > 0 && `${data.maintenanceAlerts} overdue maintenance ${data.maintenanceAlerts === 1 ? "schedule" : "schedules"}`}
+                {data.maintenanceAlerts > 0 && data.openBreakdowns > 0 && " · "}
+                {data.openBreakdowns > 0 && `${data.openBreakdowns} open ${data.openBreakdowns === 1 ? "breakdown" : "breakdowns"}`}
+                {overdueCount > 0 && ` · ${overdueCount} past due date`}
+              </p>
+            </div>
+          </div>
         </div>
+      )}
+
+      {/* KPI cards */}
+      <section className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <KpiCard label="Total machines"       value={fmt(data?.machineCount)}      Icon={Cpu}           color="blue"    />
+        <KpiCard label="Active machines"      value={fmt(data?.activeMachines)}    Icon={Activity}      color="emerald" sub={utilPct} />
+        <KpiCard label="Maintenance alerts"   value={fmt(data?.maintenanceAlerts)} Icon={AlertTriangle} color="amber"   />
+        <KpiCard label="Open breakdowns"      value={fmt(data?.openBreakdowns)}    Icon={Wrench}        color="red"     />
+        <KpiCard label="Total downtime"       value={`${fmt(data?.downtimeHours)} hrs`} Icon={Clock}   color="purple"  />
+        <KpiCard label="Maintenance cost"     value={`GHS ${fmt(data?.maintenanceCost)}`} Icon={DollarSign} color="brand" />
       </section>
+
+      {/* Schedules + Breakdowns */}
+      <div className="grid gap-6 xl:grid-cols-2">
+        {/* Upcoming schedules */}
+        <section className="rounded-2xl border border-line bg-white shadow-card">
+          <div className="flex items-center justify-between border-b border-line px-5 py-4">
+            <div className="flex items-center gap-2">
+              <Calendar className="h-4 w-4 text-brand" />
+              <h3 className="font-semibold text-ink">Upcoming Schedules</h3>
+            </div>
+            <Link href="/maintenance/schedules" className="flex items-center gap-0.5 text-xs font-medium text-brand hover:underline">
+              View all <ChevronRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+          <div className="divide-y divide-line">
+            {(data?.schedules ?? []).slice(0, 6).length === 0 ? (
+              <p className="px-5 py-8 text-center text-sm text-ink/45">No upcoming schedules</p>
+            ) : (data?.schedules ?? []).slice(0, 6).map((s) => {
+              const due = new Date(s.nextDueDate);
+              const overdue = due < today && s.status !== "COMPLETED";
+              const soon = !overdue && due <= new Date(today.getTime() + 7 * 86_400_000);
+              return (
+                <div key={s.id} className="flex items-start gap-3 px-5 py-3.5">
+                  <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${overdue ? "bg-red-100 text-red-600" : soon ? "bg-amber-100 text-amber-600" : "bg-blue-100 text-blue-600"}`}>
+                    <Calendar className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="truncate text-sm font-semibold text-ink">{s.title}</span>
+                      <PriorityBadge priority={s.priority} />
+                    </div>
+                    <p className="mt-0.5 text-xs text-ink/55">
+                      {s.machine?.name ?? s.equipment?.name ?? "No asset"} · {s.maintenanceType.replace(/_/g, " ")}
+                    </p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className={`text-xs font-semibold ${overdue ? "text-red-600" : soon ? "text-amber-600" : "text-ink/60"}`}>
+                      {due.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+                    </p>
+                    {overdue && <p className="text-[10px] text-red-500">Overdue</p>}
+                    {soon && !overdue && <p className="text-[10px] text-amber-500">Due soon</p>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        {/* Recent breakdowns */}
+        <section className="rounded-2xl border border-line bg-white shadow-card">
+          <div className="flex items-center justify-between border-b border-line px-5 py-4">
+            <div className="flex items-center gap-2">
+              <Wrench className="h-4 w-4 text-red-500" />
+              <h3 className="font-semibold text-ink">Recent Breakdowns</h3>
+            </div>
+            <Link href="/maintenance/breakdowns" className="flex items-center gap-0.5 text-xs font-medium text-brand hover:underline">
+              View all <ChevronRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+          <div className="divide-y divide-line">
+            {(data?.breakdowns ?? []).slice(0, 6).length === 0 ? (
+              <p className="px-5 py-8 text-center text-sm text-ink/45">No breakdowns recorded</p>
+            ) : (data?.breakdowns ?? []).slice(0, 6).map((b) => (
+              <div key={b.id} className="flex items-start gap-3 px-5 py-3.5">
+                <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${b.severity === "CRITICAL" || b.severity === "HIGH" ? "bg-red-100 text-red-600" : "bg-amber-100 text-amber-600"}`}>
+                  <Wrench className="h-4 w-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="truncate text-sm font-semibold text-ink">
+                      {b.machine?.name ?? b.equipment?.name ?? b.breakdownNumber}
+                    </span>
+                    <SeverityBadge severity={b.severity} />
+                    <StatusBadge status={b.status} />
+                  </div>
+                  <p className="mt-0.5 line-clamp-1 text-xs text-ink/55">{b.description}</p>
+                </div>
+                <p className="shrink-0 text-[11px] text-ink/40">
+                  {new Date(b.reportedAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
+
+      {/* Technician Assignments */}
+      {(data?.assignments ?? []).length > 0 && (
+        <section className="mt-6 rounded-2xl border border-line bg-white shadow-card">
+          <div className="flex items-center gap-2 border-b border-line px-5 py-4">
+            <User className="h-4 w-4 text-brand" />
+            <h3 className="font-semibold text-ink">Technician Assignments</h3>
+          </div>
+          <div className="grid divide-y divide-line sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+            {(data?.assignments ?? []).slice(0, 6).map((a) => (
+              <div key={a.id} className="flex items-center gap-3 px-5 py-3.5">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand/10 text-xs font-bold text-brand">
+                  {a.technician.fullName.charAt(0).toUpperCase()}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-ink">{a.technician.fullName}</p>
+                  <p className="text-xs text-ink/55">{a.machine?.name ?? a.equipment?.name ?? "General task"}</p>
+                </div>
+                <StatusBadge status={a.status} />
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
     </AppShell>
   );
 }
@@ -109,6 +377,7 @@ export function MachinesPage({ create = false }: { create?: boolean }) {
   const options = useOptions();
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
   const [form, setForm] = useState({ branchId: "", farmId: "", warehouseId: "", productionSiteId: "", code: "", name: "", machineType: "FEED_MIXER", manufacturer: "", serialNumber: "", capacity: "", location: "" });
+  const [submitError, setSubmitError] = useState("");
   async function load() {
     const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/machines");
     setRows(response.data);
@@ -116,9 +385,16 @@ export function MachinesPage({ create = false }: { create?: boolean }) {
   useEffect(() => { void load(); }, []);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await apiFetch("/maintenance/machines", { method: "POST", body: JSON.stringify({ ...form, branchId: form.branchId || options.branches[0]?.id, farmId: form.farmId || undefined, warehouseId: form.warehouseId || undefined, productionSiteId: form.productionSiteId || undefined }) });
-    setForm({ ...form, code: "", name: "", manufacturer: "", serialNumber: "", capacity: "", location: "" });
-    await load();
+    setSubmitError("");
+    const branchId = form.branchId || options.branches[0]?.id;
+    if (!branchId) { setSubmitError("Wait for branches to load, then select a branch."); return; }
+    try {
+      await apiFetch("/maintenance/machines", { method: "POST", body: JSON.stringify({ ...form, branchId, farmId: form.farmId || undefined, warehouseId: form.warehouseId || undefined, productionSiteId: form.productionSiteId || undefined }) });
+      setForm({ ...form, code: "", name: "", manufacturer: "", serialNumber: "", capacity: "", location: "" });
+      await load();
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Failed to save machine. Please try again.");
+    }
   }
   return (
     <AppShell>
@@ -136,7 +412,10 @@ export function MachinesPage({ create = false }: { create?: boolean }) {
           <TextField label="Serial number" value={form.serialNumber} onChange={(value) => setForm({ ...form, serialNumber: value })} />
           <TextField label="Capacity" value={form.capacity} onChange={(value) => setForm({ ...form, capacity: value })} />
           <TextField label="Location" value={form.location} onChange={(value) => setForm({ ...form, location: value })} />
-          <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white md:col-span-4"><Save aria-hidden className="h-4 w-4" /> Save machine</button>
+          <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white md:col-span-4">
+            <Save aria-hidden className="h-4 w-4" /> Save machine
+          </button>
+          {submitError && <p className="col-span-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>}
         </form>
       ) : <Link className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" href="/maintenance/machines/create"><Plus aria-hidden className="h-4 w-4" /> Create machine</Link>}
       <SimpleRowsTable rows={rows} />
@@ -168,6 +447,8 @@ export function SchedulePage() {
   const options = useOptions();
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
   const [form, setForm] = useState({ branchId: "", machineId: "", title: "", maintenanceType: "PREVENTIVE", priority: "MEDIUM", frequencyDays: "", nextDueDate: "", instructions: "" });
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
   async function load() {
     const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/schedules");
     setRows(response.data);
@@ -175,9 +456,17 @@ export function SchedulePage() {
   useEffect(() => { void load(); }, []);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await apiFetch("/maintenance/schedules", { method: "POST", body: JSON.stringify({ ...form, branchId: form.branchId || options.branches[0]?.id, machineId: form.machineId || options.machines[0]?.id, frequencyDays: Number(form.frequencyDays) }) });
-    setForm({ ...form, title: "", frequencyDays: "", nextDueDate: "", instructions: "" });
-    await load();
+    setSubmitting(true);
+    setSubmitError("");
+    try {
+      await apiFetch("/maintenance/schedules", { method: "POST", body: JSON.stringify({ ...form, branchId: form.branchId || options.branches[0]?.id, machineId: form.machineId || options.machines[0]?.id, frequencyDays: Number(form.frequencyDays) }) });
+      setForm({ ...form, title: "", frequencyDays: "", nextDueDate: "", instructions: "" });
+      await load();
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Failed to save schedule. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
   }
   return (
     <AppShell>
@@ -191,7 +480,10 @@ export function SchedulePage() {
         <TextField label="Frequency days" type="number" value={form.frequencyDays} onChange={(value) => setForm({ ...form, frequencyDays: value })} required />
         <TextField label="Next due date" type="date" value={form.nextDueDate} onChange={(value) => setForm({ ...form, nextDueDate: value })} required />
         <TextField label="Instructions" value={form.instructions} onChange={(value) => setForm({ ...form, instructions: value })} />
-        <button className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 text-sm font-semibold text-white md:col-span-4">Save schedule</button>
+        <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:col-span-4">
+        {submitting ? "Saving…" : "Save schedule"}
+      </button>
+      {submitError && <p className="col-span-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>}
       </form>
       <SimpleRowsTable rows={rows} />
     </AppShell>
@@ -202,6 +494,8 @@ export function BreakdownPage() {
   const options = useOptions();
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
   const [form, setForm] = useState({ machineId: "", severity: "MEDIUM", description: "", rootCause: "" });
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
   async function load() {
     const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/breakdowns");
     setRows(response.data);
@@ -209,9 +503,17 @@ export function BreakdownPage() {
   useEffect(() => { void load(); }, []);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await apiFetch("/maintenance/breakdowns", { method: "POST", body: JSON.stringify({ ...form, machineId: form.machineId || options.machines[0]?.id }) });
-    setForm({ ...form, description: "", rootCause: "" });
-    await load();
+    setSubmitting(true);
+    setSubmitError("");
+    try {
+      await apiFetch("/maintenance/breakdowns", { method: "POST", body: JSON.stringify({ ...form, machineId: form.machineId || options.machines[0]?.id }) });
+      setForm({ ...form, description: "", rootCause: "" });
+      await load();
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Failed to report breakdown. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
   }
   return (
     <AppShell>
@@ -221,7 +523,10 @@ export function BreakdownPage() {
         <FormField label="Severity"><select className={inputClass} value={form.severity} onChange={(event) => setForm({ ...form, severity: event.target.value })}><option>LOW</option><option>MEDIUM</option><option>HIGH</option><option>CRITICAL</option></select></FormField>
         <TextField label="Description" value={form.description} onChange={(value) => setForm({ ...form, description: value })} required />
         <TextField label="Root cause" value={form.rootCause} onChange={(value) => setForm({ ...form, rootCause: value })} />
-        <button className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 text-sm font-semibold text-white md:col-span-4">Report breakdown</button>
+        <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:col-span-4">
+          {submitting ? "Reporting…" : "Report breakdown"}
+        </button>
+        {submitError && <p className="col-span-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>}
       </form>
       <SimpleRowsTable rows={rows} />
     </AppShell>
@@ -232,6 +537,8 @@ export function SparePartsPage() {
   const options = useOptions();
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
   const [form, setForm] = useState({ warehouseId: "", productId: "", machineId: "", quantity: "", unitCost: "", notes: "" });
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
   async function load() {
     const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/spare-parts");
     setRows(response.data);
@@ -239,9 +546,17 @@ export function SparePartsPage() {
   useEffect(() => { void load(); }, []);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await apiFetch("/maintenance/spare-parts", { method: "POST", body: JSON.stringify({ ...form, warehouseId: form.warehouseId || options.warehouses[0]?.id, productId: form.productId || options.spareParts[0]?.id, machineId: form.machineId || options.machines[0]?.id, quantity: Number(form.quantity), unitCost: Number(form.unitCost || 0) }) });
-    setForm({ ...form, quantity: "", unitCost: "", notes: "" });
-    await load();
+    setSubmitting(true);
+    setSubmitError("");
+    try {
+      await apiFetch("/maintenance/spare-parts", { method: "POST", body: JSON.stringify({ ...form, warehouseId: form.warehouseId || options.warehouses[0]?.id, productId: form.productId || options.spareParts[0]?.id, machineId: form.machineId || options.machines[0]?.id, quantity: Number(form.quantity), unitCost: Number(form.unitCost || 0) }) });
+      setForm({ ...form, quantity: "", unitCost: "", notes: "" });
+      await load();
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Failed to issue spare part. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
   }
   return (
     <AppShell>
@@ -253,7 +568,10 @@ export function SparePartsPage() {
         <TextField label="Quantity" type="number" value={form.quantity} onChange={(value) => setForm({ ...form, quantity: value })} required />
         <TextField label="Unit cost" type="number" value={form.unitCost} onChange={(value) => setForm({ ...form, unitCost: value })} />
         <TextField label="Notes" value={form.notes} onChange={(value) => setForm({ ...form, notes: value })} />
-        <button className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 text-sm font-semibold text-white md:col-span-3">Issue spare part</button>
+        <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:col-span-3">
+          {submitting ? "Issuing…" : "Issue spare part"}
+        </button>
+        {submitError && <p className="col-span-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>}
       </form>
       <SimpleRowsTable rows={rows} />
     </AppShell>

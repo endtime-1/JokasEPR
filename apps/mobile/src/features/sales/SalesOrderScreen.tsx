@@ -1,41 +1,39 @@
-import { useEffect, useState } from "react";
-import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useMemo, useState } from "react";
+import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { ScreenWrapper } from "../../components/ScreenWrapper";
 import { FormField } from "../../components/FormField";
 import { SelectField, SelectOption } from "../../components/SelectField";
 import { Button } from "../../components/Button";
-import { Card } from "../../components/Card";
 import { useSubmit } from "../../hooks/useSubmit";
+import { useLookup } from "../../hooks/useLookup";
 import { fetchCustomers, fetchProducts } from "../../api/endpoints";
-import { colors, font, radius, spacing } from "../../constants/theme";
+import { colors, font, radius, shadow, spacing } from "../../constants/theme";
 
 type LineItem = { productId: string; productName: string; quantity: string; unitPrice: string };
 
 export function SalesOrderScreen() {
   const navigation = useNavigation<any>();
-  const [customerId, setCustomerId] = useState("");
-  const [deliveryDate, setDeliveryDate] = useState("");
-  const [notes, setNotes] = useState("");
-  const [lines, setLines] = useState<LineItem[]>([{ productId: "", productName: "", quantity: "1", unitPrice: "" }]);
-  const [customers, setCustomers] = useState<SelectOption[]>([]);
-  const [products, setProducts] = useState<SelectOption[]>([]);
-  const [allProducts, setAllProducts] = useState<any[]>([]);
+  const [customerId,    setCustomerId]    = useState("");
+  const [deliveryDate,  setDeliveryDate]  = useState("");
+  const [notes,         setNotes]         = useState("");
+  const [lines,         setLines]         = useState<LineItem[]>([{ productId: "", productName: "", quantity: "1", unitPrice: "" }]);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  useEffect(() => {
-    fetchCustomers().then((r) => {
-      setCustomers(((r.data as any[]) ?? []).map((c) => ({ label: `${c.name} (${c.customerCode})`, value: c.id })));
-    }).catch(() => {});
-    fetchProducts().then((r) => {
-      const prods = (r.data as any[]) ?? [];
-      setAllProducts(prods);
-      setProducts(prods.map((p) => ({ label: `${p.name} (${p.sku})`, value: p.id })));
-    }).catch(() => {});
-  }, []);
+  const { data: rawCustomers } = useLookup("customers", async () => { const r = await fetchCustomers(); return (r.data as any[]) ?? []; });
+  const customers: SelectOption[] = useMemo(
+    () => (rawCustomers ?? []).map((c: any) => ({ label: `${c.name} (${c.customerCode})`, value: c.id })),
+    [rawCustomers]
+  );
+
+  const { data: rawProducts } = useLookup("products", async () => { const r = await fetchProducts(); return (r.data as any[]) ?? []; });
+  const products: SelectOption[] = useMemo(
+    () => (rawProducts ?? []).map((p: any) => ({ label: `${p.name} (${p.sku})`, value: p.id })),
+    [rawProducts]
+  );
 
   function setLineProduct(idx: number, productId: string) {
-    const prod = allProducts.find((p) => p.id === productId);
+    const prod = (rawProducts ?? []).find((p: any) => p.id === productId);
     setLines((prev) => prev.map((l, i) =>
       i === idx ? { ...l, productId, productName: prod?.name ?? "", unitPrice: String(prod?.unitPrice ?? "") } : l
     ));
@@ -58,8 +56,8 @@ export function SalesOrderScreen() {
   function validate() {
     const e: Record<string, string> = {};
     if (!customerId) e.customerId = "Select a customer";
-    if (lines.some((l) => !l.productId)) e.lines = "All line items need a product";
-    if (lines.some((l) => !l.quantity || Number(l.quantity) <= 0)) e.lines = "All quantities must be > 0";
+    if (lines.some((l) => !l.productId)) e.lines = "All line items need a product selected";
+    if (lines.some((l) => !l.quantity || Number(l.quantity) <= 0)) e.lines = "All quantities must be greater than 0";
     setErrors(e);
     return Object.keys(e).length === 0;
   }
@@ -67,53 +65,101 @@ export function SalesOrderScreen() {
   const { submit, loading } = useSubmit({
     module: "sales_order",
     endpoint: "/sales/orders",
-    onSuccess: () => Alert.alert("Saved", "Sales order created.", [{ text: "OK", onPress: () => navigation.goBack() }])
+    onSuccess: () => Alert.alert("Order Created", "Sales order has been saved.", [{ text: "OK", onPress: () => navigation.goBack() }]),
   });
 
   return (
     <ScreenWrapper>
-      <Text style={styles.title}>Sales Order</Text>
-      <Text style={styles.sub}>Create a new sales order</Text>
 
-      <SelectField label="Customer" value={customerId} options={customers} onChange={(v) => { setCustomerId(v); setErrors((e) => ({ ...e, customerId: "" })); }} error={errors.customerId} required placeholder="Select customer…" />
-      <FormField label="Requested Delivery Date" value={deliveryDate} onChangeText={setDeliveryDate} keyboardType="numeric" placeholder="YYYY-MM-DD (optional)" />
+      {/* Page header */}
+      <View style={styles.pageHeader}>
+        <View style={styles.pageIconWrap}>
+          <Text style={styles.pageIconText}>🧾</Text>
+        </View>
+        <View style={styles.pageHeaderText}>
+          <Text style={styles.pageTitle}>Sales Order</Text>
+          <Text style={styles.pageSub}>Create a new customer sales order</Text>
+        </View>
+      </View>
 
-      <Text style={styles.sectionLabel}>Order Lines</Text>
-      {errors.lines && <Text style={styles.lineError}>{errors.lines}</Text>}
+      <SelectField label="Customer" value={customerId} options={customers}
+        onChange={(v) => { setCustomerId(v); setErrors((e) => ({ ...e, customerId: "" })); }}
+        error={errors.customerId} required placeholder="Select customer…" />
+
+      <FormField label="Requested Delivery Date" value={deliveryDate} onChangeText={setDeliveryDate}
+        keyboardType="numeric" placeholder="YYYY-MM-DD (optional)" />
+
+      {/* Order lines section */}
+      <View style={styles.sectionHeader}>
+        <View style={styles.sectionHeaderLeft}>
+          <Text style={styles.sectionTitle}>ORDER LINES</Text>
+          <View style={styles.sectionLine} />
+        </View>
+        <View style={styles.lineCountBadge}>
+          <Text style={styles.lineCountText}>{lines.length}</Text>
+        </View>
+      </View>
+
+      {errors.lines && (
+        <View style={styles.lineErrorBanner}>
+          <Text style={styles.lineErrorText}>⚠ {errors.lines}</Text>
+        </View>
+      )}
 
       {lines.map((line, idx) => (
-        <Card key={idx} style={styles.lineCard}>
-          <View style={styles.lineHeader}>
-            <Text style={styles.lineNum}>Line {idx + 1}</Text>
+        <View key={idx} style={styles.lineCard}>
+          <View style={styles.lineCardHeader}>
+            <View style={styles.lineNum}>
+              <Text style={styles.lineNumText}>Line {idx + 1}</Text>
+            </View>
+            {line.productName !== "" && (
+              <Text style={styles.lineProductPreview} numberOfLines={1}>{line.productName}</Text>
+            )}
             {lines.length > 1 && (
-              <TouchableOpacity onPress={() => removeLine(idx)}>
-                <Text style={styles.removeBtn}>Remove</Text>
+              <TouchableOpacity onPress={() => removeLine(idx)} style={styles.removeBtn}>
+                <Text style={styles.removeBtnText}>Remove</Text>
               </TouchableOpacity>
             )}
           </View>
-          <SelectField label="Product" value={line.productId} options={products} onChange={(v) => setLineProduct(idx, v)} placeholder="Select product…" />
+
+          <SelectField label="Product" value={line.productId} options={products}
+            onChange={(v) => setLineProduct(idx, v)} placeholder="Select product…" />
+
           <View style={styles.row}>
             <View style={styles.half}>
-              <FormField label="Qty" value={line.quantity} onChangeText={(v) => updateLine(idx, "quantity", v)} keyboardType="decimal-pad" />
+              <FormField label="Quantity" value={line.quantity}
+                onChangeText={(v) => updateLine(idx, "quantity", v)} keyboardType="decimal-pad" />
             </View>
             <View style={styles.half}>
-              <FormField label="Unit Price (GHS)" value={line.unitPrice} onChangeText={(v) => updateLine(idx, "unitPrice", v)} keyboardType="decimal-pad" placeholder="0.00" />
+              <FormField label="Unit Price (GHS)" value={line.unitPrice}
+                onChangeText={(v) => updateLine(idx, "unitPrice", v)} keyboardType="decimal-pad" placeholder="0.00" />
             </View>
           </View>
-          <Text style={styles.lineTotal}>Subtotal: GHS {((Number(line.quantity) || 0) * (Number(line.unitPrice) || 0)).toFixed(2)}</Text>
-        </Card>
+
+          {line.quantity && line.unitPrice && (
+            <Text style={styles.lineSubtotal}>
+              Subtotal: GHS {((Number(line.quantity) || 0) * (Number(line.unitPrice) || 0)).toFixed(2)}
+            </Text>
+          )}
+        </View>
       ))}
 
-      <TouchableOpacity style={styles.addLine} onPress={addLine}>
-        <Text style={styles.addLineText}>+ Add Line Item</Text>
+      <TouchableOpacity style={styles.addLineBtn} onPress={addLine}>
+        <Text style={styles.addLineBtnText}>＋  Add Line Item</Text>
       </TouchableOpacity>
 
-      <Card style={styles.totalCard}>
-        <Text style={styles.totalLabel}>Order Total</Text>
+      {/* Order total */}
+      <View style={styles.totalCard}>
+        <View style={styles.totalLeft}>
+          <Text style={styles.totalLabel}>Order Total</Text>
+          <Text style={styles.totalLineCount}>{lines.length} line item{lines.length !== 1 ? "s" : ""}</Text>
+        </View>
         <Text style={styles.totalValue}>GHS {total.toFixed(2)}</Text>
-      </Card>
+      </View>
 
-      <FormField label="Notes" value={notes} onChangeText={setNotes} multiline numberOfLines={2} style={{ minHeight: 70, textAlignVertical: "top" } as any} placeholder="Optional delivery instructions…" />
+      <FormField label="Delivery Notes" value={notes} onChangeText={setNotes} multiline numberOfLines={2}
+        style={{ minHeight: 70, textAlignVertical: "top" } as any}
+        placeholder="Optional delivery instructions…" />
 
       <Button label="Submit Order" loading={loading} onPress={async () => {
         if (!validate()) return;
@@ -124,36 +170,105 @@ export function SalesOrderScreen() {
           items: lines.map((l) => ({
             inventoryItemId: l.productId,
             quantity: Number(l.quantity),
-            unitPrice: Number(l.unitPrice)
-          }))
+            unitPrice: Number(l.unitPrice),
+          })),
         });
       }} size="lg" />
+
     </ScreenWrapper>
   );
 }
 
 const styles = StyleSheet.create({
-  title: { fontSize: font.size.xl, fontWeight: font.weight.bold, color: colors.ink },
-  sub: { fontSize: font.size.sm, color: colors.inkMid, marginTop: -spacing.sm },
-  sectionLabel: { fontSize: font.size.sm, fontWeight: font.weight.bold, color: colors.inkMid, textTransform: "uppercase", letterSpacing: 0.5 },
-  lineError: { fontSize: font.size.sm, color: colors.error },
-  lineCard: { gap: spacing.md },
-  lineHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  lineNum: { fontSize: font.size.sm, fontWeight: font.weight.semibold, color: colors.inkMid },
-  removeBtn: { fontSize: font.size.sm, color: colors.error },
-  row: { flexDirection: "row", gap: spacing.md },
-  half: { flex: 1 },
-  lineTotal: { fontSize: font.size.sm, color: colors.inkMid, textAlign: "right" },
-  addLine: {
-    borderWidth: 1,
-    borderColor: colors.brand,
-    borderStyle: "dashed",
+  pageHeader: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  pageIconWrap: {
+    width: 52, height: 52, borderRadius: radius.lg,
+    backgroundColor: colors.brandLight, borderWidth: 1, borderColor: colors.brandMid,
+    alignItems: "center", justifyContent: "center",
+  },
+  pageIconText: { fontSize: 26 },
+  pageHeaderText: { gap: 2 },
+  pageTitle: { fontSize: font.size.xl, fontWeight: font.weight.extrabold, color: colors.ink },
+  pageSub: { fontSize: font.size.sm, color: colors.inkLight },
+
+  sectionHeader: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  sectionHeaderLeft: { flex: 1, flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  sectionTitle: { fontSize: font.size.xs, fontWeight: font.weight.bold, color: colors.inkLight, letterSpacing: 1 },
+  sectionLine: { flex: 1, height: 1, backgroundColor: colors.border },
+  lineCountBadge: {
+    minWidth: 22, height: 22, borderRadius: 11,
+    backgroundColor: colors.brand + "20", alignItems: "center", justifyContent: "center", paddingHorizontal: 6,
+  },
+  lineCountText: { fontSize: font.size.xs, fontWeight: font.weight.bold, color: colors.brand },
+
+  lineErrorBanner: {
+    backgroundColor: colors.errorBg,
     borderRadius: radius.md,
     padding: spacing.md,
-    alignItems: "center"
+    borderWidth: 1,
+    borderColor: "#fca5a5",
   },
-  addLineText: { color: colors.brand, fontWeight: font.weight.semibold },
-  totalCard: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  totalLabel: { fontSize: font.size.md, fontWeight: font.weight.semibold, color: colors.ink },
-  totalValue: { fontSize: font.size.xl, fontWeight: font.weight.bold, color: colors.brand }
+  lineErrorText: { fontSize: font.size.sm, color: colors.error, fontWeight: font.weight.medium },
+
+  lineCard: {
+    backgroundColor: colors.bgCard,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.lg,
+    gap: spacing.md,
+    ...shadow.sm,
+  },
+  lineCardHeader: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  lineNum: {
+    backgroundColor: colors.brandLight,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: colors.brandMid,
+  },
+  lineNumText: { fontSize: font.size.xs, fontWeight: font.weight.bold, color: colors.brand },
+  lineProductPreview: { flex: 1, fontSize: font.size.xs, color: colors.inkMid, fontStyle: "italic" },
+  removeBtn: {
+    paddingHorizontal: spacing.sm, paddingVertical: 3,
+    backgroundColor: "#fef2f2", borderRadius: radius.full,
+    borderWidth: 1, borderColor: "#fca5a5",
+  },
+  removeBtnText: { fontSize: font.size.xs, color: "#dc2626", fontWeight: font.weight.semibold },
+
+  row: { flexDirection: "row", gap: spacing.md },
+  half: { flex: 1 },
+  lineSubtotal: {
+    textAlign: "right",
+    fontSize: font.size.sm,
+    color: colors.brand,
+    fontWeight: font.weight.semibold,
+  },
+
+  addLineBtn: {
+    borderWidth: 1.5,
+    borderColor: colors.brand,
+    borderStyle: "dashed",
+    borderRadius: radius.lg,
+    paddingVertical: spacing.md,
+    alignItems: "center",
+  },
+  addLineBtnText: { color: colors.brand, fontWeight: font.weight.bold, fontSize: font.size.sm },
+
+  totalCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: colors.brandLight,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.brandMid,
+    padding: spacing.lg,
+    ...shadow.sm,
+  },
+  totalLeft: { gap: 2 },
+  totalLabel: { fontSize: font.size.md, fontWeight: font.weight.bold, color: colors.brandDark },
+  totalLineCount: { fontSize: font.size.xs, color: colors.brand },
+  totalValue: { fontSize: font.size.xxl, fontWeight: font.weight.extrabold, color: colors.brand },
 });

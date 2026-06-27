@@ -183,6 +183,10 @@ export class CreateFeedConsumptionRecordDto extends FlockRecordDto {
   @IsNumber()
   @Min(0)
   costAmount?: number;
+
+  @IsOptional()
+  @IsUUID()
+  warehouseId?: string;
 }
 
 export class CreateEggProductionRecordDto extends FlockRecordDto {
@@ -205,6 +209,14 @@ export class CreateEggProductionRecordDto extends FlockRecordDto {
   @IsInt()
   @Min(0)
   rejectedEggs!: number;
+
+  @IsOptional()
+  @IsUUID()
+  eggProductId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  warehouseId?: string;
 }
 
 export class CreateBirdWeightRecordDto extends FlockRecordDto {
@@ -252,6 +264,19 @@ export class CreateMedicationRecordDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @IsOptional()
+  @IsUUID()
+  medicineProductId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  warehouseId?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  quantityUsed?: number;
 }
 
 export class CreateVaccinationRecordDto {
@@ -280,6 +305,19 @@ export class CreateVaccinationRecordDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @IsOptional()
+  @IsUUID()
+  vaccineProductId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  warehouseId?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  quantityUsed?: number;
 }
 
 export class CreateHealthObservationDto {

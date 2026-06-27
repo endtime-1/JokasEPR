@@ -8,7 +8,7 @@ type BrandLogoProps = {
 
 export function BrandLogo({
   className,
-  label = "Akoko Solutions",
+  label = "AKOKO SOLUTIONS",
   variant = "mark"
 }: BrandLogoProps) {
   const src = variant === "lockup" ? "/brand/akoko-logo.svg" : "/brand/akoko-mark.svg";

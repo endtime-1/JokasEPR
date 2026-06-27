@@ -1,5 +1,5 @@
-import { FeedFormulaListPage } from "../../../../components/feed-production-pages";
+import { FormulaBuilderPage } from "../../../../components/feed-production-pages";
 
 export default function CreateFeedFormulaPage() {
-  return <FeedFormulaListPage create />;
+  return <FormulaBuilderPage />;
 }

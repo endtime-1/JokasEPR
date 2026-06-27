@@ -53,7 +53,9 @@ const permissions = [
   ["settings.manage", "Settings", "Manage system settings"],
   ["ai.read", "AI Assistant", "Access AI business assistant"],
   ["alerts.read", "Alerts", "View system alerts and forecasts"],
-  ["alerts.manage", "Alerts", "Acknowledge and resolve system alerts"]
+  ["alerts.manage", "Alerts", "Acknowledge and resolve system alerts"],
+  ["quickbooks.read", "QuickBooks", "View QuickBooks integration status and sync logs"],
+  ["quickbooks.manage", "QuickBooks", "Manage QuickBooks connection, sync, and mappings"]
 ] as const;
 
 const roles = [

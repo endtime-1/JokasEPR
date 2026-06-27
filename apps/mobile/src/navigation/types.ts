@@ -29,6 +29,11 @@ export type RecordsStackParams = {
   StockMovement: undefined;
   SalesOrder: undefined;
   ProductionRecord: undefined;
+  SoyaProcessing: undefined;
+  AttendanceCheckIn: undefined;
+  ProspectVisit: undefined;
+  QualityCheck: undefined;
+  HiproPredict: undefined;
   Scanner: undefined;
   ScanResult: { result: import("../api/endpoints").QrScanResult };
 };

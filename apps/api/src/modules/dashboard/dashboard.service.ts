@@ -82,6 +82,206 @@ export class DashboardService {
     return { data: { filters: { ...query, startDate: range.start.toISOString(), endDate: range.end.toISOString() }, summary, charts, alerts } };
   }
 
+  // ── My Daily Duties ──────────────────────────────────────────────────────
+
+  async myDuties(user: AuthenticatedUser) {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const todayEnd = new Date(todayStart);
+    todayEnd.setDate(todayEnd.getDate() + 1);
+
+    const dateRange = { gte: todayStart, lt: todayEnd };
+    const base = { companyId: user.companyId };
+
+    const hasFarms = user.hasGlobalAccess || user.farmIds.length > 0;
+    const hasSites = user.hasGlobalAccess || user.productionSiteIds.length > 0;
+    const canSales = user.hasGlobalAccess || user.permissions.includes("sales.manage");
+    const canStock = user.hasGlobalAccess || user.permissions.includes("inventory.manage");
+    const canSoya  = user.hasGlobalAccess || user.permissions.includes("soya.manage");
+
+    const farmFilter = user.hasGlobalAccess ? {} : { farmId: { in: user.farmIds } };
+    const siteFilter = user.hasGlobalAccess ? {} : { productionSiteId: { in: user.productionSiteIds } };
+
+    // Resolve employee record for attendance duty (email-matched, same pattern as myTasks)
+    const selfEmployee = await this.prisma.employee.findFirst({
+      where: { companyId: user.companyId, email: user.email, deletedAt: null },
+      select: { id: true },
+    });
+
+    const [eggCount, feedCount, mortalityCount, dailyCount, prodCount, salesCount, stockCount, soyaCount, attendanceCount, visitCount] = await Promise.all([
+      hasFarms
+        ? this.prisma.eggProductionRecord.count({ where: { ...base, ...farmFilter, recordDate: dateRange } })
+        : Promise.resolve(-1),
+      hasFarms
+        ? this.prisma.feedConsumptionRecord.count({ where: { ...base, ...farmFilter, recordDate: dateRange } })
+        : Promise.resolve(-1),
+      hasFarms
+        ? this.prisma.mortalityRecord.count({ where: { ...base, ...farmFilter, recordDate: dateRange } })
+        : Promise.resolve(-1),
+      hasFarms
+        ? this.prisma.dailyPoultryRecord.count({ where: { ...base, ...farmFilter, recordDate: dateRange } })
+        : Promise.resolve(-1),
+      hasSites
+        ? this.prisma.feedProductionBatch.count({ where: { ...base, ...siteFilter, createdAt: dateRange } })
+        : Promise.resolve(-1),
+      canSales
+        ? this.prisma.salesOrder.count({ where: { ...base, createdAt: dateRange } })
+        : Promise.resolve(-1),
+      canStock
+        ? this.prisma.stockMovement.count({ where: { ...base, createdAt: dateRange } })
+        : Promise.resolve(-1),
+      canSoya
+        ? this.prisma.soyaBeanIntake.count({ where: { ...base, ...siteFilter, receivedAt: dateRange } })
+        : Promise.resolve(-1),
+      selfEmployee
+        ? this.prisma.attendanceRecord.count({ where: { companyId: user.companyId, employeeId: selfEmployee.id, date: dateRange } })
+        : Promise.resolve(-1),
+      canSales
+        ? this.prisma.prospectVisit.count({ where: { companyId: user.companyId, repId: user.id, visitedAt: dateRange } } as never)
+        : Promise.resolve(-1),
+    ]);
+
+    type DutyItem = {
+      id: string;
+      title: string;
+      description: string;
+      icon: string;
+      screen: string;
+      slot: "MORNING" | "EVENING" | "ANYTIME";
+      count: number;
+      doneToday: boolean;
+    };
+
+    const duties: DutyItem[] = [];
+
+    if (hasFarms) {
+      duties.push(
+        { id: "egg-collection",  title: "Egg Collection",        description: "Record today's egg counts by grade",               icon: "🥚", screen: "EggCollection",   slot: "MORNING",  count: eggCount,      doneToday: eggCount > 0 },
+        { id: "feed-record",     title: "Feed Record",           description: "Record feed distributed to flocks",                icon: "🌾", screen: "FeedConsumption",  slot: "MORNING",  count: feedCount,     doneToday: feedCount > 0 },
+        { id: "mortality",       title: "Mortality Record",      description: "Record bird deaths and culling events",            icon: "📉", screen: "Mortality",         slot: "MORNING",  count: mortalityCount, doneToday: mortalityCount > 0 },
+        { id: "daily-summary",   title: "Daily Poultry Summary", description: "End-of-day bird count, mortality, feed and eggs",  icon: "📋", screen: "DailyPoultry",     slot: "EVENING",  count: dailyCount,    doneToday: dailyCount > 0 },
+      );
+    }
+
+    if (hasSites) {
+      duties.push(
+        { id: "production",      title: "Production Record",     description: "Log today's feed or soya batch output and quality", icon: "🏭", screen: "ProductionRecord", slot: "ANYTIME",  count: prodCount,     doneToday: prodCount > 0 },
+      );
+    }
+
+    if (canStock) {
+      duties.push(
+        { id: "stock-movement",  title: "Stock Movement",        description: "Record deliveries, issues and stock transfers",    icon: "📦", screen: "StockMovement",    slot: "ANYTIME",  count: stockCount,    doneToday: stockCount > 0 },
+      );
+    }
+
+    if (canSales) {
+      duties.push(
+        { id: "sales-order",     title: "Sales Order",           description: "Record new customer orders and dispatches",        icon: "🧾", screen: "SalesOrder",       slot: "ANYTIME",  count: salesCount,    doneToday: salesCount > 0 },
+      );
+    }
+
+    if (canSoya) {
+      duties.push(
+        { id: "soya-intake",     title: "Soya Bean Intake",      description: "Record incoming soya bean deliveries",             icon: "🫘", screen: "SoyaProcessing",   slot: "MORNING",  count: soyaCount,     doneToday: soyaCount > 0 },
+      );
+    }
+
+    if (attendanceCount !== -1) {
+      duties.push(
+        { id: "attendance",      title: "Attendance Check-In",   description: "Log your attendance for today",                    icon: "🗓️", screen: "AttendanceCheckIn", slot: "MORNING", count: attendanceCount, doneToday: attendanceCount > 0 },
+      );
+    }
+
+    if (canSales && visitCount !== -1) {
+      duties.push(
+        { id: "prospect-visits", title: "Prospect Visits",       description: "Log customer prospecting visits with location",     icon: "📍", screen: "ProspectVisit",     slot: "ANYTIME", count: visitCount,      doneToday: visitCount > 0 },
+      );
+    }
+
+    const applicable = duties.filter((d) => d.count !== -1);
+    const done = applicable.filter((d) => d.doneToday).length;
+
+    return {
+      data: {
+        date: todayStart.toISOString().slice(0, 10),
+        duties: applicable,
+        summary: { total: applicable.length, done, pending: applicable.length - done },
+      },
+    };
+  }
+
+  // ── Farm Operations Today (manager overview) ─────────────────────────────
+
+  async farmOperationsToday(user: AuthenticatedUser) {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const todayEnd = new Date(todayStart);
+    todayEnd.setDate(todayEnd.getDate() + 1);
+
+    const dateRange = { gte: todayStart, lt: todayEnd };
+    const base = { companyId: user.companyId };
+    const farmFilter = user.hasGlobalAccess ? {} : { farmId: { in: user.farmIds } };
+    const siteFilter = user.hasGlobalAccess ? {} : { productionSiteId: { in: user.productionSiteIds } };
+
+    const [totalFarms, totalSites, eggFarms, feedFarms, mortalityFarms, dailyFarms, prodSites] = await Promise.all([
+      user.hasGlobalAccess
+        ? this.prisma.farm.count({ where: { companyId: user.companyId, deletedAt: null } })
+        : Promise.resolve(user.farmIds.length),
+      user.hasGlobalAccess
+        ? this.prisma.productionSite.count({ where: { companyId: user.companyId, deletedAt: null } })
+        : Promise.resolve(user.productionSiteIds.length),
+      this.prisma.eggProductionRecord.findMany({ where: { ...base, ...farmFilter, recordDate: dateRange }, distinct: ["farmId"], select: { farmId: true } }),
+      this.prisma.feedConsumptionRecord.findMany({ where: { ...base, ...farmFilter, recordDate: dateRange }, distinct: ["farmId"], select: { farmId: true } }),
+      this.prisma.mortalityRecord.findMany({ where: { ...base, ...farmFilter, recordDate: dateRange }, distinct: ["farmId"], select: { farmId: true } }),
+      this.prisma.dailyPoultryRecord.findMany({ where: { ...base, ...farmFilter, recordDate: dateRange }, distinct: ["farmId"], select: { farmId: true } }),
+      this.prisma.feedProductionBatch.findMany({ where: { ...base, ...siteFilter, createdAt: dateRange }, distinct: ["productionSiteId"], select: { productionSiteId: true } }),
+    ]);
+
+    type OperationRow = {
+      id: string;
+      title: string;
+      icon: string;
+      slot: "MORNING" | "EVENING" | "ANYTIME";
+      kind: "farm" | "site";
+      total: number;
+      submitted: number;
+      percentage: number;
+      complete: boolean;
+    };
+
+    function row(id: string, title: string, icon: string, slot: "MORNING" | "EVENING" | "ANYTIME", kind: "farm" | "site", total: number, submitted: number): OperationRow {
+      const percentage = total > 0 ? Math.round((submitted / total) * 100) : 0;
+      return { id, title, icon, slot, kind, total, submitted, percentage, complete: submitted >= total && total > 0 };
+    }
+
+    const duties: OperationRow[] = [
+      ...(totalFarms > 0 ? [
+        row("egg-collection",  "Egg Collection",        "🥚", "MORNING", "farm", totalFarms, eggFarms.length),
+        row("feed-record",     "Feed Record",           "🌾", "MORNING", "farm", totalFarms, feedFarms.length),
+        row("mortality",       "Mortality Record",      "📉", "MORNING", "farm", totalFarms, mortalityFarms.length),
+        row("daily-summary",   "Daily Poultry Summary", "📋", "EVENING", "farm", totalFarms, dailyFarms.length),
+      ] : []),
+      ...(totalSites > 0 ? [
+        row("production",      "Production Record",     "🏭", "ANYTIME", "site", totalSites, prodSites.length),
+      ] : []),
+    ];
+
+    const complete = duties.filter((d) => d.complete).length;
+    const notStarted = duties.filter((d) => d.submitted === 0).length;
+    const partial = duties.length - complete - notStarted;
+
+    return {
+      data: {
+        date: todayStart.toISOString().slice(0, 10),
+        duties,
+        summary: { total: duties.length, complete, partial, notStarted },
+      },
+    };
+  }
+
+  // ── Private helpers ───────────────────────────────────────────────────────
+
   private async summaryCards(baseWhere: Prisma.DashboardMetricSnapshotWhereInput): Promise<Card[]> {
     return Promise.all(
       CARD_CONFIG.map(async (card) => ({

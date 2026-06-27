@@ -17,20 +17,18 @@ export default function LoginPage() {
     setLoading(true);
     setError("");
     try {
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4001/api/v1"}/auth/login`,
-        {
-          method: "POST",
-          credentials: "include",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ email, password })
-        }
-      );
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email, password })
+      });
       if (!response.ok) {
         let message = "Sign in failed. Please check your credentials.";
         try {
           const body = await response.json();
-          if (response.status === 401) {
+          if (response.status === 429) {
+            message = "Too many sign-in attempts. Please wait 15 minutes and try again.";
+          } else if (response.status === 401) {
             message =
               body.message === "Account is locked"
                 ? "Your account is locked after too many failed attempts. Contact your administrator."
@@ -60,7 +58,7 @@ export default function LoginPage() {
           <div className="flex items-center gap-3">
             <BrandLogo className="h-14 w-14 rounded-xl bg-white shadow-soft" />
             <div>
-              <p className="text-xs font-bold uppercase tracking-wide text-white/75">Akoko ERP</p>
+              <p className="text-xs font-bold uppercase tracking-wide text-white/75">AKOKO SOLUTIONS ERP</p>
               <h1 className="text-2xl font-bold tracking-tight">Agribusiness Command Center</h1>
             </div>
           </div>
@@ -126,7 +124,7 @@ export default function LoginPage() {
                 Secure access
               </span>
             </div>
-            <p className="app-kicker">Akoko Solutions</p>
+            <p className="app-kicker">AKOKO SOLUTIONS</p>
             <h2 className="mt-2 text-3xl font-bold tracking-tight">
               Sign in to your workspace
             </h2>

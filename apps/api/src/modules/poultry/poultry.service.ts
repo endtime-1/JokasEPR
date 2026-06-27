@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { AuthenticatedUser } from "@jokas/shared";
+import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
 import {
@@ -28,6 +29,7 @@ type RequestContext = {
 
 type BatchContext = {
   id: string;
+  code: string;
   companyId: string;
   branchId: string;
   farmId: string;
@@ -408,8 +410,14 @@ export class PoultryService {
   async createFeed(user: AuthenticatedUser, dto: CreateFeedConsumptionRecordDto, context: RequestContext) {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
     const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
-    const data = await this.prisma.feedConsumptionRecord.create({
-      data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), recordDate: new Date(dto.recordDate), feedProductId: dto.feedProductId, quantityKg: dto.quantityKg, costAmount: dto.costAmount, notes: dto.notes, status: dto.status ?? "SUBMITTED" }
+    const data = await this.prisma.$transaction(async (tx) => {
+      const record = await tx.feedConsumptionRecord.create({
+        data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), recordDate: new Date(dto.recordDate), feedProductId: dto.feedProductId, quantityKg: dto.quantityKg, costAmount: dto.costAmount, notes: dto.notes, status: dto.status ?? "SUBMITTED" }
+      });
+      if (dto.feedProductId && dto.warehouseId) {
+        await this.consumeInventoryTx(tx, user, batch, dto.warehouseId, dto.feedProductId, dto.quantityKg, "PRODUCTION_INPUT", "FeedConsumptionRecord", record.id, `Feed consumption for flock ${batch.code}`);
+      }
+      return record;
     });
     await this.writeAudit(user, "CREATE", "FeedConsumptionRecord", data.id, "Recorded poultry feed consumption", context, batch.farmId);
     return { data };
@@ -418,8 +426,14 @@ export class PoultryService {
   async createEggs(user: AuthenticatedUser, dto: CreateEggProductionRecordDto, context: RequestContext) {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
     const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
-    const data = await this.prisma.eggProductionRecord.create({
-      data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), recordDate: new Date(dto.recordDate), goodEggs: dto.goodEggs, crackedEggs: dto.crackedEggs, dirtyEggs: dto.dirtyEggs, brokenEggs: dto.brokenEggs, rejectedEggs: dto.rejectedEggs, notes: dto.notes, status: dto.status ?? "SUBMITTED" }
+    const data = await this.prisma.$transaction(async (tx) => {
+      const record = await tx.eggProductionRecord.create({
+        data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), recordDate: new Date(dto.recordDate), goodEggs: dto.goodEggs, crackedEggs: dto.crackedEggs, dirtyEggs: dto.dirtyEggs, brokenEggs: dto.brokenEggs, rejectedEggs: dto.rejectedEggs, notes: dto.notes, status: dto.status ?? "SUBMITTED" }
+      });
+      if (dto.eggProductId && dto.warehouseId && dto.goodEggs > 0) {
+        await this.addToInventoryTx(tx, user, batch, dto.warehouseId, dto.eggProductId, dto.goodEggs, "EggProductionRecord", record.id, `Egg production from flock ${batch.code}`);
+      }
+      return record;
     });
     await this.writeAudit(user, "CREATE", "EggProductionRecord", data.id, "Recorded egg production", context, batch.farmId);
     return { data };
@@ -438,8 +452,14 @@ export class PoultryService {
   async createMedication(user: AuthenticatedUser, dto: CreateMedicationRecordDto, context: RequestContext) {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
     const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
-    const data = await this.prisma.medicationRecord.create({
-      data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), medicationName: dto.medicationName, dosage: dto.dosage, route: dto.route, startDate: new Date(dto.startDate), endDate: dto.endDate ? new Date(dto.endDate) : undefined, withdrawalUntil: dto.withdrawalUntil ? new Date(dto.withdrawalUntil) : undefined, notes: dto.notes }
+    const data = await this.prisma.$transaction(async (tx) => {
+      const record = await tx.medicationRecord.create({
+        data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), medicationName: dto.medicationName, dosage: dto.dosage, route: dto.route, startDate: new Date(dto.startDate), endDate: dto.endDate ? new Date(dto.endDate) : undefined, withdrawalUntil: dto.withdrawalUntil ? new Date(dto.withdrawalUntil) : undefined, notes: dto.notes }
+      });
+      if (dto.medicineProductId && dto.warehouseId && dto.quantityUsed) {
+        await this.consumeInventoryTx(tx, user, batch, dto.warehouseId, dto.medicineProductId, dto.quantityUsed, "PRODUCTION_INPUT", "MedicationRecord", record.id, `Medication (${dto.medicationName}) for flock ${batch.code}`);
+      }
+      return record;
     });
     await this.writeAudit(user, "CREATE", "MedicationRecord", data.id, "Recorded poultry medication", context, batch.farmId);
     return { data };
@@ -448,8 +468,14 @@ export class PoultryService {
   async createVaccination(user: AuthenticatedUser, dto: CreateVaccinationRecordDto, context: RequestContext) {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
     const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
-    const data = await this.prisma.vaccinationRecord.create({
-      data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), vaccineName: dto.vaccineName, dose: dto.dose, vaccinationDate: new Date(dto.vaccinationDate), nextDueDate: dto.nextDueDate ? new Date(dto.nextDueDate) : undefined, notes: dto.notes }
+    const data = await this.prisma.$transaction(async (tx) => {
+      const record = await tx.vaccinationRecord.create({
+        data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), vaccineName: dto.vaccineName, dose: dto.dose, vaccinationDate: new Date(dto.vaccinationDate), nextDueDate: dto.nextDueDate ? new Date(dto.nextDueDate) : undefined, notes: dto.notes }
+      });
+      if (dto.vaccineProductId && dto.warehouseId && dto.quantityUsed) {
+        await this.consumeInventoryTx(tx, user, batch, dto.warehouseId, dto.vaccineProductId, dto.quantityUsed, "PRODUCTION_INPUT", "VaccinationRecord", record.id, `Vaccination (${dto.vaccineName}) for flock ${batch.code}`);
+      }
+      return record;
     });
     await this.writeAudit(user, "CREATE", "VaccinationRecord", data.id, "Recorded poultry vaccination", context, batch.farmId);
     return { data };
@@ -716,6 +742,53 @@ export class PoultryService {
     if (!user.hasGlobalAccess && !user.farmIds.includes(farmId)) {
       throw new ForbiddenException("You do not have access to this farm.");
     }
+  }
+
+  private async consumeInventoryTx(
+    tx: Prisma.TransactionClient,
+    user: AuthenticatedUser,
+    batch: BatchContext,
+    warehouseId: string,
+    productId: string,
+    quantity: number,
+    movementType: "PRODUCTION_INPUT" | "WASTE",
+    referenceType: string,
+    referenceId: string,
+    notes: string
+  ) {
+    const item = await tx.inventoryItem.findFirst({ where: { companyId: user.companyId, warehouseId, productId, deletedAt: null } });
+    if (!item) throw new BadRequestException("No inventory item found for the selected product and warehouse.");
+    if (Number(item.quantityOnHand) < quantity) throw new BadRequestException(`Insufficient stock. Available: ${Number(item.quantityOnHand)}, required: ${quantity}.`);
+    const product = await tx.product.findFirst({ where: { id: productId } });
+    await tx.inventoryItem.update({ where: { id: item.id }, data: { quantityOnHand: { decrement: quantity }, updatedById: user.id } });
+    await tx.stockMovement.create({
+      data: { companyId: user.companyId, branchId: batch.branchId, productId, inventoryItemId: item.id, fromWarehouseId: warehouseId, warehouseId, farmId: batch.farmId, uomId: product!.uomId, movementType, quantity, referenceType, referenceId, notes, createdById: user.id }
+    });
+  }
+
+  private async addToInventoryTx(
+    tx: Prisma.TransactionClient,
+    user: AuthenticatedUser,
+    batch: BatchContext,
+    warehouseId: string,
+    productId: string,
+    quantity: number,
+    referenceType: string,
+    referenceId: string,
+    notes: string
+  ) {
+    const warehouse = await tx.warehouse.findFirst({ where: { companyId: user.companyId, id: warehouseId, deletedAt: null } });
+    if (!warehouse) throw new BadRequestException("Warehouse not found.");
+    const product = await tx.product.findFirst({ where: { companyId: user.companyId, id: productId } });
+    if (!product) throw new BadRequestException("Product not found.");
+    const item = await tx.inventoryItem.upsert({
+      where: { companyId_warehouseId_productId: { companyId: user.companyId, warehouseId, productId } },
+      update: { quantityOnHand: { increment: quantity }, updatedById: user.id },
+      create: { companyId: user.companyId, branchId: warehouse.branchId, warehouseId, farmId: batch.farmId, productId, uomId: product.uomId, quantityOnHand: quantity, createdById: user.id }
+    });
+    await tx.stockMovement.create({
+      data: { companyId: user.companyId, branchId: batch.branchId, productId, inventoryItemId: item.id, toWarehouseId: warehouseId, warehouseId, farmId: batch.farmId, uomId: product.uomId, movementType: "PRODUCTION_OUTPUT", quantity, referenceType, referenceId, notes, createdById: user.id }
+    });
   }
 
   private async writeAudit(user: AuthenticatedUser, action: "CREATE" | "UPDATE" | "DELETE" | "TRANSFER" | "APPROVE", entityType: string, entityId: string, summary: string, context: RequestContext, farmId?: string) {

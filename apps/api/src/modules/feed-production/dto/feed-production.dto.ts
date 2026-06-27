@@ -286,3 +286,28 @@ export class RecordExternalFeedSaleDto {
   @MaxLength(160)
   customerName?: string;
 }
+
+export class HiproPredictiveQueryDto {
+  @IsOptional()
+  @IsUUID()
+  warehouseId?: string;
+}
+
+export class SimulatePredictivePlanItemDto {
+  @IsUUID()
+  formulaId!: string;
+
+  @IsNumber()
+  @Min(0.001)
+  plannedTons!: number;
+}
+
+export class SimulatePredictiveDto {
+  @IsUUID()
+  warehouseId!: string;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SimulatePredictivePlanItemDto)
+  plans!: SimulatePredictivePlanItemDto[];
+}

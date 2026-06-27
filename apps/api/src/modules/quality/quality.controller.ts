@@ -29,7 +29,7 @@ function ctx(req: Request) {
   return { ipAddress: req.ip, userAgent: req.headers["user-agent"] as string };
 }
 
-@Controller("api/v1/quality")
+@Controller("quality")
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class QualityController {
   constructor(private readonly svc: QualityService) {}

@@ -4,7 +4,24 @@
       "PowerShell(Get-Process -Name \"node\" -ErrorAction SilentlyContinue)",
       "PowerShell(Stop-Process -Force)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000)",
-      "PowerShell(Get-NetTCPConnection -LocalPort 4001 -State Listen -ErrorAction SilentlyContinue)"
+      "PowerShell(Get-NetTCPConnection -LocalPort 4001 -State Listen -ErrorAction SilentlyContinue)",
+      "Bash(git push *)",
+      "PowerShell(\"Webpack cache cleared\")",
+      "PowerShell(Get-Process -Id 47448 -ErrorAction SilentlyContinue)",
+      "PowerShell(Start-Sleep -Seconds 8; try { $r = Invoke-WebRequest -Uri \"http://localhost:4001/api/v1/auth/login\" -Method POST -ContentType \"application/json\" -Headers @{ \"Origin\" = \"http://localhost:3000\" } -Body '{\"email\":\"admin@jokas.local\",\"password\":\"Admin@12345\"}' -UseBasicParsing; Write-Host \"Status: $\\($r.StatusCode\\)\" } catch { Write-Host \"Not ready yet or error: $_\" })",
+      "PowerShell(Set-Location \"C:\\\\Users\\\\Gabriel Kwaku Kusi\\\\Downloads\\\\Jokas\"; $env:DATABASE_URL=\"postgresql://jokas:jokas_dev_password@localhost:15432/jokas_erp?schema=public\"; pnpm --filter @jokas/db exec prisma migrate dev --name add_login_rate_limit --create-only 2>&1)",
+      "PowerShell(Set-Location \"C:\\\\Users\\\\Gabriel Kwaku Kusi\\\\Downloads\\\\Jokas\"; $env:DATABASE_URL=\"postgresql://jokas:jokas_dev_password@localhost:15432/jokas_erp?schema=public\"; pnpm --filter @jokas/db exec prisma db push --accept-data-loss 2>&1)",
+      "PowerShell(Set-Location \"C:\\\\Users\\\\Gabriel Kwaku Kusi\\\\Downloads\\\\Jokas\\\\apps\\\\api\"; $env:DATABASE_URL=\"postgresql://jokas:jokas_dev_password@localhost:15432/jokas_erp?schema=public\"; node --max-old-space-size=512 dist/main.js 2>&1)",
+      "PowerShell(Get-Process -Name \"node\")",
+      "PowerShell(Stop-Process -Force -ErrorAction SilentlyContinue)",
+      "Skill(run)",
+      "Skill(run:*)",
+      "Bash(grep -Hm1 ^description: 'C:\\\\Users\\\\Gabriel Kwaku Kusi\\\\Downloads\\\\Jokas/.claude/skills/*/SKILL.md')",
+      "Bash(echo \"done\")",
+      "PowerShell(cd \"C:\\\\Users\\\\Gabriel Kwaku Kusi\\\\Downloads\\\\Jokas\\\\apps\\\\api\"; Start-Process powershell -ArgumentList \"-NoExit\", \"-Command\", \"cd 'C:\\\\Users\\\\Gabriel Kwaku Kusi\\\\Downloads\\\\Jokas\\\\apps\\\\api'; pnpm dev\" -WindowStyle Normal; Write-Host \"API server window launched\")",
+      "PowerShell(Start-Process powershell -ArgumentList \"-NoExit\", \"-Command\", \"cd 'C:\\\\Users\\\\Gabriel Kwaku Kusi\\\\Downloads\\\\Jokas\\\\apps\\\\web'; pnpm dev\" -WindowStyle Normal; Write-Host \"Web server window launched\")",
+      "PowerShell(Start-Process powershell -ArgumentList \"-NoExit\", \"-Command\", \"cd 'C:\\\\Users\\\\Gabriel Kwaku Kusi\\\\Downloads\\\\Jokas\\\\apps\\\\mobile'; pnpm dev\" -WindowStyle Normal; Write-Host \"Mobile \\(Expo\\) window launched\")",
+      "Bash(git add *)"
     ]
   }
 }

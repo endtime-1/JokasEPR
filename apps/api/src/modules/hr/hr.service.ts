@@ -5,6 +5,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import {
   AssignTaskDto,
   BulkAttendanceDto,
+  CheckInSelfDto,
   CreateDepartmentAssignmentDto,
   CreateEmployeeDto,
   CreateEmployeeRoleDto,
@@ -223,6 +224,38 @@ export class HRService {
     return { data: rows };
   }
 
+  async checkInSelf(user: AuthenticatedUser, dto: CheckInSelfDto, ctx: RequestContext) {
+    const employee = await this.prisma.employee.findFirst({
+      where: { companyId: user.companyId, email: user.email, deletedAt: null },
+      select: { id: true },
+    });
+    if (!employee) throw new NotFoundException("No employee record found for your account. Contact HR to register your email.");
+
+    const date = new Date(dto.date);
+    date.setHours(0, 0, 0, 0);
+
+    const existing = await this.prisma.attendanceRecord.findUnique({
+      where: { companyId_employeeId_date: { companyId: user.companyId, employeeId: employee.id, date } },
+    });
+
+    const data = {
+      companyId: user.companyId,
+      employeeId: employee.id,
+      date,
+      checkInTime: dto.checkInTime ? new Date(dto.checkInTime) : new Date(),
+      status: dto.status ?? "PRESENT",
+      notes: dto.notes,
+      recordedById: user.id,
+    };
+
+    const row = existing
+      ? await this.prisma.attendanceRecord.update({ where: { id: existing.id }, data: data as never })
+      : await this.prisma.attendanceRecord.create({ data: data as never });
+
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "AttendanceRecord", entityId: row.id, action: existing ? "UPDATE" : "CREATE", ...ctx });
+    return { data: row };
+  }
+
   async recordAttendance(user: AuthenticatedUser, dto: RecordAttendanceDto, ctx: RequestContext) {
     const employee = await this.prisma.employee.findFirst({ where: { id: dto.employeeId, companyId: user.companyId, deletedAt: null } });
     if (!employee) throw new NotFoundException("Employee not found");
@@ -307,6 +340,42 @@ export class HRService {
   }
 
   // â”€â”€â”€ Tasks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+  async myTasks(user: AuthenticatedUser) {
+    const employee = await this.prisma.employee.findFirst({
+      where: { companyId: user.companyId, email: user.email, deletedAt: null },
+      select: { id: true },
+    });
+
+    if (!employee) return { data: [] };
+
+    const assignments = await this.prisma.taskAssignment.findMany({
+      where: { companyId: user.companyId, employeeId: employee.id, status: { not: "CANCELLED" as never } },
+      include: {
+        task: {
+          include: {
+            farm:   { select: { name: true } },
+            branch: { select: { name: true } },
+          },
+        },
+      },
+      orderBy: [{ task: { dueDate: "asc" } }, { createdAt: "desc" }],
+      take: 50,
+    });
+
+    return {
+      data: assignments.map((a) => ({
+        id:          a.id,
+        title:       a.task.title,
+        description: a.task.description,
+        status:      a.status,
+        priority:    a.task.priority,
+        dueDate:     a.task.dueDate?.toISOString(),
+        farm:        a.task.farm,
+        notes:       a.notes,
+      })),
+    };
+  }
 
   async listTasks(user: AuthenticatedUser, query: HRQueryDto) {
     const rows = await this.prisma.task.findMany({

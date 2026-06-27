@@ -8,9 +8,11 @@ import {
   CreateCustomerGroupDto,
   CreatePaymentDto,
   CreatePriceListDto,
+  CreateProspectVisitDto,
   CreateSalesOrderDto,
   CreateSalesOrderItemDto,
   CreateSalesReturnDto,
+  ProspectVisitQueryDto,
   SalesQueryDto
 } from "./dto/sales.dto";
 
@@ -648,5 +650,59 @@ export class SalesService {
 
   private async writeAudit(user: AuthenticatedUser, action: "CREATE" | "APPROVE", entityType: string, entityId: string, summary: string, context: RequestContext, scope: Scope) {
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action, entityType, entityId, summary, branchId: scope.branchId, warehouseId: scope.warehouseId, ipAddress: context.ipAddress, userAgent: context.userAgent });
+  }
+
+  // ── Prospect Visits ──────────────────────────────────────────────────────
+
+  async logProspectVisit(user: AuthenticatedUser, dto: CreateProspectVisitDto, ctx: RequestContext) {
+    const visit = await this.prisma.prospectVisit.create({
+      data: {
+        companyId:    user.companyId,
+        branchId:     dto.branchId,
+        repId:        user.id,
+        prospectName: dto.prospectName,
+        phone:        dto.phone,
+        address:      dto.address,
+        latitude:     dto.latitude,
+        longitude:    dto.longitude,
+        visitType:    dto.visitType ?? "COLD_CALL",
+        outcome:      dto.outcome   ?? "INTERESTED",
+        notes:        dto.notes,
+        visitedAt:    dto.visitedAt ? new Date(dto.visitedAt) : new Date(),
+      } as never,
+    });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "CREATE", entityType: "ProspectVisit", entityId: visit.id, ipAddress: ctx.ipAddress, userAgent: ctx.userAgent });
+    return { data: visit };
+  }
+
+  async listProspectVisits(user: AuthenticatedUser, query: ProspectVisitQueryDto) {
+    const cid = user.companyId;
+    const page  = Math.max(1, Number(query.page  ?? 1));
+    const limit = Math.min(100, Math.max(1, Number(query.limit ?? 50)));
+    const where: Record<string, unknown> = { companyId: cid, deletedAt: null };
+    if (query.repId)   where.repId    = query.repId;
+    if (query.branchId) where.branchId = query.branchId;
+    if (query.outcome) where.outcome  = query.outcome;
+    if (query.dateFrom || query.dateTo) {
+      where.visitedAt = {
+        ...(query.dateFrom ? { gte: new Date(query.dateFrom) } : {}),
+        ...(query.dateTo   ? { lte: new Date(query.dateTo)   } : {}),
+      };
+    }
+    const [total, visits] = await Promise.all([
+      this.prisma.prospectVisit.count({ where: where as never }),
+      this.prisma.prospectVisit.findMany({
+        where: where as never,
+        orderBy: { visitedAt: "desc" },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: { company: { select: { name: true } } },
+      }),
+    ]);
+    return { data: visits, meta: { total, page, limit } };
+  }
+
+  async myProspectVisits(user: AuthenticatedUser, query: ProspectVisitQueryDto) {
+    return this.listProspectVisits(user, { ...query, repId: user.id });
   }
 }

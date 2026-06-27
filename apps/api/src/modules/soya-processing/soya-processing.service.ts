@@ -26,7 +26,8 @@ export class SoyaProcessingService {
   ) {}
 
   async dashboard(user: AuthenticatedUser) {
-    const [intakes, batches, oilOutputs, cakeOutputs, wastes, costs, pendingQc, sales] = await Promise.all([
+    const sevenDaysAgo = new Date(Date.now() - 7 * 86400000);
+    const [intakes, batches, oilOutputs, cakeOutputs, wastes, costs, pendingQc, sales, weekBatches, batchStats, recentIntakes, intakeStats] = await Promise.all([
       this.prisma.soyaBeanIntake.findMany({ where: this.intakeWhere(user, {}), select: { quantityKg: true, totalCost: true } }),
       this.prisma.soyaProcessingBatch.findMany({ where: this.batchWhere(user, {}), include: { oilOutputs: true, cakeOutputs: true, wasteRecords: true, costs: true }, orderBy: { processingDate: "desc" }, take: 8 }),
       this.prisma.soyaOilOutput.findMany({ where: this.outputWhere(user, {}), select: { quantityLitres: true, unitCost: true } }),
@@ -34,24 +35,48 @@ export class SoyaProcessingService {
       this.prisma.soyaWasteRecord.findMany({ where: this.outputWhere(user, {}), select: { quantityKg: true } }),
       this.prisma.soyaProductionCost.findMany({ where: this.outputWhere(user, {}), select: { rawBeanCost: true, laborCost: true, packagingCost: true, overheadCost: true, expectedOilSalesValue: true, expectedCakeSalesValue: true } }),
       this.prisma.soyaQualityCheck.count({ where: { ...this.outputWhere(user, {}), status: "PENDING" } }),
-      this.prisma.soyaSalesLink.findMany({ where: this.salesWhere(user, {}), select: { totalAmount: true } })
+      this.prisma.soyaSalesLink.findMany({ where: this.salesWhere(user, {}), select: { totalAmount: true } }),
+      this.prisma.soyaProcessingBatch.findMany({
+        where: { ...this.batchWhere(user, {}), processingDate: { gte: sevenDaysAgo } },
+        include: { oilOutputs: { select: { quantityLitres: true } }, cakeOutputs: { select: { quantityKg: true } }, wasteRecords: { select: { quantityKg: true } } },
+        orderBy: { processingDate: "asc" }
+      }),
+      this.prisma.soyaProcessingBatch.groupBy({ by: ["status"], where: { companyId: user.companyId, deletedAt: null }, _count: { status: true } }),
+      this.prisma.soyaBeanIntake.findMany({ where: this.intakeWhere(user, {}), include: { warehouse: { select: { name: true, code: true } }, productionSite: { select: { name: true } } }, orderBy: { receivedAt: "desc" }, take: 5 }),
+      this.prisma.soyaBeanIntake.groupBy({ by: ["qualityStatus"], where: { companyId: user.companyId, deletedAt: null }, _count: { qualityStatus: true } })
     ]);
     const totalCost = costs.reduce((sum, cost) => sum + this.totalCost(cost), 0);
     const expectedSalesValue = costs.reduce((sum, cost) => sum + Number(cost.expectedOilSalesValue) + Number(cost.expectedCakeSalesValue), 0);
+    const beansKg = this.sum(intakes, "quantityKg");
+    const oilLitres = this.sum(oilOutputs, "quantityLitres");
+    const cakeKg = this.sum(cakeOutputs, "quantityKg");
     return {
       data: {
-        beansReceivedKg: this.sum(intakes, "quantityKg"),
+        beansReceivedKg: beansKg,
         beansReceivedCost: this.sum(intakes, "totalCost"),
         activeBatches: batches.length,
-        oilProducedLitres: this.sum(oilOutputs, "quantityLitres"),
-        cakeProducedKg: this.sum(cakeOutputs, "quantityKg"),
+        oilProducedLitres: oilLitres,
+        cakeProducedKg: cakeKg,
         wasteKg: this.sum(wastes, "quantityKg"),
         oilStockValue: oilOutputs.reduce((sum, row) => sum + Number(row.quantityLitres) * Number(row.unitCost), 0),
         cakeStockValue: cakeOutputs.reduce((sum, row) => sum + Number(row.quantityKg) * Number(row.unitCost), 0),
         pendingQualityChecks: pendingQc,
         externalSalesValue: this.sum(sales, "totalAmount"),
         profitabilityMargin: this.margin(expectedSalesValue, totalCost),
-        recentBatches: batches.map((batch) => ({ ...batch, metrics: this.batchMetrics(batch) }))
+        oilYieldPct: beansKg > 0 ? Math.round((oilLitres / beansKg) * 1000) / 10 : 0,
+        cakeYieldPct: beansKg > 0 ? Math.round((cakeKg / beansKg) * 1000) / 10 : 0,
+        recentBatches: batches.map((batch) => ({ ...batch, metrics: this.batchMetrics(batch) })),
+        recentIntakes,
+        trends: {
+          processing: weekBatches.map((b) => ({
+            date: b.processingDate,
+            oilLitres: b.oilOutputs.reduce((s, o) => s + Number(o.quantityLitres), 0),
+            cakeKg: b.cakeOutputs.reduce((s, c) => s + Number(c.quantityKg), 0),
+            wasteKg: b.wasteRecords.reduce((s, w) => s + Number(w.quantityKg), 0)
+          }))
+        },
+        batchStats: batchStats.map((row) => ({ status: row.status, count: row._count.status })),
+        intakeStats: intakeStats.map((r) => ({ status: r.qualityStatus, count: r._count.qualityStatus }))
       }
     };
   }

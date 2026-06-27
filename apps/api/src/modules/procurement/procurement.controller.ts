@@ -32,7 +32,7 @@ function ctx(req: Request) {
 }
 
 @UseGuards(JwtAuthGuard, PermissionsGuard)
-@Controller("api/v1/procurement")
+@Controller("procurement")
 export class ProcurementController {
   constructor(private readonly svc: ProcurementService) {}
 

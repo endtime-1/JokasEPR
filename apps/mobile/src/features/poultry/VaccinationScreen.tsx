@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import { Alert, StyleSheet, Text, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { ScreenWrapper } from "../../components/ScreenWrapper";
@@ -6,7 +6,8 @@ import { FormField } from "../../components/FormField";
 import { SelectField, SelectOption } from "../../components/SelectField";
 import { Button } from "../../components/Button";
 import { useSubmit } from "../../hooks/useSubmit";
-import { fetchFlockBatches, fetchFarms } from "../../api/endpoints";
+import { useLookup } from "../../hooks/useLookup";
+import { fetchFlockBatches, fetchFarms, fetchWarehouses, fetchProducts } from "../../api/endpoints";
 import { useAuth } from "../../auth/AuthContext";
 import { colors, font, spacing } from "../../constants/theme";
 
@@ -26,29 +27,43 @@ export function VaccinationScreen() {
   const [batchId, setBatchId] = useState("");
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [vaccineName, setVaccineName] = useState("");
-  const [route, setRoute] = useState("");
-  const [dosage, setDosage] = useState("");
-  const [birdsVaccinated, setBirdsVaccinated] = useState("");
+  const [dose, setDose] = useState("");
   const [nextDueDate, setNextDueDate] = useState("");
   const [notes, setNotes] = useState("");
-  const [farms, setFarms] = useState<SelectOption[]>([]);
-  const [batches, setBatches] = useState<SelectOption[]>([]);
+  // inventory link (optional)
+  const [warehouseId, setWarehouseId] = useState("");
+  const [vaccineProductId, setVaccineProductId] = useState("");
+  const [quantityUsed, setQuantityUsed] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  useEffect(() => {
-    fetchFarms().then((r) => {
-      const all = (r.data as any[]) ?? [];
-      const assigned = user?.hasGlobalAccess ? all : all.filter((f) => user?.farmIds?.includes(f.id));
-      setFarms(assigned.map((f) => ({ label: f.name, value: f.id })));
-    }).catch(() => {});
-  }, [user]);
+  const { data: rawFarms } = useLookup("farms", async () => { const r = await fetchFarms(); return (r.data as any[]) ?? []; });
+  const farms: SelectOption[] = useMemo(() => {
+    const all = rawFarms ?? [];
+    const assigned = user?.hasGlobalAccess ? all : all.filter((f: any) => user?.farmIds?.includes(f.id));
+    return assigned.map((f: any) => ({ label: f.name, value: f.id }));
+  }, [rawFarms, user]);
 
-  useEffect(() => {
-    if (!farmId) return;
-    fetchFlockBatches(farmId).then((r) => {
-      setBatches(((r.data as any[]) ?? []).map((b) => ({ label: b.batchCode, value: b.id })));
-    }).catch(() => {});
-  }, [farmId]);
+  const { data: rawBatches } = useLookup(
+    `flockBatches:${farmId}`,
+    async () => { const r = await fetchFlockBatches(farmId); return (r.data as any[]) ?? []; },
+    !farmId
+  );
+  const batches: SelectOption[] = useMemo(
+    () => (rawBatches ?? []).map((b: any) => ({ label: b.code ?? b.batchCode ?? b.name, value: b.id })),
+    [rawBatches]
+  );
+
+  const { data: rawWarehouses } = useLookup("warehouses", async () => { const r = await fetchWarehouses(); return (r.data as any[]) ?? []; });
+  const warehouses: SelectOption[] = useMemo(
+    () => (rawWarehouses ?? []).map((w: any) => ({ label: w.name, value: w.id })),
+    [rawWarehouses]
+  );
+
+  const { data: rawProducts } = useLookup("products", async () => { const r = await fetchProducts(); return (r.data as any[]) ?? []; });
+  const products: SelectOption[] = useMemo(
+    () => (rawProducts ?? []).map((p: any) => ({ label: `${p.sku} — ${p.name}`, value: p.id })),
+    [rawProducts]
+  );
 
   function validate() {
     const e: Record<string, string> = {};
@@ -56,8 +71,7 @@ export function VaccinationScreen() {
     if (!batchId) e.batchId = "Select batch";
     if (!date) e.date = "Date required";
     if (!vaccineName.trim()) e.vaccineName = "Enter vaccine name";
-    if (!route) e.route = "Select route";
-    if (!birdsVaccinated || isNaN(Number(birdsVaccinated))) e.birdsVaccinated = "Enter count";
+    if (!dose.trim()) e.dose = "Enter dose";
     setErrors(e);
     return Object.keys(e).length === 0;
   }
@@ -73,23 +87,14 @@ export function VaccinationScreen() {
       <Text style={styles.title}>Vaccination Record</Text>
       <Text style={styles.sub}>Record vaccine administered to flock</Text>
 
-      <SelectField label="Farm" value={farmId} options={farms} onChange={(v) => { setFarmId(v); setBatches([]); setBatchId(""); }} error={errors.farmId} required />
+      <SelectField label="Farm" value={farmId} options={farms} onChange={(v) => { setFarmId(v); setBatchId(""); }} error={errors.farmId} required />
       <SelectField label="Flock Batch" value={batchId} options={batches} onChange={setBatchId} error={errors.batchId} required placeholder={farmId ? "Select batch…" : "Select farm first"} />
       <FormField label="Vaccination Date" required value={date} onChangeText={setDate} error={errors.date} keyboardType="numeric" placeholder="YYYY-MM-DD" />
       <FormField label="Vaccine Name" required value={vaccineName} onChangeText={(v) => { setVaccineName(v); setErrors((e) => ({ ...e, vaccineName: "" })); }} error={errors.vaccineName} placeholder="e.g. Newcastle ND Clone 30" />
 
       <View style={styles.row}>
         <View style={styles.half}>
-          <SelectField label="Route" value={route} options={ROUTE_OPTIONS} onChange={(v) => { setRoute(v); setErrors((e) => ({ ...e, route: "" })); }} error={errors.route} required />
-        </View>
-        <View style={styles.half}>
-          <FormField label="Dosage" value={dosage} onChangeText={setDosage} placeholder="e.g. 1 drop/bird" />
-        </View>
-      </View>
-
-      <View style={styles.row}>
-        <View style={styles.half}>
-          <FormField label="Birds Vaccinated" required value={birdsVaccinated} onChangeText={(v) => { setBirdsVaccinated(v); setErrors((e) => ({ ...e, birdsVaccinated: "" })); }} error={errors.birdsVaccinated} keyboardType="numeric" placeholder="e.g. 5000" />
+          <FormField label="Dose" required value={dose} onChangeText={(v) => { setDose(v); setErrors((e) => ({ ...e, dose: "" })); }} error={errors.dose} placeholder="e.g. 1 drop/bird" />
         </View>
         <View style={styles.half}>
           <FormField label="Next Due Date" value={nextDueDate} onChangeText={setNextDueDate} keyboardType="numeric" placeholder="YYYY-MM-DD" />
@@ -98,9 +103,25 @@ export function VaccinationScreen() {
 
       <FormField label="Notes" value={notes} onChangeText={setNotes} multiline numberOfLines={2} style={{ minHeight: 70, textAlignVertical: "top" } as any} placeholder="Optional notes…" />
 
+      <Text style={styles.sectionLabel}>Inventory Link (Optional)</Text>
+      <Text style={styles.sectionHint}>Select warehouse and vaccine to auto-deduct stock when saved.</Text>
+      <SelectField label="Warehouse" value={warehouseId} options={warehouses} onChange={setWarehouseId} placeholder="No warehouse selected" />
+      <SelectField label="Vaccine Product" value={vaccineProductId} options={products} onChange={setVaccineProductId} placeholder="No product selected" />
+      <FormField label="Quantity Used" value={quantityUsed} onChangeText={setQuantityUsed} keyboardType="decimal-pad" placeholder="e.g. 50 (doses / vials / units)" />
+
       <Button label="Save Vaccination" loading={loading} onPress={async () => {
         if (!validate()) return;
-        await submit({ farmId, flockBatchId: batchId, vaccinationDate: date, vaccineName, administrationRoute: route, dosage: dosage || undefined, birdsVaccinated: Number(birdsVaccinated), nextDueDate: nextDueDate || undefined, notes: notes || undefined });
+        await submit({
+          flockBatchId: batchId,
+          vaccinationDate: date,
+          vaccineName,
+          dose,
+          nextDueDate: nextDueDate || undefined,
+          notes: notes || undefined,
+          warehouseId: warehouseId || undefined,
+          vaccineProductId: vaccineProductId || undefined,
+          quantityUsed: quantityUsed ? Number(quantityUsed) : undefined,
+        });
       }} size="lg" />
     </ScreenWrapper>
   );
@@ -110,5 +131,7 @@ const styles = StyleSheet.create({
   title: { fontSize: font.size.xl, fontWeight: font.weight.bold, color: colors.ink },
   sub: { fontSize: font.size.sm, color: colors.inkMid, marginTop: -spacing.sm },
   row: { flexDirection: "row", gap: spacing.md },
-  half: { flex: 1 }
+  half: { flex: 1 },
+  sectionLabel: { fontSize: font.size.sm, fontWeight: font.weight.bold, color: colors.inkMid, marginTop: spacing.sm },
+  sectionHint: { fontSize: font.size.xs, color: colors.inkLight, marginTop: -spacing.sm }
 });

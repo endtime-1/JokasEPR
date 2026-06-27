@@ -1,3 +1,3 @@
-import { FeedMillDashboardPage } from "../../components/feed-production-pages";
+import { FeedMillDashboardPage } from "../../components/feed-mill-dashboard";
 
 export default FeedMillDashboardPage;

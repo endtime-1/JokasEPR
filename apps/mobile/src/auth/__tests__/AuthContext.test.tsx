@@ -44,7 +44,7 @@ describe("AuthProvider — restoreSession", () => {
     mockGetAccessToken.mockResolvedValueOnce("valid-token");
     mockApiFetch.mockResolvedValueOnce({ data: mockUser });
 
-    const { result } = renderHook(() => useAuth(), { wrapper });
+    const { result } = await renderHook(() => useAuth(), { wrapper });
 
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.user).toEqual(mockUser);
@@ -53,7 +53,7 @@ describe("AuthProvider — restoreSession", () => {
   it("stays null when no token is stored", async () => {
     mockGetAccessToken.mockResolvedValueOnce(null);
 
-    const { result } = renderHook(() => useAuth(), { wrapper });
+    const { result } = await renderHook(() => useAuth(), { wrapper });
 
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.user).toBeNull();
@@ -64,7 +64,7 @@ describe("AuthProvider — restoreSession", () => {
     mockGetAccessToken.mockResolvedValueOnce("expired-token");
     mockApiFetch.mockRejectedValueOnce(new Error("Unauthorized"));
 
-    const { result } = renderHook(() => useAuth(), { wrapper });
+    const { result } = await renderHook(() => useAuth(), { wrapper });
 
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.user).toBeNull();
@@ -77,7 +77,7 @@ describe("AuthProvider — login", () => {
     mockGetAccessToken.mockResolvedValueOnce(null);
     mockApiLogin.mockResolvedValueOnce(mockUser);
 
-    const { result } = renderHook(() => useAuth(), { wrapper });
+    const { result } = await renderHook(() => useAuth(), { wrapper });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     await act(async () => {
@@ -91,7 +91,7 @@ describe("AuthProvider — login", () => {
     mockGetAccessToken.mockResolvedValueOnce(null);
     mockApiLogin.mockRejectedValueOnce(new Error("Invalid credentials"));
 
-    const { result } = renderHook(() => useAuth(), { wrapper });
+    const { result } = await renderHook(() => useAuth(), { wrapper });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     await expect(
@@ -105,7 +105,7 @@ describe("AuthProvider — logout", () => {
     mockGetAccessToken.mockResolvedValueOnce("valid-token");
     mockApiFetch.mockResolvedValueOnce({ data: mockUser });
 
-    const { result } = renderHook(() => useAuth(), { wrapper });
+    const { result } = await renderHook(() => useAuth(), { wrapper });
     await waitFor(() => expect(result.current.user).toEqual(mockUser));
 
     await act(async () => { await result.current.logout(); });

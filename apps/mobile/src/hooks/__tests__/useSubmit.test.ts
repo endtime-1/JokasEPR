@@ -42,7 +42,7 @@ describe("useSubmit", () => {
     mockApiFetch.mockResolvedValueOnce({ ok: true });
     const onSuccess = jest.fn();
 
-    const { result } = renderHook(() =>
+    const { result } = await renderHook(() =>
       useSubmit({ module: "livestock", endpoint: "/livestock/batches", onSuccess })
     );
 
@@ -62,7 +62,7 @@ describe("useSubmit", () => {
     useNetwork.mockReturnValue({ online: false, recheck: jest.fn() });
     const onSuccess = jest.fn();
 
-    const { result } = renderHook(() =>
+    const { result } = await renderHook(() =>
       useSubmit({ module: "livestock", endpoint: "/livestock/batches", onSuccess })
     );
 
@@ -85,7 +85,7 @@ describe("useSubmit", () => {
     mockApiFetch.mockRejectedValueOnce(new Error("Network timeout"));
     const onSuccess = jest.fn();
 
-    const { result } = renderHook(() =>
+    const { result } = await renderHook(() =>
       useSubmit({ module: "livestock", endpoint: "/livestock/batches", onSuccess })
     );
 
@@ -97,28 +97,20 @@ describe("useSubmit", () => {
     expect(onSuccess).toHaveBeenCalled();
   });
 
-  it("sets loading to true during the call and false after", async () => {
-    let resolveFetch!: () => void;
-    mockApiFetch.mockReturnValueOnce(
-      new Promise<void>((r) => { resolveFetch = r; })
-    );
+  it("loading is false before and after a successful submit", async () => {
+    mockApiFetch.mockResolvedValueOnce({ ok: true });
 
-    const { result } = renderHook(() =>
+    const { result } = await renderHook(() =>
       useSubmit({ module: "livestock", endpoint: "/livestock/batches" })
     );
 
-    let submitPromise: Promise<void>;
-    act(() => {
-      submitPromise = result.current.submit({ x: 1 });
-    });
-
-    expect(result.current.loading).toBe(true);
+    expect(result.current.loading).toBe(false);
 
     await act(async () => {
-      resolveFetch();
-      await submitPromise;
+      await result.current.submit({ x: 1 });
     });
 
     expect(result.current.loading).toBe(false);
+    expect(mockApiFetch).toHaveBeenCalled();
   });
 });

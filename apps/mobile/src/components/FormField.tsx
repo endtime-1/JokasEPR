@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { StyleSheet, Text, TextInput, TextInputProps, View } from "react-native";
 import { colors, font, radius, spacing } from "../constants/theme";
 
@@ -9,6 +10,8 @@ type Props = TextInputProps & {
 };
 
 export function FormField({ label, error, hint, required, style, ...rest }: Props) {
+  const [focused, setFocused] = useState(false);
+
   return (
     <View style={styles.wrapper}>
       <Text style={styles.label}>
@@ -16,27 +19,35 @@ export function FormField({ label, error, hint, required, style, ...rest }: Prop
         {required && <Text style={styles.required}> *</Text>}
       </Text>
       <TextInput
-        style={[styles.input, error && styles.inputError, style as any]}
+        style={[
+          styles.input,
+          focused && styles.inputFocused,
+          error && styles.inputError,
+          style as any
+        ]}
         placeholderTextColor={colors.inkLight}
+        onFocus={(e) => { setFocused(true); rest.onFocus?.(e); }}
+        onBlur={(e) => { setFocused(false); rest.onBlur?.(e); }}
         {...rest}
       />
       {hint && !error && <Text style={styles.hint}>{hint}</Text>}
-      {error && <Text style={styles.error}>{error}</Text>}
+      {error && <Text style={styles.errorText}>{error}</Text>}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  wrapper: { gap: 5 },
+  wrapper: { gap: 6 },
   label: {
     fontSize: font.size.sm,
     fontWeight: font.weight.semibold,
-    color: colors.ink
+    color: colors.inkMid,
+    letterSpacing: 0.1
   },
-  required: { color: colors.error },
+  required: { color: colors.brand },
   input: {
-    minHeight: 44,
-    borderWidth: 1,
+    minHeight: 48,
+    borderWidth: 1.5,
     borderColor: colors.border,
     borderRadius: radius.md,
     paddingHorizontal: spacing.md,
@@ -45,7 +56,11 @@ const styles = StyleSheet.create({
     fontSize: font.size.md,
     color: colors.ink
   },
+  inputFocused: {
+    borderColor: colors.brand,
+    backgroundColor: colors.white,
+  },
   inputError: { borderColor: colors.error },
   hint: { fontSize: font.size.xs, color: colors.inkLight },
-  error: { fontSize: font.size.xs, color: colors.error }
+  errorText: { fontSize: font.size.xs, color: colors.error, fontWeight: font.weight.medium }
 });

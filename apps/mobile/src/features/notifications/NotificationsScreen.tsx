@@ -2,16 +2,27 @@ import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { fetchNotifications, markAllNotificationsRead, markNotificationRead, type Notification } from "../../api/endpoints";
-import { Card } from "../../components/Card";
-import { Button } from "../../components/Button";
-import { colors, font, spacing } from "../../constants/theme";
+import { colors, font, radius, shadow, spacing } from "../../constants/theme";
 
-const TYPE_ICONS: Record<string, string> = {
-  LOW_STOCK_ALERT: "📦", EXPIRY_ALERT: "⚠️", VACCINATION_REMINDER: "💉",
-  MEDICATION_REMINDER: "💊", PRODUCTION_ORDER_COMPLETED: "✅", PURCHASE_APPROVAL_NEEDED: "🛒",
-  CUSTOMER_PAYMENT_OVERDUE: "💰", SUPPLIER_PAYMENT_DUE: "📋", MACHINE_MAINTENANCE_DUE: "🔧",
-  AI_RISK_ALERT: "🤖", TASK_ASSIGNED: "📌", QUALITY_BATCH_REJECTED: "❌", STOCK_TRANSFER_REQUEST: "🔄"
+const TYPE_META: Record<string, { icon: string; color: string }> = {
+  LOW_STOCK_ALERT:             { icon: "📦", color: "#f97316" },
+  EXPIRY_ALERT:                { icon: "⚠️", color: "#dc2626" },
+  VACCINATION_REMINDER:        { icon: "💉", color: "#0891b2" },
+  MEDICATION_REMINDER:         { icon: "💊", color: "#7c3aed" },
+  PRODUCTION_ORDER_COMPLETED:  { icon: "✅", color: "#16a34a" },
+  PURCHASE_APPROVAL_NEEDED:    { icon: "🛒", color: "#d97706" },
+  CUSTOMER_PAYMENT_OVERDUE:    { icon: "💰", color: "#dc2626" },
+  SUPPLIER_PAYMENT_DUE:        { icon: "📋", color: "#d97706" },
+  MACHINE_MAINTENANCE_DUE:     { icon: "🔧", color: "#64748b" },
+  AI_RISK_ALERT:               { icon: "🤖", color: "#7c3aed" },
+  TASK_ASSIGNED:               { icon: "📌", color: "#0891b2" },
+  QUALITY_BATCH_REJECTED:      { icon: "❌", color: "#dc2626" },
+  STOCK_TRANSFER_REQUEST:      { icon: "🔄", color: "#16a34a" },
 };
+
+function getMeta(type: string) {
+  return TYPE_META[type] ?? { icon: "🔔", color: colors.brand };
+}
 
 function timeAgo(iso: string) {
   const diff = Date.now() - new Date(iso).getTime();
@@ -59,58 +70,95 @@ export function NotificationsScreen() {
 
   const unreadCount = items.filter((n) => n.status === "UNREAD").length;
 
-  function renderItem({ item }: { item: Notification }) {
-    return (
-      <TouchableOpacity
-        onPress={() => { if (item.status === "UNREAD") markRead(item.id); }}
-        activeOpacity={item.status === "UNREAD" ? 0.8 : 1}
-      >
-        <Card style={[styles.card, item.status === "UNREAD" && styles.cardUnread]} padded={false}>
-          <View style={styles.cardInner}>
-            <Text style={styles.icon}>{TYPE_ICONS[item.type] ?? "🔔"}</Text>
-            <View style={styles.content}>
-              <Text style={[styles.cardTitle, item.status === "UNREAD" && styles.cardTitleUnread]}>{item.title}</Text>
-              <Text style={styles.cardBody} numberOfLines={2}>{item.body}</Text>
-              <Text style={styles.cardTime}>{timeAgo(item.createdAt)}</Text>
-            </View>
-            {item.status === "UNREAD" && <View style={styles.dot} />}
-          </View>
-        </Card>
-      </TouchableOpacity>
-    );
-  }
-
   if (loading) {
     return (
       <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
-        <View style={styles.center}><ActivityIndicator size="large" color={colors.brand} /></View>
+        <View style={styles.loadingScreen}>
+          <ActivityIndicator size="large" color={colors.brand} />
+          <Text style={styles.loadingText}>Loading notifications…</Text>
+        </View>
       </SafeAreaView>
+    );
+  }
+
+  function renderItem({ item }: { item: Notification }) {
+    const meta = getMeta(item.type);
+    const isUnread = item.status === "UNREAD";
+    return (
+      <TouchableOpacity
+        onPress={() => { if (isUnread) markRead(item.id); }}
+        activeOpacity={isUnread ? 0.75 : 1}
+      >
+        <View style={[styles.notifCard, isUnread && styles.notifCardUnread]}>
+          {isUnread && <View style={[styles.accentBar, { backgroundColor: meta.color }]} />}
+          <View style={[styles.iconWrap, { backgroundColor: meta.color + "18" }]}>
+            <Text style={styles.notifIcon}>{meta.icon}</Text>
+          </View>
+          <View style={styles.notifBody}>
+            <View style={styles.notifTitleRow}>
+              <Text style={[styles.notifTitle, isUnread && styles.notifTitleBold]} numberOfLines={1}>
+                {item.title}
+              </Text>
+              {isUnread && <View style={styles.unreadDot} />}
+            </View>
+            <Text style={styles.notifText} numberOfLines={2}>{item.body}</Text>
+            <Text style={styles.notifTime}>{timeAgo(item.createdAt)}</Text>
+          </View>
+        </View>
+      </TouchableOpacity>
     );
   }
 
   return (
     <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
+
+      {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.heading}>Notifications</Text>
+        <View style={styles.headerLeft}>
+          <Text style={styles.headerTitle}>Notifications</Text>
+          {unreadCount > 0 && (
+            <View style={styles.unreadBadge}>
+              <Text style={styles.unreadBadgeText}>{unreadCount}</Text>
+            </View>
+          )}
+        </View>
         {unreadCount > 0 && (
-          <Button label={`Mark all read (${unreadCount})`} variant="ghost" size="sm" loading={markingAll} onPress={markAll} />
+          <TouchableOpacity
+            onPress={markAll}
+            disabled={markingAll}
+            style={styles.markAllBtn}
+          >
+            <Text style={styles.markAllText}>{markingAll ? "Marking…" : "Mark all read"}</Text>
+          </TouchableOpacity>
         )}
       </View>
 
+      {/* List */}
       <FlatList
         data={items}
         renderItem={renderItem}
         keyExtractor={(n) => n.id}
         contentContainerStyle={styles.list}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={colors.brand} />}
+        ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
+        ListHeaderComponent={
+          items.length > 0 ? (
+            <View style={styles.listHeader}>
+              <Text style={styles.listHeaderText}>
+                {unreadCount > 0 ? `${unreadCount} unread` : "All caught up"} · {items.length} total
+              </Text>
+            </View>
+          ) : null
+        }
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Text style={styles.emptyIcon}>🔔</Text>
+            <View style={styles.emptyIconWrap}>
+              <Text style={styles.emptyIconText}>🔔</Text>
+            </View>
             <Text style={styles.emptyTitle}>No notifications</Text>
-            <Text style={styles.emptyDesc}>You&apos;re all caught up!</Text>
+            <Text style={styles.emptyDesc}>You're all caught up! Check back later.</Text>
           </View>
         }
-        ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
       />
     </SafeAreaView>
   );
@@ -118,31 +166,100 @@ export function NotificationsScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
+
+  loadingScreen: { flex: 1, alignItems: "center", justifyContent: "center", gap: spacing.md },
+  loadingText: { fontSize: font.size.sm, color: colors.inkLight },
+
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
+    paddingVertical: spacing.lg,
+    backgroundColor: colors.bgCard,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
-    backgroundColor: colors.bgCard
+    ...shadow.sm,
   },
-  heading: { fontSize: font.size.xl, fontWeight: font.weight.bold, color: colors.ink },
+  headerLeft: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  headerTitle: { fontSize: font.size.xl, fontWeight: font.weight.extrabold, color: colors.ink },
+  unreadBadge: {
+    backgroundColor: colors.brand,
+    borderRadius: radius.full,
+    minWidth: 22,
+    height: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 6,
+  },
+  unreadBadgeText: { color: colors.white, fontSize: font.size.xs, fontWeight: font.weight.bold },
+  markAllBtn: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 7,
+    borderRadius: radius.full,
+    backgroundColor: colors.brandLight,
+    borderWidth: 1,
+    borderColor: colors.brandMid,
+  },
+  markAllText: { fontSize: font.size.xs, color: colors.brand, fontWeight: font.weight.bold },
+
   list: { padding: spacing.xl, paddingBottom: spacing.xxxl },
-  card: { overflow: "hidden" },
-  cardUnread: { borderColor: colors.brand + "60", backgroundColor: colors.brandLight + "50" },
-  cardInner: { flexDirection: "row", alignItems: "flex-start", padding: spacing.lg, gap: spacing.md },
-  icon: { fontSize: 24, marginTop: 2 },
-  content: { flex: 1, gap: 3 },
-  cardTitle: { fontSize: font.size.md, fontWeight: font.weight.medium, color: colors.inkMid },
-  cardTitleUnread: { fontWeight: font.weight.bold, color: colors.ink },
-  cardBody: { fontSize: font.size.sm, color: colors.inkMid },
-  cardTime: { fontSize: font.size.xs, color: colors.inkLight, marginTop: 2 },
-  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.brand, marginTop: 4 },
-  center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  empty: { alignItems: "center", paddingTop: 80, gap: spacing.sm },
-  emptyIcon: { fontSize: 48 },
+  listHeader: { marginBottom: spacing.md },
+  listHeaderText: { fontSize: font.size.xs, color: colors.inkLight, fontWeight: font.weight.medium },
+
+  notifCard: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    backgroundColor: colors.bgCard,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.lg,
+    gap: spacing.md,
+    overflow: "hidden",
+    ...shadow.sm,
+  },
+  notifCardUnread: {
+    borderColor: colors.brand + "40",
+    backgroundColor: "#fffdf9",
+  },
+  accentBar: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 3,
+    borderTopLeftRadius: radius.xl,
+    borderBottomLeftRadius: radius.xl,
+  },
+  iconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
+  notifIcon: { fontSize: 22 },
+  notifBody: { flex: 1, gap: 4 },
+  notifTitleRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  notifTitle: { flex: 1, fontSize: font.size.sm, fontWeight: font.weight.medium, color: colors.inkMid },
+  notifTitleBold: { fontWeight: font.weight.bold, color: colors.ink },
+  unreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.brand },
+  notifText: { fontSize: font.size.sm, color: colors.inkMid, lineHeight: 19 },
+  notifTime: { fontSize: font.size.xs, color: colors.inkLight },
+
+  empty: { alignItems: "center", paddingTop: 80, gap: spacing.md },
+  emptyIconWrap: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: colors.brandLight,
+    alignItems: "center",
+    justifyContent: "center",
+    ...shadow.sm,
+  },
+  emptyIconText: { fontSize: 36 },
   emptyTitle: { fontSize: font.size.lg, fontWeight: font.weight.bold, color: colors.ink },
-  emptyDesc: { fontSize: font.size.sm, color: colors.inkMid }
+  emptyDesc: { fontSize: font.size.sm, color: colors.inkLight, textAlign: "center", paddingHorizontal: spacing.xl },
 });

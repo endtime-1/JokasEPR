@@ -1,54 +1,85 @@
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Button } from "../../components/Button";
-import { colors, font, radius, spacing } from "../../constants/theme";
+import { colors, font, radius, shadow, spacing } from "../../constants/theme";
 import type { QrScanResult } from "../../api/endpoints";
 
 type Props = {
   route: { params: { result: QrScanResult } };
-  navigation: { goBack: () => void; navigate: (screen: string) => void };
+  navigation: { goBack: () => void };
 };
 
-function valueText(value: unknown) {
-  if (value === null || value === undefined) return "-";
-  if (typeof value === "string" && value.includes("T")) return value.slice(0, 10);
+function formatValue(value: unknown): string {
+  if (value === null || value === undefined) return "—";
+  if (typeof value === "string" && /\d{4}-\d{2}-\d{2}T/.test(value)) return value.slice(0, 10);
   return String(value);
+}
+
+function humanKey(key: string) {
+  return key
+    .replace(/([A-Z])/g, " $1")
+    .replace(/^./, (c) => c.toUpperCase());
 }
 
 export function ScanResultScreen({ route, navigation }: Props) {
   const { result } = route.params;
+
   return (
     <SafeAreaView style={styles.safe} edges={["bottom"]}>
-      <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.header}>
-          <Text style={styles.kicker}>{result.entityType.replace(/_/g, " ")}</Text>
-          <Text style={styles.title}>{result.label}</Text>
-          <Text style={styles.subtle}>{result.barcodeValue}</Text>
-        </View>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
 
-        <View style={styles.statusRow}>
-          <View style={styles.statusPill}><Text style={styles.statusText}>{result.status}</Text></View>
-          <Text style={styles.scanned}>Scanned {new Date(result.scannedAt).toLocaleString()}</Text>
-        </View>
+        {/* Header hero */}
+        <View style={styles.hero}>
+          <View style={styles.heroIconWrap}>
+            <Text style={styles.heroIcon}>✅</Text>
+          </View>
+          <View style={styles.heroBadge}>
+            <Text style={styles.heroBadgeText}>{result.entityType.replace(/_/g, " ")}</Text>
+          </View>
+          <Text style={styles.heroLabel}>{result.label}</Text>
+          <Text style={styles.heroBarcode}>{result.barcodeValue}</Text>
 
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Authorized Details</Text>
-          {Object.entries(result.details ?? {}).map(([key, value]) => (
-            <View key={key} style={styles.detailRow}>
-              <Text style={styles.detailKey}>{key.replace(/([A-Z])/g, " $1")}</Text>
-              <Text style={styles.detailValue}>{valueText(value)}</Text>
+          <View style={styles.heroMeta}>
+            <View style={styles.statusPill}>
+              <Text style={styles.statusPillText}>{result.status}</Text>
             </View>
-          ))}
+            <Text style={styles.scannedTime}>
+              Scanned {new Date(result.scannedAt).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+            </Text>
+          </View>
         </View>
 
+        {/* Authorized details */}
+        {result.details && Object.keys(result.details).length > 0 && (
+          <View style={styles.card}>
+            <View style={styles.cardTitleRow}>
+              <Text style={styles.cardTitleIcon}>🔐</Text>
+              <Text style={styles.cardTitle}>Authorized Details</Text>
+            </View>
+            {Object.entries(result.details).map(([key, value], idx, arr) => (
+              <View key={key} style={[styles.detailRow, idx === arr.length - 1 && styles.detailRowLast]}>
+                <Text style={styles.detailKey}>{humanKey(key)}</Text>
+                <Text style={styles.detailValue}>{formatValue(value)}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* Traceability payload */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Traceability Code</Text>
-          <Text style={styles.payload}>{result.payload}</Text>
+          <View style={styles.cardTitleRow}>
+            <Text style={styles.cardTitleIcon}>🔗</Text>
+            <Text style={styles.cardTitle}>Traceability Code</Text>
+          </View>
+          <View style={styles.payloadBox}>
+            <Text style={styles.payloadText}>{result.payload}</Text>
+          </View>
         </View>
 
-        <View style={styles.actions}>
-          <Button label="Scan Another" onPress={() => navigation.goBack()} />
-        </View>
+        {/* Action */}
+        <TouchableOpacity style={styles.scanAgainBtn} onPress={() => navigation.goBack()} activeOpacity={0.85}>
+          <Text style={styles.scanAgainText}>← Scan Another</Text>
+        </TouchableOpacity>
+
       </ScrollView>
     </SafeAreaView>
   );
@@ -56,20 +87,97 @@ export function ScanResultScreen({ route, navigation }: Props) {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: spacing.lg, gap: spacing.md },
-  header: { backgroundColor: colors.bgCard, borderRadius: radius.lg, padding: spacing.lg, borderWidth: 1, borderColor: colors.border },
-  kicker: { color: colors.brand, fontSize: font.size.xs, fontWeight: font.weight.bold, textTransform: "uppercase", marginBottom: spacing.xs },
-  title: { color: colors.ink, fontSize: font.size.xxl, fontWeight: font.weight.bold },
-  subtle: { color: colors.inkMid, fontSize: font.size.sm, marginTop: spacing.xs },
-  statusRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, flexWrap: "wrap" },
-  statusPill: { backgroundColor: colors.brandLight, borderRadius: radius.full, paddingHorizontal: spacing.md, paddingVertical: spacing.xs },
-  statusText: { color: colors.brand, fontSize: font.size.xs, fontWeight: font.weight.bold },
-  scanned: { color: colors.inkMid, fontSize: font.size.sm },
-  card: { backgroundColor: colors.bgCard, borderRadius: radius.lg, padding: spacing.lg, borderWidth: 1, borderColor: colors.border },
-  cardTitle: { color: colors.ink, fontSize: font.size.md, fontWeight: font.weight.bold, marginBottom: spacing.md },
-  detailRow: { borderTopWidth: 1, borderTopColor: colors.border, paddingVertical: spacing.sm },
-  detailKey: { color: colors.inkMid, fontSize: font.size.xs, textTransform: "uppercase" },
-  detailValue: { color: colors.ink, fontSize: font.size.md, fontWeight: font.weight.medium, marginTop: 2 },
-  payload: { color: colors.inkMid, fontSize: font.size.sm, lineHeight: 20 },
-  actions: { marginTop: spacing.sm }
+  content: { padding: spacing.xl, gap: spacing.lg, paddingBottom: spacing.xxxl },
+
+  hero: {
+    backgroundColor: colors.bgCard,
+    borderRadius: radius.xxl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.xl,
+    alignItems: "center",
+    gap: spacing.sm,
+    ...shadow.md,
+  },
+  heroIconWrap: {
+    width: 68, height: 68, borderRadius: 34,
+    backgroundColor: "#f0fdf4", borderWidth: 1, borderColor: "#86efac",
+    alignItems: "center", justifyContent: "center",
+    marginBottom: spacing.xs,
+  },
+  heroIcon: { fontSize: 34 },
+  heroBadge: {
+    backgroundColor: colors.brandLight,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 4,
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: colors.brandMid,
+  },
+  heroBadgeText: { fontSize: font.size.xs, fontWeight: font.weight.bold, color: colors.brand, textTransform: "uppercase", letterSpacing: 0.8 },
+  heroLabel: { fontSize: font.size.xxl, fontWeight: font.weight.extrabold, color: colors.ink, textAlign: "center" },
+  heroBarcode: { fontSize: font.size.sm, color: colors.inkLight, fontFamily: "monospace" },
+  heroMeta: { flexDirection: "row", alignItems: "center", gap: spacing.md, marginTop: spacing.xs, flexWrap: "wrap", justifyContent: "center" },
+  statusPill: {
+    backgroundColor: "#f0fdf4",
+    paddingHorizontal: spacing.md,
+    paddingVertical: 4,
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: "#86efac",
+  },
+  statusPillText: { fontSize: font.size.xs, fontWeight: font.weight.bold, color: "#16a34a" },
+  scannedTime: { fontSize: font.size.xs, color: colors.inkMid },
+
+  card: {
+    backgroundColor: colors.bgCard,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: "hidden",
+    ...shadow.sm,
+  },
+  cardTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    backgroundColor: colors.bg,
+  },
+  cardTitleIcon: { fontSize: 16 },
+  cardTitle: { fontSize: font.size.md, fontWeight: font.weight.bold, color: colors.ink },
+
+  detailRow: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    gap: 4,
+  },
+  detailRowLast: { borderBottomWidth: 0 },
+  detailKey: { fontSize: font.size.xs, fontWeight: font.weight.semibold, color: colors.inkLight, textTransform: "uppercase", letterSpacing: 0.5 },
+  detailValue: { fontSize: font.size.md, fontWeight: font.weight.medium, color: colors.ink },
+
+  payloadBox: {
+    margin: spacing.lg,
+    backgroundColor: colors.bg,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  payloadText: { fontSize: font.size.sm, color: colors.inkMid, lineHeight: 20, fontFamily: "monospace" },
+
+  scanAgainBtn: {
+    backgroundColor: colors.brand,
+    borderRadius: radius.full,
+    paddingVertical: spacing.md,
+    alignItems: "center",
+    ...shadow.brand,
+  },
+  scanAgainText: { color: colors.white, fontSize: font.size.md, fontWeight: font.weight.bold },
 });

@@ -11,14 +11,18 @@ import {
   CreateFarmSettingDto,
   CreateProductCategorySettingDto,
   CreateProductionSiteSettingDto,
+  CreateProductDto,
   CreateUnitOfMeasureSettingDto,
   CreateWarehouseSettingDto,
   DomainListSettingsDto,
   NumberingSettingsDto,
+  ProductListQueryDto,
   TaxSettingsDto,
   UpdateCompanyProfileDto,
+  UpdateProductDto,
   UserAccessSettingsDto
 } from "./dto/settings.dto";
+import { ProductStatus, ProductType } from "@prisma/client";
 import { UpdateNotificationConfigDto } from "../notifications/dto/notifications.dto";
 
 type RequestContext = { ipAddress?: string; userAgent?: string };
@@ -268,5 +272,94 @@ export class SettingsService {
 
   private async auditCreate(user: AuthenticatedUser, entityType: string, entityId: string, summary: string, ctx: RequestContext, scope: { branchId?: string; farmId?: string; warehouseId?: string; productionSiteId?: string } = {}) {
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "CREATE", entityType, entityId, summary, ...scope, ...ctx });
+  }
+
+  async listProducts(user: AuthenticatedUser, query: ProductListQueryDto) {
+    this.requireSettings(user);
+    const { type, status, categoryId, search, page = 1, limit = 50 } = query;
+    const where: any = { companyId: user.companyId, deletedAt: null };
+    if (type) where.type = type;
+    if (status) where.status = status;
+    if (categoryId) where.categoryId = categoryId;
+    if (search) where.OR = [{ name: { contains: search, mode: "insensitive" } }, { sku: { contains: search, mode: "insensitive" } }, { description: { contains: search, mode: "insensitive" } }];
+    const skip = (page - 1) * limit;
+    const [items, total, counts] = await Promise.all([
+      this.prisma.product.findMany({
+        where,
+        include: {
+          category: { select: { id: true, name: true, code: true } },
+          uom: { select: { id: true, name: true, symbol: true } }
+        },
+        orderBy: { name: "asc" },
+        skip,
+        take: limit
+      }),
+      this.prisma.product.count({ where }),
+      this.prisma.product.groupBy({
+        by: ["type"],
+        where: { companyId: user.companyId, deletedAt: null, status: ProductStatus.ACTIVE },
+        _count: { id: true }
+      })
+    ]);
+    const typeCounts: Record<string, number> = {};
+    for (const c of counts) typeCounts[c.type] = c._count.id;
+    return { data: { items, total, page, limit, pages: Math.ceil(total / limit), typeCounts } };
+  }
+
+  async createProduct(user: AuthenticatedUser, dto: CreateProductDto, ctx: RequestContext) {
+    this.requireSettings(user);
+    const row = await this.prisma.product.create({
+      data: {
+        companyId: user.companyId,
+        branchId: dto.branchId,
+        categoryId: dto.categoryId,
+        uomId: dto.uomId,
+        name: dto.name,
+        sku: dto.sku.toUpperCase(),
+        description: dto.description,
+        type: dto.type,
+        status: ProductStatus.ACTIVE,
+        createdById: user.id
+      },
+      include: {
+        category: { select: { id: true, name: true, code: true } },
+        uom: { select: { id: true, name: true, symbol: true } }
+      }
+    });
+    await this.auditCreate(user, "Product", row.id, `Created product ${row.sku} — ${row.name}`, ctx);
+    return { data: row };
+  }
+
+  async updateProduct(user: AuthenticatedUser, id: string, dto: UpdateProductDto, ctx: RequestContext) {
+    this.requireSettings(user);
+    const data: any = { updatedById: user.id };
+    if (dto.name) data.name = dto.name;
+    if (dto.sku) data.sku = dto.sku.toUpperCase();
+    if (dto.type) data.type = dto.type;
+    if (dto.uomId) data.uomId = dto.uomId;
+    if (dto.categoryId !== undefined) data.categoryId = dto.categoryId || null;
+    if (dto.branchId !== undefined) data.branchId = dto.branchId || null;
+    if (dto.description !== undefined) data.description = dto.description;
+    if (dto.status) data.status = dto.status;
+    const row = await this.prisma.product.update({
+      where: { id, companyId: user.companyId },
+      data,
+      include: {
+        category: { select: { id: true, name: true, code: true } },
+        uom: { select: { id: true, name: true, symbol: true } }
+      }
+    });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "UPDATE", entityType: "Product", entityId: row.id, summary: `Updated product ${row.sku}`, ...ctx });
+    return { data: row };
+  }
+
+  async deleteProduct(user: AuthenticatedUser, id: string, ctx: RequestContext) {
+    this.requireSettings(user);
+    const row = await this.prisma.product.update({
+      where: { id, companyId: user.companyId },
+      data: { deletedAt: new Date(), updatedById: user.id }
+    });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "DELETE", entityType: "Product", entityId: row.id, summary: `Deleted product ${row.sku} — ${row.name}`, ...ctx });
+    return { data: { success: true } };
   }
 }

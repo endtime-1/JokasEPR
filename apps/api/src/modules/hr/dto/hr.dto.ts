@@ -155,6 +155,13 @@ export class RecordAttendanceDto {
   @IsOptional() @IsString() @MaxLength(240) notes?: string;
 }
 
+export class CheckInSelfDto {
+  @IsDateString() date!: string;
+  @IsOptional() @IsDateString() checkInTime?: string;
+  @IsOptional() @IsEnum(AttendanceStatus) status?: AttendanceStatus;
+  @IsOptional() @IsString() @MaxLength(240) notes?: string;
+}
+
 export class BulkAttendanceItemDto {
   @IsUUID() employeeId!: string;
   @IsEnum(AttendanceStatus) status!: AttendanceStatus;

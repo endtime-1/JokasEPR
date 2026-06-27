@@ -22,4 +22,14 @@ export class DashboardController {
   executive(@CurrentUser() user: AuthenticatedUser, @Query() query: DashboardQueryDto) {
     return this.dashboardService.executive(user, query);
   }
+
+  @Get("my-duties")
+  myDuties(@CurrentUser() user: AuthenticatedUser) {
+    return this.dashboardService.myDuties(user);
+  }
+
+  @Get("farm-operations-today")
+  farmOperationsToday(@CurrentUser() user: AuthenticatedUser) {
+    return this.dashboardService.farmOperationsToday(user);
+  }
 }

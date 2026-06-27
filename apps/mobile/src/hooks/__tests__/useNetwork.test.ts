@@ -16,7 +16,7 @@ beforeEach(() => {
 describe("useNetwork", () => {
   it("reports online when connected and reachable", async () => {
     mockNetwork.__setOnline(true);
-    const { result } = renderHook(() => useNetwork());
+    const { result } = await renderHook(() => useNetwork());
     await waitFor(() => {
       expect(result.current.online).toBe(true);
     });
@@ -24,7 +24,7 @@ describe("useNetwork", () => {
 
   it("reports offline when isConnected is false", async () => {
     mockNetwork.__setOnline(false);
-    const { result } = renderHook(() => useNetwork());
+    const { result } = await renderHook(() => useNetwork());
     await waitFor(() => {
       expect(result.current.online).toBe(false);
     });
@@ -32,7 +32,7 @@ describe("useNetwork", () => {
 
   it("re-checks when recheck() is called", async () => {
     mockNetwork.__setOnline(true);
-    const { result } = renderHook(() => useNetwork());
+    const { result } = await renderHook(() => useNetwork());
     await waitFor(() => expect(result.current.online).toBe(true));
 
     mockNetwork.__setOnline(false);
@@ -44,7 +44,7 @@ describe("useNetwork", () => {
 
   it("defaults to offline when getNetworkStateAsync throws", async () => {
     mockNetwork.getNetworkStateAsync.mockRejectedValueOnce(new Error("No network module"));
-    const { result } = renderHook(() => useNetwork());
+    const { result } = await renderHook(() => useNetwork());
     await waitFor(() => {
       expect(result.current.online).toBe(false);
     });

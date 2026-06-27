@@ -1,34 +1,42 @@
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, TouchableOpacityProps } from "react-native";
-import { colors, font, radius, spacing } from "../constants/theme";
+import { colors, font, radius, shadow, spacing } from "../constants/theme";
 
 type Props = TouchableOpacityProps & {
   label: string;
   loading?: boolean;
-  variant?: "primary" | "secondary" | "danger" | "ghost";
+  variant?: "primary" | "secondary" | "danger" | "ghost" | "outline";
   size?: "sm" | "md" | "lg";
 };
 
 export function Button({ label, loading, variant = "primary", size = "md", disabled, style, ...rest }: Props) {
-  const bg = variant === "primary" ? colors.brand
-    : variant === "danger" ? colors.error
-    : variant === "secondary" ? colors.bgCard
-    : "transparent";
+  const isPrimary = variant === "primary";
+  const isDanger = variant === "danger";
+  const isGhost = variant === "ghost";
+  const isOutline = variant === "outline";
 
-  const labelColor = variant === "primary" || variant === "danger" ? "#fff"
-    : variant === "ghost" ? colors.brand
+  const bg = isPrimary ? colors.brand
+    : isDanger ? colors.error
+    : isGhost || isOutline ? "transparent"
+    : colors.bgCard;
+
+  const labelColor = isPrimary || isDanger ? colors.white
+    : isGhost || isOutline ? colors.brand
     : colors.ink;
 
-  const minH = size === "sm" ? 36 : size === "lg" ? 52 : 44;
-  const textSize = size === "sm" ? font.size.sm : size === "lg" ? font.size.lg : font.size.md;
+  const minH = size === "sm" ? 38 : size === "lg" ? 54 : 46;
+  const textSize = size === "sm" ? font.size.sm : size === "lg" ? font.size.md : font.size.md;
+  const px = size === "sm" ? spacing.md : size === "lg" ? spacing.xl : spacing.lg;
 
   return (
     <TouchableOpacity
-      activeOpacity={0.8}
+      activeOpacity={0.82}
       disabled={disabled || loading}
       style={[
         styles.base,
-        { backgroundColor: bg, minHeight: minH },
-        variant === "secondary" && styles.outlined,
+        { backgroundColor: bg, minHeight: minH, paddingHorizontal: px },
+        isPrimary && shadow.brand,
+        isOutline && styles.outlineBorder,
+        variant === "secondary" && styles.secondaryBorder,
         (disabled || loading) && styles.disabled,
         style as any
       ]}
@@ -45,19 +53,18 @@ export function Button({ label, loading, variant = "primary", size = "md", disab
 
 const styles = StyleSheet.create({
   base: {
-    borderRadius: radius.md,
+    borderRadius: radius.full,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: spacing.lg,
   },
-  outlined: {
+  outlineBorder: {
+    borderWidth: 1.5,
+    borderColor: colors.brand,
+  },
+  secondaryBorder: {
     borderWidth: 1,
-    borderColor: colors.border
+    borderColor: colors.border,
   },
-  disabled: {
-    opacity: 0.5
-  },
-  label: {
-    fontWeight: font.weight.bold
-  }
+  disabled: { opacity: 0.45 },
+  label: { fontWeight: font.weight.bold, letterSpacing: 0.2 }
 });

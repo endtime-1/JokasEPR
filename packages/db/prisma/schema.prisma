@@ -448,6 +448,22 @@ enum SalesOrderStatus {
   CANCELLED
 }
 
+enum ProspectVisitType {
+  COLD_CALL
+  REFERRAL
+  FOLLOW_UP
+  DEMO
+  REACTIVATION
+}
+
+enum ProspectVisitOutcome {
+  INTERESTED
+  NOT_INTERESTED
+  FOLLOW_UP_NEEDED
+  CONVERTED
+  NO_ANSWER
+}
+
 enum InvoiceStatus {
   DRAFT
   ISSUED
@@ -665,6 +681,7 @@ model Company {
   customerCreditLimits     CustomerCreditLimit[]
   customerStatements       CustomerStatement[]
   salesCommissions         SalesCommission[]
+  prospectVisits           ProspectVisit[]
   deliveryNotes            DeliveryNote[]
   userBranchAccesses       UserBranchAccess[]
   userFarmAccesses         UserFarmAccess[]
@@ -2395,6 +2412,33 @@ model SalesCommission {
   @@index([salespersonId])
   @@index([companyId, status])
   @@index([companyId, createdAt])
+  @@index([deletedAt])
+}
+
+model ProspectVisit {
+  id           String               @id @default(uuid()) @db.Uuid
+  companyId    String               @db.Uuid
+  branchId     String?              @db.Uuid
+  repId        String               @db.Uuid
+  prospectName String
+  phone        String?
+  address      String?
+  latitude     Decimal?             @db.Decimal(10, 7)
+  longitude    Decimal?             @db.Decimal(10, 7)
+  visitType    ProspectVisitType    @default(COLD_CALL)
+  outcome      ProspectVisitOutcome @default(INTERESTED)
+  notes        String?
+  visitedAt    DateTime             @default(now())
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+  deletedAt    DateTime?
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@index([companyId])
+  @@index([repId])
+  @@index([companyId, visitedAt])
+  @@index([companyId, repId])
   @@index([deletedAt])
 }
 
@@ -6579,4 +6623,14 @@ model QuickBooksWebhookEvent {
   @@index([realmId])
   @@index([status])
   @@index([receivedAt])
+}
+
+model LoginRateLimit {
+  id        String   @id @default(uuid()) @db.Uuid
+  key       String   @db.VarChar(320)
+  attempts  Int      @default(1)
+  windowEnd DateTime
+
+  @@index([key])
+  @@index([windowEnd])
 }

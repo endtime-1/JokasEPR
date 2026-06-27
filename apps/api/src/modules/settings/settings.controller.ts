@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Ip, Post, Put, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Headers, Ip, Param, Post, Put, Query, UseGuards } from "@nestjs/common";
 import { AuthenticatedUser, PERMISSIONS } from "@jokas/shared";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { RequirePermissions } from "../../common/decorators/permissions.decorator";
@@ -14,12 +14,15 @@ import {
   CreateFarmSettingDto,
   CreateProductCategorySettingDto,
   CreateProductionSiteSettingDto,
+  CreateProductDto,
   CreateUnitOfMeasureSettingDto,
   CreateWarehouseSettingDto,
   DomainListSettingsDto,
   NumberingSettingsDto,
+  ProductListQueryDto,
   TaxSettingsDto,
   UpdateCompanyProfileDto,
+  UpdateProductDto,
   UserAccessSettingsDto
 } from "./dto/settings.dto";
 import { SettingsService } from "./settings.service";
@@ -147,5 +150,25 @@ export class SettingsController {
   @Put("notifications")
   updateNotificationConfig(@CurrentUser() user: AuthenticatedUser, @Body() dto: UpdateNotificationConfigDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.settings.updateNotificationConfig(user, dto, ctx(ipAddress, userAgent));
+  }
+
+  @Get("catalog/products")
+  listProducts(@CurrentUser() user: AuthenticatedUser, @Query() query: ProductListQueryDto) {
+    return this.settings.listProducts(user, query);
+  }
+
+  @Post("catalog/products")
+  createProduct(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateProductDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.settings.createProduct(user, dto, ctx(ipAddress, userAgent));
+  }
+
+  @Put("catalog/products/:id")
+  updateProduct(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateProductDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.settings.updateProduct(user, id, dto, ctx(ipAddress, userAgent));
+  }
+
+  @Delete("catalog/products/:id")
+  deleteProduct(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.settings.deleteProduct(user, id, ctx(ipAddress, userAgent));
   }
 }

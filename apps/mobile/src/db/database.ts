@@ -22,10 +22,44 @@ export async function getDb(): Promise<SQLite.SQLiteDatabase> {
     );
 
     CREATE INDEX IF NOT EXISTS idx_pending_unsynced ON pending_submissions (synced, created_at);
+
+    CREATE TABLE IF NOT EXISTS lookup_cache (
+      key        TEXT PRIMARY KEY,
+      data       TEXT NOT NULL,
+      cached_at  TEXT NOT NULL
+    );
   `);
   // Add record_id column if it doesn't exist (for existing DBs)
   await db.execAsync(`ALTER TABLE pending_submissions ADD COLUMN record_id TEXT`).catch(() => undefined);
   return db;
+}
+
+const CACHE_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
+
+export async function getCachedLookup<T>(key: string): Promise<{ data: T; stale: boolean } | null> {
+  const database = await getDb();
+  const row = await database.getFirstAsync<{ data: string; cached_at: string }>(
+    "SELECT data, cached_at FROM lookup_cache WHERE key = ?",
+    key
+  );
+  if (!row) return null;
+  const age = Date.now() - new Date(row.cached_at).getTime();
+  return { data: JSON.parse(row.data) as T, stale: age > CACHE_TTL_MS };
+}
+
+export async function setCachedLookup(key: string, data: unknown): Promise<void> {
+  const database = await getDb();
+  await database.runAsync(
+    "INSERT OR REPLACE INTO lookup_cache (key, data, cached_at) VALUES (?, ?, ?)",
+    key,
+    JSON.stringify(data),
+    new Date().toISOString()
+  );
+}
+
+export async function clearLookupCache(): Promise<void> {
+  const database = await getDb();
+  await database.runAsync("DELETE FROM lookup_cache");
 }
 
 export async function queueSubmission(

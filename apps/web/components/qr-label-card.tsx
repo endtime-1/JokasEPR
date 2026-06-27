@@ -42,8 +42,16 @@ export const QR_ENTITY_OPTIONS: { value: QrEntityType; label: string }[] = [
 
 function detailValue(value: unknown) {
   if (value === null || value === undefined) return "-";
-  if (typeof value === "string" && value.includes("T")) return value.slice(0, 10);
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}T/.test(value)) return value.slice(0, 10);
   return String(value);
+}
+
+function svgDataUrl(svg: string) {
+  try {
+    return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`;
+  } catch {
+    return "";
+  }
 }
 
 export function QrLabelCard({ entityType, entityId }: { entityType: QrEntityType; entityId: string }) {
@@ -70,13 +78,15 @@ export function QrLabelCard({ entityType, entityId }: { entityType: QrEntityType
 
   async function printLabel() {
     if (!label) return;
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4001/api/v1"}/qr/${label.entityType}/${label.entityId}/label.svg`, {
+    const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "";
+    const response = await fetch(`${apiBase}/qr/${label.entityType}/${label.entityId}/label.svg`, {
       headers: { authorization: `Bearer ${getAccessToken() ?? ""}` }
     });
-    const svg = await response.text();
+    const svgText = await response.text();
+    const safeDataUrl = svgDataUrl(svgText);
     const printWindow = window.open("", "_blank", "width=760,height=520");
     if (!printWindow) return;
-    printWindow.document.write(`<html><head><title>QR Label ${label.label}</title></head><body style="margin:24px">${svg}<script>window.onload=()=>window.print()</script></body></html>`);
+    printWindow.document.write(`<html><head><title>QR Label ${label.label}</title></head><body style="margin:24px"><img src="${safeDataUrl}" alt="QR label" /><script>window.onload=()=>window.print()<\/script></body></html>`);
     printWindow.document.close();
   }
 
@@ -109,8 +119,16 @@ export function QrLabelCard({ entityType, entityId }: { entityType: QrEntityType
       {label && (
         <div className="mt-5 grid gap-5 lg:grid-cols-[220px_1fr]">
           <div className="rounded-md border border-line bg-white p-4">
-            <div className="mx-auto h-[180px] w-[180px]" dangerouslySetInnerHTML={{ __html: label.qrSvg }} />
-            <div className="mt-4" dangerouslySetInnerHTML={{ __html: label.barcodeSvg }} />
+            <div className="mx-auto h-[180px] w-[180px]">
+              {label.qrSvg && (
+                <img src={svgDataUrl(label.qrSvg)} alt="QR code" className="h-full w-full object-contain" />
+              )}
+            </div>
+            <div className="mt-4">
+              {label.barcodeSvg && (
+                <img src={svgDataUrl(label.barcodeSvg)} alt="Barcode" className="w-full object-contain" />
+              )}
+            </div>
             <p className="mt-2 break-all text-center text-xs font-semibold text-ink/70">{label.barcodeValue}</p>
           </div>
 

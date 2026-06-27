@@ -1,5 +1,7 @@
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
+import { ScheduleModule } from "@nestjs/schedule";
+import { DutyRemindersModule } from "./modules/duty-reminders/duty-reminders.module";
 import { validateEnvironment } from "./config/env.validation";
 import { AiModule } from "./modules/ai/ai.module";
 import { AlertsModule } from "./modules/alerts/alerts.module";
@@ -34,7 +36,9 @@ import { QuickBooksModule } from "./modules/quickbooks/quickbooks.module";
       cache: true,
       validate: validateEnvironment
     }),
+    ScheduleModule.forRoot(),
     PrismaModule,
+    DutyRemindersModule,
     AuditModule,
     AuthModule,
     AiModule,

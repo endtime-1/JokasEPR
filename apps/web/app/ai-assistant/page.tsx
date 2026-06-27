@@ -1,7 +1,16 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { Bot, ChevronRight, Loader2, MessageSquare, Plus, Send, Trash2 } from "lucide-react";
+import {
+  Bot,
+  ChevronRight,
+  Loader2,
+  MessageSquare,
+  Plus,
+  Send,
+  Sparkles,
+  Trash2
+} from "lucide-react";
 import { AppShell } from "../../components/app-shell";
 import { apiFetch, ApiEnvelope } from "../../lib/api";
 
@@ -54,14 +63,31 @@ const EXAMPLE_QUESTIONS = [
 
 function MessageBubble({ message }: { message: Message }) {
   const isUser = message.role === "user";
+  const lines = message.content.split("\n");
+
   return (
     <div className={`flex gap-3 ${isUser ? "flex-row-reverse" : ""}`}>
-      <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${isUser ? "bg-brand text-white" : "bg-field border border-line text-ink"}`}>
+      <div
+        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-bold shadow-sm ${
+          isUser
+            ? "bg-gradient-to-br from-brand to-[#dd741b] text-white"
+            : "border border-line bg-white text-ink/70"
+        }`}
+      >
         {isUser ? "You" : <Bot className="h-4 w-4" />}
       </div>
-      <div className={`max-w-[75%] rounded-xl px-4 py-3 text-sm leading-relaxed ${isUser ? "bg-brand text-white rounded-tr-none" : "bg-white border border-line text-ink rounded-tl-none shadow-panel"}`}>
-        {message.content.split("\n").map((line, i) => (
-          <span key={i}>{line}{i < message.content.split("\n").length - 1 ? <br /> : null}</span>
+      <div
+        className={`max-w-[76%] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-card ${
+          isUser
+            ? "rounded-tr-sm bg-gradient-to-br from-brand to-[#dd741b] text-white"
+            : "rounded-tl-sm border border-line bg-white text-ink"
+        }`}
+      >
+        {lines.map((line, i) => (
+          <span key={i}>
+            {line}
+            {i < lines.length - 1 ? <br /> : null}
+          </span>
         ))}
       </div>
     </div>
@@ -79,6 +105,7 @@ export default function AiAssistantPage() {
   const [loadingSession, setLoadingSession] = useState(false);
   const [error, setError] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     apiFetch<ApiEnvelope<Session[]>>("/ai/sessions")
@@ -87,7 +114,7 @@ export default function AiAssistantPage() {
     apiFetch<ApiEnvelope<AiModel[]>>("/ai/models")
       .then((res) => {
         setModels(res.data);
-        setSelectedModel(res.data.find((model) => model.isDefault)?.id ?? res.data[0]?.id ?? "");
+        setSelectedModel(res.data.find((m) => m.isDefault)?.id ?? res.data[0]?.id ?? "");
       })
       .catch(() => undefined);
   }, []);
@@ -115,6 +142,7 @@ export default function AiAssistantPage() {
     setMessages([]);
     setError("");
     setInput("");
+    textareaRef.current?.focus();
   }
 
   async function deleteSession(id: string) {
@@ -147,7 +175,11 @@ export default function AiAssistantPage() {
     try {
       const res = await apiFetch<ApiEnvelope<ChatResponse>>("/ai/chat", {
         method: "POST",
-        body: JSON.stringify({ message: text, sessionId: activeSessionId ?? undefined, model: selectedModel || undefined })
+        body: JSON.stringify({
+          message: text,
+          sessionId: activeSessionId ?? undefined,
+          model: selectedModel || undefined
+        })
       });
 
       const aiMsg: Message = {
@@ -159,7 +191,6 @@ export default function AiAssistantPage() {
       setMessages((prev) => [...prev, aiMsg]);
       setActiveSessionId(res.data.sessionId);
 
-      // Refresh sessions list
       apiFetch<ApiEnvelope<Session[]>>("/ai/sessions")
         .then((r) => setSessions(r.data))
         .catch(() => undefined);
@@ -182,66 +213,114 @@ export default function AiAssistantPage() {
     void sendMessage(input);
   }
 
+  function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      void sendMessage(input);
+    }
+  }
+
   const isEmpty = messages.length === 0 && !loadingSession;
 
   return (
     <AppShell>
-      <div className="flex h-[calc(100vh-3rem)] gap-4 overflow-hidden">
+      <div className="flex h-[calc(100vh-5.5rem)] gap-4 overflow-hidden">
 
-        {/* Sidebar */}
-        <aside className="hidden w-64 shrink-0 flex-col lg:flex">
-          <button
-            onClick={newSession}
-            className="mb-3 flex min-h-10 items-center gap-2 rounded-md bg-brand px-3 text-sm font-semibold text-white"
-          >
-            <Plus className="h-4 w-4" /> New conversation
-          </button>
-          <div className="flex-1 overflow-y-auto space-y-1">
+        {/* ── Sidebar ──────────────────────────────────────────────────────── */}
+        <aside className="hidden w-64 shrink-0 flex-col overflow-hidden rounded-2xl border border-line bg-white shadow-panel lg:flex">
+
+          {/* Sidebar header */}
+          <div className="bg-gradient-to-br from-ink to-[#2d3f4f] px-4 py-5">
+            <div className="flex items-center gap-2.5">
+              <span className="grid h-8 w-8 place-items-center rounded-lg bg-white/15">
+                <Bot className="h-4 w-4 text-white" />
+              </span>
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-wider text-white/50">
+                  AI Assistant
+                </p>
+                <p className="text-sm font-bold text-white leading-tight">Conversations</p>
+              </div>
+            </div>
+            <button
+              onClick={newSession}
+              className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-brand py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-[#dd741b] active:scale-[0.98]"
+            >
+              <Plus className="h-4 w-4" />
+              New conversation
+            </button>
+          </div>
+
+          {/* Session list */}
+          <div className="flex-1 overflow-y-auto p-2">
+            {sessions.length === 0 && (
+              <div className="flex flex-col items-center py-8 text-center">
+                <MessageSquare className="mb-2 h-6 w-6 text-ink/20" />
+                <p className="text-xs text-ink/40">No conversations yet</p>
+              </div>
+            )}
             {sessions.map((s) => (
               <div
                 key={s.id}
-                className={`group flex items-center gap-2 rounded-md px-3 py-2 text-sm cursor-pointer ${activeSessionId === s.id ? "bg-brand/10 text-brand font-medium" : "hover:bg-field text-ink"}`}
+                className={`group flex cursor-pointer items-center gap-2.5 rounded-xl px-3 py-2.5 transition ${
+                  activeSessionId === s.id
+                    ? "bg-brand/10 text-brand"
+                    : "text-ink hover:bg-field"
+                }`}
                 onClick={() => void loadSession(s.id)}
               >
-                <MessageSquare className="h-3.5 w-3.5 shrink-0" />
-                <span className="flex-1 truncate">{s.title ?? "Untitled"}</span>
+                <MessageSquare
+                  className={`h-3.5 w-3.5 shrink-0 ${
+                    activeSessionId === s.id ? "text-brand" : "text-ink/35"
+                  }`}
+                />
+                <span className="flex-1 truncate text-sm font-medium">
+                  {s.title ?? "Untitled"}
+                </span>
+                <span className="shrink-0 rounded-md bg-line/60 px-1.5 py-0.5 text-[10px] font-semibold text-ink/50">
+                  {s._count.messages}
+                </span>
                 <button
-                  className="hidden group-hover:block text-ink/40 hover:text-red-500"
-                  onClick={(e) => { e.stopPropagation(); void deleteSession(s.id); }}
+                  className="hidden shrink-0 text-ink/30 transition hover:text-red-500 group-hover:block"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void deleteSession(s.id);
+                  }}
+                  aria-label="Delete session"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
               </div>
             ))}
-            {sessions.length === 0 && (
-              <p className="px-3 py-2 text-xs text-ink/50">No conversations yet</p>
-            )}
           </div>
         </aside>
 
-        {/* Main chat */}
-        <div className="flex flex-1 flex-col overflow-hidden rounded-md border border-line bg-white shadow-panel">
+        {/* ── Main chat ────────────────────────────────────────────────────── */}
+        <div className="flex flex-1 flex-col overflow-hidden rounded-2xl border border-line bg-white shadow-panel">
 
-          {/* Header */}
-          <div className="flex items-center gap-3 border-b border-line px-5 py-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-brand/10">
-              <Bot className="h-5 w-5 text-brand" />
+          {/* Chat header */}
+          <div className="flex items-center gap-3 border-b border-line bg-gradient-to-r from-white to-field/60 px-5 py-3.5">
+            <div className="relative">
+              <span className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-brand/20 to-brand/10">
+                <Bot className="h-5 w-5 text-brand" />
+              </span>
+              <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-emerald-500" />
             </div>
             <div className="min-w-0 flex-1">
-              <h2 className="text-sm font-semibold">Jokas AI Assistant</h2>
-              <p className="text-xs text-ink/50">Business intelligence powered by company data</p>
+              <h2 className="text-sm font-bold text-ink">AKOKO SOLUTIONS AI Assistant</h2>
+              <p className="text-xs text-ink/45">Business intelligence · powered by live company data</p>
             </div>
             {models.length > 0 && (
               <select
-                className="min-h-9 max-w-[260px] rounded-md border border-line bg-white px-3 text-xs font-medium text-ink outline-none focus:border-brand"
+                className="min-h-9 max-w-[220px] rounded-lg border border-line bg-white px-3 text-xs font-medium text-ink outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/15"
                 value={selectedModel}
-                onChange={(event) => setSelectedModel(event.target.value)}
+                onChange={(e) => setSelectedModel(e.target.value)}
                 aria-label="AI model"
                 disabled={loading}
               >
-                {models.map((model) => (
-                  <option key={model.id} value={model.id}>
-                    {model.label}
+                {models.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}
                   </option>
                 ))}
               </select>
@@ -249,31 +328,34 @@ export default function AiAssistantPage() {
           </div>
 
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+          <div className="flex-1 overflow-y-auto space-y-5 px-5 py-6">
             {loadingSession && (
-              <div className="flex justify-center py-10">
+              <div className="flex justify-center py-12">
                 <Loader2 className="h-5 w-5 animate-spin text-brand" />
               </div>
             )}
 
             {isEmpty && !loadingSession && (
-              <div className="flex flex-col items-center justify-center h-full text-center px-4">
-                <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-brand/10">
-                  <Bot className="h-7 w-7 text-brand" />
+              <div className="flex h-full flex-col items-center justify-center px-4 text-center">
+                <div className="mb-5 grid h-16 w-16 place-items-center rounded-2xl bg-gradient-to-br from-brand/20 to-brand/10 shadow-sm">
+                  <Sparkles className="h-8 w-8 text-brand" />
                 </div>
-                <h3 className="mb-1 text-base font-semibold">Ask a business question</h3>
-                <p className="mb-6 text-sm text-ink/60 max-w-sm">
-                  I answer questions using live company data — poultry, feed, soya, sales, inventory, finance, and more.
+                <h3 className="mb-1.5 text-lg font-extrabold tracking-tight text-ink">
+                  Ask a business question
+                </h3>
+                <p className="mb-7 max-w-sm text-sm text-ink/50 leading-relaxed">
+                  I answer questions using live company data — poultry, feed, soya, sales,
+                  inventory, finance, and more.
                 </p>
-                <div className="grid gap-2 w-full max-w-md">
+                <div className="grid w-full max-w-lg gap-2 sm:grid-cols-2">
                   {EXAMPLE_QUESTIONS.slice(0, 6).map((q) => (
                     <button
                       key={q}
                       onClick={() => void sendMessage(q)}
-                      className="flex items-center gap-2 rounded-md border border-line px-3 py-2 text-left text-sm hover:bg-field hover:border-brand/40 transition-colors"
+                      className="flex items-center gap-2 rounded-xl border border-line bg-field/60 px-3 py-2.5 text-left text-xs font-medium text-ink/70 transition hover:border-brand/40 hover:bg-white hover:text-ink hover:shadow-card"
                     >
                       <ChevronRight className="h-3.5 w-3.5 shrink-0 text-brand" />
-                      {q}
+                      <span className="leading-snug">{q}</span>
                     </button>
                   ))}
                 </div>
@@ -286,45 +368,57 @@ export default function AiAssistantPage() {
 
             {loading && (
               <div className="flex gap-3">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-field border border-line">
-                  <Bot className="h-4 w-4 text-ink" />
+                <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-line bg-white shadow-sm">
+                  <Bot className="h-4 w-4 text-ink/50" />
                 </div>
-                <div className="flex items-center gap-1 rounded-xl rounded-tl-none border border-line bg-white px-4 py-3 shadow-panel">
-                  <span className="h-2 w-2 animate-bounce rounded-full bg-ink/40 [animation-delay:0ms]" />
-                  <span className="h-2 w-2 animate-bounce rounded-full bg-ink/40 [animation-delay:150ms]" />
-                  <span className="h-2 w-2 animate-bounce rounded-full bg-ink/40 [animation-delay:300ms]" />
+                <div className="flex items-center gap-1.5 rounded-2xl rounded-tl-sm border border-line bg-white px-4 py-3 shadow-card">
+                  <span className="h-2 w-2 animate-bounce rounded-full bg-ink/30 [animation-delay:0ms]" />
+                  <span className="h-2 w-2 animate-bounce rounded-full bg-ink/30 [animation-delay:140ms]" />
+                  <span className="h-2 w-2 animate-bounce rounded-full bg-ink/30 [animation-delay:280ms]" />
                 </div>
               </div>
             )}
 
             {error && (
-              <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
+              <div className="app-alert-warning text-xs">{error}</div>
             )}
 
             <div ref={bottomRef} />
           </div>
 
           {/* Disclaimer */}
-          <div className="border-t border-line bg-amber-50 px-5 py-2 text-xs text-amber-700">
-            AI insights are advisory only. Validate with your operational teams before making decisions.
+          <div className="border-t border-line px-5 py-2 text-[11px] text-ink/40">
+            <span className="font-semibold text-amber-600">Advisory only.</span>
+            {" "}AI insights should be validated with your operational teams before decisions are made.
           </div>
 
           {/* Input */}
-          <form onSubmit={onSubmit} className="border-t border-line px-4 py-3 flex gap-2">
-            <input
-              className="flex-1 min-h-10 rounded-md border border-line px-3 text-sm outline-none focus:border-brand placeholder:text-ink/40"
-              placeholder="Ask about poultry, sales, inventory, finance…"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              disabled={loading}
-            />
-            <button
-              type="submit"
-              disabled={loading || !input.trim()}
-              className="flex min-h-10 min-w-10 items-center justify-center rounded-md bg-brand text-white disabled:opacity-50"
-            >
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-            </button>
+          <form onSubmit={onSubmit} className="border-t border-line px-4 py-3">
+            <div className="flex items-end gap-2 rounded-xl border border-line bg-field/60 px-3 py-2 transition focus-within:border-brand focus-within:bg-white focus-within:ring-4 focus-within:ring-brand/10">
+              <textarea
+                ref={textareaRef}
+                rows={1}
+                className="flex-1 resize-none bg-transparent text-sm text-ink outline-none placeholder:text-ink/35"
+                placeholder="Ask about poultry, sales, inventory, finance… (Enter to send)"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={onKeyDown}
+                disabled={loading}
+                style={{ maxHeight: "120px", overflowY: "auto" }}
+              />
+              <button
+                type="submit"
+                disabled={loading || !input.trim()}
+                className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand text-white shadow-sm transition hover:bg-[#dd741b] active:scale-95 disabled:opacity-40"
+                aria-label="Send message"
+              >
+                {loading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+              </button>
+            </div>
           </form>
         </div>
       </div>

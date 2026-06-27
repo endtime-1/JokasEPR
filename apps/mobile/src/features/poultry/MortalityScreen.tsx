@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import { Alert, StyleSheet, Text, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { ScreenWrapper } from "../../components/ScreenWrapper";
@@ -6,17 +6,14 @@ import { FormField } from "../../components/FormField";
 import { SelectField, SelectOption } from "../../components/SelectField";
 import { Button } from "../../components/Button";
 import { useSubmit } from "../../hooks/useSubmit";
+import { useLookup } from "../../hooks/useLookup";
 import { fetchFlockBatches, fetchFarms } from "../../api/endpoints";
 import { useAuth } from "../../auth/AuthContext";
 import { colors, font, spacing } from "../../constants/theme";
 
-const CAUSE_OPTIONS: SelectOption[] = [
-  { label: "Disease", value: "DISEASE" },
-  { label: "Injury / Trauma", value: "INJURY" },
-  { label: "Heat Stress", value: "HEAT_STRESS" },
-  { label: "Feed / Water Issue", value: "FEED_WATER" },
-  { label: "Unknown", value: "UNKNOWN" },
-  { label: "Other", value: "OTHER" }
+const CULLING_OPTIONS: SelectOption[] = [
+  { label: "Natural death", value: "false" },
+  { label: "Culling (deliberate)", value: "true" }
 ];
 
 export function MortalityScreen() {
@@ -25,35 +22,37 @@ export function MortalityScreen() {
   const [farmId, setFarmId] = useState("");
   const [batchId, setBatchId] = useState("");
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
-  const [count, setCount] = useState("");
-  const [cause, setCause] = useState("");
-  const [description, setDescription] = useState("");
-  const [farms, setFarms] = useState<SelectOption[]>([]);
-  const [batches, setBatches] = useState<SelectOption[]>([]);
+  const [birdCount, setBirdCount] = useState("");
+  const [isCulling, setIsCulling] = useState("false");
+  const [reason, setReason] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  useEffect(() => {
-    fetchFarms().then((r) => {
-      const all = (r.data as any[]) ?? [];
-      const assigned = user?.hasGlobalAccess ? all : all.filter((f) => user?.farmIds?.includes(f.id));
-      setFarms(assigned.map((f) => ({ label: f.name, value: f.id })));
-    }).catch(() => {});
-  }, [user]);
+  const { data: rawFarms } = useLookup("farms", async () => {
+    const r = await fetchFarms();
+    return (r.data as any[]) ?? [];
+  });
+  const farms: SelectOption[] = useMemo(() => {
+    const all = rawFarms ?? [];
+    const assigned = user?.hasGlobalAccess ? all : all.filter((f: any) => user?.farmIds?.includes(f.id));
+    return assigned.map((f: any) => ({ label: f.name, value: f.id }));
+  }, [rawFarms, user]);
 
-  useEffect(() => {
-    if (!farmId) { setBatches([]); return; }
-    fetchFlockBatches(farmId).then((r) => {
-      setBatches(((r.data as any[]) ?? []).map((b) => ({ label: b.batchCode, value: b.id })));
-    }).catch(() => {});
-  }, [farmId]);
+  const { data: rawBatches } = useLookup(
+    `flockBatches:${farmId}`,
+    async () => { const r = await fetchFlockBatches(farmId); return (r.data as any[]) ?? []; },
+    !farmId
+  );
+  const batches: SelectOption[] = useMemo(
+    () => (rawBatches ?? []).map((b: any) => ({ label: `${b.code} — ${b.name}`, value: b.id })),
+    [rawBatches]
+  );
 
   function validate() {
     const e: Record<string, string> = {};
     if (!farmId) e.farmId = "Select a farm";
     if (!batchId) e.batchId = "Select a flock batch";
     if (!date) e.date = "Date is required";
-    if (!count || isNaN(Number(count)) || Number(count) <= 0) e.count = "Enter mortality count";
-    if (!cause) e.cause = "Select a cause";
+    if (!birdCount || isNaN(Number(birdCount)) || Number(birdCount) <= 0) e.birdCount = "Enter bird count";
     setErrors(e);
     return Object.keys(e).length === 0;
   }
@@ -75,18 +74,24 @@ export function MortalityScreen() {
 
       <View style={styles.row}>
         <View style={styles.half}>
-          <FormField label="Count" required value={count} onChangeText={(v) => { setCount(v); setErrors((e) => ({ ...e, count: "" })); }} error={errors.count} keyboardType="numeric" placeholder="e.g. 3" />
+          <FormField label="Bird Count" required value={birdCount} onChangeText={(v) => { setBirdCount(v); setErrors((e) => ({ ...e, birdCount: "" })); }} error={errors.birdCount} keyboardType="numeric" placeholder="e.g. 3" />
         </View>
         <View style={styles.half}>
-          <SelectField label="Cause" value={cause} options={CAUSE_OPTIONS} onChange={(v) => { setCause(v); setErrors((e) => ({ ...e, cause: "" })); }} error={errors.cause} required />
+          <SelectField label="Type" value={isCulling} options={CULLING_OPTIONS} onChange={setIsCulling} required />
         </View>
       </View>
 
-      <FormField label="Description / Observation" value={description} onChangeText={setDescription} placeholder="Describe symptoms or findings…" multiline numberOfLines={3} style={{ minHeight: 80, textAlignVertical: "top" } as any} />
+      <FormField label="Reason / Observation" value={reason} onChangeText={setReason} placeholder="Describe cause or symptoms…" multiline numberOfLines={3} style={{ minHeight: 80, textAlignVertical: "top" } as any} />
 
       <Button label="Record Mortality" loading={loading} onPress={async () => {
         if (!validate()) return;
-        await submit({ farmId, flockBatchId: batchId, recordDate: date, count: Number(count), cause, description: description || undefined });
+        await submit({
+          flockBatchId: batchId,
+          recordDate: date,
+          birdCount: Number(birdCount),
+          isCulling: isCulling === "true",
+          reason: reason || undefined
+        });
       }} size="lg" />
     </ScreenWrapper>
   );

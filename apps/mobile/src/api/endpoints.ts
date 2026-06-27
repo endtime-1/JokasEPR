@@ -1,3 +1,14 @@
+import type {
+  SubmitDailyPoultryRecord,
+  SubmitEggProductionRecord,
+  SubmitFeedConsumptionRecord,
+  SubmitMedicationRecord,
+  SubmitMortalityRecord,
+  SubmitProductionRecord,
+  SubmitSalesOrder,
+  SubmitStockMovement,
+  SubmitVaccinationRecord
+} from "@jokas/shared";
 import { apiFetch } from "./client";
 
 export type ApiEnvelope<T> = { data: T; meta?: Record<string, unknown> };
@@ -14,26 +25,26 @@ export const fetchWarehouses = () =>
 
 // Poultry
 export const fetchFlockBatches = (farmId?: string) =>
-  apiFetch<ApiEnvelope<{ id: string; batchCode: string; farmId: string }[]>>(
+  apiFetch<ApiEnvelope<{ id: string; code: string; name: string; farmId: string }[]>>(
     `/poultry/flock-batches?limit=100${farmId ? `&farmId=${farmId}` : ""}`
   );
 
-export const submitDailyPoultryRecord = (payload: Record<string, unknown>) =>
+export const submitDailyPoultryRecord = (payload: SubmitDailyPoultryRecord) =>
   apiFetch<ApiEnvelope<unknown>>("/poultry/daily-records", { method: "POST", body: JSON.stringify(payload) });
 
-export const submitMortality = (payload: Record<string, unknown>) =>
+export const submitMortality = (payload: SubmitMortalityRecord) =>
   apiFetch<ApiEnvelope<unknown>>("/poultry/mortality-records", { method: "POST", body: JSON.stringify(payload) });
 
-export const submitEggProduction = (payload: Record<string, unknown>) =>
+export const submitEggProduction = (payload: SubmitEggProductionRecord) =>
   apiFetch<ApiEnvelope<unknown>>("/poultry/egg-production-records", { method: "POST", body: JSON.stringify(payload) });
 
-export const submitFeedConsumption = (payload: Record<string, unknown>) =>
+export const submitFeedConsumption = (payload: SubmitFeedConsumptionRecord) =>
   apiFetch<ApiEnvelope<unknown>>("/poultry/feed-consumption-records", { method: "POST", body: JSON.stringify(payload) });
 
-export const submitMedication = (payload: Record<string, unknown>) =>
+export const submitMedication = (payload: SubmitMedicationRecord) =>
   apiFetch<ApiEnvelope<unknown>>("/poultry/medication-records", { method: "POST", body: JSON.stringify(payload) });
 
-export const submitVaccination = (payload: Record<string, unknown>) =>
+export const submitVaccination = (payload: SubmitVaccinationRecord) =>
   apiFetch<ApiEnvelope<unknown>>("/poultry/vaccination-records", { method: "POST", body: JSON.stringify(payload) });
 
 // Inventory
@@ -42,7 +53,7 @@ export const fetchInventoryItems = (warehouseId?: string) =>
     `/inventory/items?limit=200${warehouseId ? `&warehouseId=${warehouseId}` : ""}`
   );
 
-export const submitStockMovement = (payload: Record<string, unknown>) =>
+export const submitStockMovement = (payload: SubmitStockMovement) =>
   apiFetch<ApiEnvelope<unknown>>("/inventory/stock-movements", { method: "POST", body: JSON.stringify(payload) });
 
 // Sales
@@ -52,7 +63,7 @@ export const fetchCustomers = () =>
 export const fetchProducts = () =>
   apiFetch<ApiEnvelope<{ id: string; name: string; sku: string; unitPrice: number }[]>>("/inventory/products?limit=200");
 
-export const submitSalesOrder = (payload: Record<string, unknown>) =>
+export const submitSalesOrder = (payload: SubmitSalesOrder) =>
   apiFetch<ApiEnvelope<unknown>>("/sales/orders", { method: "POST", body: JSON.stringify(payload) });
 
 // Tasks
@@ -62,13 +73,176 @@ export const fetchMyTasks = () =>
 export const updateTaskStatus = (id: string, payload: { status: string; notes?: string }) =>
   apiFetch<ApiEnvelope<unknown>>(`/hr/tasks/${id}/status`, { method: "PATCH", body: JSON.stringify(payload) });
 
+// Hipro Predictive
+export type HiproPredictiveIngredientRow = {
+  ingredientId: string;
+  name: string;
+  sku: string;
+  kgsPerTon: number;
+  availableKg: number;
+  bagsOnHand: number;
+  tonsOnHand: number;
+  maxProducibleKg: number | null;
+  maxProducibleTons: number | null;
+  feedConsumedKg: number;
+};
+
+export type HiproPredictiveFormula = {
+  formulaId: string;
+  formulaCode: string;
+  formulaName: string;
+  feedType: string;
+  finishedProduct: { name: string; sku: string } | null;
+  targetBatchKg: number;
+  maxProducibleKg: number | null;
+  maxProducibleTons: number | null;
+  maxProducibleBags: number | null;
+  limitingIngredient: { name: string; sku: string } | null;
+  ingredients: HiproPredictiveIngredientRow[];
+};
+
+export type HiproPredictiveIngredientView = {
+  ingredientId: string;
+  name: string;
+  sku: string;
+  availableKg: number;
+  bagsOnHand: number;
+  tonsOnHand: number;
+  feedConsumedKg: number;
+  formulaUsages: Array<{
+    formulaId: string;
+    formulaName: string;
+    feedType: string;
+    kgsPerTon: number;
+    maxProducibleKg: number | null;
+  }>;
+};
+
+export const fetchHiproPredictive = (warehouseId?: string) =>
+  apiFetch<ApiEnvelope<{ asOf: string; warehouseId: string | null; formulas: HiproPredictiveFormula[]; ingredientView: HiproPredictiveIngredientView[] }>>(
+    `/feed-production/hipro-predictive${warehouseId ? `?warehouseId=${warehouseId}` : ""}`
+  );
+
+export type SimulatePredictiveResult = {
+  plans: Array<{
+    formulaId: string;
+    formulaName: string;
+    formulaCode: string;
+    feedType: string;
+    plannedTons: number;
+    plannedKg: number;
+    canProduce: boolean;
+    ingredients: Array<{
+      ingredientId: string;
+      productName: string;
+      sku: string;
+      quantityKg: number;
+      availableKg: number;
+      shortageKg: number;
+      unitCost: number;
+      bagsRequired: number;
+      tonsRequired: number;
+      bagsAvailable: number;
+      tonsAvailable: number;
+    }>;
+  }>;
+  ingredientSummary: Array<{
+    ingredientId: string;
+    name: string;
+    sku: string;
+    totalRequired: number;
+    totalAvailable: number;
+    shortfall: number;
+  }>;
+  allCanProduce: boolean;
+};
+
+export const simulateHiproPredictive = (payload: { warehouseId: string; plans: Array<{ formulaId: string; plannedTons: number }> }) =>
+  apiFetch<ApiEnvelope<SimulatePredictiveResult>>("/feed-production/hipro-predictive/simulate", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+
+// Soya Processing
+export type SoyaOption = { id: string; name: string; code?: string; sku?: string; type?: string };
+
+export type SoyaOptions = {
+  data: {
+    productionSites: SoyaOption[];
+    warehouses: SoyaOption[];
+    products: SoyaOption[];
+    intakes: { id: string; receiptNumber: string; supplierName: string; quantityKg: number }[];
+  };
+};
+
+export const fetchSoyaOptions = () =>
+  apiFetch<SoyaOptions>("/soya-processing/options");
+
+export const submitSoyaIntake = (payload: Record<string, unknown>) =>
+  apiFetch<ApiEnvelope<unknown>>("/soya-processing/intakes", { method: "POST", body: JSON.stringify(payload) });
+
+export const submitSoyaBatch = (payload: Record<string, unknown>) =>
+  apiFetch<ApiEnvelope<unknown>>("/soya-processing/batches", { method: "POST", body: JSON.stringify(payload) });
+
+// Prospect Visits
+export type ProspectVisitOutcome = "INTERESTED" | "NOT_INTERESTED" | "FOLLOW_UP_NEEDED" | "CONVERTED" | "NO_ANSWER";
+export type ProspectVisitType    = "COLD_CALL" | "REFERRAL" | "FOLLOW_UP" | "DEMO" | "REACTIVATION";
+
+export type ProspectVisit = {
+  id: string;
+  prospectName: string;
+  phone?: string;
+  address?: string;
+  latitude?: number;
+  longitude?: number;
+  visitType: ProspectVisitType;
+  outcome: ProspectVisitOutcome;
+  notes?: string;
+  visitedAt: string;
+};
+
+export const submitProspectVisit = (payload: Record<string, unknown>) =>
+  apiFetch<ApiEnvelope<ProspectVisit>>("/sales/prospect-visits", { method: "POST", body: JSON.stringify(payload) });
+
+export const fetchMyProspectVisits = (dateFrom?: string) =>
+  apiFetch<ApiEnvelope<ProspectVisit[]>>(`/sales/prospect-visits/my?limit=50${dateFrom ? `&dateFrom=${dateFrom}` : ""}`);
+
+// Attendance (self check-in)
+export const submitAttendanceMe = (payload: Record<string, unknown>) =>
+  apiFetch<ApiEnvelope<unknown>>("/hr/attendance/me", { method: "POST", body: JSON.stringify(payload) });
+
+// Quality
+export type QualityOptItem = { id: string; name: string; code?: string };
+export type QualityOptionsResponse = {
+  data: {
+    templates: (QualityOptItem & { checkType: string })[];
+    farms: QualityOptItem[];
+    warehouses: QualityOptItem[];
+    productionSites: QualityOptItem[];
+  };
+};
+export const fetchQualityOptions = () =>
+  apiFetch<QualityOptionsResponse>("/quality/options");
+
+export const submitQualityCheck = (payload: Record<string, unknown>) =>
+  apiFetch<ApiEnvelope<{ id: string }>>("/quality/checks", { method: "POST", body: JSON.stringify(payload) });
+
+export const passQualityCheck = (id: string, payload: { notes?: string; overallScore?: number }) =>
+  apiFetch<ApiEnvelope<unknown>>(`/quality/checks/${id}/pass`, { method: "PATCH", body: JSON.stringify(payload) });
+
+export const failQualityCheck = (id: string, payload: { reason: string; notes?: string; overallScore?: number }) =>
+  apiFetch<ApiEnvelope<unknown>>(`/quality/checks/${id}/fail`, { method: "PATCH", body: JSON.stringify(payload) });
+
+export const conditionalPassQualityCheck = (id: string, payload: { conditions: string; notes?: string; overallScore?: number }) =>
+  apiFetch<ApiEnvelope<unknown>>(`/quality/checks/${id}/conditional-pass`, { method: "PATCH", body: JSON.stringify(payload) });
+
 // Production
 export const fetchProductionOrders = () =>
   apiFetch<ApiEnvelope<{ id: string; orderNumber: string; productionSiteId: string; status: string }[]>>(
     "/feed-production/orders?limit=50&status=IN_PROGRESS"
   );
 
-export const submitProductionRecord = (payload: Record<string, unknown>) =>
+export const submitProductionRecord = (payload: SubmitProductionRecord) =>
   apiFetch<ApiEnvelope<unknown>>("/feed-production/batches", { method: "POST", body: JSON.stringify(payload) });
 
 // Notifications
@@ -103,6 +277,28 @@ export const scanQrCode = (code: string) =>
 // Dashboard
 export const fetchDashboardSummary = () =>
   apiFetch<ApiEnvelope<Record<string, unknown>>>("/dashboard/summary");
+
+export type DutyItem = {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
+  screen: string;
+  slot: "MORNING" | "EVENING" | "ANYTIME";
+  count: number;
+  doneToday: boolean;
+};
+
+export type MyDutiesResponse = {
+  data: {
+    date: string;
+    duties: DutyItem[];
+    summary: { total: number; done: number; pending: number };
+  };
+};
+
+export const fetchMyDuties = () =>
+  apiFetch<MyDutiesResponse>("/dashboard/my-duties");
 
 // Offline Sync
 export type SyncBatchItem = {

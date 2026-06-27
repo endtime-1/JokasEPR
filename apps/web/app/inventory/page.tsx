@@ -1,3 +1,3 @@
-import { InventoryDashboardPage } from "../../components/inventory-pages";
+import { InventoryDashboardPage } from "../../components/inventory-dashboard";
 
 export default InventoryDashboardPage;

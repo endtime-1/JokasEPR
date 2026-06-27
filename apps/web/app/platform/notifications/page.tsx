@@ -118,7 +118,7 @@ export default function NotificationConfigPage() {
                       type="text"
                       value={config.emailFromName ?? ""}
                       onChange={(e) => setConfig((c) => ({ ...c, emailFromName: e.target.value }))}
-                      placeholder="Jokas ERP"
+                      placeholder="AKOKO SOLUTIONS ERP"
                       className="w-full rounded-md border border-line bg-field/40 px-3 py-2 text-sm focus:border-brand focus:outline-none"
                     />
                   </div>
