@@ -75,6 +75,31 @@ export class InventoryService {
     return { data: { warehouses, products, farms, productionSites, items } };
   }
 
+  async listProducts(user: AuthenticatedUser, type?: string) {
+    const products = await this.prisma.product.findMany({
+      where: { companyId: user.companyId, deletedAt: null, ...(type ? { type: type as any } : {}) },
+      select: {
+        id: true,
+        name: true,
+        sku: true,
+        priceLists: {
+          where: { companyId: user.companyId, status: "ACTIVE" },
+          select: { unitPrice: true },
+          orderBy: { validFrom: "desc" },
+          take: 1,
+        },
+      },
+      orderBy: { name: "asc" },
+    });
+    const data = products.map((p) => ({
+      id: p.id,
+      name: p.name,
+      sku: p.sku,
+      unitPrice: p.priceLists[0]?.unitPrice ?? null,
+    }));
+    return { data };
+  }
+
   async listItems(user: AuthenticatedUser, query: InventoryQueryDto) {
     const data = await this.prisma.inventoryItem.findMany({ where: this.itemWhere(user, query), include: { product: true, warehouse: true, farm: true, productionSite: true, stockBatches: { where: { deletedAt: null }, orderBy: { expiryDate: "asc" } } }, orderBy: { createdAt: "desc" } });
     return { data };

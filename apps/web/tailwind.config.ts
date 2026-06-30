@@ -10,7 +10,8 @@ const config: Config = {
         line: "#eadfd2",
         brand: "#f58220",
         brandDark: "#c65f0f",
-        caution: "#b45309"
+        caution: "#b45309",
+        sidebar: "#1a2235"
       },
       boxShadow: {
         panel: "0 18px 44px rgba(31, 41, 51, 0.08)",

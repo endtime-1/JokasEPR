@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { AuthenticatedUser } from "@jokas/shared";
 import { Prisma } from "@prisma/client";
 import { AuditService } from "../audit/audit.service";
@@ -13,11 +13,13 @@ import {
   CreateFeedProductionCostDto,
   CreateFeedProductionOrderDto,
   CreateFeedQualityCheckDto,
+  CreateIngredientDto,
   FeedProductionQueryDto,
   HiproPredictiveQueryDto,
   RecordExternalFeedSaleDto,
   SimulatePredictiveDto,
-  UpdateFeedQualityCheckStatusDto
+  UpdateFeedQualityCheckStatusDto,
+  UpdateIngredientDto
 } from "./dto/feed-production.dto";
 
 type RequestContext = {
@@ -44,7 +46,7 @@ export class FeedProductionService {
 
   async dashboard(user: AuthenticatedUser) {
     const sevenDaysAgo = new Date(Date.now() - 7 * 86400000);
-    const [formulas, orders, batches, qualityChecks, finishedStocks, usage, costs, stalledOrders, weekBatches, formulaStats, orderStats] = await Promise.all([
+    const [formulas, orders, batches, qualityChecks, finishedStocks, usage, costs, stalledOrders, weekBatches, formulaStats, orderStats, systemAlerts] = await Promise.all([
       this.prisma.feedFormula.count({ where: this.formulaWhere(user, {}) }),
       this.prisma.feedProductionOrder.findMany({ where: this.orderWhere(user, {}), orderBy: { createdAt: "desc" }, take: 8 }),
       this.prisma.feedProductionBatch.findMany({
@@ -69,7 +71,13 @@ export class FeedProductionService {
         orderBy: { productionDate: "asc" }
       }),
       this.prisma.feedFormula.groupBy({ by: ["status"], where: { companyId: user.companyId, deletedAt: null }, _count: { status: true } }),
-      this.prisma.feedProductionOrder.groupBy({ by: ["status"], where: { companyId: user.companyId, deletedAt: null }, _count: { status: true } })
+      this.prisma.feedProductionOrder.groupBy({ by: ["status"], where: { companyId: user.companyId, deletedAt: null }, _count: { status: true } }),
+      this.prisma.dashboardAlert.findMany({
+        where: { companyId: user.companyId, businessUnit: "FEED_MILL", status: "OPEN", deletedAt: null },
+        select: { id: true, title: true, message: true, severity: true, occurredAt: true },
+        orderBy: { occurredAt: "desc" },
+        take: 10
+      })
     ]);
 
     const totalProducedKg = batches.reduce((sum, batch) => sum + Number(batch.producedQuantityKg), 0);
@@ -96,7 +104,8 @@ export class FeedProductionService {
         recentBatches: batches,
         alerts: {
           stalledOrders: stalledOrders.map((o) => ({ id: o.id, orderNumber: o.orderNumber, status: o.status, scheduledDate: o.scheduledDate, plannedQuantityKg: Number(o.plannedQuantityKg), formula: o.formula })),
-          pendingQC: qualityChecks
+          pendingQC: qualityChecks,
+          systemAlerts
         },
         trends: {
           production: weekBatches.map((b) => ({ date: b.productionDate, producedKg: Number(b.producedQuantityKg), wastageKg: Number(b.wastageKg) }))
@@ -191,7 +200,7 @@ export class FeedProductionService {
 
   async createFormula(user: AuthenticatedUser, dto: CreateFeedFormulaDto, context: RequestContext) {
     const finishedProduct = await this.getProduct(user.companyId, dto.finishedProductId);
-    const branchId = dto.branchId ?? finishedProduct.branchId;
+    const branchId = dto.branchId ?? finishedProduct.branchId ?? user.branchIds[0];
     if (!branchId) {
       throw new BadRequestException("A branch is required for this feed formula.");
     }
@@ -292,7 +301,8 @@ export class FeedProductionService {
         finishedProduct: { select: { id: true, name: true, sku: true } },
         batches: { select: { id: true, batchNumber: true, status: true, producedQuantityKg: true } }
       },
-      orderBy: { scheduledDate: "desc" }
+      orderBy: { scheduledDate: "desc" },
+      ...(query.limit ? { take: query.limit } : {})
     });
     return { data };
   }
@@ -871,6 +881,65 @@ export class FeedProductionService {
     return { data: { plans, ingredientSummary: Array.from(summaryMap.values()), allCanProduce: plans.every((p) => p.canProduce) } };
   }
 
+  // ── Ingredient (Raw Material) Management ─────────────────────────────────────
+
+  async listIngredients(user: AuthenticatedUser) {
+    const items = await this.prisma.product.findMany({
+      where: { companyId: user.companyId, deletedAt: null, type: "RAW_MATERIAL" },
+      select: { id: true, name: true, sku: true, description: true, status: true, uom: { select: { id: true, name: true, symbol: true } } },
+      orderBy: { name: "asc" }
+    });
+    return { data: items };
+  }
+
+  async createIngredient(user: AuthenticatedUser, dto: CreateIngredientDto) {
+    const sku = dto.sku.toUpperCase();
+    const conflict = await this.prisma.product.findUnique({ where: { companyId_sku: { companyId: user.companyId, sku } } });
+    if (conflict) throw new ConflictException(`SKU "${sku}" is already in use.`);
+
+    const uom = await this.prisma.unitOfMeasure.findFirst({ where: { id: dto.uomId, companyId: user.companyId } });
+    if (!uom) throw new NotFoundException("Unit of measure not found.");
+
+    const item = await this.prisma.product.create({
+      data: { companyId: user.companyId, name: dto.name, sku, type: "RAW_MATERIAL", status: "ACTIVE", uomId: dto.uomId, description: dto.description },
+      select: { id: true, name: true, sku: true, description: true, status: true, uom: { select: { id: true, name: true, symbol: true } } }
+    });
+    return { data: item };
+  }
+
+  async updateIngredient(user: AuthenticatedUser, id: string, dto: UpdateIngredientDto) {
+    const item = await this.prisma.product.findFirst({ where: { id, companyId: user.companyId, deletedAt: null, type: "RAW_MATERIAL" } });
+    if (!item) throw new NotFoundException("Ingredient not found.");
+
+    if (dto.sku) {
+      const sku = dto.sku.toUpperCase();
+      if (sku !== item.sku) {
+        const conflict = await this.prisma.product.findUnique({ where: { companyId_sku: { companyId: user.companyId, sku } } });
+        if (conflict) throw new ConflictException(`SKU "${sku}" is already in use.`);
+      }
+    }
+
+    const updated = await this.prisma.product.update({
+      where: { id },
+      data: {
+        ...(dto.name && { name: dto.name }),
+        ...(dto.sku && { sku: dto.sku.toUpperCase() }),
+        ...(dto.uomId && { uomId: dto.uomId }),
+        ...(dto.description !== undefined && { description: dto.description }),
+        ...(dto.status && { status: dto.status })
+      },
+      select: { id: true, name: true, sku: true, description: true, status: true, uom: { select: { id: true, name: true, symbol: true } } }
+    });
+    return { data: updated };
+  }
+
+  async deleteIngredient(user: AuthenticatedUser, id: string) {
+    const item = await this.prisma.product.findFirst({ where: { id, companyId: user.companyId, deletedAt: null, type: "RAW_MATERIAL" } });
+    if (!item) throw new NotFoundException("Ingredient not found.");
+    await this.prisma.product.update({ where: { id }, data: { deletedAt: new Date() } });
+    return { data: { ok: true } };
+  }
+
   private async materialAvailability(user: AuthenticatedUser, formulaId: string, warehouseId: string, totalQuantityKg: number) {
     this.assertWarehouseAccess(user, warehouseId);
     const formula = await this.getFormulaForCosting(user, formulaId);
@@ -1135,6 +1204,7 @@ export class FeedProductionService {
       branchId: query.branchId,
       productionSiteId: query.productionSiteId,
       formulaId: query.formulaId,
+      ...(query.status ? { status: query.status } : {}),
       ...(this.dateRange(query, "scheduledDate")),
       ...(user.hasGlobalAccess ? {} : { productionSiteId: { in: user.productionSiteIds } })
     };

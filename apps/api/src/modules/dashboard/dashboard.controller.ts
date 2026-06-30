@@ -13,6 +13,11 @@ import { DashboardQueryDto } from "./dto/dashboard-query.dto";
 export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 
+  @Get("summary")
+  summary(@CurrentUser() user: AuthenticatedUser) {
+    return this.dashboardService.summary(user);
+  }
+
   @Get("options")
   options(@CurrentUser() user: AuthenticatedUser) {
     return this.dashboardService.options(user);

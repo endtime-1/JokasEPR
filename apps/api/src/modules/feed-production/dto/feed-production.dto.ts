@@ -2,7 +2,8 @@ import {
   FeedFormulaStatus,
   FeedProductionOrderStatus,
   FeedQualityCheckStatus,
-  FeedType
+  FeedType,
+  ProductStatus
 } from "@prisma/client";
 import { Type } from "class-transformer";
 import { IsArray, IsDateString, IsEnum, IsInt, IsNumber, IsOptional, IsString, IsUUID, MaxLength, Min, ValidateNested } from "class-validator";
@@ -27,6 +28,16 @@ export class FeedProductionQueryDto {
   @IsOptional()
   @IsUUID()
   productionBatchId?: string;
+
+  @IsOptional()
+  @IsEnum(FeedProductionOrderStatus)
+  status?: FeedProductionOrderStatus;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  limit?: number;
 
   @IsOptional()
   @IsDateString()
@@ -310,4 +321,19 @@ export class SimulatePredictiveDto {
   @ValidateNested({ each: true })
   @Type(() => SimulatePredictivePlanItemDto)
   plans!: SimulatePredictivePlanItemDto[];
+}
+
+export class CreateIngredientDto {
+  @IsString() @MaxLength(160) name!: string;
+  @IsString() @MaxLength(48) sku!: string;
+  @IsUUID() uomId!: string;
+  @IsOptional() @IsString() @MaxLength(500) description?: string;
+}
+
+export class UpdateIngredientDto {
+  @IsOptional() @IsString() @MaxLength(160) name?: string;
+  @IsOptional() @IsString() @MaxLength(48) sku?: string;
+  @IsOptional() @IsUUID() uomId?: string;
+  @IsOptional() @IsString() @MaxLength(500) description?: string;
+  @IsOptional() @IsEnum(ProductStatus) status?: ProductStatus;
 }

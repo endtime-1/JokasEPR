@@ -1,12 +1,15 @@
 import { Body, Controller, Delete, Get, Ip, Param, Post, Headers, UseGuards } from "@nestjs/common";
-import { AuthenticatedUser } from "@jokas/shared";
+import { AuthenticatedUser, PERMISSIONS } from "@jokas/shared";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import { RequirePermissions } from "../../common/decorators/permissions.decorator";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
+import { PermissionsGuard } from "../../common/guards/permissions.guard";
 import { AiChatDto } from "./dto/ai-chat.dto";
 import { AiService } from "./ai.service";
 
 @Controller("ai")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
+@RequirePermissions(PERMISSIONS.AI_READ)
 export class AiController {
   constructor(private readonly ai: AiService) {}
 

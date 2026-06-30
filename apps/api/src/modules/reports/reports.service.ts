@@ -224,9 +224,10 @@ export class ReportsService {
       take: 1000
     });
     const mappedRows = rows.map((row: Record<string, unknown>) => this.normalize(definition.map(row))).filter((row: Record<string, unknown>) => definition.filter?.(row) ?? true);
-    const totals = this.totals(definition.columns, mappedRows);
-    const chart = this.chart(definition, mappedRows);
-    return { data: { definition: this.publicDefinition(definition), rows: mappedRows, totals, chart } };
+    const resolvedRows = await this.resolveIds(definition.columns, mappedRows);
+    const totals = this.totals(definition.columns, resolvedRows);
+    const chart = this.chart(definition, resolvedRows);
+    return { data: { definition: this.publicDefinition(definition), rows: resolvedRows, totals, chart } };
   }
 
   async export(id: string, format: "csv" | "xls" | "pdf" | "html", user: AuthenticatedUser, query: ReportQueryDto, context: RequestContext) {
@@ -305,6 +306,59 @@ export class ReportsService {
     if (!requested) return;
     if (!user.hasGlobalAccess && allowed.length > 0 && !allowed.includes(requested)) throw new ForbiddenException(`You do not have access to this ${field.replace("Id", "")}.`);
     if (fields.includes(field)) where[field] = requested;
+  }
+
+  private async resolveIds(columns: Column[], rows: Record<string, unknown>[]): Promise<Record<string, unknown>[]> {
+    const ID_MODELS: Record<string, { model: string; nameField: string }> = {
+      farmId:           { model: "farm",           nameField: "name" },
+      poultryHouseId:   { model: "poultryHouse",   nameField: "name" },
+      flockBatchId:     { model: "flockBatch",      nameField: "code" },
+      productionSiteId: { model: "productionSite",  nameField: "name" },
+      warehouseId:      { model: "warehouse",       nameField: "name" },
+      branchId:         { model: "branch",          nameField: "name" },
+      customerId:       { model: "customer",        nameField: "name" },
+      productId:        { model: "product",         nameField: "name" },
+      feedProductId:    { model: "product",         nameField: "name" },
+      rawMaterialId:    { model: "product",         nameField: "name" },
+      finishedProductId:{ model: "product",         nameField: "name" },
+      formulaId:        { model: "feedFormula",     nameField: "name" },
+    };
+
+    const idColumns = columns.map((c) => c.key).filter((key) => key in ID_MODELS);
+    if (idColumns.length === 0 || rows.length === 0) return rows;
+
+    const idSets: Record<string, Set<string>> = {};
+    for (const col of idColumns) idSets[col] = new Set();
+    for (const row of rows) {
+      for (const col of idColumns) {
+        const val = row[col];
+        if (typeof val === "string" && val) idSets[col].add(val);
+      }
+    }
+
+    const nameMaps: Record<string, Map<string, string>> = {};
+    await Promise.all(
+      idColumns.map(async (col) => {
+        const ids = [...idSets[col]];
+        if (ids.length === 0) return;
+        const { model, nameField } = ID_MODELS[col];
+        const delegate = (this.prisma as unknown as Record<string, { findMany: (a: unknown) => Promise<Record<string, unknown>[]> }>)[model];
+        if (!delegate) return;
+        const records = await delegate.findMany({ where: { id: { in: ids } }, select: { id: true, [nameField]: true } }).catch(() => [] as Record<string, unknown>[]);
+        const m = new Map<string, string>();
+        for (const r of records) m.set(r.id as string, (r[nameField] as string) ?? (r.id as string));
+        nameMaps[col] = m;
+      })
+    );
+
+    return rows.map((row) => {
+      const out = { ...row };
+      for (const col of idColumns) {
+        const val = out[col];
+        if (typeof val === "string" && nameMaps[col]?.has(val)) out[col] = nameMaps[col].get(val);
+      }
+      return out;
+    });
   }
 
   private normalize(row: Record<string, unknown>) {

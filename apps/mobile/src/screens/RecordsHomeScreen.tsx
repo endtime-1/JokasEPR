@@ -25,6 +25,24 @@ const GROUPS: { title: string; icon: string; items: RecordItem[] }[] = [
       { icon: "🌾", label: "Feed Consumption",       desc: "Feed dispensed to flocks",                 screen: "FeedConsumption",  roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#86efac" },
       { icon: "💊", label: "Medication Record",      desc: "Treatments and dosages administered",      screen: "Medication",       roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#a78bfa" },
       { icon: "💉", label: "Vaccination Record",     desc: "Vaccines administered to birds",           screen: "Vaccination",      roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#67e8f9" },
+      { icon: "🏥", label: "Health Observation",     desc: "Log a flock health or welfare concern",    screen: "HealthObservation", roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#fbbf24" },
+      { icon: "⚖️", label: "Bird Weight Record",     desc: "Log body weight samples for growth check", screen: "BirdWeight",        roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#34d399" },
+    ],
+  },
+  {
+    title: "Finance",
+    icon: "💰",
+    items: [
+      { icon: "💸", label: "Log Expense",            desc: "Submit a business expense for approval",   screen: "ExpenseNew",        roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#f87171" },
+      { icon: "📋", label: "My Expenses",            desc: "View status of submitted expenses",        screen: "ExpenseList",       roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#fb923c" },
+      { icon: "💳", label: "Collect Payment",        desc: "Record a customer payment received",       screen: "PaymentCollect",    roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"],          color: "#34d399" },
+    ],
+  },
+  {
+    title: "Procurement & Receiving",
+    icon: "🚚",
+    items: [
+      { icon: "🚚", label: "Receive Goods (GRN)",    desc: "Log goods received against a purchase order", screen: "PurchaseOrderList", roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"],       color: "#60a5fa" },
     ],
   },
   {
@@ -32,6 +50,9 @@ const GROUPS: { title: string; icon: string; items: RecordItem[] }[] = [
     icon: "📦",
     items: [
       { icon: "📦", label: "Stock Movement",         desc: "Receive, issue, or transfer stock",        screen: "StockMovement",    roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"],          color: "#fb923c" },
+      { icon: "⚖️", label: "Stock Adjustment",       desc: "Correct stock counts or write off losses", screen: "StockAdjustment",  roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"],          color: "#f59e0b" },
+      { icon: "🔄", label: "Stock Transfer",         desc: "Move stock between warehouses",            screen: "StockTransfer",    roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"],          color: "#60a5fa" },
+      { icon: "⚠️", label: "Stock Alerts",           desc: "Low stock & upcoming expiry warnings",     screen: "StockAlerts",      roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"],          color: "#ef4444" },
     ],
   },
   {
@@ -55,6 +76,16 @@ const GROUPS: { title: string; icon: string; items: RecordItem[] }[] = [
     icon: "🔬",
     items: [
       { icon: "🔬", label: "Quality Inspection",     desc: "Log a new quality check with verdict",     screen: "QualityCheck",     roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"],          color: "#818cf8" },
+      { icon: "✅", label: "Corrective Action",      desc: "Log a corrective action for a quality issue", screen: "CorrectiveAction", roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"],          color: "#34d399" },
+      { icon: "🧪", label: "Lab Report",             desc: "Submit external lab analysis results",     screen: "LabReport",        roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"],          color: "#60a5fa" },
+    ],
+  },
+  {
+    title: "Maintenance",
+    icon: "🔧",
+    items: [
+      { icon: "📅", label: "Maintenance Schedule",    desc: "View upcoming tasks and log work done",    screen: "MaintenanceTasks",  roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#60a5fa" },
+      { icon: "🔧", label: "Report Breakdown",        desc: "Log a machine or equipment failure",       screen: "BreakdownReport",   roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#ef4444" },
     ],
   },
   {
@@ -62,6 +93,16 @@ const GROUPS: { title: string; icon: string; items: RecordItem[] }[] = [
     icon: "🗓️",
     items: [
       { icon: "🗓️", label: "Attendance Check-In",    desc: "Log your attendance for today",            screen: "AttendanceCheckIn", roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#60a5fa" },
+    ],
+  },
+  {
+    title: "Manager Views",
+    icon: "📊",
+    items: [
+      { icon: "📈", label: "Finance Overview",        desc: "Revenue, expenses, net profit & bank balances", screen: "FinanceMobile",      roles: ["MANAGER","CEO","SUPER_ADMIN"], color: "#34d399" },
+      { icon: "⏳", label: "Debtors",                 desc: "Outstanding customer invoices & balances",      screen: "DebtorList",         roles: ["MANAGER","CEO","SUPER_ADMIN"], color: "#f87171" },
+      { icon: "👥", label: "Employee Directory",      desc: "Search staff by name, code, or role",           screen: "EmployeeDirectory",  roles: ["MANAGER","CEO","SUPER_ADMIN"], color: "#60a5fa" },
+      { icon: "🗓️", label: "Today's Attendance",     desc: "Attendance summary and check-in status",        screen: "ShiftView",          roles: ["MANAGER","CEO","SUPER_ADMIN"], color: "#a78bfa" },
     ],
   },
   {

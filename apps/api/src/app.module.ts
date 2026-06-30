@@ -28,6 +28,7 @@ import { SettingsModule } from "./modules/settings/settings.module";
 import { SoyaProcessingModule } from "./modules/soya-processing/soya-processing.module";
 import { SyncModule } from "./modules/sync/sync.module";
 import { QuickBooksModule } from "./modules/quickbooks/quickbooks.module";
+import { PublicModule } from "./modules/public/public.module";
 
 @Module({
   imports: [
@@ -62,7 +63,8 @@ import { QuickBooksModule } from "./modules/quickbooks/quickbooks.module";
     ReportsModule,
     SettingsModule,
     SyncModule,
-    QuickBooksModule
+    QuickBooksModule,
+    PublicModule
   ]
 })
 export class AppModule {}

@@ -92,7 +92,7 @@ describe("apiFetch", () => {
 
   it("throws ApiError with the correct status code on non-2xx", async () => {
     mockFetch.mockResolvedValueOnce(res("Not Found", 404));
-    const err = await apiFetch("/test").catch((e) => e);
+    const err = await apiFetch("/test").catch((e) => e) as ApiError;
     expect(err).toBeInstanceOf(ApiError);
     expect(err.status).toBe(404);
   });

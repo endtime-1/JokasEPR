@@ -78,6 +78,12 @@ export class PoultryController {
 
   // ─── Batches ──────────────────────────────────────────────────────────────
 
+  @Get("flock-batches")
+  @RequirePermissions(PERMISSIONS.POULTRY_READ)
+  flockBatches(@CurrentUser() user: AuthenticatedUser, @Query() query: PoultryQueryDto) {
+    return this.poultryService.listBatches(user, query);
+  }
+
   @Get("batches")
   @RequirePermissions(PERMISSIONS.POULTRY_READ)
   batches(@CurrentUser() user: AuthenticatedUser, @Query() query: PoultryQueryDto) {

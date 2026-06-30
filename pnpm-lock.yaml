@@ -230,6 +230,43 @@ importers:
         specifier: ^5.7.2
         version: 5.9.3
 
+  apps/storefront:
+    dependencies:
+      lucide-react:
+        specifier: ^0.469.0
+        version: 0.469.0(react@19.1.0)
+      next:
+        specifier: ^15.5.19
+        version: 15.5.19(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.7(react@19.1.0))(react@19.1.0)
+      react:
+        specifier: ^19.1.0
+        version: 19.1.0
+      react-dom:
+        specifier: ^19.1.0
+        version: 19.2.7(react@19.1.0)
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.19.21
+      '@types/react':
+        specifier: ^19.1.17
+        version: 19.1.17
+      '@types/react-dom':
+        specifier: ^19.1.5
+        version: 19.2.3(@types/react@19.1.17)
+      autoprefixer:
+        specifier: ^10.4.20
+        version: 10.5.0(postcss@8.5.15)
+      postcss:
+        specifier: ^8.4.49
+        version: 8.5.15
+      tailwindcss:
+        specifier: ^3.4.17
+        version: 3.4.19(tsx@4.22.4)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+
   apps/web:
     dependencies:
       '@jokas/shared':
@@ -1956,6 +1993,11 @@ packages:
     resolution: {integrity: sha512-MEe3UeoENYVFXzoXEWsvcpg6ZvlrFNlOQ7EOsvhI3CfAXwzPfO8Qwuxd40nepsYKqyyVQnTdEfv68q91yLcKrQ==}
     peerDependencies:
       '@types/react': ^18.0.0
+
+  '@types/react-dom@19.2.3':
+    resolution: {integrity: sha512-jp2L/eY6fn+KgVVQAOqYItbF0VY/YApe5Mz2F0aykSO8gx31bYCZyvSeYxCHKvzHG5eZjc+zyaS5BrBWya2+kQ==}
+    peerDependencies:
+      '@types/react': ^19.2.0
 
   '@types/react-reconciler@0.33.0':
     resolution: {integrity: sha512-HZOXsKT0tGI9LlUw2LuedXsVeB88wFa536vVL0M6vE8zN63nI+sSr1ByxmPToP5K5bukaVscyeCJcF9guVNJ1g==}
@@ -4567,6 +4609,11 @@ packages:
     peerDependencies:
       react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0-rc
 
+  lucide-react@0.469.0:
+    resolution: {integrity: sha512-28vvUnnKQ/dBwiCQtwJw7QauYnE7yd2Cyp4tTTJpvglX4EMpbflcdBgrgToX2j71B3YvugK/NH3BGUk+E/p/Fw==}
+    peerDependencies:
+      react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
+
   luxon@3.7.2:
     resolution: {integrity: sha512-vtEhXh/gNjI9Yg1u4jX/0YVPMvxzHuGgCm6tC5kZyb08yjGWGnqAjGJvcXbqQR2P3MyMEFnRbpcdFS6PBcLqew==}
     engines: {node: '>=12'}
@@ -5289,6 +5336,11 @@ packages:
     resolution: {integrity: sha512-5m4nQKp+rZRb09LNH59GM4BxTh9251/ylbKIbpe7TpGxfJ+9kv6BLkLBXIjjspbgbnIBNqlI23tRnTWT0snUIw==}
     peerDependencies:
       react: ^18.3.1
+
+  react-dom@19.2.7:
+    resolution: {integrity: sha512-t0BRVXvbiE/o20Hfw669rLbMCDWtYZLvmJigy2f0MxsXF+71pxhR3xOkspmsO8h3ZlNzyibAmtCa3l4lYKk6gQ==}
+    peerDependencies:
+      react: ^19.2.7
 
   react-freeze@1.0.4:
     resolution: {integrity: sha512-r4F0Sec0BLxWicc7HEyo2x3/2icUTrRmDjaaRyzzn+7aDyFZliszMDOgLVwSnQnYENOlL1o569Ze2HZefk8clA==}
@@ -8555,6 +8607,10 @@ snapshots:
   '@types/react-dom@18.3.7(@types/react@18.3.31)':
     dependencies:
       '@types/react': 18.3.31
+
+  '@types/react-dom@19.2.3(@types/react@19.1.17)':
+    dependencies:
+      '@types/react': 19.1.17
 
   '@types/react-reconciler@0.33.0(@types/react@19.1.17)':
     dependencies:
@@ -11838,6 +11894,10 @@ snapshots:
     dependencies:
       react: 18.3.1
 
+  lucide-react@0.469.0(react@19.1.0):
+    dependencies:
+      react: 19.1.0
+
   luxon@3.7.2: {}
 
   magic-string@0.30.8:
@@ -12149,6 +12209,30 @@ snapshots:
       react: 18.3.1
       react-dom: 18.3.1(react@18.3.1)
       styled-jsx: 5.1.6(@babel/core@7.29.7)(react@18.3.1)
+    optionalDependencies:
+      '@next/swc-darwin-arm64': 15.5.19
+      '@next/swc-darwin-x64': 15.5.19
+      '@next/swc-linux-arm64-gnu': 15.5.19
+      '@next/swc-linux-arm64-musl': 15.5.19
+      '@next/swc-linux-x64-gnu': 15.5.19
+      '@next/swc-linux-x64-musl': 15.5.19
+      '@next/swc-win32-arm64-msvc': 15.5.19
+      '@next/swc-win32-x64-msvc': 15.5.19
+      babel-plugin-react-compiler: 1.0.0
+      sharp: 0.34.5
+    transitivePeerDependencies:
+      - '@babel/core'
+      - babel-plugin-macros
+
+  next@15.5.19(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.7(react@19.1.0))(react@19.1.0):
+    dependencies:
+      '@next/env': 15.5.19
+      '@swc/helpers': 0.5.15
+      caniuse-lite: 1.0.30001799
+      postcss: 8.4.31
+      react: 19.1.0
+      react-dom: 19.2.7(react@19.1.0)
+      styled-jsx: 5.1.6(react@19.1.0)
     optionalDependencies:
       '@next/swc-darwin-arm64': 15.5.19
       '@next/swc-darwin-x64': 15.5.19
@@ -12633,6 +12717,11 @@ snapshots:
       loose-envify: 1.4.0
       react: 18.3.1
       scheduler: 0.23.2
+
+  react-dom@19.2.7(react@19.1.0):
+    dependencies:
+      react: 19.1.0
+      scheduler: 0.27.0
 
   react-freeze@1.0.4(react@19.1.0):
     dependencies:
@@ -13267,6 +13356,11 @@ snapshots:
       react: 18.3.1
     optionalDependencies:
       '@babel/core': 7.29.7
+
+  styled-jsx@5.1.6(react@19.1.0):
+    dependencies:
+      client-only: 0.0.1
+      react: 19.1.0
 
   sucrase@3.35.1:
     dependencies:

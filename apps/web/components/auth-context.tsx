@@ -32,8 +32,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOutRef = useRef(false);
 
   useEffect(() => {
-    apiFetch<ApiEnvelope<Profile>>("/auth/me")
-      .then((res) => setProfile(res.data))
+    fetch("/api/auth/me", { credentials: "include" })
+      .then(async (res) => {
+        if (!res.ok) throw new Error("Unauthorized");
+        const json = (await res.json()) as ApiEnvelope<Profile>;
+        setProfile(json.data);
+      })
       .catch(() => router.replace("/login"))
       .finally(() => setReady(true));
   }, [router]);

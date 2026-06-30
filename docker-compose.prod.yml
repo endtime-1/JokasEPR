@@ -78,6 +78,31 @@ services:
         max-size: "10m"
         max-file: "5"
 
+  # ── Storefront (public customer-facing shop) ───────────────────────────────
+  storefront:
+    build:
+      context: .
+      dockerfile: infra/docker/storefront.prod.Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+      NODE_ENV: production
+    depends_on:
+      - api
+    networks:
+      - internal
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   # ── Nginx (reverse proxy + SSL) ────────────────────────────────────────────
   nginx:
     image: nginx:1.27-alpine
@@ -93,6 +118,7 @@ services:
     depends_on:
       - api
       - web
+      - storefront
     networks:
       - internal
     logging:

@@ -182,6 +182,6 @@ export class ProductListQueryDto {
   @IsOptional() @IsEnum(ProductStatus) status?: ProductStatus;
   @IsOptional() @IsUUID() categoryId?: string;
   @IsOptional() @IsString() @MaxLength(120) search?: string;
-  @IsOptional() @IsInt() @Min(1) page?: number;
-  @IsOptional() @IsInt() @Min(1) @Max(200) limit?: number;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(200) limit?: number;
 }

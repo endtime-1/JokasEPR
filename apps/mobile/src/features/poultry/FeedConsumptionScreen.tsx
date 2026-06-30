@@ -7,7 +7,7 @@ import { SelectField, SelectOption } from "../../components/SelectField";
 import { Button } from "../../components/Button";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
-import { fetchFlockBatches, fetchFarms, fetchWarehouses, fetchProducts } from "../../api/endpoints";
+import { fetchFlockBatches, fetchFarms, fetchWarehouses, fetchFeedProducts } from "../../api/endpoints";
 import { useAuth } from "../../auth/AuthContext";
 import { colors, font, spacing } from "../../constants/theme";
 
@@ -48,7 +48,7 @@ export function FeedConsumptionScreen() {
     [rawWarehouses]
   );
 
-  const { data: rawProducts } = useLookup("products", async () => { const r = await fetchProducts(); return (r.data as any[]) ?? []; });
+  const { data: rawProducts } = useLookup("feedProducts", async () => { const r = await fetchFeedProducts(); return (r.data as any[]) ?? []; });
   const products: SelectOption[] = useMemo(
     () => (rawProducts ?? []).map((p: any) => ({ label: `${p.sku} — ${p.name}`, value: p.id })),
     [rawProducts]

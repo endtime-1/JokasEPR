@@ -198,12 +198,10 @@ export class SalesService {
     if (warehouse.branchId !== customer.branchId) throw new BadRequestException("Sales warehouse must belong to the customer's branch.");
     this.assertBranchAccess(user, customer.branchId);
 
+    // Check stock levels — informational only, never blocks the order
     const stockChecks = await Promise.all(dto.items.map((item) => this.availableStock(user.companyId, dto.warehouseId, item.productId)));
-    dto.items.forEach((item, index) => {
-      if (stockChecks[index] < item.quantity) {
-        throw new BadRequestException(`Insufficient stock for order item ${index + 1}. Available quantity is ${stockChecks[index]}.`);
-      }
-    });
+    const itemsWithStock = dto.items.map((item, i) => ({ item, available: stockChecks[i] }));
+    const shortItems = itemsWithStock.filter(({ item, available }) => available < item.quantity);
 
     const subtotal = dto.items.reduce((sum, item) => sum + this.lineTotal(item), 0);
     const discountAmount = dto.discountAmount ?? 0;
@@ -237,6 +235,15 @@ export class SalesService {
       include: { items: { include: { product: true } }, customer: true, warehouse: true }
     });
     await this.writeAudit(user, "CREATE", "SalesOrder", data.id, `Created sales order ${orderNumber}`, context, { branchId: customer.branchId, warehouseId: warehouse.id });
+
+    // Fire production + procurement alerts for any short items (non-blocking)
+    if (shortItems.length > 0) {
+      void this.fireStockShortageAlerts(user.companyId, customer.branchId, orderNumber, shortItems).catch(() => undefined);
+    }
+
+    // Auto-generate draft production orders for all items (non-blocking)
+    void this.autoGenerateProductionOrders(user.companyId, customer.branchId, orderNumber, data.id, dto.items, user.id).catch(() => undefined);
+
     return { data };
   }
 
@@ -505,6 +512,103 @@ export class SalesService {
       map.set(key, current);
     }
     return [...map.values()].sort((a, b) => b.salesValue - a.salesValue);
+  }
+
+  private async autoGenerateProductionOrders(
+    companyId: string,
+    branchId: string,
+    salesOrderNumber: string,
+    salesOrderId: string,
+    items: CreateSalesOrderItemDto[],
+    createdById: string
+  ) {
+    for (const item of items) {
+      // Find an active formula whose finished product matches this sales item
+      const formula = await this.prisma.feedFormula.findFirst({
+        where: { companyId, finishedProductId: item.productId, status: "ACTIVE", deletedAt: null },
+        select: { id: true, branchId: true, finishedProductId: true, targetBatchKg: true }
+      });
+      if (!formula) continue; // not a feed product — skip
+
+      // Find a feed production site in the same branch as the formula
+      const site = await this.prisma.productionSite.findFirst({
+        where: { companyId, branchId: formula.branchId, type: { in: ["FEED_PRODUCTION", "MIXED"] }, deletedAt: null },
+        select: { id: true, branchId: true }
+      });
+      if (!site) continue; // no production site available — skip
+
+      // Convert quantity to kg: assume each unit = 50 kg bag unless UOM says otherwise
+      const product = await this.prisma.product.findFirst({
+        where: { id: item.productId },
+        select: { uom: { select: { symbol: true, name: true } } }
+      });
+      const uomName = (product?.uom?.name ?? "").toLowerCase();
+      const uomSymbol = (product?.uom?.symbol ?? "").toLowerCase();
+      const kgFactor = uomName.includes("50") || uomSymbol.includes("bag") ? 50 : 1;
+      const plannedQuantityKg = item.quantity * kgFactor;
+
+      // Generate order number
+      const count = await this.prisma.feedProductionOrder.count({ where: { companyId } });
+      const orderNumber = `FPO-${String(count + 1).padStart(5, "0")}`;
+
+      await this.prisma.feedProductionOrder.create({
+        data: {
+          companyId,
+          branchId: site.branchId,
+          productionSiteId: site.id,
+          formulaId: formula.id,
+          finishedProductId: formula.finishedProductId,
+          orderNumber,
+          plannedQuantityKg,
+          scheduledDate: new Date(),
+          status: "DRAFT",
+          notes: `Auto-generated from sales order ${salesOrderNumber} (${salesOrderId})`,
+          createdById
+        }
+      });
+    }
+  }
+
+  private async fireStockShortageAlerts(
+    companyId: string,
+    branchId: string,
+    orderNumber: string,
+    shortItems: { item: { productId: string; quantity: number }; available: number }[]
+  ) {
+    const productIds = shortItems.map((s) => s.item.productId);
+    const products = await this.prisma.product.findMany({ where: { id: { in: productIds } }, select: { id: true, name: true, sku: true } });
+    const productMap = new Map(products.map((p) => [p.id, p]));
+
+    const lines = shortItems.map(({ item, available }) => {
+      const p = productMap.get(item.productId);
+      const label = p ? `${p.name} (${p.sku})` : item.productId;
+      const shortBy = item.quantity - available;
+      return `${label}: ordered ${item.quantity}, in stock ${available}, short by ${shortBy}`;
+    });
+    const detail = lines.join(" | ");
+
+    await Promise.all([
+      this.prisma.dashboardAlert.create({
+        data: {
+          companyId,
+          branchId,
+          businessUnit: "FEED_MILL",
+          title: `Production Required — Sales Order ${orderNumber}`,
+          message: `Sales order ${orderNumber} cannot be fulfilled from current stock. Production team: please schedule production for the following items. ${detail}`,
+          severity: "WARNING",
+        },
+      }),
+      this.prisma.dashboardAlert.create({
+        data: {
+          companyId,
+          branchId,
+          businessUnit: "PROCUREMENT",
+          title: `Procurement Alert — Sales Order ${orderNumber}`,
+          message: `Sales order ${orderNumber} has insufficient stock. If production cannot cover these items, please raise purchase orders for raw materials or finished goods. ${detail}`,
+          severity: "WARNING",
+        },
+      }),
+    ]);
   }
 
   private async availableStock(companyId: string, warehouseId: string, productId: string) {

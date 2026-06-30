@@ -693,7 +693,7 @@ function buildRecordPayload(type: string, form: Record<string, string>, options:
 
 function SimpleRecordTable({ rows }: { rows: Record<string, any>[] }) {
   const keys = Object.keys(rows[0] ?? {}).filter((key) =>
-    ["recordDate", "startDate", "vaccinationDate", "observationDate", "transferDate", "costDate", "birdCount", "quantityKg", "goodEggs", "medicationName", "vaccineName", "severity", "amount", "status"].includes(key)
+    ["recordDate", "startDate", "vaccinationDate", "observationDate", "transferDate", "costDate", "birdCount", "quantityKg", "goodEggs", "crackedEggs", "dirtyEggs", "brokenEggs", "rejectedEggs", "medicationName", "vaccineName", "severity", "amount", "status"].includes(key)
   );
   return <DataTable rows={rows} empty="No records found" columns={keys.map((key) => ({ key, label: key.replace(/([A-Z])/g, " $1"), render: (row: Record<string, any>) => String(row[key] ?? "-").slice(0, 80) }))} />;
 }

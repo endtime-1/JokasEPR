@@ -2,6 +2,14 @@ import { BankAccountType, BatchType, ExpenseStatus, JournalEntryStatus, JournalE
 import { Type } from "class-transformer";
 import { IsArray, IsBoolean, IsDateString, IsEnum, IsInt, IsNumber, IsOptional, IsString, IsUUID, MaxLength, Min, ValidateNested } from "class-validator";
 
+export class ChartQueryDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  months?: number;
+}
+
 export class FinanceQueryDto {
   @IsOptional()
   @IsUUID()

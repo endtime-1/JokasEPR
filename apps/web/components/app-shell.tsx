@@ -19,6 +19,7 @@ import {
   Factory,
   FileDown,
   FlaskConical,
+  Globe,
   HardDrive,
   LayoutDashboard,
   LogOut,
@@ -77,6 +78,7 @@ const navGroups: { title: string; items: NavItem[] }[] = [
     title: "Commercial",
     items: [
       { href: "/sales", label: "Sales", icon: ReceiptText, permission: "sales.read" },
+      { href: "/storefront", label: "Storefront", icon: Globe, permission: "sales.read" },
       { href: "/finance", label: "Finance", icon: Wallet, permission: "finance.read" },
       { href: "/procurement", label: "Procurement", icon: ShoppingCart, permission: "procurement.read" },
       { href: "/quickbooks", label: "QuickBooks", icon: BookOpen, permission: "quickbooks.read" }
@@ -101,7 +103,7 @@ const navGroups: { title: string; items: NavItem[] }[] = [
 ];
 
 function initials(name?: string) {
-  return (name ?? "AKOKO SOLUTIONS")
+  return (name ?? "Jokas ERP")
     .split(" ")
     .filter(Boolean)
     .slice(0, 2)
@@ -137,20 +139,27 @@ function NavLink({
     <Link
       href={item.href}
       onClick={onClick}
-      className={`group flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${
+      className={`group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-150 ${
         active
-          ? "bg-brand text-white shadow-soft"
-          : "text-ink/70 hover:bg-field hover:text-ink"
+          ? "bg-brand text-white shadow-lg shadow-brand/25"
+          : "text-white/65 hover:bg-white/8 hover:text-white"
       }`}
     >
-      <Icon aria-hidden className="h-4 w-4 shrink-0" />
+      {active && (
+        <span className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-r-full bg-white/60" />
+      )}
+      <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg transition-all ${
+        active ? "bg-white/20" : "bg-white/6 group-hover:bg-white/12"
+      }`}>
+        <Icon aria-hidden className="h-3.5 w-3.5" />
+      </span>
       <span className="flex-1 truncate">{item.label}</span>
       {item.href === "/alerts" && unreadAlerts > 0 ? (
-        <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+        <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white shadow-sm">
           {unreadAlerts > 99 ? "99+" : unreadAlerts}
         </span>
       ) : active ? (
-        <ChevronRight aria-hidden className="h-4 w-4 opacity-80" />
+        <ChevronRight aria-hidden className="h-3.5 w-3.5 opacity-60" />
       ) : null}
     </Link>
   );
@@ -189,7 +198,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     setSearchFocus(0);
   }
 
-  // Global keyboard shortcut: Ctrl+K / Cmd+K opens search
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if ((e.ctrlKey || e.metaKey) && e.key === "k") {
@@ -212,10 +220,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   if (!ready) {
     return (
-      <main className="grid min-h-screen place-items-center bg-field">
-        <div className="flex items-center gap-3 rounded-xl border border-line bg-white px-5 py-3.5 text-sm text-ink/70 shadow-panel">
-          <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-brand" />
-          Loading secure session...
+      <main className="grid min-h-screen place-items-center bg-[#0f1623]">
+        <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-6 py-4 text-sm text-white/60 backdrop-blur">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-brand" />
+          Loading secure session…
         </div>
       </main>
     );
@@ -232,10 +240,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     .filter((group) => group.items.length > 0);
 
   const renderNav = (onNavigate?: () => void) => (
-    <nav aria-label="Main navigation">
-      {visibleGroups.map((group) => (
-        <div key={group.title} className="mb-1">
-          <p className="px-3 pb-1 pt-3 text-[10px] font-bold uppercase tracking-wide text-ink/40">
+    <nav aria-label="Main navigation" className="space-y-0.5">
+      {visibleGroups.map((group, gi) => (
+        <div key={group.title} className={gi > 0 ? "mt-1 pt-4" : ""}>
+          <p className="mb-1 px-3 text-[10px] font-bold uppercase tracking-[0.12em] text-white/30">
             {group.title}
           </p>
           <div className="space-y-0.5">
@@ -255,119 +263,146 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   );
 
   const renderUserCard = () => (
-    <div className="rounded-lg border border-line bg-field/70 p-3">
+    <div className="rounded-2xl border border-white/10 bg-white/6 p-3.5 backdrop-blur-sm">
       <div className="flex items-center gap-3">
-        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-white text-sm font-bold text-brand shadow-sm ring-1 ring-line">
-          {initials(profile?.fullName)}
+        <div className="relative">
+          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-brand to-[#c65f0f] text-[13px] font-bold text-white shadow-lg shadow-brand/30">
+            {initials(profile?.fullName)}
+          </div>
+          <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-[#1a2235] bg-emerald-400" />
         </div>
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold">{profile?.fullName ?? "Signed in"}</p>
-          <p className="truncate text-xs text-ink/55">{profile?.email ?? "Secure session"}</p>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold text-white">{profile?.fullName ?? "Loading…"}</p>
+          <p className="truncate text-xs text-white/45">{profile?.email ?? ""}</p>
         </div>
       </div>
-      <div className="mt-3 flex items-center gap-2 text-xs text-ink/55">
-        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-        Live environment
-      </div>
+      {profile && (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {profile.roles.slice(0, 2).map((role) => (
+            <span key={role} className="rounded-md border border-brand/25 bg-brand/12 px-2 py-0.5 text-[10px] font-semibold text-brand/90">
+              {role}
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 
-  return (
-    <div className="min-h-screen bg-field/70 text-ink lg:grid lg:grid-cols-[280px_1fr]">
-      {/* ── Desktop sidebar ─────────────────────────────────────────────── */}
-      <aside className="hidden border-r border-line bg-white px-5 py-5 shadow-soft lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col">
-        <div className="mb-5 flex items-center gap-3">
-          <Link href="/dashboard" className="flex min-w-0 items-center gap-3">
-            <BrandLogo className="h-12 w-12 shrink-0 rounded-xl shadow-soft" />
-            <span className="min-w-0">
-              <span className="app-kicker block">AKOKO SOLUTIONS ERP</span>
-              <span className="block truncate text-[17px] font-bold tracking-tight">
-                Operations Console
-              </span>
-            </span>
-          </Link>
-        </div>
+  const sidebarContent = (onNavigate?: () => void) => (
+    <>
+      {/* Brand */}
+      <div className="mb-5 flex items-center gap-3 px-1">
+        <Link href="/dashboard" onClick={onNavigate} className="flex min-w-0 items-center gap-3">
+          <div className="relative shrink-0">
+            <BrandLogo className="h-11 w-11 rounded-xl shadow-lg shadow-brand/20" />
+            <span className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full border-2 border-[#1a2235] bg-emerald-400 shadow-sm" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-brand/80">Jokas ERP</p>
+            <p className="truncate text-base font-bold text-white">Operations Console</p>
+          </div>
+        </Link>
+      </div>
 
-        <div className="mb-3">
-          {renderUserCard()}
-        </div>
+      {/* User card */}
+      <div className="mb-4">
+        {renderUserCard()}
+      </div>
 
-        <div className="relative flex-1 overflow-y-auto">
-          {renderNav()}
-          {/* fade hint that sidebar scrolls */}
-          <div className="pointer-events-none sticky bottom-0 h-6 bg-gradient-to-t from-white to-transparent" />
-        </div>
+      {/* Divider */}
+      <div className="mb-4 h-px bg-white/8" />
 
+      {/* Nav */}
+      <div className="relative flex-1 overflow-y-auto">
+        {renderNav(onNavigate)}
+        <div className="pointer-events-none sticky bottom-0 h-8 bg-gradient-to-t from-[#1a2235] to-transparent" />
+      </div>
+
+      {/* Sign out */}
+      <div className="mt-4 border-t border-white/8 pt-4">
         <button
-          className="app-button-secondary mt-4 w-full"
+          className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-white/50 transition hover:bg-red-500/12 hover:text-red-400"
           onClick={handleSignOut}
         >
-          <LogOut aria-hidden className="h-4 w-4" />
+          <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-white/6">
+            <LogOut aria-hidden className="h-3.5 w-3.5" />
+          </span>
           Sign out
         </button>
+      </div>
+    </>
+  );
+
+  return (
+    <div className="min-h-screen bg-[#f0f2f5] text-ink lg:grid lg:grid-cols-[300px_1fr]">
+      {/* ── Desktop sidebar ─────────────────────────────────────────────── */}
+      <aside className="hidden lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:overflow-hidden"
+        style={{ background: "linear-gradient(160deg, #1a2235 0%, #0f1623 60%, #141c2e 100%)" }}>
+        {/* Decorative brand glow */}
+        <div className="pointer-events-none absolute -top-10 left-4 h-32 w-32 rounded-full bg-brand/12 blur-2xl" />
+        <div className="pointer-events-none absolute bottom-20 right-0 h-24 w-24 rounded-full bg-brand/6 blur-2xl" />
+        <div className="relative flex h-full flex-col px-5 py-6">
+          {sidebarContent()}
+        </div>
       </aside>
 
       {/* ── Mobile sidebar overlay ──────────────────────────────────────── */}
       {mobileOpen && (
         <>
           <div
-            className="fixed inset-0 z-40 animate-fade-in bg-ink/30 backdrop-blur-sm lg:hidden"
+            className="fixed inset-0 z-40 animate-fade-in bg-black/50 backdrop-blur-sm lg:hidden"
             onClick={() => setMobileOpen(false)}
             aria-hidden
           />
-          <aside className="fixed inset-y-0 left-0 z-50 flex w-[280px] animate-slide-in flex-col border-r border-line bg-white px-5 py-5 shadow-panel lg:hidden">
-            <div className="mb-4 flex items-center justify-between">
-              <Link href="/dashboard" className="flex items-center gap-3" onClick={() => setMobileOpen(false)}>
-                <BrandLogo className="h-10 w-10 shrink-0 rounded-xl" />
-                <span className="text-sm font-bold">AKOKO SOLUTIONS ERP</span>
-              </Link>
+          <aside
+            className="fixed inset-y-0 left-0 z-50 flex w-[300px] animate-slide-in flex-col overflow-hidden lg:hidden"
+            style={{ background: "linear-gradient(160deg, #1a2235 0%, #0f1623 60%, #141c2e 100%)" }}
+          >
+            <div className="pointer-events-none absolute -top-10 left-4 h-32 w-32 rounded-full bg-brand/12 blur-2xl" />
+            <div className="relative flex h-full flex-col px-5 py-6">
               <button
-                className="grid h-8 w-8 place-items-center rounded-lg text-ink/50 transition hover:bg-field"
+                className="absolute right-4 top-5 grid h-8 w-8 place-items-center rounded-lg text-white/40 transition hover:bg-white/10 hover:text-white"
                 onClick={() => setMobileOpen(false)}
                 aria-label="Close menu"
               >
                 <X className="h-4 w-4" />
               </button>
+              {sidebarContent(() => setMobileOpen(false))}
             </div>
-
-            <div className="mb-3">
-              {renderUserCard()}
-            </div>
-
-            <div className="flex-1 overflow-y-auto">
-              {renderNav(() => setMobileOpen(false))}
-            </div>
-
-            <button
-              className="app-button-secondary mt-4 w-full"
-              onClick={handleSignOut}
-            >
-              <LogOut aria-hidden className="h-4 w-4" />
-              Sign out
-            </button>
           </aside>
         </>
       )}
 
       {/* ── Main content area ────────────────────────────────────────────── */}
       <div className="min-w-0">
-        <header className="sticky top-0 z-20 border-b border-line bg-white/85 px-4 py-3 backdrop-blur lg:px-8">
-          <div className="flex items-center justify-between gap-3">
+        {/* Header */}
+        <header className="sticky top-0 z-20 border-b border-black/6 bg-white/80 shadow-sm shadow-black/4 backdrop-blur-md">
+          <div className="flex items-center justify-between gap-4 px-5 py-3.5 lg:px-8">
             <div className="flex items-center gap-3">
               {/* Hamburger — mobile only */}
               <button
-                className="grid h-10 w-10 place-items-center rounded-lg border border-line bg-white text-ink/70 transition hover:bg-field lg:hidden"
+                className="grid h-9 w-9 place-items-center rounded-xl border border-line bg-white text-ink/60 shadow-sm transition hover:bg-field hover:text-ink lg:hidden"
                 onClick={() => setMobileOpen(true)}
                 aria-label="Open navigation menu"
                 aria-expanded={mobileOpen}
-                aria-controls="mobile-sidebar"
               >
                 <Menu aria-hidden className="h-4 w-4" />
               </button>
-              {/* Workspace label — desktop only */}
-              <div className="hidden items-center gap-2 text-sm text-ink/60 lg:flex">
-                <Building2 aria-hidden className="h-4 w-4 text-brand" />
-                <span className="font-medium">Multi-farm ERP workspace</span>
+
+              {/* Breadcrumb — desktop */}
+              <div className="hidden items-center gap-2.5 lg:flex">
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand/10">
+                  <Building2 aria-hidden className="h-3.5 w-3.5 text-brand" />
+                </div>
+                <div className="text-sm">
+                  <span className="font-semibold text-ink">
+                    {profile?.fullName
+                      ? (profile.roles[0] ?? "Admin")
+                      : "Loading…"}
+                  </span>
+                  <span className="mx-1.5 text-ink/30">/</span>
+                  <span className="text-ink/55">Multi-farm ERP workspace</span>
+                </div>
               </div>
             </div>
 
@@ -375,16 +410,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               {/* Search button */}
               <button
                 onClick={openSearch}
-                className="hidden min-h-10 w-[220px] items-center gap-2 rounded-lg border border-line bg-white px-3 text-sm text-ink/40 transition hover:border-brand/30 hover:text-ink/60 xl:flex"
+                className="hidden min-h-9 w-[240px] items-center gap-2.5 rounded-xl border border-line bg-field/60 px-3.5 text-sm text-ink/35 transition hover:border-brand/25 hover:bg-white hover:text-ink/55 xl:flex"
                 aria-label="Search"
               >
-                <Search aria-hidden className="h-4 w-4 shrink-0" />
+                <Search aria-hidden className="h-3.5 w-3.5 shrink-0" />
                 <span className="flex-1 text-left">Search modules…</span>
-                <kbd className="hidden rounded border border-line bg-field px-1.5 py-0.5 text-[10px] font-semibold text-ink/30 sm:block">⌃K</kbd>
+                <kbd className="rounded-md border border-line bg-white px-1.5 py-0.5 text-[10px] font-bold text-ink/25">⌃K</kbd>
               </button>
               <button
                 onClick={openSearch}
-                className="grid h-10 w-10 place-items-center rounded-lg border border-line bg-white text-ink/70 transition hover:bg-field xl:hidden"
+                className="grid h-9 w-9 place-items-center rounded-xl border border-line bg-white text-ink/60 shadow-sm transition hover:bg-field xl:hidden"
                 aria-label="Search"
               >
                 <Search aria-hidden className="h-4 w-4" />
@@ -395,7 +430,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <main className="px-4 py-6 lg:px-8">{children}</main>
+        <main className="px-5 py-7 lg:px-8">{children}</main>
       </div>
 
       {/* ── Global Search Modal ──────────────────────────────────────────── */}
@@ -424,19 +459,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         }
 
         return (
-          <div className="fixed inset-0 z-[100] flex items-start justify-center px-4 pt-[12vh]">
-            {/* Backdrop */}
+          <div className="fixed inset-0 z-[100] flex items-start justify-center px-4 pt-[10vh]">
             <div
-              className="absolute inset-0 bg-ink/30 backdrop-blur-sm"
+              className="absolute inset-0 bg-black/40 backdrop-blur-sm"
               onClick={closeSearch}
               aria-hidden
             />
-
-            {/* Panel */}
-            <div className="relative z-10 w-full max-w-lg overflow-hidden rounded-2xl border border-line bg-white shadow-2xl">
+            <div className="relative z-10 w-full max-w-[540px] overflow-hidden rounded-2xl border border-line bg-white shadow-modal animate-slide-up">
               {/* Search input */}
-              <div className="flex items-center gap-3 border-b border-line px-4 py-3">
-                <Search className="h-4 w-4 shrink-0 text-ink/40" />
+              <div className="flex items-center gap-3 border-b border-line px-4 py-3.5">
+                <div className="grid h-7 w-7 place-items-center rounded-lg bg-brand/10">
+                  <Search className="h-3.5 w-3.5 text-brand" />
+                </div>
                 <input
                   ref={searchInputRef}
                   type="text"
@@ -450,19 +484,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 {searchQuery && (
                   <button
                     onClick={() => { setSearchQuery(""); setSearchFocus(0); searchInputRef.current?.focus(); }}
-                    className="rounded p-0.5 text-ink/40 hover:text-ink"
+                    className="rounded-lg p-1 text-ink/40 hover:bg-field hover:text-ink"
                     aria-label="Clear"
                   >
                     <X className="h-3.5 w-3.5" />
                   </button>
                 )}
-                <kbd className="rounded border border-line bg-field px-1.5 py-0.5 text-[10px] font-semibold text-ink/30">ESC</kbd>
+                <kbd className="rounded-md border border-line bg-field px-1.5 py-0.5 text-[10px] font-bold text-ink/30">ESC</kbd>
               </div>
 
               {/* Results */}
-              <div className="max-h-[380px] overflow-y-auto">
+              <div className="max-h-[420px] overflow-y-auto">
                 {filtered.length === 0 ? (
-                  <p className="py-10 text-center text-sm text-ink/40">No results for "{searchQuery}"</p>
+                  <div className="py-14 text-center">
+                    <p className="text-sm font-medium text-ink/40">No results for "{searchQuery}"</p>
+                    <p className="mt-1 text-xs text-ink/25">Try a different keyword</p>
+                  </div>
                 ) : (
                   (() => {
                     let globalIdx = -1;
@@ -475,7 +512,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
                     return groups.map((g) => (
                       <div key={g.title}>
-                        <p className="px-4 pb-1 pt-3 text-[10px] font-bold uppercase tracking-wide text-ink/35">
+                        <p className="px-4 pb-1 pt-3 text-[10px] font-bold uppercase tracking-[0.1em] text-ink/35">
                           {g.title}
                         </p>
                         {g.items.map((item) => {
@@ -489,19 +526,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                               href={item.href}
                               onClick={closeSearch}
                               onMouseEnter={() => setSearchFocus(idx)}
-                              className={`flex items-center gap-3 px-4 py-2.5 text-sm transition ${
+                              className={`flex items-center gap-3 px-4 py-2.5 text-sm transition-all ${
                                 isFocused
                                   ? "bg-brand text-white"
                                   : "text-ink hover:bg-field"
                               }`}
                             >
-                              <Icon
-                                className={`h-4 w-4 shrink-0 ${isFocused ? "text-white" : "text-ink/50"}`}
-                                aria-hidden
-                              />
+                              <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg ${
+                                isFocused ? "bg-white/20" : "bg-field"
+                              }`}>
+                                <Icon className={`h-3.5 w-3.5 ${isFocused ? "text-white" : "text-brand"}`} aria-hidden />
+                              </span>
                               <span className="flex-1 font-medium">{item.label}</span>
                               <ChevronRight
-                                className={`h-3.5 w-3.5 shrink-0 ${isFocused ? "text-white/70" : "text-ink/25"}`}
+                                className={`h-3.5 w-3.5 shrink-0 ${isFocused ? "text-white/60" : "text-ink/20"}`}
                                 aria-hidden
                               />
                             </Link>
@@ -513,17 +551,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 )}
               </div>
 
-              {/* Footer hint */}
-              <div className="flex items-center gap-4 border-t border-line bg-field/60 px-4 py-2">
-                <span className="text-[10px] text-ink/40">
-                  <kbd className="rounded border border-line bg-white px-1 font-semibold">↑↓</kbd> navigate
-                </span>
-                <span className="text-[10px] text-ink/40">
-                  <kbd className="rounded border border-line bg-white px-1 font-semibold">↵</kbd> open
-                </span>
-                <span className="text-[10px] text-ink/40">
-                  <kbd className="rounded border border-line bg-white px-1 font-semibold">ESC</kbd> close
-                </span>
+              {/* Footer */}
+              <div className="flex items-center gap-4 border-t border-line bg-field/60 px-4 py-2.5">
+                {[["↑↓", "navigate"], ["↵", "open"], ["ESC", "close"]].map(([key, label]) => (
+                  <span key={key} className="flex items-center gap-1.5 text-[10px] text-ink/40">
+                    <kbd className="rounded border border-line bg-white px-1.5 py-0.5 font-bold">{key}</kbd>
+                    {label}
+                  </span>
+                ))}
               </div>
             </div>
           </div>

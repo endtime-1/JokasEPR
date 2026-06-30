@@ -38,6 +38,12 @@ export class InventoryController {
     return this.inventoryService.options(user);
   }
 
+  @Get("products")
+  @RequirePermissions(PERMISSIONS.INVENTORY_READ)
+  products(@CurrentUser() user: AuthenticatedUser, @Query("type") type?: string) {
+    return this.inventoryService.listProducts(user, type);
+  }
+
   @Get("items")
   @RequirePermissions(PERMISSIONS.INVENTORY_READ)
   items(@CurrentUser() user: AuthenticatedUser, @Query() query: InventoryQueryDto) {

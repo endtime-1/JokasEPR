@@ -203,6 +203,8 @@ function useProcurementOptions() {
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
+type SystemAlert = { id: string; title: string; message: string; severity: string; occurredAt: string };
+
 type DashData = {
   activeSuppliers: number;
   pendingPRs: number;
@@ -210,6 +212,7 @@ type DashData = {
   pendingQualityGRNs: number;
   openInvoiceCount: number;
   openInvoiceBalance: number;
+  systemAlerts: SystemAlert[];
   recentPOs: Array<{
     id: string;
     reference: string;
@@ -270,6 +273,25 @@ export function ProcurementDashboardPage() {
         />
 
         <ProcurementNav />
+
+        {data && (data.systemAlerts ?? []).length > 0 && (
+          <section className="overflow-hidden rounded-2xl border border-amber-200 border-l-[3px] border-l-amber-500 bg-white shadow-card">
+            <div className="flex items-center gap-3 border-b border-amber-100 bg-amber-50/60 px-4 py-3">
+              <AlertTriangle className="h-4 w-4 text-amber-600" />
+              <span className="text-sm font-bold text-amber-800">
+                {data.systemAlerts.length} procurement alert{data.systemAlerts.length > 1 ? "s" : ""} require attention
+              </span>
+            </div>
+            <div className="divide-y divide-amber-50">
+              {data.systemAlerts.map((a) => (
+                <div key={a.id} className="px-4 py-3">
+                  <p className="text-sm font-bold text-ink">{a.title}</p>
+                  <p className="mt-0.5 text-xs leading-relaxed text-ink/65">{a.message}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         {data && data.pendingPRs > 0 && (
           <div className="flex items-center justify-between rounded-xl border-l-[3px] border-amber-400 bg-amber-50 px-4 py-3">

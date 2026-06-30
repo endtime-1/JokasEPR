@@ -16,9 +16,7 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background:
-    linear-gradient(180deg, rgba(255, 248, 241, 0.98), rgba(255, 255, 255, 0.98) 42%),
-    #fff8f1;
+  background: #f0f2f5;
   color: var(--ink);
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   text-rendering: geometricPrecision;

@@ -10,6 +10,7 @@ import {
   ClipboardList,
   Factory,
   FlaskConical,
+  Leaf,
   Package,
   PackageCheck,
   RefreshCw,
@@ -64,6 +65,7 @@ type DashboardData = {
   alerts: {
     stalledOrders: Array<{ id: string; orderNumber: string; status: string; scheduledDate: string; plannedQuantityKg: number; formula: { name: string; code: string } | null }>;
     pendingQC: number;
+    systemAlerts: Array<{ id: string; title: string; message: string; severity: string; occurredAt: string }>;
   };
   trends: { production: TrendPoint[] };
   formulaStats: StatRow[];
@@ -149,7 +151,8 @@ function KpiCard({
 }
 
 function AlertBanner({ alerts }: { alerts: DashboardData["alerts"] }) {
-  const total = alerts.stalledOrders.length + (alerts.pendingQC > 0 ? 1 : 0);
+  const systemAlerts = alerts.systemAlerts ?? [];
+  const total = alerts.stalledOrders.length + (alerts.pendingQC > 0 ? 1 : 0) + systemAlerts.length;
   if (total === 0) return null;
   return (
     <section className="mb-6 overflow-hidden rounded-2xl border border-amber-200 border-l-[3px] border-l-amber-500 bg-white shadow-card">
@@ -162,6 +165,17 @@ function AlertBanner({ alerts }: { alerts: DashboardData["alerts"] }) {
         </span>
       </div>
       <div className="divide-y divide-amber-50/80">
+        {systemAlerts.map((a) => (
+          <div key={a.id} className="px-4 py-3">
+            <div className="flex items-start gap-2.5">
+              <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${a.severity === "CRITICAL" ? "bg-red-500" : "bg-amber-500"}`} />
+              <div>
+                <p className="text-sm font-bold text-ink">{a.title}</p>
+                <p className="mt-0.5 text-xs leading-relaxed text-ink/65">{a.message}</p>
+              </div>
+            </div>
+          </div>
+        ))}
         {alerts.pendingQC > 0 && (
           <div className="flex items-center justify-between px-4 py-2.5">
             <div className="flex items-center gap-2.5">
@@ -343,6 +357,7 @@ function QuickActions() {
     { href: "/feed-production/quality-control",       label: "QC Check",       icon: CheckCircle2, color: "text-amber-700 bg-amber-50 border-amber-200 hover:bg-amber-100" },
     { href: "/feed-production/finished-feed-inventory", label: "Finished Stock", icon: Warehouse,   color: "text-purple-700 bg-purple-50 border-purple-200 hover:bg-purple-100" },
     { href: "/feed-production/raw-material-usage",    label: "Raw Materials",  icon: Package,      color: "text-orange-700 bg-orange-50 border-orange-200 hover:bg-orange-100" },
+    { href: "/feed-production/ingredients",           label: "Ingredients",    icon: Leaf,         color: "text-lime-700 bg-lime-50 border-lime-200 hover:bg-lime-100" },
     { href: "/feed-production/internal-transfer",     label: "Transfer Feed",  icon: Truck,        color: "text-teal-700 bg-teal-50 border-teal-200 hover:bg-teal-100" },
     { href: "/feed-production/orders",                label: "View Orders",    icon: ShoppingCart, color: "text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-100" },
     { href: "/feed-production/reports",               label: "Reports",        icon: BarChart3,    color: "text-pink-700 bg-pink-50 border-pink-200 hover:bg-pink-100" }

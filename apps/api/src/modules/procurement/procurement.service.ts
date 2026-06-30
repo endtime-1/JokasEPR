@@ -52,6 +52,7 @@ export class ProcurementService {
       openInvoices,
       recentPOs,
       recentGRNs,
+      systemAlerts,
     ] = await Promise.all([
       this.prisma.supplier.count({ where: { companyId: cid, deletedAt: null, status: "ACTIVE" } }),
       this.prisma.purchaseRequest.count({ where: { companyId: cid, deletedAt: null, status: "SUBMITTED" } }),
@@ -74,6 +75,12 @@ export class ProcurementService {
         take: 8,
         include: { supplier: { select: { name: true } }, warehouse: { select: { name: true } } },
       }),
+      this.prisma.dashboardAlert.findMany({
+        where: { companyId: cid, businessUnit: "PROCUREMENT", status: "OPEN", deletedAt: null },
+        select: { id: true, title: true, message: true, severity: true, occurredAt: true },
+        orderBy: { occurredAt: "desc" },
+        take: 10,
+      }),
     ]);
 
     return {
@@ -86,6 +93,7 @@ export class ProcurementService {
         openInvoiceBalance: num(openInvoices._sum.balanceDue),
         recentPOs,
         recentGRNs,
+        systemAlerts,
       },
     };
   }

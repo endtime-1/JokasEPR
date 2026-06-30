@@ -2,8 +2,8 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
-import { AlertCircle, ArrowDownCircle, ArrowUpCircle, BadgeDollarSign, BookOpen, Building2, CheckCircle, DollarSign, FileBarChart, FileText, PiggyBank, Users, Wallet, XCircle } from "lucide-react";
-import { AppShell } from "./app-shell";
+import { AlertCircle, ArrowDownCircle, ArrowUpCircle, BadgeDollarSign, BarChart3, BookOpen, Building2, CheckCircle, DollarSign, FileBarChart, FileText, Landmark, PiggyBank, TrendingDown, TrendingUp, Users, Wallet, XCircle } from "lucide-react";
+import { FinanceShell } from "./finance-shell";
 import { DataTable } from "./data-table";
 import { FormField } from "./form-field";
 import { ApiEnvelope, apiFetch } from "../lib/api";
@@ -78,111 +78,475 @@ function StatCard({ label, value, icon: Icon, sub }: { label: string; value: str
   );
 }
 
-function FinanceNav() {
+// ─── SVG Bar Chart ────────────────────────────────────────────────────────────
+
+type ChartMonth = { month: string; label: string; revenue: number; expenses: number };
+
+function PnLBarChart({ data }: { data: ChartMonth[] }) {
+  const max = Math.max(...data.flatMap((d) => [d.revenue, d.expenses]), 1);
+  const H = 140;
+
   return (
-    <div className="mb-6 flex flex-wrap gap-2">
-      {[
-        ["/finance", "Dashboard"],
-        ["/finance/expenses", "Expenses"],
-        ["/finance/revenue", "Revenue"],
-        ["/finance/customer-payments", "Customer Payments"],
-        ["/finance/supplier-payments", "Supplier Payments"],
-        ["/finance/petty-cash", "Petty Cash"],
-        ["/finance/payroll", "Payroll"],
-        ["/finance/bank-accounts", "Bank Accounts"],
-        ["/finance/journal-entries", "Journal Entries"],
-        ["/finance/reports/profit-loss", "P&L Report"],
-        ["/finance/reports/cash-flow", "Cash Flow"],
-        ["/finance/reports/product-profitability", "Product P&L"],
-        ["/finance/reports/batch-profitability", "Batch P&L"]
-      ].map(([href, label]) => (
-        <Link key={href} href={href} className={btnSecondary}>{label}</Link>
-      ))}
+    <div className="overflow-x-auto">
+      <svg viewBox={`0 0 ${data.length * 64} ${H + 28}`} className="w-full min-w-[320px]" aria-hidden>
+        {data.map((d, i) => {
+          const rh = Math.round((d.revenue / max) * H);
+          const eh = Math.round((d.expenses / max) * H);
+          const x = i * 64;
+          return (
+            <g key={d.month}>
+              {/* Revenue bar */}
+              <rect x={x + 4} y={H - rh} width={22} height={rh} fill="#16a34a" rx={3} opacity={0.85} />
+              {/* Expense bar */}
+              <rect x={x + 30} y={H - eh} width={22} height={eh} fill="#f58220" rx={3} opacity={0.85} />
+              {/* Label */}
+              <text x={x + 32} y={H + 18} textAnchor="middle" fontSize={10} fill="#64748b">{d.label}</text>
+            </g>
+          );
+        })}
+        {/* Baseline */}
+        <line x1={0} y1={H} x2={data.length * 64} y2={H} stroke="#e2e8f0" strokeWidth={1} />
+      </svg>
+      <div className="mt-1 flex items-center gap-4 text-[11px] text-slate-500">
+        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-emerald-600 opacity-85" />Revenue</span>
+        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-brand opacity-85" />Expenses</span>
+      </div>
+    </div>
+  );
+}
+
+// ─── SVG Donut Chart ──────────────────────────────────────────────────────────
+
+const DONUT_COLORS = ["#f58220", "#16a34a", "#1a2235", "#7c3aed", "#db2777", "#ca8a04"];
+
+type DonutSlice = { name: string; amount: number };
+
+function DonutChart({ data }: { data: DonutSlice[] }) {
+  const total = data.reduce((s, d) => s + d.amount, 0) || 1;
+  const r = 44;
+  const cx = 56;
+  const cy = 56;
+  const circ = 2 * Math.PI * r;
+  let offset = 0;
+
+  return (
+    <div className="flex items-center gap-4">
+      <svg viewBox="0 0 112 112" className="h-28 w-28 shrink-0" aria-hidden>
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke="#f1f5f9" strokeWidth={18} />
+        {data.map((d, i) => {
+          const dash = (d.amount / total) * circ;
+          const gap = circ - dash;
+          const el = (
+            <circle
+              key={d.name}
+              cx={cx} cy={cy} r={r}
+              fill="none"
+              stroke={DONUT_COLORS[i % DONUT_COLORS.length]}
+              strokeWidth={18}
+              strokeDasharray={`${dash} ${gap}`}
+              strokeDashoffset={-(offset - circ / 4)}
+            />
+          );
+          offset += dash;
+          return el;
+        })}
+        {data.length === 0 && <circle cx={cx} cy={cy} r={r} fill="none" stroke="#e2e8f0" strokeWidth={18} />}
+      </svg>
+      <ul className="space-y-1.5 text-xs">
+        {data.map((d, i) => (
+          <li key={d.name} className="flex items-center gap-2">
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: DONUT_COLORS[i % DONUT_COLORS.length] }} />
+            <span className="truncate max-w-[120px] text-slate-600">{d.name}</span>
+            <span className="ml-auto font-semibold text-slate-800">{pct((d.amount / total) * 100)}</span>
+          </li>
+        ))}
+        {data.length === 0 && <li className="text-slate-400">No data</li>}
+      </ul>
     </div>
   );
 }
 
 // ─── Finance Dashboard ────────────────────────────────────────────────────────
 
+function dashPeriodDates(p: string): { startDate: string; endDate: string } {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  if (p === "last_month") return { startDate: new Date(y, m - 1, 1).toISOString().slice(0, 10), endDate: new Date(y, m, 0).toISOString().slice(0, 10) };
+  if (p === "this_quarter") { const q = Math.floor(m / 3); return { startDate: new Date(y, q * 3, 1).toISOString().slice(0, 10), endDate: now.toISOString().slice(0, 10) }; }
+  if (p === "this_year") return { startDate: new Date(y, 0, 1).toISOString().slice(0, 10), endDate: now.toISOString().slice(0, 10) };
+  return { startDate: new Date(y, m, 1).toISOString().slice(0, 10), endDate: now.toISOString().slice(0, 10) };
+}
+
 export function FinanceDashboardPage() {
   const [dash, setDash] = useState<Record<string, unknown> | null>(null);
-  const [startDate, setStartDate] = useState(() => { const d = new Date(); d.setDate(1); return d.toISOString().slice(0, 10); });
-  const [endDate, setEndDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [chart, setChart] = useState<{ months: ChartMonth[]; expensesByCategory: DonutSlice[] } | null>(null);
+  const [debtors, setDebtors] = useState<Record<string, unknown>[]>([]);
+  const [period, setPeriod] = useState("this_month");
+  const [loading, setLoading] = useState(true);
+  const [refresh, setRefresh] = useState(0);
+  const [approving, setApproving] = useState<string | null>(null);
 
   useEffect(() => {
-    apiFetch<ApiEnvelope<Record<string, unknown>>>(`/finance/dashboard?startDate=${startDate}&endDate=${endDate}`)
-      .then((r) => setDash(r.data))
-      .catch(() => undefined);
-  }, [startDate, endDate]);
+    const { startDate, endDate } = dashPeriodDates(period);
+    setLoading(true);
+    Promise.all([
+      apiFetch<ApiEnvelope<Record<string, unknown>>>(`/finance/dashboard?startDate=${startDate}&endDate=${endDate}`),
+      apiFetch<ApiEnvelope<{ months: ChartMonth[]; expensesByCategory: DonutSlice[] }>>("/finance/dashboard/chart?months=6"),
+      apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/finance/debtors")
+    ])
+      .then(([dashRes, chartRes, debtorsRes]) => {
+        setDash(dashRes.data);
+        setChart(chartRes.data);
+        setDebtors(debtorsRes.data);
+      })
+      .catch(() => undefined)
+      .finally(() => setLoading(false));
+  }, [period, refresh]);
+
+  async function handleApprove(id: string) {
+    setApproving(id);
+    try { await apiFetch(`/finance/expenses/${id}/approve`, { method: "PATCH", body: JSON.stringify({}) }); setRefresh((r) => r + 1); }
+    catch { /* noop */ } finally { setApproving(null); }
+  }
+
+  async function handleReject(id: string) {
+    const reason = prompt("Rejection reason:");
+    if (!reason) return;
+    setApproving(id);
+    try { await apiFetch(`/finance/expenses/${id}/reject`, { method: "PATCH", body: JSON.stringify({ reason }) }); setRefresh((r) => r + 1); }
+    catch { /* noop */ } finally { setApproving(null); }
+  }
 
   const bankAccounts = (dash?.bankAccounts as Array<Record<string, unknown>>) ?? [];
   const recentExpenses = (dash?.recentExpenses as Array<Record<string, unknown>>) ?? [];
   const recentRevenue = (dash?.recentRevenue as Array<Record<string, unknown>>) ?? [];
+  const pendingExpenses = recentExpenses.filter((e) => e.status === "PENDING_APPROVAL");
+  const totalRevenue = Number(dash?.totalRevenue ?? 0);
+  const totalExpenses = Number(dash?.totalExpenses ?? 0);
+  const netProfit = Number(dash?.netProfit ?? 0);
+  const profitMargin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
+  const isProfitable = netProfit >= 0;
+  const pendingCount = Number(dash?.pendingApprovals ?? 0);
+
+  // Group outstanding invoices by customer for "Who Owes You"
+  const debtorGroups: Record<string, { name: string; total: number; count: number }> = {};
+  for (const inv of debtors) {
+    const name = ((inv.customer as Record<string, unknown>)?.name as string) ?? (inv.customerName as string) ?? "Unknown";
+    if (!debtorGroups[name]) debtorGroups[name] = { name, total: 0, count: 0 };
+    debtorGroups[name].total += Number(inv.balanceDue ?? 0);
+    debtorGroups[name].count += 1;
+  }
+  const debtorList = Object.values(debtorGroups).sort((a, b) => b.total - a.total).slice(0, 5);
+  const totalOwed = debtorList.reduce((s, d) => s + d.total, 0);
 
   return (
-    <AppShell>
-      <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <div>
-          <h2 className="text-2xl font-semibold">Finance Dashboard</h2>
-          <p className="text-sm text-ink/65">Financial performance, expenses, revenue, payroll, and cash position.</p>
+    <FinanceShell title="Business Overview" subtitle="Financial performance at a glance">
+
+      {/* ── Period selector ─────────────────────────────────────────────────── */}
+      <div className="mb-5 flex flex-wrap items-center gap-2">
+        {[
+          { value: "this_month", label: "This Month" },
+          { value: "last_month", label: "Last Month" },
+          { value: "this_quarter", label: "This Quarter" },
+          { value: "this_year", label: "This Year" }
+        ].map((p) => (
+          <button
+            key={p.value}
+            onClick={() => setPeriod(p.value)}
+            className={`rounded-full px-3.5 py-1 text-xs font-semibold transition ${period === p.value ? "bg-brand text-white shadow-sm" : "border border-slate-200 bg-white text-slate-600 hover:border-brand hover:text-brand"}`}
+          >
+            {p.label}
+          </button>
+        ))}
+        {loading && <span className="ml-1 inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-brand border-t-transparent" />}
+      </div>
+
+      {/* ── KPI cards ───────────────────────────────────────────────────────── */}
+      <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+
+        {/* Money In */}
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="mb-3 flex items-start justify-between">
+            <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Money In</p>
+            <span className="grid h-8 w-8 place-items-center rounded-lg bg-emerald-50">
+              <ArrowUpCircle className="h-4 w-4 text-emerald-500" />
+            </span>
+          </div>
+          {loading ? <div className="h-8 w-40 animate-pulse rounded-md bg-slate-100" /> : <p className="text-2xl font-bold tracking-tight text-slate-900">{money(totalRevenue)}</p>}
+          <p className="mt-1 text-xs text-slate-400">{Number(dash?.revenueCount ?? 0)} transactions</p>
+          <div className="mt-3 h-1 w-full overflow-hidden rounded-full bg-slate-100">
+            <div className="h-full rounded-full bg-emerald-400 transition-all" style={{ width: totalRevenue > 0 ? "100%" : "0%" }} />
+          </div>
+          <Link href="/finance/revenue" className="mt-2 block text-xs font-semibold text-brand hover:underline">View all revenue →</Link>
         </div>
-        <div className="flex gap-2">
-          <input type="date" className={inputClass} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-          <input type="date" className={inputClass} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+
+        {/* Money Out */}
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="mb-3 flex items-start justify-between">
+            <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Money Out</p>
+            <span className="grid h-8 w-8 place-items-center rounded-lg bg-red-50">
+              <ArrowDownCircle className="h-4 w-4 text-red-400" />
+            </span>
+          </div>
+          {loading ? <div className="h-8 w-40 animate-pulse rounded-md bg-slate-100" /> : <p className="text-2xl font-bold tracking-tight text-slate-900">{money(totalExpenses)}</p>}
+          <p className="mt-1 text-xs text-slate-400">{Number(dash?.expenseCount ?? 0)} transactions</p>
+          <div className="mt-3 h-1 w-full overflow-hidden rounded-full bg-slate-100">
+            <div className="h-full rounded-full bg-red-300 transition-all" style={{ width: totalRevenue > 0 ? `${Math.min((totalExpenses / totalRevenue) * 100, 100)}%` : "0%" }} />
+          </div>
+          <Link href="/finance/expenses" className="mt-2 block text-xs font-semibold text-brand hover:underline">View all expenses →</Link>
+        </div>
+
+        {/* Net Profit */}
+        <div className={`rounded-xl border p-5 shadow-sm ${isProfitable ? "border-emerald-200 bg-emerald-50" : "border-red-200 bg-red-50"}`}>
+          <div className="mb-3 flex items-start justify-between">
+            <p className={`text-[11px] font-bold uppercase tracking-widest ${isProfitable ? "text-emerald-600" : "text-red-500"}`}>Net Profit</p>
+            <span className={`grid h-8 w-8 place-items-center rounded-lg ${isProfitable ? "bg-emerald-100" : "bg-red-100"}`}>
+              {isProfitable ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-red-500" />}
+            </span>
+          </div>
+          {loading ? <div className="h-8 w-40 animate-pulse rounded-md bg-white/60" /> : <p className={`text-2xl font-bold tracking-tight ${isProfitable ? "text-emerald-700" : "text-red-600"}`}>{money(netProfit)}</p>}
+          <p className={`mt-1 text-xs ${isProfitable ? "text-emerald-500" : "text-red-400"}`}>{profitMargin.toFixed(1)}% margin</p>
+          <Link href="/finance/reports/profit-loss" className={`mt-5 block text-xs font-semibold hover:underline ${isProfitable ? "text-emerald-700" : "text-red-600"}`}>View P&amp;L report →</Link>
+        </div>
+
+        {/* Needs Approval */}
+        <div className={`rounded-xl border p-5 shadow-sm ${pendingCount > 0 ? "border-brand/30 bg-field" : "border-slate-200 bg-white"}`}>
+          <div className="mb-3 flex items-start justify-between">
+            <p className={`text-[11px] font-bold uppercase tracking-widest ${pendingCount > 0 ? "text-brand" : "text-slate-400"}`}>Needs Approval</p>
+            <span className={`grid h-8 w-8 place-items-center rounded-lg ${pendingCount > 0 ? "bg-brand/10" : "bg-slate-100"}`}>
+              <AlertCircle className={`h-4 w-4 ${pendingCount > 0 ? "text-brand" : "text-slate-300"}`} />
+            </span>
+          </div>
+          {loading ? <div className="h-8 w-16 animate-pulse rounded-md bg-slate-100" /> : <p className={`text-2xl font-bold tracking-tight ${pendingCount > 0 ? "text-brandDark" : "text-slate-900"}`}>{pendingCount}</p>}
+          <p className="mt-1 text-xs text-slate-400">Large expenses ≥ GHS 5,000</p>
+          <Link href="/finance/expenses?status=PENDING_APPROVAL" className="mt-5 block text-xs font-semibold text-brand hover:underline">Review now →</Link>
         </div>
       </div>
-      <FinanceNav />
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Total Revenue" value={money(dash?.totalRevenue)} icon={ArrowUpCircle} />
-        <StatCard label="Total Expenses" value={money(dash?.totalExpenses)} icon={ArrowDownCircle} />
-        <StatCard label="Net Profit" value={money(dash?.netProfit)} icon={DollarSign} sub={Number(dash?.totalRevenue ?? 0) > 0 ? pct((Number(dash?.netProfit ?? 0) / Number(dash?.totalRevenue ?? 1)) * 100) + " margin" : undefined} />
-        <StatCard label="Pending Approvals" value={String(dash?.pendingApprovals ?? 0)} icon={AlertCircle} sub="Large expenses awaiting approval" />
-      </section>
-      <section className="mt-4 grid gap-4 md:grid-cols-2">
-        <StatCard label="Customer Payments Received" value={money(dash?.totalCustomerPayments)} icon={Users} />
-        <StatCard label="Supplier Payments Made" value={money(dash?.totalSupplierPayments)} icon={Building2} />
-      </section>
 
-      {bankAccounts.length > 0 && (
-        <section className="mt-6">
-          <h3 className="mb-3 text-lg font-semibold">Bank Accounts</h3>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      {/* ── Charts ──────────────────────────────────────────────────────────── */}
+      <div className="mb-5 grid gap-4 xl:grid-cols-3">
+
+        {/* P&L bar chart */}
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-2">
+          <div className="mb-4 flex items-start justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-800">Profit &amp; Loss</h3>
+              <p className="text-xs text-slate-400">Last 6 months</p>
+            </div>
+            <div className="flex items-center gap-4 pt-0.5 text-[11px] text-slate-500">
+              <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-emerald-500" />Revenue</span>
+              <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-brand" />Expenses</span>
+            </div>
+          </div>
+          {loading && !chart
+            ? <div className="h-40 animate-pulse rounded-lg bg-slate-100" />
+            : chart?.months && chart.months.length > 0
+              ? <PnLBarChart data={chart.months} />
+              : <div className="flex h-40 flex-col items-center justify-center gap-2 text-sm text-slate-400">
+                  <BarChart3 className="h-8 w-8 text-slate-200" />No chart data yet
+                </div>
+          }
+        </div>
+
+        {/* Expense donut */}
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="mb-4">
+            <h3 className="text-sm font-semibold text-slate-800">Expenses by Category</h3>
+            <p className="text-xs text-slate-400">Last 6 months</p>
+          </div>
+          {loading && !chart
+            ? <div className="flex justify-center"><div className="h-28 w-28 animate-pulse rounded-full bg-slate-100" /></div>
+            : <DonutChart data={chart?.expensesByCategory ?? []} />
+          }
+        </div>
+      </div>
+
+      {/* ── Who Owes You + Approval Queue ──────────────────────────────────── */}
+      <div className="mb-5 grid gap-4 xl:grid-cols-2">
+
+        {/* Who Owes You */}
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-800">Who Owes You</h3>
+              <p className="text-xs text-slate-400">Outstanding customer receivables</p>
+            </div>
+            {totalOwed > 0 && !loading && (
+              <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">{money(totalOwed)}</span>
+            )}
+          </div>
+          {loading
+            ? <div className="space-y-3 p-5">{[1, 2, 3].map((i) => <div key={i} className="h-10 animate-pulse rounded-lg bg-slate-100" />)}</div>
+            : debtorList.length === 0
+              ? <div className="flex h-28 flex-col items-center justify-center gap-2 text-sm text-slate-400">
+                  <CheckCircle className="h-7 w-7 text-emerald-300" />No outstanding receivables
+                </div>
+              : <ul className="divide-y divide-slate-50">
+                  {debtorList.map((d, i) => (
+                    <li key={i} className="flex items-center justify-between px-5 py-3.5">
+                      <div className="flex items-center gap-3">
+                        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-emerald-50 text-sm font-bold text-emerald-700">
+                          {d.name.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-slate-800">{d.name}</p>
+                          <p className="text-xs text-slate-400">{d.count} invoice{d.count !== 1 ? "s" : ""} outstanding</p>
+                        </div>
+                      </div>
+                      <p className="font-bold text-emerald-700">{money(d.total)}</p>
+                    </li>
+                  ))}
+                </ul>
+          }
+          <div className="border-t border-slate-50 px-5 py-3">
+            <Link href="/finance/customer-payments" className="text-xs font-semibold text-brand hover:underline">Manage receivables →</Link>
+          </div>
+        </div>
+
+        {/* Approval Queue */}
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-800">Approval Queue</h3>
+              <p className="text-xs text-slate-400">Large expenses pending your review</p>
+            </div>
+            {pendingExpenses.length > 0 && !loading && (
+              <span className="rounded-full bg-field px-3 py-1 text-xs font-bold text-brand">{pendingExpenses.length} pending</span>
+            )}
+          </div>
+          {loading
+            ? <div className="space-y-3 p-5">{[1, 2, 3].map((i) => <div key={i} className="h-14 animate-pulse rounded-lg bg-slate-100" />)}</div>
+            : pendingExpenses.length === 0
+              ? <div className="flex h-28 flex-col items-center justify-center gap-2 text-sm text-slate-400">
+                  <CheckCircle className="h-7 w-7 text-brand/30" />All clear — no pending approvals
+                </div>
+              : <ul className="divide-y divide-slate-50">
+                  {pendingExpenses.map((e) => (
+                    <li key={e.id as string} className="px-5 py-3.5">
+                      <div className="mb-2.5 flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-slate-800">{e.description as string}</p>
+                          <p className="text-xs text-slate-400">
+                            {(e.category as Record<string, unknown>)?.name as string ?? "—"} · {e.vendorName as string ?? ""} · {fmt(e.expenseDate)}
+                          </p>
+                        </div>
+                        <p className="shrink-0 text-base font-bold text-slate-900">{money(e.amount)}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleApprove(e.id as string)}
+                          disabled={approving === (e.id as string)}
+                          className="flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-50"
+                        >
+                          <CheckCircle className="h-3.5 w-3.5" />
+                          {approving === (e.id as string) ? "Approving…" : "Approve"}
+                        </button>
+                        <button
+                          onClick={() => handleReject(e.id as string)}
+                          disabled={!!approving}
+                          className="flex items-center gap-1.5 rounded-lg bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 transition hover:bg-red-100 disabled:opacity-50"
+                        >
+                          <XCircle className="h-3.5 w-3.5" />Reject
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+          }
+          <div className="border-t border-slate-50 px-5 py-3">
+            <Link href="/finance/expenses?status=PENDING_APPROVAL" className="text-xs font-semibold text-brand hover:underline">View all pending →</Link>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Bank Accounts ────────────────────────────────────────────────────── */}
+      {!loading && bankAccounts.length > 0 && (
+        <div className="mb-5">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-slate-800">Bank Accounts</h3>
+            <Link href="/finance/bank-accounts" className="text-xs font-semibold text-brand hover:underline">Manage →</Link>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {bankAccounts.map((a) => (
-              <div key={a.id as string} className="rounded-md border border-line bg-white p-4">
-                <p className="text-sm font-medium">{a.accountName as string}</p>
-                <p className="text-xs text-ink/60">{a.bankName as string}</p>
-                <strong className="mt-2 block text-xl font-semibold text-brand">{money(a.currentBalance)}</strong>
-              </div>
+              <Link
+                key={a.id as string}
+                href="/finance/bank-accounts"
+                className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-brand/30 hover:shadow-md"
+              >
+                <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-brand/10">
+                  <Landmark className="h-5 w-5 text-brand" aria-hidden />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-slate-800">{a.accountName as string}</p>
+                  <p className="text-xs text-slate-400">{a.bankName as string}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-base font-bold text-brand">{money(a.currentBalance)}</p>
+                  <p className="text-[10px] uppercase tracking-wide text-slate-400">Current</p>
+                </div>
+              </Link>
             ))}
           </div>
-        </section>
+        </div>
       )}
 
-      <div className="mt-6 grid gap-6 xl:grid-cols-2">
-        <section>
-          <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-lg font-semibold">Recent Expenses</h3>
-            <Link href="/finance/expenses" className="text-sm text-brand hover:underline">View all</Link>
+      {/* ── Recent Activity ──────────────────────────────────────────────────── */}
+      <div className="grid gap-4 xl:grid-cols-2">
+
+        {/* Recent Expenses */}
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
+            <h3 className="text-sm font-semibold text-slate-800">Recent Expenses</h3>
+            <Link href="/finance/expenses" className="text-xs font-semibold text-brand hover:underline">View all</Link>
           </div>
-          <DataTable
-            columns={[{ key: "reference", label: "Ref" }, { key: "description", label: "Description" }, { key: "amount", label: "Amount", render: (r) => money(r.amount) }, { key: "status", label: "Status", render: (r) => <StatusBadge status={r.status as string} /> }]}
-            rows={recentExpenses}
-            empty="No expenses recorded."
-          />
-        </section>
-        <section>
-          <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-lg font-semibold">Recent Revenue</h3>
-            <Link href="/finance/revenue" className="text-sm text-brand hover:underline">View all</Link>
+          {loading
+            ? <div className="space-y-3 p-5">{[1, 2, 3, 4].map((i) => <div key={i} className="h-9 animate-pulse rounded-lg bg-slate-100" />)}</div>
+            : recentExpenses.length === 0
+              ? <div className="flex h-20 items-center justify-center text-sm text-slate-400">No expenses recorded.</div>
+              : <ul className="divide-y divide-slate-50">
+                  {recentExpenses.slice(0, 6).map((e) => (
+                    <li key={e.id as string} className="flex items-center gap-3 px-5 py-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-slate-800">{e.description as string}</p>
+                        <p className="text-xs text-slate-400">{e.reference as string} · {fmt(e.expenseDate)}</p>
+                      </div>
+                      <StatusBadge status={e.status as string} />
+                      <p className="shrink-0 text-sm font-semibold text-slate-900">{money(e.amount)}</p>
+                    </li>
+                  ))}
+                </ul>
+          }
+        </div>
+
+        {/* Recent Revenue */}
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
+            <h3 className="text-sm font-semibold text-slate-800">Recent Revenue</h3>
+            <Link href="/finance/revenue" className="text-xs font-semibold text-brand hover:underline">View all</Link>
           </div>
-          <DataTable
-            columns={[{ key: "reference", label: "Ref" }, { key: "description", label: "Description" }, { key: "amount", label: "Amount", render: (r) => money(r.amount) }, { key: "source", label: "Source" }]}
-            rows={recentRevenue}
-            empty="No revenue recorded."
-          />
-        </section>
+          {loading
+            ? <div className="space-y-3 p-5">{[1, 2, 3, 4].map((i) => <div key={i} className="h-9 animate-pulse rounded-lg bg-slate-100" />)}</div>
+            : recentRevenue.length === 0
+              ? <div className="flex h-20 items-center justify-center text-sm text-slate-400">No revenue recorded.</div>
+              : <ul className="divide-y divide-slate-50">
+                  {recentRevenue.slice(0, 6).map((r) => (
+                    <li key={r.id as string} className="flex items-center gap-3 px-5 py-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-slate-800">{r.description as string}</p>
+                        <p className="text-xs text-slate-400">{r.reference as string} · {fmt(r.revenueDate)}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-bold text-emerald-700">{money(r.amount)}</p>
+                        <p className="text-[10px] text-slate-400">{(r.source as string)?.replace(/_/g, " ")}</p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+          }
+        </div>
       </div>
-    </AppShell>
+    </FinanceShell>
   );
 }
 
@@ -219,15 +583,10 @@ export function ExpenseListPage() {
   }
 
   return (
-    <AppShell>
-      <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <div>
-          <h2 className="text-2xl font-semibold">Expenses</h2>
-          <p className="text-sm text-ink/65">All business expenses and approval queue.</p>
-        </div>
+    <FinanceShell title="Expenses" subtitle="All business expenses and approval queue.">
+      <div className="mb-4 flex justify-end">
         <Link href="/finance/expenses/create" className={btnPrimary}><BadgeDollarSign className="h-4 w-4" /> Record Expense</Link>
       </div>
-      <FinanceNav />
       <div className="mb-4 flex flex-wrap gap-3">
         <select className={selectClass} value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">All Statuses</option>
@@ -259,7 +618,7 @@ export function ExpenseListPage() {
         rows={expenses}
         empty="No expenses found."
       />
-    </AppShell>
+    </FinanceShell>
   );
 }
 
@@ -293,12 +652,7 @@ export function CreateExpensePage() {
   }
 
   return (
-    <AppShell>
-      <div className="mb-6">
-        <h2 className="text-2xl font-semibold">Record Expense</h2>
-        <p className="text-sm text-ink/65">Expenses above GHS 5,000 require manager approval.</p>
-      </div>
-      <FinanceNav />
+    <FinanceShell title="Record Expense" subtitle="Expenses above GHS 5,000 require manager approval.">
       <form onSubmit={handleSubmit} className="mx-auto max-w-2xl space-y-4 rounded-md border border-line bg-white p-6 shadow-panel">
         {error && <p className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</p>}
         {success && <p className="rounded-md bg-green-50 p-3 text-sm text-green-700">{success}</p>}
@@ -358,7 +712,7 @@ export function CreateExpensePage() {
         )}
         <button type="submit" className={btnPrimary} disabled={loading}>{loading ? "Saving…" : "Record Expense"}</button>
       </form>
-    </AppShell>
+    </FinanceShell>
   );
 }
 
@@ -398,15 +752,10 @@ export function RevenuePage() {
   }
 
   return (
-    <AppShell>
-      <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <div>
-          <h2 className="text-2xl font-semibold">Revenue Records</h2>
-          <p className="text-sm text-ink/65">Track all income and revenue sources.</p>
-        </div>
+    <FinanceShell title="Revenue Records" subtitle="Track all income and revenue sources.">
+      <div className="mb-4 flex justify-end">
         <button className={btnPrimary} onClick={() => setShowForm(!showForm)}><ArrowUpCircle className="h-4 w-4" /> {showForm ? "Cancel" : "Record Revenue"}</button>
       </div>
-      <FinanceNav />
       {showForm && (
         <form onSubmit={handleSubmit} className="mb-6 rounded-md border border-line bg-white p-6 shadow-panel">
           <h3 className="mb-4 text-lg font-semibold">New Revenue Entry</h3>
@@ -458,7 +807,7 @@ export function RevenuePage() {
         rows={revenues}
         empty="No revenue records found."
       />
-    </AppShell>
+    </FinanceShell>
   );
 }
 
@@ -497,12 +846,10 @@ export function CustomerPaymentsPage() {
   }
 
   return (
-    <AppShell>
-      <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <div><h2 className="text-2xl font-semibold">Customer Payments</h2><p className="text-sm text-ink/65">Payments received from customers.</p></div>
+    <FinanceShell title="Customer Payments" subtitle="Payments received from customers.">
+      <div className="mb-4 flex justify-end">
         <button className={btnPrimary} onClick={() => setShowForm(!showForm)}><Users className="h-4 w-4" /> {showForm ? "Cancel" : "Record Payment"}</button>
       </div>
-      <FinanceNav />
       {showForm && (
         <form onSubmit={handleSubmit} className="mb-6 rounded-md border border-line bg-white p-6 shadow-panel">
           <h3 className="mb-4 text-lg font-semibold">New Customer Payment</h3>
@@ -532,7 +879,7 @@ export function CustomerPaymentsPage() {
         rows={payments}
         empty="No customer payments recorded."
       />
-    </AppShell>
+    </FinanceShell>
   );
 }
 
@@ -571,12 +918,10 @@ export function SupplierPaymentsPage() {
   }
 
   return (
-    <AppShell>
-      <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <div><h2 className="text-2xl font-semibold">Supplier Payments</h2><p className="text-sm text-ink/65">Payments made to suppliers and vendors.</p></div>
+    <FinanceShell title="Supplier Payments" subtitle="Payments made to suppliers and vendors.">
+      <div className="mb-4 flex justify-end">
         <button className={btnPrimary} onClick={() => setShowForm(!showForm)}><Building2 className="h-4 w-4" /> {showForm ? "Cancel" : "Record Payment"}</button>
       </div>
-      <FinanceNav />
       {showForm && (
         <form onSubmit={handleSubmit} className="mb-6 rounded-md border border-line bg-white p-6 shadow-panel">
           <h3 className="mb-4 text-lg font-semibold">New Supplier Payment</h3>
@@ -606,7 +951,7 @@ export function SupplierPaymentsPage() {
         rows={payments}
         empty="No supplier payments recorded."
       />
-    </AppShell>
+    </FinanceShell>
   );
 }
 
@@ -647,15 +992,10 @@ export function PettyCashPage() {
   const currentBalance = transactions.length > 0 ? Number(transactions[0].balance ?? 0) : 0;
 
   return (
-    <AppShell>
-      <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <div>
-          <h2 className="text-2xl font-semibold">Petty Cash</h2>
-          <p className="text-sm text-ink/65">Current balance: <strong className="text-brand">{money(currentBalance)}</strong></p>
-        </div>
+    <FinanceShell title="Petty Cash" subtitle={`Current balance: ${money(currentBalance)}`}>
+      <div className="mb-4 flex justify-end">
         <button className={btnPrimary} onClick={() => setShowForm(!showForm)}><PiggyBank className="h-4 w-4" /> {showForm ? "Cancel" : "New Transaction"}</button>
       </div>
-      <FinanceNav />
       {showForm && (
         <form onSubmit={handleSubmit} className="mb-6 rounded-md border border-line bg-white p-6 shadow-panel">
           <h3 className="mb-4 text-lg font-semibold">New Petty Cash Transaction</h3>
@@ -701,7 +1041,7 @@ export function PettyCashPage() {
         rows={transactions}
         empty="No petty cash transactions."
       />
-    </AppShell>
+    </FinanceShell>
   );
 }
 
@@ -753,12 +1093,10 @@ export function PayrollPage() {
   }
 
   return (
-    <AppShell>
-      <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <div><h2 className="text-2xl font-semibold">Payroll Records</h2><p className="text-sm text-ink/65">Employee salaries, deductions, and payment tracking.</p></div>
+    <FinanceShell title="Payroll Records" subtitle="Employee salaries, deductions, and payment tracking.">
+      <div className="mb-4 flex justify-end">
         <button className={btnPrimary} onClick={() => setShowForm(!showForm)}><Wallet className="h-4 w-4" /> {showForm ? "Cancel" : "Add Payroll Record"}</button>
       </div>
-      <FinanceNav />
       {showForm && (
         <form onSubmit={handleSubmit} className="mb-6 rounded-md border border-line bg-white p-6 shadow-panel">
           <h3 className="mb-4 text-lg font-semibold">New Payroll Record</h3>
@@ -803,7 +1141,7 @@ export function PayrollPage() {
         rows={records}
         empty="No payroll records found."
       />
-    </AppShell>
+    </FinanceShell>
   );
 }
 
@@ -841,12 +1179,10 @@ export function BankAccountsPage() {
   }
 
   return (
-    <AppShell>
-      <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <div><h2 className="text-2xl font-semibold">Bank Accounts</h2><p className="text-sm text-ink/65">Company bank accounts and balances.</p></div>
+    <FinanceShell title="Bank Accounts" subtitle="Company bank accounts and balances.">
+      <div className="mb-4 flex justify-end">
         <button className={btnPrimary} onClick={() => setShowForm(!showForm)}><Building2 className="h-4 w-4" /> {showForm ? "Cancel" : "Add Bank Account"}</button>
       </div>
-      <FinanceNav />
       {showForm && (
         <form onSubmit={handleSubmit} className="mb-6 rounded-md border border-line bg-white p-6 shadow-panel">
           <h3 className="mb-4 text-lg font-semibold">New Bank Account</h3>
@@ -886,7 +1222,7 @@ export function BankAccountsPage() {
         ))}
         {accounts.length === 0 && <p className="col-span-full py-8 text-center text-sm text-ink/50">No bank accounts configured.</p>}
       </div>
-    </AppShell>
+    </FinanceShell>
   );
 }
 
@@ -942,12 +1278,10 @@ export function JournalEntriesPage() {
   }
 
   return (
-    <AppShell>
-      <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <div><h2 className="text-2xl font-semibold">Journal Entries</h2><p className="text-sm text-ink/65">Double-entry bookkeeping journal entries.</p></div>
+    <FinanceShell title="Journal Entries" subtitle="Double-entry bookkeeping journal entries.">
+      <div className="mb-4 flex justify-end">
         <button className={btnPrimary} onClick={() => setShowForm(!showForm)}><BookOpen className="h-4 w-4" /> {showForm ? "Cancel" : "New Journal Entry"}</button>
       </div>
-      <FinanceNav />
       {showForm && (
         <form onSubmit={handleSubmit} className="mb-6 rounded-md border border-line bg-white p-6 shadow-panel">
           <h3 className="mb-4 text-lg font-semibold">New Journal Entry</h3>
@@ -1009,7 +1343,7 @@ export function JournalEntriesPage() {
         rows={entries}
         empty="No journal entries."
       />
-    </AppShell>
+    </FinanceShell>
   );
 }
 
@@ -1040,16 +1374,12 @@ export function ProfitLossReportPage() {
   }
 
   return (
-    <AppShell>
-      <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <div><h2 className="text-2xl font-semibold">Profit & Loss Report</h2><p className="text-sm text-ink/65">Revenue vs expenses for a period.</p></div>
-        <div className="flex gap-2">
-          <input type="date" className={inputClass} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-          <input type="date" className={inputClass} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
-          <button className={btnPrimary} onClick={generate} disabled={loading}><FileBarChart className="h-4 w-4" /> {loading ? "Generating…" : "Generate"}</button>
-        </div>
+    <FinanceShell title="Profit & Loss Report" subtitle="Revenue vs expenses for a selected period.">
+      <div className="mb-4 flex flex-wrap items-center justify-end gap-2">
+        <input type="date" className={inputClass} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+        <input type="date" className={inputClass} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+        <button className={btnPrimary} onClick={generate} disabled={loading}><FileBarChart className="h-4 w-4" /> {loading ? "Generating…" : "Generate"}</button>
       </div>
-      <FinanceNav />
       {current && (
         <section className="mb-6 rounded-md border border-line bg-white p-6 shadow-panel">
           <h3 className="mb-4 text-lg font-semibold">{current.title as string}</h3>
@@ -1075,7 +1405,7 @@ export function ProfitLossReportPage() {
         rows={reports}
         empty="No P&L reports generated yet."
       />
-    </AppShell>
+    </FinanceShell>
   );
 }
 
@@ -1108,16 +1438,12 @@ export function CashFlowReportPage() {
   const reportData = current?.reportData as Record<string, unknown> | undefined;
 
   return (
-    <AppShell>
-      <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <div><h2 className="text-2xl font-semibold">Cash Flow Report</h2><p className="text-sm text-ink/65">Cash inflows and outflows for a period.</p></div>
-        <div className="flex gap-2">
-          <input type="date" className={inputClass} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-          <input type="date" className={inputClass} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
-          <button className={btnPrimary} onClick={generate} disabled={loading}><FileText className="h-4 w-4" /> {loading ? "Generating…" : "Generate"}</button>
-        </div>
+    <FinanceShell title="Cash Flow Report" subtitle="Cash inflows and outflows for a selected period.">
+      <div className="mb-4 flex flex-wrap items-center justify-end gap-2">
+        <input type="date" className={inputClass} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+        <input type="date" className={inputClass} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+        <button className={btnPrimary} onClick={generate} disabled={loading}><FileText className="h-4 w-4" /> {loading ? "Generating…" : "Generate"}</button>
       </div>
-      <FinanceNav />
       {current && (
         <section className="mb-6 rounded-md border border-line bg-white p-6 shadow-panel">
           <h3 className="mb-4 text-lg font-semibold">{current.title as string}</h3>
@@ -1160,7 +1486,7 @@ export function CashFlowReportPage() {
         rows={reports}
         empty="No cash flow reports yet."
       />
-    </AppShell>
+    </FinanceShell>
   );
 }
 
@@ -1191,16 +1517,12 @@ export function ProductProfitabilityPage() {
   }
 
   return (
-    <AppShell>
-      <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <div><h2 className="text-2xl font-semibold">Product Profitability</h2><p className="text-sm text-ink/65">Revenue, cost, and margin by product.</p></div>
-        <div className="flex gap-2">
-          <input type="date" className={inputClass} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-          <input type="date" className={inputClass} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
-          <button className={btnPrimary} onClick={generate} disabled={loading}><FileBarChart className="h-4 w-4" /> {loading ? "Generating…" : "Analyse"}</button>
-        </div>
+    <FinanceShell title="Product Profitability" subtitle="Revenue, cost, and margin by product.">
+      <div className="mb-4 flex flex-wrap items-center justify-end gap-2">
+        <input type="date" className={inputClass} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+        <input type="date" className={inputClass} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+        <button className={btnPrimary} onClick={generate} disabled={loading}><FileBarChart className="h-4 w-4" /> {loading ? "Generating…" : "Analyse"}</button>
       </div>
-      <FinanceNav />
       <DataTable
         columns={[
           { key: "productName", label: "Product" },
@@ -1216,7 +1538,7 @@ export function ProductProfitabilityPage() {
         rows={records}
         empty="No product profitability records. Click Analyse to generate."
       />
-    </AppShell>
+    </FinanceShell>
   );
 }
 
@@ -1256,12 +1578,10 @@ export function BatchProfitabilityPage() {
   }
 
   return (
-    <AppShell>
-      <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <div><h2 className="text-2xl font-semibold">Batch Profitability</h2><p className="text-sm text-ink/65">Profitability of flock, feed, and soya processing batches.</p></div>
+    <FinanceShell title="Batch Profitability" subtitle="Profitability of flock, feed, and soya processing batches.">
+      <div className="mb-4 flex justify-end">
         <button className={btnPrimary} onClick={() => setShowForm(!showForm)}><FileBarChart className="h-4 w-4" /> {showForm ? "Cancel" : "Record Batch P&L"}</button>
       </div>
-      <FinanceNav />
       <div className="mb-4 flex gap-3">
         <select className={selectClass} value={batchTypeFilter} onChange={(e) => setBatchTypeFilter(e.target.value)}>
           <option value="">All Batch Types</option>
@@ -1314,6 +1634,6 @@ export function BatchProfitabilityPage() {
         rows={records}
         empty="No batch profitability records."
       />
-    </AppShell>
+    </FinanceShell>
   );
 }

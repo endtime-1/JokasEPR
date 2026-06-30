@@ -81,6 +81,62 @@ export class FinanceService {
     };
   }
 
+  // ─── Dashboard Chart ───────────────────────────────────────────────────────
+
+  async dashboardChart(user: AuthenticatedUser, months = 6) {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth() - months + 1, 1);
+
+    const [revenues, expenses, expByCategory] = await Promise.all([
+      this.prisma.revenue.findMany({
+        where: { companyId: user.companyId, deletedAt: null, revenueDate: { gte: start } },
+        select: { revenueDate: true, amount: true }
+      }),
+      this.prisma.expense.findMany({
+        where: { companyId: user.companyId, deletedAt: null, expenseDate: { gte: start }, status: { not: "REJECTED" } },
+        select: { expenseDate: true, amount: true }
+      }),
+      this.prisma.expense.groupBy({
+        by: ["categoryId"],
+        where: { companyId: user.companyId, deletedAt: null, expenseDate: { gte: start }, status: { not: "REJECTED" } },
+        _sum: { amount: true }
+      })
+    ]);
+
+    const buckets: { month: string; label: string; revenue: number; expenses: number }[] = [];
+    for (let i = months - 1; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const label = d.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+      buckets.push({ month: key, label, revenue: 0, expenses: 0 });
+    }
+
+    for (const r of revenues) {
+      const d = new Date(r.revenueDate);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const b = buckets.find((x) => x.month === key);
+      if (b) b.revenue += Number(r.amount);
+    }
+    for (const e of expenses) {
+      const d = new Date(e.expenseDate);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const b = buckets.find((x) => x.month === key);
+      if (b) b.expenses += Number(e.amount);
+    }
+
+    const catIds = expByCategory.map((e) => e.categoryId).filter(Boolean) as string[];
+    const categories = catIds.length
+      ? await this.prisma.expenseCategory.findMany({ where: { id: { in: catIds } }, select: { id: true, name: true } })
+      : [];
+
+    const donut = expByCategory
+      .map((e) => ({ name: categories.find((c) => c.id === e.categoryId)?.name ?? "Uncategorized", amount: Number(e._sum.amount ?? 0) }))
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 6);
+
+    return { data: { months: buckets, expensesByCategory: donut } };
+  }
+
   // ─── Options ───────────────────────────────────────────────────────────────
 
   async options(user: AuthenticatedUser) {

@@ -7,23 +7,30 @@ import { SelectField, SelectOption } from "../../components/SelectField";
 import { Button } from "../../components/Button";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
-import { fetchCustomers, fetchProducts } from "../../api/endpoints";
+import { fetchCustomers, fetchProducts, fetchWarehouses } from "../../api/endpoints";
 import { colors, font, radius, shadow, spacing } from "../../constants/theme";
 
 type LineItem = { productId: string; productName: string; quantity: string; unitPrice: string };
 
 export function SalesOrderScreen() {
   const navigation = useNavigation<any>();
-  const [customerId,    setCustomerId]    = useState("");
-  const [deliveryDate,  setDeliveryDate]  = useState("");
-  const [notes,         setNotes]         = useState("");
-  const [lines,         setLines]         = useState<LineItem[]>([{ productId: "", productName: "", quantity: "1", unitPrice: "" }]);
+  const [customerId,   setCustomerId]   = useState("");
+  const [warehouseId,  setWarehouseId]  = useState("");
+  const [orderDate,    setOrderDate]    = useState("");
+  const [notes,        setNotes]        = useState("");
+  const [lines,        setLines]        = useState<LineItem[]>([{ productId: "", productName: "", quantity: "1", unitPrice: "" }]);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const { data: rawCustomers } = useLookup("customers", async () => { const r = await fetchCustomers(); return (r.data as any[]) ?? []; });
   const customers: SelectOption[] = useMemo(
-    () => (rawCustomers ?? []).map((c: any) => ({ label: `${c.name} (${c.customerCode})`, value: c.id })),
+    () => (rawCustomers ?? []).map((c: any) => ({ label: `${c.name} (${c.code})`, value: c.id })),
     [rawCustomers]
+  );
+
+  const { data: rawWarehouses } = useLookup("warehouses", async () => { const r = await fetchWarehouses(); return (r.data as any[]) ?? []; });
+  const warehouses: SelectOption[] = useMemo(
+    () => (rawWarehouses ?? []).map((w: any) => ({ label: w.name, value: w.id })),
+    [rawWarehouses]
   );
 
   const { data: rawProducts } = useLookup("products", async () => { const r = await fetchProducts(); return (r.data as any[]) ?? []; });
@@ -56,6 +63,7 @@ export function SalesOrderScreen() {
   function validate() {
     const e: Record<string, string> = {};
     if (!customerId) e.customerId = "Select a customer";
+    if (!warehouseId) e.warehouseId = "Select a warehouse";
     if (lines.some((l) => !l.productId)) e.lines = "All line items need a product selected";
     if (lines.some((l) => !l.quantity || Number(l.quantity) <= 0)) e.lines = "All quantities must be greater than 0";
     setErrors(e);
@@ -86,7 +94,11 @@ export function SalesOrderScreen() {
         onChange={(v) => { setCustomerId(v); setErrors((e) => ({ ...e, customerId: "" })); }}
         error={errors.customerId} required placeholder="Select customer…" />
 
-      <FormField label="Requested Delivery Date" value={deliveryDate} onChangeText={setDeliveryDate}
+      <SelectField label="Warehouse" value={warehouseId} options={warehouses}
+        onChange={(v) => { setWarehouseId(v); setErrors((e) => ({ ...e, warehouseId: "" })); }}
+        error={errors.warehouseId} required placeholder="Select warehouse…" />
+
+      <FormField label="Order Date" value={orderDate} onChangeText={setOrderDate}
         keyboardType="numeric" placeholder="YYYY-MM-DD (optional)" />
 
       {/* Order lines section */}
@@ -165,10 +177,11 @@ export function SalesOrderScreen() {
         if (!validate()) return;
         await submit({
           customerId,
-          requestedDeliveryDate: deliveryDate || undefined,
+          warehouseId,
+          orderDate: orderDate || undefined,
           notes: notes || undefined,
           items: lines.map((l) => ({
-            inventoryItemId: l.productId,
+            productId: l.productId,
             quantity: Number(l.quantity),
             unitPrice: Number(l.unitPrice),
           })),

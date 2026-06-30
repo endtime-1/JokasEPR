@@ -18,15 +18,15 @@ export const fetchPlatformSummary = () =>
   apiFetch<ApiEnvelope<{ branches: number; farms: number; productionSites: number; warehouses: number; users: number }>>("/platform/summary");
 
 export const fetchFarms = () =>
-  apiFetch<ApiEnvelope<{ id: string; name: string; farmType: string }[]>>("/platform/farms?limit=200");
+  apiFetch<ApiEnvelope<{ id: string; name: string; farmType: string }[]>>("/platform/farms");
 
 export const fetchWarehouses = () =>
-  apiFetch<ApiEnvelope<{ id: string; name: string; warehouseType: string }[]>>("/platform/warehouses?limit=200");
+  apiFetch<ApiEnvelope<{ id: string; name: string; warehouseType: string }[]>>("/platform/warehouses");
 
 // Poultry
 export const fetchFlockBatches = (farmId?: string) =>
   apiFetch<ApiEnvelope<{ id: string; code: string; name: string; farmId: string }[]>>(
-    `/poultry/flock-batches?limit=100${farmId ? `&farmId=${farmId}` : ""}`
+    `/poultry/flock-batches${farmId ? `?farmId=${farmId}` : ""}`
   );
 
 export const submitDailyPoultryRecord = (payload: SubmitDailyPoultryRecord) =>
@@ -58,10 +58,13 @@ export const submitStockMovement = (payload: SubmitStockMovement) =>
 
 // Sales
 export const fetchCustomers = () =>
-  apiFetch<ApiEnvelope<{ id: string; name: string; customerCode: string }[]>>("/sales/customers?limit=200");
+  apiFetch<ApiEnvelope<{ id: string; name: string; code: string }[]>>("/sales/customers");
 
 export const fetchProducts = () =>
-  apiFetch<ApiEnvelope<{ id: string; name: string; sku: string; unitPrice: number }[]>>("/inventory/products?limit=200");
+  apiFetch<ApiEnvelope<{ id: string; name: string; sku: string; unitPrice: number }[]>>("/inventory/products");
+
+export const fetchFeedProducts = () =>
+  apiFetch<ApiEnvelope<{ id: string; name: string; sku: string; unitPrice: number }[]>>("/inventory/products?type=FINISHED_GOOD");
 
 export const submitSalesOrder = (payload: SubmitSalesOrder) =>
   apiFetch<ApiEnvelope<unknown>>("/sales/orders", { method: "POST", body: JSON.stringify(payload) });
@@ -219,10 +222,36 @@ export type QualityOptionsResponse = {
     farms: QualityOptItem[];
     warehouses: QualityOptItem[];
     productionSites: QualityOptItem[];
+    branches: QualityOptItem[];
+    suppliers: QualityOptItem[];
+    users: { id: string; fullName: string }[];
   };
 };
 export const fetchQualityOptions = () =>
   apiFetch<QualityOptionsResponse>("/quality/options");
+
+export type PoultryOptions = {
+  data: {
+    farms:   { id: string; code: string; name: string; branchId: string }[];
+    houses:  { id: string; code: string; name: string; farmId: string }[];
+    pens:    { id: string; code: string; name: string; penNumber: number; poultryHouseId: string; farmId: string; capacity: number | null }[];
+    batches: { id: string; code: string; name: string; farmId: string; birdType: string }[];
+  };
+};
+export const fetchPoultryOptions = () =>
+  apiFetch<PoultryOptions>("/poultry/options");
+
+export const submitHealthObservation = (payload: Record<string, unknown>) =>
+  apiFetch<ApiEnvelope<unknown>>("/poultry/health-observations", { method: "POST", body: JSON.stringify(payload) });
+
+export const submitBirdWeightRecord = (payload: Record<string, unknown>) =>
+  apiFetch<ApiEnvelope<unknown>>("/poultry/bird-weight-records", { method: "POST", body: JSON.stringify(payload) });
+
+export const submitCorrectiveAction = (payload: Record<string, unknown>) =>
+  apiFetch<ApiEnvelope<unknown>>("/quality/corrective-actions", { method: "POST", body: JSON.stringify(payload) });
+
+export const submitLabReport = (payload: Record<string, unknown>) =>
+  apiFetch<ApiEnvelope<unknown>>("/quality/lab-reports", { method: "POST", body: JSON.stringify(payload) });
 
 export const submitQualityCheck = (payload: Record<string, unknown>) =>
   apiFetch<ApiEnvelope<{ id: string }>>("/quality/checks", { method: "POST", body: JSON.stringify(payload) });
@@ -239,7 +268,7 @@ export const conditionalPassQualityCheck = (id: string, payload: { conditions: s
 // Production
 export const fetchProductionOrders = () =>
   apiFetch<ApiEnvelope<{ id: string; orderNumber: string; productionSiteId: string; status: string }[]>>(
-    "/feed-production/orders?limit=50&status=IN_PROGRESS"
+    "/feed-production/orders?limit=50"
   );
 
 export const submitProductionRecord = (payload: SubmitProductionRecord) =>
@@ -273,6 +302,232 @@ export type QrScanResult = {
 
 export const scanQrCode = (code: string) =>
   apiFetch<ApiEnvelope<QrScanResult>>("/qr/scan", { method: "POST", body: JSON.stringify({ code }) });
+
+// Finance
+export type FinanceOption = { id: string; name: string; code?: string; bankName?: string };
+export type FinanceOptions = {
+  data: {
+    branches: FinanceOption[];
+    bankAccounts: (FinanceOption & { bankName: string; accountType: string })[];
+    expenseCategories: FinanceOption[];
+    accounts: FinanceOption[];
+  };
+};
+export type ExpenseRecord = {
+  id: string;
+  reference: string;
+  description: string;
+  amount: number;
+  expenseDate: string;
+  status: string;
+  vendorName?: string;
+  category?: { name: string };
+  branch?: { name: string };
+};
+
+export const fetchFinanceOptions = () =>
+  apiFetch<FinanceOptions>("/finance/options");
+
+export const submitExpense = (payload: Record<string, unknown>) =>
+  apiFetch<ApiEnvelope<unknown>>("/finance/expenses", { method: "POST", body: JSON.stringify(payload) });
+
+export const fetchExpenses = () =>
+  apiFetch<ApiEnvelope<ExpenseRecord[]>>("/finance/expenses?limit=50");
+
+export const submitCustomerPayment = (payload: Record<string, unknown>) =>
+  apiFetch<ApiEnvelope<unknown>>("/finance/customer-payments", { method: "POST", body: JSON.stringify(payload) });
+
+// Procurement
+export type ProcurementOptions = {
+  data: {
+    branches: { id: string; name: string; code: string }[];
+    warehouses: { id: string; name: string; code: string }[];
+    suppliers: { id: string; name: string; code: string }[];
+    bankAccounts: { id: string; accountName: string; bankName: string }[];
+  };
+};
+export type PurchaseOrderListItem = {
+  id: string;
+  reference: string;
+  status: string;
+  totalAmount: number;
+  orderDate: string;
+  expectedDelivery?: string;
+  supplier: { name: string; code: string };
+  _count: { items: number; grnRecords: number };
+};
+export type PurchaseOrderDetail = PurchaseOrderListItem & {
+  items: Array<{
+    id: string;
+    productName: string;
+    quantity: number;
+    receivedQty: number;
+    unitCost: number;
+    uomCode: string;
+    productId?: string;
+  }>;
+};
+
+export const fetchProcurementOptions = () =>
+  apiFetch<ProcurementOptions>("/procurement/options");
+
+// Inventory (extended)
+export type InventoryOption = {
+  id: string;
+  name: string;
+  code?: string;
+  sku?: string;
+};
+export type InventoryItemOption = {
+  id: string;
+  quantityOnHand: number;
+  product: { id: string; sku: string; name: string };
+  warehouse: { code: string; name: string };
+  warehouseId: string;
+};
+export type InventoryOptions = {
+  data: {
+    warehouses: InventoryOption[];
+    products: InventoryOption[];
+    items: InventoryItemOption[];
+  };
+};
+export type LowStockAlert = {
+  id: string;
+  sku: string;
+  product: string;
+  warehouse: string;
+  quantityOnHand: number;
+  reorderLevel: number;
+};
+export type ExpiryAlert = {
+  id: string;
+  daysToExpiry: number;
+  expiryDate: string;
+  status: string;
+  product: { name: string; sku: string };
+  warehouse: { name: string };
+  stockBatch: { batchNumber: string; quantityRemaining: number } | null;
+};
+
+export const fetchInventoryOptions = () =>
+  apiFetch<InventoryOptions>("/inventory/options");
+
+export const fetchLowStockAlerts = () =>
+  apiFetch<ApiEnvelope<LowStockAlert[]>>("/inventory/low-stock");
+
+export const fetchExpiryAlerts = () =>
+  apiFetch<ApiEnvelope<ExpiryAlert[]>>("/inventory/expiry-alerts");
+
+export const submitStockAdjustment = (payload: Record<string, unknown>) =>
+  apiFetch<ApiEnvelope<unknown>>("/inventory/adjustments", { method: "POST", body: JSON.stringify(payload) });
+
+export const submitStockTransfer = (payload: Record<string, unknown>) =>
+  apiFetch<ApiEnvelope<unknown>>("/inventory/transfers", { method: "POST", body: JSON.stringify(payload) });
+
+// Returns all recent POs; screen filters to open statuses client-side
+export const fetchOpenPurchaseOrders = () =>
+  apiFetch<ApiEnvelope<PurchaseOrderListItem[]>>("/procurement/purchase-orders");
+
+export const fetchPurchaseOrderDetail = (id: string) =>
+  apiFetch<ApiEnvelope<PurchaseOrderDetail>>(`/procurement/purchase-orders/${id}`);
+
+export const submitGRN = (payload: Record<string, unknown>) =>
+  apiFetch<ApiEnvelope<unknown>>("/procurement/grns", { method: "POST", body: JSON.stringify(payload) });
+
+// Manager Views
+export type FinanceDashboardData = {
+  data: {
+    totalRevenue:           number;
+    totalExpenses:          number;
+    netProfit:              number;
+    totalCustomerPayments:  number;
+    pendingApprovals:       number;
+    bankAccounts:           { id: string; accountName: string; bankName: string; currentBalance: number }[];
+    recentExpenses:         { id: string; reference: string; description: string; amount: number; expenseDate: string; status: string; category?: { name: string } }[];
+    recentRevenue:          { id: string; amount: number; revenueDate: string; description?: string }[];
+  };
+};
+export const fetchFinanceDashboard = () =>
+  apiFetch<FinanceDashboardData>("/finance/dashboard");
+
+export type DebtorItem = {
+  id: string;
+  invoiceNumber: string;
+  status: string;
+  totalAmount: number;
+  amountPaid: number;
+  balanceDue: number;
+  dueDate?: string;
+  customer: { name: string; code: string };
+};
+export const fetchDebtors = () =>
+  apiFetch<ApiEnvelope<DebtorItem[]>>("/finance/debtors");
+
+export type EmployeeItem = {
+  id: string;
+  code: string;
+  fullName: string;
+  phone?: string;
+  email?: string;
+  status: string;
+  employeeRole?: { name: string; code: string };
+  branch?: { name: string };
+  farm?: { name: string };
+};
+export const fetchEmployees = () =>
+  apiFetch<ApiEnvelope<EmployeeItem[]>>("/hr/employees?limit=200");
+
+export type AttendanceEntry = {
+  id: string;
+  date: string;
+  status: string;
+  checkIn?: string;
+  checkOut?: string;
+  isLate?: boolean;
+  employee: { fullName: string; code: string };
+  shift?: { name: string; startTime: string; endTime: string } | null;
+};
+export const fetchTodayAttendance = () => {
+  const today = new Date().toISOString().split("T")[0];
+  return apiFetch<ApiEnvelope<AttendanceEntry[]>>(`/hr/attendance?dateFrom=${today}&dateTo=${today}`);
+};
+
+// Maintenance
+export type MaintenanceAsset = { id: string; code: string; name: string; branchId: string; machineId?: string };
+export type MaintenanceOptions = {
+  data: {
+    branches:        { id: string; code: string; name: string }[];
+    machines:        MaintenanceAsset[];
+    equipment:       MaintenanceAsset[];
+    technicians:     { id: string; fullName: string; email: string }[];
+  };
+};
+export type MaintenanceScheduleItem = {
+  id: string;
+  scheduleNumber: string;
+  title: string;
+  maintenanceType: string;
+  priority: string;
+  nextDueDate: string;
+  frequencyDays: number;
+  lastCompletedAt?: string;
+  status: string;
+  machine?:    { id: string; code: string; name: string } | null;
+  equipment?:  { id: string; code: string; name: string } | null;
+};
+
+export const fetchMaintenanceOptions = () =>
+  apiFetch<MaintenanceOptions>("/maintenance/options");
+
+export const fetchMaintenanceSchedules = () =>
+  apiFetch<ApiEnvelope<MaintenanceScheduleItem[]>>("/maintenance/schedules");
+
+export const submitBreakdown = (payload: Record<string, unknown>) =>
+  apiFetch<ApiEnvelope<unknown>>("/maintenance/breakdowns", { method: "POST", body: JSON.stringify(payload) });
+
+export const submitMaintenanceRecord = (payload: Record<string, unknown>) =>
+  apiFetch<ApiEnvelope<unknown>>("/maintenance/records", { method: "POST", body: JSON.stringify(payload) });
 
 // Dashboard
 export const fetchDashboardSummary = () =>

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Ip, Param, Patch, Post, Query, Res, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Headers, Ip, Param, Patch, Post, Put, Query, Res, UseGuards } from "@nestjs/common";
 import { Response } from "express";
 import { AuthenticatedUser, PERMISSIONS } from "@jokas/shared";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
@@ -15,11 +15,13 @@ import {
   CreateFeedProductionCostDto,
   CreateFeedProductionOrderDto,
   CreateFeedQualityCheckDto,
+  CreateIngredientDto,
   FeedProductionQueryDto,
   HiproPredictiveQueryDto,
   RecordExternalFeedSaleDto,
   SimulatePredictiveDto,
-  UpdateFeedQualityCheckStatusDto
+  UpdateFeedQualityCheckStatusDto,
+  UpdateIngredientDto
 } from "./dto/feed-production.dto";
 import { FeedProductionService } from "./feed-production.service";
 
@@ -215,5 +217,31 @@ export class FeedProductionController {
     response.setHeader("content-type", "text/csv");
     response.setHeader("content-disposition", "attachment; filename=feed-production-summary.csv");
     response.send(csv);
+  }
+
+  // ── Ingredient (Raw Material) Management ─────────────────────────────────────
+
+  @Get("ingredients")
+  @RequirePermissions(PERMISSIONS.FEED_READ)
+  listIngredients(@CurrentUser() user: AuthenticatedUser) {
+    return this.feedProductionService.listIngredients(user);
+  }
+
+  @Post("ingredients")
+  @RequirePermissions(PERMISSIONS.FEED_MANAGE)
+  createIngredient(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateIngredientDto) {
+    return this.feedProductionService.createIngredient(user, dto);
+  }
+
+  @Put("ingredients/:id")
+  @RequirePermissions(PERMISSIONS.FEED_MANAGE)
+  updateIngredient(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateIngredientDto) {
+    return this.feedProductionService.updateIngredient(user, id, dto);
+  }
+
+  @Delete("ingredients/:id")
+  @RequirePermissions(PERMISSIONS.FEED_MANAGE)
+  deleteIngredient(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
+    return this.feedProductionService.deleteIngredient(user, id);
   }
 }

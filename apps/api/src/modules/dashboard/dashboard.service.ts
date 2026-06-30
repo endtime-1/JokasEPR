@@ -63,6 +63,29 @@ export class DashboardService {
     };
   }
 
+  async summary(user: AuthenticatedUser) {
+    const companyId = user.companyId;
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
+
+    const [salesAgg, openOrders, totalBirds, pendingAlerts] = await Promise.all([
+      this.prisma.salesOrder.aggregate({ where: { companyId, status: { not: "CANCELLED" }, createdAt: { gte: monthStart } }, _sum: { totalAmount: true } }),
+      this.prisma.salesOrder.count({ where: { companyId, status: { in: ["DRAFT", "PENDING_STOCK_APPROVAL", "APPROVED"] } } }),
+      this.prisma.flockBatch.aggregate({ where: { companyId, status: "ACTIVE", deletedAt: null }, _sum: { openingBirdCount: true } }),
+      this.prisma.stockExpiryAlert.count({ where: { companyId, deletedAt: null, daysToExpiry: { lte: 30 } } }),
+    ]);
+
+    return {
+      data: {
+        totalRevenue: salesAgg._sum.totalAmount ?? 0,
+        openOrders,
+        totalBirds: totalBirds._sum.openingBirdCount ?? 0,
+        pendingAlerts,
+      },
+    };
+  }
+
   async executive(user: AuthenticatedUser, query: DashboardQueryDto) {
     this.assertCompany(user, query.companyId);
     this.assertScope(user, query.branchId, user.branchIds, "branch");
@@ -71,11 +94,10 @@ export class DashboardService {
     this.assertScope(user, query.productionSiteId, user.productionSiteIds, "production site");
 
     const range = this.resolveRange(query);
-    const baseWhere = this.metricWhere(user, query, range);
 
     const [summary, charts, alerts] = await Promise.all([
-      this.summaryCards(baseWhere),
-      this.charts(baseWhere),
+      this.liveSummary(user, query, range),
+      this.liveCharts(user, query, range),
       this.alerts(user, query, range)
     ]);
 
@@ -278,6 +300,266 @@ export class DashboardService {
         summary: { total: duties.length, complete, partial, notStarted },
       },
     };
+  }
+
+  // ── Live query helpers (executive dashboard) ────────────────────────────
+
+  private async liveSummary(user: AuthenticatedUser, query: DashboardQueryDto, range: { start: Date; end: Date }): Promise<Card[]> {
+    const cid = user.companyId;
+    const farmF = this.liveFarmFilter(user, query);
+    const siteF = this.liveSiteFilter(user, query);
+    const branchF = this.liveBranchFilter(user, query);
+
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const todayEnd = new Date(todayStart);
+    todayEnd.setDate(todayEnd.getDate() + 1);
+    const weekStart = new Date(todayStart);
+    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+    const monthStart = new Date(todayStart);
+    monthStart.setDate(1);
+
+    const [
+      totalBirds, activeFlockBatches,
+      eggAgg, mortalityAgg, feedAgg,
+      feedProdAgg, soyaBeanAgg, soyaOilAgg, soyaCakeAgg,
+      salesAgg, debtAgg,
+      lowStockAlerts, pendingProdOrders, pendingPurchaseApprovals,
+      maintenanceAlerts, aiAlerts
+    ] = await Promise.all([
+      this.prisma.flockBatch.aggregate({ where: { companyId: cid, status: "ACTIVE", deletedAt: null, ...farmF }, _sum: { openingBirdCount: true } })
+        .then(r => Number(r._sum.openingBirdCount ?? 0)).catch(() => 0),
+
+      this.prisma.flockBatch.count({ where: { companyId: cid, status: "ACTIVE", deletedAt: null, ...farmF } })
+        .catch(() => 0),
+
+      this.prisma.eggProductionRecord.aggregate({
+        where: { companyId: cid, ...farmF, recordDate: { gte: todayStart, lt: todayEnd } },
+        _sum: { goodEggs: true, crackedEggs: true, dirtyEggs: true, brokenEggs: true, rejectedEggs: true }
+      }).then(r => {
+        const s = r._sum;
+        return [s.goodEggs, s.crackedEggs, s.dirtyEggs, s.brokenEggs, s.rejectedEggs].reduce((acc: number, v) => acc + Number(v ?? 0), 0);
+      }).catch(() => 0),
+
+      this.prisma.mortalityRecord.aggregate({
+        where: { companyId: cid, ...farmF, recordDate: { gte: todayStart, lt: todayEnd } },
+        _sum: { birdCount: true }
+      }).then(r => Number(r._sum.birdCount ?? 0)).catch(() => 0),
+
+      this.prisma.feedConsumptionRecord.aggregate({
+        where: { companyId: cid, ...farmF, recordDate: { gte: todayStart, lt: todayEnd } },
+        _sum: { quantityKg: true }
+      }).then(r => Number(r._sum.quantityKg ?? 0)).catch(() => 0),
+
+      this.prisma.feedProductionBatch.aggregate({
+        where: { companyId: cid, ...siteF, createdAt: { gte: weekStart } },
+        _sum: { producedQuantityKg: true }
+      }).then(r => Number(r._sum.producedQuantityKg ?? 0)).catch(() => 0),
+
+      this.prisma.soyaBeanIntake.aggregate({
+        where: { companyId: cid, ...siteF, receivedAt: { gte: weekStart } },
+        _sum: { quantityKg: true }
+      }).then(r => Number(r._sum.quantityKg ?? 0)).catch(() => 0),
+
+      this.prisma.soyaOilOutput.aggregate({
+        where: { deletedAt: null, createdAt: { gte: range.start, lte: range.end } },
+        _sum: { quantityLitres: true }
+      }).then(r => Number(r._sum.quantityLitres ?? 0)).catch(() => 0),
+
+      this.prisma.soyaCakeOutput.aggregate({
+        where: { deletedAt: null, createdAt: { gte: range.start, lte: range.end } },
+        _sum: { quantityKg: true }
+      }).then(r => Number(r._sum.quantityKg ?? 0)).catch(() => 0),
+
+      this.prisma.salesOrder.aggregate({
+        where: { companyId: cid, ...branchF, status: { not: "CANCELLED" }, orderDate: { gte: monthStart } },
+        _sum: { totalAmount: true }
+      }).then(r => Number(r._sum.totalAmount ?? 0)).catch(() => 0),
+
+      this.prisma.salesOrder.aggregate({
+        where: { companyId: cid, ...branchF, status: { not: "CANCELLED" } },
+        _sum: { balanceDue: true }
+      }).then(r => Number(r._sum.balanceDue ?? 0)).catch(() => 0),
+
+      this.prisma.stockExpiryAlert.count({ where: { companyId: cid, deletedAt: null, daysToExpiry: { lte: 30 } } })
+        .catch(() => 0),
+
+      this.prisma.feedProductionOrder.count({ where: { companyId: cid, status: { in: ["DRAFT", "APPROVED"] as any[] } } })
+        .catch(() => 0),
+
+      this.prisma.purchaseOrder.count({ where: { companyId: cid, status: "PENDING_APPROVAL" as any, deletedAt: null } })
+        .catch(() => 0),
+
+      this.prisma.maintenanceRecord.count({ where: { companyId: cid, status: { in: ["OPEN", "OVERDUE", "PENDING"] as any[] } } } as any)
+        .catch(() => 0),
+
+      this.prisma.dashboardAlert.count({ where: { companyId: cid, status: "OPEN", deletedAt: null } })
+        .catch(() => 0),
+    ]);
+
+    const values: Record<string, number> = {
+      totalBirds,
+      activeFlockBatches,
+      eggProductionToday: eggAgg,
+      mortalityToday: mortalityAgg,
+      feedConsumedToday: feedAgg,
+      feedProducedThisWeek: feedProdAgg,
+      soyaBeansProcessedThisWeek: soyaBeanAgg,
+      soyaOilProduced: soyaOilAgg,
+      soyaCakeProduced: soyaCakeAgg,
+      currentInventoryValue: 0,
+      salesThisMonth: salesAgg,
+      outstandingCustomerDebt: debtAgg,
+      supplierDebt: 0,
+      lowStockAlerts,
+      pendingProductionOrders: pendingProdOrders,
+      pendingPurchaseApprovals,
+      machineMaintenanceAlerts: maintenanceAlerts,
+      aiAlerts,
+    };
+
+    return CARD_CONFIG.map((card) => ({
+      key: card.key,
+      label: card.label,
+      value: values[card.key] ?? 0,
+      unit: card.unit,
+      tone: card.tone,
+    }));
+  }
+
+  private async liveCharts(user: AuthenticatedUser, query: DashboardQueryDto, range: { start: Date; end: Date }) {
+    const cid = user.companyId;
+    const farmF = this.liveFarmFilter(user, query);
+    const siteF = this.liveSiteFilter(user, query);
+    const branchF = this.liveBranchFilter(user, query);
+    const dateRange = { gte: range.start, lte: range.end };
+
+    const [eggRows, mortalityRows, feedProdRows, soyaBeanRows, soyaOilRows, soyaCakeRows, salesRows, eggFarmRows, salesBranchRows] = await Promise.all([
+      this.prisma.eggProductionRecord.findMany({
+        where: { companyId: cid, ...farmF, recordDate: dateRange },
+        select: { recordDate: true, farmId: true, goodEggs: true, crackedEggs: true, dirtyEggs: true, brokenEggs: true, rejectedEggs: true }
+      }).catch(() => [] as any[]),
+
+      this.prisma.mortalityRecord.findMany({
+        where: { companyId: cid, ...farmF, recordDate: dateRange },
+        select: { recordDate: true, birdCount: true }
+      }).catch(() => [] as any[]),
+
+      this.prisma.feedProductionBatch.findMany({
+        where: { companyId: cid, ...siteF, createdAt: dateRange },
+        select: { createdAt: true, producedQuantityKg: true }
+      }).catch(() => [] as any[]),
+
+      this.prisma.soyaBeanIntake.findMany({
+        where: { companyId: cid, ...siteF, receivedAt: dateRange },
+        select: { receivedAt: true, quantityKg: true }
+      }).catch(() => [] as any[]),
+
+      this.prisma.soyaOilOutput.findMany({
+        where: { deletedAt: null, createdAt: dateRange },
+        select: { createdAt: true, quantityLitres: true }
+      }).catch(() => [] as any[]),
+
+      this.prisma.soyaCakeOutput.findMany({
+        where: { deletedAt: null, createdAt: dateRange },
+        select: { createdAt: true, quantityKg: true }
+      }).catch(() => [] as any[]),
+
+      this.prisma.salesOrder.findMany({
+        where: { companyId: cid, ...branchF, status: { not: "CANCELLED" }, orderDate: dateRange },
+        select: { orderDate: true, branchId: true, totalAmount: true }
+      }).catch(() => [] as any[]),
+
+      this.prisma.eggProductionRecord.findMany({
+        where: { companyId: cid, ...farmF, recordDate: dateRange },
+        select: { farmId: true, goodEggs: true, crackedEggs: true, dirtyEggs: true, brokenEggs: true, rejectedEggs: true }
+      }).catch(() => [] as any[]),
+
+      this.prisma.salesOrder.findMany({
+        where: { companyId: cid, ...branchF, status: { not: "CANCELLED" }, orderDate: dateRange },
+        select: { branchId: true, totalAmount: true }
+      }).catch(() => [] as any[]),
+    ]);
+
+    const sumToMap = (rows: any[], dateKey: string, valueKey: string) => {
+      const m = new Map<string, number>();
+      for (const r of rows) {
+        const k = this.formatDate(new Date(r[dateKey]));
+        m.set(k, (m.get(k) ?? 0) + Number(r[valueKey] ?? 0));
+      }
+      return Array.from(m, ([label, value]) => ({ label, value })).sort((a, b) => a.label.localeCompare(b.label));
+    };
+
+    const eggByDate = new Map<string, number>();
+    for (const r of eggRows) {
+      const k = this.formatDate(new Date(r.recordDate));
+      const total: number = [r.goodEggs, r.crackedEggs, r.dirtyEggs, r.brokenEggs, r.rejectedEggs].reduce((a: number, v: any) => a + Number(v ?? 0), 0);
+      eggByDate.set(k, (eggByDate.get(k) ?? 0) + total);
+    }
+
+    const soyaBeanByDate = new Map<string, number>();
+    for (const r of soyaBeanRows) { const k = this.formatDate(new Date(r.receivedAt)); soyaBeanByDate.set(k, (soyaBeanByDate.get(k) ?? 0) + Number(r.quantityKg ?? 0)); }
+    const soyaOilByDate = new Map<string, number>();
+    for (const r of soyaOilRows) { const k = this.formatDate(new Date(r.createdAt)); soyaOilByDate.set(k, (soyaOilByDate.get(k) ?? 0) + Number(r.quantityLitres ?? 0)); }
+    const soyaCakeByDate = new Map<string, number>();
+    for (const r of soyaCakeRows) { const k = this.formatDate(new Date(r.createdAt)); soyaCakeByDate.set(k, (soyaCakeByDate.get(k) ?? 0) + Number(r.quantityKg ?? 0)); }
+
+    const mapToSeries = (m: Map<string, number>, name: string): Series =>
+      ({ name, data: Array.from(m, ([label, value]) => ({ label, value })).sort((a, b) => a.label.localeCompare(b.label)) });
+
+    const eggByFarmId = new Map<string, number>();
+    for (const r of eggFarmRows) {
+      const total: number = [r.goodEggs, r.crackedEggs, r.dirtyEggs, r.brokenEggs, r.rejectedEggs].reduce((a: number, v: any) => a + Number(v ?? 0), 0);
+      eggByFarmId.set(r.farmId as string, (eggByFarmId.get(r.farmId as string) ?? 0) + total);
+    }
+    const farmIds = [...eggByFarmId.keys()];
+    const farmNames = farmIds.length > 0
+      ? await this.prisma.farm.findMany({ where: { id: { in: farmIds } }, select: { id: true, name: true } }).catch(() => [] as any[])
+      : [];
+    const farmNameMap = new Map(farmNames.map((f: any) => [f.id, f.name]));
+    const farmPerfData = [...eggByFarmId.entries()].map(([id, value]) => ({ label: farmNameMap.get(id) ?? id, value }));
+
+    const salesByBranchId = new Map<string, number>();
+    for (const r of salesBranchRows) {
+      const id = (r.branchId as string) ?? "unknown";
+      salesByBranchId.set(id, (salesByBranchId.get(id) ?? 0) + Number(r.totalAmount ?? 0));
+    }
+    const branchIds = [...salesByBranchId.keys()].filter(id => id !== "unknown");
+    const branchNames = branchIds.length > 0
+      ? await this.prisma.branch.findMany({ where: { id: { in: branchIds } }, select: { id: true, name: true } }).catch(() => [] as any[])
+      : [];
+    const branchNameMap = new Map(branchNames.map((b: any) => [b.id, b.name]));
+    const branchPerfData = [...salesByBranchId.entries()].map(([id, value]) => ({ label: branchNameMap.get(id) ?? id, value }));
+
+    return {
+      eggProductionTrend: [{ name: "Eggs", data: Array.from(eggByDate, ([label, value]) => ({ label, value })).sort((a, b) => a.label.localeCompare(b.label)) }] as Series[],
+      mortalityTrend: [{ name: "Mortality", data: sumToMap(mortalityRows, "recordDate", "birdCount") }] as Series[],
+      feedProductionTrend: [{ name: "Feed produced", data: sumToMap(feedProdRows, "createdAt", "producedQuantityKg") }] as Series[],
+      soyaProductionTrend: [mapToSeries(soyaBeanByDate, "Beans processed"), mapToSeries(soyaOilByDate, "Oil produced"), mapToSeries(soyaCakeByDate, "Cake produced")] as Series[],
+      salesTrend: [{ name: "Sales", data: sumToMap(salesRows, "orderDate", "totalAmount") }] as Series[],
+      inventoryValueByCategory: [{ name: "current_inventory_value", data: [] }] as Series[],
+      profitabilityByProduct: [{ name: "gross_profit", data: [] }] as Series[],
+      farmPerformanceComparison: [{ name: "farm_performance_index", data: farmPerfData }] as Series[],
+      branchPerformanceComparison: [{ name: "branch_performance_index", data: branchPerfData }] as Series[],
+    };
+  }
+
+  private liveFarmFilter(user: AuthenticatedUser, query: DashboardQueryDto) {
+    if (query.farmId) return { farmId: query.farmId };
+    if (!user.hasGlobalAccess && user.farmIds.length > 0) return { farmId: { in: user.farmIds } };
+    return {};
+  }
+
+  private liveSiteFilter(user: AuthenticatedUser, query: DashboardQueryDto) {
+    if (query.productionSiteId) return { productionSiteId: query.productionSiteId };
+    if (!user.hasGlobalAccess && user.productionSiteIds.length > 0) return { productionSiteId: { in: user.productionSiteIds } };
+    return {};
+  }
+
+  private liveBranchFilter(user: AuthenticatedUser, query: DashboardQueryDto) {
+    if (query.branchId) return { branchId: query.branchId };
+    if (!user.hasGlobalAccess && user.branchIds.length > 0) return { branchId: { in: user.branchIds } };
+    return {};
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────

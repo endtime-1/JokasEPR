@@ -7,6 +7,7 @@ import { PermissionsGuard } from "../../common/guards/permissions.guard";
 import {
   ApproveExpenseDto,
   ApprovePayrollDto,
+  ChartQueryDto,
   CreateAccountDto,
   CreateBankAccountDto,
   CreateBatchProfitabilityDto,
@@ -35,6 +36,12 @@ export class FinanceController {
   @RequirePermissions(PERMISSIONS.FINANCE_READ)
   dashboard(@CurrentUser() user: AuthenticatedUser, @Query() query: FinanceQueryDto) {
     return this.financeService.dashboard(user, query);
+  }
+
+  @Get("dashboard/chart")
+  @RequirePermissions(PERMISSIONS.FINANCE_READ)
+  dashboardChart(@CurrentUser() user: AuthenticatedUser, @Query() query: ChartQueryDto) {
+    return this.financeService.dashboardChart(user, query.months ?? 6);
   }
 
   @Get("options")

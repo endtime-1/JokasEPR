@@ -22,6 +22,25 @@ import { QualityCheckScreen } from "../features/quality/QualityCheckScreen";
 import { HiproPredictiveScreen } from "../features/feed/HiproPredictiveScreen";
 import { ScannerScreen } from "../features/scanner/ScannerScreen";
 import { ScanResultScreen } from "../features/scanner/ScanResultScreen";
+import { ExpenseNewScreen } from "../features/finance/ExpenseNewScreen";
+import { ExpenseListScreen } from "../features/finance/ExpenseListScreen";
+import { PaymentCollectScreen } from "../features/finance/PaymentCollectScreen";
+import { PurchaseOrderListScreen } from "../features/procurement/PurchaseOrderListScreen";
+import { GrnCreateScreen } from "../features/procurement/GrnCreateScreen";
+import { StockAdjustmentScreen } from "../features/inventory/StockAdjustmentScreen";
+import { StockAlertsScreen } from "../features/inventory/StockAlertsScreen";
+import { StockTransferScreen } from "../features/inventory/StockTransferScreen";
+import { BreakdownReportScreen } from "../features/maintenance/BreakdownReportScreen";
+import { MaintenanceTasksScreen } from "../features/maintenance/MaintenanceTasksScreen";
+import { MaintenanceLogScreen } from "../features/maintenance/MaintenanceLogScreen";
+import { HealthObservationScreen } from "../features/poultry/HealthObservationScreen";
+import { BirdWeightScreen } from "../features/poultry/BirdWeightScreen";
+import { CorrectiveActionScreen } from "../features/quality/CorrectiveActionScreen";
+import { LabReportScreen } from "../features/quality/LabReportScreen";
+import { FinanceMobileScreen } from "../features/manager/FinanceMobileScreen";
+import { DebtorScreen } from "../features/manager/DebtorScreen";
+import { EmployeeDirectoryScreen } from "../features/manager/EmployeeDirectoryScreen";
+import { ShiftViewScreen } from "../features/manager/ShiftViewScreen";
 import { RecordsHomeScreen } from "../screens/RecordsHomeScreen";
 import { TaskListScreen } from "../features/tasks/TaskListScreen";
 import { TaskUpdateScreen } from "../features/tasks/TaskUpdateScreen";
@@ -80,8 +99,27 @@ function RecordsNavigator() {
       <RecordsStack.Screen name="ProspectVisit"    component={ProspectVisitScreen}     options={{ title: "Prospect Visit"        }} />
       <RecordsStack.Screen name="QualityCheck"    component={QualityCheckScreen}      options={{ title: "Quality Inspection"   }} />
       <RecordsStack.Screen name="HiproPredict"    component={HiproPredictiveScreen}   options={{ title: "Feed Predictive"      }} />
-      <RecordsStack.Screen name="Scanner"         component={ScannerScreen}         options={{ title: "QR Scanner"      }} />
-      <RecordsStack.Screen name="ScanResult"      component={ScanResultScreen}      options={{ title: "Scan Result"     }} />
+      <RecordsStack.Screen name="HealthObservation"   component={HealthObservationScreen}  options={{ title: "Health Observation" }} />
+      <RecordsStack.Screen name="BirdWeight"          component={BirdWeightScreen}          options={{ title: "Bird Weight"        }} />
+      <RecordsStack.Screen name="CorrectiveAction"    component={CorrectiveActionScreen}    options={{ title: "Corrective Action"  }} />
+      <RecordsStack.Screen name="LabReport"           component={LabReportScreen}           options={{ title: "Lab Report"         }} />
+      <RecordsStack.Screen name="BreakdownReport"     component={BreakdownReportScreen}    options={{ title: "Report Breakdown"   }} />
+      <RecordsStack.Screen name="MaintenanceTasks"   component={MaintenanceTasksScreen}   options={{ title: "Maintenance"        }} />
+      <RecordsStack.Screen name="MaintenanceLog"     component={MaintenanceLogScreen}     options={{ title: "Log Work Done"      }} />
+      <RecordsStack.Screen name="StockAdjustment"    component={StockAdjustmentScreen}    options={{ title: "Stock Adjustment"   }} />
+      <RecordsStack.Screen name="StockAlerts"        component={StockAlertsScreen}        options={{ title: "Stock Alerts"       }} />
+      <RecordsStack.Screen name="StockTransfer"      component={StockTransferScreen}      options={{ title: "Stock Transfer"     }} />
+      <RecordsStack.Screen name="ExpenseNew"         component={ExpenseNewScreen}         options={{ title: "New Expense"        }} />
+      <RecordsStack.Screen name="ExpenseList"        component={ExpenseListScreen}        options={{ title: "My Expenses"        }} />
+      <RecordsStack.Screen name="PaymentCollect"     component={PaymentCollectScreen}     options={{ title: "Collect Payment"    }} />
+      <RecordsStack.Screen name="PurchaseOrderList"  component={PurchaseOrderListScreen}  options={{ title: "Purchase Orders"    }} />
+      <RecordsStack.Screen name="GrnCreate"          component={GrnCreateScreen}          options={{ title: "Receive Goods"      }} />
+      <RecordsStack.Screen name="Scanner"            component={ScannerScreen}            options={{ title: "QR Scanner"         }} />
+      <RecordsStack.Screen name="ScanResult"         component={ScanResultScreen}         options={{ title: "Scan Result"        }} />
+      <RecordsStack.Screen name="FinanceMobile"      component={FinanceMobileScreen}      options={{ title: "Finance Overview"   }} />
+      <RecordsStack.Screen name="DebtorList"         component={DebtorScreen}             options={{ title: "Debtors"            }} />
+      <RecordsStack.Screen name="EmployeeDirectory"  component={EmployeeDirectoryScreen}  options={{ title: "Employees"          }} />
+      <RecordsStack.Screen name="ShiftView"          component={ShiftViewScreen}          options={{ title: "Today's Attendance" }} />
     </RecordsStack.Navigator>
   );
 }

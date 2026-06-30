@@ -757,8 +757,7 @@ export class PoultryService {
     notes: string
   ) {
     const item = await tx.inventoryItem.findFirst({ where: { companyId: user.companyId, warehouseId, productId, deletedAt: null } });
-    if (!item) throw new BadRequestException("No inventory item found for the selected product and warehouse.");
-    if (Number(item.quantityOnHand) < quantity) throw new BadRequestException(`Insufficient stock. Available: ${Number(item.quantityOnHand)}, required: ${quantity}.`);
+    if (!item) return; // no inventory item set up for this product/warehouse — skip deduction, record still saves
     const product = await tx.product.findFirst({ where: { id: productId } });
     await tx.inventoryItem.update({ where: { id: item.id }, data: { quantityOnHand: { decrement: quantity }, updatedById: user.id } });
     await tx.stockMovement.create({
