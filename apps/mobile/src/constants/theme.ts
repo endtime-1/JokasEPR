@@ -76,20 +76,51 @@ export const radius = {
 };
 
 export const font = {
+  family: {
+    regular:   "Inter_400Regular",
+    medium:    "Inter_500Medium",
+    semibold:  "Inter_600SemiBold",
+    bold:      "Inter_700Bold",
+    extrabold: "Inter_800ExtraBold",
+  },
   size: {
-    xs: 11,
-    sm: 13,
-    md: 15,
-    lg: 17,
-    xl: 21,
-    xxl: 26,
+    xs:   11,
+    sm:   13,
+    md:   15,
+    lg:   17,
+    xl:   21,
+    xxl:  26,
     xxxl: 32
   },
   weight: {
-    regular: "400" as const,
-    medium: "500" as const,
-    semibold: "600" as const,
-    bold: "700" as const,
+    regular:   "400" as const,
+    medium:    "500" as const,
+    semibold:  "600" as const,
+    bold:      "700" as const,
     extrabold: "800" as const
   }
+};
+
+// Centralised semantic tokens — import these instead of hardcoding hex in screens
+export const semantic = {
+  status: {
+    approved:   { color: "#16a34a", bg: "#f0fdf4", border: "#bbf7d0" },
+    pending:    { color: "#d97706", bg: "#fffbeb", border: "#fde68a" },
+    submitted:  { color: "#d97706", bg: "#fff7ed", border: "#fed7aa" },
+    rejected:   { color: "#dc2626", bg: "#fef2f2", border: "#fca5a5" },
+    draft:      { color: "#64748b", bg: "#f8fafc", border: "#e2e8f0" },
+    inProgress: { color: "#2563eb", bg: "#eff6ff", border: "#bfdbfe" },
+    closed:     { color: "#64748b", bg: "#f8fafc", border: "#e2e8f0" },
+  },
+  priority: {
+    critical: { color: "#dc2626", bg: "#fef2f2", border: "#fca5a5" },
+    high:     { color: "#d97706", bg: "#fffbeb", border: "#fde68a" },
+    medium:   { color: "#2563eb", bg: "#eff6ff", border: "#bfdbfe" },
+    low:      { color: "#16a34a", bg: "#f0fdf4", border: "#bbf7d0" },
+  },
+  slot: {
+    MORNING: { color: "#d97706", bg: "#fef3c7" },
+    EVENING: { color: "#7c3aed", bg: "#ede9fe" },
+    ANYTIME: { color: "#0369a1", bg: "#e0f2fe" },
+  },
 };

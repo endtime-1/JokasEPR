@@ -3,10 +3,11 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { useAuth } from "../auth/AuthContext";
 import { SyncBanner } from "../components/SyncBanner";
+import { Icon, type IconName } from "../components/Icon";
 import { colors, font, radius, shadow, spacing } from "../constants/theme";
 
 type RecordItem = {
-  icon: string;
+  icon: IconName;
   label: string;
   desc: string;
   screen: string;
@@ -14,119 +15,125 @@ type RecordItem = {
   color: string;
 };
 
-const GROUPS: { title: string; icon: string; items: RecordItem[] }[] = [
+type Group = {
+  title: string;
+  icon: IconName;
+  items: RecordItem[];
+};
+
+const GROUPS: Group[] = [
   {
     title: "Poultry Operations",
-    icon: "🐔",
+    icon: "bird",
     items: [
-      { icon: "📋", label: "Daily Poultry Record",  desc: "Population counts & performance metrics",  screen: "DailyPoultry",    roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#4ade80" },
-      { icon: "📉", label: "Mortality Entry",        desc: "Record bird deaths and culling events",     screen: "Mortality",        roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#f87171" },
-      { icon: "🥚", label: "Egg Collection",         desc: "Daily egg counts by grade",                screen: "EggCollection",    roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#fbbf24" },
-      { icon: "🌾", label: "Feed Consumption",       desc: "Feed dispensed to flocks",                 screen: "FeedConsumption",  roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#86efac" },
-      { icon: "💊", label: "Medication Record",      desc: "Treatments and dosages administered",      screen: "Medication",       roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#a78bfa" },
-      { icon: "💉", label: "Vaccination Record",     desc: "Vaccines administered to birds",           screen: "Vaccination",      roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#67e8f9" },
-      { icon: "🏥", label: "Health Observation",     desc: "Log a flock health or welfare concern",    screen: "HealthObservation", roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#fbbf24" },
-      { icon: "⚖️", label: "Bird Weight Record",     desc: "Log body weight samples for growth check", screen: "BirdWeight",        roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#34d399" },
+      { icon: "clipboard-list",   label: "Daily Poultry Record",  desc: "Population counts & performance metrics",     screen: "DailyPoultry",     roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#16a34a" },
+      { icon: "arrow-down-bold",  label: "Mortality Entry",        desc: "Record bird deaths and culling events",        screen: "Mortality",        roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#dc2626" },
+      { icon: "egg",              label: "Egg Collection",         desc: "Daily egg counts by grade",                   screen: "EggCollection",    roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#d97706" },
+      { icon: "barley",           label: "Feed Consumption",       desc: "Feed dispensed to flocks",                    screen: "FeedConsumption",  roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#16a34a" },
+      { icon: "pill",             label: "Medication Record",      desc: "Treatments and dosages administered",         screen: "Medication",       roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#7c3aed" },
+      { icon: "needle",           label: "Vaccination Record",     desc: "Vaccines administered to birds",              screen: "Vaccination",      roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#0891b2" },
+      { icon: "heart-pulse",      label: "Health Observation",     desc: "Log a flock health or welfare concern",       screen: "HealthObservation",roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#d97706" },
+      { icon: "scale",            label: "Bird Weight Record",     desc: "Log body weight samples for growth check",    screen: "BirdWeight",       roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#16a34a" },
     ],
   },
   {
     title: "Finance",
-    icon: "💰",
+    icon: "cash",
     items: [
-      { icon: "💸", label: "Log Expense",            desc: "Submit a business expense for approval",   screen: "ExpenseNew",        roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#f87171" },
-      { icon: "📋", label: "My Expenses",            desc: "View status of submitted expenses",        screen: "ExpenseList",       roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#fb923c" },
-      { icon: "💳", label: "Collect Payment",        desc: "Record a customer payment received",       screen: "PaymentCollect",    roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"],          color: "#34d399" },
+      { icon: "credit-card-minus",  label: "Log Expense",       desc: "Submit a business expense for approval",  screen: "ExpenseNew",     roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#dc2626" },
+      { icon: "receipt",            label: "My Expenses",       desc: "View status of submitted expenses",       screen: "ExpenseList",    roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#d97706" },
+      { icon: "credit-card-check",  label: "Collect Payment",   desc: "Record a customer payment received",      screen: "PaymentCollect", roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"],          color: "#16a34a" },
     ],
   },
   {
     title: "Procurement & Receiving",
-    icon: "🚚",
+    icon: "truck-delivery",
     items: [
-      { icon: "🚚", label: "Receive Goods (GRN)",    desc: "Log goods received against a purchase order", screen: "PurchaseOrderList", roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"],       color: "#60a5fa" },
+      { icon: "truck-delivery", label: "Receive Goods (GRN)", desc: "Log goods received against a purchase order", screen: "PurchaseOrderList", roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#2563eb" },
     ],
   },
   {
     title: "Inventory & Supply Chain",
-    icon: "📦",
+    icon: "package-variant",
     items: [
-      { icon: "📦", label: "Stock Movement",         desc: "Receive, issue, or transfer stock",        screen: "StockMovement",    roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"],          color: "#fb923c" },
-      { icon: "⚖️", label: "Stock Adjustment",       desc: "Correct stock counts or write off losses", screen: "StockAdjustment",  roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"],          color: "#f59e0b" },
-      { icon: "🔄", label: "Stock Transfer",         desc: "Move stock between warehouses",            screen: "StockTransfer",    roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"],          color: "#60a5fa" },
-      { icon: "⚠️", label: "Stock Alerts",           desc: "Low stock & upcoming expiry warnings",     screen: "StockAlerts",      roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"],          color: "#ef4444" },
+      { icon: "swap-horizontal", label: "Stock Movement",   desc: "Receive, issue, or transfer stock",         screen: "StockMovement",   roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#d97706" },
+      { icon: "tune-variant",    label: "Stock Adjustment", desc: "Correct stock counts or write off losses",  screen: "StockAdjustment", roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#d97706" },
+      { icon: "transfer",        label: "Stock Transfer",   desc: "Move stock between warehouses",             screen: "StockTransfer",   roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#2563eb" },
+      { icon: "alert-rhombus",   label: "Stock Alerts",     desc: "Low stock & upcoming expiry warnings",      screen: "StockAlerts",     roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#dc2626" },
     ],
   },
   {
     title: "Sales",
-    icon: "🧾",
+    icon: "receipt",
     items: [
-      { icon: "🧾", label: "Sales Order",            desc: "Create a new customer sales order",        screen: "SalesOrder",       roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"],          color: "#34d399" },
-      { icon: "📍", label: "Prospect Visit",         desc: "Log a field visit with GPS location",      screen: "ProspectVisit",    roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#fbbf24" },
+      { icon: "cart-plus",       label: "Sales Order",    desc: "Create a new customer sales order",         screen: "SalesOrder",    roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"],          color: "#16a34a" },
+      { icon: "map-marker-plus", label: "Prospect Visit", desc: "Log a field visit with GPS location",       screen: "ProspectVisit", roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#d97706" },
     ],
   },
   {
     title: "Production",
-    icon: "🏭",
+    icon: "factory",
     items: [
-      { icon: "🏭", label: "Production Record",      desc: "Log feed mill batch output",               screen: "ProductionRecord",      roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#60a5fa" },
-      { icon: "⚙️", label: "Feed Production Batch",  desc: "Record batch against a production order",  screen: "FeedProductionBatch",   roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"],          color: "#f58220" },
-      { icon: "🫘", label: "Soya Processing",        desc: "Log bean intake or processing batch",      screen: "SoyaProcessing",        roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"],          color: "#f59e0b" },
-      { icon: "🫘", label: "Soya Processing Batch",  desc: "Record soya processing with oil/cake output", screen: "SoyaBatch",          roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"],          color: "#d97706" },
+      { icon: "factory",        label: "Production Record",      desc: "Log feed mill batch output",                 screen: "ProductionRecord",    roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#2563eb" },
+      { icon: "cog-play",       label: "Feed Production Batch",  desc: "Record batch against a production order",    screen: "FeedProductionBatch", roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"],          color: colors.brand },
+      { icon: "seed",           label: "Soya Processing",        desc: "Log bean intake or processing batch",        screen: "SoyaProcessing",      roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"],          color: "#d97706" },
+      { icon: "seed-outline",   label: "Soya Processing Batch",  desc: "Record soya processing with oil/cake output",screen: "SoyaBatch",           roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"],          color: "#d97706" },
     ],
   },
   {
     title: "Quality",
-    icon: "🔬",
+    icon: "shield-check",
     items: [
-      { icon: "🔬", label: "Quality Inspection",     desc: "Log a new quality check with verdict",     screen: "QualityCheck",     roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"],          color: "#818cf8" },
-      { icon: "✅", label: "Corrective Action",      desc: "Log a corrective action for a quality issue", screen: "CorrectiveAction", roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"],          color: "#34d399" },
-      { icon: "🧪", label: "Lab Report",             desc: "Submit external lab analysis results",     screen: "LabReport",        roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"],          color: "#60a5fa" },
+      { icon: "magnify-scan", label: "Quality Inspection", desc: "Log a new quality check with verdict",         screen: "QualityCheck",     roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#7c3aed" },
+      { icon: "check-circle", label: "Corrective Action",  desc: "Log a corrective action for a quality issue",  screen: "CorrectiveAction", roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#16a34a" },
+      { icon: "test-tube",    label: "Lab Report",         desc: "Submit external lab analysis results",          screen: "LabReport",        roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#2563eb" },
     ],
   },
   {
     title: "Maintenance",
-    icon: "🔧",
+    icon: "wrench",
     items: [
-      { icon: "📅", label: "Maintenance Schedule",    desc: "View upcoming tasks and log work done",    screen: "MaintenanceTasks",  roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#60a5fa" },
-      { icon: "🔧", label: "Report Breakdown",        desc: "Log a machine or equipment failure",       screen: "BreakdownReport",   roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#ef4444" },
+      { icon: "calendar-clock",  label: "Maintenance Schedule", desc: "View upcoming tasks and log work done",  screen: "MaintenanceTasks", roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#2563eb" },
+      { icon: "alert-circle",    label: "Report Breakdown",     desc: "Log a machine or equipment failure",     screen: "BreakdownReport",  roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#dc2626" },
     ],
   },
   {
     title: "HR",
-    icon: "🗓️",
+    icon: "account-group",
     items: [
-      { icon: "🗓️", label: "Attendance Check-In",    desc: "Log your attendance for today",            screen: "AttendanceCheckIn", roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#60a5fa" },
+      { icon: "account-clock", label: "Attendance Check-In", desc: "Log your attendance for today", screen: "AttendanceCheckIn", roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#2563eb" },
     ],
   },
   {
     title: "Manager Views",
-    icon: "📊",
+    icon: "chart-bar",
     items: [
-      { icon: "📈", label: "Finance Overview",        desc: "Revenue, expenses, net profit & bank balances", screen: "FinanceMobile",      roles: ["MANAGER","CEO","SUPER_ADMIN"], color: "#34d399" },
-      { icon: "⏳", label: "Debtors",                 desc: "Outstanding customer invoices & balances",      screen: "DebtorList",         roles: ["MANAGER","CEO","SUPER_ADMIN"], color: "#f87171" },
-      { icon: "👥", label: "Employee Directory",      desc: "Search staff by name, code, or role",           screen: "EmployeeDirectory",  roles: ["MANAGER","CEO","SUPER_ADMIN"], color: "#60a5fa" },
-      { icon: "🗓️", label: "Today's Attendance",     desc: "Attendance summary and check-in status",        screen: "ShiftView",          roles: ["MANAGER","CEO","SUPER_ADMIN"], color: "#a78bfa" },
+      { icon: "chart-line",         label: "Finance Overview",     desc: "Revenue, expenses, net profit & bank balances", screen: "FinanceMobile",     roles: ["MANAGER","CEO","SUPER_ADMIN"], color: "#16a34a" },
+      { icon: "account-arrow-right",label: "Debtors",              desc: "Outstanding customer invoices & balances",      screen: "DebtorList",        roles: ["MANAGER","CEO","SUPER_ADMIN"], color: "#dc2626" },
+      { icon: "account-multiple",   label: "Employee Directory",   desc: "Search staff by name, code, or role",           screen: "EmployeeDirectory", roles: ["MANAGER","CEO","SUPER_ADMIN"], color: "#2563eb" },
+      { icon: "calendar-today",     label: "Today's Attendance",   desc: "Attendance summary and check-in status",        screen: "ShiftView",         roles: ["MANAGER","CEO","SUPER_ADMIN"], color: "#7c3aed" },
     ],
   },
   {
     title: "Planning",
-    icon: "🎯",
+    icon: "bullseye-arrow",
     items: [
-      { icon: "🎯", label: "Market Planning",         desc: "View production targets and approval status",   screen: "PlanningDashboard",  roles: ["MANAGER","CEO","SUPER_ADMIN"], color: "#f58220" },
+      { icon: "bullseye-arrow", label: "Market Planning", desc: "View production targets and approval status", screen: "PlanningDashboard", roles: ["MANAGER","CEO","SUPER_ADMIN"], color: colors.brand },
     ],
   },
   {
     title: "Tools",
-    icon: "🛠️",
+    icon: "tools",
     items: [
-      { icon: "📷", label: "QR / Barcode Scanner",   desc: "Scan and look up assets or stock items",   screen: "Scanner",          roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#c084fc" },
+      { icon: "qrcode-scan", label: "QR / Barcode Scanner", desc: "Scan and look up assets or stock items", screen: "Scanner", roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#7c3aed" },
     ],
   },
 ];
 
 export function RecordsHomeScreen() {
-  const { user } = useAuth();
-  const navigation = useNavigation<any>();
-  const userRoles = user?.roles ?? [];
+  const { user }     = useAuth();
+  const navigation   = useNavigation<any>();
+  const userRoles    = user?.roles ?? [];
 
   const visibleGroups = GROUPS.map((g) => ({
     ...g,
@@ -138,10 +145,9 @@ export function RecordsHomeScreen() {
       <SyncBanner />
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
 
-        {/* Page header */}
         <View style={styles.pageHeader}>
           <View style={styles.pageIconWrap}>
-            <Text style={styles.pageIcon}>📝</Text>
+            <Icon name="file-document" size={26} color={colors.brand} />
           </View>
           <View style={styles.pageHeaderText}>
             <Text style={styles.pageTitle}>Records</Text>
@@ -151,14 +157,14 @@ export function RecordsHomeScreen() {
 
         {visibleGroups.map((group) => (
           <View key={group.title} style={styles.group}>
-            {/* Group header */}
             <View style={styles.groupHeader}>
-              <Text style={styles.groupIcon}>{group.icon}</Text>
+              <View style={styles.groupIconWrap}>
+                <Icon name={group.icon} size={14} color={colors.inkMid} />
+              </View>
               <Text style={styles.groupTitle}>{group.title}</Text>
               <View style={styles.groupLine} />
             </View>
 
-            {/* Items */}
             <View style={styles.groupCard}>
               {group.items.map((item, idx) => (
                 <View key={item.screen}>
@@ -168,14 +174,14 @@ export function RecordsHomeScreen() {
                     onPress={() => navigation.navigate(item.screen)}
                     activeOpacity={0.75}
                   >
-                    <View style={[styles.iconBg, { backgroundColor: item.color + "22" }]}>
-                      <Text style={styles.icon}>{item.icon}</Text>
+                    <View style={[styles.iconBg, { backgroundColor: item.color + "18" }]}>
+                      <Icon name={item.icon} size={22} color={item.color} />
                     </View>
                     <View style={styles.rowText}>
                       <Text style={styles.rowLabel}>{item.label}</Text>
                       <Text style={styles.rowDesc}>{item.desc}</Text>
                     </View>
-                    <Text style={styles.chevron}>›</Text>
+                    <Icon name="chevron-right" size={20} color={colors.inkLight} />
                   </TouchableOpacity>
                 </View>
               ))}
@@ -189,67 +195,36 @@ export function RecordsHomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bg },
+  safe:      { flex: 1, backgroundColor: colors.bg },
   container: { padding: spacing.xl, gap: spacing.md, paddingBottom: spacing.xxxl },
 
-  pageHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-    marginBottom: spacing.sm,
-  },
-  pageIconWrap: {
-    width: 52,
-    height: 52,
-    borderRadius: radius.lg,
-    backgroundColor: colors.brandLight,
-    borderWidth: 1,
-    borderColor: colors.brandMid,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  pageIcon: { fontSize: 26 },
+  pageHeader:     { flexDirection: "row", alignItems: "center", gap: spacing.md, marginBottom: spacing.sm },
+  pageIconWrap:   { width: 52, height: 52, borderRadius: radius.lg, backgroundColor: colors.brandLight, borderWidth: 1, borderColor: colors.brandMid, alignItems: "center", justifyContent: "center" },
   pageHeaderText: { gap: 2 },
-  pageTitle: { fontSize: font.size.xl, fontWeight: font.weight.extrabold, color: colors.ink },
-  pageSub: { fontSize: font.size.sm, color: colors.inkLight },
+  pageTitle:      { fontSize: font.size.xl, fontFamily: font.family.extrabold, color: colors.ink },
+  pageSub:        { fontSize: font.size.sm, color: colors.inkLight, fontFamily: font.family.regular },
 
-  group: { gap: spacing.sm },
+  group:       { gap: spacing.sm },
   groupHeader: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  groupIcon: { fontSize: 16 },
-  groupTitle: {
-    fontSize: font.size.xs,
-    fontWeight: font.weight.bold,
-    color: colors.inkLight,
-    letterSpacing: 1,
-    textTransform: "uppercase",
+  groupIconWrap:{ width: 22, height: 22, alignItems: "center", justifyContent: "center" },
+  groupTitle:  {
+    fontSize: font.size.xs, fontFamily: font.family.bold, color: colors.inkLight,
+    letterSpacing: 0.8, textTransform: "uppercase",
   },
   groupLine: { flex: 1, height: 1, backgroundColor: colors.border },
 
   groupCard: {
     backgroundColor: colors.bgCard,
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    borderColor: colors.border,
-    overflow: "hidden",
-    ...shadow.sm,
+    borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border,
+    overflow: "hidden", ...shadow.sm,
   },
   divider: { height: 1, backgroundColor: colors.border, marginLeft: spacing.xl + 44 + spacing.md },
   row: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: spacing.lg,
-    gap: spacing.md,
+    flexDirection: "row", alignItems: "center",
+    padding: spacing.lg, gap: spacing.md,
   },
-  iconBg: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.md,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  icon: { fontSize: 22 },
-  rowText: { flex: 1, gap: 2 },
-  rowLabel: { fontSize: font.size.md, fontWeight: font.weight.semibold, color: colors.ink },
-  rowDesc: { fontSize: font.size.xs, color: colors.inkLight },
-  chevron: { fontSize: 22, color: colors.inkLight, fontWeight: "300" },
+  iconBg:   { width: 44, height: 44, borderRadius: radius.md, alignItems: "center", justifyContent: "center" },
+  rowText:  { flex: 1, gap: 2 },
+  rowLabel: { fontSize: font.size.md, fontFamily: font.family.semibold, color: colors.ink },
+  rowDesc:  { fontSize: font.size.xs, color: colors.inkLight, fontFamily: font.family.regular },
 });

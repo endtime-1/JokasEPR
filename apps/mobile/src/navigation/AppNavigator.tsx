@@ -2,9 +2,10 @@ import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { useEffect } from "react";
 import { AppState, StyleSheet, View } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSync } from "../hooks/useSync";
 import { colors, font, radius, shadow } from "../constants/theme";
+import type { ComponentProps } from "react";
 import { HomeScreen } from "../screens/HomeScreen";
 import { DailyPoultryScreen } from "../features/poultry/DailyPoultryScreen";
 import { MortalityScreen } from "../features/poultry/MortalityScreen";
@@ -58,27 +59,25 @@ const RecordsStack = createNativeStackNavigator<RecordsStackParams>();
 const TasksStack   = createNativeStackNavigator<TasksStackParams>();
 const MoreStack    = createNativeStackNavigator<MoreStackParams>();
 
-// Icon name maps — outline when inactive, solid when focused
-const TAB_ICONS: Record<string, { default: keyof typeof Ionicons.glyphMap; focused: keyof typeof Ionicons.glyphMap }> = {
-  HomeTab:          { default: "home-outline",          focused: "home"            },
-  RecordsTab:       { default: "document-text-outline", focused: "document-text"   },
-  TasksTab:         { default: "checkmark-circle-outline", focused: "checkmark-circle" },
-  NotificationsTab: { default: "notifications-outline", focused: "notifications"   },
-  MoreTab:          { default: "grid-outline",          focused: "grid"            },
+type MCName = React.ComponentProps<typeof MaterialCommunityIcons>["name"];
+
+// outline when inactive, filled when focused
+const TAB_ICONS: Record<string, { default: MCName; focused: MCName }> = {
+  HomeTab:          { default: "home-outline",                    focused: "home"                        },
+  RecordsTab:       { default: "file-document-outline",           focused: "file-document"               },
+  TasksTab:         { default: "checkbox-marked-circle-outline",  focused: "checkbox-marked-circle"      },
+  NotificationsTab: { default: "bell-outline",                    focused: "bell"                        },
+  MoreTab:          { default: "dots-grid",                       focused: "view-grid"                   },
 };
 
-type TabIconProps = {
-  route: string;
-  focused: boolean;
-  color: string;
-};
+type TabIconProps = { route: string; focused: boolean; color: string };
 
 function TabIcon({ route, focused, color }: TabIconProps) {
-  const icons = TAB_ICONS[route] ?? { default: "ellipsis-horizontal-outline", focused: "ellipsis-horizontal" };
+  const icons = TAB_ICONS[route] ?? { default: "dots-horizontal", focused: "dots-horizontal" };
   const name  = focused ? icons.focused : icons.default;
   return (
     <View style={[styles.iconWrap, focused && styles.iconWrapFocused]}>
-      <Ionicons name={name} size={22} color={focused ? colors.white : color} />
+      <MaterialCommunityIcons name={name} size={22} color={focused ? colors.white : color} />
       {focused && <View style={styles.focusDot} />}
     </View>
   );
@@ -156,7 +155,8 @@ const stackOpts = {
   headerBackTitle: "Back",
   headerStyle: { backgroundColor: colors.bgCard },
   headerShadowVisible: true,
-  headerTitleStyle: { fontWeight: font.weight.bold as any, color: colors.ink },
+  headerTitleStyle: { fontFamily: font.family.bold, color: colors.ink },
+  headerBackTitleStyle: { fontFamily: font.family.regular },
 };
 
 // Mounts once when user is logged in. Triggers sync every time the app
