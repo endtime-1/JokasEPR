@@ -636,21 +636,6 @@ export const fetchOpenFeedOrders = () =>
 export const submitFeedProductionBatch = (payload: Record<string, unknown>) =>
   apiFetch<ApiEnvelope<unknown>>("/feed-production/batches", { method: "POST", body: JSON.stringify(payload) });
 
-// Soya Processing
-export type SoyaOption = { id: string; code?: string; name: string; branchId?: string; productionSiteId?: string; type?: string; sku?: string };
-export type SoyaIntake = { id: string; receiptNumber: string; supplierName: string; quantityKg: number };
-export type SoyaOptions = {
-  data: {
-    productionSites: SoyaOption[];
-    warehouses:      SoyaOption[];
-    products:        (SoyaOption & { sku: string; type: string })[];
-    intakes:         SoyaIntake[];
-  };
-};
-export const fetchSoyaOptions = () => apiFetch<SoyaOptions>("/soya-processing/options");
-export const submitSoyaBatch = (payload: Record<string, unknown>) =>
-  apiFetch<ApiEnvelope<unknown>>("/soya-processing/batches", { method: "POST", body: JSON.stringify(payload) });
-
 // Market Planning
 export type MarketTarget = {
   id: string;
