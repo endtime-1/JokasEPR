@@ -153,8 +153,8 @@ export function MaintenanceLogScreen() {
       <Button label="Save Maintenance Record" loading={loading} size="lg"
         onPress={async () => {
           if (!validate()) return;
-          const finalMachineId   = machineId   ?? overrideMachineId  || undefined;
-          const finalEquipmentId = equipmentId ?? overrideEquipId || undefined;
+          const finalMachineId   = (machineId   ?? overrideMachineId)  || undefined;
+          const finalEquipmentId = (equipmentId ?? overrideEquipId) || undefined;
           await submit({
             ...(scheduleId     ? { scheduleId }     : {}),
             ...(finalMachineId   ? { machineId: finalMachineId }     : {}),

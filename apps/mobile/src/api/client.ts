@@ -56,14 +56,34 @@ export class ApiError extends Error {
 }
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  let response = await request(path, init);
-  if (response.status === 401 && (await refreshSession())) {
+  let response: Response;
+  try {
     response = await request(path, init);
+  } catch {
+    throw new ApiError(0, "Network error — check your connection and try again.");
   }
+
+  if (response.status === 401 && (await refreshSession())) {
+    try {
+      response = await request(path, init);
+    } catch {
+      throw new ApiError(0, "Network error — check your connection and try again.");
+    }
+  }
+
   if (!response.ok) {
-    const text = await response.text().catch(() => "Request failed");
-    throw new ApiError(response.status, text);
+    let message = "Something went wrong. Please try again.";
+    try {
+      const body = await response.json();
+      if (typeof body?.message === "string" && body.message.length < 200) {
+        message = body.message;
+      }
+    } catch {
+      // keep generic message — never expose raw server text
+    }
+    throw new ApiError(response.status, message);
   }
+
   return response.json() as Promise<T>;
 }
 

@@ -48,6 +48,9 @@ export type RecordsStackParams = {
   DebtorList: undefined;
   EmployeeDirectory: undefined;
   ShiftView: undefined;
+  FeedProductionBatch: undefined;
+  SoyaBatch: undefined;
+  PlanningDashboard: undefined;
   ExpenseNew: undefined;
   ExpenseList: undefined;
   PaymentCollect: undefined;

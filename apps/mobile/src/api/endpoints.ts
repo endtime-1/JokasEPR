@@ -617,6 +617,60 @@ export type Task = {
   farm?: { name: string };
 };
 
+// Feed Production
+export type FeedOption = { id: string; code: string; name: string; branchId?: string; productionSiteId?: string; farmId?: string; type?: string };
+export type FeedFormula = { id: string; code: string; name: string; feedType: string; finishedProductId: string };
+export type FeedOrder  = { id: string; orderNumber: string; status: string; scheduledDate: string; plannedQuantityKg: number; formula: { name: string; code: string } | null };
+export type FeedProductionOptions = {
+  data: {
+    productionSites: FeedOption[];
+    warehouses:      FeedOption[];
+    rawMaterials:    FeedOption[];
+    finishedFeeds:   FeedOption[];
+    formulas:        FeedFormula[];
+  };
+};
+export const fetchFeedProductionOptions = () => apiFetch<FeedProductionOptions>("/feed-production/options");
+export const fetchOpenFeedOrders = () =>
+  apiFetch<ApiEnvelope<FeedOrder[]>>("/feed-production/orders?limit=50");
+export const submitFeedProductionBatch = (payload: Record<string, unknown>) =>
+  apiFetch<ApiEnvelope<unknown>>("/feed-production/batches", { method: "POST", body: JSON.stringify(payload) });
+
+// Soya Processing
+export type SoyaOption = { id: string; code?: string; name: string; branchId?: string; productionSiteId?: string; type?: string; sku?: string };
+export type SoyaIntake = { id: string; receiptNumber: string; supplierName: string; quantityKg: number };
+export type SoyaOptions = {
+  data: {
+    productionSites: SoyaOption[];
+    warehouses:      SoyaOption[];
+    products:        (SoyaOption & { sku: string; type: string })[];
+    intakes:         SoyaIntake[];
+  };
+};
+export const fetchSoyaOptions = () => apiFetch<SoyaOptions>("/soya-processing/options");
+export const submitSoyaBatch = (payload: Record<string, unknown>) =>
+  apiFetch<ApiEnvelope<unknown>>("/soya-processing/batches", { method: "POST", body: JSON.stringify(payload) });
+
+// Market Planning
+export type MarketTarget = {
+  id: string;
+  targetNumber?: string;
+  periodStart: string;
+  periodEnd: string;
+  status: string;
+  notes?: string;
+  items?: { id: string; targetQuantityKg: number; product?: { name: string; sku: string } | null }[];
+};
+export type PlanningDashboardData = {
+  data: {
+    targets:         MarketTarget[];
+    targetStats:     { status: string; count: number }[];
+    planStats:       { status: string; count: number }[];
+  };
+};
+export const fetchPlanningDashboard = () => apiFetch<PlanningDashboardData>("/market-planning/dashboard");
+export const fetchMarketTargets    = () => apiFetch<ApiEnvelope<MarketTarget[]>>("/market-planning/targets?limit=20");
+
 export type Notification = {
   id: string;
   type: string;

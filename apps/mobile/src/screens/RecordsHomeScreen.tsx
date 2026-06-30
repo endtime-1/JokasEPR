@@ -67,8 +67,10 @@ const GROUPS: { title: string; icon: string; items: RecordItem[] }[] = [
     title: "Production",
     icon: "🏭",
     items: [
-      { icon: "🏭", label: "Production Record",      desc: "Log feed mill batch output",               screen: "ProductionRecord", roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#60a5fa" },
-      { icon: "🫘", label: "Soya Processing",        desc: "Log bean intake or processing batch",      screen: "SoyaProcessing",   roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"],          color: "#f59e0b" },
+      { icon: "🏭", label: "Production Record",      desc: "Log feed mill batch output",               screen: "ProductionRecord",      roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#60a5fa" },
+      { icon: "⚙️", label: "Feed Production Batch",  desc: "Record batch against a production order",  screen: "FeedProductionBatch",   roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"],          color: "#f58220" },
+      { icon: "🫘", label: "Soya Processing",        desc: "Log bean intake or processing batch",      screen: "SoyaProcessing",        roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"],          color: "#f59e0b" },
+      { icon: "🫘", label: "Soya Processing Batch",  desc: "Record soya processing with oil/cake output", screen: "SoyaBatch",          roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"],          color: "#d97706" },
     ],
   },
   {
@@ -103,6 +105,13 @@ const GROUPS: { title: string; icon: string; items: RecordItem[] }[] = [
       { icon: "⏳", label: "Debtors",                 desc: "Outstanding customer invoices & balances",      screen: "DebtorList",         roles: ["MANAGER","CEO","SUPER_ADMIN"], color: "#f87171" },
       { icon: "👥", label: "Employee Directory",      desc: "Search staff by name, code, or role",           screen: "EmployeeDirectory",  roles: ["MANAGER","CEO","SUPER_ADMIN"], color: "#60a5fa" },
       { icon: "🗓️", label: "Today's Attendance",     desc: "Attendance summary and check-in status",        screen: "ShiftView",          roles: ["MANAGER","CEO","SUPER_ADMIN"], color: "#a78bfa" },
+    ],
+  },
+  {
+    title: "Planning",
+    icon: "🎯",
+    items: [
+      { icon: "🎯", label: "Market Planning",         desc: "View production targets and approval status",   screen: "PlanningDashboard",  roles: ["MANAGER","CEO","SUPER_ADMIN"], color: "#f58220" },
     ],
   },
   {

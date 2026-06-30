@@ -41,6 +41,9 @@ import { FinanceMobileScreen } from "../features/manager/FinanceMobileScreen";
 import { DebtorScreen } from "../features/manager/DebtorScreen";
 import { EmployeeDirectoryScreen } from "../features/manager/EmployeeDirectoryScreen";
 import { ShiftViewScreen } from "../features/manager/ShiftViewScreen";
+import { FeedProductionBatchScreen } from "../features/feed/FeedProductionBatchScreen";
+import { SoyaBatchScreen } from "../features/soya/SoyaBatchScreen";
+import { PlanningDashboardScreen } from "../features/planning/PlanningDashboardScreen";
 import { RecordsHomeScreen } from "../screens/RecordsHomeScreen";
 import { TaskListScreen } from "../features/tasks/TaskListScreen";
 import { TaskUpdateScreen } from "../features/tasks/TaskUpdateScreen";
@@ -119,7 +122,10 @@ function RecordsNavigator() {
       <RecordsStack.Screen name="FinanceMobile"      component={FinanceMobileScreen}      options={{ title: "Finance Overview"   }} />
       <RecordsStack.Screen name="DebtorList"         component={DebtorScreen}             options={{ title: "Debtors"            }} />
       <RecordsStack.Screen name="EmployeeDirectory"  component={EmployeeDirectoryScreen}  options={{ title: "Employees"          }} />
-      <RecordsStack.Screen name="ShiftView"          component={ShiftViewScreen}          options={{ title: "Today's Attendance" }} />
+      <RecordsStack.Screen name="ShiftView"          component={ShiftViewScreen}          options={{ title: "Today's Attendance"    }} />
+      <RecordsStack.Screen name="FeedProductionBatch" component={FeedProductionBatchScreen} options={{ title: "Feed Production Batch" }} />
+      <RecordsStack.Screen name="SoyaBatch"           component={SoyaBatchScreen}           options={{ title: "Soya Processing Batch" }} />
+      <RecordsStack.Screen name="PlanningDashboard"   component={PlanningDashboardScreen}   options={{ title: "Market Planning"       }} />
     </RecordsStack.Navigator>
   );
 }
