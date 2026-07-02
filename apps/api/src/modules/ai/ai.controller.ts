@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Ip, Param, Post, Headers, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Ip, Param, Post, Query, Headers, UseGuards } from "@nestjs/common";
 import { AuthenticatedUser, PERMISSIONS } from "@jokas/shared";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { RequirePermissions } from "../../common/decorators/permissions.decorator";
@@ -21,6 +21,27 @@ export class AiController {
     @Headers("user-agent") ua?: string
   ) {
     return this.ai.chat(user, dto, ip, ua);
+  }
+
+  /** Analyse feed cost, g/bird rate, and efficiency for a specific flock batch */
+  @Get("feed-analysis")
+  feedAnalysis(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query("batchId") batchId: string
+  ) {
+    return this.ai.feedAnalysis(user, batchId);
+  }
+
+  /** Scan all active flocks for mortality spikes, egg drops, or feed anomalies */
+  @Get("anomaly-check")
+  anomalyCheck(@CurrentUser() user: AuthenticatedUser) {
+    return this.ai.anomalyCheck(user);
+  }
+
+  /** Generate a plain-English farm performance summary for today */
+  @Get("report-summary")
+  reportSummary(@CurrentUser() user: AuthenticatedUser) {
+    return this.ai.reportSummary(user);
   }
 
   @Get("models")

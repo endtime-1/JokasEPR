@@ -10,8 +10,12 @@ type AppEnvironment = {
   API_VERSION: string;
   WEB_ORIGIN: string;
   UPLOAD_MAX_MB: string;
-  AI_API_KEY?: string;
+  AI_API_KEY?: string;        // legacy single-key fallback
+  ANTHROPIC_API_KEY?: string;
+  GEMINI_API_KEY?: string;
+  GROQ_API_KEY?: string;
   AI_MODEL?: string;
+  AI_MODELS?: string;
   // Email (Nodemailer SMTP)
   SMTP_HOST?: string;
   SMTP_PORT?: string;
