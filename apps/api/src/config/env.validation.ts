@@ -11,6 +11,7 @@ type AppEnvironment = {
   WEB_ORIGIN: string;
   UPLOAD_MAX_MB: string;
   AI_API_KEY?: string;        // legacy single-key fallback
+  OPENROUTER_API_KEY?: string;
   NVIDIA_API_KEY?: string;
   ANTHROPIC_API_KEY?: string;
   GEMINI_API_KEY?: string;

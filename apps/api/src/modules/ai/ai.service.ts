@@ -6,16 +6,9 @@ import { PrismaService } from "../prisma/prisma.service";
 import { AiDataService } from "./ai-data.service";
 import { AiChatDto } from "./dto/ai-chat.dto";
 
-// ── Provider detection ───────────────────────────────────────────────────────
+// ── Provider types ───────────────────────────────────────────────────────────
 
-type Provider = "anthropic" | "gemini" | "groq" | "nvidia";
-
-function detectProvider(model: string): Provider {
-  if (model.startsWith("gemini"))    return "gemini";
-  if (model.includes("/"))           return "nvidia"; // NVIDIA NIM uses org/model format
-  if (model.startsWith("llama") || model.startsWith("mixtral") || model.startsWith("qwen")) return "groq";
-  return "anthropic"; // claude-* and anything unrecognised → Anthropic
-}
+type Provider = "anthropic" | "gemini" | "groq" | "nvidia" | "openrouter";
 
 type AiMessageParam = { role: "user" | "assistant"; content: string };
 
@@ -64,12 +57,23 @@ export class AiService {
     private readonly data: AiDataService
   ) {}
 
+  private detectProvider(model: string): Provider {
+    if (model.startsWith("gemini")) return "gemini";
+    if (model.includes("/")) {
+      // org/model format — prefer OpenRouter if key is present, else NVIDIA NIM
+      return this.config.get("OPENROUTER_API_KEY") ? "openrouter" : "nvidia";
+    }
+    if (model.startsWith("llama") || model.startsWith("mixtral") || model.startsWith("qwen")) return "groq";
+    return "anthropic";
+  }
+
   private keyFor(provider: Provider): string | undefined {
     switch (provider) {
-      case "nvidia":    return this.config.get("NVIDIA_API_KEY") || undefined;
-      case "anthropic": return this.config.get("ANTHROPIC_API_KEY") || this.config.get("AI_API_KEY") || undefined;
-      case "gemini":    return this.config.get("GEMINI_API_KEY") || undefined;
-      case "groq":      return this.config.get("GROQ_API_KEY") || undefined;
+      case "openrouter": return this.config.get("OPENROUTER_API_KEY") || undefined;
+      case "nvidia":     return this.config.get("NVIDIA_API_KEY") || undefined;
+      case "anthropic":  return this.config.get("ANTHROPIC_API_KEY") || this.config.get("AI_API_KEY") || undefined;
+      case "gemini":     return this.config.get("GEMINI_API_KEY") || undefined;
+      case "groq":       return this.config.get("GROQ_API_KEY") || undefined;
     }
   }
 
@@ -95,7 +99,7 @@ export class AiService {
   private async callAi(
     model: string, systemPrompt: string, messages: AiMessageParam[], maxTokens = 1024
   ): Promise<{ reply: string; inputTokens: number; outputTokens: number }> {
-    const provider = detectProvider(model);
+    const provider = this.detectProvider(model);
     const key = this.keyFor(provider);
     if (!key) {
       throw new ForbiddenException(
@@ -103,10 +107,11 @@ export class AiService {
       );
     }
     switch (provider) {
-      case "nvidia":    return this.callNvidia(key, model, systemPrompt, messages, maxTokens);
-      case "anthropic": return this.callAnthropic(key, model, systemPrompt, messages, maxTokens);
-      case "gemini":    return this.callGemini(key, model, systemPrompt, messages, maxTokens);
-      case "groq":      return this.callGroq(key, model, systemPrompt, messages, maxTokens);
+      case "openrouter": return this.callOpenRouter(key, model, systemPrompt, messages, maxTokens);
+      case "nvidia":     return this.callNvidia(key, model, systemPrompt, messages, maxTokens);
+      case "anthropic":  return this.callAnthropic(key, model, systemPrompt, messages, maxTokens);
+      case "gemini":     return this.callGemini(key, model, systemPrompt, messages, maxTokens);
+      case "groq":       return this.callGroq(key, model, systemPrompt, messages, maxTokens);
     }
   }
 
@@ -170,6 +175,34 @@ export class AiService {
     if (!res.ok) {
       this.logger.warn(`Groq ${res.status}: ${await res.text().catch(() => res.statusText)}`);
       throw new ForbiddenException("Groq API request failed.");
+    }
+    const json = await res.json() as any;
+    return {
+      reply: json.choices?.[0]?.message?.content ?? "No response.",
+      inputTokens: json.usage?.prompt_tokens ?? 0,
+      outputTokens: json.usage?.completion_tokens ?? 0,
+    };
+  }
+
+  // ── OpenRouter (OpenAI-compatible, routes to hundreds of models) ────────────
+
+  private async callOpenRouter(key: string, model: string, system: string, messages: AiMessageParam[], maxTokens: number) {
+    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "Authorization": `Bearer ${key}`,
+        "HTTP-Referer": "https://jokas.app",
+        "X-Title": "Jokas ERP",
+      },
+      body: JSON.stringify({
+        model, max_tokens: maxTokens,
+        messages: [{ role: "system", content: system }, ...messages],
+      }),
+    });
+    if (!res.ok) {
+      this.logger.warn(`OpenRouter ${res.status}: ${await res.text().catch(() => res.statusText)}`);
+      throw new ForbiddenException("OpenRouter API request failed.");
     }
     const json = await res.json() as any;
     return {
