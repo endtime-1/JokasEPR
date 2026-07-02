@@ -51,7 +51,7 @@ const defaults: Partial<AppEnvironment> = {
   API_VERSION: "1",
   WEB_ORIGIN: "http://localhost:3000",
   UPLOAD_MAX_MB: "10",
-  AI_MODEL: "deepseek-ai/deepseek-v4-flash"
+  AI_MODEL: "deepseek/deepseek-chat"
 };
 
 export function validateEnvironment(config: Record<string, unknown>): AppEnvironment {

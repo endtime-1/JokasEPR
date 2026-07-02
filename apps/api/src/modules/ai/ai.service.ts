@@ -274,7 +274,7 @@ export class AiService {
       companyId: user.companyId, actorUserId: user.id,
       action: "CREATE", entityType: "AiChatMessage", entityId: session.id,
       summary: `AI query: ${dto.message.slice(0, 120)}`,
-      metadata: { sessionId: session.id, model, provider: detectProvider(model), inputTokens, outputTokens },
+      metadata: { sessionId: session.id, model, provider: this.detectProvider(model), inputTokens, outputTokens },
       ipAddress, userAgent,
     });
 
@@ -358,11 +358,11 @@ export class AiService {
   async models(user: AuthenticatedUser) {
     if (!user.permissions.includes("ai.read")) throw new ForbiddenException("AI access denied.");
     const defaultModel = this.defaultModel();
-    const available = this.configuredModels().filter((id) => !!this.keyFor(detectProvider(id)));
+    const available = this.configuredModels().filter((id) => !!this.keyFor(this.detectProvider(id)));
     return {
       data: available.map((id) => ({
         id,
-        provider: detectProvider(id),
+        provider: this.detectProvider(id),
         label: id.replace(/^claude-/, "Claude ").replace(/^gemini-/, "Gemini ").replace(/-/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()),
         isDefault: id === defaultModel,
       })),
