@@ -8,10 +8,11 @@ import { AiChatDto } from "./dto/ai-chat.dto";
 
 // ── Provider detection ───────────────────────────────────────────────────────
 
-type Provider = "anthropic" | "gemini" | "groq";
+type Provider = "anthropic" | "gemini" | "groq" | "kimi";
 
 function detectProvider(model: string): Provider {
-  if (model.startsWith("gemini"))  return "gemini";
+  if (model.startsWith("gemini"))    return "gemini";
+  if (model.startsWith("moonshot"))  return "kimi";
   if (model.startsWith("llama") || model.startsWith("mixtral") || model.startsWith("qwen")) return "groq";
   return "anthropic"; // claude-* and anything unrecognised → Anthropic
 }
@@ -65,6 +66,7 @@ export class AiService {
 
   private keyFor(provider: Provider): string | undefined {
     switch (provider) {
+      case "kimi":      return this.config.get("KIMI_API_KEY") || undefined;
       case "anthropic": return this.config.get("ANTHROPIC_API_KEY") || this.config.get("AI_API_KEY") || undefined;
       case "gemini":    return this.config.get("GEMINI_API_KEY") || undefined;
       case "groq":      return this.config.get("GROQ_API_KEY") || undefined;
@@ -101,6 +103,7 @@ export class AiService {
       );
     }
     switch (provider) {
+      case "kimi":      return this.callKimi(key, model, systemPrompt, messages, maxTokens);
       case "anthropic": return this.callAnthropic(key, model, systemPrompt, messages, maxTokens);
       case "gemini":    return this.callGemini(key, model, systemPrompt, messages, maxTokens);
       case "groq":      return this.callGroq(key, model, systemPrompt, messages, maxTokens);
@@ -167,6 +170,29 @@ export class AiService {
     if (!res.ok) {
       this.logger.warn(`Groq ${res.status}: ${await res.text().catch(() => res.statusText)}`);
       throw new ForbiddenException("Groq API request failed.");
+    }
+    const json = await res.json() as any;
+    return {
+      reply: json.choices?.[0]?.message?.content ?? "No response.",
+      inputTokens: json.usage?.prompt_tokens ?? 0,
+      outputTokens: json.usage?.completion_tokens ?? 0,
+    };
+  }
+
+  // ── Kimi by Moonshot AI (OpenAI-compatible) ─────────────────────────────────
+
+  private async callKimi(key: string, model: string, system: string, messages: AiMessageParam[], maxTokens: number) {
+    const res = await fetch("https://api.moonshot.cn/v1/chat/completions", {
+      method: "POST",
+      headers: { "content-type": "application/json", "Authorization": `Bearer ${key}` },
+      body: JSON.stringify({
+        model, max_tokens: maxTokens,
+        messages: [{ role: "system", content: system }, ...messages],
+      }),
+    });
+    if (!res.ok) {
+      this.logger.warn(`Kimi ${res.status}: ${await res.text().catch(() => res.statusText)}`);
+      throw new ForbiddenException("Kimi (Moonshot AI) API request failed.");
     }
     const json = await res.json() as any;
     return {

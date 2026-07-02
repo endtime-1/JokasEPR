@@ -11,6 +11,7 @@ type AppEnvironment = {
   WEB_ORIGIN: string;
   UPLOAD_MAX_MB: string;
   AI_API_KEY?: string;        // legacy single-key fallback
+  KIMI_API_KEY?: string;
   ANTHROPIC_API_KEY?: string;
   GEMINI_API_KEY?: string;
   GROQ_API_KEY?: string;
@@ -49,7 +50,7 @@ const defaults: Partial<AppEnvironment> = {
   API_VERSION: "1",
   WEB_ORIGIN: "http://localhost:3000",
   UPLOAD_MAX_MB: "10",
-  AI_MODEL: "claude-sonnet-4-6"
+  AI_MODEL: "moonshot-v1-32k"
 };
 
 export function validateEnvironment(config: Record<string, unknown>): AppEnvironment {
