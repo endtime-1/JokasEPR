@@ -41,8 +41,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
-    await apiLogout();
-    setUser(null);
+    try {
+      await apiLogout();
+    } catch {
+      // API call failed — still clear local session
+      await clearSession();
+    } finally {
+      setUser(null);
+    }
   }, []);
 
   return <AuthContext.Provider value={{ user, loading, login, logout }}>{children}</AuthContext.Provider>;

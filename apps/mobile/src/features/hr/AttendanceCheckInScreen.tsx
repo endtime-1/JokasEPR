@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { Alert, StyleSheet, Text, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { ScreenWrapper } from "../../components/ScreenWrapper";
+import { FormCard } from "../../components/FormCard";
+import { FormFooter } from "../../components/FormFooter";
 import { FormField } from "../../components/FormField";
 import { SelectField, SelectOption } from "../../components/SelectField";
-import { Button } from "../../components/Button";
 import { useSubmit } from "../../hooks/useSubmit";
 import { colors, font, radius, spacing } from "../../constants/theme";
 
@@ -40,14 +42,14 @@ export function AttendanceCheckInScreen() {
   }
 
   return (
-    <ScreenWrapper>
+    <ScreenWrapper footer={<FormFooter saveLabel="Record Check-In" onSave={handleSubmit} loading={loading} />}>
       <View style={styles.pageHeader}>
-        <View style={styles.iconWrap}>
-          <Text style={styles.iconText}>🗓️</Text>
+        <View style={styles.pageIconWrap}>
+          <MaterialCommunityIcons name="account-clock" size={22} color={colors.brand} />
         </View>
         <View>
-          <Text style={styles.pageTitle}>Attendance Check-In</Text>
-          <Text style={styles.pageSub}>Log your attendance for today</Text>
+          <Text style={styles.title}>Attendance Check-In</Text>
+          <Text style={styles.sub}>Log your attendance for today</Text>
         </View>
       </View>
 
@@ -55,7 +57,7 @@ export function AttendanceCheckInScreen() {
         <Text style={styles.dateChipText}>📅  {todayISO()}</Text>
       </View>
 
-      <View style={styles.section}>
+      <FormCard label="ATTENDANCE">
         <SelectField
           label="Attendance Status"
           options={STATUS_OPTIONS}
@@ -63,7 +65,9 @@ export function AttendanceCheckInScreen() {
           onChange={setStatus}
           required
         />
+      </FormCard>
 
+      <FormCard label="NOTES">
         <FormField
           label="Notes (optional)"
           value={notes}
@@ -72,27 +76,22 @@ export function AttendanceCheckInScreen() {
           multiline
           numberOfLines={3}
         />
-      </View>
-
-      <View style={styles.actions}>
-        <Button
-          label={loading ? "Saving..." : "Record Check-In"}
-          onPress={handleSubmit}
-          disabled={loading}
-        />
-      </View>
+      </FormCard>
     </ScreenWrapper>
   );
 }
 
 const styles = StyleSheet.create({
-  pageHeader: { flexDirection: "row", alignItems: "center", gap: spacing.md, marginBottom: spacing.lg, paddingHorizontal: spacing.lg },
-  iconWrap:   { width: 52, height: 52, borderRadius: radius.xl, backgroundColor: "#dbeafe", alignItems: "center", justifyContent: "center" },
-  iconText:   { fontSize: 26 },
-  pageTitle:  { fontSize: font.size.xl, fontWeight: font.weight.bold as any, color: colors.ink },
-  pageSub:    { fontSize: font.size.sm, color: colors.inkLight, marginTop: 2 },
-  dateChip:   { marginHorizontal: spacing.lg, marginBottom: spacing.lg, paddingVertical: spacing.sm, paddingHorizontal: spacing.md, backgroundColor: "#f0fdf4", borderRadius: radius.md, alignSelf: "flex-start" },
+  pageHeader:   { flexDirection: "row", alignItems: "center", gap: 12 },
+  pageIconWrap: {
+    width: 48, height: 48, borderRadius: 12,
+    backgroundColor: colors.brandLight,
+    borderWidth: 1, borderColor: colors.brandMid,
+    alignItems: "center", justifyContent: "center",
+  },
+  title: { fontSize: font.size.xl, fontFamily: font.family.extrabold, color: colors.ink },
+  sub:   { fontSize: font.size.sm, color: colors.inkMid, fontFamily: font.family.regular },
+
+  dateChip:     { paddingVertical: spacing.sm, paddingHorizontal: spacing.md, backgroundColor: "#f0fdf4", borderRadius: radius.md, alignSelf: "flex-start" },
   dateChipText: { fontSize: font.size.sm, color: "#16a34a", fontWeight: font.weight.semibold as any },
-  section:    { paddingHorizontal: spacing.lg, gap: spacing.md },
-  actions:    { marginTop: spacing.xl, paddingHorizontal: spacing.lg },
 });

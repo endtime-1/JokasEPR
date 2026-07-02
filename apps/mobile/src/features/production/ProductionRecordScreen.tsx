@@ -1,10 +1,12 @@
 import { useMemo, useState } from "react";
 import { Alert, StyleSheet, Text, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { ScreenWrapper } from "../../components/ScreenWrapper";
+import { FormCard } from "../../components/FormCard";
+import { FormFooter } from "../../components/FormFooter";
 import { FormField } from "../../components/FormField";
 import { SelectField, SelectOption } from "../../components/SelectField";
-import { Button } from "../../components/Button";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
 import { fetchProductionOrders } from "../../api/endpoints";
@@ -57,17 +59,28 @@ export function ProductionRecordScreen() {
 
   const qcMeta = QC_META[qualityCheck];
 
-  return (
-    <ScreenWrapper>
+  async function handleSubmit() {
+    if (!validate()) return;
+    await submit({
+      productionOrderId: orderId,
+      batchNumber: batchNumber || undefined,
+      startTime: startTime || undefined,
+      endTime: endTime || undefined,
+      outputQuantityKg: Number(outputQtyKg),
+      qualityCheckResult: qualityCheck,
+      notes: notes || undefined,
+    });
+  }
 
-      {/* Page header */}
+  return (
+    <ScreenWrapper footer={<FormFooter saveLabel="Save Production Record" onSave={handleSubmit} loading={loading} />}>
       <View style={styles.pageHeader}>
         <View style={styles.pageIconWrap}>
-          <Text style={styles.pageIconText}>🏭</Text>
+          <MaterialCommunityIcons name="factory" size={22} color={colors.brand} />
         </View>
-        <View style={styles.pageHeaderText}>
-          <Text style={styles.pageTitle}>Production Record</Text>
-          <Text style={styles.pageSub}>Log output from a production run</Text>
+        <View>
+          <Text style={styles.title}>Production Record</Text>
+          <Text style={styles.sub}>Log output from a production run</Text>
         </View>
       </View>
 
@@ -81,68 +94,59 @@ export function ProductionRecordScreen() {
         </View>
       )}
 
-      <SelectField label="Production Order" value={orderId} options={orders}
-        onChange={(v) => { setOrderId(v); setErrors((e) => ({ ...e, orderId: "" })); }}
-        error={errors.orderId} required placeholder="Select order…" />
+      <FormCard label="PRODUCTION ORDER">
+        <SelectField label="Production Order" value={orderId} options={orders}
+          onChange={(v) => { setOrderId(v); setErrors((e) => ({ ...e, orderId: "" })); }}
+          error={errors.orderId} required placeholder="Select order…" />
 
-      <FormField label="Batch Number" value={batchNumber} onChangeText={setBatchNumber}
-        placeholder="e.g. BATCH-2026-001" />
+        <FormField label="Batch Number" value={batchNumber} onChangeText={setBatchNumber}
+          placeholder="e.g. BATCH-2026-001" />
+      </FormCard>
 
-      <View style={styles.row}>
-        <View style={styles.half}>
-          <FormField label="Start Time" value={startTime} onChangeText={setStartTime}
-            placeholder="YYYY-MM-DDTHH:MM" />
+      <FormCard label="RECORD DATA">
+        <View style={styles.row}>
+          <View style={styles.half}>
+            <FormField label="Start Time" value={startTime} onChangeText={setStartTime}
+              placeholder="YYYY-MM-DDTHH:MM" />
+          </View>
+          <View style={styles.half}>
+            <FormField label="End Time" value={endTime} onChangeText={setEndTime}
+              placeholder="YYYY-MM-DDTHH:MM" />
+          </View>
         </View>
-        <View style={styles.half}>
-          <FormField label="End Time" value={endTime} onChangeText={setEndTime}
-            placeholder="YYYY-MM-DDTHH:MM" />
+
+        <View style={styles.row}>
+          <View style={styles.half}>
+            <FormField label="Output (kg)" required value={outputQtyKg}
+              onChangeText={(v) => { setOutputQtyKg(v); setErrors((e) => ({ ...e, outputQtyKg: "" })); }}
+              error={errors.outputQtyKg} keyboardType="decimal-pad" placeholder="e.g. 5000" />
+          </View>
+          <View style={styles.half}>
+            <SelectField label="Quality Check" value={qualityCheck} options={QC_OPTIONS}
+              onChange={setQualityCheck} />
+          </View>
         </View>
-      </View>
+      </FormCard>
 
-      <View style={styles.row}>
-        <View style={styles.half}>
-          <FormField label="Output (kg)" required value={outputQtyKg}
-            onChangeText={(v) => { setOutputQtyKg(v); setErrors((e) => ({ ...e, outputQtyKg: "" })); }}
-            error={errors.outputQtyKg} keyboardType="decimal-pad" placeholder="e.g. 5000" />
-        </View>
-        <View style={styles.half}>
-          <SelectField label="Quality Check" value={qualityCheck} options={QC_OPTIONS}
-            onChange={setQualityCheck} />
-        </View>
-      </View>
-
-      <FormField label="Notes" value={notes} onChangeText={setNotes} multiline numberOfLines={3}
-        style={{ minHeight: 80, textAlignVertical: "top" } as any}
-        placeholder="Optional notes about this production run…" />
-
-      <Button label="Save Production Record" loading={loading} onPress={async () => {
-        if (!validate()) return;
-        await submit({
-          productionOrderId: orderId,
-          batchNumber: batchNumber || undefined,
-          startTime: startTime || undefined,
-          endTime: endTime || undefined,
-          outputQuantityKg: Number(outputQtyKg),
-          qualityCheckResult: qualityCheck,
-          notes: notes || undefined,
-        });
-      }} size="lg" />
-
+      <FormCard label="NOTES">
+        <FormField label="Notes" value={notes} onChangeText={setNotes} multiline numberOfLines={3}
+          style={{ minHeight: 80, textAlignVertical: "top" } as any}
+          placeholder="Optional notes about this production run…" />
+      </FormCard>
     </ScreenWrapper>
   );
 }
 
 const styles = StyleSheet.create({
-  pageHeader: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  pageHeader:   { flexDirection: "row", alignItems: "center", gap: 12 },
   pageIconWrap: {
-    width: 52, height: 52, borderRadius: radius.lg,
-    backgroundColor: colors.brandLight, borderWidth: 1, borderColor: colors.brandMid,
+    width: 48, height: 48, borderRadius: 12,
+    backgroundColor: colors.brandLight,
+    borderWidth: 1, borderColor: colors.brandMid,
     alignItems: "center", justifyContent: "center",
   },
-  pageIconText: { fontSize: 26 },
-  pageHeaderText: { gap: 2 },
-  pageTitle: { fontSize: font.size.xl, fontWeight: font.weight.extrabold, color: colors.ink },
-  pageSub: { fontSize: font.size.sm, color: colors.inkLight },
+  title: { fontSize: font.size.xl, fontFamily: font.family.extrabold, color: colors.ink },
+  sub:   { fontSize: font.size.sm, color: colors.inkMid, fontFamily: font.family.regular },
 
   qcBadge: {
     flexDirection: "row",

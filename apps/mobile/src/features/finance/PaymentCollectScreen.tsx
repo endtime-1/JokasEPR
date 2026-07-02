@@ -1,10 +1,12 @@
 import { useMemo, useState } from "react";
 import { Alert, StyleSheet, Text, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { ScreenWrapper } from "../../components/ScreenWrapper";
+import { FormCard } from "../../components/FormCard";
+import { FormFooter } from "../../components/FormFooter";
 import { FormField } from "../../components/FormField";
 import { SelectField, SelectOption } from "../../components/SelectField";
-import { Button } from "../../components/Button";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
 import { fetchCustomers, fetchFinanceOptions } from "../../api/endpoints";
@@ -77,82 +79,88 @@ export function PaymentCollectScreen() {
       ),
   });
 
+  async function handleSubmit() {
+    if (!validate()) return;
+    await submit({
+      customerName,
+      amount: amountNum,
+      paymentDate,
+      paymentMethod,
+      invoiceRef:    invoiceRef    || undefined,
+      bankAccountId: bankAccountId || undefined,
+      description:   description   || undefined,
+      notes:         notes         || undefined,
+    });
+  }
+
   return (
-    <ScreenWrapper>
+    <ScreenWrapper footer={<FormFooter saveLabel="Record Payment" onSave={handleSubmit} loading={loading} />}>
       <View style={styles.pageHeader}>
         <View style={styles.pageIconWrap}>
-          <Text style={styles.pageIconText}>💳</Text>
+          <MaterialCommunityIcons name="credit-card-check" size={22} color={colors.brand} />
         </View>
-        <View style={styles.pageHeaderText}>
-          <Text style={styles.pageTitle}>Collect Payment</Text>
-          <Text style={styles.pageSub}>Record a customer payment</Text>
+        <View>
+          <Text style={styles.title}>Collect Payment</Text>
+          <Text style={styles.sub}>Record a customer payment</Text>
         </View>
       </View>
 
-      <SelectField label="Customer" value={customerId} options={customers}
-        onChange={onCustomerChange}
-        error={errors.customerId} required placeholder="Select customer…" />
+      <FormCard label="PAYMENT DETAILS">
+        <SelectField label="Customer" value={customerId} options={customers}
+          onChange={onCustomerChange}
+          error={errors.customerId} required placeholder="Select customer…" />
 
-      <FormField label="Amount (GHS)" value={amount}
-        onChangeText={(v) => { setAmount(v); setErrors((e) => ({ ...e, amount: "" })); }}
-        keyboardType="decimal-pad" required error={errors.amount} placeholder="0.00" />
+        <FormField label="Amount (GHS)" value={amount}
+          onChangeText={(v) => { setAmount(v); setErrors((e) => ({ ...e, amount: "" })); }}
+          keyboardType="decimal-pad" required error={errors.amount} placeholder="0.00" />
 
-      {amountNum > 0 && (
-        <View style={styles.amountPreview}>
-          <Text style={styles.amountLabel}>Payment Total</Text>
-          <Text style={styles.amountValue}>
-            GHS {amountNum.toLocaleString("en-GH", { minimumFractionDigits: 2 })}
-          </Text>
-        </View>
-      )}
+        {amountNum > 0 && (
+          <View style={styles.amountPreview}>
+            <Text style={styles.amountLabel}>Payment Total</Text>
+            <Text style={styles.amountValue}>
+              GHS {amountNum.toLocaleString("en-GH", { minimumFractionDigits: 2 })}
+            </Text>
+          </View>
+        )}
 
-      <FormField label="Payment Date" value={paymentDate}
-        onChangeText={(v) => { setPaymentDate(v); setErrors((e) => ({ ...e, paymentDate: "" })); }}
-        placeholder="YYYY-MM-DD" required error={errors.paymentDate} />
+        <FormField label="Payment Date" value={paymentDate}
+          onChangeText={(v) => { setPaymentDate(v); setErrors((e) => ({ ...e, paymentDate: "" })); }}
+          placeholder="YYYY-MM-DD" required error={errors.paymentDate} />
 
-      <SelectField label="Payment Method" value={paymentMethod} options={PAYMENT_METHODS}
-        onChange={(v) => { setPaymentMethod(v); setErrors((e) => ({ ...e, paymentMethod: "" })); }}
-        error={errors.paymentMethod} required placeholder="Select method…" />
+        <SelectField label="Payment Method" value={paymentMethod} options={PAYMENT_METHODS}
+          onChange={(v) => { setPaymentMethod(v); setErrors((e) => ({ ...e, paymentMethod: "" })); }}
+          error={errors.paymentMethod} required placeholder="Select method…" />
 
-      <FormField label="Invoice Reference" value={invoiceRef}
-        onChangeText={setInvoiceRef} placeholder="INV-2026-0001 (optional)" />
+        <FormField label="Invoice Reference" value={invoiceRef}
+          onChangeText={setInvoiceRef} placeholder="INV-2026-0001 (optional)" />
 
-      <SelectField label="Received Into Account" value={bankAccountId} options={bankAccounts}
-        onChange={setBankAccountId} placeholder="Select bank account (optional)" />
+        <SelectField label="Received Into Account" value={bankAccountId} options={bankAccounts}
+          onChange={setBankAccountId} placeholder="Select bank account (optional)" />
+      </FormCard>
 
-      <FormField label="Description" value={description}
-        onChangeText={setDescription} placeholder="Optional payment note" />
+      <FormCard label="NOTES">
+        <FormField label="Description" value={description}
+          onChangeText={setDescription} placeholder="Optional payment note" />
 
-      <FormField label="Notes" value={notes} onChangeText={setNotes}
-        multiline numberOfLines={2}
-        style={{ minHeight: 70, textAlignVertical: "top" } as any}
-        placeholder="Internal notes…" />
-
-      <Button label="Record Payment" loading={loading} size="lg"
-        onPress={async () => {
-          if (!validate()) return;
-          await submit({
-            customerName,
-            amount: amountNum,
-            paymentDate,
-            paymentMethod,
-            invoiceRef:    invoiceRef    || undefined,
-            bankAccountId: bankAccountId || undefined,
-            description:   description   || undefined,
-            notes:         notes         || undefined,
-          });
-        }} />
+        <FormField label="Notes" value={notes} onChangeText={setNotes}
+          multiline numberOfLines={2}
+          style={{ minHeight: 70, textAlignVertical: "top" } as any}
+          placeholder="Internal notes…" />
+      </FormCard>
     </ScreenWrapper>
   );
 }
 
 const styles = StyleSheet.create({
-  pageHeader:     { flexDirection: "row", alignItems: "center", gap: spacing.md },
-  pageIconWrap:   { width: 52, height: 52, borderRadius: radius.lg, backgroundColor: colors.brandLight, borderWidth: 1, borderColor: colors.brandMid, alignItems: "center", justifyContent: "center" },
-  pageIconText:   { fontSize: 26 },
-  pageHeaderText: { gap: 2 },
-  pageTitle:      { fontSize: font.size.xl, fontWeight: font.weight.extrabold, color: colors.ink },
-  pageSub:        { fontSize: font.size.sm, color: colors.inkLight },
+  pageHeader:   { flexDirection: "row", alignItems: "center", gap: 12 },
+  pageIconWrap: {
+    width: 48, height: 48, borderRadius: 12,
+    backgroundColor: colors.brandLight,
+    borderWidth: 1, borderColor: colors.brandMid,
+    alignItems: "center", justifyContent: "center",
+  },
+  title: { fontSize: font.size.xl, fontFamily: font.family.extrabold, color: colors.ink },
+  sub:   { fontSize: font.size.sm, color: colors.inkMid, fontFamily: font.family.regular },
 
   amountPreview: {
     flexDirection: "row",

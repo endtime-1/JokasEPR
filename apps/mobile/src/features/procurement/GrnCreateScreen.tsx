@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Alert, StyleSheet, Text, View } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { ScreenWrapper } from "../../components/ScreenWrapper";
+import { FormCard } from "../../components/FormCard";
+import { FormFooter } from "../../components/FormFooter";
 import { FormField } from "../../components/FormField";
 import { SelectField, SelectOption } from "../../components/SelectField";
-import { Button } from "../../components/Button";
 import { useLookup } from "../../hooks/useLookup";
 import { fetchProcurementOptions, fetchPurchaseOrderDetail, PurchaseOrderDetail, submitGRN } from "../../api/endpoints";
 import { apiFetch } from "../../api/client";
@@ -131,8 +133,18 @@ export function GrnCreateScreen() {
   }
 
   return (
-    <ScreenWrapper>
-      {/* Header */}
+    <ScreenWrapper footer={<FormFooter saveLabel="Submit GRN" onSave={handleSubmit} loading={submitting} />}>
+      <View style={styles.pageHeader}>
+        <View style={styles.pageIconWrap}>
+          <MaterialCommunityIcons name="truck-delivery" size={22} color={colors.brand} />
+        </View>
+        <View style={styles.pageHeaderText}>
+          <Text style={styles.title}>Goods Received Note</Text>
+          <Text style={styles.sub}>Record delivery against purchase order</Text>
+        </View>
+      </View>
+
+      {/* PO summary card */}
       <View style={styles.poCard}>
         <View style={styles.poCardRow}>
           <View style={styles.poIconWrap}><Text style={styles.poIconText}>📦</Text></View>
@@ -152,69 +164,72 @@ export function GrnCreateScreen() {
         </View>
       </View>
 
-      <SelectField label="Receiving Warehouse" value={warehouseId} options={warehouses}
-        onChange={(v) => { setWarehouseId(v); setErrors((e) => ({ ...e, warehouseId: "" })); }}
-        error={errors.warehouseId} required placeholder="Select warehouse…" />
+      <FormCard label="RECEIVING DETAILS">
+        <SelectField label="Receiving Warehouse" value={warehouseId} options={warehouses}
+          onChange={(v) => { setWarehouseId(v); setErrors((e) => ({ ...e, warehouseId: "" })); }}
+          error={errors.warehouseId} required placeholder="Select warehouse…" />
 
-      <FormField label="Date Received" value={receivedDate}
-        onChangeText={(v) => { setReceivedDate(v); setErrors((e) => ({ ...e, receivedDate: "" })); }}
-        placeholder={`YYYY-MM-DD (default: today)`}
-        error={errors.receivedDate} />
+        <FormField label="Date Received" value={receivedDate}
+          onChangeText={(v) => { setReceivedDate(v); setErrors((e) => ({ ...e, receivedDate: "" })); }}
+          placeholder={`YYYY-MM-DD (default: today)`}
+          error={errors.receivedDate} />
 
-      <FormField label="Delivery Note / Waybill Ref" value={deliveryRef}
-        onChangeText={setDeliveryRef} placeholder="Optional" />
+        <FormField label="Delivery Note / Waybill Ref" value={deliveryRef}
+          onChangeText={setDeliveryRef} placeholder="Optional" />
+      </FormCard>
 
-      {/* Line items */}
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>ITEMS TO RECEIVE</Text>
-        <View style={styles.sectionLine} />
-        <View style={styles.itemCountBadge}>
-          <Text style={styles.itemCountText}>{lines.length}</Text>
-        </View>
-      </View>
-
-      {errors.lines && (
-        <View style={styles.lineErrorBanner}>
-          <Text style={styles.lineErrorText}>⚠ {errors.lines}</Text>
-        </View>
-      )}
-
-      {lines.map((line, idx) => (
-        <View key={line.purchaseOrderItemId} style={styles.lineCard}>
-          <View style={styles.lineHeader}>
-            <View style={styles.lineNum}><Text style={styles.lineNumText}>Item {idx + 1}</Text></View>
-            <Text style={styles.lineProduct} numberOfLines={1}>{line.productName}</Text>
-            <Text style={styles.lineUom}>{line.uomCode}</Text>
+      <FormCard label="ITEMS TO RECEIVE">
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>ITEMS TO RECEIVE</Text>
+          <View style={styles.sectionLine} />
+          <View style={styles.itemCountBadge}>
+            <Text style={styles.itemCountText}>{lines.length}</Text>
           </View>
-          <View style={styles.lineRow}>
-            <View style={styles.lineHalf}>
-              <Text style={styles.lineMetaLabel}>Ordered</Text>
-              <Text style={styles.lineMetaValue}>{line.orderedQty}</Text>
-            </View>
-            <View style={styles.lineHalf}>
-              <FormField label="Received Qty" value={line.receivedQty}
-                onChangeText={(v) => updateLine(idx, "receivedQty", v)}
-                keyboardType="decimal-pad" />
-            </View>
-          </View>
-          <FormField label="Batch / Lot Number" value={line.batchNumber}
-            onChangeText={(v) => updateLine(idx, "batchNumber", v)}
-            placeholder="Optional" />
         </View>
-      ))}
 
-      <FormField label="Notes" value={notes} onChangeText={setNotes}
-        multiline numberOfLines={2}
-        style={{ minHeight: 70, textAlignVertical: "top" } as any}
-        placeholder="Condition of goods, any discrepancies…" />
+        {errors.lines && (
+          <View style={styles.lineErrorBanner}>
+            <Text style={styles.lineErrorText}>⚠ {errors.lines}</Text>
+          </View>
+        )}
 
-      <View style={styles.qualityNotice}>
-        <Text style={styles.qualityNoticeText}>
-          ℹ GRN will be placed on Quality Hold. A quality officer must pass it before stock is posted to inventory.
-        </Text>
-      </View>
+        {lines.map((line, idx) => (
+          <View key={line.purchaseOrderItemId} style={styles.lineCard}>
+            <View style={styles.lineHeader}>
+              <View style={styles.lineNum}><Text style={styles.lineNumText}>Item {idx + 1}</Text></View>
+              <Text style={styles.lineProduct} numberOfLines={1}>{line.productName}</Text>
+              <Text style={styles.lineUom}>{line.uomCode}</Text>
+            </View>
+            <View style={styles.lineRow}>
+              <View style={styles.lineHalf}>
+                <Text style={styles.lineMetaLabel}>Ordered</Text>
+                <Text style={styles.lineMetaValue}>{line.orderedQty}</Text>
+              </View>
+              <View style={styles.lineHalf}>
+                <FormField label="Received Qty" value={line.receivedQty}
+                  onChangeText={(v) => updateLine(idx, "receivedQty", v)}
+                  keyboardType="decimal-pad" />
+              </View>
+            </View>
+            <FormField label="Batch / Lot Number" value={line.batchNumber}
+              onChangeText={(v) => updateLine(idx, "batchNumber", v)}
+              placeholder="Optional" />
+          </View>
+        ))}
+      </FormCard>
 
-      <Button label="Submit GRN" loading={submitting} size="lg" onPress={handleSubmit} />
+      <FormCard label="NOTES">
+        <FormField label="Notes" value={notes} onChangeText={setNotes}
+          multiline numberOfLines={2}
+          style={{ minHeight: 70, textAlignVertical: "top" } as any}
+          placeholder="Condition of goods, any discrepancies…" />
+
+        <View style={styles.qualityNotice}>
+          <Text style={styles.qualityNoticeText}>
+            ℹ GRN will be placed on Quality Hold. A quality officer must pass it before stock is posted to inventory.
+          </Text>
+        </View>
+      </FormCard>
     </ScreenWrapper>
   );
 }
@@ -223,6 +238,17 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: spacing.md, padding: spacing.xxl },
   loadingText: { fontSize: font.size.sm, color: colors.inkLight },
   errorText:   { fontSize: font.size.sm, color: colors.error, textAlign: "center" },
+
+  pageHeader:     { flexDirection: "row", alignItems: "center", gap: 12 },
+  pageIconWrap:   {
+    width: 48, height: 48, borderRadius: 12,
+    backgroundColor: colors.brandLight,
+    borderWidth: 1, borderColor: colors.brandMid,
+    alignItems: "center", justifyContent: "center",
+  },
+  pageHeaderText: { flex: 1 },
+  title: { fontSize: font.size.xl, fontFamily: font.family.extrabold, color: colors.ink },
+  sub:   { fontSize: font.size.sm, color: colors.inkMid, fontFamily: font.family.regular },
 
   poCard: {
     backgroundColor: colors.bgCard,
@@ -252,7 +278,7 @@ const styles = StyleSheet.create({
   lineErrorBanner: { backgroundColor: "#fef2f2", borderRadius: radius.md, padding: spacing.md, borderWidth: 1, borderColor: "#fca5a5" },
   lineErrorText:   { fontSize: font.size.sm, color: colors.error, fontWeight: font.weight.medium },
 
-  lineCard: { backgroundColor: colors.bgCard, borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border, padding: spacing.lg, gap: spacing.sm, ...shadow.sm },
+  lineCard: { backgroundColor: colors.bg, borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border, padding: spacing.lg, gap: spacing.sm },
   lineHeader: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   lineNum:    { backgroundColor: colors.brandLight, paddingHorizontal: spacing.sm, paddingVertical: 3, borderRadius: radius.full, borderWidth: 1, borderColor: colors.brandMid },
   lineNumText: { fontSize: font.size.xs, fontWeight: font.weight.bold, color: colors.brand },

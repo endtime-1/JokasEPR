@@ -1,10 +1,12 @@
 import { useMemo, useState } from "react";
 import { Alert, StyleSheet, Text, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { ScreenWrapper } from "../../components/ScreenWrapper";
+import { FormCard } from "../../components/FormCard";
+import { FormFooter } from "../../components/FormFooter";
 import { FormField } from "../../components/FormField";
 import { SelectField, SelectOption } from "../../components/SelectField";
-import { Button } from "../../components/Button";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
 import { fetchFlockBatches, fetchFarms } from "../../api/endpoints";
@@ -90,44 +92,62 @@ export function DailyPoultryScreen() {
   }
 
   return (
-    <ScreenWrapper>
-      <Text style={styles.title}>Daily Poultry Record</Text>
-      <Text style={styles.sub}>Record daily population and performance</Text>
-
-      <SelectField label="Farm" value={form.farmId} options={farms} onChange={set("farmId")} error={errors.farmId} required placeholder="Select farm…" />
-      <SelectField label="Flock Batch" value={form.flockBatchId} options={batches} onChange={set("flockBatchId")} error={errors.flockBatchId} required placeholder={form.farmId ? "Select batch…" : "Select farm first"} />
-      <FormField label="Record Date" required value={form.recordDate} onChangeText={set("recordDate")} error={errors.recordDate} placeholder="YYYY-MM-DD" keyboardType="numeric" />
-
-      <View style={styles.row}>
-        <View style={styles.half}>
-          <FormField label="Opening Count" value={form.openingBirdCount} onChangeText={set("openingBirdCount")} error={errors.openingBirdCount} keyboardType="numeric" placeholder="e.g. 5000" />
+    <ScreenWrapper footer={<FormFooter saveLabel="Save Record" onSave={handleSubmit} loading={loading} />}>
+      <View style={styles.pageHeader}>
+        <View style={styles.pageIconWrap}>
+          <MaterialCommunityIcons name="clipboard-list" size={22} color={colors.brand} />
         </View>
-        <View style={styles.half}>
-          <FormField label="Mortality" value={form.mortalityCount} onChangeText={set("mortalityCount")} keyboardType="numeric" placeholder="0" />
+        <View>
+          <Text style={styles.title}>Daily Poultry Record</Text>
+          <Text style={styles.sub}>Record daily population and performance</Text>
         </View>
       </View>
 
-      <View style={styles.row}>
-        <View style={styles.half}>
-          <FormField label="Culled" value={form.culledCount} onChangeText={set("culledCount")} keyboardType="numeric" placeholder="0" />
+      <FormCard label="FLOCK / BATCH">
+        <SelectField label="Farm" value={form.farmId} options={farms} onChange={set("farmId")} error={errors.farmId} required placeholder="Select farm…" />
+        <SelectField label="Flock Batch" value={form.flockBatchId} options={batches} onChange={set("flockBatchId")} error={errors.flockBatchId} required placeholder={form.farmId ? "Select batch…" : "Select farm first"} />
+        <FormField label="Record Date" required value={form.recordDate} onChangeText={set("recordDate")} error={errors.recordDate} placeholder="YYYY-MM-DD" keyboardType="numeric" />
+      </FormCard>
+
+      <FormCard label="RECORD DATA">
+        <View style={styles.row}>
+          <View style={styles.half}>
+            <FormField label="Opening Count" value={form.openingBirdCount} onChangeText={set("openingBirdCount")} error={errors.openingBirdCount} keyboardType="numeric" placeholder="e.g. 5000" />
+          </View>
+          <View style={styles.half}>
+            <FormField label="Mortality" value={form.mortalityCount} onChangeText={set("mortalityCount")} keyboardType="numeric" placeholder="0" />
+          </View>
         </View>
-        <View style={styles.half}>
-          <FormField label="Total Eggs" value={form.totalEggs} onChangeText={set("totalEggs")} keyboardType="numeric" placeholder="0" />
+
+        <View style={styles.row}>
+          <View style={styles.half}>
+            <FormField label="Culled" value={form.culledCount} onChangeText={set("culledCount")} keyboardType="numeric" placeholder="0" />
+          </View>
+          <View style={styles.half}>
+            <FormField label="Total Eggs" value={form.totalEggs} onChangeText={set("totalEggs")} keyboardType="numeric" placeholder="0" />
+          </View>
         </View>
-      </View>
 
-      <FormField label="Feed Consumed (kg)" value={form.feedConsumedKg} onChangeText={set("feedConsumedKg")} keyboardType="decimal-pad" placeholder="0" />
+        <FormField label="Feed Consumed (kg)" value={form.feedConsumedKg} onChangeText={set("feedConsumedKg")} keyboardType="decimal-pad" placeholder="0" />
+      </FormCard>
 
-      <FormField label="Notes" value={form.notes} onChangeText={set("notes")} placeholder="Optional notes…" multiline numberOfLines={3} style={{ minHeight: 80, textAlignVertical: "top" } as any} />
-
-      <Button label="Save Record" loading={loading} onPress={handleSubmit} size="lg" />
+      <FormCard label="NOTES">
+        <FormField label="Notes" value={form.notes} onChangeText={set("notes")} placeholder="Optional notes…" multiline numberOfLines={3} style={{ minHeight: 80, textAlignVertical: "top" } as any} />
+      </FormCard>
     </ScreenWrapper>
   );
 }
 
 const styles = StyleSheet.create({
-  title: { fontSize: font.size.xl, fontWeight: font.weight.bold, color: colors.ink },
-  sub: { fontSize: font.size.sm, color: colors.inkMid, marginTop: -spacing.sm },
+  pageHeader:   { flexDirection: "row", alignItems: "center", gap: 12 },
+  pageIconWrap: {
+    width: 48, height: 48, borderRadius: 12,
+    backgroundColor: colors.brandLight,
+    borderWidth: 1, borderColor: colors.brandMid,
+    alignItems: "center", justifyContent: "center",
+  },
+  title: { fontSize: font.size.xl, fontFamily: font.family.extrabold, color: colors.ink },
+  sub:   { fontSize: font.size.sm, color: colors.inkMid, fontFamily: font.family.regular },
   row: { flexDirection: "row", gap: spacing.md },
-  half: { flex: 1 }
+  half: { flex: 1 },
 });

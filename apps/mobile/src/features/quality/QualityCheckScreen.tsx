@@ -1,10 +1,12 @@
 import { useMemo, useState } from "react";
 import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { ScreenWrapper } from "../../components/ScreenWrapper";
+import { FormCard } from "../../components/FormCard";
+import { FormFooter } from "../../components/FormFooter";
 import { FormField } from "../../components/FormField";
 import { SelectField, SelectOption } from "../../components/SelectField";
-import { Button } from "../../components/Button";
 import { useLookup } from "../../hooks/useLookup";
 import { apiFetch } from "../../api/client";
 import {
@@ -136,19 +138,18 @@ export function QualityCheckScreen() {
   // ── Step 2: Verdict ───────────────────────────────────────────────────────
   if (createdId) {
     return (
-      <ScreenWrapper>
+      <ScreenWrapper footer={<FormFooter saveLabel="Submit Verdict" onSave={handleVerdict} loading={loading} />}>
         <View style={styles.pageHeader}>
-          <View style={[styles.iconWrap, { backgroundColor: "#dcfce7" }]}>
-            <Text style={styles.iconText}>✅</Text>
+          <View style={styles.pageIconWrap}>
+            <MaterialCommunityIcons name="magnify-scan" size={22} color={colors.brand} />
           </View>
           <View>
-            <Text style={styles.pageTitle}>Inspection Verdict</Text>
-            <Text style={styles.pageSub}>Record the inspection outcome</Text>
+            <Text style={styles.title}>Inspection Verdict</Text>
+            <Text style={styles.sub}>Record the inspection outcome</Text>
           </View>
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Result</Text>
+        <FormCard label="RESULT">
           <View style={styles.verdictRow}>
             {VERDICT_OPTS.map(({ v, label, color, bg }) => (
               <TouchableOpacity
@@ -181,33 +182,25 @@ export function QualityCheckScreen() {
               numberOfLines={3}
             />
           )}
-        </View>
-
-        <View style={styles.actions}>
-          <Button
-            label={loading ? "Submitting..." : "Submit Verdict"}
-            onPress={handleVerdict}
-            disabled={loading || !verdict}
-          />
-        </View>
+        </FormCard>
       </ScreenWrapper>
     );
   }
 
   // ── Step 1: Create Check ──────────────────────────────────────────────────
   return (
-    <ScreenWrapper>
+    <ScreenWrapper footer={<FormFooter saveLabel="Create Inspection →" onSave={handleCreate} loading={loading} />}>
       <View style={styles.pageHeader}>
-        <View style={styles.iconWrap}>
-          <Text style={styles.iconText}>🔬</Text>
+        <View style={styles.pageIconWrap}>
+          <MaterialCommunityIcons name="magnify-scan" size={22} color={colors.brand} />
         </View>
         <View>
-          <Text style={styles.pageTitle}>Quality Inspection</Text>
-          <Text style={styles.pageSub}>Log a new quality check</Text>
+          <Text style={styles.title}>Quality Inspection</Text>
+          <Text style={styles.sub}>Log a new quality check</Text>
         </View>
       </View>
 
-      <View style={styles.section}>
+      <FormCard label="INSPECTION DETAILS">
         <SelectField
           label="Check Type *"
           options={CHECK_TYPE_OPTIONS}
@@ -250,7 +243,9 @@ export function QualityCheckScreen() {
           multiline
           numberOfLines={2}
         />
+      </FormCard>
 
+      <FormCard label="NOTES">
         <FormField
           label="Notes"
           value={notes}
@@ -259,29 +254,23 @@ export function QualityCheckScreen() {
           multiline
           numberOfLines={3}
         />
-      </View>
-
-      <View style={styles.actions}>
-        <Button
-          label={loading ? "Creating..." : "Create Inspection →"}
-          onPress={handleCreate}
-          disabled={loading}
-        />
-      </View>
+      </FormCard>
     </ScreenWrapper>
   );
 }
 
 const styles = StyleSheet.create({
-  pageHeader:   { flexDirection: "row", alignItems: "center", gap: spacing.md, marginBottom: spacing.xl, paddingHorizontal: spacing.lg },
-  iconWrap:     { width: 52, height: 52, borderRadius: radius.xl, backgroundColor: "#e0e7ff", alignItems: "center", justifyContent: "center" },
-  iconText:     { fontSize: 26 },
-  pageTitle:    { fontSize: font.size.xl, fontWeight: font.weight.bold as any, color: colors.ink },
-  pageSub:      { fontSize: font.size.sm, color: colors.inkLight, marginTop: 2 },
-  section:      { paddingHorizontal: spacing.lg, gap: spacing.md },
-  sectionTitle: { fontSize: font.size.md, fontWeight: font.weight.semibold as any, color: colors.ink, marginBottom: spacing.xs },
+  pageHeader:   { flexDirection: "row", alignItems: "center", gap: 12 },
+  pageIconWrap: {
+    width: 48, height: 48, borderRadius: 12,
+    backgroundColor: colors.brandLight,
+    borderWidth: 1, borderColor: colors.brandMid,
+    alignItems: "center", justifyContent: "center",
+  },
+  title: { fontSize: font.size.xl, fontFamily: font.family.extrabold, color: colors.ink },
+  sub:   { fontSize: font.size.sm, color: colors.inkMid, fontFamily: font.family.regular },
+
   verdictRow:   { flexDirection: "row", gap: spacing.sm },
   verdictBtn:   { flex: 1, paddingVertical: spacing.sm, borderRadius: radius.md, borderWidth: 2, borderColor: colors.border, alignItems: "center" },
   verdictLabel: { fontSize: font.size.sm, fontWeight: font.weight.semibold as any, color: colors.inkLight, textAlign: "center" },
-  actions:      { marginTop: spacing.xl, paddingHorizontal: spacing.lg },
 });

@@ -1,10 +1,12 @@
 import { useMemo, useState } from "react";
 import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { ScreenWrapper } from "../../components/ScreenWrapper";
+import { FormCard } from "../../components/FormCard";
+import { FormFooter } from "../../components/FormFooter";
 import { FormField } from "../../components/FormField";
 import { SelectField, SelectOption } from "../../components/SelectField";
-import { Button } from "../../components/Button";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
 import { fetchPoultryOptions } from "../../api/endpoints";
@@ -73,117 +75,123 @@ export function HealthObservationScreen() {
       Alert.alert("Observation Saved", "Health observation has been recorded.", [{ text: "OK", onPress: () => navigation.goBack() }]),
   });
 
+  async function handleSubmit() {
+    if (!validate()) return;
+    await submit({
+      flockBatchId,
+      ...(penId ? { penId } : {}),
+      observationDate,
+      severity,
+      observation,
+      ...(treatment       ? { treatment }       : {}),
+      ...(recommendation  ? { recommendation }  : {}),
+      ...(vetConsulted && vetVisitDate    ? { vetVisitDate }    : {}),
+      ...(vetConsulted && veterinarianName ? { veterinarianName } : {}),
+    });
+  }
+
   return (
-    <ScreenWrapper>
+    <ScreenWrapper footer={<FormFooter saveLabel="Save Observation" onSave={handleSubmit} loading={loading} />}>
       <View style={styles.pageHeader}>
         <View style={styles.pageIconWrap}>
-          <Text style={styles.pageIconText}>🏥</Text>
+          <MaterialCommunityIcons name="heart-pulse" size={22} color={colors.brand} />
         </View>
-        <View style={styles.pageHeaderText}>
-          <Text style={styles.pageTitle}>Health Observation</Text>
-          <Text style={styles.pageSub}>Log a flock health or welfare concern</Text>
-        </View>
-      </View>
-
-      <SelectField label="Flock Batch" value={flockBatchId} options={batchOptions}
-        onChange={(v) => { setFlockBatchId(v); setPenId(""); setErrors((e) => ({ ...e, flockBatchId: "" })); }}
-        required error={errors.flockBatchId} placeholder="Select flock batch…" />
-
-      <SelectField label="Pen (optional)" value={penId} options={penOptions}
-        onChange={setPenId}
-        placeholder={flockBatchId ? "Select pen (optional)…" : "Select batch first"} />
-
-      <FormField label="Observation Date" value={observationDate}
-        onChangeText={(v) => { setObservationDate(v); setErrors((e) => ({ ...e, observationDate: "" })); }}
-        required error={errors.observationDate} placeholder="YYYY-MM-DD"
-        keyboardType="numbers-and-punctuation" />
-
-      {/* Severity */}
-      <View style={styles.sevSection}>
-        <Text style={styles.fieldLabel}>Severity <Text style={styles.required}>*</Text></Text>
-        <View style={styles.sevGrid}>
-          {(Object.keys(SEVERITY_CONFIG) as Severity[]).map((s) => {
-            const cfg = SEVERITY_CONFIG[s];
-            const active = severity === s;
-            return (
-              <TouchableOpacity key={s}
-                style={[styles.sevBtn, active
-                  ? { backgroundColor: cfg.bg, borderColor: cfg.color }
-                  : { backgroundColor: colors.bgCard, borderColor: colors.border }
-                ]}
-                onPress={() => setSeverity(s)} activeOpacity={0.8}
-              >
-                <Text style={[styles.sevLabel, { color: active ? cfg.color : colors.inkLight }]}>{cfg.label}</Text>
-                {active && <Text style={[styles.sevDesc, { color: cfg.color }]}>{cfg.desc}</Text>}
-              </TouchableOpacity>
-            );
-          })}
+        <View>
+          <Text style={styles.title}>Health Observation</Text>
+          <Text style={styles.sub}>Log a flock health or welfare concern</Text>
         </View>
       </View>
 
-      <FormField label="Observation" value={observation}
-        onChangeText={(v) => { setObservation(v); setErrors((e) => ({ ...e, observation: "" })); }}
-        required error={errors.observation} multiline numberOfLines={3}
-        style={{ minHeight: 90, textAlignVertical: "top" } as any}
-        placeholder="Describe what you observed: symptoms, behaviour changes, appearance…" />
+      <FormCard label="FLOCK DETAILS">
+        <SelectField label="Flock Batch" value={flockBatchId} options={batchOptions}
+          onChange={(v) => { setFlockBatchId(v); setPenId(""); setErrors((e) => ({ ...e, flockBatchId: "" })); }}
+          required error={errors.flockBatchId} placeholder="Select flock batch…" />
 
-      <FormField label="Treatment Applied (optional)" value={treatment}
-        onChangeText={setTreatment} multiline numberOfLines={2}
-        style={{ minHeight: 60, textAlignVertical: "top" } as any}
-        placeholder="Any immediate treatment or action taken…" />
+        <SelectField label="Pen (optional)" value={penId} options={penOptions}
+          onChange={setPenId}
+          placeholder={flockBatchId ? "Select pen (optional)…" : "Select batch first"} />
 
-      <FormField label="Recommendation (optional)" value={recommendation}
-        onChangeText={setRecommendation} multiline numberOfLines={2}
-        style={{ minHeight: 60, textAlignVertical: "top" } as any}
-        placeholder="Follow-up actions recommended…" />
+        <FormField label="Observation Date" value={observationDate}
+          onChangeText={(v) => { setObservationDate(v); setErrors((e) => ({ ...e, observationDate: "" })); }}
+          required error={errors.observationDate} placeholder="YYYY-MM-DD"
+          keyboardType="numbers-and-punctuation" />
+      </FormCard>
 
-      {/* Vet visited toggle */}
-      <TouchableOpacity style={[styles.vetToggle, vetConsulted && styles.vetToggleActive]}
-        onPress={() => setVetConsulted((v) => !v)} activeOpacity={0.8}
-      >
-        <View style={[styles.vetCheckbox, vetConsulted && styles.vetCheckboxActive]}>
-          {vetConsulted && <Text style={styles.vetCheckmark}>✓</Text>}
+      <FormCard label="OBSERVATION DATA">
+        {/* Severity */}
+        <View style={styles.sevSection}>
+          <Text style={styles.fieldLabel}>Severity <Text style={styles.required}>*</Text></Text>
+          <View style={styles.sevGrid}>
+            {(Object.keys(SEVERITY_CONFIG) as Severity[]).map((s) => {
+              const cfg = SEVERITY_CONFIG[s];
+              const active = severity === s;
+              return (
+                <TouchableOpacity key={s}
+                  style={[styles.sevBtn, active
+                    ? { backgroundColor: cfg.bg, borderColor: cfg.color }
+                    : { backgroundColor: colors.bgCard, borderColor: colors.border }
+                  ]}
+                  onPress={() => setSeverity(s)} activeOpacity={0.8}
+                >
+                  <Text style={[styles.sevLabel, { color: active ? cfg.color : colors.inkLight }]}>{cfg.label}</Text>
+                  {active && <Text style={[styles.sevDesc, { color: cfg.color }]}>{cfg.desc}</Text>}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         </View>
-        <Text style={[styles.vetToggleText, vetConsulted && styles.vetToggleTextActive]}>
-          Veterinarian was consulted
-        </Text>
-      </TouchableOpacity>
 
-      {vetConsulted && (
-        <>
-          <FormField label="Vet Visit Date" value={vetVisitDate} onChangeText={setVetVisitDate}
-            placeholder="YYYY-MM-DD" keyboardType="numbers-and-punctuation" />
-          <FormField label="Veterinarian Name" value={veterinarianName} onChangeText={setVeterinarianName}
-            placeholder="Dr. Name / Clinic" />
-        </>
-      )}
+        <FormField label="Observation" value={observation}
+          onChangeText={(v) => { setObservation(v); setErrors((e) => ({ ...e, observation: "" })); }}
+          required error={errors.observation} multiline numberOfLines={3}
+          style={{ minHeight: 90, textAlignVertical: "top" } as any}
+          placeholder="Describe what you observed: symptoms, behaviour changes, appearance…" />
 
-      <Button label="Save Observation" loading={loading} size="lg"
-        onPress={async () => {
-          if (!validate()) return;
-          await submit({
-            flockBatchId,
-            ...(penId ? { penId } : {}),
-            observationDate,
-            severity,
-            observation,
-            ...(treatment       ? { treatment }       : {}),
-            ...(recommendation  ? { recommendation }  : {}),
-            ...(vetConsulted && vetVisitDate    ? { vetVisitDate }    : {}),
-            ...(vetConsulted && veterinarianName ? { veterinarianName } : {}),
-          });
-        }} />
+        <FormField label="Treatment Applied (optional)" value={treatment}
+          onChangeText={setTreatment} multiline numberOfLines={2}
+          style={{ minHeight: 60, textAlignVertical: "top" } as any}
+          placeholder="Any immediate treatment or action taken…" />
+
+        <FormField label="Recommendation (optional)" value={recommendation}
+          onChangeText={setRecommendation} multiline numberOfLines={2}
+          style={{ minHeight: 60, textAlignVertical: "top" } as any}
+          placeholder="Follow-up actions recommended…" />
+
+        {/* Vet visited toggle */}
+        <TouchableOpacity style={[styles.vetToggle, vetConsulted && styles.vetToggleActive]}
+          onPress={() => setVetConsulted((v) => !v)} activeOpacity={0.8}
+        >
+          <View style={[styles.vetCheckbox, vetConsulted && styles.vetCheckboxActive]}>
+            {vetConsulted && <Text style={styles.vetCheckmark}>✓</Text>}
+          </View>
+          <Text style={[styles.vetToggleText, vetConsulted && styles.vetToggleTextActive]}>
+            Veterinarian was consulted
+          </Text>
+        </TouchableOpacity>
+
+        {vetConsulted && (
+          <>
+            <FormField label="Vet Visit Date" value={vetVisitDate} onChangeText={setVetVisitDate}
+              placeholder="YYYY-MM-DD" keyboardType="numbers-and-punctuation" />
+            <FormField label="Veterinarian Name" value={veterinarianName} onChangeText={setVeterinarianName}
+              placeholder="Dr. Name / Clinic" />
+          </>
+        )}
+      </FormCard>
     </ScreenWrapper>
   );
 }
 
 const styles = StyleSheet.create({
-  pageHeader:     { flexDirection: "row", alignItems: "center", gap: spacing.md },
-  pageIconWrap:   { width: 52, height: 52, borderRadius: 16, backgroundColor: "#fef9c3", borderWidth: 1, borderColor: "#fde047", alignItems: "center", justifyContent: "center" },
-  pageIconText:   { fontSize: 26 },
-  pageHeaderText: { gap: 2 },
-  pageTitle:      { fontSize: font.size.xl, fontWeight: font.weight.extrabold, color: colors.ink },
-  pageSub:        { fontSize: font.size.sm, color: colors.inkLight },
+  pageHeader:   { flexDirection: "row", alignItems: "center", gap: 12 },
+  pageIconWrap: {
+    width: 48, height: 48, borderRadius: 12,
+    backgroundColor: colors.brandLight,
+    borderWidth: 1, borderColor: colors.brandMid,
+    alignItems: "center", justifyContent: "center",
+  },
+  title: { fontSize: font.size.xl, fontFamily: font.family.extrabold, color: colors.ink },
+  sub:   { fontSize: font.size.sm, color: colors.inkMid, fontFamily: font.family.regular },
 
   fieldLabel: { fontSize: font.size.sm, fontWeight: font.weight.semibold, color: colors.ink },
   required:   { color: colors.error },

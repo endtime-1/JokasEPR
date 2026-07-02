@@ -1,10 +1,12 @@
 import { useMemo, useState } from "react";
 import { Alert, StyleSheet, Text, View } from "react-native";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { ScreenWrapper } from "../../components/ScreenWrapper";
+import { FormCard } from "../../components/FormCard";
+import { FormFooter } from "../../components/FormFooter";
 import { FormField } from "../../components/FormField";
 import { SelectField, SelectOption } from "../../components/SelectField";
-import { Button } from "../../components/Button";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
 import { fetchMaintenanceOptions } from "../../api/endpoints";
@@ -28,14 +30,14 @@ export function MaintenanceLogScreen() {
 
   const today = new Date().toISOString().split("T")[0];
 
-  const [maintenanceType, setMaintenanceType] = useState(defaultType ?? "");
-  const [maintenanceDate, setMaintenanceDate] = useState(today);
-  const [description,     setDescription]     = useState("");
-  const [findings,        setFindings]        = useState("");
-  const [nextDueDate,     setNextDueDate]      = useState("");
+  const [maintenanceType,   setMaintenanceType]   = useState(defaultType ?? "");
+  const [maintenanceDate,   setMaintenanceDate]   = useState(today);
+  const [description,       setDescription]       = useState("");
+  const [findings,          setFindings]          = useState("");
+  const [nextDueDate,       setNextDueDate]        = useState("");
   const [overrideMachineId, setOverrideMachineId] = useState(machineId ?? "");
   const [overrideEquipId,   setOverrideEquipId]   = useState(equipmentId ?? "");
-  const [errors,          setErrors]          = useState<Record<string, string>>({});
+  const [errors,            setErrors]            = useState<Record<string, string>>({});
 
   // If no pre-selected asset, let user pick from maintenance options
   const needsAssetPicker = !machineId && !equipmentId;
@@ -74,15 +76,31 @@ export function MaintenanceLogScreen() {
       ),
   });
 
+  async function handleSubmit() {
+    if (!validate()) return;
+    const finalMachineId   = (machineId   ?? overrideMachineId)  || undefined;
+    const finalEquipmentId = (equipmentId ?? overrideEquipId) || undefined;
+    await submit({
+      ...(scheduleId       ? { scheduleId }                        : {}),
+      ...(finalMachineId   ? { machineId: finalMachineId }         : {}),
+      ...(finalEquipmentId ? { equipmentId: finalEquipmentId }     : {}),
+      maintenanceType,
+      maintenanceDate,
+      description,
+      ...(findings    ? { findings }    : {}),
+      ...(nextDueDate ? { nextDueDate } : {}),
+    });
+  }
+
   return (
-    <ScreenWrapper>
+    <ScreenWrapper footer={<FormFooter saveLabel="Save Maintenance Record" onSave={handleSubmit} loading={loading} />}>
       <View style={styles.pageHeader}>
         <View style={styles.pageIconWrap}>
-          <Text style={styles.pageIconText}>📋</Text>
+          <MaterialCommunityIcons name="clipboard-check" size={22} color={colors.brand} />
         </View>
-        <View style={styles.pageHeaderText}>
-          <Text style={styles.pageTitle}>Log Work Done</Text>
-          <Text style={styles.pageSub} numberOfLines={1}>{assetName}</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.title}>Log Work Done</Text>
+          <Text style={styles.sub} numberOfLines={1}>{assetName}</Text>
         </View>
       </View>
 
@@ -93,91 +111,77 @@ export function MaintenanceLogScreen() {
         </View>
       )}
 
-      {/* Asset picker — only shown when screen opened without a pre-selected asset */}
       {needsAssetPicker && (
-        <>
+        <FormCard label="ASSET">
           <SelectField label="Machine (if applicable)" value={overrideMachineId} options={machineOptions}
             onChange={(v) => { setOverrideMachineId(v); setOverrideEquipId(""); }}
             placeholder="Select machine (optional)…" />
           <SelectField label="Equipment (if applicable)" value={overrideEquipId} options={equipmentOptions}
             onChange={(v) => { setOverrideEquipId(v); setOverrideMachineId(""); }}
             placeholder="Select equipment (optional)…" />
-        </>
+        </FormCard>
       )}
 
-      <SelectField
-        label="Maintenance Type" value={maintenanceType} options={MAINTENANCE_TYPES}
-        onChange={(v) => { setMaintenanceType(v); setErrors((e) => ({ ...e, maintenanceType: "" })); }}
-        required error={errors.maintenanceType} placeholder="Select type…"
-      />
+      <FormCard label="MAINTENANCE DETAILS">
+        <SelectField
+          label="Maintenance Type" value={maintenanceType} options={MAINTENANCE_TYPES}
+          onChange={(v) => { setMaintenanceType(v); setErrors((e) => ({ ...e, maintenanceType: "" })); }}
+          required error={errors.maintenanceType} placeholder="Select type…"
+        />
 
-      <FormField
-        label="Date Work Was Done" value={maintenanceDate}
-        onChangeText={(v) => { setMaintenanceDate(v); setErrors((e) => ({ ...e, maintenanceDate: "" })); }}
-        required error={errors.maintenanceDate}
-        placeholder="YYYY-MM-DD"
-        keyboardType="numbers-and-punctuation"
-      />
+        <FormField
+          label="Date Work Was Done" value={maintenanceDate}
+          onChangeText={(v) => { setMaintenanceDate(v); setErrors((e) => ({ ...e, maintenanceDate: "" })); }}
+          required error={errors.maintenanceDate}
+          placeholder="YYYY-MM-DD"
+          keyboardType="numbers-and-punctuation"
+        />
 
-      <FormField
-        label="Description of Work" value={description}
-        onChangeText={(v) => { setDescription(v); setErrors((e) => ({ ...e, description: "" })); }}
-        required error={errors.description} multiline numberOfLines={3}
-        style={{ minHeight: 90, textAlignVertical: "top" } as any}
-        placeholder="What maintenance work was performed?"
-      />
+        <FormField
+          label="Description of Work" value={description}
+          onChangeText={(v) => { setDescription(v); setErrors((e) => ({ ...e, description: "" })); }}
+          required error={errors.description} multiline numberOfLines={3}
+          style={{ minHeight: 90, textAlignVertical: "top" } as any}
+          placeholder="What maintenance work was performed?"
+        />
 
-      <FormField
-        label="Findings (optional)" value={findings}
-        onChangeText={setFindings}
-        multiline numberOfLines={2}
-        style={{ minHeight: 70, textAlignVertical: "top" } as any}
-        placeholder="Any observations, wear, or issues found during the work…"
-      />
+        <FormField
+          label="Findings (optional)" value={findings}
+          onChangeText={setFindings}
+          multiline numberOfLines={2}
+          style={{ minHeight: 70, textAlignVertical: "top" } as any}
+          placeholder="Any observations, wear, or issues found during the work…"
+        />
 
-      <FormField
-        label="Next Due Date (optional)" value={nextDueDate}
-        onChangeText={setNextDueDate}
-        placeholder="YYYY-MM-DD — leave blank to auto-calculate from frequency"
-        keyboardType="numbers-and-punctuation"
-      />
+        <FormField
+          label="Next Due Date (optional)" value={nextDueDate}
+          onChangeText={setNextDueDate}
+          placeholder="YYYY-MM-DD — leave blank to auto-calculate from frequency"
+          keyboardType="numbers-and-punctuation"
+        />
 
-      {nextDueDate && scheduleId && (
-        <View style={styles.nextDueNote}>
-          <Text style={styles.nextDueNoteText}>
-            ✅ This will update the schedule's next due date to {nextDueDate}
-          </Text>
-        </View>
-      )}
-
-      <Button label="Save Maintenance Record" loading={loading} size="lg"
-        onPress={async () => {
-          if (!validate()) return;
-          const finalMachineId   = (machineId   ?? overrideMachineId)  || undefined;
-          const finalEquipmentId = (equipmentId ?? overrideEquipId) || undefined;
-          await submit({
-            ...(scheduleId     ? { scheduleId }     : {}),
-            ...(finalMachineId   ? { machineId: finalMachineId }     : {}),
-            ...(finalEquipmentId ? { equipmentId: finalEquipmentId } : {}),
-            maintenanceType,
-            maintenanceDate,
-            description,
-            ...(findings     ? { findings }     : {}),
-            ...(nextDueDate  ? { nextDueDate }  : {}),
-          });
-        }}
-      />
+        {nextDueDate && scheduleId && (
+          <View style={styles.nextDueNote}>
+            <Text style={styles.nextDueNoteText}>
+              This will update the schedule's next due date to {nextDueDate}
+            </Text>
+          </View>
+        )}
+      </FormCard>
     </ScreenWrapper>
   );
 }
 
 const styles = StyleSheet.create({
-  pageHeader:     { flexDirection: "row", alignItems: "center", gap: spacing.md },
-  pageIconWrap:   { width: 52, height: 52, borderRadius: 16, backgroundColor: colors.brandLight, borderWidth: 1, borderColor: colors.brandMid, alignItems: "center", justifyContent: "center" },
-  pageIconText:   { fontSize: 26 },
-  pageHeaderText: { flex: 1, gap: 2 },
-  pageTitle:      { fontSize: font.size.xl, fontWeight: font.weight.extrabold, color: colors.ink },
-  pageSub:        { fontSize: font.size.sm, color: colors.inkLight },
+  pageHeader:   { flexDirection: "row", alignItems: "center", gap: 12 },
+  pageIconWrap: {
+    width: 48, height: 48, borderRadius: 12,
+    backgroundColor: colors.brandLight,
+    borderWidth: 1, borderColor: colors.brandMid,
+    alignItems: "center", justifyContent: "center",
+  },
+  title: { fontSize: font.size.xl, fontFamily: font.family.extrabold, color: colors.ink },
+  sub:   { fontSize: font.size.sm, color: colors.inkMid, fontFamily: font.family.regular },
 
   scheduleCard: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
@@ -186,6 +190,6 @@ const styles = StyleSheet.create({
   scheduleCardLabel: { fontSize: font.size.xs, color: "#1d4ed8" },
   scheduleCardValue: { fontSize: font.size.sm, fontWeight: font.weight.semibold, color: "#1e40af" },
 
-  nextDueNote: { backgroundColor: "#f0fdf4", borderRadius: radius.md, borderWidth: 1, borderColor: "#bbf7d0", padding: spacing.md },
+  nextDueNote:     { backgroundColor: "#f0fdf4", borderRadius: radius.md, borderWidth: 1, borderColor: "#bbf7d0", padding: spacing.md },
   nextDueNoteText: { fontSize: font.size.sm, color: "#15803d" },
 });

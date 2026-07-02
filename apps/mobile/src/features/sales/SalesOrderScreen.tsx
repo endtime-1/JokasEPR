@@ -1,10 +1,12 @@
 import { useMemo, useState } from "react";
 import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { ScreenWrapper } from "../../components/ScreenWrapper";
+import { FormCard } from "../../components/FormCard";
+import { FormFooter } from "../../components/FormFooter";
 import { FormField } from "../../components/FormField";
 import { SelectField, SelectOption } from "../../components/SelectField";
-import { Button } from "../../components/Button";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
 import { fetchCustomers, fetchProducts, fetchWarehouses } from "../../api/endpoints";
@@ -76,133 +78,134 @@ export function SalesOrderScreen() {
     onSuccess: () => Alert.alert("Order Created", "Sales order has been saved.", [{ text: "OK", onPress: () => navigation.goBack() }]),
   });
 
-  return (
-    <ScreenWrapper>
+  async function handleSubmit() {
+    if (!validate()) return;
+    await submit({
+      customerId,
+      warehouseId,
+      orderDate: orderDate || undefined,
+      notes: notes || undefined,
+      items: lines.map((l) => ({
+        productId: l.productId,
+        quantity: Number(l.quantity),
+        unitPrice: Number(l.unitPrice),
+      })),
+    });
+  }
 
-      {/* Page header */}
+  return (
+    <ScreenWrapper footer={<FormFooter saveLabel="Submit Order" onSave={handleSubmit} loading={loading} />}>
       <View style={styles.pageHeader}>
         <View style={styles.pageIconWrap}>
-          <Text style={styles.pageIconText}>🧾</Text>
+          <MaterialCommunityIcons name="cart-plus" size={22} color={colors.brand} />
         </View>
-        <View style={styles.pageHeaderText}>
-          <Text style={styles.pageTitle}>Sales Order</Text>
-          <Text style={styles.pageSub}>Create a new customer sales order</Text>
-        </View>
-      </View>
-
-      <SelectField label="Customer" value={customerId} options={customers}
-        onChange={(v) => { setCustomerId(v); setErrors((e) => ({ ...e, customerId: "" })); }}
-        error={errors.customerId} required placeholder="Select customer…" />
-
-      <SelectField label="Warehouse" value={warehouseId} options={warehouses}
-        onChange={(v) => { setWarehouseId(v); setErrors((e) => ({ ...e, warehouseId: "" })); }}
-        error={errors.warehouseId} required placeholder="Select warehouse…" />
-
-      <FormField label="Order Date" value={orderDate} onChangeText={setOrderDate}
-        keyboardType="numeric" placeholder="YYYY-MM-DD (optional)" />
-
-      {/* Order lines section */}
-      <View style={styles.sectionHeader}>
-        <View style={styles.sectionHeaderLeft}>
-          <Text style={styles.sectionTitle}>ORDER LINES</Text>
-          <View style={styles.sectionLine} />
-        </View>
-        <View style={styles.lineCountBadge}>
-          <Text style={styles.lineCountText}>{lines.length}</Text>
+        <View>
+          <Text style={styles.title}>Sales Order</Text>
+          <Text style={styles.sub}>Create a new customer sales order</Text>
         </View>
       </View>
 
-      {errors.lines && (
-        <View style={styles.lineErrorBanner}>
-          <Text style={styles.lineErrorText}>⚠ {errors.lines}</Text>
-        </View>
-      )}
+      <FormCard label="ORDER DETAILS">
+        <SelectField label="Customer" value={customerId} options={customers}
+          onChange={(v) => { setCustomerId(v); setErrors((e) => ({ ...e, customerId: "" })); }}
+          error={errors.customerId} required placeholder="Select customer…" />
 
-      {lines.map((line, idx) => (
-        <View key={idx} style={styles.lineCard}>
-          <View style={styles.lineCardHeader}>
-            <View style={styles.lineNum}>
-              <Text style={styles.lineNumText}>Line {idx + 1}</Text>
+        <SelectField label="Warehouse" value={warehouseId} options={warehouses}
+          onChange={(v) => { setWarehouseId(v); setErrors((e) => ({ ...e, warehouseId: "" })); }}
+          error={errors.warehouseId} required placeholder="Select warehouse…" />
+
+        <FormField label="Order Date" value={orderDate} onChangeText={setOrderDate}
+          keyboardType="numeric" placeholder="YYYY-MM-DD (optional)" />
+      </FormCard>
+
+      <FormCard label="ORDER LINES">
+        <View style={styles.sectionHeader}>
+          <View style={styles.sectionHeaderLeft}>
+            <Text style={styles.sectionTitle}>ORDER LINES</Text>
+            <View style={styles.sectionLine} />
+          </View>
+          <View style={styles.lineCountBadge}>
+            <Text style={styles.lineCountText}>{lines.length}</Text>
+          </View>
+        </View>
+
+        {errors.lines && (
+          <View style={styles.lineErrorBanner}>
+            <Text style={styles.lineErrorText}>⚠ {errors.lines}</Text>
+          </View>
+        )}
+
+        {lines.map((line, idx) => (
+          <View key={idx} style={styles.lineCard}>
+            <View style={styles.lineCardHeader}>
+              <View style={styles.lineNum}>
+                <Text style={styles.lineNumText}>Line {idx + 1}</Text>
+              </View>
+              {line.productName !== "" && (
+                <Text style={styles.lineProductPreview} numberOfLines={1}>{line.productName}</Text>
+              )}
+              {lines.length > 1 && (
+                <TouchableOpacity onPress={() => removeLine(idx)} style={styles.removeBtn}>
+                  <Text style={styles.removeBtnText}>Remove</Text>
+                </TouchableOpacity>
+              )}
             </View>
-            {line.productName !== "" && (
-              <Text style={styles.lineProductPreview} numberOfLines={1}>{line.productName}</Text>
-            )}
-            {lines.length > 1 && (
-              <TouchableOpacity onPress={() => removeLine(idx)} style={styles.removeBtn}>
-                <Text style={styles.removeBtnText}>Remove</Text>
-              </TouchableOpacity>
+
+            <SelectField label="Product" value={line.productId} options={products}
+              onChange={(v) => setLineProduct(idx, v)} placeholder="Select product…" />
+
+            <View style={styles.row}>
+              <View style={styles.half}>
+                <FormField label="Quantity" value={line.quantity}
+                  onChangeText={(v) => updateLine(idx, "quantity", v)} keyboardType="decimal-pad" />
+              </View>
+              <View style={styles.half}>
+                <FormField label="Unit Price (GHS)" value={line.unitPrice}
+                  onChangeText={(v) => updateLine(idx, "unitPrice", v)} keyboardType="decimal-pad" placeholder="0.00" />
+              </View>
+            </View>
+
+            {line.quantity && line.unitPrice && (
+              <Text style={styles.lineSubtotal}>
+                Subtotal: GHS {((Number(line.quantity) || 0) * (Number(line.unitPrice) || 0)).toFixed(2)}
+              </Text>
             )}
           </View>
+        ))}
 
-          <SelectField label="Product" value={line.productId} options={products}
-            onChange={(v) => setLineProduct(idx, v)} placeholder="Select product…" />
+        <TouchableOpacity style={styles.addLineBtn} onPress={addLine}>
+          <Text style={styles.addLineBtnText}>＋  Add Line Item</Text>
+        </TouchableOpacity>
 
-          <View style={styles.row}>
-            <View style={styles.half}>
-              <FormField label="Quantity" value={line.quantity}
-                onChangeText={(v) => updateLine(idx, "quantity", v)} keyboardType="decimal-pad" />
-            </View>
-            <View style={styles.half}>
-              <FormField label="Unit Price (GHS)" value={line.unitPrice}
-                onChangeText={(v) => updateLine(idx, "unitPrice", v)} keyboardType="decimal-pad" placeholder="0.00" />
-            </View>
+        {/* Order total */}
+        <View style={styles.totalCard}>
+          <View style={styles.totalLeft}>
+            <Text style={styles.totalLabel}>Order Total</Text>
+            <Text style={styles.totalLineCount}>{lines.length} line item{lines.length !== 1 ? "s" : ""}</Text>
           </View>
-
-          {line.quantity && line.unitPrice && (
-            <Text style={styles.lineSubtotal}>
-              Subtotal: GHS {((Number(line.quantity) || 0) * (Number(line.unitPrice) || 0)).toFixed(2)}
-            </Text>
-          )}
+          <Text style={styles.totalValue}>GHS {total.toFixed(2)}</Text>
         </View>
-      ))}
+      </FormCard>
 
-      <TouchableOpacity style={styles.addLineBtn} onPress={addLine}>
-        <Text style={styles.addLineBtnText}>＋  Add Line Item</Text>
-      </TouchableOpacity>
-
-      {/* Order total */}
-      <View style={styles.totalCard}>
-        <View style={styles.totalLeft}>
-          <Text style={styles.totalLabel}>Order Total</Text>
-          <Text style={styles.totalLineCount}>{lines.length} line item{lines.length !== 1 ? "s" : ""}</Text>
-        </View>
-        <Text style={styles.totalValue}>GHS {total.toFixed(2)}</Text>
-      </View>
-
-      <FormField label="Delivery Notes" value={notes} onChangeText={setNotes} multiline numberOfLines={2}
-        style={{ minHeight: 70, textAlignVertical: "top" } as any}
-        placeholder="Optional delivery instructions…" />
-
-      <Button label="Submit Order" loading={loading} onPress={async () => {
-        if (!validate()) return;
-        await submit({
-          customerId,
-          warehouseId,
-          orderDate: orderDate || undefined,
-          notes: notes || undefined,
-          items: lines.map((l) => ({
-            productId: l.productId,
-            quantity: Number(l.quantity),
-            unitPrice: Number(l.unitPrice),
-          })),
-        });
-      }} size="lg" />
-
+      <FormCard label="NOTES">
+        <FormField label="Delivery Notes" value={notes} onChangeText={setNotes} multiline numberOfLines={2}
+          style={{ minHeight: 70, textAlignVertical: "top" } as any}
+          placeholder="Optional delivery instructions…" />
+      </FormCard>
     </ScreenWrapper>
   );
 }
 
 const styles = StyleSheet.create({
-  pageHeader: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  pageHeader:   { flexDirection: "row", alignItems: "center", gap: 12 },
   pageIconWrap: {
-    width: 52, height: 52, borderRadius: radius.lg,
-    backgroundColor: colors.brandLight, borderWidth: 1, borderColor: colors.brandMid,
+    width: 48, height: 48, borderRadius: 12,
+    backgroundColor: colors.brandLight,
+    borderWidth: 1, borderColor: colors.brandMid,
     alignItems: "center", justifyContent: "center",
   },
-  pageIconText: { fontSize: 26 },
-  pageHeaderText: { gap: 2 },
-  pageTitle: { fontSize: font.size.xl, fontWeight: font.weight.extrabold, color: colors.ink },
-  pageSub: { fontSize: font.size.sm, color: colors.inkLight },
+  title: { fontSize: font.size.xl, fontFamily: font.family.extrabold, color: colors.ink },
+  sub:   { fontSize: font.size.sm, color: colors.inkMid, fontFamily: font.family.regular },
 
   sectionHeader: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   sectionHeaderLeft: { flex: 1, flexDirection: "row", alignItems: "center", gap: spacing.sm },
@@ -224,13 +227,12 @@ const styles = StyleSheet.create({
   lineErrorText: { fontSize: font.size.sm, color: colors.error, fontWeight: font.weight.medium },
 
   lineCard: {
-    backgroundColor: colors.bgCard,
+    backgroundColor: colors.bg,
     borderRadius: radius.xl,
     borderWidth: 1,
     borderColor: colors.border,
     padding: spacing.lg,
     gap: spacing.md,
-    ...shadow.sm,
   },
   lineCardHeader: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   lineNum: {

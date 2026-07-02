@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { Alert, StyleSheet, Text, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { ScreenWrapper } from "../../components/ScreenWrapper";
+import { FormCard } from "../../components/FormCard";
+import { FormFooter } from "../../components/FormFooter";
 import { FormField } from "../../components/FormField";
-import { Button } from "../../components/Button";
 import { useSubmit } from "../../hooks/useSubmit";
 import { colors, font, radius, spacing } from "../../constants/theme";
 
@@ -36,15 +38,28 @@ export function LabReportScreen() {
       Alert.alert("Report Logged", "Lab report has been saved.", [{ text: "OK", onPress: () => navigation.goBack() }]),
   });
 
+  async function handleSubmit() {
+    if (!validate()) return;
+    await submit({
+      reportNumber,
+      labName,
+      reportDate,
+      ...(fileUrl        ? { fileUrl, fileType: "URL" } : {}),
+      ...(summary        ? { summary }        : {}),
+      ...(findings       ? { findings }       : {}),
+      ...(recommendations ? { recommendations } : {}),
+    });
+  }
+
   return (
-    <ScreenWrapper>
+    <ScreenWrapper footer={<FormFooter saveLabel="Save Lab Report" onSave={handleSubmit} loading={loading} />}>
       <View style={styles.pageHeader}>
         <View style={styles.pageIconWrap}>
-          <Text style={styles.pageIconText}>🧪</Text>
+          <MaterialCommunityIcons name="test-tube" size={22} color={colors.brand} />
         </View>
-        <View style={styles.pageHeaderText}>
-          <Text style={styles.pageTitle}>Lab Report</Text>
-          <Text style={styles.pageSub}>Log external lab analysis results</Text>
+        <View>
+          <Text style={styles.title}>Lab Report</Text>
+          <Text style={styles.sub}>Log external lab analysis results</Text>
         </View>
       </View>
 
@@ -54,75 +69,68 @@ export function LabReportScreen() {
         </Text>
       </View>
 
-      <View style={styles.row}>
-        <View style={styles.half}>
-          <FormField label="Report Number" value={reportNumber}
-            onChangeText={(v) => { setReportNumber(v); setErrors((e) => ({ ...e, reportNumber: "" })); }}
-            required error={errors.reportNumber} placeholder="e.g. LAB-2026-001" />
+      <FormCard label="REPORT DETAILS">
+        <View style={styles.row}>
+          <View style={styles.half}>
+            <FormField label="Report Number" value={reportNumber}
+              onChangeText={(v) => { setReportNumber(v); setErrors((e) => ({ ...e, reportNumber: "" })); }}
+              required error={errors.reportNumber} placeholder="e.g. LAB-2026-001" />
+          </View>
+          <View style={styles.half}>
+            <FormField label="Report Date" value={reportDate}
+              onChangeText={(v) => { setReportDate(v); setErrors((e) => ({ ...e, reportDate: "" })); }}
+              required error={errors.reportDate} placeholder="YYYY-MM-DD"
+              keyboardType="numbers-and-punctuation" />
+          </View>
         </View>
-        <View style={styles.half}>
-          <FormField label="Report Date" value={reportDate}
-            onChangeText={(v) => { setReportDate(v); setErrors((e) => ({ ...e, reportDate: "" })); }}
-            required error={errors.reportDate} placeholder="YYYY-MM-DD"
-            keyboardType="numbers-and-punctuation" />
-        </View>
-      </View>
 
-      <FormField label="Lab / Testing Facility" value={labName}
-        onChangeText={(v) => { setLabName(v); setErrors((e) => ({ ...e, labName: "" })); }}
-        required error={errors.labName} placeholder="Name of lab that issued this report…" />
+        <FormField label="Lab / Testing Facility" value={labName}
+          onChangeText={(v) => { setLabName(v); setErrors((e) => ({ ...e, labName: "" })); }}
+          required error={errors.labName} placeholder="Name of lab that issued this report…" />
 
-      <FormField label="File URL (optional)" value={fileUrl}
-        onChangeText={setFileUrl}
-        placeholder="Paste Google Drive / OneDrive share link…"
-        keyboardType="url" autoCapitalize="none" autoCorrect={false} />
+        <FormField label="File URL (optional)" value={fileUrl}
+          onChangeText={setFileUrl}
+          placeholder="Paste Google Drive / OneDrive share link…"
+          keyboardType="url" autoCapitalize="none" autoCorrect={false} />
 
-      {fileUrl.length > 0 && (
-        <View style={styles.linkPreview}>
-          <Text style={styles.linkPreviewIcon}>📎</Text>
-          <Text style={styles.linkPreviewText} numberOfLines={1}>{fileUrl}</Text>
-        </View>
-      )}
+        {fileUrl.length > 0 && (
+          <View style={styles.linkPreview}>
+            <Text style={styles.linkPreviewIcon}>📎</Text>
+            <Text style={styles.linkPreviewText} numberOfLines={1}>{fileUrl}</Text>
+          </View>
+        )}
+      </FormCard>
 
-      <FormField label="Summary (optional)" value={summary}
-        onChangeText={setSummary} multiline numberOfLines={2}
-        style={{ minHeight: 60, textAlignVertical: "top" } as any}
-        placeholder="Brief summary of test results…" />
+      <FormCard label="FINDINGS">
+        <FormField label="Summary (optional)" value={summary}
+          onChangeText={setSummary} multiline numberOfLines={2}
+          style={{ minHeight: 60, textAlignVertical: "top" } as any}
+          placeholder="Brief summary of test results…" />
 
-      <FormField label="Findings (optional)" value={findings}
-        onChangeText={setFindings} multiline numberOfLines={3}
-        style={{ minHeight: 80, textAlignVertical: "top" } as any}
-        placeholder="Key findings from the lab analysis…" />
+        <FormField label="Findings (optional)" value={findings}
+          onChangeText={setFindings} multiline numberOfLines={3}
+          style={{ minHeight: 80, textAlignVertical: "top" } as any}
+          placeholder="Key findings from the lab analysis…" />
 
-      <FormField label="Recommendations (optional)" value={recommendations}
-        onChangeText={setRecommendations} multiline numberOfLines={2}
-        style={{ minHeight: 60, textAlignVertical: "top" } as any}
-        placeholder="Recommended actions based on findings…" />
-
-      <Button label="Save Lab Report" loading={loading} size="lg"
-        onPress={async () => {
-          if (!validate()) return;
-          await submit({
-            reportNumber,
-            labName,
-            reportDate,
-            ...(fileUrl        ? { fileUrl, fileType: "URL" } : {}),
-            ...(summary        ? { summary }        : {}),
-            ...(findings       ? { findings }       : {}),
-            ...(recommendations ? { recommendations } : {}),
-          });
-        }} />
+        <FormField label="Recommendations (optional)" value={recommendations}
+          onChangeText={setRecommendations} multiline numberOfLines={2}
+          style={{ minHeight: 60, textAlignVertical: "top" } as any}
+          placeholder="Recommended actions based on findings…" />
+      </FormCard>
     </ScreenWrapper>
   );
 }
 
 const styles = StyleSheet.create({
-  pageHeader:     { flexDirection: "row", alignItems: "center", gap: spacing.md },
-  pageIconWrap:   { width: 52, height: 52, borderRadius: 16, backgroundColor: "#f0f9ff", borderWidth: 1, borderColor: "#bae6fd", alignItems: "center", justifyContent: "center" },
-  pageIconText:   { fontSize: 26 },
-  pageHeaderText: { gap: 2 },
-  pageTitle:      { fontSize: font.size.xl, fontWeight: font.weight.extrabold, color: colors.ink },
-  pageSub:        { fontSize: font.size.sm, color: colors.inkLight },
+  pageHeader:   { flexDirection: "row", alignItems: "center", gap: 12 },
+  pageIconWrap: {
+    width: 48, height: 48, borderRadius: 12,
+    backgroundColor: colors.brandLight,
+    borderWidth: 1, borderColor: colors.brandMid,
+    alignItems: "center", justifyContent: "center",
+  },
+  title: { fontSize: font.size.xl, fontFamily: font.family.extrabold, color: colors.ink },
+  sub:   { fontSize: font.size.sm, color: colors.inkMid, fontFamily: font.family.regular },
 
   infoCard: { backgroundColor: "#eff6ff", borderRadius: radius.md, borderWidth: 1, borderColor: "#bfdbfe", padding: spacing.md },
   infoText: { fontSize: font.size.sm, color: "#1d4ed8", lineHeight: 19 },

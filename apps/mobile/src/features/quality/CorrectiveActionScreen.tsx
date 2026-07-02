@@ -1,10 +1,12 @@
 import { useMemo, useState } from "react";
 import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { ScreenWrapper } from "../../components/ScreenWrapper";
+import { FormCard } from "../../components/FormCard";
+import { FormFooter } from "../../components/FormFooter";
 import { FormField } from "../../components/FormField";
 import { SelectField, SelectOption } from "../../components/SelectField";
-import { Button } from "../../components/Button";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
 import { fetchQualityOptions } from "../../api/endpoints";
@@ -56,93 +58,99 @@ export function CorrectiveActionScreen() {
       Alert.alert("Action Created", "Corrective action has been logged.", [{ text: "OK", onPress: () => navigation.goBack() }]),
   });
 
+  async function handleSubmit() {
+    if (!validate()) return;
+    await submit({
+      title,
+      description,
+      priority,
+      ...(rootCause         ? { rootCause }         : {}),
+      ...(preventiveMeasure ? { preventiveMeasure } : {}),
+      ...(assignedToId      ? { assignedToId }      : {}),
+      ...(dueDate           ? { dueDate }           : {}),
+    });
+  }
+
   return (
-    <ScreenWrapper>
+    <ScreenWrapper footer={<FormFooter saveLabel="Create Corrective Action" onSave={handleSubmit} loading={loading} />}>
       <View style={styles.pageHeader}>
         <View style={styles.pageIconWrap}>
-          <Text style={styles.pageIconText}>✅</Text>
+          <MaterialCommunityIcons name="check-circle" size={22} color={colors.brand} />
         </View>
-        <View style={styles.pageHeaderText}>
-          <Text style={styles.pageTitle}>Corrective Action</Text>
-          <Text style={styles.pageSub}>Log a quality issue corrective action</Text>
-        </View>
-      </View>
-
-      <FormField label="Title" value={title}
-        onChangeText={(v) => { setTitle(v); setErrors((e) => ({ ...e, title: "" })); }}
-        required error={errors.title} placeholder="Short title for this corrective action…" />
-
-      <FormField label="Description" value={description}
-        onChangeText={(v) => { setDescription(v); setErrors((e) => ({ ...e, description: "" })); }}
-        required error={errors.description} multiline numberOfLines={3}
-        style={{ minHeight: 90, textAlignVertical: "top" } as any}
-        placeholder="What needs to be done and why…" />
-
-      {/* Priority */}
-      <View style={styles.prioritySection}>
-        <Text style={styles.fieldLabel}>Priority <Text style={styles.required}>*</Text></Text>
-        <View style={styles.priorityRow}>
-          {(Object.keys(PRIORITY_CONFIG) as Priority[]).map((p) => {
-            const cfg    = PRIORITY_CONFIG[p];
-            const active = priority === p;
-            return (
-              <TouchableOpacity key={p}
-                style={[styles.priorityBtn, active
-                  ? { backgroundColor: cfg.bg, borderColor: cfg.color }
-                  : { backgroundColor: colors.bgCard, borderColor: colors.border }
-                ]}
-                onPress={() => setPriority(p)} activeOpacity={0.8}
-              >
-                <Text style={[styles.priorityLabel, { color: active ? cfg.color : colors.inkLight }]}>
-                  {cfg.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
+        <View>
+          <Text style={styles.title}>Corrective Action</Text>
+          <Text style={styles.sub}>Log a quality issue corrective action</Text>
         </View>
       </View>
 
-      <FormField label="Root Cause (optional)" value={rootCause}
-        onChangeText={setRootCause} multiline numberOfLines={2}
-        style={{ minHeight: 60, textAlignVertical: "top" } as any}
-        placeholder="What caused this issue?…" />
+      <FormCard label="ACTION DETAILS">
+        <FormField label="Title" value={title}
+          onChangeText={(v) => { setTitle(v); setErrors((e) => ({ ...e, title: "" })); }}
+          required error={errors.title} placeholder="Short title for this corrective action…" />
 
-      <FormField label="Preventive Measure (optional)" value={preventiveMeasure}
-        onChangeText={setPreventiveMeasure} multiline numberOfLines={2}
-        style={{ minHeight: 60, textAlignVertical: "top" } as any}
-        placeholder="How will this be prevented in future?…" />
+        <FormField label="Description" value={description}
+          onChangeText={(v) => { setDescription(v); setErrors((e) => ({ ...e, description: "" })); }}
+          required error={errors.description} multiline numberOfLines={3}
+          style={{ minHeight: 90, textAlignVertical: "top" } as any}
+          placeholder="What needs to be done and why…" />
 
-      <SelectField label="Assign To (optional)" value={assignedToId} options={userOptions}
-        onChange={setAssignedToId} placeholder="Select team member…" />
+        {/* Priority */}
+        <View style={styles.prioritySection}>
+          <Text style={styles.fieldLabel}>Priority <Text style={styles.required}>*</Text></Text>
+          <View style={styles.priorityRow}>
+            {(Object.keys(PRIORITY_CONFIG) as Priority[]).map((p) => {
+              const cfg    = PRIORITY_CONFIG[p];
+              const active = priority === p;
+              return (
+                <TouchableOpacity key={p}
+                  style={[styles.priorityBtn, active
+                    ? { backgroundColor: cfg.bg, borderColor: cfg.color }
+                    : { backgroundColor: colors.bgCard, borderColor: colors.border }
+                  ]}
+                  onPress={() => setPriority(p)} activeOpacity={0.8}
+                >
+                  <Text style={[styles.priorityLabel, { color: active ? cfg.color : colors.inkLight }]}>
+                    {cfg.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
 
-      <FormField label="Due Date (optional)" value={dueDate}
-        onChangeText={setDueDate} placeholder="YYYY-MM-DD"
-        keyboardType="numbers-and-punctuation" />
+        <FormField label="Root Cause (optional)" value={rootCause}
+          onChangeText={setRootCause} multiline numberOfLines={2}
+          style={{ minHeight: 60, textAlignVertical: "top" } as any}
+          placeholder="What caused this issue?…" />
 
-      <Button label="Create Corrective Action" loading={loading} size="lg"
-        onPress={async () => {
-          if (!validate()) return;
-          await submit({
-            title,
-            description,
-            priority,
-            ...(rootCause         ? { rootCause }         : {}),
-            ...(preventiveMeasure ? { preventiveMeasure } : {}),
-            ...(assignedToId      ? { assignedToId }      : {}),
-            ...(dueDate           ? { dueDate }           : {}),
-          });
-        }} />
+        <FormField label="Preventive Measure (optional)" value={preventiveMeasure}
+          onChangeText={setPreventiveMeasure} multiline numberOfLines={2}
+          style={{ minHeight: 60, textAlignVertical: "top" } as any}
+          placeholder="How will this be prevented in future?…" />
+      </FormCard>
+
+      <FormCard label="ASSIGNMENT">
+        <SelectField label="Assign To (optional)" value={assignedToId} options={userOptions}
+          onChange={setAssignedToId} placeholder="Select team member…" />
+
+        <FormField label="Due Date (optional)" value={dueDate}
+          onChangeText={setDueDate} placeholder="YYYY-MM-DD"
+          keyboardType="numbers-and-punctuation" />
+      </FormCard>
     </ScreenWrapper>
   );
 }
 
 const styles = StyleSheet.create({
-  pageHeader:     { flexDirection: "row", alignItems: "center", gap: spacing.md },
-  pageIconWrap:   { width: 52, height: 52, borderRadius: 16, backgroundColor: "#f0fdf4", borderWidth: 1, borderColor: "#bbf7d0", alignItems: "center", justifyContent: "center" },
-  pageIconText:   { fontSize: 26 },
-  pageHeaderText: { gap: 2 },
-  pageTitle:      { fontSize: font.size.xl, fontWeight: font.weight.extrabold, color: colors.ink },
-  pageSub:        { fontSize: font.size.sm, color: colors.inkLight },
+  pageHeader:   { flexDirection: "row", alignItems: "center", gap: 12 },
+  pageIconWrap: {
+    width: 48, height: 48, borderRadius: 12,
+    backgroundColor: colors.brandLight,
+    borderWidth: 1, borderColor: colors.brandMid,
+    alignItems: "center", justifyContent: "center",
+  },
+  title: { fontSize: font.size.xl, fontFamily: font.family.extrabold, color: colors.ink },
+  sub:   { fontSize: font.size.sm, color: colors.inkMid, fontFamily: font.family.regular },
 
   fieldLabel:     { fontSize: font.size.sm, fontWeight: font.weight.semibold, color: colors.ink },
   required:       { color: colors.error },

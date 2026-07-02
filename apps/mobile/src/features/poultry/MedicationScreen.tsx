@@ -1,10 +1,12 @@
 import { useMemo, useState } from "react";
 import { Alert, StyleSheet, Text, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { ScreenWrapper } from "../../components/ScreenWrapper";
+import { FormCard } from "../../components/FormCard";
+import { FormFooter } from "../../components/FormFooter";
 import { FormField } from "../../components/FormField";
 import { SelectField, SelectOption } from "../../components/SelectField";
-import { Button } from "../../components/Button";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
 import { fetchFlockBatches, fetchFarms, fetchWarehouses, fetchProducts } from "../../api/endpoints";
@@ -83,58 +85,78 @@ export function MedicationScreen() {
     onSuccess: () => Alert.alert("Saved", "Medication record saved.", [{ text: "OK", onPress: () => navigation.goBack() }])
   });
 
+  async function handleSubmit() {
+    if (!validate()) return;
+    await submit({
+      flockBatchId: batchId,
+      startDate,
+      endDate: endDate || undefined,
+      medicationName,
+      dosage,
+      route,
+      notes: notes || undefined,
+      warehouseId: warehouseId || undefined,
+      medicineProductId: medicineProductId || undefined,
+      quantityUsed: quantityUsed ? Number(quantityUsed) : undefined,
+    });
+  }
+
   return (
-    <ScreenWrapper>
-      <Text style={styles.title}>Medication Record</Text>
-      <Text style={styles.sub}>Record treatment administered to flock</Text>
-
-      <SelectField label="Farm" value={farmId} options={farms} onChange={(v) => { setFarmId(v); setBatchId(""); }} error={errors.farmId} required />
-      <SelectField label="Flock Batch" value={batchId} options={batches} onChange={setBatchId} error={errors.batchId} required placeholder={farmId ? "Select batch…" : "Select farm first"} />
-      <FormField label="Start Date" required value={startDate} onChangeText={setStartDate} error={errors.startDate} keyboardType="numeric" placeholder="YYYY-MM-DD" />
-      <FormField label="Medication Name" required value={medicationName} onChangeText={(v) => { setMedicationName(v); setErrors((e) => ({ ...e, medicationName: "" })); }} error={errors.medicationName} placeholder="e.g. Amoxicillin 20%" />
-
-      <View style={styles.row}>
-        <View style={styles.half}>
-          <FormField label="Dosage" required value={dosage} onChangeText={(v) => { setDosage(v); setErrors((e) => ({ ...e, dosage: "" })); }} error={errors.dosage} placeholder="e.g. 1g/L" />
+    <ScreenWrapper footer={<FormFooter saveLabel="Save Medication" onSave={handleSubmit} loading={loading} />}>
+      <View style={styles.pageHeader}>
+        <View style={styles.pageIconWrap}>
+          <MaterialCommunityIcons name="pill" size={22} color={colors.brand} />
         </View>
-        <View style={styles.half}>
-          <SelectField label="Route" value={route} options={ROUTE_OPTIONS} onChange={(v) => { setRoute(v); setErrors((e) => ({ ...e, route: "" })); }} error={errors.route} required />
+        <View>
+          <Text style={styles.title}>Medication Record</Text>
+          <Text style={styles.sub}>Record treatment administered to flock</Text>
         </View>
       </View>
 
-      <FormField label="End Date" value={endDate} onChangeText={setEndDate} keyboardType="numeric" placeholder="YYYY-MM-DD (optional)" />
-      <FormField label="Notes / Diagnosis" value={notes} onChangeText={setNotes} multiline numberOfLines={2} style={{ minHeight: 70, textAlignVertical: "top" } as any} placeholder="e.g. Respiratory infection treatment…" />
+      <FormCard label="FLOCK / BATCH">
+        <SelectField label="Farm" value={farmId} options={farms} onChange={(v) => { setFarmId(v); setBatchId(""); }} error={errors.farmId} required />
+        <SelectField label="Flock Batch" value={batchId} options={batches} onChange={setBatchId} error={errors.batchId} required placeholder={farmId ? "Select batch…" : "Select farm first"} />
+        <FormField label="Start Date" required value={startDate} onChangeText={setStartDate} error={errors.startDate} keyboardType="numeric" placeholder="YYYY-MM-DD" />
+      </FormCard>
 
-      <Text style={styles.sectionLabel}>Inventory Link (Optional)</Text>
-      <Text style={styles.sectionHint}>Select warehouse and medicine to auto-deduct stock when saved.</Text>
-      <SelectField label="Warehouse" value={warehouseId} options={warehouses} onChange={setWarehouseId} placeholder="No warehouse selected" />
-      <SelectField label="Medicine Product" value={medicineProductId} options={products} onChange={setMedicineProductId} placeholder="No product selected" />
-      <FormField label="Quantity Used" value={quantityUsed} onChangeText={setQuantityUsed} keyboardType="decimal-pad" placeholder="e.g. 0.5 (kg / litres / units)" />
+      <FormCard label="MEDICATION DATA">
+        <FormField label="Medication Name" required value={medicationName} onChangeText={(v) => { setMedicationName(v); setErrors((e) => ({ ...e, medicationName: "" })); }} error={errors.medicationName} placeholder="e.g. Amoxicillin 20%" />
 
-      <Button label="Save Medication" loading={loading} onPress={async () => {
-        if (!validate()) return;
-        await submit({
-          flockBatchId: batchId,
-          startDate,
-          endDate: endDate || undefined,
-          medicationName,
-          dosage,
-          route,
-          notes: notes || undefined,
-          warehouseId: warehouseId || undefined,
-          medicineProductId: medicineProductId || undefined,
-          quantityUsed: quantityUsed ? Number(quantityUsed) : undefined,
-        });
-      }} size="lg" />
+        <View style={styles.row}>
+          <View style={styles.half}>
+            <FormField label="Dosage" required value={dosage} onChangeText={(v) => { setDosage(v); setErrors((e) => ({ ...e, dosage: "" })); }} error={errors.dosage} placeholder="e.g. 1g/L" />
+          </View>
+          <View style={styles.half}>
+            <SelectField label="Route" value={route} options={ROUTE_OPTIONS} onChange={(v) => { setRoute(v); setErrors((e) => ({ ...e, route: "" })); }} error={errors.route} required />
+          </View>
+        </View>
+
+        <FormField label="End Date" value={endDate} onChangeText={setEndDate} keyboardType="numeric" placeholder="YYYY-MM-DD (optional)" />
+      </FormCard>
+
+      <FormCard label="NOTES">
+        <FormField label="Notes / Diagnosis" value={notes} onChangeText={setNotes} multiline numberOfLines={2} style={{ minHeight: 70, textAlignVertical: "top" } as any} placeholder="e.g. Respiratory infection treatment…" />
+      </FormCard>
+
+      <FormCard label="INVENTORY LINK (OPTIONAL)">
+        <SelectField label="Warehouse" value={warehouseId} options={warehouses} onChange={setWarehouseId} placeholder="No warehouse selected" />
+        <SelectField label="Medicine Product" value={medicineProductId} options={products} onChange={setMedicineProductId} placeholder="No product selected" />
+        <FormField label="Quantity Used" value={quantityUsed} onChangeText={setQuantityUsed} keyboardType="decimal-pad" placeholder="e.g. 0.5 (kg / litres / units)" />
+      </FormCard>
     </ScreenWrapper>
   );
 }
 
 const styles = StyleSheet.create({
-  title: { fontSize: font.size.xl, fontWeight: font.weight.bold, color: colors.ink },
-  sub: { fontSize: font.size.sm, color: colors.inkMid, marginTop: -spacing.sm },
+  pageHeader:   { flexDirection: "row", alignItems: "center", gap: 12 },
+  pageIconWrap: {
+    width: 48, height: 48, borderRadius: 12,
+    backgroundColor: colors.brandLight,
+    borderWidth: 1, borderColor: colors.brandMid,
+    alignItems: "center", justifyContent: "center",
+  },
+  title: { fontSize: font.size.xl, fontFamily: font.family.extrabold, color: colors.ink },
+  sub:   { fontSize: font.size.sm, color: colors.inkMid, fontFamily: font.family.regular },
   row: { flexDirection: "row", gap: spacing.md },
   half: { flex: 1 },
-  sectionLabel: { fontSize: font.size.sm, fontWeight: font.weight.bold, color: colors.inkMid, marginTop: spacing.sm },
-  sectionHint: { fontSize: font.size.xs, color: colors.inkLight, marginTop: -spacing.sm }
 });

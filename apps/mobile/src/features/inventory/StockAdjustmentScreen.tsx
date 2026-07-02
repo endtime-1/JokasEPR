@@ -1,14 +1,16 @@
 import { useMemo, useState } from "react";
 import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { ScreenWrapper } from "../../components/ScreenWrapper";
+import { FormCard } from "../../components/FormCard";
+import { FormFooter } from "../../components/FormFooter";
 import { FormField } from "../../components/FormField";
 import { SelectField, SelectOption } from "../../components/SelectField";
-import { Button } from "../../components/Button";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
 import { fetchInventoryOptions } from "../../api/endpoints";
-import { colors, font, radius, shadow, spacing } from "../../constants/theme";
+import { colors, font, radius, spacing } from "../../constants/theme";
 
 type AdjType = {
   value: string;
@@ -99,114 +101,120 @@ export function StockAdjustmentScreen() {
       ),
   });
 
+  async function handleSubmit() {
+    if (!validate()) return;
+    const item = warehouseItems.find((i) => i.id === inventoryItemId);
+    await submit({
+      warehouseId,
+      productId:      item?.product?.id,
+      adjustmentType,
+      quantity:       signedQty,
+      reason,
+    });
+  }
+
   return (
-    <ScreenWrapper>
+    <ScreenWrapper footer={<FormFooter saveLabel="Submit Adjustment" onSave={handleSubmit} loading={loading} />}>
       <View style={styles.pageHeader}>
         <View style={styles.pageIconWrap}>
-          <Text style={styles.pageIconText}>⚖️</Text>
+          <MaterialCommunityIcons name="tune-variant" size={22} color={colors.brand} />
         </View>
-        <View style={styles.pageHeaderText}>
-          <Text style={styles.pageTitle}>Stock Adjustment</Text>
-          <Text style={styles.pageSub}>Correct stock counts or write off losses</Text>
+        <View>
+          <Text style={styles.title}>Stock Adjustment</Text>
+          <Text style={styles.sub}>Correct stock counts or write off losses</Text>
         </View>
       </View>
 
-      <SelectField label="Warehouse" value={warehouseId} options={warehouses}
-        onChange={(v) => { setWarehouseId(v); setInventoryItemId(""); setErrors((e) => ({ ...e, warehouseId: "" })); }}
-        error={errors.warehouseId} required placeholder="Select warehouse…" />
+      <FormCard label="STOCK ITEM">
+        <SelectField label="Warehouse" value={warehouseId} options={warehouses}
+          onChange={(v) => { setWarehouseId(v); setInventoryItemId(""); setErrors((e) => ({ ...e, warehouseId: "" })); }}
+          error={errors.warehouseId} required placeholder="Select warehouse…" />
 
-      <SelectField label="Stock Item" value={inventoryItemId} options={itemOptions}
-        onChange={(v) => { setInventoryItemId(v); setErrors((e) => ({ ...e, inventoryItemId: "" })); }}
-        error={errors.inventoryItemId} required placeholder={warehouseId ? "Select item…" : "Select warehouse first"}  />
+        <SelectField label="Stock Item" value={inventoryItemId} options={itemOptions}
+          onChange={(v) => { setInventoryItemId(v); setErrors((e) => ({ ...e, inventoryItemId: "" })); }}
+          error={errors.inventoryItemId} required placeholder={warehouseId ? "Select item…" : "Select warehouse first"} />
 
-      {selectedItem && (
-        <View style={styles.stockCard}>
-          <Text style={styles.stockCardLabel}>Current Stock</Text>
-          <Text style={styles.stockCardValue}>{Number(selectedItem.quantityOnHand)}</Text>
-          <Text style={styles.stockCardSub}>{selectedItem.warehouse.name}</Text>
+        {selectedItem && (
+          <View style={styles.stockCard}>
+            <Text style={styles.stockCardLabel}>Current Stock</Text>
+            <Text style={styles.stockCardValue}>{Number(selectedItem.quantityOnHand)}</Text>
+            <Text style={styles.stockCardSub}>{selectedItem.warehouse.name}</Text>
+          </View>
+        )}
+      </FormCard>
+
+      <FormCard label="ADJUSTMENT DATA">
+        <SelectField label="Adjustment Type" value={adjustmentType} options={ADJ_TYPE_OPTIONS}
+          onChange={onTypeChange}
+          error={errors.adjustmentType} required placeholder="Select type…" />
+
+        {adjustmentType && (
+          <Text style={styles.typeDesc}>
+            {ADJ_TYPES.find((t) => t.value === adjustmentType)?.desc}
+          </Text>
+        )}
+
+        {/* Direction toggle */}
+        <View style={styles.dirLabel}>
+          <Text style={styles.fieldLabel}>Direction <Text style={styles.required}>*</Text></Text>
         </View>
-      )}
+        <View style={styles.dirToggle}>
+          {(["add", "remove"] as const).map((d) => (
+            <TouchableOpacity
+              key={d}
+              style={[styles.dirBtn, direction === d && (d === "add" ? styles.dirBtnAddActive : styles.dirBtnRemoveActive)]}
+              onPress={() => setDirection(d)}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.dirBtnText, direction === d && styles.dirBtnTextActive]}>
+                {d === "add" ? "＋  Add to Stock" : "－  Remove from Stock"}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
 
-      <SelectField label="Adjustment Type" value={adjustmentType} options={ADJ_TYPE_OPTIONS}
-        onChange={onTypeChange}
-        error={errors.adjustmentType} required placeholder="Select type…" />
+        <FormField label="Quantity" value={quantity}
+          onChangeText={(v) => { setQuantity(v); setErrors((e) => ({ ...e, quantity: "" })); }}
+          keyboardType="decimal-pad" required error={errors.quantity} placeholder="0" />
 
-      {adjustmentType && (
-        <Text style={styles.typeDesc}>
-          {ADJ_TYPES.find((t) => t.value === adjustmentType)?.desc}
-        </Text>
-      )}
-
-      {/* Direction toggle */}
-      <View style={styles.dirLabel}>
-        <Text style={styles.fieldLabel}>Direction <Text style={styles.required}>*</Text></Text>
-      </View>
-      <View style={styles.dirToggle}>
-        {(["add", "remove"] as const).map((d) => (
-          <TouchableOpacity
-            key={d}
-            style={[styles.dirBtn, direction === d && (d === "add" ? styles.dirBtnAddActive : styles.dirBtnRemoveActive)]}
-            onPress={() => setDirection(d)}
-            activeOpacity={0.8}
-          >
-            <Text style={[styles.dirBtnText, direction === d && styles.dirBtnTextActive]}>
-              {d === "add" ? "＋  Add to Stock" : "－  Remove from Stock"}
+        {selectedItem && qtyNum > 0 && (
+          <View style={styles.previewCard}>
+            <Text style={styles.previewLabel}>Stock After Adjustment</Text>
+            <Text style={[
+              styles.previewValue,
+              { color: Number(selectedItem.quantityOnHand) + signedQty < 0 ? colors.error : colors.brand }
+            ]}>
+              {(Number(selectedItem.quantityOnHand) + signedQty).toFixed(2)}
             </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+          </View>
+        )}
 
-      <FormField label="Quantity" value={quantity}
-        onChangeText={(v) => { setQuantity(v); setErrors((e) => ({ ...e, quantity: "" })); }}
-        keyboardType="decimal-pad" required error={errors.quantity} placeholder="0" />
+        <FormField label="Reason" value={reason}
+          onChangeText={(v) => { setReason(v); setErrors((e) => ({ ...e, reason: "" })); }}
+          required error={errors.reason} multiline numberOfLines={2}
+          style={{ minHeight: 70, textAlignVertical: "top" } as any}
+          placeholder="Explain why this adjustment is needed…" />
 
-      {selectedItem && qtyNum > 0 && (
-        <View style={styles.previewCard}>
-          <Text style={styles.previewLabel}>Stock After Adjustment</Text>
-          <Text style={[
-            styles.previewValue,
-            { color: Number(selectedItem.quantityOnHand) + signedQty < 0 ? colors.error : colors.brand }
-          ]}>
-            {(Number(selectedItem.quantityOnHand) + signedQty).toFixed(2)}
+        <View style={styles.approvalNote}>
+          <Text style={styles.approvalNoteText}>
+            ℹ All adjustments require manager approval before stock is updated
           </Text>
         </View>
-      )}
-
-      <FormField label="Reason" value={reason}
-        onChangeText={(v) => { setReason(v); setErrors((e) => ({ ...e, reason: "" })); }}
-        required error={errors.reason} multiline numberOfLines={2}
-        style={{ minHeight: 70, textAlignVertical: "top" } as any}
-        placeholder="Explain why this adjustment is needed…" />
-
-      <View style={styles.approvalNote}>
-        <Text style={styles.approvalNoteText}>
-          ℹ All adjustments require manager approval before stock is updated
-        </Text>
-      </View>
-
-      <Button label="Submit Adjustment" loading={loading} size="lg"
-        onPress={async () => {
-          if (!validate()) return;
-          const item = warehouseItems.find((i) => i.id === inventoryItemId);
-          await submit({
-            warehouseId,
-            productId:      item?.product?.id,
-            adjustmentType,
-            quantity:       signedQty,
-            reason,
-          });
-        }} />
+      </FormCard>
     </ScreenWrapper>
   );
 }
 
 const styles = StyleSheet.create({
-  pageHeader:     { flexDirection: "row", alignItems: "center", gap: spacing.md },
-  pageIconWrap:   { width: 52, height: 52, borderRadius: radius.lg, backgroundColor: colors.brandLight, borderWidth: 1, borderColor: colors.brandMid, alignItems: "center", justifyContent: "center" },
-  pageIconText:   { fontSize: 26 },
-  pageHeaderText: { gap: 2 },
-  pageTitle:      { fontSize: font.size.xl, fontWeight: font.weight.extrabold, color: colors.ink },
-  pageSub:        { fontSize: font.size.sm, color: colors.inkLight },
+  pageHeader:   { flexDirection: "row", alignItems: "center", gap: 12 },
+  pageIconWrap: {
+    width: 48, height: 48, borderRadius: 12,
+    backgroundColor: colors.brandLight,
+    borderWidth: 1, borderColor: colors.brandMid,
+    alignItems: "center", justifyContent: "center",
+  },
+  title: { fontSize: font.size.xl, fontFamily: font.family.extrabold, color: colors.ink },
+  sub:   { fontSize: font.size.sm, color: colors.inkMid, fontFamily: font.family.regular },
 
   stockCard: {
     flexDirection: "row",

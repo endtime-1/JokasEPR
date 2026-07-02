@@ -1,10 +1,12 @@
 import { useMemo, useState } from "react";
 import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { ScreenWrapper } from "../../components/ScreenWrapper";
+import { FormCard } from "../../components/FormCard";
+import { FormFooter } from "../../components/FormFooter";
 import { FormField } from "../../components/FormField";
 import { SelectField, SelectOption } from "../../components/SelectField";
-import { Button } from "../../components/Button";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
 import { fetchSoyaOptions } from "../../api/endpoints";
@@ -47,11 +49,11 @@ export function SoyaProcessingScreen() {
       {/* Page header */}
       <View style={styles.pageHeader}>
         <View style={styles.pageIconWrap}>
-          <Text style={styles.pageIconText}>🫘</Text>
+          <MaterialCommunityIcons name="seed" size={22} color={colors.brand} />
         </View>
-        <View style={styles.pageHeaderText}>
-          <Text style={styles.pageTitle}>Soya Processing</Text>
-          <Text style={styles.pageSub}>Log intake or processing batch</Text>
+        <View>
+          <Text style={styles.title}>Soya Processing</Text>
+          <Text style={styles.sub}>Log intake or processing batch</Text>
         </View>
       </View>
 
@@ -98,6 +100,7 @@ function IntakeForm({
   prodOpts: SelectOption[];
   onSuccess: () => void;
 }) {
+  const navigation = useNavigation<any>();
   const [siteId,       setSiteId]       = useState("");
   const [warehouseId,  setWarehouseId]  = useState("");
   const [productId,    setProductId]    = useState("");
@@ -131,6 +134,22 @@ function IntakeForm({
     onSuccess: () => Alert.alert("Saved", "Bean intake recorded.", [{ text: "OK", onPress: onSuccess }]),
   });
 
+  async function handleSubmit() {
+    if (!validate()) return;
+    await submit({
+      productionSiteId: siteId,
+      warehouseId,
+      productId,
+      supplierName: supplier,
+      receiptNumber: receipt,
+      quantityKg: Number(quantityKg),
+      unitCost: Number(unitCost),
+      moisturePercent: moisture ? Number(moisture) : undefined,
+      qualityStatus: quality,
+      notes: notes || undefined,
+    });
+  }
+
   return (
     <>
       <View style={styles.sectionHeader}>
@@ -138,74 +157,66 @@ function IntakeForm({
         <Text style={styles.sectionTitle}>Record Bean Delivery</Text>
       </View>
 
-      <SelectField label="Production Site" value={siteId} options={siteOpts}
-        onChange={(v) => { setSiteId(v); setErrors((e) => ({ ...e, siteId: "" })); }}
-        error={errors.siteId} required placeholder="Select site…" />
+      <FormCard label="LOCATION">
+        <SelectField label="Production Site" value={siteId} options={siteOpts}
+          onChange={(v) => { setSiteId(v); setErrors((e) => ({ ...e, siteId: "" })); }}
+          error={errors.siteId} required placeholder="Select site…" />
 
-      <SelectField label="Receiving Warehouse" value={warehouseId} options={whOpts}
-        onChange={(v) => { setWarehouseId(v); setErrors((e) => ({ ...e, warehouseId: "" })); }}
-        error={errors.warehouseId} required placeholder="Select warehouse…" />
+        <SelectField label="Receiving Warehouse" value={warehouseId} options={whOpts}
+          onChange={(v) => { setWarehouseId(v); setErrors((e) => ({ ...e, warehouseId: "" })); }}
+          error={errors.warehouseId} required placeholder="Select warehouse…" />
 
-      <SelectField label="Soya Bean Product" value={productId} options={prodOpts}
-        onChange={(v) => { setProductId(v); setErrors((e) => ({ ...e, productId: "" })); }}
-        error={errors.productId} required placeholder="Select product…" />
+        <SelectField label="Soya Bean Product" value={productId} options={prodOpts}
+          onChange={(v) => { setProductId(v); setErrors((e) => ({ ...e, productId: "" })); }}
+          error={errors.productId} required placeholder="Select product…" />
+      </FormCard>
 
-      <View style={styles.row}>
-        <View style={styles.half}>
-          <FormField label="Supplier Name" required value={supplier}
-            onChangeText={(v) => { setSupplier(v); setErrors((e) => ({ ...e, supplier: "" })); }}
-            error={errors.supplier} placeholder="e.g. Kusi Farms" />
+      <FormCard label="INTAKE DATA">
+        <View style={styles.row}>
+          <View style={styles.half}>
+            <FormField label="Supplier Name" required value={supplier}
+              onChangeText={(v) => { setSupplier(v); setErrors((e) => ({ ...e, supplier: "" })); }}
+              error={errors.supplier} placeholder="e.g. Kusi Farms" />
+          </View>
+          <View style={styles.half}>
+            <FormField label="Receipt No." required value={receipt}
+              onChangeText={(v) => { setReceipt(v); setErrors((e) => ({ ...e, receipt: "" })); }}
+              error={errors.receipt} placeholder="e.g. REC-001" />
+          </View>
         </View>
-        <View style={styles.half}>
-          <FormField label="Receipt No." required value={receipt}
-            onChangeText={(v) => { setReceipt(v); setErrors((e) => ({ ...e, receipt: "" })); }}
-            error={errors.receipt} placeholder="e.g. REC-001" />
-        </View>
-      </View>
 
-      <View style={styles.row}>
-        <View style={styles.half}>
-          <FormField label="Quantity (kg)" required value={quantityKg}
-            onChangeText={(v) => { setQuantityKg(v); setErrors((e) => ({ ...e, quantityKg: "" })); }}
-            error={errors.quantityKg} keyboardType="decimal-pad" placeholder="e.g. 5000" />
+        <View style={styles.row}>
+          <View style={styles.half}>
+            <FormField label="Quantity (kg)" required value={quantityKg}
+              onChangeText={(v) => { setQuantityKg(v); setErrors((e) => ({ ...e, quantityKg: "" })); }}
+              error={errors.quantityKg} keyboardType="decimal-pad" placeholder="e.g. 5000" />
+          </View>
+          <View style={styles.half}>
+            <FormField label="Unit Cost (GHS/kg)" required value={unitCost}
+              onChangeText={(v) => { setUnitCost(v); setErrors((e) => ({ ...e, unitCost: "" })); }}
+              error={errors.unitCost} keyboardType="decimal-pad" placeholder="e.g. 4.50" />
+          </View>
         </View>
-        <View style={styles.half}>
-          <FormField label="Unit Cost (GHS/kg)" required value={unitCost}
-            onChangeText={(v) => { setUnitCost(v); setErrors((e) => ({ ...e, unitCost: "" })); }}
-            error={errors.unitCost} keyboardType="decimal-pad" placeholder="e.g. 4.50" />
-        </View>
-      </View>
 
-      <View style={styles.row}>
-        <View style={styles.half}>
-          <FormField label="Moisture %" value={moisture} onChangeText={setMoisture}
-            keyboardType="decimal-pad" placeholder="e.g. 12.5" />
+        <View style={styles.row}>
+          <View style={styles.half}>
+            <FormField label="Moisture %" value={moisture} onChangeText={setMoisture}
+              keyboardType="decimal-pad" placeholder="e.g. 12.5" />
+          </View>
+          <View style={styles.half}>
+            <SelectField label="Quality Grade" value={quality} options={QUALITY_OPTIONS}
+              onChange={setQuality} />
+          </View>
         </View>
-        <View style={styles.half}>
-          <SelectField label="Quality Grade" value={quality} options={QUALITY_OPTIONS}
-            onChange={setQuality} />
-        </View>
-      </View>
+      </FormCard>
 
-      <FormField label="Notes" value={notes} onChangeText={setNotes} multiline numberOfLines={3}
-        style={{ minHeight: 80, textAlignVertical: "top" } as any}
-        placeholder="Optional notes about this delivery…" />
+      <FormCard label="NOTES">
+        <FormField label="Notes" value={notes} onChangeText={setNotes} multiline numberOfLines={3}
+          style={{ minHeight: 80, textAlignVertical: "top" } as any}
+          placeholder="Optional notes about this delivery…" />
+      </FormCard>
 
-      <Button label="Save Bean Intake" loading={loading} size="lg" onPress={async () => {
-        if (!validate()) return;
-        await submit({
-          productionSiteId: siteId,
-          warehouseId,
-          productId,
-          supplierName: supplier,
-          receiptNumber: receipt,
-          quantityKg: Number(quantityKg),
-          unitCost: Number(unitCost),
-          moisturePercent: moisture ? Number(moisture) : undefined,
-          qualityStatus: quality,
-          notes: notes || undefined,
-        });
-      }} />
+      <FormFooter saveLabel="Save Bean Intake" onSave={handleSubmit} loading={loading} />
     </>
   );
 }
@@ -264,6 +275,25 @@ function BatchForm({
     ? Math.round(((Number(oilLitres) + Number(cakeKg)) / Number(beansKg)) * 100)
     : null;
 
+  async function handleSubmit() {
+    if (!validate()) return;
+    await submit({
+      productionSiteId: siteId,
+      rawWarehouseId: rawWhId,
+      oilWarehouseId: oilWhId,
+      cakeWarehouseId: cakeWhId,
+      beanProductId: beanProdId,
+      oilProductId: oilProdId,
+      cakeProductId: cakeProdId,
+      batchNumber: batchNumber || undefined,
+      beansUsedKg: Number(beansKg),
+      oilProducedLitres: Number(oilLitres),
+      cakeProducedKg: Number(cakeKg),
+      wasteKg: wasteKg ? Number(wasteKg) : undefined,
+      processingDate: processingDate || undefined,
+    });
+  }
+
   return (
     <>
       <View style={styles.sectionHeader}>
@@ -279,104 +309,89 @@ function BatchForm({
         </View>
       )}
 
-      <SelectField label="Production Site" value={siteId} options={siteOpts}
-        onChange={(v) => { setSiteId(v); setErrors((e) => ({ ...e, siteId: "" })); }}
-        error={errors.siteId} required placeholder="Select site…" />
+      <FormCard label="LOCATION">
+        <SelectField label="Production Site" value={siteId} options={siteOpts}
+          onChange={(v) => { setSiteId(v); setErrors((e) => ({ ...e, siteId: "" })); }}
+          error={errors.siteId} required placeholder="Select site…" />
 
-      <View style={styles.row}>
-        <View style={styles.half}>
-          <FormField label="Processing Date" value={processingDate} onChangeText={setProcessingDate}
-            placeholder="YYYY-MM-DD" />
+        <View style={styles.row}>
+          <View style={styles.half}>
+            <FormField label="Processing Date" value={processingDate} onChangeText={setProcessingDate}
+              placeholder="YYYY-MM-DD" />
+          </View>
+          <View style={styles.half}>
+            <FormField label="Batch Number" value={batchNumber} onChangeText={setBatchNumber}
+              placeholder="e.g. SPB-001" />
+          </View>
         </View>
-        <View style={styles.half}>
-          <FormField label="Batch Number" value={batchNumber} onChangeText={setBatchNumber}
-            placeholder="e.g. SPB-001" />
+      </FormCard>
+
+      <FormCard label="WAREHOUSE ROUTING">
+        <SelectField label="Raw Material Warehouse" value={rawWhId} options={whOpts}
+          onChange={(v) => { setRawWhId(v); setErrors((e) => ({ ...e, rawWhId: "" })); }}
+          error={errors.rawWhId} required placeholder="Where beans come from…" />
+
+        <View style={styles.row}>
+          <View style={styles.half}>
+            <SelectField label="Oil Output WH" value={oilWhId} options={whOpts}
+              onChange={(v) => { setOilWhId(v); setErrors((e) => ({ ...e, oilWhId: "" })); }}
+              error={errors.oilWhId} required placeholder="Oil destination…" />
+          </View>
+          <View style={styles.half}>
+            <SelectField label="Cake Output WH" value={cakeWhId} options={whOpts}
+              onChange={(v) => { setCakeWhId(v); setErrors((e) => ({ ...e, cakeWhId: "" })); }}
+              error={errors.cakeWhId} required placeholder="Cake destination…" />
+          </View>
         </View>
-      </View>
+      </FormCard>
 
-      <View style={styles.subLabel}><Text style={styles.subLabelText}>WAREHOUSE ROUTING</Text></View>
+      <FormCard label="PRODUCTS">
+        <SelectField label="Soya Bean Product" value={beanProdId} options={prodOpts}
+          onChange={(v) => { setBeanProdId(v); setErrors((e) => ({ ...e, beanProdId: "" })); }}
+          error={errors.beanProdId} required placeholder="Select product…" />
 
-      <SelectField label="Raw Material Warehouse" value={rawWhId} options={whOpts}
-        onChange={(v) => { setRawWhId(v); setErrors((e) => ({ ...e, rawWhId: "" })); }}
-        error={errors.rawWhId} required placeholder="Where beans come from…" />
-
-      <View style={styles.row}>
-        <View style={styles.half}>
-          <SelectField label="Oil Output WH" value={oilWhId} options={whOpts}
-            onChange={(v) => { setOilWhId(v); setErrors((e) => ({ ...e, oilWhId: "" })); }}
-            error={errors.oilWhId} required placeholder="Oil destination…" />
+        <View style={styles.row}>
+          <View style={styles.half}>
+            <SelectField label="Oil Product" value={oilProdId} options={prodOpts}
+              onChange={(v) => { setOilProdId(v); setErrors((e) => ({ ...e, oilProdId: "" })); }}
+              error={errors.oilProdId} required placeholder="Select…" />
+          </View>
+          <View style={styles.half}>
+            <SelectField label="Cake Product" value={cakeProdId} options={prodOpts}
+              onChange={(v) => { setCakeProdId(v); setErrors((e) => ({ ...e, cakeProdId: "" })); }}
+              error={errors.cakeProdId} required placeholder="Select…" />
+          </View>
         </View>
-        <View style={styles.half}>
-          <SelectField label="Cake Output WH" value={cakeWhId} options={whOpts}
-            onChange={(v) => { setCakeWhId(v); setErrors((e) => ({ ...e, cakeWhId: "" })); }}
-            error={errors.cakeWhId} required placeholder="Cake destination…" />
-        </View>
-      </View>
+      </FormCard>
 
-      <View style={styles.subLabel}><Text style={styles.subLabelText}>PRODUCTS</Text></View>
-
-      <SelectField label="Soya Bean Product" value={beanProdId} options={prodOpts}
-        onChange={(v) => { setBeanProdId(v); setErrors((e) => ({ ...e, beanProdId: "" })); }}
-        error={errors.beanProdId} required placeholder="Select product…" />
-
-      <View style={styles.row}>
-        <View style={styles.half}>
-          <SelectField label="Oil Product" value={oilProdId} options={prodOpts}
-            onChange={(v) => { setOilProdId(v); setErrors((e) => ({ ...e, oilProdId: "" })); }}
-            error={errors.oilProdId} required placeholder="Select…" />
+      <FormCard label="QUANTITIES">
+        <View style={styles.row}>
+          <View style={styles.half}>
+            <FormField label="Beans Used (kg)" required value={beansKg}
+              onChangeText={(v) => { setBeansKg(v); setErrors((e) => ({ ...e, beansKg: "" })); }}
+              error={errors.beansKg} keyboardType="decimal-pad" placeholder="e.g. 1000" />
+          </View>
+          <View style={styles.half}>
+            <FormField label="Oil Produced (L)" required value={oilLitres}
+              onChangeText={(v) => { setOilLitres(v); setErrors((e) => ({ ...e, oilLitres: "" })); }}
+              error={errors.oilLitres} keyboardType="decimal-pad" placeholder="e.g. 180" />
+          </View>
         </View>
-        <View style={styles.half}>
-          <SelectField label="Cake Product" value={cakeProdId} options={prodOpts}
-            onChange={(v) => { setCakeProdId(v); setErrors((e) => ({ ...e, cakeProdId: "" })); }}
-            error={errors.cakeProdId} required placeholder="Select…" />
-        </View>
-      </View>
 
-      <View style={styles.subLabel}><Text style={styles.subLabelText}>QUANTITIES</Text></View>
+        <View style={styles.row}>
+          <View style={styles.half}>
+            <FormField label="Cake Produced (kg)" required value={cakeKg}
+              onChangeText={(v) => { setCakeKg(v); setErrors((e) => ({ ...e, cakeKg: "" })); }}
+              error={errors.cakeKg} keyboardType="decimal-pad" placeholder="e.g. 750" />
+          </View>
+          <View style={styles.half}>
+            <FormField label="Waste (kg)" value={wasteKg} onChangeText={setWasteKg}
+              keyboardType="decimal-pad" placeholder="e.g. 20" />
+          </View>
+        </View>
+      </FormCard>
 
-      <View style={styles.row}>
-        <View style={styles.half}>
-          <FormField label="Beans Used (kg)" required value={beansKg}
-            onChangeText={(v) => { setBeansKg(v); setErrors((e) => ({ ...e, beansKg: "" })); }}
-            error={errors.beansKg} keyboardType="decimal-pad" placeholder="e.g. 1000" />
-        </View>
-        <View style={styles.half}>
-          <FormField label="Oil Produced (L)" required value={oilLitres}
-            onChangeText={(v) => { setOilLitres(v); setErrors((e) => ({ ...e, oilLitres: "" })); }}
-            error={errors.oilLitres} keyboardType="decimal-pad" placeholder="e.g. 180" />
-        </View>
-      </View>
-
-      <View style={styles.row}>
-        <View style={styles.half}>
-          <FormField label="Cake Produced (kg)" required value={cakeKg}
-            onChangeText={(v) => { setCakeKg(v); setErrors((e) => ({ ...e, cakeKg: "" })); }}
-            error={errors.cakeKg} keyboardType="decimal-pad" placeholder="e.g. 750" />
-        </View>
-        <View style={styles.half}>
-          <FormField label="Waste (kg)" value={wasteKg} onChangeText={setWasteKg}
-            keyboardType="decimal-pad" placeholder="e.g. 20" />
-        </View>
-      </View>
-
-      <Button label="Save Processing Batch" loading={loading} size="lg" onPress={async () => {
-        if (!validate()) return;
-        await submit({
-          productionSiteId: siteId,
-          rawWarehouseId: rawWhId,
-          oilWarehouseId: oilWhId,
-          cakeWarehouseId: cakeWhId,
-          beanProductId: beanProdId,
-          oilProductId: oilProdId,
-          cakeProductId: cakeProdId,
-          batchNumber: batchNumber || undefined,
-          beansUsedKg: Number(beansKg),
-          oilProducedLitres: Number(oilLitres),
-          cakeProducedKg: Number(cakeKg),
-          wasteKg: wasteKg ? Number(wasteKg) : undefined,
-          processingDate: processingDate || undefined,
-        });
-      }} />
+      <FormFooter saveLabel="Save Processing Batch" onSave={handleSubmit} loading={loading} />
     </>
   );
 }
@@ -384,16 +399,15 @@ function BatchForm({
 // ── Styles ────────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  pageHeader: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  pageHeader:   { flexDirection: "row", alignItems: "center", gap: 12 },
   pageIconWrap: {
-    width: 52, height: 52, borderRadius: radius.lg,
-    backgroundColor: colors.brandLight, borderWidth: 1, borderColor: colors.brandMid,
+    width: 48, height: 48, borderRadius: 12,
+    backgroundColor: colors.brandLight,
+    borderWidth: 1, borderColor: colors.brandMid,
     alignItems: "center", justifyContent: "center",
   },
-  pageIconText: { fontSize: 26 },
-  pageHeaderText: { gap: 2 },
-  pageTitle: { fontSize: font.size.xl, fontWeight: font.weight.extrabold, color: colors.ink },
-  pageSub: { fontSize: font.size.sm, color: colors.inkLight },
+  title: { fontSize: font.size.xl, fontFamily: font.family.extrabold, color: colors.ink },
+  sub:   { fontSize: font.size.sm, color: colors.inkMid, fontFamily: font.family.regular },
 
   tabBar: {
     flexDirection: "row",
@@ -430,14 +444,6 @@ const styles = StyleSheet.create({
   },
   sectionIcon: { fontSize: 18 },
   sectionTitle: { fontSize: font.size.md, fontWeight: font.weight.bold, color: colors.ink },
-
-  subLabel: { paddingTop: spacing.xs, paddingBottom: 2 },
-  subLabelText: {
-    fontSize: 10,
-    fontWeight: font.weight.bold,
-    color: colors.inkLight,
-    letterSpacing: 1.1,
-  },
 
   yieldBadge: {
     borderRadius: radius.lg,

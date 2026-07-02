@@ -1,10 +1,12 @@
 import { useMemo, useState } from "react";
 import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { ScreenWrapper } from "../../components/ScreenWrapper";
+import { FormCard } from "../../components/FormCard";
+import { FormFooter } from "../../components/FormFooter";
 import { FormField } from "../../components/FormField";
 import { SelectField, SelectOption } from "../../components/SelectField";
-import { Button } from "../../components/Button";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
 import { fetchMaintenanceOptions } from "../../api/endpoints";
@@ -73,141 +75,145 @@ export function BreakdownReportScreen() {
       ),
   });
 
+  async function handleSubmit() {
+    if (!validate()) return;
+    await submit({
+      ...(assetType === "machine"   ? { machineId:   assetId } : {}),
+      ...(assetType === "equipment" ? { equipmentId: assetId } : {}),
+      severity,
+      description,
+      ...(rootCause ? { rootCause } : {}),
+    });
+  }
+
   return (
-    <ScreenWrapper>
+    <ScreenWrapper footer={<FormFooter saveLabel="Report Breakdown" onSave={handleSubmit} loading={loading} />}>
       <View style={styles.pageHeader}>
-        <View style={styles.pageIconWrap}>
-          <Text style={styles.pageIconText}>🔧</Text>
+        <View style={[styles.pageIconWrap, { backgroundColor: "#fef2f2", borderColor: "#fca5a5" }]}>
+          <MaterialCommunityIcons name="alert-circle" size={22} color="#dc2626" />
         </View>
-        <View style={styles.pageHeaderText}>
-          <Text style={styles.pageTitle}>Report Breakdown</Text>
-          <Text style={styles.pageSub}>Log a machine or equipment failure</Text>
+        <View>
+          <Text style={styles.title}>Report Breakdown</Text>
+          <Text style={styles.sub}>Log a machine or equipment failure</Text>
         </View>
       </View>
 
       {/* Critical warning */}
       <View style={styles.warningCard}>
         <Text style={styles.warningText}>
-          ⚠️ Submitting this form will mark the asset as{" "}
+          Submitting this form will mark the asset as{" "}
           <Text style={styles.warningBold}>BROKEN DOWN</Text> and alert the maintenance team.
         </Text>
       </View>
 
-      {/* Asset type toggle */}
-      <View style={styles.toggleRow}>
-        {(["machine", "equipment"] as AssetType[]).map((t) => (
-          <TouchableOpacity
-            key={t}
-            style={[styles.toggleBtn, assetType === t && styles.toggleBtnActive]}
-            onPress={() => onAssetTypeChange(t)}
-            activeOpacity={0.8}
-          >
-            <Text style={[styles.toggleBtnText, assetType === t && styles.toggleBtnTextActive]}>
-              {t === "machine" ? "🏭 Machine" : "⚙️ Equipment"}
+      <FormCard label="ASSET">
+        {/* Asset type toggle */}
+        <View style={styles.toggleRow}>
+          {(["machine", "equipment"] as AssetType[]).map((t) => (
+            <TouchableOpacity
+              key={t}
+              style={[styles.toggleBtn, assetType === t && styles.toggleBtnActive]}
+              onPress={() => onAssetTypeChange(t)}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.toggleBtnText, assetType === t && styles.toggleBtnTextActive]}>
+                {t === "machine" ? "Machine" : "Equipment"}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <SelectField
+          label={assetType === "machine" ? "Machine" : "Equipment"}
+          value={assetId} options={assetOptions}
+          onChange={(v) => { setAssetId(v); setErrors((e) => ({ ...e, assetId: "" })); }}
+          error={errors.assetId} required
+          placeholder={`Select ${assetType}…`}
+        />
+      </FormCard>
+
+      <FormCard label="BREAKDOWN DATA">
+        {/* Severity picker */}
+        <View style={styles.sevSection}>
+          <Text style={styles.fieldLabel}>Severity <Text style={styles.required}>*</Text></Text>
+          <View style={styles.sevGrid}>
+            {(Object.keys(SEVERITY_CONFIG) as Severity[]).map((s) => {
+              const cfg = SEVERITY_CONFIG[s];
+              const active = severity === s;
+              return (
+                <TouchableOpacity
+                  key={s}
+                  style={[styles.sevBtn,
+                    active
+                      ? { backgroundColor: cfg.bg, borderColor: cfg.color }
+                      : { backgroundColor: colors.bgCard, borderColor: colors.border }
+                  ]}
+                  onPress={() => setSeverity(s)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.sevEmoji}>{cfg.emoji}</Text>
+                  <Text style={[styles.sevLabel, { color: active ? cfg.color : colors.inkLight }]}>
+                    {cfg.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+
+        {severity && (
+          <View style={[styles.sevNote, { backgroundColor: SEVERITY_CONFIG[severity].bg, borderColor: SEVERITY_CONFIG[severity].border }]}>
+            <Text style={[styles.sevNoteText, { color: SEVERITY_CONFIG[severity].color }]}>
+              {severity === "CRITICAL"
+                ? "Critical: Immediate shutdown and repair required"
+                : severity === "HIGH"
+                ? "High: Urgent attention needed, may affect production"
+                : severity === "MEDIUM"
+                ? "Medium: Schedule repair soon to avoid escalation"
+                : "Low: Minor issue, can be addressed during next maintenance window"}
             </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+          </View>
+        )}
 
-      <SelectField
-        label={assetType === "machine" ? "Machine" : "Equipment"}
-        value={assetId} options={assetOptions}
-        onChange={(v) => { setAssetId(v); setErrors((e) => ({ ...e, assetId: "" })); }}
-        error={errors.assetId} required
-        placeholder={`Select ${assetType}…`}
-      />
+        <FormField
+          label="Description" value={description}
+          onChangeText={(v) => { setDescription(v); setErrors((e) => ({ ...e, description: "" })); }}
+          required error={errors.description} multiline numberOfLines={3}
+          style={{ minHeight: 90, textAlignVertical: "top" } as any}
+          placeholder="Describe what happened, what symptoms you observed…"
+        />
 
-      {/* Severity picker */}
-      <View style={styles.sevSection}>
-        <Text style={styles.fieldLabel}>Severity <Text style={styles.required}>*</Text></Text>
-        <View style={styles.sevGrid}>
-          {(Object.keys(SEVERITY_CONFIG) as Severity[]).map((s) => {
-            const cfg = SEVERITY_CONFIG[s];
-            const active = severity === s;
-            return (
-              <TouchableOpacity
-                key={s}
-                style={[styles.sevBtn,
-                  active
-                    ? { backgroundColor: cfg.bg, borderColor: cfg.color }
-                    : { backgroundColor: colors.bgCard, borderColor: colors.border }
-                ]}
-                onPress={() => setSeverity(s)}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.sevEmoji}>{cfg.emoji}</Text>
-                <Text style={[styles.sevLabel, { color: active ? cfg.color : colors.inkLight }]}>
-                  {cfg.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      </View>
-
-      {severity && (
-        <View style={[styles.sevNote, { backgroundColor: SEVERITY_CONFIG[severity].bg, borderColor: SEVERITY_CONFIG[severity].border }]}>
-          <Text style={[styles.sevNoteText, { color: SEVERITY_CONFIG[severity].color }]}>
-            {severity === "CRITICAL"
-              ? "Critical: Immediate shutdown and repair required"
-              : severity === "HIGH"
-              ? "High: Urgent attention needed, may affect production"
-              : severity === "MEDIUM"
-              ? "Medium: Schedule repair soon to avoid escalation"
-              : "Low: Minor issue, can be addressed during next maintenance window"}
-          </Text>
-        </View>
-      )}
-
-      <FormField
-        label="Description" value={description}
-        onChangeText={(v) => { setDescription(v); setErrors((e) => ({ ...e, description: "" })); }}
-        required error={errors.description} multiline numberOfLines={3}
-        style={{ minHeight: 90, textAlignVertical: "top" } as any}
-        placeholder="Describe what happened, what symptoms you observed…"
-      />
-
-      <FormField
-        label="Root Cause (optional)" value={rootCause}
-        onChangeText={setRootCause}
-        multiline numberOfLines={2}
-        style={{ minHeight: 70, textAlignVertical: "top" } as any}
-        placeholder="If known, describe what caused the breakdown…"
-      />
-
-      <Button label="Report Breakdown" loading={loading} size="lg"
-        style={{ backgroundColor: "#dc2626" } as any}
-        onPress={async () => {
-          if (!validate()) return;
-          await submit({
-            ...(assetType === "machine"    ? { machineId:   assetId } : {}),
-            ...(assetType === "equipment"  ? { equipmentId: assetId } : {}),
-            severity,
-            description,
-            ...(rootCause ? { rootCause } : {}),
-          });
-        }}
-      />
+        <FormField
+          label="Root Cause (optional)" value={rootCause}
+          onChangeText={setRootCause}
+          multiline numberOfLines={2}
+          style={{ minHeight: 70, textAlignVertical: "top" } as any}
+          placeholder="If known, describe what caused the breakdown…"
+        />
+      </FormCard>
     </ScreenWrapper>
   );
 }
 
 const styles = StyleSheet.create({
-  pageHeader:     { flexDirection: "row", alignItems: "center", gap: spacing.md },
-  pageIconWrap:   { width: 52, height: 52, borderRadius: 16, backgroundColor: "#fef2f2", borderWidth: 1, borderColor: "#fca5a5", alignItems: "center", justifyContent: "center" },
-  pageIconText:   { fontSize: 26 },
-  pageHeaderText: { gap: 2 },
-  pageTitle:      { fontSize: font.size.xl, fontWeight: font.weight.extrabold, color: colors.ink },
-  pageSub:        { fontSize: font.size.sm, color: colors.inkLight },
+  pageHeader:   { flexDirection: "row", alignItems: "center", gap: 12 },
+  pageIconWrap: {
+    width: 48, height: 48, borderRadius: 12,
+    backgroundColor: colors.brandLight,
+    borderWidth: 1, borderColor: colors.brandMid,
+    alignItems: "center", justifyContent: "center",
+  },
+  title: { fontSize: font.size.xl, fontFamily: font.family.extrabold, color: colors.ink },
+  sub:   { fontSize: font.size.sm, color: colors.inkMid, fontFamily: font.family.regular },
 
   warningCard: { backgroundColor: "#fff7ed", borderRadius: radius.lg, borderWidth: 1, borderColor: "#fed7aa", padding: spacing.md },
   warningText: { fontSize: font.size.sm, color: "#92400e", lineHeight: 20 },
   warningBold: { fontWeight: font.weight.bold },
 
-  toggleRow:        { flexDirection: "row", gap: spacing.sm },
-  toggleBtn:        { flex: 1, paddingVertical: spacing.md, borderRadius: radius.lg, borderWidth: 1.5, borderColor: colors.border, alignItems: "center", backgroundColor: colors.bgCard },
-  toggleBtnActive:  { borderColor: colors.brand, backgroundColor: colors.brandLight },
-  toggleBtnText:    { fontSize: font.size.sm, fontWeight: font.weight.semibold, color: colors.inkLight },
+  toggleRow:           { flexDirection: "row", gap: spacing.sm },
+  toggleBtn:           { flex: 1, paddingVertical: spacing.md, borderRadius: radius.lg, borderWidth: 1.5, borderColor: colors.border, alignItems: "center", backgroundColor: colors.bgCard },
+  toggleBtnActive:     { borderColor: colors.brand, backgroundColor: colors.brandLight },
+  toggleBtnText:       { fontSize: font.size.sm, fontWeight: font.weight.semibold, color: colors.inkLight },
   toggleBtnTextActive: { color: colors.brand },
 
   fieldLabel: { fontSize: font.size.sm, fontWeight: font.weight.semibold, color: colors.ink },
@@ -219,6 +225,6 @@ const styles = StyleSheet.create({
   sevEmoji:   { fontSize: 18 },
   sevLabel:   { fontSize: font.size.sm, fontWeight: font.weight.bold },
 
-  sevNote: { borderRadius: radius.md, borderWidth: 1, padding: spacing.md },
+  sevNote:     { borderRadius: radius.md, borderWidth: 1, padding: spacing.md },
   sevNoteText: { fontSize: font.size.sm },
 });

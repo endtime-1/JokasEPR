@@ -1,10 +1,12 @@
 import { useMemo, useState } from "react";
 import { Alert, StyleSheet, Text, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { ScreenWrapper } from "../../components/ScreenWrapper";
+import { FormCard } from "../../components/FormCard";
+import { FormFooter } from "../../components/FormFooter";
 import { FormField } from "../../components/FormField";
 import { SelectField, SelectOption } from "../../components/SelectField";
-import { Button } from "../../components/Button";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
 import { fetchPoultryOptions } from "../../api/endpoints";
@@ -85,88 +87,96 @@ export function BirdWeightScreen() {
       Alert.alert("Weight Recorded", "Bird weight record has been saved.", [{ text: "OK", onPress: () => navigation.goBack() }]),
   });
 
+  async function handleSubmit() {
+    if (!validate()) return;
+    await submit({
+      flockBatchId,
+      ...(penId ? { penId } : {}),
+      recordDate,
+      sampleSize: parseInt(sampleSize, 10),
+      averageWeightKg: avgNum,
+      ...(notes ? { notes } : {}),
+    });
+  }
+
   return (
-    <ScreenWrapper>
+    <ScreenWrapper footer={<FormFooter saveLabel="Save Weight Record" onSave={handleSubmit} loading={loading} />}>
       <View style={styles.pageHeader}>
         <View style={styles.pageIconWrap}>
-          <Text style={styles.pageIconText}>⚖️</Text>
+          <MaterialCommunityIcons name="scale" size={22} color={colors.brand} />
         </View>
-        <View style={styles.pageHeaderText}>
-          <Text style={styles.pageTitle}>Bird Weight Record</Text>
-          <Text style={styles.pageSub}>Log average body weight for growth tracking</Text>
-        </View>
-      </View>
-
-      <SelectField label="Flock Batch" value={flockBatchId} options={batchOptions}
-        onChange={(v) => { setFlockBatchId(v); setPenId(""); setErrors((e) => ({ ...e, flockBatchId: "" })); }}
-        required error={errors.flockBatchId} placeholder="Select flock batch…" />
-
-      <SelectField label="Pen (optional)" value={penId} options={penOptions}
-        onChange={setPenId}
-        placeholder={flockBatchId ? "Select pen (optional)…" : "Select batch first"} />
-
-      <FormField label="Weighing Date" value={recordDate}
-        onChangeText={(v) => { setRecordDate(v); setErrors((e) => ({ ...e, recordDate: "" })); }}
-        required error={errors.recordDate} placeholder="YYYY-MM-DD"
-        keyboardType="numbers-and-punctuation" />
-
-      <View style={styles.row}>
-        <View style={styles.half}>
-          <FormField label="Birds Sampled" value={sampleSize}
-            onChangeText={(v) => { setSampleSize(v); setErrors((e) => ({ ...e, sampleSize: "" })); }}
-            required error={errors.sampleSize} placeholder="e.g. 30"
-            keyboardType="number-pad" />
-        </View>
-        <View style={styles.half}>
-          <FormField label="Avg Weight (kg)" value={avgWeightKg}
-            onChangeText={(v) => { setAvgWeightKg(v); setErrors((e) => ({ ...e, avgWeightKg: "" })); }}
-            required error={errors.avgWeightKg} placeholder="e.g. 1.85"
-            keyboardType="decimal-pad" />
+        <View>
+          <Text style={styles.title}>Bird Weight Record</Text>
+          <Text style={styles.sub}>Log average body weight for growth tracking</Text>
         </View>
       </View>
 
-      {status && (
-        <View style={[styles.statusCard, { backgroundColor: status.bg }]}>
-          <View style={styles.statusLeft}>
-            <Text style={[styles.statusLabel, { color: status.color }]}>{status.label}</Text>
-            <Text style={styles.statusSub}>
-              Target ≈ {TARGET_WEIGHT[selectedBatch!.birdType] ?? 2.0} kg for {selectedBatch!.birdType}
+      <FormCard label="FLOCK DETAILS">
+        <SelectField label="Flock Batch" value={flockBatchId} options={batchOptions}
+          onChange={(v) => { setFlockBatchId(v); setPenId(""); setErrors((e) => ({ ...e, flockBatchId: "" })); }}
+          required error={errors.flockBatchId} placeholder="Select flock batch…" />
+
+        <SelectField label="Pen (optional)" value={penId} options={penOptions}
+          onChange={setPenId}
+          placeholder={flockBatchId ? "Select pen (optional)…" : "Select batch first"} />
+
+        <FormField label="Weighing Date" value={recordDate}
+          onChangeText={(v) => { setRecordDate(v); setErrors((e) => ({ ...e, recordDate: "" })); }}
+          required error={errors.recordDate} placeholder="YYYY-MM-DD"
+          keyboardType="numbers-and-punctuation" />
+      </FormCard>
+
+      <FormCard label="WEIGHT DATA">
+        <View style={styles.row}>
+          <View style={styles.half}>
+            <FormField label="Birds Sampled" value={sampleSize}
+              onChangeText={(v) => { setSampleSize(v); setErrors((e) => ({ ...e, sampleSize: "" })); }}
+              required error={errors.sampleSize} placeholder="e.g. 30"
+              keyboardType="number-pad" />
+          </View>
+          <View style={styles.half}>
+            <FormField label="Avg Weight (kg)" value={avgWeightKg}
+              onChangeText={(v) => { setAvgWeightKg(v); setErrors((e) => ({ ...e, avgWeightKg: "" })); }}
+              required error={errors.avgWeightKg} placeholder="e.g. 1.85"
+              keyboardType="decimal-pad" />
+          </View>
+        </View>
+
+        {status && (
+          <View style={[styles.statusCard, { backgroundColor: status.bg }]}>
+            <View style={styles.statusLeft}>
+              <Text style={[styles.statusLabel, { color: status.color }]}>{status.label}</Text>
+              <Text style={styles.statusSub}>
+                Target ≈ {TARGET_WEIGHT[selectedBatch!.birdType] ?? 2.0} kg for {selectedBatch!.birdType}
+              </Text>
+            </View>
+            <Text style={[styles.statusWeight, { color: status.color }]}>
+              {avgNum.toFixed(3)} kg
             </Text>
           </View>
-          <Text style={[styles.statusWeight, { color: status.color }]}>
-            {avgNum.toFixed(3)} kg
-          </Text>
-        </View>
-      )}
+        )}
+      </FormCard>
 
-      <FormField label="Notes (optional)" value={notes} onChangeText={setNotes}
-        multiline numberOfLines={2}
-        style={{ minHeight: 60, textAlignVertical: "top" } as any}
-        placeholder="Any observations about the weighing session…" />
-
-      <Button label="Save Weight Record" loading={loading} size="lg"
-        onPress={async () => {
-          if (!validate()) return;
-          await submit({
-            flockBatchId,
-            ...(penId ? { penId } : {}),
-            recordDate,
-            sampleSize: parseInt(sampleSize, 10),
-            averageWeightKg: avgNum,
-            ...(notes ? { notes } : {}),
-          });
-        }} />
+      <FormCard label="NOTES">
+        <FormField label="Notes (optional)" value={notes} onChangeText={setNotes}
+          multiline numberOfLines={2}
+          style={{ minHeight: 60, textAlignVertical: "top" } as any}
+          placeholder="Any observations about the weighing session…" />
+      </FormCard>
     </ScreenWrapper>
   );
 }
 
 const styles = StyleSheet.create({
-  pageHeader:     { flexDirection: "row", alignItems: "center", gap: spacing.md },
-  pageIconWrap:   { width: 52, height: 52, borderRadius: 16, backgroundColor: colors.brandLight, borderWidth: 1, borderColor: colors.brandMid, alignItems: "center", justifyContent: "center" },
-  pageIconText:   { fontSize: 26 },
-  pageHeaderText: { gap: 2 },
-  pageTitle:      { fontSize: font.size.xl, fontWeight: font.weight.extrabold, color: colors.ink },
-  pageSub:        { fontSize: font.size.sm, color: colors.inkLight },
+  pageHeader:   { flexDirection: "row", alignItems: "center", gap: 12 },
+  pageIconWrap: {
+    width: 48, height: 48, borderRadius: 12,
+    backgroundColor: colors.brandLight,
+    borderWidth: 1, borderColor: colors.brandMid,
+    alignItems: "center", justifyContent: "center",
+  },
+  title: { fontSize: font.size.xl, fontFamily: font.family.extrabold, color: colors.ink },
+  sub:   { fontSize: font.size.sm, color: colors.inkMid, fontFamily: font.family.regular },
 
   row:  { flexDirection: "row", gap: spacing.md },
   half: { flex: 1 },

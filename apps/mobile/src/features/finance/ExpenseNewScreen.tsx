@@ -1,14 +1,16 @@
 import { useMemo, useState } from "react";
 import { Alert, StyleSheet, Text, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { ScreenWrapper } from "../../components/ScreenWrapper";
+import { FormCard } from "../../components/FormCard";
+import { FormFooter } from "../../components/FormFooter";
 import { FormField } from "../../components/FormField";
 import { SelectField, SelectOption } from "../../components/SelectField";
-import { Button } from "../../components/Button";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
 import { fetchFinanceOptions } from "../../api/endpoints";
-import { colors, font, radius, shadow, spacing } from "../../constants/theme";
+import { colors, font, radius, spacing } from "../../constants/theme";
 
 const PAYMENT_METHODS: SelectOption[] = [
   { label: "Cash",           value: "CASH"           },
@@ -77,15 +79,31 @@ export function ExpenseNewScreen() {
       ),
   });
 
+  async function handleSubmit() {
+    if (!validate()) return;
+    await submit({
+      categoryId,
+      amount: amountNum,
+      expenseDate,
+      description,
+      vendorName:    vendorName    || undefined,
+      paymentMethod,
+      branchId:      branchId      || undefined,
+      bankAccountId: bankAccountId || undefined,
+      receiptRef:    receiptRef    || undefined,
+      notes:         notes         || undefined,
+    });
+  }
+
   return (
-    <ScreenWrapper>
+    <ScreenWrapper footer={<FormFooter saveLabel={requiresApproval ? "Submit for Approval" : "Save Expense"} onSave={handleSubmit} loading={loading} />}>
       <View style={styles.pageHeader}>
         <View style={styles.pageIconWrap}>
-          <Text style={styles.pageIconText}>💸</Text>
+          <MaterialCommunityIcons name="credit-card-minus" size={22} color={colors.brand} />
         </View>
-        <View style={styles.pageHeaderText}>
-          <Text style={styles.pageTitle}>New Expense</Text>
-          <Text style={styles.pageSub}>Log a business expense</Text>
+        <View>
+          <Text style={styles.title}>New Expense</Text>
+          <Text style={styles.sub}>Log a business expense</Text>
         </View>
       </View>
 
@@ -95,71 +113,62 @@ export function ExpenseNewScreen() {
         </View>
       )}
 
-      <SelectField label="Expense Category" value={categoryId} options={categories}
-        onChange={(v) => { setCategoryId(v); setErrors((e) => ({ ...e, categoryId: "" })); }}
-        error={errors.categoryId} required placeholder="Select category…" />
+      <FormCard label="EXPENSE DETAILS">
+        <SelectField label="Expense Category" value={categoryId} options={categories}
+          onChange={(v) => { setCategoryId(v); setErrors((e) => ({ ...e, categoryId: "" })); }}
+          error={errors.categoryId} required placeholder="Select category…" />
 
-      <FormField label="Amount (GHS)" value={amount}
-        onChangeText={(v) => { setAmount(v); setErrors((e) => ({ ...e, amount: "" })); }}
-        keyboardType="decimal-pad" required error={errors.amount} placeholder="0.00" />
+        <FormField label="Amount (GHS)" value={amount}
+          onChangeText={(v) => { setAmount(v); setErrors((e) => ({ ...e, amount: "" })); }}
+          keyboardType="decimal-pad" required error={errors.amount} placeholder="0.00" />
 
-      <FormField label="Expense Date" value={expenseDate}
-        onChangeText={(v) => { setExpenseDate(v); setErrors((e) => ({ ...e, expenseDate: "" })); }}
-        placeholder="YYYY-MM-DD" required error={errors.expenseDate} />
+        <FormField label="Expense Date" value={expenseDate}
+          onChangeText={(v) => { setExpenseDate(v); setErrors((e) => ({ ...e, expenseDate: "" })); }}
+          placeholder="YYYY-MM-DD" required error={errors.expenseDate} />
 
-      <FormField label="Description" value={description}
-        onChangeText={(v) => { setDescription(v); setErrors((e) => ({ ...e, description: "" })); }}
-        required error={errors.description} placeholder="What was this expense for?" />
+        <FormField label="Description" value={description}
+          onChangeText={(v) => { setDescription(v); setErrors((e) => ({ ...e, description: "" })); }}
+          required error={errors.description} placeholder="What was this expense for?" />
 
-      <FormField label="Vendor / Payee Name" value={vendorName}
-        onChangeText={setVendorName} placeholder="Optional" />
+        <FormField label="Vendor / Payee Name" value={vendorName}
+          onChangeText={setVendorName} placeholder="Optional" />
 
-      <SelectField label="Payment Method" value={paymentMethod} options={PAYMENT_METHODS}
-        onChange={(v) => { setPaymentMethod(v); setErrors((e) => ({ ...e, paymentMethod: "" })); }}
-        error={errors.paymentMethod} required placeholder="Select method…" />
+        <SelectField label="Payment Method" value={paymentMethod} options={PAYMENT_METHODS}
+          onChange={(v) => { setPaymentMethod(v); setErrors((e) => ({ ...e, paymentMethod: "" })); }}
+          error={errors.paymentMethod} required placeholder="Select method…" />
+      </FormCard>
 
-      <SelectField label="Branch" value={branchId} options={branches}
-        onChange={setBranchId} placeholder="Select branch (optional)" />
+      <FormCard label="LOCATION">
+        <SelectField label="Branch" value={branchId} options={branches}
+          onChange={setBranchId} placeholder="Select branch (optional)" />
 
-      <SelectField label="Bank Account" value={bankAccountId} options={bankAccounts}
-        onChange={setBankAccountId} placeholder="Select account (optional)" />
+        <SelectField label="Bank Account" value={bankAccountId} options={bankAccounts}
+          onChange={setBankAccountId} placeholder="Select account (optional)" />
+      </FormCard>
 
-      <FormField label="Receipt / Reference No." value={receiptRef}
-        onChangeText={setReceiptRef} placeholder="Optional receipt number" />
+      <FormCard label="NOTES">
+        <FormField label="Receipt / Reference No." value={receiptRef}
+          onChangeText={setReceiptRef} placeholder="Optional receipt number" />
 
-      <FormField label="Notes" value={notes} onChangeText={setNotes}
-        multiline numberOfLines={2}
-        style={{ minHeight: 70, textAlignVertical: "top" } as any}
-        placeholder="Optional notes…" />
-
-      <Button label={requiresApproval ? "Submit for Approval" : "Save Expense"}
-        loading={loading} size="lg"
-        onPress={async () => {
-          if (!validate()) return;
-          await submit({
-            categoryId,
-            amount: amountNum,
-            expenseDate,
-            description,
-            vendorName:    vendorName    || undefined,
-            paymentMethod,
-            branchId:      branchId      || undefined,
-            bankAccountId: bankAccountId || undefined,
-            receiptRef:    receiptRef    || undefined,
-            notes:         notes         || undefined,
-          });
-        }} />
+        <FormField label="Notes" value={notes} onChangeText={setNotes}
+          multiline numberOfLines={2}
+          style={{ minHeight: 70, textAlignVertical: "top" } as any}
+          placeholder="Optional notes…" />
+      </FormCard>
     </ScreenWrapper>
   );
 }
 
 const styles = StyleSheet.create({
-  pageHeader:     { flexDirection: "row", alignItems: "center", gap: spacing.md },
-  pageIconWrap:   { width: 52, height: 52, borderRadius: radius.lg, backgroundColor: colors.brandLight, borderWidth: 1, borderColor: colors.brandMid, alignItems: "center", justifyContent: "center" },
-  pageIconText:   { fontSize: 26 },
-  pageHeaderText: { gap: 2 },
-  pageTitle:      { fontSize: font.size.xl, fontWeight: font.weight.extrabold, color: colors.ink },
-  pageSub:        { fontSize: font.size.sm, color: colors.inkLight },
+  pageHeader:   { flexDirection: "row", alignItems: "center", gap: 12 },
+  pageIconWrap: {
+    width: 48, height: 48, borderRadius: 12,
+    backgroundColor: colors.brandLight,
+    borderWidth: 1, borderColor: colors.brandMid,
+    alignItems: "center", justifyContent: "center",
+  },
+  title: { fontSize: font.size.xl, fontFamily: font.family.extrabold, color: colors.ink },
+  sub:   { fontSize: font.size.sm, color: colors.inkMid, fontFamily: font.family.regular },
 
   approvalBanner: {
     backgroundColor: "#fff7ed",

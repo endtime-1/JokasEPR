@@ -1,10 +1,12 @@
 import { useMemo, useState } from "react";
 import { Alert, StyleSheet, Text, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { ScreenWrapper } from "../../components/ScreenWrapper";
+import { FormCard } from "../../components/FormCard";
+import { FormFooter } from "../../components/FormFooter";
 import { FormField } from "../../components/FormField";
 import { SelectField, SelectOption } from "../../components/SelectField";
-import { Button } from "../../components/Button";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
 import { fetchFlockBatches, fetchFarms } from "../../api/endpoints";
@@ -63,43 +65,61 @@ export function MortalityScreen() {
     onSuccess: () => Alert.alert("Saved", "Mortality recorded.", [{ text: "OK", onPress: () => navigation.goBack() }])
   });
 
+  async function handleSubmit() {
+    if (!validate()) return;
+    await submit({
+      flockBatchId: batchId,
+      recordDate: date,
+      birdCount: Number(birdCount),
+      isCulling: isCulling === "true",
+      reason: reason || undefined
+    });
+  }
+
   return (
-    <ScreenWrapper>
-      <Text style={styles.title}>Mortality Entry</Text>
-      <Text style={styles.sub}>Record bird deaths for a flock batch</Text>
-
-      <SelectField label="Farm" value={farmId} options={farms} onChange={(v) => { setFarmId(v); setErrors((e) => ({ ...e, farmId: "" })); }} error={errors.farmId} required />
-      <SelectField label="Flock Batch" value={batchId} options={batches} onChange={(v) => { setBatchId(v); setErrors((e) => ({ ...e, batchId: "" })); }} error={errors.batchId} required placeholder={farmId ? "Select batch…" : "Select farm first"} />
-      <FormField label="Date" required value={date} onChangeText={(v) => { setDate(v); setErrors((e) => ({ ...e, date: "" })); }} error={errors.date} keyboardType="numeric" placeholder="YYYY-MM-DD" />
-
-      <View style={styles.row}>
-        <View style={styles.half}>
-          <FormField label="Bird Count" required value={birdCount} onChangeText={(v) => { setBirdCount(v); setErrors((e) => ({ ...e, birdCount: "" })); }} error={errors.birdCount} keyboardType="numeric" placeholder="e.g. 3" />
+    <ScreenWrapper footer={<FormFooter saveLabel="Record Mortality" onSave={handleSubmit} loading={loading} />}>
+      <View style={styles.pageHeader}>
+        <View style={styles.pageIconWrap}>
+          <MaterialCommunityIcons name="arrow-down-bold" size={22} color={colors.brand} />
         </View>
-        <View style={styles.half}>
-          <SelectField label="Type" value={isCulling} options={CULLING_OPTIONS} onChange={setIsCulling} required />
+        <View>
+          <Text style={styles.title}>Mortality Entry</Text>
+          <Text style={styles.sub}>Record bird deaths for a flock batch</Text>
         </View>
       </View>
 
-      <FormField label="Reason / Observation" value={reason} onChangeText={setReason} placeholder="Describe cause or symptoms…" multiline numberOfLines={3} style={{ minHeight: 80, textAlignVertical: "top" } as any} />
+      <FormCard label="FLOCK / BATCH">
+        <SelectField label="Farm" value={farmId} options={farms} onChange={(v) => { setFarmId(v); setErrors((e) => ({ ...e, farmId: "" })); }} error={errors.farmId} required />
+        <SelectField label="Flock Batch" value={batchId} options={batches} onChange={(v) => { setBatchId(v); setErrors((e) => ({ ...e, batchId: "" })); }} error={errors.batchId} required placeholder={farmId ? "Select batch…" : "Select farm first"} />
+        <FormField label="Date" required value={date} onChangeText={(v) => { setDate(v); setErrors((e) => ({ ...e, date: "" })); }} error={errors.date} keyboardType="numeric" placeholder="YYYY-MM-DD" />
+      </FormCard>
 
-      <Button label="Record Mortality" loading={loading} onPress={async () => {
-        if (!validate()) return;
-        await submit({
-          flockBatchId: batchId,
-          recordDate: date,
-          birdCount: Number(birdCount),
-          isCulling: isCulling === "true",
-          reason: reason || undefined
-        });
-      }} size="lg" />
+      <FormCard label="MORTALITY DATA">
+        <View style={styles.row}>
+          <View style={styles.half}>
+            <FormField label="Bird Count" required value={birdCount} onChangeText={(v) => { setBirdCount(v); setErrors((e) => ({ ...e, birdCount: "" })); }} error={errors.birdCount} keyboardType="numeric" placeholder="e.g. 3" />
+          </View>
+          <View style={styles.half}>
+            <SelectField label="Type" value={isCulling} options={CULLING_OPTIONS} onChange={setIsCulling} required />
+          </View>
+        </View>
+
+        <FormField label="Reason / Observation" value={reason} onChangeText={setReason} placeholder="Describe cause or symptoms…" multiline numberOfLines={3} style={{ minHeight: 80, textAlignVertical: "top" } as any} />
+      </FormCard>
     </ScreenWrapper>
   );
 }
 
 const styles = StyleSheet.create({
-  title: { fontSize: font.size.xl, fontWeight: font.weight.bold, color: colors.ink },
-  sub: { fontSize: font.size.sm, color: colors.inkMid, marginTop: -spacing.sm },
+  pageHeader:   { flexDirection: "row", alignItems: "center", gap: 12 },
+  pageIconWrap: {
+    width: 48, height: 48, borderRadius: 12,
+    backgroundColor: colors.brandLight,
+    borderWidth: 1, borderColor: colors.brandMid,
+    alignItems: "center", justifyContent: "center",
+  },
+  title: { fontSize: font.size.xl, fontFamily: font.family.extrabold, color: colors.ink },
+  sub:   { fontSize: font.size.sm, color: colors.inkMid, fontFamily: font.family.regular },
   row: { flexDirection: "row", gap: spacing.md },
-  half: { flex: 1 }
+  half: { flex: 1 },
 });

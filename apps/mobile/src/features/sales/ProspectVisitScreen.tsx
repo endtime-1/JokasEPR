@@ -2,10 +2,12 @@ import { useEffect, useState } from "react";
 import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import * as Location from "expo-location";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { ScreenWrapper } from "../../components/ScreenWrapper";
+import { FormCard } from "../../components/FormCard";
+import { FormFooter } from "../../components/FormFooter";
 import { FormField } from "../../components/FormField";
 import { SelectField, SelectOption } from "../../components/SelectField";
-import { Button } from "../../components/Button";
 import { useSubmit } from "../../hooks/useSubmit";
 import { colors, font, radius, spacing } from "../../constants/theme";
 
@@ -108,15 +110,14 @@ export function ProspectVisitScreen() {
   const outcomeStyle = OUTCOME_COLORS[outcome] ?? OUTCOME_COLORS.INTERESTED;
 
   return (
-    <ScreenWrapper>
-      {/* Header */}
+    <ScreenWrapper footer={<FormFooter saveLabel="Log Visit" onSave={handleSubmit} loading={loading} />}>
       <View style={styles.pageHeader}>
-        <View style={styles.iconWrap}>
-          <Text style={styles.iconText}>📍</Text>
+        <View style={styles.pageIconWrap}>
+          <MaterialCommunityIcons name="map-marker-plus" size={22} color={colors.brand} />
         </View>
         <View>
-          <Text style={styles.pageTitle}>Log Prospect Visit</Text>
-          <Text style={styles.pageSub}>Record a customer prospecting visit</Text>
+          <Text style={styles.title}>Log Prospect Visit</Text>
+          <Text style={styles.sub}>Record a customer prospecting visit</Text>
         </View>
       </View>
 
@@ -142,7 +143,7 @@ export function ProspectVisitScreen() {
         </Text>
       </TouchableOpacity>
 
-      <View style={styles.section}>
+      <FormCard label="PROSPECT DETAILS">
         <FormField
           label="Prospect Name / Business *"
           value={prospectName}
@@ -192,7 +193,9 @@ export function ProspectVisitScreen() {
             {OUTCOME_OPTIONS.find((o) => o.value === outcome)?.label}
           </Text>
         </View>
+      </FormCard>
 
+      <FormCard label="NOTES">
         <FormField
           label="Notes"
           value={notes}
@@ -201,34 +204,30 @@ export function ProspectVisitScreen() {
           multiline
           numberOfLines={4}
         />
-      </View>
-
-      <View style={styles.actions}>
-        <Button
-          label={loading ? "Saving..." : "Log Visit"}
-          onPress={handleSubmit}
-          disabled={loading}
-        />
-      </View>
+      </FormCard>
     </ScreenWrapper>
   );
 }
 
 const styles = StyleSheet.create({
-  pageHeader:       { flexDirection: "row", alignItems: "center", gap: spacing.md, marginBottom: spacing.lg, paddingHorizontal: spacing.lg },
-  iconWrap:         { width: 52, height: 52, borderRadius: radius.xl, backgroundColor: "#fef9c3", alignItems: "center", justifyContent: "center" },
-  iconText:         { fontSize: 26 },
-  pageTitle:        { fontSize: font.size.xl, fontWeight: font.weight.bold as any, color: colors.ink },
-  pageSub:          { fontSize: font.size.sm, color: colors.inkLight, marginTop: 2 },
-  gpsChip:          { marginHorizontal: spacing.lg, marginBottom: spacing.lg, paddingVertical: spacing.sm, paddingHorizontal: spacing.md, backgroundColor: "#f3f4f6", borderRadius: radius.md, borderWidth: 1, borderColor: colors.border },
-  gpsChipOk:        { backgroundColor: "#f0fdf4", borderColor: "#86efac" },
-  gpsChipDenied:    { backgroundColor: "#fff1f2", borderColor: "#fca5a5" },
-  gpsChipLoading:   { backgroundColor: "#eff6ff", borderColor: "#93c5fd" },
-  gpsChipText:      { fontSize: font.size.sm, color: colors.inkLight, fontWeight: font.weight.medium as any },
-  section:          { paddingHorizontal: spacing.lg, gap: spacing.md },
+  pageHeader:   { flexDirection: "row", alignItems: "center", gap: 12 },
+  pageIconWrap: {
+    width: 48, height: 48, borderRadius: 12,
+    backgroundColor: colors.brandLight,
+    borderWidth: 1, borderColor: colors.brandMid,
+    alignItems: "center", justifyContent: "center",
+  },
+  title: { fontSize: font.size.xl, fontFamily: font.family.extrabold, color: colors.ink },
+  sub:   { fontSize: font.size.sm, color: colors.inkMid, fontFamily: font.family.regular },
+
+  gpsChip:        { paddingVertical: spacing.sm, paddingHorizontal: spacing.md, backgroundColor: "#f3f4f6", borderRadius: radius.md, borderWidth: 1, borderColor: colors.border },
+  gpsChipOk:      { backgroundColor: "#f0fdf4", borderColor: "#86efac" },
+  gpsChipDenied:  { backgroundColor: "#fff1f2", borderColor: "#fca5a5" },
+  gpsChipLoading: { backgroundColor: "#eff6ff", borderColor: "#93c5fd" },
+  gpsChipText:    { fontSize: font.size.sm, color: colors.inkLight, fontWeight: font.weight.medium as any },
+
   row:              { flexDirection: "row", gap: spacing.sm },
   half:             { flex: 1 },
   outcomeBadge:     { paddingVertical: spacing.xs, paddingHorizontal: spacing.md, borderRadius: radius.md, alignSelf: "flex-start" },
   outcomeBadgeText: { fontSize: font.size.sm, fontWeight: font.weight.semibold as any },
-  actions:          { marginTop: spacing.xl, paddingHorizontal: spacing.lg },
 });

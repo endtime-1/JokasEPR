@@ -1,10 +1,12 @@
 import { useMemo, useState } from "react";
 import { Alert, StyleSheet, Text, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { ScreenWrapper } from "../../components/ScreenWrapper";
+import { FormCard } from "../../components/FormCard";
+import { FormFooter } from "../../components/FormFooter";
 import { FormField } from "../../components/FormField";
 import { SelectField, SelectOption } from "../../components/SelectField";
-import { Button } from "../../components/Button";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
 import { fetchFlockBatches, fetchFarms, fetchWarehouses, fetchProducts } from "../../api/endpoints";
@@ -82,56 +84,75 @@ export function VaccinationScreen() {
     onSuccess: () => Alert.alert("Saved", "Vaccination recorded.", [{ text: "OK", onPress: () => navigation.goBack() }])
   });
 
+  async function handleSubmit() {
+    if (!validate()) return;
+    await submit({
+      flockBatchId: batchId,
+      vaccinationDate: date,
+      vaccineName,
+      dose,
+      nextDueDate: nextDueDate || undefined,
+      notes: notes || undefined,
+      warehouseId: warehouseId || undefined,
+      vaccineProductId: vaccineProductId || undefined,
+      quantityUsed: quantityUsed ? Number(quantityUsed) : undefined,
+    });
+  }
+
   return (
-    <ScreenWrapper>
-      <Text style={styles.title}>Vaccination Record</Text>
-      <Text style={styles.sub}>Record vaccine administered to flock</Text>
-
-      <SelectField label="Farm" value={farmId} options={farms} onChange={(v) => { setFarmId(v); setBatchId(""); }} error={errors.farmId} required />
-      <SelectField label="Flock Batch" value={batchId} options={batches} onChange={setBatchId} error={errors.batchId} required placeholder={farmId ? "Select batch…" : "Select farm first"} />
-      <FormField label="Vaccination Date" required value={date} onChangeText={setDate} error={errors.date} keyboardType="numeric" placeholder="YYYY-MM-DD" />
-      <FormField label="Vaccine Name" required value={vaccineName} onChangeText={(v) => { setVaccineName(v); setErrors((e) => ({ ...e, vaccineName: "" })); }} error={errors.vaccineName} placeholder="e.g. Newcastle ND Clone 30" />
-
-      <View style={styles.row}>
-        <View style={styles.half}>
-          <FormField label="Dose" required value={dose} onChangeText={(v) => { setDose(v); setErrors((e) => ({ ...e, dose: "" })); }} error={errors.dose} placeholder="e.g. 1 drop/bird" />
+    <ScreenWrapper footer={<FormFooter saveLabel="Save Vaccination" onSave={handleSubmit} loading={loading} />}>
+      <View style={styles.pageHeader}>
+        <View style={styles.pageIconWrap}>
+          <MaterialCommunityIcons name="needle" size={22} color={colors.brand} />
         </View>
-        <View style={styles.half}>
-          <FormField label="Next Due Date" value={nextDueDate} onChangeText={setNextDueDate} keyboardType="numeric" placeholder="YYYY-MM-DD" />
+        <View>
+          <Text style={styles.title}>Vaccination Record</Text>
+          <Text style={styles.sub}>Record vaccine administered to flock</Text>
         </View>
       </View>
 
-      <FormField label="Notes" value={notes} onChangeText={setNotes} multiline numberOfLines={2} style={{ minHeight: 70, textAlignVertical: "top" } as any} placeholder="Optional notes…" />
+      <FormCard label="FLOCK / BATCH">
+        <SelectField label="Farm" value={farmId} options={farms} onChange={(v) => { setFarmId(v); setBatchId(""); }} error={errors.farmId} required />
+        <SelectField label="Flock Batch" value={batchId} options={batches} onChange={setBatchId} error={errors.batchId} required placeholder={farmId ? "Select batch…" : "Select farm first"} />
+        <FormField label="Vaccination Date" required value={date} onChangeText={setDate} error={errors.date} keyboardType="numeric" placeholder="YYYY-MM-DD" />
+      </FormCard>
 
-      <Text style={styles.sectionLabel}>Inventory Link (Optional)</Text>
-      <Text style={styles.sectionHint}>Select warehouse and vaccine to auto-deduct stock when saved.</Text>
-      <SelectField label="Warehouse" value={warehouseId} options={warehouses} onChange={setWarehouseId} placeholder="No warehouse selected" />
-      <SelectField label="Vaccine Product" value={vaccineProductId} options={products} onChange={setVaccineProductId} placeholder="No product selected" />
-      <FormField label="Quantity Used" value={quantityUsed} onChangeText={setQuantityUsed} keyboardType="decimal-pad" placeholder="e.g. 50 (doses / vials / units)" />
+      <FormCard label="VACCINE DATA">
+        <FormField label="Vaccine Name" required value={vaccineName} onChangeText={(v) => { setVaccineName(v); setErrors((e) => ({ ...e, vaccineName: "" })); }} error={errors.vaccineName} placeholder="e.g. Newcastle ND Clone 30" />
 
-      <Button label="Save Vaccination" loading={loading} onPress={async () => {
-        if (!validate()) return;
-        await submit({
-          flockBatchId: batchId,
-          vaccinationDate: date,
-          vaccineName,
-          dose,
-          nextDueDate: nextDueDate || undefined,
-          notes: notes || undefined,
-          warehouseId: warehouseId || undefined,
-          vaccineProductId: vaccineProductId || undefined,
-          quantityUsed: quantityUsed ? Number(quantityUsed) : undefined,
-        });
-      }} size="lg" />
+        <View style={styles.row}>
+          <View style={styles.half}>
+            <FormField label="Dose" required value={dose} onChangeText={(v) => { setDose(v); setErrors((e) => ({ ...e, dose: "" })); }} error={errors.dose} placeholder="e.g. 1 drop/bird" />
+          </View>
+          <View style={styles.half}>
+            <FormField label="Next Due Date" value={nextDueDate} onChangeText={setNextDueDate} keyboardType="numeric" placeholder="YYYY-MM-DD" />
+          </View>
+        </View>
+      </FormCard>
+
+      <FormCard label="NOTES">
+        <FormField label="Notes" value={notes} onChangeText={setNotes} multiline numberOfLines={2} style={{ minHeight: 70, textAlignVertical: "top" } as any} placeholder="Optional notes…" />
+      </FormCard>
+
+      <FormCard label="INVENTORY LINK (OPTIONAL)">
+        <SelectField label="Warehouse" value={warehouseId} options={warehouses} onChange={setWarehouseId} placeholder="No warehouse selected" />
+        <SelectField label="Vaccine Product" value={vaccineProductId} options={products} onChange={setVaccineProductId} placeholder="No product selected" />
+        <FormField label="Quantity Used" value={quantityUsed} onChangeText={setQuantityUsed} keyboardType="decimal-pad" placeholder="e.g. 50 (doses / vials / units)" />
+      </FormCard>
     </ScreenWrapper>
   );
 }
 
 const styles = StyleSheet.create({
-  title: { fontSize: font.size.xl, fontWeight: font.weight.bold, color: colors.ink },
-  sub: { fontSize: font.size.sm, color: colors.inkMid, marginTop: -spacing.sm },
+  pageHeader:   { flexDirection: "row", alignItems: "center", gap: 12 },
+  pageIconWrap: {
+    width: 48, height: 48, borderRadius: 12,
+    backgroundColor: colors.brandLight,
+    borderWidth: 1, borderColor: colors.brandMid,
+    alignItems: "center", justifyContent: "center",
+  },
+  title: { fontSize: font.size.xl, fontFamily: font.family.extrabold, color: colors.ink },
+  sub:   { fontSize: font.size.sm, color: colors.inkMid, fontFamily: font.family.regular },
   row: { flexDirection: "row", gap: spacing.md },
   half: { flex: 1 },
-  sectionLabel: { fontSize: font.size.sm, fontWeight: font.weight.bold, color: colors.inkMid, marginTop: spacing.sm },
-  sectionHint: { fontSize: font.size.xs, color: colors.inkLight, marginTop: -spacing.sm }
 });
