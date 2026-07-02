@@ -43,12 +43,16 @@ Keep it under 200 words. No jargon. A non-technical farm owner should understand
 
 const MAX_HISTORY = 10;
 const FALLBACK_MODELS = ["claude-haiku-4-5-20251001", "claude-sonnet-4-6"];
+const AI_TIMEOUT_MS = 30_000;   // abort provider fetch after 30 s
+const AI_RATE_LIMIT = 20;       // max requests per user per minute
+const AI_RATE_WINDOW_MS = 60_000;
 
 // ── Service ──────────────────────────────────────────────────────────────────
 
 @Injectable()
 export class AiService {
   private readonly logger = new Logger(AiService.name);
+  private readonly rateLimitMap = new Map<string, { count: number; windowEnd: number }>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -87,18 +91,37 @@ export class AiService {
     return [...new Set([this.defaultModel(), ...extra, ...FALLBACK_MODELS])];
   }
 
+  private availableModels(): string[] {
+    return this.configuredModels().filter((id) => !!this.keyFor(this.detectProvider(id)));
+  }
+
   private resolveModel(requested?: string): string {
-    const models = this.configuredModels();
+    const available = this.availableModels();
     const selected = requested?.trim() || this.defaultModel();
-    if (!models.includes(selected)) throw new BadRequestException("Selected AI model is not enabled.");
+    if (!available.includes(selected)) throw new BadRequestException("Selected AI model is not available.");
     return selected;
+  }
+
+  private enforceRateLimit(userId: string): void {
+    const now = Date.now();
+    const entry = this.rateLimitMap.get(userId);
+    if (!entry || now > entry.windowEnd) {
+      this.rateLimitMap.set(userId, { count: 1, windowEnd: now + AI_RATE_WINDOW_MS });
+      return;
+    }
+    if (entry.count >= AI_RATE_LIMIT) {
+      throw new ForbiddenException(`AI rate limit reached. Max ${AI_RATE_LIMIT} requests per minute.`);
+    }
+    entry.count++;
   }
 
   // ── Provider call dispatcher ─────────────────────────────────────────────────
 
   private async callAi(
-    model: string, systemPrompt: string, messages: AiMessageParam[], maxTokens = 1024
+    model: string, systemPrompt: string, messages: AiMessageParam[], maxTokens = 1024,
+    userId?: string
   ): Promise<{ reply: string; inputTokens: number; outputTokens: number }> {
+    if (userId) this.enforceRateLimit(userId);
     const provider = this.detectProvider(model);
     const key = this.keyFor(provider);
     if (!key) {
@@ -120,6 +143,7 @@ export class AiService {
       method: "POST",
       headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
       body: JSON.stringify({ model, max_tokens: maxTokens, system, messages }),
+      signal: AbortSignal.timeout(AI_TIMEOUT_MS),
     });
     if (!res.ok) {
       this.logger.warn(`Anthropic ${res.status}: ${await res.text().catch(() => res.statusText)}`);
@@ -148,6 +172,7 @@ export class AiService {
           contents,
           generationConfig: { maxOutputTokens: maxTokens },
         }),
+        signal: AbortSignal.timeout(AI_TIMEOUT_MS),
       }
     );
     if (!res.ok) {
@@ -171,6 +196,7 @@ export class AiService {
         model, max_tokens: maxTokens,
         messages: [{ role: "system", content: system }, ...messages],
       }),
+      signal: AbortSignal.timeout(AI_TIMEOUT_MS),
     });
     if (!res.ok) {
       this.logger.warn(`Groq ${res.status}: ${await res.text().catch(() => res.statusText)}`);
@@ -199,6 +225,7 @@ export class AiService {
         model, max_tokens: maxTokens,
         messages: [{ role: "system", content: system }, ...messages],
       }),
+      signal: AbortSignal.timeout(AI_TIMEOUT_MS),
     });
     if (!res.ok) {
       this.logger.warn(`OpenRouter ${res.status}: ${await res.text().catch(() => res.statusText)}`);
@@ -222,6 +249,7 @@ export class AiService {
         model, max_tokens: maxTokens,
         messages: [{ role: "system", content: system }, ...messages],
       }),
+      signal: AbortSignal.timeout(AI_TIMEOUT_MS),
     });
     if (!res.ok) {
       this.logger.warn(`NVIDIA NIM ${res.status}: ${await res.text().catch(() => res.statusText)}`);
@@ -266,7 +294,7 @@ export class AiService {
     ];
 
     const system = `${BASE_PROMPT}\n\n--- LIVE COMPANY DATA (${new Date().toISOString().slice(0, 10)}) ---\n${dataContext}\n--- END DATA ---`;
-    const { reply, inputTokens, outputTokens } = await this.callAi(model, system, messages);
+    const { reply, inputTokens, outputTokens } = await this.callAi(model, system, messages, 1024, user.id);
 
     await this.prisma.aiChatMessage.create({ data: { sessionId: session.id, role: "assistant", content: reply } });
 
@@ -321,7 +349,7 @@ export class AiService {
       totalKg > 0 && totalCost > 0 ? `Cost/kg: GHS ${(totalCost / totalKg).toFixed(2)}` : "",
     ].filter(Boolean).join("\n");
 
-    const { reply } = await this.callAi(model, FEED_ANALYSIS_PROMPT, [{ role: "user", content: context }], 512);
+    const { reply } = await this.callAi(model, FEED_ANALYSIS_PROMPT, [{ role: "user", content: context }], 512, user.id);
     return { data: { batchId, model, analysis: reply } };
   }
 
@@ -334,7 +362,7 @@ export class AiService {
     const { reply } = await this.callAi(
       model, ANOMALY_PROMPT,
       [{ role: "user", content: `Analyse the following farm data for anomalies:\n\n${dataContext}` }],
-      768
+      768, user.id
     );
     return { data: { model, anomalies: reply, checkedAt: new Date().toISOString() } };
   }
@@ -348,7 +376,7 @@ export class AiService {
     const { reply } = await this.callAi(
       model, REPORT_SUMMARY_PROMPT,
       [{ role: "user", content: `Generate a farm performance summary:\n\n${dataContext}` }],
-      512
+      512, user.id
     );
     return { data: { model, summary: reply, generatedAt: new Date().toISOString() } };
   }
