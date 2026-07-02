@@ -187,7 +187,7 @@ export class PublicService {
     });
 
     return {
-      ref: storefrontRef,
+      storefrontRef,
       orderNumber,
       status: "PENDING",
       message: "Your order has been received. Our team will confirm and arrange delivery.",
@@ -210,6 +210,7 @@ export class PublicService {
         isPublic: true,
         publicSlug: true,
         publicDescription: true,
+        publicImageUrl: true,
         storefrontCategory: true,
         minOrderQty: true,
         unitLabel: true,
@@ -230,6 +231,7 @@ export class PublicService {
       isPublic: p.isPublic,
       publicSlug: p.publicSlug,
       publicDescription: p.publicDescription,
+      publicImageUrl: p.publicImageUrl,
       storefrontCategory: p.storefrontCategory,
       minOrderQty: p.minOrderQty ? Number(p.minOrderQty) : 1,
       unitLabel: p.unitLabel,
@@ -246,6 +248,31 @@ export class PublicService {
     if (data.minOrderQty !== undefined) data.minOrderQty = Number(data.minOrderQty);
 
     const product = await this.prisma.product.update({ where: { id }, data });
+
+    if (body.unitPrice !== undefined && body.unitPrice !== null) {
+      const price = Number(body.unitPrice);
+      if (price > 0) {
+        const existing = await this.prisma.priceList.findFirst({
+          where: { productId: id, status: "ACTIVE" },
+          orderBy: { validFrom: "desc" },
+        });
+        if (existing) {
+          await this.prisma.priceList.update({ where: { id: existing.id }, data: { unitPrice: price } });
+        } else {
+          await this.prisma.priceList.create({
+            data: {
+              companyId: product.companyId,
+              productId: id,
+              name: "Storefront Price",
+              unitPrice: price,
+              currency: "GHS",
+              status: "ACTIVE",
+            },
+          });
+        }
+      }
+    }
+
     return { id: product.id, isPublic: product.isPublic, publicSlug: product.publicSlug };
   }
 
@@ -328,14 +355,79 @@ export class PublicService {
   }
 
   async adminStats() {
-    const [published, pending, confirmed, delivered, total] = await Promise.all([
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const [published, totalProducts, pending, confirmed, delivered, cancelled, total, revenueAgg, recentOrders, recentRevAgg] = await Promise.all([
       this.prisma.product.count({ where: { isPublic: true, deletedAt: null, status: "ACTIVE" } }),
+      this.prisma.product.count({ where: { deletedAt: null, status: "ACTIVE" } }),
       this.prisma.salesOrder.count({ where: { isStorefrontOrder: true, status: "PENDING_STOCK_APPROVAL" } }),
       this.prisma.salesOrder.count({ where: { isStorefrontOrder: true, status: "APPROVED" } }),
       this.prisma.salesOrder.count({ where: { isStorefrontOrder: true, status: "FULFILLED" } }),
+      this.prisma.salesOrder.count({ where: { isStorefrontOrder: true, status: "CANCELLED" } }),
       this.prisma.salesOrder.count({ where: { isStorefrontOrder: true } }),
+      this.prisma.salesOrder.aggregate({
+        where: { isStorefrontOrder: true, status: { in: ["APPROVED", "FULFILLED"] } },
+        _sum: { totalAmount: true },
+      }),
+      this.prisma.salesOrder.findMany({
+        where: { isStorefrontOrder: true },
+        select: {
+          id: true,
+          orderNumber: true,
+          storefrontRef: true,
+          status: true,
+          orderDate: true,
+          totalAmount: true,
+          storefrontCustomerName: true,
+          storefrontCustomerPhone: true,
+          items: { select: { quantity: true, product: { select: { name: true } } }, take: 3 },
+        },
+        orderBy: { orderDate: "desc" },
+        take: 8,
+      }),
+      this.prisma.salesOrder.aggregate({
+        where: { isStorefrontOrder: true, status: { in: ["APPROVED", "FULFILLED"] }, orderDate: { gte: thirtyDaysAgo } },
+        _sum: { totalAmount: true },
+      }),
     ]);
-    return { published, pending, confirmed, delivered, total };
+
+    const statusLabel: Record<string, string> = {
+      PENDING_STOCK_APPROVAL: "Pending",
+      APPROVED: "Confirmed",
+      FULFILLED: "Delivered",
+      CANCELLED: "Cancelled",
+    };
+
+    return {
+      published,
+      totalProducts,
+      pending,
+      confirmed,
+      delivered,
+      cancelled,
+      total,
+      totalRevenue: Number(revenueAgg._sum.totalAmount ?? 0),
+      revenueThisMonth: Number(recentRevAgg._sum.totalAmount ?? 0),
+      recentOrders: recentOrders.map((o) => ({
+        id: o.id,
+        orderNumber: o.orderNumber,
+        ref: o.storefrontRef,
+        status: o.status,
+        statusLabel: statusLabel[o.status] ?? o.status,
+        orderDate: o.orderDate,
+        total: Number(o.totalAmount),
+        customerName: o.storefrontCustomerName,
+        customerPhone: o.storefrontCustomerPhone,
+        itemSummary: o.items.map((i) => `${(i.product as { name: string }).name} ×${Number(i.quantity)}`).join(", "),
+      })),
+    };
+  }
+
+  async updateProductImageUrl(id: string, filename: string) {
+    const imageUrl = `/uploads/products/${filename}`;
+    await this.prisma.product.update({ where: { id }, data: { publicImageUrl: imageUrl } });
+    return imageUrl;
   }
 
   async getOrderStatus(ref: string) {
@@ -370,19 +462,18 @@ export class PublicService {
     };
 
     return {
-      ref,
+      storefrontRef: ref,
       orderNumber: order.orderNumber,
       status: order.status,
       statusLabel: statusLabel[order.status] ?? order.status,
-      orderDate: order.orderDate,
+      createdAt: order.orderDate,
       total: Number(order.totalAmount),
       customerName: order.storefrontCustomerName,
       deliveryAddress: order.storefrontDeliveryAddress,
-      items: order.items.map((i) => ({
-        name: (i.product as { name: string; unitLabel?: string | null }).name,
-        quantity: i.quantity,
+      lines: order.items.map((i) => ({
+        productName: (i.product as { name: string; unitLabel?: string | null }).name,
+        qty: Number(i.quantity),
         unitPrice: Number(i.unitPrice),
-        total: Number(i.lineTotal),
       })),
     };
   }

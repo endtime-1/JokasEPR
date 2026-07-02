@@ -16,6 +16,7 @@ const NAV_GROUPS = [
   {
     label: "Production",
     items: [
+      { href: "/feed-production/batches", label: "Batches" },
       { href: "/feed-production/quality-control", label: "Quality Control" },
       { href: "/feed-production/raw-material-usage", label: "Raw Materials" }
     ]
@@ -24,6 +25,7 @@ const NAV_GROUPS = [
     label: "Stock",
     items: [
       { href: "/feed-production/finished-feed-inventory", label: "Finished Stock" },
+      { href: "/feed-production/packaging-records", label: "Packaging" },
       { href: "/feed-production/internal-transfer", label: "Transfers" }
     ]
   },

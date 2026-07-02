@@ -407,7 +407,25 @@ async function main() {
     })
   ]);
 
-  const [soyaCake, wheatBran, broilerFinisher] = await Promise.all([
+  const [
+    soyaCake,
+    wheatBran,
+    broilerFinisher,
+    localSoya,
+    soyaOilRaw,
+    oshell,
+    dicalcium,
+    salt,
+    lysine,
+    methionine,
+    layerPremix,
+    binder,
+    kenzyme,
+    cholineChloride,
+    carophyllRed,
+    carophyllYellow,
+    sack
+  ] = await Promise.all([
     prisma.product.upsert({
       where: { companyId_sku: { companyId: company.id, sku: "SOYA-CAKE" } },
       update: {},
@@ -445,6 +463,188 @@ async function main() {
         name: "Broiler Finisher Feed",
         sku: "BROILER-FINISHER",
         type: "FINISHED_GOOD"
+      }
+    }),
+    prisma.product.upsert({
+      where: { companyId_sku: { companyId: company.id, sku: "SOYA-LOCAL" } },
+      update: {},
+      create: {
+        companyId: company.id,
+        branchId: kumasiBranch.id,
+        categoryId: rawCategory.id,
+        uomId: kg.id,
+        name: "Local Soya",
+        sku: "SOYA-LOCAL",
+        type: "RAW_MATERIAL"
+      }
+    }),
+    prisma.product.upsert({
+      where: { companyId_sku: { companyId: company.id, sku: "SOYA-OIL-RAW" } },
+      update: {},
+      create: {
+        companyId: company.id,
+        branchId: kumasiBranch.id,
+        categoryId: rawCategory.id,
+        uomId: litre.id,
+        name: "Soya Oil (Raw)",
+        sku: "SOYA-OIL-RAW",
+        type: "RAW_MATERIAL"
+      }
+    }),
+    prisma.product.upsert({
+      where: { companyId_sku: { companyId: company.id, sku: "RM-OSHELL" } },
+      update: {},
+      create: {
+        companyId: company.id,
+        branchId: accraBranch.id,
+        categoryId: rawCategory.id,
+        uomId: kg.id,
+        name: "Oshell (Oyster Shell)",
+        sku: "RM-OSHELL",
+        type: "RAW_MATERIAL"
+      }
+    }),
+    prisma.product.upsert({
+      where: { companyId_sku: { companyId: company.id, sku: "RM-DICALCIUM" } },
+      update: {},
+      create: {
+        companyId: company.id,
+        branchId: accraBranch.id,
+        categoryId: rawCategory.id,
+        uomId: kg.id,
+        name: "Dicalcium",
+        sku: "RM-DICALCIUM",
+        type: "RAW_MATERIAL"
+      }
+    }),
+    prisma.product.upsert({
+      where: { companyId_sku: { companyId: company.id, sku: "RM-SALT" } },
+      update: {},
+      create: {
+        companyId: company.id,
+        branchId: accraBranch.id,
+        categoryId: rawCategory.id,
+        uomId: kg.id,
+        name: "Salt",
+        sku: "RM-SALT",
+        type: "RAW_MATERIAL"
+      }
+    }),
+    prisma.product.upsert({
+      where: { companyId_sku: { companyId: company.id, sku: "RM-LYSINE" } },
+      update: {},
+      create: {
+        companyId: company.id,
+        branchId: accraBranch.id,
+        categoryId: rawCategory.id,
+        uomId: kg.id,
+        name: "Lysine",
+        sku: "RM-LYSINE",
+        type: "RAW_MATERIAL"
+      }
+    }),
+    prisma.product.upsert({
+      where: { companyId_sku: { companyId: company.id, sku: "RM-METHIONINE" } },
+      update: {},
+      create: {
+        companyId: company.id,
+        branchId: accraBranch.id,
+        categoryId: rawCategory.id,
+        uomId: kg.id,
+        name: "Methionine",
+        sku: "RM-METHIONINE",
+        type: "RAW_MATERIAL"
+      }
+    }),
+    prisma.product.upsert({
+      where: { companyId_sku: { companyId: company.id, sku: "RM-LPREMIX" } },
+      update: {},
+      create: {
+        companyId: company.id,
+        branchId: accraBranch.id,
+        categoryId: rawCategory.id,
+        uomId: kg.id,
+        name: "Layer Premix",
+        sku: "RM-LPREMIX",
+        type: "RAW_MATERIAL"
+      }
+    }),
+    prisma.product.upsert({
+      where: { companyId_sku: { companyId: company.id, sku: "RM-BINDER" } },
+      update: {},
+      create: {
+        companyId: company.id,
+        branchId: accraBranch.id,
+        categoryId: rawCategory.id,
+        uomId: kg.id,
+        name: "Binder",
+        sku: "RM-BINDER",
+        type: "RAW_MATERIAL"
+      }
+    }),
+    prisma.product.upsert({
+      where: { companyId_sku: { companyId: company.id, sku: "RM-KENZYME" } },
+      update: {},
+      create: {
+        companyId: company.id,
+        branchId: accraBranch.id,
+        categoryId: rawCategory.id,
+        uomId: kg.id,
+        name: "Kenzyme",
+        sku: "RM-KENZYME",
+        type: "RAW_MATERIAL"
+      }
+    }),
+    prisma.product.upsert({
+      where: { companyId_sku: { companyId: company.id, sku: "RM-CHOLINE" } },
+      update: {},
+      create: {
+        companyId: company.id,
+        branchId: accraBranch.id,
+        categoryId: rawCategory.id,
+        uomId: kg.id,
+        name: "Chlorine Chloride",
+        sku: "RM-CHOLINE",
+        type: "RAW_MATERIAL"
+      }
+    }),
+    prisma.product.upsert({
+      where: { companyId_sku: { companyId: company.id, sku: "RM-CAROPHYLL-RED" } },
+      update: {},
+      create: {
+        companyId: company.id,
+        branchId: accraBranch.id,
+        categoryId: rawCategory.id,
+        uomId: kg.id,
+        name: "Carophyll Red",
+        sku: "RM-CAROPHYLL-RED",
+        type: "RAW_MATERIAL"
+      }
+    }),
+    prisma.product.upsert({
+      where: { companyId_sku: { companyId: company.id, sku: "RM-CAROPHYLL-YELLOW" } },
+      update: {},
+      create: {
+        companyId: company.id,
+        branchId: accraBranch.id,
+        categoryId: rawCategory.id,
+        uomId: kg.id,
+        name: "Carophyll Yellow",
+        sku: "RM-CAROPHYLL-YELLOW",
+        type: "RAW_MATERIAL"
+      }
+    }),
+    prisma.product.upsert({
+      where: { companyId_sku: { companyId: company.id, sku: "RM-SACK" } },
+      update: {},
+      create: {
+        companyId: company.id,
+        branchId: accraBranch.id,
+        categoryId: rawCategory.id,
+        uomId: bag.id,
+        name: "Sack",
+        sku: "RM-SACK",
+        type: "RAW_MATERIAL"
       }
     })
   ]);
@@ -516,6 +716,94 @@ async function main() {
     })
   ]);
 
+  const [
+    feedBSM, feedBSC, feedBFM, feedBFC,
+    feedSCC, feedSCM, feedCSM, feedCSC,
+    feedDM, feedDC, feedPLM, feedPLC,
+    feedL1M, feedL1C, feedL2M, feedL2C
+  ] = await Promise.all([
+    prisma.product.upsert({
+      where: { companyId_sku: { companyId: company.id, sku: "FEED-BSM" } },
+      update: {},
+      create: { companyId: company.id, branchId: accraBranch.id, categoryId: finishedCategory.id, uomId: bag.id, name: "Broiler Starter Mash", sku: "FEED-BSM", type: "FINISHED_GOOD" }
+    }),
+    prisma.product.upsert({
+      where: { companyId_sku: { companyId: company.id, sku: "FEED-BSC" } },
+      update: {},
+      create: { companyId: company.id, branchId: accraBranch.id, categoryId: finishedCategory.id, uomId: bag.id, name: "Broiler Starter Concentrate", sku: "FEED-BSC", type: "FINISHED_GOOD" }
+    }),
+    prisma.product.upsert({
+      where: { companyId_sku: { companyId: company.id, sku: "FEED-BFM" } },
+      update: {},
+      create: { companyId: company.id, branchId: accraBranch.id, categoryId: finishedCategory.id, uomId: bag.id, name: "Broiler Finisher Mash", sku: "FEED-BFM", type: "FINISHED_GOOD" }
+    }),
+    prisma.product.upsert({
+      where: { companyId_sku: { companyId: company.id, sku: "FEED-BFC" } },
+      update: {},
+      create: { companyId: company.id, branchId: accraBranch.id, categoryId: finishedCategory.id, uomId: bag.id, name: "Broiler Finisher Concentrate", sku: "FEED-BFC", type: "FINISHED_GOOD" }
+    }),
+    prisma.product.upsert({
+      where: { companyId_sku: { companyId: company.id, sku: "FEED-SCC" } },
+      update: {},
+      create: { companyId: company.id, branchId: accraBranch.id, categoryId: finishedCategory.id, uomId: bag.id, name: "Super Chicks Concentrate", sku: "FEED-SCC", type: "FINISHED_GOOD" }
+    }),
+    prisma.product.upsert({
+      where: { companyId_sku: { companyId: company.id, sku: "FEED-SCM" } },
+      update: {},
+      create: { companyId: company.id, branchId: accraBranch.id, categoryId: finishedCategory.id, uomId: bag.id, name: "Super Chicks Mash", sku: "FEED-SCM", type: "FINISHED_GOOD" }
+    }),
+    prisma.product.upsert({
+      where: { companyId_sku: { companyId: company.id, sku: "FEED-CSM" } },
+      update: {},
+      create: { companyId: company.id, branchId: accraBranch.id, categoryId: finishedCategory.id, uomId: bag.id, name: "Chicks Starter Mash", sku: "FEED-CSM", type: "FINISHED_GOOD" }
+    }),
+    prisma.product.upsert({
+      where: { companyId_sku: { companyId: company.id, sku: "FEED-CSC" } },
+      update: {},
+      create: { companyId: company.id, branchId: accraBranch.id, categoryId: finishedCategory.id, uomId: bag.id, name: "Chicks Starter Concentrate", sku: "FEED-CSC", type: "FINISHED_GOOD" }
+    }),
+    prisma.product.upsert({
+      where: { companyId_sku: { companyId: company.id, sku: "FEED-DM" } },
+      update: {},
+      create: { companyId: company.id, branchId: accraBranch.id, categoryId: finishedCategory.id, uomId: bag.id, name: "Developer Mash", sku: "FEED-DM", type: "FINISHED_GOOD" }
+    }),
+    prisma.product.upsert({
+      where: { companyId_sku: { companyId: company.id, sku: "FEED-DC" } },
+      update: {},
+      create: { companyId: company.id, branchId: accraBranch.id, categoryId: finishedCategory.id, uomId: bag.id, name: "Developer Concentrate", sku: "FEED-DC", type: "FINISHED_GOOD" }
+    }),
+    prisma.product.upsert({
+      where: { companyId_sku: { companyId: company.id, sku: "FEED-PLM" } },
+      update: {},
+      create: { companyId: company.id, branchId: accraBranch.id, categoryId: finishedCategory.id, uomId: bag.id, name: "Pre-lay Mash", sku: "FEED-PLM", type: "FINISHED_GOOD" }
+    }),
+    prisma.product.upsert({
+      where: { companyId_sku: { companyId: company.id, sku: "FEED-PLC" } },
+      update: {},
+      create: { companyId: company.id, branchId: accraBranch.id, categoryId: finishedCategory.id, uomId: bag.id, name: "Pre-lay Concentrate", sku: "FEED-PLC", type: "FINISHED_GOOD" }
+    }),
+    prisma.product.upsert({
+      where: { companyId_sku: { companyId: company.id, sku: "FEED-L1M" } },
+      update: {},
+      create: { companyId: company.id, branchId: accraBranch.id, categoryId: finishedCategory.id, uomId: bag.id, name: "Layer 1 Mash", sku: "FEED-L1M", type: "FINISHED_GOOD" }
+    }),
+    prisma.product.upsert({
+      where: { companyId_sku: { companyId: company.id, sku: "FEED-L1C" } },
+      update: {},
+      create: { companyId: company.id, branchId: accraBranch.id, categoryId: finishedCategory.id, uomId: bag.id, name: "Layer 1 Concentrate", sku: "FEED-L1C", type: "FINISHED_GOOD" }
+    }),
+    prisma.product.upsert({
+      where: { companyId_sku: { companyId: company.id, sku: "FEED-L2M" } },
+      update: {},
+      create: { companyId: company.id, branchId: accraBranch.id, categoryId: finishedCategory.id, uomId: bag.id, name: "Layer 2 Mash", sku: "FEED-L2M", type: "FINISHED_GOOD" }
+    }),
+    prisma.product.upsert({
+      where: { companyId_sku: { companyId: company.id, sku: "FEED-L2C" } },
+      update: {},
+      create: { companyId: company.id, branchId: accraBranch.id, categoryId: finishedCategory.id, uomId: bag.id, name: "Layer 2 Concentrate", sku: "FEED-L2C", type: "FINISHED_GOOD" }
+    })
+  ]);
+
   const maizeInventory = await prisma.inventoryItem.upsert({
     where: { companyId_warehouseId_productId: { companyId: company.id, warehouseId: warehouses[0].id, productId: maize.id } },
     update: {},
@@ -544,6 +832,90 @@ async function main() {
       quantityOnHand: 350
     }
   });
+
+  // New finished feed types inventory
+  await Promise.all([
+    prisma.inventoryItem.upsert({
+      where: { companyId_warehouseId_productId: { companyId: company.id, warehouseId: warehouses[2].id, productId: feedBSM.id } },
+      update: {},
+      create: { companyId: company.id, branchId: accraBranch.id, warehouseId: warehouses[2].id, productionSiteId: productionSites[0].id, productId: feedBSM.id, uomId: bag.id, reorderLevel: 50, quantityOnHand: 200 }
+    }),
+    prisma.inventoryItem.upsert({
+      where: { companyId_warehouseId_productId: { companyId: company.id, warehouseId: warehouses[2].id, productId: feedBSC.id } },
+      update: {},
+      create: { companyId: company.id, branchId: accraBranch.id, warehouseId: warehouses[2].id, productionSiteId: productionSites[0].id, productId: feedBSC.id, uomId: bag.id, reorderLevel: 50, quantityOnHand: 200 }
+    }),
+    prisma.inventoryItem.upsert({
+      where: { companyId_warehouseId_productId: { companyId: company.id, warehouseId: warehouses[2].id, productId: feedBFM.id } },
+      update: {},
+      create: { companyId: company.id, branchId: accraBranch.id, warehouseId: warehouses[2].id, productionSiteId: productionSites[0].id, productId: feedBFM.id, uomId: bag.id, reorderLevel: 50, quantityOnHand: 200 }
+    }),
+    prisma.inventoryItem.upsert({
+      where: { companyId_warehouseId_productId: { companyId: company.id, warehouseId: warehouses[2].id, productId: feedBFC.id } },
+      update: {},
+      create: { companyId: company.id, branchId: accraBranch.id, warehouseId: warehouses[2].id, productionSiteId: productionSites[0].id, productId: feedBFC.id, uomId: bag.id, reorderLevel: 50, quantityOnHand: 200 }
+    }),
+    prisma.inventoryItem.upsert({
+      where: { companyId_warehouseId_productId: { companyId: company.id, warehouseId: warehouses[2].id, productId: feedSCC.id } },
+      update: {},
+      create: { companyId: company.id, branchId: accraBranch.id, warehouseId: warehouses[2].id, productionSiteId: productionSites[0].id, productId: feedSCC.id, uomId: bag.id, reorderLevel: 50, quantityOnHand: 200 }
+    }),
+    prisma.inventoryItem.upsert({
+      where: { companyId_warehouseId_productId: { companyId: company.id, warehouseId: warehouses[2].id, productId: feedSCM.id } },
+      update: {},
+      create: { companyId: company.id, branchId: accraBranch.id, warehouseId: warehouses[2].id, productionSiteId: productionSites[0].id, productId: feedSCM.id, uomId: bag.id, reorderLevel: 50, quantityOnHand: 200 }
+    }),
+    prisma.inventoryItem.upsert({
+      where: { companyId_warehouseId_productId: { companyId: company.id, warehouseId: warehouses[2].id, productId: feedCSM.id } },
+      update: {},
+      create: { companyId: company.id, branchId: accraBranch.id, warehouseId: warehouses[2].id, productionSiteId: productionSites[0].id, productId: feedCSM.id, uomId: bag.id, reorderLevel: 50, quantityOnHand: 200 }
+    }),
+    prisma.inventoryItem.upsert({
+      where: { companyId_warehouseId_productId: { companyId: company.id, warehouseId: warehouses[2].id, productId: feedCSC.id } },
+      update: {},
+      create: { companyId: company.id, branchId: accraBranch.id, warehouseId: warehouses[2].id, productionSiteId: productionSites[0].id, productId: feedCSC.id, uomId: bag.id, reorderLevel: 50, quantityOnHand: 200 }
+    }),
+    prisma.inventoryItem.upsert({
+      where: { companyId_warehouseId_productId: { companyId: company.id, warehouseId: warehouses[2].id, productId: feedDM.id } },
+      update: {},
+      create: { companyId: company.id, branchId: accraBranch.id, warehouseId: warehouses[2].id, productionSiteId: productionSites[0].id, productId: feedDM.id, uomId: bag.id, reorderLevel: 50, quantityOnHand: 200 }
+    }),
+    prisma.inventoryItem.upsert({
+      where: { companyId_warehouseId_productId: { companyId: company.id, warehouseId: warehouses[2].id, productId: feedDC.id } },
+      update: {},
+      create: { companyId: company.id, branchId: accraBranch.id, warehouseId: warehouses[2].id, productionSiteId: productionSites[0].id, productId: feedDC.id, uomId: bag.id, reorderLevel: 50, quantityOnHand: 200 }
+    }),
+    prisma.inventoryItem.upsert({
+      where: { companyId_warehouseId_productId: { companyId: company.id, warehouseId: warehouses[2].id, productId: feedPLM.id } },
+      update: {},
+      create: { companyId: company.id, branchId: accraBranch.id, warehouseId: warehouses[2].id, productionSiteId: productionSites[0].id, productId: feedPLM.id, uomId: bag.id, reorderLevel: 50, quantityOnHand: 200 }
+    }),
+    prisma.inventoryItem.upsert({
+      where: { companyId_warehouseId_productId: { companyId: company.id, warehouseId: warehouses[2].id, productId: feedPLC.id } },
+      update: {},
+      create: { companyId: company.id, branchId: accraBranch.id, warehouseId: warehouses[2].id, productionSiteId: productionSites[0].id, productId: feedPLC.id, uomId: bag.id, reorderLevel: 50, quantityOnHand: 200 }
+    }),
+    prisma.inventoryItem.upsert({
+      where: { companyId_warehouseId_productId: { companyId: company.id, warehouseId: warehouses[2].id, productId: feedL1M.id } },
+      update: {},
+      create: { companyId: company.id, branchId: accraBranch.id, warehouseId: warehouses[2].id, productionSiteId: productionSites[0].id, productId: feedL1M.id, uomId: bag.id, reorderLevel: 50, quantityOnHand: 200 }
+    }),
+    prisma.inventoryItem.upsert({
+      where: { companyId_warehouseId_productId: { companyId: company.id, warehouseId: warehouses[2].id, productId: feedL1C.id } },
+      update: {},
+      create: { companyId: company.id, branchId: accraBranch.id, warehouseId: warehouses[2].id, productionSiteId: productionSites[0].id, productId: feedL1C.id, uomId: bag.id, reorderLevel: 50, quantityOnHand: 200 }
+    }),
+    prisma.inventoryItem.upsert({
+      where: { companyId_warehouseId_productId: { companyId: company.id, warehouseId: warehouses[2].id, productId: feedL2M.id } },
+      update: {},
+      create: { companyId: company.id, branchId: accraBranch.id, warehouseId: warehouses[2].id, productionSiteId: productionSites[0].id, productId: feedL2M.id, uomId: bag.id, reorderLevel: 50, quantityOnHand: 200 }
+    }),
+    prisma.inventoryItem.upsert({
+      where: { companyId_warehouseId_productId: { companyId: company.id, warehouseId: warehouses[2].id, productId: feedL2C.id } },
+      update: {},
+      create: { companyId: company.id, branchId: accraBranch.id, warehouseId: warehouses[2].id, productionSiteId: productionSites[0].id, productId: feedL2C.id, uomId: bag.id, reorderLevel: 50, quantityOnHand: 200 }
+    })
+  ]);
 
   await prisma.inventoryItem.upsert({
     where: { companyId_warehouseId_productId: { companyId: company.id, warehouseId: warehouses[0].id, productId: soyaOil.id } },
@@ -584,6 +956,188 @@ async function main() {
         uomId: kg.id,
         reorderLevel: 600,
         quantityOnHand: 3600
+      }
+    }),
+    prisma.inventoryItem.upsert({
+      where: { companyId_warehouseId_productId: { companyId: company.id, warehouseId: warehouses[0].id, productId: localSoya.id } },
+      update: {},
+      create: {
+        companyId: company.id,
+        branchId: accraBranch.id,
+        warehouseId: warehouses[0].id,
+        productId: localSoya.id,
+        uomId: kg.id,
+        reorderLevel: 1000,
+        quantityOnHand: 5000
+      }
+    }),
+    prisma.inventoryItem.upsert({
+      where: { companyId_warehouseId_productId: { companyId: company.id, warehouseId: warehouses[0].id, productId: soyaOilRaw.id } },
+      update: {},
+      create: {
+        companyId: company.id,
+        branchId: accraBranch.id,
+        warehouseId: warehouses[0].id,
+        productId: soyaOilRaw.id,
+        uomId: litre.id,
+        reorderLevel: 500,
+        quantityOnHand: 2500
+      }
+    }),
+    prisma.inventoryItem.upsert({
+      where: { companyId_warehouseId_productId: { companyId: company.id, warehouseId: warehouses[0].id, productId: oshell.id } },
+      update: {},
+      create: {
+        companyId: company.id,
+        branchId: accraBranch.id,
+        warehouseId: warehouses[0].id,
+        productId: oshell.id,
+        uomId: kg.id,
+        reorderLevel: 200,
+        quantityOnHand: 1500
+      }
+    }),
+    prisma.inventoryItem.upsert({
+      where: { companyId_warehouseId_productId: { companyId: company.id, warehouseId: warehouses[0].id, productId: dicalcium.id } },
+      update: {},
+      create: {
+        companyId: company.id,
+        branchId: accraBranch.id,
+        warehouseId: warehouses[0].id,
+        productId: dicalcium.id,
+        uomId: kg.id,
+        reorderLevel: 100,
+        quantityOnHand: 1000
+      }
+    }),
+    prisma.inventoryItem.upsert({
+      where: { companyId_warehouseId_productId: { companyId: company.id, warehouseId: warehouses[0].id, productId: salt.id } },
+      update: {},
+      create: {
+        companyId: company.id,
+        branchId: accraBranch.id,
+        warehouseId: warehouses[0].id,
+        productId: salt.id,
+        uomId: kg.id,
+        reorderLevel: 100,
+        quantityOnHand: 800
+      }
+    }),
+    prisma.inventoryItem.upsert({
+      where: { companyId_warehouseId_productId: { companyId: company.id, warehouseId: warehouses[0].id, productId: lysine.id } },
+      update: {},
+      create: {
+        companyId: company.id,
+        branchId: accraBranch.id,
+        warehouseId: warehouses[0].id,
+        productId: lysine.id,
+        uomId: kg.id,
+        reorderLevel: 50,
+        quantityOnHand: 500
+      }
+    }),
+    prisma.inventoryItem.upsert({
+      where: { companyId_warehouseId_productId: { companyId: company.id, warehouseId: warehouses[0].id, productId: methionine.id } },
+      update: {},
+      create: {
+        companyId: company.id,
+        branchId: accraBranch.id,
+        warehouseId: warehouses[0].id,
+        productId: methionine.id,
+        uomId: kg.id,
+        reorderLevel: 50,
+        quantityOnHand: 500
+      }
+    }),
+    prisma.inventoryItem.upsert({
+      where: { companyId_warehouseId_productId: { companyId: company.id, warehouseId: warehouses[0].id, productId: layerPremix.id } },
+      update: {},
+      create: {
+        companyId: company.id,
+        branchId: accraBranch.id,
+        warehouseId: warehouses[0].id,
+        productId: layerPremix.id,
+        uomId: kg.id,
+        reorderLevel: 100,
+        quantityOnHand: 1000
+      }
+    }),
+    prisma.inventoryItem.upsert({
+      where: { companyId_warehouseId_productId: { companyId: company.id, warehouseId: warehouses[0].id, productId: binder.id } },
+      update: {},
+      create: {
+        companyId: company.id,
+        branchId: accraBranch.id,
+        warehouseId: warehouses[0].id,
+        productId: binder.id,
+        uomId: kg.id,
+        reorderLevel: 50,
+        quantityOnHand: 400
+      }
+    }),
+    prisma.inventoryItem.upsert({
+      where: { companyId_warehouseId_productId: { companyId: company.id, warehouseId: warehouses[0].id, productId: kenzyme.id } },
+      update: {},
+      create: {
+        companyId: company.id,
+        branchId: accraBranch.id,
+        warehouseId: warehouses[0].id,
+        productId: kenzyme.id,
+        uomId: kg.id,
+        reorderLevel: 50,
+        quantityOnHand: 300
+      }
+    }),
+    prisma.inventoryItem.upsert({
+      where: { companyId_warehouseId_productId: { companyId: company.id, warehouseId: warehouses[0].id, productId: cholineChloride.id } },
+      update: {},
+      create: {
+        companyId: company.id,
+        branchId: accraBranch.id,
+        warehouseId: warehouses[0].id,
+        productId: cholineChloride.id,
+        uomId: kg.id,
+        reorderLevel: 50,
+        quantityOnHand: 400
+      }
+    }),
+    prisma.inventoryItem.upsert({
+      where: { companyId_warehouseId_productId: { companyId: company.id, warehouseId: warehouses[0].id, productId: carophyllRed.id } },
+      update: {},
+      create: {
+        companyId: company.id,
+        branchId: accraBranch.id,
+        warehouseId: warehouses[0].id,
+        productId: carophyllRed.id,
+        uomId: kg.id,
+        reorderLevel: 20,
+        quantityOnHand: 200
+      }
+    }),
+    prisma.inventoryItem.upsert({
+      where: { companyId_warehouseId_productId: { companyId: company.id, warehouseId: warehouses[0].id, productId: carophyllYellow.id } },
+      update: {},
+      create: {
+        companyId: company.id,
+        branchId: accraBranch.id,
+        warehouseId: warehouses[0].id,
+        productId: carophyllYellow.id,
+        uomId: kg.id,
+        reorderLevel: 20,
+        quantityOnHand: 200
+      }
+    }),
+    prisma.inventoryItem.upsert({
+      where: { companyId_warehouseId_productId: { companyId: company.id, warehouseId: warehouses[0].id, productId: sack.id } },
+      update: {},
+      create: {
+        companyId: company.id,
+        branchId: accraBranch.id,
+        warehouseId: warehouses[0].id,
+        productId: sack.id,
+        uomId: bag.id,
+        reorderLevel: 100,
+        quantityOnHand: 1000
       }
     })
   ]);

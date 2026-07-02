@@ -46,8 +46,7 @@ export default function CheckoutPage() {
         notes: form.notes || undefined,
         lines: items.map((i) => ({
           productId: i.product.id,
-          qty: i.qty,
-          unitPrice: i.product.price ?? 0,
+          quantity: i.qty,
         })),
       });
       clear();

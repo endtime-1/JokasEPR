@@ -1,5 +1,6 @@
 import { renderHook, act } from "@testing-library/react-native";
 import { useSubmit } from "../useSubmit";
+import { useNetwork } from "../useNetwork";
 import { apiFetch } from "../../api/client";
 import { queueSubmission } from "../../db/database";
 
@@ -30,11 +31,11 @@ jest.mock("../../api/client", () => ({
 const mockApiFetch = apiFetch as jest.Mock;
 const mockQueueSubmission = queueSubmission as jest.Mock;
 
-const { useNetwork } = require("../useNetwork") as { useNetwork: jest.Mock };
+const mockUseNetwork = useNetwork as unknown as jest.Mock;
 
 beforeEach(() => {
   jest.clearAllMocks();
-  useNetwork.mockReturnValue({ online: true, recheck: jest.fn() });
+  mockUseNetwork.mockReturnValue({ online: true, recheck: jest.fn() });
 });
 
 describe("useSubmit", () => {
@@ -59,7 +60,7 @@ describe("useSubmit", () => {
   });
 
   it("queues to SQLite and calls onSuccess when offline", async () => {
-    useNetwork.mockReturnValue({ online: false, recheck: jest.fn() });
+    mockUseNetwork.mockReturnValue({ online: false, recheck: jest.fn() });
     const onSuccess = jest.fn();
 
     const { result } = await renderHook(() =>

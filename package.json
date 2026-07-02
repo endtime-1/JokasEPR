@@ -5,7 +5,7 @@
   "description": "Multi-farm agribusiness ERP monorepo for poultry, feed mill, soya processing, inventory, sales, finance, HR, maintenance, QC, marketing, and AI decision support.",
   "packageManager": "pnpm@9.15.0",
   "scripts": {
-    "dev": "pnpm --parallel --filter @jokas/api --filter @jokas/web dev",
+    "dev": "pnpm --parallel --filter @jokas/api --filter @jokas/web --filter @jokas/storefront dev",
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
     "lint:eslint": "eslint .",

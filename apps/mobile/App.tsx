@@ -6,6 +6,7 @@ import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_7
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthProvider } from "./src/auth/AuthContext";
 import { ErrorBoundary } from "./src/components/ErrorBoundary";
+import { ToastProvider } from "./src/components/Toast";
 import { RootNavigator } from "./src/navigation/RootNavigator";
 
 export default function App() {
@@ -24,8 +25,10 @@ export default function App() {
       <SafeAreaProvider>
         <AuthProvider>
           <NavigationContainer>
-            <StatusBar style="dark" />
-            <RootNavigator />
+            <ToastProvider>
+              <StatusBar style="dark" />
+              <RootNavigator />
+            </ToastProvider>
           </NavigationContainer>
         </AuthProvider>
       </SafeAreaProvider>

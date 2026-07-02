@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Put, Query, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { PermissionsGuard } from "../../common/guards/permissions.guard";
 import { RequirePermissions } from "../../common/decorators/permissions.decorator";
@@ -12,6 +12,7 @@ import {
   CreateDepartmentAssignmentDto,
   CreateEmployeeDto,
   CreateEmployeeRoleDto,
+  CreateLeaveRequestDto,
   CreatePayrollRecordDto,
   CreatePerformanceRecordDto,
   CreateShiftDto,
@@ -19,6 +20,7 @@ import {
   CreateTrainingRecordDto,
   HRQueryDto,
   RecordAttendanceDto,
+  ReviewLeaveRequestDto,
   UpdateAssignmentStatusDto,
   UpdateEmployeeDto,
   UpdateTaskStatusDto,
@@ -68,6 +70,18 @@ export class HRController {
   @RequirePermissions(PERMISSIONS.HR_READ)
   listEmployees(@CurrentUser() user: AuthenticatedUser, @Query() query: HRQueryDto) {
     return this.svc.listEmployees(user, query);
+  }
+
+  @Get("employees/me")
+  @RequirePermissions(PERMISSIONS.PLATFORM_READ)
+  getMyEmployee(@CurrentUser() user: AuthenticatedUser) {
+    return this.svc.getMyEmployee(user);
+  }
+
+  @Patch("employees/me")
+  @RequirePermissions(PERMISSIONS.PLATFORM_READ)
+  updateMyEmployee(@CurrentUser() user: AuthenticatedUser, @Body() dto: { phone?: string }, @Req() req: Request) {
+    return this.svc.updateMyEmployee(user, dto, ctx(req));
   }
 
   @Get("employees/:id")
@@ -174,6 +188,12 @@ export class HRController {
 
   // ─── Payroll ────────────────────────────────────────────────────────────────
 
+  @Get("payroll/me")
+  @RequirePermissions(PERMISSIONS.PLATFORM_READ)
+  getMyPayslips(@CurrentUser() user: AuthenticatedUser) {
+    return this.svc.getMyPayslips(user);
+  }
+
   @Get("payroll")
   @RequirePermissions(PERMISSIONS.HR_READ)
   listPayroll(@CurrentUser() user: AuthenticatedUser, @Query() query: HRQueryDto) {
@@ -252,5 +272,37 @@ export class HRController {
   @RequirePermissions(PERMISSIONS.HR_READ)
   productivityReport(@CurrentUser() user: AuthenticatedUser, @Query() query: HRQueryDto) {
     return this.svc.productivityReport(user, query);
+  }
+
+  // ─── Leave Requests ─────────────────────────────────────────────────────────
+
+  @Get("leave-requests/my")
+  @RequirePermissions(PERMISSIONS.PLATFORM_READ)
+  myLeaveRequests(@CurrentUser() user: AuthenticatedUser) {
+    return this.svc.myLeaveRequests(user);
+  }
+
+  @Get("leave-requests")
+  @RequirePermissions(PERMISSIONS.HR_READ)
+  listLeaveRequests(@CurrentUser() user: AuthenticatedUser, @Query() query: HRQueryDto) {
+    return this.svc.listLeaveRequests(user, query);
+  }
+
+  @Post("leave-requests")
+  @RequirePermissions(PERMISSIONS.PLATFORM_READ)
+  submitLeaveRequest(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateLeaveRequestDto, @Req() req: Request) {
+    return this.svc.submitLeaveRequest(user, dto, ctx(req));
+  }
+
+  @Patch("leave-requests/:id/review")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  reviewLeaveRequest(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: ReviewLeaveRequestDto, @Req() req: Request) {
+    return this.svc.reviewLeaveRequest(user, id, dto, ctx(req));
+  }
+
+  @Delete("leave-requests/:id")
+  @RequirePermissions(PERMISSIONS.PLATFORM_READ)
+  cancelLeaveRequest(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Req() req: Request) {
+    return this.svc.cancelLeaveRequest(user, id, ctx(req));
   }
 }

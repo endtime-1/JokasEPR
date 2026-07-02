@@ -1,12 +1,17 @@
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { fetchDashboardSummary, fetchHiproPredictive, fetchPlatformSummary } from "../../api/endpoints";
 import type { HiproPredictiveFormula } from "../../api/endpoints";
+import { EmptyState } from "../../components/EmptyState";
+import { Icon, type IconName } from "../../components/Icon";
+import { MetricCard } from "../../components/MetricCard";
+import { SkeletonMetricGrid } from "../../components/SkeletonLoader";
 import { colors, font, radius, shadow, spacing } from "../../constants/theme";
 
-type Metric = { label: string; value: string; icon: string; color: string };
+type Metric = { label: string; value: string; icon: IconName; color: string };
 
 export function DashboardScreen() {
   const navigation = useNavigation<any>();
@@ -36,36 +41,25 @@ export function DashboardScreen() {
 
   useEffect(() => { load(); }, [load]);
 
-  if (loading) {
-    return (
-      <SafeAreaView style={styles.safe} edges={["bottom"]}>
-        <View style={styles.loadingScreen}>
-          <ActivityIndicator size="large" color={colors.brand} />
-          <Text style={styles.loadingText}>Loading dashboard…</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
   const dash = summary as Record<string, any>;
   const plat = platform as Record<string, any>;
 
   const platformMetrics: Metric[] = [
-    { label: "Farms",      value: String(plat.farms      ?? "—"), icon: "🏡", color: colors.brand   },
-    { label: "Warehouses", value: String(plat.warehouses ?? "—"), icon: "🏠", color: "#8b5cf6"       },
-    { label: "Users",      value: String(plat.users      ?? "—"), icon: "👥", color: "#0891b2"       },
-    { label: "Branches",   value: String(plat.branches   ?? "—"), icon: "🏢", color: "#d97706"       },
+    { label: "Farms",      value: String(plat.farms      ?? "—"), icon: "home-city",       color: colors.brand },
+    { label: "Warehouses", value: String(plat.warehouses ?? "—"), icon: "warehouse",        color: "#8b5cf6"    },
+    { label: "Users",      value: String(plat.users      ?? "—"), icon: "account-multiple", color: "#0891b2"    },
+    { label: "Branches",   value: String(plat.branches   ?? "—"), icon: "office-building",  color: "#d97706"    },
   ];
 
   const summaryMetrics: Metric[] = [];
   if (dash.totalRevenue !== undefined)
-    summaryMetrics.push({ label: "Revenue (GHS)", value: Number(dash.totalRevenue).toLocaleString("en-GH", { maximumFractionDigits: 0 }), icon: "💰", color: "#16a34a" });
+    summaryMetrics.push({ label: "Revenue (GHS)", value: Number(dash.totalRevenue).toLocaleString("en-GH", { maximumFractionDigits: 0 }), icon: "cash",                color: "#16a34a"    });
   if (dash.openOrders !== undefined)
-    summaryMetrics.push({ label: "Open Orders",   value: String(dash.openOrders),                                                          icon: "🧾", color: colors.brand });
+    summaryMetrics.push({ label: "Open Orders",   value: String(dash.openOrders),                                                          icon: "receipt-text-outline", color: colors.brand });
   if (dash.totalBirds !== undefined)
-    summaryMetrics.push({ label: "Total Birds",   value: Number(dash.totalBirds).toLocaleString(),                                          icon: "🐔", color: "#16a34a" });
+    summaryMetrics.push({ label: "Total Birds",   value: Number(dash.totalBirds).toLocaleString(),                                          icon: "bird",                color: "#16a34a"    });
   if (dash.pendingAlerts !== undefined)
-    summaryMetrics.push({ label: "Pending Alerts",value: String(dash.pendingAlerts),                                                        icon: "⚠️", color: "#d97706" });
+    summaryMetrics.push({ label: "Pending Alerts",value: String(dash.pendingAlerts),                                                        icon: "alert-circle-outline", color: "#d97706"   });
 
   const today = new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 
@@ -81,46 +75,55 @@ export function DashboardScreen() {
           <View style={[styles.deco, styles.decoTR]} />
           <View style={[styles.deco, styles.decoBL]} />
           <View style={styles.heroIcon}>
-            <Text style={styles.heroEmoji}>📊</Text>
+            <MaterialCommunityIcons name="chart-areaspline" size={32} color="rgba(255,255,255,0.9)" />
           </View>
           <Text style={styles.heroTitle}>Dashboard</Text>
           <Text style={styles.heroDate}>{today}</Text>
         </View>
 
         {/* Business overview */}
-        {summaryMetrics.length > 0 && (
+        {(loading && summaryMetrics.length === 0) ? (
+          <View style={styles.section}>
+            <SectionLabel title="BUSINESS OVERVIEW" />
+            <SkeletonMetricGrid />
+          </View>
+        ) : summaryMetrics.length > 0 ? (
           <View style={styles.section}>
             <SectionLabel title="BUSINESS OVERVIEW" />
             <View style={styles.grid}>
               {summaryMetrics.map((m) => <MetricCard key={m.label} {...m} />)}
             </View>
           </View>
+        ) : (
+          <View style={styles.section}>
+            <EmptyState
+              icon="chart-areaspline"
+              title="No business data yet"
+              subtitle="Dashboard metrics will appear here once your ERP has activity. Pull down to refresh."
+              iconColor={colors.brand}
+            />
+          </View>
         )}
 
-        {/* Operations */}
+        {/* Platform overview */}
         <View style={styles.section}>
           <SectionLabel title="PLATFORM OVERVIEW" />
-          <View style={styles.grid}>
-            {platformMetrics.map((m) => <MetricCard key={m.label} {...m} />)}
-          </View>
+          {loading ? (
+            <SkeletonMetricGrid />
+          ) : (
+            <View style={styles.grid}>
+              {platformMetrics.map((m) => <MetricCard key={m.label} {...m} />)}
+            </View>
+          )}
         </View>
 
-        {summaryMetrics.length === 0 && (
-          <View style={styles.noDataCard}>
-            <Text style={styles.noDataEmoji}>📈</Text>
-            <Text style={styles.noDataTitle}>No business data yet</Text>
-            <Text style={styles.noDataDesc}>Dashboard metrics will appear here once your ERP has activity. Pull down to refresh.</Text>
-          </View>
-        )}
-
-        {/* ── Feed Predictive snapshot ── */}
+        {/* Feed Predictive snapshot */}
         {feedFormulas.length > 0 && (
           <FeedPredictiveWidget
             formulas={feedFormulas}
             onPress={() => navigation.navigate("RecordsTab", { screen: "HiproPredict" })}
           />
         )}
-
       </ScrollView>
     </SafeAreaView>
   );
@@ -128,35 +131,39 @@ export function DashboardScreen() {
 
 function FeedPredictiveWidget({ formulas, onPress }: { formulas: HiproPredictiveFormula[]; onPress: () => void }) {
   const canProduceCount = formulas.filter((f) => f.maxProducibleTons !== null && f.maxProducibleTons > 0).length;
-  const atRisk = formulas.filter((f) => f.maxProducibleTons !== null && f.maxProducibleTons < 5);
-  const outOfStock = formulas.filter((f) => f.maxProducibleTons !== null && f.maxProducibleTons <= 0);
+  const atRisk          = formulas.filter((f) => f.maxProducibleTons !== null && f.maxProducibleTons < 5);
+  const outOfStock      = formulas.filter((f) => f.maxProducibleTons !== null && f.maxProducibleTons <= 0);
 
   const mostCritical = formulas
     .filter((f) => f.maxProducibleTons !== null)
     .sort((a, b) => (a.maxProducibleTons ?? 0) - (b.maxProducibleTons ?? 0))[0];
 
-  const statusColor = outOfStock.length > 0 ? "#dc2626" : atRisk.length > 0 ? "#d97706" : "#16a34a";
-  const statusBg = outOfStock.length > 0 ? "#fef2f2" : atRisk.length > 0 ? "#fffbeb" : "#f0fdf4";
+  const statusColor  = outOfStock.length > 0 ? "#dc2626" : atRisk.length > 0 ? "#d97706" : "#16a34a";
+  const statusBg     = outOfStock.length > 0 ? "#fef2f2" : atRisk.length > 0 ? "#fffbeb" : "#f0fdf4";
   const statusBorder = outOfStock.length > 0 ? "#fecaca" : atRisk.length > 0 ? "#fde68a" : "#86efac";
-  const statusIcon = outOfStock.length > 0 ? "🔴" : atRisk.length > 0 ? "⚠️" : "✅";
+  const statusIconName: IconName = outOfStock.length > 0 ? "alert-circle" : atRisk.length > 0 ? "alert" : "check-circle";
 
   return (
     <View style={styles.section}>
       <SectionLabel title="FEED PREDICTIVE SNAPSHOT" />
-      <TouchableOpacity style={[styles.predictCard, { borderColor: statusBorder, backgroundColor: statusBg }]} onPress={onPress} activeOpacity={0.8}>
-        {/* Header row */}
+      <TouchableOpacity
+        style={[styles.predictCard, { borderColor: statusBorder, backgroundColor: statusBg }]}
+        onPress={onPress}
+        activeOpacity={0.8}
+      >
         <View style={styles.predictHeader}>
           <View style={styles.predictHeaderLeft}>
-            <Text style={styles.predictIcon}>🧮</Text>
+            <View style={[styles.predictIconWrap, { backgroundColor: statusColor + "18" }]}>
+              <Icon name="calculator-variant" size={22} color={statusColor} />
+            </View>
             <View>
               <Text style={[styles.predictTitle, { color: statusColor }]}>Hipro Predictive</Text>
               <Text style={styles.predictSub}>Live ingredient stock analysis</Text>
             </View>
           </View>
-          <Text style={styles.predictArrow}>›</Text>
+          <Icon name="chevron-right" size={22} color={colors.inkLight} />
         </View>
 
-        {/* Stat row */}
         <View style={styles.predictStatRow}>
           <PredictStat label="Can Produce" value={`${canProduceCount}/${formulas.length}`} color="#16a34a" />
           <View style={styles.predictStatDivider} />
@@ -165,10 +172,12 @@ function FeedPredictiveWidget({ formulas, onPress }: { formulas: HiproPredictive
           <PredictStat label="Out of Stock" value={String(outOfStock.length)} color="#dc2626" />
         </View>
 
-        {/* Most critical */}
-        {mostCritical && (
+        {mostCritical ? (
           <View style={[styles.criticalRow, { borderColor: statusBorder }]}>
-            <Text style={styles.criticalLabel}>{statusIcon} Most critical:</Text>
+            <View style={styles.criticalLabelRow}>
+              <Icon name={statusIconName} size={13} color={statusColor} />
+              <Text style={styles.criticalLabel}>Most critical:</Text>
+            </View>
             <Text style={[styles.criticalName, { color: statusColor }]}>{mostCritical.formulaName}</Text>
             <Text style={styles.criticalDetail}>
               {mostCritical.maxProducibleTons != null
@@ -177,7 +186,7 @@ function FeedPredictiveWidget({ formulas, onPress }: { formulas: HiproPredictive
               {mostCritical.limitingIngredient ? ` · Limited by ${mostCritical.limitingIngredient.name}` : ""}
             </Text>
           </View>
-        )}
+        ) : null}
 
         <Text style={[styles.predictTapHint, { color: statusColor }]}>Tap to view full predictive analysis →</Text>
       </TouchableOpacity>
@@ -203,24 +212,9 @@ function SectionLabel({ title }: { title: string }) {
   );
 }
 
-function MetricCard({ label, value, icon, color }: Metric) {
-  return (
-    <View style={styles.metricCard}>
-      <View style={[styles.metricIconWrap, { backgroundColor: color + "18" }]}>
-        <Text style={styles.metricEmoji}>{icon}</Text>
-      </View>
-      <Text style={[styles.metricValue, { color }]}>{value}</Text>
-      <Text style={styles.metricLabel}>{label}</Text>
-      <View style={[styles.metricAccent, { backgroundColor: color }]} />
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bg },
+  safe:      { flex: 1, backgroundColor: colors.bg },
   container: { paddingBottom: spacing.xxxl },
-  loadingScreen: { flex: 1, alignItems: "center", justifyContent: "center", gap: spacing.md },
-  loadingText: { fontSize: font.size.sm, color: colors.inkLight },
 
   hero: {
     backgroundColor: colors.brand,
@@ -231,91 +225,34 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     marginBottom: spacing.xl,
   },
-  deco: {
-    position: "absolute",
-    borderRadius: radius.full,
-    backgroundColor: "rgba(255,255,255,0.1)",
-  },
-  decoTR: { width: 160, height: 160, top: -50, right: -40 },
-  decoBL: { width: 120, height: 120, bottom: -30, left: -20 },
-  heroIcon: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
+  deco:    { position: "absolute", borderRadius: radius.full, backgroundColor: "rgba(255,255,255,0.1)" },
+  decoTR:  { width: 160, height: 160, top: -50, right: -40 },
+  decoBL:  { width: 120, height: 120, bottom: -30, left: -20 },
+  heroIcon:{
+    width: 68, height: 68, borderRadius: 34,
     backgroundColor: "rgba(255,255,255,0.2)",
-    alignItems: "center",
-    justifyContent: "center",
+    alignItems: "center", justifyContent: "center",
     marginBottom: spacing.xs,
   },
-  heroEmoji: { fontSize: 32 },
-  heroTitle: { fontSize: font.size.xxl, fontWeight: font.weight.extrabold, color: colors.white },
-  heroDate: { fontSize: font.size.sm, color: "rgba(255,255,255,0.8)" },
+  heroTitle: { fontSize: font.size.xxl, fontFamily: font.family.extrabold, color: colors.white },
+  heroDate:  { fontSize: font.size.sm, color: "rgba(255,255,255,0.8)", fontFamily: font.family.regular },
 
-  section: { paddingHorizontal: spacing.xl, gap: spacing.md, marginBottom: spacing.xl },
+  section:         { paddingHorizontal: spacing.xl, gap: spacing.md, marginBottom: spacing.xl },
   sectionLabelRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
-  sectionLabelText: { fontSize: font.size.xs, fontWeight: font.weight.bold, color: colors.inkLight, letterSpacing: 1.2 },
-  sectionLabelLine: { flex: 1, height: 1, backgroundColor: colors.border },
+  sectionLabelText:{ fontSize: font.size.xs, fontFamily: font.family.bold, color: colors.inkLight, letterSpacing: 1.2 },
+  sectionLabelLine:{ flex: 1, height: 1, backgroundColor: colors.border },
 
   grid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.md },
-  metricCard: {
-    width: "47%",
-    backgroundColor: colors.bgCard,
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.lg,
-    gap: spacing.sm,
-    overflow: "hidden",
-    ...shadow.md,
-  },
-  metricIconWrap: {
-    width: 48,
-    height: 48,
-    borderRadius: radius.md,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  metricEmoji: { fontSize: 24 },
-  metricValue: { fontSize: font.size.xxl, fontWeight: font.weight.extrabold },
-  metricLabel: { fontSize: font.size.sm, color: colors.inkMid, fontWeight: font.weight.medium },
-  metricAccent: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 3,
-    borderBottomLeftRadius: radius.xl,
-    borderBottomRightRadius: radius.xl,
-  },
-
-  noDataCard: {
-    marginHorizontal: spacing.xl,
-    backgroundColor: colors.brandLight,
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    borderColor: colors.brandMid,
-    padding: spacing.xxl,
-    alignItems: "center",
-    gap: spacing.md,
-  },
-  noDataEmoji: { fontSize: 40 },
-  noDataTitle: { fontSize: font.size.lg, fontWeight: font.weight.bold, color: colors.brandDark },
-  noDataDesc: { fontSize: font.size.sm, color: colors.brand, textAlign: "center", lineHeight: 20 },
 
   // Feed Predictive widget
   predictCard: {
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    padding: spacing.lg,
-    gap: spacing.md,
-    ...shadow.md,
+    borderRadius: radius.xl, borderWidth: 1, padding: spacing.lg, gap: spacing.md, ...shadow.md,
   },
-  predictHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  predictHeader:     { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   predictHeaderLeft: { flexDirection: "row", alignItems: "center", gap: spacing.md },
-  predictIcon: { fontSize: 28 },
-  predictTitle: { fontSize: font.size.md, fontWeight: font.weight.bold as any },
-  predictSub: { fontSize: font.size.xs, color: colors.inkLight },
-  predictArrow: { fontSize: 24, color: colors.inkLight },
+  predictIconWrap:   { width: 48, height: 48, borderRadius: radius.md, alignItems: "center", justifyContent: "center" },
+  predictTitle:      { fontSize: font.size.md, fontFamily: font.family.bold },
+  predictSub:        { fontSize: font.size.xs, color: colors.inkLight, fontFamily: font.family.regular },
 
   predictStatRow: {
     flexDirection: "row",
@@ -324,19 +261,16 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     alignItems: "center",
   },
-  predictStat: { flex: 1, alignItems: "center", gap: 2 },
-  predictStatVal: { fontSize: font.size.xl, fontWeight: font.weight.extrabold as any },
-  predictStatLabel: { fontSize: 10, color: colors.inkLight, fontWeight: font.weight.medium as any },
-  predictStatDivider: { width: 1, height: 36, backgroundColor: colors.border },
+  predictStat:       { flex: 1, alignItems: "center", gap: 2 },
+  predictStatVal:    { fontSize: font.size.xl, fontFamily: font.family.extrabold },
+  predictStatLabel:  { fontSize: 10, color: colors.inkLight, fontFamily: font.family.medium },
+  predictStatDivider:{ width: 1, height: 36, backgroundColor: colors.border },
 
-  criticalRow: {
-    borderTopWidth: 1,
-    paddingTop: spacing.sm,
-    gap: 3,
-  },
-  criticalLabel: { fontSize: font.size.xs, color: colors.inkMid, fontWeight: font.weight.semibold as any },
-  criticalName: { fontSize: font.size.sm, fontWeight: font.weight.bold as any },
-  criticalDetail: { fontSize: font.size.xs, color: colors.inkMid },
+  criticalRow:     { borderTopWidth: 1, paddingTop: spacing.sm, gap: 3 },
+  criticalLabelRow:{ flexDirection: "row", alignItems: "center", gap: 5 },
+  criticalLabel:   { fontSize: font.size.xs, color: colors.inkMid, fontFamily: font.family.semibold },
+  criticalName:    { fontSize: font.size.sm, fontFamily: font.family.bold },
+  criticalDetail:  { fontSize: font.size.xs, color: colors.inkMid, fontFamily: font.family.regular },
 
-  predictTapHint: { fontSize: font.size.xs, fontWeight: font.weight.semibold as any, textAlign: "right" },
+  predictTapHint: { fontSize: font.size.xs, fontFamily: font.family.semibold, textAlign: "right" },
 });

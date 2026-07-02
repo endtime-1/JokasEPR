@@ -139,12 +139,12 @@ export function StockAlertsScreen() {
         <View style={styles.center}><Text style={styles.errorText}>{error}</Text></View>
       ) : (
         <FlatList
-          data={data}
+          data={data as any}
           keyExtractor={(i) => i.id}
           renderItem={({ item }) =>
             tab === "low_stock"
-              ? <LowStockRow item={item as LowStockAlert} />
-              : <ExpiryRow   item={item as ExpiryAlert}   />
+              ? <LowStockRow item={item as any} />
+              : <ExpiryRow   item={item as any}   />
           }
           refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={colors.brand} />}
           contentContainerStyle={styles.list}

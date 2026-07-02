@@ -1,21 +1,26 @@
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, FlatList, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { SyncBanner } from "../../components/SyncBanner";
+import { EmptyState } from "../../components/EmptyState";
+import { Icon } from "../../components/Icon";
+import { PageHeader } from "../../components/PageHeader";
+import { SegmentedControl } from "../../components/SegmentedControl";
+import { SkeletonList } from "../../components/SkeletonLoader";
 import { fetchFinanceDashboard, FinanceDashboardData } from "../../api/endpoints";
-import { colors, font, radius, shadow, spacing } from "../../constants/theme";
+import { colors, font, radius, semantic, shadow, spacing } from "../../constants/theme";
 
 const GHS = (n: number) =>
   `GHS ${Number(n).toLocaleString("en-GH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 type Tab = "expenses" | "revenue";
 
-const EXPENSE_STATUS: Record<string, { bg: string; color: string }> = {
-  PENDING:          { bg: "#f1f5f9", color: "#475569" },
-  PENDING_APPROVAL: { bg: "#fff7ed", color: "#c2410c" },
-  APPROVED:         { bg: "#f0fdf4", color: "#15803d" },
-  REJECTED:         { bg: "#fef2f2", color: "#b91c1c" },
-  PAID:             { bg: "#f0fdf4", color: "#15803d" },
+const EXPENSE_STATUS: Record<string, { bg: string; color: string; border: string }> = {
+  PENDING:          { ...semantic.status.draft      },
+  PENDING_APPROVAL: { ...semantic.status.submitted  },
+  APPROVED:         { ...semantic.status.approved   },
+  REJECTED:         { ...semantic.status.rejected   },
+  PAID:             { ...semantic.status.approved   },
 };
 
 export function FinanceMobileScreen() {
@@ -42,7 +47,9 @@ export function FinanceMobileScreen() {
   if (loading && !dash) {
     return (
       <SafeAreaView style={styles.safe} edges={["bottom"]}>
-        <View style={styles.center}><ActivityIndicator size="large" color={colors.brand} /></View>
+        <View style={styles.skeletonPad}>
+          <SkeletonList count={4} />
+        </View>
       </SafeAreaView>
     );
   }
@@ -50,7 +57,14 @@ export function FinanceMobileScreen() {
   if (error) {
     return (
       <SafeAreaView style={styles.safe} edges={["bottom"]}>
-        <View style={styles.center}><Text style={styles.errorText}>{error}</Text></View>
+        <EmptyState
+          icon="alert-circle-outline"
+          title="Failed to load"
+          subtitle={error}
+          iconColor="#dc2626"
+          actionLabel="Retry"
+          onAction={load}
+        />
       </SafeAreaView>
     );
   }
@@ -66,35 +80,51 @@ export function FinanceMobileScreen() {
         refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={colors.brand} />}
       >
         {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>Finance Overview</Text>
-          <Text style={styles.headerSub}>Current period · read-only</Text>
-        </View>
+        <PageHeader
+          icon="chart-line"
+          title="Finance Overview"
+          subtitle="Current period · read-only"
+        />
 
         {/* KPI grid */}
         <View style={styles.kpiGrid}>
           <View style={[styles.kpiCard, styles.kpiCardRevenue]}>
-            <Text style={styles.kpiLabel}>Revenue</Text>
+            <View style={styles.kpiIconRow}>
+              <Icon name="trending-up" size={16} color="#15803d" />
+              <Text style={styles.kpiLabel}>Revenue</Text>
+            </View>
             <Text style={[styles.kpiValue, { color: "#15803d" }]}>{GHS(dash?.totalRevenue ?? 0)}</Text>
           </View>
           <View style={[styles.kpiCard, styles.kpiCardExpense]}>
-            <Text style={styles.kpiLabel}>Expenses</Text>
+            <View style={styles.kpiIconRow}>
+              <Icon name="trending-down" size={16} color="#dc2626" />
+              <Text style={styles.kpiLabel}>Expenses</Text>
+            </View>
             <Text style={[styles.kpiValue, { color: "#dc2626" }]}>{GHS(dash?.totalExpenses ?? 0)}</Text>
           </View>
           <View style={[styles.kpiCard, styles.kpiCardProfit, { borderColor: profit >= 0 ? "#bbf7d0" : "#fca5a5", backgroundColor: profit >= 0 ? "#f0fdf4" : "#fef2f2" }]}>
-            <Text style={styles.kpiLabel}>Net Profit</Text>
+            <View style={styles.kpiIconRow}>
+              <Icon name="scale-balance" size={16} color={profitColor} />
+              <Text style={styles.kpiLabel}>Net Profit</Text>
+            </View>
             <Text style={[styles.kpiValueLg, { color: profitColor }]}>{GHS(profit)}</Text>
           </View>
           <View style={[styles.kpiCard, { backgroundColor: "#fff7ed", borderColor: "#fed7aa" }]}>
-            <Text style={styles.kpiLabel}>Pending Approvals</Text>
+            <View style={styles.kpiIconRow}>
+              <Icon name="clock-outline" size={16} color="#d97706" />
+              <Text style={styles.kpiLabel}>Pending Approvals</Text>
+            </View>
             <Text style={[styles.kpiValueLg, { color: "#d97706" }]}>{dash?.pendingApprovals ?? 0}</Text>
           </View>
         </View>
 
         {/* Bank accounts */}
-        {(dash?.bankAccounts?.length ?? 0) > 0 && (
+        {(dash?.bankAccounts?.length ?? 0) > 0 ? (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>🏦 Bank Balances</Text>
+            <View style={styles.sectionTitleRow}>
+              <Icon name="bank" size={16} color={colors.inkMid} />
+              <Text style={styles.sectionTitle}>Bank Balances</Text>
+            </View>
             <View style={styles.bankList}>
               {dash!.bankAccounts.map((b) => (
                 <View key={b.id} style={styles.bankRow}>
@@ -109,20 +139,19 @@ export function FinanceMobileScreen() {
               ))}
             </View>
           </View>
-        )}
+        ) : null}
 
         {/* Recent activity tabs */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Recent Activity</Text>
-          <View style={styles.tabRow}>
-            {(["expenses", "revenue"] as Tab[]).map((t) => (
-              <TouchableOpacity key={t} style={[styles.tabBtn, tab === t && styles.tabBtnActive]} onPress={() => setTab(t)}>
-                <Text style={[styles.tabLabel, tab === t && styles.tabLabelActive]}>
-                  {t === "expenses" ? "Expenses" : "Revenue"}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          <SegmentedControl
+            segments={[
+              { key: "expenses", label: "Expenses", icon: "credit-card-minus" },
+              { key: "revenue",  label: "Revenue",  icon: "cash-plus"         },
+            ]}
+            active={tab}
+            onChange={(k) => setTab(k as Tab)}
+          />
 
           {tab === "expenses" ? (
             dash?.recentExpenses?.length ? (
@@ -137,14 +166,16 @@ export function FinanceMobileScreen() {
                     </View>
                     <View style={styles.txRight}>
                       <Text style={[styles.txAmount, { color: "#dc2626" }]}>-{GHS(Number(e.amount))}</Text>
-                      <View style={[styles.txBadge, { backgroundColor: sc.bg }]}>
+                      <View style={[styles.txBadge, { backgroundColor: sc.bg, borderColor: sc.border }]}>
                         <Text style={[styles.txBadgeText, { color: sc.color }]}>{e.status.replace("_", " ")}</Text>
                       </View>
                     </View>
                   </View>
                 );
               })
-            ) : <Text style={styles.empty}>No recent expenses</Text>
+            ) : (
+              <EmptyState icon="receipt-text-outline" title="No recent expenses" iconColor="#dc2626" />
+            )
           ) : (
             dash?.recentRevenue?.length ? (
               dash.recentRevenue.map((r) => (
@@ -156,7 +187,9 @@ export function FinanceMobileScreen() {
                   <Text style={[styles.txAmount, { color: "#15803d" }]}>+{GHS(Number(r.amount))}</Text>
                 </View>
               ))
-            ) : <Text style={styles.empty}>No recent revenue</Text>
+            ) : (
+              <EmptyState icon="cash-plus" title="No recent revenue" iconColor="#16a34a" />
+            )
           )}
         </View>
       </ScrollView>
@@ -165,45 +198,34 @@ export function FinanceMobileScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: colors.bg },
-  scroll: { padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.lg },
-  center: { flex: 1, alignItems: "center", justifyContent: "center", padding: spacing.xxl },
+  safe:       { flex: 1, backgroundColor: colors.bg },
+  scroll:     { padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.lg },
+  skeletonPad:{ padding: spacing.xl, gap: spacing.sm },
 
-  header:     { gap: 3 },
-  headerTitle: { fontSize: font.size.xxl, fontWeight: font.weight.extrabold, color: colors.ink },
-  headerSub:  { fontSize: font.size.sm, color: colors.inkLight },
+  kpiGrid:       { flexDirection: "row", flexWrap: "wrap", gap: spacing.md },
+  kpiCard:       { flex: 1, minWidth: "44%", padding: spacing.lg, borderRadius: radius.xl, borderWidth: 1, gap: 6, ...shadow.sm },
+  kpiCardRevenue:{ backgroundColor: "#f0fdf4", borderColor: "#bbf7d0" },
+  kpiCardExpense:{ backgroundColor: "#fef2f2", borderColor: "#fca5a5" },
+  kpiCardProfit: { flex: 2, minWidth: "100%" },
+  kpiIconRow:    { flexDirection: "row", alignItems: "center", gap: 6 },
+  kpiLabel:      { fontSize: font.size.xs, fontFamily: font.family.bold, color: colors.inkLight, textTransform: "uppercase", letterSpacing: 0.5 },
+  kpiValue:      { fontSize: font.size.lg, fontFamily: font.family.extrabold },
+  kpiValueLg:    { fontSize: 28, fontFamily: font.family.extrabold },
 
-  kpiGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.md },
-  kpiCard: {
-    flex: 1, minWidth: "44%", padding: spacing.lg, borderRadius: radius.xl,
-    borderWidth: 1, gap: 6, ...shadow.sm,
-  },
-  kpiCardRevenue: { backgroundColor: "#f0fdf4", borderColor: "#bbf7d0" },
-  kpiCardExpense: { backgroundColor: "#fef2f2", borderColor: "#fca5a5" },
-  kpiCardProfit:  { flex: 2, minWidth: "100%" },
-  kpiLabel:   { fontSize: font.size.xs, fontWeight: font.weight.bold, color: colors.inkLight, textTransform: "uppercase", letterSpacing: 0.5 },
-  kpiValue:   { fontSize: font.size.lg, fontWeight: font.weight.extrabold },
-  kpiValueLg: { fontSize: 28, fontWeight: font.weight.extrabold },
+  section:        { gap: spacing.md },
+  sectionTitleRow:{ flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  sectionTitle:   { fontSize: font.size.md, fontFamily: font.family.bold, color: colors.ink },
 
-  section:      { gap: spacing.md },
-  sectionTitle: { fontSize: font.size.md, fontWeight: font.weight.bold, color: colors.ink },
-
-  bankList: { gap: spacing.sm },
-  bankRow: {
+  bankList:    { gap: spacing.sm },
+  bankRow:     {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     backgroundColor: colors.bgCard, borderRadius: radius.lg, borderWidth: 1,
     borderColor: colors.border, padding: spacing.md, ...shadow.sm,
   },
   bankLeft:    { gap: 2 },
-  bankName:    { fontSize: font.size.sm, fontWeight: font.weight.semibold, color: colors.ink },
-  bankSub:     { fontSize: font.size.xs, color: colors.inkLight },
-  bankBalance: { fontSize: font.size.md, fontWeight: font.weight.extrabold },
-
-  tabRow:        { flexDirection: "row", backgroundColor: colors.bg, borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border, overflow: "hidden" },
-  tabBtn:        { flex: 1, paddingVertical: spacing.md, alignItems: "center" },
-  tabBtnActive:  { backgroundColor: colors.brand },
-  tabLabel:      { fontSize: font.size.sm, fontWeight: font.weight.semibold, color: colors.inkLight },
-  tabLabelActive: { color: colors.white },
+  bankName:    { fontSize: font.size.sm, fontFamily: font.family.semibold, color: colors.ink },
+  bankSub:     { fontSize: font.size.xs, color: colors.inkLight, fontFamily: font.family.regular },
+  bankBalance: { fontSize: font.size.md, fontFamily: font.family.extrabold },
 
   txRow: {
     flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between",
@@ -211,13 +233,10 @@ const styles = StyleSheet.create({
   },
   txLeft:      { flex: 1, gap: 2 },
   txRight:     { alignItems: "flex-end", gap: 4 },
-  txTitle:     { fontSize: font.size.sm, fontWeight: font.weight.semibold, color: colors.ink },
-  txMeta:      { fontSize: font.size.xs, color: colors.inkLight },
-  txDate:      { fontSize: font.size.xs, color: colors.inkLight },
-  txAmount:    { fontSize: font.size.sm, fontWeight: font.weight.extrabold },
-  txBadge:     { paddingHorizontal: spacing.sm, paddingVertical: 2, borderRadius: radius.full },
-  txBadgeText: { fontSize: 9, fontWeight: font.weight.bold, textTransform: "uppercase" },
-
-  errorText: { fontSize: font.size.sm, color: colors.error, textAlign: "center" },
-  empty:     { fontSize: font.size.sm, color: colors.inkLight, textAlign: "center", paddingVertical: spacing.lg },
+  txTitle:     { fontSize: font.size.sm, fontFamily: font.family.semibold, color: colors.ink },
+  txMeta:      { fontSize: font.size.xs, color: colors.inkLight, fontFamily: font.family.regular },
+  txDate:      { fontSize: font.size.xs, color: colors.inkLight, fontFamily: font.family.regular },
+  txAmount:    { fontSize: font.size.sm, fontFamily: font.family.extrabold },
+  txBadge:     { paddingHorizontal: spacing.sm, paddingVertical: 2, borderRadius: radius.full, borderWidth: 1 },
+  txBadgeText: { fontSize: 9, fontFamily: font.family.bold, textTransform: "uppercase" },
 });

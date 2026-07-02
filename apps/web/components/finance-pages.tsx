@@ -557,6 +557,7 @@ export function ExpenseListPage() {
   const [status, setStatus] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [actionErr, setActionErr] = useState("");
 
   function load() {
     const params = new URLSearchParams();
@@ -571,15 +572,25 @@ export function ExpenseListPage() {
   useEffect(() => { load(); }, [status, startDate, endDate]);
 
   async function handleApprove(id: string) {
-    await apiFetch(`/finance/expenses/${id}/approve`, { method: "PATCH", body: JSON.stringify({}) });
-    load();
+    setActionErr("");
+    try {
+      await apiFetch(`/finance/expenses/${id}/approve`, { method: "PATCH", body: JSON.stringify({}) });
+      load();
+    } catch (err: unknown) {
+      setActionErr(err instanceof Error ? err.message : "Failed to approve expense");
+    }
   }
 
   async function handleReject(id: string) {
     const reason = prompt("Rejection reason:");
     if (!reason) return;
-    await apiFetch(`/finance/expenses/${id}/reject`, { method: "PATCH", body: JSON.stringify({ reason }) });
-    load();
+    setActionErr("");
+    try {
+      await apiFetch(`/finance/expenses/${id}/reject`, { method: "PATCH", body: JSON.stringify({ reason }) });
+      load();
+    } catch (err: unknown) {
+      setActionErr(err instanceof Error ? err.message : "Failed to reject expense");
+    }
   }
 
   return (
@@ -587,6 +598,7 @@ export function ExpenseListPage() {
       <div className="mb-4 flex justify-end">
         <Link href="/finance/expenses/create" className={btnPrimary}><BadgeDollarSign className="h-4 w-4" /> Record Expense</Link>
       </div>
+      {actionErr && <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{actionErr}</p>}
       <div className="mb-4 flex flex-wrap gap-3">
         <select className={selectClass} value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">All Statuses</option>
@@ -1054,6 +1066,7 @@ export function PayrollPage() {
   const [form, setForm] = useState({ period: new Date().toISOString().slice(0, 7), periodStart: "", periodEnd: "", employeeName: "", employeeCode: "", basicSalary: "", allowances: "0", deductions: "0", taxDeduction: "0", ssnit: "0", branchId: "", bankAccountId: "", notes: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [actionErr, setActionErr] = useState("");
 
   function load() {
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/finance/payroll")
@@ -1083,13 +1096,23 @@ export function PayrollPage() {
   }
 
   async function handleApprove(id: string) {
-    await apiFetch(`/finance/payroll/${id}/approve`, { method: "PATCH", body: JSON.stringify({}) });
-    load();
+    setActionErr("");
+    try {
+      await apiFetch(`/finance/payroll/${id}/approve`, { method: "PATCH", body: JSON.stringify({}) });
+      load();
+    } catch (err: unknown) {
+      setActionErr(err instanceof Error ? err.message : "Failed to approve payroll record");
+    }
   }
 
   async function handleMarkPaid(id: string) {
-    await apiFetch(`/finance/payroll/${id}/mark-paid`, { method: "PATCH", body: JSON.stringify({}) });
-    load();
+    setActionErr("");
+    try {
+      await apiFetch(`/finance/payroll/${id}/mark-paid`, { method: "PATCH", body: JSON.stringify({}) });
+      load();
+    } catch (err: unknown) {
+      setActionErr(err instanceof Error ? err.message : "Failed to mark payroll as paid");
+    }
   }
 
   return (
@@ -1097,6 +1120,7 @@ export function PayrollPage() {
       <div className="mb-4 flex justify-end">
         <button className={btnPrimary} onClick={() => setShowForm(!showForm)}><Wallet className="h-4 w-4" /> {showForm ? "Cancel" : "Add Payroll Record"}</button>
       </div>
+      {actionErr && <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{actionErr}</p>}
       {showForm && (
         <form onSubmit={handleSubmit} className="mb-6 rounded-md border border-line bg-white p-6 shadow-panel">
           <h3 className="mb-4 text-lg font-semibold">New Payroll Record</h3>
@@ -1236,6 +1260,7 @@ export function JournalEntriesPage() {
   const [lines, setLines] = useState([{ accountId: "", description: "", debit: "", credit: "", sequence: 1 }]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [actionErr, setActionErr] = useState("");
 
   function load() {
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/finance/journal-entries")
@@ -1273,8 +1298,13 @@ export function JournalEntriesPage() {
   }
 
   async function handlePost(id: string) {
-    await apiFetch(`/finance/journal-entries/${id}/post`, { method: "PATCH", body: JSON.stringify({}) });
-    load();
+    setActionErr("");
+    try {
+      await apiFetch(`/finance/journal-entries/${id}/post`, { method: "PATCH", body: JSON.stringify({}) });
+      load();
+    } catch (err: unknown) {
+      setActionErr(err instanceof Error ? err.message : "Failed to post journal entry");
+    }
   }
 
   return (
@@ -1282,6 +1312,7 @@ export function JournalEntriesPage() {
       <div className="mb-4 flex justify-end">
         <button className={btnPrimary} onClick={() => setShowForm(!showForm)}><BookOpen className="h-4 w-4" /> {showForm ? "Cancel" : "New Journal Entry"}</button>
       </div>
+      {actionErr && <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{actionErr}</p>}
       {showForm && (
         <form onSubmit={handleSubmit} className="mb-6 rounded-md border border-line bg-white p-6 shadow-panel">
           <h3 className="mb-4 text-lg font-semibold">New Journal Entry</h3>
@@ -1634,6 +1665,151 @@ export function BatchProfitabilityPage() {
         rows={records}
         empty="No batch profitability records."
       />
+    </FinanceShell>
+  );
+}
+
+// ─── Chart of Accounts ────────────────────────────────────────────────────────
+
+type AccountRow = { id: string; code: string; name: string; type: string; description?: string | null };
+
+const ACCOUNT_TYPE_META: Record<string, { label: string; color: string; bg: string }> = {
+  ASSET:     { label: "Assets",      color: "text-blue-700",   bg: "bg-blue-50"   },
+  LIABILITY: { label: "Liabilities", color: "text-red-700",    bg: "bg-red-50"    },
+  EQUITY:    { label: "Equity",      color: "text-purple-700", bg: "bg-purple-50" },
+  REVENUE:   { label: "Revenue",     color: "text-green-700",  bg: "bg-green-50"  },
+  EXPENSE:   { label: "Expenses",    color: "text-orange-700", bg: "bg-orange-50" }
+};
+
+const ACCOUNT_TYPES = ["ASSET", "LIABILITY", "EQUITY", "REVENUE", "EXPENSE"] as const;
+
+export function ChartOfAccountsPage() {
+  const [accounts, setAccounts] = useState<AccountRow[]>([]);
+  const [showForm, setShowForm] = useState(false);
+  const [search, setSearch] = useState("");
+  const [refresh, setRefresh] = useState(0);
+  const [form, setForm] = useState({ code: "", name: "", type: "ASSET", description: "" });
+  const [formErr, setFormErr] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const params = search ? `?search=${encodeURIComponent(search)}` : "";
+      apiFetch<ApiEnvelope<AccountRow[]>>(`/finance/accounts${params}`)
+        .then((r) => setAccounts(r.data))
+        .catch(() => undefined);
+    }, search ? 300 : 0);
+    return () => clearTimeout(t);
+  }, [search, refresh]);
+
+  function set(k: string, v: string) { setForm((f) => ({ ...f, [k]: v })); }
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setFormErr("");
+    setSubmitting(true);
+    try {
+      await apiFetch("/finance/accounts", { method: "POST", body: JSON.stringify(form) });
+      setShowForm(false);
+      setForm({ code: "", name: "", type: "ASSET", description: "" });
+      setRefresh((r) => r + 1);
+    } catch (err: unknown) {
+      setFormErr(err instanceof Error ? err.message : "Failed to create account");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const grouped = (ACCOUNT_TYPES as readonly string[]).reduce<Record<string, AccountRow[]>>((acc, t) => {
+    acc[t] = accounts.filter((a) => a.type === t);
+    return acc;
+  }, {});
+
+  return (
+    <FinanceShell title="Chart of Accounts" subtitle="Ledger structure — assets, liabilities, equity, revenue, and expenses.">
+      <div className="mb-5 flex flex-wrap items-center gap-3">
+        <input
+          className={inputClass + " flex-1 min-w-48 max-w-sm"}
+          placeholder="Search by code or name…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <span className="text-sm text-ink/55">{accounts.length} account{accounts.length !== 1 ? "s" : ""}</span>
+        <button className={btnPrimary} onClick={() => setShowForm((v) => !v)}>
+          <BookOpen className="h-4 w-4" /> {showForm ? "Cancel" : "New Account"}
+        </button>
+      </div>
+
+      {showForm && (
+        <form onSubmit={handleSubmit} className="mb-6 rounded-md border border-line bg-white p-6 shadow-panel">
+          <h3 className="mb-4 text-base font-semibold">New Account</h3>
+          {formErr && <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{formErr}</p>}
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <FormField label="Code *">
+              <input className={inputClass} value={form.code} onChange={(e) => set("code", e.target.value)} placeholder="e.g. 1000" maxLength={24} required />
+            </FormField>
+            <FormField label="Name *">
+              <input className={inputClass} value={form.name} onChange={(e) => set("name", e.target.value)} maxLength={120} required />
+            </FormField>
+            <FormField label="Type *">
+              <select className={selectClass} value={form.type} onChange={(e) => set("type", e.target.value)}>
+                {ACCOUNT_TYPES.map((t) => <option key={t} value={t}>{ACCOUNT_TYPE_META[t].label}</option>)}
+              </select>
+            </FormField>
+            <FormField label="Description">
+              <input className={inputClass} value={form.description} onChange={(e) => set("description", e.target.value)} maxLength={240} />
+            </FormField>
+          </div>
+          <button type="submit" className={btnPrimary + " mt-4"} disabled={submitting}>
+            {submitting ? "Saving…" : "Create Account"}
+          </button>
+        </form>
+      )}
+
+      <div className="space-y-5">
+        {ACCOUNT_TYPES.map((type) => {
+          const rows = grouped[type] ?? [];
+          if (rows.length === 0) return null;
+          const meta = ACCOUNT_TYPE_META[type];
+          return (
+            <section key={type}>
+              <div className={`mb-2 flex items-center gap-2 rounded-md px-3 py-2 ${meta.bg}`}>
+                <span className={`text-sm font-bold ${meta.color}`}>{meta.label}</span>
+                <span className={`text-xs font-semibold opacity-70 ${meta.color}`}>({rows.length})</span>
+              </div>
+              <div className="overflow-x-auto rounded-md border border-line bg-white">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-line text-left text-xs font-semibold uppercase tracking-wide text-ink/50">
+                      <th className="w-28 px-4 py-2.5">Code</th>
+                      <th className="px-4 py-2.5">Name</th>
+                      <th className="hidden px-4 py-2.5 md:table-cell">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-line/50">
+                    {rows.map((a) => (
+                      <tr key={a.id} className="transition-colors hover:bg-field/60">
+                        <td className="px-4 py-2.5">
+                          <code className={`rounded px-1.5 py-0.5 font-mono text-xs font-semibold ${meta.bg} ${meta.color}`}>{a.code}</code>
+                        </td>
+                        <td className="px-4 py-2.5 font-medium">{a.name}</td>
+                        <td className="hidden px-4 py-2.5 text-ink/55 md:table-cell">{a.description ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          );
+        })}
+        {accounts.length === 0 && (
+          <div className="flex flex-col items-center gap-3 rounded-md border border-dashed border-line bg-white py-14 text-center">
+            <BookOpen className="h-8 w-8 text-brand/40" />
+            <p className="text-sm font-medium text-ink/55">No accounts yet. Create your first account above.</p>
+            <button className={btnPrimary} onClick={() => setShowForm(true)}>Add first account</button>
+          </div>
+        )}
+      </div>
     </FinanceShell>
   );
 }

@@ -6,7 +6,7 @@ import {
   ProductStatus
 } from "@prisma/client";
 import { Type } from "class-transformer";
-import { IsArray, IsDateString, IsEnum, IsInt, IsNumber, IsOptional, IsString, IsUUID, MaxLength, Min, ValidateNested } from "class-validator";
+import { ArrayMaxSize, IsArray, IsDateString, IsEnum, IsInt, IsNumber, IsOptional, IsString, IsUUID, Max, MaxLength, Min, ValidateNested } from "class-validator";
 
 export class FeedProductionQueryDto {
   @IsOptional()
@@ -102,6 +102,34 @@ export class CreateFeedFormulaDto {
 
 export class AddFeedFormulaIngredientDto extends FeedFormulaIngredientInputDto {}
 
+export class UpdateFeedFormulaDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  name?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0.001)
+  targetBatchKg?: number;
+
+  @IsOptional()
+  @IsEnum(FeedFormulaStatus)
+  status?: FeedFormulaStatus;
+}
+
+export class UpdateFeedFormulaIngredientDto {
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  quantityKg?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  unitCost?: number;
+}
+
 export class CreateFeedFormulaVersionDto {
   @IsOptional()
   @IsEnum(FeedFormulaStatus)
@@ -129,10 +157,6 @@ export class CreateFeedProductionOrderDto {
   @IsOptional()
   @IsUUID()
   rawMaterialWarehouseId?: string;
-
-  @IsOptional()
-  @IsEnum(FeedProductionOrderStatus)
-  status?: FeedProductionOrderStatus;
 
   @IsOptional()
   @IsString()
@@ -205,10 +229,6 @@ export class CreateFeedQualityCheckDto {
   @IsOptional()
   @IsString()
   textureNotes?: string;
-
-  @IsOptional()
-  @IsEnum(FeedQualityCheckStatus)
-  status?: FeedQualityCheckStatus;
 }
 
 export class UpdateFeedQualityCheckStatusDto {
@@ -310,6 +330,7 @@ export class SimulatePredictivePlanItemDto {
 
   @IsNumber()
   @Min(0.001)
+  @Max(10000)
   plannedTons!: number;
 }
 
@@ -318,6 +339,7 @@ export class SimulatePredictiveDto {
   warehouseId!: string;
 
   @IsArray()
+  @ArrayMaxSize(20)
   @ValidateNested({ each: true })
   @Type(() => SimulatePredictivePlanItemDto)
   plans!: SimulatePredictivePlanItemDto[];

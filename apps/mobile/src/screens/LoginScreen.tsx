@@ -12,9 +12,12 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "../auth/AuthContext";
 import { colors, font, radius, shadow, spacing } from "../constants/theme";
+
+type MCName = React.ComponentProps<typeof MaterialCommunityIcons>["name"];
 
 const SAVED_EMAIL_KEY = "jokas.lastEmail";
 
@@ -75,60 +78,65 @@ export function LoginScreen() {
           showsVerticalScrollIndicator={false}
           bounces={false}
         >
-          {/* ── Hero ── */}
+          {/* ── Hero Header ── */}
           <View style={styles.hero}>
-            {/* decorative circles */}
-            <View style={[styles.deco, styles.decoTL]} />
-            <View style={[styles.deco, styles.decoBR]} />
-            <View style={[styles.deco, styles.decoMid]} />
+            {/* Elegant glassmorphic background meshes */}
+            <View style={[styles.deco, styles.decoTop]} />
+            <View style={[styles.deco, styles.decoBottom]} />
 
-            {/* logo */}
+            {/* Premium outer ring */}
             <View style={styles.logoOuter}>
               <View style={styles.logoMid}>
                 <View style={styles.logoInner}>
-                  <Text style={styles.logoEmoji}>🌾</Text>
+                  <MaterialCommunityIcons name="leaf" size={42} color={colors.brand} />
                 </View>
               </View>
             </View>
 
-            <Text style={styles.brand}>AKOKO SOLUTIONS</Text>
-            <Text style={styles.tagline}>Enterprise Farm Management</Text>
+            <Text style={styles.brand}>JOKAS ERP</Text>
+            <Text style={styles.tagline}>ENTERPRISE FARM OPERATIONS</Text>
 
-            {/* small feature pills */}
-            <View style={styles.pillRow}>
-              {["🐔 Poultry", "📦 Inventory", "📊 Analytics"].map((p) => (
-                <View key={p} style={styles.pill}>
-                  <Text style={styles.pillText}>{p}</Text>
+            {/* Feature Tags */}
+            <View style={styles.tagRow}>
+              {[
+                { label: "Poultry", icon: "bird" },
+                { label: "Inventory", icon: "package-variant-closed" },
+                { label: "Analytics", icon: "chart-box-outline" }
+              ].map((p) => (
+                <View key={p.label} style={styles.tagPill}>
+                  <MaterialCommunityIcons name={p.icon as MCName} size={12} color="rgba(255,255,255,0.9)" />
+                  <Text style={styles.tagText}>{p.label}</Text>
                 </View>
               ))}
             </View>
           </View>
 
-          {/* ── Form card ── */}
+          {/* ── Form Card ── */}
           <View style={styles.card}>
-
-            {/* header */}
+            {/* Header */}
             <View style={styles.cardHeader}>
-              <Text style={styles.cardTitle}>Welcome back</Text>
-              <Text style={styles.cardSub}>Sign in to your Jokas ERP account</Text>
+              <Text style={styles.cardTitle}>Welcome Back</Text>
+              <Text style={styles.cardSub}>Sign in to access your Jokas dashboard</Text>
             </View>
 
             {/* API error banner */}
             {apiError !== "" && (
               <View style={styles.errorBanner}>
-                <Text style={styles.errorBannerIcon}>⚠️</Text>
+                <MaterialCommunityIcons name="alert-circle-outline" size={20} color={colors.error} />
                 <Text style={styles.errorBannerText}>{apiError}</Text>
                 <TouchableOpacity onPress={() => setApiError("")}>
-                  <Text style={styles.errorBannerClose}>✕</Text>
+                  <MaterialCommunityIcons name="close" size={16} color={colors.error} />
                 </TouchableOpacity>
               </View>
             )}
 
-            {/* email field */}
+            {/* Email Field */}
             <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>Email address <Text style={styles.required}>*</Text></Text>
+              <Text style={styles.fieldLabel}>
+                Email address <Text style={styles.required}>*</Text>
+              </Text>
               <View style={[styles.inputRow, errors.email ? styles.inputError : email ? styles.inputFilled : null]}>
-                <Text style={styles.inputIcon}>✉️</Text>
+                <MaterialCommunityIcons name="email-outline" size={18} color={email ? colors.brand : colors.inkLight} />
                 <TextInput
                   style={styles.input}
                   value={email}
@@ -137,27 +145,29 @@ export function LoginScreen() {
                   autoCapitalize="none"
                   autoCorrect={false}
                   returnKeyType="next"
-                  placeholder="you@company.com"
+                  placeholder="name@company.com"
                   placeholderTextColor={colors.inkLight}
                   onSubmitEditing={() => passwordRef.current?.focus()}
                   blurOnSubmit={false}
                 />
                 {email.length > 0 && !errors.email && (
                   <TouchableOpacity onPress={() => { setEmail(""); setErrors((e) => ({ ...e, email: undefined })); }}>
-                    <Text style={styles.clearBtn}>✕</Text>
+                    <MaterialCommunityIcons name="close-circle" size={16} color={colors.inkLight} />
                   </TouchableOpacity>
                 )}
               </View>
-              {errors.email && <Text style={styles.fieldError}>⚠ {errors.email}</Text>}
+              {errors.email && <Text style={styles.fieldError}>{errors.email}</Text>}
             </View>
 
-            {/* password field */}
+            {/* Password Field */}
             <View style={styles.fieldGroup}>
               <View style={styles.labelRow}>
-                <Text style={styles.fieldLabel}>Password <Text style={styles.required}>*</Text></Text>
+                <Text style={styles.fieldLabel}>
+                  Password <Text style={styles.required}>*</Text>
+                </Text>
               </View>
               <View style={[styles.inputRow, errors.password ? styles.inputError : password ? styles.inputFilled : null]}>
-                <Text style={styles.inputIcon}>🔒</Text>
+                <MaterialCommunityIcons name="lock-outline" size={18} color={password ? colors.brand : colors.inkLight} />
                 <TextInput
                   ref={passwordRef}
                   style={styles.input}
@@ -170,13 +180,13 @@ export function LoginScreen() {
                   onSubmitEditing={handleLogin}
                 />
                 <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeBtn}>
-                  <Text style={styles.eyeText}>{showPassword ? "Hide" : "Show"}</Text>
+                  <MaterialCommunityIcons name={showPassword ? "eye-off-outline" : "eye-outline"} size={20} color={colors.brand} />
                 </TouchableOpacity>
               </View>
-              {errors.password && <Text style={styles.fieldError}>⚠ {errors.password}</Text>}
+              {errors.password && <Text style={styles.fieldError}>{errors.password}</Text>}
             </View>
 
-            {/* sign in button */}
+            {/* Sign In Button */}
             <TouchableOpacity
               style={[styles.signInBtn, loading && styles.signInBtnLoading]}
               onPress={handleLogin}
@@ -186,50 +196,50 @@ export function LoginScreen() {
               {loading ? (
                 <View style={styles.signInBtnContent}>
                   <ActivityIndicator size="small" color={colors.white} />
-                  <Text style={styles.signInBtnText}>Signing in…</Text>
+                  <Text style={styles.signInBtnText}>Authenticating…</Text>
                 </View>
               ) : (
                 <View style={styles.signInBtnContent}>
-                  <Text style={styles.signInBtnText}>Sign in</Text>
-                  <Text style={styles.signInBtnArrow}>→</Text>
+                  <Text style={styles.signInBtnText}>Sign In</Text>
+                  <MaterialCommunityIcons name="arrow-right" size={18} color={colors.white} />
                 </View>
               )}
             </TouchableOpacity>
 
-            {/* support note */}
+            {/* Support Note */}
             <Text style={styles.supportNote}>
               Having trouble? Contact your system administrator.
             </Text>
 
-            {/* divider */}
+            {/* Divider */}
             <View style={styles.divider}>
               <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>AKOKO SOLUTIONS ERP</Text>
+              <Text style={styles.dividerText}>SECURE ACCESS</Text>
               <View style={styles.dividerLine} />
             </View>
 
-            {/* feature list */}
+            {/* Feature List */}
             <View style={styles.featureList}>
               {[
-                { icon: "🔐", text: "Secure JWT authentication" },
-                { icon: "🔄", text: "Offline-first with auto sync" },
-                { icon: "🏡", text: "Multi-farm field operations" },
+                { icon: "shield-check-outline", text: "Secure JWT Authentication", color: "#10B981" },
+                { icon: "sync", text: "Offline-First with Automatic Sync", color: "#3B82F6" },
+                { icon: "map-marker-radius-outline", text: "Multi-Farm Field Operations", color: colors.brand },
               ].map((f) => (
                 <View key={f.text} style={styles.featureItem}>
-                  <Text style={styles.featureIcon}>{f.icon}</Text>
+                  <View style={[styles.featureIconWrap, { backgroundColor: f.color + "12" }]}>
+                    <MaterialCommunityIcons name={f.icon as MCName} size={18} color={f.color} />
+                  </View>
                   <Text style={styles.featureText}>{f.text}</Text>
                 </View>
               ))}
             </View>
-
           </View>
 
-          {/* footer */}
+          {/* Footer */}
           <View style={styles.footer}>
             <Text style={styles.footerText}>© 2026 Jokas Farms · AKOKO SOLUTIONS</Text>
-            <Text style={styles.footerVersion}>v1.0.0</Text>
+            <Text style={styles.footerVersion}>v2.0.0</Text>
           </View>
-
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -246,7 +256,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.brand,
     alignItems: "center",
     paddingTop: spacing.xxxl,
-    paddingBottom: 60,
+    paddingBottom: 55,
     paddingHorizontal: spacing.xl,
     gap: spacing.sm,
     overflow: "hidden",
@@ -254,71 +264,76 @@ const styles = StyleSheet.create({
   deco: {
     position: "absolute",
     borderRadius: radius.full,
-    backgroundColor: "rgba(255,255,255,0.08)",
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
   },
-  decoTL: { width: 200, height: 200, top: -60, left: -60 },
-  decoBR: { width: 160, height: 160, bottom: -30, right: -40 },
-  decoMid: { width: 100, height: 100, top: 30, right: 30 },
+  decoTop: { width: 240, height: 240, top: -80, left: -60 },
+  decoBottom: { width: 180, height: 180, bottom: -40, right: -50 },
 
   logoOuter: {
-    width: 110,
-    height: 110,
-    borderRadius: 55,
-    backgroundColor: "rgba(255,255,255,0.15)",
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: spacing.sm,
+    marginBottom: spacing.xs,
+    borderWidth: 1.5,
+    borderColor: "rgba(255, 255, 255, 0.2)",
   },
   logoMid: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    backgroundColor: "rgba(255,255,255,0.2)",
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: "rgba(255, 255, 255, 0.18)",
     alignItems: "center",
     justifyContent: "center",
   },
   logoInner: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     backgroundColor: colors.white,
     alignItems: "center",
     justifyContent: "center",
     ...shadow.lg,
   },
-  logoEmoji: { fontSize: 36 },
 
   brand: {
     fontSize: font.size.xl,
     fontWeight: font.weight.extrabold,
     color: colors.white,
-    letterSpacing: 2,
+    letterSpacing: 2.5,
+    fontFamily: font.family.bold,
   },
   tagline: {
-    fontSize: font.size.sm,
-    color: "rgba(255,255,255,0.8)",
-    letterSpacing: 0.4,
+    fontSize: font.size.xs,
+    color: "rgba(255, 255, 255, 0.8)",
+    fontWeight: font.weight.bold,
+    letterSpacing: 1.2,
   },
 
-  pillRow: {
+  tagRow: {
     flexDirection: "row",
     gap: spacing.sm,
-    marginTop: spacing.sm,
+    marginTop: spacing.md,
     flexWrap: "wrap",
     justifyContent: "center",
   },
-  pill: {
-    backgroundColor: "rgba(255,255,255,0.18)",
+  tagPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.15)",
     borderRadius: radius.full,
     paddingHorizontal: spacing.md,
-    paddingVertical: 5,
+    paddingVertical: 6,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.25)",
+    borderColor: "rgba(255, 255, 255, 0.2)",
+    gap: spacing.xs,
   },
-  pillText: {
+  tagText: {
     color: colors.white,
-    fontSize: font.size.xs,
-    fontWeight: font.weight.semibold,
+    fontSize: 11,
+    fontFamily: font.family.semibold,
   },
 
   // ── Card ──────────────────────────────
@@ -327,22 +342,26 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: radius.xxl,
     borderTopRightRadius: radius.xxl,
     marginTop: -28,
-    padding: spacing.xxl,
+    paddingHorizontal: spacing.xxl,
     paddingTop: spacing.xxxl,
+    paddingBottom: spacing.xxl,
     gap: spacing.lg,
     flex: 1,
-    minHeight: 520,
+    minHeight: 500,
   },
 
-  cardHeader: { gap: 4, marginBottom: spacing.xs },
+  cardHeader: { gap: 6, marginBottom: spacing.xs },
   cardTitle: {
     fontSize: font.size.xxl,
-    fontWeight: font.weight.extrabold,
+    fontFamily: font.family.extrabold,
     color: colors.ink,
   },
-  cardSub: { fontSize: font.size.sm, color: colors.inkLight },
+  cardSub: {
+    fontSize: font.size.sm,
+    color: colors.inkLight,
+    fontFamily: font.family.regular,
+  },
 
-  // error banner
   errorBanner: {
     flexDirection: "row",
     alignItems: "center",
@@ -350,24 +369,21 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: "#fca5a5",
+    borderColor: "#FECACA",
     gap: spacing.sm,
   },
-  errorBannerIcon: { fontSize: 16 },
   errorBannerText: {
     flex: 1,
     fontSize: font.size.sm,
     color: colors.error,
-    fontWeight: font.weight.medium,
+    fontWeight: font.weight.semibold,
   },
-  errorBannerClose: { color: colors.error, fontSize: 14, fontWeight: font.weight.bold, padding: 2 },
 
-  // fields
-  fieldGroup: { gap: 7 },
+  fieldGroup: { gap: 8 },
   labelRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   fieldLabel: {
     fontSize: font.size.sm,
-    fontWeight: font.weight.semibold,
+    fontFamily: font.family.semibold,
     color: colors.inkMid,
   },
   required: { color: colors.brand },
@@ -383,36 +399,29 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgCard,
     gap: spacing.sm,
   },
-  inputFilled: { borderColor: colors.brand, backgroundColor: "#fffdf9" },
+  inputFilled: { borderColor: colors.brand, backgroundColor: "#FFFDF9" },
   inputError: { borderColor: colors.error, backgroundColor: colors.errorBg },
-  inputIcon: { fontSize: 16 },
   input: {
     flex: 1,
     fontSize: font.size.md,
     color: colors.ink,
+    fontFamily: font.family.regular,
     paddingVertical: spacing.sm,
   },
-  clearBtn: { color: colors.inkLight, fontSize: 14, padding: 4 },
-  eyeBtn: { paddingHorizontal: 4, paddingVertical: 4 },
-  eyeText: {
-    fontSize: font.size.sm,
-    color: colors.brand,
-    fontWeight: font.weight.semibold,
-  },
+  eyeBtn: { padding: 4 },
   fieldError: {
     fontSize: font.size.xs,
     color: colors.error,
-    fontWeight: font.weight.medium,
+    fontWeight: font.weight.semibold,
   },
 
-  // sign-in button
   signInBtn: {
     backgroundColor: colors.brand,
     borderRadius: radius.full,
     minHeight: 56,
     alignItems: "center",
     justifyContent: "center",
-    marginTop: spacing.xs,
+    marginTop: spacing.sm,
     ...shadow.brand,
   },
   signInBtnLoading: { opacity: 0.8 },
@@ -424,54 +433,70 @@ const styles = StyleSheet.create({
   signInBtnText: {
     color: colors.white,
     fontSize: font.size.md,
-    fontWeight: font.weight.bold,
-    letterSpacing: 0.3,
+    fontFamily: font.family.bold,
+    letterSpacing: 0.5,
   },
-  signInBtnArrow: { color: colors.white, fontSize: font.size.lg },
 
   supportNote: {
     textAlign: "center",
     fontSize: font.size.xs,
     color: colors.inkLight,
     marginTop: -spacing.xs,
+    fontFamily: font.family.medium,
   },
 
-  // divider
   divider: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
-    marginTop: spacing.xs,
+    marginTop: spacing.sm,
   },
   dividerLine: { flex: 1, height: 1, backgroundColor: colors.border },
   dividerText: {
-    fontSize: font.size.xs,
+    fontSize: font.size.xs - 1,
     color: colors.inkLight,
-    fontWeight: font.weight.semibold,
-    letterSpacing: 0.8,
+    fontFamily: font.family.bold,
+    letterSpacing: 1.5,
   },
 
-  // features
   featureList: { gap: spacing.sm },
-  featureItem: { flexDirection: "row", alignItems: "center", gap: spacing.md },
-  featureIcon: { fontSize: 18, width: 28 },
-  featureText: { fontSize: font.size.sm, color: colors.inkMid, fontWeight: font.weight.medium },
+  featureItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    backgroundColor: "#F8FAFC",
+    borderRadius: radius.md,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  featureIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: radius.sm,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  featureText: {
+    fontSize: font.size.sm,
+    color: colors.inkMid,
+    fontFamily: font.family.medium,
+  },
 
-  // footer
   footer: {
     backgroundColor: colors.bgCard,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: spacing.xxl,
-    paddingVertical: spacing.lg,
+    paddingVertical: spacing.xl,
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
-  footerText: { fontSize: font.size.xs, color: colors.inkLight },
+  footerText: { fontSize: font.size.xs, color: colors.inkLight, fontFamily: font.family.medium },
   footerVersion: {
     fontSize: font.size.xs,
     color: colors.brand,
-    fontWeight: font.weight.semibold,
+    fontFamily: font.family.semibold,
   },
 });

@@ -205,11 +205,11 @@ export class AuthService {
       throw new UnauthorizedException("User is no longer active.");
     }
 
-    const roles = user.roles.map((item) => item.role.name);
+    const roles = user.roles.map((item) => item.role.level as string);
     const permissions = Array.from(
       new Set(user.roles.flatMap((item) => item.role.permissions.map((permission) => permission.key)))
     );
-    const hasGlobalAccess = roles.includes("Super Admin") || roles.includes("CEO/Owner");
+    const hasGlobalAccess = roles.includes("SUPER_ADMIN") || roles.includes("CEO");
 
     return {
       id: user.id,

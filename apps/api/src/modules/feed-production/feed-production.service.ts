@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { AuthenticatedUser } from "@jokas/shared";
+import { randomBytes, randomUUID } from "crypto";
 import { Prisma } from "@prisma/client";
 import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -18,6 +19,8 @@ import {
   HiproPredictiveQueryDto,
   RecordExternalFeedSaleDto,
   SimulatePredictiveDto,
+  UpdateFeedFormulaDto,
+  UpdateFeedFormulaIngredientDto,
   UpdateFeedQualityCheckStatusDto,
   UpdateIngredientDto
 } from "./dto/feed-production.dto";
@@ -177,7 +180,8 @@ export class FeedProductionService {
         ingredients: { where: { deletedAt: null }, include: { ingredient: { select: { id: true, name: true, sku: true } } }, orderBy: { sortOrder: "asc" } },
         versions: { orderBy: { versionNo: "desc" }, take: 1 }
       },
-      orderBy: { createdAt: "desc" }
+      orderBy: { createdAt: "desc" },
+      take: query.limit ?? 200
     });
     return { data: data.map((formula) => ({ ...formula, costing: this.costFormula(formula) })) };
   }
@@ -253,6 +257,56 @@ export class FeedProductionService {
     return { data };
   }
 
+  async updateFormula(user: AuthenticatedUser, id: string, dto: UpdateFeedFormulaDto, context: RequestContext) {
+    const formula = await this.requireFormula(user, id);
+    const updated = await this.prisma.feedFormula.update({
+      where: { id },
+      data: {
+        ...(dto.name !== undefined && { name: dto.name }),
+        ...(dto.targetBatchKg !== undefined && { targetBatchKg: dto.targetBatchKg }),
+        ...(dto.status !== undefined && { status: dto.status }),
+        updatedById: user.id,
+      },
+    });
+    await this.writeAudit(user, "UPDATE", "FeedFormula", id, `Updated feed formula ${formula.code}`, context, { branchId: formula.branchId });
+    return { data: updated };
+  }
+
+  async deleteFormula(user: AuthenticatedUser, id: string, context: RequestContext) {
+    const formula = await this.requireFormula(user, id);
+    const activeOrders = await this.prisma.feedProductionOrder.count({
+      where: { companyId: user.companyId, formulaId: id, status: { in: ["DRAFT", "APPROVED", "IN_PROGRESS"] }, deletedAt: null }
+    });
+    if (activeOrders > 0) throw new BadRequestException("Cannot delete a formula with active production orders. Archive it first.");
+    await this.prisma.feedFormula.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    await this.writeAudit(user, "DELETE", "FeedFormula", id, `Deleted formula ${formula.code}`, context, { branchId: formula.branchId });
+    return { data: { ok: true } };
+  }
+
+  async updateFormulaIngredient(user: AuthenticatedUser, formulaId: string, ingredientId: string, dto: UpdateFeedFormulaIngredientDto, context: RequestContext) {
+    const formula = await this.requireFormula(user, formulaId);
+    const row = await this.prisma.feedFormulaIngredient.findFirst({ where: { id: ingredientId, formulaId, companyId: user.companyId } });
+    if (!row) throw new NotFoundException("Ingredient not found");
+    const updated = await this.prisma.feedFormulaIngredient.update({
+      where: { id: ingredientId },
+      data: {
+        ...(dto.quantityKg !== undefined && { quantityKg: dto.quantityKg }),
+        ...(dto.unitCost !== undefined && { unitCost: dto.unitCost }),
+      },
+    });
+    await this.writeAudit(user, "UPDATE", "FeedFormula", formulaId, `Updated ingredient in formula ${formula.code}`, context, { branchId: formula.branchId });
+    return { data: updated };
+  }
+
+  async deleteFormulaIngredient(user: AuthenticatedUser, formulaId: string, ingredientId: string, context: RequestContext) {
+    const formula = await this.requireFormula(user, formulaId);
+    const row = await this.prisma.feedFormulaIngredient.findFirst({ where: { id: ingredientId, formulaId, companyId: user.companyId } });
+    if (!row) throw new NotFoundException("Ingredient not found");
+    await this.prisma.feedFormulaIngredient.delete({ where: { id: ingredientId } });
+    await this.writeAudit(user, "UPDATE", "FeedFormula", formulaId, `Removed ingredient from formula ${formula.code}`, context, { branchId: formula.branchId });
+    return { data: { id: ingredientId } };
+  }
+
   async createVersion(user: AuthenticatedUser, formulaId: string, dto: CreateFeedFormulaVersionDto, context: RequestContext) {
     const formula = await this.getFormulaForCosting(user, formulaId);
     const costing = this.costFormula(formula);
@@ -302,7 +356,7 @@ export class FeedProductionService {
         batches: { select: { id: true, batchNumber: true, status: true, producedQuantityKg: true } }
       },
       orderBy: { scheduledDate: "desc" },
-      ...(query.limit ? { take: query.limit } : {})
+      take: query.limit ?? 200
     });
     return { data };
   }
@@ -333,10 +387,8 @@ export class FeedProductionService {
         orderNumber,
         plannedQuantityKg: dto.plannedQuantityKg,
         scheduledDate: new Date(dto.scheduledDate),
-        status: dto.status ?? "DRAFT",
+        status: "DRAFT",
         notes: dto.notes,
-        approvedById: dto.status === "APPROVED" ? user.id : undefined,
-        approvedAt: dto.status === "APPROVED" ? new Date() : undefined,
         createdById: user.id
       }
     });
@@ -348,6 +400,9 @@ export class FeedProductionService {
 
   async approveOrder(user: AuthenticatedUser, id: string, context: RequestContext) {
     const order = await this.requireOrder(user, id);
+    if (!["DRAFT", "PENDING_STOCK_APPROVAL"].includes(order.status)) {
+      throw new BadRequestException(`Order cannot be approved from status "${order.status}".`);
+    }
     const data = await this.prisma.feedProductionOrder.update({
       where: { id },
       data: { status: "APPROVED", approvedById: user.id, approvedAt: new Date(), updatedById: user.id }
@@ -526,7 +581,8 @@ export class FeedProductionService {
         qualityChecks: { orderBy: { checkedAt: "desc" }, take: 1 },
         costs: { orderBy: { createdAt: "desc" }, take: 1 }
       },
-      orderBy: { productionDate: "desc" }
+      orderBy: { productionDate: "desc" },
+      take: query.limit ?? 200
     });
     return { data: data.map((batch) => ({ ...batch, metrics: this.batchMetrics(batch) })) };
   }
@@ -556,7 +612,8 @@ export class FeedProductionService {
     const data = await this.prisma.feedRawMaterialUsage.findMany({
       where: this.usageWhere(user, query),
       include: { rawMaterial: { select: { name: true, sku: true } }, productionBatch: { select: { batchNumber: true } }, productionSite: { select: { name: true } } },
-      orderBy: { createdAt: "desc" }
+      orderBy: { createdAt: "desc" },
+      take: query.limit ?? 200
     });
     return { data };
   }
@@ -565,7 +622,8 @@ export class FeedProductionService {
     const data = await this.prisma.feedQualityCheck.findMany({
       where: this.qualityWhere(user, query),
       include: { productionBatch: { select: { batchNumber: true } }, productionSite: { select: { name: true } } },
-      orderBy: { checkedAt: "desc" }
+      orderBy: { checkedAt: "desc" },
+      take: query.limit ?? 200
     });
     return { data };
   }
@@ -581,10 +639,8 @@ export class FeedProductionService {
         moisturePercent: dto.moisturePercent,
         proteinPercent: dto.proteinPercent,
         textureNotes: dto.textureNotes,
-        status: dto.status ?? "PENDING",
+        status: "PENDING",
         checkedById: user.id,
-        approvedById: dto.status === "APPROVED" ? user.id : undefined,
-        approvedAt: dto.status === "APPROVED" ? new Date() : undefined
       }
     });
     await this.writeAudit(user, "CREATE", "FeedQualityCheck", data.id, `Recorded quality check for ${batch.batchNumber}`, context, { branchId: batch.branchId, productionSiteId: batch.productionSiteId });
@@ -610,7 +666,8 @@ export class FeedProductionService {
     const data = await this.prisma.finishedFeedStock.findMany({
       where: this.finishedStockWhere(user, query),
       include: { product: { select: { name: true, sku: true } }, warehouse: { select: { name: true, code: true } }, productionBatch: { select: { batchNumber: true } } },
-      orderBy: { createdAt: "desc" }
+      orderBy: { createdAt: "desc" },
+      take: query.limit ?? 200
     });
     return { data };
   }
@@ -638,7 +695,8 @@ export class FeedProductionService {
     const data = await this.prisma.feedPackagingRecord.findMany({
       where: this.packagingWhere(user, query),
       include: { productionBatch: { select: { batchNumber: true } }, productionSite: { select: { name: true } } },
-      orderBy: { packagedAt: "desc" }
+      orderBy: { packagedAt: "desc" },
+      take: query.limit ?? 200
     });
     return { data };
   }
@@ -694,7 +752,8 @@ export class FeedProductionService {
     const data = await this.prisma.feedInternalTransfer.findMany({
       where: this.transferWhere(user, query),
       include: { productionBatch: { select: { batchNumber: true } }, product: { select: { name: true, sku: true } }, fromWarehouse: { select: { name: true, code: true } }, toFarm: { select: { name: true, code: true } }, toPoultryHouse: { select: { name: true, code: true } } },
-      orderBy: { transferDate: "desc" }
+      orderBy: { transferDate: "desc" },
+      take: query.limit ?? 200
     });
     return { data };
   }
@@ -841,19 +900,30 @@ export class FeedProductionService {
 
   async simulatePredictive(user: AuthenticatedUser, dto: SimulatePredictiveDto) {
     this.assertWarehouseAccess(user, dto.warehouseId);
-    const runningStock = new Map<string, number>();
 
+    // Load all formulas in parallel instead of sequentially
+    const formulaResults = await Promise.all(dto.plans.map((plan) => this.getFormulaForCosting(user, plan.formulaId)));
+    const formulaMap = new Map(dto.plans.map((plan, i) => [plan.formulaId, formulaResults[i]!]));
+
+    // Batch-load all inventory for this warehouse in one query instead of N×M findFirst calls
+    const allIngredientIds = [...new Set(formulaResults.flatMap((f) => f.ingredients.map((i) => i.ingredientId)))];
+    const inventoryRows = await this.prisma.inventoryItem.findMany({
+      where: { companyId: user.companyId, warehouseId: dto.warehouseId, productId: { in: allIngredientIds }, deletedAt: null },
+      select: { productId: true, quantityOnHand: true }
+    });
+    const stockMap = new Map(inventoryRows.map((r) => [r.productId, Number(r.quantityOnHand)]));
+
+    const runningStock = new Map<string, number>();
     const plans = [];
     for (const plan of dto.plans) {
-      const formula = await this.getFormulaForCosting(user, plan.formulaId);
+      const formula = formulaMap.get(plan.formulaId)!;
       const targetBatchKg = Number(formula.targetBatchKg);
       const scale = (plan.plannedTons * 1000) / Math.max(targetBatchKg, 1);
 
       const ingredients = [];
       let canProduce = true;
       for (const ing of formula.ingredients) {
-        const inventoryRow = await this.prisma.inventoryItem.findFirst({ where: { companyId: user.companyId, warehouseId: dto.warehouseId, productId: ing.ingredientId, deletedAt: null }, select: { quantityOnHand: true } });
-        const totalAvailable = Number(inventoryRow?.quantityOnHand ?? 0);
+        const totalAvailable = stockMap.get(ing.ingredientId) ?? 0;
         const alreadyAllocated = runningStock.get(ing.ingredientId) ?? 0;
         const effectiveAvailable = Math.max(0, totalAvailable - alreadyAllocated);
         const required = Number((Number(ing.quantityKg) * scale).toFixed(4));
@@ -1042,7 +1112,7 @@ export class FeedProductionService {
         return transfer;
       }
 
-      const saleReference = `SALE-${Date.now()}`;
+      const saleReference = randomUUID();
       await tx.stockMovement.create({
         data: {
           companyId: user.companyId,
@@ -1107,7 +1177,8 @@ export class FeedProductionService {
 
   private async nextDocumentNumber(companyId: string, prefix: string, model: { count: (args: { where: { companyId: string } }) => Promise<number> }) {
     const count = await model.count({ where: { companyId } });
-    return `${prefix}-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}`;
+    const nonce = randomBytes(2).toString("hex").toUpperCase();
+    return `${prefix}-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}-${nonce}`;
   }
 
   private async getProduct(companyId: string, productId: string) {
@@ -1194,56 +1265,81 @@ export class FeedProductionService {
   }
 
   private formulaWhere(user: AuthenticatedUser, query: FeedProductionQueryDto) {
-    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId, ...(user.hasGlobalAccess ? {} : { branchId: { in: user.branchIds } }) };
+    const branchId = user.hasGlobalAccess
+      ? query.branchId
+      : (query.branchId && user.branchIds.includes(query.branchId) ? query.branchId : { in: user.branchIds });
+    return { companyId: user.companyId, deletedAt: null, branchId };
   }
 
   private orderWhere(user: AuthenticatedUser, query: FeedProductionQueryDto) {
+    const productionSiteId = user.hasGlobalAccess
+      ? query.productionSiteId
+      : (query.productionSiteId && user.productionSiteIds.includes(query.productionSiteId) ? query.productionSiteId : { in: user.productionSiteIds });
     return {
       companyId: user.companyId,
       deletedAt: null,
-      branchId: query.branchId,
-      productionSiteId: query.productionSiteId,
+      ...(query.branchId ? { branchId: query.branchId } : {}),
+      productionSiteId,
       formulaId: query.formulaId,
       ...(query.status ? { status: query.status } : {}),
-      ...(this.dateRange(query, "scheduledDate")),
-      ...(user.hasGlobalAccess ? {} : { productionSiteId: { in: user.productionSiteIds } })
+      ...(this.dateRange(query, "scheduledDate"))
     };
   }
 
   private batchWhere(user: AuthenticatedUser, query: FeedProductionQueryDto) {
+    const productionSiteId = user.hasGlobalAccess
+      ? query.productionSiteId
+      : (query.productionSiteId && user.productionSiteIds.includes(query.productionSiteId) ? query.productionSiteId : { in: user.productionSiteIds });
     return {
       companyId: user.companyId,
       deletedAt: null,
-      branchId: query.branchId,
-      productionSiteId: query.productionSiteId,
+      ...(query.branchId ? { branchId: query.branchId } : {}),
+      productionSiteId,
       id: query.productionBatchId,
-      ...(this.dateRange(query, "productionDate")),
-      ...(user.hasGlobalAccess ? {} : { productionSiteId: { in: user.productionSiteIds } })
+      ...(this.dateRange(query, "productionDate"))
     };
   }
 
   private usageWhere(user: AuthenticatedUser, query: FeedProductionQueryDto) {
-    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId, productionSiteId: query.productionSiteId, productionBatchId: query.productionBatchId, ...(user.hasGlobalAccess ? {} : { productionSiteId: { in: user.productionSiteIds } }) };
+    const productionSiteId = user.hasGlobalAccess
+      ? query.productionSiteId
+      : (query.productionSiteId && user.productionSiteIds.includes(query.productionSiteId) ? query.productionSiteId : { in: user.productionSiteIds });
+    return { companyId: user.companyId, deletedAt: null, ...(query.branchId ? { branchId: query.branchId } : {}), productionSiteId, productionBatchId: query.productionBatchId };
   }
 
   private qualityWhere(user: AuthenticatedUser, query: FeedProductionQueryDto) {
-    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId, productionSiteId: query.productionSiteId, productionBatchId: query.productionBatchId, ...(user.hasGlobalAccess ? {} : { productionSiteId: { in: user.productionSiteIds } }) };
+    const productionSiteId = user.hasGlobalAccess
+      ? query.productionSiteId
+      : (query.productionSiteId && user.productionSiteIds.includes(query.productionSiteId) ? query.productionSiteId : { in: user.productionSiteIds });
+    return { companyId: user.companyId, deletedAt: null, ...(query.branchId ? { branchId: query.branchId } : {}), productionSiteId, productionBatchId: query.productionBatchId };
   }
 
   private finishedStockWhere(user: AuthenticatedUser, query: FeedProductionQueryDto) {
-    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId, productionSiteId: query.productionSiteId, warehouseId: query.warehouseId, productionBatchId: query.productionBatchId, ...(user.hasGlobalAccess ? {} : { warehouseId: { in: user.warehouseIds } }) };
+    const warehouseId = user.hasGlobalAccess
+      ? query.warehouseId
+      : (query.warehouseId && user.warehouseIds.includes(query.warehouseId) ? query.warehouseId : { in: user.warehouseIds });
+    return { companyId: user.companyId, deletedAt: null, ...(query.branchId ? { branchId: query.branchId } : {}), productionSiteId: query.productionSiteId, warehouseId, productionBatchId: query.productionBatchId };
   }
 
   private packagingWhere(user: AuthenticatedUser, query: FeedProductionQueryDto) {
-    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId, productionSiteId: query.productionSiteId, productionBatchId: query.productionBatchId, ...(this.dateRange(query, "packagedAt")), ...(user.hasGlobalAccess ? {} : { productionSiteId: { in: user.productionSiteIds } }) };
+    const productionSiteId = user.hasGlobalAccess
+      ? query.productionSiteId
+      : (query.productionSiteId && user.productionSiteIds.includes(query.productionSiteId) ? query.productionSiteId : { in: user.productionSiteIds });
+    return { companyId: user.companyId, deletedAt: null, ...(query.branchId ? { branchId: query.branchId } : {}), productionSiteId, productionBatchId: query.productionBatchId, ...(this.dateRange(query, "packagedAt")) };
   }
 
   private costWhere(user: AuthenticatedUser, query: FeedProductionQueryDto) {
-    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId, productionSiteId: query.productionSiteId, productionBatchId: query.productionBatchId, ...(user.hasGlobalAccess ? {} : { productionSiteId: { in: user.productionSiteIds } }) };
+    const productionSiteId = user.hasGlobalAccess
+      ? query.productionSiteId
+      : (query.productionSiteId && user.productionSiteIds.includes(query.productionSiteId) ? query.productionSiteId : { in: user.productionSiteIds });
+    return { companyId: user.companyId, deletedAt: null, ...(query.branchId ? { branchId: query.branchId } : {}), productionSiteId, productionBatchId: query.productionBatchId };
   }
 
   private transferWhere(user: AuthenticatedUser, query: FeedProductionQueryDto) {
-    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId, productionBatchId: query.productionBatchId, fromWarehouseId: query.warehouseId, ...(this.dateRange(query, "transferDate")), ...(user.hasGlobalAccess ? {} : { fromWarehouseId: { in: user.warehouseIds } }) };
+    const fromWarehouseId = user.hasGlobalAccess
+      ? query.warehouseId
+      : (query.warehouseId && user.warehouseIds.includes(query.warehouseId) ? query.warehouseId : { in: user.warehouseIds });
+    return { companyId: user.companyId, deletedAt: null, ...(query.branchId ? { branchId: query.branchId } : {}), productionBatchId: query.productionBatchId, fromWarehouseId, ...(this.dateRange(query, "transferDate")) };
   }
 
   private dateRange(query: FeedProductionQueryDto, field: string) {

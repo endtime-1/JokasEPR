@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { colors, font, radius, shadow, spacing } from "../constants/theme";
-import { getAllSubmissions, getRetryableSubmissions, markRetry, type PendingSubmission } from "../db/database";
+import { getAllSubmissions, markRetry, type PendingSubmission } from "../db/database";
 import { retrySyncRecord } from "../api/endpoints";
 import { useSync } from "../hooks/useSync";
 import { useNetwork } from "../hooks/useNetwork";
@@ -29,6 +30,8 @@ const ENDPOINT_LABELS: Record<string, string> = {
   "sales-orders": "Sales Order",
 };
 
+type MCName = React.ComponentProps<typeof MaterialCommunityIcons>["name"];
+
 function getLabel(endpoint: string) {
   const key = Object.keys(ENDPOINT_LABELS).find((k) => endpoint.includes(k));
   return key ? ENDPOINT_LABELS[key] : endpoint.split("/").filter(Boolean).pop() ?? endpoint;
@@ -43,11 +46,11 @@ function deriveStatus(row: PendingSubmission): RowStatus {
   return "pending";
 }
 
-const STATUS_META: Record<RowStatus, { color: string; bg: string; label: string; icon: string }> = {
-  pending:  { color: "#d97706", bg: "#fffbeb", label: "Pending",     icon: "🕐" },
-  synced:   { color: "#16a34a", bg: "#f0fdf4", label: "Synced",      icon: "✅" },
-  error:    { color: "#dc2626", bg: "#fef2f2", label: "Failed",      icon: "❌" },
-  maxRetry: { color: "#7c3aed", bg: "#f5f3ff", label: "Max Retries", icon: "⛔" },
+const STATUS_META: Record<RowStatus, { color: string; bg: string; label: string; icon: MCName }> = {
+  pending:  { color: "#D97706", bg: "#FFFBEB", label: "Pending",     icon: "clock-outline" },
+  synced:   { color: "#10B981", bg: "#ECFDF5", label: "Synced",      icon: "check-circle-outline" },
+  error:    { color: "#EF4444", bg: "#FEF2F2", label: "Failed",      icon: "close-circle-outline" },
+  maxRetry: { color: "#8B5CF6", bg: "#F5F3FF", label: "Max Retries", icon: "alert-octagon-outline" },
 };
 
 export function SyncStatusScreen() {
@@ -96,7 +99,7 @@ export function SyncStatusScreen() {
       <SafeAreaView style={styles.safe} edges={["bottom"]}>
         <View style={styles.loadingScreen}>
           <ActivityIndicator size="large" color={colors.brand} />
-          <Text style={styles.loadingText}>Loading sync status…</Text>
+          <Text style={styles.loadingText}>Retrieving sync status logs…</Text>
         </View>
       </SafeAreaView>
     );
@@ -106,25 +109,25 @@ export function SyncStatusScreen() {
     <SafeAreaView style={styles.safe} edges={["bottom"]}>
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
 
-        {/* Page header */}
+        {/* Page Header */}
         <View style={styles.pageHeader}>
           <View style={styles.pageIconWrap}>
-            <Text style={styles.pageIconText}>🔄</Text>
+            <MaterialCommunityIcons name="cloud-sync-outline" size={26} color={colors.brand} />
           </View>
           <View style={styles.pageHeaderText}>
-            <Text style={styles.pageTitle}>Sync Status</Text>
-            <Text style={styles.pageSub}>Manage offline records and data sync</Text>
+            <Text style={styles.pageTitle}>Sync Manager</Text>
+            <Text style={styles.pageSub}>Monitor and force upload offline farm logs</Text>
           </View>
         </View>
 
-        {/* Connection card */}
+        {/* Connection telemetry card */}
         <View style={[styles.connectionCard, online ? styles.connectionOnline : styles.connectionOffline]}>
           <View style={styles.connectionLeft}>
-            <View style={[styles.connectionDot, { backgroundColor: online ? "#22c55e" : "#dc2626" }]} />
-            <View>
-              <Text style={styles.connectionStatus}>{online ? "Connected" : "Offline"}</Text>
+            <View style={[styles.connectionDot, { backgroundColor: online ? "#10B981" : "#EF4444" }]} />
+            <View style={{ gap: 2 }}>
+              <Text style={styles.connectionStatus}>{online ? "Connected to Server" : "Offline Mode"}</Text>
               {lastSyncAt && (
-                <Text style={styles.connectionSub}>Last sync: {timeAgo(lastSyncAt.toISOString())}</Text>
+                <Text style={styles.connectionSub}>Last verified: {timeAgo(lastSyncAt.toISOString())}</Text>
               )}
             </View>
           </View>
@@ -132,66 +135,75 @@ export function SyncStatusScreen() {
             <View style={styles.connectionRight}>
               <Text style={styles.syncResultText}>↑ {lastResult.synced} synced</Text>
               {lastResult.failed > 0 && (
-                <Text style={[styles.syncResultText, { color: "#dc2626" }]}>✕ {lastResult.failed} failed</Text>
+                <Text style={[styles.syncResultText, { color: colors.error }]}>✕ {lastResult.failed} failed</Text>
               )}
             </View>
           )}
         </View>
 
-        {/* Stat counters */}
+        {/* Sync Summary Counters */}
         <View style={styles.counters}>
           {([
-            { key: "pending" as const,  count: pendingRows.length  },
-            { key: "synced"  as const,  count: syncedRows.length   },
-            { key: "error"   as const,  count: failedRows.length   },
-          ]).map(({ key, count }) => {
+            { key: "pending" as const,  count: pendingRows.length,  label: "Queueing" },
+            { key: "synced"  as const,  count: syncedRows.length,   label: "Completed" },
+            { key: "error"   as const,  count: failedRows.length,   label: "Unresolved" },
+          ]).map(({ key, count, label }) => {
             const meta = STATUS_META[key];
             return (
-              <View key={key} style={[styles.counterCard, { borderColor: meta.color + "30" }]}>
-                <Text style={styles.counterIcon}>{meta.icon}</Text>
+              <View key={key} style={[styles.counterCard, { borderColor: meta.color + "20" }]}>
+                <MaterialCommunityIcons name={meta.icon} size={22} color={meta.color} />
                 <Text style={[styles.counterNum, { color: meta.color }]}>{count}</Text>
-                <Text style={styles.counterLabel}>{meta.label}</Text>
+                <Text style={styles.counterLabel}>{label}</Text>
               </View>
             );
           })}
         </View>
 
-        {/* Sync button */}
+        {/* Force Sync button */}
         <TouchableOpacity
           style={[styles.syncBtn, (syncing || !online) && styles.syncBtnDisabled]}
           onPress={handleManualSync}
           disabled={syncing || !online}
           activeOpacity={0.85}
         >
-          {syncing
-            ? <><ActivityIndicator size="small" color={colors.white} /><Text style={styles.syncBtnText}>Syncing…</Text></>
-            : <Text style={styles.syncBtnText}>
-                {online ? `Sync Now${pending > 0 ? ` (${pending} pending)` : ""}` : "Cannot sync while offline"}
+          {syncing ? (
+            <>
+              <ActivityIndicator size="small" color={colors.white} />
+              <Text style={styles.syncBtnText}>Synchronizing Queue…</Text>
+            </>
+          ) : (
+            <>
+              <MaterialCommunityIcons name="sync" size={18} color={colors.white} />
+              <Text style={styles.syncBtnText}>
+                {online ? `Force Sync Queue${pending > 0 ? ` (${pending} items)` : ""}` : "Sync Disabled Offline"}
               </Text>
-          }
+            </>
+          )}
         </TouchableOpacity>
 
         {/* Pending rows */}
         {pendingRows.length > 0 && (
-          <SubmissionSection title="Pending Upload" rows={pendingRows} retrying={retrying} />
+          <SubmissionSection title="Queueing Submissions" rows={pendingRows} retrying={retrying} />
         )}
 
         {/* Failed rows */}
         {failedRows.length > 0 && (
-          <SubmissionSection title="Failed" rows={failedRows} retrying={retrying} onRetry={handleRetry} />
+          <SubmissionSection title="Failed Entries" rows={failedRows} retrying={retrying} onRetry={handleRetry} />
         )}
 
         {/* Synced rows */}
         {syncedRows.length > 0 && (
-          <SubmissionSection title="Recently Synced" rows={syncedRows.slice(0, 10)} retrying={retrying} />
+          <SubmissionSection title="Recent Successful Syncs" rows={syncedRows.slice(0, 10)} retrying={retrying} />
         )}
 
-        {/* Empty */}
+        {/* Empty State */}
         {rows.length === 0 && (
           <View style={styles.emptyCard}>
-            <Text style={styles.emptyEmoji}>✅</Text>
-            <Text style={styles.emptyTitle}>Everything is synced</Text>
-            <Text style={styles.emptyDesc}>No offline submissions pending.</Text>
+            <View style={styles.emptyIconCircle}>
+              <MaterialCommunityIcons name="check-all" size={32} color="#10B981" />
+            </View>
+            <Text style={styles.emptyTitle}>All Records Synced</Text>
+            <Text style={styles.emptyDesc}>No offline submissions pending queue execution.</Text>
           </View>
         )}
 
@@ -209,10 +221,11 @@ function SubmissionSection({ title, rows, retrying, onRetry }: {
   return (
     <View style={styles.section}>
       <View style={styles.sectionLabelRow}>
-        <Text style={styles.sectionLabel}>{title.toUpperCase()}</Text>
+        <Text style={styles.sectionLabel}>{title}</Text>
         <View style={styles.sectionLine} />
         <View style={styles.sectionCount}><Text style={styles.sectionCountText}>{rows.length}</Text></View>
       </View>
+
       <View style={styles.sectionCard}>
         {rows.map((row, idx) => {
           const status = deriveStatus(row);
@@ -222,7 +235,7 @@ function SubmissionSection({ title, rows, retrying, onRetry }: {
               {idx > 0 && <View style={styles.rowDivider} />}
               <View style={styles.submissionRow}>
                 <View style={[styles.submissionIconWrap, { backgroundColor: meta.bg }]}>
-                  <Text style={styles.submissionIcon}>{meta.icon}</Text>
+                  <MaterialCommunityIcons name={meta.icon} size={18} color={meta.color} />
                 </View>
                 <View style={styles.submissionInfo}>
                   <Text style={styles.submissionTitle}>{getLabel(row.endpoint)}</Text>
@@ -231,7 +244,7 @@ function SubmissionSection({ title, rows, retrying, onRetry }: {
                   )}
                   <Text style={styles.submissionMeta}>
                     {timeAgo(row.created_at)}
-                    {row.attempts > 0 ? ` · ${row.attempts} attempt${row.attempts !== 1 ? "s" : ""}` : ""}
+                    {row.attempts > 0 ? ` · Attempt ${row.attempts}/5` : ""}
                   </Text>
                 </View>
                 <View style={styles.submissionRight}>
@@ -243,6 +256,7 @@ function SubmissionSection({ title, rows, retrying, onRetry }: {
                       onPress={() => onRetry(row)}
                       disabled={retrying.has(row.id)}
                       style={styles.retryBtn}
+                      activeOpacity={0.7}
                     >
                       <Text style={styles.retryBtnText}>{retrying.has(row.id) ? "…" : "Retry"}</Text>
                     </TouchableOpacity>
@@ -261,18 +275,23 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   container: { padding: spacing.xl, gap: spacing.lg, paddingBottom: spacing.xxxl },
   loadingScreen: { flex: 1, alignItems: "center", justifyContent: "center", gap: spacing.md },
-  loadingText: { fontSize: font.size.sm, color: colors.inkLight },
+  loadingText: { fontSize: font.size.sm, color: colors.inkLight, fontFamily: font.family.medium },
 
   pageHeader: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   pageIconWrap: {
-    width: 52, height: 52, borderRadius: radius.lg,
-    backgroundColor: colors.brandLight, borderWidth: 1, borderColor: colors.brandMid,
-    alignItems: "center", justifyContent: "center",
+    width: 52,
+    height: 52,
+    borderRadius: radius.lg,
+    backgroundColor: colors.brandLight,
+    borderWidth: 1,
+    borderColor: colors.brandMid,
+    alignItems: "center",
+    justifyContent: "center",
+    ...shadow.sm,
   },
-  pageIconText: { fontSize: 26 },
   pageHeaderText: { gap: 2 },
-  pageTitle: { fontSize: font.size.xl, fontWeight: font.weight.extrabold, color: colors.ink },
-  pageSub: { fontSize: font.size.sm, color: colors.inkLight },
+  pageTitle: { fontSize: font.size.xl, fontFamily: font.family.extrabold, color: colors.ink },
+  pageSub: { fontSize: font.size.sm, color: colors.inkLight, fontFamily: font.family.regular },
 
   connectionCard: {
     flexDirection: "row",
@@ -283,14 +302,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     ...shadow.sm,
   },
-  connectionOnline: { backgroundColor: "#f0fdf4", borderColor: "#86efac" },
-  connectionOffline: { backgroundColor: "#fef2f2", borderColor: "#fca5a5" },
+  connectionOnline: { backgroundColor: colors.successBg, borderColor: "#A7F3D0" },
+  connectionOffline: { backgroundColor: colors.errorBg, borderColor: "#FECACA" },
   connectionLeft: { flexDirection: "row", alignItems: "center", gap: spacing.md },
-  connectionDot: { width: 12, height: 12, borderRadius: 6 },
-  connectionStatus: { fontSize: font.size.md, fontWeight: font.weight.bold, color: colors.ink },
-  connectionSub: { fontSize: font.size.xs, color: colors.inkMid },
+  connectionDot: { width: 10, height: 10, borderRadius: 5 },
+  connectionStatus: { fontSize: font.size.md - 1, fontFamily: font.family.bold, color: colors.ink },
+  connectionSub: { fontSize: font.size.xs, color: colors.inkMid, fontFamily: font.family.medium },
   connectionRight: { alignItems: "flex-end", gap: 2 },
-  syncResultText: { fontSize: font.size.xs, color: colors.inkMid, fontWeight: font.weight.medium },
+  syncResultText: { fontSize: font.size.xs, color: colors.inkMid, fontFamily: font.family.semibold },
 
   counters: { flexDirection: "row", gap: spacing.sm },
   counterCard: {
@@ -300,12 +319,11 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     paddingVertical: spacing.md,
     borderWidth: 1,
-    gap: 3,
+    gap: 4,
     ...shadow.sm,
   },
-  counterIcon: { fontSize: 20 },
-  counterNum: { fontSize: font.size.xxl, fontWeight: font.weight.extrabold },
-  counterLabel: { fontSize: font.size.xs, color: colors.inkLight, fontWeight: font.weight.medium },
+  counterNum: { fontSize: font.size.xl, fontFamily: font.family.extrabold },
+  counterLabel: { fontSize: font.size.xs - 1, color: colors.inkLight, fontFamily: font.family.bold },
 
   syncBtn: {
     flexDirection: "row",
@@ -318,17 +336,18 @@ const styles = StyleSheet.create({
     ...shadow.brand,
   },
   syncBtnDisabled: { opacity: 0.55 },
-  syncBtnText: { color: colors.white, fontSize: font.size.md, fontWeight: font.weight.bold },
+  syncBtnText: { color: colors.white, fontSize: font.size.md - 1, fontFamily: font.family.bold },
 
-  section: { gap: spacing.sm },
+  section: { gap: spacing.sm, marginTop: spacing.xs },
   sectionLabelRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  sectionLabel: { fontSize: font.size.xs, fontWeight: font.weight.bold, color: colors.inkLight, letterSpacing: 1 },
+  sectionLabel: { fontSize: font.size.xs, fontFamily: font.family.bold, color: colors.inkLight, letterSpacing: 1.2, textTransform: "uppercase" },
   sectionLine: { flex: 1, height: 1, backgroundColor: colors.border },
   sectionCount: {
     minWidth: 22, height: 22, borderRadius: 11,
-    backgroundColor: colors.brand + "20", alignItems: "center", justifyContent: "center", paddingHorizontal: 6,
+    backgroundColor: colors.brandLight, alignItems: "center", justifyContent: "center", paddingHorizontal: 6,
+    borderWidth: 1, borderColor: colors.brandMid,
   },
-  sectionCountText: { fontSize: font.size.xs, fontWeight: font.weight.bold, color: colors.brand },
+  sectionCountText: { fontSize: 10, fontFamily: font.family.bold, color: colors.brand },
 
   sectionCard: {
     backgroundColor: colors.bgCard,
@@ -341,31 +360,40 @@ const styles = StyleSheet.create({
   rowDivider: { height: 1, backgroundColor: colors.border, marginLeft: spacing.xl },
   submissionRow: { flexDirection: "row", alignItems: "center", padding: spacing.lg, gap: spacing.md },
   submissionIconWrap: { width: 40, height: 40, borderRadius: radius.md, alignItems: "center", justifyContent: "center" },
-  submissionIcon: { fontSize: 18 },
   submissionInfo: { flex: 1, gap: 2 },
-  submissionTitle: { fontSize: font.size.sm, fontWeight: font.weight.semibold, color: colors.ink },
-  submissionError: { fontSize: font.size.xs, color: "#dc2626" },
-  submissionMeta: { fontSize: font.size.xs, color: colors.inkLight },
+  submissionTitle: { fontSize: font.size.sm, fontFamily: font.family.bold, color: colors.ink },
+  submissionError: { fontSize: font.size.xs, color: colors.error, fontFamily: font.family.medium },
+  submissionMeta: { fontSize: font.size.xs, color: colors.inkLight, fontFamily: font.family.regular },
   submissionRight: { alignItems: "flex-end", gap: spacing.xs },
-  statusPill: { paddingHorizontal: spacing.sm, paddingVertical: 3, borderRadius: radius.full },
-  statusPillText: { fontSize: font.size.xs, fontWeight: font.weight.bold },
+  statusPill: { paddingHorizontal: spacing.md, paddingVertical: 3, borderRadius: radius.full },
+  statusPillText: { fontSize: 10, fontFamily: font.family.bold },
   retryBtn: {
-    paddingHorizontal: spacing.md, paddingVertical: 4,
+    paddingHorizontal: spacing.md, paddingVertical: 5,
     backgroundColor: colors.brandLight, borderRadius: radius.full,
     borderWidth: 1, borderColor: colors.brandMid,
   },
-  retryBtnText: { fontSize: font.size.xs, fontWeight: font.weight.bold, color: colors.brand },
+  retryBtnText: { fontSize: font.size.xs - 1, fontFamily: font.family.bold, color: colors.brand },
 
   emptyCard: {
-    backgroundColor: colors.brandLight,
+    backgroundColor: colors.successBg,
     borderRadius: radius.xl,
     borderWidth: 1,
-    borderColor: colors.brandMid,
+    borderColor: "#A7F3D0",
     padding: spacing.xxxl,
     alignItems: "center",
     gap: spacing.md,
+    ...shadow.sm,
   },
-  emptyEmoji: { fontSize: 40 },
-  emptyTitle: { fontSize: font.size.lg, fontWeight: font.weight.bold, color: colors.brandDark },
-  emptyDesc: { fontSize: font.size.sm, color: colors.brand, textAlign: "center" },
+  emptyIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: colors.white,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
+  },
+  emptyTitle: { fontSize: font.size.lg - 1, fontFamily: font.family.bold, color: "#065F46" },
+  emptyDesc: { fontSize: font.size.sm, color: "#065F46", fontFamily: font.family.medium, textAlign: "center" },
 });

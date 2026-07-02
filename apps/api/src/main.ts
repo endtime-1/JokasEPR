@@ -1,14 +1,17 @@
 import { Logger, ValidationPipe, VersioningType } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { NestFactory } from "@nestjs/core";
+import { NestExpressApplication } from "@nestjs/platform-express";
 import cookieParser from "cookie-parser";
 import helmet from "helmet";
+import { mkdirSync } from "fs";
+import { join } from "path";
 import { AppModule } from "./app.module";
 import { HttpExceptionFilter } from "./common/filters/http-exception.filter";
 import { RequestLoggingInterceptor } from "./common/interceptors/request-logging.interceptor";
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true });
   const config = app.get(ConfigService);
   const port = config.get<number>("API_PORT", 4001);
   const prefix = config.get<string>("API_PREFIX", "api");
@@ -64,6 +67,10 @@ async function bootstrap() {
   );
   app.useGlobalFilters(new HttpExceptionFilter());
   app.useGlobalInterceptors(new RequestLoggingInterceptor());
+
+  const uploadsDir = join(process.cwd(), "uploads");
+  mkdirSync(uploadsDir, { recursive: true });
+  app.useStaticAssets(uploadsDir, { prefix: "/uploads" });
 
   await app.listen(port);
   Logger.log(`API listening on http://localhost:${port}/${prefix}/v${version}`, "Bootstrap");

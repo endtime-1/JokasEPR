@@ -328,6 +328,9 @@ export type ExpenseRecord = {
 export const fetchFinanceOptions = () =>
   apiFetch<FinanceOptions>("/finance/options");
 
+export const submitIncomeEntry = (payload: Record<string, unknown>) =>
+  apiFetch<ApiEnvelope<unknown>>("/finance/revenue", { method: "POST", body: JSON.stringify(payload) });
+
 export const submitExpense = (payload: Record<string, unknown>) =>
   apiFetch<ApiEnvelope<unknown>>("/finance/expenses", { method: "POST", body: JSON.stringify(payload) });
 
@@ -606,16 +609,56 @@ export type MobileSyncRecord = {
 };
 
 // Types
+export type TaskAssignment = {
+  id: string;
+  employee: { id: string; fullName: string; code?: string };
+  assignedBy?: { fullName: string };
+};
+
 export type Task = {
   id: string;
   title: string;
   description?: string;
+  taskType?: string;
   status: string;
   priority: string;
   dueDate?: string;
+  completedAt?: string;
+  notes?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  assignees?: { id: string; fullName: string; employeeRole?: { name: string } }[];
   assignedTo?: { fullName: string };
-  farm?: { name: string };
+  assignedBy?: { fullName: string };
+  assignments?: TaskAssignment[];
+  farm?: { id: string; name: string };
+  branch?: { id: string; name: string };
+  productionSite?: { name: string };
 };
+
+export const fetchTask = (id: string) =>
+  apiFetch<ApiEnvelope<Task>>(`/hr/tasks/${id}`);
+
+export const fetchAllTasks = (params?: { status?: string; limit?: number }) => {
+  const qs = new URLSearchParams();
+  if (params?.status) qs.set("status", params.status);
+  if (params?.limit)  qs.set("limit", String(params.limit));
+  const q = qs.toString();
+  return apiFetch<ApiEnvelope<Task[]>>(`/hr/tasks${q ? `?${q}` : "?limit=100"}`);
+};
+
+export const submitCreateTask = (payload: {
+  title: string;
+  description?: string;
+  taskType?: string;
+  priority?: string;
+  dueDate?: string;
+  farmId?: string;
+  branchId?: string;
+  notes?: string;
+  assigneeIds?: string[];
+}) =>
+  apiFetch<ApiEnvelope<Task>>("/hr/tasks", { method: "POST", body: JSON.stringify(payload) });
 
 // Feed Production
 export type FeedOption = { id: string; code: string; name: string; branchId?: string; productionSiteId?: string; farmId?: string; type?: string };
@@ -664,3 +707,433 @@ export type Notification = {
   status: "UNREAD" | "READ";
   createdAt: string;
 };
+
+// ── Finance Approvals ────────────────────────────────────────────────────────
+export type ExpenseDetailRecord = ExpenseRecord & {
+  notes?: string;
+  receiptUrl?: string;
+  vendorName?: string;
+  requestedBy?: { fullName: string; code: string };
+  approvedBy?: { fullName: string } | null;
+};
+
+export type PayrollRun = {
+  id: string;
+  reference: string;
+  period: string;
+  status: string;
+  totalAmount: number;
+  employeeCount: number;
+  processedAt?: string;
+  approvedAt?: string;
+};
+
+export const fetchPendingExpenses = () =>
+  apiFetch<ApiEnvelope<ExpenseRecord[]>>("/finance/expenses?status=PENDING_APPROVAL&limit=50");
+
+export const fetchExpenseDetail = (id: string) =>
+  apiFetch<ApiEnvelope<ExpenseDetailRecord>>(`/finance/expenses/${id}`);
+
+export const approveExpense = (id: string, payload?: { notes?: string }) =>
+  apiFetch<ApiEnvelope<unknown>>(`/finance/expenses/${id}/approve`, { method: "PATCH", body: JSON.stringify(payload ?? {}) });
+
+export const rejectExpense = (id: string, payload: { reason: string }) =>
+  apiFetch<ApiEnvelope<unknown>>(`/finance/expenses/${id}/reject`, { method: "PATCH", body: JSON.stringify(payload) });
+
+export const fetchPayrollRuns = () =>
+  apiFetch<ApiEnvelope<PayrollRun[]>>("/finance/payroll?limit=20");
+
+export const approvePayroll = (id: string) =>
+  apiFetch<ApiEnvelope<unknown>>(`/finance/payroll/${id}/approve`, { method: "PATCH", body: JSON.stringify({}) });
+
+// ── Procurement (manager flow) ───────────────────────────────────────────────
+export type ProcurementDashboardData = {
+  data: {
+    openPurchaseRequests: number;
+    pendingPurchaseOrders: number;
+    grnsThisMonth: number;
+    totalSpendThisMonth: number;
+    recentPurchaseOrders: PurchaseOrderListItem[];
+  };
+};
+
+export type PurchaseRequestItem = {
+  id: string;
+  productName: string;
+  quantity: number;
+  unitCost?: number;
+  uomCode?: string;
+  notes?: string;
+};
+
+export type PurchaseRequest = {
+  id: string;
+  reference: string;
+  status: string;
+  requestDate: string;
+  totalAmount?: number;
+  notes?: string;
+  requestedBy?: { fullName: string };
+  supplier?: { id: string; name: string; code: string };
+  items: PurchaseRequestItem[];
+};
+
+export const fetchProcurementDashboard = () =>
+  apiFetch<ProcurementDashboardData>("/procurement/dashboard");
+
+export const fetchPurchaseRequests = (status?: string) =>
+  apiFetch<ApiEnvelope<PurchaseRequest[]>>(`/procurement/purchase-requests?limit=50${status ? `&status=${status}` : ""}`);
+
+export const fetchPurchaseRequestDetail = (id: string) =>
+  apiFetch<ApiEnvelope<PurchaseRequest>>(`/procurement/purchase-requests/${id}`);
+
+export const submitPurchaseRequest = (payload: Record<string, unknown>) =>
+  apiFetch<ApiEnvelope<unknown>>("/procurement/purchase-requests", { method: "POST", body: JSON.stringify(payload) });
+
+export const approvePurchaseRequest = (id: string, payload?: { notes?: string }) =>
+  apiFetch<ApiEnvelope<unknown>>(`/procurement/purchase-requests/${id}/approve`, { method: "PATCH", body: JSON.stringify(payload ?? {}) });
+
+export const rejectPurchaseRequest = (id: string, payload: { reason: string }) =>
+  apiFetch<ApiEnvelope<unknown>>(`/procurement/purchase-requests/${id}/reject`, { method: "PATCH", body: JSON.stringify(payload) });
+
+export const approvePurchaseOrder = (id: string, payload?: { notes?: string }) =>
+  apiFetch<ApiEnvelope<unknown>>(`/procurement/purchase-orders/${id}/approve`, { method: "PATCH", body: JSON.stringify(payload ?? {}) });
+
+export const rejectPurchaseOrder = (id: string, payload: { reason: string }) =>
+  apiFetch<ApiEnvelope<unknown>>(`/procurement/purchase-orders/${id}/reject`, { method: "PATCH", body: JSON.stringify(payload) });
+
+// ── Feed Production (manager order flow) ─────────────────────────────────────
+export type FeedFormulaIngredientDetail = {
+  id: string;
+  product: { id: string; name: string; sku: string };
+  percentageInFormula: number;
+  kgPerTonne: number;
+  bagsPerTonne: number;
+  unitCostGhs: number;
+  totalCostGhs: number;
+  uomCode: string;
+  bagWeightKg: number;
+};
+
+export type FeedFormulaDetail = {
+  id: string;
+  code: string;
+  name: string;
+  feedType: string;
+  isActive: boolean;
+  targetBatchKg: number;
+  finishedProduct: { name: string; sku: string } | null;
+  ingredients: FeedFormulaIngredientDetail[];
+  totalCostPerTonne: number;
+  totalCostPerBatch: number;
+  version?: number;
+};
+
+export type FeedProductionOrderFull = FeedOrder & {
+  productionSite?: { name: string; code: string } | null;
+  warehouse?: { name: string; code: string } | null;
+  createdBy?: { fullName: string } | null;
+  batches?: { id: string; batchNumber: string; producedQuantityKg: number; status: string; createdAt: string }[];
+  formula?: { name: string; code: string; ingredients: { product: { name: string; sku: string }; kgPerTonne: number; requiredKg: number }[] } | null;
+};
+
+export const fetchFeedFormulas = () =>
+  apiFetch<ApiEnvelope<FeedFormula[]>>("/feed-production/formulas?limit=100");
+
+export const fetchFeedFormulaDetail = (id: string) =>
+  apiFetch<ApiEnvelope<FeedFormulaDetail>>(`/feed-production/formulas/${id}`);
+
+export const fetchFeedProductionOrderDetail = (id: string) =>
+  apiFetch<ApiEnvelope<FeedProductionOrderFull>>(`/feed-production/orders/${id}`);
+
+export const createFeedProductionOrder = (payload: Record<string, unknown>) =>
+  apiFetch<ApiEnvelope<{ id: string; orderNumber: string }>>("/feed-production/orders", { method: "POST", body: JSON.stringify(payload) });
+
+export const approveFeedProductionOrder = (id: string) =>
+  apiFetch<ApiEnvelope<unknown>>(`/feed-production/orders/${id}/approve`, { method: "PATCH", body: JSON.stringify({}) });
+
+// ── Profile & Auth ────────────────────────────────────────────────────────────
+export type MyProfileData = {
+  id: string;
+  fullName: string;
+  email: string;
+  phone?: string;
+  code?: string;
+  roles: string[];
+  branch?: { id: string; name: string; code: string };
+  farm?: { id: string; name: string; code: string };
+  employeeRole?: { name: string; code: string };
+};
+
+export const fetchMyProfile = () =>
+  apiFetch<ApiEnvelope<MyProfileData>>("/hr/employees/me");
+
+export const updateMyProfile = (payload: { phone?: string }) =>
+  apiFetch<ApiEnvelope<MyProfileData>>("/hr/employees/me", { method: "PATCH", body: JSON.stringify(payload) });
+
+export const changePassword = (payload: { currentPassword: string; newPassword: string }) =>
+  apiFetch<ApiEnvelope<unknown>>("/auth/change-password", { method: "POST", body: JSON.stringify(payload) });
+
+// ── Sales (manager/visibility) ────────────────────────────────────────────────
+export type SalesDashboardData = {
+  data: {
+    totalRevenue:       number;
+    totalOrders:        number;
+    paidOrders:         number;
+    pendingOrders:      number;
+    topCustomers:       { id: string; name: string; totalSpend: number }[];
+    recentOrders:       SalesOrderListItem[];
+  };
+};
+
+export type SalesOrderListItem = {
+  id: string;
+  orderNumber: string;
+  status: string;
+  totalAmount: number;
+  orderDate: string;
+  customer: { id: string; name: string; code: string };
+  _count?: { items: number };
+};
+
+export type CustomerDetail = {
+  id: string;
+  name: string;
+  code: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  totalOrders: number;
+  totalSpend: number;
+  outstandingBalance: number;
+  recentOrders: SalesOrderListItem[];
+};
+
+export const fetchSalesDashboard = () =>
+  apiFetch<SalesDashboardData>("/sales/dashboard");
+
+export const fetchSalesOrders = (status?: string) =>
+  apiFetch<ApiEnvelope<SalesOrderListItem[]>>(`/sales/orders?limit=50${status ? `&status=${status}` : ""}`);
+
+export const fetchCustomerDetail = (id: string) =>
+  apiFetch<ApiEnvelope<CustomerDetail>>(`/sales/customers/${id}`);
+
+// ── HR (leave requests) ───────────────────────────────────────────────────────
+export type LeaveType = "ANNUAL" | "SICK" | "MATERNITY" | "PATERNITY" | "COMPASSIONATE" | "UNPAID";
+
+export type LeaveRequest = {
+  id: string;
+  reference?: string;
+  leaveType: LeaveType | string;
+  startDate: string;
+  endDate: string;
+  daysRequested: number;
+  status: string;
+  reason?: string;
+  reviewedBy?: { fullName: string } | null;
+  reviewNote?: string;
+  createdAt: string;
+};
+
+export type HRDashboardData = {
+  data: {
+    totalEmployees:    number;
+    presentToday:      number;
+    absentToday:       number;
+    openLeaveRequests: number;
+    attendanceRate:    number;
+    recentLeaveRequests: LeaveRequest[];
+  };
+};
+
+export const fetchMyLeaveRequests = () =>
+  apiFetch<ApiEnvelope<LeaveRequest[]>>("/hr/leave-requests/my?limit=20");
+
+export const submitLeaveRequest = (payload: Record<string, unknown>) =>
+  apiFetch<ApiEnvelope<LeaveRequest>>("/hr/leave-requests", { method: "POST", body: JSON.stringify(payload) });
+
+export const fetchHRDashboard = () =>
+  apiFetch<HRDashboardData>("/hr/dashboard");
+
+// ── Market Planning (depth) ───────────────────────────────────────────────────
+export type MarketTargetItem = {
+  id: string;
+  targetQuantityKg: number;
+  achievedQuantityKg?: number;
+  product?: { id: string; name: string; sku: string } | null;
+};
+
+export type MarketTargetFull = MarketTarget & {
+  items: MarketTargetItem[];
+  createdBy?: { fullName: string } | null;
+  approvedBy?: { fullName: string } | null;
+};
+
+export const fetchMarketTargetDetail = (id: string) =>
+  apiFetch<ApiEnvelope<MarketTargetFull>>(`/market-planning/targets/${id}`);
+
+export const submitMarketTarget = (payload: Record<string, unknown>) =>
+  apiFetch<ApiEnvelope<MarketTarget>>("/market-planning/targets", { method: "POST", body: JSON.stringify(payload) });
+
+// ── Phase 5 — Storefront Admin ────────────────────────────────────────────────
+
+export type StorefrontStats = {
+  data: { published: number; pending: number; confirmed: number; delivered: number; total: number };
+};
+
+export type StorefrontOrderItem = { name: string; qty: number; unitPrice: number; total: number };
+export type StorefrontOrder = {
+  id: string;
+  orderNumber: string;
+  ref: string | null;
+  status: string;
+  statusLabel: string;
+  orderDate: string;
+  total: number;
+  customer: { name: string | null; phone: string | null; email: string | null; address: string | null };
+  notes: string | null;
+  items: StorefrontOrderItem[];
+};
+
+export type StorefrontProduct = {
+  id: string;
+  name: string;
+  sku: string;
+  isPublic: boolean;
+  publicSlug: string | null;
+  publicDescription: string | null;
+  storefrontCategory: string | null;
+  minOrderQty: number;
+  unitLabel: string | null;
+  unitPrice: number | null;
+};
+
+export const fetchStorefrontStats   = () =>
+  apiFetch<StorefrontStats>("/public/admin/stats");
+
+export const fetchStorefrontOrders  = (status?: string, search?: string) => {
+  const params = new URLSearchParams();
+  if (status && status !== "ALL") params.set("status", status);
+  if (search) params.set("search", search);
+  const qs = params.toString();
+  return apiFetch<ApiEnvelope<StorefrontOrder[]>>(`/public/admin/orders${qs ? `?${qs}` : ""}`);
+};
+
+export const updateStorefrontOrderStatus = (id: string, status: string) =>
+  apiFetch<ApiEnvelope<unknown>>(`/public/admin/orders/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) });
+
+export const fetchStorefrontProducts = (search?: string) =>
+  apiFetch<ApiEnvelope<StorefrontProduct[]>>(`/public/admin/products${search ? `?search=${encodeURIComponent(search)}` : ""}`);
+
+export const updateStorefrontProduct = (id: string, payload: Record<string, unknown>) =>
+  apiFetch<ApiEnvelope<StorefrontProduct>>(`/public/admin/products/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
+
+// ── Phase 6 — AI Assistant ────────────────────────────────────────────────────
+
+export type AiSession = {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AiMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  createdAt: string;
+};
+
+export type AiChatResponse = {
+  data: {
+    sessionId: string;
+    reply: string;
+    model: string;
+  };
+};
+
+export type AiSessionDetail = {
+  data: {
+    session: AiSession;
+    messages: AiMessage[];
+  };
+};
+
+export const fetchAiSessions = () =>
+  apiFetch<ApiEnvelope<AiSession[]>>("/ai/sessions");
+
+export const fetchAiSession = (id: string) =>
+  apiFetch<AiSessionDetail>(`/ai/sessions/${id}`);
+
+export const deleteAiSession = (id: string) =>
+  apiFetch<ApiEnvelope<unknown>>(`/ai/sessions/${id}`, { method: "DELETE" });
+
+export const sendAiMessage = (message: string, sessionId?: string) =>
+  apiFetch<AiChatResponse>("/ai/chat", {
+    method: "POST",
+    body: JSON.stringify({ message, sessionId }),
+  });
+
+// ── Phase 6 — Reports Browser ─────────────────────────────────────────────────
+
+export type ReportColumn = {
+  key: string;
+  label: string;
+  type?: "text" | "number" | "money" | "date" | "percent";
+};
+
+export type ReportCatalogItem = {
+  id: string;
+  title: string;
+  category: string;
+  description: string;
+};
+
+export type ReportChart = {
+  title: string;
+  labels: string[];
+  values: number[];
+};
+
+export type ReportRunResult = {
+  data: {
+    definition: ReportCatalogItem & { columns: ReportColumn[] };
+    rows: Record<string, unknown>[];
+    totals: Record<string, number>;
+    chart?: ReportChart;
+  };
+};
+
+export const fetchReportCatalog = () =>
+  apiFetch<ApiEnvelope<ReportCatalogItem[]>>("/reports");
+
+export const runReport = (id: string, params?: Record<string, string>) => {
+  const qs = params ? `?${new URLSearchParams(params).toString()}` : "";
+  return apiFetch<ReportRunResult>(`/reports/${id}${qs}`);
+};
+
+// ── Phase 6 — My Payslips ─────────────────────────────────────────────────────
+
+export type PayslipRecord = {
+  id: string;
+  reference: string;
+  period: string;
+  periodStart: string;
+  periodEnd: string;
+  employeeName: string;
+  employeeCode?: string;
+  basicSalary: number;
+  allowances: number;
+  deductions: number;
+  grossPay: number;
+  taxDeduction: number;
+  ssnit: number;
+  netPay: number;
+  paymentDate?: string;
+  paymentMethod?: string;
+  status: string;
+  notes?: string;
+};
+
+export const fetchMyPayslips = () =>
+  apiFetch<ApiEnvelope<PayslipRecord[]>>("/hr/payroll/me");

@@ -16,8 +16,7 @@ export interface PublicProduct {
 
 export interface OrderLine {
   productId: string;
-  qty: number;
-  unitPrice: number;
+  quantity: number;
 }
 
 export interface PlaceOrderPayload {
@@ -33,7 +32,7 @@ export interface PublicOrder {
   storefrontRef: string;
   status: string;
   createdAt: string;
-  lines: { productName: string; qty: number; unitPrice: number }[];
+  lines: { productName: string; qty: number; unitPrice: number; }[];
   total: number;
 }
 
@@ -104,11 +103,11 @@ export const api = {
                 const product = MOCK_PRODUCTS.find((p) => p.id === l.productId);
                 return {
                   productName: product?.name ?? l.productId,
-                  qty: l.qty,
-                  unitPrice: l.unitPrice,
+                  qty: l.quantity,
+                  unitPrice: product?.price ?? 0,
                 };
               }),
-              total: payload.lines.reduce((s, l) => s + l.unitPrice * l.qty, 0),
+              total: payload.lines.reduce((s, l) => s + (MOCK_PRODUCTS.find((p) => p.id === l.productId)?.price ?? 0) * l.quantity, 0),
             })
           );
         }

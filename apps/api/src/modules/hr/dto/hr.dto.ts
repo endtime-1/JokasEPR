@@ -267,3 +267,16 @@ export class CreateDepartmentAssignmentDto {
   @IsOptional() @IsString() @MaxLength(240) notes?: string;
 }
 
+export class CreateLeaveRequestDto {
+  @IsEnum(["ANNUAL", "SICK", "MATERNITY", "PATERNITY", "COMPASSIONATE", "UNPAID"]) leaveType!: string;
+  @IsDateString() startDate!: string;
+  @IsDateString() endDate!: string;
+  @IsInt() @Min(1) daysRequested!: number;
+  @IsOptional() @IsString() @MaxLength(500) reason?: string;
+}
+
+export class ReviewLeaveRequestDto {
+  @IsEnum(["APPROVED", "REJECTED"]) decision!: string;
+  @IsOptional() @IsString() @MaxLength(500) reviewNote?: string;
+}
+

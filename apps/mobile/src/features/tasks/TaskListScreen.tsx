@@ -1,25 +1,43 @@
-import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useCallback, useState } from "react";
+import {
+  FlatList,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
+import { useFocusEffect } from "@react-navigation/native";
 import { SyncBanner } from "../../components/SyncBanner";
-import { fetchMyTasks, type Task } from "../../api/endpoints";
-import { colors, font, radius, shadow, spacing } from "../../constants/theme";
+import { Badge } from "../../components/Badge";
+import { EmptyState } from "../../components/EmptyState";
+import { Icon } from "../../components/Icon";
+import { PageHeader } from "../../components/PageHeader";
+import { SegmentedControl } from "../../components/SegmentedControl";
+import { SkeletonList } from "../../components/SkeletonLoader";
+import { StatRow } from "../../components/StatRow";
+import { fetchMyTasks, fetchAllTasks, type Task } from "../../api/endpoints";
+import { useAuth } from "../../auth/AuthContext";
+import { colors, font, radius, semantic, shadow, spacing } from "../../constants/theme";
 
-const PRIORITY_META: Record<string, { color: string; bg: string; label: string }> = {
-  CRITICAL: { color: "#dc2626", bg: "#fef2f2", label: "Critical" },
-  HIGH:     { color: "#d97706", bg: "#fffbeb", label: "High"     },
-  MEDIUM:   { color: "#2563eb", bg: "#eff6ff", label: "Medium"   },
-  LOW:      { color: "#64748b", bg: "#f8fafc", label: "Low"      },
+const PRIORITY_META: Record<string, { label: string; color: string; bg: string; border: string }> = {
+  URGENT: { label: "Urgent",  ...semantic.priority.critical },
+  HIGH:   { label: "High",    ...semantic.priority.high     },
+  MEDIUM: { label: "Medium",  ...semantic.priority.medium   },
+  LOW:    { label: "Low",     ...semantic.priority.low      },
 };
 
-const STATUS_META: Record<string, { color: string; bg: string; label: string }> = {
-  COMPLETED:   { color: "#16a34a", bg: "#f0fdf4", label: "Completed"   },
-  IN_PROGRESS: { color: "#d97706", bg: "#fffbeb", label: "In Progress" },
-  PENDING:     { color: "#64748b", bg: "#f8fafc", label: "Pending"     },
-  BLOCKED:     { color: "#dc2626", bg: "#fef2f2", label: "Blocked"     },
-  CANCELLED:   { color: "#94a3b8", bg: "#f8fafc", label: "Cancelled"   },
+const STATUS_META: Record<string, { label: string; color: string; bg: string; border: string }> = {
+  COMPLETED:   { label: "Completed",   ...semantic.status.approved   },
+  IN_PROGRESS: { label: "In Progress", ...semantic.status.inProgress },
+  OPEN:        { label: "Open",        ...semantic.status.pending    },
+  ON_HOLD:     { label: "On Hold",     ...semantic.status.rejected   },
+  CANCELLED:   { label: "Cancelled",   ...semantic.status.closed     },
 };
+
+const MANAGER_ROLES = ["SUPER_ADMIN", "CEO", "MANAGER", "HR_MANAGER", "ADMIN"];
 
 function isPastDue(dueDate?: string) {
   if (!dueDate) return false;
@@ -32,16 +50,23 @@ function formatDate(iso: string) {
 
 export function TaskListScreen() {
   const navigation = useNavigation<any>();
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { user }   = useAuth();
+
+  const isManager = user?.roles?.some((r) => MANAGER_ROLES.includes(r)) ?? false;
+
+  const [tasks, setTasks]           = useState<Task[]>([]);
+  const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeFilter, setActiveFilter] = useState<"all" | "pending" | "done">("all");
+  const [activeFilter, setActiveFilter] = useState("all");
+  const [viewMode, setViewMode]     = useState<"mine" | "all">("mine");
 
   const load = useCallback(async (isRefresh = false) => {
     if (!isRefresh) setLoading(true);
     else setRefreshing(true);
     try {
-      const res = await fetchMyTasks();
+      const res = viewMode === "all" && isManager
+        ? await fetchAllTasks({ limit: 100 })
+        : await fetchMyTasks();
       setTasks((res.data as any) ?? []);
     } catch {
       //
@@ -49,9 +74,14 @@ export function TaskListScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [viewMode, isManager]);
 
-  useEffect(() => { load(); }, [load]);
+  // Refresh every time this screen gains focus
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
+  );
 
   const pending = tasks.filter((t) => t.status !== "COMPLETED" && t.status !== "CANCELLED");
   const done    = tasks.filter((t) => t.status === "COMPLETED" || t.status === "CANCELLED");
@@ -64,9 +94,8 @@ export function TaskListScreen() {
   if (loading) {
     return (
       <SafeAreaView style={styles.safe} edges={["bottom"]}>
-        <View style={styles.loadingScreen}>
-          <ActivityIndicator size="large" color={colors.brand} />
-          <Text style={styles.loadingText}>Loading tasks…</Text>
+        <View style={styles.skeletonPad}>
+          <SkeletonList count={5} />
         </View>
       </SafeAreaView>
     );
@@ -74,8 +103,11 @@ export function TaskListScreen() {
 
   function renderTask({ item }: { item: Task }) {
     const pastDue = isPastDue(item.dueDate) && item.status !== "COMPLETED";
-    const pMeta = PRIORITY_META[item.priority] ?? PRIORITY_META.LOW;
-    const sMeta = STATUS_META[item.status] ?? STATUS_META.PENDING;
+    const pMeta   = PRIORITY_META[item.priority] ?? PRIORITY_META.LOW;
+    const sMeta   = STATUS_META[item.status]     ?? STATUS_META.OPEN;
+
+    const assigneeName = item.assignees?.map((a) => a.fullName).join(", ")
+      ?? item.assignedTo?.fullName;
 
     return (
       <TouchableOpacity
@@ -83,48 +115,64 @@ export function TaskListScreen() {
         activeOpacity={0.78}
       >
         <View style={styles.taskCard}>
-          {/* priority accent bar */}
           <View style={[styles.priorityBar, { backgroundColor: pMeta.color }]} />
-
           <View style={styles.taskInner}>
             <View style={styles.taskTop}>
               <Text style={styles.taskTitle} numberOfLines={2}>{item.title}</Text>
-              <View style={[styles.badge, { backgroundColor: sMeta.bg }]}>
-                <Text style={[styles.badgeText, { color: sMeta.color }]}>{sMeta.label}</Text>
-              </View>
+              <Badge label={sMeta.label} color={sMeta.color} bg={sMeta.bg} border={sMeta.border} />
             </View>
-
-            {item.description && (
+            {item.description ? (
               <Text style={styles.taskDesc} numberOfLines={2}>{item.description}</Text>
-            )}
-
+            ) : null}
             <View style={styles.taskMeta}>
-              <View style={[styles.badge, { backgroundColor: pMeta.bg }]}>
-                <Text style={[styles.badgeText, { color: pMeta.color }]}>{pMeta.label}</Text>
-              </View>
-              {item.farm && (
+              <Badge label={pMeta.label} color={pMeta.color} bg={pMeta.bg} border={pMeta.border} />
+              {assigneeName ? (
                 <View style={styles.metaChip}>
-                  <Text style={styles.metaChipText}>📍 {item.farm.name}</Text>
+                  <Icon name="account" size={11} color={colors.inkMid} />
+                  <Text style={styles.metaChipText} numberOfLines={1}>{assigneeName}</Text>
                 </View>
-              )}
-              {item.dueDate && (
+              ) : null}
+              {item.farm ? (
+                <View style={styles.metaChip}>
+                  <Icon name="map-marker" size={11} color={colors.inkMid} />
+                  <Text style={styles.metaChipText}>{item.farm.name}</Text>
+                </View>
+              ) : null}
+              {item.dueDate ? (
                 <View style={[styles.metaChip, pastDue && styles.pastDueChip]}>
+                  <Icon name={pastDue ? "alert" : "calendar"} size={11} color={pastDue ? "#dc2626" : colors.inkMid} />
                   <Text style={[styles.metaChipText, pastDue && styles.pastDueText]}>
-                    {pastDue ? "⚠ OVERDUE · " : "📅 "}{formatDate(item.dueDate)}
+                    {pastDue ? "OVERDUE · " : ""}{formatDate(item.dueDate)}
                   </Text>
                 </View>
-              )}
+              ) : null}
             </View>
+
+            {/* Quick-action buttons for managers */}
+            {isManager && item.status === "OPEN" && (
+              <TouchableOpacity
+                style={styles.quickAction}
+                onPress={() => navigation.navigate("TaskUpdate", { taskId: item.id, taskTitle: item.title })}
+                activeOpacity={0.75}
+              >
+                <Icon name="pencil" size={13} color={colors.brand} />
+                <Text style={styles.quickActionText}>Update Status</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </TouchableOpacity>
     );
   }
 
+  const titleText    = viewMode === "all" ? "All Tasks" : "My Tasks";
+  const subtitleText = viewMode === "all"
+    ? `${tasks.length} task${tasks.length !== 1 ? "s" : ""} across all employees`
+    : `${tasks.length} task${tasks.length !== 1 ? "s" : ""} assigned to you`;
+
   return (
     <SafeAreaView style={styles.safe} edges={["bottom"]}>
       <SyncBanner />
-
       <FlatList
         data={filtered}
         renderItem={renderTask}
@@ -134,119 +182,118 @@ export function TaskListScreen() {
         ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
         ListHeaderComponent={
           <View style={styles.listHeader}>
-            {/* Page title */}
-            <View style={styles.pageHeader}>
-              <View style={styles.pageIconWrap}>
-                <Text style={styles.pageIconText}>✅</Text>
-              </View>
-              <View>
-                <Text style={styles.pageTitle}>My Tasks</Text>
-                <Text style={styles.pageSub}>{tasks.length} task{tasks.length !== 1 ? "s" : ""} assigned to you</Text>
-              </View>
-            </View>
+            <PageHeader
+              icon="checkbox-marked-circle"
+              title={titleText}
+              subtitle={subtitleText}
+            />
 
-            {/* Stat chips */}
-            <View style={styles.statRow}>
-              <StatChip label="Pending" count={pending.length} color="#d97706" bg="#fffbeb" />
-              <StatChip label="Done" count={done.length} color="#16a34a" bg="#f0fdf4" />
-              <StatChip label="Total" count={tasks.length} color={colors.brand} bg={colors.brandLight} />
-            </View>
-
-            {/* Filter tabs */}
-            <View style={styles.filterRow}>
-              {(["all", "pending", "done"] as const).map((f) => (
+            {/* Manager view toggle */}
+            {isManager && (
+              <View style={styles.viewToggle}>
                 <TouchableOpacity
-                  key={f}
-                  style={[styles.filterTab, activeFilter === f && styles.filterTabActive]}
-                  onPress={() => setActiveFilter(f)}
+                  style={[styles.toggleBtn, viewMode === "mine" && styles.toggleBtnActive]}
+                  onPress={() => { setViewMode("mine"); setActiveFilter("all"); }}
                 >
-                  <Text style={[styles.filterTabText, activeFilter === f && styles.filterTabTextActive]}>
-                    {f === "all" ? "All" : f === "pending" ? "Active" : "Done"}
-                  </Text>
+                  <Icon name="account" size={14} color={viewMode === "mine" ? colors.brand : colors.inkMid} />
+                  <Text style={[styles.toggleText, viewMode === "mine" && styles.toggleTextActive]}>My Tasks</Text>
                 </TouchableOpacity>
-              ))}
-            </View>
+                <TouchableOpacity
+                  style={[styles.toggleBtn, viewMode === "all" && styles.toggleBtnActive]}
+                  onPress={() => { setViewMode("all"); setActiveFilter("all"); }}
+                >
+                  <Icon name="account-group" size={14} color={viewMode === "all" ? colors.brand : colors.inkMid} />
+                  <Text style={[styles.toggleText, viewMode === "all" && styles.toggleTextActive]}>All Tasks</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            <StatRow
+              items={[
+                { label: "Pending", value: pending.length, color: "#d97706", bg: "#fffbeb" },
+                { label: "Done",    value: done.length,    color: "#16a34a", bg: "#f0fdf4" },
+                { label: "Total",   value: tasks.length,   color: colors.brand, bg: colors.brandLight },
+              ]}
+            />
+            <SegmentedControl
+              segments={[
+                { key: "all",     label: "All",    badge: tasks.length   },
+                { key: "pending", label: "Active", badge: pending.length },
+                { key: "done",    label: "Done",   badge: done.length    },
+              ]}
+              active={activeFilter}
+              onChange={setActiveFilter}
+            />
           </View>
         }
         ListEmptyComponent={
-          <View style={styles.empty}>
-            <View style={styles.emptyIconWrap}>
-              <Text style={styles.emptyIconText}>✅</Text>
-            </View>
-            <Text style={styles.emptyTitle}>
-              {activeFilter === "pending" ? "No active tasks" : activeFilter === "done" ? "No completed tasks" : "No tasks assigned"}
-            </Text>
-            <Text style={styles.emptyDesc}>
-              {activeFilter === "all" ? "You're all caught up!" : "Try switching the filter above"}
-            </Text>
-          </View>
+          <EmptyState
+            icon="checkbox-marked-circle-outline"
+            title={
+              activeFilter === "pending" ? "No active tasks" :
+              activeFilter === "done"    ? "No completed tasks" :
+              viewMode === "all" ? "No tasks yet" : "No tasks assigned"
+            }
+            subtitle={
+              activeFilter === "all" && viewMode === "mine"
+                ? "You're all caught up!"
+                : "Try switching the filter above"
+            }
+          />
         }
       />
+
+      {/* FAB — Assign Task (managers only) */}
+      {isManager && (
+        <TouchableOpacity
+          style={styles.fab}
+          onPress={() => navigation.navigate("TaskAssign")}
+          activeOpacity={0.85}
+        >
+          <Icon name="plus" size={22} color="#fff" />
+        </TouchableOpacity>
+      )}
     </SafeAreaView>
   );
 }
 
-function StatChip({ label, count, color, bg }: { label: string; count: number; color: string; bg: string }) {
-  return (
-    <View style={[styles.statChip, { backgroundColor: bg, borderColor: color + "30" }]}>
-      <Text style={[styles.statChipValue, { color }]}>{count}</Text>
-      <Text style={styles.statChipLabel}>{label}</Text>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bg },
-  list: { padding: spacing.xl, paddingBottom: spacing.xxxl },
-  loadingScreen: { flex: 1, alignItems: "center", justifyContent: "center", gap: spacing.md },
-  loadingText: { fontSize: font.size.sm, color: colors.inkLight },
+  safe:        { flex: 1, backgroundColor: colors.bg },
+  list:        { padding: spacing.xl, paddingBottom: 100 },
+  skeletonPad: { padding: spacing.xl, gap: spacing.sm },
 
   listHeader: { gap: spacing.lg, marginBottom: spacing.md },
-  pageHeader: { flexDirection: "row", alignItems: "center", gap: spacing.md },
-  pageIconWrap: {
-    width: 52,
-    height: 52,
-    borderRadius: radius.lg,
-    backgroundColor: colors.brandLight,
-    borderWidth: 1,
-    borderColor: colors.brandMid,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  pageIconText: { fontSize: 26 },
-  pageTitle: { fontSize: font.size.xl, fontWeight: font.weight.extrabold, color: colors.ink },
-  pageSub: { fontSize: font.size.sm, color: colors.inkLight },
 
-  statRow: { flexDirection: "row", gap: spacing.sm },
-  statChip: {
-    flex: 1,
-    alignItems: "center",
-    paddingVertical: spacing.md,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    gap: 2,
-  },
-  statChipValue: { fontSize: font.size.xl, fontWeight: font.weight.extrabold },
-  statChipLabel: { fontSize: font.size.xs, color: colors.inkLight, fontWeight: font.weight.medium },
-
-  filterRow: {
+  viewToggle: {
     flexDirection: "row",
     backgroundColor: colors.bgCard,
-    borderRadius: radius.lg,
+    borderRadius: radius.xl,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: 4,
-    gap: 4,
+    overflow: "hidden",
   },
-  filterTab: {
+  toggleBtn: {
     flex: 1,
-    paddingVertical: 8,
-    borderRadius: radius.md,
+    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.xs,
+    paddingVertical: spacing.sm + 2,
   },
-  filterTabActive: { backgroundColor: colors.brand },
-  filterTabText: { fontSize: font.size.sm, fontWeight: font.weight.semibold, color: colors.inkLight },
-  filterTabTextActive: { color: colors.white },
+  toggleBtnActive: {
+    backgroundColor: colors.brandLight,
+    borderBottomWidth: 2,
+    borderBottomColor: colors.brand,
+  },
+  toggleText: {
+    fontSize: font.size.sm,
+    fontFamily: font.family.medium,
+    color: colors.inkMid,
+  },
+  toggleTextActive: {
+    fontFamily: font.family.semibold,
+    color: colors.brand,
+  },
 
   taskCard: {
     flexDirection: "row",
@@ -258,39 +305,52 @@ const styles = StyleSheet.create({
     ...shadow.sm,
   },
   priorityBar: { width: 4 },
-  taskInner: { flex: 1, padding: spacing.lg, gap: spacing.sm },
-  taskTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: spacing.sm },
-  taskTitle: { flex: 1, fontSize: font.size.md, fontWeight: font.weight.semibold, color: colors.ink },
-  taskDesc: { fontSize: font.size.sm, color: colors.inkMid, lineHeight: 19 },
-  taskMeta: { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs, alignItems: "center" },
+  taskInner:   { flex: 1, padding: spacing.lg, gap: spacing.sm },
+  taskTop:     { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: spacing.sm },
+  taskTitle:   { flex: 1, fontSize: font.size.md, fontFamily: font.family.semibold, color: colors.ink },
+  taskDesc:    { fontSize: font.size.sm, color: colors.inkMid, lineHeight: 19, fontFamily: font.family.regular },
+  taskMeta:    { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs, alignItems: "center" },
 
-  badge: { paddingHorizontal: spacing.sm, paddingVertical: 3, borderRadius: radius.full },
-  badgeText: { fontSize: font.size.xs, fontWeight: font.weight.bold },
   metaChip: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    backgroundColor: colors.bg, borderRadius: radius.full,
+    paddingHorizontal: spacing.sm, paddingVertical: 3,
+    borderWidth: 1, borderColor: colors.border,
+    maxWidth: 150,
+  },
+  metaChipText: { fontSize: font.size.xs, color: colors.inkMid, fontFamily: font.family.medium },
+  pastDueChip:  { backgroundColor: "#fef2f2", borderColor: "#fca5a5" },
+  pastDueText:  { color: "#dc2626" },
+
+  quickAction: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: colors.bg,
-    borderRadius: radius.full,
+    gap: 4,
+    alignSelf: "flex-start",
     paddingHorizontal: spacing.sm,
-    paddingVertical: 3,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  metaChipText: { fontSize: font.size.xs, color: colors.inkMid, fontWeight: font.weight.medium },
-  pastDueChip: { backgroundColor: "#fef2f2", borderColor: "#fca5a5" },
-  pastDueText: { color: "#dc2626" },
-
-  empty: { alignItems: "center", paddingTop: 60, gap: spacing.md },
-  emptyIconWrap: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    paddingVertical: 4,
+    borderRadius: radius.full,
     backgroundColor: colors.brandLight,
+    borderWidth: 1,
+    borderColor: colors.brand,
+    marginTop: 2,
+  },
+  quickActionText: {
+    fontSize: font.size.xs,
+    fontFamily: font.family.semibold,
+    color: colors.brand,
+  },
+
+  fab: {
+    position: "absolute",
+    bottom: spacing.xl,
+    right: spacing.xl,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.brand,
     alignItems: "center",
     justifyContent: "center",
-    ...shadow.sm,
+    ...shadow.lg,
   },
-  emptyIconText: { fontSize: 36 },
-  emptyTitle: { fontSize: font.size.lg, fontWeight: font.weight.bold, color: colors.ink },
-  emptyDesc: { fontSize: font.size.sm, color: colors.inkLight },
 });

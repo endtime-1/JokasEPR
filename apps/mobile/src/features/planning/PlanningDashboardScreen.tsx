@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useNavigation } from "@react-navigation/native";
 import { SyncBanner } from "../../components/SyncBanner";
 import { fetchMarketTargets, MarketTarget } from "../../api/endpoints";
 import { colors, font, radius, shadow, spacing } from "../../constants/theme";
@@ -17,11 +18,12 @@ function fmt(dateStr: string) {
   return new Date(dateStr).toLocaleDateString("en-GH", { day: "numeric", month: "short", year: "numeric" });
 }
 
-function TargetRow({ item }: { item: MarketTarget }) {
+function TargetRow({ item, onPress }: { item: MarketTarget; onPress: () => void }) {
   const sc = STATUS_CFG[item.status] ?? STATUS_CFG.DRAFT;
   const totalKg = (item.items ?? []).reduce((s, i) => s + Number(i.targetQuantityKg), 0);
 
   return (
+    <TouchableOpacity onPress={onPress} activeOpacity={0.75}>
     <View style={[styles.row, { borderColor: sc.border, backgroundColor: sc.bg }]}>
       <View style={styles.rowTop}>
         <View style={styles.rowLeft}>
@@ -56,10 +58,12 @@ function TargetRow({ item }: { item: MarketTarget }) {
 
       {item.notes && <Text style={styles.notes}>{item.notes}</Text>}
     </View>
+    </TouchableOpacity>
   );
 }
 
 export function PlanningDashboardScreen() {
+  const navigation = useNavigation<any>();
   const [targets, setTargets] = useState<MarketTarget[]>([]);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState("");
@@ -124,14 +128,23 @@ export function PlanningDashboardScreen() {
         <FlatList
           data={targets}
           keyExtractor={(i) => i.id}
-          renderItem={({ item }) => <TargetRow item={item} />}
+          renderItem={({ item }) => (
+            <TargetRow item={item} onPress={() => navigation.navigate("MarketTargetDetail", { targetId: item.id })} />
+          )}
           refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={colors.brand} />}
           contentContainerStyle={styles.list}
           ItemSeparatorComponent={() => <View style={styles.sep} />}
           ListEmptyComponent={
             <View style={styles.center}>
               <Text style={styles.emptyText}>No targets set</Text>
-              <Text style={styles.emptyHint}>Market planning targets are managed on the web dashboard</Text>
+              <Text style={styles.emptyHint}>Create a target to start tracking production volumes</Text>
+              <TouchableOpacity
+                style={styles.createBtn}
+                onPress={() => navigation.navigate("MarketTargetCreate")}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.createBtnText}>+ Create Market Target</Text>
+              </TouchableOpacity>
             </View>
           }
         />
@@ -182,4 +195,12 @@ const styles = StyleSheet.create({
   errorText: { fontSize: font.size.sm, color: colors.error, textAlign: "center" },
   emptyText: { fontSize: font.size.lg, fontWeight: font.weight.bold, color: colors.ink },
   emptyHint: { fontSize: font.size.sm, color: colors.inkLight, textAlign: "center" },
+  createBtn: {
+    marginTop: spacing.sm,
+    backgroundColor: colors.brand,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    borderRadius: radius.full,
+  },
+  createBtnText: { fontSize: font.size.sm, fontFamily: font.family.bold, color: colors.white },
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { apiFetch, type ApiEnvelope } from "../../../lib/api";
 import {
   Package,
@@ -13,7 +13,11 @@ import {
   Globe,
   AlertCircle,
   CheckCircle2,
+  ImagePlus,
+  Loader2,
 } from "lucide-react";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4001/api/v1";
 
 interface AdminProduct {
   id: string;
@@ -22,6 +26,7 @@ interface AdminProduct {
   isPublic: boolean;
   publicSlug: string | null;
   publicDescription: string | null;
+  publicImageUrl: string | null;
   storefrontCategory: string | null;
   minOrderQty: number;
   unitLabel: string | null;
@@ -43,6 +48,10 @@ function ProductRow({ product, onSaved }: { product: AdminProduct; onSaved: (p: 
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState("");
+  const [imageUrl, setImageUrl] = useState<string | null>(product.publicImageUrl ?? null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadErr, setUploadErr] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const dirty =
     draft.isPublic !== product.isPublic ||
@@ -50,7 +59,8 @@ function ProductRow({ product, onSaved }: { product: AdminProduct; onSaved: (p: 
     draft.publicDescription !== product.publicDescription ||
     draft.storefrontCategory !== product.storefrontCategory ||
     draft.minOrderQty !== product.minOrderQty ||
-    draft.unitLabel !== product.unitLabel;
+    draft.unitLabel !== product.unitLabel ||
+    draft.unitPrice !== product.unitPrice;
 
   async function handleTogglePublish() {
     const next = { ...draft, isPublic: !draft.isPublic };
@@ -85,6 +95,7 @@ function ProductRow({ product, onSaved }: { product: AdminProduct; onSaved: (p: 
           storefrontCategory: draft.storefrontCategory,
           minOrderQty: draft.minOrderQty,
           unitLabel: draft.unitLabel,
+          unitPrice: draft.unitPrice,
         }),
       });
       onSaved(draft);
@@ -99,6 +110,31 @@ function ProductRow({ product, onSaved }: { product: AdminProduct; onSaved: (p: 
 
   function field(key: keyof AdminProduct, value: string | number) {
     setDraft((d) => ({ ...d, [key]: value }));
+  }
+
+  async function handleImagePick(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    setUploadErr("");
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch(`${API_BASE}/public/admin/products/${product.id}/image`, {
+        method: "POST",
+        body: form,
+        credentials: "include",
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.message ?? "Upload failed");
+      const apiRoot = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4001/api/v1").replace("/api/v1", "");
+      setImageUrl(`${apiRoot}${json.data.imageUrl}`);
+    } catch (err: unknown) {
+      setUploadErr(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   }
 
   return (
@@ -159,6 +195,49 @@ function ProductRow({ product, onSaved }: { product: AdminProduct; onSaved: (p: 
       {expanded && (
         <div className="border-t border-line px-4 pb-4 pt-4">
           <div className="grid gap-4 sm:grid-cols-2">
+
+            {/* Product image — full width */}
+            <div className="sm:col-span-2">
+              <label className="mb-1 block text-xs font-semibold text-ink/60">Product Image</label>
+              <div className="flex items-start gap-4">
+                {/* Preview */}
+                <div className="h-24 w-24 shrink-0 overflow-hidden rounded-xl border border-line bg-ink/4">
+                  {imageUrl ? (
+                    <img src={imageUrl} alt="Product" className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-ink/20">
+                      <ImagePlus className="h-6 w-6" />
+                      <span className="text-[10px]">No image</span>
+                    </div>
+                  )}
+                </div>
+                {/* Upload button */}
+                <div className="flex flex-col gap-2">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleImagePick}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploading}
+                    className="flex items-center gap-2 rounded-xl border border-line bg-white px-4 py-2 text-sm font-semibold text-ink/60 shadow-sm transition hover:border-brand/30 hover:text-brand disabled:opacity-50"
+                  >
+                    {uploading ? (
+                      <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Uploading…</>
+                    ) : (
+                      <><ImagePlus className="h-3.5 w-3.5" /> {imageUrl ? "Replace image" : "Upload image"}</>
+                    )}
+                  </button>
+                  {uploadErr && <p className="text-xs text-red-500">{uploadErr}</p>}
+                  <p className="text-xs text-ink/35">JPG, PNG, WebP · max 5 MB</p>
+                </div>
+              </div>
+            </div>
+
             {/* Slug */}
             <div>
               <label className="mb-1 block text-xs font-semibold text-ink/60">URL Slug</label>
@@ -214,6 +293,25 @@ function ProductRow({ product, onSaved }: { product: AdminProduct; onSaved: (p: 
                 placeholder="e.g. 50kg bag, crate, bird"
                 className="w-full rounded-xl border border-line bg-field px-3 py-2 text-sm text-ink placeholder:text-ink/30 focus:border-brand/50 focus:outline-none focus:ring-2 focus:ring-brand/15"
               />
+            </div>
+
+            {/* Price */}
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-ink/60">
+                Unit Price <span className="font-normal text-ink/35">(GHS)</span>
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-ink/40">GHS</span>
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={draft.unitPrice ?? ""}
+                  onChange={(e) => field("unitPrice", parseFloat(e.target.value) || 0)}
+                  placeholder="0.00"
+                  className="w-full rounded-xl border border-line bg-field py-2 pl-12 pr-3 text-sm text-ink placeholder:text-ink/30 focus:border-brand/50 focus:outline-none focus:ring-2 focus:ring-brand/15"
+                />
+              </div>
             </div>
 
             {/* Description — full width */}

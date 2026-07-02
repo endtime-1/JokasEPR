@@ -20,6 +20,8 @@ import {
   HiproPredictiveQueryDto,
   RecordExternalFeedSaleDto,
   SimulatePredictiveDto,
+  UpdateFeedFormulaDto,
+  UpdateFeedFormulaIngredientDto,
   UpdateFeedQualityCheckStatusDto,
   UpdateIngredientDto
 } from "./dto/feed-production.dto";
@@ -78,6 +80,30 @@ export class FeedProductionController {
     return this.feedProductionService.addIngredient(user, id, dto, { ipAddress, userAgent });
   }
 
+  @Patch("formulas/:id")
+  @RequirePermissions(PERMISSIONS.FEED_MANAGE)
+  updateFormula(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateFeedFormulaDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.feedProductionService.updateFormula(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Patch("formulas/:id/ingredients/:ingredientId")
+  @RequirePermissions(PERMISSIONS.FEED_MANAGE)
+  updateFormulaIngredient(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Param("ingredientId") ingredientId: string, @Body() dto: UpdateFeedFormulaIngredientDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.feedProductionService.updateFormulaIngredient(user, id, ingredientId, dto, { ipAddress, userAgent });
+  }
+
+  @Delete("formulas/:id")
+  @RequirePermissions(PERMISSIONS.FEED_MANAGE)
+  deleteFormula(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.feedProductionService.deleteFormula(user, id, { ipAddress, userAgent });
+  }
+
+  @Delete("formulas/:id/ingredients/:ingredientId")
+  @RequirePermissions(PERMISSIONS.FEED_MANAGE)
+  deleteFormulaIngredient(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Param("ingredientId") ingredientId: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.feedProductionService.deleteFormulaIngredient(user, id, ingredientId, { ipAddress, userAgent });
+  }
+
   @Get("formulas/:id")
   @RequirePermissions(PERMISSIONS.FEED_READ)
   formula(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
@@ -104,8 +130,8 @@ export class FeedProductionController {
 
   @Get("orders/:id/raw-material-availability")
   @RequirePermissions(PERMISSIONS.FEED_READ)
-  orderAvailability(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Query("warehouseId") warehouseId: string) {
-    return this.feedProductionService.orderAvailability(user, id, warehouseId);
+  orderAvailability(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Query() query: FeedProductionQueryDto) {
+    return this.feedProductionService.orderAvailability(user, id, query.warehouseId ?? "");
   }
 
   @Get("batches")

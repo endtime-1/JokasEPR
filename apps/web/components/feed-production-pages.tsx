@@ -1,9 +1,9 @@
-﻿"use client";
+"use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { AlertCircle, AlertTriangle, ArrowLeft, BarChart3, Brain, Calculator, CheckCircle2, ChevronDown, ChevronUp, Download, Factory, GripVertical, Package, PackageCheck, Plus, Printer, RotateCw, Trash2, TrendingUp, Zap } from "lucide-react";
+import { AlertCircle, AlertTriangle, ArrowLeft, BarChart3, Brain, Calculator, CheckCircle2, ChevronDown, ChevronUp, Download, Factory, GripVertical, Package, PackageCheck, Pencil, Plus, Printer, RotateCw, Trash2, TrendingUp, Zap } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { FeedMillShell } from "./feed-mill-shell";
 import { DataTable } from "./data-table";
@@ -71,6 +71,24 @@ type BatchRow = {
   metrics?: { totalCost: number; expectedSalesValue: number; profitMargin: number };
 };
 
+type BatchDetail = {
+  id: string;
+  batchNumber: string;
+  status: string;
+  producedQuantityKg: string | number;
+  wastageKg: string | number;
+  productionDate: string;
+  productionSite?: { name: string; code: string };
+  finishedProduct?: { name: string; sku: string };
+  productionOrder?: { orderNumber: string; plannedQuantityKg: string | number };
+  rawMaterialUsages?: Array<{ id: string; rawMaterial?: { name: string; sku: string }; quantityKg: string | number; unitCost: string | number; wastageKg: string | number }>;
+  qualityChecks?: Array<{ id: string; status: string; moisturePercent?: number | null; proteinPercent?: number | null; textureNotes?: string | null; checkedAt?: string }>;
+  finishedFeedStocks?: Array<{ id: string; warehouse?: { name: string; code: string }; quantityKg: string | number; bag50KgCount: number; unitCost: string | number }>;
+  packagingRecords?: Array<{ id: string; packageSizeKg: string | number; packageCount: number; packagedAt?: string }>;
+  internalTransfers?: Array<{ id: string; fromWarehouse?: { name: string; code: string }; toFarm?: { name: string; code: string }; toPoultryHouse?: { name: string; code: string } | null; quantityKg: string | number; transferDate?: string }>;
+  metrics?: { totalCost: number; expectedSalesValue: number; profitMargin: number };
+};
+
 type IngredientDraftRow = {
   uid: string;
   ingredientId: string;
@@ -84,7 +102,6 @@ type OrderFormState = {
   plannedQuantityKg: string;
   scheduledDate: string;
   rawMaterialWarehouseId: string;
-  status: string;
   notes: string;
 };
 
@@ -158,7 +175,32 @@ export function FeedFormulaListPage() {
 let _uidCounter = 0;
 function uid() { return `row-${++_uidCounter}`; }
 
-const FEED_TYPES = ["CHICK_MASH", "GROWER_MASH", "LAYER_MASH", "BROILER_STARTER", "BROILER_FINISHER", "BREEDER_FEED", "CONCENTRATE", "CUSTOM_FEED"] as const;
+const FEED_TYPES = [
+  "CHICK_MASH",
+  "GROWER_MASH",
+  "LAYER_MASH",
+  "BROILER_STARTER",
+  "BROILER_FINISHER",
+  "BREEDER_FEED",
+  "CONCENTRATE",
+  "CUSTOM_FEED",
+  "BROILER_STARTER_MASH",
+  "BROILER_STARTER_CONCENTRATE",
+  "BROILER_FINISHER_MASH",
+  "BROILER_FINISHER_CONCENTRATE",
+  "SUPER_CHICKS_CONCENTRATE",
+  "SUPER_CHICKS_MASH",
+  "CHICKS_STARTER_MASH",
+  "CHICKS_STARTER_CONCENTRATE",
+  "DEVELOPER_MASH",
+  "DEVELOPER_CONCENTRATE",
+  "PRE_LAY_MASH",
+  "PRE_LAY_CONCENTRATE",
+  "LAYER_1_MASH",
+  "LAYER_1_CONCENTRATE",
+  "LAYER_2_MASH",
+  "LAYER_2_CONCENTRATE"
+] as const;
 
 export function FormulaBuilderPage() {
   const options = useFeedOptions();
@@ -193,7 +235,7 @@ export function FormulaBuilderPage() {
   const totalKg = ingRows.reduce((s, r) => s + (Number(r.quantityKg) || 0), 0);
   const totalCost = ingRows.reduce((s, r) => s + (Number(r.quantityKg) || 0) * (Number(r.unitCost) || 0), 0);
   const batchKg = Number(targetBatchKg) || 100;
-  const costPer100Kg = totalKg > 0 ? (totalCost / totalKg) * 100 : 0;
+  const costPer100Kg = batchKg > 0 ? (totalCost / batchKg) * 100 : 0;
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -318,7 +360,9 @@ export function FormulaBuilderPage() {
                     <th className="w-8 py-2.5 pl-4 pr-2">#</th>
                     <th className="py-2.5 pr-4" style={{ minWidth: 220 }}>Ingredient *</th>
                     <th className="py-2.5 pr-4 text-right" style={{ minWidth: 120 }}>kg per batch *</th>
-                    <th className="py-2.5 pr-4 text-right" style={{ minWidth: 120 }}>Unit Cost (GHS/kg)</th>
+                    <th className="py-2.5 pr-4 text-right" style={{ minWidth: 100 }}>Qty per kg</th>
+                    <th className="py-2.5 pr-4 text-right" style={{ minWidth: 120 }}>Qty per Bag (50kg)</th>
+                    <th className="py-2.5 pr-4 text-right" style={{ minWidth: 120 }}>Price (GHS/kg)</th>
                     <th className="py-2.5 pr-4 text-right" style={{ minWidth: 110 }}>Line Cost (GHS)</th>
                     <th className="w-10 py-2.5 pr-4" />
                   </tr>
@@ -328,6 +372,9 @@ export function FormulaBuilderPage() {
                     const lineKg = Number(row.quantityKg) || 0;
                     const lineCost = Number(row.unitCost) || 0;
                     const lineTotal = lineKg * lineCost;
+                    const targetBatch = Number(targetBatchKg) || 100;
+                    const qtyPerKg = lineKg / targetBatch;
+                    const qtyPerBag = qtyPerKg * 50;
                     const isDupe = row.ingredientId && ingRows.filter((r) => r.ingredientId === row.ingredientId).length > 1;
                     return (
                       <tr key={row.uid} className="group border-b border-line/40 last:border-0">
@@ -357,6 +404,12 @@ export function FormulaBuilderPage() {
                             value={row.quantityKg}
                             onChange={(e) => updateRow(row.uid, "quantityKg", e.target.value)}
                           />
+                        </td>
+                        <td className="py-2 pr-4 text-right text-ink/50 text-xs">
+                          {qtyPerKg.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg
+                        </td>
+                        <td className="py-2 pr-4 text-right text-ink/50 text-xs">
+                          {qtyPerBag.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg
                         </td>
                         <td className="py-2 pr-4 text-right">
                           <input
@@ -477,9 +530,33 @@ function FormulaTable({ rows }: { rows: FormulaRow[] }) {
 
 export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" | "costing" | "versions" }) {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const options = useFeedOptions();
   const [formula, setFormula] = useState<FormulaRow | null>(null);
   const [costing, setCosting] = useState<FormulaRow["costing"] | null>(null);
+
+  // Header edit state
+  const [editingHeader, setEditingHeader] = useState(false);
+  const [headerDraft, setHeaderDraft] = useState({ name: "", targetBatchKg: "" });
+  const [headerSaving, setHeaderSaving] = useState(false);
+
+  // Per-ingredient edit state
+  const [editingRow, setEditingRow] = useState<string | null>(null);
+  const [rowDraft, setRowDraft] = useState({ quantityKg: "", unitCost: "" });
+  const [rowSaving, setRowSaving] = useState(false);
+  // confirmDeleteId: first click → show inline confirm; deletingId: delete in flight
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteErr, setDeleteErr] = useState("");
+
+  // Archive / restore / delete formula state
+  const [archiving, setArchiving] = useState(false);
+  const [archiveErr, setArchiveErr] = useState("");
+  const [confirmDeleteFormula, setConfirmDeleteFormula] = useState(false);
+  const [deletingFormula, setDeletingFormula] = useState(false);
+  const [deleteFormulaErr, setDeleteFormulaErr] = useState("");
+
+  // Add form
   const [ingredient, setIngredient] = useState({ ingredientId: "", quantityKg: "", unitCost: "" });
 
   async function load() {
@@ -491,9 +568,59 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
     }
   }
 
-  useEffect(() => {
-    load().catch(() => undefined);
-  }, [mode, params.id]);
+  useEffect(() => { load().catch(() => undefined); }, [mode, params.id]);
+
+  function openHeaderEdit() {
+    setHeaderDraft({ name: formula?.name ?? "", targetBatchKg: String(formula?.targetBatchKg ?? "") });
+    setEditingHeader(true);
+  }
+
+  async function saveHeader() {
+    setHeaderSaving(true);
+    try {
+      await apiFetch(`/feed-production/formulas/${params.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name: headerDraft.name, targetBatchKg: Number(headerDraft.targetBatchKg) }),
+      });
+      setEditingHeader(false);
+      await load();
+    } finally {
+      setHeaderSaving(false);
+    }
+  }
+
+  function openRowEdit(ing: { id: string; quantityKg: string | number; unitCost: string | number }) {
+    setEditingRow(ing.id);
+    setRowDraft({ quantityKg: String(ing.quantityKg), unitCost: String(ing.unitCost) });
+  }
+
+  async function saveRow(ingId: string) {
+    setRowSaving(true);
+    try {
+      await apiFetch(`/feed-production/formulas/${params.id}/ingredients/${ingId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ quantityKg: Number(rowDraft.quantityKg), unitCost: Number(rowDraft.unitCost) }),
+      });
+      setEditingRow(null);
+      await load();
+    } finally {
+      setRowSaving(false);
+    }
+  }
+
+  async function deleteRow(ingId: string) {
+    setDeletingId(ingId);
+    setDeleteErr("");
+    try {
+      await apiFetch(`/feed-production/formulas/${params.id}/ingredients/${ingId}`, { method: "DELETE" });
+      setConfirmDeleteId(null);
+      await load();
+    } catch (e: unknown) {
+      setDeleteErr(e instanceof Error ? e.message : "Delete failed");
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   async function addIngredient(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -510,10 +637,155 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
     await load();
   }
 
+  async function archiveFormula() {
+    setArchiving(true);
+    setArchiveErr("");
+    try {
+      await apiFetch(`/feed-production/formulas/${params.id}`, { method: "PATCH", body: JSON.stringify({ status: "INACTIVE" }) });
+      await load();
+    } catch (e: unknown) {
+      setArchiveErr(e instanceof Error ? e.message : "Archive failed");
+    } finally {
+      setArchiving(false);
+    }
+  }
+
+  async function restoreFormula() {
+    setArchiving(true);
+    setArchiveErr("");
+    try {
+      await apiFetch(`/feed-production/formulas/${params.id}`, { method: "PATCH", body: JSON.stringify({ status: "ACTIVE" }) });
+      await load();
+    } catch (e: unknown) {
+      setArchiveErr(e instanceof Error ? e.message : "Restore failed");
+    } finally {
+      setArchiving(false);
+    }
+  }
+
+  async function deleteFormula() {
+    setDeletingFormula(true);
+    setDeleteFormulaErr("");
+    try {
+      await apiFetch(`/feed-production/formulas/${params.id}`, { method: "DELETE" });
+      router.push("/feed-production/formulas");
+    } catch (e: unknown) {
+      setDeleteFormulaErr(e instanceof Error ? e.message : "Delete failed");
+      setDeletingFormula(false);
+    }
+  }
+
   const title = mode === "costing" ? "Formula Costing" : mode === "versions" ? "Formula Version History" : formula?.name ?? "Formula Details";
+
   return (
     <FeedMillShell>
-      <PageHeader title={title} subtitle="Formula ingredients, cost per 100kg, cost per 50kg bag, and version history." />
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-bold text-ink">{title}</h1>
+            {formula?.status && <StatusBadge status={formula.status} />}
+          </div>
+          <p className="mt-0.5 text-sm text-ink/50">Formula ingredients, cost per 100kg, cost per 50kg bag, and version history.</p>
+        </div>
+        {mode === "details" && !editingHeader && (
+          <div className="flex shrink-0 flex-wrap gap-2">
+            <button
+              onClick={openHeaderEdit}
+              className="inline-flex items-center gap-2 rounded-xl border border-line bg-white px-4 py-2 text-sm font-semibold text-ink/60 shadow-sm transition hover:border-brand/30 hover:text-brand"
+            >
+              <Pencil className="h-3.5 w-3.5" aria-hidden /> Edit
+            </button>
+            {formula?.status === "INACTIVE" ? (
+              <button
+                onClick={restoreFormula}
+                disabled={archiving}
+                className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 shadow-sm transition hover:bg-emerald-100 disabled:opacity-50"
+              >
+                <RotateCw className="h-3.5 w-3.5" aria-hidden /> {archiving ? "Restoring…" : "Restore"}
+              </button>
+            ) : (
+              <button
+                onClick={archiveFormula}
+                disabled={archiving}
+                className="inline-flex items-center gap-2 rounded-xl border border-line bg-white px-4 py-2 text-sm font-semibold text-ink/60 shadow-sm transition hover:border-amber-300 hover:text-amber-700 disabled:opacity-50"
+              >
+                {archiving ? "Archiving…" : "Archive"}
+              </button>
+            )}
+            {formula?.status === "INACTIVE" && (
+              confirmDeleteFormula ? (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm text-ink/50">Delete permanently?</span>
+                  <button
+                    onClick={deleteFormula}
+                    disabled={deletingFormula}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-red-500 px-3 py-2 text-sm font-bold text-white transition hover:bg-red-600 disabled:opacity-50"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" aria-hidden /> {deletingFormula ? "Deleting…" : "Yes, delete"}
+                  </button>
+                  <button
+                    onClick={() => { setConfirmDeleteFormula(false); setDeleteFormulaErr(""); }}
+                    className="rounded-xl border border-line bg-white px-3 py-2 text-sm font-semibold text-ink/50 transition hover:text-ink"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setConfirmDeleteFormula(true)}
+                  className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-600 shadow-sm transition hover:bg-red-100"
+                >
+                  <Trash2 className="h-3.5 w-3.5" aria-hidden /> Delete
+                </button>
+              )
+            )}
+          </div>
+        )}
+      </div>
+      {(archiveErr || deleteFormulaErr) && (
+        <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          <span>{archiveErr || deleteFormulaErr}</span>
+          <button onClick={() => { setArchiveErr(""); setDeleteFormulaErr(""); }} className="ml-auto text-red-400 hover:text-red-600">✕</button>
+        </div>
+      )}
+
+      {/* Header edit panel */}
+      {editingHeader && (
+        <div className="mb-6 rounded-2xl border border-brand/30 bg-brand/5 p-5 shadow-sm">
+          <h3 className="mb-4 text-sm font-bold text-ink">Edit Formula Details</h3>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="sm:col-span-2">
+              <label className="mb-1.5 block text-xs font-semibold text-ink/55">Formula Name</label>
+              <input
+                value={headerDraft.name}
+                onChange={(e) => setHeaderDraft((d) => ({ ...d, name: e.target.value }))}
+                className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-ink/55">Target Batch (kg)</label>
+              <input
+                type="number"
+                min="0.001"
+                step="0.001"
+                value={headerDraft.targetBatchKg}
+                onChange={(e) => setHeaderDraft((d) => ({ ...d, targetBatchKg: e.target.value }))}
+                className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-right text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+              />
+            </div>
+          </div>
+          <div className="mt-4 flex gap-2">
+            <button onClick={saveHeader} disabled={headerSaving} className="app-button-primary">
+              {headerSaving ? "Saving…" : "Save changes"}
+            </button>
+            <button onClick={() => setEditingHeader(false)} className="rounded-xl border border-line bg-white px-4 py-2 text-sm font-semibold text-ink/50 transition hover:text-ink">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       <section className="mb-6 grid gap-4 md:grid-cols-4">
         {[
           ["Target kg", formula?.targetBatchKg],
@@ -527,6 +799,7 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
           </article>
         ))}
       </section>
+
       {mode === "versions" ? (
         <>
           <button className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" onClick={createVersion}>
@@ -560,26 +833,110 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
                     <th className="py-2.5 pr-4">Ingredient</th>
                     <th className="py-2.5 pr-4">SKU</th>
                     <th className="py-2.5 pr-4 text-right">kg per batch</th>
-                    <th className="py-2.5 pr-4 text-right">Unit Cost (GHS)</th>
-                    <th className="py-2.5 pr-5 text-right">Line Cost (GHS)</th>
+                    <th className="py-2.5 pr-4 text-right">Qty per kg</th>
+                    <th className="py-2.5 pr-4 text-right">Qty per Bag (50kg)</th>
+                    <th className="py-2.5 pr-4 text-right">Price (GHS/kg)</th>
+                    <th className="py-2.5 pr-4 text-right">Amount (GHS)</th>
+                    <th className="py-2.5 pr-5" />
                   </tr>
                 </thead>
                 <tbody>
                   {(formula?.ingredients ?? []).length === 0 ? (
-                    <tr><td colSpan={6} className="px-5 py-10 text-center text-sm text-ink/40">No ingredients yet — add below</td></tr>
+                    <tr><td colSpan={9} className="px-5 py-10 text-center text-sm text-ink/40">No ingredients yet — add below</td></tr>
                   ) : (
-                    (formula?.ingredients ?? []).map((ing, idx) => (
-                      <tr key={ing.id} className="border-b border-line/40 last:border-0 hover:bg-field/30">
-                        <td className="px-5 py-2.5 text-xs font-semibold text-ink/30">{idx + 1}</td>
-                        <td className="py-2.5 pr-4 font-semibold text-ink">{ing.ingredient?.name ?? "—"}</td>
-                        <td className="py-2.5 pr-4">
-                          <span className="rounded bg-field px-1.5 py-0.5 font-mono text-[11px] font-bold text-ink/50">{ing.ingredient?.sku ?? "—"}</span>
-                        </td>
-                        <td className="py-2.5 pr-4 text-right">{number(ing.quantityKg)}</td>
-                        <td className="py-2.5 pr-4 text-right text-ink/60">{number(ing.unitCost)}</td>
-                        <td className="py-2.5 pr-5 text-right font-semibold">{number(Number(ing.quantityKg) * Number(ing.unitCost))}</td>
-                      </tr>
-                    ))
+                    (formula?.ingredients ?? []).map((ing, idx) => {
+                      const targetBatch = Number(formula?.targetBatchKg || 100);
+                      const isEditing = editingRow === ing.id;
+                      const kgVal = isEditing ? Number(rowDraft.quantityKg) : Number(ing.quantityKg);
+                      const costVal = isEditing ? Number(rowDraft.unitCost) : Number(ing.unitCost);
+                      const qtyPerKg = kgVal / targetBatch;
+                      const qtyPerBag = qtyPerKg * 50;
+                      return (
+                        <tr key={ing.id} className={`border-b border-line/40 last:border-0 ${isEditing ? "bg-brand/5" : "hover:bg-field/30"}`}>
+                          <td className="px-5 py-2.5 text-xs font-semibold text-ink/30">{idx + 1}</td>
+                          <td className="py-2.5 pr-4 font-semibold text-ink">{ing.ingredient?.name ?? "—"}</td>
+                          <td className="py-2.5 pr-4">
+                            <span className="rounded bg-field px-1.5 py-0.5 font-mono text-[11px] font-bold text-ink/50">{ing.ingredient?.sku ?? "—"}</span>
+                          </td>
+                          <td className="py-2.5 pr-4 text-right">
+                            {isEditing ? (
+                              <input
+                                type="number" min="0" step="0.001" autoFocus
+                                value={rowDraft.quantityKg}
+                                onChange={(e) => setRowDraft((d) => ({ ...d, quantityKg: e.target.value }))}
+                                className="w-24 rounded-lg border border-brand/40 bg-white px-2 py-1 text-right text-sm focus:outline-none focus:ring-2 focus:ring-brand/20"
+                              />
+                            ) : number(ing.quantityKg)}
+                          </td>
+                          <td className="py-2.5 pr-4 text-right text-ink/60">{qtyPerKg.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg</td>
+                          <td className="py-2.5 pr-4 text-right text-ink/60">{number(qtyPerBag)} kg</td>
+                          <td className="py-2.5 pr-4 text-right text-ink/60">
+                            {isEditing ? (
+                              <input
+                                type="number" min="0" step="0.01"
+                                value={rowDraft.unitCost}
+                                onChange={(e) => setRowDraft((d) => ({ ...d, unitCost: e.target.value }))}
+                                className="w-24 rounded-lg border border-brand/40 bg-white px-2 py-1 text-right text-sm focus:outline-none focus:ring-2 focus:ring-brand/20"
+                              />
+                            ) : number(ing.unitCost)}
+                          </td>
+                          <td className="py-2.5 pr-4 text-right font-semibold">{number(kgVal * costVal)}</td>
+                          <td className="py-2 pr-5">
+                            {isEditing ? (
+                              <div className="flex items-center justify-end gap-1.5">
+                                <button
+                                  onClick={() => saveRow(ing.id)}
+                                  disabled={rowSaving}
+                                  className="rounded-lg bg-brand px-2.5 py-1 text-xs font-bold text-white transition hover:bg-brand/90 disabled:opacity-50"
+                                >
+                                  {rowSaving ? "…" : "Save"}
+                                </button>
+                                <button
+                                  onClick={() => setEditingRow(null)}
+                                  className="rounded-lg border border-line bg-white px-2 py-1 text-xs font-semibold text-ink/50 transition hover:text-ink"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            ) : confirmDeleteId === ing.id ? (
+                              <div className="flex items-center justify-end gap-1.5">
+                                <span className="text-xs text-ink/50">Remove?</span>
+                                <button
+                                  onClick={() => deleteRow(ing.id)}
+                                  disabled={deletingId === ing.id}
+                                  className="rounded-lg bg-red-500 px-2.5 py-1 text-xs font-bold text-white transition hover:bg-red-600 disabled:opacity-50"
+                                >
+                                  {deletingId === ing.id ? "…" : "Yes, remove"}
+                                </button>
+                                <button
+                                  onClick={() => { setConfirmDeleteId(null); setDeleteErr(""); }}
+                                  className="rounded-lg border border-line bg-white px-2 py-1 text-xs font-semibold text-ink/50 transition hover:text-ink"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center justify-end gap-1">
+                                <button
+                                  onClick={() => openRowEdit(ing)}
+                                  title="Edit quantities"
+                                  className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-ink/40 transition hover:bg-brand/10 hover:text-brand"
+                                >
+                                  <Pencil className="h-3 w-3" aria-hidden /> Edit
+                                </button>
+                                <button
+                                  onClick={() => { setConfirmDeleteId(ing.id); setDeleteErr(""); }}
+                                  title="Remove ingredient"
+                                  className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-ink/40 transition hover:bg-red-50 hover:text-red-500"
+                                >
+                                  <Trash2 className="h-3 w-3" aria-hidden /> Remove
+                                </button>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
                 {(formula?.ingredients?.length ?? 0) > 0 && (() => {
@@ -591,7 +948,10 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
                         <td colSpan={3} className="px-5 py-2.5 text-xs uppercase tracking-wide text-ink/40">Totals</td>
                         <td className="py-2.5 pr-4 text-right">{number(totalKg)} kg</td>
                         <td className="py-2.5 pr-4" />
-                        <td className="py-2.5 pr-5 text-right text-brand">{number(totalCost)} GHS</td>
+                        <td className="py-2.5 pr-4" />
+                        <td className="py-2.5 pr-4" />
+                        <td className="py-2.5 pr-4 text-right text-brand">{number(totalCost)} GHS</td>
+                        <td className="py-2.5 pr-5" />
                       </tr>
                     </tfoot>
                   );
@@ -599,6 +959,14 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
               </table>
             </div>
           </div>
+
+          {deleteErr && (
+            <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              <span>{deleteErr}</span>
+              <button onClick={() => setDeleteErr("")} className="ml-auto text-red-400 hover:text-red-600">✕</button>
+            </div>
+          )}
 
           {/* Add ingredient */}
           <div className="rounded-2xl border border-line bg-white p-5 shadow-panel">
@@ -621,11 +989,7 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
               <div>
                 <label className="mb-1.5 block text-xs font-semibold text-ink/55">kg per batch *</label>
                 <input
-                  type="number"
-                  min="0"
-                  step="0.001"
-                  required
-                  placeholder="0"
+                  type="number" min="0" step="0.001" required placeholder="0"
                   className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-right text-sm transition focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
                   value={ingredient.quantityKg}
                   onChange={(e) => setIngredient({ ...ingredient, quantityKg: e.target.value })}
@@ -634,10 +998,7 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
               <div>
                 <label className="mb-1.5 block text-xs font-semibold text-ink/55">Unit Cost (GHS/kg)</label>
                 <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  placeholder="0.00"
+                  type="number" min="0" step="0.01" placeholder="0.00"
                   className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-right text-sm transition focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
                   value={ingredient.unitCost}
                   onChange={(e) => setIngredient({ ...ingredient, unitCost: e.target.value })}
@@ -657,7 +1018,10 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
 export function FeedProductionOrdersPage({ create = false }: { create?: boolean }) {
   const options = useFeedOptions();
   const [rows, setRows] = useState<OrderRow[]>([]);
-  const [form, setForm] = useState({ productionSiteId: "", formulaId: "", plannedQuantityKg: "", scheduledDate: today(), rawMaterialWarehouseId: "", status: "APPROVED", notes: "" });
+  const [form, setForm] = useState<OrderFormState>({ productionSiteId: "", formulaId: "", plannedQuantityKg: "", scheduledDate: today(), rawMaterialWarehouseId: "", notes: "" });
+  const [submitErr, setSubmitErr] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [actionErr, setActionErr] = useState("");
 
   async function load() {
     const response = await apiFetch<ApiEnvelope<OrderRow[]>>("/feed-production/orders");
@@ -667,206 +1031,1267 @@ export function FeedProductionOrdersPage({ create = false }: { create?: boolean 
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await apiFetch("/feed-production/orders", {
-      method: "POST",
-      body: JSON.stringify({
-        productionSiteId: form.productionSiteId || options.productionSites[0]?.id,
-        formulaId: form.formulaId || options.formulas[0]?.id,
-        plannedQuantityKg: Number(form.plannedQuantityKg),
-        scheduledDate: form.scheduledDate,
-        rawMaterialWarehouseId: form.rawMaterialWarehouseId || options.warehouses[0]?.id,
-        status: form.status,
-        notes: form.notes || undefined
-      })
-    });
-    setForm({ ...form, plannedQuantityKg: "", notes: "" });
-    await load();
+    setSubmitting(true);
+    setSubmitErr("");
+    try {
+      await apiFetch("/feed-production/orders", {
+        method: "POST",
+        body: JSON.stringify({
+          productionSiteId: form.productionSiteId || options.productionSites[0]?.id,
+          formulaId: form.formulaId || options.formulas[0]?.id,
+          plannedQuantityKg: Number(form.plannedQuantityKg),
+          scheduledDate: form.scheduledDate,
+          rawMaterialWarehouseId: form.rawMaterialWarehouseId || options.warehouses[0]?.id,
+          notes: form.notes || undefined
+        })
+      });
+      setForm({ ...form, plannedQuantityKg: "", notes: "" });
+      await load();
+    } catch (err: unknown) {
+      setSubmitErr((err as Error)?.message ?? "Failed to create order.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function approveOrder(id: string) {
+    setActionErr("");
+    try {
+      await apiFetch(`/feed-production/orders/${id}/approve`, { method: "PATCH" });
+      await load();
+    } catch (err: unknown) {
+      setActionErr((err as Error)?.message ?? "Failed to approve order.");
+    }
   }
 
   return (
     <FeedMillShell>
       <PageHeader title={create ? "Create Production Order" : "Feed Production Orders"} subtitle="Plan, approve, and monitor feed mill production orders." />
-      {create ? <OrderForm options={options} form={form} setForm={setForm} submit={submit} /> : <Link className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" href="/feed-production/orders/create"><Plus aria-hidden className="h-4 w-4" /> Create order</Link>}
-      <OrderTable rows={rows} />
+      {actionErr && (
+        <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+          <AlertCircle className="h-4 w-4 shrink-0" /><span>{actionErr}</span>
+          <button onClick={() => setActionErr("")} className="ml-auto text-red-400 hover:text-red-600">✕</button>
+        </div>
+      )}
+      {create ? (
+        <>
+          {submitErr && (
+            <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+              <AlertCircle className="h-4 w-4 shrink-0" /><span>{submitErr}</span>
+              <button onClick={() => setSubmitErr("")} className="ml-auto text-red-400 hover:text-red-600">✕</button>
+            </div>
+          )}
+          <OrderForm options={options} form={form} setForm={setForm} submit={submit} submitting={submitting} />
+        </>
+      ) : (
+        <Link className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" href="/feed-production/orders/create">
+          <Plus aria-hidden className="h-4 w-4" /> Create order
+        </Link>
+      )}
+      <OrderTable rows={rows} onApprove={approveOrder} />
     </FeedMillShell>
   );
 }
 
-function OrderForm({ options, form, setForm, submit }: { options: FeedOptions; form: OrderFormState; setForm: (form: OrderFormState) => void; submit: (event: FormEvent<HTMLFormElement>) => void }) {
+function OrderForm({ options, form, setForm, submit, submitting }: { options: FeedOptions; form: OrderFormState; setForm: (form: OrderFormState) => void; submit: (event: FormEvent<HTMLFormElement>) => void; submitting?: boolean }) {
   return (
-    <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-4">
-      <SelectField label="Production site" value={form.productionSiteId || options.productionSites[0]?.id || ""} options={options.productionSites} onChange={(value) => setForm({ ...form, productionSiteId: value })} />
-      <SelectField label="Formula" value={form.formulaId || options.formulas[0]?.id || ""} options={options.formulas} onChange={(value) => setForm({ ...form, formulaId: value })} />
-      <SelectField label="Raw material warehouse" value={form.rawMaterialWarehouseId || options.warehouses[0]?.id || ""} options={options.warehouses} onChange={(value) => setForm({ ...form, rawMaterialWarehouseId: value })} />
-      <FormField label="Planned kg"><input className={inputClass} type="number" value={form.plannedQuantityKg} onChange={(event) => setForm({ ...form, plannedQuantityKg: event.target.value })} required /></FormField>
-      <FormField label="Scheduled date"><input className={inputClass} type="date" value={form.scheduledDate} onChange={(event) => setForm({ ...form, scheduledDate: event.target.value })} required /></FormField>
-      <FormField label="Status"><select className={inputClass} value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}><option>APPROVED</option><option>DRAFT</option></select></FormField>
-      <FormField label="Notes"><input className={inputClass} value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} /></FormField>
-      <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white"><Plus aria-hidden className="h-4 w-4" /> Save order</button>
+    <form onSubmit={submit} className="mb-6 rounded-2xl border border-line bg-white p-5 shadow-panel">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <SelectField label="Production site *" value={form.productionSiteId || options.productionSites[0]?.id || ""} options={options.productionSites} onChange={(value) => setForm({ ...form, productionSiteId: value })} />
+        <SelectField label="Formula *" value={form.formulaId || options.formulas[0]?.id || ""} options={options.formulas} onChange={(value) => setForm({ ...form, formulaId: value })} />
+        <SelectField label="Raw material warehouse" value={form.rawMaterialWarehouseId || options.warehouses[0]?.id || ""} options={options.warehouses} onChange={(value) => setForm({ ...form, rawMaterialWarehouseId: value })} />
+        <FormField label="Planned quantity (kg) *"><input className={inputClass} type="number" min="0.001" step="0.001" value={form.plannedQuantityKg} onChange={(event) => setForm({ ...form, plannedQuantityKg: event.target.value })} required /></FormField>
+        <FormField label="Scheduled date *"><input className={inputClass} type="date" value={form.scheduledDate} onChange={(event) => setForm({ ...form, scheduledDate: event.target.value })} required /></FormField>
+        <FormField label="Notes"><input className={inputClass} placeholder="Optional notes…" value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} /></FormField>
+      </div>
+      <p className="mb-4 mt-3 text-xs text-ink/45">Orders are created as DRAFT. Use the Approve action on the orders list to advance the workflow.</p>
+      <div className="flex items-center justify-between gap-4">
+        <Link href="/feed-production/orders" className="app-button-secondary">Cancel</Link>
+        <button type="submit" disabled={submitting} className="app-button-primary min-w-[160px]">
+          {submitting ? "Creating…" : "Create order"}
+        </button>
+      </div>
     </form>
   );
 }
 
-function OrderTable({ rows }: { rows: OrderRow[] }) {
+function OrderTable({ rows, onApprove }: { rows: OrderRow[]; onApprove?: (id: string) => Promise<void> }) {
+  const [approvingId, setApprovingId] = useState<string | null>(null);
+
+  async function handleApprove(id: string) {
+    setApprovingId(id);
+    try { await onApprove?.(id); } finally { setApprovingId(null); }
+  }
+
   return (
     <DataTable rows={rows} empty="No feed production orders found" columns={[
-      { key: "order", label: "Order", render: (row) => row.orderNumber },
+      { key: "order", label: "Order #", render: (row) => <span className="font-mono text-xs font-semibold">{row.orderNumber}</span> },
       { key: "site", label: "Site", render: (row) => row.productionSite?.name ?? "-" },
       { key: "formula", label: "Formula", render: (row) => row.formula?.name ?? "-" },
       { key: "planned", label: "Planned kg", render: (row) => number(row.plannedQuantityKg) },
       { key: "date", label: "Scheduled", render: (row) => new Date(row.scheduledDate).toLocaleDateString() },
-      { key: "status", label: "Status", render: (row) => row.status },
-      { key: "batch", label: "Batch", render: (row) => row.batches?.[0] ? <Link className="text-brand" href={`/feed-production/batches/${row.batches[0].id}`}>{row.batches[0].batchNumber}</Link> : "-" }
+      { key: "status", label: "Status", render: (row) => <StatusBadge status={row.status} /> },
+      { key: "batch", label: "Batch", render: (row) => row.batches?.[0] ? <Link className="font-semibold text-brand" href={`/feed-production/batches/${row.batches[0].id}`}>{row.batches[0].batchNumber}</Link> : "-" },
+      {
+        key: "actions", label: "",
+        render: (row) => (
+          <div className="flex items-center gap-1">
+            {row.status === "DRAFT" && onApprove && (
+              <button onClick={() => handleApprove(row.id)} disabled={approvingId === row.id} className="rounded-lg bg-emerald-500 px-2.5 py-1 text-xs font-bold text-white transition hover:bg-emerald-600 disabled:opacity-50">
+                {approvingId === row.id ? "…" : "Approve"}
+              </button>
+            )}
+            {(row.status === "APPROVED" || row.status === "IN_PROGRESS") && (
+              <Link href={`/feed-production/batches/create?orderId=${row.id}`} className="rounded-lg bg-brand px-2.5 py-1 text-xs font-bold text-white transition hover:bg-brand/90">
+                Post batch
+              </Link>
+            )}
+          </div>
+        )
+      }
     ]} />
   );
 }
 
-export function FeedBatchDetailsPage() {
-  const params = useParams<{ id: string }>();
-  const [batch, setBatch] = useState<Record<string, unknown> | null>(null);
-  const [label, setLabel] = useState<Record<string, unknown> | null>(null);
+export function FeedBatchListPage() {
+  const [rows, setRows] = useState<BatchRow[]>([]);
 
   useEffect(() => {
-    apiFetch<ApiEnvelope<Record<string, unknown>>>(`/feed-production/batches/${params.id}`)
-      .then((response) => setBatch(response.data))
+    apiFetch<ApiEnvelope<BatchRow[]>>("/feed-production/batches")
+      .then((res) => setRows(res.data))
       .catch(() => undefined);
-  }, [params.id]);
+  }, []);
 
-  async function printLabel() {
-    const response = await apiFetch<ApiEnvelope<Record<string, unknown>>>(`/feed-production/batches/${params.id}/label`);
-    setLabel(response.data);
+  const totalKg = rows.reduce((s, r) => s + Number(r.producedQuantityKg), 0);
+  const completedCount = rows.filter((r) => r.status === "COMPLETED").length;
+
+  return (
+    <FeedMillShell>
+      <PageHeader title="Production Batches" subtitle="All feed production batches — produced quantities, costs, margins, and status." />
+      <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
+        {[
+          ["Total batches", rows.length],
+          ["Completed", completedCount],
+          ["Total produced (kg)", number(totalKg)],
+          ["Avg margin", rows.length ? `${(rows.reduce((s, r) => s + (r.metrics?.profitMargin ?? 0), 0) / rows.length).toFixed(1)}%` : "-"],
+        ].map(([lbl, val]) => (
+          <article key={lbl} className="rounded-xl border border-line bg-white p-4 shadow-panel">
+            <p className="text-xs text-ink/50">{lbl}</p>
+            <strong className="mt-1.5 block text-xl font-bold text-ink">{val}</strong>
+          </article>
+        ))}
+      </div>
+      <DataTable
+        rows={rows}
+        empty="No production batches found"
+        columns={[
+          { key: "batch", label: "Batch #", render: (r) => <Link className="font-semibold text-brand" href={`/feed-production/batches/${r.id}`}>{r.batchNumber}</Link> },
+          { key: "product", label: "Product", render: (r) => r.finishedProduct?.name ?? "-" },
+          { key: "site", label: "Site", render: (r) => r.productionSite?.name ?? "-" },
+          { key: "date", label: "Date", render: (r) => r.productionDate ? new Date(r.productionDate).toLocaleDateString() : "-" },
+          { key: "produced", label: "Produced (kg)", render: (r) => number(r.producedQuantityKg) },
+          { key: "wastage", label: "Wastage (kg)", render: (r) => number(r.wastageKg) },
+          { key: "margin", label: "Margin", render: (r) => `${r.metrics?.profitMargin ?? 0}%` },
+          { key: "status", label: "Status", render: (r) => <StatusBadge status={r.status} /> },
+        ]}
+      />
+    </FeedMillShell>
+  );
+}
+
+type ApprovedOrder = {
+  id: string;
+  orderNumber: string;
+  plannedQuantityKg: string | number;
+  status: string;
+  formula?: { name: string; code: string };
+  productionSite?: { name: string; code: string };
+};
+
+export function FeedBatchCreatePage() {
+  const options = useFeedOptions();
+  const router = useRouter();
+  const [approvedOrders, setApprovedOrders] = useState<ApprovedOrder[]>([]);
+  const [form, setForm] = useState({
+    productionOrderId: "",
+    rawMaterialWarehouseId: "",
+    finishedWarehouseId: "",
+    batchNumber: "",
+    producedQuantityKg: "",
+    wastageKg: "",
+    productionDate: today(),
+    laborCost: "",
+    packagingCost: "",
+    overheadCost: "",
+    expectedSalesValue: "",
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const [submitErr, setSubmitErr] = useState("");
+
+  useEffect(() => {
+    apiFetch<ApiEnvelope<ApprovedOrder[]>>("/feed-production/orders?status=APPROVED")
+      .then((res) => setApprovedOrders(res.data))
+      .catch(() => undefined);
+  }, []);
+
+  // Pre-select order from query param
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const qp = new URLSearchParams(window.location.search);
+    const orderId = qp.get("orderId");
+    if (orderId) setForm((f) => ({ ...f, productionOrderId: orderId }));
+  }, []);
+
+  async function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setSubmitting(true);
+    setSubmitErr("");
+    try {
+      const res = await apiFetch<ApiEnvelope<{ id: string; batchNumber: string }>>("/feed-production/batches", {
+        method: "POST",
+        body: JSON.stringify({
+          productionOrderId: form.productionOrderId || approvedOrders[0]?.id,
+          rawMaterialWarehouseId: form.rawMaterialWarehouseId || options.warehouses[0]?.id,
+          finishedWarehouseId: form.finishedWarehouseId || options.warehouses[0]?.id,
+          batchNumber: form.batchNumber || undefined,
+          producedQuantityKg: Number(form.producedQuantityKg),
+          wastageKg: Number(form.wastageKg) || undefined,
+          productionDate: form.productionDate || undefined,
+          laborCost: Number(form.laborCost) || undefined,
+          packagingCost: Number(form.packagingCost) || undefined,
+          overheadCost: Number(form.overheadCost) || undefined,
+          expectedSalesValue: Number(form.expectedSalesValue) || undefined,
+        }),
+      });
+      router.push(`/feed-production/batches/${res.data.id}`);
+    } catch (e: unknown) {
+      setSubmitErr(e instanceof Error ? e.message : "Batch creation failed");
+      setSubmitting(false);
+    }
   }
 
+  const selectedOrder = approvedOrders.find((o) => o.id === form.productionOrderId);
+
   return (
     <FeedMillShell>
-      <PageHeader title={String(batch?.batchNumber ?? "Production Batch Details")} subtitle="Batch raw material usage, QC status, packaging, finished stock, transfers, and costing." />
-      <button className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" onClick={printLabel}>
-        <Printer aria-hidden className="h-4 w-4" /> Print batch label
-      </button>
-      {label ? <pre className="mb-6 max-h-60 overflow-auto rounded-md border border-line bg-white p-4 text-xs shadow-panel">{JSON.stringify(label, null, 2)}</pre> : null}
-      <pre className="max-h-[620px] overflow-auto rounded-md border border-line bg-white p-4 text-xs shadow-panel">{JSON.stringify(batch, null, 2)}</pre>
+      <div className="mb-6 flex items-center gap-3">
+        <Link href="/feed-production/batches" className="inline-flex items-center gap-1 text-sm font-semibold text-ink/40 hover:text-brand">
+          <ArrowLeft className="h-3.5 w-3.5" /> Batches
+        </Link>
+      </div>
+      <div className="mb-6">
+        <h1 className="text-xl font-bold text-ink">Post Production Batch</h1>
+        <p className="mt-0.5 text-sm text-ink/50">Record produced quantities, costs, and link to an approved production order.</p>
+      </div>
+
+      {submitErr && (
+        <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+          <AlertCircle className="h-4 w-4 shrink-0" /><span>{submitErr}</span>
+          <button onClick={() => setSubmitErr("")} className="ml-auto text-red-400 hover:text-red-600">✕</button>
+        </div>
+      )}
+
+      <form onSubmit={submit} className="space-y-6">
+        <div className="rounded-2xl border border-line bg-white p-5 shadow-panel">
+          <h3 className="mb-4 text-sm font-bold text-ink">Production Order</h3>
+          <div className="grid gap-4 md:grid-cols-3">
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-ink/55">Production order *</label>
+              <select
+                required
+                className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                value={form.productionOrderId}
+                onChange={(e) => setForm((f) => ({ ...f, productionOrderId: e.target.value }))}
+              >
+                <option value="">— select approved order —</option>
+                {approvedOrders.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.orderNumber} · {o.formula?.name ?? ""} · {number(o.plannedQuantityKg)} kg
+                  </option>
+                ))}
+              </select>
+              {approvedOrders.length === 0 && (
+                <p className="mt-1.5 text-xs text-amber-600">No approved orders found. Approve an order first.</p>
+              )}
+            </div>
+            {selectedOrder && (
+              <div className="rounded-xl border border-brand/20 bg-brand/5 px-4 py-3 md:col-span-2">
+                <p className="text-xs font-semibold text-brand">{selectedOrder.orderNumber}</p>
+                <p className="mt-0.5 text-sm font-semibold text-ink">{selectedOrder.formula?.name ?? ""}</p>
+                <p className="text-xs text-ink/50">{selectedOrder.productionSite?.name ?? ""} · {number(selectedOrder.plannedQuantityKg)} kg planned</p>
+              </div>
+            )}
+          </div>
+          <div className="mt-4 grid gap-4 md:grid-cols-3">
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-ink/55">Raw material warehouse *</label>
+              <select
+                required
+                className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                value={form.rawMaterialWarehouseId}
+                onChange={(e) => setForm((f) => ({ ...f, rawMaterialWarehouseId: e.target.value }))}
+              >
+                <option value="">— select warehouse —</option>
+                {options.warehouses.map((w) => <option key={w.id} value={w.id}>{w.code} {w.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-ink/55">Finished feed warehouse *</label>
+              <select
+                required
+                className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                value={form.finishedWarehouseId}
+                onChange={(e) => setForm((f) => ({ ...f, finishedWarehouseId: e.target.value }))}
+              >
+                <option value="">— select warehouse —</option>
+                {options.warehouses.map((w) => <option key={w.id} value={w.id}>{w.code} {w.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-ink/55">Batch number (auto if blank)</label>
+              <input
+                type="text" placeholder="e.g. BATCH-2026-0012"
+                className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                value={form.batchNumber}
+                onChange={(e) => setForm((f) => ({ ...f, batchNumber: e.target.value }))}
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-line bg-white p-5 shadow-panel">
+          <h3 className="mb-4 text-sm font-bold text-ink">Production Quantities</h3>
+          <div className="grid gap-4 md:grid-cols-3">
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-ink/55">Produced quantity (kg) *</label>
+              <input
+                type="number" min="0.001" step="0.001" required
+                className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-right text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                value={form.producedQuantityKg}
+                onChange={(e) => setForm((f) => ({ ...f, producedQuantityKg: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-ink/55">Wastage (kg)</label>
+              <input
+                type="number" min="0" step="0.001" placeholder="0"
+                className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-right text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                value={form.wastageKg}
+                onChange={(e) => setForm((f) => ({ ...f, wastageKg: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-ink/55">Production date</label>
+              <input
+                type="date"
+                className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                value={form.productionDate}
+                onChange={(e) => setForm((f) => ({ ...f, productionDate: e.target.value }))}
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-line bg-white p-5 shadow-panel">
+          <h3 className="mb-1 text-sm font-bold text-ink">Production Costs <span className="font-normal text-ink/40">(optional — record separately later if unknown now)</span></h3>
+          <div className="mt-4 grid gap-4 md:grid-cols-4">
+            {(["laborCost", "packagingCost", "overheadCost", "expectedSalesValue"] as const).map((field) => (
+              <div key={field}>
+                <label className="mb-1.5 block text-xs font-semibold text-ink/55">
+                  {field === "laborCost" ? "Labor cost (GHS)" : field === "packagingCost" ? "Packaging cost (GHS)" : field === "overheadCost" ? "Overhead cost (GHS)" : "Expected sales value (GHS)"}
+                </label>
+                <input
+                  type="number" min="0" step="0.01" placeholder="0.00"
+                  className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-right text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                  value={form[field]}
+                  onChange={(e) => setForm((f) => ({ ...f, [field]: e.target.value }))}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-4 pb-8">
+          <Link href="/feed-production/batches" className="rounded-xl border border-line bg-white px-5 py-2.5 text-sm font-semibold text-ink/60 transition hover:text-ink">
+            Cancel
+          </Link>
+          <button type="submit" disabled={submitting} className="app-button-primary min-w-[200px]">
+            <Factory className="h-4 w-4" aria-hidden /> {submitting ? "Posting batch…" : "Post production batch"}
+          </button>
+        </div>
+      </form>
     </FeedMillShell>
   );
 }
 
-export function FeedRecordListPage({ title, endpoint, subtitle }: { title: string; endpoint: string; subtitle: string }) {
-  const [rows, setRows] = useState<Array<Record<string, unknown>>>([]);
-  useEffect(() => {
-    apiFetch<ApiEnvelope<Array<Record<string, unknown>>>>(endpoint)
-      .then((response) => setRows(response.data))
-      .catch(() => undefined);
-  }, [endpoint]);
-  const keys = Object.keys(rows[0] ?? {}).filter((key) => ["batchNumber", "quantityKg", "unitCost", "wastageKg", "status", "moisturePercent", "proteinPercent", "packageCount", "bag50KgCount", "createdAt", "checkedAt", "packagedAt"].includes(key));
+type BatchLabel = {
+  title: string;
+  batchNumber: string;
+  product: string;
+  feedType: string;
+  productionSite: string;
+  productionDate: string;
+  producedQuantityKg: number;
+  packageSizeKg: number;
+  packageCount: number;
+  status: string;
+};
+
+export function FeedBatchDetailsPage() {
+  const params = useParams<{ id: string }>();
+  const options = useFeedOptions();
+  const [batch, setBatch] = useState<BatchDetail | null>(null);
+  const [label, setLabel] = useState<BatchLabel | null>(null);
+  const [showLabel, setShowLabel] = useState(false);
+  const [qcErr, setQcErr] = useState("");
+
+  // External sale form
+  const [saleForm, setSaleForm] = useState({ fromWarehouseId: "", quantityKg: "", unitPrice: "", customerName: "" });
+  const [submittingSale, setSubmittingSale] = useState(false);
+  const [saleErr, setSaleErr] = useState("");
+
+  // Production cost form
+  const [costForm, setCostForm] = useState({ laborCost: "", packagingCost: "", overheadCost: "", expectedSalesValue: "" });
+  const [submittingCost, setSubmittingCost] = useState(false);
+  const [costErr, setCostErr] = useState("");
+
+  async function load() {
+    const res = await apiFetch<ApiEnvelope<BatchDetail>>(`/feed-production/batches/${params.id}`);
+    setBatch(res.data);
+  }
+
+  useEffect(() => { load().catch(() => undefined); }, [params.id]);
+
+  async function fetchLabel() {
+    const res = await apiFetch<ApiEnvelope<BatchLabel>>(`/feed-production/batches/${params.id}/label`);
+    setLabel(res.data);
+    setShowLabel(true);
+  }
+
+  async function updateQcStatus(qcId: string, status: "APPROVED" | "FAILED" | "PASSED") {
+    setQcErr("");
+    try {
+      await apiFetch(`/feed-production/quality-checks/${qcId}/approve`, { method: "PATCH", body: JSON.stringify({ status }) });
+      await load();
+    } catch (e: unknown) {
+      setQcErr((e as Error)?.message ?? "Failed to update QC status.");
+    }
+  }
+
+  async function submitSale(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setSubmittingSale(true);
+    setSaleErr("");
+    try {
+      await apiFetch("/feed-production/external-sales", {
+        method: "POST",
+        body: JSON.stringify({
+          productionBatchId: params.id,
+          fromWarehouseId: saleForm.fromWarehouseId || options.warehouses[0]?.id,
+          quantityKg: Number(saleForm.quantityKg),
+          unitPrice: Number(saleForm.unitPrice),
+          customerName: saleForm.customerName || undefined,
+        }),
+      });
+      setSaleForm({ fromWarehouseId: "", quantityKg: "", unitPrice: "", customerName: "" });
+      await load();
+    } catch (e: unknown) {
+      setSaleErr((e as Error)?.message ?? "Sale recording failed.");
+    } finally {
+      setSubmittingSale(false);
+    }
+  }
+
+  async function submitCost(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setSubmittingCost(true);
+    setCostErr("");
+    try {
+      await apiFetch("/feed-production/costs", {
+        method: "POST",
+        body: JSON.stringify({
+          productionBatchId: params.id,
+          laborCost: Number(costForm.laborCost) || 0,
+          packagingCost: Number(costForm.packagingCost) || 0,
+          overheadCost: Number(costForm.overheadCost) || 0,
+          expectedSalesValue: Number(costForm.expectedSalesValue) || 0,
+        }),
+      });
+      setCostForm({ laborCost: "", packagingCost: "", overheadCost: "", expectedSalesValue: "" });
+      await load();
+    } catch (e: unknown) {
+      setCostErr((e as Error)?.message ?? "Cost recording failed.");
+    } finally {
+      setSubmittingCost(false);
+    }
+  }
+
+  const b = batch;
+
   return (
     <FeedMillShell>
-      <PageHeader title={title} subtitle={subtitle} />
-      <DataTable rows={rows} empty="No records found" columns={keys.map((key) => ({ key, label: key.replace(/([A-Z])/g, " $1"), render: (row: Record<string, unknown>) => String(row[key] ?? "-").slice(0, 90) }))} />
+      {/* Header */}
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <Link href="/feed-production/batches" className="mb-1 inline-flex items-center gap-1 text-xs font-semibold text-ink/40 hover:text-brand">
+            <ArrowLeft className="h-3 w-3" /> Batches
+          </Link>
+          <p className="app-kicker">Feed Mill</p>
+          <h1 className="mt-0.5 text-2xl font-bold text-ink">{b?.batchNumber ?? "Batch Details"}</h1>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <StatusBadge status={b?.status ?? ""} />
+            {b?.productionSite && <span className="text-sm text-ink/50">{b.productionSite.name}</span>}
+            {b?.finishedProduct && <span className="text-sm text-ink/50">· {b.finishedProduct.name}</span>}
+            {b?.productionDate && <span className="text-sm text-ink/40">· {new Date(b.productionDate).toLocaleDateString()}</span>}
+          </div>
+        </div>
+        <button
+          onClick={() => (showLabel ? setShowLabel(false) : fetchLabel())}
+          className="inline-flex items-center gap-2 rounded-xl border border-line bg-white px-4 py-2 text-sm font-semibold text-ink/60 shadow-sm transition hover:border-brand/30 hover:text-brand"
+        >
+          <Printer className="h-4 w-4" aria-hidden /> {showLabel ? "Hide label" : "View label"}
+        </button>
+      </div>
+
+      {/* Batch label card */}
+      {showLabel && label && (
+        <div className="mb-6 overflow-hidden rounded-2xl border-2 border-brand/20 bg-white shadow-panel print:border-black">
+          <div className="bg-brand px-6 py-3">
+            <p className="text-xs font-bold uppercase tracking-widest text-white/70">Jokas Agri — Feed Mill</p>
+            <p className="text-lg font-bold text-white">{label.title}</p>
+          </div>
+          <div className="grid grid-cols-2 gap-px bg-line sm:grid-cols-3">
+            {[
+              ["Batch #", label.batchNumber],
+              ["Product", label.product],
+              ["Feed Type", label.feedType?.replace(/_/g, " ")],
+              ["Production Site", label.productionSite],
+              ["Production Date", label.productionDate ? new Date(label.productionDate).toLocaleDateString() : "-"],
+              ["Status", label.status],
+              ["Produced (kg)", number(label.producedQuantityKg)],
+              ["Pkg size (kg)", number(label.packageSizeKg)],
+              ["Package count", String(label.packageCount)],
+            ].map(([k, v]) => (
+              <div key={k} className="bg-white px-4 py-3">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-ink/40">{k}</p>
+                <p className="mt-0.5 text-sm font-semibold text-ink">{v}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Stat cards */}
+      <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
+        {([
+          ["Produced (kg)", number(b?.producedQuantityKg)],
+          ["Wastage (kg)", number(b?.wastageKg)],
+          ["Total cost", money(b?.metrics?.totalCost)],
+          ["Profit margin", `${b?.metrics?.profitMargin ?? 0}%`]
+        ] as [string, string][]).map(([lbl, val]) => (
+          <article key={lbl} className="rounded-xl border border-line bg-white p-4 shadow-panel">
+            <p className="text-xs text-ink/50">{lbl}</p>
+            <strong className="mt-1.5 block text-xl font-bold text-ink">{val}</strong>
+          </article>
+        ))}
+      </div>
+
+      {/* Production order reference */}
+      {b?.productionOrder && (
+        <div className="mb-6 rounded-xl border border-line bg-white px-5 py-3.5 shadow-panel">
+          <span className="text-xs font-bold uppercase tracking-wide text-ink/40">Production Order</span>
+          <span className="ml-3 font-mono text-sm font-semibold text-ink">{b.productionOrder.orderNumber}</span>
+          <span className="ml-3 text-sm text-ink/50">({number(b.productionOrder.plannedQuantityKg)} kg planned)</span>
+        </div>
+      )}
+
+      {/* Raw material usage */}
+      <BatchSection title="Raw Material Usage">
+        <DataTable rows={b?.rawMaterialUsages ?? []} empty="No raw material usage recorded" columns={[
+          { key: "name", label: "Ingredient", render: (r) => r.rawMaterial?.name ?? "-" },
+          { key: "sku", label: "SKU", render: (r) => <span className="font-mono text-xs">{r.rawMaterial?.sku ?? "-"}</span> },
+          { key: "qty", label: "Qty (kg)", render: (r) => number(r.quantityKg) },
+          { key: "cost", label: "Unit cost", render: (r) => money(r.unitCost) },
+          { key: "total", label: "Line cost", render: (r) => money(Number(r.quantityKg) * Number(r.unitCost)) },
+          { key: "wastage", label: "Wastage (kg)", render: (r) => number(r.wastageKg) }
+        ]} />
+      </BatchSection>
+
+      {/* Quality checks */}
+      {qcErr && (
+        <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+          <AlertCircle className="h-4 w-4 shrink-0" /><span>{qcErr}</span>
+          <button onClick={() => setQcErr("")} className="ml-auto text-red-400 hover:text-red-600">✕</button>
+        </div>
+      )}
+      <BatchSection title="Quality Checks">
+        <DataTable rows={b?.qualityChecks ?? []} empty="No quality checks recorded" columns={[
+          { key: "status", label: "Status", render: (r) => <StatusBadge status={r.status} /> },
+          { key: "moisture", label: "Moisture %", render: (r) => r.moisturePercent != null ? `${r.moisturePercent}%` : "-" },
+          { key: "protein", label: "Protein %", render: (r) => r.proteinPercent != null ? `${r.proteinPercent}%` : "-" },
+          { key: "notes", label: "Notes", render: (r) => r.textureNotes ?? "-" },
+          { key: "date", label: "Checked", render: (r) => r.checkedAt ? new Date(r.checkedAt).toLocaleDateString() : "-" },
+          {
+            key: "actions", label: "",
+            render: (r) => r.status === "PENDING" ? (
+              <div className="flex items-center gap-1">
+                <button onClick={() => updateQcStatus(r.id, "APPROVED")} className="rounded-lg bg-emerald-500 px-2.5 py-1 text-xs font-bold text-white hover:bg-emerald-600">Approve</button>
+                <button onClick={() => updateQcStatus(r.id, "FAILED")} className="rounded-lg bg-red-500 px-2.5 py-1 text-xs font-bold text-white hover:bg-red-600">Fail</button>
+              </div>
+            ) : null
+          }
+        ]} />
+      </BatchSection>
+
+      {/* Finished feed stock */}
+      <BatchSection title="Finished Feed Stock">
+        <DataTable rows={b?.finishedFeedStocks ?? []} empty="No finished feed stock recorded" columns={[
+          { key: "wh", label: "Warehouse", render: (r) => r.warehouse?.name ?? "-" },
+          { key: "qty", label: "Qty (kg)", render: (r) => number(r.quantityKg) },
+          { key: "bags", label: "Bags (50 kg)", render: (r) => r.bag50KgCount },
+          { key: "cost", label: "Unit cost", render: (r) => money(r.unitCost) }
+        ]} />
+      </BatchSection>
+
+      {/* Packaging records */}
+      <BatchSection title="Packaging Records">
+        <DataTable rows={b?.packagingRecords ?? []} empty="No packaging records" columns={[
+          { key: "size", label: "Bag size (kg)", render: (r) => number(r.packageSizeKg) },
+          { key: "count", label: "Bags", render: (r) => r.packageCount },
+          { key: "total", label: "Total kg", render: (r) => number(Number(r.packageSizeKg) * r.packageCount) },
+          { key: "date", label: "Packaged", render: (r) => r.packagedAt ? new Date(r.packagedAt).toLocaleDateString() : "-" }
+        ]} />
+      </BatchSection>
+
+      {/* Internal transfers */}
+      <BatchSection title="Internal Transfers">
+        <DataTable rows={b?.internalTransfers ?? []} empty="No transfers recorded" columns={[
+          { key: "from", label: "From warehouse", render: (r) => r.fromWarehouse?.name ?? "-" },
+          { key: "farm", label: "To farm", render: (r) => r.toFarm?.name ?? "-" },
+          { key: "house", label: "To house", render: (r) => r.toPoultryHouse?.name ?? "-" },
+          { key: "qty", label: "Qty (kg)", render: (r) => number(r.quantityKg) },
+          { key: "date", label: "Date", render: (r) => r.transferDate ? new Date(r.transferDate).toLocaleDateString() : "-" }
+        ]} />
+      </BatchSection>
+
+      {/* External sale recording */}
+      <BatchSection title="Record External Sale">
+        {saleErr && (
+          <div className="mb-3 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+            <AlertCircle className="h-4 w-4 shrink-0" /><span>{saleErr}</span>
+            <button onClick={() => setSaleErr("")} className="ml-auto text-red-400 hover:text-red-600">✕</button>
+          </div>
+        )}
+        <form onSubmit={submitSale} className="rounded-xl border border-line bg-white p-4 shadow-panel">
+          <div className="grid gap-4 md:grid-cols-4">
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-ink/55">From warehouse *</label>
+              <select
+                required
+                className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                value={saleForm.fromWarehouseId}
+                onChange={(e) => setSaleForm((f) => ({ ...f, fromWarehouseId: e.target.value }))}
+              >
+                <option value="">— select —</option>
+                {options.warehouses.map((w) => <option key={w.id} value={w.id}>{w.code} {w.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-ink/55">Quantity (kg) *</label>
+              <input type="number" min="0.001" step="0.001" required
+                className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-right text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                value={saleForm.quantityKg}
+                onChange={(e) => setSaleForm((f) => ({ ...f, quantityKg: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-ink/55">Unit price (GHS/kg) *</label>
+              <input type="number" min="0" step="0.01" required
+                className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-right text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                value={saleForm.unitPrice}
+                onChange={(e) => setSaleForm((f) => ({ ...f, unitPrice: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-ink/55">Customer name</label>
+              <input type="text" placeholder="optional"
+                className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                value={saleForm.customerName}
+                onChange={(e) => setSaleForm((f) => ({ ...f, customerName: e.target.value }))}
+              />
+            </div>
+          </div>
+          {saleForm.quantityKg && saleForm.unitPrice && (
+            <p className="mt-2 text-xs text-ink/50">
+              Sale value: <strong>{money(Number(saleForm.quantityKg) * Number(saleForm.unitPrice))}</strong>
+            </p>
+          )}
+          <button type="submit" disabled={submittingSale} className="mt-4 inline-flex min-h-9 items-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-white transition hover:bg-brand/90 disabled:opacity-50">
+            <TrendingUp className="h-4 w-4" aria-hidden /> {submittingSale ? "Recording…" : "Record sale"}
+          </button>
+        </form>
+      </BatchSection>
+
+      {/* Production cost recording */}
+      <BatchSection title="Record Production Costs">
+        {costErr && (
+          <div className="mb-3 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+            <AlertCircle className="h-4 w-4 shrink-0" /><span>{costErr}</span>
+            <button onClick={() => setCostErr("")} className="ml-auto text-red-400 hover:text-red-600">✕</button>
+          </div>
+        )}
+        <form onSubmit={submitCost} className="rounded-xl border border-line bg-white p-4 shadow-panel">
+          <p className="mb-3 text-xs text-ink/45">Records a new cost entry for this batch. Raw material cost is computed automatically from usage records.</p>
+          <div className="grid gap-4 md:grid-cols-4">
+            {(["laborCost", "packagingCost", "overheadCost", "expectedSalesValue"] as const).map((field) => (
+              <div key={field}>
+                <label className="mb-1.5 block text-xs font-semibold text-ink/55">
+                  {field === "laborCost" ? "Labor cost (GHS)" : field === "packagingCost" ? "Packaging cost (GHS)" : field === "overheadCost" ? "Overhead cost (GHS)" : "Expected sales value (GHS)"}
+                </label>
+                <input type="number" min="0" step="0.01" placeholder="0.00"
+                  className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-right text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                  value={costForm[field]}
+                  onChange={(e) => setCostForm((f) => ({ ...f, [field]: e.target.value }))}
+                />
+              </div>
+            ))}
+          </div>
+          <button type="submit" disabled={submittingCost} className="mt-4 inline-flex min-h-9 items-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-white transition hover:bg-brand/90 disabled:opacity-50">
+            <Calculator className="h-4 w-4" aria-hidden /> {submittingCost ? "Recording…" : "Record costs"}
+          </button>
+        </form>
+      </BatchSection>
     </FeedMillShell>
   );
 }
+
+type UsageRow = {
+  id: string;
+  quantityKg: string | number;
+  unitCost: string | number;
+  wastageKg: string | number;
+  createdAt: string;
+  rawMaterial?: { name: string; sku: string };
+  productionBatch?: { batchNumber: string };
+  productionSite?: { name: string };
+};
+
+export function FeedRawMaterialUsagePage() {
+  const [rows, setRows] = useState<UsageRow[]>([]);
+
+  useEffect(() => {
+    apiFetch<ApiEnvelope<UsageRow[]>>("/feed-production/raw-material-usage")
+      .then((res) => setRows(res.data))
+      .catch(() => undefined);
+  }, []);
+
+  const totalKg = rows.reduce((s, r) => s + Number(r.quantityKg), 0);
+  const totalCost = rows.reduce((s, r) => s + Number(r.quantityKg) * Number(r.unitCost), 0);
+  const totalWastage = rows.reduce((s, r) => s + Number(r.wastageKg), 0);
+
+  return (
+    <FeedMillShell>
+      <PageHeader title="Raw Material Usage" subtitle="Raw material issue, cost, and wastage records by batch." />
+      <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
+        {[
+          ["Usage records", rows.length],
+          ["Total consumed (kg)", number(totalKg)],
+          ["Total wastage (kg)", number(totalWastage)],
+          ["Total raw material cost", money(totalCost)],
+        ].map(([lbl, val]) => (
+          <article key={lbl} className="rounded-xl border border-line bg-white p-4 shadow-panel">
+            <p className="text-xs text-ink/50">{lbl}</p>
+            <strong className="mt-1.5 block text-xl font-bold text-ink">{val}</strong>
+          </article>
+        ))}
+      </div>
+      <DataTable
+        rows={rows}
+        empty="No raw material usage records found"
+        columns={[
+          { key: "ingredient", label: "Ingredient", render: (r) => r.rawMaterial?.name ?? "-" },
+          { key: "sku", label: "SKU", render: (r) => <span className="font-mono text-xs">{r.rawMaterial?.sku ?? "-"}</span> },
+          { key: "batch", label: "Batch", render: (r) => r.productionBatch?.batchNumber ?? "-" },
+          { key: "site", label: "Site", render: (r) => r.productionSite?.name ?? "-" },
+          { key: "qty", label: "Qty (kg)", render: (r) => number(r.quantityKg) },
+          { key: "unitCost", label: "Unit cost", render: (r) => money(r.unitCost) },
+          { key: "lineCost", label: "Line cost", render: (r) => money(Number(r.quantityKg) * Number(r.unitCost)) },
+          { key: "wastage", label: "Wastage (kg)", render: (r) => number(r.wastageKg) },
+          { key: "date", label: "Date", render: (r) => new Date(r.createdAt).toLocaleDateString() },
+        ]}
+      />
+    </FeedMillShell>
+  );
+}
+
+type QcRow = {
+  id: string;
+  status: string;
+  moisturePercent?: number | null;
+  proteinPercent?: number | null;
+  textureNotes?: string | null;
+  checkedAt?: string;
+  productionBatch?: { batchNumber: string };
+};
 
 export function FeedQualityControlPage() {
   const options = useFeedOptions();
-  const [rows, setRows] = useState<Array<Record<string, unknown>>>([]);
-  const [form, setForm] = useState({ productionBatchId: "", moisturePercent: "", proteinPercent: "", textureNotes: "", status: "APPROVED" });
+  const [rows, setRows] = useState<QcRow[]>([]);
+  const [form, setForm] = useState({ productionBatchId: "", moisturePercent: "", proteinPercent: "", textureNotes: "" });
+  const [submitting, setSubmitting] = useState(false);
+  const [submitErr, setSubmitErr] = useState("");
 
   async function load() {
-    const response = await apiFetch<ApiEnvelope<Array<Record<string, unknown>>>>("/feed-production/quality-checks");
+    const response = await apiFetch<ApiEnvelope<QcRow[]>>("/feed-production/quality-checks");
     setRows(response.data);
   }
   useEffect(() => { load().catch(() => undefined); }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await apiFetch("/feed-production/quality-checks", {
-      method: "POST",
-      body: JSON.stringify({ productionBatchId: form.productionBatchId || options.batches[0]?.id, moisturePercent: Number(form.moisturePercent), proteinPercent: Number(form.proteinPercent), textureNotes: form.textureNotes, status: form.status })
-    });
-    await load();
+    setSubmitting(true);
+    setSubmitErr("");
+    try {
+      await apiFetch("/feed-production/quality-checks", {
+        method: "POST",
+        body: JSON.stringify({
+          productionBatchId: form.productionBatchId || options.batches[0]?.id,
+          moisturePercent: Number(form.moisturePercent) || undefined,
+          proteinPercent: Number(form.proteinPercent) || undefined,
+          textureNotes: form.textureNotes || undefined
+        })
+      });
+      setForm({ productionBatchId: "", moisturePercent: "", proteinPercent: "", textureNotes: "" });
+      await load();
+    } catch (e: unknown) {
+      setSubmitErr(e instanceof Error ? e.message : "Submit failed");
+    } finally {
+      setSubmitting(false);
+    }
   }
+
+  const pending = rows.filter((r) => r.status === "PENDING").length;
 
   return (
     <FeedMillShell>
       <PageHeader title="Feed Quality Control" subtitle="Record and approve feed quality checks for production batches." />
-      <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-5">
-        <SelectField label="Batch" value={form.productionBatchId || options.batches[0]?.id || ""} options={options.batches.map((batch) => ({ ...batch, name: batch.batchNumber }))} onChange={(value) => setForm({ ...form, productionBatchId: value })} />
-        <FormField label="Moisture %"><input className={inputClass} type="number" value={form.moisturePercent} onChange={(event) => setForm({ ...form, moisturePercent: event.target.value })} /></FormField>
-        <FormField label="Protein %"><input className={inputClass} type="number" value={form.proteinPercent} onChange={(event) => setForm({ ...form, proteinPercent: event.target.value })} /></FormField>
-        <FormField label="Status"><select className={inputClass} value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}><option>APPROVED</option><option>PASSED</option><option>FAILED</option><option>PENDING</option></select></FormField>
-        <FormField label="Notes"><input className={inputClass} value={form.textureNotes} onChange={(event) => setForm({ ...form, textureNotes: event.target.value })} /></FormField>
-        <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white md:col-span-5"><PackageCheck aria-hidden className="h-4 w-4" /> Save quality check</button>
-      </form>
-      <SimpleRowsTable rows={rows} />
+      {pending > 0 && (
+        <div className="mb-4 flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span><strong>{pending}</strong> quality check{pending !== 1 ? "s" : ""} awaiting review — open the batch detail page to approve or fail.</span>
+        </div>
+      )}
+      <div className="mb-6 rounded-2xl border border-line bg-white p-5 shadow-panel">
+        <h3 className="mb-4 text-sm font-bold text-ink">Record Quality Check</h3>
+        {submitErr && (
+          <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+            <AlertCircle className="h-4 w-4 shrink-0" /><span>{submitErr}</span>
+            <button onClick={() => setSubmitErr("")} className="ml-auto text-red-400 hover:text-red-600">✕</button>
+          </div>
+        )}
+        <form onSubmit={submit} className="grid gap-4 md:grid-cols-4">
+          <SelectField label="Batch *" value={form.productionBatchId || options.batches[0]?.id || ""} options={options.batches.map((b) => ({ ...b, name: b.batchNumber }))} onChange={(v) => setForm({ ...form, productionBatchId: v })} />
+          <FormField label="Moisture %"><input className={inputClass} type="number" step="0.01" min="0" max="100" placeholder="e.g. 13.5" value={form.moisturePercent} onChange={(e) => setForm({ ...form, moisturePercent: e.target.value })} /></FormField>
+          <FormField label="Protein %"><input className={inputClass} type="number" step="0.01" min="0" max="100" placeholder="e.g. 18.0" value={form.proteinPercent} onChange={(e) => setForm({ ...form, proteinPercent: e.target.value })} /></FormField>
+          <FormField label="Texture notes"><input className={inputClass} placeholder="e.g. Fine mash, uniform colour" value={form.textureNotes} onChange={(e) => setForm({ ...form, textureNotes: e.target.value })} /></FormField>
+          <div className="flex items-end gap-4 md:col-span-4">
+            <button type="submit" disabled={submitting} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-50">
+              <PackageCheck aria-hidden className="h-4 w-4" /> {submitting ? "Recording…" : "Record quality check"}
+            </button>
+            <p className="text-xs text-ink/40">Checks start as PENDING — approve or fail from the batch detail page.</p>
+          </div>
+        </form>
+      </div>
+      <DataTable
+        rows={rows}
+        empty="No quality checks recorded"
+        columns={[
+          { key: "batch", label: "Batch", render: (r) => r.productionBatch?.batchNumber ?? "-" },
+          { key: "status", label: "Status", render: (r) => <StatusBadge status={r.status} /> },
+          { key: "moisture", label: "Moisture %", render: (r) => r.moisturePercent != null ? `${r.moisturePercent}%` : "-" },
+          { key: "protein", label: "Protein %", render: (r) => r.proteinPercent != null ? `${r.proteinPercent}%` : "-" },
+          { key: "texture", label: "Texture notes", render: (r) => r.textureNotes ?? "-" },
+          { key: "date", label: "Checked", render: (r) => r.checkedAt ? new Date(r.checkedAt).toLocaleDateString() : "-" },
+        ]}
+      />
     </FeedMillShell>
   );
 }
 
+type StockRow = {
+  id: string;
+  quantityKg: string | number;
+  bag50KgCount: number;
+  unitCost: string | number;
+  productionBatch?: { batchNumber: string };
+  warehouse?: { name: string; code: string };
+  finishedProduct?: { name: string; sku: string };
+};
+
 export function FinishedFeedInventoryPage() {
-  const [rows, setRows] = useState<Array<Record<string, unknown>>>([]);
+  const [rows, setRows] = useState<StockRow[]>([]);
   useEffect(() => {
-    apiFetch<ApiEnvelope<Array<Record<string, unknown>>>>("/feed-production/finished-feed-stock")
-      .then((response) => setRows(response.data))
+    apiFetch<ApiEnvelope<StockRow[]>>("/feed-production/finished-feed-stock")
+      .then((res) => setRows(res.data))
       .catch(() => undefined);
   }, []);
+
+  const totalKg = rows.reduce((s, r) => s + Number(r.quantityKg), 0);
+  const totalBags = rows.reduce((s, r) => s + r.bag50KgCount, 0);
+  const totalValue = rows.reduce((s, r) => s + Number(r.quantityKg) * Number(r.unitCost), 0);
+
   return (
     <FeedMillShell>
       <PageHeader title="Finished Feed Inventory" subtitle="Current finished feed stock by warehouse, batch, product, bag count, and unit cost." />
-      <SimpleRowsTable rows={rows} />
+      <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
+        {[
+          ["Stock lines", rows.length],
+          ["Total (kg)", number(totalKg)],
+          ["Total bags (50kg)", totalBags],
+          ["Stock value", money(totalValue)],
+        ].map(([lbl, val]) => (
+          <article key={lbl} className="rounded-xl border border-line bg-white p-4 shadow-panel">
+            <p className="text-xs text-ink/50">{lbl}</p>
+            <strong className="mt-1.5 block text-xl font-bold text-ink">{val}</strong>
+          </article>
+        ))}
+      </div>
+      <DataTable
+        rows={rows}
+        empty="No finished feed stock found"
+        columns={[
+          { key: "batch", label: "Batch", render: (r) => r.productionBatch?.batchNumber ?? "-" },
+          { key: "product", label: "Product", render: (r) => r.finishedProduct?.name ?? "-" },
+          { key: "warehouse", label: "Warehouse", render: (r) => r.warehouse?.name ?? "-" },
+          { key: "qty", label: "Qty (kg)", render: (r) => number(r.quantityKg) },
+          { key: "bags", label: "Bags (50kg)", render: (r) => String(r.bag50KgCount) },
+          { key: "unitCost", label: "Unit cost", render: (r) => money(r.unitCost) },
+          { key: "lineValue", label: "Line value", render: (r) => money(Number(r.quantityKg) * Number(r.unitCost)) },
+        ]}
+      />
     </FeedMillShell>
   );
 }
 
+type TransferRow = {
+  id: string;
+  quantityKg: string | number;
+  transferDate?: string;
+  notes?: string;
+  productionBatch?: { batchNumber: string };
+  fromWarehouse?: { name: string; code: string };
+  toFarm?: { name: string };
+  toPoultryHouse?: { name: string } | null;
+};
+
 export function InternalFeedTransferPage() {
   const options = useFeedOptions();
-  const [rows, setRows] = useState<Array<Record<string, unknown>>>([]);
+  const [rows, setRows] = useState<TransferRow[]>([]);
   const [form, setForm] = useState({ productionBatchId: "", fromWarehouseId: "", toFarmId: "", toPoultryHouseId: "", quantityKg: "", notes: "" });
+  const [submitting, setSubmitting] = useState(false);
+  const [submitErr, setSubmitErr] = useState("");
   const houses = useMemo(() => options.poultryHouses.filter((house) => !form.toFarmId || house.farmId === form.toFarmId), [options.poultryHouses, form.toFarmId]);
 
   async function load() {
-    const response = await apiFetch<ApiEnvelope<Array<Record<string, unknown>>>>("/feed-production/transfers");
+    const response = await apiFetch<ApiEnvelope<TransferRow[]>>("/feed-production/transfers");
     setRows(response.data);
   }
   useEffect(() => { load().catch(() => undefined); }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await apiFetch("/feed-production/transfers", {
-      method: "POST",
-      body: JSON.stringify({
-        productionBatchId: form.productionBatchId || options.batches[0]?.id,
-        fromWarehouseId: form.fromWarehouseId || options.warehouses[0]?.id,
-        toFarmId: form.toFarmId || options.farms[0]?.id,
-        toPoultryHouseId: form.toPoultryHouseId || houses[0]?.id,
-        quantityKg: Number(form.quantityKg),
-        notes: form.notes || undefined
-      })
-    });
-    await load();
+    setSubmitting(true);
+    setSubmitErr("");
+    try {
+      await apiFetch("/feed-production/transfers", {
+        method: "POST",
+        body: JSON.stringify({
+          productionBatchId: form.productionBatchId || options.batches[0]?.id,
+          fromWarehouseId: form.fromWarehouseId || options.warehouses[0]?.id,
+          toFarmId: form.toFarmId || options.farms[0]?.id,
+          toPoultryHouseId: form.toPoultryHouseId || houses[0]?.id || undefined,
+          quantityKg: Number(form.quantityKg),
+          notes: form.notes || undefined
+        })
+      });
+      setForm({ productionBatchId: "", fromWarehouseId: "", toFarmId: "", toPoultryHouseId: "", quantityKg: "", notes: "" });
+      await load();
+    } catch (e: unknown) {
+      setSubmitErr(e instanceof Error ? e.message : "Transfer failed");
+    } finally {
+      setSubmitting(false);
+    }
   }
+
+  const totalTransferredKg = rows.reduce((s, r) => s + Number(r.quantityKg), 0);
 
   return (
     <FeedMillShell>
       <PageHeader title="Internal Feed Transfer" subtitle="Transfer finished feed from feed mill stores to assigned farms and poultry houses." />
-      <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-5">
-        <SelectField label="Batch" value={form.productionBatchId || options.batches[0]?.id || ""} options={options.batches.map((batch) => ({ ...batch, name: batch.batchNumber }))} onChange={(value) => setForm({ ...form, productionBatchId: value })} />
-        <SelectField label="From warehouse" value={form.fromWarehouseId || options.warehouses[0]?.id || ""} options={options.warehouses} onChange={(value) => setForm({ ...form, fromWarehouseId: value })} />
-        <SelectField label="To farm" value={form.toFarmId || options.farms[0]?.id || ""} options={options.farms} onChange={(value) => setForm({ ...form, toFarmId: value, toPoultryHouseId: "" })} />
-        <SelectField label="To house" value={form.toPoultryHouseId || houses[0]?.id || ""} options={houses} onChange={(value) => setForm({ ...form, toPoultryHouseId: value })} />
-        <FormField label="Quantity kg"><input className={inputClass} type="number" value={form.quantityKg} onChange={(event) => setForm({ ...form, quantityKg: event.target.value })} required /></FormField>
-        <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white md:col-span-5">Create transfer</button>
-      </form>
-      <SimpleRowsTable rows={rows} />
+      <div className="mb-6 rounded-2xl border border-line bg-white p-5 shadow-panel">
+        <h3 className="mb-4 text-sm font-bold text-ink">New Transfer</h3>
+        {submitErr && (
+          <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+            <AlertCircle className="h-4 w-4 shrink-0" /><span>{submitErr}</span>
+            <button onClick={() => setSubmitErr("")} className="ml-auto text-red-400 hover:text-red-600">✕</button>
+          </div>
+        )}
+        <form onSubmit={submit} className="grid gap-4 md:grid-cols-5">
+          <SelectField label="Batch *" value={form.productionBatchId || options.batches[0]?.id || ""} options={options.batches.map((b) => ({ ...b, name: b.batchNumber }))} onChange={(v) => setForm({ ...form, productionBatchId: v })} />
+          <SelectField label="From warehouse *" value={form.fromWarehouseId || options.warehouses[0]?.id || ""} options={options.warehouses} onChange={(v) => setForm({ ...form, fromWarehouseId: v })} />
+          <SelectField label="To farm *" value={form.toFarmId || options.farms[0]?.id || ""} options={options.farms} onChange={(v) => setForm({ ...form, toFarmId: v, toPoultryHouseId: "" })} />
+          <SelectField label="To house" value={form.toPoultryHouseId || houses[0]?.id || ""} options={houses} onChange={(v) => setForm({ ...form, toPoultryHouseId: v })} />
+          <FormField label="Quantity (kg) *"><input className={inputClass} type="number" min="0.001" step="0.001" required value={form.quantityKg} onChange={(e) => setForm({ ...form, quantityKg: e.target.value })} /></FormField>
+          <div className="flex items-end md:col-span-5">
+            <button type="submit" disabled={submitting} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-50">
+              {submitting ? "Transferring…" : "Create transfer"}
+            </button>
+          </div>
+        </form>
+      </div>
+      <div className="mb-4 flex items-center gap-3">
+        <span className="text-sm font-semibold text-ink">{rows.length} transfer{rows.length !== 1 ? "s" : ""}</span>
+        <span className="text-sm text-ink/50">·</span>
+        <span className="text-sm text-ink/60">{number(totalTransferredKg)} kg total</span>
+      </div>
+      <DataTable
+        rows={rows}
+        empty="No transfers recorded"
+        columns={[
+          { key: "batch", label: "Batch", render: (r) => r.productionBatch?.batchNumber ?? "-" },
+          { key: "from", label: "From warehouse", render: (r) => r.fromWarehouse?.name ?? "-" },
+          { key: "farm", label: "To farm", render: (r) => r.toFarm?.name ?? "-" },
+          { key: "house", label: "To house", render: (r) => r.toPoultryHouse?.name ?? "-" },
+          { key: "qty", label: "Qty (kg)", render: (r) => number(r.quantityKg) },
+          { key: "date", label: "Date", render: (r) => r.transferDate ? new Date(r.transferDate).toLocaleDateString() : "-" },
+          { key: "notes", label: "Notes", render: (r) => r.notes ?? "-" },
+        ]}
+      />
     </FeedMillShell>
   );
 }
 
 export function FeedReportsPage() {
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [downloading, setDownloading] = useState<string | null>(null);
+  const [err, setErr] = useState("");
+
+  async function download(reportPath: string, filename: string) {
+    setDownloading(filename);
+    setErr("");
+    try {
+      const params = new URLSearchParams();
+      if (startDate) params.set("startDate", startDate);
+      if (endDate) params.set("endDate", endDate);
+      const qs = params.toString();
+      await downloadReport(`${reportPath}${qs ? `?${qs}` : ""}`, filename);
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : "Download failed");
+    } finally {
+      setDownloading(null);
+    }
+  }
+
+  const reports = [
+    { id: "summary", label: "Feed Production Summary", description: "Batches, quantities, costs, and margins across all production runs.", path: "/feed-production/reports/summary.csv", filename: "feed-production-summary.csv", icon: BarChart3 },
+  ];
+
   return (
     <FeedMillShell>
       <PageHeader title="Feed Production Reports" subtitle="Export feed formula, production, cost, quality, stock, and transfer reports." />
-      <button className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" onClick={() => downloadReport("/feed-production/reports/summary.csv", "feed-production-summary.csv")}>
-        <Download aria-hidden className="h-4 w-4" /> Download feed summary CSV
-      </button>
+      <div className="mb-6 rounded-2xl border border-line bg-white p-5 shadow-panel">
+        <h3 className="mb-4 text-sm font-bold text-ink">Date Range Filter</h3>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold text-ink/55">From date</label>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold text-ink/55">To date</label>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+            />
+          </div>
+          <div className="flex items-end">
+            <button
+              onClick={() => { setStartDate(""); setEndDate(""); }}
+              className="min-h-10 rounded-lg border border-line bg-white px-4 text-sm font-semibold text-ink/50 transition hover:text-ink"
+            >
+              Clear dates
+            </button>
+          </div>
+        </div>
+        {(startDate || endDate) && (
+          <p className="mt-3 text-xs text-ink/50">
+            Filtering:{" "}
+            {startDate && endDate ? `${startDate} → ${endDate}` : startDate ? `from ${startDate}` : `until ${endDate}`}
+          </p>
+        )}
+      </div>
+      {err && (
+        <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+          <AlertCircle className="h-4 w-4 shrink-0" /><span>{err}</span>
+          <button onClick={() => setErr("")} className="ml-auto text-red-400 hover:text-red-600">✕</button>
+        </div>
+      )}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {reports.map((report) => {
+          const Icon = report.icon;
+          const isDownloading = downloading === report.filename;
+          return (
+            <div key={report.id} className="flex flex-col gap-4 rounded-2xl border border-line bg-white p-5 shadow-panel">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand/10">
+                  <Icon className="h-5 w-5 text-brand" aria-hidden />
+                </div>
+                <div>
+                  <p className="font-semibold text-ink">{report.label}</p>
+                  <p className="mt-0.5 text-xs text-ink/50">{report.description}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => download(report.path, report.filename)}
+                disabled={isDownloading}
+                className="mt-auto inline-flex min-h-9 items-center justify-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-white transition hover:bg-brand/90 disabled:opacity-50"
+              >
+                <Download className="h-4 w-4" aria-hidden />
+                {isDownloading ? "Downloading…" : "Download CSV"}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </FeedMillShell>
+  );
+}
+
+type PackagingRow = {
+  id: string;
+  packageSizeKg: string | number;
+  packageCount: number;
+  packagedAt?: string;
+  productionBatch?: { batchNumber: string };
+  productionSite?: { name: string };
+};
+
+export function FeedPackagingRecordPage() {
+  const options = useFeedOptions();
+  const [rows, setRows] = useState<PackagingRow[]>([]);
+  const [form, setForm] = useState({ productionBatchId: "", packageSizeKg: "50", packageCount: "", packagedAt: today() });
+  const [submitting, setSubmitting] = useState(false);
+  const [submitErr, setSubmitErr] = useState("");
+
+  async function load() {
+    const response = await apiFetch<ApiEnvelope<PackagingRow[]>>("/feed-production/packaging-records");
+    setRows(response.data);
+  }
+
+  useEffect(() => { load().catch(() => undefined); }, []);
+
+  async function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setSubmitting(true);
+    setSubmitErr("");
+    try {
+      await apiFetch("/feed-production/packaging-records", {
+        method: "POST",
+        body: JSON.stringify({
+          productionBatchId: form.productionBatchId || options.batches[0]?.id,
+          packageSizeKg: Number(form.packageSizeKg),
+          packageCount: Number(form.packageCount),
+          packagedAt: form.packagedAt || undefined,
+        }),
+      });
+      setForm({ productionBatchId: "", packageSizeKg: "50", packageCount: "", packagedAt: today() });
+      await load();
+    } catch (e: unknown) {
+      setSubmitErr(e instanceof Error ? e.message : "Submit failed");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <FeedMillShell>
+      <PageHeader title="Packaging Records" subtitle="Record and track feed packaging — bag counts, sizes, and dates." />
+      <div className="mb-8 rounded-2xl border border-line bg-white p-5 shadow-panel">
+        <h3 className="mb-4 text-sm font-bold text-ink">Record Packaging</h3>
+        {submitErr && (
+          <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+            <AlertCircle className="h-4 w-4 shrink-0" /><span>{submitErr}</span>
+            <button onClick={() => setSubmitErr("")} className="ml-auto text-red-400 hover:text-red-600">✕</button>
+          </div>
+        )}
+        <form onSubmit={submit} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="sm:col-span-2">
+            <label className="mb-1.5 block text-xs font-semibold text-ink/55">Production Batch *</label>
+            <select
+              required
+              className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+              value={form.productionBatchId}
+              onChange={(e) => setForm((f) => ({ ...f, productionBatchId: e.target.value }))}
+            >
+              <option value="">— select batch —</option>
+              {options.batches.map((b) => (
+                <option key={b.id} value={b.id}>{b.batchNumber} ({b.status})</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold text-ink/55">Package size (kg) *</label>
+            <input
+              type="number" min="0.001" step="0.001" required
+              className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-right text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+              value={form.packageSizeKg}
+              onChange={(e) => setForm((f) => ({ ...f, packageSizeKg: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold text-ink/55">Package count *</label>
+            <input
+              type="number" min="1" step="1" required
+              className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-right text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+              value={form.packageCount}
+              onChange={(e) => setForm((f) => ({ ...f, packageCount: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold text-ink/55">Packaged date</label>
+            <input
+              type="date"
+              className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+              value={form.packagedAt}
+              onChange={(e) => setForm((f) => ({ ...f, packagedAt: e.target.value }))}
+            />
+          </div>
+          <div className="flex items-end sm:col-span-2 lg:col-span-4 lg:justify-end">
+            <button type="submit" disabled={submitting} className="app-button-primary disabled:opacity-50">
+              <Package className="h-4 w-4" /> {submitting ? "Recording…" : "Record packaging"}
+            </button>
+          </div>
+        </form>
+      </div>
+      <DataTable
+        rows={rows}
+        empty="No packaging records yet"
+        columns={[
+          { key: "batch", label: "Batch", render: (row) => row.productionBatch?.batchNumber ?? "-" },
+          { key: "site", label: "Site", render: (row) => row.productionSite?.name ?? "-" },
+          { key: "size", label: "Pkg size (kg)", render: (row) => number(row.packageSizeKg) },
+          { key: "count", label: "Count", render: (row) => String(row.packageCount) },
+          { key: "totalKg", label: "Total kg", render: (row) => number(Number(row.packageSizeKg) * row.packageCount) },
+          { key: "date", label: "Packaged at", render: (row) => row.packagedAt ? new Date(row.packagedAt).toLocaleDateString() : "-" },
+        ]}
+      />
     </FeedMillShell>
   );
 }
@@ -897,6 +2322,40 @@ function BatchTable({ rows }: { rows: BatchRow[] }) {
 function SimpleRowsTable({ rows }: { rows: Array<Record<string, unknown>> }) {
   const keys = Object.keys(rows[0] ?? {}).filter((key) => !["id", "companyId", "branchId", "deletedAt", "updatedAt"].includes(key)).slice(0, 8);
   return <DataTable rows={rows} empty="No records found" columns={keys.map((key) => ({ key, label: key.replace(/([A-Z])/g, " $1"), render: (row: Record<string, unknown>) => typeof row[key] === "object" && row[key] !== null ? JSON.stringify(row[key]).slice(0, 80) : String(row[key] ?? "-").slice(0, 80) }))} />;
+}
+
+const STATUS_COLORS: Record<string, string> = {
+  DRAFT: "bg-gray-100 text-gray-600",
+  APPROVED: "bg-emerald-50 text-emerald-700",
+  IN_PROGRESS: "bg-blue-50 text-blue-700",
+  COMPLETED: "bg-teal-50 text-teal-700",
+  REJECTED: "bg-red-50 text-red-600",
+  CANCELLED: "bg-gray-100 text-gray-500",
+  PENDING: "bg-amber-50 text-amber-700",
+  PENDING_STOCK_APPROVAL: "bg-amber-50 text-amber-700",
+  PASSED: "bg-emerald-50 text-emerald-700",
+  FAILED: "bg-red-50 text-red-600",
+  ACTIVE: "bg-brand/10 text-brand",
+  INACTIVE: "bg-gray-100 text-gray-500",
+  QUALITY_HOLD: "bg-orange-50 text-orange-700",
+};
+
+function StatusBadge({ status }: { status: string }) {
+  const cls = STATUS_COLORS[status] ?? "bg-gray-100 text-gray-600";
+  return (
+    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${cls}`}>
+      {status.replace(/_/g, " ")}
+    </span>
+  );
+}
+
+function BatchSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="mb-6">
+      <h3 className="mb-2 text-sm font-bold text-ink">{title}</h3>
+      {children}
+    </div>
+  );
 }
 
 // ─── Hi-Pro Predictive Planner ──────────────────────────────────────────────

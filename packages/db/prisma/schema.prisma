@@ -269,6 +269,22 @@ enum FeedType {
   BREEDER_FEED
   CONCENTRATE
   CUSTOM_FEED
+  BROILER_STARTER_MASH
+  BROILER_STARTER_CONCENTRATE
+  BROILER_FINISHER_MASH
+  BROILER_FINISHER_CONCENTRATE
+  SUPER_CHICKS_CONCENTRATE
+  SUPER_CHICKS_MASH
+  CHICKS_STARTER_MASH
+  CHICKS_STARTER_CONCENTRATE
+  DEVELOPER_MASH
+  DEVELOPER_CONCENTRATE
+  PRE_LAY_MASH
+  PRE_LAY_CONCENTRATE
+  LAYER_1_MASH
+  LAYER_1_CONCENTRATE
+  LAYER_2_MASH
+  LAYER_2_CONCENTRATE
 }
 
 enum FeedFormulaStatus {
@@ -746,6 +762,7 @@ model Company {
   quickBooksConnection     QuickBooksConnection?
   quickBooksSyncLogs       QuickBooksSyncLog[]
   quickBooksMappings       QuickBooksMapping[]
+  leaveRequests            LeaveRequest[]
 
   @@index([status])
   @@index([createdAt])
@@ -5737,12 +5754,13 @@ model Employee {
   farm                 Farm?                @relation(fields: [farmId], references: [id])
   warehouse            Warehouse?           @relation(fields: [warehouseId], references: [id])
   productionSite       ProductionSite?      @relation(fields: [productionSiteId], references: [id])
-  attendanceRecords    AttendanceRecord[]
-  taskAssignments      TaskAssignment[]
-  payrollRecords       PayrollRecord[]
-  trainingRecords      TrainingRecord[]
-  performanceRecords   HRPerformanceRecord[]
+  attendanceRecords     AttendanceRecord[]
+  taskAssignments       TaskAssignment[]
+  payrollRecords        PayrollRecord[]
+  trainingRecords       TrainingRecord[]
+  performanceRecords    HRPerformanceRecord[]
   departmentAssignments DepartmentAssignment[]
+  leaveRequests         LeaveRequest[]
 
   @@unique([companyId, code])
   @@index([companyId])
@@ -6651,4 +6669,54 @@ model LoginRateLimit {
 
   @@index([key])
   @@index([windowEnd])
+}
+
+// ── Leave Request System ──────────────────────────────────────────────────────
+
+enum LeaveType {
+  ANNUAL
+  SICK
+  MATERNITY
+  PATERNITY
+  COMPASSIONATE
+  UNPAID
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+model LeaveRequest {
+  id            String      @id @default(uuid()) @db.Uuid
+  companyId     String      @db.Uuid
+  employeeId    String?     @db.Uuid
+  employeeName  String      @db.VarChar(160)
+  employeeCode  String?     @db.VarChar(30)
+  reference     String      @db.VarChar(30)
+  leaveType     LeaveType
+  startDate     DateTime
+  endDate       DateTime
+  daysRequested Int
+  reason        String?     @db.VarChar(500)
+  status        LeaveStatus @default(PENDING)
+  reviewedById  String?     @db.Uuid
+  reviewNote    String?     @db.VarChar(500)
+  reviewedAt    DateTime?
+  createdById   String?     @db.Uuid
+  updatedById   String?     @db.Uuid
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  deletedAt     DateTime?
+
+  company  Company   @relation(fields: [companyId], references: [id])
+  employee Employee? @relation(fields: [employeeId], references: [id])
+
+  @@unique([companyId, reference])
+  @@index([companyId])
+  @@index([companyId, status])
+  @@index([companyId, employeeId])
+  @@index([deletedAt])
 }

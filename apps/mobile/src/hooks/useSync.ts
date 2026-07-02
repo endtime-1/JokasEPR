@@ -44,7 +44,7 @@ export function useSync(): SyncState {
   // Auto-sync when coming online
   useEffect(() => {
     if (online) sync();
-  }, [online]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [online, sync]);
 
   // Periodic sync every 2 minutes
   useEffect(() => {
