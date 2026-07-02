@@ -8,11 +8,11 @@ import { AiChatDto } from "./dto/ai-chat.dto";
 
 // ── Provider detection ───────────────────────────────────────────────────────
 
-type Provider = "anthropic" | "gemini" | "groq" | "kimi";
+type Provider = "anthropic" | "gemini" | "groq" | "nvidia";
 
 function detectProvider(model: string): Provider {
   if (model.startsWith("gemini"))    return "gemini";
-  if (model.startsWith("moonshot"))  return "kimi";
+  if (model.includes("/"))           return "nvidia"; // NVIDIA NIM uses org/model format
   if (model.startsWith("llama") || model.startsWith("mixtral") || model.startsWith("qwen")) return "groq";
   return "anthropic"; // claude-* and anything unrecognised → Anthropic
 }
@@ -66,7 +66,7 @@ export class AiService {
 
   private keyFor(provider: Provider): string | undefined {
     switch (provider) {
-      case "kimi":      return this.config.get("KIMI_API_KEY") || undefined;
+      case "nvidia":    return this.config.get("NVIDIA_API_KEY") || undefined;
       case "anthropic": return this.config.get("ANTHROPIC_API_KEY") || this.config.get("AI_API_KEY") || undefined;
       case "gemini":    return this.config.get("GEMINI_API_KEY") || undefined;
       case "groq":      return this.config.get("GROQ_API_KEY") || undefined;
@@ -103,7 +103,7 @@ export class AiService {
       );
     }
     switch (provider) {
-      case "kimi":      return this.callKimi(key, model, systemPrompt, messages, maxTokens);
+      case "nvidia":    return this.callNvidia(key, model, systemPrompt, messages, maxTokens);
       case "anthropic": return this.callAnthropic(key, model, systemPrompt, messages, maxTokens);
       case "gemini":    return this.callGemini(key, model, systemPrompt, messages, maxTokens);
       case "groq":      return this.callGroq(key, model, systemPrompt, messages, maxTokens);
@@ -179,10 +179,10 @@ export class AiService {
     };
   }
 
-  // ── Kimi by Moonshot AI (OpenAI-compatible) ─────────────────────────────────
+  // ── NVIDIA NIM (OpenAI-compatible) ──────────────────────────────────────────
 
-  private async callKimi(key: string, model: string, system: string, messages: AiMessageParam[], maxTokens: number) {
-    const res = await fetch("https://api.moonshot.cn/v1/chat/completions", {
+  private async callNvidia(key: string, model: string, system: string, messages: AiMessageParam[], maxTokens: number) {
+    const res = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
       method: "POST",
       headers: { "content-type": "application/json", "Authorization": `Bearer ${key}` },
       body: JSON.stringify({
@@ -191,8 +191,8 @@ export class AiService {
       }),
     });
     if (!res.ok) {
-      this.logger.warn(`Kimi ${res.status}: ${await res.text().catch(() => res.statusText)}`);
-      throw new ForbiddenException("Kimi (Moonshot AI) API request failed.");
+      this.logger.warn(`NVIDIA NIM ${res.status}: ${await res.text().catch(() => res.statusText)}`);
+      throw new ForbiddenException("NVIDIA NIM API request failed.");
     }
     const json = await res.json() as any;
     return {
