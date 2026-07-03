@@ -14,7 +14,6 @@ allowBuilds:
   "@next/swc-win32-x64-msvc": true
   "@prisma/client": true
   "@prisma/engines": true
-  esbuild: true
   napi-postinstall: true
   prisma: true
   sharp: true
@@ -32,7 +31,6 @@ onlyBuiltDependencies:
   - "@next/swc-win32-x64-msvc"
   - "@prisma/client"
   - "@prisma/engines"
-  - "esbuild"
   - "napi-postinstall"
   - "prisma"
   - "sharp"
