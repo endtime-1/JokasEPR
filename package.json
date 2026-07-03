@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "description": "Multi-farm agribusiness ERP monorepo for poultry, feed mill, soya processing, inventory, sales, finance, HR, maintenance, QC, marketing, and AI decision support.",
-  "packageManager": "pnpm@9.15.0",
+  "packageManager": "pnpm@11.9.0",
   "scripts": {
     "dev": "pnpm --parallel --filter @jokas/api --filter @jokas/web --filter @jokas/storefront dev",
     "build": "pnpm -r build",
