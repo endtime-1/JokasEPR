@@ -19,11 +19,9 @@ allowBuilds:
   sharp: true
   unrs-resolver: true
 
-neverBuiltDependencies:
-  - esbuild
-
 onlyBuiltDependencies:
   - "@nestjs/core"
+  - "esbuild"
   - "@next/swc-darwin-arm64"
   - "@next/swc-darwin-x64"
   - "@next/swc-linux-arm64-gnu"
