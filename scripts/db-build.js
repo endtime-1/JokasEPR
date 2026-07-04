@@ -19,9 +19,19 @@ execSync(`npx prisma generate --schema="${schema}"`, {
 });
 
 if (process.env.NODE_ENV === "production") {
-  console.log("[db-build] running prisma migrate deploy...");
-  execSync(`npx prisma migrate deploy --schema="${schema}"`, {
-    stdio: "inherit",
-    cwd: dbDir,
-  });
+  if (provider === "mysql") {
+    // MySQL on Hostinger: migration files use PostgreSQL syntax so they won't
+    // work. Use db push to sync the schema directly against the fresh database.
+    console.log("[db-build] mysql: running prisma db push...");
+    execSync(`npx prisma db push --schema="${schema}" --accept-data-loss`, {
+      stdio: "inherit",
+      cwd: dbDir,
+    });
+  } else {
+    console.log("[db-build] postgresql: running prisma migrate deploy...");
+    execSync(`npx prisma migrate deploy --schema="${schema}"`, {
+      stdio: "inherit",
+      cwd: dbDir,
+    });
+  }
 }
