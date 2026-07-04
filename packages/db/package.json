@@ -5,7 +5,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "prisma generate && tsc -p tsconfig.json",
+    "build": "node ../../scripts/db-build.js && tsc -p tsconfig.json",
     "lint": "tsc -p tsconfig.json --noEmit && eslint .",
     "test": "echo \"No db tests yet\"",
     "prisma:generate": "prisma generate",
