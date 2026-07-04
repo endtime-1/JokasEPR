@@ -6,7 +6,8 @@
   "packageManager": "pnpm@11.9.0",
   "scripts": {
     "dev": "pnpm --parallel --filter @jokas/api --filter @jokas/web --filter @jokas/storefront dev",
-    "build": "npx --yes pnpm@11.9.0 --filter @jokas/db build && npx --yes pnpm@11.9.0 --filter @jokas/shared build && npx --yes pnpm@11.9.0 --filter @jokas/api --filter @jokas/web build",
+    "build": "npx --yes pnpm@11.9.0 --filter @jokas/db build && npx --yes pnpm@11.9.0 --filter @jokas/shared build && npx --yes pnpm@11.9.0 --filter @jokas/api --filter @jokas/web build && node scripts/post-build.js",
+    "start": "pm2 start ecosystem.config.js --no-daemon",
     "lint": "pnpm -r lint",
     "lint:eslint": "eslint .",
     "test": "pnpm -r test",
