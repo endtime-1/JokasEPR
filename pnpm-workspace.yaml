@@ -37,3 +37,6 @@ onlyBuiltDependencies:
   - "prisma"
   - "sharp"
   - "unrs-resolver"
+
+patchedDependencies:
+  esbuild@0.28.1: patches/esbuild@0.28.1.patch
