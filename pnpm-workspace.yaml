@@ -38,5 +38,9 @@ onlyBuiltDependencies:
   - "sharp"
   - "unrs-resolver"
 
+overrides:
+  '@types/react': '^19.0.0'
+  '@types/react-dom': '^19.0.0'
+
 patchedDependencies:
   esbuild@0.28.1: patches/esbuild@0.28.1.patch

@@ -153,7 +153,7 @@ function FormLabel({ children }: { children: ReactNode }) {
 
 // ─── Options ──────────────────────────────────────────────────────────────────
 
-type Opt = { id: string; code?: string; sku?: string; name?: string; invoiceNumber?: string; balanceDue?: string | number; product?: { sku: string; name: string }; customerGroup?: { code: string; name: string } };
+type Opt = { id: string; code?: string; sku?: string; name?: string; invoiceNumber?: string; balanceDue?: string | number; customerId?: string; product?: { sku: string; name: string }; customerGroup?: { code: string; name: string } };
 
 type SalesOptions = {
   branches: Opt[];
