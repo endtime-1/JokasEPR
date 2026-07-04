@@ -1,9 +1,9 @@
-generator client {
+﻿generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = env("DATABASE_PROVIDER")
   url      = env("DATABASE_URL")
 }
 
@@ -613,14 +613,14 @@ enum MaintenanceCostType {
 }
 
 model Company {
-  id          String        @id @default(uuid()) @db.Uuid
+  id          String        @id @default(uuid())
   name        String
   legalName   String?
   taxId       String?
   status      CompanyStatus @default(ACTIVE)
   timezone    String        @default("Africa/Accra")
-  createdById String?       @db.Uuid
-  updatedById String?       @db.Uuid
+  createdById String?      
+  updatedById String?      
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
   deletedAt   DateTime?
@@ -770,16 +770,16 @@ model Company {
 }
 
 model Branch {
-  id           String       @id @default(uuid()) @db.Uuid
-  companyId    String       @db.Uuid
+  id           String       @id @default(uuid())
+  companyId    String      
   name         String
   code         String
   city         String?
   country      String       @default("Ghana")
   status       RecordStatus @default(ACTIVE)
   isHeadOffice Boolean      @default(false)
-  createdById  String?      @db.Uuid
-  updatedById  String?      @db.Uuid
+  createdById  String?     
+  updatedById  String?     
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
   deletedAt    DateTime?
@@ -880,16 +880,16 @@ model Branch {
 }
 
 model Farm {
-  id          String       @id @default(uuid()) @db.Uuid
-  companyId   String       @db.Uuid
-  branchId    String       @db.Uuid
+  id          String       @id @default(uuid())
+  companyId   String      
+  branchId    String      
   name        String
   code        String
   type        FarmType     @default(POULTRY)
   status      RecordStatus @default(ACTIVE)
   location    String?
-  createdById String?      @db.Uuid
-  updatedById String?      @db.Uuid
+  createdById String?     
+  updatedById String?     
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   deletedAt   DateTime?
@@ -947,16 +947,16 @@ model Farm {
 }
 
 model ProductionSite {
-  id          String             @id @default(uuid()) @db.Uuid
-  companyId   String             @db.Uuid
-  branchId    String             @db.Uuid
+  id          String             @id @default(uuid())
+  companyId   String            
+  branchId    String            
   name        String
   code        String
   type        ProductionSiteType
   status      RecordStatus       @default(ACTIVE)
   location    String?
-  createdById String?            @db.Uuid
-  updatedById String?            @db.Uuid
+  createdById String?           
+  updatedById String?           
   createdAt   DateTime           @default(now())
   updatedAt   DateTime           @updatedAt
   deletedAt   DateTime?
@@ -1023,16 +1023,16 @@ model ProductionSite {
 }
 
 model PoultryHouse {
-  id          String       @id @default(uuid()) @db.Uuid
-  companyId   String       @db.Uuid
-  branchId    String       @db.Uuid
-  farmId      String       @db.Uuid
+  id          String       @id @default(uuid())
+  companyId   String      
+  branchId    String      
+  farmId      String      
   name        String
   code        String
   capacity    Int?
   status      RecordStatus @default(ACTIVE)
-  createdById String?      @db.Uuid
-  updatedById String?      @db.Uuid
+  createdById String?     
+  updatedById String?     
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   deletedAt   DateTime?
@@ -1064,18 +1064,18 @@ model PoultryHouse {
 }
 
 model Warehouse {
-  id               String        @id @default(uuid()) @db.Uuid
-  companyId        String        @db.Uuid
-  branchId         String        @db.Uuid
-  farmId           String?       @db.Uuid
-  productionSiteId String?       @db.Uuid
+  id               String        @id @default(uuid())
+  companyId        String       
+  branchId         String       
+  farmId           String?      
+  productionSiteId String?      
   name             String
   code             String
   type             WarehouseType @default(GENERAL)
   status           RecordStatus  @default(ACTIVE)
   location         String?
-  createdById      String?       @db.Uuid
-  updatedById      String?       @db.Uuid
+  createdById      String?      
+  updatedById      String?      
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
   deletedAt        DateTime?
@@ -1139,14 +1139,14 @@ model Warehouse {
 }
 
 model Department {
-  id          String       @id @default(uuid()) @db.Uuid
-  companyId   String       @db.Uuid
-  branchId    String?      @db.Uuid
+  id          String       @id @default(uuid())
+  companyId   String      
+  branchId    String?     
   name        String
   code        String
   status      RecordStatus @default(ACTIVE)
-  createdById String?      @db.Uuid
-  updatedById String?      @db.Uuid
+  createdById String?     
+  updatedById String?     
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   deletedAt   DateTime?
@@ -1164,13 +1164,13 @@ model Department {
 }
 
 model User {
-  id                String     @id @default(uuid()) @db.Uuid
-  companyId         String     @db.Uuid
-  branchId          String?    @db.Uuid
-  farmId            String?    @db.Uuid
-  warehouseId       String?    @db.Uuid
-  productionSiteId  String?    @db.Uuid
-  departmentId      String?    @db.Uuid
+  id                String     @id @default(uuid())
+  companyId         String    
+  branchId          String?   
+  farmId            String?   
+  warehouseId       String?   
+  productionSiteId  String?   
+  departmentId      String?   
   email             String
   fullName          String
   phone             String?
@@ -1180,8 +1180,8 @@ model User {
   passwordChangedAt     DateTime   @default(now())
   failedLoginAttempts   Int        @default(0)
   lockedUntil           DateTime?
-  createdById       String?    @db.Uuid
-  updatedById       String?    @db.Uuid
+  createdById       String?   
+  updatedById       String?   
   createdAt         DateTime   @default(now())
   updatedAt         DateTime   @updatedAt
   deletedAt         DateTime?
@@ -1243,14 +1243,14 @@ model User {
 }
 
 model QrCode {
-  id               String       @id @default(uuid()) @db.Uuid
-  companyId        String       @db.Uuid
-  branchId         String?      @db.Uuid
-  farmId           String?      @db.Uuid
-  warehouseId      String?      @db.Uuid
-  productionSiteId String?      @db.Uuid
+  id               String       @id @default(uuid())
+  companyId        String      
+  branchId         String?     
+  farmId           String?     
+  warehouseId      String?     
+  productionSiteId String?     
   entityType       QrEntityType
-  entityId         String       @db.Uuid
+  entityId         String      
   token            String       @unique
   payload          String       @unique
   barcodeValue     String       @unique
@@ -1259,8 +1259,8 @@ model QrCode {
   metadata         Json?
   expiresAt        DateTime?
   lastScannedAt    DateTime?
-  createdById      String?      @db.Uuid
-  updatedById      String?      @db.Uuid
+  createdById      String?     
+  updatedById      String?     
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
   deletedAt        DateTime?
@@ -1279,15 +1279,15 @@ model QrCode {
 }
 
 model Role {
-  id          String       @id @default(uuid()) @db.Uuid
-  companyId   String       @db.Uuid
+  id          String       @id @default(uuid())
+  companyId   String      
   name        String
   description String?
   level       RoleLevel    @default(OFFICER)
   status      RecordStatus @default(ACTIVE)
   isSystem    Boolean      @default(false)
-  createdById String?      @db.Uuid
-  updatedById String?      @db.Uuid
+  createdById String?     
+  updatedById String?     
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   deletedAt   DateTime?
@@ -1305,14 +1305,14 @@ model Role {
 }
 
 model Permission {
-  id          String       @id @default(uuid()) @db.Uuid
-  companyId   String       @db.Uuid
+  id          String       @id @default(uuid())
+  companyId   String      
   key         String
   description String?
   module      String
   status      RecordStatus @default(ACTIVE)
-  createdById String?      @db.Uuid
-  updatedById String?      @db.Uuid
+  createdById String?     
+  updatedById String?     
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
@@ -1327,11 +1327,11 @@ model Permission {
 }
 
 model UserRole {
-  userId      String   @db.Uuid
-  roleId      String   @db.Uuid
-  companyId   String   @db.Uuid
-  createdById String?  @db.Uuid
-  updatedById String?  @db.Uuid
+  userId      String  
+  roleId      String  
+  companyId   String  
+  createdById String? 
+  updatedById String? 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -1344,11 +1344,11 @@ model UserRole {
 }
 
 model UserBranchAccess {
-  userId      String   @db.Uuid
-  branchId    String   @db.Uuid
-  companyId   String   @db.Uuid
-  createdById String?  @db.Uuid
-  updatedById String?  @db.Uuid
+  userId      String  
+  branchId    String  
+  companyId   String  
+  createdById String? 
+  updatedById String? 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -1363,11 +1363,11 @@ model UserBranchAccess {
 }
 
 model UserFarmAccess {
-  userId      String   @db.Uuid
-  farmId      String   @db.Uuid
-  companyId   String   @db.Uuid
-  createdById String?  @db.Uuid
-  updatedById String?  @db.Uuid
+  userId      String  
+  farmId      String  
+  companyId   String  
+  createdById String? 
+  updatedById String? 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -1382,11 +1382,11 @@ model UserFarmAccess {
 }
 
 model UserWarehouseAccess {
-  userId      String   @db.Uuid
-  warehouseId String   @db.Uuid
-  companyId   String   @db.Uuid
-  createdById String?  @db.Uuid
-  updatedById String?  @db.Uuid
+  userId      String  
+  warehouseId String  
+  companyId   String  
+  createdById String? 
+  updatedById String? 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -1401,11 +1401,11 @@ model UserWarehouseAccess {
 }
 
 model UserProductionSiteAccess {
-  userId           String   @db.Uuid
-  productionSiteId String   @db.Uuid
-  companyId        String   @db.Uuid
-  createdById      String?  @db.Uuid
-  updatedById      String?  @db.Uuid
+  userId           String  
+  productionSiteId String  
+  companyId        String  
+  createdById      String? 
+  updatedById      String? 
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -1420,11 +1420,11 @@ model UserProductionSiteAccess {
 }
 
 model Product {
-  id          String        @id @default(uuid()) @db.Uuid
-  companyId   String        @db.Uuid
-  branchId    String?       @db.Uuid
-  categoryId  String?       @db.Uuid
-  uomId       String        @db.Uuid
+  id          String        @id @default(uuid())
+  companyId   String       
+  branchId    String?      
+  categoryId  String?      
+  uomId       String       
   name        String
   sku         String
   description String?
@@ -1439,8 +1439,8 @@ model Product {
   storefrontCategory String?
   minOrderQty        Decimal? @default(1) @db.Decimal(10, 2)
   unitLabel          String?
-  createdById String?       @db.Uuid
-  updatedById String?       @db.Uuid
+  createdById String?      
+  updatedById String?      
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
   deletedAt   DateTime?
@@ -1497,15 +1497,15 @@ model Product {
 }
 
 model ProductCategory {
-  id          String       @id @default(uuid()) @db.Uuid
-  companyId   String       @db.Uuid
-  parentId    String?      @db.Uuid
+  id          String       @id @default(uuid())
+  companyId   String      
+  parentId    String?     
   name        String
   code        String
   description String?
   status      RecordStatus @default(ACTIVE)
-  createdById String?      @db.Uuid
-  updatedById String?      @db.Uuid
+  createdById String?     
+  updatedById String?     
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   deletedAt   DateTime?
@@ -1525,14 +1525,14 @@ model ProductCategory {
 }
 
 model UnitOfMeasure {
-  id          String       @id @default(uuid()) @db.Uuid
-  companyId   String       @db.Uuid
+  id          String       @id @default(uuid())
+  companyId   String      
   name        String
   code        String
   symbol      String
   status      RecordStatus @default(ACTIVE)
-  createdById String?      @db.Uuid
-  updatedById String?      @db.Uuid
+  createdById String?     
+  updatedById String?     
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   deletedAt   DateTime?
@@ -1551,19 +1551,19 @@ model UnitOfMeasure {
 }
 
 model InventoryItem {
-  id               String              @id @default(uuid()) @db.Uuid
-  companyId        String              @db.Uuid
-  branchId         String              @db.Uuid
-  farmId           String?             @db.Uuid
-  warehouseId      String              @db.Uuid
-  productionSiteId String?             @db.Uuid
-  productId        String              @db.Uuid
-  uomId            String              @db.Uuid
+  id               String              @id @default(uuid())
+  companyId        String             
+  branchId         String             
+  farmId           String?            
+  warehouseId      String             
+  productionSiteId String?            
+  productId        String             
+  uomId            String             
   status           InventoryItemStatus @default(ACTIVE)
   reorderLevel     Decimal             @default(0) @db.Decimal(18, 4)
   quantityOnHand   Decimal             @default(0) @db.Decimal(18, 4)
-  createdById      String?             @db.Uuid
-  updatedById      String?             @db.Uuid
+  createdById      String?            
+  updatedById      String?            
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
   deletedAt        DateTime?
@@ -1595,15 +1595,15 @@ model InventoryItem {
 }
 
 model StockBatch {
-  id                String           @id @default(uuid()) @db.Uuid
-  companyId         String           @db.Uuid
-  branchId          String           @db.Uuid
-  farmId            String?          @db.Uuid
-  warehouseId       String           @db.Uuid
-  productionSiteId  String?          @db.Uuid
-  productId         String           @db.Uuid
-  inventoryItemId   String?          @db.Uuid
-  uomId             String           @db.Uuid
+  id                String           @id @default(uuid())
+  companyId         String          
+  branchId          String          
+  farmId            String?         
+  warehouseId       String          
+  productionSiteId  String?         
+  productId         String          
+  inventoryItemId   String?         
+  uomId             String          
   batchNumber       String
   status            StockBatchStatus @default(AVAILABLE)
   quantityReceived  Decimal          @default(0) @db.Decimal(18, 4)
@@ -1611,8 +1611,8 @@ model StockBatch {
   unitCost          Decimal?         @db.Decimal(18, 4)
   manufactureDate   DateTime?
   expiryDate        DateTime?
-  createdById       String?          @db.Uuid
-  updatedById       String?          @db.Uuid
+  createdById       String?         
+  updatedById       String?         
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
   deletedAt         DateTime?
@@ -1643,30 +1643,30 @@ model StockBatch {
 }
 
 model StockMovement {
-  id                   String            @id @default(uuid()) @db.Uuid
-  companyId            String            @db.Uuid
-  branchId             String            @db.Uuid
-  productId            String            @db.Uuid
-  inventoryItemId      String?           @db.Uuid
-  stockBatchId         String?           @db.Uuid
-  fromWarehouseId      String?           @db.Uuid
-  toWarehouseId        String?           @db.Uuid
-  fromFarmId           String?           @db.Uuid
-  toFarmId             String?           @db.Uuid
-  fromProductionSiteId String?           @db.Uuid
-  toProductionSiteId   String?           @db.Uuid
-  farmId               String?           @db.Uuid
-  warehouseId          String?           @db.Uuid
-  productionSiteId     String?           @db.Uuid
-  uomId                String            @db.Uuid
+  id                   String            @id @default(uuid())
+  companyId            String           
+  branchId             String           
+  productId            String           
+  inventoryItemId      String?          
+  stockBatchId         String?          
+  fromWarehouseId      String?          
+  toWarehouseId        String?          
+  fromFarmId           String?          
+  toFarmId             String?          
+  fromProductionSiteId String?          
+  toProductionSiteId   String?          
+  farmId               String?          
+  warehouseId          String?          
+  productionSiteId     String?          
+  uomId                String           
   movementType         StockMovementType
   quantity             Decimal           @db.Decimal(18, 4)
   unitCost             Decimal?          @db.Decimal(18, 4)
   referenceType        String?
   referenceId          String?
   notes                String?
-  createdById          String?           @db.Uuid
-  updatedById          String?           @db.Uuid
+  createdById          String?          
+  updatedById          String?          
   movementDate         DateTime          @default(now())
   createdAt            DateTime          @default(now())
   updatedAt            DateTime          @updatedAt
@@ -1708,18 +1708,18 @@ model StockMovement {
 }
 
 model WarehouseLocation {
-  id               String       @id @default(uuid()) @db.Uuid
-  companyId        String       @db.Uuid
-  branchId         String       @db.Uuid
-  warehouseId      String       @db.Uuid
-  productionSiteId String?      @db.Uuid
-  parentId         String?      @db.Uuid
+  id               String       @id @default(uuid())
+  companyId        String      
+  branchId         String      
+  warehouseId      String      
+  productionSiteId String?     
+  parentId         String?     
   code             String
   name             String
   barcode          String?
   status           RecordStatus @default(ACTIVE)
-  createdById      String?      @db.Uuid
-  updatedById      String?      @db.Uuid
+  createdById      String?     
+  updatedById      String?     
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
   deletedAt        DateTime?
@@ -1743,25 +1743,25 @@ model WarehouseLocation {
 }
 
 model StockAdjustment {
-  id              String              @id @default(uuid()) @db.Uuid
-  companyId       String              @db.Uuid
-  branchId        String              @db.Uuid
-  warehouseId     String              @db.Uuid
-  productionSiteId String?            @db.Uuid
-  inventoryItemId String              @db.Uuid
-  productId       String              @db.Uuid
+  id              String              @id @default(uuid())
+  companyId       String             
+  branchId        String             
+  warehouseId     String             
+  productionSiteId String?           
+  inventoryItemId String             
+  productId       String             
   adjustmentNumber String
   adjustmentType  StockAdjustmentType
   quantity        Decimal             @db.Decimal(18, 4)
   unitCost        Decimal?            @db.Decimal(18, 4)
   reason          String
   status          StockWorkflowStatus @default(PENDING_APPROVAL)
-  movementId      String?             @db.Uuid
-  requestedById   String?             @db.Uuid
-  approvedById    String?             @db.Uuid
+  movementId      String?            
+  requestedById   String?            
+  approvedById    String?            
   approvedAt      DateTime?
-  createdById     String?             @db.Uuid
-  updatedById     String?             @db.Uuid
+  createdById     String?            
+  updatedById     String?            
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
   deletedAt       DateTime?
@@ -1787,25 +1787,25 @@ model StockAdjustment {
 }
 
 model StockTransfer {
-  id                   String              @id @default(uuid()) @db.Uuid
-  companyId            String              @db.Uuid
-  branchId             String              @db.Uuid
-  productId            String              @db.Uuid
-  stockBatchId         String?             @db.Uuid
+  id                   String              @id @default(uuid())
+  companyId            String             
+  branchId             String             
+  productId            String             
+  stockBatchId         String?            
   transferNumber       String
-  fromWarehouseId      String              @db.Uuid
-  toWarehouseId        String              @db.Uuid
-  fromProductionSiteId String?             @db.Uuid
-  toProductionSiteId   String?             @db.Uuid
+  fromWarehouseId      String             
+  toWarehouseId        String             
+  fromProductionSiteId String?            
+  toProductionSiteId   String?            
   quantity             Decimal             @db.Decimal(18, 4)
   unitCost             Decimal?            @db.Decimal(18, 4)
   barcode              String?
   status               StockWorkflowStatus @default(COMPLETED)
-  requestedById        String?             @db.Uuid
-  approvedById         String?             @db.Uuid
+  requestedById        String?            
+  approvedById         String?            
   approvedAt           DateTime?
-  createdById          String?             @db.Uuid
-  updatedById          String?             @db.Uuid
+  createdById          String?            
+  updatedById          String?            
   transferDate         DateTime            @default(now())
   createdAt            DateTime            @default(now())
   updatedAt            DateTime            @updatedAt
@@ -1835,19 +1835,19 @@ model StockTransfer {
 }
 
 model StockReorderLevel {
-  id               String       @id @default(uuid()) @db.Uuid
-  companyId        String       @db.Uuid
-  branchId         String       @db.Uuid
-  warehouseId      String       @db.Uuid
-  productionSiteId String?      @db.Uuid
-  inventoryItemId  String      @db.Uuid
-  productId        String      @db.Uuid
+  id               String       @id @default(uuid())
+  companyId        String      
+  branchId         String      
+  warehouseId      String      
+  productionSiteId String?     
+  inventoryItemId  String     
+  productId        String     
   minimumQuantity  Decimal     @default(0) @db.Decimal(18, 4)
   maximumQuantity  Decimal?    @db.Decimal(18, 4)
   reorderQuantity  Decimal?    @db.Decimal(18, 4)
   status           RecordStatus @default(ACTIVE)
-  createdById      String?      @db.Uuid
-  updatedById      String?      @db.Uuid
+  createdById      String?     
+  updatedById      String?     
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
   deletedAt        DateTime?
@@ -1871,14 +1871,14 @@ model StockReorderLevel {
 }
 
 model StockExpiryAlert {
-  id              String       @id @default(uuid()) @db.Uuid
-  companyId       String       @db.Uuid
-  branchId        String       @db.Uuid
-  warehouseId     String       @db.Uuid
-  productionSiteId String?     @db.Uuid
-  inventoryItemId String?      @db.Uuid
-  stockBatchId    String       @db.Uuid
-  productId       String       @db.Uuid
+  id              String       @id @default(uuid())
+  companyId       String      
+  branchId        String      
+  warehouseId     String      
+  productionSiteId String?    
+  inventoryItemId String?     
+  stockBatchId    String      
+  productId       String      
   expiryDate      DateTime
   daysToExpiry    Int
   status          RecordStatus @default(ACTIVE)
@@ -1907,13 +1907,13 @@ model StockExpiryAlert {
 }
 
 model InventoryValuation {
-  id               String                   @id @default(uuid()) @db.Uuid
-  companyId        String                   @db.Uuid
-  branchId         String                   @db.Uuid
-  warehouseId      String                   @db.Uuid
-  productionSiteId String?                  @db.Uuid
-  inventoryItemId  String                   @db.Uuid
-  productId        String                   @db.Uuid
+  id               String                   @id @default(uuid())
+  companyId        String                  
+  branchId         String                  
+  warehouseId      String                  
+  productionSiteId String?                 
+  inventoryItemId  String                  
+  productId        String                  
   valuationDate    DateTime                 @default(now())
   quantityOnHand   Decimal                  @db.Decimal(18, 4)
   unitCost         Decimal                  @db.Decimal(18, 4)
@@ -1941,23 +1941,23 @@ model InventoryValuation {
 }
 
 model StockReservation {
-  id               String                 @id @default(uuid()) @db.Uuid
-  companyId        String                 @db.Uuid
-  branchId         String                 @db.Uuid
-  warehouseId      String                 @db.Uuid
-  farmId           String?                @db.Uuid
-  productionSiteId String?                @db.Uuid
-  inventoryItemId  String                 @db.Uuid
-  stockBatchId     String?                @db.Uuid
-  productId        String                 @db.Uuid
+  id               String                 @id @default(uuid())
+  companyId        String                
+  branchId         String                
+  warehouseId      String                
+  farmId           String?               
+  productionSiteId String?               
+  inventoryItemId  String                
+  stockBatchId     String?               
+  productId        String                
   reservationNumber String
   quantity         Decimal                @db.Decimal(18, 4)
-  requestedById    String?                @db.Uuid
+  requestedById    String?               
   purpose          String?
   status           StockReservationStatus @default(ACTIVE)
   expiresAt        DateTime?
-  createdById      String?                @db.Uuid
-  updatedById      String?                @db.Uuid
+  createdById      String?               
+  updatedById      String?               
   createdAt        DateTime               @default(now())
   updatedAt        DateTime               @updatedAt
   deletedAt        DateTime?
@@ -1986,15 +1986,15 @@ model StockReservation {
 }
 
 model StockApproval {
-  id              String              @id @default(uuid()) @db.Uuid
-  companyId       String              @db.Uuid
-  branchId        String              @db.Uuid
+  id              String              @id @default(uuid())
+  companyId       String             
+  branchId        String             
   approvalNumber  String
   entityType      String
   entityId        String
   status          StockWorkflowStatus @default(PENDING_APPROVAL)
-  requestedById   String?             @db.Uuid
-  approvedById    String?             @db.Uuid
+  requestedById   String?            
+  approvedById    String?            
   approvedAt      DateTime?
   notes           String?
   createdAt       DateTime            @default(now())
@@ -2014,15 +2014,15 @@ model StockApproval {
 }
 
 model CustomerGroup {
-  id          String       @id @default(uuid()) @db.Uuid
-  companyId   String       @db.Uuid
-  branchId    String?      @db.Uuid
+  id          String       @id @default(uuid())
+  companyId   String      
+  branchId    String?     
   code        String
   name        String
   description String?
   status      RecordStatus @default(ACTIVE)
-  createdById String?      @db.Uuid
-  updatedById String?      @db.Uuid
+  createdById String?     
+  updatedById String?     
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   deletedAt   DateTime?
@@ -2041,18 +2041,18 @@ model CustomerGroup {
 }
 
 model Customer {
-  id              String         @id @default(uuid()) @db.Uuid
-  companyId       String         @db.Uuid
-  branchId        String         @db.Uuid
-  customerGroupId String?        @db.Uuid
+  id              String         @id @default(uuid())
+  companyId       String        
+  branchId        String        
+  customerGroupId String?       
   code            String
   name            String
   phone           String?
   email           String?
   address         String?
   status          CustomerStatus @default(ACTIVE)
-  createdById     String?        @db.Uuid
-  updatedById     String?        @db.Uuid
+  createdById     String?       
+  updatedById     String?       
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
   deletedAt       DateTime?
@@ -2083,17 +2083,17 @@ model Customer {
 }
 
 model CustomerCreditLimit {
-  id             String       @id @default(uuid()) @db.Uuid
-  companyId      String       @db.Uuid
-  branchId       String       @db.Uuid
-  customerId     String       @db.Uuid
+  id             String       @id @default(uuid())
+  companyId      String      
+  branchId       String      
+  customerId     String      
   creditLimit    Decimal      @default(0) @db.Decimal(18, 4)
   currentBalance Decimal      @default(0) @db.Decimal(18, 4)
   status         RecordStatus @default(ACTIVE)
-  approvedById   String?      @db.Uuid
+  approvedById   String?     
   approvedAt     DateTime?
-  createdById    String?      @db.Uuid
-  updatedById    String?      @db.Uuid
+  createdById    String?     
+  updatedById    String?     
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   deletedAt      DateTime?
@@ -2112,19 +2112,19 @@ model CustomerCreditLimit {
 }
 
 model PriceList {
-  id              String       @id @default(uuid()) @db.Uuid
-  companyId       String       @db.Uuid
-  branchId        String?      @db.Uuid
-  customerGroupId String?      @db.Uuid
-  productId       String       @db.Uuid
+  id              String       @id @default(uuid())
+  companyId       String      
+  branchId        String?     
+  customerGroupId String?     
+  productId       String      
   name            String
   unitPrice       Decimal      @db.Decimal(18, 4)
   currency        String       @default("GHS")
   validFrom       DateTime     @default(now())
   validTo         DateTime?
   status          RecordStatus @default(ACTIVE)
-  createdById     String?      @db.Uuid
-  updatedById     String?      @db.Uuid
+  createdById     String?     
+  updatedById     String?     
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
   deletedAt       DateTime?
@@ -2145,13 +2145,13 @@ model PriceList {
 }
 
 model SalesOrder {
-  id                String           @id @default(uuid()) @db.Uuid
-  companyId         String           @db.Uuid
-  branchId          String           @db.Uuid
-  customerId        String           @db.Uuid
-  warehouseId       String           @db.Uuid
-  marketTargetId    String?          @db.Uuid
-  productionPlanId  String?          @db.Uuid
+  id                String           @id @default(uuid())
+  companyId         String          
+  branchId          String          
+  customerId        String          
+  warehouseId       String          
+  marketTargetId    String?         
+  productionPlanId  String?         
   orderNumber       String
   orderDate         DateTime         @default(now())
   status            SalesOrderStatus @default(PENDING_STOCK_APPROVAL)
@@ -2161,8 +2161,8 @@ model SalesOrder {
   totalAmount       Decimal          @default(0) @db.Decimal(18, 4)
   paidAmount        Decimal          @default(0) @db.Decimal(18, 4)
   balanceDue        Decimal          @default(0) @db.Decimal(18, 4)
-  salespersonId     String?          @db.Uuid
-  stockApprovedById String?          @db.Uuid
+  salespersonId     String?         
+  stockApprovedById String?         
   stockApprovedAt   DateTime?
   notes             String?
 
@@ -2174,8 +2174,8 @@ model SalesOrder {
   storefrontCustomerEmail   String?
   storefrontDeliveryAddress String?
 
-  createdById       String?          @db.Uuid
-  updatedById       String?          @db.Uuid
+  createdById       String?         
+  updatedById       String?         
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
   deletedAt         DateTime?
@@ -2205,10 +2205,10 @@ model SalesOrder {
 }
 
 model SalesOrderItem {
-  id             String   @id @default(uuid()) @db.Uuid
-  companyId      String   @db.Uuid
-  salesOrderId   String   @db.Uuid
-  productId      String   @db.Uuid
+  id             String   @id @default(uuid())
+  companyId      String  
+  salesOrderId   String  
+  productId      String  
   quantity       Decimal  @db.Decimal(18, 4)
   unitPrice      Decimal  @db.Decimal(18, 4)
   discountAmount Decimal  @default(0) @db.Decimal(18, 4)
@@ -2227,11 +2227,11 @@ model SalesOrderItem {
 }
 
 model Invoice {
-  id             String        @id @default(uuid()) @db.Uuid
-  companyId      String        @db.Uuid
-  branchId       String        @db.Uuid
-  customerId     String        @db.Uuid
-  salesOrderId   String?       @db.Uuid
+  id             String        @id @default(uuid())
+  companyId      String       
+  branchId       String       
+  customerId     String       
+  salesOrderId   String?      
   invoiceNumber  String
   invoiceDate    DateTime      @default(now())
   dueDate        DateTime?
@@ -2242,8 +2242,8 @@ model Invoice {
   totalAmount    Decimal       @default(0) @db.Decimal(18, 4)
   paidAmount     Decimal       @default(0) @db.Decimal(18, 4)
   balanceDue     Decimal       @default(0) @db.Decimal(18, 4)
-  createdById    String?       @db.Uuid
-  updatedById    String?       @db.Uuid
+  createdById    String?      
+  updatedById    String?      
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   deletedAt      DateTime?
@@ -2274,20 +2274,20 @@ model Invoice {
 }
 
 model Payment {
-  id            String        @id @default(uuid()) @db.Uuid
-  companyId     String        @db.Uuid
-  branchId      String        @db.Uuid
-  customerId    String        @db.Uuid
-  invoiceId     String?       @db.Uuid
+  id            String        @id @default(uuid())
+  companyId     String       
+  branchId      String       
+  customerId    String       
+  invoiceId     String?      
   paymentNumber String
   paymentDate   DateTime      @default(now())
   amount        Decimal       @db.Decimal(18, 4)
   method        PaymentMethod
   status        PaymentStatus @default(POSTED)
   reference     String?
-  receivedById  String?       @db.Uuid
-  createdById   String?       @db.Uuid
-  updatedById   String?       @db.Uuid
+  receivedById  String?      
+  createdById   String?      
+  updatedById   String?      
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
   deletedAt     DateTime?
@@ -2316,18 +2316,18 @@ model Payment {
 }
 
 model Receipt {
-  id            String   @id @default(uuid()) @db.Uuid
-  companyId     String   @db.Uuid
-  branchId      String   @db.Uuid
-  customerId    String   @db.Uuid
-  invoiceId     String?  @db.Uuid
-  paymentId     String?  @unique @db.Uuid
+  id            String   @id @default(uuid())
+  companyId     String  
+  branchId      String  
+  customerId    String  
+  invoiceId     String? 
+  paymentId     String?  @unique
   receiptNumber String
   receiptDate   DateTime @default(now())
   amount        Decimal  @db.Decimal(18, 4)
-  issuedById    String?  @db.Uuid
-  createdById   String?  @db.Uuid
-  updatedById   String?  @db.Uuid
+  issuedById    String? 
+  createdById   String? 
+  updatedById   String? 
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   deletedAt     DateTime?
@@ -2349,22 +2349,22 @@ model Receipt {
 }
 
 model SalesReturn {
-  id            String            @id @default(uuid()) @db.Uuid
-  companyId     String            @db.Uuid
-  branchId      String            @db.Uuid
-  customerId    String            @db.Uuid
-  salesOrderId  String?           @db.Uuid
-  productId     String            @db.Uuid
-  warehouseId   String            @db.Uuid
+  id            String            @id @default(uuid())
+  companyId     String           
+  branchId      String           
+  customerId    String           
+  salesOrderId  String?          
+  productId     String           
+  warehouseId   String           
   quantity      Decimal           @db.Decimal(18, 4)
   unitPrice     Decimal           @db.Decimal(18, 4)
   totalAmount   Decimal           @db.Decimal(18, 4)
   reason        String
   status        SalesReturnStatus @default(REQUESTED)
-  approvedById  String?           @db.Uuid
+  approvedById  String?          
   approvedAt    DateTime?
-  createdById   String?           @db.Uuid
-  updatedById   String?           @db.Uuid
+  createdById   String?          
+  updatedById   String?          
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
   deletedAt     DateTime?
@@ -2389,13 +2389,13 @@ model SalesReturn {
 }
 
 model CustomerStatement {
-  id            String   @id @default(uuid()) @db.Uuid
-  companyId     String   @db.Uuid
-  branchId      String   @db.Uuid
-  customerId    String   @db.Uuid
-  invoiceId     String?  @db.Uuid
-  paymentId     String?  @db.Uuid
-  salesReturnId String?  @db.Uuid
+  id            String   @id @default(uuid())
+  companyId     String  
+  branchId      String  
+  customerId    String  
+  invoiceId     String? 
+  paymentId     String? 
+  salesReturnId String? 
   entryDate     DateTime @default(now())
   entryType     String
   debit         Decimal  @default(0) @db.Decimal(18, 4)
@@ -2423,16 +2423,16 @@ model CustomerStatement {
 }
 
 model SalesCommission {
-  id               String       @id @default(uuid()) @db.Uuid
-  companyId        String       @db.Uuid
-  branchId         String       @db.Uuid
-  salesOrderId     String       @db.Uuid
-  salespersonId    String       @db.Uuid
+  id               String       @id @default(uuid())
+  companyId        String      
+  branchId         String      
+  salesOrderId     String      
+  salespersonId    String      
   commissionRate   Decimal      @default(0) @db.Decimal(9, 4)
   commissionAmount Decimal      @default(0) @db.Decimal(18, 4)
   status           RecordStatus @default(ACTIVE)
-  createdById      String?      @db.Uuid
-  updatedById      String?      @db.Uuid
+  createdById      String?     
+  updatedById      String?     
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
   deletedAt        DateTime?
@@ -2451,10 +2451,10 @@ model SalesCommission {
 }
 
 model ProspectVisit {
-  id           String               @id @default(uuid()) @db.Uuid
-  companyId    String               @db.Uuid
-  branchId     String?              @db.Uuid
-  repId        String               @db.Uuid
+  id           String               @id @default(uuid())
+  companyId    String              
+  branchId     String?             
+  repId        String              
   prospectName String
   phone        String?
   address      String?
@@ -2478,20 +2478,20 @@ model ProspectVisit {
 }
 
 model DeliveryNote {
-  id             String             @id @default(uuid()) @db.Uuid
-  companyId      String             @db.Uuid
-  branchId       String             @db.Uuid
-  salesOrderId   String             @db.Uuid
-  warehouseId    String             @db.Uuid
+  id             String             @id @default(uuid())
+  companyId      String            
+  branchId       String            
+  salesOrderId   String            
+  warehouseId    String            
   deliveryNumber String
   deliveryDate   DateTime           @default(now())
   status         DeliveryNoteStatus @default(PENDING_RELEASE)
-  releasedById   String?            @db.Uuid
+  releasedById   String?           
   deliveredAt    DateTime?
   recipientName  String?
   notes          String?
-  createdById    String?            @db.Uuid
-  updatedById    String?            @db.Uuid
+  createdById    String?           
+  updatedById    String?           
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
   deletedAt      DateTime?
@@ -2513,12 +2513,12 @@ model DeliveryNote {
 }
 
 model Machine {
-  id               String       @id @default(uuid()) @db.Uuid
-  companyId        String       @db.Uuid
-  branchId         String       @db.Uuid
-  farmId           String?      @db.Uuid
-  warehouseId      String?      @db.Uuid
-  productionSiteId String?      @db.Uuid
+  id               String       @id @default(uuid())
+  companyId        String      
+  branchId         String      
+  farmId           String?     
+  warehouseId      String?     
+  productionSiteId String?     
   code             String
   name             String
   machineType      MachineType
@@ -2531,8 +2531,8 @@ model Machine {
   capacity         String?
   location         String?
   notes            String?
-  createdById      String?      @db.Uuid
-  updatedById      String?      @db.Uuid
+  createdById      String?     
+  updatedById      String?     
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
   deletedAt        DateTime?
@@ -2564,13 +2564,13 @@ model Machine {
 }
 
 model Equipment {
-  id               String        @id @default(uuid()) @db.Uuid
-  companyId        String        @db.Uuid
-  branchId         String        @db.Uuid
-  farmId           String?       @db.Uuid
-  warehouseId      String?       @db.Uuid
-  productionSiteId String?       @db.Uuid
-  machineId        String?       @db.Uuid
+  id               String        @id @default(uuid())
+  companyId        String       
+  branchId         String       
+  farmId           String?      
+  warehouseId      String?      
+  productionSiteId String?      
+  machineId        String?      
   code             String
   name             String
   equipmentType    EquipmentType
@@ -2581,8 +2581,8 @@ model Equipment {
   purchaseDate     DateTime?
   location         String?
   notes            String?
-  createdById      String?       @db.Uuid
-  updatedById      String?       @db.Uuid
+  createdById      String?      
+  updatedById      String?      
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
   deletedAt        DateTime?
@@ -2615,14 +2615,14 @@ model Equipment {
 }
 
 model MaintenanceSchedule {
-  id               String                    @id @default(uuid()) @db.Uuid
-  companyId        String                    @db.Uuid
-  branchId         String                    @db.Uuid
-  farmId           String?                   @db.Uuid
-  warehouseId      String?                   @db.Uuid
-  productionSiteId String?                   @db.Uuid
-  machineId        String?                   @db.Uuid
-  equipmentId      String?                   @db.Uuid
+  id               String                    @id @default(uuid())
+  companyId        String                   
+  branchId         String                   
+  farmId           String?                  
+  warehouseId      String?                  
+  productionSiteId String?                  
+  machineId        String?                  
+  equipmentId      String?                  
   scheduleNumber   String
   title            String
   maintenanceType  MaintenanceType
@@ -2632,8 +2632,8 @@ model MaintenanceSchedule {
   nextDueDate      DateTime
   status           MaintenanceWorkflowStatus @default(SCHEDULED)
   instructions     String?
-  createdById      String?                   @db.Uuid
-  updatedById      String?                   @db.Uuid
+  createdById      String?                  
+  updatedById      String?                  
   createdAt        DateTime                  @default(now())
   updatedAt        DateTime                  @updatedAt
   deletedAt        DateTime?
@@ -2665,25 +2665,25 @@ model MaintenanceSchedule {
 }
 
 model MaintenanceRecord {
-  id               String                    @id @default(uuid()) @db.Uuid
-  companyId        String                    @db.Uuid
-  branchId         String                    @db.Uuid
-  farmId           String?                   @db.Uuid
-  warehouseId      String?                   @db.Uuid
-  productionSiteId String?                   @db.Uuid
-  scheduleId       String?                   @db.Uuid
-  machineId        String?                   @db.Uuid
-  equipmentId      String?                   @db.Uuid
+  id               String                    @id @default(uuid())
+  companyId        String                   
+  branchId         String                   
+  farmId           String?                  
+  warehouseId      String?                  
+  productionSiteId String?                  
+  scheduleId       String?                  
+  machineId        String?                  
+  equipmentId      String?                  
   recordNumber     String
   maintenanceDate  DateTime                  @default(now())
   maintenanceType  MaintenanceType
   status           MaintenanceWorkflowStatus @default(COMPLETED)
-  completedById    String?                   @db.Uuid
+  completedById    String?                  
   description      String
   findings         String?
   nextDueDate      DateTime?
-  createdById      String?                   @db.Uuid
-  updatedById      String?                   @db.Uuid
+  createdById      String?                  
+  updatedById      String?                  
   createdAt        DateTime                  @default(now())
   updatedAt        DateTime                  @updatedAt
   deletedAt        DateTime?
@@ -2719,14 +2719,14 @@ model MaintenanceRecord {
 }
 
 model BreakdownRecord {
-  id               String            @id @default(uuid()) @db.Uuid
-  companyId        String            @db.Uuid
-  branchId         String            @db.Uuid
-  farmId           String?           @db.Uuid
-  warehouseId      String?           @db.Uuid
-  productionSiteId String?           @db.Uuid
-  machineId        String?           @db.Uuid
-  equipmentId      String?           @db.Uuid
+  id               String            @id @default(uuid())
+  companyId        String           
+  branchId         String           
+  farmId           String?          
+  warehouseId      String?          
+  productionSiteId String?          
+  machineId        String?          
+  equipmentId      String?          
   breakdownNumber  String
   reportedAt       DateTime          @default(now())
   severity         BreakdownSeverity @default(MEDIUM)
@@ -2735,10 +2735,10 @@ model BreakdownRecord {
   rootCause        String?
   resolution       String?
   resolvedAt       DateTime?
-  reportedById     String?           @db.Uuid
-  resolvedById     String?           @db.Uuid
-  createdById      String?           @db.Uuid
-  updatedById      String?           @db.Uuid
+  reportedById     String?          
+  resolvedById     String?          
+  createdById      String?          
+  updatedById      String?          
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
   deletedAt        DateTime?
@@ -2775,23 +2775,23 @@ model BreakdownRecord {
 }
 
 model SparePartUsage {
-  id                  String   @id @default(uuid()) @db.Uuid
-  companyId           String   @db.Uuid
-  branchId            String   @db.Uuid
-  warehouseId         String   @db.Uuid
-  machineId           String?  @db.Uuid
-  equipmentId         String?  @db.Uuid
-  maintenanceRecordId String?  @db.Uuid
-  breakdownRecordId   String?  @db.Uuid
-  productId           String   @db.Uuid
+  id                  String   @id @default(uuid())
+  companyId           String  
+  branchId            String  
+  warehouseId         String  
+  machineId           String? 
+  equipmentId         String? 
+  maintenanceRecordId String? 
+  breakdownRecordId   String? 
+  productId           String  
   quantity            Decimal  @db.Decimal(18, 4)
   unitCost            Decimal  @default(0) @db.Decimal(18, 4)
   totalCost           Decimal  @default(0) @db.Decimal(18, 4)
-  issuedById          String?  @db.Uuid
+  issuedById          String? 
   usedAt              DateTime @default(now())
   notes               String?
-  createdById         String?  @db.Uuid
-  updatedById         String?  @db.Uuid
+  createdById         String? 
+  updatedById         String? 
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
   deletedAt           DateTime?
@@ -2821,21 +2821,21 @@ model SparePartUsage {
 }
 
 model TechnicianAssignment {
-  id                  String                     @id @default(uuid()) @db.Uuid
-  companyId           String                     @db.Uuid
-  branchId            String                     @db.Uuid
-  machineId           String?                    @db.Uuid
-  equipmentId         String?                    @db.Uuid
-  scheduleId          String?                    @db.Uuid
-  maintenanceRecordId String?                    @db.Uuid
-  breakdownRecordId   String?                    @db.Uuid
-  technicianId        String                     @db.Uuid
+  id                  String                     @id @default(uuid())
+  companyId           String                    
+  branchId            String                    
+  machineId           String?                   
+  equipmentId         String?                   
+  scheduleId          String?                   
+  maintenanceRecordId String?                   
+  breakdownRecordId   String?                   
+  technicianId        String                    
   assignedAt          DateTime                   @default(now())
   dueDate             DateTime?
   status              TechnicianAssignmentStatus @default(ASSIGNED)
   notes               String?
-  createdById         String?                    @db.Uuid
-  updatedById         String?                    @db.Uuid
+  createdById         String?                   
+  updatedById         String?                   
   createdAt           DateTime                   @default(now())
   updatedAt           DateTime                   @updatedAt
   deletedAt           DateTime?
@@ -2865,22 +2865,22 @@ model TechnicianAssignment {
 }
 
 model MachineDowntimeRecord {
-  id                String         @id @default(uuid()) @db.Uuid
-  companyId         String         @db.Uuid
-  branchId          String         @db.Uuid
-  farmId            String?        @db.Uuid
-  warehouseId       String?        @db.Uuid
-  productionSiteId  String?        @db.Uuid
-  machineId         String?        @db.Uuid
-  equipmentId       String?        @db.Uuid
-  breakdownRecordId String?        @db.Uuid
+  id                String         @id @default(uuid())
+  companyId         String        
+  branchId          String        
+  farmId            String?       
+  warehouseId       String?       
+  productionSiteId  String?       
+  machineId         String?       
+  equipmentId       String?       
+  breakdownRecordId String?       
   startAt           DateTime
   endAt             DateTime?
   durationHours     Decimal        @default(0) @db.Decimal(18, 4)
   reason            String
   status            DowntimeStatus @default(OPEN)
-  createdById       String?        @db.Uuid
-  updatedById       String?        @db.Uuid
+  createdById       String?       
+  updatedById       String?       
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
   deletedAt         DateTime?
@@ -2910,25 +2910,25 @@ model MachineDowntimeRecord {
 }
 
 model MaintenanceCost {
-  id                  String                    @id @default(uuid()) @db.Uuid
-  companyId           String                    @db.Uuid
-  branchId            String                    @db.Uuid
-  farmId              String?                   @db.Uuid
-  warehouseId         String?                   @db.Uuid
-  productionSiteId    String?                   @db.Uuid
-  machineId           String?                   @db.Uuid
-  equipmentId         String?                   @db.Uuid
-  maintenanceRecordId String?                   @db.Uuid
-  breakdownRecordId   String?                   @db.Uuid
+  id                  String                    @id @default(uuid())
+  companyId           String                   
+  branchId            String                   
+  farmId              String?                  
+  warehouseId         String?                  
+  productionSiteId    String?                  
+  machineId           String?                  
+  equipmentId         String?                  
+  maintenanceRecordId String?                  
+  breakdownRecordId   String?                  
   costDate            DateTime                  @default(now())
   costType            MaintenanceCostType
   amount              Decimal                   @db.Decimal(18, 4)
   description         String?
   status              MaintenanceWorkflowStatus @default(COMPLETED)
-  approvedById        String?                   @db.Uuid
+  approvedById        String?                  
   approvedAt          DateTime?
-  createdById         String?                   @db.Uuid
-  updatedById         String?                   @db.Uuid
+  createdById         String?                  
+  updatedById         String?                  
   createdAt           DateTime                  @default(now())
   updatedAt           DateTime                  @updatedAt
   deletedAt           DateTime?
@@ -2960,11 +2960,11 @@ model MaintenanceCost {
 }
 
 model FlockBatch {
-  id               String           @id @default(uuid()) @db.Uuid
-  companyId        String           @db.Uuid
-  branchId         String           @db.Uuid
-  farmId           String           @db.Uuid
-  poultryHouseId   String?          @db.Uuid
+  id               String           @id @default(uuid())
+  companyId        String          
+  branchId         String          
+  farmId           String          
+  poultryHouseId   String?         
   code             String
   name             String
   birdType         BirdType
@@ -2974,8 +2974,8 @@ model FlockBatch {
   actualCloseDate DateTime?
   status           FlockBatchStatus @default(ACTIVE)
   notes            String?
-  createdById      String?          @db.Uuid
-  updatedById      String?          @db.Uuid
+  createdById      String?         
+  updatedById      String?         
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
   deletedAt        DateTime?
@@ -3008,13 +3008,13 @@ model FlockBatch {
 }
 
 model DailyPoultryRecord {
-  id               String              @id @default(uuid()) @db.Uuid
-  companyId        String              @db.Uuid
-  branchId         String              @db.Uuid
-  farmId           String              @db.Uuid
-  poultryHouseId   String              @db.Uuid
-  penId            String?             @db.Uuid
-  flockBatchId     String              @db.Uuid
+  id               String              @id @default(uuid())
+  companyId        String             
+  branchId         String             
+  farmId           String             
+  poultryHouseId   String             
+  penId            String?            
+  flockBatchId     String             
   recordDate       DateTime
   openingBirdCount Int?
   mortalityCount   Int                 @default(0)
@@ -3023,8 +3023,8 @@ model DailyPoultryRecord {
   totalEggs        Int                 @default(0)
   notes            String?
   status           PoultryRecordStatus @default(SUBMITTED)
-  createdById      String?             @db.Uuid
-  updatedById      String?             @db.Uuid
+  createdById      String?            
+  updatedById      String?            
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
   deletedAt        DateTime?
@@ -3048,21 +3048,21 @@ model DailyPoultryRecord {
 }
 
 model MortalityRecord {
-  id             String              @id @default(uuid()) @db.Uuid
-  companyId      String              @db.Uuid
-  branchId       String              @db.Uuid
-  farmId         String              @db.Uuid
-  poultryHouseId String              @db.Uuid
-  penId          String?             @db.Uuid
-  flockBatchId   String              @db.Uuid
+  id             String              @id @default(uuid())
+  companyId      String             
+  branchId       String             
+  farmId         String             
+  poultryHouseId String             
+  penId          String?            
+  flockBatchId   String             
   recordDate     DateTime
   birdCount      Int
   isCulling      Boolean             @default(false)
   reason         String?
   notes          String?
   status         PoultryRecordStatus @default(SUBMITTED)
-  createdById    String?             @db.Uuid
-  updatedById    String?             @db.Uuid
+  createdById    String?            
+  updatedById    String?            
   createdAt      DateTime            @default(now())
   updatedAt      DateTime            @updatedAt
   deletedAt      DateTime?
@@ -3085,21 +3085,21 @@ model MortalityRecord {
 }
 
 model FeedConsumptionRecord {
-  id             String              @id @default(uuid()) @db.Uuid
-  companyId      String              @db.Uuid
-  branchId       String              @db.Uuid
-  farmId         String              @db.Uuid
-  poultryHouseId String              @db.Uuid
-  penId          String?             @db.Uuid
-  flockBatchId   String              @db.Uuid
-  feedProductId  String?             @db.Uuid
+  id             String              @id @default(uuid())
+  companyId      String             
+  branchId       String             
+  farmId         String             
+  poultryHouseId String             
+  penId          String?            
+  flockBatchId   String             
+  feedProductId  String?            
   recordDate     DateTime
   quantityKg     Decimal             @db.Decimal(18, 4)
   costAmount     Decimal?            @db.Decimal(18, 4)
   notes          String?
   status         PoultryRecordStatus @default(SUBMITTED)
-  createdById    String?             @db.Uuid
-  updatedById    String?             @db.Uuid
+  createdById    String?            
+  updatedById    String?            
   createdAt      DateTime            @default(now())
   updatedAt      DateTime            @updatedAt
   deletedAt      DateTime?
@@ -3124,13 +3124,13 @@ model FeedConsumptionRecord {
 }
 
 model EggProductionRecord {
-  id             String              @id @default(uuid()) @db.Uuid
-  companyId      String              @db.Uuid
-  branchId       String              @db.Uuid
-  farmId         String              @db.Uuid
-  poultryHouseId String              @db.Uuid
-  penId          String?             @db.Uuid
-  flockBatchId   String              @db.Uuid
+  id             String              @id @default(uuid())
+  companyId      String             
+  branchId       String             
+  farmId         String             
+  poultryHouseId String             
+  penId          String?            
+  flockBatchId   String             
   recordDate     DateTime
   goodEggs       Int                 @default(0)
   crackedEggs    Int                 @default(0)
@@ -3139,8 +3139,8 @@ model EggProductionRecord {
   rejectedEggs   Int                 @default(0)
   notes          String?
   status         PoultryRecordStatus @default(SUBMITTED)
-  createdById    String?             @db.Uuid
-  updatedById    String?             @db.Uuid
+  createdById    String?            
+  updatedById    String?            
   createdAt      DateTime            @default(now())
   updatedAt      DateTime            @updatedAt
   deletedAt      DateTime?
@@ -3163,20 +3163,20 @@ model EggProductionRecord {
 }
 
 model BirdWeightRecord {
-  id              String              @id @default(uuid()) @db.Uuid
-  companyId       String              @db.Uuid
-  branchId        String              @db.Uuid
-  farmId          String              @db.Uuid
-  poultryHouseId  String              @db.Uuid
-  penId           String?             @db.Uuid
-  flockBatchId    String              @db.Uuid
+  id              String              @id @default(uuid())
+  companyId       String             
+  branchId        String             
+  farmId          String             
+  poultryHouseId  String             
+  penId           String?            
+  flockBatchId    String             
   recordDate      DateTime
   sampleSize      Int
   averageWeightKg Decimal             @db.Decimal(18, 4)
   notes           String?
   status          PoultryRecordStatus @default(SUBMITTED)
-  createdById     String?             @db.Uuid
-  updatedById     String?             @db.Uuid
+  createdById     String?            
+  updatedById     String?            
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
   deletedAt       DateTime?
@@ -3199,13 +3199,13 @@ model BirdWeightRecord {
 }
 
 model MedicationRecord {
-  id             String              @id @default(uuid()) @db.Uuid
-  companyId      String              @db.Uuid
-  branchId       String              @db.Uuid
-  farmId         String              @db.Uuid
-  poultryHouseId String              @db.Uuid
-  penId          String?             @db.Uuid
-  flockBatchId   String              @db.Uuid
+  id             String              @id @default(uuid())
+  companyId      String             
+  branchId       String             
+  farmId         String             
+  poultryHouseId String             
+  penId          String?            
+  flockBatchId   String             
   medicationName String
   dosage         String
   route          String?
@@ -3214,8 +3214,8 @@ model MedicationRecord {
   withdrawalUntil DateTime?
   notes          String?
   status         PoultryRecordStatus @default(SUBMITTED)
-  createdById    String?             @db.Uuid
-  updatedById    String?             @db.Uuid
+  createdById    String?            
+  updatedById    String?            
   createdAt      DateTime            @default(now())
   updatedAt      DateTime            @updatedAt
   deletedAt      DateTime?
@@ -3238,21 +3238,21 @@ model MedicationRecord {
 }
 
 model VaccinationRecord {
-  id             String              @id @default(uuid()) @db.Uuid
-  companyId      String              @db.Uuid
-  branchId       String              @db.Uuid
-  farmId         String              @db.Uuid
-  poultryHouseId String              @db.Uuid
-  penId          String?             @db.Uuid
-  flockBatchId   String              @db.Uuid
+  id             String              @id @default(uuid())
+  companyId      String             
+  branchId       String             
+  farmId         String             
+  poultryHouseId String             
+  penId          String?            
+  flockBatchId   String             
   vaccineName    String
   dose           String
   vaccinationDate DateTime
   nextDueDate    DateTime?
   notes          String?
   status         PoultryRecordStatus @default(SUBMITTED)
-  createdById    String?             @db.Uuid
-  updatedById    String?             @db.Uuid
+  createdById    String?            
+  updatedById    String?            
   createdAt      DateTime            @default(now())
   updatedAt      DateTime            @updatedAt
   deletedAt      DateTime?
@@ -3275,24 +3275,24 @@ model VaccinationRecord {
 }
 
 model PoultryTransferRecord {
-  id                 String                @id @default(uuid()) @db.Uuid
-  companyId          String                @db.Uuid
-  branchId           String                @db.Uuid
-  flockBatchId       String                @db.Uuid
-  fromFarmId         String                @db.Uuid
-  fromPoultryHouseId String                @db.Uuid
-  fromPenId          String?               @db.Uuid
-  toFarmId           String                @db.Uuid
-  toPoultryHouseId   String                @db.Uuid
-  toPenId            String?               @db.Uuid
+  id                 String                @id @default(uuid())
+  companyId          String               
+  branchId           String               
+  flockBatchId       String               
+  fromFarmId         String               
+  fromPoultryHouseId String               
+  fromPenId          String?              
+  toFarmId           String               
+  toPoultryHouseId   String               
+  toPenId            String?              
   birdCount          Int
   transferDate       DateTime
   status             PoultryTransferStatus @default(PENDING)
   reason             String?
-  approvedById       String?               @db.Uuid
+  approvedById       String?              
   approvedAt         DateTime?
-  createdById        String?               @db.Uuid
-  updatedById        String?               @db.Uuid
+  createdById        String?              
+  updatedById        String?              
   createdAt          DateTime              @default(now())
   updatedAt          DateTime              @updatedAt
   deletedAt          DateTime?
@@ -3320,13 +3320,13 @@ model PoultryTransferRecord {
 }
 
 model PoultryHealthObservation {
-  id             String                @id @default(uuid()) @db.Uuid
-  companyId      String                @db.Uuid
-  branchId       String                @db.Uuid
-  farmId         String                @db.Uuid
-  poultryHouseId String                @db.Uuid
-  penId          String?               @db.Uuid
-  flockBatchId   String                @db.Uuid
+  id             String                @id @default(uuid())
+  companyId      String               
+  branchId       String               
+  farmId         String               
+  poultryHouseId String               
+  penId          String?              
+  flockBatchId   String               
   observationDate DateTime
   severity       PoultryHealthSeverity @default(LOW)
   observation    String
@@ -3334,8 +3334,8 @@ model PoultryHealthObservation {
   veterinarianName String?
   recommendation String?
   status         PoultryRecordStatus   @default(SUBMITTED)
-  createdById    String?               @db.Uuid
-  updatedById    String?               @db.Uuid
+  createdById    String?              
+  updatedById    String?              
   createdAt      DateTime              @default(now())
   updatedAt      DateTime              @updatedAt
   deletedAt      DateTime?
@@ -3359,22 +3359,22 @@ model PoultryHealthObservation {
 }
 
 model PoultryCostRecord {
-  id             String              @id @default(uuid()) @db.Uuid
-  companyId      String              @db.Uuid
-  branchId       String              @db.Uuid
-  farmId         String              @db.Uuid
-  poultryHouseId String              @db.Uuid
-  penId          String?             @db.Uuid
-  flockBatchId   String              @db.Uuid
+  id             String              @id @default(uuid())
+  companyId      String             
+  branchId       String             
+  farmId         String             
+  poultryHouseId String             
+  penId          String?            
+  flockBatchId   String             
   costDate       DateTime
   costType       PoultryCostType
   amount         Decimal             @db.Decimal(18, 4)
   description    String?
   status         PoultryRecordStatus @default(SUBMITTED)
-  approvedById   String?             @db.Uuid
+  approvedById   String?            
   approvedAt     DateTime?
-  createdById    String?             @db.Uuid
-  updatedById    String?             @db.Uuid
+  createdById    String?            
+  updatedById    String?            
   createdAt      DateTime            @default(now())
   updatedAt      DateTime            @updatedAt
   deletedAt      DateTime?
@@ -3398,17 +3398,17 @@ model PoultryCostRecord {
 }
 
 model Pen {
-  id             String    @id @default(uuid()) @db.Uuid
-  companyId      String    @db.Uuid
-  branchId       String    @db.Uuid
-  farmId         String    @db.Uuid
-  poultryHouseId String    @db.Uuid
+  id             String    @id @default(uuid())
+  companyId      String   
+  branchId       String   
+  farmId         String   
+  poultryHouseId String   
   penNumber      Int
   code           String    @db.VarChar(20)
   name           String?   @db.VarChar(100)
   capacity       Int?
   isActive       Boolean   @default(true)
-  createdById    String?   @db.Uuid
+  createdById    String?  
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
   deletedAt      DateTime?
@@ -3441,17 +3441,17 @@ model Pen {
 }
 
 model BatchPenAllocation {
-  id             String   @id @default(uuid()) @db.Uuid
-  companyId      String   @db.Uuid
-  branchId       String   @db.Uuid
-  flockBatchId   String   @db.Uuid
-  penId          String   @db.Uuid
-  poultryHouseId String   @db.Uuid
-  farmId         String   @db.Uuid
+  id             String   @id @default(uuid())
+  companyId      String  
+  branchId       String  
+  flockBatchId   String  
+  penId          String  
+  poultryHouseId String  
+  farmId         String  
   birdCount      Int
   notes          String?
   allocatedAt    DateTime @default(now())
-  createdById    String?  @db.Uuid
+  createdById    String? 
 
   company      Company      @relation(fields: [companyId], references: [id])
   branch       Branch       @relation(fields: [branchId], references: [id])
@@ -3469,18 +3469,18 @@ model BatchPenAllocation {
 }
 
 model FeedFormula {
-  id                String            @id @default(uuid()) @db.Uuid
-  companyId         String            @db.Uuid
-  branchId          String            @db.Uuid
-  finishedProductId String            @db.Uuid
+  id                String            @id @default(uuid())
+  companyId         String           
+  branchId          String           
+  finishedProductId String           
   code              String
   name              String
   feedType          FeedType
   targetBatchKg     Decimal           @default(100) @db.Decimal(18, 4)
   status            FeedFormulaStatus @default(DRAFT)
   currentVersionNo  Int               @default(1)
-  createdById       String?           @db.Uuid
-  updatedById       String?           @db.Uuid
+  createdById       String?          
+  updatedById       String?          
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
   deletedAt         DateTime?
@@ -3502,10 +3502,10 @@ model FeedFormula {
 }
 
 model FeedFormulaIngredient {
-  id            String   @id @default(uuid()) @db.Uuid
-  formulaId     String   @db.Uuid
-  companyId     String   @db.Uuid
-  ingredientId  String   @db.Uuid
+  id            String   @id @default(uuid())
+  formulaId     String  
+  companyId     String  
+  ingredientId  String  
   quantityKg    Decimal  @db.Decimal(18, 4)
   unitCost      Decimal  @default(0) @db.Decimal(18, 4)
   sortOrder     Int      @default(0)
@@ -3523,16 +3523,16 @@ model FeedFormulaIngredient {
 }
 
 model FeedFormulaVersion {
-  id              String            @id @default(uuid()) @db.Uuid
-  companyId       String            @db.Uuid
-  formulaId       String            @db.Uuid
+  id              String            @id @default(uuid())
+  companyId       String           
+  formulaId       String           
   versionNo       Int
   status          FeedFormulaStatus @default(ACTIVE)
   ingredientSnapshot Json
   costPer100Kg    Decimal           @default(0) @db.Decimal(18, 4)
   costPer50KgBag  Decimal           @default(0) @db.Decimal(18, 4)
   notes           String?
-  createdById     String?           @db.Uuid
+  createdById     String?          
   createdAt       DateTime          @default(now())
 
   company Company @relation(fields: [companyId], references: [id])
@@ -3547,25 +3547,25 @@ model FeedFormulaVersion {
 }
 
 model FeedProductionOrder {
-  id               String                    @id @default(uuid()) @db.Uuid
-  companyId        String                    @db.Uuid
-  branchId         String                    @db.Uuid
-  productionSiteId String                    @db.Uuid
-  formulaId        String                    @db.Uuid
-  formulaVersionId String?                   @db.Uuid
-  finishedProductId String                   @db.Uuid
-  marketTargetId   String?                   @db.Uuid
-  productionPlanId String?                   @db.Uuid
-  productionPlanItemId String?               @db.Uuid
+  id               String                    @id @default(uuid())
+  companyId        String                   
+  branchId         String                   
+  productionSiteId String                   
+  formulaId        String                   
+  formulaVersionId String?                  
+  finishedProductId String                  
+  marketTargetId   String?                  
+  productionPlanId String?                  
+  productionPlanItemId String?              
   orderNumber      String
   plannedQuantityKg Decimal                  @db.Decimal(18, 4)
   scheduledDate    DateTime
   status           FeedProductionOrderStatus @default(DRAFT)
   notes            String?
-  approvedById     String?                   @db.Uuid
+  approvedById     String?                  
   approvedAt       DateTime?
-  createdById      String?                   @db.Uuid
-  updatedById      String?                   @db.Uuid
+  createdById      String?                  
+  updatedById      String?                  
   createdAt        DateTime                  @default(now())
   updatedAt        DateTime                  @updatedAt
   deletedAt        DateTime?
@@ -3593,22 +3593,22 @@ model FeedProductionOrder {
 }
 
 model FeedProductionBatch {
-  id                String                    @id @default(uuid()) @db.Uuid
-  companyId         String                    @db.Uuid
-  branchId          String                    @db.Uuid
-  productionSiteId  String                    @db.Uuid
-  productionOrderId String                    @db.Uuid
-  finishedProductId String                    @db.Uuid
-  marketTargetId    String?                   @db.Uuid
-  productionPlanId  String?                   @db.Uuid
-  productionExecutionId String?               @db.Uuid
+  id                String                    @id @default(uuid())
+  companyId         String                   
+  branchId          String                   
+  productionSiteId  String                   
+  productionOrderId String                   
+  finishedProductId String                   
+  marketTargetId    String?                  
+  productionPlanId  String?                  
+  productionExecutionId String?              
   batchNumber       String
   producedQuantityKg Decimal                  @default(0) @db.Decimal(18, 4)
   wastageKg         Decimal                   @default(0) @db.Decimal(18, 4)
   productionDate    DateTime                  @default(now())
   status            FeedProductionBatchStatus @default(PLANNED)
-  createdById       String?                   @db.Uuid
-  updatedById       String?                   @db.Uuid
+  createdById       String?                  
+  updatedById       String?                  
   createdAt         DateTime                  @default(now())
   updatedAt         DateTime                  @updatedAt
   deletedAt         DateTime?
@@ -3640,16 +3640,16 @@ model FeedProductionBatch {
 }
 
 model FeedRawMaterialUsage {
-  id                String   @id @default(uuid()) @db.Uuid
-  companyId         String   @db.Uuid
-  branchId          String   @db.Uuid
-  productionSiteId  String   @db.Uuid
-  productionBatchId String   @db.Uuid
-  rawMaterialId     String   @db.Uuid
+  id                String   @id @default(uuid())
+  companyId         String  
+  branchId          String  
+  productionSiteId  String  
+  productionBatchId String  
+  rawMaterialId     String  
   quantityKg        Decimal  @db.Decimal(18, 4)
   unitCost          Decimal  @default(0) @db.Decimal(18, 4)
   wastageKg         Decimal  @default(0) @db.Decimal(18, 4)
-  createdById       String?  @db.Uuid
+  createdById       String? 
   createdAt         DateTime @default(now())
   deletedAt         DateTime?
 
@@ -3668,17 +3668,17 @@ model FeedRawMaterialUsage {
 }
 
 model FeedQualityCheck {
-  id                String                 @id @default(uuid()) @db.Uuid
-  companyId         String                 @db.Uuid
-  branchId          String                 @db.Uuid
-  productionSiteId  String                 @db.Uuid
-  productionBatchId String                 @db.Uuid
+  id                String                 @id @default(uuid())
+  companyId         String                
+  branchId          String                
+  productionSiteId  String                
+  productionBatchId String                
   moisturePercent   Decimal?               @db.Decimal(18, 4)
   proteinPercent    Decimal?               @db.Decimal(18, 4)
   textureNotes      String?
   status            FeedQualityCheckStatus @default(PENDING)
-  checkedById       String?                @db.Uuid
-  approvedById      String?                @db.Uuid
+  checkedById       String?               
+  approvedById      String?               
   approvedAt        DateTime?
   checkedAt         DateTime               @default(now())
   createdAt         DateTime               @default(now())
@@ -3700,13 +3700,13 @@ model FeedQualityCheck {
 }
 
 model FinishedFeedStock {
-  id                String   @id @default(uuid()) @db.Uuid
-  companyId         String   @db.Uuid
-  branchId          String   @db.Uuid
-  productionSiteId  String   @db.Uuid
-  warehouseId       String   @db.Uuid
-  productionBatchId String   @db.Uuid
-  productId         String   @db.Uuid
+  id                String   @id @default(uuid())
+  companyId         String  
+  branchId          String  
+  productionSiteId  String  
+  warehouseId       String  
+  productionBatchId String  
+  productId         String  
   quantityKg        Decimal  @default(0) @db.Decimal(18, 4)
   bag50KgCount      Int      @default(0)
   unitCost          Decimal  @default(0) @db.Decimal(18, 4)
@@ -3731,16 +3731,16 @@ model FinishedFeedStock {
 }
 
 model FeedPackagingRecord {
-  id                String   @id @default(uuid()) @db.Uuid
-  companyId         String   @db.Uuid
-  branchId          String   @db.Uuid
-  productionSiteId  String   @db.Uuid
-  productionBatchId String   @db.Uuid
+  id                String   @id @default(uuid())
+  companyId         String  
+  branchId          String  
+  productionSiteId  String  
+  productionBatchId String  
   packageSizeKg     Decimal  @default(50) @db.Decimal(18, 4)
   packageCount      Int
   labelPrinted      Boolean  @default(false)
   packagedAt        DateTime @default(now())
-  createdById       String?  @db.Uuid
+  createdById       String? 
   createdAt         DateTime @default(now())
   deletedAt         DateTime?
 
@@ -3758,17 +3758,17 @@ model FeedPackagingRecord {
 }
 
 model FeedProductionCost {
-  id                String   @id @default(uuid()) @db.Uuid
-  companyId         String   @db.Uuid
-  branchId          String   @db.Uuid
-  productionSiteId  String   @db.Uuid
-  productionBatchId String   @db.Uuid
+  id                String   @id @default(uuid())
+  companyId         String  
+  branchId          String  
+  productionSiteId  String  
+  productionBatchId String  
   rawMaterialCost   Decimal  @default(0) @db.Decimal(18, 4)
   laborCost         Decimal  @default(0) @db.Decimal(18, 4)
   packagingCost     Decimal  @default(0) @db.Decimal(18, 4)
   overheadCost      Decimal  @default(0) @db.Decimal(18, 4)
   expectedSalesValue Decimal @default(0) @db.Decimal(18, 4)
-  createdById       String?  @db.Uuid
+  createdById       String? 
   createdAt         DateTime @default(now())
   deletedAt         DateTime?
 
@@ -3786,20 +3786,20 @@ model FeedProductionCost {
 }
 
 model FeedInternalTransfer {
-  id                String             @id @default(uuid()) @db.Uuid
-  companyId         String             @db.Uuid
-  branchId          String             @db.Uuid
-  productionBatchId String             @db.Uuid
-  productId         String             @db.Uuid
-  fromWarehouseId   String             @db.Uuid
-  toFarmId          String?            @db.Uuid
-  toPoultryHouseId  String?            @db.Uuid
+  id                String             @id @default(uuid())
+  companyId         String            
+  branchId          String            
+  productionBatchId String            
+  productId         String            
+  fromWarehouseId   String            
+  toFarmId          String?           
+  toPoultryHouseId  String?           
   quantityKg        Decimal            @db.Decimal(18, 4)
   status            FeedTransferStatus @default(PENDING)
   transferDate      DateTime           @default(now())
   notes             String?
-  createdById       String?            @db.Uuid
-  updatedById       String?            @db.Uuid
+  createdById       String?           
+  updatedById       String?           
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
   deletedAt         DateTime?
@@ -3825,10 +3825,10 @@ model FeedInternalTransfer {
 }
 
 model MarketTarget {
-  id               String               @id @default(uuid()) @db.Uuid
-  companyId        String               @db.Uuid
-  branchId         String?              @db.Uuid
-  productionSiteId String?              @db.Uuid
+  id               String               @id @default(uuid())
+  companyId        String              
+  branchId         String?             
+  productionSiteId String?             
   targetNumber     String               @db.VarChar(40)
   title            String               @db.VarChar(200)
   period           MarketTargetPeriod
@@ -3836,12 +3836,12 @@ model MarketTarget {
   periodEnd        DateTime
   status           MarketPlanningStatus @default(DRAFT)
   notes            String?              @db.VarChar(500)
-  approvedById     String?              @db.Uuid
+  approvedById     String?             
   approvedAt       DateTime?
-  rejectedById     String?              @db.Uuid
+  rejectedById     String?             
   rejectionReason  String?              @db.VarChar(240)
-  createdById      String?              @db.Uuid
-  updatedById      String?              @db.Uuid
+  createdById      String?             
+  updatedById      String?             
   createdAt        DateTime             @default(now())
   updatedAt        DateTime             @updatedAt
   deletedAt        DateTime?
@@ -3859,12 +3859,12 @@ model MarketTarget {
 }
 
 model MarketTargetItem {
-  id                    String                 @id @default(uuid()) @db.Uuid
-  companyId             String                 @db.Uuid
-  marketTargetId        String                 @db.Uuid
-  productId             String                 @db.Uuid
-  formulaId             String?                @db.Uuid
-  formulaVersionId      String?                @db.Uuid
+  id                    String                 @id @default(uuid())
+  companyId             String                
+  marketTargetId        String                
+  productId             String                
+  formulaId             String?               
+  formulaVersionId      String?               
   baseQuantity          Decimal                @db.Decimal(18, 4)
   adjustmentPercent     Decimal                @default(0) @db.Decimal(9, 4)
   finalTargetQuantity   Decimal                @db.Decimal(18, 4)
@@ -3873,10 +3873,10 @@ model MarketTargetItem {
   adjustmentReason      String?                @db.VarChar(240)
   approvalStatus        MarketTargetItemStatus @default(DRAFT)
   demandEstimateNotes   String?                @db.VarChar(500)
-  approvedById          String?                @db.Uuid
+  approvedById          String?               
   approvedAt            DateTime?
-  createdById           String?                @db.Uuid
-  updatedById           String?                @db.Uuid
+  createdById           String?               
+  updatedById           String?               
   createdAt             DateTime               @default(now())
   updatedAt             DateTime               @updatedAt
   deletedAt             DateTime?
@@ -3892,17 +3892,17 @@ model MarketTargetItem {
 }
 
 model TargetAdjustment {
-  id                   String                 @id @default(uuid()) @db.Uuid
-  companyId            String                 @db.Uuid
-  marketTargetId       String                 @db.Uuid
-  marketTargetItemId   String?                @db.Uuid
+  id                   String                 @id @default(uuid())
+  companyId            String                
+  marketTargetId       String                
+  marketTargetItemId   String?               
   previousBaseQuantity Decimal                @db.Decimal(18, 4)
   adjustmentPercent    Decimal                @db.Decimal(9, 4)
   adjustedQuantity     Decimal                @db.Decimal(18, 4)
   reason               String                 @db.VarChar(240)
   status               MarketTargetItemStatus @default(SUBMITTED)
-  requestedById        String?                @db.Uuid
-  approvedById         String?                @db.Uuid
+  requestedById        String?               
+  approvedById         String?               
   approvedAt           DateTime?
   createdAt            DateTime               @default(now())
   updatedAt            DateTime               @updatedAt
@@ -3917,22 +3917,22 @@ model TargetAdjustment {
 }
 
 model ProductionPlan {
-  id                 String               @id @default(uuid()) @db.Uuid
-  companyId          String               @db.Uuid
-  branchId           String               @db.Uuid
-  marketTargetId     String               @db.Uuid
-  productionSiteId   String               @db.Uuid
-  centralWarehouseId String               @db.Uuid
+  id                 String               @id @default(uuid())
+  companyId          String              
+  branchId           String              
+  marketTargetId     String              
+  productionSiteId   String              
+  centralWarehouseId String              
   planNumber         String               @db.VarChar(40)
   plannedStartDate   DateTime?
   plannedEndDate     DateTime?
   totalPlannedKg     Decimal              @default(0) @db.Decimal(18, 4)
   status             ProductionPlanStatus @default(DRAFT)
-  approvedById       String?              @db.Uuid
+  approvedById       String?             
   approvedAt         DateTime?
   notes              String?              @db.VarChar(500)
-  createdById        String?              @db.Uuid
-  updatedById        String?              @db.Uuid
+  createdById        String?             
+  updatedById        String?             
   createdAt          DateTime             @default(now())
   updatedAt          DateTime             @updatedAt
   deletedAt          DateTime?
@@ -3949,18 +3949,18 @@ model ProductionPlan {
 }
 
 model ProductionPlanItem {
-  id                 String               @id @default(uuid()) @db.Uuid
-  companyId          String               @db.Uuid
-  productionPlanId   String               @db.Uuid
-  marketTargetItemId String?              @db.Uuid
-  productId          String               @db.Uuid
-  formulaId          String?              @db.Uuid
-  formulaVersionId   String?              @db.Uuid
+  id                 String               @id @default(uuid())
+  companyId          String              
+  productionPlanId   String              
+  marketTargetItemId String?             
+  productId          String              
+  formulaId          String?             
+  formulaVersionId   String?             
   plannedQuantityKg  Decimal              @db.Decimal(18, 4)
   producedQuantityKg Decimal              @default(0) @db.Decimal(18, 4)
   status             ProductionPlanStatus @default(DRAFT)
-  createdById        String?              @db.Uuid
-  updatedById        String?              @db.Uuid
+  createdById        String?             
+  updatedById        String?             
   createdAt          DateTime             @default(now())
   updatedAt          DateTime             @updatedAt
   deletedAt          DateTime?
@@ -3977,12 +3977,12 @@ model ProductionPlanItem {
 }
 
 model MaterialRequirementPlan {
-  id                   String                        @id @default(uuid()) @db.Uuid
-  companyId            String                        @db.Uuid
-  branchId             String                        @db.Uuid
-  marketTargetId       String                        @db.Uuid
-  productionPlanId     String                        @db.Uuid
-  centralWarehouseId   String                        @db.Uuid
+  id                   String                        @id @default(uuid())
+  companyId            String                       
+  branchId             String                       
+  marketTargetId       String                       
+  productionPlanId     String                       
+  centralWarehouseId   String                       
   mrpNumber            String                        @db.VarChar(40)
   totalRequiredKg      Decimal                       @default(0) @db.Decimal(18, 4)
   totalAvailableKg     Decimal                       @default(0) @db.Decimal(18, 4)
@@ -3990,8 +3990,8 @@ model MaterialRequirementPlan {
   status               MaterialRequirementPlanStatus @default(DRAFT)
   calculatedAt         DateTime?
   notes                String?                       @db.VarChar(500)
-  createdById          String?                       @db.Uuid
-  updatedById          String?                       @db.Uuid
+  createdById          String?                      
+  updatedById          String?                      
   createdAt            DateTime                      @default(now())
   updatedAt            DateTime                      @updatedAt
   deletedAt            DateTime?
@@ -4008,14 +4008,14 @@ model MaterialRequirementPlan {
 }
 
 model MaterialRequirementItem {
-  id                    String   @id @default(uuid()) @db.Uuid
-  companyId             String   @db.Uuid
-  materialRequirementPlanId String @db.Uuid
-  productionPlanItemId  String?  @db.Uuid
-  finishedProductId     String   @db.Uuid
-  rawMaterialId         String   @db.Uuid
-  formulaId             String?  @db.Uuid
-  formulaVersionId      String?  @db.Uuid
+  id                    String   @id @default(uuid())
+  companyId             String  
+  materialRequirementPlanId String
+  productionPlanItemId  String? 
+  finishedProductId     String  
+  rawMaterialId         String  
+  formulaId             String? 
+  formulaVersionId      String? 
   requiredQuantityKg    Decimal  @db.Decimal(18, 4)
   availableQuantityKg   Decimal  @default(0) @db.Decimal(18, 4)
   shortageQuantityKg    Decimal  @default(0) @db.Decimal(18, 4)
@@ -4036,18 +4036,18 @@ model MaterialRequirementItem {
 }
 
 model InventoryAvailabilityCheck {
-  id                        String                      @id @default(uuid()) @db.Uuid
-  companyId                 String                      @db.Uuid
-  materialRequirementPlanId String                      @db.Uuid
-  materialRequirementItemId String?                     @db.Uuid
-  warehouseId               String                      @db.Uuid
-  rawMaterialId             String                      @db.Uuid
+  id                        String                      @id @default(uuid())
+  companyId                 String                     
+  materialRequirementPlanId String                     
+  materialRequirementItemId String?                    
+  warehouseId               String                     
+  rawMaterialId             String                     
   requiredQuantityKg        Decimal                     @db.Decimal(18, 4)
   availableQuantityKg       Decimal                     @default(0) @db.Decimal(18, 4)
   shortageQuantityKg        Decimal                     @default(0) @db.Decimal(18, 4)
   status                    InventoryAvailabilityStatus
   checkedAt                 DateTime                    @default(now())
-  createdById               String?                     @db.Uuid
+  createdById               String?                    
   createdAt                 DateTime                    @default(now())
   deletedAt                 DateTime?
 
@@ -4062,22 +4062,22 @@ model InventoryAvailabilityCheck {
 }
 
 model ProcurementRecommendation {
-  id                        String                          @id @default(uuid()) @db.Uuid
-  companyId                 String                          @db.Uuid
-  branchId                  String                          @db.Uuid
-  marketTargetId            String                          @db.Uuid
-  materialRequirementPlanId String                          @db.Uuid
-  materialRequirementItemId String?                         @db.Uuid
-  rawMaterialId             String                          @db.Uuid
+  id                        String                          @id @default(uuid())
+  companyId                 String                         
+  branchId                  String                         
+  marketTargetId            String                         
+  materialRequirementPlanId String                         
+  materialRequirementItemId String?                        
+  rawMaterialId             String                         
   recommendedQuantityKg     Decimal                         @db.Decimal(18, 4)
   estimatedUnitCost         Decimal                         @default(0) @db.Decimal(18, 4)
   estimatedTotalCost        Decimal                         @default(0) @db.Decimal(18, 4)
   status                    ProcurementRecommendationStatus @default(OPEN)
-  purchaseRequestId         String?                         @db.Uuid
+  purchaseRequestId         String?                        
   convertedAt               DateTime?
   notes                     String?                         @db.VarChar(500)
-  createdById               String?                         @db.Uuid
-  updatedById               String?                         @db.Uuid
+  createdById               String?                        
+  updatedById               String?                        
   createdAt                 DateTime                        @default(now())
   updatedAt                 DateTime                        @updatedAt
   deletedAt                 DateTime?
@@ -4095,25 +4095,25 @@ model ProcurementRecommendation {
 }
 
 model ProductionExecution {
-  id                       String                    @id @default(uuid()) @db.Uuid
-  companyId                String                    @db.Uuid
-  branchId                 String                    @db.Uuid
-  marketTargetId           String                    @db.Uuid
-  productionPlanId         String                    @db.Uuid
-  productionPlanItemId     String?                   @db.Uuid
-  feedProductionOrderId    String?                   @db.Uuid
-  feedProductionBatchId    String?                   @db.Uuid
-  productId                String                    @db.Uuid
+  id                       String                    @id @default(uuid())
+  companyId                String                   
+  branchId                 String                   
+  marketTargetId           String                   
+  productionPlanId         String                   
+  productionPlanItemId     String?                  
+  feedProductionOrderId    String?                  
+  feedProductionBatchId    String?                  
+  productId                String                   
   plannedQuantityKg        Decimal                   @db.Decimal(18, 4)
   producedQuantityKg       Decimal                   @default(0) @db.Decimal(18, 4)
-  rawMaterialWarehouseId   String                    @db.Uuid
-  finishedGoodsWarehouseId String                    @db.Uuid
+  rawMaterialWarehouseId   String                   
+  finishedGoodsWarehouseId String                   
   status                   ProductionExecutionStatus @default(PLANNED)
   startedAt                DateTime?
   completedAt              DateTime?
   notes                    String?                   @db.VarChar(500)
-  createdById              String?                   @db.Uuid
-  updatedById              String?                   @db.Uuid
+  createdById              String?                  
+  updatedById              String?                  
   createdAt                DateTime                  @default(now())
   updatedAt                DateTime                  @updatedAt
   deletedAt                DateTime?
@@ -4134,11 +4134,11 @@ model ProductionExecution {
 }
 
 model TargetVsActualReport {
-  id                    String                     @id @default(uuid()) @db.Uuid
-  companyId             String                     @db.Uuid
-  branchId              String?                    @db.Uuid
-  marketTargetId        String                     @db.Uuid
-  productionPlanId      String?                    @db.Uuid
+  id                    String                     @id @default(uuid())
+  companyId             String                    
+  branchId              String?                   
+  marketTargetId        String                    
+  productionPlanId      String?                   
   periodStart           DateTime
   periodEnd             DateTime
   targetKg              Decimal                    @default(0) @db.Decimal(18, 4)
@@ -4152,7 +4152,7 @@ model TargetVsActualReport {
   salesAchievementPct   Decimal                    @default(0) @db.Decimal(9, 4)
   status                TargetVsActualReportStatus @default(GENERATED)
   generatedAt           DateTime                   @default(now())
-  createdById           String?                    @db.Uuid
+  createdById           String?                   
   createdAt             DateTime                   @default(now())
   updatedAt             DateTime                   @updatedAt
   deletedAt             DateTime?
@@ -4169,12 +4169,12 @@ model TargetVsActualReport {
 }
 
 model SoyaBeanIntake {
-  id               String            @id @default(uuid()) @db.Uuid
-  companyId        String            @db.Uuid
-  branchId         String            @db.Uuid
-  productionSiteId String            @db.Uuid
-  warehouseId      String            @db.Uuid
-  productId        String            @db.Uuid
+  id               String            @id @default(uuid())
+  companyId        String           
+  branchId         String           
+  productionSiteId String           
+  warehouseId      String           
+  productId        String           
   receiptNumber    String
   supplierName     String
   quantityKg       Decimal           @db.Decimal(18, 4)
@@ -4184,8 +4184,8 @@ model SoyaBeanIntake {
   qualityStatus    SoyaQualityStatus @default(PENDING)
   receivedAt       DateTime          @default(now())
   notes            String?
-  createdById      String?           @db.Uuid
-  updatedById      String?           @db.Uuid
+  createdById      String?          
+  updatedById      String?          
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
   deletedAt        DateTime?
@@ -4209,19 +4209,19 @@ model SoyaBeanIntake {
 }
 
 model SoyaProcessingBatch {
-  id               String                    @id @default(uuid()) @db.Uuid
-  companyId        String                    @db.Uuid
-  branchId         String                    @db.Uuid
-  productionSiteId String                    @db.Uuid
-  intakeId         String?                   @db.Uuid
-  beanProductId    String                    @db.Uuid
+  id               String                    @id @default(uuid())
+  companyId        String                   
+  branchId         String                   
+  productionSiteId String                   
+  intakeId         String?                  
+  beanProductId    String                   
   batchNumber      String
   beansUsedKg      Decimal                   @db.Decimal(18, 4)
   processingDate   DateTime                  @default(now())
   status           SoyaProcessingBatchStatus @default(PLANNED)
   notes            String?
-  createdById      String?                   @db.Uuid
-  updatedById      String?                   @db.Uuid
+  createdById      String?                  
+  updatedById      String?                  
   createdAt        DateTime                  @default(now())
   updatedAt        DateTime                  @updatedAt
   deletedAt        DateTime?
@@ -4251,16 +4251,16 @@ model SoyaProcessingBatch {
 }
 
 model SoyaOilOutput {
-  id               String   @id @default(uuid()) @db.Uuid
-  companyId        String   @db.Uuid
-  branchId         String   @db.Uuid
-  productionSiteId String   @db.Uuid
-  productionBatchId String  @db.Uuid
-  warehouseId      String   @db.Uuid
-  productId        String   @db.Uuid
+  id               String   @id @default(uuid())
+  companyId        String  
+  branchId         String  
+  productionSiteId String  
+  productionBatchId String 
+  warehouseId      String  
+  productId        String  
   quantityLitres   Decimal  @db.Decimal(18, 4)
   unitCost         Decimal  @default(0) @db.Decimal(18, 4)
-  createdById      String?  @db.Uuid
+  createdById      String? 
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
   deletedAt        DateTime?
@@ -4283,16 +4283,16 @@ model SoyaOilOutput {
 }
 
 model SoyaCakeOutput {
-  id               String   @id @default(uuid()) @db.Uuid
-  companyId        String   @db.Uuid
-  branchId         String   @db.Uuid
-  productionSiteId String   @db.Uuid
-  productionBatchId String  @db.Uuid
-  warehouseId      String   @db.Uuid
-  productId        String   @db.Uuid
+  id               String   @id @default(uuid())
+  companyId        String  
+  branchId         String  
+  productionSiteId String  
+  productionBatchId String 
+  warehouseId      String  
+  productId        String  
   quantityKg       Decimal  @db.Decimal(18, 4)
   unitCost         Decimal  @default(0) @db.Decimal(18, 4)
-  createdById      String?  @db.Uuid
+  createdById      String? 
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
   deletedAt        DateTime?
@@ -4315,14 +4315,14 @@ model SoyaCakeOutput {
 }
 
 model SoyaWasteRecord {
-  id                String   @id @default(uuid()) @db.Uuid
-  companyId         String   @db.Uuid
-  branchId          String   @db.Uuid
-  productionSiteId  String   @db.Uuid
-  productionBatchId String   @db.Uuid
+  id                String   @id @default(uuid())
+  companyId         String  
+  branchId          String  
+  productionSiteId  String  
+  productionBatchId String  
   quantityKg        Decimal  @db.Decimal(18, 4)
   reason            String?
-  createdById       String?  @db.Uuid
+  createdById       String? 
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
   deletedAt         DateTime?
@@ -4341,18 +4341,18 @@ model SoyaWasteRecord {
 }
 
 model SoyaQualityCheck {
-  id                String            @id @default(uuid()) @db.Uuid
-  companyId         String            @db.Uuid
-  branchId          String            @db.Uuid
-  productionSiteId  String            @db.Uuid
-  productionBatchId String            @db.Uuid
+  id                String            @id @default(uuid())
+  companyId         String           
+  branchId          String           
+  productionSiteId  String           
+  productionBatchId String           
   moisturePercent   Decimal?          @db.Decimal(18, 4)
   oilPurityPercent  Decimal?          @db.Decimal(18, 4)
   cakeProteinPercent Decimal?         @db.Decimal(18, 4)
   status            SoyaQualityStatus @default(PENDING)
   notes             String?
-  checkedById       String?           @db.Uuid
-  approvedById      String?           @db.Uuid
+  checkedById       String?          
+  approvedById      String?          
   approvedAt        DateTime?
   checkedAt         DateTime          @default(now())
   createdAt         DateTime          @default(now())
@@ -4374,18 +4374,18 @@ model SoyaQualityCheck {
 }
 
 model SoyaProductionCost {
-  id                  String   @id @default(uuid()) @db.Uuid
-  companyId           String   @db.Uuid
-  branchId            String   @db.Uuid
-  productionSiteId    String   @db.Uuid
-  productionBatchId   String   @db.Uuid
+  id                  String   @id @default(uuid())
+  companyId           String  
+  branchId            String  
+  productionSiteId    String  
+  productionBatchId   String  
   rawBeanCost         Decimal  @default(0) @db.Decimal(18, 4)
   laborCost           Decimal  @default(0) @db.Decimal(18, 4)
   packagingCost       Decimal  @default(0) @db.Decimal(18, 4)
   overheadCost        Decimal  @default(0) @db.Decimal(18, 4)
   expectedOilSalesValue Decimal @default(0) @db.Decimal(18, 4)
   expectedCakeSalesValue Decimal @default(0) @db.Decimal(18, 4)
-  createdById         String?  @db.Uuid
+  createdById         String? 
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
   deletedAt           DateTime?
@@ -4404,22 +4404,22 @@ model SoyaProductionCost {
 }
 
 model SoyaInternalTransfer {
-  id                String             @id @default(uuid()) @db.Uuid
-  companyId         String             @db.Uuid
-  branchId          String             @db.Uuid
-  productionSiteId  String             @db.Uuid
-  productionBatchId String             @db.Uuid
-  productId         String             @db.Uuid
+  id                String             @id @default(uuid())
+  companyId         String            
+  branchId          String            
+  productionSiteId  String            
+  productionBatchId String            
+  productId         String            
   outputType        SoyaOutputType
-  fromWarehouseId   String             @db.Uuid
-  toWarehouseId     String             @db.Uuid
-  toProductionSiteId String?           @db.Uuid
+  fromWarehouseId   String            
+  toWarehouseId     String            
+  toProductionSiteId String?          
   quantity          Decimal            @db.Decimal(18, 4)
   status            SoyaTransferStatus @default(PENDING)
   transferDate      DateTime           @default(now())
   notes             String?
-  createdById       String?            @db.Uuid
-  updatedById       String?            @db.Uuid
+  createdById       String?           
+  updatedById       String?           
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
   deletedAt         DateTime?
@@ -4447,13 +4447,13 @@ model SoyaInternalTransfer {
 }
 
 model SoyaSalesLink {
-  id                String         @id @default(uuid()) @db.Uuid
-  companyId         String         @db.Uuid
-  branchId          String         @db.Uuid
-  productionSiteId  String         @db.Uuid
-  productionBatchId String         @db.Uuid
-  productId         String         @db.Uuid
-  warehouseId       String         @db.Uuid
+  id                String         @id @default(uuid())
+  companyId         String        
+  branchId          String        
+  productionSiteId  String        
+  productionBatchId String        
+  productId         String        
+  warehouseId       String        
   outputType        SoyaOutputType
   customerName      String
   quantity          Decimal        @db.Decimal(18, 4)
@@ -4461,8 +4461,8 @@ model SoyaSalesLink {
   totalAmount       Decimal        @db.Decimal(18, 4)
   status            SoyaSaleStatus @default(POSTED)
   saleDate          DateTime       @default(now())
-  createdById       String?        @db.Uuid
-  updatedById       String?        @db.Uuid
+  createdById       String?       
+  updatedById       String?       
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
   deletedAt         DateTime?
@@ -4486,14 +4486,14 @@ model SoyaSalesLink {
 }
 
 model DashboardMetricSnapshot {
-  id               String             @id @default(uuid()) @db.Uuid
-  companyId        String             @db.Uuid
-  branchId         String?            @db.Uuid
-  farmId           String?            @db.Uuid
-  warehouseId      String?            @db.Uuid
-  productionSiteId String?            @db.Uuid
-  productId        String?            @db.Uuid
-  productCategoryId String?           @db.Uuid
+  id               String             @id @default(uuid())
+  companyId        String            
+  branchId         String?           
+  farmId           String?           
+  warehouseId      String?           
+  productionSiteId String?           
+  productId        String?           
+  productCategoryId String?          
   businessUnit     BusinessUnit
   metricKey        DashboardMetricKey
   metricDate       DateTime
@@ -4527,12 +4527,12 @@ model DashboardMetricSnapshot {
 }
 
 model DashboardAlert {
-  id               String                 @id @default(uuid()) @db.Uuid
-  companyId        String                 @db.Uuid
-  branchId         String?                @db.Uuid
-  farmId           String?                @db.Uuid
-  warehouseId      String?                @db.Uuid
-  productionSiteId String?                @db.Uuid
+  id               String                 @id @default(uuid())
+  companyId        String                
+  branchId         String?               
+  farmId           String?               
+  warehouseId      String?               
+  productionSiteId String?               
   businessUnit     BusinessUnit
   title            String
   message          String
@@ -4562,9 +4562,9 @@ model DashboardAlert {
 }
 
 model RefreshToken {
-  id        String    @id @default(uuid()) @db.Uuid
-  companyId String    @db.Uuid
-  userId    String    @db.Uuid
+  id        String    @id @default(uuid())
+  companyId String   
+  userId    String   
   tokenHash String
   userAgent String?
   ipAddress String?
@@ -4583,13 +4583,13 @@ model RefreshToken {
 }
 
 model AuditLog {
-  id               String      @id @default(uuid()) @db.Uuid
-  companyId        String      @db.Uuid
-  branchId         String?     @db.Uuid
-  farmId           String?     @db.Uuid
-  warehouseId      String?     @db.Uuid
-  productionSiteId String?     @db.Uuid
-  actorUserId      String?     @db.Uuid
+  id               String      @id @default(uuid())
+  companyId        String     
+  branchId         String?    
+  farmId           String?    
+  warehouseId      String?    
+  productionSiteId String?    
+  actorUserId      String?    
   action           AuditAction
   entityType       String
   entityId         String?
@@ -4617,19 +4617,19 @@ model AuditLog {
 }
 
 model SystemSetting {
-  id               String       @id @default(uuid()) @db.Uuid
-  companyId        String       @db.Uuid
-  branchId         String?      @db.Uuid
-  farmId           String?      @db.Uuid
-  warehouseId      String?      @db.Uuid
-  productionSiteId String?      @db.Uuid
+  id               String       @id @default(uuid())
+  companyId        String      
+  branchId         String?     
+  farmId           String?     
+  warehouseId      String?     
+  productionSiteId String?     
   key              String
   value            Json
   description      String?
   status           RecordStatus @default(ACTIVE)
   isEncrypted      Boolean      @default(false)
-  createdById      String?      @db.Uuid
-  updatedById      String?      @db.Uuid
+  createdById      String?     
+  updatedById      String?     
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
   deletedAt        DateTime?
@@ -4719,16 +4719,16 @@ enum BatchType {
 }
 
 model Account {
-  id          String      @id @default(uuid()) @db.Uuid
-  companyId   String      @db.Uuid
+  id          String      @id @default(uuid())
+  companyId   String     
   code        String      @db.VarChar(24)
   name        String      @db.VarChar(120)
   type        AccountType
-  parentId    String?     @db.Uuid
+  parentId    String?    
   isActive    Boolean     @default(true)
   description String?     @db.VarChar(240)
-  createdById String?     @db.Uuid
-  updatedById String?     @db.Uuid
+  createdById String?    
+  updatedById String?    
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
   deletedAt   DateTime?
@@ -4746,15 +4746,15 @@ model Account {
 }
 
 model ExpenseCategory {
-  id          String    @id @default(uuid()) @db.Uuid
-  companyId   String    @db.Uuid
+  id          String    @id @default(uuid())
+  companyId   String   
   name        String    @db.VarChar(120)
   code        String    @db.VarChar(24)
   description String?   @db.VarChar(240)
-  accountId   String?   @db.Uuid
+  accountId   String?  
   isActive    Boolean   @default(true)
-  createdById String?   @db.Uuid
-  updatedById String?   @db.Uuid
+  createdById String?  
+  updatedById String?  
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
@@ -4770,8 +4770,8 @@ model ExpenseCategory {
 }
 
 model BankAccount {
-  id             String          @id @default(uuid()) @db.Uuid
-  companyId      String          @db.Uuid
+  id             String          @id @default(uuid())
+  companyId      String         
   accountName    String          @db.VarChar(120)
   accountNumber  String          @db.VarChar(40)
   bankName       String          @db.VarChar(120)
@@ -4782,8 +4782,8 @@ model BankAccount {
   currentBalance Decimal         @default(0) @db.Decimal(15, 2)
   isActive       Boolean         @default(true)
   notes          String?         @db.VarChar(500)
-  createdById    String?         @db.Uuid
-  updatedById    String?         @db.Uuid
+  createdById    String?        
+  updatedById    String?        
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
   deletedAt      DateTime?
@@ -4801,10 +4801,10 @@ model BankAccount {
 }
 
 model Expense {
-  id               String        @id @default(uuid()) @db.Uuid
-  companyId        String        @db.Uuid
+  id               String        @id @default(uuid())
+  companyId        String       
   reference        String        @db.VarChar(30)
-  categoryId       String        @db.Uuid
+  categoryId       String       
   description      String        @db.VarChar(240)
   amount           Decimal       @db.Decimal(15, 2)
   currency         String        @default("GHS") @db.VarChar(10)
@@ -4813,18 +4813,18 @@ model Expense {
   vendorName       String?       @db.VarChar(160)
   receiptRef       String?       @db.VarChar(120)
   notes            String?       @db.VarChar(500)
-  branchId         String?       @db.Uuid
+  branchId         String?      
   status           ExpenseStatus @default(PENDING)
   approvalRequired Boolean       @default(false)
-  submittedById    String        @db.Uuid
-  approvedById     String?       @db.Uuid
+  submittedById    String       
+  approvedById     String?      
   approvedAt       DateTime?
-  rejectedById     String?       @db.Uuid
+  rejectedById     String?      
   rejectedAt       DateTime?
   rejectionReason  String?       @db.VarChar(240)
-  bankAccountId    String?       @db.Uuid
-  createdById      String?       @db.Uuid
-  updatedById      String?       @db.Uuid
+  bankAccountId    String?      
+  createdById      String?      
+  updatedById      String?      
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
   deletedAt        DateTime?
@@ -4851,8 +4851,8 @@ model Expense {
 }
 
 model Revenue {
-  id            String        @id @default(uuid()) @db.Uuid
-  companyId     String        @db.Uuid
+  id            String        @id @default(uuid())
+  companyId     String       
   reference     String        @db.VarChar(30)
   source        RevenueSource
   description   String        @db.VarChar(240)
@@ -4862,11 +4862,11 @@ model Revenue {
   paymentMethod PaymentMethod
   customerName  String?       @db.VarChar(160)
   invoiceRef    String?       @db.VarChar(60)
-  branchId      String?       @db.Uuid
+  branchId      String?      
   notes         String?       @db.VarChar(500)
-  bankAccountId String?       @db.Uuid
-  createdById   String?       @db.Uuid
-  updatedById   String?       @db.Uuid
+  bankAccountId String?      
+  createdById   String?      
+  updatedById   String?      
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
   deletedAt     DateTime?
@@ -4883,8 +4883,8 @@ model Revenue {
 }
 
 model SupplierPayment {
-  id               String        @id @default(uuid()) @db.Uuid
-  companyId        String        @db.Uuid
+  id               String        @id @default(uuid())
+  companyId        String       
   reference        String        @db.VarChar(30)
   supplierName     String        @db.VarChar(160)
   amount           Decimal       @db.Decimal(15, 2)
@@ -4893,10 +4893,10 @@ model SupplierPayment {
   paymentMethod    PaymentMethod
   description      String        @db.VarChar(240)
   purchaseOrderRef String?       @db.VarChar(60)
-  bankAccountId    String?       @db.Uuid
+  bankAccountId    String?      
   notes            String?       @db.VarChar(500)
-  createdById      String?       @db.Uuid
-  updatedById      String?       @db.Uuid
+  createdById      String?      
+  updatedById      String?      
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
   deletedAt        DateTime?
@@ -4911,8 +4911,8 @@ model SupplierPayment {
 }
 
 model CustomerPayment {
-  id            String        @id @default(uuid()) @db.Uuid
-  companyId     String        @db.Uuid
+  id            String        @id @default(uuid())
+  companyId     String       
   reference     String        @db.VarChar(30)
   customerName  String        @db.VarChar(160)
   amount        Decimal       @db.Decimal(15, 2)
@@ -4921,10 +4921,10 @@ model CustomerPayment {
   paymentMethod PaymentMethod
   description   String        @db.VarChar(240)
   invoiceRef    String?       @db.VarChar(60)
-  bankAccountId String?       @db.Uuid
+  bankAccountId String?      
   notes         String?       @db.VarChar(500)
-  createdById   String?       @db.Uuid
-  updatedById   String?       @db.Uuid
+  createdById   String?      
+  updatedById   String?      
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
   deletedAt     DateTime?
@@ -4939,8 +4939,8 @@ model CustomerPayment {
 }
 
 model PayrollRecord {
-  id            String         @id @default(uuid()) @db.Uuid
-  companyId     String         @db.Uuid
+  id            String         @id @default(uuid())
+  companyId     String        
   reference     String         @db.VarChar(30)
   period        String         @db.VarChar(10)
   periodStart   DateTime
@@ -4956,13 +4956,13 @@ model PayrollRecord {
   netPay        Decimal        @db.Decimal(15, 2)
   paymentDate   DateTime?
   paymentMethod PaymentMethod?
-  bankAccountId String?        @db.Uuid
+  bankAccountId String?       
   status        PayrollStatus  @default(DRAFT)
   notes         String?        @db.VarChar(500)
-  branchId      String?        @db.Uuid
-  employeeId    String?        @db.Uuid
-  createdById   String?        @db.Uuid
-  updatedById   String?        @db.Uuid
+  branchId      String?       
+  employeeId    String?       
+  createdById   String?       
+  updatedById   String?       
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   deletedAt     DateTime?
@@ -4980,22 +4980,22 @@ model PayrollRecord {
 }
 
 model PettyCashTransaction {
-  id              String        @id @default(uuid()) @db.Uuid
-  companyId       String        @db.Uuid
+  id              String        @id @default(uuid())
+  companyId       String       
   reference       String        @db.VarChar(30)
   type            PettyCashType
   amount          Decimal       @db.Decimal(15, 2)
   description     String        @db.VarChar(240)
   transactionDate DateTime
-  categoryId      String?       @db.Uuid
-  branchId        String?       @db.Uuid
-  requestedById   String?       @db.Uuid
-  approvedById    String?       @db.Uuid
+  categoryId      String?      
+  branchId        String?      
+  requestedById   String?      
+  approvedById    String?      
   receiptRef      String?       @db.VarChar(60)
   balance         Decimal       @db.Decimal(15, 2)
   notes           String?       @db.VarChar(500)
-  createdById     String?       @db.Uuid
-  updatedById     String?       @db.Uuid
+  createdById     String?      
+  updatedById     String?      
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
   deletedAt       DateTime?
@@ -5012,8 +5012,8 @@ model PettyCashTransaction {
 }
 
 model JournalEntry {
-  id           String             @id @default(uuid()) @db.Uuid
-  companyId    String             @db.Uuid
+  id           String             @id @default(uuid())
+  companyId    String            
   reference    String             @db.VarChar(30)
   entryDate    DateTime
   description  String             @db.VarChar(240)
@@ -5023,11 +5023,11 @@ model JournalEntry {
   totalCredit  Decimal            @db.Decimal(15, 2)
   sourceModule String?            @db.VarChar(60)
   sourceId     String?            @db.VarChar(60)
-  reversalOf   String?            @db.Uuid
+  reversalOf   String?           
   notes        String?            @db.VarChar(500)
-  postedById   String?            @db.Uuid
-  createdById  String?            @db.Uuid
-  updatedById  String?            @db.Uuid
+  postedById   String?           
+  createdById  String?           
+  updatedById  String?           
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
   deletedAt    DateTime?
@@ -5043,9 +5043,9 @@ model JournalEntry {
 }
 
 model JournalEntryLine {
-  id             String  @id @default(uuid()) @db.Uuid
-  journalEntryId String  @db.Uuid
-  accountId      String  @db.Uuid
+  id             String  @id @default(uuid())
+  journalEntryId String 
+  accountId      String 
   description    String? @db.VarChar(240)
   debit          Decimal @default(0) @db.Decimal(15, 2)
   credit         Decimal @default(0) @db.Decimal(15, 2)
@@ -5059,8 +5059,8 @@ model JournalEntryLine {
 }
 
 model ProfitLossReport {
-  id            String    @id @default(uuid()) @db.Uuid
-  companyId     String    @db.Uuid
+  id            String    @id @default(uuid())
+  companyId     String   
   title         String    @db.VarChar(160)
   periodStart   DateTime
   periodEnd     DateTime
@@ -5070,8 +5070,8 @@ model ProfitLossReport {
   netProfit     Decimal   @db.Decimal(15, 2)
   reportData    Json
   notes         String?   @db.VarChar(500)
-  createdById   String?   @db.Uuid
-  updatedById   String?   @db.Uuid
+  createdById   String?  
+  updatedById   String?  
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   deletedAt     DateTime?
@@ -5084,8 +5084,8 @@ model ProfitLossReport {
 }
 
 model CashFlowReport {
-  id                String    @id @default(uuid()) @db.Uuid
-  companyId         String    @db.Uuid
+  id                String    @id @default(uuid())
+  companyId         String   
   title             String    @db.VarChar(160)
   periodStart       DateTime
   periodEnd         DateTime
@@ -5097,8 +5097,8 @@ model CashFlowReport {
   netCashFlow       Decimal   @db.Decimal(15, 2)
   reportData        Json
   notes             String?   @db.VarChar(500)
-  createdById       String?   @db.Uuid
-  updatedById       String?   @db.Uuid
+  createdById       String?  
+  updatedById       String?  
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
   deletedAt         DateTime?
@@ -5111,8 +5111,8 @@ model CashFlowReport {
 }
 
 model ProductProfitability {
-  id           String    @id @default(uuid()) @db.Uuid
-  companyId    String    @db.Uuid
+  id           String    @id @default(uuid())
+  companyId    String   
   productName  String    @db.VarChar(160)
   productCode  String?   @db.VarChar(30)
   periodStart  DateTime
@@ -5123,7 +5123,7 @@ model ProductProfitability {
   margin       Decimal   @db.Decimal(5, 2)
   unitsSold    Decimal   @db.Decimal(15, 3)
   reportData   Json?
-  createdById  String?   @db.Uuid
+  createdById  String?  
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   deletedAt    DateTime?
@@ -5136,8 +5136,8 @@ model ProductProfitability {
 }
 
 model BatchProfitability {
-  id             String    @id @default(uuid()) @db.Uuid
-  companyId      String    @db.Uuid
+  id             String    @id @default(uuid())
+  companyId      String   
   batchType      BatchType
   batchId        String    @db.VarChar(60)
   batchReference String    @db.VarChar(60)
@@ -5149,7 +5149,7 @@ model BatchProfitability {
   grossProfit    Decimal   @db.Decimal(15, 2)
   margin         Decimal   @db.Decimal(5, 2)
   reportData     Json?
-  createdById    String?   @db.Uuid
+  createdById    String?  
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
   deletedAt      DateTime?
@@ -5230,14 +5230,14 @@ enum PurchaseApprovalStatus {
 }
 
 model SupplierCategory {
-  id          String    @id @default(uuid()) @db.Uuid
-  companyId   String    @db.Uuid
+  id          String    @id @default(uuid())
+  companyId   String   
   name        String    @db.VarChar(120)
   code        String    @db.VarChar(24)
   description String?   @db.VarChar(240)
   isActive    Boolean   @default(true)
-  createdById String?   @db.Uuid
-  updatedById String?   @db.Uuid
+  createdById String?  
+  updatedById String?  
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
@@ -5251,9 +5251,9 @@ model SupplierCategory {
 }
 
 model Supplier {
-  id               String         @id @default(uuid()) @db.Uuid
-  companyId        String         @db.Uuid
-  categoryId       String?        @db.Uuid
+  id               String         @id @default(uuid())
+  companyId        String        
+  categoryId       String?       
   code             String         @db.VarChar(24)
   name             String         @db.VarChar(160)
   contactPerson    String?        @db.VarChar(120)
@@ -5269,8 +5269,8 @@ model Supplier {
   rating           Decimal?       @db.Decimal(3, 2)
   leadTimeDays     Int?
   notes            String?        @db.VarChar(500)
-  createdById      String?        @db.Uuid
-  updatedById      String?        @db.Uuid
+  createdById      String?       
+  updatedById      String?       
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
   deletedAt        DateTime?
@@ -5297,25 +5297,25 @@ model Supplier {
 }
 
 model PurchaseRequest {
-  id              String                @id @default(uuid()) @db.Uuid
-  companyId       String                @db.Uuid
+  id              String                @id @default(uuid())
+  companyId       String               
   reference       String                @db.VarChar(30)
   title           String                @db.VarChar(200)
-  marketTargetId  String?               @db.Uuid
-  materialRequirementPlanId String?      @db.Uuid
-  procurementRecommendationId String?    @db.Uuid
-  requestedById   String                @db.Uuid
-  branchId        String?               @db.Uuid
+  marketTargetId  String?              
+  materialRequirementPlanId String?     
+  procurementRecommendationId String?   
+  requestedById   String               
+  branchId        String?              
   requiredDate    DateTime?
   status          PurchaseRequestStatus @default(DRAFT)
   totalEstimate   Decimal               @default(0) @db.Decimal(15, 2)
-  approvedById    String?               @db.Uuid
+  approvedById    String?              
   approvedAt      DateTime?
-  rejectedById    String?               @db.Uuid
+  rejectedById    String?              
   rejectionReason String?               @db.VarChar(240)
   notes           String?               @db.VarChar(500)
-  createdById     String?               @db.Uuid
-  updatedById     String?               @db.Uuid
+  createdById     String?              
+  updatedById     String?              
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
   deletedAt       DateTime?
@@ -5339,9 +5339,9 @@ model PurchaseRequest {
 }
 
 model PurchaseRequestItem {
-  id                String   @id @default(uuid()) @db.Uuid
-  purchaseRequestId String   @db.Uuid
-  productId         String?  @db.Uuid
+  id                String   @id @default(uuid())
+  purchaseRequestId String  
+  productId         String? 
   productName       String   @db.VarChar(160)
   quantity          Decimal  @db.Decimal(15, 4)
   uomCode           String?  @db.VarChar(10)
@@ -5355,11 +5355,11 @@ model PurchaseRequestItem {
 }
 
 model PurchaseOrder {
-  id                String              @id @default(uuid()) @db.Uuid
-  companyId         String              @db.Uuid
+  id                String              @id @default(uuid())
+  companyId         String             
   reference         String              @db.VarChar(30)
-  supplierId        String              @db.Uuid
-  purchaseRequestId String?             @db.Uuid
+  supplierId        String             
+  purchaseRequestId String?            
   orderDate         DateTime            @default(now())
   expectedDelivery  DateTime?
   deliveryAddress   String?             @db.VarChar(300)
@@ -5369,13 +5369,13 @@ model PurchaseOrder {
   totalAmount       Decimal             @default(0) @db.Decimal(15, 2)
   currency          String              @default("GHS") @db.VarChar(10)
   paymentTermsDays  Int?
-  approvedById      String?             @db.Uuid
+  approvedById      String?            
   approvedAt        DateTime?
-  rejectedById      String?             @db.Uuid
+  rejectedById      String?            
   rejectionReason   String?             @db.VarChar(240)
   notes             String?             @db.VarChar(500)
-  createdById       String?             @db.Uuid
-  updatedById       String?             @db.Uuid
+  createdById       String?            
+  updatedById       String?            
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
   deletedAt         DateTime?
@@ -5396,9 +5396,9 @@ model PurchaseOrder {
 }
 
 model PurchaseOrderItem {
-  id              String   @id @default(uuid()) @db.Uuid
-  purchaseOrderId String   @db.Uuid
-  productId       String?  @db.Uuid
+  id              String   @id @default(uuid())
+  purchaseOrderId String  
+  productId       String? 
   productName     String   @db.VarChar(160)
   quantity        Decimal  @db.Decimal(15, 4)
   unitCost        Decimal  @db.Decimal(15, 2)
@@ -5415,24 +5415,24 @@ model PurchaseOrderItem {
 }
 
 model GoodsReceivedNote {
-  id                   String    @id @default(uuid()) @db.Uuid
-  companyId            String    @db.Uuid
+  id                   String    @id @default(uuid())
+  companyId            String   
   reference            String    @db.VarChar(30)
-  purchaseOrderId      String    @db.Uuid
-  supplierId           String    @db.Uuid
-  branchId             String?   @db.Uuid
-  warehouseId          String    @db.Uuid
+  purchaseOrderId      String   
+  supplierId           String   
+  branchId             String?  
+  warehouseId          String   
   receivedDate         DateTime  @default(now())
   deliveryNoteRef      String?   @db.VarChar(60)
   status               GRNStatus @default(DRAFT)
   qualityCheckRequired Boolean   @default(true)
-  qualityPassedById    String?   @db.Uuid
+  qualityPassedById    String?  
   qualityPassedAt      DateTime?
   qualityNotes         String?   @db.VarChar(500)
   postedAt             DateTime?
   notes                String?   @db.VarChar(500)
-  createdById          String?   @db.Uuid
-  updatedById          String?   @db.Uuid
+  createdById          String?  
+  updatedById          String?  
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
   deletedAt            DateTime?
@@ -5454,10 +5454,10 @@ model GoodsReceivedNote {
 }
 
 model GoodsReceivedItem {
-  id                  String    @id @default(uuid()) @db.Uuid
-  grnId               String    @db.Uuid
-  purchaseOrderItemId String?   @db.Uuid
-  productId           String?   @db.Uuid
+  id                  String    @id @default(uuid())
+  grnId               String   
+  purchaseOrderItemId String?  
+  productId           String?  
   productName         String    @db.VarChar(160)
   orderedQty          Decimal   @db.Decimal(15, 4)
   receivedQty         Decimal   @db.Decimal(15, 4)
@@ -5478,11 +5478,11 @@ model GoodsReceivedItem {
 }
 
 model SupplierInvoice {
-  id              String                @id @default(uuid()) @db.Uuid
-  companyId       String                @db.Uuid
+  id              String                @id @default(uuid())
+  companyId       String               
   reference       String                @db.VarChar(30)
-  supplierId      String                @db.Uuid
-  purchaseOrderId String?               @db.Uuid
+  supplierId      String               
+  purchaseOrderId String?              
   invoiceNumber   String                @db.VarChar(60)
   invoiceDate     DateTime
   dueDate         DateTime?
@@ -5493,8 +5493,8 @@ model SupplierInvoice {
   balanceDue      Decimal               @db.Decimal(15, 2)
   status          SupplierInvoiceStatus @default(PENDING)
   notes           String?               @db.VarChar(500)
-  createdById     String?               @db.Uuid
-  updatedById     String?               @db.Uuid
+  createdById     String?              
+  updatedById     String?              
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
   deletedAt       DateTime?
@@ -5517,19 +5517,19 @@ model SupplierInvoice {
 }
 
 model ProcurementPayment {
-  id            String        @id @default(uuid()) @db.Uuid
-  companyId     String        @db.Uuid
+  id            String        @id @default(uuid())
+  companyId     String       
   reference     String        @db.VarChar(30)
-  supplierId    String        @db.Uuid
-  invoiceId     String?       @db.Uuid
+  supplierId    String       
+  invoiceId     String?      
   amount        Decimal       @db.Decimal(15, 2)
   paymentDate   DateTime
   paymentMethod PaymentMethod
-  bankAccountId String?       @db.Uuid
+  bankAccountId String?      
   description   String        @db.VarChar(240)
   notes         String?       @db.VarChar(500)
-  createdById   String?       @db.Uuid
-  updatedById   String?       @db.Uuid
+  createdById   String?      
+  updatedById   String?      
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
   deletedAt     DateTime?
@@ -5546,9 +5546,9 @@ model ProcurementPayment {
 }
 
 model SupplierPerformanceRecord {
-  id                   String            @id @default(uuid()) @db.Uuid
-  companyId            String            @db.Uuid
-  supplierId           String            @db.Uuid
+  id                   String            @id @default(uuid())
+  companyId            String           
+  supplierId           String           
   period               String            @db.VarChar(10)
   rating               PerformanceRating
   onTimeDelivery       Boolean           @default(true)
@@ -5559,8 +5559,8 @@ model SupplierPerformanceRecord {
   lateDeliveries       Int               @default(0)
   rejectedItems        Int               @default(0)
   notes                String?           @db.VarChar(500)
-  reviewedById         String?           @db.Uuid
-  createdById          String?           @db.Uuid
+  reviewedById         String?          
+  createdById          String?          
   createdAt            DateTime          @default(now())
   updatedAt            DateTime          @updatedAt
   deletedAt            DateTime?
@@ -5575,16 +5575,16 @@ model SupplierPerformanceRecord {
 }
 
 model PurchaseApproval {
-  id                String                 @id @default(uuid()) @db.Uuid
-  companyId         String                 @db.Uuid
-  purchaseOrderId   String?                @db.Uuid
-  purchaseRequestId String?                @db.Uuid
+  id                String                 @id @default(uuid())
+  companyId         String                
+  purchaseOrderId   String?               
+  purchaseRequestId String?               
   approvalLevel     Int                    @default(1)
   status            PurchaseApprovalStatus @default(PENDING)
-  approverId        String                 @db.Uuid
+  approverId        String                
   approvedAt        DateTime?
   comments          String?                @db.VarChar(500)
-  createdById       String?                @db.Uuid
+  createdById       String?               
   createdAt         DateTime               @default(now())
   updatedAt         DateTime               @updatedAt
 
@@ -5601,16 +5601,16 @@ model PurchaseApproval {
 }
 
 model SupplierPriceHistory {
-  id            String   @id @default(uuid()) @db.Uuid
-  companyId     String   @db.Uuid
-  supplierId    String   @db.Uuid
-  productId     String?  @db.Uuid
+  id            String   @id @default(uuid())
+  companyId     String  
+  supplierId    String  
+  productId     String? 
   productName   String   @db.VarChar(160)
   unitPrice     Decimal  @db.Decimal(15, 2)
   currency      String   @default("GHS") @db.VarChar(10)
   effectiveDate DateTime
   notes         String?  @db.VarChar(240)
-  createdById   String?  @db.Uuid
+  createdById   String? 
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -5693,14 +5693,14 @@ enum HRPerformanceStatus {
 }
 
 model EmployeeRole {
-  id          String    @id @default(uuid()) @db.Uuid
-  companyId   String    @db.Uuid
+  id          String    @id @default(uuid())
+  companyId   String   
   code        String    @db.VarChar(24)
   name        String    @db.VarChar(120)
   description String?   @db.VarChar(240)
   isActive    Boolean   @default(true)
-  createdById String?   @db.Uuid
-  updatedById String?   @db.Uuid
+  createdById String?  
+  updatedById String?  
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
@@ -5714,8 +5714,8 @@ model EmployeeRole {
 }
 
 model Employee {
-  id                    String         @id @default(uuid()) @db.Uuid
-  companyId             String         @db.Uuid
+  id                    String         @id @default(uuid())
+  companyId             String        
   code                  String         @db.VarChar(30)
   firstName             String         @db.VarChar(80)
   lastName              String         @db.VarChar(80)
@@ -5729,11 +5729,11 @@ model Employee {
   startDate             DateTime
   endDate               DateTime?
   status                EmployeeStatus @default(ACTIVE)
-  employeeRoleId        String?        @db.Uuid
-  branchId              String?        @db.Uuid
-  farmId                String?        @db.Uuid
-  warehouseId           String?        @db.Uuid
-  productionSiteId      String?        @db.Uuid
+  employeeRoleId        String?       
+  branchId              String?       
+  farmId                String?       
+  warehouseId           String?       
+  productionSiteId      String?       
   basicSalary           Decimal?       @db.Decimal(15, 2)
   bankName              String?        @db.VarChar(120)
   bankAccount           String?        @db.VarChar(40)
@@ -5742,8 +5742,8 @@ model Employee {
   emergencyContactName  String?        @db.VarChar(120)
   emergencyContactPhone String?        @db.VarChar(40)
   notes                 String?        @db.VarChar(500)
-  createdById           String?        @db.Uuid
-  updatedById           String?        @db.Uuid
+  createdById           String?       
+  updatedById           String?       
   createdAt             DateTime       @default(now())
   updatedAt             DateTime       @updatedAt
   deletedAt             DateTime?
@@ -5774,17 +5774,17 @@ model Employee {
 }
 
 model AttendanceRecord {
-  id           String           @id @default(uuid()) @db.Uuid
-  companyId    String           @db.Uuid
-  employeeId   String           @db.Uuid
+  id           String           @id @default(uuid())
+  companyId    String          
+  employeeId   String          
   date         DateTime
   checkInTime  DateTime?
   checkOutTime DateTime?
   status       AttendanceStatus @default(PRESENT)
   hoursWorked  Decimal?         @db.Decimal(5, 2)
-  shiftId      String?          @db.Uuid
+  shiftId      String?         
   notes        String?          @db.VarChar(240)
-  recordedById String?          @db.Uuid
+  recordedById String?         
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
 
@@ -5801,17 +5801,17 @@ model AttendanceRecord {
 }
 
 model Shift {
-  id          String    @id @default(uuid()) @db.Uuid
-  companyId   String    @db.Uuid
-  branchId    String?   @db.Uuid
+  id          String    @id @default(uuid())
+  companyId   String   
+  branchId    String?  
   code        String    @db.VarChar(24)
   name        String    @db.VarChar(120)
   startTime   String    @db.VarChar(5)
   endTime     String    @db.VarChar(5)
   isActive    Boolean   @default(true)
   notes       String?   @db.VarChar(240)
-  createdById String?   @db.Uuid
-  updatedById String?   @db.Uuid
+  createdById String?  
+  updatedById String?  
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
@@ -5827,8 +5827,8 @@ model Shift {
 }
 
 model Task {
-  id               String       @id @default(uuid()) @db.Uuid
-  companyId        String       @db.Uuid
+  id               String       @id @default(uuid())
+  companyId        String      
   title            String       @db.VarChar(200)
   description      String?      @db.VarChar(1000)
   taskType         String?      @db.VarChar(60)
@@ -5836,13 +5836,13 @@ model Task {
   status           TaskStatus   @default(OPEN)
   dueDate          DateTime?
   completedAt      DateTime?
-  branchId         String?      @db.Uuid
-  farmId           String?      @db.Uuid
-  productionSiteId String?      @db.Uuid
-  assignedById     String?      @db.Uuid
+  branchId         String?     
+  farmId           String?     
+  productionSiteId String?     
+  assignedById     String?     
   notes            String?      @db.VarChar(500)
-  createdById      String?      @db.Uuid
-  updatedById      String?      @db.Uuid
+  createdById      String?     
+  updatedById      String?     
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
   deletedAt        DateTime?
@@ -5863,11 +5863,11 @@ model Task {
 }
 
 model TaskAssignment {
-  id          String               @id @default(uuid()) @db.Uuid
-  companyId   String               @db.Uuid
-  taskId      String               @db.Uuid
-  employeeId  String               @db.Uuid
-  assignedById String?             @db.Uuid
+  id          String               @id @default(uuid())
+  companyId   String              
+  taskId      String              
+  employeeId  String              
+  assignedById String?            
   status      TaskAssignmentStatus @default(ASSIGNED)
   completedAt DateTime?
   notes       String?              @db.VarChar(500)
@@ -5887,9 +5887,9 @@ model TaskAssignment {
 }
 
 model TrainingRecord {
-  id            String          @id @default(uuid()) @db.Uuid
-  companyId     String          @db.Uuid
-  employeeId    String          @db.Uuid
+  id            String          @id @default(uuid())
+  companyId     String         
+  employeeId    String         
   title         String          @db.VarChar(200)
   description   String?         @db.VarChar(500)
   trainer       String?         @db.VarChar(120)
@@ -5898,8 +5898,8 @@ model TrainingRecord {
   outcome       TrainingOutcome @default(ONGOING)
   certificate   String?         @db.VarChar(120)
   notes         String?         @db.VarChar(500)
-  createdById   String?         @db.Uuid
-  updatedById   String?         @db.Uuid
+  createdById   String?        
+  updatedById   String?        
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
   deletedAt     DateTime?
@@ -5914,11 +5914,11 @@ model TrainingRecord {
 }
 
 model HRPerformanceRecord {
-  id                  String              @id @default(uuid()) @db.Uuid
-  companyId           String              @db.Uuid
-  employeeId          String              @db.Uuid
+  id                  String              @id @default(uuid())
+  companyId           String             
+  employeeId          String             
   period              String              @db.VarChar(10)
-  reviewerId          String?             @db.Uuid
+  reviewerId          String?            
   overallRating       HRRating            @default(MEETS_EXPECTATIONS)
   attendanceScore     Int                 @default(0)
   taskCompletionScore Int                 @default(0)
@@ -5928,8 +5928,8 @@ model HRPerformanceRecord {
   goals               String?             @db.VarChar(500)
   status              HRPerformanceStatus @default(DRAFT)
   acknowledgedAt      DateTime?
-  createdById         String?             @db.Uuid
-  updatedById         String?             @db.Uuid
+  createdById         String?            
+  updatedById         String?            
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
   deletedAt           DateTime?
@@ -5947,19 +5947,19 @@ model HRPerformanceRecord {
 }
 
 model DepartmentAssignment {
-  id               String    @id @default(uuid()) @db.Uuid
-  companyId        String    @db.Uuid
-  employeeId       String    @db.Uuid
-  branchId         String?   @db.Uuid
-  farmId           String?   @db.Uuid
-  warehouseId      String?   @db.Uuid
-  productionSiteId String?   @db.Uuid
+  id               String    @id @default(uuid())
+  companyId        String   
+  employeeId       String   
+  branchId         String?  
+  farmId           String?  
+  warehouseId      String?  
+  productionSiteId String?  
   department       String    @db.VarChar(120)
   startDate        DateTime
   endDate          DateTime?
   isPrimary        Boolean   @default(true)
   notes            String?   @db.VarChar(240)
-  createdById      String?   @db.Uuid
+  createdById      String?  
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
@@ -6031,15 +6031,15 @@ enum DisposalMethod {
 }
 
 model QualityCheckTemplate {
-  id          String      @id @default(uuid()) @db.Uuid
-  companyId   String      @db.Uuid
+  id          String      @id @default(uuid())
+  companyId   String     
   code        String      @db.VarChar(30)
   name        String      @db.VarChar(160)
   checkType   QCCheckType
   description String?     @db.VarChar(500)
   isActive    Boolean     @default(true)
-  createdById String?     @db.Uuid
-  updatedById String?     @db.Uuid
+  createdById String?    
+  updatedById String?    
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
   deletedAt   DateTime?
@@ -6055,9 +6055,9 @@ model QualityCheckTemplate {
 }
 
 model QualityCheckParameter {
-  id            String          @id @default(uuid()) @db.Uuid
-  companyId     String          @db.Uuid
-  templateId    String          @db.Uuid
+  id            String          @id @default(uuid())
+  companyId     String         
+  templateId    String         
   paramCode     String          @db.VarChar(30)
   name          String          @db.VarChar(120)
   paramType     QCParameterType @default(NUMERIC)
@@ -6068,7 +6068,7 @@ model QualityCheckParameter {
   isRequired    Boolean         @default(true)
   sortOrder     Int             @default(0)
   notes         String?         @db.VarChar(240)
-  createdById   String?         @db.Uuid
+  createdById   String?        
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 
@@ -6082,31 +6082,31 @@ model QualityCheckParameter {
 }
 
 model QualityCheck {
-  id               String        @id @default(uuid()) @db.Uuid
-  companyId        String        @db.Uuid
+  id               String        @id @default(uuid())
+  companyId        String       
   reference        String        @db.VarChar(30)
   checkType        QCCheckType
-  templateId       String?       @db.Uuid
+  templateId       String?      
   referenceType    String?       @db.VarChar(60)
-  referenceId      String?       @db.Uuid
+  referenceId      String?      
   batchNumber      String?       @db.VarChar(60)
   status           QCStatus      @default(PENDING)
   decision         BatchDecision @default(PENDING)
-  inspectorId      String?       @db.Uuid
+  inspectorId      String?      
   checkedAt        DateTime?
-  approvedById     String?       @db.Uuid
+  approvedById     String?      
   approvedAt       DateTime?
   overallScore     Decimal?      @db.Decimal(5, 2)
   passedParameters Int           @default(0)
   totalParameters  Int           @default(0)
   summary          String?       @db.VarChar(500)
   notes            String?       @db.VarChar(500)
-  branchId         String?       @db.Uuid
-  farmId           String?       @db.Uuid
-  warehouseId      String?       @db.Uuid
-  productionSiteId String?       @db.Uuid
-  createdById      String?       @db.Uuid
-  updatedById      String?       @db.Uuid
+  branchId         String?      
+  farmId           String?      
+  warehouseId      String?      
+  productionSiteId String?      
+  createdById      String?      
+  updatedById      String?      
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
   deletedAt        DateTime?
@@ -6132,10 +6132,10 @@ model QualityCheck {
 }
 
 model QualityInspectionResult {
-  id          String   @id @default(uuid()) @db.Uuid
-  companyId   String   @db.Uuid
-  checkId     String   @db.Uuid
-  parameterId String   @db.Uuid
+  id          String   @id @default(uuid())
+  companyId   String  
+  checkId     String  
+  parameterId String  
   actualValue String?  @db.VarChar(120)
   passed      Boolean  @default(false)
   deviation   Decimal? @db.Decimal(12, 4)
@@ -6153,12 +6153,12 @@ model QualityInspectionResult {
 }
 
 model RejectedBatch {
-  id              String         @id @default(uuid()) @db.Uuid
-  companyId       String         @db.Uuid
+  id              String         @id @default(uuid())
+  companyId       String        
   reference       String         @db.VarChar(30)
-  checkId         String         @unique @db.Uuid
+  checkId         String         @unique
   referenceType   String?        @db.VarChar(60)
-  referenceId     String?        @db.Uuid
+  referenceId     String?       
   batchNumber     String?        @db.VarChar(60)
   rejectionReason String         @db.VarChar(500)
   disposalMethod  DisposalMethod @default(QUARANTINE)
@@ -6167,9 +6167,9 @@ model RejectedBatch {
   quantity        Decimal?       @db.Decimal(15, 4)
   unitOfMeasure   String?        @db.VarChar(20)
   estimatedValue  Decimal?       @db.Decimal(15, 2)
-  supplierId      String?        @db.Uuid
-  createdById     String?        @db.Uuid
-  updatedById     String?        @db.Uuid
+  supplierId      String?       
+  createdById     String?       
+  updatedById     String?       
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
   deletedAt       DateTime?
@@ -6187,20 +6187,20 @@ model RejectedBatch {
 }
 
 model ApprovedBatch {
-  id            String    @id @default(uuid()) @db.Uuid
-  companyId     String    @db.Uuid
+  id            String    @id @default(uuid())
+  companyId     String   
   reference     String    @db.VarChar(30)
-  checkId       String    @unique @db.Uuid
+  checkId       String    @unique
   referenceType String?   @db.VarChar(60)
-  referenceId   String?   @db.Uuid
+  referenceId   String?  
   batchNumber   String?   @db.VarChar(60)
-  stockBatchId  String?   @db.Uuid
+  stockBatchId  String?  
   quantity      Decimal?  @db.Decimal(15, 4)
   unitOfMeasure String?   @db.VarChar(20)
-  approvedById  String?   @db.Uuid
+  approvedById  String?  
   approvalNotes String?   @db.VarChar(500)
   expiryDate    DateTime?
-  createdById   String?   @db.Uuid
+  createdById   String?  
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   deletedAt     DateTime?
@@ -6218,9 +6218,9 @@ model ApprovedBatch {
 }
 
 model LabReportUpload {
-  id              String    @id @default(uuid()) @db.Uuid
-  companyId       String    @db.Uuid
-  checkId         String    @db.Uuid
+  id              String    @id @default(uuid())
+  companyId       String   
+  checkId         String   
   reportNumber    String    @db.VarChar(60)
   labName         String    @db.VarChar(160)
   reportDate      DateTime
@@ -6229,7 +6229,7 @@ model LabReportUpload {
   summary         String?   @db.VarChar(1000)
   findings        String?   @db.VarChar(1000)
   recommendations String?   @db.VarChar(1000)
-  uploadedById    String?   @db.Uuid
+  uploadedById    String?  
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   deletedAt       DateTime?
@@ -6245,25 +6245,25 @@ model LabReportUpload {
 }
 
 model CorrectiveAction {
-  id                String                 @id @default(uuid()) @db.Uuid
-  companyId         String                 @db.Uuid
+  id                String                 @id @default(uuid())
+  companyId         String                
   reference         String                 @db.VarChar(30)
-  checkId           String?                @db.Uuid
-  rejectedBatchId   String?                @db.Uuid
+  checkId           String?               
+  rejectedBatchId   String?               
   title             String                 @db.VarChar(200)
   description       String                 @db.VarChar(1000)
   rootCause         String?                @db.VarChar(500)
   preventiveMeasure String?                @db.VarChar(500)
   status            CorrectiveActionStatus @default(OPEN)
   priority          String                 @default("MEDIUM") @db.VarChar(20)
-  assignedToId      String?                @db.Uuid
+  assignedToId      String?               
   dueDate           DateTime?
   completedAt       DateTime?
-  verifiedById      String?                @db.Uuid
+  verifiedById      String?               
   verifiedAt        DateTime?
   closedAt          DateTime?
-  createdById       String?                @db.Uuid
-  updatedById       String?                @db.Uuid
+  createdById       String?               
+  updatedById       String?               
   createdAt         DateTime               @default(now())
   updatedAt         DateTime               @updatedAt
   deletedAt         DateTime?
@@ -6283,9 +6283,9 @@ model CorrectiveAction {
 }
 
 model AiChatSession {
-  id        String   @id @default(uuid()) @db.Uuid
-  companyId String   @db.Uuid
-  userId    String   @db.Uuid
+  id        String   @id @default(uuid())
+  companyId String  
+  userId    String  
   title     String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -6299,8 +6299,8 @@ model AiChatSession {
 }
 
 model AiChatMessage {
-  id        String   @id @default(uuid()) @db.Uuid
-  sessionId String   @db.Uuid
+  id        String   @id @default(uuid())
+  sessionId String  
   role      String
   content   String
   createdAt DateTime @default(now())
@@ -6312,12 +6312,12 @@ model AiChatMessage {
 }
 
 model AiAlert {
-  id                 String           @id @default(uuid()) @db.Uuid
-  companyId          String           @db.Uuid
-  branchId           String?          @db.Uuid
-  farmId             String?          @db.Uuid
-  warehouseId        String?          @db.Uuid
-  productionSiteId   String?          @db.Uuid
+  id                 String           @id @default(uuid())
+  companyId          String          
+  branchId           String?         
+  farmId             String?         
+  warehouseId        String?         
+  productionSiteId   String?         
   category           AiAlertCategory
   severity           AiAlertSeverity  @default(MEDIUM)
   status             AiAlertStatus    @default(UNREAD)
@@ -6329,9 +6329,9 @@ model AiAlert {
   entityId           String?
   entityName         String?
   acknowledgedAt     DateTime?
-  acknowledgedById   String?          @db.Uuid
+  acknowledgedById   String?         
   resolvedAt         DateTime?
-  resolvedById       String?          @db.Uuid
+  resolvedById       String?         
   expiresAt          DateTime?
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
@@ -6354,8 +6354,8 @@ model AiAlert {
 }
 
 model AiForecast {
-  id            String   @id @default(uuid()) @db.Uuid
-  companyId     String   @db.Uuid
+  id            String   @id @default(uuid())
+  companyId     String  
   category      AiAlertCategory
   entityType    String
   entityId      String
@@ -6405,16 +6405,16 @@ enum NotificationStatus {
 }
 
 model Notification {
-  id          String             @id @default(uuid()) @db.Uuid
-  companyId   String             @db.Uuid
-  userId      String             @db.Uuid
+  id          String             @id @default(uuid())
+  companyId   String            
+  userId      String            
   type        NotificationType
   channel     NotificationChannel @default(IN_APP)
   status      NotificationStatus  @default(UNREAD)
   title       String
   body        String
   entityType  String?
-  entityId    String?            @db.Uuid
+  entityId    String?           
   metadata    Json?
   readAt      DateTime?
   sentAt      DateTime?
@@ -6429,9 +6429,9 @@ model Notification {
 }
 
 model NotificationPreference {
-  id               String              @id @default(uuid()) @db.Uuid
-  userId           String              @db.Uuid
-  companyId        String              @db.Uuid
+  id               String              @id @default(uuid())
+  userId           String             
+  companyId        String             
   notificationType NotificationType
   inApp            Boolean             @default(true)
   email            Boolean             @default(false)
@@ -6449,8 +6449,8 @@ model NotificationPreference {
 }
 
 model NotificationConfig {
-  id                String   @id @default(uuid()) @db.Uuid
-  companyId         String   @unique @db.Uuid
+  id                String   @id @default(uuid())
+  companyId         String   @unique
   emailEnabled      Boolean  @default(false)
   emailFromAddress  String?
   emailFromName     String?
@@ -6523,9 +6523,9 @@ enum QBWebhookStatus {
 }
 
 model MobileSyncRecord {
-  id        String           @id @default(uuid()) @db.Uuid
-  companyId String           @db.Uuid
-  userId    String           @db.Uuid
+  id        String           @id @default(uuid())
+  companyId String          
+  userId    String          
   localId   String
   module    String
   endpoint  String
@@ -6547,12 +6547,12 @@ model MobileSyncRecord {
 // ─── QuickBooks Online Models ─────────────────────────────────────────────────
 
 model QuickBooksConnection {
-  id            String        @id @default(uuid()) @db.Uuid
-  companyId     String        @unique @db.Uuid
+  id            String        @id @default(uuid())
+  companyId     String        @unique
   realmId       String        @db.VarChar(50)
   environment   QBEnvironment @default(SANDBOX)
   connectedAt   DateTime      @default(now())
-  connectedById String        @db.Uuid
+  connectedById String       
   disconnectedAt DateTime?
   isActive      Boolean       @default(true)
   createdAt     DateTime      @default(now())
@@ -6570,8 +6570,8 @@ model QuickBooksConnection {
 }
 
 model QuickBooksToken {
-  id                    String               @id @default(uuid()) @db.Uuid
-  connectionId          String               @unique @db.Uuid
+  id                    String               @id @default(uuid())
+  connectionId          String               @unique
   accessTokenEnc        String               @db.Text
   refreshTokenEnc       String               @db.Text
   accessTokenExpiresAt  DateTime
@@ -6585,9 +6585,9 @@ model QuickBooksToken {
 }
 
 model QuickBooksMapping {
-  id            String               @id @default(uuid()) @db.Uuid
-  companyId     String               @db.Uuid
-  connectionId  String               @db.Uuid
+  id            String               @id @default(uuid())
+  companyId     String              
+  connectionId  String              
   mappingType   QBMappingType
   erpEntityId   String?              @db.VarChar(100)
   erpEntityName String               @db.VarChar(200)
@@ -6606,9 +6606,9 @@ model QuickBooksMapping {
 }
 
 model QuickBooksSyncLog {
-  id               String               @id @default(uuid()) @db.Uuid
-  companyId        String               @db.Uuid
-  connectionId     String               @db.Uuid
+  id               String               @id @default(uuid())
+  companyId        String              
+  connectionId     String              
   operation        QBSyncOperation
   result           QBSyncResult
   entityType       String?              @db.VarChar(50)
@@ -6619,7 +6619,7 @@ model QuickBooksSyncLog {
   recordsFailed    Int                  @default(0)
   errorMessage     String?              @db.Text
   details          Json?
-  triggeredById    String?              @db.Uuid
+  triggeredById    String?             
   startedAt        DateTime             @default(now())
   completedAt      DateTime?
   durationMs       Int?
@@ -6637,8 +6637,8 @@ model QuickBooksSyncLog {
 }
 
 model QuickBooksWebhookEvent {
-  id           String                @id @default(uuid()) @db.Uuid
-  connectionId String?               @db.Uuid
+  id           String                @id @default(uuid())
+  connectionId String?              
   realmId      String                @db.VarChar(50)
   entityType   String                @db.VarChar(50)
   entityId     String                @db.VarChar(50)
@@ -6662,7 +6662,7 @@ model QuickBooksWebhookEvent {
 }
 
 model LoginRateLimit {
-  id        String   @id @default(uuid()) @db.Uuid
+  id        String   @id @default(uuid())
   key       String   @db.VarChar(320)
   attempts  Int      @default(1)
   windowEnd DateTime
@@ -6690,9 +6690,9 @@ enum LeaveStatus {
 }
 
 model LeaveRequest {
-  id            String      @id @default(uuid()) @db.Uuid
-  companyId     String      @db.Uuid
-  employeeId    String?     @db.Uuid
+  id            String      @id @default(uuid())
+  companyId     String     
+  employeeId    String?    
   employeeName  String      @db.VarChar(160)
   employeeCode  String?     @db.VarChar(30)
   reference     String      @db.VarChar(30)
@@ -6702,11 +6702,11 @@ model LeaveRequest {
   daysRequested Int
   reason        String?     @db.VarChar(500)
   status        LeaveStatus @default(PENDING)
-  reviewedById  String?     @db.Uuid
+  reviewedById  String?    
   reviewNote    String?     @db.VarChar(500)
   reviewedAt    DateTime?
-  createdById   String?     @db.Uuid
-  updatedById   String?     @db.Uuid
+  createdById   String?    
+  updatedById   String?    
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
   deletedAt     DateTime?
