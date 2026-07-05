@@ -35,7 +35,9 @@ if (existsSync(staticSrc)) {
 // files from public_html/ but needs this .htaccess to reach the Node.js process.
 const { writeFileSync } = require("fs");
 const port = process.env.PORT || "3000";
-const htaccessPath = path.join(__dirname, "../../public_html/.htaccess");
+// Hostinger builds from public_html/.builds/source/ so __dirname is
+// .builds/source/scripts/ — public_html/.htaccess is three levels up.
+const htaccessPath = path.join(__dirname, "../../../.htaccess");
 const htaccess = `RewriteEngine On
 RewriteRule ^\\.builds - [F,L]
 RewriteCond %{HTTP:Upgrade} websocket [NC]
