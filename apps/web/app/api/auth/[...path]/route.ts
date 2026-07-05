@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 
-const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4001/api/v1").trim();
+// Prefer the internal URL (server-to-server) to avoid a round-trip through LiteSpeed.
+const API_BASE = (process.env.API_INTERNAL_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4001/api/v1").trim();
 
 async function proxy(request: NextRequest, segments: string[]): Promise<NextResponse> {
   const upstreamUrl = `${API_BASE}/auth/${segments.join("/")}`;
