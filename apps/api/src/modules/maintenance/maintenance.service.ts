@@ -75,7 +75,7 @@ export class MaintenanceService {
       this.prisma.productionSite.findMany({ where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess ? {} : { id: { in: user.productionSiteIds } }) }, select: { id: true, code: true, name: true, branchId: true }, orderBy: { name: "asc" } }),
       this.prisma.machine.findMany({ where: this.machineWhere(user, {}), select: { id: true, code: true, name: true, branchId: true }, orderBy: { name: "asc" } }),
       this.prisma.equipment.findMany({ where: this.equipmentWhere(user, {}), select: { id: true, code: true, name: true, branchId: true, machineId: true }, orderBy: { name: "asc" } }),
-      this.prisma.product.findMany({ where: { companyId: user.companyId, deletedAt: null, status: "ACTIVE", OR: [{ sku: { contains: "SPARE", mode: "insensitive" } }, { name: { contains: "belt", mode: "insensitive" } }, { name: { contains: "part", mode: "insensitive" } }] }, select: { id: true, sku: true, name: true, uomId: true }, orderBy: { name: "asc" } }),
+      this.prisma.product.findMany({ where: { companyId: user.companyId, deletedAt: null, status: "ACTIVE", OR: [{ sku: { contains: "SPARE" } }, { name: { contains: "belt" } }, { name: { contains: "part" } }] }, select: { id: true, sku: true, name: true, uomId: true }, orderBy: { name: "asc" } }),
       this.prisma.user.findMany({ where: { companyId: user.companyId, deletedAt: null, status: "ACTIVE" }, select: { id: true, fullName: true, email: true }, orderBy: { fullName: "asc" } })
     ]);
     return { data: { branches, farms, warehouses, productionSites, machines, equipment, spareParts, technicians } };

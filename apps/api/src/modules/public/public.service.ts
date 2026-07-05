@@ -199,7 +199,7 @@ export class PublicService {
 
   async adminListProducts(search?: string) {
     const where: Record<string, unknown> = { deletedAt: null, status: "ACTIVE" };
-    if (search) where.name = { contains: search, mode: "insensitive" };
+    if (search) where.name = { contains: search };
 
     const products = await this.prisma.product.findMany({
       where,
@@ -281,7 +281,7 @@ export class PublicService {
     if (status && status !== "ALL") where.status = status;
     if (search) {
       where.OR = [
-        { storefrontCustomerName: { contains: search, mode: "insensitive" } },
+        { storefrontCustomerName: { contains: search } },
         { storefrontCustomerPhone: { contains: search } },
         { storefrontRef: { contains: search } },
         { orderNumber: { contains: search } },

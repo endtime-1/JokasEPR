@@ -1,4 +1,4 @@
-﻿import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { AuthenticatedUser } from "@jokas/shared";
 import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -114,7 +114,7 @@ export class QualityService {
     const cid = user.companyId;
     const where: Record<string, unknown> = { companyId: cid, deletedAt: null };
     if (q.checkType) where.checkType = q.checkType;
-    if (q.search) where.name = { contains: q.search, mode: "insensitive" };
+    if (q.search) where.name = { contains: q.search };
     return this.prisma.qualityCheckTemplate.findMany({
       where,
       orderBy: { createdAt: "desc" },
@@ -499,7 +499,7 @@ export class QualityService {
   async listLabReports(user: AuthenticatedUser, q: QualityQueryDto) {
     const cid = user.companyId;
     const where: Record<string, unknown> = { companyId: cid, deletedAt: null };
-    if (q.search) where.reportNumber = { contains: q.search, mode: "insensitive" };
+    if (q.search) where.reportNumber = { contains: q.search };
     return this.prisma.labReportUpload.findMany({
       where,
       orderBy: { reportDate: "desc" },

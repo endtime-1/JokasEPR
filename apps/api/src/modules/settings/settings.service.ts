@@ -281,7 +281,7 @@ export class SettingsService {
     if (type) where.type = type;
     if (status) where.status = status;
     if (categoryId) where.categoryId = categoryId;
-    if (search) where.OR = [{ name: { contains: search, mode: "insensitive" } }, { sku: { contains: search, mode: "insensitive" } }, { description: { contains: search, mode: "insensitive" } }];
+    if (search) where.OR = [{ name: { contains: search } }, { sku: { contains: search } }, { description: { contains: search } }];
     const skip = (page - 1) * limit;
     const [items, total, counts] = await Promise.all([
       this.prisma.product.findMany({

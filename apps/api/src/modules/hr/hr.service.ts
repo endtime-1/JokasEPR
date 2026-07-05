@@ -1,4 +1,4 @@
-﻿import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { AuthenticatedUser } from "@jokas/shared";
 import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -123,7 +123,7 @@ export class HRService {
       where: {
         companyId: user.companyId,
         deletedAt: null,
-        ...(query.search ? { OR: [{ name: { contains: query.search, mode: "insensitive" } }, { code: { contains: query.search, mode: "insensitive" } }] } : {}),
+        ...(query.search ? { OR: [{ name: { contains: query.search } }, { code: { contains: query.search } }] } : {}),
       },
       include: { _count: { select: { employees: true } } },
       orderBy: { name: "asc" },
@@ -149,7 +149,7 @@ export class HRService {
         deletedAt: null,
         ...(query.status ? { status: query.status as never } : {}),
         ...(query.branchId ? { branchId: query.branchId } : {}),
-        ...(query.search ? { OR: [{ fullName: { contains: query.search, mode: "insensitive" } }, { code: { contains: query.search, mode: "insensitive" } }, { phone: { contains: query.search, mode: "insensitive" } }] } : {}),
+        ...(query.search ? { OR: [{ fullName: { contains: query.search } }, { code: { contains: query.search } }, { phone: { contains: query.search } }] } : {}),
       },
       include: {
         employeeRole: { select: { name: true, code: true } },
@@ -434,7 +434,7 @@ export class HRService {
         deletedAt: null,
         ...(query.status ? { status: query.status as never } : {}),
         ...(query.branchId ? { branchId: query.branchId } : {}),
-        ...(query.search ? { OR: [{ title: { contains: query.search, mode: "insensitive" } }, { taskType: { contains: query.search, mode: "insensitive" } }] } : {}),
+        ...(query.search ? { OR: [{ title: { contains: query.search } }, { taskType: { contains: query.search } }] } : {}),
       },
       include: {
         branch: { select: { name: true } },
@@ -648,7 +648,7 @@ export class HRService {
         deletedAt: null,
         ...(query.employeeId ? { employeeId: query.employeeId } : {}),
         ...(query.status ? { outcome: query.status as never } : {}),
-        ...(query.search ? { title: { contains: query.search, mode: "insensitive" } } : {}),
+        ...(query.search ? { title: { contains: query.search } } : {}),
       },
       include: { employee: { select: { fullName: true, code: true } } },
       orderBy: { trainingDate: "desc" },

@@ -1,4 +1,4 @@
-﻿import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { AuthenticatedUser } from "@jokas/shared";
 import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -119,7 +119,7 @@ export class ProcurementService {
       where: {
         companyId: user.companyId,
         deletedAt: null,
-        ...(query.search ? { OR: [{ name: { contains: query.search, mode: "insensitive" } }, { code: { contains: query.search, mode: "insensitive" } }] } : {}),
+        ...(query.search ? { OR: [{ name: { contains: query.search } }, { code: { contains: query.search } }] } : {}),
       },
       include: { _count: { select: { suppliers: true } } },
       orderBy: { name: "asc" },
@@ -146,7 +146,7 @@ export class ProcurementService {
         companyId: user.companyId,
         deletedAt: null,
         ...(query.status ? { status: query.status as never } : {}),
-        ...(query.search ? { OR: [{ name: { contains: query.search, mode: "insensitive" } }, { code: { contains: query.search, mode: "insensitive" } }, { contactPerson: { contains: query.search, mode: "insensitive" } }] } : {}),
+        ...(query.search ? { OR: [{ name: { contains: query.search } }, { code: { contains: query.search } }, { contactPerson: { contains: query.search } }] } : {}),
       },
       include: { category: { select: { name: true, code: true } }, _count: { select: { purchaseOrders: true } } },
       orderBy: { name: "asc" },
@@ -197,7 +197,7 @@ export class ProcurementService {
         deletedAt: null,
         ...(query.status ? { status: query.status as never } : {}),
         ...(query.branchId ? { branchId: query.branchId } : {}),
-        ...(query.search ? { OR: [{ reference: { contains: query.search, mode: "insensitive" } }, { title: { contains: query.search, mode: "insensitive" } }] } : {}),
+        ...(query.search ? { OR: [{ reference: { contains: query.search } }, { title: { contains: query.search } }] } : {}),
       },
       include: {
         requestedBy: { select: { fullName: true } },
@@ -314,7 +314,7 @@ export class ProcurementService {
         deletedAt: null,
         ...(query.status ? { status: query.status as never } : {}),
         ...(query.supplierId ? { supplierId: query.supplierId } : {}),
-        ...(query.search ? { OR: [{ reference: { contains: query.search, mode: "insensitive" } }] } : {}),
+        ...(query.search ? { OR: [{ reference: { contains: query.search } }] } : {}),
       },
       include: {
         supplier: { select: { name: true, code: true } },
@@ -444,7 +444,7 @@ export class ProcurementService {
         ...(query.status ? { status: query.status as never } : {}),
         ...(query.supplierId ? { supplierId: query.supplierId } : {}),
         ...(query.branchId ? { branchId: query.branchId } : {}),
-        ...(query.search ? { OR: [{ reference: { contains: query.search, mode: "insensitive" } }, { deliveryNoteRef: { contains: query.search, mode: "insensitive" } }] } : {}),
+        ...(query.search ? { OR: [{ reference: { contains: query.search } }, { deliveryNoteRef: { contains: query.search } }] } : {}),
       },
       include: {
         supplier: { select: { name: true } },
@@ -626,7 +626,7 @@ export class ProcurementService {
         deletedAt: null,
         ...(query.status ? { status: query.status as never } : {}),
         ...(query.supplierId ? { supplierId: query.supplierId } : {}),
-        ...(query.search ? { OR: [{ reference: { contains: query.search, mode: "insensitive" } }, { invoiceNumber: { contains: query.search, mode: "insensitive" } }] } : {}),
+        ...(query.search ? { OR: [{ reference: { contains: query.search } }, { invoiceNumber: { contains: query.search } }] } : {}),
       },
       include: {
         supplier: { select: { name: true } },
@@ -672,7 +672,7 @@ export class ProcurementService {
         companyId: user.companyId,
         deletedAt: null,
         ...(query.supplierId ? { supplierId: query.supplierId } : {}),
-        ...(query.search ? { OR: [{ reference: { contains: query.search, mode: "insensitive" } }, { description: { contains: query.search, mode: "insensitive" } }] } : {}),
+        ...(query.search ? { OR: [{ reference: { contains: query.search } }, { description: { contains: query.search } }] } : {}),
       },
       include: {
         supplier: { select: { name: true } },
@@ -770,7 +770,7 @@ export class ProcurementService {
       where: {
         companyId: user.companyId,
         ...(query.supplierId ? { supplierId: query.supplierId } : {}),
-        ...(query.search ? { productName: { contains: query.search, mode: "insensitive" } } : {}),
+        ...(query.search ? { productName: { contains: query.search } } : {}),
       },
       include: { supplier: { select: { name: true, code: true } } },
       orderBy: [{ supplierId: "asc" }, { effectiveDate: "desc" }],
