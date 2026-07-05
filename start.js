@@ -1,10 +1,5 @@
 #!/usr/bin/env node
 "use strict";
-// Hostinger requires the entry-file process to call listen() within 3 seconds.
-// When we require() Next.js server.js from here, require.main.filename points
-// to start.js so Next.js can't resolve its own compiled files and crashes
-// before calling listen(). Solution: run both servers as child processes and
-// listen() here immediately via a TCP bridge that forwards to Next.js.
 const { spawn } = require("child_process");
 const net = require("net");
 const path = require("path");
@@ -12,42 +7,51 @@ const path = require("path");
 const root = __dirname;
 const PORT = parseInt(process.env.PORT || "3000", 10);
 const API_PORT = parseInt(process.env.API_PORT || "4001", 10);
-const WEB_INTERNAL_PORT = 3001; // Next.js binds here; bridge forwards $PORT → 3001
+const WEB_INTERNAL_PORT = 3001;
 
 const standaloneDir = path.join(root, "apps/web/.next/standalone");
 const serverScript = path.join(standaloneDir, "apps/web", "server.js");
 const apiScript = path.join(root, "apps/api/dist/main.js");
 
+// Print env state so runtime logs show whether Hostinger injected the vars.
+console.log("[start] env check — DATABASE_URL:", process.env.DATABASE_URL ? "SET" : "MISSING",
+  "| JWT_ACCESS_SECRET:", process.env.JWT_ACCESS_SECRET ? "SET" : "MISSING",
+  "| PORT:", process.env.PORT, "| API_PORT:", process.env.API_PORT);
+
 function launch(name, script, cwd, env) {
   console.log(`[start] launching ${name}`);
   const proc = spawn(process.execPath, [script], {
     cwd,
-    stdio: "inherit",
+    // Route child stderr → parent stdout so all output appears in runtime logs.
+    stdio: ["inherit", "inherit", process.stdout],
     env: { ...process.env, ...env, NODE_ENV: "production" },
   });
-  proc.on("error", (err) => {
-    console.error(`[start] ${name} error:`, err.message);
-  });
+  proc.on("error", (err) => console.error(`[start] ${name} spawn error:`, err.message));
   proc.on("close", (code) => {
-    console.error(`[start] ${name} exited with code ${code} — shutting down`);
-    web.kill();
-    api.kill();
-    process.exit(code ?? 1);
+    console.log(`[start] ${name} exited with code ${code}`);
+    if (name === "jokas-api") {
+      // API crash: keep the web running, restart API after 3 s.
+      console.log("[start] API crashed — restarting in 3 s");
+      setTimeout(() => { api = launch("jokas-api", apiScript, path.join(root, "apps/api"), { PORT: String(API_PORT) }); }, 3000);
+    } else {
+      web.kill();
+      api.kill();
+      bridge.close();
+      process.exit(code ?? 1);
+    }
   });
   return proc;
 }
 
-const web = launch("jokas-web", serverScript, standaloneDir, {
+let web = launch("jokas-web", serverScript, standaloneDir, {
   PORT: String(WEB_INTERNAL_PORT),
   HOSTNAME: "0.0.0.0",
 });
 
-const api = launch("jokas-api", apiScript, path.join(root, "apps/api"), {
+let api = launch("jokas-api", apiScript, path.join(root, "apps/api"), {
   PORT: String(API_PORT),
 });
 
-// TCP bridge: bind $PORT immediately so Hostinger detects listen() within 3s,
-// then pipe every socket through to the Next.js process on WEB_INTERNAL_PORT.
 const bridge = net.createServer((socket) => {
   const upstream = net.connect(WEB_INTERNAL_PORT, "127.0.0.1");
   socket.pipe(upstream);
