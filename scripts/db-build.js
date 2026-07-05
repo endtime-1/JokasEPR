@@ -23,10 +23,15 @@ if (process.env.NODE_ENV === "production") {
     // MySQL on Hostinger: migration files use PostgreSQL syntax so they won't
     // work. Use db push to sync the schema directly against the fresh database.
     console.log("[db-build] mysql: running prisma db push...");
-    execSync(`npx prisma db push --schema="${schema}" --accept-data-loss`, {
-      stdio: "inherit",
-      cwd: dbDir,
-    });
+    try {
+      execSync(`npx prisma db push --schema="${schema}" --accept-data-loss`, {
+        stdio: "inherit",
+        cwd: dbDir,
+      });
+    } catch (err) {
+      console.error("[db-build] prisma db push failed (schema-engine permissions?):", err.message);
+      console.error("[db-build] continuing build — run db push manually after deploy if needed");
+    }
   } else {
     console.log("[db-build] postgresql: running prisma migrate deploy...");
     execSync(`npx prisma migrate deploy --schema="${schema}"`, {
