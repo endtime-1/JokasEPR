@@ -7,7 +7,7 @@ const root = __dirname;
 
 function launch(name, script, cwd, env) {
   console.log(`[start] launching ${name} (${script})`);
-  const proc = spawn("node", [script], {
+  const proc = spawn(process.execPath, [script], {
     cwd,
     stdio: "inherit",
     env: { ...process.env, ...env },
