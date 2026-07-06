@@ -260,8 +260,7 @@ function startProxy(attempt) {
 }
 
 // ---------------------------------------------------------------------------
-// Diagnostics: OS, OpenSSL, and Prisma engine binaries
-// Run before startProxy so the output appears at the top of each cycle.
+// Diagnostics
 // ---------------------------------------------------------------------------
 try {
   const os = execSync("cat /etc/os-release 2>/dev/null | grep PRETTY_NAME", { encoding: "utf8", timeout: 2000 }).trim();
@@ -271,51 +270,92 @@ try {
   const ssl = execSync("openssl version 2>/dev/null", { encoding: "utf8", timeout: 2000 }).trim();
   console.log("[start] OpenSSL:", ssl);
 } catch {}
-try {
-  // Prisma v6 puts the engine binary directly in @prisma/client (explicit output).
-  const prismaDir = path.join(root, "node_modules/@prisma/client");
-  const files = fs.readdirSync(prismaDir)
-    .filter(f => f.endsWith(".node") || f.endsWith(".so") || f.includes("query_engine") || f.includes("libquery"));
-  console.log("[start] Prisma engines in @prisma/client:", files.length ? files.join(", ") : "NONE FOUND");
-} catch (e) {
-  console.log("[start] @prisma/client dir missing:", e.message);
-}
 
 // ---------------------------------------------------------------------------
-// Verify the Prisma engine binary is present in node_modules/@prisma/client.
-// Prisma v6 generates directly into @prisma/client (explicit output in schema).
-// If the engine binary is missing (Hostinger stripped it or pnpm reinstalled
-// over it), fall back to the node_modules/prisma-client/ backup written by
-// post-build.js. No child processes — just a synchronous directory copy.
+// Restore Prisma runtime — two steps, both synchronous (no child processes).
+//
+// Without a custom output in schema, Prisma generates into the pnpm store
+// (.pnpm/…/node_modules/@prisma/client and .pnpm/…/node_modules/.prisma/client).
+// Hostinger excludes dot-directories from the deployed runtime, so:
+//   • node_modules/@prisma/client  → broken symlink (target .pnpm/ is gone)
+//   • node_modules/.prisma/client  → missing (dot-dir excluded)
+//
+// post-build.js backed both up to node_modules/prisma-client/ and
+// node_modules/prisma-runtime/ (no dots).  We restore them here before
+// launching any child process.
 // ---------------------------------------------------------------------------
-(function restorePrismaClient() {
-  const clientDir = path.join(root, "node_modules/@prisma/client");
-  const backupDir = path.join(root, "node_modules/prisma-client");
+(function restorePrismaRuntime() {
+  const clientDir   = path.join(root, "node_modules/@prisma/client");
+  const prismaDir   = path.join(root, "node_modules/.prisma/client");
+  const clientBackup  = path.join(root, "node_modules/prisma-client");
+  const runtimeBackup = path.join(root, "node_modules/prisma-runtime");
 
-  function hasEngine(dir) {
+  // Returns true if the symlink at p has a missing target.
+  function isBrokenSymlink(p) {
     try {
-      return fs.readdirSync(dir).some(
-        f => f.includes("query_engine") || f.includes("libquery") || f.endsWith(".so.node")
-      );
-    } catch { return false; }
+      if (!fs.lstatSync(p).isSymbolicLink()) return false;
+      fs.statSync(p);   // throws if target is missing
+      return false;
+    } catch { return true; }
   }
 
-  if (hasEngine(clientDir)) {
-    console.log("[start] Prisma engine present in @prisma/client — OK");
-    return;
+  // ── Step 1: ensure @prisma/client is a real, readable directory ──────────
+  const clientOk = (() => {
+    try { return !!fs.statSync(path.join(clientDir, "index.js")); }
+    catch { return false; }
+  })();
+
+  if (!clientOk) {
+    console.warn("[start] @prisma/client/index.js unreachable (broken symlink or excluded)");
+    // Remove the broken symlink so cpSync can create a real directory there.
+    if (isBrokenSymlink(clientDir)) {
+      try { fs.unlinkSync(clientDir); console.log("[start] removed broken @prisma/client symlink"); }
+      catch (e) { console.error("[start] could not remove symlink:", e.message); }
+    }
+    if (fs.existsSync(clientBackup)) {
+      try {
+        fs.cpSync(clientBackup, clientDir, { recursive: true, force: true });
+        console.log("[start] @prisma/client restored from node_modules/prisma-client/");
+      } catch (e) {
+        console.error("[start] @prisma/client restore failed:", e.message);
+      }
+    } else {
+      console.error("[start] No node_modules/prisma-client/ backup — API will fail");
+    }
+  } else {
+    console.log("[start] @prisma/client/index.js present — OK");
   }
 
-  console.warn("[start] Prisma engine binary missing from @prisma/client");
-  if (!fs.existsSync(backupDir)) {
-    console.error("[start] No backup at node_modules/prisma-client/ either — API will fail. Re-deploy to regenerate.");
-    return;
-  }
-
-  try {
-    fs.cpSync(backupDir, clientDir, { recursive: true, force: true });
-    console.log("[start] Prisma engine restored from node_modules/prisma-client/ backup");
-  } catch (e) {
-    console.error("[start] Prisma restore failed:", e.message);
+  // ── Step 2: ensure .prisma/client/default.js exists ─────────────────────
+  // @prisma/client/index.js does require('../.prisma/client/default') at
+  // runtime.  After step 1, @prisma/client is a real dir at
+  // node_modules/@prisma/client, so '../' resolves to node_modules/ and
+  // Node.js looks for node_modules/.prisma/client/default.js.
+  const runtimeOk = fs.existsSync(path.join(prismaDir, "default.js"));
+  if (!runtimeOk) {
+    console.warn("[start] .prisma/client/default.js missing — restoring from backup");
+    if (fs.existsSync(runtimeBackup)) {
+      try {
+        fs.mkdirSync(path.dirname(prismaDir), { recursive: true });
+        try { fs.rmSync(prismaDir, { recursive: true, force: true }); } catch {}
+        fs.cpSync(runtimeBackup, prismaDir, { recursive: true });
+        console.log("[start] .prisma/client/ restored from node_modules/prisma-runtime/");
+        const engines = fs.readdirSync(prismaDir)
+          .filter(f => f.includes("query_engine") || f.includes("libquery") || f.endsWith(".so.node"));
+        console.log("[start] Prisma engine:", engines.length ? engines.join(", ") : "NONE FOUND");
+      } catch (e) {
+        console.error("[start] .prisma/client restore failed:", e.message);
+      }
+    } else {
+      console.error("[start] No node_modules/prisma-runtime/ backup — API will fail");
+    }
+  } else {
+    console.log("[start] .prisma/client/default.js present — OK");
+    try {
+      const engines = fs.readdirSync(prismaDir)
+        .filter(f => f.includes("query_engine") || f.includes("libquery") || f.endsWith(".so.node"));
+      console.log("[start] Prisma engine:", engines.length ? engines.join(", ") : "NONE FOUND");
+    } catch {}
   }
 })();
 

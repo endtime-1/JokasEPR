@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Copies public/ and .next/static/ into the standalone output directory.
 // Next.js standalone mode does not include these automatically.
-const { cpSync, existsSync, mkdirSync } = require("fs");
+const { cpSync, existsSync, mkdirSync, readdirSync, realpathSync, rmSync, writeFileSync } = require("fs");
 const path = require("path");
 
 const webDir = path.join(__dirname, "../apps/web");
@@ -31,12 +31,7 @@ if (existsSync(staticSrc)) {
 }
 
 // Write LiteSpeed proxy rules so jokasfarms.com forwards to the Node.js app.
-// The app binds to process.env.PORT (default 3000). Hostinger serves static
-// files from public_html/ but needs this .htaccess to reach the Node.js process.
-const { writeFileSync } = require("fs");
 const port = process.env.PORT || "3000";
-// Hostinger builds from public_html/.builds/source/ so __dirname is
-// .builds/source/scripts/ — public_html/.htaccess is three levels up.
 const htaccessPath = path.join(__dirname, "../../../.htaccess");
 const htaccess = `RewriteEngine On
 RewriteRule ^\\.builds - [F,L]
@@ -54,29 +49,95 @@ try {
   console.log(`post-build: could not write .htaccess (${e.message}) — skipping`);
 }
 
-// Back up the generated Prisma client to node_modules/prisma-client/ (no dot).
-// Prisma v6 generates to node_modules/@prisma/client (explicit output in schema).
-// That directory survives Hostinger's deployment, but we also keep a backup in
-// node_modules/prisma-client/ so start.js can restore it if @prisma/client ever
-// gets overwritten by a bare pnpm install on the server.
-const prismaClientSrc = path.join(__dirname, "../node_modules/@prisma/client");
-const prismaClientDst = path.join(__dirname, "../node_modules/prisma-client");
+// ---------------------------------------------------------------------------
+// Back up the Prisma runtime client to non-dot paths for Hostinger deployment.
+//
+// Without a custom `output` in the schema generator, Prisma generates the
+// client into the pnpm store (node_modules/.pnpm/@prisma+client@.../...).
+// TypeScript resolves @prisma/client via the symlink in node_modules/ and
+// sees the correct generated types — the build works.
+//
+// BUT Hostinger's deployment strips dot-directories (.pnpm/, .prisma/) from
+// the runtime copy. At runtime:
+//   - node_modules/@prisma/client  → broken symlink (target .pnpm/ is gone)
+//   - node_modules/.prisma/client  → missing dot-dir (required at runtime via
+//                                    require('../.prisma/client/default'))
+//
+// We back up both here. start.js restores them synchronously at boot before
+// launching the web and API processes (no child process spawning needed).
+// ---------------------------------------------------------------------------
 
-// Detect whether generate actually ran: look for the query engine binary.
-const engineFiles = existsSync(prismaClientSrc)
-  ? require("fs").readdirSync(prismaClientSrc).filter(
-      f => f.includes("query_engine") || f.includes("libquery") || f.endsWith(".so.node")
-    )
-  : [];
+// Resolve the REAL path of @prisma/client, following the pnpm symlink into
+// the store. The .prisma/client/ directory is a sibling of @prisma/client
+// inside the pnpm store's node_modules/.
+let storeNodeModulesDir = null;
+let prismaRealClientDir = null;
+try {
+  prismaRealClientDir = realpathSync(path.join(__dirname, "../node_modules/@prisma/client"));
+  // path: <root>/node_modules/.pnpm/@prisma+client@.../node_modules/@prisma/client
+  // dirname → .../node_modules/@prisma
+  // dirname → .../node_modules        ← the store's node_modules
+  storeNodeModulesDir = path.dirname(path.dirname(prismaRealClientDir));
+  console.log("post-build: @prisma/client real path:", prismaRealClientDir);
+} catch (e) {
+  console.warn("post-build: could not resolve real path of @prisma/client:", e.message);
+}
 
-if (engineFiles.length > 0) {
-  console.log("post-build: Prisma engine found:", engineFiles.join(", "));
-  const { rmSync } = require("fs");
-  if (existsSync(prismaClientDst)) rmSync(prismaClientDst, { recursive: true, force: true });
-  cpSync(prismaClientSrc, prismaClientDst, { recursive: true });
-  console.log("post-build: Prisma client backed up → node_modules/prisma-client/");
+// 1. Back up @prisma/client (the JS package) → node_modules/prisma-client/
+//    start.js uses this to replace a broken symlink with a real directory.
+const clientSrc = prismaRealClientDir || path.join(__dirname, "../node_modules/@prisma/client");
+const clientDst = path.join(__dirname, "../node_modules/prisma-client");
+if (existsSync(path.join(clientSrc, "index.js"))) {
+  if (existsSync(clientDst)) rmSync(clientDst, { recursive: true, force: true });
+  cpSync(clientSrc, clientDst, { recursive: true });
+  console.log("post-build: @prisma/client backed up → node_modules/prisma-client/");
 } else {
-  console.warn("post-build: Prisma engine binary not found in node_modules/@prisma/client — schema output path may be wrong or generate did not run.");
+  console.warn("post-build: @prisma/client/index.js not found — client backup skipped");
+}
+
+// 2. Back up .prisma/client/ (generated runtime code + engine binary)
+//    → node_modules/prisma-runtime/
+//    This is the file that @prisma/client/index.js loads at runtime:
+//      require('../.prisma/client/default')
+//    The dot-dir is excluded by Hostinger; start.js restores it from here.
+const runtimeSrc = storeNodeModulesDir
+  ? path.join(storeNodeModulesDir, ".prisma/client")
+  : path.join(__dirname, "../node_modules/.prisma/client");
+const runtimeDst = path.join(__dirname, "../node_modules/prisma-runtime");
+
+let runtimeSrcFound = existsSync(runtimeSrc);
+
+// Fallback: if generate wrote to root node_modules/.prisma/client (real dir, not symlink)
+if (!runtimeSrcFound) {
+  const rootFallback = path.join(__dirname, "../node_modules/.prisma/client");
+  if (existsSync(rootFallback) && rootFallback !== runtimeSrc) {
+    console.log("post-build: using root node_modules/.prisma/client as fallback");
+    runtimeSrcFound = true;
+    // runtimeSrc variable can't be reassigned; use a local override below
+    backupRuntime(rootFallback, runtimeDst);
+  } else {
+    console.error("post-build: .prisma/client/ not found anywhere — API will fail at runtime!");
+  }
+} else {
+  backupRuntime(runtimeSrc, runtimeDst);
+}
+
+function backupRuntime(src, dst) {
+  try {
+    const engineFiles = readdirSync(src).filter(
+      f => f.includes("query_engine") || f.includes("libquery") || f.endsWith(".so.node")
+    );
+    if (engineFiles.length === 0) {
+      console.warn("post-build: .prisma/client/ found but no engine binary — runtime may fail");
+    } else {
+      console.log("post-build: Prisma engine found:", engineFiles.join(", "));
+    }
+    if (existsSync(dst)) rmSync(dst, { recursive: true, force: true });
+    cpSync(src, dst, { recursive: true });
+    console.log("post-build: .prisma/client/ backed up → node_modules/prisma-runtime/");
+  } catch (e) {
+    console.error("post-build: failed to back up .prisma/client/:", e.message);
+  }
 }
 
 console.log("post-build: done");
