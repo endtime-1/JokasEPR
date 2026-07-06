@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 "use strict";
-const { spawn } = require("child_process");
+const { spawn, execSync } = require("child_process");
 const net = require("net");
 const path = require("path");
 
@@ -16,6 +16,20 @@ const apiScript = path.join(root, "apps/api/dist/main.js");
 console.log("[start] env — DATABASE_URL:", process.env.DATABASE_URL ? "SET" : "MISSING",
   "| JWT:", process.env.JWT_ACCESS_SECRET ? "SET" : "MISSING",
   "| PORT:", process.env.PORT, "| API_PORT:", process.env.API_PORT);
+
+// Kill any zombie processes from a previous deployment that are holding our ports.
+// Hostinger sometimes starts a new instance before fully killing the old one,
+// leaving orphaned bridges and Next.js processes on 3000 / 3001.
+function freePort(port) {
+  try {
+    execSync(`fuser -k ${port}/tcp 2>/dev/null`, { timeout: 2000 });
+    console.log(`[start] freed port ${port}`);
+  } catch {
+    // fuser exits non-zero when no process holds the port — that's fine
+  }
+}
+freePort(PORT);
+freePort(WEB_INTERNAL_PORT);
 
 const children = [];
 
