@@ -31,7 +31,8 @@ if (!existsSync(standaloneDir)) {
 
 // Write LiteSpeed proxy rules so jokasfarms.com forwards to the Node.js app.
 const port = process.env.PORT || "3000";
-const htaccessPath = path.join(__dirname, "../../../.htaccess");
+// public_html is two levels up from scripts/ (nodejs/scripts → nodejs → jokasfarms.com → public_html)
+const htaccessPath = path.join(__dirname, "../../public_html/.htaccess");
 const htaccess = `RewriteEngine On
 RewriteRule ^\\.builds - [F,L]
 RewriteCond %{HTTP:Upgrade} websocket [NC]
