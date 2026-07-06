@@ -73,11 +73,19 @@ web.on("close", (code) => {
 });
 
 // NestJS API — auto-restarts on crash so web keeps serving.
+// stderr is piped to stdout so errors appear in Hostinger's runtime logs.
 let apiRestarts = 0;
 function startApi() {
-  const proc = launch("jokas-api", apiScript, path.join(root, "apps/api"), {
-    PORT: String(API_PORT),
+  console.log("[start] launching jokas-api");
+  const proc = spawn(process.execPath, [apiScript], {
+    cwd: path.join(root, "apps/api"),
+    stdio: ["inherit", "inherit", "pipe"],
+    env: { ...process.env, PORT: String(API_PORT), NODE_ENV: "production" },
   });
+  children.push(proc);
+  proc.on("error", (err) => console.error("[start] jokas-api error:", err.message));
+  // Forward API stderr → stdout so it shows in Hostinger runtime logs.
+  proc.stderr.on("data", (chunk) => process.stdout.write(`[api-err] ${chunk}`));
   proc.on("close", (code) => {
     apiRestarts++;
     const delay = Math.min(3000 * apiRestarts, 30000);
