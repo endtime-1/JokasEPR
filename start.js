@@ -288,22 +288,32 @@ startProxy(0);
   // ---------------------------------------------------------------------------
   const prismaClientDir = path.join(root, "node_modules/.prisma/client");
   if (!fs.existsSync(prismaClientDir)) {
-    console.log("[start] Prisma client missing — running prisma generate on this server (may take ~60s)…");
+    console.log("[start] Prisma client missing — generating for this platform (may take ~60s)…");
+    const prismaCli = path.join(root, "node_modules/prisma/build/index.js");
+    const prismaSchema = path.join(root, "packages/db/prisma/schema.mysql.prisma");
+    const cliExists = fs.existsSync(prismaCli);
+    console.log("[start] Prisma CLI exists:", cliExists, "path:", prismaCli);
+    // Capture stdout+stderr so the error is visible in Runtime Logs regardless of
+    // Hostinger's stdio buffering. On failure execSync throws; e.stdout/e.stderr
+    // carry the child's output.
+    const generateCmd = cliExists
+      ? `"${process.execPath}" "${prismaCli}" generate --schema "${prismaSchema}"`
+      : `npx --yes prisma generate --schema "${prismaSchema}"`;
+    console.log("[start] running:", generateCmd);
     try {
-      const prismaCli = path.join(root, "node_modules/prisma/build/index.js");
-      const prismaSchema = path.join(root, "packages/db/prisma/schema.mysql.prisma");
-      execSync(
-        `"${process.execPath}" "${prismaCli}" generate --schema "${prismaSchema}"`,
-        {
-          cwd: path.join(root, "packages/db"),
-          stdio: "inherit",
-          timeout: 180000, // 3 minutes
-          env: { ...process.env },
-        }
-      );
-      console.log("[start] Prisma client generated for this platform");
+      const out = execSync(generateCmd, {
+        cwd: path.join(root, "packages/db"),
+        encoding: "utf8",
+        timeout: 300000, // 5 minutes
+        env: { ...process.env },
+      });
+      if (out) console.log("[start] prisma generate output:\n" + out.trim());
+      console.log("[start] Prisma client generated OK");
     } catch (e) {
-      console.error("[start] prisma generate failed:", e.message);
+      console.error("[start] prisma generate FAILED");
+      if (e.stdout) console.error("[start] prisma stdout:\n" + e.stdout.toString().trim());
+      if (e.stderr) console.error("[start] prisma stderr:\n" + e.stderr.toString().trim());
+      console.error("[start] error:", e.message.split("\n")[0]);
     }
   } else {
     console.log("[start] Prisma client present — skipping generate");
