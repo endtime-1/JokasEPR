@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 "use strict";
-const { spawn } = require("child_process");
+const { spawn, execSync } = require("child_process");
 const fs = require("fs");
 const http = require("http");
 const net = require("net");
@@ -16,10 +16,81 @@ const serverScript = path.join(standaloneDir, "apps/web", "server.js");
 const apiScript = path.join(root, "apps/api/dist/main.js");
 
 // ---------------------------------------------------------------------------
-// Orphan cleanup
-// Hostinger may SIGKILL start.js (uncatchable). Children are then orphaned
-// and hold ports 3001/4001 forever. On next boot we read the PID file and
-// SIGKILL them before doing anything else.
+// Kill any process listening on a given port.
+// Tries four methods so we don't depend on a single tool being available.
+// ---------------------------------------------------------------------------
+function killPortOwner(port) {
+  // 1. fuser with numeric signal (most portable SIGKILL syntax)
+  for (const sig of ["-9", "-KILL"]) {
+    try {
+      execSync(`fuser ${sig} ${port}/tcp 2>/dev/null`, { timeout: 3000 });
+      console.log(`[start] killed port ${port} owner via fuser ${sig}`);
+      return;
+    } catch {}
+  }
+
+  // 2. lsof
+  try {
+    const pids = execSync(`lsof -ti :${port} 2>/dev/null`, {
+      timeout: 3000, encoding: "utf8",
+    }).trim();
+    if (pids) {
+      for (const pid of pids.split("\n")) {
+        try { process.kill(parseInt(pid), "SIGKILL"); } catch {}
+      }
+      console.log(`[start] killed port ${port} owner(s) via lsof: ${pids.replace(/\n/g, ",")}`);
+      return;
+    }
+  } catch {}
+
+  // 3. Parse /proc/net/tcp[6] — pure Node.js, always works on Linux.
+  //    Finds the socket inode for the port, then walks /proc/PID/fd to
+  //    identify which process owns it.
+  const hexPort = port.toString(16).toUpperCase().padStart(4, "0");
+  let inode = null;
+
+  for (const file of ["/proc/net/tcp", "/proc/net/tcp6"]) {
+    if (inode) break;
+    try {
+      const lines = fs.readFileSync(file, "utf8").split("\n").slice(1);
+      for (const line of lines) {
+        const cols = line.trim().split(/\s+/);
+        if (cols.length < 10) continue;
+        const localPort = cols[1]?.split(":")[1]?.toUpperCase();
+        const state = cols[3];
+        if (localPort === hexPort && state === "0A") { // 0A = TCP_LISTEN
+          inode = cols[9];
+          break;
+        }
+      }
+    } catch {}
+  }
+
+  if (inode) {
+    try {
+      for (const pid of fs.readdirSync("/proc").filter(d => /^\d+$/.test(d))) {
+        try {
+          for (const fd of fs.readdirSync(`/proc/${pid}/fd`)) {
+            try {
+              if (fs.readlinkSync(`/proc/${pid}/fd/${fd}`).includes(`socket:[${inode}]`)) {
+                process.kill(parseInt(pid), "SIGKILL");
+                console.log(`[start] killed PID ${pid} (held port ${port}, socket inode ${inode})`);
+                return;
+              }
+            } catch {}
+          }
+        } catch {}
+      }
+    } catch {}
+  }
+
+  console.log(`[start] could not identify owner of port ${port} — will wait`);
+}
+
+// ---------------------------------------------------------------------------
+// Orphan cleanup via PID file
+// Hostinger may SIGKILL start.js (uncatchable); children are then orphaned
+// and keep holding ports. On next boot we read the PID file and kill them.
 // ---------------------------------------------------------------------------
 const PID_FILE = path.join("/tmp", "jokas-child-pids.json");
 
@@ -35,17 +106,20 @@ function killOrphans() {
   } catch {}
 }
 
-killOrphans(); // must run before anything else starts
+// Run both cleanup paths before anything else.
+killOrphans();
+killPortOwner(WEB_INTERNAL_PORT);
+killPortOwner(API_PORT);
 
 // ---------------------------------------------------------------------------
-// Startup log
+// Env log
 // ---------------------------------------------------------------------------
 console.log("[start] env — DATABASE_URL:", process.env.DATABASE_URL ? "SET" : "MISSING",
   "| JWT:", process.env.JWT_ACCESS_SECRET ? "SET" : "MISSING",
   "| PORT:", process.env.PORT, "| API_PORT:", process.env.API_PORT);
 
 // ---------------------------------------------------------------------------
-// Child process tracking (explicit vars so dead restarts don't accumulate)
+// Child tracking
 // ---------------------------------------------------------------------------
 let webProc = null;
 let apiProc = null;
@@ -59,8 +133,8 @@ function killAll() {
 
 function savePids() {
   const pids = [];
-  if (webProc && webProc.pid) pids.push(webProc.pid);
-  if (apiProc && apiProc.pid) pids.push(apiProc.pid);
+  if (webProc?.pid) pids.push(webProc.pid);
+  if (apiProc?.pid) pids.push(apiProc.pid);
   try { fs.writeFileSync(PID_FILE, JSON.stringify(pids)); } catch {}
 }
 
@@ -70,9 +144,9 @@ process.on("exit", killAll);
 });
 
 // ---------------------------------------------------------------------------
-// Port availability probe (no fuser/lsof — not guaranteed on all hosts)
+// Port availability probe — waits until nothing listens on the port
 // ---------------------------------------------------------------------------
-function waitForPortFree(port, maxWaitMs = 6000) {
+function waitForPortFree(port, maxWaitMs = 4000) {
   return new Promise((resolve) => {
     const deadline = Date.now() + maxWaitMs;
     function check() {
@@ -122,7 +196,7 @@ function launch(name, script, cwd, env) {
 }
 
 // ---------------------------------------------------------------------------
-// HTTP proxy (must start first — Hostinger requires listen() within 3s)
+// HTTP proxy (starts immediately — Hostinger requires listen() within 3s)
 // ---------------------------------------------------------------------------
 function handleRequest(req, res) {
   if (!webReady) {
@@ -172,7 +246,7 @@ function startProxy(attempt) {
 startProxy(0);
 
 // ---------------------------------------------------------------------------
-// Launch children after ports are free
+// Wait for ports to be free, then launch children
 // ---------------------------------------------------------------------------
 (async () => {
   console.log(`[start] waiting for ports ${WEB_INTERNAL_PORT} and ${API_PORT} to be free…`);
@@ -196,7 +270,7 @@ startProxy(0);
     process.exit(code ?? 1);
   });
 
-  // API (with exponential backoff restarts)
+  // API (exponential backoff restarts; API is non-fatal so web keeps running)
   let apiRestarts = 0;
   function startApi() {
     apiProc = launch("jokas-api", apiScript, path.join(root, "apps/api"), {
@@ -213,6 +287,6 @@ startProxy(0);
     });
   }
 
-  savePids(); // record web PID immediately
+  savePids(); // record web PID
   startApi();
 })();
