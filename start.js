@@ -106,6 +106,14 @@ function killOrphans() {
   } catch {}
 }
 
+// Catch anything that would otherwise kill the process silently.
+process.on("uncaughtException", (e) => {
+  console.error("[start] uncaughtException:", e?.stack || e);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("[start] unhandledRejection:", reason?.stack || reason);
+});
+
 // Run both cleanup paths before anything else.
 killOrphans();
 killPortOwner(WEB_INTERNAL_PORT);
@@ -278,6 +286,7 @@ startProxy(0);
     waitForPortFree(API_PORT),
   ]);
   console.log("[start] ports clear");
+  console.log("[start] checking Prisma client…");
 
   // ---------------------------------------------------------------------------
   // Prisma client check — Hostinger does not copy node_modules/.prisma/ to the
@@ -378,4 +387,6 @@ startProxy(0);
 
   savePids(); // record web PID
   startApi();
-})();
+})().catch((e) => {
+  console.error("[start] FATAL — main startup threw:", e?.stack || e);
+});
