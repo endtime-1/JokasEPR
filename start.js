@@ -301,6 +301,8 @@ try {
     } catch { return true; }
   }
 
+  console.log("[start] backup paths — client:", clientBackup, "| runtime:", runtimeBackup);
+
   // ── Step 1: ensure @prisma/client is a real, readable directory ──────────
   const clientOk = (() => {
     try { return !!fs.statSync(path.join(clientDir, "index.js")); }
@@ -316,13 +318,15 @@ try {
     }
     if (fs.existsSync(clientBackup)) {
       try {
+        // Ensure the @prisma/ scope directory exists before copying into it.
+        fs.mkdirSync(path.dirname(clientDir), { recursive: true });
         fs.cpSync(clientBackup, clientDir, { recursive: true, force: true });
-        console.log("[start] @prisma/client restored from node_modules/prisma-client/");
+        console.log("[start] @prisma/client restored from prisma-client/ backup");
       } catch (e) {
         console.error("[start] @prisma/client restore failed:", e.message);
       }
     } else {
-      console.error("[start] No node_modules/prisma-client/ backup — API will fail");
+      console.error("[start] prisma-client/ backup not found at", clientBackup, "— API will fail");
     }
   } else {
     console.log("[start] @prisma/client/index.js present — OK");
@@ -349,7 +353,7 @@ try {
         console.error("[start] .prisma/client restore failed:", e.message);
       }
     } else {
-      console.error("[start] No node_modules/prisma-runtime/ backup — API will fail");
+      console.error("[start] prisma-runtime/ backup not found at", runtimeBackup, "— API will fail");
     }
   } else {
     console.log("[start] .prisma/client/default.js present — OK");
