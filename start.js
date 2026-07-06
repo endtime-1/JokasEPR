@@ -106,12 +106,15 @@ function killOrphans() {
   } catch {}
 }
 
-// Catch anything that would otherwise kill the process silently.
+// Surface any crash that would otherwise kill the process silently.
 process.on("uncaughtException", (e) => {
   console.error("[start] uncaughtException:", e?.stack || e);
 });
 process.on("unhandledRejection", (reason) => {
   console.error("[start] unhandledRejection:", reason?.stack || reason);
+});
+process.on("exit", (code) => {
+  process.stdout.write(`[start] process.exit code=${code}\n`);
 });
 
 // Run both cleanup paths before anything else.
@@ -148,7 +151,12 @@ function savePids() {
 
 process.on("exit", killAll);
 ["SIGTERM", "SIGINT"].forEach((sig) => {
-  process.on(sig, () => { killAll(); if (proxy) proxy.close(); process.exit(0); });
+  process.on(sig, () => {
+    console.log(`[start] received ${sig} — shutting down`);
+    killAll();
+    if (proxy) proxy.close();
+    process.exit(0);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -274,6 +282,39 @@ try {
   console.log("[start] Prisma engines dir missing:", e.message);
 }
 
+// ---------------------------------------------------------------------------
+// Restore Prisma client from the non-dot backup written by post-build.js.
+// Hostinger excludes dot-directories (like .prisma/) when syncing node_modules
+// to the runtime nodejs/ dir. post-build.js backs up the generated client to
+// node_modules/prisma-client/ (no dot) which survives deployment. We symlink
+// it back here synchronously — zero child processes, runs in microseconds.
+// ---------------------------------------------------------------------------
+(function restorePrismaClient() {
+  const backup = path.join(root, "node_modules/prisma-client");
+  const target = path.join(root, "node_modules/.prisma/client");
+  if (fs.existsSync(target)) {
+    console.log("[start] Prisma client already present");
+    return;
+  }
+  if (!fs.existsSync(backup)) {
+    console.error("[start] Prisma backup (node_modules/prisma-client/) missing — API will fail to start. Re-deploy to trigger post-build.");
+    return;
+  }
+  try {
+    fs.symlinkSync(backup, target);
+    console.log("[start] Prisma client restored via symlink");
+  } catch (e) {
+    console.warn("[start] symlink failed (" + e.message + ") — falling back to fs.cpSync");
+    try {
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.cpSync(backup, target, { recursive: true });
+      console.log("[start] Prisma client restored via copy");
+    } catch (e2) {
+      console.error("[start] Prisma restore failed:", e2.message);
+    }
+  }
+})();
+
 startProxy(0);
 
 // ---------------------------------------------------------------------------
@@ -286,56 +327,6 @@ startProxy(0);
     waitForPortFree(API_PORT),
   ]);
   console.log("[start] ports clear");
-  console.log("[start] checking Prisma client…");
-
-  // ---------------------------------------------------------------------------
-  // Prisma client check — Hostinger does not copy node_modules/.prisma/ to the
-  // nodejs/ runtime directory. If the client is missing, generate it here on
-  // the target server so we get the exact binary for the running OpenSSL version
-  // (OpenSSL 3.5.1 on this host has no pre-built Prisma binary in our build).
-  // The proxy is already up serving "Starting up…" so this 60s window is fine.
-  // ---------------------------------------------------------------------------
-  const prismaClientDir = path.join(root, "node_modules/.prisma/client");
-  if (!fs.existsSync(prismaClientDir)) {
-    const prismaCli = path.join(root, "node_modules/prisma/build/index.js");
-    const prismaSchema = path.join(root, "packages/db/prisma/schema.mysql.prisma");
-    console.log("[start] Prisma client missing — generating (may take ~60s, proxy stays live)…");
-
-    // Run generate asynchronously with spawn so the event loop stays unblocked.
-    // execSync would freeze the proxy, triggering Hostinger's health-check timeout
-    // and causing it to SIGKILL the app and start a competing second instance.
-    // CHECKPOINT_DISABLE=1 suppresses Prisma's telemetry child which fails with
-    // EAGAIN under Hostinger's process limit and crashes the generate.
-    await new Promise((resolve) => {
-      const proc = spawn(
-        process.execPath,
-        [prismaCli, "generate", "--schema", prismaSchema],
-        {
-          cwd: path.join(root, "packages/db"),
-          stdio: ["ignore", "pipe", "pipe"],
-          env: { ...process.env, CHECKPOINT_DISABLE: "1", PRISMA_DISABLE_CHECKPOINT: "1" },
-        }
-      );
-      proc.stdout.on("data", (d) => process.stdout.write("[prisma] " + d));
-      proc.stderr.on("data", (d) => process.stdout.write("[prisma-err] " + d));
-      proc.on("close", (code) => {
-        if (code) console.warn(`[start] prisma generate exited ${code} — checking if client was written anyway`);
-        resolve();
-      });
-      proc.on("error", (e) => {
-        console.error("[start] prisma generate spawn error:", e.message);
-        resolve();
-      });
-    });
-
-    if (fs.existsSync(prismaClientDir)) {
-      console.log("[start] Prisma client generated OK");
-    } else {
-      console.error("[start] Prisma client still missing after generate");
-    }
-  } else {
-    console.log("[start] Prisma client present — skipping generate");
-  }
 
   // ---------------------------------------------------------------------------
   // Fix DATABASE_URL for reliable MySQL connection:

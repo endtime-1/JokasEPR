@@ -54,4 +54,21 @@ try {
   console.log(`post-build: could not write .htaccess (${e.message}) — skipping`);
 }
 
+// Back up the generated Prisma client to a non-dot directory.
+// Hostinger excludes dot-prefix directories (like .prisma/) when rsyncing
+// node_modules to the runtime nodejs/ dir. node_modules/prisma-client/ (no dot)
+// survives the sync. start.js restores it via fs.symlinkSync at boot.
+const prismaClientSrc = path.join(__dirname, "../node_modules/.prisma/client");
+const prismaClientDst = path.join(__dirname, "../node_modules/prisma-client");
+if (existsSync(prismaClientSrc)) {
+  if (existsSync(prismaClientDst)) {
+    const { rmSync } = require("fs");
+    rmSync(prismaClientDst, { recursive: true, force: true });
+  }
+  cpSync(prismaClientSrc, prismaClientDst, { recursive: true });
+  console.log("post-build: Prisma client backed up → node_modules/prisma-client/");
+} else {
+  console.warn("post-build: .prisma/client not found — Prisma may not have generated. API will fail on Hostinger.");
+}
+
 console.log("post-build: done");
