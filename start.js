@@ -243,6 +243,29 @@ function startProxy(attempt) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Diagnostics: OS, OpenSSL, and Prisma engine binaries
+// Run before startProxy so the output appears at the top of each cycle.
+// ---------------------------------------------------------------------------
+try {
+  const os = execSync("cat /etc/os-release 2>/dev/null | grep PRETTY_NAME", { encoding: "utf8", timeout: 2000 }).trim();
+  console.log("[start] OS:", os);
+} catch {}
+try {
+  const ssl = execSync("openssl version 2>/dev/null", { encoding: "utf8", timeout: 2000 }).trim();
+  console.log("[start] OpenSSL:", ssl);
+} catch {}
+try {
+  // Show every file in .prisma/client that looks like an engine binary.
+  // This tells us which binaryTargets were actually included in the build.
+  const prismaDir = path.join(root, "node_modules/.prisma/client");
+  const files = fs.readdirSync(prismaDir)
+    .filter(f => f.endsWith(".node") || f.endsWith(".so") || f.includes("query_engine") || f.includes("libquery"));
+  console.log("[start] Prisma engines:", files.length ? files.join(", ") : "NONE FOUND");
+} catch (e) {
+  console.log("[start] Prisma engines dir missing:", e.message);
+}
+
 startProxy(0);
 
 // ---------------------------------------------------------------------------
@@ -255,6 +278,22 @@ startProxy(0);
     waitForPortFree(API_PORT),
   ]);
   console.log("[start] ports clear — launching children");
+
+  // ---------------------------------------------------------------------------
+  // Fix DATABASE_URL for reliable MySQL connection:
+  //   - "localhost" → "127.0.0.1" to force TCP (avoid Unix socket hang)
+  //   - add connect_timeout=10 so a bad host fails in 10s instead of hanging
+  // ---------------------------------------------------------------------------
+  let dbUrl = process.env.DATABASE_URL || "";
+  if (dbUrl.startsWith("mysql://")) {
+    dbUrl = dbUrl.replace("@localhost:", "@127.0.0.1:");
+    if (!dbUrl.includes("connect_timeout")) {
+      dbUrl += (dbUrl.includes("?") ? "&" : "?") + "connect_timeout=10";
+    }
+    if (dbUrl !== process.env.DATABASE_URL) {
+      console.log("[start] DATABASE_URL patched: localhost→127.0.0.1 + connect_timeout=10");
+    }
+  }
 
   // Web
   webProc = launch("jokas-web", serverScript, standaloneDir, {
@@ -275,6 +314,7 @@ startProxy(0);
   function startApi() {
     apiProc = launch("jokas-api", apiScript, path.join(root, "apps/api"), {
       PORT: String(API_PORT),
+      DATABASE_URL: dbUrl,
     });
     if (!apiProc) { console.error("[start] API script missing — not starting API"); return; }
     savePids();

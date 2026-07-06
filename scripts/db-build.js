@@ -13,6 +13,15 @@ const schema = path.join(dbDir, "prisma", schemaFile);
 
 console.log(`[db-build] provider=${provider} schema=${schemaFile}`);
 
+// Delete the previously generated client so Hostinger's build cache cannot
+// serve a stale version with the wrong binary targets.
+const { rmSync } = require("fs");
+const generatedDir = path.join(dbDir, "../../node_modules/.prisma/client");
+try {
+  rmSync(generatedDir, { recursive: true, force: true });
+  console.log("[db-build] cleared old .prisma/client cache");
+} catch {}
+
 execSync(`npx prisma generate --schema="${schema}"`, {
   stdio: "inherit",
   cwd: dbDir,
