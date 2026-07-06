@@ -9,25 +9,24 @@ const standaloneDir = path.join(webDir, ".next/standalone");
 const standaloneWebDir = path.join(standaloneDir, "apps/web");
 
 if (!existsSync(standaloneDir)) {
-  console.log("No standalone output found — skipping asset copy.");
-  process.exit(0);
-}
+  console.log("post-build: no standalone output found — skipping static asset copy (Prisma backup will still run)");
+} else {
+  mkdirSync(standaloneWebDir, { recursive: true });
 
-mkdirSync(standaloneWebDir, { recursive: true });
+  // Copy public/
+  const publicSrc = path.join(webDir, "public");
+  if (existsSync(publicSrc)) {
+    cpSync(publicSrc, path.join(standaloneWebDir, "public"), { recursive: true });
+    console.log("Copied public/");
+  }
 
-// Copy public/
-const publicSrc = path.join(webDir, "public");
-if (existsSync(publicSrc)) {
-  cpSync(publicSrc, path.join(standaloneWebDir, "public"), { recursive: true });
-  console.log("Copied public/");
-}
-
-// Copy .next/static/
-const staticSrc = path.join(webDir, ".next/static");
-if (existsSync(staticSrc)) {
-  mkdirSync(path.join(standaloneWebDir, ".next"), { recursive: true });
-  cpSync(staticSrc, path.join(standaloneWebDir, ".next/static"), { recursive: true });
-  console.log("Copied .next/static/");
+  // Copy .next/static/
+  const staticSrc = path.join(webDir, ".next/static");
+  if (existsSync(staticSrc)) {
+    mkdirSync(path.join(standaloneWebDir, ".next"), { recursive: true });
+    cpSync(staticSrc, path.join(standaloneWebDir, ".next/static"), { recursive: true });
+    console.log("Copied .next/static/");
+  }
 }
 
 // Write LiteSpeed proxy rules so jokasfarms.com forwards to the Node.js app.
@@ -86,6 +85,9 @@ try {
 // (the API starts from there).  Project-root build-generated dirs are NOT
 // deployed (Hostinger only deploys git-tracked files + specific build outputs).
 const distDir = path.join(__dirname, "../apps/api/dist");
+
+// Ensure the target directory exists even if the API build didn't run.
+mkdirSync(distDir, { recursive: true });
 
 // 1. Back up @prisma/client (the JS package) → apps/api/dist/prisma-client/
 //    start.js uses this to create a real directory at node_modules/@prisma/client

@@ -402,19 +402,33 @@ try {
     }
   }
 
-  // Web
-  webProc = launch("jokas-web", serverScript, standaloneDir, {
-    PORT: String(WEB_INTERNAL_PORT),
-    HOSTNAME: "0.0.0.0",
-  });
-  if (!webProc) { console.error("[start] aborting — web script missing"); process.exit(1); }
-
-  webProc.on("close", (code, signal) => {
-    console.log(`[start] web exited code=${code} signal=${signal} — shutting down`);
-    webProc = null;
-    if (proxy) proxy.close();
-    process.exit(code ?? 1);
-  });
+  // Web (restart on crash like the API; never take down the proxy)
+  let webRestarts = 0;
+  function startWeb() {
+    if (!fs.existsSync(serverScript)) {
+      console.error(`[start] web server.js missing at ${serverScript} — will retry in 30s`);
+      setTimeout(startWeb, 30000);
+      return;
+    }
+    webProc = launch("jokas-web", serverScript, standaloneDir, {
+      PORT: String(WEB_INTERNAL_PORT),
+      HOSTNAME: "0.0.0.0",
+    });
+    if (!webProc) {
+      console.error("[start] web script missing — will retry in 30s");
+      setTimeout(startWeb, 30000);
+      return;
+    }
+    webProc.on("close", (code, signal) => {
+      webProc = null;
+      webReady = false;
+      webRestarts++;
+      const delay = Math.min(3000 * webRestarts, 30000);
+      console.log(`[start] web exited code=${code} signal=${signal} — restart #${webRestarts} in ${delay}ms`);
+      setTimeout(startWeb, delay);
+    });
+  }
+  startWeb();
 
   // API (exponential backoff restarts; API is non-fatal so web keeps running)
   let apiRestarts = 0;
