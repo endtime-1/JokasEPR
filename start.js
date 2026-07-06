@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 "use strict";
-const { spawn, execSync } = require("child_process");
+const { spawn } = require("child_process");
+const fs = require("fs");
 const http = require("http");
 const net = require("net");
 const path = require("path");
@@ -14,55 +15,99 @@ const standaloneDir = path.join(root, "apps/web/.next/standalone");
 const serverScript = path.join(standaloneDir, "apps/web", "server.js");
 const apiScript = path.join(root, "apps/api/dist/main.js");
 
+// ---------------------------------------------------------------------------
+// Orphan cleanup
+// Hostinger may SIGKILL start.js (uncatchable). Children are then orphaned
+// and hold ports 3001/4001 forever. On next boot we read the PID file and
+// SIGKILL them before doing anything else.
+// ---------------------------------------------------------------------------
+const PID_FILE = path.join("/tmp", "jokas-child-pids.json");
+
+function killOrphans() {
+  try {
+    const pids = JSON.parse(fs.readFileSync(PID_FILE, "utf8"));
+    let n = 0;
+    for (const pid of pids) {
+      try { process.kill(pid, "SIGKILL"); n++; } catch {}
+    }
+    if (n) console.log(`[start] SIGKILLed ${n} orphaned child(ren) from previous run`);
+    fs.unlinkSync(PID_FILE);
+  } catch {}
+}
+
+killOrphans(); // must run before anything else starts
+
+// ---------------------------------------------------------------------------
+// Startup log
+// ---------------------------------------------------------------------------
 console.log("[start] env — DATABASE_URL:", process.env.DATABASE_URL ? "SET" : "MISSING",
   "| JWT:", process.env.JWT_ACCESS_SECRET ? "SET" : "MISSING",
   "| PORT:", process.env.PORT, "| API_PORT:", process.env.API_PORT);
 
-// Force-kill any process holding a port so the next bind succeeds immediately.
-// Uses SIGKILL (-KILL) so the holder releases the socket without a graceful delay.
-function freePort(port) {
-  try {
-    execSync(`fuser -k -KILL ${port}/tcp 2>/dev/null`, { timeout: 2000 });
-    console.log(`[start] freed port ${port}`);
-  } catch {
-    // fuser not available or nothing found — try lsof as fallback
-    try {
-      const pids = execSync(
-        `lsof -t -i TCP:${port} -s TCP:LISTEN 2>/dev/null`, { timeout: 2000, encoding: "utf8" }
-      ).trim();
-      if (pids) {
-        execSync(`kill -9 ${pids.split("\n").join(" ")} 2>/dev/null`, { timeout: 1000 });
-        console.log(`[start] freed port ${port} via lsof`);
-      }
-    } catch { /* best effort */ }
-  }
-}
-freePort(PORT);
-freePort(WEB_INTERNAL_PORT);
-freePort(API_PORT);
-
-const children = [];
-// Set true when Next.js reports "Ready". Before that, the proxy returns an
-// instant HTTP 200 so Hostinger's 3-second health check passes even though
-// Next.js is still initialising.
+// ---------------------------------------------------------------------------
+// Child process tracking (explicit vars so dead restarts don't accumulate)
+// ---------------------------------------------------------------------------
+let webProc = null;
+let apiProc = null;
+let proxy;
 let webReady = false;
 
-function killAll(sig) {
-  for (const c of children) { try { c.kill(sig || "SIGKILL"); } catch {} }
+function killAll() {
+  if (webProc) { try { webProc.kill("SIGKILL"); } catch {} }
+  if (apiProc) { try { apiProc.kill("SIGKILL"); } catch {} }
 }
-// Use SIGKILL on exit so children release their ports instantly — SIGTERM
-// starts a graceful shutdown that holds ports for several more seconds, causing
-// EADDRINUSE in the very next restart cycle.
-process.on("exit", () => killAll("SIGKILL"));
 
+function savePids() {
+  const pids = [];
+  if (webProc && webProc.pid) pids.push(webProc.pid);
+  if (apiProc && apiProc.pid) pids.push(apiProc.pid);
+  try { fs.writeFileSync(PID_FILE, JSON.stringify(pids)); } catch {}
+}
+
+process.on("exit", killAll);
+["SIGTERM", "SIGINT"].forEach((sig) => {
+  process.on(sig, () => { killAll(); if (proxy) proxy.close(); process.exit(0); });
+});
+
+// ---------------------------------------------------------------------------
+// Port availability probe (no fuser/lsof — not guaranteed on all hosts)
+// ---------------------------------------------------------------------------
+function waitForPortFree(port, maxWaitMs = 6000) {
+  return new Promise((resolve) => {
+    const deadline = Date.now() + maxWaitMs;
+    function check() {
+      const probe = net.createServer();
+      probe.listen(port, "127.0.0.1", () => {
+        probe.close(() => resolve());
+      });
+      probe.on("error", () => {
+        if (Date.now() < deadline) {
+          setTimeout(check, 100);
+        } else {
+          console.warn(`[start] port ${port} still busy after ${maxWaitMs}ms — launching anyway`);
+          resolve();
+        }
+      });
+    }
+    check();
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Child launcher
+// ---------------------------------------------------------------------------
 function launch(name, script, cwd, env) {
-  console.log(`[start] launching ${name}`);
+  if (!fs.existsSync(script)) {
+    console.error(`[start] MISSING script for ${name}: ${script}`);
+    return null;
+  }
+  console.log(`[start] launching ${name} — ${script}`);
   const proc = spawn(process.execPath, [script], {
     cwd,
     stdio: ["inherit", "pipe", "pipe"],
     env: { ...process.env, ...env, NODE_ENV: "production" },
   });
-  children.push(proc);
+  proc.on("spawn", () => console.log(`[start] ${name} spawned PID=${proc.pid}`));
   proc.stdout.on("data", (d) => {
     const s = d.toString();
     process.stdout.write(`[${name}] ` + s);
@@ -76,67 +121,42 @@ function launch(name, script, cwd, env) {
   return proc;
 }
 
-// HTTP request handler — forwards to Next.js once it is ready; returns an
-// instant 200 "Starting up" page while it is still initialising.
-// Using http.createServer (not net.createServer) so Hostinger's patched
-// http.Server.prototype.listen is triggered and satisfies the 3-second check.
+// ---------------------------------------------------------------------------
+// HTTP proxy (must start first — Hostinger requires listen() within 3s)
+// ---------------------------------------------------------------------------
 function handleRequest(req, res) {
   if (!webReady) {
-    res.writeHead(200, {
-      "content-type": "text/html; charset=utf-8",
-      "cache-control": "no-store",
-    });
-    res.end(
-      "<!doctype html><html><head>" +
-      "<meta http-equiv='refresh' content='2'>" +
-      "</head><body>Starting up. Refreshing automatically…</body></html>"
-    );
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
+    res.end("<!doctype html><html><head><meta http-equiv='refresh' content='2'></head>" +
+      "<body>Starting up. Refreshing automatically…</body></html>");
     return;
   }
-  const upstream = http.request(
-    {
-      hostname: "127.0.0.1",
-      port: WEB_INTERNAL_PORT,
-      path: req.url,
-      method: req.method,
-      headers: req.headers,
-    },
-    (proxyRes) => {
-      res.writeHead(proxyRes.statusCode, proxyRes.headers);
-      proxyRes.pipe(res);
-    }
+  const up = http.request(
+    { hostname: "127.0.0.1", port: WEB_INTERNAL_PORT, path: req.url, method: req.method, headers: req.headers },
+    (pRes) => { res.writeHead(pRes.statusCode, pRes.headers); pRes.pipe(res); }
   );
-  upstream.on("error", () => {
-    if (!res.headersSent) { res.writeHead(502); res.end("Bad Gateway"); }
-  });
-  req.pipe(upstream);
+  up.on("error", () => { if (!res.headersSent) { res.writeHead(502); res.end("Bad Gateway"); } });
+  req.pipe(up);
 }
 
-// WebSocket upgrade — pipe raw TCP once the upgrade handshake is forwarded.
 function handleUpgrade(req, clientSocket, head) {
   const up = net.connect(WEB_INTERNAL_PORT, "127.0.0.1", () => {
-    let headers = `${req.method} ${req.url} HTTP/1.1\r\n`;
-    for (const [k, v] of Object.entries(req.headers)) headers += `${k}: ${v}\r\n`;
-    up.write(headers + "\r\n");
+    let hdrs = `${req.method} ${req.url} HTTP/1.1\r\n`;
+    for (const [k, v] of Object.entries(req.headers)) hdrs += `${k}: ${v}\r\n`;
+    up.write(hdrs + "\r\n");
     if (head && head.length) up.write(head);
-    clientSocket.pipe(up);
-    up.pipe(clientSocket);
+    clientSocket.pipe(up); up.pipe(clientSocket);
   });
   up.on("error", () => clientSocket.destroy());
   clientSocket.on("error", () => up.destroy());
 }
-
-// Start the HTTP proxy, retrying on EADDRINUSE so a slow-dying zombie
-// does not permanently block us.  6 × 500 ms = 3 s max wait.
-let proxy;
-let proxyAttempt = 0;
 
 function startProxy(attempt) {
   const p = http.createServer(handleRequest);
   proxy = p;
   p.on("upgrade", handleUpgrade);
   p.once("error", (err) => {
-    if (err.code === "EADDRINUSE" && attempt < 6) {
+    if (err.code === "EADDRINUSE" && attempt < 8) {
       console.log(`[start] port ${PORT} busy, retry #${attempt + 1} in 500ms`);
       setTimeout(() => startProxy(attempt + 1), 500);
     } else {
@@ -144,41 +164,55 @@ function startProxy(attempt) {
     }
   });
   p.listen(PORT, "0.0.0.0", () => {
-    console.log(`[start] HTTP proxy listening on port ${PORT} → Next.js :${WEB_INTERNAL_PORT}`);
+    console.log(`[start] HTTP proxy listening on ${PORT} → Next.js :${WEB_INTERNAL_PORT}`);
     if (process.send) process.send("ready");
   });
 }
 
 startProxy(0);
 
-["SIGTERM", "SIGINT"].forEach((sig) => {
-  process.on(sig, () => {
-    killAll("SIGKILL");   // Force-kill so ports are released before the next restart
+// ---------------------------------------------------------------------------
+// Launch children after ports are free
+// ---------------------------------------------------------------------------
+(async () => {
+  console.log(`[start] waiting for ports ${WEB_INTERNAL_PORT} and ${API_PORT} to be free…`);
+  await Promise.all([
+    waitForPortFree(WEB_INTERNAL_PORT),
+    waitForPortFree(API_PORT),
+  ]);
+  console.log("[start] ports clear — launching children");
+
+  // Web
+  webProc = launch("jokas-web", serverScript, standaloneDir, {
+    PORT: String(WEB_INTERNAL_PORT),
+    HOSTNAME: "0.0.0.0",
+  });
+  if (!webProc) { console.error("[start] aborting — web script missing"); process.exit(1); }
+
+  webProc.on("close", (code, signal) => {
+    console.log(`[start] web exited code=${code} signal=${signal} — shutting down`);
+    webProc = null;
     if (proxy) proxy.close();
-    process.exit(0);
+    process.exit(code ?? 1);
   });
-});
 
-const web = launch("jokas-web", serverScript, standaloneDir, {
-  PORT: String(WEB_INTERNAL_PORT),
-  HOSTNAME: "0.0.0.0",
-});
-web.on("close", (code) => {
-  console.log(`[start] web exited (${code}) — shutting down`);
-  if (proxy) proxy.close();
-  process.exit(code ?? 1);
-});
+  // API (with exponential backoff restarts)
+  let apiRestarts = 0;
+  function startApi() {
+    apiProc = launch("jokas-api", apiScript, path.join(root, "apps/api"), {
+      PORT: String(API_PORT),
+    });
+    if (!apiProc) { console.error("[start] API script missing — not starting API"); return; }
+    savePids();
+    apiProc.on("close", (code, signal) => {
+      apiProc = null;
+      apiRestarts++;
+      const delay = Math.min(3000 * apiRestarts, 30000);
+      console.log(`[start] API exited code=${code} signal=${signal} — restart #${apiRestarts} in ${delay}ms`);
+      setTimeout(startApi, delay);
+    });
+  }
 
-let apiRestarts = 0;
-function startApi() {
-  const proc = launch("jokas-api", apiScript, path.join(root, "apps/api"), {
-    PORT: String(API_PORT),
-  });
-  proc.on("close", (code) => {
-    apiRestarts++;
-    const delay = Math.min(3000 * apiRestarts, 30000);
-    console.log(`[start] API exited (${code}) — restart #${apiRestarts} in ${delay}ms`);
-    setTimeout(startApi, delay);
-  });
-}
-startApi();
+  savePids(); // record web PID immediately
+  startApi();
+})();

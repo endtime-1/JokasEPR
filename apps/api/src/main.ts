@@ -11,6 +11,7 @@ import { HttpExceptionFilter } from "./common/filters/http-exception.filter";
 import { RequestLoggingInterceptor } from "./common/interceptors/request-logging.interceptor";
 
 async function bootstrap() {
+  process.stderr.write("[api] bootstrap() starting\n");
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: false });
   const config = app.get(ConfigService);
   const port = config.get<number>("API_PORT", 4001);
@@ -76,4 +77,7 @@ async function bootstrap() {
   Logger.log(`API listening on http://localhost:${port}/${prefix}/v${version}`, "Bootstrap");
 }
 
-void bootstrap();
+bootstrap().catch((err) => {
+  process.stderr.write("[api] FATAL: " + (err?.stack || err) + "\n");
+  process.exit(1);
+});
