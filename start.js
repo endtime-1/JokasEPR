@@ -277,7 +277,37 @@ startProxy(0);
     waitForPortFree(WEB_INTERNAL_PORT),
     waitForPortFree(API_PORT),
   ]);
-  console.log("[start] ports clear — launching children");
+  console.log("[start] ports clear");
+
+  // ---------------------------------------------------------------------------
+  // Prisma client check — Hostinger does not copy node_modules/.prisma/ to the
+  // nodejs/ runtime directory. If the client is missing, generate it here on
+  // the target server so we get the exact binary for the running OpenSSL version
+  // (OpenSSL 3.5.1 on this host has no pre-built Prisma binary in our build).
+  // The proxy is already up serving "Starting up…" so this 60s window is fine.
+  // ---------------------------------------------------------------------------
+  const prismaClientDir = path.join(root, "node_modules/.prisma/client");
+  if (!fs.existsSync(prismaClientDir)) {
+    console.log("[start] Prisma client missing — running prisma generate on this server (may take ~60s)…");
+    try {
+      const prismaCli = path.join(root, "node_modules/prisma/build/index.js");
+      const prismaSchema = path.join(root, "packages/db/prisma/schema.mysql.prisma");
+      execSync(
+        `"${process.execPath}" "${prismaCli}" generate --schema "${prismaSchema}"`,
+        {
+          cwd: path.join(root, "packages/db"),
+          stdio: "inherit",
+          timeout: 180000, // 3 minutes
+          env: { ...process.env },
+        }
+      );
+      console.log("[start] Prisma client generated for this platform");
+    } catch (e) {
+      console.error("[start] prisma generate failed:", e.message);
+    }
+  } else {
+    console.log("[start] Prisma client present — skipping generate");
+  }
 
   // ---------------------------------------------------------------------------
   // Fix DATABASE_URL for reliable MySQL connection:
