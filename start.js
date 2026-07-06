@@ -18,12 +18,24 @@ console.log("[start] env — DATABASE_URL:", process.env.DATABASE_URL ? "SET" : 
   "| JWT:", process.env.JWT_ACCESS_SECRET ? "SET" : "MISSING",
   "| PORT:", process.env.PORT, "| API_PORT:", process.env.API_PORT);
 
-// Free zombie processes from a previous deployment that may hold our ports.
+// Force-kill any process holding a port so the next bind succeeds immediately.
+// Uses SIGKILL (-KILL) so the holder releases the socket without a graceful delay.
 function freePort(port) {
   try {
-    execSync(`fuser -k ${port}/tcp 2>/dev/null`, { timeout: 2000 });
+    execSync(`fuser -k -KILL ${port}/tcp 2>/dev/null`, { timeout: 2000 });
     console.log(`[start] freed port ${port}`);
-  } catch { /* fuser exits 1 when nothing found — fine */ }
+  } catch {
+    // fuser not available or nothing found — try lsof as fallback
+    try {
+      const pids = execSync(
+        `lsof -t -i TCP:${port} -s TCP:LISTEN 2>/dev/null`, { timeout: 2000, encoding: "utf8" }
+      ).trim();
+      if (pids) {
+        execSync(`kill -9 ${pids.split("\n").join(" ")} 2>/dev/null`, { timeout: 1000 });
+        console.log(`[start] freed port ${port} via lsof`);
+      }
+    } catch { /* best effort */ }
+  }
 }
 freePort(PORT);
 freePort(WEB_INTERNAL_PORT);
@@ -36,9 +48,12 @@ const children = [];
 let webReady = false;
 
 function killAll(sig) {
-  for (const c of children) { try { c.kill(sig || "SIGTERM"); } catch {} }
+  for (const c of children) { try { c.kill(sig || "SIGKILL"); } catch {} }
 }
-process.on("exit", () => killAll("SIGTERM"));
+// Use SIGKILL on exit so children release their ports instantly — SIGTERM
+// starts a graceful shutdown that holds ports for several more seconds, causing
+// EADDRINUSE in the very next restart cycle.
+process.on("exit", () => killAll("SIGKILL"));
 
 function launch(name, script, cwd, env) {
   console.log(`[start] launching ${name}`);
@@ -138,7 +153,7 @@ startProxy(0);
 
 ["SIGTERM", "SIGINT"].forEach((sig) => {
   process.on(sig, () => {
-    killAll(sig);
+    killAll("SIGKILL");   // Force-kill so ports are released before the next restart
     if (proxy) proxy.close();
     process.exit(0);
   });
