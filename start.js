@@ -287,10 +287,10 @@ try {
 (function restorePrismaRuntime() {
   const clientDir   = path.join(root, "node_modules/@prisma/client");
   const prismaDir   = path.join(root, "node_modules/.prisma/client");
-  // Backups live in the project root (deployed by Hostinger alongside start.js),
-  // NOT inside node_modules/ (which Hostinger reinstalls fresh each deploy).
-  const clientBackup  = path.join(root, "prisma-client");
-  const runtimeBackup = path.join(root, "prisma-runtime");
+  // Backups live inside apps/api/dist/ — the one directory that is guaranteed
+  // to be deployed by Hostinger (the API binary lives there).
+  const clientBackup  = path.join(root, "apps/api/dist/prisma-client");
+  const runtimeBackup = path.join(root, "apps/api/dist/prisma-runtime");
 
   // Returns true if the symlink at p has a missing target.
   function isBrokenSymlink(p) {
