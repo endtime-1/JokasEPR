@@ -27,6 +27,7 @@ function freePort(port) {
 }
 freePort(PORT);
 freePort(WEB_INTERNAL_PORT);
+freePort(API_PORT);
 
 const children = [];
 // Set true when Next.js reports "Ready". Before that, the proxy returns an
