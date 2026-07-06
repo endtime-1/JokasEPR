@@ -288,39 +288,41 @@ startProxy(0);
   // ---------------------------------------------------------------------------
   const prismaClientDir = path.join(root, "node_modules/.prisma/client");
   if (!fs.existsSync(prismaClientDir)) {
-    console.log("[start] Prisma client missing — generating for this platform (may take ~60s)…");
     const prismaCli = path.join(root, "node_modules/prisma/build/index.js");
     const prismaSchema = path.join(root, "packages/db/prisma/schema.mysql.prisma");
-    // npx lives alongside the node binary but may not be on PATH. Derive its
-    // full path from process.execPath so we find it even in alt-nodejs installs.
-    const npxBin = path.join(path.dirname(process.execPath), "npx");
-    const cliExists = fs.existsSync(prismaCli);
-    const npxExists = fs.existsSync(npxBin);
-    console.log("[start] Prisma CLI:", cliExists ? prismaCli : "MISSING");
-    console.log("[start] npx:", npxExists ? npxBin : "MISSING");
-    const generateCmd = cliExists
-      ? `"${process.execPath}" "${prismaCli}" generate --schema "${prismaSchema}"`
-      : npxExists
-        ? `"${npxBin}" --yes prisma generate --schema "${prismaSchema}"`
-        : null;
-    if (!generateCmd) {
-      console.error("[start] no Prisma CLI or npx found — cannot generate client");
-    }
-    console.log("[start] running:", generateCmd);
-    try {
-      const out = generateCmd && execSync(generateCmd, {
-        cwd: path.join(root, "packages/db"),
-        encoding: "utf8",
-        timeout: 600000, // 10 minutes — binary download on a slow link
-        env: { ...process.env },
+    console.log("[start] Prisma client missing — generating (may take ~60s, proxy stays live)…");
+
+    // Run generate asynchronously with spawn so the event loop stays unblocked.
+    // execSync would freeze the proxy, triggering Hostinger's health-check timeout
+    // and causing it to SIGKILL the app and start a competing second instance.
+    // CHECKPOINT_DISABLE=1 suppresses Prisma's telemetry child which fails with
+    // EAGAIN under Hostinger's process limit and crashes the generate.
+    await new Promise((resolve) => {
+      const proc = spawn(
+        process.execPath,
+        [prismaCli, "generate", "--schema", prismaSchema],
+        {
+          cwd: path.join(root, "packages/db"),
+          stdio: ["ignore", "pipe", "pipe"],
+          env: { ...process.env, CHECKPOINT_DISABLE: "1", PRISMA_DISABLE_CHECKPOINT: "1" },
+        }
+      );
+      proc.stdout.on("data", (d) => process.stdout.write("[prisma] " + d));
+      proc.stderr.on("data", (d) => process.stdout.write("[prisma-err] " + d));
+      proc.on("close", (code) => {
+        if (code) console.warn(`[start] prisma generate exited ${code} — checking if client was written anyway`);
+        resolve();
       });
-      if (out) console.log("[start] prisma generate output:\n" + out.trim());
+      proc.on("error", (e) => {
+        console.error("[start] prisma generate spawn error:", e.message);
+        resolve();
+      });
+    });
+
+    if (fs.existsSync(prismaClientDir)) {
       console.log("[start] Prisma client generated OK");
-    } catch (e) {
-      console.error("[start] prisma generate FAILED");
-      if (e.stdout) console.error("[start] prisma stdout:\n" + e.stdout.toString().trim());
-      if (e.stderr) console.error("[start] prisma stderr:\n" + e.stderr.toString().trim());
-      console.error("[start] error:", e.message.split("\n")[0]);
+    } else {
+      console.error("[start] Prisma client still missing after generate");
     }
   } else {
     console.log("[start] Prisma client present — skipping generate");
