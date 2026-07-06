@@ -39,7 +39,6 @@ RewriteCond %{HTTP:Upgrade} websocket [NC]
 RewriteCond %{HTTP:Connection} upgrade [NC]
 RewriteRule ^/?(.*)$ ws://127.0.0.1:${port}/$1 [P,L]
 RewriteCond %{REQUEST_FILENAME} !-f
-RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^/?(.*)$ http://127.0.0.1:${port}/$1 [P,L]
 `;
 try {

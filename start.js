@@ -260,6 +260,12 @@ function startProxy(attempt) {
 }
 
 // ---------------------------------------------------------------------------
+// Bind the proxy port immediately so Hostinger's 3-second listen() check
+// passes before any slow synchronous operations (file copies etc.) below.
+// ---------------------------------------------------------------------------
+startProxy(0);
+
+// ---------------------------------------------------------------------------
 // Diagnostics
 // ---------------------------------------------------------------------------
 try {
@@ -303,33 +309,37 @@ try {
 
   console.log("[start] backup paths — client:", clientBackup, "| runtime:", runtimeBackup);
 
-  // ── Step 1: ensure @prisma/client is a real, readable directory ──────────
-  const clientOk = (() => {
-    try { return !!fs.statSync(path.join(clientDir, "index.js")); }
-    catch { return false; }
-  })();
-
-  if (!clientOk) {
-    console.warn("[start] @prisma/client/index.js unreachable (broken symlink or excluded)");
-    // Remove the broken symlink so cpSync can create a real directory there.
+  // ── Step 1: ALWAYS overwrite @prisma/client with the generated backup ─────
+  // pnpm's fresh install in nodejs/ puts an UNGENERATED (vanilla) @prisma/client
+  // here — either as a real directory or a broken symlink.  The vanilla index.js
+  // uses require('./.prisma/client/default') which looks INSIDE @prisma/client/
+  // itself and will never find anything.  Our post-build backup is the GENERATED
+  // version whose index.js uses require('../../.prisma/client/default'), which
+  // resolves to node_modules/.prisma/client/default.js — exactly where step 2
+  // restores the runtime.  We must overwrite the vanilla unconditionally.
+  if (fs.existsSync(clientBackup)) {
+    // Remove existing dir/symlink (vanilla real dir, broken symlink, or absent)
     if (isBrokenSymlink(clientDir)) {
-      try { fs.unlinkSync(clientDir); console.log("[start] removed broken @prisma/client symlink"); }
-      catch (e) { console.error("[start] could not remove symlink:", e.message); }
-    }
-    if (fs.existsSync(clientBackup)) {
-      try {
-        // Ensure the @prisma/ scope directory exists before copying into it.
-        fs.mkdirSync(path.dirname(clientDir), { recursive: true });
-        fs.cpSync(clientBackup, clientDir, { recursive: true, force: true });
-        console.log("[start] @prisma/client restored from prisma-client/ backup");
-      } catch (e) {
-        console.error("[start] @prisma/client restore failed:", e.message);
-      }
+      try { fs.unlinkSync(clientDir); } catch {}
     } else {
-      console.error("[start] prisma-client/ backup not found at", clientBackup, "— API will fail");
+      try { fs.rmSync(clientDir, { recursive: true, force: true }); } catch {}
+    }
+    try {
+      fs.mkdirSync(path.dirname(clientDir), { recursive: true });
+      fs.cpSync(clientBackup, clientDir, { recursive: true });
+      console.log("[start] @prisma/client overwritten with generated backup");
+    } catch (e) {
+      console.error("[start] @prisma/client restore failed:", e.message);
     }
   } else {
-    console.log("[start] @prisma/client/index.js present — OK");
+    const vanillaOk = (() => {
+      try { return !!fs.statSync(path.join(clientDir, "index.js")); } catch { return false; }
+    })();
+    if (vanillaOk) {
+      console.warn("[start] prisma-client/ backup missing — keeping vanilla @prisma/client (API will likely fail)");
+    } else {
+      console.error("[start] prisma-client/ backup not found at", clientBackup, "AND @prisma/client unreachable — API will fail");
+    }
   }
 
   // ── Step 2: ensure .prisma/client/default.js exists ─────────────────────
@@ -364,8 +374,6 @@ try {
     } catch {}
   }
 })();
-
-startProxy(0);
 
 // ---------------------------------------------------------------------------
 // Wait for ports to be free, then launch children
