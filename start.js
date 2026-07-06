@@ -272,46 +272,50 @@ try {
   console.log("[start] OpenSSL:", ssl);
 } catch {}
 try {
-  // Show every file in .prisma/client that looks like an engine binary.
-  // This tells us which binaryTargets were actually included in the build.
-  const prismaDir = path.join(root, "node_modules/.prisma/client");
+  // Prisma v6 puts the engine binary directly in @prisma/client (explicit output).
+  const prismaDir = path.join(root, "node_modules/@prisma/client");
   const files = fs.readdirSync(prismaDir)
     .filter(f => f.endsWith(".node") || f.endsWith(".so") || f.includes("query_engine") || f.includes("libquery"));
-  console.log("[start] Prisma engines:", files.length ? files.join(", ") : "NONE FOUND");
+  console.log("[start] Prisma engines in @prisma/client:", files.length ? files.join(", ") : "NONE FOUND");
 } catch (e) {
-  console.log("[start] Prisma engines dir missing:", e.message);
+  console.log("[start] @prisma/client dir missing:", e.message);
 }
 
 // ---------------------------------------------------------------------------
-// Restore Prisma client from the non-dot backup written by post-build.js.
-// Hostinger excludes dot-directories (like .prisma/) when syncing node_modules
-// to the runtime nodejs/ dir. post-build.js backs up the generated client to
-// node_modules/prisma-client/ (no dot) which survives deployment. We symlink
-// it back here synchronously — zero child processes, runs in microseconds.
+// Verify the Prisma engine binary is present in node_modules/@prisma/client.
+// Prisma v6 generates directly into @prisma/client (explicit output in schema).
+// If the engine binary is missing (Hostinger stripped it or pnpm reinstalled
+// over it), fall back to the node_modules/prisma-client/ backup written by
+// post-build.js. No child processes — just a synchronous directory copy.
 // ---------------------------------------------------------------------------
 (function restorePrismaClient() {
-  const backup = path.join(root, "node_modules/prisma-client");
-  const target = path.join(root, "node_modules/.prisma/client");
-  if (fs.existsSync(target)) {
-    console.log("[start] Prisma client already present");
-    return;
-  }
-  if (!fs.existsSync(backup)) {
-    console.error("[start] Prisma backup (node_modules/prisma-client/) missing — API will fail to start. Re-deploy to trigger post-build.");
-    return;
-  }
-  try {
-    fs.symlinkSync(backup, target);
-    console.log("[start] Prisma client restored via symlink");
-  } catch (e) {
-    console.warn("[start] symlink failed (" + e.message + ") — falling back to fs.cpSync");
+  const clientDir = path.join(root, "node_modules/@prisma/client");
+  const backupDir = path.join(root, "node_modules/prisma-client");
+
+  function hasEngine(dir) {
     try {
-      fs.mkdirSync(path.dirname(target), { recursive: true });
-      fs.cpSync(backup, target, { recursive: true });
-      console.log("[start] Prisma client restored via copy");
-    } catch (e2) {
-      console.error("[start] Prisma restore failed:", e2.message);
-    }
+      return fs.readdirSync(dir).some(
+        f => f.includes("query_engine") || f.includes("libquery") || f.endsWith(".so.node")
+      );
+    } catch { return false; }
+  }
+
+  if (hasEngine(clientDir)) {
+    console.log("[start] Prisma engine present in @prisma/client — OK");
+    return;
+  }
+
+  console.warn("[start] Prisma engine binary missing from @prisma/client");
+  if (!fs.existsSync(backupDir)) {
+    console.error("[start] No backup at node_modules/prisma-client/ either — API will fail. Re-deploy to regenerate.");
+    return;
+  }
+
+  try {
+    fs.cpSync(backupDir, clientDir, { recursive: true, force: true });
+    console.log("[start] Prisma engine restored from node_modules/prisma-client/ backup");
+  } catch (e) {
+    console.error("[start] Prisma restore failed:", e.message);
   }
 })();
 

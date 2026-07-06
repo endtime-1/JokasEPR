@@ -54,21 +54,29 @@ try {
   console.log(`post-build: could not write .htaccess (${e.message}) — skipping`);
 }
 
-// Back up the generated Prisma client to a non-dot directory.
-// Hostinger excludes dot-prefix directories (like .prisma/) when rsyncing
-// node_modules to the runtime nodejs/ dir. node_modules/prisma-client/ (no dot)
-// survives the sync. start.js restores it via fs.symlinkSync at boot.
-const prismaClientSrc = path.join(__dirname, "../node_modules/.prisma/client");
+// Back up the generated Prisma client to node_modules/prisma-client/ (no dot).
+// Prisma v6 generates to node_modules/@prisma/client (explicit output in schema).
+// That directory survives Hostinger's deployment, but we also keep a backup in
+// node_modules/prisma-client/ so start.js can restore it if @prisma/client ever
+// gets overwritten by a bare pnpm install on the server.
+const prismaClientSrc = path.join(__dirname, "../node_modules/@prisma/client");
 const prismaClientDst = path.join(__dirname, "../node_modules/prisma-client");
-if (existsSync(prismaClientSrc)) {
-  if (existsSync(prismaClientDst)) {
-    const { rmSync } = require("fs");
-    rmSync(prismaClientDst, { recursive: true, force: true });
-  }
+
+// Detect whether generate actually ran: look for the query engine binary.
+const engineFiles = existsSync(prismaClientSrc)
+  ? require("fs").readdirSync(prismaClientSrc).filter(
+      f => f.includes("query_engine") || f.includes("libquery") || f.endsWith(".so.node")
+    )
+  : [];
+
+if (engineFiles.length > 0) {
+  console.log("post-build: Prisma engine found:", engineFiles.join(", "));
+  const { rmSync } = require("fs");
+  if (existsSync(prismaClientDst)) rmSync(prismaClientDst, { recursive: true, force: true });
   cpSync(prismaClientSrc, prismaClientDst, { recursive: true });
   console.log("post-build: Prisma client backed up → node_modules/prisma-client/");
 } else {
-  console.warn("post-build: .prisma/client not found — Prisma may not have generated. API will fail on Hostinger.");
+  console.warn("post-build: Prisma engine binary not found in node_modules/@prisma/client — schema output path may be wrong or generate did not run.");
 }
 
 console.log("post-build: done");
