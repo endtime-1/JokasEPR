@@ -287,8 +287,10 @@ try {
 (function restorePrismaRuntime() {
   const clientDir   = path.join(root, "node_modules/@prisma/client");
   const prismaDir   = path.join(root, "node_modules/.prisma/client");
-  const clientBackup  = path.join(root, "node_modules/prisma-client");
-  const runtimeBackup = path.join(root, "node_modules/prisma-runtime");
+  // Backups live in the project root (deployed by Hostinger alongside start.js),
+  // NOT inside node_modules/ (which Hostinger reinstalls fresh each deploy).
+  const clientBackup  = path.join(root, "prisma-client");
+  const runtimeBackup = path.join(root, "prisma-runtime");
 
   // Returns true if the symlink at p has a missing target.
   function isBrokenSymlink(p) {

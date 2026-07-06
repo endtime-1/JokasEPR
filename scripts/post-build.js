@@ -83,27 +83,29 @@ try {
   console.warn("post-build: could not resolve real path of @prisma/client:", e.message);
 }
 
-// 1. Back up @prisma/client (the JS package) → node_modules/prisma-client/
-//    start.js uses this to replace a broken symlink with a real directory.
+// 1. Back up @prisma/client (the JS package) → <project-root>/prisma-client/
+//    Hostinger deploys project-root files to nodejs/ but does a fresh install
+//    for node_modules/ — so backups must live outside node_modules/.
+//    start.js uses this to replace a missing/broken @prisma/client at runtime.
 const clientSrc = prismaRealClientDir || path.join(__dirname, "../node_modules/@prisma/client");
-const clientDst = path.join(__dirname, "../node_modules/prisma-client");
+const clientDst = path.join(__dirname, "../prisma-client");  // project root, not node_modules/
 if (existsSync(path.join(clientSrc, "index.js"))) {
   if (existsSync(clientDst)) rmSync(clientDst, { recursive: true, force: true });
   cpSync(clientSrc, clientDst, { recursive: true });
-  console.log("post-build: @prisma/client backed up → node_modules/prisma-client/");
+  console.log("post-build: @prisma/client backed up → prisma-client/");
 } else {
   console.warn("post-build: @prisma/client/index.js not found — client backup skipped");
 }
 
 // 2. Back up .prisma/client/ (generated runtime code + engine binary)
-//    → node_modules/prisma-runtime/
+//    → <project-root>/prisma-runtime/
 //    This is the file that @prisma/client/index.js loads at runtime:
 //      require('../.prisma/client/default')
 //    The dot-dir is excluded by Hostinger; start.js restores it from here.
 const runtimeSrc = storeNodeModulesDir
   ? path.join(storeNodeModulesDir, ".prisma/client")
   : path.join(__dirname, "../node_modules/.prisma/client");
-const runtimeDst = path.join(__dirname, "../node_modules/prisma-runtime");
+const runtimeDst = path.join(__dirname, "../prisma-runtime");  // project root, not node_modules/
 
 let runtimeSrcFound = existsSync(runtimeSrc);
 
