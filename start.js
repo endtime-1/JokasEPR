@@ -13,10 +13,26 @@ const standaloneDir = path.join(root, "apps/web/.next/standalone");
 const serverScript = path.join(standaloneDir, "apps/web", "server.js");
 const apiScript = path.join(root, "apps/api/dist/main.js");
 
-// Diagnostic: verify Hostinger injects env vars at runtime.
 console.log("[start] env — DATABASE_URL:", process.env.DATABASE_URL ? "SET" : "MISSING",
   "| JWT:", process.env.JWT_ACCESS_SECRET ? "SET" : "MISSING",
   "| PORT:", process.env.PORT, "| API_PORT:", process.env.API_PORT);
+
+// Track all child processes so we can kill them before this process exits.
+// Without this, orphaned children hold ports and the next restart gets EADDRINUSE.
+const children = [];
+
+function killAll(sig) {
+  for (const c of children) {
+    try { c.kill(sig || "SIGTERM"); } catch {}
+  }
+}
+
+// Kill children synchronously on any exit so ports are released immediately.
+process.on("exit", () => killAll("SIGTERM"));
+
+["SIGTERM", "SIGINT"].forEach((sig) => {
+  process.on(sig, () => { killAll(sig); bridge.close(); process.exit(0); });
+});
 
 function launch(name, script, cwd, env) {
   console.log(`[start] launching ${name}`);
@@ -25,12 +41,12 @@ function launch(name, script, cwd, env) {
     stdio: "inherit",
     env: { ...process.env, ...env, NODE_ENV: "production" },
   });
+  children.push(proc);
   proc.on("error", (err) => console.error(`[start] ${name} error:`, err.message));
   return proc;
 }
 
-// TCP bridge — binds PORT immediately so Hostinger detects listen() within 3 s.
-// All sockets are forwarded to Next.js on the internal port.
+// TCP bridge — bind PORT immediately, pipe all sockets to Next.js on WEB_INTERNAL_PORT.
 const bridge = net.createServer((socket) => {
   const upstream = net.connect(WEB_INTERNAL_PORT, "127.0.0.1");
   socket.pipe(upstream);
@@ -41,9 +57,12 @@ const bridge = net.createServer((socket) => {
 
 bridge.listen(PORT, "0.0.0.0", () => {
   console.log(`[start] bridge listening on port ${PORT} → Next.js :${WEB_INTERNAL_PORT}`);
+  // Some process managers (PM2, Hostinger) require this signal to mark the app ready.
+  if (process.send) process.send("ready");
 });
 
-let web = launch("jokas-web", serverScript, standaloneDir, {
+// Next.js web server on internal port.
+const web = launch("jokas-web", serverScript, standaloneDir, {
   PORT: String(WEB_INTERNAL_PORT),
   HOSTNAME: "0.0.0.0",
 });
@@ -53,6 +72,7 @@ web.on("close", (code) => {
   process.exit(code ?? 1);
 });
 
+// NestJS API — auto-restarts on crash so web keeps serving.
 let apiRestarts = 0;
 function startApi() {
   const proc = launch("jokas-api", apiScript, path.join(root, "apps/api"), {
@@ -66,11 +86,3 @@ function startApi() {
   });
 }
 startApi();
-
-["SIGTERM", "SIGINT"].forEach((sig) => {
-  process.on(sig, () => {
-    web.kill(sig);
-    bridge.close();
-    process.exit(0);
-  });
-});
