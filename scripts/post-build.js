@@ -6,7 +6,8 @@
 // 4. Bundles the NestJS API (tsc output) into a single file with esbuild.
 // 5. Rewrites package.json and pnpm-workspace.yaml so the runtime pnpm
 //    install is a near-instant no-op (nothing to download).
-const { cpSync, execSync, existsSync, mkdirSync, readdirSync, realpathSync, rmSync, writeFileSync } = require("fs");
+const { cpSync, existsSync, mkdirSync, readdirSync, realpathSync, rmSync, writeFileSync } = require("fs");
+const { execSync } = require("child_process");
 const path = require("path");
 
 const root = path.join(__dirname, "..");
