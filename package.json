@@ -6,7 +6,6 @@
   "packageManager": "pnpm@11.9.0",
   "scripts": {
     "dev": "pnpm --parallel --filter @jokas/api --filter @jokas/web --filter @jokas/storefront dev",
-    "postinstall": "node scripts/fix-permissions.js",
     "build": "npx --yes pnpm@11.9.0 --filter @jokas/db build && npx --yes pnpm@11.9.0 --filter @jokas/shared build && npx --yes pnpm@11.9.0 --filter @jokas/api --filter @jokas/web build && node scripts/post-build.js",
     "start": "node start.js",
     "lint": "pnpm -r lint",
@@ -17,10 +16,7 @@
     "db:migrate": "pnpm --filter @jokas/db prisma:migrate",
     "db:seed": "pnpm --filter @jokas/db prisma:seed"
   },
-  "dependencies": {
-    "prisma": "^6.1.0",
-    "@prisma/client": "^6.1.0"
-  },
+  "dependencies": {},
   "devDependencies": {
     "@eslint/js": "^9.18.0",
     "@typescript-eslint/eslint-plugin": "^8.20.0",
