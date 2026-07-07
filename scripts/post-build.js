@@ -33,26 +33,15 @@ if (!existsSync(standaloneDir)) {
   }
 }
 
-// Write LiteSpeed proxy .htaccess.
-// During Hostinger build, __dirname is:
-//   public_html/.builds/source/repository/scripts/
-// public_html/ is 4 levels up: scripts→repository→source→.builds→public_html
-const port = process.env.PORT || "3000";
-const htaccessPath = path.join(__dirname, "../../../../.htaccess");
-const htaccess = `RewriteEngine On
-RewriteRule ^\\.builds - [F,L]
-RewriteCond %{HTTP:Upgrade} websocket [NC]
-RewriteCond %{HTTP:Connection} upgrade [NC]
-RewriteRule ^/?(.*)$ ws://127.0.0.1:${port}/$1 [P,L]
-RewriteCond %{REQUEST_FILENAME} !-f
-RewriteRule ^/?(.*)$ http://127.0.0.1:${port}/$1 [P,L]
-`;
-try {
-  writeFileSync(htaccessPath, htaccess);
-  console.log(`post-build: .htaccess written (proxy → port ${port})`);
-} catch (e) {
-  console.log(`post-build: could not write .htaccess (${e.message}) — skipping`);
-}
+// NOTE: .htaccess is intentionally NOT written here.
+// Hostinger uses Phusion Passenger (OpenLiteSpeed) which writes its own
+// PassengerAppRoot / PassengerStartupFile directives to .htaccess after
+// every build. Passenger intercepts all HTTP requests and forwards them
+// to start.js — no RewriteRule proxy is needed or wanted.
+// Adding RewriteRules on top of Passenger causes a race: if LiteSpeed
+// evaluates the rule before Passenger binds port 3000, it gets a
+// "Connection Refused" and returns 503.
+console.log("post-build: skipping .htaccess write (Passenger handles all routing)");
 
 // ---------------------------------------------------------------------------
 // Find @prisma/client by searching all known pnpm locations.
