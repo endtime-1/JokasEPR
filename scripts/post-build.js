@@ -164,9 +164,20 @@ const apiDistBundle = path.join(root, "apps/api/dist/bundle.js");
 if (existsSync(apiDistMain)) {
   try {
     console.log("post-build: bundling API with esbuild…");
-    // Require esbuild by absolute path so we don't rely on PATH or npx.
-    // With shamefully-hoist=true esbuild is symlinked to root node_modules/.
-    const esbuild = require(path.join(root, "node_modules/esbuild"));
+    // Find esbuild in root node_modules or in the .pnpm virtual store.
+    // shamefully-hoist doesn't always create root-level symlinks, so we
+    // search .pnpm the same way we search for @prisma/client above.
+    const esbuildCandidates = [
+      path.join(root, "node_modules/esbuild"),
+      ...pnpmStoreCandidates("esbuild"),
+    ];
+    let esbuildPath = null;
+    for (const c of esbuildCandidates) {
+      if (existsSync(path.join(c, "package.json"))) { esbuildPath = c; break; }
+    }
+    if (!esbuildPath) throw new Error("esbuild package not found in node_modules or .pnpm store");
+    console.log("post-build: using esbuild at:", esbuildPath);
+    const esbuild = require(esbuildPath);
     esbuild.buildSync({
       entryPoints: [apiDistMain],
       bundle: true,

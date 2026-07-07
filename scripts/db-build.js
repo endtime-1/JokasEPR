@@ -31,6 +31,17 @@ if (process.env.NODE_ENV === "production") {
   if (provider === "mysql") {
     // MySQL on Hostinger: migration files use PostgreSQL syntax so they won't
     // work. Use db push to sync the schema directly against the fresh database.
+    //
+    // First chmod the schema-engine binary — pnpm's .pnpm store sometimes
+    // loses the execute bit, causing EACCES when the binary is first spawned.
+    try {
+      execSync(
+        "find ../../node_modules/.pnpm -name 'schema-engine-*' -type f -exec chmod +x {} +",
+        { cwd: dbDir, shell: true, stdio: "pipe" }
+      );
+      console.log("[db-build] chmod +x schema-engine binaries OK");
+    } catch {}
+
     console.log("[db-build] mysql: running prisma db push...");
     try {
       execSync(`npx prisma db push --schema="${schema}" --accept-data-loss`, {
@@ -38,7 +49,7 @@ if (process.env.NODE_ENV === "production") {
         cwd: dbDir,
       });
     } catch (err) {
-      console.error("[db-build] prisma db push failed (schema-engine permissions?):", err.message);
+      console.error("[db-build] prisma db push failed:", err.message);
       console.error("[db-build] continuing build — run db push manually after deploy if needed");
     }
   } else {
