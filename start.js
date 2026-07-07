@@ -7,6 +7,18 @@ const net = require("net");
 const path = require("path");
 
 const root = __dirname;
+
+// Write a health file to public_html immediately so we can confirm start.js
+// is executing even when runtime logs are unavailable. The !-f rule in
+// .htaccess means LiteSpeed serves this file directly without proxying.
+try {
+  fs.writeFileSync(
+    path.join(root, "../public_html/health.txt"),
+    "start.js running\npid=" + process.pid + "\nnode=" + process.version +
+    "\nport=" + (process.env.PORT || "?") + "\ntime=" + Date.now() + "\n"
+  );
+} catch (_) {}
+
 const PORT = parseInt(process.env.PORT || "3000", 10);
 const API_PORT = parseInt(process.env.API_PORT || "4001", 10);
 const WEB_INTERNAL_PORT = 3001;
