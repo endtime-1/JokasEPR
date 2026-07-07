@@ -117,18 +117,6 @@ process.on("exit", (code) => {
   process.stdout.write(`[start] process.exit code=${code}\n`);
 });
 
-// Run both cleanup paths before anything else.
-killOrphans();
-killPortOwner(WEB_INTERNAL_PORT);
-killPortOwner(API_PORT);
-
-// ---------------------------------------------------------------------------
-// Env log
-// ---------------------------------------------------------------------------
-console.log("[start] env — DATABASE_URL:", process.env.DATABASE_URL ? "SET" : "MISSING",
-  "| JWT:", process.env.JWT_ACCESS_SECRET ? "SET" : "MISSING",
-  "| PORT:", process.env.PORT, "| API_PORT:", process.env.API_PORT);
-
 // ---------------------------------------------------------------------------
 // Child tracking
 // ---------------------------------------------------------------------------
@@ -260,9 +248,8 @@ function startProxy(attempt) {
 }
 
 // ---------------------------------------------------------------------------
-// Write .htaccess to public_html/ so LiteSpeed proxies traffic to us.
-// nodejs/ and public_html/ are siblings under jokasfarms.com/, so public_html
-// is one level up from root (the nodejs/ dir).
+// Write .htaccess + bind proxy port FIRST — before any slow sync operations.
+// Hostinger requires listen() within 3 seconds of start.
 // ---------------------------------------------------------------------------
 try {
   const publicHtml = path.join(root, "../public_html");
@@ -284,12 +271,18 @@ try {
 } catch (e) {
   console.warn("[start] could not write .htaccess:", e.message);
 }
+startProxy(0);
 
 // ---------------------------------------------------------------------------
-// Bind the proxy port immediately so Hostinger's 3-second listen() check
-// passes before any slow synchronous operations (file copies etc.) below.
+// Env log + deferred cleanup (after port is bound)
 // ---------------------------------------------------------------------------
-startProxy(0);
+console.log("[start] env — DATABASE_URL:", process.env.DATABASE_URL ? "SET" : "MISSING",
+  "| JWT:", process.env.JWT_ACCESS_SECRET ? "SET" : "MISSING",
+  "| PORT:", process.env.PORT, "| API_PORT:", process.env.API_PORT);
+
+killOrphans();
+killPortOwner(WEB_INTERNAL_PORT);
+killPortOwner(API_PORT);
 
 // ---------------------------------------------------------------------------
 // Diagnostics
