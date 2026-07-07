@@ -177,6 +177,16 @@ if (existsSync(apiDistMain)) {
     }
     if (!esbuildPath) throw new Error("esbuild package not found in node_modules or .pnpm store");
     console.log("post-build: using esbuild at:", esbuildPath);
+    // esbuild spawns a platform-specific native binary at runtime.
+    // pnpm's .pnpm store sometimes strips the execute bit — chmod it first.
+    try {
+      const { execSync: ce } = require("child_process");
+      ce("find node_modules/.pnpm -path '*/@esbuild/*/bin/esbuild' -type f -exec chmod +x {} +",
+        { cwd: root, shell: true, stdio: "pipe" });
+      console.log("post-build: chmod +x @esbuild/* binary OK");
+    } catch (ce) {
+      console.warn("post-build: chmod @esbuild binary failed:", ce.message);
+    }
     const esbuild = require(esbuildPath);
     esbuild.buildSync({
       entryPoints: [apiDistMain],
