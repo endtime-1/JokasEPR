@@ -195,7 +195,14 @@ if (existsSync(apiDistMain)) {
       target: "node18",
       outfile: apiDistBundle,
       // @prisma/client stays external — start.js restores it from backup.
-      external: ["@prisma/client", ".prisma/client", ".prisma/*"],
+      // @nestjs/microservices and @nestjs/websockets are optional lazy-loaded
+      // peer deps in @nestjs/core — this app doesn't use them so they're safe
+      // to leave as external (the lazy require() is never invoked at runtime).
+      external: [
+        "@prisma/client", ".prisma/client", ".prisma/*",
+        "@nestjs/microservices", "@nestjs/microservices/*",
+        "@nestjs/websockets", "@nestjs/websockets/*",
+      ],
       logLevel: "warning",
     });
     console.log("post-build: API bundle written → apps/api/dist/bundle.js");
