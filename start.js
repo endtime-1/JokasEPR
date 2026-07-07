@@ -293,7 +293,10 @@ function startProxy(attempt) {
 // ---------------------------------------------------------------------------
 // Write .htaccess + bind proxy port FIRST — before any slow sync operations.
 // Hostinger requires listen() within 3 seconds of start.
+// Kill any leftover process holding PORT before we try to listen — otherwise
+// EADDRINUSE triggers 8×500ms retries (4s total) which exceeds the 3s window.
 // ---------------------------------------------------------------------------
+killPortOwner(PORT);
 try {
   const publicHtml = path.join(root, "../public_html");
   const htaccessPath = path.join(publicHtml, ".htaccess");

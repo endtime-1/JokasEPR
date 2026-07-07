@@ -253,23 +253,17 @@ try {
   console.warn("post-build: could not write runtime pnpm-workspace.yaml:", e.message);
 }
 
-// Also replace pnpm-lock.yaml with a minimal version that matches the empty
-// package.json above. Without this, the old 1365-package lockfile conflicts
-// with the empty package.json and pnpm exits with ERR_PNPM_OUTDATED_LOCKFILE
-// (or takes forever re-resolving), so node start.js never runs.
-const minimalLockfile = [
-  "lockfileVersion: '9.0'",
-  "",
-  "settings:",
-  "  autoInstallPeers: true",
-  "  excludeLinksFromLockfile: false",
-  "",
-].join("\n");
+// Delete pnpm-lock.yaml entirely so the runtime has no lockfile at all.
+// With a missing lockfile + empty package.json + empty workspace, pnpm
+// generates a fresh zero-package lockfile in under a second and exits.
+// This avoids any schema-mismatch or frozen-lockfile errors that a hand-crafted
+// minimal YAML might trigger (e.g. missing "importers" section in pnpm v9).
+const { rmSync: _rmSync } = require("fs");
 try {
-  writeFileSync(path.join(root, "pnpm-lock.yaml"), minimalLockfile);
-  console.log("post-build: wrote minimal runtime pnpm-lock.yaml");
+  _rmSync(path.join(root, "pnpm-lock.yaml"), { force: true });
+  console.log("post-build: deleted pnpm-lock.yaml (runtime will generate a fresh empty one)");
 } catch (e) {
-  console.warn("post-build: could not write runtime pnpm-lock.yaml:", e.message);
+  console.warn("post-build: could not delete pnpm-lock.yaml:", e.message);
 }
 
 // Write a static diagnostic file to public_html.
