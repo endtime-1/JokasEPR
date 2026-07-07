@@ -274,201 +274,167 @@ try {
 startProxy(0);
 
 // ---------------------------------------------------------------------------
-// Env log + deferred cleanup (after port is bound)
+// Defer ALL blocking synchronous operations until after the first event-loop
+// tick so the proxy can answer LiteSpeed's health check before we block.
+// Without setImmediate, execSync + fs.cpSync hold the event loop for ~20s
+// and LiteSpeed times out waiting for an HTTP response → 503 / marks backend
+// unhealthy for all subsequent requests.
 // ---------------------------------------------------------------------------
-console.log("[start] env — DATABASE_URL:", process.env.DATABASE_URL ? "SET" : "MISSING",
-  "| JWT:", process.env.JWT_ACCESS_SECRET ? "SET" : "MISSING",
-  "| PORT:", process.env.PORT, "| API_PORT:", process.env.API_PORT);
+setImmediate(() => {
+  console.log("[start] env — DATABASE_URL:", process.env.DATABASE_URL ? "SET" : "MISSING",
+    "| JWT:", process.env.JWT_ACCESS_SECRET ? "SET" : "MISSING",
+    "| PORT:", process.env.PORT, "| API_PORT:", process.env.API_PORT);
 
-killOrphans();
-killPortOwner(WEB_INTERNAL_PORT);
-killPortOwner(API_PORT);
+  killOrphans();
+  killPortOwner(WEB_INTERNAL_PORT);
+  killPortOwner(API_PORT);
 
-// ---------------------------------------------------------------------------
-// Diagnostics
-// ---------------------------------------------------------------------------
-try {
-  const os = execSync("cat /etc/os-release 2>/dev/null | grep PRETTY_NAME", { encoding: "utf8", timeout: 2000 }).trim();
-  console.log("[start] OS:", os);
-} catch {}
-try {
-  const ssl = execSync("openssl version 2>/dev/null", { encoding: "utf8", timeout: 2000 }).trim();
-  console.log("[start] OpenSSL:", ssl);
-} catch {}
+  // ── Diagnostics ──────────────────────────────────────────────────────────
+  try {
+    const os = execSync("cat /etc/os-release 2>/dev/null | grep PRETTY_NAME", { encoding: "utf8", timeout: 2000 }).trim();
+    console.log("[start] OS:", os);
+  } catch {}
+  try {
+    const ssl = execSync("openssl version 2>/dev/null", { encoding: "utf8", timeout: 2000 }).trim();
+    console.log("[start] OpenSSL:", ssl);
+  } catch {}
 
-// ---------------------------------------------------------------------------
-// Restore Prisma runtime — two steps, both synchronous (no child processes).
-//
-// Without a custom output in schema, Prisma generates into the pnpm store
-// (.pnpm/…/node_modules/@prisma/client and .pnpm/…/node_modules/.prisma/client).
-// Hostinger excludes dot-directories from the deployed runtime, so:
-//   • node_modules/@prisma/client  → broken symlink (target .pnpm/ is gone)
-//   • node_modules/.prisma/client  → missing (dot-dir excluded)
-//
-// post-build.js backed both up to node_modules/prisma-client/ and
-// node_modules/prisma-runtime/ (no dots).  We restore them here before
-// launching any child process.
-// ---------------------------------------------------------------------------
-(function restorePrismaRuntime() {
-  const clientDir   = path.join(root, "node_modules/@prisma/client");
-  const prismaDir   = path.join(root, "node_modules/.prisma/client");
-  // Backups live inside apps/api/dist/ — the one directory that is guaranteed
-  // to be deployed by Hostinger (the API binary lives there).
-  const clientBackup  = path.join(root, "apps/api/dist/prisma-client");
-  const runtimeBackup = path.join(root, "apps/api/dist/prisma-runtime");
+  // ── Restore Prisma runtime ───────────────────────────────────────────────
+  (function restorePrismaRuntime() {
+    const clientDir     = path.join(root, "node_modules/@prisma/client");
+    const prismaDir     = path.join(root, "node_modules/.prisma/client");
+    const clientBackup  = path.join(root, "apps/api/dist/prisma-client");
+    const runtimeBackup = path.join(root, "apps/api/dist/prisma-runtime");
 
-  // Returns true if the symlink at p has a missing target.
-  function isBrokenSymlink(p) {
-    try {
-      if (!fs.lstatSync(p).isSymbolicLink()) return false;
-      fs.statSync(p);   // throws if target is missing
-      return false;
-    } catch { return true; }
-  }
-
-  console.log("[start] backup paths — client:", clientBackup, "| runtime:", runtimeBackup);
-
-  // ── Step 1: ALWAYS overwrite @prisma/client with the generated backup ─────
-  // pnpm's fresh install in nodejs/ puts an UNGENERATED (vanilla) @prisma/client
-  // here — either as a real directory or a broken symlink.  The vanilla index.js
-  // uses require('./.prisma/client/default') which looks INSIDE @prisma/client/
-  // itself and will never find anything.  Our post-build backup is the GENERATED
-  // version whose index.js uses require('../../.prisma/client/default'), which
-  // resolves to node_modules/.prisma/client/default.js — exactly where step 2
-  // restores the runtime.  We must overwrite the vanilla unconditionally.
-  if (fs.existsSync(clientBackup)) {
-    // Remove existing dir/symlink (vanilla real dir, broken symlink, or absent)
-    if (isBrokenSymlink(clientDir)) {
-      try { fs.unlinkSync(clientDir); } catch {}
-    } else {
-      try { fs.rmSync(clientDir, { recursive: true, force: true }); } catch {}
-    }
-    try {
-      fs.mkdirSync(path.dirname(clientDir), { recursive: true });
-      fs.cpSync(clientBackup, clientDir, { recursive: true });
-      console.log("[start] @prisma/client overwritten with generated backup");
-    } catch (e) {
-      console.error("[start] @prisma/client restore failed:", e.message);
-    }
-  } else {
-    const vanillaOk = (() => {
-      try { return !!fs.statSync(path.join(clientDir, "index.js")); } catch { return false; }
-    })();
-    if (vanillaOk) {
-      console.warn("[start] prisma-client/ backup missing — keeping vanilla @prisma/client (API will likely fail)");
-    } else {
-      console.error("[start] prisma-client/ backup not found at", clientBackup, "AND @prisma/client unreachable — API will fail");
-    }
-  }
-
-  // ── Step 2: ensure .prisma/client/default.js exists ─────────────────────
-  // @prisma/client/index.js does require('../.prisma/client/default') at
-  // runtime.  After step 1, @prisma/client is a real dir at
-  // node_modules/@prisma/client, so '../' resolves to node_modules/ and
-  // Node.js looks for node_modules/.prisma/client/default.js.
-  const runtimeOk = fs.existsSync(path.join(prismaDir, "default.js"));
-  if (!runtimeOk) {
-    console.warn("[start] .prisma/client/default.js missing — restoring from backup");
-    if (fs.existsSync(runtimeBackup)) {
+    function isBrokenSymlink(p) {
       try {
-        fs.mkdirSync(path.dirname(prismaDir), { recursive: true });
-        try { fs.rmSync(prismaDir, { recursive: true, force: true }); } catch {}
-        fs.cpSync(runtimeBackup, prismaDir, { recursive: true });
-        console.log("[start] .prisma/client/ restored from node_modules/prisma-runtime/");
+        if (!fs.lstatSync(p).isSymbolicLink()) return false;
+        fs.statSync(p);
+        return false;
+      } catch { return true; }
+    }
+
+    console.log("[start] backup paths — client:", clientBackup, "| runtime:", runtimeBackup);
+
+    if (fs.existsSync(clientBackup)) {
+      if (isBrokenSymlink(clientDir)) {
+        try { fs.unlinkSync(clientDir); } catch {}
+      } else {
+        try { fs.rmSync(clientDir, { recursive: true, force: true }); } catch {}
+      }
+      try {
+        fs.mkdirSync(path.dirname(clientDir), { recursive: true });
+        fs.cpSync(clientBackup, clientDir, { recursive: true });
+        console.log("[start] @prisma/client overwritten with generated backup");
+      } catch (e) {
+        console.error("[start] @prisma/client restore failed:", e.message);
+      }
+    } else {
+      const vanillaOk = (() => {
+        try { return !!fs.statSync(path.join(clientDir, "index.js")); } catch { return false; }
+      })();
+      if (vanillaOk) {
+        console.warn("[start] prisma-client/ backup missing — keeping vanilla @prisma/client (API will likely fail)");
+      } else {
+        console.error("[start] prisma-client/ backup not found AND @prisma/client unreachable — API will fail");
+      }
+    }
+
+    const runtimeOk = fs.existsSync(path.join(prismaDir, "default.js"));
+    if (!runtimeOk) {
+      console.warn("[start] .prisma/client/default.js missing — restoring from backup");
+      if (fs.existsSync(runtimeBackup)) {
+        try {
+          fs.mkdirSync(path.dirname(prismaDir), { recursive: true });
+          try { fs.rmSync(prismaDir, { recursive: true, force: true }); } catch {}
+          fs.cpSync(runtimeBackup, prismaDir, { recursive: true });
+          console.log("[start] .prisma/client/ restored from backup");
+          const engines = fs.readdirSync(prismaDir)
+            .filter(f => f.includes("query_engine") || f.includes("libquery") || f.endsWith(".so.node"));
+          console.log("[start] Prisma engine:", engines.length ? engines.join(", ") : "NONE FOUND");
+        } catch (e) {
+          console.error("[start] .prisma/client restore failed:", e.message);
+        }
+      } else {
+        console.error("[start] prisma-runtime/ backup not found — API will fail");
+      }
+    } else {
+      console.log("[start] .prisma/client/default.js present — OK");
+      try {
         const engines = fs.readdirSync(prismaDir)
           .filter(f => f.includes("query_engine") || f.includes("libquery") || f.endsWith(".so.node"));
         console.log("[start] Prisma engine:", engines.length ? engines.join(", ") : "NONE FOUND");
-      } catch (e) {
-        console.error("[start] .prisma/client restore failed:", e.message);
+      } catch {}
+    }
+  })();
+
+  // ── Wait for child ports, then launch ────────────────────────────────────
+  (async () => {
+    console.log(`[start] waiting for ports ${WEB_INTERNAL_PORT} and ${API_PORT} to be free…`);
+    await Promise.all([
+      waitForPortFree(WEB_INTERNAL_PORT),
+      waitForPortFree(API_PORT),
+    ]);
+    console.log("[start] ports clear");
+
+    let dbUrl = process.env.DATABASE_URL || "";
+    if (dbUrl.startsWith("mysql://")) {
+      dbUrl = dbUrl.replace("@localhost:", "@127.0.0.1:");
+      if (!dbUrl.includes("connect_timeout")) {
+        dbUrl += (dbUrl.includes("?") ? "&" : "?") + "connect_timeout=10";
       }
-    } else {
-      console.error("[start] prisma-runtime/ backup not found at", runtimeBackup, "— API will fail");
+      if (dbUrl !== process.env.DATABASE_URL) {
+        console.log("[start] DATABASE_URL patched: localhost→127.0.0.1 + connect_timeout=10");
+      }
     }
-  } else {
-    console.log("[start] .prisma/client/default.js present — OK");
-    try {
-      const engines = fs.readdirSync(prismaDir)
-        .filter(f => f.includes("query_engine") || f.includes("libquery") || f.endsWith(".so.node"));
-      console.log("[start] Prisma engine:", engines.length ? engines.join(", ") : "NONE FOUND");
-    } catch {}
-  }
-})();
 
-// ---------------------------------------------------------------------------
-// Wait for ports to be free, then launch children
-// ---------------------------------------------------------------------------
-(async () => {
-  console.log(`[start] waiting for ports ${WEB_INTERNAL_PORT} and ${API_PORT} to be free…`);
-  await Promise.all([
-    waitForPortFree(WEB_INTERNAL_PORT),
-    waitForPortFree(API_PORT),
-  ]);
-  console.log("[start] ports clear");
+    let webRestarts = 0;
+    function startWeb() {
+      if (!fs.existsSync(serverScript)) {
+        console.error(`[start] web server.js missing at ${serverScript} — will retry in 30s`);
+        setTimeout(startWeb, 30000);
+        return;
+      }
+      webProc = launch("jokas-web", serverScript, standaloneDir, {
+        PORT: String(WEB_INTERNAL_PORT),
+        HOSTNAME: "0.0.0.0",
+      });
+      if (!webProc) {
+        console.error("[start] web script missing — will retry in 30s");
+        setTimeout(startWeb, 30000);
+        return;
+      }
+      webProc.on("close", (code, signal) => {
+        webProc = null;
+        webReady = false;
+        webRestarts++;
+        const delay = Math.min(3000 * webRestarts, 30000);
+        console.log(`[start] web exited code=${code} signal=${signal} — restart #${webRestarts} in ${delay}ms`);
+        setTimeout(startWeb, delay);
+      });
+    }
+    startWeb();
 
-  // ---------------------------------------------------------------------------
-  // Fix DATABASE_URL for reliable MySQL connection:
-  //   - "localhost" → "127.0.0.1" to force TCP (avoid Unix socket hang)
-  //   - add connect_timeout=10 so a bad host fails in 10s instead of hanging
-  // ---------------------------------------------------------------------------
-  let dbUrl = process.env.DATABASE_URL || "";
-  if (dbUrl.startsWith("mysql://")) {
-    dbUrl = dbUrl.replace("@localhost:", "@127.0.0.1:");
-    if (!dbUrl.includes("connect_timeout")) {
-      dbUrl += (dbUrl.includes("?") ? "&" : "?") + "connect_timeout=10";
+    let apiRestarts = 0;
+    function startApi() {
+      apiProc = launch("jokas-api", apiScript, path.join(root, "apps/api"), {
+        PORT: String(API_PORT),
+        DATABASE_URL: dbUrl,
+      });
+      if (!apiProc) { console.error("[start] API script missing — not starting API"); return; }
+      savePids();
+      apiProc.on("close", (code, signal) => {
+        apiProc = null;
+        apiRestarts++;
+        const delay = Math.min(3000 * apiRestarts, 30000);
+        console.log(`[start] API exited code=${code} signal=${signal} — restart #${apiRestarts} in ${delay}ms`);
+        setTimeout(startApi, delay);
+      });
     }
-    if (dbUrl !== process.env.DATABASE_URL) {
-      console.log("[start] DATABASE_URL patched: localhost→127.0.0.1 + connect_timeout=10");
-    }
-  }
 
-  // Web (restart on crash like the API; never take down the proxy)
-  let webRestarts = 0;
-  function startWeb() {
-    if (!fs.existsSync(serverScript)) {
-      console.error(`[start] web server.js missing at ${serverScript} — will retry in 30s`);
-      setTimeout(startWeb, 30000);
-      return;
-    }
-    webProc = launch("jokas-web", serverScript, standaloneDir, {
-      PORT: String(WEB_INTERNAL_PORT),
-      HOSTNAME: "0.0.0.0",
-    });
-    if (!webProc) {
-      console.error("[start] web script missing — will retry in 30s");
-      setTimeout(startWeb, 30000);
-      return;
-    }
-    webProc.on("close", (code, signal) => {
-      webProc = null;
-      webReady = false;
-      webRestarts++;
-      const delay = Math.min(3000 * webRestarts, 30000);
-      console.log(`[start] web exited code=${code} signal=${signal} — restart #${webRestarts} in ${delay}ms`);
-      setTimeout(startWeb, delay);
-    });
-  }
-  startWeb();
-
-  // API (exponential backoff restarts; API is non-fatal so web keeps running)
-  let apiRestarts = 0;
-  function startApi() {
-    apiProc = launch("jokas-api", apiScript, path.join(root, "apps/api"), {
-      PORT: String(API_PORT),
-      DATABASE_URL: dbUrl,
-    });
-    if (!apiProc) { console.error("[start] API script missing — not starting API"); return; }
     savePids();
-    apiProc.on("close", (code, signal) => {
-      apiProc = null;
-      apiRestarts++;
-      const delay = Math.min(3000 * apiRestarts, 30000);
-      console.log(`[start] API exited code=${code} signal=${signal} — restart #${apiRestarts} in ${delay}ms`);
-      setTimeout(startApi, delay);
-    });
-  }
-
-  savePids(); // record web PID
-  startApi();
-})().catch((e) => {
-  console.error("[start] FATAL — main startup threw:", e?.stack || e);
-});
+    startApi();
+  })().catch((e) => {
+    console.error("[start] FATAL — main startup threw:", e?.stack || e);
+  });
+}); // end setImmediate
