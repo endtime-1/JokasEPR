@@ -52,6 +52,18 @@ if (process.env.NODE_ENV === "production") {
       console.error("[db-build] prisma db push failed:", err.message);
       console.error("[db-build] continuing build — run db push manually after deploy if needed");
     }
+
+    // Seed initial data (roles, permissions, Super Admin user) on first deploy.
+    // seed-if-empty.js is a no-op when users already exist.
+    try {
+      execSync(`node ${path.join(__dirname, "seed-if-empty.js")}`, {
+        stdio: "inherit",
+        cwd: dbDir,
+        env: process.env,
+      });
+    } catch (err) {
+      console.error("[db-build] seed-if-empty failed:", err.message);
+    }
   } else {
     console.log("[db-build] postgresql: running prisma migrate deploy...");
     execSync(`npx prisma migrate deploy --schema="${schema}"`, {
