@@ -272,4 +272,32 @@ try {
   console.warn("post-build: could not write runtime pnpm-lock.yaml:", e.message);
 }
 
+// Write a static diagnostic file to public_html.
+// LiteSpeed serves this directly (the !-f .htaccess rule means physical files
+// bypass the proxy), so it is accessible even when port 3000 is down.
+// Visit jokasfarms.com/build-info.txt after every deploy to confirm:
+//   1. post-build.js ran and what it wrote
+//   2. The deployment pipeline reaches public_html
+// Then compare with jokasfarms.com/health.txt (written by start.js):
+//   - build-info.txt present but health.txt missing → pnpm install still blocking
+//   - both present → full startup chain is working
+const buildInfoPath = path.join(__dirname, "../../../../build-info.txt");
+try {
+  const info = [
+    "built_at=" + new Date().toISOString(),
+    "pkg_deps=0 (minimal runtime package.json)",
+    "workspace_packages=0 (minimal pnpm-workspace.yaml)",
+    "lockfile=minimal (no packages — should make pnpm install instant)",
+    "api_bundle=" + (existsSync(apiDistBundle) ? "YES" : "NO"),
+    "prisma_backed_up=" + (existsSync(path.join(distDir, "prisma-client")) ? "YES" : "NO"),
+    "",
+    "If you see this file but NOT health.txt: pnpm install is still blocking.",
+    "If you also see health.txt: startup chain is fully working.",
+  ].join("\n");
+  writeFileSync(buildInfoPath, info);
+  console.log("post-build: wrote build-info.txt → jokasfarms.com/build-info.txt");
+} catch (e) {
+  console.warn("post-build: could not write build-info.txt:", e.message);
+}
+
 console.log("post-build: done");
