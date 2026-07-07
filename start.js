@@ -8,14 +8,32 @@ const path = require("path");
 
 const root = __dirname;
 
-// Write a health file to public_html immediately so we can confirm start.js
-// is executing even when runtime logs are unavailable. The !-f rule in
-// .htaccess means LiteSpeed serves this file directly without proxying.
+// Write a rich health file immediately. This is overwritten every time
+// start.js runs, so the timestamp tells us exactly when it last ran.
+// Includes runtime package.json info so we know what pnpm install saw.
 try {
+  let pkgDeps = "unreadable";
+  let lockfileType = "unreadable";
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+    pkgDeps = String(Object.keys(pkg.dependencies || {}).length);
+  } catch {}
+  try {
+    const lock = fs.readFileSync(path.join(root, "pnpm-lock.yaml"), "utf8");
+    lockfileType = lock.length < 600 ? "MINIMAL(ok)" : "FULL(" + lock.length + "bytes — PROBLEM)";
+  } catch { lockfileType = "missing(ok)"; }
   fs.writeFileSync(
     path.join(root, "../public_html/health.txt"),
-    "start.js running\npid=" + process.pid + "\nnode=" + process.version +
-    "\nport=" + (process.env.PORT || "?") + "\ntime=" + Date.now() + "\n"
+    [
+      "start.js running",
+      "pid=" + process.pid,
+      "node=" + process.version,
+      "port=" + (process.env.PORT || "?"),
+      "time=" + new Date().toISOString(),
+      "pkg_deps=" + pkgDeps + " (should be 0)",
+      "lockfile=" + lockfileType,
+      "root=" + root,
+    ].join("\n") + "\n"
   );
 } catch (_) {}
 
@@ -260,6 +278,14 @@ function startProxy(attempt) {
   });
   p.listen(PORT, "0.0.0.0", () => {
     console.log(`[start] HTTP proxy listening on ${PORT} → Next.js :${WEB_INTERNAL_PORT}`);
+    // Write proof that port 3000 was successfully bound.
+    // If health.txt exists but proxy-bound.txt does NOT, port 3000 was in use.
+    try {
+      fs.writeFileSync(
+        path.join(root, "../public_html/proxy-bound.txt"),
+        "proxy listening on port " + PORT + "\ntime=" + new Date().toISOString() + "\n"
+      );
+    } catch {}
     if (process.send) process.send("ready");
   });
 }
