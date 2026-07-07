@@ -253,4 +253,23 @@ try {
   console.warn("post-build: could not write runtime pnpm-workspace.yaml:", e.message);
 }
 
+// Also replace pnpm-lock.yaml with a minimal version that matches the empty
+// package.json above. Without this, the old 1365-package lockfile conflicts
+// with the empty package.json and pnpm exits with ERR_PNPM_OUTDATED_LOCKFILE
+// (or takes forever re-resolving), so node start.js never runs.
+const minimalLockfile = [
+  "lockfileVersion: '9.0'",
+  "",
+  "settings:",
+  "  autoInstallPeers: true",
+  "  excludeLinksFromLockfile: false",
+  "",
+].join("\n");
+try {
+  writeFileSync(path.join(root, "pnpm-lock.yaml"), minimalLockfile);
+  console.log("post-build: wrote minimal runtime pnpm-lock.yaml");
+} catch (e) {
+  console.warn("post-build: could not write runtime pnpm-lock.yaml:", e.message);
+}
+
 console.log("post-build: done");
