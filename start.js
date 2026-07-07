@@ -291,32 +291,15 @@ function startProxy(attempt) {
 }
 
 // ---------------------------------------------------------------------------
-// Write .htaccess + bind proxy port FIRST — before any slow sync operations.
-// Hostinger requires listen() within 3 seconds of start.
-// Kill any leftover process holding PORT before we try to listen — otherwise
-// EADDRINUSE triggers 8×500ms retries (4s total) which exceeds the 3s window.
+// Bind proxy port FIRST — before any slow sync operations.
+// Hostinger/Passenger requires listen() within seconds of start.
+// Kill any leftover process holding PORT before we try to listen.
+// NOTE: do NOT write .htaccess here. post-build.js writes it at build time
+// and Hostinger appends PassengerStartupFile directives afterward. If start.js
+// overwrites .htaccess it removes those directives, OpenLiteSpeed reloads,
+// Passenger kills this process, and port 3000 goes dark → persistent 503.
 // ---------------------------------------------------------------------------
 killPortOwner(PORT);
-try {
-  const publicHtml = path.join(root, "../public_html");
-  const htaccessPath = path.join(publicHtml, ".htaccess");
-  const port = process.env.PORT || "3000";
-  const htaccess = [
-    "RewriteEngine On",
-    "RewriteRule ^\\.builds - [F,L]",
-    "RewriteCond %{HTTP:Upgrade} websocket [NC]",
-    "RewriteCond %{HTTP:Connection} upgrade [NC]",
-    `RewriteRule ^/?(.*)$ ws://127.0.0.1:${port}/$1 [P,L]`,
-    "RewriteCond %{REQUEST_FILENAME} !-f",
-    `RewriteRule ^/?(.*)$ http://127.0.0.1:${port}/$1 [P,L]`,
-    "",
-  ].join("\n");
-  fs.mkdirSync(publicHtml, { recursive: true });
-  fs.writeFileSync(htaccessPath, htaccess);
-  console.log(`[start] .htaccess written → ${htaccessPath}`);
-} catch (e) {
-  console.warn("[start] could not write .htaccess:", e.message);
-}
 startProxy(0);
 
 // ---------------------------------------------------------------------------
