@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, ArrowRight, CheckCircle2, Settings2 } from "lucide-react";
+import { AlertCircle, ArrowRight, CheckCircle2, Settings } from "lucide-react";
 import { BrandLogo } from "../../components/brand-logo";
 
 export default function SetupPage() {
@@ -119,7 +119,7 @@ export default function SetupPage() {
           </div>
         </div>
         <div className="flex items-center gap-3 rounded-xl border border-white/15 bg-white/10 p-4 text-sm">
-          <Settings2 className="h-5 w-5 shrink-0 text-white/70" />
+          <Settings className="h-5 w-5 shrink-0 text-white/70" />
           <span className="text-white/80">This page is only accessible on a fresh installation with no existing users.</span>
         </div>
       </section>
@@ -135,7 +135,7 @@ export default function SetupPage() {
             <div className="mb-5 flex items-center justify-between gap-3">
               <BrandLogo className="h-14 w-14 rounded-xl shadow-soft" />
               <span className="inline-flex items-center gap-2 rounded-full border border-line bg-field px-3 py-1 text-xs font-semibold text-ink/65">
-                <Settings2 aria-hidden className="h-3.5 w-3.5 text-brand" />
+                <Settings aria-hidden className="h-3.5 w-3.5 text-brand" />
                 One-time setup
               </span>
             </div>
