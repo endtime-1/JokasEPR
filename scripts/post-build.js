@@ -7,7 +7,6 @@
 // 5. Rewrites package.json and pnpm-workspace.yaml so the runtime pnpm
 //    install is a near-instant no-op (nothing to download).
 const { cpSync, existsSync, mkdirSync, readdirSync, realpathSync, rmSync, writeFileSync } = require("fs");
-const { execSync } = require("child_process");
 const path = require("path");
 
 const root = path.join(__dirname, "..");
@@ -165,20 +164,19 @@ const apiDistBundle = path.join(root, "apps/api/dist/bundle.js");
 if (existsSync(apiDistMain)) {
   try {
     console.log("post-build: bundling API with esbuild…");
-    // Run esbuild from apps/api so it uses the correct module resolution base.
-    execSync(
-      [
-        "npx esbuild dist/main.js",
-        "--bundle",
-        "--platform=node",
-        "--target=node18",
-        "--outfile=dist/bundle.js",
-        "--external:@prisma/client",
-        "--external:.prisma/client",
-        "--log-level=warning",
-      ].join(" "),
-      { cwd: path.join(root, "apps/api"), stdio: "inherit" }
-    );
+    // Require esbuild by absolute path so we don't rely on PATH or npx.
+    // With shamefully-hoist=true esbuild is symlinked to root node_modules/.
+    const esbuild = require(path.join(root, "node_modules/esbuild"));
+    esbuild.buildSync({
+      entryPoints: [apiDistMain],
+      bundle: true,
+      platform: "node",
+      target: "node18",
+      outfile: apiDistBundle,
+      // @prisma/client stays external — start.js restores it from backup.
+      external: ["@prisma/client", ".prisma/client", ".prisma/*"],
+      logLevel: "warning",
+    });
     console.log("post-build: API bundle written → apps/api/dist/bundle.js");
   } catch (e) {
     console.error("post-build: esbuild bundling failed:", e.message);
