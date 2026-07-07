@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState, type ReactNode } from "react";
-import { Building2, ChevronRight, DatabaseBackup, LockKeyhole, Package, Plus, Save, Settings2, Sparkles } from "lucide-react";
+import { Bot, Building2, ChevronRight, HardDrive, Package, Plus, Save, Settings, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { AppShell } from "../../components/app-shell";
 import { ApiEnvelope, apiFetch } from "../../lib/api";
@@ -171,7 +171,7 @@ export default function SettingsPage() {
           <ChevronRight className="h-5 w-5 shrink-0 text-ink/30" />
         </Link>
 
-        <SettingCard title="Master Data" icon={Settings2}>
+        <SettingCard title="Master Data" icon={Settings}>
           <div className="mb-4 flex flex-wrap gap-2">
             {masterSections.map(([key, label]) => (
               <button key={key} onClick={() => { setActiveMaster(key); setForm({}); }} className={`rounded-md border px-3 py-2 text-sm font-semibold ${activeMaster === key ? "border-brand bg-brand text-white" : "border-line bg-white text-ink/70"}`}>
@@ -197,7 +197,7 @@ export default function SettingsPage() {
         </SettingCard>
 
         <div className="grid gap-5 xl:grid-cols-2">
-          <SettingCard title="Tax & Numbering" icon={Settings2}>
+          <SettingCard title="Tax & Numbering" icon={Settings}>
             <div className="grid gap-3">
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={bool(settings["tax.settings"].enabled)} onChange={(e) => updateSetting("tax.settings", { ...settings["tax.settings"], enabled: e.target.checked })} /> Enable tax</label>
               <input className={inputClass} placeholder="Tax name" value={settings["tax.settings"].taxName ?? ""} onChange={(e) => updateSetting("tax.settings", { ...settings["tax.settings"], taxName: e.target.value })} />
@@ -207,7 +207,7 @@ export default function SettingsPage() {
             </div>
           </SettingCard>
 
-          <SettingCard title="Notifications & AI" icon={Sparkles}>
+          <SettingCard title="Notifications & AI" icon={Bot}>
             <div className="grid gap-3">
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={bool(notification.emailEnabled)} onChange={(e) => setNotification({ ...notification, emailEnabled: e.target.checked })} /> Email notifications</label>
               <input className={inputClass} placeholder="From address" value={notification.emailFromAddress ?? ""} onChange={(e) => setNotification({ ...notification, emailFromAddress: e.target.value })} />
@@ -218,7 +218,7 @@ export default function SettingsPage() {
             </div>
           </SettingCard>
 
-          <SettingCard title="Backup Settings" icon={DatabaseBackup}>
+          <SettingCard title="Backup Settings" icon={HardDrive}>
             <div className="grid gap-3">
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={bool(settings["backup.settings"].enabled)} onChange={(e) => updateSetting("backup.settings", { ...settings["backup.settings"], enabled: e.target.checked })} /> Backups enabled</label>
               <input className={inputClass} placeholder="Frequency" value={settings["backup.settings"].frequency} onChange={(e) => updateSetting("backup.settings", { ...settings["backup.settings"], frequency: e.target.value })} />
@@ -228,7 +228,7 @@ export default function SettingsPage() {
             </div>
           </SettingCard>
 
-          <SettingCard title="User Access & Domain Types" icon={LockKeyhole}>
+          <SettingCard title="User Access & Domain Types" icon={ShieldCheck}>
             <div className="grid gap-3">
               {(["enforceBranchScope", "enforceFarmScope", "enforceWarehouseScope", "enforceProductionSiteScope", "requireMfaForAdmins"] as const).map((key) => (
                 <label key={key} className="flex items-center gap-2 text-sm">

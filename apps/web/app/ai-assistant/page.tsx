@@ -8,7 +8,6 @@ import {
   MessageSquare,
   Plus,
   Send,
-  Sparkles,
   Trash2
 } from "lucide-react";
 import { AppShell } from "../../components/app-shell";
@@ -338,7 +337,7 @@ export default function AiAssistantPage() {
             {isEmpty && !loadingSession && (
               <div className="flex h-full flex-col items-center justify-center px-4 text-center">
                 <div className="mb-5 grid h-16 w-16 place-items-center rounded-2xl bg-gradient-to-br from-brand/20 to-brand/10 shadow-sm">
-                  <Sparkles className="h-8 w-8 text-brand" />
+                  <Bot className="h-8 w-8 text-brand" />
                 </div>
                 <h3 className="mb-1.5 text-lg font-extrabold tracking-tight text-ink">
                   Ask a business question
