@@ -1,7 +1,12 @@
 #!/usr/bin/env node
-// Copies public/ and .next/static/ into the standalone output directory.
-// Next.js standalone mode does not include these automatically.
-const { cpSync, existsSync, mkdirSync, readdirSync, realpathSync, rmSync, writeFileSync } = require("fs");
+// post-build.js — runs after all workspace packages are compiled.
+// 1. Copies Next.js static assets into the standalone output.
+// 2. Writes the LiteSpeed .htaccess proxy rules.
+// 3. Finds and backs up @prisma/client + .prisma/client engine binary.
+// 4. Bundles the NestJS API (tsc output) into a single file with esbuild.
+// 5. Rewrites package.json and pnpm-workspace.yaml so the runtime pnpm
+//    install is a near-instant no-op (nothing to download).
+const { cpSync, execSync, existsSync, mkdirSync, readdirSync, realpathSync, rmSync, writeFileSync } = require("fs");
 const path = require("path");
 
 const root = path.join(__dirname, "..");
@@ -139,6 +144,47 @@ if (runtimeDir) {
   console.log("post-build: .prisma/client backed up → apps/api/dist/prisma-runtime/");
 } else {
   console.error("post-build: .prisma/client not found — API will fail at runtime!");
+}
+
+// ---------------------------------------------------------------------------
+// Bundle the NestJS API into a single file with esbuild.
+//
+// tsc (nest build) compiles TypeScript → apps/api/dist/*.js but leaves all
+// require('package') calls pointing at external node_modules. esbuild then
+// bundles dist/main.js and inlines all dependencies into dist/bundle.js.
+// Only @prisma/client stays external because start.js restores it from the
+// build-time backup.
+//
+// With shamefully-hoist=true, ALL packages are symlinked to root
+// node_modules/, so esbuild can resolve every dependency correctly.
+// ---------------------------------------------------------------------------
+const apiDistMain = path.join(root, "apps/api/dist/main.js");
+const apiDistBundle = path.join(root, "apps/api/dist/bundle.js");
+
+if (existsSync(apiDistMain)) {
+  try {
+    console.log("post-build: bundling API with esbuild…");
+    // Run esbuild from apps/api so it uses the correct module resolution base.
+    execSync(
+      [
+        "npx esbuild dist/main.js",
+        "--bundle",
+        "--platform=node",
+        "--target=node18",
+        "--outfile=dist/bundle.js",
+        "--external:@prisma/client",
+        "--external:.prisma/client",
+        "--log-level=warning",
+      ].join(" "),
+      { cwd: path.join(root, "apps/api"), stdio: "inherit" }
+    );
+    console.log("post-build: API bundle written → apps/api/dist/bundle.js");
+  } catch (e) {
+    console.error("post-build: esbuild bundling failed:", e.message);
+    console.warn("post-build: will fall back to unbundled dist/main.js at runtime (node_modules required)");
+  }
+} else {
+  console.warn("post-build: apps/api/dist/main.js not found — skipping esbuild step");
 }
 
 // ---------------------------------------------------------------------------

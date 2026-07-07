@@ -25,7 +25,12 @@ const WEB_INTERNAL_PORT = 3001;
 
 const standaloneDir = path.join(root, "apps/web/.next/standalone");
 const serverScript = path.join(standaloneDir, "apps/web", "server.js");
-const apiScript = path.join(root, "apps/api/dist/main.js");
+// Prefer the esbuild bundle (self-contained, no node_modules needed).
+// Fall back to tsc output if bundle wasn't created.
+const apiBundle = path.join(root, "apps/api/dist/bundle.js");
+const apiScript = fs.existsSync(apiBundle)
+  ? apiBundle
+  : path.join(root, "apps/api/dist/main.js");
 
 // ---------------------------------------------------------------------------
 // Kill any process listening on a given port.
