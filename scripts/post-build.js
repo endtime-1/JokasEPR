@@ -141,4 +141,43 @@ if (runtimeDir) {
   console.error("post-build: .prisma/client not found — API will fail at runtime!");
 }
 
+// ---------------------------------------------------------------------------
+// Write minimal runtime package.json and pnpm-workspace.yaml.
+//
+// Hostinger deploys whatever files exist in the build directory AFTER the
+// build command runs. By overwriting these two files, the runtime (nodejs/)
+// ends up with a package.json that has zero dependencies and a workspace
+// config with no packages. That makes `pnpm install` a near-instant no-op —
+// nothing to download — so `node start.js` runs within seconds.
+//
+// The API is webpack-bundled (all JS deps included in dist/main.js), and
+// Next.js standalone already bundles its own node_modules. The only external
+// dependency at runtime is @prisma/client, which start.js restores from the
+// build-time backup above.
+//
+// NOTE: the BUILD itself uses the git-committed files, so this overwrite
+// only affects the deployed runtime copy. The next build starts fresh from
+// the git repo every time.
+// ---------------------------------------------------------------------------
+const runtimePkg = {
+  name: "jokas-agribusiness-erp",
+  private: true,
+  version: "0.1.0",
+  scripts: { start: "node start.js" },
+  dependencies: {},
+};
+try {
+  writeFileSync(path.join(root, "package.json"), JSON.stringify(runtimePkg, null, 2) + "\n");
+  console.log("post-build: wrote minimal runtime package.json (pnpm install will be instant)");
+} catch (e) {
+  console.warn("post-build: could not write runtime package.json:", e.message);
+}
+
+try {
+  writeFileSync(path.join(root, "pnpm-workspace.yaml"), "packages: []\n");
+  console.log("post-build: wrote minimal runtime pnpm-workspace.yaml");
+} catch (e) {
+  console.warn("post-build: could not write runtime pnpm-workspace.yaml:", e.message);
+}
+
 console.log("post-build: done");
