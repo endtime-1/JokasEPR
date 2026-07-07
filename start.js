@@ -260,6 +260,32 @@ function startProxy(attempt) {
 }
 
 // ---------------------------------------------------------------------------
+// Write .htaccess to public_html/ so LiteSpeed proxies traffic to us.
+// nodejs/ and public_html/ are siblings under jokasfarms.com/, so public_html
+// is one level up from root (the nodejs/ dir).
+// ---------------------------------------------------------------------------
+try {
+  const publicHtml = path.join(root, "../public_html");
+  const htaccessPath = path.join(publicHtml, ".htaccess");
+  const port = process.env.PORT || "3000";
+  const htaccess = [
+    "RewriteEngine On",
+    "RewriteRule ^\\.builds - [F,L]",
+    "RewriteCond %{HTTP:Upgrade} websocket [NC]",
+    "RewriteCond %{HTTP:Connection} upgrade [NC]",
+    `RewriteRule ^/?(.*)$ ws://127.0.0.1:${port}/$1 [P,L]`,
+    "RewriteCond %{REQUEST_FILENAME} !-f",
+    `RewriteRule ^/?(.*)$ http://127.0.0.1:${port}/$1 [P,L]`,
+    "",
+  ].join("\n");
+  fs.mkdirSync(publicHtml, { recursive: true });
+  fs.writeFileSync(htaccessPath, htaccess);
+  console.log(`[start] .htaccess written → ${htaccessPath}`);
+} catch (e) {
+  console.warn("[start] could not write .htaccess:", e.message);
+}
+
+// ---------------------------------------------------------------------------
 // Bind the proxy port immediately so Hostinger's 3-second listen() check
 // passes before any slow synchronous operations (file copies etc.) below.
 // ---------------------------------------------------------------------------
