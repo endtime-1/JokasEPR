@@ -52,7 +52,8 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     throw new Error(await response.text());
   }
 
-  return response.json() as Promise<T>;
+  const text = await response.text();
+  return (text ? JSON.parse(text) : {}) as T;
 }
 
 export async function downloadReport(path: string, filename: string): Promise<void> {
