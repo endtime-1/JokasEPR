@@ -176,6 +176,15 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={`rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase ${c[status] ?? "bg-gray-100 text-gray-600"}`}>{status.replace(/_/g, " ")}</span>;
 }
 
+const QUICK_ACTIONS = [
+  { href: "/maintenance/machines",           label: "Machines",        desc: "Register & view assets",     icon: Cpu,           color: "text-blue-700 bg-blue-50 border-blue-200 hover:bg-blue-100" },
+  { href: "/maintenance/schedules",          label: "PM Schedules",    desc: "Preventive maintenance",     icon: Calendar,      color: "text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100" },
+  { href: "/maintenance/breakdowns",         label: "Breakdowns",      desc: "Log & track incidents",      icon: AlertTriangle, color: "text-red-700 bg-red-50 border-red-200 hover:bg-red-100" },
+  { href: "/maintenance/records",            label: "Work Orders",     desc: "Completed maintenance",      icon: Activity,      color: "text-purple-700 bg-purple-50 border-purple-200 hover:bg-purple-100" },
+  { href: "/maintenance/spare-parts",        label: "Spare Parts",     desc: "Parts inventory",            icon: Wrench,        color: "text-amber-700 bg-amber-50 border-amber-200 hover:bg-amber-100" },
+  { href: "/maintenance/costs",              label: "Costs",           desc: "Repair & labour costs",      icon: DollarSign,    color: "text-pink-700 bg-pink-50 border-pink-200 hover:bg-pink-100" },
+];
+
 export function MaintenanceDashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -199,11 +208,11 @@ export function MaintenanceDashboardPage() {
   const today = new Date();
   const overdueCount = (data?.schedules ?? []).filter((s) => new Date(s.nextDueDate) < today && s.status !== "COMPLETED").length;
   const hasAlerts = (data?.maintenanceAlerts ?? 0) > 0 || (data?.openBreakdowns ?? 0) > 0;
-  const utilPct = data && data.machineCount > 0 ? `${Math.round((data.activeMachines / data.machineCount) * 100)}% utilisation` : undefined;
+  const utilPct = data && data.machineCount > 0 ? Math.round((data.activeMachines / data.machineCount) * 100) : 0;
 
   return (
     <AppShell>
-      {/* Hero header */}
+      {/* ── Hero ───────────────────────────────────────────────────────────── */}
       <div className="mb-6 overflow-hidden rounded-2xl border border-line bg-gradient-to-br from-white via-white to-field shadow-panel">
         <div className="flex flex-wrap items-start justify-between gap-4 px-6 py-5">
           <div>
@@ -215,74 +224,132 @@ export function MaintenanceDashboardPage() {
               Maintenance Dashboard
             </h1>
             <p className="mt-1.5 max-w-lg text-sm leading-relaxed text-ink/55">
-              Machine status, preventive maintenance schedules, breakdown records, spare parts usage, downtime, and repair cost visibility.
+              Machine health, preventive schedules, breakdown tracking, spare parts, downtime, and repair cost visibility.
             </p>
           </div>
-          <div className="flex flex-wrap items-start gap-2 pt-1">
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            {data && (
+              <div className="flex items-center gap-2 rounded-xl border border-line bg-white px-3.5 py-2 shadow-card">
+                <span className={`h-2.5 w-2.5 rounded-full ${hasAlerts ? "bg-amber-400 animate-pulse" : "bg-emerald-400"}`} />
+                <span className="text-xs font-semibold text-ink/70">
+                  {hasAlerts ? "Attention needed" : "All systems normal"}
+                </span>
+              </div>
+            )}
             <button onClick={load} disabled={loading} className="app-button-secondary text-xs">
               <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
               {loading ? "Loading…" : "Refresh"}
             </button>
-            <Link className="app-button-secondary text-xs" href="/maintenance/machines">Machines</Link>
-            <Link className="app-button-secondary text-xs" href="/maintenance/schedules">Schedules</Link>
-            <Link className="app-button-secondary text-xs" href="/maintenance/breakdowns">Breakdowns</Link>
-            <Link className="app-button-secondary text-xs" href="/maintenance/costs">Costs</Link>
+            <Link className="app-button-primary text-xs" href="/maintenance/breakdowns/create">
+              <Plus className="h-3.5 w-3.5" />
+              Report breakdown
+            </Link>
           </div>
         </div>
+
+        {/* Machine utilisation bar */}
+        {data && data.machineCount > 0 && (
+          <div className="border-t border-line/50 bg-field/30 px-6 py-3.5">
+            <div className="flex items-center gap-4">
+              <p className="shrink-0 text-[11px] font-bold uppercase tracking-wide text-ink/40">Fleet utilisation</p>
+              <div className="h-2 flex-1 overflow-hidden rounded-full bg-line/60">
+                <div
+                  className="h-2 rounded-full transition-all duration-700"
+                  style={{ width: `${utilPct}%`, background: utilPct >= 80 ? "linear-gradient(90deg,#10b981,#059669)" : utilPct >= 50 ? "linear-gradient(90deg,#f58220,#dd741b)" : "linear-gradient(90deg,#ef4444,#dc2626)" }}
+                />
+              </div>
+              <p className="shrink-0 text-xs font-bold text-ink/70">{data.activeMachines}/{data.machineCount} active · {utilPct}%</p>
+            </div>
+          </div>
+        )}
       </div>
 
       {error && <div className="app-alert-warning mb-6">{error}</div>}
 
       {/* Alert banner */}
       {hasAlerts && data && (
-        <div className="mb-6 rounded-2xl border border-amber-200 border-l-[3px] border-l-amber-500 bg-white p-4 shadow-card">
-          <div className="flex items-start gap-3">
-            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
-            <div className="min-w-0">
-              <p className="font-semibold text-ink">Maintenance attention needed</p>
-              <p className="mt-0.5 text-sm text-ink/60">
-                {data.maintenanceAlerts > 0 && `${data.maintenanceAlerts} overdue maintenance ${data.maintenanceAlerts === 1 ? "schedule" : "schedules"}`}
-                {data.maintenanceAlerts > 0 && data.openBreakdowns > 0 && " · "}
-                {data.openBreakdowns > 0 && `${data.openBreakdowns} open ${data.openBreakdowns === 1 ? "breakdown" : "breakdowns"}`}
-                {overdueCount > 0 && ` · ${overdueCount} past due date`}
-              </p>
-            </div>
+        <div className="mb-6 flex items-start gap-3 rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 to-white p-4 shadow-card">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-100">
+            <AlertTriangle className="h-5 w-5 text-amber-600" />
           </div>
+          <div className="min-w-0 flex-1">
+            <p className="font-semibold text-ink">Maintenance attention needed</p>
+            <p className="mt-0.5 text-sm text-ink/60">
+              {data.maintenanceAlerts > 0 && `${data.maintenanceAlerts} overdue maintenance ${data.maintenanceAlerts === 1 ? "schedule" : "schedules"}`}
+              {data.maintenanceAlerts > 0 && data.openBreakdowns > 0 && " · "}
+              {data.openBreakdowns > 0 && `${data.openBreakdowns} open ${data.openBreakdowns === 1 ? "breakdown" : "breakdowns"}`}
+              {overdueCount > 0 && ` · ${overdueCount} past due date`}
+            </p>
+          </div>
+          <Link href="/maintenance/schedules" className="shrink-0 text-xs font-semibold text-amber-700 hover:underline">
+            View schedules →
+          </Link>
         </div>
       )}
 
-      {/* KPI cards */}
+      {/* ── KPI cards ──────────────────────────────────────────────────────── */}
       <section className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <KpiCard label="Total machines"       value={fmt(data?.machineCount)}      Icon={Cpu}           color="blue"    />
-        <KpiCard label="Active machines"      value={fmt(data?.activeMachines)}    Icon={Activity}      color="emerald" sub={utilPct} />
-        <KpiCard label="Maintenance alerts"   value={fmt(data?.maintenanceAlerts)} Icon={AlertTriangle} color="amber"   />
-        <KpiCard label="Open breakdowns"      value={fmt(data?.openBreakdowns)}    Icon={Wrench}        color="red"     />
-        <KpiCard label="Total downtime"       value={`${fmt(data?.downtimeHours)} hrs`} Icon={Clock}   color="purple"  />
-        <KpiCard label="Maintenance cost"     value={`GHS ${fmt(data?.maintenanceCost)}`} Icon={DollarSign} color="brand" />
+        <KpiCard label="Total machines"     value={fmt(data?.machineCount)}           Icon={Cpu}           color="blue"    />
+        <KpiCard label="Active machines"    value={fmt(data?.activeMachines)}         Icon={Activity}      color="emerald" sub={data ? `${utilPct}% fleet utilisation` : undefined} />
+        <KpiCard label="Maintenance alerts" value={fmt(data?.maintenanceAlerts)}      Icon={AlertTriangle} color="amber"   sub={overdueCount > 0 ? `${overdueCount} past due` : undefined} />
+        <KpiCard label="Open breakdowns"    value={fmt(data?.openBreakdowns)}         Icon={Wrench}        color="red"     />
+        <KpiCard label="Total downtime"     value={`${fmt(data?.downtimeHours)} hrs`} Icon={Clock}         color="purple"  />
+        <KpiCard label="Maintenance cost"   value={`GHS ${fmt(data?.maintenanceCost)}`} Icon={DollarSign}  color="brand"   />
       </section>
 
-      {/* Schedules + Breakdowns */}
+      {/* ── Quick actions ───────────────────────────────────────────────────── */}
+      <section className="mb-6">
+        <p className="mb-3 text-[11px] font-bold uppercase tracking-wider text-ink/40">Quick access</p>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          {QUICK_ACTIONS.map(({ href, label, desc, icon: Icon, color }) => (
+            <Link
+              key={href}
+              href={href}
+              className={`flex flex-col gap-2 rounded-xl border p-4 transition ${color}`}
+            >
+              <div className="flex items-center gap-2">
+                <Icon className="h-4 w-4 shrink-0" aria-hidden />
+                <span className="text-sm font-bold">{label}</span>
+              </div>
+              <p className="text-[11px] font-medium opacity-75 leading-snug">{desc}</p>
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      {/* ── Schedules + Breakdowns ─────────────────────────────────────────── */}
       <div className="grid gap-6 xl:grid-cols-2">
         {/* Upcoming schedules */}
-        <section className="rounded-2xl border border-line bg-white shadow-card">
-          <div className="flex items-center justify-between border-b border-line px-5 py-4">
-            <div className="flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-brand" />
-              <h3 className="font-semibold text-ink">Upcoming Schedules</h3>
+        <section className="overflow-hidden rounded-2xl border border-line bg-white shadow-panel">
+          <div className="flex items-center justify-between border-b border-line bg-gradient-to-r from-white to-field/60 px-5 py-4">
+            <div className="flex items-center gap-2.5">
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-100">
+                <Calendar className="h-4 w-4 text-blue-600" />
+              </span>
+              <div>
+                <h3 className="text-sm font-bold text-ink">Upcoming Schedules</h3>
+                <p className="text-[11px] text-ink/45">Preventive maintenance queue</p>
+              </div>
             </div>
-            <Link href="/maintenance/schedules" className="flex items-center gap-0.5 text-xs font-medium text-brand hover:underline">
+            <Link href="/maintenance/schedules" className="flex items-center gap-0.5 text-xs font-semibold text-brand hover:underline">
               View all <ChevronRight className="h-3.5 w-3.5" />
             </Link>
           </div>
-          <div className="divide-y divide-line">
+          <div className="divide-y divide-line/60">
             {(data?.schedules ?? []).slice(0, 6).length === 0 ? (
-              <p className="px-5 py-8 text-center text-sm text-ink/45">No upcoming schedules</p>
+              <div className="flex flex-col items-center py-10 text-center">
+                <span className="mb-2 grid h-10 w-10 place-items-center rounded-xl bg-field">
+                  <Calendar className="h-5 w-5 text-ink/20" />
+                </span>
+                <p className="text-sm font-medium text-ink/40">No upcoming schedules</p>
+                <Link href="/maintenance/schedules/create" className="mt-2 text-xs font-semibold text-brand hover:underline">Create a schedule →</Link>
+              </div>
             ) : (data?.schedules ?? []).slice(0, 6).map((s) => {
               const due = new Date(s.nextDueDate);
               const overdue = due < today && s.status !== "COMPLETED";
               const soon = !overdue && due <= new Date(today.getTime() + 7 * 86_400_000);
               return (
-                <div key={s.id} className="flex items-start gap-3 px-5 py-3.5">
+                <div key={s.id} className="flex items-start gap-3 px-5 py-3.5 transition hover:bg-field/40">
                   <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${overdue ? "bg-red-100 text-red-600" : soon ? "bg-amber-100 text-amber-600" : "bg-blue-100 text-blue-600"}`}>
                     <Calendar className="h-4 w-4" />
                   </div>
@@ -291,16 +358,16 @@ export function MaintenanceDashboardPage() {
                       <span className="truncate text-sm font-semibold text-ink">{s.title}</span>
                       <PriorityBadge priority={s.priority} />
                     </div>
-                    <p className="mt-0.5 text-xs text-ink/55">
+                    <p className="mt-0.5 text-xs text-ink/50">
                       {s.machine?.name ?? s.equipment?.name ?? "No asset"} · {s.maintenanceType.replace(/_/g, " ")}
                     </p>
                   </div>
                   <div className="shrink-0 text-right">
-                    <p className={`text-xs font-semibold ${overdue ? "text-red-600" : soon ? "text-amber-600" : "text-ink/60"}`}>
-                      {due.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+                    <p className={`text-xs font-bold ${overdue ? "text-red-600" : soon ? "text-amber-600" : "text-ink/55"}`}>
+                      {due.toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}
                     </p>
-                    {overdue && <p className="text-[10px] text-red-500">Overdue</p>}
-                    {soon && !overdue && <p className="text-[10px] text-amber-500">Due soon</p>}
+                    {overdue && <p className="text-[10px] font-semibold text-red-500">Overdue</p>}
+                    {soon && !overdue && <p className="text-[10px] font-semibold text-amber-500">Due soon</p>}
                   </div>
                 </div>
               );
@@ -309,21 +376,32 @@ export function MaintenanceDashboardPage() {
         </section>
 
         {/* Recent breakdowns */}
-        <section className="rounded-2xl border border-line bg-white shadow-card">
-          <div className="flex items-center justify-between border-b border-line px-5 py-4">
-            <div className="flex items-center gap-2">
-              <Wrench className="h-4 w-4 text-red-500" />
-              <h3 className="font-semibold text-ink">Recent Breakdowns</h3>
+        <section className="overflow-hidden rounded-2xl border border-line bg-white shadow-panel">
+          <div className="flex items-center justify-between border-b border-line bg-gradient-to-r from-white to-field/60 px-5 py-4">
+            <div className="flex items-center gap-2.5">
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-100">
+                <Wrench className="h-4 w-4 text-red-600" />
+              </span>
+              <div>
+                <h3 className="text-sm font-bold text-ink">Recent Breakdowns</h3>
+                <p className="text-[11px] text-ink/45">Unresolved incidents</p>
+              </div>
             </div>
-            <Link href="/maintenance/breakdowns" className="flex items-center gap-0.5 text-xs font-medium text-brand hover:underline">
+            <Link href="/maintenance/breakdowns" className="flex items-center gap-0.5 text-xs font-semibold text-brand hover:underline">
               View all <ChevronRight className="h-3.5 w-3.5" />
             </Link>
           </div>
-          <div className="divide-y divide-line">
+          <div className="divide-y divide-line/60">
             {(data?.breakdowns ?? []).slice(0, 6).length === 0 ? (
-              <p className="px-5 py-8 text-center text-sm text-ink/45">No breakdowns recorded</p>
+              <div className="flex flex-col items-center py-10 text-center">
+                <span className="mb-2 grid h-10 w-10 place-items-center rounded-xl bg-field">
+                  <Wrench className="h-5 w-5 text-ink/20" />
+                </span>
+                <p className="text-sm font-medium text-ink/40">No breakdowns recorded</p>
+                <Link href="/maintenance/breakdowns/create" className="mt-2 text-xs font-semibold text-brand hover:underline">Report a breakdown →</Link>
+              </div>
             ) : (data?.breakdowns ?? []).slice(0, 6).map((b) => (
-              <div key={b.id} className="flex items-start gap-3 px-5 py-3.5">
+              <div key={b.id} className="flex items-start gap-3 px-5 py-3.5 transition hover:bg-field/40">
                 <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${b.severity === "CRITICAL" || b.severity === "HIGH" ? "bg-red-100 text-red-600" : "bg-amber-100 text-amber-600"}`}>
                   <Wrench className="h-4 w-4" />
                 </div>
@@ -335,9 +413,9 @@ export function MaintenanceDashboardPage() {
                     <SeverityBadge severity={b.severity} />
                     <StatusBadge status={b.status} />
                   </div>
-                  <p className="mt-0.5 line-clamp-1 text-xs text-ink/55">{b.description}</p>
+                  <p className="mt-0.5 line-clamp-1 text-xs text-ink/50">{b.description}</p>
                 </div>
-                <p className="shrink-0 text-[11px] text-ink/40">
+                <p className="shrink-0 text-[11px] font-medium text-ink/40">
                   {new Date(b.reportedAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}
                 </p>
               </div>
@@ -346,22 +424,27 @@ export function MaintenanceDashboardPage() {
         </section>
       </div>
 
-      {/* Technician Assignments */}
+      {/* ── Technician Assignments ─────────────────────────────────────────── */}
       {(data?.assignments ?? []).length > 0 && (
-        <section className="mt-6 rounded-2xl border border-line bg-white shadow-card">
-          <div className="flex items-center gap-2 border-b border-line px-5 py-4">
-            <User className="h-4 w-4 text-brand" />
-            <h3 className="font-semibold text-ink">Technician Assignments</h3>
+        <section className="mt-6 overflow-hidden rounded-2xl border border-line bg-white shadow-panel">
+          <div className="flex items-center gap-2.5 border-b border-line bg-gradient-to-r from-white to-field/60 px-5 py-4">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand/10">
+              <User className="h-4 w-4 text-brand" />
+            </span>
+            <div>
+              <h3 className="text-sm font-bold text-ink">Technician Assignments</h3>
+              <p className="text-[11px] text-ink/45">Active work assignments</p>
+            </div>
           </div>
-          <div className="grid divide-y divide-line sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+          <div className="grid divide-y divide-line/60 sm:grid-cols-2 sm:divide-x sm:divide-y-0">
             {(data?.assignments ?? []).slice(0, 6).map((a) => (
-              <div key={a.id} className="flex items-center gap-3 px-5 py-3.5">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand/10 text-xs font-bold text-brand">
+              <div key={a.id} className="flex items-center gap-3 px-5 py-3.5 transition hover:bg-field/40">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand/20 to-brand/10 text-sm font-bold text-brand">
                   {a.technician.fullName.charAt(0).toUpperCase()}
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold text-ink">{a.technician.fullName}</p>
-                  <p className="text-xs text-ink/55">{a.machine?.name ?? a.equipment?.name ?? "General task"}</p>
+                  <p className="text-xs text-ink/50">{a.machine?.name ?? a.equipment?.name ?? "General task"}</p>
                 </div>
                 <StatusBadge status={a.status} />
               </div>
