@@ -1,12 +1,12 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
   ArrowRight,
-  BarChart3,
-  CheckCircle2,
+  ChartBar,
+  CircleCheckBig,
   Droplets,
   Factory,
   Package,
@@ -350,12 +350,12 @@ function QuickActions() {
   const actions = [
     { href: "/soya-processing/intakes/create",   label: "Record Intake", icon: Package,      color: "text-blue-700 bg-blue-50 border-blue-200 hover:bg-blue-100" },
     { href: "/soya-processing/batches/create",   label: "New Batch",     icon: Factory,      color: "text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100" },
-    { href: "/soya-processing/quality-control",  label: "QC Check",      icon: CheckCircle2, color: "text-amber-700 bg-amber-50 border-amber-200 hover:bg-amber-100" },
+    { href: "/soya-processing/quality-control",  label: "QC Check",      icon: CircleCheckBig, color: "text-amber-700 bg-amber-50 border-amber-200 hover:bg-amber-100" },
     { href: "/soya-processing/oil-stock",        label: "Oil Stock",     icon: Droplets,     color: "text-teal-700 bg-teal-50 border-teal-200 hover:bg-teal-100" },
     { href: "/soya-processing/cake-stock",       label: "Cake Stock",    icon: Package,      color: "text-purple-700 bg-purple-50 border-purple-200 hover:bg-purple-100" },
     { href: "/soya-processing/internal-transfer", label: "Transfer",     icon: Truck,        color: "text-orange-700 bg-orange-50 border-orange-200 hover:bg-orange-100" },
     { href: "/soya-processing/batches",          label: "All Batches",   icon: TrendingUp,   color: "text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-100" },
-    { href: "/soya-processing/reports",          label: "Reports",       icon: BarChart3,    color: "text-pink-700 bg-pink-50 border-pink-200 hover:bg-pink-100" }
+    { href: "/soya-processing/reports",          label: "Reports",       icon: ChartBar,    color: "text-pink-700 bg-pink-50 border-pink-200 hover:bg-pink-100" }
   ];
   return (
     <section className="mb-8">

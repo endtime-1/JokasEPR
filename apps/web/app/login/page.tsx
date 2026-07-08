@@ -1,8 +1,8 @@
-"use client";
+﻿"use client";
 
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, ArrowRight, Building2, ShieldCheck } from "lucide-react";
+import { CircleAlert, ArrowRight, Building2, ShieldCheck } from "lucide-react";
 import { BrandLogo } from "../../components/brand-logo";
 
 export default function LoginPage() {
@@ -172,7 +172,7 @@ export default function LoginPage() {
               aria-live="assertive"
               className="mb-5 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
             >
-              <AlertCircle aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+              <CircleAlert aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
               <span>{error}</span>
             </div>
           )}

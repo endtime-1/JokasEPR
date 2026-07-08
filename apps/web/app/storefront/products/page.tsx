@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { apiFetch, type ApiEnvelope } from "../../../lib/api";
@@ -11,10 +11,10 @@ import {
   ChevronUp,
   Save,
   Globe,
-  AlertCircle,
-  CheckCircle2,
+  CircleAlert,
+  CircleCheckBig,
   ImagePlus,
-  Loader2,
+  LoaderCircle,
 } from "lucide-react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4001/api/v1";
@@ -166,7 +166,7 @@ function ProductRow({ product, onSaved }: { product: AdminProduct; onSaved: (p: 
             )}
             {saved && (
               <span className="flex shrink-0 items-center gap-1 text-[10px] font-semibold text-emerald-600">
-                <CheckCircle2 className="h-3 w-3" /> Saved
+                <CircleCheckBig className="h-3 w-3" /> Saved
               </span>
             )}
           </div>
@@ -227,7 +227,7 @@ function ProductRow({ product, onSaved }: { product: AdminProduct; onSaved: (p: 
                     className="flex items-center gap-2 rounded-xl border border-line bg-white px-4 py-2 text-sm font-semibold text-ink/60 shadow-sm transition hover:border-brand/30 hover:text-brand disabled:opacity-50"
                   >
                     {uploading ? (
-                      <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Uploading…</>
+                      <><LoaderCircle className="h-3.5 w-3.5 animate-spin" /> Uploading…</>
                     ) : (
                       <><ImagePlus className="h-3.5 w-3.5" /> {imageUrl ? "Replace image" : "Upload image"}</>
                     )}
@@ -333,7 +333,7 @@ function ProductRow({ product, onSaved }: { product: AdminProduct; onSaved: (p: 
           <div className="mt-4 flex items-center justify-between gap-3">
             {err ? (
               <div className="flex items-center gap-1.5 text-xs text-red-500">
-                <AlertCircle className="h-3.5 w-3.5" /> {err}
+                <CircleAlert className="h-3.5 w-3.5" /> {err}
               </div>
             ) : (
               <div />

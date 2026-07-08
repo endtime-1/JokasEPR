@@ -1,8 +1,8 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Bell, CheckCheck, ChevronRight, Loader2 } from "lucide-react";
+import { Bell, CheckCheck, ChevronRight, LoaderCircle } from "lucide-react";
 import { apiFetch, ApiEnvelope } from "../lib/api";
 
 type Notification = {
@@ -129,7 +129,7 @@ export function NotificationBell() {
           <div className="max-h-96 overflow-y-auto">
             {loading ? (
               <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-5 w-5 animate-spin text-ink/40" />
+                <LoaderCircle className="h-5 w-5 animate-spin text-ink/40" />
               </div>
             ) : items.length === 0 ? (
               <p className="py-8 text-center text-sm text-ink/45">No notifications yet</p>

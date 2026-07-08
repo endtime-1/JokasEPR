@@ -1,10 +1,10 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import {
-  AlertTriangle, BarChart2, Building2, ChevronRight,
+  AlertTriangle, ChartBar, Building2, ChevronRight,
   ClipboardList, Clock, DollarSign, FileText, Package, Plus,
   ShoppingCart, Star, Tag, Wallet,
   type LucideIcon,
@@ -136,7 +136,7 @@ function StatusBadge({ status }: { status: string }) {
 // ─── Nav ──────────────────────────────────────────────────────────────────────
 
 const procurementNavLinks = [
-  { href: "/procurement",                     label: "Dashboard",    Icon: BarChart2 },
+  { href: "/procurement",                     label: "Dashboard",    Icon: ChartBar },
   { href: "/procurement/suppliers",           label: "Suppliers",    Icon: Building2 },
   { href: "/procurement/supplier-categories", label: "Categories",   Icon: Tag },
   { href: "/procurement/purchase-requests",   label: "Requests",     Icon: ClipboardList },

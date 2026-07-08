@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -6,7 +6,7 @@ import {
   AlertTriangle,
   ArrowRight,
   Bird,
-  CheckCircle2,
+  CircleCheckBig,
   Egg,
   FlameKindling,
   Heart,
@@ -401,7 +401,7 @@ function HouseOccupancyGrid({ houses }: { houses: HouseData[] }) {
 
 function QuickActions() {
   const actions = [
-    { href: "/poultry/daily-records", label: "Daily Record", icon: CheckCircle2, color: "text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100" },
+    { href: "/poultry/daily-records", label: "Daily Record", icon: CircleCheckBig, color: "text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100" },
     { href: "/poultry/egg-production", label: "Egg Production", icon: Egg, color: "text-amber-700 bg-amber-50 border-amber-200 hover:bg-amber-100" },
     { href: "/poultry/feed-consumption", label: "Feed Intake", icon: Wheat, color: "text-blue-700 bg-blue-50 border-blue-200 hover:bg-blue-100" },
     { href: "/poultry/mortality", label: "Mortality", icon: Skull, color: "text-red-700 bg-red-50 border-red-200 hover:bg-red-100" },

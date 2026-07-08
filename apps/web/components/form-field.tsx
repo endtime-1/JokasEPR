@@ -1,4 +1,4 @@
-import { AlertCircle } from "lucide-react";
+﻿import { CircleAlert } from "lucide-react";
 import type { ReactNode } from "react";
 
 export function FormField({
@@ -35,7 +35,7 @@ export function FormField({
           role="alert"
           aria-live="polite"
         >
-          <AlertCircle aria-hidden className="h-3.5 w-3.5 shrink-0" />
+          <CircleAlert aria-hidden className="h-3.5 w-3.5 shrink-0" />
           {error}
         </span>
       )}

@@ -1,8 +1,8 @@
-"use client";
+﻿"use client";
 
 import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
-import { AlertCircle, ArrowDownCircle, ArrowUpCircle, BadgeDollarSign, BarChart3, BookOpen, Building2, CheckCircle, DollarSign, FileBarChart, FileText, Landmark, PiggyBank, TrendingDown, TrendingUp, Users, Wallet, XCircle } from "lucide-react";
+import { CircleAlert, CircleArrowDown, CircleArrowUp, BadgeDollarSign, ChartBar, BookOpen, Building2, CircleCheck, DollarSign, FileChartColumn, FileText, Landmark, PiggyBank, TrendingDown, TrendingUp, Users, Wallet, CircleX } from "lucide-react";
 import { FinanceShell } from "./finance-shell";
 import { DataTable } from "./data-table";
 import { FormField } from "./form-field";
@@ -270,7 +270,7 @@ export function FinanceDashboardPage() {
           <div className="mb-3 flex items-start justify-between">
             <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Money In</p>
             <span className="grid h-8 w-8 place-items-center rounded-lg bg-emerald-50">
-              <ArrowUpCircle className="h-4 w-4 text-emerald-500" />
+              <CircleArrowUp className="h-4 w-4 text-emerald-500" />
             </span>
           </div>
           {loading ? <div className="h-8 w-40 animate-pulse rounded-md bg-slate-100" /> : <p className="text-2xl font-bold tracking-tight text-slate-900">{money(totalRevenue)}</p>}
@@ -286,7 +286,7 @@ export function FinanceDashboardPage() {
           <div className="mb-3 flex items-start justify-between">
             <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Money Out</p>
             <span className="grid h-8 w-8 place-items-center rounded-lg bg-red-50">
-              <ArrowDownCircle className="h-4 w-4 text-red-400" />
+              <CircleArrowDown className="h-4 w-4 text-red-400" />
             </span>
           </div>
           {loading ? <div className="h-8 w-40 animate-pulse rounded-md bg-slate-100" /> : <p className="text-2xl font-bold tracking-tight text-slate-900">{money(totalExpenses)}</p>}
@@ -315,7 +315,7 @@ export function FinanceDashboardPage() {
           <div className="mb-3 flex items-start justify-between">
             <p className={`text-[11px] font-bold uppercase tracking-widest ${pendingCount > 0 ? "text-brand" : "text-slate-400"}`}>Needs Approval</p>
             <span className={`grid h-8 w-8 place-items-center rounded-lg ${pendingCount > 0 ? "bg-brand/10" : "bg-slate-100"}`}>
-              <AlertCircle className={`h-4 w-4 ${pendingCount > 0 ? "text-brand" : "text-slate-300"}`} />
+              <CircleAlert className={`h-4 w-4 ${pendingCount > 0 ? "text-brand" : "text-slate-300"}`} />
             </span>
           </div>
           {loading ? <div className="h-8 w-16 animate-pulse rounded-md bg-slate-100" /> : <p className={`text-2xl font-bold tracking-tight ${pendingCount > 0 ? "text-brandDark" : "text-slate-900"}`}>{pendingCount}</p>}
@@ -344,7 +344,7 @@ export function FinanceDashboardPage() {
             : chart?.months && chart.months.length > 0
               ? <PnLBarChart data={chart.months} />
               : <div className="flex h-40 flex-col items-center justify-center gap-2 text-sm text-slate-400">
-                  <BarChart3 className="h-8 w-8 text-slate-200" />No chart data yet
+                  <ChartBar className="h-8 w-8 text-slate-200" />No chart data yet
                 </div>
           }
         </div>
@@ -380,7 +380,7 @@ export function FinanceDashboardPage() {
             ? <div className="space-y-3 p-5">{[1, 2, 3].map((i) => <div key={i} className="h-10 animate-pulse rounded-lg bg-slate-100" />)}</div>
             : debtorList.length === 0
               ? <div className="flex h-28 flex-col items-center justify-center gap-2 text-sm text-slate-400">
-                  <CheckCircle className="h-7 w-7 text-emerald-300" />No outstanding receivables
+                  <CircleCheck className="h-7 w-7 text-emerald-300" />No outstanding receivables
                 </div>
               : <ul className="divide-y divide-slate-50">
                   {debtorList.map((d, i) => (
@@ -419,7 +419,7 @@ export function FinanceDashboardPage() {
             ? <div className="space-y-3 p-5">{[1, 2, 3].map((i) => <div key={i} className="h-14 animate-pulse rounded-lg bg-slate-100" />)}</div>
             : pendingExpenses.length === 0
               ? <div className="flex h-28 flex-col items-center justify-center gap-2 text-sm text-slate-400">
-                  <CheckCircle className="h-7 w-7 text-brand/30" />All clear — no pending approvals
+                  <CircleCheck className="h-7 w-7 text-brand/30" />All clear — no pending approvals
                 </div>
               : <ul className="divide-y divide-slate-50">
                   {pendingExpenses.map((e) => (
@@ -439,7 +439,7 @@ export function FinanceDashboardPage() {
                           disabled={approving === (e.id as string)}
                           className="flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-50"
                         >
-                          <CheckCircle className="h-3.5 w-3.5" />
+                          <CircleCheck className="h-3.5 w-3.5" />
                           {approving === (e.id as string) ? "Approving…" : "Approve"}
                         </button>
                         <button
@@ -447,7 +447,7 @@ export function FinanceDashboardPage() {
                           disabled={!!approving}
                           className="flex items-center gap-1.5 rounded-lg bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 transition hover:bg-red-100 disabled:opacity-50"
                         >
-                          <XCircle className="h-3.5 w-3.5" />Reject
+                          <CircleX className="h-3.5 w-3.5" />Reject
                         </button>
                       </div>
                     </li>
@@ -719,7 +719,7 @@ export function CreateExpensePage() {
         </FormField>
         {Number(form.amount) >= 5000 && (
           <p className="flex items-center gap-2 rounded-md bg-orange-50 p-3 text-sm text-orange-700">
-            <AlertCircle className="h-4 w-4" /> This expense exceeds GHS 5,000 and will require manager approval.
+            <CircleAlert className="h-4 w-4" /> This expense exceeds GHS 5,000 and will require manager approval.
           </p>
         )}
         <button type="submit" className={btnPrimary} disabled={loading}>{loading ? "Saving…" : "Record Expense"}</button>
@@ -766,7 +766,7 @@ export function RevenuePage() {
   return (
     <FinanceShell title="Revenue Records" subtitle="Track all income and revenue sources.">
       <div className="mb-4 flex justify-end">
-        <button className={btnPrimary} onClick={() => setShowForm(!showForm)}><ArrowUpCircle className="h-4 w-4" /> {showForm ? "Cancel" : "Record Revenue"}</button>
+        <button className={btnPrimary} onClick={() => setShowForm(!showForm)}><CircleArrowUp className="h-4 w-4" /> {showForm ? "Cancel" : "Record Revenue"}</button>
       </div>
       {showForm && (
         <form onSubmit={handleSubmit} className="mb-6 rounded-md border border-line bg-white p-6 shadow-panel">
@@ -1409,16 +1409,16 @@ export function ProfitLossReportPage() {
       <div className="mb-4 flex flex-wrap items-center justify-end gap-2">
         <input type="date" className={inputClass} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
         <input type="date" className={inputClass} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
-        <button className={btnPrimary} onClick={generate} disabled={loading}><FileBarChart className="h-4 w-4" /> {loading ? "Generating…" : "Generate"}</button>
+        <button className={btnPrimary} onClick={generate} disabled={loading}><FileChartColumn className="h-4 w-4" /> {loading ? "Generating…" : "Generate"}</button>
       </div>
       {current && (
         <section className="mb-6 rounded-md border border-line bg-white p-6 shadow-panel">
           <h3 className="mb-4 text-lg font-semibold">{current.title as string}</h3>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <StatCard label="Total Revenue" value={money(current.totalRevenue)} icon={ArrowUpCircle} />
-            <StatCard label="Total Expenses" value={money(current.totalExpenses)} icon={ArrowDownCircle} />
+            <StatCard label="Total Revenue" value={money(current.totalRevenue)} icon={CircleArrowUp} />
+            <StatCard label="Total Expenses" value={money(current.totalExpenses)} icon={CircleArrowDown} />
             <StatCard label="Gross Profit" value={money(current.grossProfit)} icon={DollarSign} />
-            <StatCard label="Net Profit" value={money(current.netProfit)} icon={CheckCircle} />
+            <StatCard label="Net Profit" value={money(current.netProfit)} icon={CircleCheck} />
           </div>
         </section>
       )}
@@ -1480,7 +1480,7 @@ export function CashFlowReportPage() {
           <h3 className="mb-4 text-lg font-semibold">{current.title as string}</h3>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             <StatCard label="Operating Cash Flow" value={money(current.operatingCashFlow)} icon={DollarSign} />
-            <StatCard label="Net Cash Flow" value={money(current.netCashFlow)} icon={ArrowUpCircle} />
+            <StatCard label="Net Cash Flow" value={money(current.netCashFlow)} icon={CircleArrowUp} />
             <StatCard label="Closing Balance" value={money(current.closingBalance)} icon={Wallet} />
           </div>
           {reportData && (
@@ -1552,7 +1552,7 @@ export function ProductProfitabilityPage() {
       <div className="mb-4 flex flex-wrap items-center justify-end gap-2">
         <input type="date" className={inputClass} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
         <input type="date" className={inputClass} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
-        <button className={btnPrimary} onClick={generate} disabled={loading}><FileBarChart className="h-4 w-4" /> {loading ? "Generating…" : "Analyse"}</button>
+        <button className={btnPrimary} onClick={generate} disabled={loading}><FileChartColumn className="h-4 w-4" /> {loading ? "Generating…" : "Analyse"}</button>
       </div>
       <DataTable
         columns={[
@@ -1611,7 +1611,7 @@ export function BatchProfitabilityPage() {
   return (
     <FinanceShell title="Batch Profitability" subtitle="Profitability of flock, feed, and soya processing batches.">
       <div className="mb-4 flex justify-end">
-        <button className={btnPrimary} onClick={() => setShowForm(!showForm)}><FileBarChart className="h-4 w-4" /> {showForm ? "Cancel" : "Record Batch P&L"}</button>
+        <button className={btnPrimary} onClick={() => setShowForm(!showForm)}><FileChartColumn className="h-4 w-4" /> {showForm ? "Cancel" : "Record Batch P&L"}</button>
       </div>
       <div className="mb-4 flex gap-3">
         <select className={selectClass} value={batchTypeFilter} onChange={(e) => setBatchTypeFilter(e.target.value)}>

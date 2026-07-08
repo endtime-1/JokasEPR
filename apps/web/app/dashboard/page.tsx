@@ -1,17 +1,17 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import {
   Activity,
   AlertTriangle,
-  BarChart3,
+  ChartBar,
   Bird,
   Boxes,
   CalendarDays,
-  CheckCircle2,
+  CircleCheckBig,
   Clock,
   Factory,
-  LineChart as LineIcon,
+  ChartLine as LineIcon,
   PackageCheck,
   Scale,
   ShoppingCart,
@@ -190,7 +190,7 @@ function SelectField({
 }
 
 function SummaryCard({ card, index }: { card: Card; index: number }) {
-  const Icon = cardIcons[index] ?? BarChart3;
+  const Icon = cardIcons[index] ?? ChartBar;
 
   const styles = {
     critical: {
@@ -347,7 +347,7 @@ function BarPanel({ title, series }: { title: string; series: Series[] }) {
       <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-4">
         <h3 className="text-sm font-bold text-ink">{title}</h3>
         <span className="grid h-7 w-7 place-items-center rounded-lg bg-brand/10">
-          <BarChart3 aria-hidden className="h-3.5 w-3.5 text-brand" />
+          <ChartBar aria-hidden className="h-3.5 w-3.5 text-brand" />
         </span>
       </div>
       <div className="space-y-3 px-5 pb-5 pt-4">
@@ -427,7 +427,7 @@ function FarmOperationsToday({ data, loading }: { data: FarmOperationsResponse["
         <div className="flex items-center gap-2">
           {allComplete ? (
             <span className="flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700 ring-1 ring-emerald-200">
-              <CheckCircle2 aria-hidden className="h-3.5 w-3.5" />
+              <CircleCheckBig aria-hidden className="h-3.5 w-3.5" />
               All duties complete
             </span>
           ) : (

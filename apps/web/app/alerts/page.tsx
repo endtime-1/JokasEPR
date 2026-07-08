@@ -1,16 +1,16 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  AlertCircle,
+  CircleAlert,
   AlertTriangle,
   Bell,
   BellOff,
-  CheckCircle2,
+  CircleCheckBig,
   ChevronDown,
   Download,
   Info,
-  Loader2,
+  LoaderCircle,
   RefreshCw,
   TrendingUp,
   Zap
@@ -70,7 +70,7 @@ const SEVERITY_CONFIG = {
     border: "border-l-red-500",
     badge: "bg-red-100 text-red-700",
     icon: "bg-red-100 text-red-600",
-    Icon: AlertCircle
+    Icon: CircleAlert
   },
   HIGH: {
     label: "High",
@@ -193,7 +193,7 @@ function AlertCard({
                 onClick={() => onResolve(alert.id)}
                 className="app-button-secondary min-h-9 px-3 text-xs"
               >
-                <CheckCircle2 aria-hidden className="h-3.5 w-3.5" />
+                <CircleCheckBig aria-hidden className="h-3.5 w-3.5" />
                 Resolve
               </button>
             </div>
@@ -345,7 +345,7 @@ export default function AlertsPage() {
                   className="app-button-primary"
                 >
                   {generating ? (
-                    <Loader2 aria-hidden className="h-4 w-4 animate-spin" />
+                    <LoaderCircle aria-hidden className="h-4 w-4 animate-spin" />
                   ) : (
                     <Zap aria-hidden className="h-4 w-4" />
                   )}
@@ -376,7 +376,7 @@ export default function AlertsPage() {
             {
               label: "Critical",
               value: critical,
-              Icon: AlertCircle,
+              Icon: CircleAlert,
               iconStyle: "bg-red-100 text-red-600",
               valStyle: "text-red-600"
             },
@@ -518,7 +518,7 @@ export default function AlertsPage() {
 
           {loading ? (
             <div className="flex justify-center py-16">
-              <Loader2 aria-hidden className="h-6 w-6 animate-spin text-brand" />
+              <LoaderCircle aria-hidden className="h-6 w-6 animate-spin text-brand" />
             </div>
           ) : alerts.length === 0 ? (
             <div className="app-card flex flex-col items-center justify-center py-16 text-center">

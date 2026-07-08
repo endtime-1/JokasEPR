@@ -1,12 +1,12 @@
-"use client";
+﻿"use client";
 
 import { ChangeEvent, ComponentType, FormEvent, ReactNode, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  AlertTriangle, CheckCircle, ChevronRight, ClipboardCheck,
+  AlertTriangle, CircleCheck, ChevronRight, ClipboardCheck,
   FileText, FlaskConical, Plus, RefreshCw, ShieldCheck,
-  ShieldX, TrendingUp, XCircle,
+  ShieldX, TrendingUp, CircleX,
 } from "lucide-react";
 import { ApiEnvelope, apiFetch } from "../lib/api";
 import { AppShell } from "./app-shell";
@@ -272,8 +272,8 @@ export function QualityDashboardPage() {
       <section className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard label="Total checks"      value={data?.totalChecks ?? 0}             Icon={ClipboardCheck} color="blue" />
         <KpiCard label="Pending"           value={data?.pendingChecks ?? 0}           Icon={TrendingUp}     color="amber" />
-        <KpiCard label="Passed"            value={data?.passedChecks ?? 0}            Icon={CheckCircle}    color="emerald" sub={passRate != null ? `${passRate.toFixed(1)}% pass rate` : undefined} />
-        <KpiCard label="Failed"            value={data?.failedChecks ?? 0}            Icon={XCircle}        color="red" />
+        <KpiCard label="Passed"            value={data?.passedChecks ?? 0}            Icon={CircleCheck}    color="emerald" sub={passRate != null ? `${passRate.toFixed(1)}% pass rate` : undefined} />
+        <KpiCard label="Failed"            value={data?.failedChecks ?? 0}            Icon={CircleX}        color="red" />
         <KpiCard label="Approved batches"  value={data?.approvedBatches ?? 0}         Icon={ShieldCheck}    color="indigo" />
         <KpiCard label="Rejected batches"  value={data?.rejectedBatches ?? 0}         Icon={ShieldX}        color="red" />
         <KpiCard label="Open CARs"         value={data?.openCorrectiveActions ?? 0}   Icon={FileText}       color="purple" />
@@ -1449,7 +1449,7 @@ export function QualityReportsPage() {
             <KpiCard label="Approved"     value={decisionsMap["APPROVED"] ?? 0}       Icon={ShieldCheck}    color="emerald" />
             <KpiCard label="Rejected"     value={decisionsMap["REJECTED"] ?? 0}       Icon={ShieldX}        color="red" />
             <KpiCard label="Quarantine"   value={decisionsMap["QUARANTINE"] ?? 0}     Icon={AlertTriangle}  color="amber" />
-            <KpiCard label="Conditional"  value={decisionsMap["CONDITIONALLY_APPROVED"] ?? 0} Icon={CheckCircle} color="purple" />
+            <KpiCard label="Conditional"  value={decisionsMap["CONDITIONALLY_APPROVED"] ?? 0} Icon={CircleCheck} color="purple" />
           </section>
 
           <div className="rounded-2xl border border-line bg-white p-5 shadow-card">
@@ -1507,7 +1507,7 @@ export function QualityReportsPage() {
           {data.failureReasons.length > 0 && (
             <div className="overflow-hidden rounded-2xl border border-line bg-white shadow-card">
               <div className="flex items-center gap-2 border-b border-line px-5 py-4">
-                <XCircle className="h-4 w-4 text-red-500" />
+                <CircleX className="h-4 w-4 text-red-500" />
                 <h3 className="font-semibold text-ink">Failed Checks in Period</h3>
               </div>
               <DataTable

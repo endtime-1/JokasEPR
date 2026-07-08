@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import {
   createContext,
@@ -11,11 +11,11 @@ import {
   type ReactNode
 } from "react";
 import {
-  AlertCircle,
-  CheckCircle2,
+  CircleAlert,
+  CircleCheckBig,
   Info,
   X,
-  XCircle,
+  CircleX,
   type LucideIcon
 } from "lucide-react";
 
@@ -219,10 +219,10 @@ const ToastContext = createContext<ToastContextValue>({
 });
 
 const toastIcons: Record<ToastType, LucideIcon> = {
-  success: CheckCircle2,
-  error: XCircle,
+  success: CircleCheckBig,
+  error: CircleX,
   info: Info,
-  warning: AlertCircle
+  warning: CircleAlert
 };
 
 const toastStyles: Record<ToastType, string> = {

@@ -1,8 +1,8 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, CheckCircle2, Loader2, Mail, MessageCircle, Save, Smartphone } from "lucide-react";
+import { ArrowLeft, CircleCheckBig, LoaderCircle, Mail, MessageCircle, Save, Smartphone } from "lucide-react";
 import { AppShell } from "../../../components/app-shell";
 import { apiFetch, ApiEnvelope } from "../../../lib/api";
 
@@ -74,7 +74,7 @@ export default function NotificationConfigPage() {
 
         {loading ? (
           <div className="flex items-center justify-center py-16">
-            <Loader2 className="h-6 w-6 animate-spin text-ink/40" />
+            <LoaderCircle className="h-6 w-6 animate-spin text-ink/40" />
           </div>
         ) : (
           <div className="space-y-4">
@@ -179,7 +179,7 @@ export default function NotificationConfigPage() {
             <div className="flex items-center justify-end gap-3 pt-2">
               {saved && (
                 <span className="flex items-center gap-1 text-sm font-medium text-emerald-600">
-                  <CheckCircle2 className="h-4 w-4" />
+                  <CircleCheckBig className="h-4 w-4" />
                   Saved
                 </span>
               )}
@@ -188,7 +188,7 @@ export default function NotificationConfigPage() {
                 disabled={saving}
                 className="flex items-center gap-2 rounded-lg bg-brand px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-brand/90 disabled:opacity-60"
               >
-                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                {saving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                 Save Configuration
               </button>
             </div>

@@ -1,10 +1,10 @@
-"use client";
+﻿"use client";
 
 import { ChangeEvent, ComponentType, FormEvent, ReactNode, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  AlertTriangle, ArrowUpRight, BarChart2, CheckCircle, ChevronRight,
+  AlertTriangle, ArrowUpRight, ChartBar, CircleCheck, ChevronRight,
   Clock, DollarSign, Download, FileText, Package, Plus,
   RefreshCw, ShoppingCart, TrendingUp, Users, Wallet,
 } from "lucide-react";
@@ -233,7 +233,7 @@ export function SalesDashboardPage() {
     { href: "/sales/payments",       label: "Record Payment",  Icon: Wallet,       cls: "border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100" },
     { href: "/sales/debtors",        label: "View Debtors",    Icon: AlertTriangle,cls: "border-red-200 bg-red-50 text-red-700 hover:bg-red-100" },
     { href: "/sales/invoices",       label: "Invoices",        Icon: FileText,     cls: "border-line bg-white text-ink/70 hover:bg-field" },
-    { href: "/sales/reports",        label: "Reports",         Icon: BarChart2,    cls: "border-line bg-white text-ink/70 hover:bg-field" },
+    { href: "/sales/reports",        label: "Reports",         Icon: ChartBar,    cls: "border-line bg-white text-ink/70 hover:bg-field" },
   ];
 
   return (
@@ -314,7 +314,7 @@ export function SalesDashboardPage() {
       {/* ── KPI cards ── */}
       <section className="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard label="Sales (Invoiced)"  value={money(salesValue)}   Icon={DollarSign}    color="brand" />
-        <KpiCard label="Collected"         value={money(paidValue)}    Icon={CheckCircle}   color="emerald" sub={salesValue > 0 ? `${collectRate.toFixed(1)}% collected` : undefined} />
+        <KpiCard label="Collected"         value={money(paidValue)}    Icon={CircleCheck}   color="emerald" sub={salesValue > 0 ? `${collectRate.toFixed(1)}% collected` : undefined} />
         <KpiCard label="Outstanding Debt"  value={money(outstanding)}  Icon={AlertTriangle} color={outstanding > 0 ? "red" : "blue"} />
         <KpiCard label="Returns Value"     value={money(returnValue)}  Icon={RefreshCw}     color="amber" />
       </section>
@@ -423,7 +423,7 @@ export function SalesDashboardPage() {
           <section className="rounded-2xl border border-line bg-white p-5 shadow-card">
             <div className="mb-4 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <BarChart2 className="h-4 w-4 text-brand" />
+                <ChartBar className="h-4 w-4 text-brand" />
                 <h3 className="text-sm font-semibold text-ink">Top Products</h3>
               </div>
               <Link href="/sales/reports" className="text-xs text-brand hover:underline">See report →</Link>

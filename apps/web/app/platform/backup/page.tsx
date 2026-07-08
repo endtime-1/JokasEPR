@@ -1,6 +1,6 @@
-"use client";
+﻿"use client";
 
-import { AlertTriangle, Archive, CheckCircle2, Clock, Cloud, Database, FileArchive, HardDrive, Info, RefreshCw, Shield, Terminal } from "lucide-react";
+import { AlertTriangle, Archive, CircleCheckBig, Clock, Cloud, Database, FileArchive, HardDrive, Info, RefreshCw, Shield, Terminal } from "lucide-react";
 import { AppShell } from "../../../components/app-shell";
 
 function SectionHeader({ icon: Icon, title, subtitle }: { icon: React.ElementType; title: string; subtitle?: string }) {
@@ -54,7 +54,7 @@ function Step({ n, children }: { n: number; children: React.ReactNode }) {
 function CheckItem({ done = false, children }: { done?: boolean; children: React.ReactNode }) {
   return (
     <li className="flex items-start gap-2 text-sm text-ink/80">
-      <CheckCircle2 size={15} className={`mt-0.5 shrink-0 ${done ? "text-green-500" : "text-ink/25"}`} />
+      <CircleCheckBig size={15} className={`mt-0.5 shrink-0 ${done ? "text-green-500" : "text-ink/25"}`} />
       {children}
     </li>
   );

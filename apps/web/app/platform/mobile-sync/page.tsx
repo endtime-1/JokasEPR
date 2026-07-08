@@ -1,7 +1,7 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { RefreshCw, AlertCircle, CheckCircle2, Copy, RotateCcw } from "lucide-react";
+import { RefreshCw, CircleAlert, CircleCheckBig, Copy, RotateCcw } from "lucide-react";
 import { AppShell } from "../../../components/app-shell";
 import { ApiEnvelope, apiFetch } from "../../../lib/api";
 
@@ -50,8 +50,8 @@ function StatusBadge({ status }: { status: MobileSyncRecord["status"] }) {
   }[status];
   return (
     <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${cfg.bg} ${cfg.text}`}>
-      {status === "SYNCED" && <CheckCircle2 size={11} />}
-      {status === "FAILED" && <AlertCircle size={11} />}
+      {status === "SYNCED" && <CircleCheckBig size={11} />}
+      {status === "FAILED" && <CircleAlert size={11} />}
       {cfg.label}
     </span>
   );
@@ -173,7 +173,7 @@ export default function MobileSyncPage() {
             </div>
           ) : records.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-gray-400">
-              <CheckCircle2 size={40} className="mb-2 text-green-300" />
+              <CircleCheckBig size={40} className="mb-2 text-green-300" />
               <p className="font-medium">No records found</p>
               <p className="text-sm">Try changing the filter or refreshing</p>
             </div>

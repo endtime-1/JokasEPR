@@ -1,10 +1,10 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { apiFetch, type ApiEnvelope } from "../../lib/api";
 import {
-  CheckCircle2,
+  CircleCheckBig,
   Clock,
   Globe,
   Package,
@@ -13,9 +13,9 @@ import {
   ShoppingBag,
   TrendingUp,
   Truck,
-  XCircle,
+  CircleX,
   AlertTriangle,
-  BarChart3,
+  ChartBar,
   ArrowRight,
 } from "lucide-react";
 
@@ -47,9 +47,9 @@ interface DashStats {
 
 const STATUS_META: Record<string, { label: string; color: string; icon: typeof Clock }> = {
   PENDING_STOCK_APPROVAL: { label: "Pending",   color: "bg-amber-50 text-amber-700 ring-1 ring-amber-100",    icon: Clock       },
-  APPROVED:               { label: "Confirmed",  color: "bg-blue-50 text-blue-700 ring-1 ring-blue-100",       icon: CheckCircle2 },
+  APPROVED:               { label: "Confirmed",  color: "bg-blue-50 text-blue-700 ring-1 ring-blue-100",       icon: CircleCheckBig },
   FULFILLED:              { label: "Delivered",  color: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100", icon: Truck    },
-  CANCELLED:              { label: "Cancelled",  color: "bg-red-50 text-red-500 ring-1 ring-red-100",          icon: XCircle     },
+  CANCELLED:              { label: "Cancelled",  color: "bg-red-50 text-red-500 ring-1 ring-red-100",          icon: CircleX     },
 };
 
 const NEXT_STATUS: Record<string, { label: string; value: string; color: string }> = {
@@ -169,7 +169,7 @@ export default function StorefrontDashboard() {
         {/* Revenue this month */}
         <div className="flex items-center gap-4 rounded-2xl border border-line bg-white p-5 shadow-sm ring-1 ring-brand/8">
           <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-brand/10">
-            <BarChart3 className="h-5 w-5 text-brand" />
+            <ChartBar className="h-5 w-5 text-brand" />
           </div>
           <div>
             <p className="text-2xl font-black text-ink">
@@ -205,7 +205,7 @@ export default function StorefrontDashboard() {
           className="group flex items-center gap-4 rounded-2xl border border-line bg-white p-5 shadow-sm ring-1 ring-blue-100 transition hover:-translate-y-0.5 hover:shadow-md"
         >
           <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-blue-50">
-            <CheckCircle2 className="h-5 w-5 text-blue-600" />
+            <CircleCheckBig className="h-5 w-5 text-blue-600" />
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-2xl font-black text-ink">

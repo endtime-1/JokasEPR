@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
@@ -7,7 +7,7 @@ import {
   CheckCheck,
   ChevronRight,
   Filter,
-  Loader2,
+  LoaderCircle,
   Settings
 } from "lucide-react";
 import { AppShell } from "../../components/app-shell";
@@ -155,7 +155,7 @@ export default function NotificationsPage() {
         <div className="rounded-xl border border-line bg-white">
           {loading ? (
             <div className="flex items-center justify-center py-16">
-              <Loader2 className="h-6 w-6 animate-spin text-ink/40" />
+              <LoaderCircle className="h-6 w-6 animate-spin text-ink/40" />
             </div>
           ) : items.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-center">

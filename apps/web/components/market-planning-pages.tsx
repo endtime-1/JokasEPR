@@ -1,9 +1,9 @@
-"use client";
+﻿"use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { CheckCircle2, ClipboardList, Factory, PackageCheck, Plus, RefreshCw, ShoppingCart, TrendingUp } from "lucide-react";
+import { CircleCheckBig, ClipboardList, Factory, PackageCheck, Plus, RefreshCw, ShoppingCart, TrendingUp } from "lucide-react";
 import { MarketPlanningShell } from "./market-planning-shell";
 import { DataTable } from "./data-table";
 import { ApiEnvelope, apiFetch } from "../lib/api";
@@ -277,7 +277,7 @@ export function MarketTargetDetailsPage() {
     <MarketPlanningShell>
       <Header title={target?.targetNumber ?? "Market Target"} subtitle={target?.title ?? "Target details, production plan, MRP, recommendations, and approval trail."} />
       <section className="mb-6 grid gap-4 md:grid-cols-4">
-        <Card label="Status" value={target?.status ?? "-"} icon={CheckCircle2} />
+        <Card label="Status" value={target?.status ?? "-"} icon={CircleCheckBig} />
         <Card label="Target kg" value={number(target?.items?.reduce((s, i) => s + Number(i.targetQuantityKg ?? 0), 0))} icon={TrendingUp} />
         <Card label="Items" value={number(target?.items?.length)} icon={ClipboardList} />
         <Card label="Plans" value={number(target?.productionPlans?.length)} icon={Factory} />
@@ -286,7 +286,7 @@ export function MarketTargetDetailsPage() {
         <label className="grid gap-1 text-sm font-semibold">Production site<select required className={inputClass} value={approve.productionSiteId} onChange={(e) => setApprove({ ...approve, productionSiteId: e.target.value })}><option value="">Select</option>{options.productionSites.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
         <label className="grid gap-1 text-sm font-semibold">Central warehouse<select required className={inputClass} value={approve.centralWarehouseId} onChange={(e) => setApprove({ ...approve, centralWarehouseId: e.target.value })}><option value="">Select</option>{options.warehouses.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
         <label className="grid gap-1 text-sm font-semibold">Notes<input className={inputClass} value={approve.notes} onChange={(e) => setApprove({ ...approve, notes: e.target.value })} /></label>
-        <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white md:w-fit" type="submit"><CheckCircle2 className="h-4 w-4" /> Approve and plan</button>
+        <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white md:w-fit" type="submit"><CircleCheckBig className="h-4 w-4" /> Approve and plan</button>
       </form>
       <section className="grid gap-6 xl:grid-cols-2">
         <div><h3 className="mb-3 text-lg font-semibold">Target items</h3><DataTable<TargetItem> rows={target?.items ?? []} empty="No target items." columns={[{ key: "productId", label: "Product", render: (row) => row.product?.name ?? row.productId }, { key: "baseQuantity", label: "Base bags", render: (row) => number(row.baseQuantity) }, { key: "adjustmentPercent", label: "Adjustment %", render: (row) => number(row.adjustmentPercent) }, { key: "targetQuantityKg", label: "Target kg", render: (row) => number(row.targetQuantityKg) }, { key: "approvalStatus", label: "Status" }]} /></div>

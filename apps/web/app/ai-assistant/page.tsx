@@ -1,10 +1,10 @@
-"use client";
+﻿"use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 import {
   Bot,
   ChevronRight,
-  Loader2,
+  LoaderCircle,
   MessageSquare,
   Plus,
   Send,
@@ -330,7 +330,7 @@ export default function AiAssistantPage() {
           <div className="flex-1 overflow-y-auto space-y-5 px-5 py-6">
             {loadingSession && (
               <div className="flex justify-center py-12">
-                <Loader2 className="h-5 w-5 animate-spin text-brand" />
+                <LoaderCircle className="h-5 w-5 animate-spin text-brand" />
               </div>
             )}
 
@@ -412,7 +412,7 @@ export default function AiAssistantPage() {
                 aria-label="Send message"
               >
                 {loading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <LoaderCircle className="h-4 w-4 animate-spin" />
                 ) : (
                   <Send className="h-4 w-4" />
                 )}

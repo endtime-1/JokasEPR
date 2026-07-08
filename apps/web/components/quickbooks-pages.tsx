@@ -1,10 +1,10 @@
-"use client";
+﻿"use client";
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
-  Activity, AlertCircle, ArrowRight, CheckCircle, Clock, Cloud, CloudOff, RefreshCw, Settings,
-  Unlink, Webhook, XCircle, Zap
+  Activity, CircleAlert, ArrowRight, CircleCheck, Clock, Cloud, CloudOff, RefreshCw, Settings,
+  Unlink, Webhook, CircleX, Zap
 } from "lucide-react";
 import { AppShell } from "./app-shell";
 import { apiFetch } from "../lib/api";
@@ -123,8 +123,8 @@ export function QuickBooksConnectionPage() {
     <AppShell>
       <QBNav />
 
-      {error && <div className="mb-4 flex items-center gap-2 rounded-md bg-red-50 p-3 text-sm text-red-700"><AlertCircle className="h-4 w-4" />{error}</div>}
-      {msg && <div className="mb-4 flex items-center gap-2 rounded-md bg-green-50 p-3 text-sm text-green-700"><CheckCircle className="h-4 w-4" />{msg}</div>}
+      {error && <div className="mb-4 flex items-center gap-2 rounded-md bg-red-50 p-3 text-sm text-red-700"><CircleAlert className="h-4 w-4" />{error}</div>}
+      {msg && <div className="mb-4 flex items-center gap-2 rounded-md bg-green-50 p-3 text-sm text-green-700"><CircleCheck className="h-4 w-4" />{msg}</div>}
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Connection status */}
@@ -471,8 +471,8 @@ export function QuickBooksMappingPage() {
     <AppShell>
       <QBNav />
 
-      {error && <div className="mb-4 flex items-center gap-2 rounded-md bg-red-50 p-3 text-sm text-red-700"><AlertCircle className="h-4 w-4" />{error}</div>}
-      {msg && <div className="mb-4 flex items-center gap-2 rounded-md bg-green-50 p-3 text-sm text-green-700"><CheckCircle className="h-4 w-4" />{msg}</div>}
+      {error && <div className="mb-4 flex items-center gap-2 rounded-md bg-red-50 p-3 text-sm text-red-700"><CircleAlert className="h-4 w-4" />{error}</div>}
+      {msg && <div className="mb-4 flex items-center gap-2 rounded-md bg-green-50 p-3 text-sm text-green-700"><CircleCheck className="h-4 w-4" />{msg}</div>}
 
       <div className="grid gap-6 lg:grid-cols-2">
         <div className={cardClass}>

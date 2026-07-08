@@ -1,20 +1,20 @@
-"use client";
+﻿"use client";
 
 import React, { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  ArrowDownCircle,
+  CircleArrowDown,
   ArrowLeft,
-  ArrowUpCircle,
-  BarChart3,
+  CircleArrowUp,
+  ChartBar,
   BookOpen,
   Building2,
   ChevronDown,
   ChevronRight,
   CreditCard,
   DollarSign,
-  FileBarChart,
+  FileChartColumn,
   FileClock,
   FileText,
   Landmark,
@@ -50,14 +50,14 @@ const sections: NavSection[] = [
     title: "Sales",
     items: [
       { href: "/sales/orders", label: "Invoices & Orders", icon: ReceiptText },
-      { href: "/finance/customer-payments", label: "Customer Payments", icon: ArrowUpCircle },
+      { href: "/finance/customer-payments", label: "Customer Payments", icon: CircleArrowUp },
       { href: "/finance/reports/product-profitability", label: "Debtors (A/R)", icon: Users }
     ]
   },
   {
     title: "Expenses",
     items: [
-      { href: "/finance/expenses", label: "Expenses", icon: ArrowDownCircle },
+      { href: "/finance/expenses", label: "Expenses", icon: CircleArrowDown },
       { href: "/finance/supplier-payments", label: "Supplier Payments", icon: Building2 },
       { href: "/finance/reports/batch-profitability", label: "Creditors (A/P)", icon: FileClock }
     ]
@@ -82,16 +82,16 @@ const sections: NavSection[] = [
     title: "Reports",
     items: [
       { href: "/finance/reports/profit-loss", label: "Profit & Loss", icon: TrendingUp },
-      { href: "/finance/reports/cash-flow", label: "Cash Flow", icon: BarChart3 },
-      { href: "/finance/reports/product-profitability", label: "Product P&L", icon: FileBarChart },
+      { href: "/finance/reports/cash-flow", label: "Cash Flow", icon: ChartBar },
+      { href: "/finance/reports/product-profitability", label: "Product P&L", icon: FileChartColumn },
       { href: "/finance/reports/batch-profitability", label: "Batch P&L", icon: FileText }
     ]
   }
 ];
 
 const newActions = [
-  { href: "/finance/expenses/create", label: "Expense", icon: ArrowDownCircle },
-  { href: "/finance/revenue", label: "Revenue", icon: ArrowUpCircle },
+  { href: "/finance/expenses/create", label: "Expense", icon: CircleArrowDown },
+  { href: "/finance/revenue", label: "Revenue", icon: CircleArrowUp },
   { href: "/finance/journal-entries", label: "Journal Entry", icon: BookOpen },
   { href: "/finance/payroll", label: "Payroll Record", icon: Wallet },
   { href: "/finance/petty-cash", label: "Petty Cash", icon: PiggyBank },

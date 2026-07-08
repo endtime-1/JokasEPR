@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
@@ -12,10 +12,10 @@ import {
   ChevronDown,
   ChevronUp,
   Clock,
-  CheckCircle2,
+  CircleCheckBig,
   Truck,
-  XCircle,
-  AlertCircle,
+  CircleX,
+  CircleAlert,
   RefreshCw,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -44,9 +44,9 @@ const STATUS_OPTIONS = [
 
 const STATUS_META: Record<string, { label: string; color: string; icon: LucideIcon }> = {
   PENDING_STOCK_APPROVAL: { label: "Pending",   color: "bg-amber-50 text-amber-700 ring-amber-100",    icon: Clock },
-  APPROVED:               { label: "Confirmed",  color: "bg-blue-50 text-blue-700 ring-blue-100",       icon: CheckCircle2 },
+  APPROVED:               { label: "Confirmed",  color: "bg-blue-50 text-blue-700 ring-blue-100",       icon: CircleCheckBig },
   FULFILLED:              { label: "Delivered",  color: "bg-emerald-50 text-emerald-700 ring-emerald-100", icon: Truck },
-  CANCELLED:              { label: "Cancelled",  color: "bg-red-50 text-red-600 ring-red-100",          icon: XCircle },
+  CANCELLED:              { label: "Cancelled",  color: "bg-red-50 text-red-600 ring-red-100",          icon: CircleX },
 };
 
 const NEXT_STATUS: Record<string, { label: string; value: string; color: string }> = {
@@ -197,7 +197,7 @@ function OrderCard({ order, onUpdated }: { order: AdminOrder; onUpdated: (o: Adm
           {/* Error */}
           {err && (
             <div className="flex items-center gap-2 text-xs text-red-500">
-              <AlertCircle className="h-3.5 w-3.5" /> {err}
+              <CircleAlert className="h-3.5 w-3.5" /> {err}
             </div>
           )}
 
@@ -210,7 +210,7 @@ function OrderCard({ order, onUpdated }: { order: AdminOrder; onUpdated: (o: Adm
                   disabled={updating}
                   className={`flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm transition active:scale-95 disabled:opacity-50 ${next.color}`}
                 >
-                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  <CircleCheckBig className="h-3.5 w-3.5" />
                   {updating ? "Updating…" : next.label}
                 </button>
               )}
@@ -219,7 +219,7 @@ function OrderCard({ order, onUpdated }: { order: AdminOrder; onUpdated: (o: Adm
                 disabled={updating}
                 className="flex items-center gap-1.5 rounded-xl border border-red-100 bg-red-50 px-4 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-100 disabled:opacity-50"
               >
-                <XCircle className="h-3.5 w-3.5" />
+                <CircleX className="h-3.5 w-3.5" />
                 Cancel
               </button>
             </div>

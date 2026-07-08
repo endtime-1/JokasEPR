@@ -1,8 +1,8 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Loader2, Save } from "lucide-react";
+import { ArrowLeft, LoaderCircle, Save } from "lucide-react";
 import { AppShell } from "../../../components/app-shell";
 import { apiFetch, ApiEnvelope } from "../../../lib/api";
 
@@ -87,7 +87,7 @@ export default function NotificationPreferencesPage() {
 
         {loading ? (
           <div className="flex items-center justify-center py-16">
-            <Loader2 className="h-6 w-6 animate-spin text-ink/40" />
+            <LoaderCircle className="h-6 w-6 animate-spin text-ink/40" />
           </div>
         ) : (
           <>
@@ -142,7 +142,7 @@ export default function NotificationPreferencesPage() {
                 disabled={saving}
                 className="flex items-center gap-2 rounded-lg bg-brand px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-brand/90 disabled:opacity-60"
               >
-                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                {saving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                 Save Preferences
               </button>
             </div>

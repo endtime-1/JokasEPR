@@ -1,12 +1,12 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
   ArrowRight,
-  BarChart3,
-  CheckCircle2,
+  ChartBar,
+  CircleCheckBig,
   ClipboardList,
   Factory,
   Package,
@@ -276,11 +276,11 @@ function QuickActions() {
     { href: "/market-planning/targets/create-weekly",         label: "Weekly Target",    icon: Target,        color: "text-blue-700 bg-blue-50 border-blue-200 hover:bg-blue-100" },
     { href: "/market-planning/targets/create-monthly",        label: "Monthly Target",   icon: ClipboardList, color: "text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-100" },
     { href: "/market-planning/mrp",                          label: "Run MRP",           icon: Package,       color: "text-amber-700 bg-amber-50 border-amber-200 hover:bg-amber-100" },
-    { href: "/market-planning/availability",                  label: "Check Availability", icon: CheckCircle2, color: "text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100" },
+    { href: "/market-planning/availability",                  label: "Check Availability", icon: CircleCheckBig, color: "text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100" },
     { href: "/market-planning/recommendations",               label: "Recommendations",  icon: ShoppingCart,  color: "text-orange-700 bg-orange-50 border-orange-200 hover:bg-orange-100" },
     { href: "/market-planning/production-plans",              label: "Production Plans", icon: Factory,       color: "text-purple-700 bg-purple-50 border-purple-200 hover:bg-purple-100" },
     { href: "/market-planning/execution",                     label: "Execution",        icon: Truck,         color: "text-teal-700 bg-teal-50 border-teal-200 hover:bg-teal-100" },
-    { href: "/market-planning/reports/target-vs-actual",      label: "Reports",          icon: BarChart3,     color: "text-pink-700 bg-pink-50 border-pink-200 hover:bg-pink-100" }
+    { href: "/market-planning/reports/target-vs-actual",      label: "Reports",          icon: ChartBar,     color: "text-pink-700 bg-pink-50 border-pink-200 hover:bg-pink-100" }
   ];
   return (
     <section className="mb-8">

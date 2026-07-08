@@ -1,13 +1,13 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
   ArrowRight,
-  BarChart3,
+  ChartBar,
   Box,
-  CheckCircle2,
+  CircleCheckBig,
   Clock,
   Download,
   Package,
@@ -467,11 +467,11 @@ function QuickActions() {
     { href: "/inventory/stock-in",      label: "Stock In",   icon: Package,      color: "text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100" },
     { href: "/inventory/stock-out",     label: "Stock Out",  icon: ShoppingCart, color: "text-red-700 bg-red-50 border-red-200 hover:bg-red-100" },
     { href: "/inventory/transfers",     label: "Transfer",   icon: Truck,        color: "text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-100" },
-    { href: "/inventory/adjustments",   label: "Adjustment", icon: CheckCircle2, color: "text-amber-700 bg-amber-50 border-amber-200 hover:bg-amber-100" },
+    { href: "/inventory/adjustments",   label: "Adjustment", icon: CircleCheckBig, color: "text-amber-700 bg-amber-50 border-amber-200 hover:bg-amber-100" },
     { href: "/inventory/items/create",  label: "New Item",   icon: Box,          color: "text-blue-700 bg-blue-50 border-blue-200 hover:bg-blue-100" },
     { href: "/inventory/low-stock",     label: "Low Stock",  icon: Zap,          color: "text-orange-700 bg-orange-50 border-orange-200 hover:bg-orange-100" },
     { href: "/inventory/valuation",     label: "Valuation",  icon: TrendingUp,   color: "text-purple-700 bg-purple-50 border-purple-200 hover:bg-purple-100" },
-    { href: "/inventory/reports",       label: "Reports",    icon: BarChart3,    color: "text-pink-700 bg-pink-50 border-pink-200 hover:bg-pink-100" }
+    { href: "/inventory/reports",       label: "Reports",    icon: ChartBar,    color: "text-pink-700 bg-pink-50 border-pink-200 hover:bg-pink-100" }
   ];
   return (
     <section className="mb-8">
@@ -561,7 +561,7 @@ export function InventoryDashboardPage() {
       <section className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard label="Low Stock Items" value={String(data?.lowStockCount ?? 0)} sub="Below reorder level" icon={Zap} color={(data?.lowStockCount ?? 0) > 0 ? "amber" : "green"} href="/inventory/low-stock" />
         <KpiCard label="Expiry Alerts" value={String(data?.expiryAlertCount ?? 0)} sub="Expiring within 45 days" icon={Clock} color={(data?.expiryAlertCount ?? 0) > 0 ? "red" : "green"} href="/inventory/expiry-alerts" />
-        <KpiCard label="Pending Approvals" value={String(data?.pendingApprovals ?? 0)} sub="Adjustments awaiting sign-off" icon={CheckCircle2} color={(data?.pendingApprovals ?? 0) > 0 ? "amber" : "green"} href="/inventory/adjustments" />
+        <KpiCard label="Pending Approvals" value={String(data?.pendingApprovals ?? 0)} sub="Adjustments awaiting sign-off" icon={CircleCheckBig} color={(data?.pendingApprovals ?? 0) > 0 ? "amber" : "green"} href="/inventory/adjustments" />
         <KpiCard label="Movements Today" value={String(data?.movementsToday ?? 0)} sub="Stock events recorded today" icon={Download} color={(data?.movementsToday ?? 0) > 0 ? "blue" : "default"} href="/inventory/movements" />
       </section>
 

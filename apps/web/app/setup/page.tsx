@@ -1,8 +1,8 @@
-"use client";
+﻿"use client";
 
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, ArrowRight, CheckCircle2, Settings } from "lucide-react";
+import { CircleAlert, ArrowRight, CircleCheckBig, Settings } from "lucide-react";
 import { BrandLogo } from "../../components/brand-logo";
 
 export default function SetupPage() {
@@ -78,7 +78,7 @@ export default function SetupPage() {
     return (
       <main className="grid min-h-screen place-items-center bg-field px-5">
         <div className="w-full max-w-[460px] rounded-2xl border border-line bg-white p-10 text-center shadow-panel">
-          <CheckCircle2 className="mx-auto mb-4 h-14 w-14 text-green-500" />
+          <CircleCheckBig className="mx-auto mb-4 h-14 w-14 text-green-500" />
           <h2 className="text-2xl font-bold tracking-tight">Setup complete!</h2>
           <p className="mt-3 text-sm text-ink/60">
             Your admin account has been created. Redirecting to sign-in…
@@ -231,7 +231,7 @@ export default function SetupPage() {
               aria-live="assertive"
               className="mb-5 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
             >
-              <AlertCircle aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+              <CircleAlert aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
               <span>{error}</span>
             </div>
           )}

@@ -1,9 +1,9 @@
-"use client";
+﻿"use client";
 
 import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { AlertCircle, AlertTriangle, ArrowLeft, BarChart3, Brain, Calculator, CheckCircle2, ChevronDown, ChevronUp, Download, Factory, GripVertical, Package, PackageCheck, Pencil, Plus, Printer, RotateCw, Trash2, TrendingUp, Zap } from "lucide-react";
+import { CircleAlert, AlertTriangle, ArrowLeft, ChartBar, Brain, Calculator, CircleCheckBig, ChevronDown, ChevronUp, Download, Factory, GripVertical, Package, PackageCheck, Pencil, Plus, Printer, RotateCw, Trash2, TrendingUp, Zap } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { FeedMillShell } from "./feed-mill-shell";
 import { DataTable } from "./data-table";
@@ -292,7 +292,7 @@ export function FormulaBuilderPage() {
 
         {error && (
           <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
             <span>{error}</span>
           </div>
         )}
@@ -744,7 +744,7 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
       </div>
       {(archiveErr || deleteFormulaErr) && (
         <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-          <AlertCircle className="h-4 w-4 shrink-0" />
+          <CircleAlert className="h-4 w-4 shrink-0" />
           <span>{archiveErr || deleteFormulaErr}</span>
           <button onClick={() => { setArchiveErr(""); setDeleteFormulaErr(""); }} className="ml-auto text-red-400 hover:text-red-600">✕</button>
         </div>
@@ -962,7 +962,7 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
 
           {deleteErr && (
             <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-              <AlertCircle className="h-4 w-4 shrink-0" />
+              <CircleAlert className="h-4 w-4 shrink-0" />
               <span>{deleteErr}</span>
               <button onClick={() => setDeleteErr("")} className="ml-auto text-red-400 hover:text-red-600">✕</button>
             </div>
@@ -1069,7 +1069,7 @@ export function FeedProductionOrdersPage({ create = false }: { create?: boolean 
       <PageHeader title={create ? "Create Production Order" : "Feed Production Orders"} subtitle="Plan, approve, and monitor feed mill production orders." />
       {actionErr && (
         <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-          <AlertCircle className="h-4 w-4 shrink-0" /><span>{actionErr}</span>
+          <CircleAlert className="h-4 w-4 shrink-0" /><span>{actionErr}</span>
           <button onClick={() => setActionErr("")} className="ml-auto text-red-400 hover:text-red-600">✕</button>
         </div>
       )}
@@ -1077,7 +1077,7 @@ export function FeedProductionOrdersPage({ create = false }: { create?: boolean 
         <>
           {submitErr && (
             <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-              <AlertCircle className="h-4 w-4 shrink-0" /><span>{submitErr}</span>
+              <CircleAlert className="h-4 w-4 shrink-0" /><span>{submitErr}</span>
               <button onClick={() => setSubmitErr("")} className="ml-auto text-red-400 hover:text-red-600">✕</button>
             </div>
           )}
@@ -1286,7 +1286,7 @@ export function FeedBatchCreatePage() {
 
       {submitErr && (
         <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-          <AlertCircle className="h-4 w-4 shrink-0" /><span>{submitErr}</span>
+          <CircleAlert className="h-4 w-4 shrink-0" /><span>{submitErr}</span>
           <button onClick={() => setSubmitErr("")} className="ml-auto text-red-400 hover:text-red-600">✕</button>
         </div>
       )}
@@ -1620,7 +1620,7 @@ export function FeedBatchDetailsPage() {
       {/* Quality checks */}
       {qcErr && (
         <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-          <AlertCircle className="h-4 w-4 shrink-0" /><span>{qcErr}</span>
+          <CircleAlert className="h-4 w-4 shrink-0" /><span>{qcErr}</span>
           <button onClick={() => setQcErr("")} className="ml-auto text-red-400 hover:text-red-600">✕</button>
         </div>
       )}
@@ -1678,7 +1678,7 @@ export function FeedBatchDetailsPage() {
       <BatchSection title="Record External Sale">
         {saleErr && (
           <div className="mb-3 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-            <AlertCircle className="h-4 w-4 shrink-0" /><span>{saleErr}</span>
+            <CircleAlert className="h-4 w-4 shrink-0" /><span>{saleErr}</span>
             <button onClick={() => setSaleErr("")} className="ml-auto text-red-400 hover:text-red-600">✕</button>
           </div>
         )}
@@ -1736,7 +1736,7 @@ export function FeedBatchDetailsPage() {
       <BatchSection title="Record Production Costs">
         {costErr && (
           <div className="mb-3 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-            <AlertCircle className="h-4 w-4 shrink-0" /><span>{costErr}</span>
+            <CircleAlert className="h-4 w-4 shrink-0" /><span>{costErr}</span>
             <button onClick={() => setCostErr("")} className="ml-auto text-red-400 hover:text-red-600">✕</button>
           </div>
         )}
@@ -1885,7 +1885,7 @@ export function FeedQualityControlPage() {
         <h3 className="mb-4 text-sm font-bold text-ink">Record Quality Check</h3>
         {submitErr && (
           <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-            <AlertCircle className="h-4 w-4 shrink-0" /><span>{submitErr}</span>
+            <CircleAlert className="h-4 w-4 shrink-0" /><span>{submitErr}</span>
             <button onClick={() => setSubmitErr("")} className="ml-auto text-red-400 hover:text-red-600">✕</button>
           </div>
         )}
@@ -2032,7 +2032,7 @@ export function InternalFeedTransferPage() {
         <h3 className="mb-4 text-sm font-bold text-ink">New Transfer</h3>
         {submitErr && (
           <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-            <AlertCircle className="h-4 w-4 shrink-0" /><span>{submitErr}</span>
+            <CircleAlert className="h-4 w-4 shrink-0" /><span>{submitErr}</span>
             <button onClick={() => setSubmitErr("")} className="ml-auto text-red-400 hover:text-red-600">✕</button>
           </div>
         )}
@@ -2094,7 +2094,7 @@ export function FeedReportsPage() {
   }
 
   const reports = [
-    { id: "summary", label: "Feed Production Summary", description: "Batches, quantities, costs, and margins across all production runs.", path: "/feed-production/reports/summary.csv", filename: "feed-production-summary.csv", icon: BarChart3 },
+    { id: "summary", label: "Feed Production Summary", description: "Batches, quantities, costs, and margins across all production runs.", path: "/feed-production/reports/summary.csv", filename: "feed-production-summary.csv", icon: ChartBar },
   ];
 
   return (
@@ -2139,7 +2139,7 @@ export function FeedReportsPage() {
       </div>
       {err && (
         <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-          <AlertCircle className="h-4 w-4 shrink-0" /><span>{err}</span>
+          <CircleAlert className="h-4 w-4 shrink-0" /><span>{err}</span>
           <button onClick={() => setErr("")} className="ml-auto text-red-400 hover:text-red-600">✕</button>
         </div>
       )}
@@ -2227,7 +2227,7 @@ export function FeedPackagingRecordPage() {
         <h3 className="mb-4 text-sm font-bold text-ink">Record Packaging</h3>
         {submitErr && (
           <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-            <AlertCircle className="h-4 w-4 shrink-0" /><span>{submitErr}</span>
+            <CircleAlert className="h-4 w-4 shrink-0" /><span>{submitErr}</span>
             <button onClick={() => setSubmitErr("")} className="ml-auto text-red-400 hover:text-red-600">✕</button>
           </div>
         )}
@@ -2829,7 +2829,7 @@ export function HiproPredictivePage() {
         {/* MODE INFO BANNER */}
         {mode === "global" ? (
           <div className="flex items-start gap-3 rounded-xl border-l-[3px] border-indigo-400 bg-indigo-50 px-4 py-3 text-xs text-indigo-800">
-            <BarChart3 className="mt-0.5 h-4 w-4 shrink-0" />
+            <ChartBar className="mt-0.5 h-4 w-4 shrink-0" />
             <span><strong>Global Plan:</strong> Enter No. of Bags for each feed type in the table below. Every ingredient tab automatically calculates its consumption and cost from those numbers.</span>
           </div>
         ) : (

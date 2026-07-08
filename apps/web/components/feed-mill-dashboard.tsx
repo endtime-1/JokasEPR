@@ -1,12 +1,12 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
   ArrowRight,
-  BarChart3,
-  CheckCircle2,
+  ChartBar,
+  CircleCheckBig,
   ClipboardList,
   Factory,
   FlaskConical,
@@ -354,13 +354,13 @@ function QuickActions() {
   const actions = [
     { href: "/feed-production/formulas",              label: "New Formula",    icon: FlaskConical, color: "text-blue-700 bg-blue-50 border-blue-200 hover:bg-blue-100" },
     { href: "/feed-production/orders/create",         label: "New Order",      icon: ClipboardList, color: "text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100" },
-    { href: "/feed-production/quality-control",       label: "QC Check",       icon: CheckCircle2, color: "text-amber-700 bg-amber-50 border-amber-200 hover:bg-amber-100" },
+    { href: "/feed-production/quality-control",       label: "QC Check",       icon: CircleCheckBig, color: "text-amber-700 bg-amber-50 border-amber-200 hover:bg-amber-100" },
     { href: "/feed-production/finished-feed-inventory", label: "Finished Stock", icon: Warehouse,   color: "text-purple-700 bg-purple-50 border-purple-200 hover:bg-purple-100" },
     { href: "/feed-production/raw-material-usage",    label: "Raw Materials",  icon: Package,      color: "text-orange-700 bg-orange-50 border-orange-200 hover:bg-orange-100" },
     { href: "/feed-production/ingredients",           label: "Ingredients",    icon: Leaf,         color: "text-lime-700 bg-lime-50 border-lime-200 hover:bg-lime-100" },
     { href: "/feed-production/internal-transfer",     label: "Transfer Feed",  icon: Truck,        color: "text-teal-700 bg-teal-50 border-teal-200 hover:bg-teal-100" },
     { href: "/feed-production/orders",                label: "View Orders",    icon: ShoppingCart, color: "text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-100" },
-    { href: "/feed-production/reports",               label: "Reports",        icon: BarChart3,    color: "text-pink-700 bg-pink-50 border-pink-200 hover:bg-pink-100" }
+    { href: "/feed-production/reports",               label: "Reports",        icon: ChartBar,    color: "text-pink-700 bg-pink-50 border-pink-200 hover:bg-pink-100" }
   ];
   return (
     <section className="mb-8">
