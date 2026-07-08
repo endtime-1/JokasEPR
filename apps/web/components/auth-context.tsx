@@ -32,14 +32,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOutRef = useRef(false);
 
   useEffect(() => {
-    fetch("/api/auth/me", { credentials: "include" })
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+
+    fetch("/api/auth/me", { credentials: "include", signal: controller.signal })
       .then(async (res) => {
         if (!res.ok) throw new Error("Unauthorized");
         const json = (await res.json()) as ApiEnvelope<Profile>;
         setProfile(json.data);
       })
       .catch(() => router.replace("/login"))
-      .finally(() => setReady(true));
+      .finally(() => { clearTimeout(timeout); setReady(true); });
   }, [router]);
 
   async function signOut() {
