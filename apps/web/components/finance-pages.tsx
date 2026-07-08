@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
-import { CircleAlert, CircleArrowDown, CircleArrowUp, BadgeDollarSign, ChartBar, BookOpen, Building2, CircleCheck, DollarSign, FileChartColumn, FileText, Landmark, PiggyBank, TrendingDown, TrendingUp, Users, Wallet, CircleX } from "lucide-react";
+import { CircleAlert, CircleArrowDown, CircleArrowUp, BadgeDollarSign, ChartBar, BookOpen, Building2, CircleCheck, ChevronRight, DollarSign, FileChartColumn, FileText, Landmark, PiggyBank, TrendingDown, TrendingUp, Users, Wallet, CircleX } from "lucide-react";
 import { FinanceShell } from "./finance-shell";
 import { DataTable } from "./data-table";
 import { FormField } from "./form-field";
@@ -243,84 +243,135 @@ export function FinanceDashboardPage() {
   return (
     <FinanceShell title="Business Overview" subtitle="Financial performance at a glance">
 
-      {/* ── Period selector ─────────────────────────────────────────────────── */}
-      <div className="mb-5 flex flex-wrap items-center gap-2">
-        {[
-          { value: "this_month", label: "This Month" },
-          { value: "last_month", label: "Last Month" },
-          { value: "this_quarter", label: "This Quarter" },
-          { value: "this_year", label: "This Year" }
-        ].map((p) => (
-          <button
-            key={p.value}
-            onClick={() => setPeriod(p.value)}
-            className={`rounded-full px-3.5 py-1 text-xs font-semibold transition ${period === p.value ? "bg-brand text-white shadow-sm" : "border border-slate-200 bg-white text-slate-600 hover:border-brand hover:text-brand"}`}
-          >
-            {p.label}
-          </button>
-        ))}
-        {loading && <span className="ml-1 inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-brand border-t-transparent" />}
+      {/* ── Business Snapshot (QuickBooks-style hero) ────────────────────────── */}
+      <div className="mb-6 overflow-hidden rounded-2xl bg-sidebar shadow-panel">
+        {/* Header row: title + period tabs */}
+        <div className="flex flex-wrap items-start justify-between gap-3 px-6 py-5">
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-widest text-white/40">Business Snapshot</p>
+            <p className="mt-0.5 text-sm text-white/55">
+              {new Date().toLocaleDateString("en-GB", { month: "long", year: "numeric" })}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {[
+              { value: "this_month", label: "This Month" },
+              { value: "last_month", label: "Last Month" },
+              { value: "this_quarter", label: "This Quarter" },
+              { value: "this_year", label: "This Year" }
+            ].map((p) => (
+              <button
+                key={p.value}
+                onClick={() => setPeriod(p.value)}
+                className={`rounded-lg px-3.5 py-1.5 text-xs font-semibold transition ${period === p.value ? "bg-brand text-white shadow-md" : "bg-white/10 text-white/55 hover:bg-white/20 hover:text-white"}`}
+              >
+                {p.label}
+              </button>
+            ))}
+            {loading && <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-brand border-t-transparent" />}
+          </div>
+        </div>
+
+        {/* Three big numbers */}
+        <div className="grid grid-cols-1 border-t border-white/10 sm:grid-cols-3">
+          {/* Money In */}
+          <div className="border-b border-white/10 px-6 py-5 sm:border-b-0 sm:border-r">
+            <p className="text-[11px] font-bold uppercase tracking-widest text-white/40">Money In</p>
+            {loading
+              ? <div className="mt-2 h-9 w-36 animate-pulse rounded-lg bg-white/10" />
+              : <p className="mt-2 text-3xl font-bold leading-none text-emerald-400">{money(totalRevenue)}</p>
+            }
+            <p className="mt-1.5 text-xs text-white/30">{Number(dash?.revenueCount ?? 0)} transactions</p>
+            <Link href="/finance/revenue" className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-brand hover:underline">
+              View revenue <ChevronRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+          {/* Money Out */}
+          <div className="border-b border-white/10 px-6 py-5 sm:border-b-0 sm:border-r">
+            <p className="text-[11px] font-bold uppercase tracking-widest text-white/40">Money Out</p>
+            {loading
+              ? <div className="mt-2 h-9 w-36 animate-pulse rounded-lg bg-white/10" />
+              : <p className="mt-2 text-3xl font-bold leading-none text-red-400">{money(totalExpenses)}</p>
+            }
+            <p className="mt-1.5 text-xs text-white/30">{Number(dash?.expenseCount ?? 0)} transactions</p>
+            <Link href="/finance/expenses" className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-brand hover:underline">
+              View expenses <ChevronRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+          {/* Net Position */}
+          <div className="px-6 py-5">
+            <p className="text-[11px] font-bold uppercase tracking-widest text-white/40">Net Position</p>
+            {loading
+              ? <div className="mt-2 h-9 w-36 animate-pulse rounded-lg bg-white/10" />
+              : <p className={`mt-2 text-3xl font-bold leading-none ${isProfitable ? "text-emerald-400" : "text-red-400"}`}>{money(netProfit)}</p>
+            }
+            <p className={`mt-1.5 text-xs ${isProfitable ? "text-emerald-500/60" : "text-red-500/60"}`}>{profitMargin.toFixed(1)}% margin</p>
+            <Link href="/finance/reports/profit-loss" className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-brand hover:underline">
+              P&amp;L report <ChevronRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+        </div>
       </div>
 
-      {/* ── KPI cards ───────────────────────────────────────────────────────── */}
+      {/* ── Action KPIs ─────────────────────────────────────────────────────── */}
       <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-
-        {/* Money In */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="mb-3 flex items-start justify-between">
-            <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Money In</p>
-            <span className="grid h-8 w-8 place-items-center rounded-lg bg-emerald-50">
-              <CircleArrowUp className="h-4 w-4 text-emerald-500" />
-            </span>
-          </div>
-          {loading ? <div className="h-8 w-40 animate-pulse rounded-md bg-slate-100" /> : <p className="text-2xl font-bold tracking-tight text-slate-900">{money(totalRevenue)}</p>}
-          <p className="mt-1 text-xs text-slate-400">{Number(dash?.revenueCount ?? 0)} transactions</p>
-          <div className="mt-3 h-1 w-full overflow-hidden rounded-full bg-slate-100">
-            <div className="h-full rounded-full bg-emerald-400 transition-all" style={{ width: totalRevenue > 0 ? "100%" : "0%" }} />
-          </div>
-          <Link href="/finance/revenue" className="mt-2 block text-xs font-semibold text-brand hover:underline">View all revenue →</Link>
-        </div>
-
-        {/* Money Out */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="mb-3 flex items-start justify-between">
-            <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Money Out</p>
-            <span className="grid h-8 w-8 place-items-center rounded-lg bg-red-50">
-              <CircleArrowDown className="h-4 w-4 text-red-400" />
-            </span>
-          </div>
-          {loading ? <div className="h-8 w-40 animate-pulse rounded-md bg-slate-100" /> : <p className="text-2xl font-bold tracking-tight text-slate-900">{money(totalExpenses)}</p>}
-          <p className="mt-1 text-xs text-slate-400">{Number(dash?.expenseCount ?? 0)} transactions</p>
-          <div className="mt-3 h-1 w-full overflow-hidden rounded-full bg-slate-100">
-            <div className="h-full rounded-full bg-red-300 transition-all" style={{ width: totalRevenue > 0 ? `${Math.min((totalExpenses / totalRevenue) * 100, 100)}%` : "0%" }} />
-          </div>
-          <Link href="/finance/expenses" className="mt-2 block text-xs font-semibold text-brand hover:underline">View all expenses →</Link>
-        </div>
-
-        {/* Net Profit */}
-        <div className={`rounded-xl border p-5 shadow-sm ${isProfitable ? "border-emerald-200 bg-emerald-50" : "border-red-200 bg-red-50"}`}>
-          <div className="mb-3 flex items-start justify-between">
-            <p className={`text-[11px] font-bold uppercase tracking-widest ${isProfitable ? "text-emerald-600" : "text-red-500"}`}>Net Profit</p>
-            <span className={`grid h-8 w-8 place-items-center rounded-lg ${isProfitable ? "bg-emerald-100" : "bg-red-100"}`}>
-              {isProfitable ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-red-500" />}
-            </span>
-          </div>
-          {loading ? <div className="h-8 w-40 animate-pulse rounded-md bg-white/60" /> : <p className={`text-2xl font-bold tracking-tight ${isProfitable ? "text-emerald-700" : "text-red-600"}`}>{money(netProfit)}</p>}
-          <p className={`mt-1 text-xs ${isProfitable ? "text-emerald-500" : "text-red-400"}`}>{profitMargin.toFixed(1)}% margin</p>
-          <Link href="/finance/reports/profit-loss" className={`mt-5 block text-xs font-semibold hover:underline ${isProfitable ? "text-emerald-700" : "text-red-600"}`}>View P&amp;L report →</Link>
-        </div>
 
         {/* Needs Approval */}
         <div className={`rounded-xl border p-5 shadow-sm ${pendingCount > 0 ? "border-brand/30 bg-field" : "border-slate-200 bg-white"}`}>
           <div className="mb-3 flex items-start justify-between">
             <p className={`text-[11px] font-bold uppercase tracking-widest ${pendingCount > 0 ? "text-brand" : "text-slate-400"}`}>Needs Approval</p>
             <span className={`grid h-8 w-8 place-items-center rounded-lg ${pendingCount > 0 ? "bg-brand/10" : "bg-slate-100"}`}>
-              <CircleAlert className={`h-4 w-4 ${pendingCount > 0 ? "text-brand" : "text-slate-300"}`} />
+              <CircleAlert className={`h-4 w-4 ${pendingCount > 0 ? "text-brand animate-pulse" : "text-slate-300"}`} />
             </span>
           </div>
-          {loading ? <div className="h-8 w-16 animate-pulse rounded-md bg-slate-100" /> : <p className={`text-2xl font-bold tracking-tight ${pendingCount > 0 ? "text-brandDark" : "text-slate-900"}`}>{pendingCount}</p>}
+          {loading ? <div className="h-8 w-16 animate-pulse rounded-md bg-slate-100" /> : <p className={`text-3xl font-bold tracking-tight ${pendingCount > 0 ? "text-brandDark" : "text-slate-900"}`}>{pendingCount}</p>}
           <p className="mt-1 text-xs text-slate-400">Large expenses ≥ GHS 5,000</p>
-          <Link href="/finance/expenses?status=PENDING_APPROVAL" className="mt-5 block text-xs font-semibold text-brand hover:underline">Review now →</Link>
+          <Link href="/finance/expenses?status=PENDING_APPROVAL" className="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-brand hover:underline">Review now <ChevronRight className="h-3.5 w-3.5" /></Link>
+        </div>
+
+        {/* Profit margin */}
+        <div className={`rounded-xl border p-5 shadow-sm ${isProfitable ? "border-emerald-200 bg-emerald-50" : "border-red-200 bg-red-50"}`}>
+          <div className="mb-3 flex items-start justify-between">
+            <p className={`text-[11px] font-bold uppercase tracking-widest ${isProfitable ? "text-emerald-700" : "text-red-600"}`}>Profit Margin</p>
+            <span className={`grid h-8 w-8 place-items-center rounded-lg ${isProfitable ? "bg-emerald-100" : "bg-red-100"}`}>
+              {isProfitable ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-red-500" />}
+            </span>
+          </div>
+          {loading ? <div className="h-8 w-24 animate-pulse rounded-md bg-white/60" /> : <p className={`text-3xl font-bold tracking-tight ${isProfitable ? "text-emerald-700" : "text-red-600"}`}>{profitMargin.toFixed(1)}%</p>}
+          <p className={`mt-1 text-xs ${isProfitable ? "text-emerald-600" : "text-red-500"}`}>{money(netProfit)} net profit</p>
+          <Link href="/finance/reports/profit-loss" className={`mt-4 inline-flex items-center gap-1 text-xs font-semibold hover:underline ${isProfitable ? "text-emerald-700" : "text-red-600"}`}>P&amp;L report <ChevronRight className="h-3.5 w-3.5" /></Link>
+        </div>
+
+        {/* Revenue transactions */}
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="mb-3 flex items-start justify-between">
+            <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Revenue Entries</p>
+            <span className="grid h-8 w-8 place-items-center rounded-lg bg-emerald-50">
+              <CircleArrowUp className="h-4 w-4 text-emerald-500" />
+            </span>
+          </div>
+          {loading ? <div className="h-8 w-16 animate-pulse rounded-md bg-slate-100" /> : <p className="text-3xl font-bold tracking-tight text-slate-900">{Number(dash?.revenueCount ?? 0)}</p>}
+          <p className="mt-1 text-xs text-slate-400">Transactions this period</p>
+          <div className="mt-3 h-1 w-full overflow-hidden rounded-full bg-slate-100">
+            <div className="h-full rounded-full bg-emerald-400" style={{ width: totalRevenue > 0 ? "100%" : "0%" }} />
+          </div>
+          <Link href="/finance/revenue" className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-brand hover:underline">View all <ChevronRight className="h-3.5 w-3.5" /></Link>
+        </div>
+
+        {/* Expense transactions */}
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="mb-3 flex items-start justify-between">
+            <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Expense Entries</p>
+            <span className="grid h-8 w-8 place-items-center rounded-lg bg-red-50">
+              <CircleArrowDown className="h-4 w-4 text-red-400" />
+            </span>
+          </div>
+          {loading ? <div className="h-8 w-16 animate-pulse rounded-md bg-slate-100" /> : <p className="text-3xl font-bold tracking-tight text-slate-900">{Number(dash?.expenseCount ?? 0)}</p>}
+          <p className="mt-1 text-xs text-slate-400">Transactions this period</p>
+          <div className="mt-3 h-1 w-full overflow-hidden rounded-full bg-slate-100">
+            <div className="h-full rounded-full bg-red-300" style={{ width: totalRevenue > 0 ? `${Math.min((totalExpenses / totalRevenue) * 100, 100)}%` : "0%" }} />
+          </div>
+          <Link href="/finance/expenses" className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-brand hover:underline">View all <ChevronRight className="h-3.5 w-3.5" /></Link>
         </div>
       </div>
 
