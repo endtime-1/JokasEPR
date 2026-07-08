@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { AlertTriangle, CalendarDays, CircleAlert, ClipboardList, DollarSign, UserCheck, UserPlus, Users } from "lucide-react";
 import { ApiEnvelope, apiFetch } from "../lib/api";
 import { AppShell } from "./app-shell";
 import { DataTable } from "./data-table";
@@ -85,13 +86,25 @@ const hrNav = [
 ];
 
 function HRNav() {
+  const pathname = usePathname();
   return (
-    <div className="mb-6 flex flex-wrap gap-2">
-      {hrNav.map((n) => (
-        <Link key={n.href} href={n.href} className="rounded-full border border-line bg-white px-4 py-1.5 text-xs font-medium hover:bg-field">
-          {n.label}
-        </Link>
-      ))}
+    <div className="flex gap-1 overflow-x-auto rounded-xl border border-line bg-field/60 p-1 [scrollbar-width:none]">
+      {hrNav.map((n) => {
+        const active = n.href === "/hr" ? pathname === "/hr" : pathname.startsWith(n.href);
+        return (
+          <Link
+            key={n.href}
+            href={n.href}
+            className={`shrink-0 rounded-lg px-4 py-2 text-sm font-medium whitespace-nowrap transition-all ${
+              active
+                ? "bg-white text-brand shadow-sm font-semibold"
+                : "text-ink/55 hover:text-ink"
+            }`}
+          >
+            {n.label}
+          </Link>
+        );
+      })}
     </div>
   );
 }
@@ -134,74 +147,136 @@ type DashData = {
 export function HRDashboardPage() {
   const [data, setData] = useState<DashData | null>(null);
   useEffect(() => {
-    apiFetch<ApiEnvelope<DashData>>("/hr/dashboard").then((r) => setData(r.data)).catch(() => undefined);
+    apiFetch<ApiEnvelope<DashData>>(“/hr/dashboard”).then((r) => setData(r.data)).catch(() => undefined);
   }, []);
+
+  const kpis = [
+    { label: “Total Employees”, value: data?.totalEmployees, icon: Users, color: “text-sky-400” },
+    { label: “Active”, value: data?.activeEmployees, icon: UserCheck, color: “text-emerald-400” },
+    { label: “On Leave”, value: data?.onLeave, icon: CalendarDays, color: “text-yellow-400” },
+    { label: “Today Present”, value: data?.todayAttendanceCount, icon: ClipboardList, color: “text-blue-400” },
+    { label: “Open Tasks”, value: data?.openTasks, icon: AlertTriangle, color: “text-purple-400” },
+    { label: “Urgent Tasks”, value: data?.urgentTasks, icon: CircleAlert, color: “text-red-400” },
+    { label: “Pending Payroll”, value: data?.pendingPayroll, icon: DollarSign, color: “text-orange-400” },
+  ];
 
   return (
     <AppShell>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">HR & Task Management</h1>
-            <p className="mt-0.5 text-sm text-ink/60">Employee, attendance, tasks and workforce</p>
+      <div className=”space-y-6”>
+
+        {/* ── Hero ─────────────────────────────────────────────────────────── */}
+        <div className=”overflow-hidden rounded-2xl bg-sidebar shadow-panel”>
+          <div className=”flex flex-wrap items-start justify-between gap-4 px-6 py-5”>
+            <div>
+              <p className=”text-[11px] font-bold uppercase tracking-widest text-white/40”>Human Resources</p>
+              <h1 className=”mt-1 text-2xl font-bold text-white”>HR & Workforce</h1>
+              <p className=”mt-1 text-sm text-white/55”>Employees, attendance, payroll & task management</p>
+            </div>
+            <Link
+              href=”/hr/employees/create”
+              className=”flex items-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-sm font-bold text-white shadow-lg transition hover:bg-brandDark”
+            >
+              <UserPlus className=”h-4 w-4” aria-hidden />
+              New Employee
+            </Link>
           </div>
-          <Link href="/hr/employees/create" className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white hover:opacity-90">
-            + New Employee
-          </Link>
+
+          {/* KPI strip */}
+          <div className=”grid grid-cols-2 gap-px border-t border-white/10 bg-white/10 sm:grid-cols-4 lg:grid-cols-7”>
+            {kpis.map(({ label, value, icon: Icon, color }) => (
+              <div key={label} className=”flex flex-col items-center bg-sidebar px-3 py-4 text-center”>
+                <Icon className={`mb-1.5 h-5 w-5 ${color}`} aria-hidden />
+                {data
+                  ? <p className=”text-2xl font-bold text-white”>{value ?? 0}</p>
+                  : <div className=”h-7 w-10 animate-pulse rounded-md bg-white/10” />
+                }
+                <p className=”mt-0.5 text-[10px] leading-tight text-white/40”>{label}</p>
+              </div>
+            ))}
+          </div>
         </div>
 
+        {/* ── Tab nav ──────────────────────────────────────────────────────── */}
         <HRNav />
 
-        {data ? (
-          <>
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-7">
-              <StatCard label="Total Employees" value={data.totalEmployees} />
-              <StatCard label="Active" value={data.activeEmployees} />
-              <StatCard label="On Leave" value={data.onLeave} />
-              <StatCard label="Today's Attendance" value={data.todayAttendanceCount} />
-              <StatCard label="Open Tasks" value={data.openTasks} />
-              <StatCard label="Urgent Tasks" value={data.urgentTasks} />
-              <StatCard label="Pending Payroll" value={data.pendingPayroll} />
-            </div>
+        {/* ── Recent data ──────────────────────────────────────────────────── */}
+        <div className=”grid grid-cols-1 gap-6 lg:grid-cols-2”>
 
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-              <div className="rounded-lg border border-line bg-white p-5">
-                <div className="mb-3 flex items-center justify-between">
-                  <h2 className="text-sm font-semibold">Recent Employees</h2>
-                  <Link href="/hr/employees" className="text-xs text-brand hover:underline">View all</Link>
-                </div>
-                <DataTable
-                  columns={[
-                    { key: "code", label: "Code" },
-                    { key: "fullName", label: "Name", render: (r) => <Link href={`/hr/employees/${r.id}`} className="font-medium text-brand hover:underline">{r.fullName as string}</Link> },
-                    { key: "employeeRole", label: "Role", render: (r) => r.employeeRole?.name ?? "â€”" },
-                    { key: "status", label: "Status", render: (r) => <StatusBadge status={r.status as string} /> },
-                  ]}
-                  rows={data.recentEmployees as Record<string, any>[]}
-                  empty="No employees yet"
-                />
+          {/* Recent Employees */}
+          <div className=”overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm”>
+            <div className=”flex items-center justify-between border-b border-slate-100 px-5 py-4”>
+              <div>
+                <h2 className=”text-sm font-semibold text-slate-800”>Recent Employees</h2>
+                <p className=”text-xs text-slate-400”>Latest additions to the workforce</p>
               </div>
-              <div className="rounded-lg border border-line bg-white p-5">
-                <div className="mb-3 flex items-center justify-between">
-                  <h2 className="text-sm font-semibold">Recent Tasks</h2>
-                  <Link href="/hr/tasks" className="text-xs text-brand hover:underline">View all</Link>
-                </div>
-                <DataTable
-                  columns={[
-                    { key: "title", label: "Task", render: (r) => <Link href={`/hr/tasks/${r.id}`} className="font-medium text-brand hover:underline">{r.title as string}</Link> },
-                    { key: "priority", label: "Priority", render: (r) => <StatusBadge status={r.priority as string} /> },
-                    { key: "dueDate", label: "Due", render: (r) => fmt(r.dueDate as string) },
-                    { key: "status", label: "Status", render: (r) => <StatusBadge status={r.status as string} /> },
-                  ]}
-                  rows={data.recentTasks as Record<string, any>[]}
-                  empty="No tasks yet"
-                />
-              </div>
+              <Link href=”/hr/employees” className=”text-xs font-semibold text-brand hover:underline”>View all →</Link>
             </div>
-          </>
-        ) : (
-          <p className="text-sm text-ink/60">Loading dashboard...</p>
-        )}
+            <ul className=”divide-y divide-slate-50”>
+              {!data && [1, 2, 3].map((i) => (
+                <li key={i} className=”flex items-center gap-3 px-5 py-3.5”>
+                  <div className=”h-9 w-9 animate-pulse rounded-full bg-slate-100” />
+                  <div className=”flex-1 space-y-1.5”>
+                    <div className=”h-3.5 w-36 animate-pulse rounded bg-slate-100” />
+                    <div className=”h-3 w-24 animate-pulse rounded bg-slate-100” />
+                  </div>
+                </li>
+              ))}
+              {data?.recentEmployees.map((emp) => (
+                <li key={emp.id} className=”flex items-center gap-3 px-5 py-3.5”>
+                  <div className=”grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand/10 text-sm font-bold text-brand”>
+                    {emp.fullName.charAt(0).toUpperCase()}
+                  </div>
+                  <div className=”min-w-0 flex-1”>
+                    <Link href={`/hr/employees/${emp.id}`} className=”text-sm font-medium text-slate-800 hover:text-brand hover:underline”>
+                      {emp.fullName}
+                    </Link>
+                    <p className=”text-xs text-slate-400”>{emp.code} · {emp.employeeRole?.name ?? “No role”} · {emp.branch?.name ?? “”}</p>
+                  </div>
+                  <StatusBadge status={emp.status} />
+                </li>
+              ))}
+              {data?.recentEmployees.length === 0 && (
+                <li className=”flex h-20 items-center justify-center text-sm text-slate-400”>No employees yet</li>
+              )}
+            </ul>
+          </div>
+
+          {/* Recent Tasks */}
+          <div className=”overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm”>
+            <div className=”flex items-center justify-between border-b border-slate-100 px-5 py-4”>
+              <div>
+                <h2 className=”text-sm font-semibold text-slate-800”>Recent Tasks</h2>
+                <p className=”text-xs text-slate-400”>Active operational tasks</p>
+              </div>
+              <Link href=”/hr/tasks” className=”text-xs font-semibold text-brand hover:underline”>Task board →</Link>
+            </div>
+            <ul className=”divide-y divide-slate-50”>
+              {!data && [1, 2, 3].map((i) => (
+                <li key={i} className=”flex items-center gap-3 px-5 py-3.5”>
+                  <div className=”flex-1 space-y-1.5”>
+                    <div className=”h-3.5 w-48 animate-pulse rounded bg-slate-100” />
+                    <div className=”h-3 w-24 animate-pulse rounded bg-slate-100” />
+                  </div>
+                </li>
+              ))}
+              {data?.recentTasks.map((task) => (
+                <li key={task.id} className=”flex items-center gap-3 px-5 py-3.5”>
+                  <div className=”min-w-0 flex-1”>
+                    <p className=”text-sm font-medium text-slate-800”>{task.title}</p>
+                    <p className=”text-xs text-slate-400”>{task.dueDate ? `Due ${fmt(task.dueDate)}` : “No due date”}</p>
+                  </div>
+                  <div className=”flex shrink-0 flex-col items-end gap-1”>
+                    <StatusBadge status={task.priority} />
+                    <StatusBadge status={task.status} />
+                  </div>
+                </li>
+              ))}
+              {data?.recentTasks.length === 0 && (
+                <li className=”flex h-20 items-center justify-center text-sm text-slate-400”>No tasks yet</li>
+              )}
+            </ul>
+          </div>
+        </div>
       </div>
     </AppShell>
   );

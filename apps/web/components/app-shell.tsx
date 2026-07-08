@@ -149,7 +149,7 @@ function NavLink({
       ref={linkRef}
       href={item.href}
       onClick={onClick}
-      className={`group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-150 ${
+      className={`group relative flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-150 ${
         active
           ? "bg-brand text-white shadow-lg shadow-brand/25"
           : "text-white/65 hover:bg-white/8 hover:text-white"
@@ -158,10 +158,10 @@ function NavLink({
       {active && (
         <span className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-r-full bg-white/60" />
       )}
-      <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg transition-all ${
+      <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg transition-all ${
         active ? "bg-white/20" : "bg-white/6 group-hover:bg-white/12"
       }`}>
-        <Icon aria-hidden className="h-3.5 w-3.5" />
+        <Icon aria-hidden className="h-4 w-4" />
       </span>
       <span className="flex-1 truncate">{item.label}</span>
       {item.href === "/alerts" && unreadAlerts > 0 ? (
@@ -253,7 +253,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <nav aria-label="Main navigation" className="space-y-0.5">
       {visibleGroups.map((group, gi) => (
         <div key={group.title} className={gi > 0 ? "mt-1 pt-4" : ""}>
-          <p className="mb-1 px-3 text-[10px] font-bold uppercase tracking-[0.12em] text-white/30">
+          <p className="mb-1 px-4 text-[11px] font-bold uppercase tracking-[0.12em] text-white/30">
             {group.title}
           </p>
           <div className="space-y-0.5">
