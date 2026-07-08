@@ -16,11 +16,12 @@ const nextConfig = {
   async headers() {
     return [
       {
-        // HTML pages must never be cached — prevents ChunkLoadError after deploys
-        source: "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|gif|svg|ico|webp|woff2?)).*)",
+        // All routes: no caching on HTML pages. Next.js overrides this for
+        // /_next/static/** with its own immutable headers, so static assets
+        // are still cached correctly by the browser.
+        source: "/:path*",
         headers: [
           { key: "Cache-Control", value: "no-store, must-revalidate" },
-          { key: "Pragma", value: "no-cache" },
         ],
       },
     ];
