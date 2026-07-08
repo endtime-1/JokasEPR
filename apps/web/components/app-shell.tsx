@@ -135,8 +135,18 @@ function NavLink({
 }) {
   const Icon = item.icon;
   const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+  const linkRef = useRef<HTMLAnchorElement>(null);
+
+  // Scroll the active item into view whenever navigation changes it
+  useEffect(() => {
+    if (active && linkRef.current) {
+      linkRef.current.scrollIntoView({ block: "nearest", behavior: "instant" });
+    }
+  }, [active]);
+
   return (
     <Link
+      ref={linkRef}
       href={item.href}
       onClick={onClick}
       className={`group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-150 ${
