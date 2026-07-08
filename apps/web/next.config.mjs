@@ -13,6 +13,18 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: true
   },
+  async headers() {
+    return [
+      {
+        // HTML pages must never be cached — prevents ChunkLoadError after deploys
+        source: "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|gif|svg|ico|webp|woff2?)).*)",
+        headers: [
+          { key: "Cache-Control", value: "no-store, must-revalidate" },
+          { key: "Pragma", value: "no-cache" },
+        ],
+      },
+    ];
+  },
   async rewrites() {
     // Proxy /api/v1/* to the internal NestJS process on API_PORT (default 4001).
     // This lets the browser call /api/v1/* on the same origin instead of directly
