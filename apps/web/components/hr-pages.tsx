@@ -8,14 +8,14 @@ import { ApiEnvelope, apiFetch } from "../lib/api";
 import { AppShell } from "./app-shell";
 import { DataTable } from "./data-table";
 
-// â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â"€â"€â"€ Helpers â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 function money(v: unknown) {
   return `GHS ${Number(v ?? 0).toLocaleString("en-GH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function fmt(d?: string | Date | null) {
-  if (!d) return "â€”";
+  if (!d) return "—";
   return new Date(d).toLocaleDateString("en-GH", { day: "2-digit", month: "short", year: "numeric" });
 }
 
@@ -71,7 +71,7 @@ function StatCard({ label, value, sub }: { label: string; value: string | number
   );
 }
 
-// â”€â”€â”€ Nav â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â"€â"€â"€ Nav â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 const hrNav = [
   { href: "/hr", label: "Dashboard" },
@@ -109,7 +109,7 @@ function HRNav() {
   );
 }
 
-// â”€â”€â”€ Options hook â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â"€â"€â"€ Options hook â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 type HROptions = {
   branches: { id: string; name: string; code: string }[];
@@ -130,7 +130,7 @@ function useHROptions() {
   return opts;
 }
 
-// â”€â”€â”€ Dashboard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â"€â"€â"€ Dashboard â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 type DashData = {
   totalEmployees: number;
@@ -147,50 +147,50 @@ type DashData = {
 export function HRDashboardPage() {
   const [data, setData] = useState<DashData | null>(null);
   useEffect(() => {
-    apiFetch<ApiEnvelope<DashData>>(“/hr/dashboard”).then((r) => setData(r.data)).catch(() => undefined);
+    apiFetch<ApiEnvelope<DashData>>("/hr/dashboard").then((r) => setData(r.data)).catch(() => undefined);
   }, []);
 
   const kpis = [
-    { label: “Total Employees”, value: data?.totalEmployees, icon: Users, color: “text-sky-400” },
-    { label: “Active”, value: data?.activeEmployees, icon: UserCheck, color: “text-emerald-400” },
-    { label: “On Leave”, value: data?.onLeave, icon: CalendarDays, color: “text-yellow-400” },
-    { label: “Today Present”, value: data?.todayAttendanceCount, icon: ClipboardList, color: “text-blue-400” },
-    { label: “Open Tasks”, value: data?.openTasks, icon: AlertTriangle, color: “text-purple-400” },
-    { label: “Urgent Tasks”, value: data?.urgentTasks, icon: CircleAlert, color: “text-red-400” },
-    { label: “Pending Payroll”, value: data?.pendingPayroll, icon: DollarSign, color: “text-orange-400” },
+    { label: "Total Employees", value: data?.totalEmployees, icon: Users, color: "text-sky-400" },
+    { label: "Active", value: data?.activeEmployees, icon: UserCheck, color: "text-emerald-400" },
+    { label: "On Leave", value: data?.onLeave, icon: CalendarDays, color: "text-yellow-400" },
+    { label: "Today Present", value: data?.todayAttendanceCount, icon: ClipboardList, color: "text-blue-400" },
+    { label: "Open Tasks", value: data?.openTasks, icon: AlertTriangle, color: "text-purple-400" },
+    { label: "Urgent Tasks", value: data?.urgentTasks, icon: CircleAlert, color: "text-red-400" },
+    { label: "Pending Payroll", value: data?.pendingPayroll, icon: DollarSign, color: "text-orange-400" },
   ];
 
   return (
     <AppShell>
-      <div className=”space-y-6”>
+      <div className="space-y-6">
 
         {/* ── Hero ─────────────────────────────────────────────────────────── */}
-        <div className=”overflow-hidden rounded-2xl bg-sidebar shadow-panel”>
-          <div className=”flex flex-wrap items-start justify-between gap-4 px-6 py-5”>
+        <div className="overflow-hidden rounded-2xl bg-sidebar shadow-panel">
+          <div className="flex flex-wrap items-start justify-between gap-4 px-6 py-5">
             <div>
-              <p className=”text-[11px] font-bold uppercase tracking-widest text-white/40”>Human Resources</p>
-              <h1 className=”mt-1 text-2xl font-bold text-white”>HR & Workforce</h1>
-              <p className=”mt-1 text-sm text-white/55”>Employees, attendance, payroll & task management</p>
+              <p className="text-[11px] font-bold uppercase tracking-widest text-white/40">Human Resources</p>
+              <h1 className="mt-1 text-2xl font-bold text-white">HR & Workforce</h1>
+              <p className="mt-1 text-sm text-white/55">Employees, attendance, payroll & task management</p>
             </div>
             <Link
-              href=”/hr/employees/create”
-              className=”flex items-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-sm font-bold text-white shadow-lg transition hover:bg-brandDark”
+              href="/hr/employees/create"
+              className="flex items-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-sm font-bold text-white shadow-lg transition hover:bg-brandDark"
             >
-              <UserPlus className=”h-4 w-4” aria-hidden />
+              <UserPlus className="h-4 w-4" aria-hidden />
               New Employee
             </Link>
           </div>
 
           {/* KPI strip */}
-          <div className=”grid grid-cols-2 gap-px border-t border-white/10 bg-white/10 sm:grid-cols-4 lg:grid-cols-7”>
+          <div className="grid grid-cols-2 gap-px border-t border-white/10 bg-white/10 sm:grid-cols-4 lg:grid-cols-7">
             {kpis.map(({ label, value, icon: Icon, color }) => (
-              <div key={label} className=”flex flex-col items-center bg-sidebar px-3 py-4 text-center”>
+              <div key={label} className="flex flex-col items-center bg-sidebar px-3 py-4 text-center">
                 <Icon className={`mb-1.5 h-5 w-5 ${color}`} aria-hidden />
                 {data
-                  ? <p className=”text-2xl font-bold text-white”>{value ?? 0}</p>
-                  : <div className=”h-7 w-10 animate-pulse rounded-md bg-white/10” />
+                  ? <p className="text-2xl font-bold text-white">{value ?? 0}</p>
+                  : <div className="h-7 w-10 animate-pulse rounded-md bg-white/10" />
                 }
-                <p className=”mt-0.5 text-[10px] leading-tight text-white/40”>{label}</p>
+                <p className="mt-0.5 text-[10px] leading-tight text-white/40">{label}</p>
               </div>
             ))}
           </div>
@@ -200,79 +200,79 @@ export function HRDashboardPage() {
         <HRNav />
 
         {/* ── Recent data ──────────────────────────────────────────────────── */}
-        <div className=”grid grid-cols-1 gap-6 lg:grid-cols-2”>
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
 
           {/* Recent Employees */}
-          <div className=”overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm”>
-            <div className=”flex items-center justify-between border-b border-slate-100 px-5 py-4”>
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
               <div>
-                <h2 className=”text-sm font-semibold text-slate-800”>Recent Employees</h2>
-                <p className=”text-xs text-slate-400”>Latest additions to the workforce</p>
+                <h2 className="text-sm font-semibold text-slate-800">Recent Employees</h2>
+                <p className="text-xs text-slate-400">Latest additions to the workforce</p>
               </div>
-              <Link href=”/hr/employees” className=”text-xs font-semibold text-brand hover:underline”>View all →</Link>
+              <Link href="/hr/employees" className="text-xs font-semibold text-brand hover:underline">View all →</Link>
             </div>
-            <ul className=”divide-y divide-slate-50”>
+            <ul className="divide-y divide-slate-50">
               {!data && [1, 2, 3].map((i) => (
-                <li key={i} className=”flex items-center gap-3 px-5 py-3.5”>
-                  <div className=”h-9 w-9 animate-pulse rounded-full bg-slate-100” />
-                  <div className=”flex-1 space-y-1.5”>
-                    <div className=”h-3.5 w-36 animate-pulse rounded bg-slate-100” />
-                    <div className=”h-3 w-24 animate-pulse rounded bg-slate-100” />
+                <li key={i} className="flex items-center gap-3 px-5 py-3.5">
+                  <div className="h-9 w-9 animate-pulse rounded-full bg-slate-100" />
+                  <div className="flex-1 space-y-1.5">
+                    <div className="h-3.5 w-36 animate-pulse rounded bg-slate-100" />
+                    <div className="h-3 w-24 animate-pulse rounded bg-slate-100" />
                   </div>
                 </li>
               ))}
               {data?.recentEmployees.map((emp) => (
-                <li key={emp.id} className=”flex items-center gap-3 px-5 py-3.5”>
-                  <div className=”grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand/10 text-sm font-bold text-brand”>
+                <li key={emp.id} className="flex items-center gap-3 px-5 py-3.5">
+                  <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand/10 text-sm font-bold text-brand">
                     {emp.fullName.charAt(0).toUpperCase()}
                   </div>
-                  <div className=”min-w-0 flex-1”>
-                    <Link href={`/hr/employees/${emp.id}`} className=”text-sm font-medium text-slate-800 hover:text-brand hover:underline”>
+                  <div className="min-w-0 flex-1">
+                    <Link href={`/hr/employees/${emp.id}`} className="text-sm font-medium text-slate-800 hover:text-brand hover:underline">
                       {emp.fullName}
                     </Link>
-                    <p className=”text-xs text-slate-400”>{emp.code} · {emp.employeeRole?.name ?? “No role”} · {emp.branch?.name ?? “”}</p>
+                    <p className="text-xs text-slate-400">{emp.code} · {emp.employeeRole?.name ?? "No role"} · {emp.branch?.name ?? ""}</p>
                   </div>
                   <StatusBadge status={emp.status} />
                 </li>
               ))}
               {data?.recentEmployees.length === 0 && (
-                <li className=”flex h-20 items-center justify-center text-sm text-slate-400”>No employees yet</li>
+                <li className="flex h-20 items-center justify-center text-sm text-slate-400">No employees yet</li>
               )}
             </ul>
           </div>
 
           {/* Recent Tasks */}
-          <div className=”overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm”>
-            <div className=”flex items-center justify-between border-b border-slate-100 px-5 py-4”>
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
               <div>
-                <h2 className=”text-sm font-semibold text-slate-800”>Recent Tasks</h2>
-                <p className=”text-xs text-slate-400”>Active operational tasks</p>
+                <h2 className="text-sm font-semibold text-slate-800">Recent Tasks</h2>
+                <p className="text-xs text-slate-400">Active operational tasks</p>
               </div>
-              <Link href=”/hr/tasks” className=”text-xs font-semibold text-brand hover:underline”>Task board →</Link>
+              <Link href="/hr/tasks" className="text-xs font-semibold text-brand hover:underline">Task board →</Link>
             </div>
-            <ul className=”divide-y divide-slate-50”>
+            <ul className="divide-y divide-slate-50">
               {!data && [1, 2, 3].map((i) => (
-                <li key={i} className=”flex items-center gap-3 px-5 py-3.5”>
-                  <div className=”flex-1 space-y-1.5”>
-                    <div className=”h-3.5 w-48 animate-pulse rounded bg-slate-100” />
-                    <div className=”h-3 w-24 animate-pulse rounded bg-slate-100” />
+                <li key={i} className="flex items-center gap-3 px-5 py-3.5">
+                  <div className="flex-1 space-y-1.5">
+                    <div className="h-3.5 w-48 animate-pulse rounded bg-slate-100" />
+                    <div className="h-3 w-24 animate-pulse rounded bg-slate-100" />
                   </div>
                 </li>
               ))}
               {data?.recentTasks.map((task) => (
-                <li key={task.id} className=”flex items-center gap-3 px-5 py-3.5”>
-                  <div className=”min-w-0 flex-1”>
-                    <p className=”text-sm font-medium text-slate-800”>{task.title}</p>
-                    <p className=”text-xs text-slate-400”>{task.dueDate ? `Due ${fmt(task.dueDate)}` : “No due date”}</p>
+                <li key={task.id} className="flex items-center gap-3 px-5 py-3.5">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-slate-800">{task.title}</p>
+                    <p className="text-xs text-slate-400">{task.dueDate ? `Due ${fmt(task.dueDate)}` : "No due date"}</p>
                   </div>
-                  <div className=”flex shrink-0 flex-col items-end gap-1”>
+                  <div className="flex shrink-0 flex-col items-end gap-1">
                     <StatusBadge status={task.priority} />
                     <StatusBadge status={task.status} />
                   </div>
                 </li>
               ))}
               {data?.recentTasks.length === 0 && (
-                <li className=”flex h-20 items-center justify-center text-sm text-slate-400”>No tasks yet</li>
+                <li className="flex h-20 items-center justify-center text-sm text-slate-400">No tasks yet</li>
               )}
             </ul>
           </div>
@@ -282,7 +282,7 @@ export function HRDashboardPage() {
   );
 }
 
-// â”€â”€â”€ Employee List â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â"€â"€â"€ Employee List â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 type Employee = { id: string; code: string; fullName: string; phone?: string; email?: string; status: string; startDate: string; employeeRole?: { name: string }; branch?: { name: string }; farm?: { name: string } };
 
@@ -317,8 +317,8 @@ export function EmployeeListPage() {
           columns={[
             { key: "code", label: "Code" },
             { key: "fullName", label: "Name", render: (r) => <Link href={`/hr/employees/${r.id}`} className="font-medium text-brand hover:underline">{r.fullName as string}</Link> },
-            { key: "employeeRole", label: "Role", render: (r) => r.employeeRole?.name ?? "â€”" },
-            { key: "branch", label: "Branch/Site", render: (r) => r.branch?.name ?? r.farm?.name ?? "â€”" },
+            { key: "employeeRole", label: "Role", render: (r) => r.employeeRole?.name ?? "—" },
+            { key: "branch", label: "Branch/Site", render: (r) => r.branch?.name ?? r.farm?.name ?? "—" },
             { key: "phone", label: "Phone" },
             { key: "startDate", label: "Start Date", render: (r) => fmt(r.startDate as string) },
             { key: "status", label: "Status", render: (r) => <StatusBadge status={r.status as string} /> },
@@ -331,7 +331,7 @@ export function EmployeeListPage() {
   );
 }
 
-// â”€â”€â”€ Create Employee â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â"€â"€â"€ Create Employee â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 export function CreateEmployeePage() {
   const router = useRouter();
@@ -384,7 +384,7 @@ export function CreateEmployeePage() {
               <div><label className="mb-1 block text-xs font-medium">Employee Code *</label><input required value={form.code} onChange={f("code")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
               <div><label className="mb-1 block text-xs font-medium">Role</label>
                 <select value={form.employeeRoleId} onChange={f("employeeRoleId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
-                  <option value="">â€” None â€”</option>
+                  <option value="">— None —</option>
                   {opts.employeeRoles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
                 </select>
               </div>
@@ -396,7 +396,7 @@ export function CreateEmployeePage() {
             <div className="grid grid-cols-3 gap-4">
               <div><label className="mb-1 block text-xs font-medium">Gender</label>
                 <select value={form.gender} onChange={f("gender")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
-                  <option value="">â€”</option>
+                  <option value="">—</option>
                   {["MALE", "FEMALE", "OTHER"].map((g) => <option key={g} value={g}>{g}</option>)}
                 </select>
               </div>
@@ -419,13 +419,13 @@ export function CreateEmployeePage() {
             <div className="grid grid-cols-2 gap-4">
               <div><label className="mb-1 block text-xs font-medium">Branch</label>
                 <select value={form.branchId} onChange={f("branchId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
-                  <option value="">â€” None â€”</option>
+                  <option value="">— None —</option>
                   {opts.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
                 </select>
               </div>
               <div><label className="mb-1 block text-xs font-medium">Farm</label>
                 <select value={form.farmId} onChange={f("farmId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
-                  <option value="">â€” None â€”</option>
+                  <option value="">— None —</option>
                   {opts.farms.map((f_) => <option key={f_.id} value={f_.id}>{f_.name}</option>)}
                 </select>
               </div>
@@ -454,7 +454,7 @@ export function CreateEmployeePage() {
   );
 }
 
-// â”€â”€â”€ Employee Detail â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â"€â"€â"€ Employee Detail â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 type EmployeeDetail = Employee & {
   email?: string; address?: string; nationalId?: string; gender?: string; dateOfBirth?: string; basicSalary?: number;
@@ -501,29 +501,29 @@ export function EmployeeDetailPage({ id }: { id: string }) {
               <h2 className="font-semibold">Personal Details</h2>
               <dl className="grid grid-cols-2 gap-y-2 text-sm">
                 <dt className="text-ink/60">Code</dt><dd className="font-medium">{data.code}</dd>
-                <dt className="text-ink/60">Gender</dt><dd>{data.gender ?? "â€”"}</dd>
+                <dt className="text-ink/60">Gender</dt><dd>{data.gender ?? "—"}</dd>
                 <dt className="text-ink/60">Date of Birth</dt><dd>{fmt(data.dateOfBirth)}</dd>
-                <dt className="text-ink/60">National ID</dt><dd>{data.nationalId ?? "â€”"}</dd>
-                <dt className="text-ink/60">Phone</dt><dd>{data.phone ?? "â€”"}</dd>
-                <dt className="text-ink/60">Email</dt><dd>{data.email ?? "â€”"}</dd>
-                <dt className="text-ink/60">Address</dt><dd>{data.address ?? "â€”"}</dd>
-                <dt className="text-ink/60">Emergency Contact</dt><dd>{data.emergencyContactName ?? "â€”"}</dd>
-                <dt className="text-ink/60">Emergency Phone</dt><dd>{data.emergencyContactPhone ?? "â€”"}</dd>
+                <dt className="text-ink/60">National ID</dt><dd>{data.nationalId ?? "—"}</dd>
+                <dt className="text-ink/60">Phone</dt><dd>{data.phone ?? "—"}</dd>
+                <dt className="text-ink/60">Email</dt><dd>{data.email ?? "—"}</dd>
+                <dt className="text-ink/60">Address</dt><dd>{data.address ?? "—"}</dd>
+                <dt className="text-ink/60">Emergency Contact</dt><dd>{data.emergencyContactName ?? "—"}</dd>
+                <dt className="text-ink/60">Emergency Phone</dt><dd>{data.emergencyContactPhone ?? "—"}</dd>
               </dl>
             </div>
             <div className="rounded-lg border border-line bg-white p-5 space-y-3">
               <h2 className="font-semibold">Employment & Payroll</h2>
               <dl className="grid grid-cols-2 gap-y-2 text-sm">
-                <dt className="text-ink/60">Role</dt><dd>{data.employeeRole?.name ?? "â€”"}</dd>
+                <dt className="text-ink/60">Role</dt><dd>{data.employeeRole?.name ?? "—"}</dd>
                 <dt className="text-ink/60">Start Date</dt><dd>{fmt(data.startDate)}</dd>
-                <dt className="text-ink/60">Branch</dt><dd>{data.branch?.name ?? "â€”"}</dd>
-                <dt className="text-ink/60">Farm</dt><dd>{data.farm?.name ?? "â€”"}</dd>
-                <dt className="text-ink/60">Warehouse</dt><dd>{data.warehouse?.name ?? "â€”"}</dd>
-                <dt className="text-ink/60">Basic Salary</dt><dd>{data.basicSalary ? money(data.basicSalary) : "â€”"}</dd>
-                <dt className="text-ink/60">Bank Name</dt><dd>{data.bankName ?? "â€”"}</dd>
-                <dt className="text-ink/60">Bank Account</dt><dd>{data.bankAccount ?? "â€”"}</dd>
-                <dt className="text-ink/60">SSNIT</dt><dd>{data.ssnitNumber ?? "â€”"}</dd>
-                <dt className="text-ink/60">TIN</dt><dd>{data.tinNumber ?? "â€”"}</dd>
+                <dt className="text-ink/60">Branch</dt><dd>{data.branch?.name ?? "—"}</dd>
+                <dt className="text-ink/60">Farm</dt><dd>{data.farm?.name ?? "—"}</dd>
+                <dt className="text-ink/60">Warehouse</dt><dd>{data.warehouse?.name ?? "—"}</dd>
+                <dt className="text-ink/60">Basic Salary</dt><dd>{data.basicSalary ? money(data.basicSalary) : "—"}</dd>
+                <dt className="text-ink/60">Bank Name</dt><dd>{data.bankName ?? "—"}</dd>
+                <dt className="text-ink/60">Bank Account</dt><dd>{data.bankAccount ?? "—"}</dd>
+                <dt className="text-ink/60">SSNIT</dt><dd>{data.ssnitNumber ?? "—"}</dd>
+                <dt className="text-ink/60">TIN</dt><dd>{data.tinNumber ?? "—"}</dd>
               </dl>
             </div>
           </div>
@@ -534,7 +534,7 @@ export function EmployeeDetailPage({ id }: { id: string }) {
             columns={[
               { key: "date", label: "Date", render: (r) => fmt(r.date as string) },
               { key: "status", label: "Status", render: (r) => <StatusBadge status={r.status as string} /> },
-              { key: "hoursWorked", label: "Hours Worked", render: (r) => r.hoursWorked ? `${Number(r.hoursWorked).toFixed(1)}h` : "â€”" },
+              { key: "hoursWorked", label: "Hours Worked", render: (r) => r.hoursWorked ? `${Number(r.hoursWorked).toFixed(1)}h` : "—" },
             ]}
             rows={data.attendanceRecords as Record<string, any>[]}
             empty="No attendance records"
@@ -544,7 +544,7 @@ export function EmployeeDetailPage({ id }: { id: string }) {
         {tab === "tasks" && (
           <DataTable
             columns={[
-              { key: "task", label: "Task", render: (r) => r.task?.title ?? "â€”" },
+              { key: "task", label: "Task", render: (r) => r.task?.title ?? "—" },
               { key: "priority", label: "Priority", render: (r) => <StatusBadge status={r.task?.priority as string} /> },
               { key: "dueDate", label: "Due", render: (r) => fmt(r.task?.dueDate as string) },
               { key: "status", label: "Status", render: (r) => <StatusBadge status={r.status as string} /> },
@@ -594,7 +594,7 @@ export function EmployeeDetailPage({ id }: { id: string }) {
   );
 }
 
-// â”€â”€â”€ Attendance Page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â"€â"€â"€ Attendance Page â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 type AttendanceRow = { id: string; date: string; status: string; hoursWorked?: number; employee: { fullName: string; code: string }; shift?: { name: string } };
 
@@ -650,7 +650,7 @@ export function AttendancePage() {
               <div>
                 <label className="mb-1 block text-xs font-medium">Employee *</label>
                 <select required value={form.employeeId} onChange={f("employeeId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
-                  <option value="">â€” Select â€”</option>
+                  <option value="">— Select —</option>
                   {opts.employees.map((e) => <option key={e.id} value={e.id}>{e.fullName} ({e.code})</option>)}
                 </select>
               </div>
@@ -667,8 +667,8 @@ export function AttendancePage() {
               <div>
                 <label className="mb-1 block text-xs font-medium">Shift</label>
                 <select value={form.shiftId} onChange={f("shiftId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
-                  <option value="">â€” None â€”</option>
-                  {opts.shifts.map((s) => <option key={s.id} value={s.id}>{s.name} ({s.startTime}â€“{s.endTime})</option>)}
+                  <option value="">— None —</option>
+                  {opts.shifts.map((s) => <option key={s.id} value={s.id}>{s.name} ({s.startTime}—{s.endTime})</option>)}
                 </select>
               </div>
               <div>
@@ -695,10 +695,10 @@ export function AttendancePage() {
           columns={[
             { key: "employee", label: "Employee", render: (r) => `${r.employee?.fullName} (${r.employee?.code})` },
             { key: "date", label: "Date", render: (r) => fmt(r.date as string) },
-            { key: "shift", label: "Shift", render: (r) => r.shift?.name ?? "â€”" },
-            { key: "checkIn", label: "Check In", render: (r) => r.checkInTime ? new Date(r.checkInTime as string).toLocaleTimeString("en-GH", { hour: "2-digit", minute: "2-digit" }) : "â€”" },
-            { key: "checkOut", label: "Check Out", render: (r) => r.checkOutTime ? new Date(r.checkOutTime as string).toLocaleTimeString("en-GH", { hour: "2-digit", minute: "2-digit" }) : "â€”" },
-            { key: "hoursWorked", label: "Hours", render: (r) => r.hoursWorked ? `${Number(r.hoursWorked).toFixed(1)}h` : "â€”" },
+            { key: "shift", label: "Shift", render: (r) => r.shift?.name ?? "—" },
+            { key: "checkIn", label: "Check In", render: (r) => r.checkInTime ? new Date(r.checkInTime as string).toLocaleTimeString("en-GH", { hour: "2-digit", minute: "2-digit" }) : "—" },
+            { key: "checkOut", label: "Check Out", render: (r) => r.checkOutTime ? new Date(r.checkOutTime as string).toLocaleTimeString("en-GH", { hour: "2-digit", minute: "2-digit" }) : "—" },
+            { key: "hoursWorked", label: "Hours", render: (r) => r.hoursWorked ? `${Number(r.hoursWorked).toFixed(1)}h` : "—" },
             { key: "status", label: "Status", render: (r) => <StatusBadge status={r.status as string} /> },
           ]}
           rows={rows as Record<string, any>[]}
@@ -709,7 +709,7 @@ export function AttendancePage() {
   );
 }
 
-// â”€â”€â”€ Shift Schedule â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â"€â"€â"€ Shift Schedule â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 type Shift = { id: string; code: string; name: string; startTime: string; endTime: string; isActive: boolean; branch?: { name: string } };
 
@@ -761,7 +761,7 @@ export function ShiftSchedulePage() {
               </div>
               <div><label className="mb-1 block text-xs font-medium">Branch</label>
                 <select value={form.branchId} onChange={f("branchId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
-                  <option value="">â€” All Branches â€”</option>
+                  <option value="">— All Branches —</option>
                   {opts.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
                 </select>
               </div>
@@ -788,7 +788,7 @@ export function ShiftSchedulePage() {
   );
 }
 
-// â”€â”€â”€ Task Board â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â"€â"€â"€ Task Board â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 type Task = { id: string; title: string; priority: string; status: string; dueDate?: string; taskType?: string; branch?: { name: string }; assignments: Array<{ employee: { fullName: string } }> };
 
@@ -859,7 +859,7 @@ export function TaskBoardPage() {
   );
 }
 
-// â”€â”€â”€ Create Task â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â"€â"€â"€ Create Task â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 export function CreateTaskPage() {
   const router = useRouter();
@@ -916,7 +916,7 @@ export function CreateTaskPage() {
               <div><label className="mb-1 block text-xs font-medium">Due Date</label><input type="date" value={form.dueDate} onChange={f("dueDate")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
               <div><label className="mb-1 block text-xs font-medium">Branch</label>
                 <select value={form.branchId} onChange={f("branchId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
-                  <option value="">â€” None â€”</option>
+                  <option value="">— None —</option>
                   {opts.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
                 </select>
               </div>
@@ -943,7 +943,7 @@ export function CreateTaskPage() {
   );
 }
 
-// â”€â”€â”€ Payroll Page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â"€â"€â"€ Payroll Page â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 type PayrollRow = { id: string; reference: string; period: string; grossPay: number; netPay: number; status: string; employee?: { fullName: string; code: string }; paymentDate?: string };
 
@@ -1008,7 +1008,7 @@ export function PayrollPage() {
             <form onSubmit={submit} className="grid grid-cols-2 gap-4">
               <div><label className="mb-1 block text-xs font-medium">Employee *</label>
                 <select required value={form.employeeId} onChange={f("employeeId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
-                  <option value="">â€” Select â€”</option>
+                  <option value="">— Select —</option>
                   {opts.employees.map((e) => <option key={e.id} value={e.id}>{e.fullName}</option>)}
                 </select>
               </div>
@@ -1038,7 +1038,7 @@ export function PayrollPage() {
         <DataTable
           columns={[
             { key: "reference", label: "Reference" },
-            { key: "employee", label: "Employee", render: (r) => r.employee?.fullName ?? "â€”" },
+            { key: "employee", label: "Employee", render: (r) => r.employee?.fullName ?? "—" },
             { key: "period", label: "Period" },
             { key: "grossPay", label: "Gross", render: (r) => money(r.grossPay) },
             { key: "netPay", label: "Net Pay", render: (r) => money(r.netPay) },
@@ -1061,7 +1061,7 @@ export function PayrollPage() {
   );
 }
 
-// â”€â”€â”€ Training Records â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â"€â"€â"€ Training Records â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 type TrainingRow = { id: string; title: string; trainer?: string; trainingDate: string; durationHours?: number; outcome: string; employee: { fullName: string; code: string } };
 
@@ -1111,7 +1111,7 @@ export function TrainingPage() {
             <form onSubmit={submit} className="grid grid-cols-2 gap-4">
               <div><label className="mb-1 block text-xs font-medium">Employee *</label>
                 <select required value={form.employeeId} onChange={f("employeeId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
-                  <option value="">â€” Select â€”</option>
+                  <option value="">— Select —</option>
                   {opts.employees.map((e) => <option key={e.id} value={e.id}>{e.fullName}</option>)}
                 </select>
               </div>
@@ -1133,11 +1133,11 @@ export function TrainingPage() {
         )}
         <DataTable
           columns={[
-            { key: "employee", label: "Employee", render: (r) => r.employee?.fullName ?? "â€”" },
+            { key: "employee", label: "Employee", render: (r) => r.employee?.fullName ?? "—" },
             { key: "title", label: "Training" },
             { key: "trainer", label: "Trainer" },
             { key: "trainingDate", label: "Date", render: (r) => fmt(r.trainingDate as string) },
-            { key: "durationHours", label: "Hours", render: (r) => r.durationHours ? `${r.durationHours}h` : "â€”" },
+            { key: "durationHours", label: "Hours", render: (r) => r.durationHours ? `${r.durationHours}h` : "—" },
             { key: "outcome", label: "Outcome", render: (r) => <StatusBadge status={r.outcome as string} /> },
           ]}
           rows={rows as Record<string, any>[]}
@@ -1148,7 +1148,7 @@ export function TrainingPage() {
   );
 }
 
-// â”€â”€â”€ Performance Report â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â"€â"€â"€ Performance Report â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 type PerfRow = { id: string; period: string; overallRating: string; attendanceScore: number; taskCompletionScore: number; qualityScore: number; teamworkScore: number; status: string; employee: { fullName: string; code: string }; reviewer?: { fullName: string } };
 
@@ -1201,7 +1201,7 @@ export function PerformancePage() {
             <form onSubmit={submit} className="grid grid-cols-2 gap-4">
               <div><label className="mb-1 block text-xs font-medium">Employee *</label>
                 <select required value={form.employeeId} onChange={f("employeeId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
-                  <option value="">â€” Select â€”</option>
+                  <option value="">— Select —</option>
                   {opts.employees.map((e) => <option key={e.id} value={e.id}>{e.fullName}</option>)}
                 </select>
               </div>
@@ -1226,13 +1226,13 @@ export function PerformancePage() {
         )}
         <DataTable
           columns={[
-            { key: "employee", label: "Employee", render: (r) => r.employee?.fullName ?? "â€”" },
+            { key: "employee", label: "Employee", render: (r) => r.employee?.fullName ?? "—" },
             { key: "period", label: "Period" },
             { key: "overallRating", label: "Rating", render: (r) => <StatusBadge status={r.overallRating as string} /> },
             { key: "attendanceScore", label: "Attend.", render: (r) => `${r.attendanceScore}%` },
             { key: "taskCompletionScore", label: "Tasks", render: (r) => `${r.taskCompletionScore}%` },
             { key: "qualityScore", label: "Quality", render: (r) => `${r.qualityScore}%` },
-            { key: "reviewer", label: "Reviewer", render: (r) => r.reviewer?.fullName ?? "â€”" },
+            { key: "reviewer", label: "Reviewer", render: (r) => r.reviewer?.fullName ?? "—" },
             { key: "status", label: "Status", render: (r) => <StatusBadge status={r.status as string} /> },
           ]}
           rows={rows as Record<string, any>[]}
@@ -1243,7 +1243,7 @@ export function PerformancePage() {
   );
 }
 
-// â”€â”€â”€ Productivity Report â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â"€â"€â"€ Productivity Report â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 type ProductivityData = {
   period: { from: string; to: string };
@@ -1284,13 +1284,13 @@ export function ProductivityReportPage() {
 
         {data && (
           <>
-            <p className="text-sm text-ink/60">Period: {fmt(data.period.from)} â€” {fmt(data.period.to)} Â· {data.employees.length} employees</p>
+            <p className="text-sm text-ink/60">Period: {fmt(data.period.from)} — {fmt(data.period.to)} Â· {data.employees.length} employees</p>
             <DataTable
               columns={[
-                { key: "employee", label: "Employee", render: (r) => r.employee?.fullName ?? "â€”" },
-                { key: "code", label: "Code", render: (r) => r.employee?.code ?? "â€”" },
-                { key: "role", label: "Role", render: (r) => r.employee?.employeeRole?.name ?? "â€”" },
-                { key: "branch", label: "Branch", render: (r) => r.employee?.branch?.name ?? "â€”" },
+                { key: "employee", label: "Employee", render: (r) => r.employee?.fullName ?? "—" },
+                { key: "code", label: "Code", render: (r) => r.employee?.code ?? "—" },
+                { key: "role", label: "Role", render: (r) => r.employee?.employeeRole?.name ?? "—" },
+                { key: "branch", label: "Branch", render: (r) => r.employee?.branch?.name ?? "—" },
                 { key: "present", label: "Present", render: (r) => r.attendance?.present ?? 0 },
                 { key: "absent", label: "Absent", render: (r) => r.attendance?.absent ?? 0 },
                 { key: "late", label: "Late", render: (r) => r.attendance?.late ?? 0 },
