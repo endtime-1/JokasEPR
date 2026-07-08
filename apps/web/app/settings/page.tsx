@@ -127,7 +127,21 @@ export default function SettingsPage() {
   }
 
   if (!settings) {
-    return <AppShell><p className="p-6 text-sm text-ink/60">Loading settings...</p></AppShell>;
+    return (
+      <AppShell>
+        {error ? (
+          <div className="p-6">
+            <p className="mb-3 text-sm font-semibold text-red-700">Failed to load settings</p>
+            <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
+            <button className="app-button-primary" onClick={() => { setError(""); load().catch((err) => setError(err instanceof Error ? err.message : "Failed to load settings.")); }}>
+              Retry
+            </button>
+          </div>
+        ) : (
+          <p className="p-6 text-sm text-ink/60">Loading settings…</p>
+        )}
+      </AppShell>
+    );
   }
 
   return (

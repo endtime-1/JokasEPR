@@ -1,4 +1,8 @@
-const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4001/api/v1").trim();
+// In production the browser must call /api/v1/* on the same origin so Next.js
+// can proxy the request to the internal NestJS process (via next.config rewrites).
+// If NEXT_PUBLIC_API_URL is explicitly set (e.g. in dev or a custom deploy) use it;
+// otherwise default to the relative path which works on any host.
+const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "/api/v1").trim();
 
 export type ApiEnvelope<T> = {
   data: T;
