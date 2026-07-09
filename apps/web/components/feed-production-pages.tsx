@@ -112,7 +112,7 @@ function useFeedOptions() {
   const [options, setOptions] = useState<FeedOptions>({ productionSites: [], warehouses: [], farms: [], poultryHouses: [], rawMaterials: [], finishedFeeds: [], formulas: [], batches: [] });
   useEffect(() => {
     apiFetch<ApiEnvelope<FeedOptions>>("/feed-production/options")
-      .then((response) => setOptions(response.data))
+      .then((response) => setOptions(response.data ?? { productionSites: [], warehouses: [], farms: [], poultryHouses: [], rawMaterials: [], finishedFeeds: [], formulas: [], batches: [] }))
       .catch(() => undefined);
   }, []);
   return options;
@@ -153,7 +153,7 @@ export function FeedFormulaListPage() {
 
   async function load() {
     const response = await apiFetch<ApiEnvelope<FormulaRow[]>>("/feed-production/formulas");
-    setRows(response.data);
+    setRows(response.data ?? []);
   }
 
   useEffect(() => {
@@ -1025,7 +1025,7 @@ export function FeedProductionOrdersPage({ create = false }: { create?: boolean 
 
   async function load() {
     const response = await apiFetch<ApiEnvelope<OrderRow[]>>("/feed-production/orders");
-    setRows(response.data);
+    setRows(response.data ?? []);
   }
   useEffect(() => { load().catch(() => undefined); }, []);
 
@@ -1158,7 +1158,7 @@ export function FeedBatchListPage() {
 
   useEffect(() => {
     apiFetch<ApiEnvelope<BatchRow[]>>("/feed-production/batches")
-      .then((res) => setRows(res.data))
+      .then((res) => setRows(res.data ?? []))
       .catch(() => undefined);
   }, []);
 
@@ -1781,7 +1781,7 @@ export function FeedRawMaterialUsagePage() {
 
   useEffect(() => {
     apiFetch<ApiEnvelope<UsageRow[]>>("/feed-production/raw-material-usage")
-      .then((res) => setRows(res.data))
+      .then((res) => setRows(res.data ?? []))
       .catch(() => undefined);
   }, []);
 
@@ -1843,7 +1843,7 @@ export function FeedQualityControlPage() {
 
   async function load() {
     const response = await apiFetch<ApiEnvelope<QcRow[]>>("/feed-production/quality-checks");
-    setRows(response.data);
+    setRows(response.data ?? []);
   }
   useEffect(() => { load().catch(() => undefined); }, []);
 
@@ -1932,7 +1932,7 @@ export function FinishedFeedInventoryPage() {
   const [rows, setRows] = useState<StockRow[]>([]);
   useEffect(() => {
     apiFetch<ApiEnvelope<StockRow[]>>("/feed-production/finished-feed-stock")
-      .then((res) => setRows(res.data))
+      .then((res) => setRows(res.data ?? []))
       .catch(() => undefined);
   }, []);
 
@@ -1994,7 +1994,7 @@ export function InternalFeedTransferPage() {
 
   async function load() {
     const response = await apiFetch<ApiEnvelope<TransferRow[]>>("/feed-production/transfers");
-    setRows(response.data);
+    setRows(response.data ?? []);
   }
   useEffect(() => { load().catch(() => undefined); }, []);
 

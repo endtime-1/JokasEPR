@@ -31,7 +31,7 @@ function useInventoryOptions() {
   const [options, setOptions] = useState<InventoryOptions>({ warehouses: [], products: [], farms: [], productionSites: [], items: [] });
   useEffect(() => {
     apiFetch<ApiEnvelope<InventoryOptions>>("/inventory/options")
-      .then((response) => setOptions(response.data))
+      .then((response) => setOptions(response.data ?? { warehouses: [], products: [], farms: [], productionSites: [], items: [] }))
       .catch(() => undefined);
   }, []);
   return options;
@@ -60,7 +60,7 @@ export function InventoryItemsPage({ create = false }: { create?: boolean }) {
   const [form, setForm] = useState({ warehouseId: "", productId: "", reorderLevel: "", openingQuantity: "" });
   async function load() {
     const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/inventory/items");
-    setRows(response.data);
+    setRows(response.data ?? []);
   }
   useEffect(() => { load().catch(() => undefined); }, []);
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -129,7 +129,7 @@ export function InventoryListPage({ title, endpoint, subtitle }: { title: string
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
   useEffect(() => {
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>(endpoint)
-      .then((response) => setRows(response.data))
+      .then((response) => setRows(response.data ?? []))
       .catch(() => undefined);
   }, [endpoint]);
   return (
@@ -185,7 +185,7 @@ function SelectField({ label, value, options, onChange }: { label: string; value
 }
 
 function SimpleRowsTable({ rows }: { rows: Record<string, unknown>[] }) {
-  const keys = Object.keys(rows[0] ?? {}).filter((key) => !["id", "companyId", "branchId", "deletedAt", "updatedAt"].includes(key)).slice(0, 8);
+  const keys = Object.keys(rows?.[0] ?? {}).filter((key) => !["id", "companyId", "branchId", "deletedAt", "updatedAt"].includes(key)).slice(0, 8);
   return <DataTable rows={rows} empty="No records found" columns={keys.map((key) => ({ key, label: key.replace(/([A-Z])/g, " $1"), render: (row: Record<string, unknown>) => typeof row[key] === "object" && row[key] !== null ? JSON.stringify(row[key]).slice(0, 80) : String(row[key] ?? "-").slice(0, 90) }))} />;
 }
 

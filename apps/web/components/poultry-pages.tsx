@@ -59,7 +59,7 @@ function usePoultryOptions() {
   const [options, setOptions] = useState<PoultryOptions>({ farms: [], houses: [], pens: [], batches: [] });
   useEffect(() => {
     apiFetch<ApiEnvelope<PoultryOptions>>("/poultry/options")
-      .then((response) => setOptions(response.data))
+      .then((response) => setOptions(response.data ?? { farms: [], houses: [], pens: [], batches: [] }))
       .catch(() => undefined);
   }, []);
   return options;
@@ -125,7 +125,7 @@ export function PoultryHousesPage({ create = false }: { create?: boolean }) {
 
   async function load() {
     const response = await apiFetch<ApiEnvelope<HouseRow[]>>("/poultry/houses");
-    setRows(response.data);
+    setRows(response.data ?? []);
   }
 
   useEffect(() => {
@@ -266,7 +266,7 @@ export function FlockBatchesPage({ create = false }: { create?: boolean }) {
 
   async function load() {
     const response = await apiFetch<ApiEnvelope<BatchRow[]>>("/poultry/batches");
-    setRows(response.data);
+    setRows(response.data ?? []);
   }
 
   useEffect(() => {
@@ -599,7 +599,7 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
 
   async function load() {
     const response = await apiFetch<ApiEnvelope<Record<string, any>[]>>(`/poultry/records/${type}`);
-    setRows(response.data);
+    setRows(response.data ?? []);
   }
 
   useEffect(() => {
@@ -692,7 +692,7 @@ function buildRecordPayload(type: string, form: Record<string, string>, options:
 }
 
 function SimpleRecordTable({ rows }: { rows: Record<string, any>[] }) {
-  const keys = Object.keys(rows[0] ?? {}).filter((key) =>
+  const keys = Object.keys(rows?.[0] ?? {}).filter((key) =>
     ["recordDate", "startDate", "vaccinationDate", "observationDate", "transferDate", "costDate", "birdCount", "quantityKg", "goodEggs", "crackedEggs", "dirtyEggs", "brokenEggs", "rejectedEggs", "medicationName", "vaccineName", "severity", "amount", "status"].includes(key)
   );
   return <DataTable rows={rows} empty="No records found" columns={keys.map((key) => ({ key, label: key.replace(/([A-Z])/g, " $1"), render: (row: Record<string, any>) => String(row[key] ?? "-").slice(0, 80) }))} />;
@@ -710,7 +710,7 @@ export function PoultryTransferPage() {
 
   async function load() {
     const response = await apiFetch<ApiEnvelope<Record<string, any>[]>>("/poultry/records/transfers");
-    setRows(response.data);
+    setRows(response.data ?? []);
   }
   useEffect(() => { load().catch(() => undefined); }, []);
 

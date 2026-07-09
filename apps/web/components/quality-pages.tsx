@@ -380,7 +380,7 @@ export function QualityTemplatesPage() {
   function load() {
     const p = new URLSearchParams();
     if (checkType) p.set("checkType", checkType);
-    apiFetch<ApiEnvelope<Template[]>>(`/quality/templates?${p}`).then((r) => setRows(r.data)).catch(() => undefined);
+    apiFetch<ApiEnvelope<Template[]>>(`/quality/templates?${p}`).then((r) => setRows(r.data ?? [])).catch(() => undefined);
   }
 
   useEffect(() => { load(); }, [checkType]);
@@ -540,7 +540,7 @@ export function QualityChecksPage({ filterType }: { filterType?: string }) {
     if (status) p.set("status", status);
     if (decision) p.set("decision", decision);
     apiFetch<ApiEnvelope<{ total: number; items: QualityCheck[] }>>(`/quality/checks?${p}`)
-      .then((r) => setData(r.data)).catch(() => undefined);
+      .then((r) => setData(r.data ?? { total: 0, items: [] })).catch(() => undefined);
   }
 
   useEffect(() => { load(); }, [checkType, status, decision]);
@@ -986,9 +986,9 @@ export function QualityCheckDetailPage({ id }: { id: string }) {
 
       {tab === "results" && (
         <div className="space-y-3">
-          {check.results.length === 0 ? (
+          {(check.results ?? []).length === 0 ? (
             <p className="rounded-2xl border border-dashed border-line py-10 text-center text-sm text-ink/45">No inspection results recorded</p>
-          ) : check.results.map((r) => (
+          ) : (check.results ?? []).map((r) => (
             <div key={r.id} className={`rounded-2xl border p-5 shadow-card ${r.passed ? "border-emerald-200 bg-emerald-50/30" : "border-red-200 bg-red-50/30"}`}>
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -1065,7 +1065,7 @@ type RejectedBatch = {
 export function RejectedBatchesPage() {
   const [rows, setRows] = useState<RejectedBatch[]>([]);
   useEffect(() => {
-    apiFetch<ApiEnvelope<RejectedBatch[]>>("/quality/rejected-batches").then((r) => setRows(r.data)).catch(() => undefined);
+    apiFetch<ApiEnvelope<RejectedBatch[]>>("/quality/rejected-batches").then((r) => setRows(r.data ?? [])).catch(() => undefined);
   }, []);
 
   return (
@@ -1104,7 +1104,7 @@ type ApprovedBatch = {
 export function ApprovedBatchesPage() {
   const [rows, setRows] = useState<ApprovedBatch[]>([]);
   useEffect(() => {
-    apiFetch<ApiEnvelope<ApprovedBatch[]>>("/quality/approved-batches").then((r) => setRows(r.data)).catch(() => undefined);
+    apiFetch<ApiEnvelope<ApprovedBatch[]>>("/quality/approved-batches").then((r) => setRows(r.data ?? [])).catch(() => undefined);
   }, []);
 
   return (
@@ -1148,13 +1148,13 @@ export function LabReportsPage() {
   const [error, setError] = useState("");
 
   function load() {
-    apiFetch<ApiEnvelope<LabReport[]>>("/quality/lab-reports").then((r) => setRows(r.data)).catch(() => undefined);
+    apiFetch<ApiEnvelope<LabReport[]>>("/quality/lab-reports").then((r) => setRows(r.data ?? [])).catch(() => undefined);
   }
 
   useEffect(() => {
     load();
     apiFetch<ApiEnvelope<{ id: string; reference: string; checkType: string; batchNumber?: string }[]>>("/quality/checks")
-      .then((r) => setChecks(r.data)).catch(() => undefined);
+      .then((r) => setChecks(r.data ?? [])).catch(() => undefined);
   }, []);
 
   const f = (k: string) => (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
@@ -1250,7 +1250,7 @@ export function CorrectiveActionsPage() {
   function load() {
     const p = new URLSearchParams();
     if (status) p.set("status", status);
-    apiFetch<ApiEnvelope<CorrectiveAction[]>>(`/quality/corrective-actions?${p}`).then((r) => setRows(r.data)).catch(() => undefined);
+    apiFetch<ApiEnvelope<CorrectiveAction[]>>(`/quality/corrective-actions?${p}`).then((r) => setRows(r.data ?? [])).catch(() => undefined);
   }
 
   useEffect(() => { load(); }, [status]);
