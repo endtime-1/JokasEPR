@@ -43,6 +43,26 @@ const masterSections = [
   ["expense-categories", "Expense categories"]
 ] as const;
 
+const DEFAULT_SETTINGS: SettingsMap = {
+  "poultry.types": { values: [] },
+  "feed.types": { values: [] },
+  "tax.settings": { enabled: false, taxName: "", ratePercent: 0 },
+  "numbering.settings": {
+    invoice: { prefix: "INV", nextNumber: 1 },
+    productionBatch: { prefix: "PB", nextNumber: 1 },
+    stockMovement: { prefix: "SM", nextNumber: 1 }
+  },
+  "ai.settings": { enabled: false, defaultModel: "", allowedModels: [] },
+  "backup.settings": { enabled: false, frequency: "daily" },
+  "user-access.settings": {
+    enforceBranchScope: false,
+    enforceFarmScope: false,
+    enforceWarehouseScope: false,
+    enforceProductionSiteScope: false,
+    requireMfaForAdmins: false
+  }
+};
+
 const inputClass = "min-h-10 rounded-md border border-line bg-white px-3 text-sm outline-none focus:border-brand";
 
 function bool(value: unknown) {
@@ -87,7 +107,7 @@ export default function SettingsPage() {
     setCompany(companyRes.data ?? {});
     setMaster(masterRes.data ?? {});
     setOptions(optionsRes.data ?? {});
-    setSettings(settingsRes);
+    setSettings({ ...DEFAULT_SETTINGS, ...(settingsRes as Partial<SettingsMap>) });
     setNotification(notificationRes.data ?? {});
   }
 
