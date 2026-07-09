@@ -178,7 +178,7 @@ export function MarketTargetListPage() {
   const [rows, setRows] = useState<TargetRow[]>([]);
   useEffect(() => {
     apiFetch<ApiEnvelope<TargetRow[]>>("/market-planning/targets")
-      .then((res) => setRows(res.data))
+      .then((res) => setRows(res.data ?? []))
       .catch(() => undefined);
   }, []);
   return (
@@ -455,7 +455,7 @@ export function TargetVsActualReportPage({ demandOnly = false }: { demandOnly?: 
   const [rows, setRows] = useState<ReportRow[]>([]);
   useEffect(() => {
     apiFetch<ApiEnvelope<ReportRow[]>>(demandOnly ? "/market-planning/reports/demand-vs-sales" : "/market-planning/reports/target-vs-actual")
-      .then((res) => setRows(res.data))
+      .then((res) => setRows(res.data ?? []))
       .catch(() => undefined);
   }, [demandOnly]);
   return (

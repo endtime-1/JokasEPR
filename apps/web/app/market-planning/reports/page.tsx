@@ -1,0 +1,5 @@
+import { redirect } from "next/navigation";
+
+export default function Page() {
+  redirect("/market-planning/reports/target-vs-actual");
+}
