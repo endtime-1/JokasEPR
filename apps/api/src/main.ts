@@ -19,6 +19,10 @@ async function bootstrap() {
   const version = config.get<string>("API_VERSION", "1");
   const isProduction = config.get("NODE_ENV") === "production";
 
+  // Health check — bypasses prefix/versioning so UptimeRobot can ping /health
+  // to keep Render free-tier from suspending the service.
+  app.use("/health", (_req: unknown, res: { send: (s: string) => void }) => res.send("ok"));
+
   app.setGlobalPrefix(prefix);
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: version });
 
