@@ -119,7 +119,10 @@ export default function SettingsPage() {
 
   async function saveCompany(event: FormEvent) {
     event.preventDefault();
-    await save("company", () => apiFetch("/settings/company", { method: "PUT", body: JSON.stringify(company) }));
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { id, status, createdById, updatedById, createdAt, updatedAt, deletedAt, ...payload } = company;
+    if (!payload.logoUrl) delete payload.logoUrl;
+    await save("company", () => apiFetch("/settings/company", { method: "PUT", body: JSON.stringify(payload) }));
   }
 
   async function save(key: string, action: () => Promise<unknown>) {
