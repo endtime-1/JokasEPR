@@ -21,6 +21,7 @@ import {
   FlaskConical,
   Globe,
   HardDrive,
+  LayoutDashboard,
   LogOut,
   MapPinned,
   Menu,
@@ -54,6 +55,7 @@ const navGroups: { title: string; items: NavItem[] }[] = [
   {
     title: "Command",
     items: [
+      { href: "/dashboard", label: "Executive", icon: LayoutDashboard },
       { href: "/ai-assistant", label: "AI Assistant", icon: Bot, permission: "ai.read" },
       { href: "/alerts", label: "AI Alerts", icon: AlertTriangle, permission: "alerts.read" },
       { href: "/reports", label: "Reports", icon: FileDown, permission: "reports.export" }
