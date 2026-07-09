@@ -95,20 +95,24 @@ export default function SettingsPage() {
   const [form, setForm] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState("");
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
   async function load() {
-    const [companyRes, masterRes, optionsRes, settingsRes, notificationRes] = await Promise.all([
+    const results = await Promise.allSettled([
       apiFetch<ApiEnvelope<any>>("/settings/company"),
       apiFetch<ApiEnvelope<MasterData>>("/settings/master-data"),
       apiFetch<ApiEnvelope<Record<string, Option[]>>>("/settings/options"),
       apiFetch<SettingsMap>("/settings/system"),
       apiFetch<ApiEnvelope<any>>("/settings/notifications")
     ]);
-    setCompany(companyRes.data ?? {});
-    setMaster(masterRes.data ?? {});
-    setOptions(optionsRes.data ?? {});
-    setSettings({ ...DEFAULT_SETTINGS, ...(settingsRes as Partial<SettingsMap>) });
-    setNotification(notificationRes.data ?? {});
+    const [companyRes, masterRes, optionsRes, settingsRes, notificationRes] = results;
+    if (companyRes.status === "fulfilled") setCompany(companyRes.value.data ?? {});
+    if (masterRes.status === "fulfilled") setMaster(masterRes.value.data ?? {});
+    if (optionsRes.status === "fulfilled") setOptions(optionsRes.value.data ?? {});
+    if (settingsRes.status === "fulfilled") setSettings({ ...DEFAULT_SETTINGS, ...(settingsRes.value as Partial<SettingsMap>) });
+    if (notificationRes.status === "fulfilled") setNotification(notificationRes.value.data ?? {});
+    const firstFailure = results.find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
+    if (firstFailure) throw firstFailure.reason;
   }
 
   useEffect(() => {
@@ -122,14 +126,16 @@ export default function SettingsPage() {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { id, status, createdById, updatedById, createdAt, updatedAt, deletedAt, ...payload } = company;
     if (!payload.logoUrl) delete payload.logoUrl;
-    await save("company", () => apiFetch("/settings/company", { method: "PUT", body: JSON.stringify(payload) }));
+    await save("company", () => apiFetch("/settings/company", { method: "PUT", body: JSON.stringify(payload) }), "Company profile saved.");
   }
 
-  async function save(key: string, action: () => Promise<unknown>) {
+  async function save(key: string, action: () => Promise<unknown>, successMsg = "Saved.") {
     setSaving(key);
     setError("");
+    setSuccess("");
     try {
       await action();
+      setSuccess(successMsg);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Save failed.");
@@ -140,8 +146,12 @@ export default function SettingsPage() {
 
   async function createMaster(event: FormEvent) {
     event.preventDefault();
+    if (["farms", "warehouses", "production-sites"].includes(activeMaster) && !form.branchId) {
+      setError("Please select a branch before adding.");
+      return;
+    }
     const payload = buildMasterPayload(activeMaster, form);
-    await save(activeMaster, () => apiFetch(`/settings/${activeMaster}`, { method: "POST", body: JSON.stringify(payload) }));
+    await save(activeMaster, () => apiFetch(`/settings/${activeMaster}`, { method: "POST", body: JSON.stringify(payload) }), "Record added.");
     setForm({});
   }
 
@@ -179,6 +189,7 @@ export default function SettingsPage() {
         </div>
 
         {error && <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+        {success && <p className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">{success}</p>}
 
         <SettingCard title="Company Profile" icon={Building2}>
           <form onSubmit={saveCompany} className="grid gap-3 md:grid-cols-2">
@@ -240,7 +251,7 @@ export default function SettingsPage() {
               <input className={inputClass} placeholder="Tax name" value={settings["tax.settings"].taxName ?? ""} onChange={(e) => updateSetting("tax.settings", { ...settings["tax.settings"], taxName: e.target.value })} />
               <input className={inputClass} type="number" placeholder="Rate %" value={settings["tax.settings"].ratePercent ?? 0} onChange={(e) => updateSetting("tax.settings", { ...settings["tax.settings"], ratePercent: Number(e.target.value) })} />
               <NumberingEditor settings={settings["numbering.settings"]} onChange={(value) => updateSetting("numbering.settings", value)} />
-              <button className="app-button-primary w-max" onClick={() => save("tax-numbering", async () => { await apiFetch("/settings/system/tax", { method: "PUT", body: JSON.stringify(settings["tax.settings"]) }); await apiFetch("/settings/system/numbering", { method: "PUT", body: JSON.stringify(settings["numbering.settings"]) }); })}>Save tax & numbering</button>
+              <button className="app-button-primary w-max" onClick={() => save("tax-numbering", async () => { await apiFetch("/settings/system/tax", { method: "PUT", body: JSON.stringify(settings["tax.settings"]) }); await apiFetch("/settings/system/numbering", { method: "PUT", body: JSON.stringify(settings["numbering.settings"]) }); }, "Tax & numbering saved.")}>Save tax & numbering</button>
             </div>
           </SettingCard>
 
@@ -251,7 +262,7 @@ export default function SettingsPage() {
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={bool(settings["ai.settings"].enabled)} onChange={(e) => updateSetting("ai.settings", { ...settings["ai.settings"], enabled: e.target.checked })} /> AI assistant enabled</label>
               <input className={inputClass} placeholder="Default AI model" value={settings["ai.settings"].defaultModel} onChange={(e) => updateSetting("ai.settings", { ...settings["ai.settings"], defaultModel: e.target.value })} />
               <input className={inputClass} placeholder="Allowed AI models, comma separated" value={settings["ai.settings"].allowedModels.join(", ")} onChange={(e) => updateSetting("ai.settings", { ...settings["ai.settings"], allowedModels: parseList(e.target.value) })} />
-              <button className="app-button-primary w-max" onClick={() => save("notifications-ai", async () => { await apiFetch("/settings/notifications", { method: "PUT", body: JSON.stringify(notification) }); await apiFetch("/settings/system/ai", { method: "PUT", body: JSON.stringify(settings["ai.settings"]) }); })}>Save notifications & AI</button>
+              <button className="app-button-primary w-max" onClick={() => save("notifications-ai", async () => { await apiFetch("/settings/notifications", { method: "PUT", body: JSON.stringify(notification) }); await apiFetch("/settings/system/ai", { method: "PUT", body: JSON.stringify(settings["ai.settings"]) }); }, "Notifications & AI saved.")}>Save notifications & AI</button>
             </div>
           </SettingCard>
 
@@ -294,14 +305,14 @@ function camel(resource: string) {
   return map[resource] ?? resource;
 }
 
-function Select({ value, onChange, options, placeholder }: { value: string; onChange: (value: string) => void; options: Option[]; placeholder: string }) {
-  return <select className={inputClass} value={value} onChange={(e) => onChange(e.target.value)}><option value="">{placeholder}</option>{options.map((option) => <option key={option.id} value={option.id}>{option.code} - {option.name}</option>)}</select>;
+function Select({ value, onChange, options, placeholder, required }: { value: string; onChange: (value: string) => void; options: Option[]; placeholder: string; required?: boolean }) {
+  return <select className={inputClass} value={value} onChange={(e) => onChange(e.target.value)} required={required}><option value="">{placeholder}</option>{options.map((option) => <option key={option.id} value={option.id}>{option.code} - {option.name}</option>)}</select>;
 }
 
 function masterFields(resource: string, form: Record<string, string>, setForm: (value: Record<string, string>) => void, options: Record<string, Option[]>) {
   const set = (key: string, value: string) => setForm({ ...form, [key]: value });
   const base = [<input key="name" className={inputClass} placeholder="Name" value={form.name ?? ""} onChange={(e) => set("name", e.target.value)} required />, <input key="code" className={inputClass} placeholder="Code" value={form.code ?? ""} onChange={(e) => set("code", e.target.value)} required />];
-  if (["farms", "warehouses", "production-sites", "departments"].includes(resource)) base.push(<Select key="branchId" value={form.branchId ?? ""} onChange={(v) => set("branchId", v)} options={options.branches ?? []} placeholder="Branch" />);
+  if (["farms", "warehouses", "production-sites", "departments"].includes(resource)) base.push(<Select key="branchId" value={form.branchId ?? ""} onChange={(v) => set("branchId", v)} options={options.branches ?? []} placeholder="Branch" required={["farms", "warehouses", "production-sites"].includes(resource)} />);
   if (resource === "warehouses") base.push(<Select key="farmId" value={form.farmId ?? ""} onChange={(v) => set("farmId", v)} options={options.farms ?? []} placeholder="Farm (optional)" />);
   if (resource === "production-sites") base.push(<select key="type" className={inputClass} value={form.type ?? "FEED_PRODUCTION"} onChange={(e) => set("type", e.target.value)}><option value="FEED_PRODUCTION">Feed production</option><option value="SOYA_PROCESSING">Soya processing</option><option value="MIXED">Mixed</option></select>);
   if (resource === "warehouses") base.push(<select key="type" className={inputClass} value={form.type ?? "GENERAL"} onChange={(e) => set("type", e.target.value)}><option value="GENERAL">General</option><option value="FARM_STORE">Farm store</option><option value="FEED_STORE">Feed store</option><option value="SOYA_STORE">Soya store</option><option value="COLD_STORAGE">Cold storage</option></select>);
