@@ -564,8 +564,9 @@ export default function DashboardPage() {
   useEffect(() => {
     apiFetch<ApiEnvelope<DashboardOptions>>("/dashboard/options")
       .then((res) => {
-        setOptions(res.data);
-        setFilters((f) => ({ ...f, companyId: res.data.companies[0]?.id ?? "" }));
+        const opts = res.data ?? { companies: [], branches: [], farms: [], warehouses: [], productionSites: [], businessUnits: [] };
+        setOptions(opts);
+        setFilters((f) => ({ ...f, companyId: opts.companies[0]?.id ?? "" }));
       })
       .catch(() => undefined);
   }, []);

@@ -84,8 +84,9 @@ export default function ReportsPage() {
   useEffect(() => {
     apiFetch<ApiEnvelope<ReportDefinition[]>>("/reports")
       .then((res) => {
-        setCatalog(res.data);
-        setActiveId(res.data[0]?.id ?? "");
+        const catalog = res.data ?? [];
+        setCatalog(catalog);
+        setActiveId(catalog[0]?.id ?? "");
       })
       .catch(() => undefined);
     apiFetch<ApiEnvelope<ReportOptions>>("/reports/options")
