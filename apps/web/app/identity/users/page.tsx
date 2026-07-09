@@ -56,8 +56,8 @@ function selectedOptions(event: React.ChangeEvent<HTMLSelectElement>) {
   return Array.from(event.target.selectedOptions).map((option) => option.value);
 }
 
-function scopeNames<T extends Record<string, ScopeOption>>(items: T[], key: keyof T) {
-  return items.map((item) => item[key].code).join(", ") || "-";
+function scopeNames<T extends Record<string, ScopeOption>>(items: T[] | undefined, key: keyof T) {
+  return (items ?? []).map((item) => item[key].code).join(", ") || "-";
 }
 
 export default function UsersPage() {
@@ -210,7 +210,7 @@ export default function UsersPage() {
         columns={[
           { key: "name", label: "Name", render: (row) => row.fullName },
           { key: "email", label: "Email", render: (row) => row.email },
-          { key: "roles", label: "Roles", render: (row) => row.roles.map((item) => item.role.name).join(", ") || "-" },
+          { key: "roles", label: "Roles", render: (row) => (row.roles ?? []).map((item) => item.role.name).join(", ") || "-" },
           { key: "scope", label: "Scope", render: (row) => `B: ${scopeNames(row.branchAccesses, "branch")} | F: ${scopeNames(row.farmAccesses, "farm")} | W: ${scopeNames(row.warehouseAccesses, "warehouse")}` },
           { key: "status", label: "Status", render: (row) => row.status },
           {

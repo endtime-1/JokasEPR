@@ -84,11 +84,11 @@ export default function SettingsPage() {
       apiFetch<SettingsMap>("/settings/system"),
       apiFetch<ApiEnvelope<any>>("/settings/notifications")
     ]);
-    setCompany(companyRes.data);
-    setMaster(masterRes.data);
-    setOptions(optionsRes.data);
+    setCompany(companyRes.data ?? {});
+    setMaster(masterRes.data ?? {});
+    setOptions(optionsRes.data ?? {});
     setSettings(settingsRes);
-    setNotification(notificationRes.data);
+    setNotification(notificationRes.data ?? {});
   }
 
   useEffect(() => {
