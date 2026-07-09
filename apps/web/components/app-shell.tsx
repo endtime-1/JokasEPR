@@ -137,10 +137,16 @@ function NavLink({
   const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
   const linkRef = useRef<HTMLAnchorElement>(null);
 
-  // Scroll the active item into view whenever navigation changes it
+  // Scroll the active item into view within the sidebar only — never the main page
   useEffect(() => {
     if (active && linkRef.current) {
-      linkRef.current.scrollIntoView({ block: "center", behavior: "instant" });
+      const el = linkRef.current;
+      const container = el.closest<HTMLElement>("[data-nav-scroll]");
+      if (container) {
+        const cRect = container.getBoundingClientRect();
+        const eRect = el.getBoundingClientRect();
+        container.scrollTop += eRect.top - cRect.top - cRect.height / 2 + eRect.height / 2;
+      }
     }
   }, [active]);
 
@@ -323,7 +329,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="mb-4 h-px bg-white/8" />
 
       {/* Nav */}
-      <div className="relative flex-1 overflow-y-auto">
+      <div data-nav-scroll="" className="relative flex-1 overflow-y-auto">
         {renderNav(onNavigate)}
         <div className="pointer-events-none sticky bottom-0 h-8 bg-gradient-to-t from-[#1a2235] to-transparent" />
       </div>
