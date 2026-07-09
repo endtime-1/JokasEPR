@@ -73,14 +73,15 @@ export default function UsersPage() {
 
   const defaultRoleIds = useMemo(() => (form.roleIds.length ? form.roleIds : roles[0] ? [roles[0].id] : []), [form.roleIds, roles]);
 
+  const empty = { data: [] as ScopeOption[] };
   async function load() {
     const [userResponse, roleResponse, branchResponse, farmResponse, warehouseResponse, productionSiteResponse] = await Promise.all([
-      apiFetch<ApiEnvelope<UserRow[]>>("/identity/users"),
-      apiFetch<ApiEnvelope<Role[]>>("/identity/roles"),
-      apiFetch<ApiEnvelope<ScopeOption[]>>("/platform/branches"),
-      apiFetch<ApiEnvelope<ScopeOption[]>>("/platform/farms"),
-      apiFetch<ApiEnvelope<ScopeOption[]>>("/platform/warehouses"),
-      apiFetch<ApiEnvelope<ScopeOption[]>>("/platform/production-sites")
+      apiFetch<ApiEnvelope<UserRow[]>>("/identity/users").catch(() => ({ data: [] as UserRow[] })),
+      apiFetch<ApiEnvelope<Role[]>>("/identity/roles").catch(() => ({ data: [] as Role[] })),
+      apiFetch<ApiEnvelope<ScopeOption[]>>("/platform/branches").catch(() => empty),
+      apiFetch<ApiEnvelope<ScopeOption[]>>("/platform/farms").catch(() => empty),
+      apiFetch<ApiEnvelope<ScopeOption[]>>("/platform/warehouses").catch(() => empty),
+      apiFetch<ApiEnvelope<ScopeOption[]>>("/platform/production-sites").catch(() => empty),
     ]);
     const roles = roleResponse.data ?? [];
     setUsers(userResponse.data ?? []);
