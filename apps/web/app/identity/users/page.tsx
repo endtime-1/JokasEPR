@@ -82,13 +82,14 @@ export default function UsersPage() {
       apiFetch<ApiEnvelope<ScopeOption[]>>("/platform/warehouses"),
       apiFetch<ApiEnvelope<ScopeOption[]>>("/platform/production-sites")
     ]);
-    setUsers(userResponse.data);
-    setRoles(roleResponse.data);
-    setBranches(branchResponse.data);
-    setFarms(farmResponse.data);
-    setWarehouses(warehouseResponse.data);
-    setProductionSites(productionSiteResponse.data);
-    setForm((current) => ({ ...current, roleIds: current.roleIds.length ? current.roleIds : roleResponse.data[0] ? [roleResponse.data[0].id] : [] }));
+    const roles = roleResponse.data ?? [];
+    setUsers(userResponse.data ?? []);
+    setRoles(roles);
+    setBranches(branchResponse.data ?? []);
+    setFarms(farmResponse.data ?? []);
+    setWarehouses(warehouseResponse.data ?? []);
+    setProductionSites(productionSiteResponse.data ?? []);
+    setForm((current) => ({ ...current, roleIds: current.roleIds.length ? current.roleIds : roles[0] ? [roles[0].id] : [] }));
   }
 
   useEffect(() => {
