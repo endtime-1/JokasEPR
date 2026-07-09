@@ -13,14 +13,14 @@ type Column<T> = {
 
 export function DataTable<T extends Record<string, unknown>>({
   columns,
-  rows,
+  rows = [],
   empty,
   searchPlaceholder,
   pageSize = 25,
   actions
 }: {
   columns: Column<T>[];
-  rows: T[];
+  rows?: T[];
   empty: string;
   searchPlaceholder?: string;
   pageSize?: number;
