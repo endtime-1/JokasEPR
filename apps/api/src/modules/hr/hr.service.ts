@@ -433,6 +433,7 @@ export class HRService {
         companyId: user.companyId,
         deletedAt: null,
         ...(query.status ? { status: query.status as never } : {}),
+        ...(query.priority ? { priority: query.priority as never } : {}),
         ...(query.branchId ? { branchId: query.branchId } : {}),
         ...(query.search ? { OR: [{ title: { contains: query.search } }, { taskType: { contains: query.search } }] } : {}),
       },

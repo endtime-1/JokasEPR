@@ -140,7 +140,7 @@ function NavLink({
   // Scroll the active item into view whenever navigation changes it
   useEffect(() => {
     if (active && linkRef.current) {
-      linkRef.current.scrollIntoView({ block: "nearest", behavior: "instant" });
+      linkRef.current.scrollIntoView({ block: "center", behavior: "instant" });
     }
   }, [active]);
 
@@ -288,7 +288,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </div>
       {profile && (
         <div className="mt-3 flex flex-wrap gap-1.5">
-          {profile.roles.slice(0, 2).map((role) => (
+          {(profile.roles ?? []).slice(0, 2).map((role) => (
             <span key={role} className="rounded-md border border-brand/25 bg-brand/12 px-2 py-0.5 text-[10px] font-semibold text-brand/90">
               {role}
             </span>
@@ -407,7 +407,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <div className="text-sm">
                   <span className="font-semibold text-ink">
                     {profile?.fullName
-                      ? (profile.roles[0] ?? "Admin")
+                      ? (profile.roles?.[0] ?? "Admin")
                       : "Loading…"}
                   </span>
                   <span className="mx-1.5 text-ink/30">/</span>

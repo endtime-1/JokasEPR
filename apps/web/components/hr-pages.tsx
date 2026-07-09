@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { AlertTriangle, CalendarDays, CircleAlert, ClipboardList, DollarSign, UserCheck, UserPlus, Users } from "lucide-react";
+import { AlertTriangle, CalendarDays, CircleAlert, ClipboardList, DollarSign, FileText, UserCheck, UserPlus, Users } from "lucide-react";
 import { ApiEnvelope, apiFetch } from "../lib/api";
 import { AppShell } from "./app-shell";
 import { DataTable } from "./data-table";
@@ -79,6 +79,7 @@ const hrNav = [
   { href: "/hr/attendance", label: "Attendance" },
   { href: "/hr/shifts", label: "Shifts" },
   { href: "/hr/tasks", label: "Task Board" },
+  { href: "/hr/leave-requests", label: "Leave Requests" },
   { href: "/hr/payroll", label: "Payroll" },
   { href: "/hr/training", label: "Training" },
   { href: "/hr/performance", label: "Performance" },
@@ -136,10 +137,13 @@ type DashData = {
   totalEmployees: number;
   activeEmployees: number;
   onLeave: number;
-  todayAttendanceCount: number;
+  presentToday: number;
+  absentToday: number;
+  attendanceRate: number;
   openTasks: number;
   urgentTasks: number;
   pendingPayroll: number;
+  openLeaveRequests: number;
   recentEmployees: Array<{ id: string; code: string; fullName: string; status: string; employeeRole?: { name: string }; branch?: { name: string } }>;
   recentTasks: Array<{ id: string; title: string; priority: string; status: string; dueDate?: string }>;
 };
@@ -154,9 +158,10 @@ export function HRDashboardPage() {
     { label: "Total Employees", value: data?.totalEmployees, icon: Users, color: "text-sky-400" },
     { label: "Active", value: data?.activeEmployees, icon: UserCheck, color: "text-emerald-400" },
     { label: "On Leave", value: data?.onLeave, icon: CalendarDays, color: "text-yellow-400" },
-    { label: "Today Present", value: data?.todayAttendanceCount, icon: ClipboardList, color: "text-blue-400" },
+    { label: "Present Today", value: data?.presentToday, icon: ClipboardList, color: "text-blue-400" },
     { label: "Open Tasks", value: data?.openTasks, icon: AlertTriangle, color: "text-purple-400" },
     { label: "Urgent Tasks", value: data?.urgentTasks, icon: CircleAlert, color: "text-red-400" },
+    { label: "Leave Requests", value: data?.openLeaveRequests, icon: FileText, color: "text-teal-400" },
     { label: "Pending Payroll", value: data?.pendingPayroll, icon: DollarSign, color: "text-orange-400" },
   ];
 
@@ -182,7 +187,7 @@ export function HRDashboardPage() {
           </div>
 
           {/* KPI strip */}
-          <div className="grid grid-cols-2 gap-px border-t border-white/10 bg-white/10 sm:grid-cols-4 lg:grid-cols-7">
+          <div className="grid grid-cols-2 gap-px border-t border-white/10 bg-white/10 sm:grid-cols-4 lg:grid-cols-8">
             {kpis.map(({ label, value, icon: Icon, color }) => (
               <div key={label} className="flex flex-col items-center bg-sidebar px-3 py-4 text-center">
                 <Icon className={`mb-1.5 h-5 w-5 ${color}`} aria-hidden />
@@ -431,6 +436,20 @@ export function CreateEmployeePage() {
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
+              <div><label className="mb-1 block text-xs font-medium">Warehouse</label>
+                <select value={form.warehouseId} onChange={f("warehouseId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
+                  <option value="">— None —</option>
+                  {opts.warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+                </select>
+              </div>
+              <div><label className="mb-1 block text-xs font-medium">Production Site</label>
+                <select value={form.productionSiteId} onChange={f("productionSiteId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
+                  <option value="">— None —</option>
+                  {opts.productionSites.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
               <div><label className="mb-1 block text-xs font-medium">Bank Name</label><input value={form.bankName} onChange={f("bankName")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
               <div><label className="mb-1 block text-xs font-medium">Bank Account</label><input value={form.bankAccount} onChange={f("bankAccount")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
             </div>
@@ -471,14 +490,92 @@ type EmployeeDetail = Employee & {
 export function EmployeeDetailPage({ id }: { id: string }) {
   const [data, setData] = useState<EmployeeDetail | null>(null);
   const [tab, setTab] = useState("overview");
+  const opts = useHROptions();
 
-  useEffect(() => {
-    apiFetch<ApiEnvelope<EmployeeDetail>>(`/hr/employees/${id}`).then((r) => setData(r.data)).catch(() => undefined);
-  }, [id]);
+  // edit state
+  const [editForm, setEditForm] = useState({ firstName: "", lastName: "", phone: "", email: "", address: "", gender: "", dateOfBirth: "", employeeRoleId: "", branchId: "", farmId: "", warehouseId: "", productionSiteId: "", basicSalary: "", bankName: "", bankAccount: "", ssnitNumber: "", tinNumber: "", emergencyContactName: "", emergencyContactPhone: "", status: "", notes: "" });
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState("");
+  const [editSuccess, setEditSuccess] = useState(false);
 
-  if (!data) return <AppShell><p className="text-sm text-ink/60 p-6">Loading...</p></AppShell>;
+  function load() {
+    apiFetch<ApiEnvelope<EmployeeDetail>>(`/hr/employees/${id}`).then((r) => {
+      setData(r.data);
+      const d = r.data;
+      setEditForm({
+        firstName: d.fullName.split(" ")[0] ?? "",
+        lastName: d.fullName.split(" ").slice(1).join(" ") ?? "",
+        phone: d.phone ?? "",
+        email: d.email ?? "",
+        address: d.address ?? "",
+        gender: d.gender ?? "",
+        dateOfBirth: d.dateOfBirth ? d.dateOfBirth.slice(0, 10) : "",
+        employeeRoleId: (d as any).employeeRoleId ?? "",
+        branchId: (d as any).branchId ?? "",
+        farmId: (d as any).farmId ?? "",
+        warehouseId: (d as any).warehouseId ?? "",
+        productionSiteId: (d as any).productionSiteId ?? "",
+        basicSalary: d.basicSalary?.toString() ?? "",
+        bankName: d.bankName ?? "",
+        bankAccount: d.bankAccount ?? "",
+        ssnitNumber: d.ssnitNumber ?? "",
+        tinNumber: d.tinNumber ?? "",
+        emergencyContactName: d.emergencyContactName ?? "",
+        emergencyContactPhone: d.emergencyContactPhone ?? "",
+        status: d.status ?? "",
+        notes: d.notes ?? "",
+      });
+    }).catch(() => undefined);
+  }
 
-  const tabs = ["overview", "attendance", "tasks", "payroll", "training", "performance"];
+  useEffect(() => { load(); }, [id]);
+
+  if (!data) return <AppShell><div className="flex items-center justify-center p-12"><div className="h-6 w-6 animate-spin rounded-full border-2 border-brand border-t-transparent" /></div></AppShell>;
+
+  const ef = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setEditForm((p) => ({ ...p, [k]: e.target.value }));
+
+  async function saveEdit(e: React.FormEvent) {
+    e.preventDefault();
+    setEditSaving(true);
+    setEditError("");
+    setEditSuccess(false);
+    try {
+      await apiFetch(`/hr/employees/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          firstName: editForm.firstName || undefined,
+          lastName: editForm.lastName || undefined,
+          phone: editForm.phone || undefined,
+          email: editForm.email || undefined,
+          address: editForm.address || undefined,
+          gender: editForm.gender || undefined,
+          dateOfBirth: editForm.dateOfBirth || undefined,
+          employeeRoleId: editForm.employeeRoleId || undefined,
+          branchId: editForm.branchId || undefined,
+          farmId: editForm.farmId || undefined,
+          warehouseId: editForm.warehouseId || undefined,
+          productionSiteId: editForm.productionSiteId || undefined,
+          basicSalary: editForm.basicSalary ? Number(editForm.basicSalary) : undefined,
+          bankName: editForm.bankName || undefined,
+          bankAccount: editForm.bankAccount || undefined,
+          ssnitNumber: editForm.ssnitNumber || undefined,
+          tinNumber: editForm.tinNumber || undefined,
+          emergencyContactName: editForm.emergencyContactName || undefined,
+          emergencyContactPhone: editForm.emergencyContactPhone || undefined,
+          status: editForm.status || undefined,
+          notes: editForm.notes || undefined,
+        }),
+      });
+      setEditSuccess(true);
+      load();
+    } catch (err: unknown) {
+      setEditError(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
+  const tabs = ["overview", "edit", "attendance", "tasks", "payroll", "training", "performance"];
 
   return (
     <AppShell>
@@ -526,6 +623,100 @@ export function EmployeeDetailPage({ id }: { id: string }) {
                 <dt className="text-ink/60">TIN</dt><dd>{data.tinNumber ?? "—"}</dd>
               </dl>
             </div>
+          </div>
+        )}
+
+        {tab === "edit" && (
+          <div className="space-y-5">
+            {editError && <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{editError}</div>}
+            {editSuccess && <div className="rounded-md bg-green-50 p-3 text-sm text-green-700">Saved successfully</div>}
+            <form onSubmit={saveEdit} className="space-y-5">
+              <div className="rounded-lg border border-line bg-white p-5 space-y-4">
+                <h2 className="font-semibold">Personal Details</h2>
+                <div className="grid grid-cols-2 gap-4">
+                  <div><label className="mb-1 block text-xs font-medium">First Name</label><input value={editForm.firstName} onChange={ef("firstName")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+                  <div><label className="mb-1 block text-xs font-medium">Last Name</label><input value={editForm.lastName} onChange={ef("lastName")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+                </div>
+                <div className="grid grid-cols-3 gap-4">
+                  <div><label className="mb-1 block text-xs font-medium">Gender</label>
+                    <select value={editForm.gender} onChange={ef("gender")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
+                      <option value="">—</option>
+                      {["MALE", "FEMALE", "OTHER"].map((g) => <option key={g} value={g}>{g}</option>)}
+                    </select>
+                  </div>
+                  <div><label className="mb-1 block text-xs font-medium">Date of Birth</label><input type="date" value={editForm.dateOfBirth} onChange={ef("dateOfBirth")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+                  <div><label className="mb-1 block text-xs font-medium">Status</label>
+                    <select value={editForm.status} onChange={ef("status")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
+                      <option value="">— Unchanged —</option>
+                      {["ACTIVE", "ON_LEAVE", "SUSPENDED", "TERMINATED", "RESIGNED"].map((s) => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div><label className="mb-1 block text-xs font-medium">Phone</label><input value={editForm.phone} onChange={ef("phone")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+                  <div><label className="mb-1 block text-xs font-medium">Email</label><input type="email" value={editForm.email} onChange={ef("email")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+                </div>
+                <div><label className="mb-1 block text-xs font-medium">Address</label><textarea value={editForm.address} onChange={ef("address")} rows={2} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+              </div>
+
+              <div className="rounded-lg border border-line bg-white p-5 space-y-4">
+                <h2 className="font-semibold">Assignment & Payroll</h2>
+                <div className="grid grid-cols-2 gap-4">
+                  <div><label className="mb-1 block text-xs font-medium">Role</label>
+                    <select value={editForm.employeeRoleId} onChange={ef("employeeRoleId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
+                      <option value="">— None —</option>
+                      {opts.employeeRoles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                    </select>
+                  </div>
+                  <div><label className="mb-1 block text-xs font-medium">Basic Salary (GHS)</label><input type="number" min={0} step={0.01} value={editForm.basicSalary} onChange={ef("basicSalary")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div><label className="mb-1 block text-xs font-medium">Branch</label>
+                    <select value={editForm.branchId} onChange={ef("branchId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
+                      <option value="">— None —</option>
+                      {opts.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                    </select>
+                  </div>
+                  <div><label className="mb-1 block text-xs font-medium">Farm</label>
+                    <select value={editForm.farmId} onChange={ef("farmId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
+                      <option value="">— None —</option>
+                      {opts.farms.map((f_) => <option key={f_.id} value={f_.id}>{f_.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div><label className="mb-1 block text-xs font-medium">Warehouse</label>
+                    <select value={editForm.warehouseId} onChange={ef("warehouseId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
+                      <option value="">— None —</option>
+                      {opts.warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+                    </select>
+                  </div>
+                  <div><label className="mb-1 block text-xs font-medium">Production Site</label>
+                    <select value={editForm.productionSiteId} onChange={ef("productionSiteId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
+                      <option value="">— None —</option>
+                      {opts.productionSites.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div><label className="mb-1 block text-xs font-medium">Bank Name</label><input value={editForm.bankName} onChange={ef("bankName")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+                  <div><label className="mb-1 block text-xs font-medium">Bank Account</label><input value={editForm.bankAccount} onChange={ef("bankAccount")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div><label className="mb-1 block text-xs font-medium">SSNIT Number</label><input value={editForm.ssnitNumber} onChange={ef("ssnitNumber")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+                  <div><label className="mb-1 block text-xs font-medium">TIN Number</label><input value={editForm.tinNumber} onChange={ef("tinNumber")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div><label className="mb-1 block text-xs font-medium">Emergency Contact</label><input value={editForm.emergencyContactName} onChange={ef("emergencyContactName")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+                  <div><label className="mb-1 block text-xs font-medium">Emergency Phone</label><input value={editForm.emergencyContactPhone} onChange={ef("emergencyContactPhone")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+                </div>
+                <div><label className="mb-1 block text-xs font-medium">Notes</label><textarea value={editForm.notes} onChange={ef("notes")} rows={2} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+              </div>
+
+              <button type="submit" disabled={editSaving} className="rounded-md bg-brand px-6 py-2 text-sm font-semibold text-white disabled:opacity-50">
+                {editSaving ? "Saving..." : "Save Changes"}
+              </button>
+            </form>
           </div>
         )}
 
@@ -809,6 +1000,19 @@ export function TaskBoardPage() {
   const columns = ["OPEN", "IN_PROGRESS", "ON_HOLD", "COMPLETED"];
   const byStatus = (s: string) => rows.filter((r) => r.status === s);
 
+  async function moveTask(taskId: string, newStatus: string) {
+    await apiFetch(`/hr/tasks/${taskId}/status`, { method: "PATCH", body: JSON.stringify({ status: newStatus }) })
+      .then(() => load())
+      .catch(() => undefined);
+  }
+
+  const nextStatus: Record<string, string> = {
+    OPEN: "IN_PROGRESS",
+    IN_PROGRESS: "COMPLETED",
+    ON_HOLD: "IN_PROGRESS",
+    COMPLETED: "OPEN",
+  };
+
   return (
     <AppShell>
       <div className="space-y-5">
@@ -837,9 +1041,11 @@ export function TaskBoardPage() {
               </div>
               <div className="space-y-2">
                 {byStatus(col).map((task) => (
-                  <Link key={task.id} href={`/hr/tasks/${task.id}`} className="block rounded-md bg-white p-3 shadow-sm hover:shadow-md">
-                    <p className="text-sm font-medium">{task.title}</p>
-                    {task.taskType && <p className="text-xs text-ink/50 mt-0.5">{task.taskType}</p>}
+                  <div key={task.id} className="rounded-md bg-white p-3 shadow-sm">
+                    <Link href={`/hr/tasks/${task.id}`} className="block hover:text-brand">
+                      <p className="text-sm font-medium">{task.title}</p>
+                      {task.taskType && <p className="text-xs text-ink/50 mt-0.5">{task.taskType}</p>}
+                    </Link>
                     <div className="mt-2 flex items-center gap-2">
                       <StatusBadge status={task.priority} />
                       {task.dueDate && <span className="text-xs text-ink/50">Due {fmt(task.dueDate)}</span>}
@@ -847,7 +1053,15 @@ export function TaskBoardPage() {
                     {task.assignments?.length > 0 && (
                       <p className="mt-1 text-xs text-ink/60">{task.assignments.map((a) => a.employee?.fullName).join(", ")}</p>
                     )}
-                  </Link>
+                    {col !== "CANCELLED" && nextStatus[col] && (
+                      <button
+                        onClick={() => moveTask(task.id, nextStatus[col])}
+                        className="mt-2 w-full rounded border border-line bg-field px-2 py-1 text-xs font-medium text-ink/70 hover:bg-white hover:text-brand"
+                      >
+                        Move to {nextStatus[col].replace(/_/g, " ")} &rarr;
+                      </button>
+                    )}
+                  </div>
                 ))}
                 {byStatus(col).length === 0 && <p className="text-xs text-ink/40 text-center py-4">Empty</p>}
               </div>
@@ -1117,6 +1331,7 @@ export function TrainingPage() {
               </div>
               <div><label className="mb-1 block text-xs font-medium">Training Title *</label><input required value={form.title} onChange={f("title")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
               <div><label className="mb-1 block text-xs font-medium">Trainer</label><input value={form.trainer} onChange={f("trainer")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+              <div className="col-span-2"><label className="mb-1 block text-xs font-medium">Description</label><textarea value={form.description} onChange={f("description")} rows={2} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
               <div><label className="mb-1 block text-xs font-medium">Training Date *</label><input required type="date" value={form.trainingDate} onChange={f("trainingDate")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
               <div><label className="mb-1 block text-xs font-medium">Duration (hours)</label><input type="number" min={0} step={0.5} value={form.durationHours} onChange={f("durationHours")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
               <div><label className="mb-1 block text-xs font-medium">Outcome</label>
@@ -1186,6 +1401,10 @@ export function PerformancePage() {
     }
   }
 
+  async function acknowledge(id: string) {
+    await apiFetch(`/hr/performance/${id}/acknowledge`, { method: "PATCH" }).then(() => load()).catch(() => undefined);
+  }
+
   return (
     <AppShell>
       <div className="space-y-5">
@@ -1234,6 +1453,11 @@ export function PerformancePage() {
             { key: "qualityScore", label: "Quality", render: (r) => `${r.qualityScore}%` },
             { key: "reviewer", label: "Reviewer", render: (r) => r.reviewer?.fullName ?? "—" },
             { key: "status", label: "Status", render: (r) => <StatusBadge status={r.status as string} /> },
+            {
+              key: "actions", label: "", render: (r) => r.status === "REVIEWED" ? (
+                <button onClick={() => acknowledge(r.id as string)} className="rounded bg-green-100 px-2 py-0.5 text-xs text-green-700 hover:bg-green-200">Acknowledge</button>
+              ) : null,
+            },
           ]}
           rows={rows as Record<string, any>[]}
           empty="No performance records"
@@ -1243,7 +1467,262 @@ export function PerformancePage() {
   );
 }
 
-// â"€â"€â"€ Productivity Report â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+// ─── Task Detail ─────────────────────────────────────────────────────────────
+
+type TaskDetail = {
+  id: string; title: string; description?: string; taskType?: string; priority: string; status: string; dueDate?: string; notes?: string;
+  branch?: { name: string }; farm?: { name: string }; productionSite?: { name: string };
+  createdBy?: { fullName: string };
+  assignments: Array<{ id: string; status: string; notes?: string; employee: { id: string; fullName: string; code: string } }>;
+};
+
+export function TaskDetailPage({ id }: { id: string }) {
+  const [data, setData] = useState<TaskDetail | null>(null);
+  const [statusValue, setStatusValue] = useState("");
+  const [statusNotes, setStatusNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  function load() {
+    apiFetch<ApiEnvelope<TaskDetail>>(`/hr/tasks/${id}`).then((r) => {
+      setData(r.data);
+      setStatusValue(r.data.status);
+    }).catch(() => undefined);
+  }
+
+  useEffect(() => { load(); }, [id]);
+
+  async function updateStatus(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await apiFetch(`/hr/tasks/${id}/status`, { method: "PATCH", body: JSON.stringify({ status: statusValue, notes: statusNotes || undefined }) });
+      load();
+      setStatusNotes("");
+    } catch { /* silent */ } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!data) return <AppShell><div className="flex items-center justify-center p-12"><div className="h-6 w-6 animate-spin rounded-full border-2 border-brand border-t-transparent" /></div></AppShell>;
+
+  return (
+    <AppShell>
+      <div className="space-y-5">
+        <div className="flex items-center gap-3">
+          <Link href="/hr/tasks" className="text-sm text-ink/60 hover:text-ink">&larr; Task Board</Link>
+          <h1 className="text-xl font-bold">{data.title}</h1>
+          <StatusBadge status={data.status} />
+          <StatusBadge status={data.priority} />
+        </div>
+
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+          <div className="lg:col-span-2 space-y-5">
+            <div className="rounded-lg border border-line bg-white p-5 space-y-3">
+              <h2 className="font-semibold">Task Details</h2>
+              {data.description && <p className="text-sm text-ink/80">{data.description}</p>}
+              <dl className="grid grid-cols-2 gap-y-2 text-sm">
+                <dt className="text-ink/60">Type</dt><dd>{data.taskType ?? "—"}</dd>
+                <dt className="text-ink/60">Due Date</dt><dd>{fmt(data.dueDate)}</dd>
+                <dt className="text-ink/60">Branch</dt><dd>{data.branch?.name ?? "—"}</dd>
+                <dt className="text-ink/60">Farm</dt><dd>{data.farm?.name ?? "—"}</dd>
+                <dt className="text-ink/60">Production Site</dt><dd>{data.productionSite?.name ?? "—"}</dd>
+                <dt className="text-ink/60">Created By</dt><dd>{data.createdBy?.fullName ?? "—"}</dd>
+              </dl>
+              {data.notes && <p className="text-xs text-ink/60 border-t border-line pt-2">{data.notes}</p>}
+            </div>
+
+            <div className="rounded-lg border border-line bg-white p-5 space-y-3">
+              <h2 className="font-semibold">Assignments</h2>
+              {data.assignments.length === 0 && <p className="text-sm text-ink/50">No employees assigned</p>}
+              <ul className="space-y-2">
+                {data.assignments.map((a) => (
+                  <li key={a.id} className="flex items-center justify-between rounded-md border border-line px-3 py-2">
+                    <div>
+                      <p className="text-sm font-medium">{a.employee.fullName}</p>
+                      <p className="text-xs text-ink/50">{a.employee.code}</p>
+                    </div>
+                    <StatusBadge status={a.status} />
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-line bg-white p-5 space-y-4 h-fit">
+            <h2 className="font-semibold">Update Status</h2>
+            <form onSubmit={updateStatus} className="space-y-3">
+              <div>
+                <label className="mb-1 block text-xs font-medium">New Status</label>
+                <select value={statusValue} onChange={(e) => setStatusValue(e.target.value)} className="w-full rounded-md border border-line px-3 py-2 text-sm">
+                  {["OPEN", "IN_PROGRESS", "ON_HOLD", "COMPLETED", "CANCELLED"].map((s) => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium">Notes (optional)</label>
+                <textarea value={statusNotes} onChange={(e) => setStatusNotes(e.target.value)} rows={2} className="w-full rounded-md border border-line px-3 py-2 text-sm" />
+              </div>
+              <button type="submit" disabled={saving || statusValue === data.status} className="w-full rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+                {saving ? "Saving..." : "Update Status"}
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </AppShell>
+  );
+}
+
+// ─── Leave Requests ───────────────────────────────────────────────────────────
+
+type LeaveRow = {
+  id: string; reference: string; leaveType: string; startDate: string; endDate: string; daysRequested: number;
+  status: string; reason?: string; reviewNote?: string; createdAt: string;
+  employee?: { fullName: string; code: string };
+  reviewer?: { fullName: string };
+};
+
+export function LeaveRequestsPage() {
+  const [rows, setRows] = useState<LeaveRow[]>([]);
+  const [statusFilter, setStatusFilter] = useState("");
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ leaveType: "ANNUAL", startDate: "", endDate: "", daysRequested: "1", reason: "" });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [reviewingId, setReviewingId] = useState<string | null>(null);
+  const [reviewNote, setReviewNote] = useState("");
+
+  function load() {
+    const params = new URLSearchParams();
+    if (statusFilter) params.set("status", statusFilter);
+    apiFetch<ApiEnvelope<LeaveRow[]>>(`/hr/leave-requests?${params}`).then((r) => setRows(r.data)).catch(() => undefined);
+  }
+
+  useEffect(() => { load(); }, [statusFilter]);
+
+  const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setForm((p) => ({ ...p, [k]: e.target.value }));
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      await apiFetch("/hr/leave-requests", {
+        method: "POST",
+        body: JSON.stringify({ ...form, daysRequested: Number(form.daysRequested) }),
+      });
+      setShowForm(false);
+      setForm({ leaveType: "ANNUAL", startDate: "", endDate: "", daysRequested: "1", reason: "" });
+      load();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to submit request");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function review(id: string, decision: "APPROVED" | "REJECTED") {
+    await apiFetch(`/hr/leave-requests/${id}/review`, {
+      method: "PATCH",
+      body: JSON.stringify({ decision, reviewNote: reviewNote || undefined }),
+    }).then(() => { setReviewingId(null); setReviewNote(""); load(); }).catch(() => undefined);
+  }
+
+  async function cancelRequest(id: string) {
+    if (!confirm("Cancel this leave request?")) return;
+    await apiFetch(`/hr/leave-requests/${id}`, { method: "DELETE" }).then(() => load()).catch(() => undefined);
+  }
+
+  return (
+    <AppShell>
+      <div className="space-y-5">
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-bold">Leave Requests</h1>
+          <button onClick={() => setShowForm((p) => !p)} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white">
+            {showForm ? "Cancel" : "+ Request Leave"}
+          </button>
+        </div>
+        <HRNav />
+
+        {showForm && (
+          <div className="rounded-lg border border-line bg-white p-5">
+            <h2 className="mb-4 font-semibold">New Leave Request</h2>
+            {error && <div className="mb-3 rounded bg-red-50 p-2 text-sm text-red-700">{error}</div>}
+            <form onSubmit={submit} className="grid grid-cols-2 gap-4">
+              <div><label className="mb-1 block text-xs font-medium">Leave Type *</label>
+                <select required value={form.leaveType} onChange={f("leaveType")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
+                  {["ANNUAL", "SICK", "MATERNITY", "PATERNITY", "COMPASSIONATE", "UNPAID"].map((t) => <option key={t} value={t}>{t.replace(/_/g, " ")}</option>)}
+                </select>
+              </div>
+              <div><label className="mb-1 block text-xs font-medium">Days Requested *</label>
+                <input required type="number" min={1} value={form.daysRequested} onChange={f("daysRequested")} className="w-full rounded-md border border-line px-3 py-2 text-sm" />
+              </div>
+              <div><label className="mb-1 block text-xs font-medium">Start Date *</label>
+                <input required type="date" value={form.startDate} onChange={f("startDate")} className="w-full rounded-md border border-line px-3 py-2 text-sm" />
+              </div>
+              <div><label className="mb-1 block text-xs font-medium">End Date *</label>
+                <input required type="date" value={form.endDate} onChange={f("endDate")} className="w-full rounded-md border border-line px-3 py-2 text-sm" />
+              </div>
+              <div className="col-span-2"><label className="mb-1 block text-xs font-medium">Reason</label>
+                <textarea value={form.reason} onChange={f("reason")} rows={2} className="w-full rounded-md border border-line px-3 py-2 text-sm" />
+              </div>
+              <div className="col-span-2">
+                <button type="submit" disabled={saving} className="rounded-md bg-brand px-5 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Submitting..." : "Submit Request"}</button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {reviewingId && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+            <h3 className="mb-2 text-sm font-semibold text-amber-800">Review Note (optional)</h3>
+            <textarea value={reviewNote} onChange={(e) => setReviewNote(e.target.value)} rows={2} placeholder="Add a note for the employee..." className="mb-3 w-full rounded-md border border-line px-3 py-2 text-sm" />
+            <div className="flex gap-2">
+              <button onClick={() => review(reviewingId, "APPROVED")} className="rounded-md bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700">Approve</button>
+              <button onClick={() => review(reviewingId, "REJECTED")} className="rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700">Reject</button>
+              <button onClick={() => { setReviewingId(null); setReviewNote(""); }} className="rounded-md border border-line px-4 py-2 text-sm font-medium">Cancel</button>
+            </div>
+          </div>
+        )}
+
+        <div className="flex gap-3">
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="rounded-md border border-line px-3 py-2 text-sm">
+            <option value="">All Statuses</option>
+            {["PENDING", "APPROVED", "REJECTED", "CANCELLED"].map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+
+        <DataTable
+          columns={[
+            { key: "reference", label: "Reference" },
+            { key: "employee", label: "Employee", render: (r) => r.employee ? `${r.employee.fullName} (${r.employee.code})` : "—" },
+            { key: "leaveType", label: "Type", render: (r) => (r.leaveType as string).replace(/_/g, " ") },
+            { key: "startDate", label: "From", render: (r) => fmt(r.startDate as string) },
+            { key: "endDate", label: "To", render: (r) => fmt(r.endDate as string) },
+            { key: "daysRequested", label: "Days" },
+            { key: "status", label: "Status", render: (r) => <StatusBadge status={r.status as string} /> },
+            { key: "reviewer", label: "Reviewed By", render: (r) => r.reviewer?.fullName ?? "—" },
+            {
+              key: "actions", label: "Actions", render: (r) => (
+                <div className="flex gap-1">
+                  {r.status === "PENDING" && (
+                    <>
+                      <button onClick={() => setReviewingId(r.id as string)} className="rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-700 hover:bg-blue-200">Review</button>
+                      <button onClick={() => cancelRequest(r.id as string)} className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-600 hover:bg-red-100 hover:text-red-700">Cancel</button>
+                    </>
+                  )}
+                </div>
+              ),
+            },
+          ]}
+          rows={rows as Record<string, any>[]}
+          empty="No leave requests"
+        />
+      </div>
+    </AppShell>
+  );
+}
+
+// ─── Productivity Report ──────────────────────────────────────────────────────
 
 type ProductivityData = {
   period: { from: string; to: string };

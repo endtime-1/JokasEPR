@@ -69,6 +69,7 @@ export default function UsersPage() {
   const [productionSites, setProductionSites] = useState<ScopeOption[]>([]);
   const [form, setForm] = useState<UserForm>(emptyForm);
   const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
 
   const defaultRoleIds = useMemo(() => (form.roleIds.length ? form.roleIds : roles[0] ? [roles[0].id] : []), [form.roleIds, roles]);
 
@@ -91,34 +92,44 @@ export default function UsersPage() {
   }
 
   useEffect(() => {
-    load().catch(() => undefined);
+    load().catch((err) => setError(err instanceof Error ? err.message : "Failed to load users."));
   }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMessage("");
-    await apiFetch("/identity/users", {
-      method: "POST",
-      body: JSON.stringify({
-        ...form,
-        roleIds: defaultRoleIds,
-        branchId: form.branchIds[0],
-        farmId: form.farmIds[0],
-        warehouseId: form.warehouseIds[0],
-        productionSiteId: form.productionSiteIds[0]
-      })
-    });
-    setForm({ ...emptyForm, roleIds: roles[0] ? [roles[0].id] : [] });
-    setMessage("User created and access assigned.");
-    await load();
+    setError("");
+    try {
+      await apiFetch("/identity/users", {
+        method: "POST",
+        body: JSON.stringify({
+          ...form,
+          roleIds: defaultRoleIds,
+          branchId: form.branchIds[0],
+          farmId: form.farmIds[0],
+          warehouseId: form.warehouseIds[0],
+          productionSiteId: form.productionSiteIds[0]
+        })
+      });
+      setForm({ ...emptyForm, roleIds: roles[0] ? [roles[0].id] : [] });
+      setMessage("User created and access assigned.");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create user.");
+    }
   }
 
   async function setStatus(user: UserRow, status: "ACTIVE" | "DEACTIVATED") {
-    await apiFetch(`/identity/users/${user.id}/status`, {
-      method: "PATCH",
-      body: JSON.stringify({ status })
-    });
-    await load();
+    setError("");
+    try {
+      await apiFetch(`/identity/users/${user.id}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({ status })
+      });
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update status.");
+    }
   }
 
   return (
@@ -189,7 +200,8 @@ export default function UsersPage() {
         </button>
       </form>
 
-      {message ? <p className="mb-4 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">{message}</p> : null}
+      {message && <p className="mb-4 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">{message}</p>}
+      {error && <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
       <DataTable
         rows={users}

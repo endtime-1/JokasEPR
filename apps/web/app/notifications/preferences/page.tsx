@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, LoaderCircle, Save } from "lucide-react";
 import { AppShell } from "../../../components/app-shell";
-import { apiFetch, ApiEnvelope } from "../../../lib/api";
+import { apiFetch } from "../../../lib/api";
 
 type Preference = {
   notificationType: string;
@@ -44,7 +44,7 @@ export default function NotificationPreferencesPage() {
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    apiFetch<ApiEnvelope<Preference[]>>("/notifications/preferences")
+    apiFetch<{ data: Preference[] }>("/notifications/preferences")
       .then((res) => setPrefs(res.data))
       .finally(() => setLoading(false));
   }, []);

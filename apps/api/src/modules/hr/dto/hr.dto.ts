@@ -78,6 +78,7 @@ enum HRRating {
 export class HRQueryDto {
   @IsOptional() @IsString() search?: string;
   @IsOptional() @IsString() status?: string;
+  @IsOptional() @IsString() priority?: string;
   @IsOptional() @IsUUID() branchId?: string;
   @IsOptional() @IsUUID() employeeId?: string;
   @IsOptional() @IsString() period?: string;
