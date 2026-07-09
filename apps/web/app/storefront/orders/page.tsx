@@ -243,7 +243,7 @@ function OrdersContent() {
     if (status !== "ALL") params.set("status", status);
     if (search) params.set("search", search);
     apiFetch<ApiEnvelope<AdminOrder[]>>(`/public/admin/orders?${params}`)
-      .then((r) => setOrders(r.data))
+      .then((r) => setOrders(r.data ?? []))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [status, search]);

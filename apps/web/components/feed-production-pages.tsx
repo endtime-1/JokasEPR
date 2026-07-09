@@ -2192,7 +2192,7 @@ export function FeedPackagingRecordPage() {
 
   async function load() {
     const response = await apiFetch<ApiEnvelope<PackagingRow[]>>("/feed-production/packaging-records");
-    setRows(response.data);
+    setRows(response.data ?? []);
   }
 
   useEffect(() => { load().catch(() => undefined); }, []);
@@ -2719,9 +2719,10 @@ export function HiproPredictivePage() {
       : `/feed-production/hipro-predictive`;
     apiFetch<ApiEnvelope<HiproPredictiveData>>(path)
       .then((r) => {
-        setData(r.data);
-        if (r.data.ingredientView.length > 0) {
-          setActiveIngId((prev) => prev ?? r.data.ingredientView[0].ingredientId);
+        const d = r.data ?? null;
+        setData(d);
+        if (d && d.ingredientView.length > 0) {
+          setActiveIngId((prev) => prev ?? d.ingredientView[0].ingredientId);
         }
       })
       .catch((e: unknown) => setFetchError((e as Error)?.message ?? "Failed to load data"))
@@ -2797,7 +2798,7 @@ export function HiproPredictivePage() {
                     ? `/feed-production/hipro-predictive?warehouseId=${warehouseId}`
                     : `/feed-production/hipro-predictive`;
                   apiFetch<ApiEnvelope<HiproPredictiveData>>(path)
-                    .then((r) => setData(r.data))
+                    .then((r) => setData(r.data ?? null))
                     .catch((e: unknown) => setFetchError((e as Error)?.message ?? "Failed to load"))
                     .finally(() => setLoading(false));
                 }}

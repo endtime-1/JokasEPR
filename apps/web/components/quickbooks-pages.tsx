@@ -252,7 +252,7 @@ export function QuickBooksSyncLogsPage() {
     setLoading(true);
     const params = new URLSearchParams({ limit: "100", ...(filter.operation && { operation: filter.operation }), ...(filter.result && { result: filter.result }) });
     apiFetch<{ data: SyncLog[] }>(`/quickbooks/logs?${params}`)
-      .then((r) => setLogs(r.data))
+      .then((r) => setLogs(r.data ?? []))
       .catch(() => undefined)
       .finally(() => setLoading(false));
   }
@@ -355,7 +355,7 @@ export function QuickBooksWebhookEventsPage() {
     setLoading(true);
     const params = new URLSearchParams({ limit: "100", ...(statusFilter && { status: statusFilter }) });
     apiFetch<{ data: WebhookEvent[] }>(`/quickbooks/webhook-events?${params}`)
-      .then((r) => setEvents(r.data))
+      .then((r) => setEvents(r.data ?? []))
       .catch(() => undefined)
       .finally(() => setLoading(false));
   }

@@ -300,7 +300,7 @@ export function EmployeeListPage() {
     const params = new URLSearchParams();
     if (search) params.set("search", search);
     if (status) params.set("status", status);
-    apiFetch<ApiEnvelope<Employee[]>>(`/hr/employees?${params}`).then((r) => setRows(r.data)).catch(() => undefined);
+    apiFetch<ApiEnvelope<Employee[]>>(`/hr/employees?${params}`).then((r) => setRows(r.data ?? [])).catch(() => undefined);
   }, [search, status]);
 
   return (
@@ -500,6 +500,7 @@ export function EmployeeDetailPage({ id }: { id: string }) {
 
   function load() {
     apiFetch<ApiEnvelope<EmployeeDetail>>(`/hr/employees/${id}`).then((r) => {
+      if (!r.data) return;
       setData(r.data);
       const d = r.data;
       setEditForm({
@@ -799,7 +800,7 @@ export function AttendancePage() {
   const [showForm, setShowForm] = useState(false);
 
   function load() {
-    apiFetch<ApiEnvelope<AttendanceRow[]>>(`/hr/attendance?dateFrom=${dateFilter}&dateTo=${dateFilter}`).then((r) => setRows(r.data)).catch(() => undefined);
+    apiFetch<ApiEnvelope<AttendanceRow[]>>(`/hr/attendance?dateFrom=${dateFilter}&dateTo=${dateFilter}`).then((r) => setRows(r.data ?? [])).catch(() => undefined);
   }
 
   useEffect(() => { load(); }, [dateFilter]);
@@ -912,7 +913,7 @@ export function ShiftSchedulePage() {
   const [error, setError] = useState("");
 
   function load() {
-    apiFetch<ApiEnvelope<Shift[]>>("/hr/shifts").then((r) => setRows(r.data)).catch(() => undefined);
+    apiFetch<ApiEnvelope<Shift[]>>("/hr/shifts").then((r) => setRows(r.data ?? [])).catch(() => undefined);
   }
 
   useEffect(() => { load(); }, []);
@@ -992,7 +993,7 @@ export function TaskBoardPage() {
     const params = new URLSearchParams();
     if (status) params.set("status", status);
     if (priority) params.set("priority", priority);
-    apiFetch<ApiEnvelope<Task[]>>(`/hr/tasks?${params}`).then((r) => setRows(r.data)).catch(() => undefined);
+    apiFetch<ApiEnvelope<Task[]>>(`/hr/tasks?${params}`).then((r) => setRows(r.data ?? [])).catch(() => undefined);
   }
 
   useEffect(() => { load(); }, [status, priority]);
@@ -1170,7 +1171,7 @@ export function PayrollPage() {
   const [showForm, setShowForm] = useState(false);
 
   function load() {
-    apiFetch<ApiEnvelope<PayrollRow[]>>("/hr/payroll").then((r) => setRows(r.data)).catch(() => undefined);
+    apiFetch<ApiEnvelope<PayrollRow[]>>("/hr/payroll").then((r) => setRows(r.data ?? [])).catch(() => undefined);
   }
 
   useEffect(() => { load(); }, []);
@@ -1288,7 +1289,7 @@ export function TrainingPage() {
   const [showForm, setShowForm] = useState(false);
 
   function load() {
-    apiFetch<ApiEnvelope<TrainingRow[]>>("/hr/training").then((r) => setRows(r.data)).catch(() => undefined);
+    apiFetch<ApiEnvelope<TrainingRow[]>>("/hr/training").then((r) => setRows(r.data ?? [])).catch(() => undefined);
   }
 
   useEffect(() => { load(); }, []);
@@ -1376,7 +1377,7 @@ export function PerformancePage() {
   const [showForm, setShowForm] = useState(false);
 
   function load() {
-    apiFetch<ApiEnvelope<PerfRow[]>>("/hr/performance").then((r) => setRows(r.data)).catch(() => undefined);
+    apiFetch<ApiEnvelope<PerfRow[]>>("/hr/performance").then((r) => setRows(r.data ?? [])).catch(() => undefined);
   }
 
   useEffect(() => { load(); }, []);
@@ -1485,7 +1486,7 @@ export function TaskDetailPage({ id }: { id: string }) {
   function load() {
     apiFetch<ApiEnvelope<TaskDetail>>(`/hr/tasks/${id}`).then((r) => {
       setData(r.data);
-      setStatusValue(r.data.status);
+      setStatusValue(r.data?.status ?? "");
     }).catch(() => undefined);
   }
 
@@ -1594,7 +1595,7 @@ export function LeaveRequestsPage() {
   function load() {
     const params = new URLSearchParams();
     if (statusFilter) params.set("status", statusFilter);
-    apiFetch<ApiEnvelope<LeaveRow[]>>(`/hr/leave-requests?${params}`).then((r) => setRows(r.data)).catch(() => undefined);
+    apiFetch<ApiEnvelope<LeaveRow[]>>(`/hr/leave-requests?${params}`).then((r) => setRows(r.data ?? [])).catch(() => undefined);
   }
 
   useEffect(() => { load(); }, [statusFilter]);

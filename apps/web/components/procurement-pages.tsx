@@ -492,7 +492,7 @@ export function SuppliersPage() {
   useEffect(() => {
     const q = search ? `?search=${encodeURIComponent(search)}` : "";
     apiFetch<ApiEnvelope<Supplier[]>>(`/procurement/suppliers${q}`)
-      .then((r) => setRows(r.data))
+      .then((r) => setRows(r.data ?? []))
       .catch(() => undefined);
   }, [search]);
 
@@ -692,7 +692,7 @@ export function SupplierCategoriesPage() {
 
   function load() {
     apiFetch<ApiEnvelope<SupplierCategory[]>>("/procurement/supplier-categories")
-      .then((r) => setRows(r.data))
+      .then((r) => setRows(r.data ?? []))
       .catch(() => undefined);
   }
   useEffect(() => { load(); }, []);
@@ -789,7 +789,7 @@ export function PurchaseRequestsPage() {
   function load() {
     const q = statusFilter ? `?status=${statusFilter}` : "";
     apiFetch<ApiEnvelope<PurchaseRequest[]>>(`/procurement/purchase-requests${q}`)
-      .then((r) => setRows(r.data))
+      .then((r) => setRows(r.data ?? []))
       .catch(() => undefined);
   }
   useEffect(() => { load(); }, [statusFilter]);
@@ -1059,7 +1059,7 @@ export function PurchaseOrdersPage() {
   function load() {
     const q = statusFilter ? `?status=${statusFilter}` : "";
     apiFetch<ApiEnvelope<PurchaseOrder[]>>(`/procurement/purchase-orders${q}`)
-      .then((r) => setRows(r.data))
+      .then((r) => setRows(r.data ?? []))
       .catch(() => undefined);
   }
   useEffect(() => { load(); }, [statusFilter]);
@@ -1360,7 +1360,7 @@ export function GRNsPage() {
   function load() {
     const q = statusFilter ? `?status=${statusFilter}` : "";
     apiFetch<ApiEnvelope<GRN[]>>(`/procurement/grns${q}`)
-      .then((r) => setRows(r.data))
+      .then((r) => setRows(r.data ?? []))
       .catch(() => undefined);
   }
   useEffect(() => { load(); }, [statusFilter]);
@@ -1486,7 +1486,7 @@ export function CreateGRNPage() {
 
   useEffect(() => {
     apiFetch<ApiEnvelope<POOption[]>>("/procurement/purchase-orders?status=SENT_TO_SUPPLIER")
-      .then((r) => setPoOptions(r.data))
+      .then((r) => setPoOptions(r.data ?? []))
       .catch(() => undefined);
   }, []);
 
@@ -1661,7 +1661,7 @@ export function SupplierInvoicesPage() {
   function load() {
     const q = statusFilter ? `?status=${statusFilter}` : "";
     apiFetch<ApiEnvelope<SupplierInvoice[]>>(`/procurement/invoices${q}`)
-      .then((r) => setRows(r.data))
+      .then((r) => setRows(r.data ?? []))
       .catch(() => undefined);
   }
   useEffect(() => { load(); }, [statusFilter]);
@@ -1808,7 +1808,7 @@ export function ProcurementPaymentsPage() {
 
   function load() {
     apiFetch<ApiEnvelope<ProcurementPayment[]>>("/procurement/payments")
-      .then((r) => setRows(r.data))
+      .then((r) => setRows(r.data ?? []))
       .catch(() => undefined);
   }
   useEffect(() => { load(); }, []);
@@ -1958,7 +1958,7 @@ export function SupplierPerformancePage() {
 
   function load() {
     apiFetch<ApiEnvelope<PerformanceRecord[]>>("/procurement/performance")
-      .then((r) => setRows(r.data))
+      .then((r) => setRows(r.data ?? []))
       .catch(() => undefined);
   }
   useEffect(() => { load(); }, []);
@@ -2121,7 +2121,7 @@ export function PriceHistoryPage() {
 
   function load() {
     apiFetch<ApiEnvelope<PriceHistoryRow[]>>("/procurement/price-history")
-      .then((r) => setRows(r.data))
+      .then((r) => setRows(r.data ?? []))
       .catch(() => undefined);
   }
   useEffect(() => { load(); }, []);

@@ -507,7 +507,7 @@ export function CustomersPage({ create = false }: { create?: boolean }) {
   async function load() {
     const p = new URLSearchParams();
     if (search) p.set("search", search);
-    apiFetch<ApiEnvelope<Customer[]>>(`/sales/customers?${p}`).then((r) => setRows(r.data)).catch(() => undefined);
+    apiFetch<ApiEnvelope<Customer[]>>(`/sales/customers?${p}`).then((r) => setRows(r.data ?? [])).catch(() => undefined);
   }
 
   useEffect(() => { void load(); }, [search]);
@@ -775,7 +775,7 @@ export function OrdersPage({ create = false }: { create?: boolean }) {
   async function load() {
     const p = new URLSearchParams();
     if (status) p.set("status", status);
-    apiFetch<ApiEnvelope<SalesOrder[]>>(`/sales/orders?${p}`).then((r) => setRows(r.data)).catch(() => undefined);
+    apiFetch<ApiEnvelope<SalesOrder[]>>(`/sales/orders?${p}`).then((r) => setRows(r.data ?? [])).catch(() => undefined);
   }
 
   useEffect(() => { void load(); }, [status]);
@@ -992,7 +992,7 @@ export function PaymentsPage() {
   const [showForm, setShowForm] = useState(false);
 
   async function load() {
-    apiFetch<ApiEnvelope<Payment[]>>("/sales/payments").then((r) => setRows(r.data)).catch(() => undefined);
+    apiFetch<ApiEnvelope<Payment[]>>("/sales/payments").then((r) => setRows(r.data ?? [])).catch(() => undefined);
   }
 
   useEffect(() => { void load(); }, []);
@@ -1104,7 +1104,7 @@ export function ReturnsPage() {
   const [showForm, setShowForm] = useState(false);
 
   async function load() {
-    apiFetch<ApiEnvelope<SalesReturn[]>>("/sales/returns").then((r) => setRows(r.data)).catch(() => undefined);
+    apiFetch<ApiEnvelope<SalesReturn[]>>("/sales/returns").then((r) => setRows(r.data ?? [])).catch(() => undefined);
   }
 
   useEffect(() => { void load(); }, []);
@@ -1265,7 +1265,7 @@ export function SalesListPage({ title, endpoint, subtitle }: { title: string; en
   useEffect(() => {
     setLoading(true);
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>(endpoint)
-      .then((r) => setRows(r.data))
+      .then((r) => setRows(r.data ?? []))
       .catch(() => undefined)
       .finally(() => setLoading(false));
   }, [endpoint]);

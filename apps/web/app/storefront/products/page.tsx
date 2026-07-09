@@ -17,7 +17,7 @@ import {
   LoaderCircle,
 } from "lucide-react";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4001/api/v1";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "/api/v1";
 
 interface AdminProduct {
   id: string;
@@ -127,7 +127,7 @@ function ProductRow({ product, onSaved }: { product: AdminProduct; onSaved: (p: 
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.message ?? "Upload failed");
-      const apiRoot = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4001/api/v1").replace("/api/v1", "");
+      const apiRoot = (process.env.NEXT_PUBLIC_API_URL ?? "").replace("/api/v1", "");
       setImageUrl(`${apiRoot}${json.data.imageUrl}`);
     } catch (err: unknown) {
       setUploadErr(err instanceof Error ? err.message : "Upload failed");
@@ -362,7 +362,7 @@ export default function StorefrontProductsPage() {
   const load = useCallback(() => {
     setLoading(true);
     apiFetch<ApiEnvelope<AdminProduct[]>>("/public/admin/products")
-      .then((r) => setProducts(r.data))
+      .then((r) => setProducts(r.data ?? []))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);

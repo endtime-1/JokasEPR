@@ -37,8 +37,8 @@ export default function AuditPage() {
 
     apiFetch<AuditResponse>(`/audit-logs?${params}`)
       .then((r) => {
-        setLogs(r.data);
-        setTotal(r.total);
+        setLogs(r.data ?? []);
+        setTotal(r.total ?? 0);
       })
       .catch(() => undefined)
       .finally(() => setLoading(false));

@@ -616,7 +616,7 @@ export function ExpenseListPage() {
     if (startDate) params.set("startDate", startDate);
     if (endDate) params.set("endDate", endDate);
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>(`/finance/expenses?${params}`)
-      .then((r) => setExpenses(r.data))
+      .then((r) => setExpenses(r.data ?? []))
       .catch(() => undefined);
   }
 
@@ -791,7 +791,7 @@ export function RevenuePage() {
 
   function load() {
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/finance/revenue")
-      .then((r) => setRevenues(r.data))
+      .then((r) => setRevenues(r.data ?? []))
       .catch(() => undefined);
   }
 
@@ -886,7 +886,7 @@ export function CustomerPaymentsPage() {
 
   function load() {
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/finance/customer-payments")
-      .then((r) => setPayments(r.data))
+      .then((r) => setPayments(r.data ?? []))
       .catch(() => undefined);
   }
 
@@ -958,7 +958,7 @@ export function SupplierPaymentsPage() {
 
   function load() {
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/finance/supplier-payments")
-      .then((r) => setPayments(r.data))
+      .then((r) => setPayments(r.data ?? []))
       .catch(() => undefined);
   }
 
@@ -1030,7 +1030,7 @@ export function PettyCashPage() {
 
   function load() {
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/finance/petty-cash")
-      .then((r) => setTransactions(r.data))
+      .then((r) => setTransactions(r.data ?? []))
       .catch(() => undefined);
   }
 
@@ -1121,7 +1121,7 @@ export function PayrollPage() {
 
   function load() {
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/finance/payroll")
-      .then((r) => setRecords(r.data))
+      .then((r) => setRecords(r.data ?? []))
       .catch(() => undefined);
   }
 
@@ -1231,7 +1231,7 @@ export function BankAccountsPage() {
 
   function load() {
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/finance/bank-accounts")
-      .then((r) => setAccounts(r.data))
+      .then((r) => setAccounts(r.data ?? []))
       .catch(() => undefined);
   }
 
@@ -1315,7 +1315,7 @@ export function JournalEntriesPage() {
 
   function load() {
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/finance/journal-entries")
-      .then((r) => setEntries(r.data))
+      .then((r) => setEntries(r.data ?? []))
       .catch(() => undefined);
   }
 
@@ -1440,7 +1440,7 @@ export function ProfitLossReportPage() {
 
   useEffect(() => {
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/finance/reports/profit-loss")
-      .then((r) => setReports(r.data))
+      .then((r) => setReports(r.data ?? []))
       .catch(() => undefined);
   }, []);
 
@@ -1449,7 +1449,7 @@ export function ProfitLossReportPage() {
     try {
       const res = await apiFetch<ApiEnvelope<Record<string, unknown>>>("/finance/reports/profit-loss", { method: "POST", body: JSON.stringify({ startDate, endDate }) });
       setCurrent(res.data);
-      apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/finance/reports/profit-loss").then((r) => setReports(r.data)).catch(() => undefined);
+      apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/finance/reports/profit-loss").then((r) => setReports(r.data ?? [])).catch(() => undefined);
     } finally {
       setLoading(false);
     }
@@ -1502,7 +1502,7 @@ export function CashFlowReportPage() {
 
   useEffect(() => {
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/finance/reports/cash-flow")
-      .then((r) => setReports(r.data))
+      .then((r) => setReports(r.data ?? []))
       .catch(() => undefined);
   }, []);
 
@@ -1511,7 +1511,7 @@ export function CashFlowReportPage() {
     try {
       const res = await apiFetch<ApiEnvelope<Record<string, unknown>>>("/finance/reports/cash-flow", { method: "POST", body: JSON.stringify({ startDate, endDate }) });
       setCurrent(res.data);
-      apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/finance/reports/cash-flow").then((r) => setReports(r.data)).catch(() => undefined);
+      apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/finance/reports/cash-flow").then((r) => setReports(r.data ?? [])).catch(() => undefined);
     } finally {
       setLoading(false);
     }
@@ -1582,7 +1582,7 @@ export function ProductProfitabilityPage() {
 
   function load() {
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/finance/reports/product-profitability")
-      .then((r) => setRecords(r.data))
+      .then((r) => setRecords(r.data ?? []))
       .catch(() => undefined);
   }
 
@@ -1637,7 +1637,7 @@ export function BatchProfitabilityPage() {
   function load() {
     const params = batchTypeFilter ? `?status=${batchTypeFilter}` : "";
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>(`/finance/reports/batch-profitability${params}`)
-      .then((r) => setRecords(r.data))
+      .then((r) => setRecords(r.data ?? []))
       .catch(() => undefined);
   }
 
@@ -1747,7 +1747,7 @@ export function ChartOfAccountsPage() {
     const t = setTimeout(() => {
       const params = search ? `?search=${encodeURIComponent(search)}` : "";
       apiFetch<ApiEnvelope<AccountRow[]>>(`/finance/accounts${params}`)
-        .then((r) => setAccounts(r.data))
+        .then((r) => setAccounts(r.data ?? []))
         .catch(() => undefined);
     }, search ? 300 : 0);
     return () => clearTimeout(t);
