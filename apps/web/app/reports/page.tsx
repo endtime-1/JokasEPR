@@ -89,7 +89,7 @@ export default function ReportsPage() {
       })
       .catch(() => undefined);
     apiFetch<ApiEnvelope<ReportOptions>>("/reports/options")
-      .then((res) => setOptions(res.data))
+      .then((res) => setOptions(res.data ?? emptyOptions))
       .catch(() => undefined);
   }, []);
 
