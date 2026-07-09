@@ -329,7 +329,7 @@ export function ProductionPlanPage() {
   const [plans, setPlans] = useState<PlanRow[]>([]);
   const [planId, setPlanId] = useState("");
   const [message, setMessage] = useState("");
-  useEffect(() => { apiFetch<ApiEnvelope<PlanRow[]>>("/market-planning/production-plans").then((res) => setPlans(res.data)).catch(() => undefined); }, []);
+  useEffect(() => { apiFetch<ApiEnvelope<PlanRow[]>>("/market-planning/production-plans").then((res) => setPlans(res.data ?? [])).catch(() => undefined); }, []);
   async function calculate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const res = await apiFetch<ApiEnvelope<MrpRow>>(`/market-planning/production-plans/${planId}/mrp`, { method: "POST", body: JSON.stringify({}) });
@@ -353,7 +353,7 @@ export function MaterialRequirementPlanningPage() {
   const [mrps, setMrps] = useState<MrpRow[]>([]);
   const [planId, setPlanId] = useState("");
   useEffect(() => {
-    apiFetch<ApiEnvelope<PlanRow[]>>("/market-planning/production-plans").then((res) => setPlans(res.data)).catch(() => undefined);
+    apiFetch<ApiEnvelope<PlanRow[]>>("/market-planning/production-plans").then((res) => setPlans(res.data ?? [])).catch(() => undefined);
   }, []);
   async function calculate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -383,7 +383,7 @@ export function ProcurementRecommendationPage({ convert = false }: { convert?: b
   const [message, setMessage] = useState("");
   async function load() {
     const res = await apiFetch<ApiEnvelope<RecommendationRow[]>>("/market-planning/recommendations");
-    setRows(res.data);
+    setRows(res.data ?? []);
   }
   useEffect(() => { load().catch(() => undefined); }, []);
   async function generate(event: FormEvent<HTMLFormElement>) {
@@ -423,7 +423,7 @@ export function ProductionExecutionPage() {
   const [plan, setPlan] = useState<PlanRow | null>(null);
   const [form, setForm] = useState({ planId: "", productionPlanItemId: "", rawMaterialWarehouseId: "", finishedGoodsWarehouseId: "", producedQuantityKg: "1000", wastageKg: "0" });
   const [message, setMessage] = useState("");
-  useEffect(() => { apiFetch<ApiEnvelope<PlanRow[]>>("/market-planning/production-plans").then((res) => setPlans(res.data)).catch(() => undefined); }, []);
+  useEffect(() => { apiFetch<ApiEnvelope<PlanRow[]>>("/market-planning/production-plans").then((res) => setPlans(res.data ?? [])).catch(() => undefined); }, []);
   async function selectPlan(planId: string) {
     setForm({ ...form, planId, productionPlanItemId: "" });
     if (!planId) return setPlan(null);

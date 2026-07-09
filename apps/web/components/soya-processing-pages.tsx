@@ -36,7 +36,7 @@ function useSoyaOptions() {
   const [options, setOptions] = useState<SoyaOptions>({ productionSites: [], warehouses: [], products: [], intakes: [], batches: [] });
   useEffect(() => {
     apiFetch<ApiEnvelope<SoyaOptions>>("/soya-processing/options")
-      .then((response) => setOptions(response.data))
+      .then((response) => setOptions(response.data ?? { productionSites: [], warehouses: [], products: [], intakes: [], batches: [] }))
       .catch(() => undefined);
   }, []);
   return options;
@@ -82,7 +82,7 @@ export function SoyaIntakesPage({ create = false }: { create?: boolean }) {
 
   async function load() {
     const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/soya-processing/intakes");
-    setRows(response.data);
+    setRows(response.data ?? []);
   }
   useEffect(() => { load().catch(() => undefined); }, []);
 
@@ -120,7 +120,7 @@ export function SoyaBatchesPage({ create = false }: { create?: boolean }) {
 
   async function load() {
     const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/soya-processing/batches");
-    setRows(response.data);
+    setRows(response.data ?? []);
   }
   useEffect(() => { load().catch(() => undefined); }, []);
 
@@ -187,7 +187,7 @@ export function SoyaQualityPage() {
   const [form, setForm] = useState({ productionBatchId: "", moisturePercent: "", oilPurityPercent: "", cakeProteinPercent: "", status: "APPROVED", notes: "" });
   async function load() {
     const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/soya-processing/quality-checks");
-    setRows(response.data);
+    setRows(response.data ?? []);
   }
   useEffect(() => { load().catch(() => undefined); }, []);
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -215,7 +215,7 @@ export function SoyaStockPage({ type }: { type: "oil" | "cake" }) {
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
   useEffect(() => {
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>(`/soya-processing/${type}-stock`)
-      .then((response) => setRows(response.data))
+      .then((response) => setRows(response.data ?? []))
       .catch(() => undefined);
   }, [type]);
   return (
@@ -233,7 +233,7 @@ export function SoyaTransferPage() {
   const outputProducts = useMemo(() => products(options, (product) => ["SOYA-OIL", "SOYA-CAKE"].includes(product.sku ?? "")), [options]);
   async function load() {
     const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/soya-processing/transfers");
-    setRows(response.data);
+    setRows(response.data ?? []);
   }
   useEffect(() => { load().catch(() => undefined); }, []);
   async function submit(event: FormEvent<HTMLFormElement>) {
