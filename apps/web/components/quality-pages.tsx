@@ -193,7 +193,7 @@ function useQCOptions() {
   });
   useEffect(() => {
     apiFetch<ApiEnvelope<QCOptions>>("/quality/options")
-      .then((r) => setOpts(r.data))
+      .then((r) => setOpts(r.data ?? { templates: [], branches: [], farms: [], warehouses: [], productionSites: [], suppliers: [], users: [] }))
       .catch(() => undefined);
   }, []);
   return opts;

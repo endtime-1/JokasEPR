@@ -195,7 +195,7 @@ function useProcurementOptions() {
   });
   useEffect(() => {
     apiFetch<ApiEnvelope<ProcurementOptions>>("/procurement/options")
-      .then((r) => setOpts(r.data))
+      .then((r) => setOpts(r.data ?? { branches: [], warehouses: [], suppliers: [], supplierCategories: [], bankAccounts: [] }))
       .catch(() => undefined);
   }, []);
   return opts;

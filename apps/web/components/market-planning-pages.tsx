@@ -69,7 +69,7 @@ function useOptions() {
   const [options, setOptions] = useState<PlanningOptions>({ branches: [], productionSites: [], warehouses: [], finishedFeeds: [], formulas: [], rawMaterials: [] });
   useEffect(() => {
     apiFetch<ApiEnvelope<PlanningOptions>>("/market-planning/options")
-      .then((res) => setOptions(res.data))
+      .then((res) => setOptions(res.data ?? { branches: [], productionSites: [], warehouses: [], finishedFeeds: [], formulas: [], rawMaterials: [] }))
       .catch(() => undefined);
   }, []);
   return options;

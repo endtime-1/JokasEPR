@@ -168,7 +168,7 @@ type SalesOptions = {
 function useSalesOptions() {
   const [opts, setOpts] = useState<SalesOptions>({ branches: [], warehouses: [], products: [], customerGroups: [], customers: [], priceLists: [], invoices: [] });
   useEffect(() => {
-    apiFetch<ApiEnvelope<SalesOptions>>("/sales/options").then((r) => setOpts(r.data)).catch(() => undefined);
+    apiFetch<ApiEnvelope<SalesOptions>>("/sales/options").then((r) => setOpts(r.data ?? { branches: [], warehouses: [], products: [], customerGroups: [], customers: [], priceLists: [], invoices: [] })).catch(() => undefined);
   }, []);
   return opts;
 }

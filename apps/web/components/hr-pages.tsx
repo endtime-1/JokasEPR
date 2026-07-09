@@ -126,7 +126,7 @@ type HROptions = {
 function useHROptions() {
   const [opts, setOpts] = useState<HROptions>({ branches: [], farms: [], warehouses: [], productionSites: [], employeeRoles: [], shifts: [], employees: [], bankAccounts: [] });
   useEffect(() => {
-    apiFetch<ApiEnvelope<HROptions>>("/hr/options").then((r) => setOpts(r.data)).catch(() => undefined);
+    apiFetch<ApiEnvelope<HROptions>>("/hr/options").then((r) => setOpts(r.data ?? { branches: [], farms: [], warehouses: [], productionSites: [], employeeRoles: [], shifts: [], employees: [], bankAccounts: [] })).catch(() => undefined);
   }, []);
   return opts;
 }

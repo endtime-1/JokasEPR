@@ -81,7 +81,7 @@ function useOptions() {
   const [options, setOptions] = useState<MaintenanceOptions>({ branches: [], farms: [], warehouses: [], productionSites: [], machines: [], equipment: [], spareParts: [], technicians: [] });
   useEffect(() => {
     apiFetch<ApiEnvelope<MaintenanceOptions>>("/maintenance/options")
-      .then((response) => setOptions(response.data))
+      .then((response) => setOptions(response.data ?? { branches: [], farms: [], warehouses: [], productionSites: [], machines: [], equipment: [], spareParts: [], technicians: [] }))
       .catch(() => undefined);
   }, []);
   return options;

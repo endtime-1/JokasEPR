@@ -28,7 +28,7 @@ function useFinanceOptions() {
   const [options, setOptions] = useState<FinanceOptions>({ branches: [], bankAccounts: [], expenseCategories: [], accounts: [] });
   useEffect(() => {
     apiFetch<ApiEnvelope<FinanceOptions>>("/finance/options")
-      .then((r) => setOptions(r.data))
+      .then((r) => setOptions(r.data ?? { branches: [], bankAccounts: [], expenseCategories: [], accounts: [] }))
       .catch(() => undefined);
   }, []);
   return options;
