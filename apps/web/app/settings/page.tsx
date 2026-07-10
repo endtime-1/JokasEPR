@@ -317,8 +317,8 @@ function Select({ value, onChange, options, placeholder, required }: { value: st
   return <select className={inputClass} value={value} onChange={(e) => onChange(e.target.value)} required={required}><option value="">{placeholder}</option>{options.map((option) => <option key={option.id} value={option.id}>{option.code} - {option.name}</option>)}</select>;
 }
 
-function masterFields(resource: string, form: Record<string, string>, setForm: (value: Record<string, string>) => void, options: Record<string, Option[]>) {
-  const set = (key: string, value: string) => setForm({ ...form, [key]: value });
+function masterFields(resource: string, form: Record<string, string>, setForm: (updater: ((prev: Record<string, string>) => Record<string, string>) | Record<string, string>) => void, options: Record<string, Option[]>) {
+  const set = (key: string, value: string) => setForm((prev) => ({ ...prev, [key]: value }));
   const base = [<input key="name" className={inputClass} placeholder="Name" value={form.name ?? ""} onChange={(e) => set("name", e.target.value)} required />, <input key="code" className={inputClass} placeholder="Code" value={form.code ?? ""} onChange={(e) => set("code", e.target.value)} required />];
   if (["farms", "warehouses", "production-sites", "departments"].includes(resource)) base.push(<Select key="branchId" value={form.branchId ?? ""} onChange={(v) => set("branchId", v)} options={options.branches ?? []} placeholder="Branch" required={["farms", "warehouses", "production-sites"].includes(resource)} />);
   if (resource === "warehouses") base.push(<Select key="farmId" value={form.farmId ?? ""} onChange={(v) => set("farmId", v)} options={options.farms ?? []} placeholder="Farm (optional)" />);
