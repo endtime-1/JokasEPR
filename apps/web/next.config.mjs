@@ -16,10 +16,18 @@ const nextConfig = {
   async headers() {
     return [
       {
-        // All routes: no caching on HTML pages. Next.js overrides this for
-        // /_next/static/** with its own immutable headers, so static assets
-        // are still cached correctly by the browser.
-        source: "/:path*",
+        // Static chunk files have content-addressed URLs (hashed filenames).
+        // Cache them for 1 year — if the content changes, Next.js generates
+        // a new URL so old cached files are never served for new code.
+        source: "/_next/static/:path*",
+        headers: [
+          { key: "Cache-Control", value: "public, max-age=31536000, immutable" },
+        ],
+      },
+      {
+        // All HTML routes must never be cached so the browser always gets
+        // the latest chunk manifest pointing to current hashed filenames.
+        source: "/((?!_next/static).*)",
         headers: [
           { key: "Cache-Control", value: "no-store, must-revalidate" },
         ],
