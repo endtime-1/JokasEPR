@@ -121,6 +121,14 @@ export default function SettingsPage() {
 
   const rows = useMemo(() => master[camel(activeMaster)] ?? [], [master, activeMaster]);
 
+  // Merge API options with master-data so dropdowns populate even if the
+  // /settings/options request failed or returned stale data.
+  const mergedOptions = useMemo(() => ({
+    ...options,
+    branches: options.branches?.length ? options.branches : (master.branches ?? []).map((b: any) => ({ id: b.id, code: b.code ?? b.name, name: b.name })),
+    farms: options.farms?.length ? options.farms : (master.farms ?? []).map((b: any) => ({ id: b.id, code: b.code ?? b.name, name: b.name })),
+  }), [options, master]);
+
   async function saveCompany(event: FormEvent) {
     event.preventDefault();
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -228,7 +236,7 @@ export default function SettingsPage() {
             ))}
           </div>
           <form onSubmit={createMaster} className="mb-4 grid gap-3 md:grid-cols-4">
-            {masterFields(activeMaster, form, setForm, options)}
+            {masterFields(activeMaster, form, setForm, mergedOptions)}
             <button className="app-button-primary md:mt-auto" disabled={saving === activeMaster}><Plus className="h-4 w-4" />Add</button>
           </form>
           <div className="overflow-hidden rounded-md border border-line">
