@@ -64,7 +64,7 @@ export class AiDataService {
         orderBy: { observationDate: "desc" }
       });
 
-      sections.push(`POULTRY (last 7 days):\n${flockLines.join("\n")}${healthObs.length ? "\nHealth observations:\n" + healthObs.map((h) => `  - ${h.flockBatch.name} [${h.severity}]: ${h.observation}`).join("\n") : ""}`);
+      sections.push(`POULTRY (last 7 days):\n${flockLines.join("\n")}${healthObs.length ? "\nHealth observations:\n" + healthObs.map((h) => `  - ${h.flockBatch?.name ?? "Unknown batch"} [${h.severity}]: ${h.observation}`).join("\n") : ""}`);
     }
 
     // ── Feed Production ───────────────────────────────────────
@@ -94,7 +94,7 @@ export class AiDataService {
       });
 
       const formulaLines = formulas.map((f) => `  - ${f.name} (${f.feedType}): GHS ${Number(f.versions[0]?.costPer100Kg ?? 0).toFixed(2)}/100kg`);
-      const batchLines = batches.map((b) => `  - ${b.batchNumber} [${b.status}]: formula=${b.productionOrder.formula.name}, output=${Number(b.producedQuantityKg).toFixed(2)}kg`);
+      const batchLines = batches.map((b) => `  - ${b.batchNumber} [${b.status}]: formula=${b.productionOrder?.formula?.name ?? "unknown"}, output=${Number(b.producedQuantityKg ?? 0).toFixed(2)}kg`);
 
       sections.push(`FEED PRODUCTION (last 30 days):\nActive formulas:\n${formulaLines.join("\n")}\nRecent batches:\n${batchLines.join("\n")}`);
     }

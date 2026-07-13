@@ -14,8 +14,10 @@
       "infoPlist": {
         "NSCameraUsageDescription": "Used to scan QR codes and barcodes for inventory and production tracking.",
         "NSFaceIDUsageDescription": "Used for secure authentication.",
-        "NSLocationWhenInUseUsageDescription": "Used to record the location of prospect visits for the sales team."
-      }
+        "NSLocationWhenInUseUsageDescription": "Used to record the location of prospect visits for the sales team.",
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "bundleIdentifier": "jokasfarms.com"
     },
     "android": {
       "adaptiveIcon": {
@@ -27,8 +29,10 @@
         "android.permission.USE_BIOMETRIC",
         "android.permission.USE_FINGERPRINT",
         "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION"
-      ]
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.RECORD_AUDIO"
+      ],
+      "package": "jokasfarms.com"
     },
     "plugins": [
       "expo-sqlite",
@@ -45,6 +49,11 @@
           "locationWhenInUsePermission": "Allow AKOKO SOLUTIONS ERP to record your location when logging prospect visits."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "10106b29-1d76-442a-bcc4-6739678cb157"
+      }
+    }
   }
 }

@@ -108,12 +108,13 @@ export default function AiAssistantPage() {
 
   useEffect(() => {
     apiFetch<ApiEnvelope<Session[]>>("/ai/sessions")
-      .then((res) => setSessions(res.data))
+      .then((res) => setSessions(res.data ?? []))
       .catch(() => undefined);
     apiFetch<ApiEnvelope<AiModel[]>>("/ai/models")
       .then((res) => {
-        setModels(res.data);
-        setSelectedModel(res.data.find((m) => m.isDefault)?.id ?? res.data[0]?.id ?? "");
+        const list = res.data ?? [];
+        setModels(list);
+        setSelectedModel(list.find((m) => m.isDefault)?.id ?? list[0]?.id ?? "");
       })
       .catch(() => undefined);
   }, []);
@@ -128,7 +129,7 @@ export default function AiAssistantPage() {
     try {
       const res = await apiFetch<ApiEnvelope<SessionDetail>>(`/ai/sessions/${id}`);
       setActiveSessionId(id);
-      setMessages(res.data.messages as Message[]);
+      setMessages((res.data?.messages ?? []) as Message[]);
     } catch {
       setError("Failed to load session.");
     } finally {
@@ -191,16 +192,20 @@ export default function AiAssistantPage() {
       setActiveSessionId(res.data.sessionId);
 
       apiFetch<ApiEnvelope<Session[]>>("/ai/sessions")
-        .then((r) => setSessions(r.data))
+        .then((r) => setSessions(r.data ?? []))
         .catch(() => undefined);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to get a response.";
+      const raw = err instanceof Error ? err.message : "Failed to get a response.";
+      let displayMsg = raw;
       try {
-        const parsed = JSON.parse(msg) as { message?: string };
-        setError(parsed.message ?? msg);
+        const parsed = JSON.parse(raw) as { message?: unknown };
+        const m = parsed.message;
+        if (typeof m === "string") displayMsg = m;
+        else if (Array.isArray(m) && m.length > 0) displayMsg = String(m[0]);
       } catch {
-        setError(msg);
+        // raw is already a plain string
       }
+      setError(displayMsg);
       setMessages((prev) => prev.filter((m) => m.id !== userMsg.id));
     } finally {
       setLoading(false);
