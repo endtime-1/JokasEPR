@@ -1,4 +1,9 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req, UseGuards } from "@nestjs/common";
+﻿import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
+import { diskStorage } from "multer";
+import { extname } from "path";
+import { mkdirSync } from "fs";
+import { join } from "path";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { PermissionsGuard } from "../../common/guards/permissions.guard";
 import { RequirePermissions } from "../../common/decorators/permissions.decorator";
@@ -100,6 +105,37 @@ export class HRController {
   @RequirePermissions(PERMISSIONS.HR_MANAGE)
   updateEmployee(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateEmployeeDto, @Req() req: Request) {
     return this.svc.updateEmployee(user, id, dto, ctx(req));
+  }
+
+  @Post("employees/:id/photo")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  @UseInterceptors(
+    FileInterceptor("photo", {
+      storage: diskStorage({
+        destination: (_req, _file, cb) => {
+          const dir = join(process.cwd(), "uploads", "employees");
+          mkdirSync(dir, { recursive: true });
+          cb(null, dir);
+        },
+        filename: (req, file, cb) => {
+          const ext = extname(file.originalname).toLowerCase();
+          cb(null, `${(req as any).params.id}-${Date.now()}${ext}`);
+        },
+      }),
+      limits: { fileSize: 5 * 1024 * 1024 },
+      fileFilter: (_req, file, cb) => {
+        if (file.mimetype.startsWith("image/")) cb(null, true);
+        else cb(new BadRequestException("Only image files are allowed"), false);
+      },
+    })
+  )
+  async uploadEmployeePhoto(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id") id: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    if (!file) throw new BadRequestException("No file uploaded");
+    return this.svc.uploadEmployeePhoto(user, id, file.filename);
   }
 
   // ─── Attendance ────────────────────────────────────────────────────────────

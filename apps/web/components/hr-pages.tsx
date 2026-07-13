@@ -144,7 +144,7 @@ type DashData = {
   urgentTasks: number;
   pendingPayroll: number;
   openLeaveRequests: number;
-  recentEmployees: Array<{ id: string; code: string; fullName: string; status: string; employeeRole?: { name: string }; branch?: { name: string } }>;
+  recentEmployees: Array<{ id: string; code: string; fullName: string; status: string; photoUrl?: string; employeeRole?: { name: string }; branch?: { name: string } }>;
   recentTasks: Array<{ id: string; title: string; priority: string; status: string; dueDate?: string }>;
 };
 
@@ -228,9 +228,13 @@ export function HRDashboardPage() {
               ))}
               {data?.recentEmployees.map((emp) => (
                 <li key={emp.id} className="flex items-center gap-3 px-5 py-3.5">
-                  <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand/10 text-sm font-bold text-brand">
-                    {emp.fullName.charAt(0).toUpperCase()}
-                  </div>
+                  {emp.photoUrl ? (
+                    <img src={emp.photoUrl} alt="" className="h-9 w-9 shrink-0 rounded-full object-cover" />
+                  ) : (
+                    <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand/10 text-sm font-bold text-brand">
+                      {emp.fullName.charAt(0).toUpperCase()}
+                    </div>
+                  )}
                   <div className="min-w-0 flex-1">
                     <Link href={`/hr/employees/${emp.id}`} className="text-sm font-medium text-slate-800 hover:text-brand hover:underline">
                       {emp.fullName}
@@ -289,7 +293,7 @@ export function HRDashboardPage() {
 
 // â"€â"€â"€ Employee List â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
-type Employee = { id: string; code: string; fullName: string; phone?: string; email?: string; status: string; startDate: string; employeeRole?: { name: string }; branch?: { name: string }; farm?: { name: string } };
+type Employee = { id: string; code: string; fullName: string; phone?: string; email?: string; status: string; startDate: string; photoUrl?: string; employeeRole?: { name: string }; branch?: { name: string }; farm?: { name: string } };
 
 export function EmployeeListPage() {
   const [rows, setRows] = useState<Employee[]>([]);
@@ -321,7 +325,16 @@ export function EmployeeListPage() {
         <DataTable
           columns={[
             { key: "code", label: "Code" },
-            { key: "fullName", label: "Name", render: (r) => <Link href={`/hr/employees/${r.id}`} className="font-medium text-brand hover:underline">{r.fullName as string}</Link> },
+            { key: "fullName", label: "Name", render: (r) => (
+              <Link href={`/hr/employees/${r.id}`} className="flex items-center gap-2 hover:text-brand">
+                {r.photoUrl ? (
+                  <img src={r.photoUrl as string} alt="" className="h-7 w-7 rounded-full object-cover shrink-0" />
+                ) : (
+                  <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-brand/10 text-xs font-bold text-brand">{(r.fullName as string).charAt(0).toUpperCase()}</span>
+                )}
+                <span className="font-medium text-brand">{r.fullName as string}</span>
+              </Link>
+            ) },
             { key: "employeeRole", label: "Role", render: (r) => r.employeeRole?.name ?? "—" },
             { key: "branch", label: "Branch/Site", render: (r) => r.branch?.name ?? r.farm?.name ?? "—" },
             { key: "phone", label: "Phone" },
@@ -478,7 +491,7 @@ export function CreateEmployeePage() {
 type EmployeeDetail = Employee & {
   email?: string; address?: string; nationalId?: string; gender?: string; dateOfBirth?: string; basicSalary?: number;
   bankName?: string; bankAccount?: string; ssnitNumber?: string; tinNumber?: string;
-  emergencyContactName?: string; emergencyContactPhone?: string; notes?: string;
+  emergencyContactName?: string; emergencyContactPhone?: string; notes?: string; photoUrl?: string;
   warehouse?: { name: string }; productionSite?: { name: string };
   attendanceRecords: Array<{ id: string; date: string; status: string; hoursWorked?: number }>;
   taskAssignments: Array<{ id: string; status: string; task: { title: string; priority: string; dueDate?: string } }>;
@@ -497,6 +510,8 @@ export function EmployeeDetailPage({ id }: { id: string }) {
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState("");
   const [editSuccess, setEditSuccess] = useState(false);
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const [photoError, setPhotoError] = useState("");
 
   function load() {
     apiFetch<ApiEnvelope<EmployeeDetail>>(`/hr/employees/${id}`).then((r) => {
@@ -576,6 +591,29 @@ export function EmployeeDetailPage({ id }: { id: string }) {
     }
   }
 
+  async function uploadPhoto(file: File) {
+    setPhotoUploading(true);
+    setPhotoError("");
+    try {
+      const body = new FormData();
+      body.append("photo", file);
+      const res = await fetch(`/api/v1/hr/employees/${id}/photo`, {
+        method: "POST",
+        body,
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json?.message ?? "Upload failed");
+      }
+      load();
+    } catch (err: unknown) {
+      setPhotoError(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setPhotoUploading(false);
+    }
+  }
+
   const tabs = ["overview", "edit", "attendance", "tasks", "payroll", "training", "performance"];
 
   return (
@@ -585,6 +623,34 @@ export function EmployeeDetailPage({ id }: { id: string }) {
           <Link href="/hr/employees" className="text-sm text-ink/60 hover:text-ink">â† Employees</Link>
           <h1 className="text-xl font-bold">{data.fullName}</h1>
           <StatusBadge status={data.status} />
+        </div>
+
+        {/* Profile photo strip */}
+        <div className="flex items-center gap-4 rounded-lg border border-line bg-white p-4">
+          <div className="relative shrink-0">
+            {data.photoUrl ? (
+              <img src={data.photoUrl} alt={data.fullName} className="h-20 w-20 rounded-full object-cover ring-2 ring-brand/20" />
+            ) : (
+              <div className="grid h-20 w-20 place-items-center rounded-full bg-brand/10 text-2xl font-bold text-brand">
+                {data.fullName.charAt(0).toUpperCase()}
+              </div>
+            )}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-base font-semibold text-ink">{data.fullName}</p>
+            <p className="text-xs text-ink/55">{data.code} · {data.employeeRole?.name ?? "No role"}</p>
+            <label className="mt-2 inline-flex cursor-pointer items-center gap-2 rounded-md border border-line px-3 py-1.5 text-xs font-medium text-ink/70 hover:bg-field">
+              {photoUploading ? "Uploading..." : "Change Photo"}
+              <input
+                type="file"
+                accept="image/*"
+                className="sr-only"
+                disabled={photoUploading}
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadPhoto(f); e.target.value = ""; }}
+              />
+            </label>
+            {photoError && <p className="mt-1 text-xs text-red-600">{photoError}</p>}
+          </div>
         </div>
 
         <div className="flex gap-2 border-b border-line pb-1">

@@ -5743,7 +5743,8 @@ model Employee {
   emergencyContactName  String?        @db.VarChar(120)
   emergencyContactPhone String?        @db.VarChar(40)
   notes                 String?        @db.VarChar(500)
-  createdById           String?       
+  photoUrl              String?        @db.VarChar(500)
+  createdById           String?
   updatedById           String?       
   createdAt             DateTime       @default(now())
   updatedAt             DateTime       @updatedAt
