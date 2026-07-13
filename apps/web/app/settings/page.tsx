@@ -32,6 +32,15 @@ type SettingsMap = {
 
 type NumberingRule = { prefix: string; includeYear?: boolean; padding?: number; nextNumber?: number };
 
+// Default form values for tabs that have required enum selects.
+// These ensure the enum value is in the payload even if the user
+// never touches the dropdown (visual default ≠ form state default).
+const TAB_DEFAULTS: Partial<Record<string, Record<string, string>>> = {
+  "farms": { type: "POULTRY" },
+  "production-sites": { type: "FEED_PRODUCTION" },
+  "warehouses": { type: "GENERAL" },
+};
+
 const masterSections = [
   ["branches", "Branches"],
   ["farms", "Farms"],
@@ -123,10 +132,13 @@ export default function SettingsPage() {
 
   // Merge API options with master-data so dropdowns populate even if the
   // /settings/options request failed or returned stale data.
+  const toOpt = (arr: any[]) => arr.map((b) => ({ id: b.id, code: b.code ?? b.name, name: b.name }));
   const mergedOptions = useMemo(() => ({
     ...options,
-    branches: options.branches?.length ? options.branches : (master.branches ?? []).map((b: any) => ({ id: b.id, code: b.code ?? b.name, name: b.name })),
-    farms: options.farms?.length ? options.farms : (master.farms ?? []).map((b: any) => ({ id: b.id, code: b.code ?? b.name, name: b.name })),
+    branches: options.branches?.length ? options.branches : toOpt(master.branches ?? []),
+    farms: options.farms?.length ? options.farms : toOpt(master.farms ?? []),
+    productCategories: options.productCategories?.length ? options.productCategories : toOpt(master.productCategories ?? []),
+    accounts: options.accounts ?? [],
   }), [options, master]);
 
   async function saveCompany(event: FormEvent) {
@@ -137,7 +149,7 @@ export default function SettingsPage() {
     await save("company", () => apiFetch("/settings/company", { method: "PUT", body: JSON.stringify(payload) }), "Company profile saved.");
   }
 
-  async function save(key: string, action: () => Promise<unknown>, successMsg = "Saved.") {
+  async function save(key: string, action: () => Promise<unknown>, successMsg = "Saved."): Promise<boolean> {
     setSaving(key);
     setError("");
     setSuccess("");
@@ -145,8 +157,10 @@ export default function SettingsPage() {
       await action();
       setSuccess(successMsg);
       await load();
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Save failed.");
+      return false;
     } finally {
       setSaving("");
     }
@@ -159,8 +173,8 @@ export default function SettingsPage() {
       return;
     }
     const payload = buildMasterPayload(activeMaster, form);
-    await save(activeMaster, () => apiFetch(`/settings/${activeMaster}`, { method: "POST", body: JSON.stringify(payload) }), "Record added.");
-    setForm({});
+    const ok = await save(activeMaster, () => apiFetch(`/settings/${activeMaster}`, { method: "POST", body: JSON.stringify(payload) }), "Record added.");
+    if (ok) setForm(TAB_DEFAULTS[activeMaster] ?? {});
   }
 
   function updateSetting<K extends keyof SettingsMap>(key: K, value: SettingsMap[K]) {
@@ -230,7 +244,7 @@ export default function SettingsPage() {
         <SettingCard title="Master Data" icon={Settings}>
           <div className="mb-4 flex flex-wrap gap-2">
             {masterSections.map(([key, label]) => (
-              <button key={key} onClick={() => { setActiveMaster(key); setForm({}); }} className={`rounded-md border px-3 py-2 text-sm font-semibold ${activeMaster === key ? "border-brand bg-brand text-white" : "border-line bg-white text-ink/70"}`}>
+              <button key={key} onClick={() => { setActiveMaster(key); setForm(TAB_DEFAULTS[key] ?? {}); setError(""); setSuccess(""); }} className={`rounded-md border px-3 py-2 text-sm font-semibold ${activeMaster === key ? "border-brand bg-brand text-white" : "border-line bg-white text-ink/70"}`}>
                 {label}
               </button>
             ))}
@@ -243,12 +257,13 @@ export default function SettingsPage() {
             <table className="w-full text-left text-sm">
               <thead className="bg-field text-xs uppercase text-ink/55"><tr><th className="px-3 py-2">Code</th><th className="px-3 py-2">Name</th><th className="px-3 py-2">Status</th></tr></thead>
               <tbody>
-                {rows.slice(0, 12).map((row) => (
+                {rows.map((row) => (
                   <tr key={row.id} className="border-t border-line"><td className="px-3 py-2 font-semibold">{row.code ?? "-"}</td><td className="px-3 py-2">{row.name}</td><td className="px-3 py-2">{row.status ?? (row.isActive ? "ACTIVE" : "INACTIVE")}</td></tr>
                 ))}
-                {rows.length === 0 && <tr><td colSpan={3} className="px-3 py-8 text-center text-ink/45">No records</td></tr>}
+                {rows.length === 0 && <tr><td colSpan={3} className="px-3 py-8 text-center text-ink/45">No records yet</td></tr>}
               </tbody>
             </table>
+            {rows.length > 0 && <p className="px-3 py-2 text-xs text-ink/45 border-t border-line">{rows.length} record{rows.length !== 1 ? "s" : ""}</p>}
           </div>
         </SettingCard>
 
@@ -319,13 +334,19 @@ function Select({ value, onChange, options, placeholder, required }: { value: st
 
 function masterFields(resource: string, form: Record<string, string>, setForm: (updater: ((prev: Record<string, string>) => Record<string, string>) | Record<string, string>) => void, options: Record<string, Option[]>) {
   const set = (key: string, value: string) => setForm((prev) => ({ ...prev, [key]: value }));
-  const base = [<input key="name" className={inputClass} placeholder="Name" value={form.name ?? ""} onChange={(e) => set("name", e.target.value)} required />, <input key="code" className={inputClass} placeholder="Code" value={form.code ?? ""} onChange={(e) => set("code", e.target.value)} required />];
+  const base = [
+    <input key="name" className={inputClass} placeholder="Name" value={form.name ?? ""} onChange={(e) => set("name", e.target.value)} required />,
+    <input key="code" className={inputClass} placeholder="Code" value={form.code ?? ""} onChange={(e) => set("code", e.target.value)} required />,
+  ];
+  if (resource === "branches") base.push(<input key="city" className={inputClass} placeholder="City" value={form.city ?? ""} onChange={(e) => set("city", e.target.value)} />);
   if (["farms", "warehouses", "production-sites", "departments"].includes(resource)) base.push(<Select key="branchId" value={form.branchId ?? ""} onChange={(v) => set("branchId", v)} options={options.branches ?? []} placeholder="Branch" required={["farms", "warehouses", "production-sites"].includes(resource)} />);
+  if (resource === "farms") base.push(<select key="type" className={inputClass} value={form.type ?? "POULTRY"} onChange={(e) => set("type", e.target.value)}><option value="POULTRY">Poultry</option><option value="CROP">Crop</option><option value="MIXED">Mixed</option></select>);
   if (resource === "warehouses") base.push(<Select key="farmId" value={form.farmId ?? ""} onChange={(v) => set("farmId", v)} options={options.farms ?? []} placeholder="Farm (optional)" />);
-  if (resource === "production-sites") base.push(<select key="type" className={inputClass} value={form.type ?? "FEED_PRODUCTION"} onChange={(e) => set("type", e.target.value)}><option value="FEED_PRODUCTION">Feed production</option><option value="SOYA_PROCESSING">Soya processing</option><option value="MIXED">Mixed</option></select>);
   if (resource === "warehouses") base.push(<select key="type" className={inputClass} value={form.type ?? "GENERAL"} onChange={(e) => set("type", e.target.value)}><option value="GENERAL">General</option><option value="FARM_STORE">Farm store</option><option value="FEED_STORE">Feed store</option><option value="SOYA_STORE">Soya store</option><option value="COLD_STORAGE">Cold storage</option></select>);
+  if (resource === "production-sites") base.push(<select key="type" className={inputClass} value={form.type ?? "FEED_PRODUCTION"} onChange={(e) => set("type", e.target.value)}><option value="FEED_PRODUCTION">Feed production</option><option value="SOYA_PROCESSING">Soya processing</option><option value="MIXED">Mixed</option></select>);
   if (resource === "units-of-measure") base.push(<input key="symbol" className={inputClass} placeholder="Symbol" value={form.symbol ?? ""} onChange={(e) => set("symbol", e.target.value)} required />);
-  if (resource === "product-categories") base.push(<Select key="parentId" value={form.parentId ?? ""} onChange={(v) => set("parentId", v)} options={options.productCategories ?? []} placeholder="Parent category" />);
+  if (resource === "product-categories") base.push(<Select key="parentId" value={form.parentId ?? ""} onChange={(v) => set("parentId", v)} options={options.productCategories ?? []} placeholder="Parent category (optional)" />);
+  if (resource === "expense-categories") base.push(<Select key="accountId" value={form.accountId ?? ""} onChange={(v) => set("accountId", v)} options={options.accounts ?? []} placeholder="Account (optional)" />);
   if (["farms", "warehouses", "production-sites"].includes(resource)) base.push(<input key="location" className={inputClass} placeholder="Location" value={form.location ?? ""} onChange={(e) => set("location", e.target.value)} />);
   return base;
 }
