@@ -1,6 +1,6 @@
 import * as SecureStore from "expo-secure-store";
 
-export const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:4001/api/v1";
+export const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "https://jokasfarms.com/api/v1";
 
 const ACCESS_KEY = "jokas.accessToken";
 const REFRESH_KEY = "jokas.refreshToken";
