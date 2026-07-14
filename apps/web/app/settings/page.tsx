@@ -181,6 +181,14 @@ export default function SettingsPage() {
   async function createMaster(event: FormEvent) {
     event.preventDefault();
     setMasterMsg(null);
+    if (!form.name?.trim()) {
+      setMasterMsg({ type: "err", text: "Name is required." });
+      return;
+    }
+    if (!form.code?.trim()) {
+      setMasterMsg({ type: "err", text: "Code is required." });
+      return;
+    }
     if (["farms", "warehouses", "production-sites"].includes(activeMaster) && !form.branchId) {
       setMasterMsg({ type: "err", text: "Please select a branch before adding." });
       return;
@@ -380,7 +388,11 @@ function masterFields(resource: string, form: Record<string, string>, setForm: (
 
 function buildMasterPayload(resource: string, form: Record<string, string>) {
   const payload: Record<string, unknown> = { ...form };
-  for (const key of Object.keys(payload)) if (payload[key] === "") delete payload[key];
+  for (const key of Object.keys(payload)) {
+    const v = (payload[key] as string).trim();
+    if (v === "") delete payload[key];
+    else payload[key] = v;
+  }
   if (resource === "branches") payload.country = payload.country ?? "Ghana";
   if (resource === "units-of-measure") payload.symbol = payload.symbol ?? payload.code;
   return payload;
