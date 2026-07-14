@@ -105,6 +105,7 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [masterMsg, setMasterMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
 
   async function load() {
     const results = await Promise.allSettled([
@@ -166,15 +167,36 @@ export default function SettingsPage() {
     }
   }
 
+  async function refreshMaster() {
+    try {
+      const res = await apiFetch<ApiEnvelope<MasterData>>("/settings/master-data");
+      setMaster(res.data ?? {});
+      const optRes = await apiFetch<ApiEnvelope<Record<string, Option[]>>>("/settings/options");
+      setOptions(optRes.data ?? {});
+    } catch {
+      // silent — list will still show the previous state
+    }
+  }
+
   async function createMaster(event: FormEvent) {
     event.preventDefault();
+    setMasterMsg(null);
     if (["farms", "warehouses", "production-sites"].includes(activeMaster) && !form.branchId) {
-      setError("Please select a branch before adding.");
+      setMasterMsg({ type: "err", text: "Please select a branch before adding." });
       return;
     }
     const payload = buildMasterPayload(activeMaster, form);
-    const ok = await save(activeMaster, () => apiFetch(`/settings/${activeMaster}`, { method: "POST", body: JSON.stringify(payload) }), "Record added.");
-    if (ok) setForm(TAB_DEFAULTS[activeMaster] ?? {});
+    setSaving(activeMaster);
+    try {
+      await apiFetch(`/settings/${activeMaster}`, { method: "POST", body: JSON.stringify(payload) });
+      setMasterMsg({ type: "ok", text: "Record added." });
+      setForm(TAB_DEFAULTS[activeMaster] ?? {});
+      await refreshMaster();
+    } catch (err) {
+      setMasterMsg({ type: "err", text: err instanceof Error ? err.message : "Save failed." });
+    } finally {
+      setSaving("");
+    }
   }
 
   function updateSetting<K extends keyof SettingsMap>(key: K, value: SettingsMap[K]) {
@@ -244,7 +266,7 @@ export default function SettingsPage() {
         <SettingCard title="Master Data" icon={Settings}>
           <div className="mb-4 flex flex-wrap gap-2">
             {masterSections.map(([key, label]) => (
-              <button key={key} onClick={() => { setActiveMaster(key); setForm(TAB_DEFAULTS[key] ?? {}); setError(""); setSuccess(""); }} className={`rounded-md border px-3 py-2 text-sm font-semibold ${activeMaster === key ? "border-brand bg-brand text-white" : "border-line bg-white text-ink/70"}`}>
+              <button key={key} onClick={() => { setActiveMaster(key); setForm(TAB_DEFAULTS[key] ?? {}); setError(""); setSuccess(""); setMasterMsg(null); }} className={`rounded-md border px-3 py-2 text-sm font-semibold ${activeMaster === key ? "border-brand bg-brand text-white" : "border-line bg-white text-ink/70"}`}>
                 {label}
               </button>
             ))}
@@ -253,6 +275,11 @@ export default function SettingsPage() {
             {masterFields(activeMaster, form, setForm, mergedOptions)}
             <button className="app-button-primary md:mt-auto" disabled={saving === activeMaster}><Plus className="h-4 w-4" />Add</button>
           </form>
+          {masterMsg && (
+            <p className={`mb-3 rounded-md border px-3 py-2 text-sm ${masterMsg.type === "ok" ? "border-green-200 bg-green-50 text-green-700" : "border-red-200 bg-red-50 text-red-700"}`}>
+              {masterMsg.text}
+            </p>
+          )}
           <div className="overflow-hidden rounded-md border border-line">
             <table className="w-full text-left text-sm">
               <thead className="bg-field text-xs uppercase text-ink/55"><tr><th className="px-3 py-2">Code</th><th className="px-3 py-2">Name</th><th className="px-3 py-2">Status</th></tr></thead>
