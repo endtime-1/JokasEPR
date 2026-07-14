@@ -204,6 +204,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     setMobileOpen(false);
   }, [pathname]);
 
+  // Redirect to login when any apiFetch signals the session has fully expired
+  useEffect(() => {
+    function onSessionExpired() {
+      router.push("/login");
+    }
+    window.addEventListener("auth:session-expired", onSessionExpired);
+    return () => window.removeEventListener("auth:session-expired", onSessionExpired);
+  }, [router]);
+
   useEffect(() => {
     apiFetch<ApiEnvelope<{ count: number }>>("/alerts/unread-count")
       .then((res) => setUnreadAlerts(res.data.count))

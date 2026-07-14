@@ -61,6 +61,12 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   }
 
   if (!response.ok) {
+    if (response.status === 401) {
+      // Session fully expired — signal the app to redirect to login
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("auth:session-expired"));
+      }
+    }
     throw new Error(extractErrorMessage(await response.text()));
   }
 
