@@ -140,7 +140,11 @@ export class SettingsService {
 
   async createBranch(user: AuthenticatedUser, dto: CreateBranchSettingDto, ctx: RequestContext) {
     this.requireSettings(user);
-    const row = await this.prisma.branch.create({ data: { companyId: user.companyId, name: dto.name, code: dto.code.toUpperCase(), city: dto.city, country: dto.country ?? "Ghana", isHeadOffice: dto.isHeadOffice ?? false, createdById: user.id } });
+    const code = dto.code.toUpperCase();
+    const softDeleted = await this.prisma.branch.findFirst({ where: { companyId: user.companyId, code, deletedAt: { not: null } } });
+    const row = softDeleted
+      ? await this.prisma.branch.update({ where: { id: softDeleted.id }, data: { name: dto.name, code, city: dto.city ?? null, country: dto.country ?? "Ghana", isHeadOffice: dto.isHeadOffice ?? false, deletedAt: null, updatedById: user.id } })
+      : await this.prisma.branch.create({ data: { companyId: user.companyId, name: dto.name, code, city: dto.city, country: dto.country ?? "Ghana", isHeadOffice: dto.isHeadOffice ?? false, createdById: user.id } });
     await this.auditCreate(user, "Branch", row.id, `Created branch ${row.code}`, ctx);
     return { data: row };
   }
@@ -148,7 +152,11 @@ export class SettingsService {
   async createFarm(user: AuthenticatedUser, dto: CreateFarmSettingDto, ctx: RequestContext) {
     this.requireSettings(user);
     await this.requireBranch(user.companyId, dto.branchId);
-    const row = await this.prisma.farm.create({ data: { companyId: user.companyId, branchId: dto.branchId, name: dto.name, code: dto.code.toUpperCase(), location: dto.location, type: dto.type ?? "POULTRY", createdById: user.id } });
+    const code = dto.code.toUpperCase();
+    const softDeleted = await this.prisma.farm.findFirst({ where: { companyId: user.companyId, code, deletedAt: { not: null } } });
+    const row = softDeleted
+      ? await this.prisma.farm.update({ where: { id: softDeleted.id }, data: { branchId: dto.branchId, name: dto.name, code, location: dto.location ?? null, type: dto.type ?? "POULTRY", deletedAt: null, updatedById: user.id } })
+      : await this.prisma.farm.create({ data: { companyId: user.companyId, branchId: dto.branchId, name: dto.name, code, location: dto.location, type: dto.type ?? "POULTRY", createdById: user.id } });
     await this.auditCreate(user, "Farm", row.id, `Created farm ${row.code}`, ctx, { branchId: row.branchId });
     return { data: row };
   }
@@ -156,7 +164,11 @@ export class SettingsService {
   async createWarehouse(user: AuthenticatedUser, dto: CreateWarehouseSettingDto, ctx: RequestContext) {
     this.requireSettings(user);
     await this.requireBranch(user.companyId, dto.branchId);
-    const row = await this.prisma.warehouse.create({ data: { companyId: user.companyId, branchId: dto.branchId, farmId: dto.farmId, productionSiteId: dto.productionSiteId, name: dto.name, code: dto.code.toUpperCase(), location: dto.location, type: dto.type ?? "GENERAL", createdById: user.id } });
+    const code = dto.code.toUpperCase();
+    const softDeleted = await this.prisma.warehouse.findFirst({ where: { companyId: user.companyId, code, deletedAt: { not: null } } });
+    const row = softDeleted
+      ? await this.prisma.warehouse.update({ where: { id: softDeleted.id }, data: { branchId: dto.branchId, farmId: dto.farmId ?? null, productionSiteId: dto.productionSiteId ?? null, name: dto.name, code, location: dto.location ?? null, type: dto.type ?? "GENERAL", deletedAt: null, updatedById: user.id } })
+      : await this.prisma.warehouse.create({ data: { companyId: user.companyId, branchId: dto.branchId, farmId: dto.farmId, productionSiteId: dto.productionSiteId, name: dto.name, code, location: dto.location, type: dto.type ?? "GENERAL", createdById: user.id } });
     await this.auditCreate(user, "Warehouse", row.id, `Created warehouse ${row.code}`, ctx, { branchId: row.branchId, warehouseId: row.id });
     return { data: row };
   }
@@ -164,14 +176,22 @@ export class SettingsService {
   async createProductionSite(user: AuthenticatedUser, dto: CreateProductionSiteSettingDto, ctx: RequestContext) {
     this.requireSettings(user);
     await this.requireBranch(user.companyId, dto.branchId);
-    const row = await this.prisma.productionSite.create({ data: { companyId: user.companyId, branchId: dto.branchId, name: dto.name, code: dto.code.toUpperCase(), type: dto.type, location: dto.location, createdById: user.id } });
+    const code = dto.code.toUpperCase();
+    const softDeleted = await this.prisma.productionSite.findFirst({ where: { companyId: user.companyId, code, deletedAt: { not: null } } });
+    const row = softDeleted
+      ? await this.prisma.productionSite.update({ where: { id: softDeleted.id }, data: { branchId: dto.branchId, name: dto.name, code, type: dto.type, location: dto.location ?? null, deletedAt: null, updatedById: user.id } })
+      : await this.prisma.productionSite.create({ data: { companyId: user.companyId, branchId: dto.branchId, name: dto.name, code, type: dto.type, location: dto.location, createdById: user.id } });
     await this.auditCreate(user, "ProductionSite", row.id, `Created production site ${row.code}`, ctx, { branchId: row.branchId, productionSiteId: row.id });
     return { data: row };
   }
 
   async createDepartment(user: AuthenticatedUser, dto: CreateDepartmentSettingDto, ctx: RequestContext) {
     this.requireSettings(user);
-    const row = await this.prisma.department.create({ data: { companyId: user.companyId, branchId: dto.branchId, name: dto.name, code: dto.code.toUpperCase(), createdById: user.id } });
+    const code = dto.code.toUpperCase();
+    const softDeleted = await this.prisma.department.findFirst({ where: { companyId: user.companyId, code, deletedAt: { not: null } } });
+    const row = softDeleted
+      ? await this.prisma.department.update({ where: { id: softDeleted.id }, data: { branchId: dto.branchId, name: dto.name, code, deletedAt: null, updatedById: user.id } })
+      : await this.prisma.department.create({ data: { companyId: user.companyId, branchId: dto.branchId, name: dto.name, code, createdById: user.id } });
     await this.auditCreate(user, "Department", row.id, `Created department ${row.code}`, ctx, { branchId: row.branchId ?? undefined });
     return { data: row };
   }
