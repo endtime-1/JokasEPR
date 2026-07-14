@@ -65,7 +65,11 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   }
 
   const text = await response.text();
-  return (text ? JSON.parse(text) : {}) as T;
+  if (!text) return {} as T;
+  if (text.trimStart().startsWith("<")) {
+    throw new Error("API server is not reachable. Please try again in a moment.");
+  }
+  return JSON.parse(text) as T;
 }
 
 export async function downloadReport(path: string, filename: string): Promise<void> {
