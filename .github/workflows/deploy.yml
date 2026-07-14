@@ -66,7 +66,9 @@ jobs:
 
       - name: Upload Web to Hostinger
         run: |
-          rsync -avz --delete -e "ssh -p 65002 -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no" \
+          rsync -avz --delete --no-perms --omit-dir-times \
+            --exclude='.next/cache' \
+            -e "ssh -p 65002 -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no" \
             /tmp/web-deploy/ \
             ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/apps/web/
 
