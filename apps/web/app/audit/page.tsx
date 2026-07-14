@@ -15,7 +15,7 @@ type AuditLog = {
   actor?: { fullName: string; email: string };
 };
 
-type AuditResponse = { data: AuditLog[]; total: number };
+type AuditResponse = { data: { data: AuditLog[]; total: number } };
 
 const PAGE_SIZE = 50;
 
@@ -37,8 +37,8 @@ export default function AuditPage() {
 
     apiFetch<AuditResponse>(`/audit-logs?${params}`)
       .then((r) => {
-        setLogs(r.data ?? []);
-        setTotal(r.total ?? 0);
+        setLogs(r.data?.data ?? []);
+        setTotal(r.data?.total ?? 0);
       })
       .catch(() => undefined)
       .finally(() => setLoading(false));
