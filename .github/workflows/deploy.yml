@@ -60,19 +60,19 @@ jobs:
 
       - name: Upload API to Hostinger
         run: |
-          rsync -avz --delete \
+          rsync -avz --delete -e "ssh -p 65002 -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no" \
             /tmp/api-deploy/ \
             ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/apps/api/
 
       - name: Upload Web to Hostinger
         run: |
-          rsync -avz --delete \
+          rsync -avz --delete -e "ssh -p 65002 -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no" \
             /tmp/web-deploy/ \
             ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/apps/web/
 
       - name: Upload DB migrations
         run: |
-          rsync -avz \
+          rsync -avz -e "ssh -p 65002 -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no" \
             packages/db/prisma/ \
             ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/prisma/
 
@@ -82,7 +82,7 @@ jobs:
           host: ${{ secrets.HOSTINGER_HOST }}
           username: ${{ secrets.HOSTINGER_USER }}
           key: ${{ secrets.HOSTINGER_SSH_KEY }}
-          port: 22
+          port: 65002
           script: |
             NODE=/opt/alt/alt-nodejs22/root/usr/bin/node
             APP_DIR=~/domains/jokasfarms.com/nodejs
