@@ -1,77 +1,20 @@
-name: Build & Deploy to Hostinger
-
-on:
-  push:
-    branches: [main]
-  workflow_dispatch:
-
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 11.9.0
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'pnpm'
-
-      - name: Install all dependencies
-        run: pnpm install
-
-      - name: Generate Prisma client
-        run: pnpm --filter @jokas/db prisma:generate
-
-      - name: Build API
-        run: pnpm --filter @jokas/api build
-
-      - name: Build Web
-        run: pnpm --filter @jokas/web build
-
-      # Create standalone deploy bundles with only production deps
-      - name: Bundle API for deployment
-        run: |
-          pnpm --filter @jokas/api deploy --prod /tmp/api-deploy
-          cp -r apps/api/dist /tmp/api-deploy/dist
-
-      - name: Bundle Web for deployment
-        run: |
-          pnpm --filter @jokas/web deploy --prod /tmp/web-deploy
-          cp -r apps/web/.next /tmp/web-deploy/.next
-          cp -r apps/web/public /tmp/web-deploy/public 2>/dev/null || true
-
-      - name: Setup SSH key
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.HOSTINGER_SSH_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H "${{ secrets.HOSTINGER_HOST }}" >> ~/.ssh/known_hosts
-
       - name: Upload API to Hostinger
         run: |
           rsync -avz --delete \
             /tmp/api-deploy/ \
-            ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/apps/api/
+            ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/apps/api/
 
       - name: Upload Web to Hostinger
         run: |
           rsync -avz --delete \
             /tmp/web-deploy/ \
-            ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/apps/web/
+            ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/apps/web/
 
       - name: Upload DB migrations
         run: |
           rsync -avz \
             packages/db/prisma/ \
-            ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/apps/prisma/
+            ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/prisma/
 
       - name: Restart services on Hostinger
         uses: appleboy/ssh-action@v1.2.0
@@ -81,14 +24,13 @@ jobs:
           key: ${{ secrets.HOSTINGER_SSH_KEY }}
           port: 22
           script: |
-            cd ~/apps/api
-            # Run migrations — try local binary first, fall back to npx.
-            # Non-fatal: a failed migration should not prevent PM2 from restarting.
-            PRISMA_BIN="./node_modules/.bin/prisma"
-            if [ ! -f "$PRISMA_BIN" ]; then PRISMA_BIN="npx prisma"; fi
-            $PRISMA_BIN migrate deploy --schema=~/apps/prisma/schema.prisma \
-              && echo "Migrations applied." \
-              || echo "WARNING: migrations failed or were already up to date."
-            # Always restart PM2 so new code goes live
-            pm2 restart ecosystem.config.js --update-env || pm2 start ecosystem.config.js
-            pm2 save
+            NODE=/opt/alt/alt-nodejs22/root/usr/bin/node
+            APP_DIR=~/domains/jokasfarms.com/nodejs
+            PRISMA=$APP_DIR/apps/api/node_modules/.bin/prisma
+            if [ -f "$PRISMA" ]; then
+              $NODE $PRISMA migrate deploy --schema=$APP_DIR/prisma/schema.prisma \
+                && echo "Migrations applied." || echo "WARNING: migrations skipped."
+            fi
+            rm -f /tmp/jokas-manager.lock
+            ps aux | grep -E "node|lsnode" | grep "$(whoami)" | grep -v grep | awk '{print $2}' | xargs kill -9 2>/dev/null || true
+            echo "Restart triggered"
