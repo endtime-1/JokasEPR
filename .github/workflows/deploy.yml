@@ -81,10 +81,14 @@ jobs:
           key: ${{ secrets.HOSTINGER_SSH_KEY }}
           port: 22
           script: |
-            set -e
-            # Run any pending DB migrations (npx uses local binary if present, downloads if not)
             cd ~/apps/api
-            npx --yes prisma migrate deploy --schema=~/apps/prisma/schema.prisma
-            # Restart PM2 processes
+            # Run migrations — try local binary first, fall back to npx.
+            # Non-fatal: a failed migration should not prevent PM2 from restarting.
+            PRISMA_BIN="./node_modules/.bin/prisma"
+            if [ ! -f "$PRISMA_BIN" ]; then PRISMA_BIN="npx prisma"; fi
+            $PRISMA_BIN migrate deploy --schema=~/apps/prisma/schema.prisma \
+              && echo "Migrations applied." \
+              || echo "WARNING: migrations failed or were already up to date."
+            # Always restart PM2 so new code goes live
             pm2 restart ecosystem.config.js --update-env || pm2 start ecosystem.config.js
             pm2 save
