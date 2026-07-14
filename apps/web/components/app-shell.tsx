@@ -125,16 +125,24 @@ function hasAccess(
 function NavLink({
   item,
   pathname,
+  allHrefs,
   unreadAlerts,
   onClick
 }: {
   item: NavItem;
   pathname: string;
+  allHrefs: string[];
   unreadAlerts: number;
   onClick?: () => void;
 }) {
   const Icon = item.icon;
-  const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+  // Only highlight with prefix-match if no other nav item has a longer, more specific match
+  const active =
+    pathname === item.href ||
+    (pathname.startsWith(`${item.href}/`) &&
+      !allHrefs.some(
+        (h) => h !== item.href && h.length > item.href.length && pathname.startsWith(h)
+      ));
   const linkRef = useRef<HTMLAnchorElement>(null);
 
   // Scroll the active item into view within the sidebar only — never the main page
@@ -255,6 +263,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }))
     .filter((group) => group.items.length > 0);
 
+  const allNavHrefs = visibleGroups.flatMap((g) => g.items.map((i) => i.href));
+
   const renderNav = (onNavigate?: () => void) => (
     <nav aria-label="Main navigation" className="space-y-0.5">
       {visibleGroups.map((group, gi) => (
@@ -268,6 +278,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 key={item.href}
                 item={item}
                 pathname={pathname}
+                allHrefs={allNavHrefs}
                 unreadAlerts={unreadAlerts}
                 onClick={onNavigate}
               />
