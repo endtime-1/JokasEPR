@@ -42,12 +42,12 @@ jobs:
       # Create standalone deploy bundles with only production deps
       - name: Bundle API for deployment
         run: |
-          pnpm --filter @jokas/api deploy --prod /tmp/api-deploy
+          pnpm --filter @jokas/api deploy --prod --legacy /tmp/api-deploy
           cp -r apps/api/dist /tmp/api-deploy/dist
 
       - name: Bundle Web for deployment
         run: |
-          pnpm --filter @jokas/web deploy --prod /tmp/web-deploy
+          pnpm --filter @jokas/web deploy --prod --legacy /tmp/web-deploy
           cp -r apps/web/.next /tmp/web-deploy/.next
           cp -r apps/web/public /tmp/web-deploy/public 2>/dev/null || true
 
