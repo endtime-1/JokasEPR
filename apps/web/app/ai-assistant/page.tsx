@@ -195,17 +195,7 @@ export default function AiAssistantPage() {
         .then((r) => setSessions(r.data ?? []))
         .catch(() => undefined);
     } catch (err) {
-      const raw = err instanceof Error ? err.message : "Failed to get a response.";
-      let displayMsg = raw;
-      try {
-        const parsed = JSON.parse(raw) as { message?: unknown };
-        const m = parsed.message;
-        if (typeof m === "string") displayMsg = m;
-        else if (Array.isArray(m) && m.length > 0) displayMsg = String(m[0]);
-      } catch {
-        // raw is already a plain string
-      }
-      setError(displayMsg);
+      setError(err instanceof Error ? err.message : "Failed to get a response.");
       setMessages((prev) => prev.filter((m) => m.id !== userMsg.id));
     } finally {
       setLoading(false);

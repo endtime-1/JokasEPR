@@ -41,6 +41,18 @@ async function request(path: string, init?: RequestInit): Promise<Response> {
   });
 }
 
+function extractErrorMessage(text: string): string {
+  try {
+    const parsed = JSON.parse(text) as { message?: unknown };
+    const m = parsed.message;
+    if (typeof m === "string") return m;
+    if (Array.isArray(m) && m.length > 0) return String(m[0]);
+  } catch {
+    // text is already plain
+  }
+  return text;
+}
+
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   let response = await request(path, init);
 
@@ -49,7 +61,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   }
 
   if (!response.ok) {
-    throw new Error(await response.text());
+    throw new Error(extractErrorMessage(await response.text()));
   }
 
   const text = await response.text();
@@ -59,7 +71,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
 export async function downloadReport(path: string, filename: string): Promise<void> {
   const response = await fetch(`${API_URL}${path}`, { credentials: "include" });
   if (!response.ok) {
-    throw new Error(await response.text());
+    throw new Error(extractErrorMessage(await response.text()));
   }
   const blob = await response.blob();
   const url = URL.createObjectURL(blob);
