@@ -1,4 +1,4 @@
-     name: Build & Deploy to Hostinger
+name: Build & Deploy to Hostinger
 
 on:
   push:
@@ -36,6 +36,7 @@ jobs:
       - name: Build Web
         run: pnpm --filter @jokas/web build
 
+      # Create standalone deploy bundles with only production deps
       - name: Bundle API for deployment
         run: |
           pnpm --filter @jokas/api deploy --prod /tmp/api-deploy
@@ -83,10 +84,16 @@ jobs:
             NODE=/opt/alt/alt-nodejs22/root/usr/bin/node
             APP_DIR=~/domains/jokasfarms.com/nodejs
             PRISMA=$APP_DIR/apps/api/node_modules/.bin/prisma
+
             if [ -f "$PRISMA" ]; then
-              $NODE $PRISMA migrate deploy --schema=$APP_DIR/prisma/schema.prisma \
-                && echo "Migrations applied." || echo "WARNING: migrations skipped."
+              DATABASE_URL="${DATABASE_URL}" $NODE $PRISMA migrate deploy \
+                --schema=$APP_DIR/prisma/schema.prisma \
+                && echo "Migrations applied." \
+                || echo "WARNING: migrations failed or already up to date."
+            else
+              echo "WARNING: prisma binary not found — skipping migrations"
             fi
+
             rm -f /tmp/jokas-manager.lock
             ps aux | grep -E "node|lsnode" | grep "$(whoami)" | grep -v grep | awk '{print $2}' | xargs kill -9 2>/dev/null || true
-            echo "Restart triggered"
+            echo "Restart triggered — LiteSpeed will respawn the app"
