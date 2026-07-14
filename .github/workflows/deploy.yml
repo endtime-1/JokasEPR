@@ -30,6 +30,9 @@ jobs:
       - name: Generate Prisma client
         run: pnpm --filter @jokas/db prisma:generate
 
+      - name: Build shared package
+        run: pnpm --filter @jokas/shared build
+
       - name: Build API
         run: pnpm --filter @jokas/api build
 
