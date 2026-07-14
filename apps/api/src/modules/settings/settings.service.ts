@@ -198,21 +198,33 @@ export class SettingsService {
 
   async createUnitOfMeasure(user: AuthenticatedUser, dto: CreateUnitOfMeasureSettingDto, ctx: RequestContext) {
     this.requireSettings(user);
-    const row = await this.prisma.unitOfMeasure.create({ data: { companyId: user.companyId, name: dto.name, code: dto.code.toUpperCase(), symbol: dto.symbol, createdById: user.id } });
+    const code = dto.code.toUpperCase();
+    const softDeleted = await this.prisma.unitOfMeasure.findFirst({ where: { companyId: user.companyId, code, deletedAt: { not: null } } });
+    const row = softDeleted
+      ? await this.prisma.unitOfMeasure.update({ where: { id: softDeleted.id }, data: { name: dto.name, code, symbol: dto.symbol, deletedAt: null, updatedById: user.id } })
+      : await this.prisma.unitOfMeasure.create({ data: { companyId: user.companyId, name: dto.name, code, symbol: dto.symbol, createdById: user.id } });
     await this.auditCreate(user, "UnitOfMeasure", row.id, `Created unit of measure ${row.code}`, ctx);
     return { data: row };
   }
 
   async createProductCategory(user: AuthenticatedUser, dto: CreateProductCategorySettingDto, ctx: RequestContext) {
     this.requireSettings(user);
-    const row = await this.prisma.productCategory.create({ data: { companyId: user.companyId, name: dto.name, code: dto.code.toUpperCase(), parentId: dto.parentId, description: dto.description, createdById: user.id } });
+    const code = dto.code.toUpperCase();
+    const softDeleted = await this.prisma.productCategory.findFirst({ where: { companyId: user.companyId, code, deletedAt: { not: null } } });
+    const row = softDeleted
+      ? await this.prisma.productCategory.update({ where: { id: softDeleted.id }, data: { name: dto.name, code, parentId: dto.parentId ?? null, description: dto.description ?? null, deletedAt: null, updatedById: user.id } })
+      : await this.prisma.productCategory.create({ data: { companyId: user.companyId, name: dto.name, code, parentId: dto.parentId, description: dto.description, createdById: user.id } });
     await this.auditCreate(user, "ProductCategory", row.id, `Created product category ${row.code}`, ctx);
     return { data: row };
   }
 
   async createExpenseCategory(user: AuthenticatedUser, dto: CreateExpenseCategorySettingDto, ctx: RequestContext) {
     this.requireSettings(user);
-    const row = await this.prisma.expenseCategory.create({ data: { companyId: user.companyId, name: dto.name, code: dto.code.toUpperCase(), description: dto.description, accountId: dto.accountId, createdById: user.id } });
+    const code = dto.code.toUpperCase();
+    const softDeleted = await this.prisma.expenseCategory.findFirst({ where: { companyId: user.companyId, code, deletedAt: { not: null } } });
+    const row = softDeleted
+      ? await this.prisma.expenseCategory.update({ where: { id: softDeleted.id }, data: { name: dto.name, code, description: dto.description ?? null, accountId: dto.accountId ?? null, deletedAt: null, updatedById: user.id } })
+      : await this.prisma.expenseCategory.create({ data: { companyId: user.companyId, name: dto.name, code, description: dto.description, accountId: dto.accountId, createdById: user.id } });
     await this.auditCreate(user, "ExpenseCategory", row.id, `Created expense category ${row.code}`, ctx);
     return { data: row };
   }
