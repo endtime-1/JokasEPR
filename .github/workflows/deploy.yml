@@ -121,6 +121,12 @@ jobs:
             packages/db/prisma/ \
             ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/prisma/
 
+      - name: Upload ecosystem config
+        run: |
+          rsync -avz -e "ssh -p 65002 -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no" \
+            ecosystem.config.js \
+            ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/
+
       - name: Restart services on Hostinger
         uses: appleboy/ssh-action@v1.2.0
         with:
@@ -133,16 +139,48 @@ jobs:
             APP_DIR=~/domains/jokasfarms.com/nodejs
             PRISMA=$APP_DIR/apps/api/node_modules/.bin/prisma
 
+            # Run migrations
             if [ -f "$PRISMA" ]; then
               DATABASE_URL="${DATABASE_URL}" $NODE $PRISMA migrate deploy \
                 --schema=$APP_DIR/prisma/schema.prisma \
                 && echo "Migrations applied." \
                 || echo "WARNING: migrations failed or already up to date."
-
             else
               echo "WARNING: prisma binary not found — skipping migrations"
             fi
 
-            rm -f /tmp/jokas-manager.lock
+            # Kill any existing Node processes for this user
             ps aux | grep -E "node|lsnode" | grep "$(whoami)" | grep -v grep | awk '{print $2}' | xargs kill -9 2>/dev/null || true
-            echo "Restart triggered — LiteSpeed will respawn the app"
+            sleep 1
+
+            # Prefer PM2 if globally available
+            if command -v pm2 >/dev/null 2>&1; then
+              cd $APP_DIR
+              pm2 reload ecosystem.config.js --update-env 2>/dev/null \
+                || pm2 start ecosystem.config.js --update-env
+              pm2 save
+              echo "PM2 restart complete."
+            else
+              # PM2 not available: start both processes manually with nohup
+              echo "PM2 not found — starting processes manually"
+
+              cd $APP_DIR
+              export NODE_ENV=production
+
+              # Start API (reads API_PORT from env, defaults to 4001)
+              nohup $NODE apps/api/dist/main.js >> /tmp/jokas-api.log 2>&1 &
+              API_PID=$!
+              disown $API_PID
+              echo "API started — PID $API_PID"
+
+              # Start Web (Next.js standalone)
+              cd $APP_DIR/apps/web/.next/standalone
+              PORT=3000 HOSTNAME=0.0.0.0 NODE_ENV=production \
+                nohup $NODE apps/web/server.js >> /tmp/jokas-web.log 2>&1 &
+              WEB_PID=$!
+              disown $WEB_PID
+              echo "Web started — PID $WEB_PID"
+
+              sleep 2
+              echo "Running node processes: $(ps aux | grep '[n]ode' | grep "$(whoami)" | wc -l)"
+            fi
