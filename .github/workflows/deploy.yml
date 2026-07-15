@@ -45,6 +45,40 @@ jobs:
           pnpm --filter @jokas/api deploy --prod --legacy /tmp/api-deploy
           cp -r apps/api/dist /tmp/api-deploy/dist
 
+          # pnpm deploy copies @prisma/client from the npm store (pre-generate stub).
+          # We must overwrite it with the generated version so enums like AuditAction exist.
+          for CANDIDATE in \
+            "packages/db/node_modules/@prisma/client" \
+            "node_modules/@prisma/client"; do
+            if [ -f "$CANDIDATE/index.js" ]; then PRISMA_PKG="$CANDIDATE"; break; fi
+          done
+          if [ -n "$PRISMA_PKG" ]; then
+            echo "Copying generated @prisma/client from $PRISMA_PKG"
+            rm -rf /tmp/api-deploy/node_modules/@prisma/client
+            cp -rL "$PRISMA_PKG" /tmp/api-deploy/node_modules/@prisma/client
+            mkdir -p /tmp/api-deploy/dist/prisma-client
+            cp -rL "$PRISMA_PKG/." /tmp/api-deploy/dist/prisma-client/
+          else
+            echo "ERROR: generated @prisma/client not found"; exit 1
+          fi
+
+          # Copy the .prisma/client runtime (native query engine binary)
+          for CANDIDATE in \
+            "packages/db/node_modules/.prisma/client" \
+            "node_modules/.prisma/client"; do
+            if [ -d "$CANDIDATE" ]; then PRISMA_RUNTIME="$CANDIDATE"; break; fi
+          done
+          if [ -n "$PRISMA_RUNTIME" ]; then
+            echo "Copying .prisma/client runtime from $PRISMA_RUNTIME"
+            mkdir -p /tmp/api-deploy/node_modules/.prisma
+            rm -rf /tmp/api-deploy/node_modules/.prisma/client
+            cp -rL "$PRISMA_RUNTIME" /tmp/api-deploy/node_modules/.prisma/client
+            mkdir -p /tmp/api-deploy/dist/prisma-runtime
+            cp -rL "$PRISMA_RUNTIME/." /tmp/api-deploy/dist/prisma-runtime/
+          else
+            echo "WARNING: .prisma/client runtime not found"
+          fi
+
       - name: Bundle Web for deployment
         run: |
           pnpm --filter @jokas/web deploy --prod --legacy /tmp/web-deploy
