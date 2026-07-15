@@ -121,10 +121,10 @@ jobs:
             packages/db/prisma/ \
             ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/prisma/
 
-      - name: Upload ecosystem config
+      - name: Upload root startup files
         run: |
           rsync -avz -e "ssh -p 65002 -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no" \
-            ecosystem.config.js \
+            ecosystem.config.js start.js package.json \
             ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/
 
       - name: Restart services on Hostinger
