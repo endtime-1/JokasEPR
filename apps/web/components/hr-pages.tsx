@@ -76,6 +76,7 @@ function StatCard({ label, value, sub }: { label: string; value: string | number
 const hrNav = [
   { href: "/hr", label: "Dashboard" },
   { href: "/hr/employees", label: "Employees" },
+  { href: "/hr/employee-roles", label: "Roles" },
   { href: "/hr/attendance", label: "Attendance" },
   { href: "/hr/shifts", label: "Shifts" },
   { href: "/hr/tasks", label: "Task Board" },
@@ -519,8 +520,8 @@ export function EmployeeDetailPage({ id }: { id: string }) {
       setData(r.data);
       const d = r.data;
       setEditForm({
-        firstName: d.fullName.split(" ")[0] ?? "",
-        lastName: d.fullName.split(" ").slice(1).join(" ") ?? "",
+        firstName: (d as any).firstName ?? d.fullName.split(" ")[0] ?? "",
+        lastName: (d as any).lastName ?? d.fullName.split(" ").slice(1).join(" ") ?? "",
         phone: d.phone ?? "",
         email: d.email ?? "",
         address: d.address ?? "",
@@ -984,6 +985,11 @@ export function ShiftSchedulePage() {
 
   useEffect(() => { load(); }, []);
 
+  async function deactivate(id: string) {
+    if (!confirm("Deactivate this shift?")) return;
+    await apiFetch(`/hr/shifts/${id}`, { method: "DELETE" }).then(() => load()).catch(() => undefined);
+  }
+
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm((p) => ({ ...p, [k]: e.target.value }));
 
   async function submit(e: React.FormEvent) {
@@ -1034,7 +1040,10 @@ export function ShiftSchedulePage() {
                 { key: "startTime", label: "Start" },
                 { key: "endTime", label: "End" },
                 { key: "branch", label: "Branch", render: (r) => r.branch?.name ?? "All" },
-                { key: "isActive", label: "Active", render: (r) => r.isActive ? "Yes" : "No" },
+                { key: "isActive", label: "Active", render: (r) => <span className={r.isActive ? "text-green-600 font-medium" : "text-ink/40"}>{r.isActive ? "Active" : "Inactive"}</span> },
+                { key: "actions", label: "", render: (r) => r.isActive ? (
+                  <button onClick={() => deactivate(r.id as string)} className="rounded bg-orange-100 px-2 py-0.5 text-xs text-orange-700 hover:bg-orange-200">Deactivate</button>
+                ) : null },
               ]}
               rows={rows as Record<string, any>[]}
               empty="No shifts defined"
@@ -1054,6 +1063,7 @@ export function TaskBoardPage() {
   const [rows, setRows] = useState<Task[]>([]);
   const [status, setStatus] = useState("");
   const [priority, setPriority] = useState("");
+  const [moveError, setMoveError] = useState("");
 
   function load() {
     const params = new URLSearchParams();
@@ -1068,9 +1078,13 @@ export function TaskBoardPage() {
   const byStatus = (s: string) => rows.filter((r) => r.status === s);
 
   async function moveTask(taskId: string, newStatus: string) {
-    await apiFetch(`/hr/tasks/${taskId}/status`, { method: "PATCH", body: JSON.stringify({ status: newStatus }) })
-      .then(() => load())
-      .catch(() => undefined);
+    setMoveError("");
+    try {
+      await apiFetch(`/hr/tasks/${taskId}/status`, { method: "PATCH", body: JSON.stringify({ status: newStatus }) });
+      load();
+    } catch (err: unknown) {
+      setMoveError(err instanceof Error ? err.message : "Failed to move task");
+    }
   }
 
   const nextStatus: Record<string, string> = {
@@ -1088,6 +1102,7 @@ export function TaskBoardPage() {
           <Link href="/hr/tasks/create" className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white hover:opacity-90">+ New Task</Link>
         </div>
         <HRNav />
+        {moveError && <div className="rounded-md bg-red-50 p-2 text-sm text-red-700">{moveError}</div>}
         <div className="flex gap-3">
           <select value={status} onChange={(e) => setStatus(e.target.value)} className="rounded-md border border-line px-3 py-2 text-sm">
             <option value="">All Statuses</option>
@@ -1242,7 +1257,25 @@ export function PayrollPage() {
 
   useEffect(() => { load(); }, []);
 
+  const [payeEst, setPayeEst] = useState<{ grossMonthly: number; ssnit: number; paye: number; netPay: number } | null>(null);
+  const [payeLoading, setPayeLoading] = useState(false);
+
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm((p) => ({ ...p, [k]: e.target.value }));
+
+  async function computePaye() {
+    if (!form.basicSalary) return;
+    setPayeLoading(true);
+    try {
+      const params = new URLSearchParams({ basicSalary: form.basicSalary, allowances: form.allowances || "0", deductions: form.deductions || "0" });
+      const r = await apiFetch<ApiEnvelope<{ grossMonthly: number; ssnit: number; paye: number; netPay: number }>>(`/hr/payroll/compute?${params}`);
+      setPayeEst(r.data);
+      if (r.data) {
+        setForm((p) => ({ ...p, taxDeduction: r.data!.paye.toFixed(2), ssnit: r.data!.ssnit.toFixed(2) }));
+      }
+    } catch { /* ignore */ } finally {
+      setPayeLoading(false);
+    }
+  }
 
   const gross = (Number(form.basicSalary) || 0) + (Number(form.allowances) || 0) - (Number(form.deductions) || 0);
   const net = gross - (Number(form.taxDeduction) || 0) - (Number(form.ssnit) || 0);
@@ -1299,7 +1332,13 @@ export function PayrollPage() {
               <div><label className="mb-1 block text-xs font-medium">Basic Salary *</label><input required type="number" min={0} step={0.01} value={form.basicSalary} onChange={f("basicSalary")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
               <div><label className="mb-1 block text-xs font-medium">Allowances</label><input type="number" min={0} step={0.01} value={form.allowances} onChange={f("allowances")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
               <div><label className="mb-1 block text-xs font-medium">Deductions</label><input type="number" min={0} step={0.01} value={form.deductions} onChange={f("deductions")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div><label className="mb-1 block text-xs font-medium">Tax Deduction</label><input type="number" min={0} step={0.01} value={form.taxDeduction} onChange={f("taxDeduction")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+              <div className="col-span-2 flex items-center gap-3">
+                <button type="button" onClick={computePaye} disabled={payeLoading || !form.basicSalary} className="rounded-md border border-brand px-3 py-2 text-xs font-semibold text-brand hover:bg-brand/5 disabled:opacity-50">
+                  {payeLoading ? "Computing..." : "Auto-compute Ghana PAYE"}
+                </button>
+                {payeEst && <span className="text-xs text-ink/60">Estimated: SSNIT {money(payeEst.ssnit)} · PAYE {money(payeEst.paye)} · Net {money(payeEst.netPay)}</span>}
+              </div>
+              <div><label className="mb-1 block text-xs font-medium">Tax (PAYE)</label><input type="number" min={0} step={0.01} value={form.taxDeduction} onChange={f("taxDeduction")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
               <div><label className="mb-1 block text-xs font-medium">SSNIT</label><input type="number" min={0} step={0.01} value={form.ssnit} onChange={f("ssnit")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
               <div><label className="mb-1 block text-xs font-medium">Payment Method</label>
                 <select value={form.paymentMethod} onChange={f("paymentMethod")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
@@ -1468,6 +1507,10 @@ export function PerformancePage() {
     }
   }
 
+  async function submitPerf(id: string) {
+    await apiFetch(`/hr/performance/${id}/submit`, { method: "PATCH" }).then(() => load()).catch(() => undefined);
+  }
+
   async function acknowledge(id: string) {
     await apiFetch(`/hr/performance/${id}/acknowledge`, { method: "PATCH" }).then(() => load()).catch(() => undefined);
   }
@@ -1521,9 +1564,12 @@ export function PerformancePage() {
             { key: "reviewer", label: "Reviewer", render: (r) => r.reviewer?.fullName ?? "—" },
             { key: "status", label: "Status", render: (r) => <StatusBadge status={r.status as string} /> },
             {
-              key: "actions", label: "", render: (r) => r.status === "REVIEWED" ? (
-                <button onClick={() => acknowledge(r.id as string)} className="rounded bg-green-100 px-2 py-0.5 text-xs text-green-700 hover:bg-green-200">Acknowledge</button>
-              ) : null,
+              key: "actions", label: "", render: (r) => (
+                <div className="flex gap-1">
+                  {r.status === "DRAFT" && <button onClick={() => submitPerf(r.id as string)} className="rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-700 hover:bg-blue-200">Submit</button>}
+                  {r.status === "REVIEWED" && <button onClick={() => acknowledge(r.id as string)} className="rounded bg-green-100 px-2 py-0.5 text-xs text-green-700 hover:bg-green-200">Acknowledge</button>}
+                </div>
+              ),
             },
           ]}
           rows={rows as Record<string, any>[]}
@@ -1548,6 +1594,7 @@ export function TaskDetailPage({ id }: { id: string }) {
   const [statusValue, setStatusValue] = useState("");
   const [statusNotes, setStatusNotes] = useState("");
   const [saving, setSaving] = useState(false);
+  const [statusError, setStatusError] = useState("");
 
   function load() {
     apiFetch<ApiEnvelope<TaskDetail>>(`/hr/tasks/${id}`).then((r) => {
@@ -1561,11 +1608,14 @@ export function TaskDetailPage({ id }: { id: string }) {
   async function updateStatus(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
+    setStatusError("");
     try {
       await apiFetch(`/hr/tasks/${id}/status`, { method: "PATCH", body: JSON.stringify({ status: statusValue, notes: statusNotes || undefined }) });
       load();
       setStatusNotes("");
-    } catch { /* silent */ } finally {
+    } catch (err: unknown) {
+      setStatusError(err instanceof Error ? err.message : "Failed to update status");
+    } finally {
       setSaving(false);
     }
   }
@@ -1628,6 +1678,7 @@ export function TaskDetailPage({ id }: { id: string }) {
                 <label className="mb-1 block text-xs font-medium">Notes (optional)</label>
                 <textarea value={statusNotes} onChange={(e) => setStatusNotes(e.target.value)} rows={2} className="w-full rounded-md border border-line px-3 py-2 text-sm" />
               </div>
+              {statusError && <p className="text-xs text-red-600">{statusError}</p>}
               <button type="submit" disabled={saving || statusValue === data.status} className="w-full rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
                 {saving ? "Saving..." : "Update Status"}
               </button>
@@ -1666,7 +1717,17 @@ export function LeaveRequestsPage() {
 
   useEffect(() => { load(); }, [statusFilter]);
 
-  const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setForm((p) => ({ ...p, [k]: e.target.value }));
+  const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    const val = e.target.value;
+    setForm((p) => {
+      const next = { ...p, [k]: val };
+      if ((k === "startDate" || k === "endDate") && next.startDate && next.endDate) {
+        const diff = Math.round((new Date(next.endDate).getTime() - new Date(next.startDate).getTime()) / 86400000) + 1;
+        if (diff > 0) next.daysRequested = String(diff);
+      }
+      return next;
+    });
+  };
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -1784,6 +1845,115 @@ export function LeaveRequestsPage() {
           rows={rows as Record<string, any>[]}
           empty="No leave requests"
         />
+      </div>
+    </AppShell>
+  );
+}
+
+// ─── Employee Roles Page ─────────────────────────────────────────────────────
+
+type EmployeeRole = { id: string; code: string; name: string; description?: string; isActive: boolean };
+
+export function EmployeeRolesPage() {
+  const [rows, setRows] = useState<EmployeeRole[]>([]);
+  const [form, setForm] = useState({ code: "", name: "", description: "" });
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({ name: "", description: "" });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  function load() {
+    apiFetch<ApiEnvelope<EmployeeRole[]>>("/hr/employee-roles").then((r) => setRows(r.data ?? [])).catch(() => undefined);
+  }
+
+  useEffect(() => { load(); }, []);
+
+  const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setForm((p) => ({ ...p, [k]: e.target.value }));
+  const ef = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setEditForm((p) => ({ ...p, [k]: e.target.value }));
+
+  async function create(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      await apiFetch("/hr/employee-roles", { method: "POST", body: JSON.stringify(form) });
+      setForm({ code: "", name: "", description: "" });
+      load();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to create role");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function startEdit(role: EmployeeRole) {
+    setEditingId(role.id);
+    setEditForm({ name: role.name, description: role.description ?? "" });
+  }
+
+  async function saveEdit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingId) return;
+    setSaving(true);
+    setError("");
+    try {
+      await apiFetch(`/hr/employee-roles/${editingId}`, { method: "PUT", body: JSON.stringify(editForm) });
+      setEditingId(null);
+      load();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to update role");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <AppShell>
+      <div className="space-y-5">
+        <h1 className="text-xl font-bold">Employee Roles</h1>
+        <HRNav />
+        {error && <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          <div className="rounded-lg border border-line bg-white p-5">
+            <h2 className="mb-4 font-semibold">Add Role</h2>
+            <form onSubmit={create} className="space-y-3">
+              <div><label className="mb-1 block text-xs font-medium">Code *</label><input required value={form.code} onChange={f("code")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Name *</label><input required value={form.name} onChange={f("name")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Description</label><textarea value={form.description} onChange={f("description")} rows={2} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+              <button type="submit" disabled={saving} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Saving..." : "Add Role"}</button>
+            </form>
+          </div>
+
+          <div className="lg:col-span-2">
+            {editingId && (
+              <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4">
+                <h3 className="mb-3 text-sm font-semibold text-amber-800">Editing Role</h3>
+                <form onSubmit={saveEdit} className="grid grid-cols-2 gap-3">
+                  <div><label className="mb-1 block text-xs font-medium">Name *</label><input required value={editForm.name} onChange={ef("name")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+                  <div><label className="mb-1 block text-xs font-medium">Description</label><input value={editForm.description} onChange={ef("description")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+                  <div className="col-span-2 flex gap-2">
+                    <button type="submit" disabled={saving} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Saving..." : "Save"}</button>
+                    <button type="button" onClick={() => setEditingId(null)} className="rounded-md border border-line px-4 py-2 text-sm">Cancel</button>
+                  </div>
+                </form>
+              </div>
+            )}
+            <DataTable
+              columns={[
+                { key: "code", label: "Code" },
+                { key: "name", label: "Role Name" },
+                { key: "description", label: "Description", render: (r) => r.description ?? "—" },
+                { key: "isActive", label: "Active", render: (r) => <span className={r.isActive ? "text-green-600" : "text-ink/40"}>{r.isActive ? "Yes" : "No"}</span> },
+                { key: "actions", label: "", render: (r) => (
+                  <button onClick={() => startEdit(r as EmployeeRole)} className="rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-700 hover:bg-blue-200">Edit</button>
+                )},
+              ]}
+              rows={rows as Record<string, any>[]}
+              empty="No roles defined"
+            />
+          </div>
+        </div>
       </div>
     </AppShell>
   );

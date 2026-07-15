@@ -281,3 +281,52 @@ export class ReviewLeaveRequestDto {
   @IsOptional() @IsString() @MaxLength(500) reviewNote?: string;
 }
 
+export class UpdateTaskDto {
+  @IsOptional() @IsString() @MaxLength(200) title?: string;
+  @IsOptional() @IsString() @MaxLength(1000) description?: string;
+  @IsOptional() @IsString() @MaxLength(60) taskType?: string;
+  @IsOptional() @IsEnum(TaskPriority) priority?: TaskPriority;
+  @IsOptional() @IsDateString() dueDate?: string;
+  @IsOptional() @IsUUID() branchId?: string;
+  @IsOptional() @IsUUID() farmId?: string;
+  @IsOptional() @IsUUID() productionSiteId?: string;
+  @IsOptional() @IsString() @MaxLength(500) notes?: string;
+}
+
+export class UpdateShiftDto {
+  @IsOptional() @IsString() @MaxLength(120) name?: string;
+  @IsOptional() @IsString() @MaxLength(5) startTime?: string;
+  @IsOptional() @IsString() @MaxLength(5) endTime?: string;
+  @IsOptional() @IsUUID() branchId?: string;
+  @IsOptional() @IsBoolean() isActive?: boolean;
+  @IsOptional() @IsString() @MaxLength(240) notes?: string;
+}
+
+export class UpdateEmployeeRoleDto {
+  @IsOptional() @IsString() @MaxLength(120) name?: string;
+  @IsOptional() @IsString() @MaxLength(240) description?: string;
+  @IsOptional() @IsBoolean() isActive?: boolean;
+}
+
+export class ReviewPerformanceDto {
+  @IsOptional() @IsEnum(HRRating) overallRating?: HRRating;
+  @IsOptional() @IsInt() @Min(0) attendanceScore?: number;
+  @IsOptional() @IsInt() @Min(0) taskCompletionScore?: number;
+  @IsOptional() @IsInt() @Min(0) qualityScore?: number;
+  @IsOptional() @IsInt() @Min(0) teamworkScore?: number;
+  @IsOptional() @IsString() @MaxLength(1000) comments?: string;
+  @IsOptional() @IsString() @MaxLength(500) goals?: string;
+}
+
+export class CheckOutSelfDto {
+  @IsDateString() date!: string;
+  @IsOptional() @IsDateString() checkOutTime?: string;
+  @IsOptional() @IsString() @MaxLength(240) notes?: string;
+}
+
+export class ComputePayrollDto {
+  @IsNumber() @Min(0) basicSalary!: number;
+  @IsOptional() @IsNumber() @Min(0) allowances?: number;
+  @IsOptional() @IsNumber() @Min(0) deductions?: number;
+}
+

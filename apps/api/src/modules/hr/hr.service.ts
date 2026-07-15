@@ -6,6 +6,8 @@ import {
   AssignTaskDto,
   BulkAttendanceDto,
   CheckInSelfDto,
+  CheckOutSelfDto,
+  ComputePayrollDto,
   CreateDepartmentAssignmentDto,
   CreateEmployeeDto,
   CreateEmployeeRoleDto,
@@ -18,16 +20,22 @@ import {
   HRQueryDto,
   RecordAttendanceDto,
   ReviewLeaveRequestDto,
+  ReviewPerformanceDto,
   UpdateAssignmentStatusDto,
   UpdateEmployeeDto,
+  UpdateEmployeeRoleDto,
+  UpdateShiftDto,
+  UpdateTaskDto,
   UpdateTaskStatusDto,
 } from "./dto/hr.dto";
 
 type RequestContext = { ipAddress?: string; userAgent?: string };
 
-function nextRef(prefix: string, count: number) {
+function nextRef(prefix: string) {
   const year = new Date().getFullYear();
-  return `${prefix}-${year}-${String(count + 1).padStart(4, "0")}`;
+  const ts = Date.now().toString(36).toUpperCase().slice(-5);
+  const rand = Math.random().toString(36).slice(2, 5).toUpperCase();
+  return `${prefix}-${year}-${ts}${rand}`;
 }
 
 function num(v: unknown) {
@@ -257,6 +265,7 @@ export class HRService {
     if (!row) throw new NotFoundException("Employee not found");
     const photoUrl = `/uploads/employees/${filename}`;
     await this.prisma.employee.update({ where: { id }, data: { photoUrl } });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "Employee", entityId: id, action: "UPDATE", summary: "Updated employee photo" });
     return { data: { photoUrl } };
   }
 
@@ -451,6 +460,7 @@ export class HRService {
         assignments: { include: { employee: { select: { fullName: true, code: true } } } },
       },
       orderBy: [{ priority: "asc" }, { dueDate: "asc" }, { createdAt: "desc" }],
+      take: 500,
     });
     return { data: rows };
   }
@@ -596,8 +606,7 @@ export class HRService {
     const grossPay = num(dto.basicSalary) + allowances - deductions;
     const netPay = grossPay - taxDeduction - ssnit;
 
-    const count = await this.prisma.payrollRecord.count({ where: { companyId: user.companyId } });
-    const reference = nextRef("PAY", count);
+    const reference = nextRef("PAY");
 
     const row = await this.prisma.payrollRecord.create({
       data: {
@@ -712,6 +721,7 @@ export class HRService {
   async acknowledgePerformance(user: AuthenticatedUser, id: string, ctx: RequestContext) {
     const row = await this.prisma.hRPerformanceRecord.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
     if (!row) throw new NotFoundException("Performance record not found");
+    if (row.status !== "REVIEWED") throw new BadRequestException("Only REVIEWED records can be acknowledged");
 
     const updated = await this.prisma.hRPerformanceRecord.update({ where: { id }, data: { status: "ACKNOWLEDGED", acknowledgedAt: new Date(), updatedById: user.id } });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "HRPerformanceRecord", entityId: id, action: "UPDATE", ...ctx });
@@ -766,7 +776,7 @@ export class HRService {
       }),
       this.prisma.taskAssignment.groupBy({
         by: ["employeeId", "status"],
-        where: { companyId: cid },
+        where: { companyId: cid, createdAt: { gte: dateFrom, lte: dateTo } },
         _count: { status: true },
       }),
       this.prisma.employee.findMany({
@@ -802,8 +812,7 @@ export class HRService {
       where: { companyId: user.companyId, email: user.email, deletedAt: null },
     });
 
-    const count = await this.prisma.leaveRequest.count({ where: { companyId: user.companyId } });
-    const reference = nextRef("LVR", count);
+    const reference = nextRef("LVR");
 
     const row = await this.prisma.leaveRequest.create({
       data: {
@@ -829,12 +838,10 @@ export class HRService {
       where: { companyId: user.companyId, email: user.email, deletedAt: null },
     });
 
-    const where = emp
-      ? { companyId: user.companyId, employeeId: emp.id, deletedAt: null }
-      : { companyId: user.companyId, employeeName: user.fullName, deletedAt: null };
+    if (!emp) return { data: [] };
 
     const rows = await this.prisma.leaveRequest.findMany({
-      where,
+      where: { companyId: user.companyId, employeeId: emp.id, deletedAt: null },
       orderBy: { createdAt: "desc" },
       take: 20,
       include: { employee: { select: { fullName: true, code: true } } },
@@ -877,14 +884,195 @@ export class HRService {
 
   async cancelLeaveRequest(user: AuthenticatedUser, id: string, ctx: RequestContext) {
     const emp = await this.prisma.employee.findFirst({ where: { companyId: user.companyId, email: user.email, deletedAt: null } });
+    if (!emp) throw new ForbiddenException("Cannot cancel leave — no employee record linked to your account");
     const row = await this.prisma.leaveRequest.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
     if (!row) throw new NotFoundException("Leave request not found");
-    if (emp && row.employeeId !== emp.id) throw new ForbiddenException("Cannot cancel another employee's leave request");
+    if (row.employeeId !== emp.id) throw new ForbiddenException("Cannot cancel another employee's leave request");
     if (row.status !== "PENDING") throw new BadRequestException("Only PENDING requests can be cancelled");
 
     const updated = await this.prisma.leaveRequest.update({ where: { id }, data: { status: "CANCELLED", updatedById: user.id } });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "LeaveRequest", entityId: id, action: "UPDATE", ...ctx });
     return { data: updated };
+  }
+
+  // ─── Task management ─────────────────────────────────────────────────────────
+
+  async updateTask(user: AuthenticatedUser, id: string, dto: UpdateTaskDto, ctx: RequestContext) {
+    const row = await this.prisma.task.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!row) throw new NotFoundException("Task not found");
+    const updated = await this.prisma.task.update({
+      where: { id },
+      data: { ...dto, dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined, updatedById: user.id },
+    });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "Task", entityId: id, action: "UPDATE", ...ctx });
+    return { data: updated };
+  }
+
+  async deleteTask(user: AuthenticatedUser, id: string, ctx: RequestContext) {
+    const row = await this.prisma.task.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!row) throw new NotFoundException("Task not found");
+    await this.prisma.task.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "Task", entityId: id, action: "DELETE", ...ctx });
+    return { success: true };
+  }
+
+  // ─── Shift management ────────────────────────────────────────────────────────
+
+  async updateShift(user: AuthenticatedUser, id: string, dto: UpdateShiftDto, ctx: RequestContext) {
+    const row = await this.prisma.shift.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!row) throw new NotFoundException("Shift not found");
+    const updated = await this.prisma.shift.update({ where: { id }, data: { ...dto, updatedById: user.id } });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "Shift", entityId: id, action: "UPDATE", ...ctx });
+    return { data: updated };
+  }
+
+  async deactivateShift(user: AuthenticatedUser, id: string, ctx: RequestContext) {
+    const row = await this.prisma.shift.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!row) throw new NotFoundException("Shift not found");
+    const updated = await this.prisma.shift.update({ where: { id }, data: { isActive: false, updatedById: user.id } });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "Shift", entityId: id, action: "UPDATE", ...ctx });
+    return { data: updated };
+  }
+
+  // ─── Employee Role management ─────────────────────────────────────────────────
+
+  async updateEmployeeRole(user: AuthenticatedUser, id: string, dto: UpdateEmployeeRoleDto, ctx: RequestContext) {
+    const row = await this.prisma.employeeRole.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!row) throw new NotFoundException("Employee role not found");
+    const updated = await this.prisma.employeeRole.update({ where: { id }, data: { ...dto, updatedById: user.id } });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "EmployeeRole", entityId: id, action: "UPDATE", ...ctx });
+    return { data: updated };
+  }
+
+  async deleteEmployee(user: AuthenticatedUser, id: string, ctx: RequestContext) {
+    const row = await this.prisma.employee.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!row) throw new NotFoundException("Employee not found");
+    await this.prisma.employee.update({
+      where: { id },
+      data: { deletedAt: new Date(), status: "TERMINATED" as never, updatedById: user.id },
+    });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "Employee", entityId: id, action: "DELETE", ...ctx });
+    return { success: true };
+  }
+
+  // ─── Performance workflow ────────────────────────────────────────────────────
+
+  async submitPerformance(user: AuthenticatedUser, id: string, ctx: RequestContext) {
+    const row = await this.prisma.hRPerformanceRecord.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!row) throw new NotFoundException("Performance record not found");
+    if (row.status !== "DRAFT") throw new BadRequestException("Only DRAFT records can be submitted");
+    const updated = await this.prisma.hRPerformanceRecord.update({ where: { id }, data: { status: "SUBMITTED", updatedById: user.id } });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "HRPerformanceRecord", entityId: id, action: "UPDATE", ...ctx });
+    return { data: updated };
+  }
+
+  async reviewPerformance(user: AuthenticatedUser, id: string, dto: ReviewPerformanceDto, ctx: RequestContext) {
+    const row = await this.prisma.hRPerformanceRecord.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!row) throw new NotFoundException("Performance record not found");
+    if (row.status !== "SUBMITTED") throw new BadRequestException("Only SUBMITTED records can be reviewed");
+    const updated = await this.prisma.hRPerformanceRecord.update({
+      where: { id },
+      data: { status: "REVIEWED", reviewerId: user.id, updatedById: user.id, ...dto },
+    });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "HRPerformanceRecord", entityId: id, action: "UPDATE", ...ctx });
+    return { data: updated };
+  }
+
+  // ─── Self check-out ───────────────────────────────────────────────────────────
+
+  async checkoutSelf(user: AuthenticatedUser, dto: CheckOutSelfDto, ctx: RequestContext) {
+    const emp = await this.prisma.employee.findFirst({ where: { companyId: user.companyId, email: user.email, deletedAt: null } });
+    if (!emp) throw new ForbiddenException("No employee record linked to your account");
+
+    const date = new Date(dto.date);
+    const row = await this.prisma.attendanceRecord.findFirst({
+      where: { companyId: user.companyId, employeeId: emp.id, date },
+    });
+    if (!row) throw new NotFoundException("No check-in record found for this date");
+    if (row.checkOutTime) throw new BadRequestException("Already checked out for this date");
+
+    const updated = await this.prisma.attendanceRecord.update({
+      where: { id: row.id },
+      data: {
+        checkOutTime: dto.checkOutTime ? new Date(dto.checkOutTime) : new Date(),
+        notes: dto.notes ?? row.notes,
+      },
+    });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "AttendanceRecord", entityId: row.id, action: "UPDATE", ...ctx });
+    return { data: updated };
+  }
+
+  // ─── Payroll estimate ────────────────────────────────────────────────────────
+
+  private computePaye(grossMonthly: number): { paye: number; ssnit: number } {
+    const ssnit = Math.round(grossMonthly * 0.055 * 100) / 100;
+    const taxableMonthly = grossMonthly - ssnit;
+    const annualTaxable = taxableMonthly * 12;
+
+    // Ghana 2024 PAYE annual bands
+    const bands = [
+      { limit: 4380, rate: 0 },
+      { limit: 1320, rate: 0.05 },
+      { limit: 1560, rate: 0.1 },
+      { limit: 36000, rate: 0.175 },
+      { limit: 196740, rate: 0.25 },
+      { limit: Infinity, rate: 0.3 },
+    ];
+
+    let annualPaye = 0;
+    let remaining = annualTaxable;
+    for (const band of bands) {
+      if (remaining <= 0) break;
+      const taxable = Math.min(remaining, band.limit);
+      annualPaye += taxable * band.rate;
+      remaining -= taxable;
+    }
+
+    return { paye: Math.round((annualPaye / 12) * 100) / 100, ssnit };
+  }
+
+  async computePayrollEstimate(user: AuthenticatedUser, dto: ComputePayrollDto) {
+    const allowances = dto.allowances ?? 0;
+    const deductions = dto.deductions ?? 0;
+    const grossMonthly = num(dto.basicSalary) + allowances - deductions;
+    const { paye, ssnit } = this.computePaye(grossMonthly);
+    const netPay = Math.round((grossMonthly - paye - ssnit) * 100) / 100;
+    return { data: { grossMonthly, ssnit, paye, netPay, totalDeductions: paye + ssnit } };
+  }
+
+  // ─── HR Reports ───────────────────────────────────────────────────────────────
+
+  async reportHeadcount(user: AuthenticatedUser, query: HRQueryDto) {
+    const cid = user.companyId;
+    const dateFrom = query.dateFrom ? new Date(query.dateFrom) : new Date(new Date().getFullYear(), 0, 1);
+    const dateTo = query.dateTo ? new Date(query.dateTo) : new Date();
+
+    const [newHires, terminations, activeCount] = await Promise.all([
+      this.prisma.employee.count({
+        where: { companyId: cid, deletedAt: null, startDate: { gte: dateFrom, lte: dateTo } },
+      }),
+      this.prisma.employee.count({
+        where: { companyId: cid, deletedAt: { not: null, gte: dateFrom, lte: dateTo } },
+      }),
+      this.prisma.employee.count({ where: { companyId: cid, deletedAt: null, status: "ACTIVE" as never } }),
+    ]);
+
+    return { data: { period: { from: dateFrom, to: dateTo }, newHires, terminations, activeCount, netChange: newHires - terminations } };
+  }
+
+  async reportLeaveSummary(user: AuthenticatedUser, query: HRQueryDto) {
+    const cid = user.companyId;
+    const dateFrom = query.dateFrom ? new Date(query.dateFrom) : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    const dateTo = query.dateTo ? new Date(query.dateTo) : new Date();
+
+    const byType = await this.prisma.leaveRequest.groupBy({
+      by: ["leaveType", "status"],
+      where: { companyId: cid, deletedAt: null, startDate: { gte: dateFrom, lte: dateTo } },
+      _count: { id: true },
+      _sum: { daysRequested: true },
+    });
+
+    return { data: { period: { from: dateFrom, to: dateTo }, breakdown: byType } };
   }
 }
 

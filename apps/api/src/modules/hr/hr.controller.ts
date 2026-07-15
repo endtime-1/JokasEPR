@@ -14,6 +14,8 @@ import {
   AssignTaskDto,
   BulkAttendanceDto,
   CheckInSelfDto,
+  CheckOutSelfDto,
+  ComputePayrollDto,
   CreateDepartmentAssignmentDto,
   CreateEmployeeDto,
   CreateEmployeeRoleDto,
@@ -26,8 +28,12 @@ import {
   HRQueryDto,
   RecordAttendanceDto,
   ReviewLeaveRequestDto,
+  ReviewPerformanceDto,
   UpdateAssignmentStatusDto,
   UpdateEmployeeDto,
+  UpdateEmployeeRoleDto,
+  UpdateShiftDto,
+  UpdateTaskDto,
   UpdateTaskStatusDto,
 } from "./dto/hr.dto";
 import { Request } from "express";
@@ -69,6 +75,12 @@ export class HRController {
     return this.svc.createEmployeeRole(user, dto, ctx(req));
   }
 
+  @Put("employee-roles/:id")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  updateEmployeeRole(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateEmployeeRoleDto, @Req() req: Request) {
+    return this.svc.updateEmployeeRole(user, id, dto, ctx(req));
+  }
+
   // ─── Employees ─────────────────────────────────────────────────────────────
 
   @Get("employees")
@@ -105,6 +117,12 @@ export class HRController {
   @RequirePermissions(PERMISSIONS.HR_MANAGE)
   updateEmployee(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateEmployeeDto, @Req() req: Request) {
     return this.svc.updateEmployee(user, id, dto, ctx(req));
+  }
+
+  @Delete("employees/:id")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  deleteEmployee(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Req() req: Request) {
+    return this.svc.deleteEmployee(user, id, ctx(req));
   }
 
   @Post("employees/:id/photo")
@@ -152,6 +170,12 @@ export class HRController {
     return this.svc.checkInSelf(user, dto, ctx(req));
   }
 
+  @Post("attendance/checkout")
+  @RequirePermissions(PERMISSIONS.PLATFORM_READ)
+  checkoutSelf(@CurrentUser() user: AuthenticatedUser, @Body() dto: CheckOutSelfDto, @Req() req: Request) {
+    return this.svc.checkoutSelf(user, dto, ctx(req));
+  }
+
   @Post("attendance")
   @RequirePermissions(PERMISSIONS.HR_MANAGE)
   recordAttendance(@CurrentUser() user: AuthenticatedUser, @Body() dto: RecordAttendanceDto, @Req() req: Request) {
@@ -176,6 +200,18 @@ export class HRController {
   @RequirePermissions(PERMISSIONS.HR_MANAGE)
   createShift(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateShiftDto, @Req() req: Request) {
     return this.svc.createShift(user, dto, ctx(req));
+  }
+
+  @Put("shifts/:id")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  updateShift(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateShiftDto, @Req() req: Request) {
+    return this.svc.updateShift(user, id, dto, ctx(req));
+  }
+
+  @Delete("shifts/:id")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  deactivateShift(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Req() req: Request) {
+    return this.svc.deactivateShift(user, id, ctx(req));
   }
 
   // ─── Tasks ─────────────────────────────────────────────────────────────────
@@ -204,6 +240,18 @@ export class HRController {
     return this.svc.createTask(user, dto, ctx(req));
   }
 
+  @Put("tasks/:id")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  updateTask(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateTaskDto, @Req() req: Request) {
+    return this.svc.updateTask(user, id, dto, ctx(req));
+  }
+
+  @Delete("tasks/:id")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  deleteTask(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Req() req: Request) {
+    return this.svc.deleteTask(user, id, ctx(req));
+  }
+
   @Patch("tasks/:id/status")
   @RequirePermissions(PERMISSIONS.HR_MANAGE)
   updateTaskStatus(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateTaskStatusDto, @Req() req: Request) {
@@ -228,6 +276,12 @@ export class HRController {
   @RequirePermissions(PERMISSIONS.PLATFORM_READ)
   getMyPayslips(@CurrentUser() user: AuthenticatedUser) {
     return this.svc.getMyPayslips(user);
+  }
+
+  @Get("payroll/compute")
+  @RequirePermissions(PERMISSIONS.HR_READ)
+  computePayrollEstimate(@CurrentUser() user: AuthenticatedUser, @Query() dto: ComputePayrollDto) {
+    return this.svc.computePayrollEstimate(user, dto);
   }
 
   @Get("payroll")
@@ -282,6 +336,18 @@ export class HRController {
     return this.svc.createPerformanceRecord(user, dto, ctx(req));
   }
 
+  @Patch("performance/:id/submit")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  submitPerformance(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Req() req: Request) {
+    return this.svc.submitPerformance(user, id, ctx(req));
+  }
+
+  @Patch("performance/:id/review")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  reviewPerformance(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: ReviewPerformanceDto, @Req() req: Request) {
+    return this.svc.reviewPerformance(user, id, dto, ctx(req));
+  }
+
   @Patch("performance/:id/acknowledge")
   @RequirePermissions(PERMISSIONS.HR_MANAGE)
   acknowledgePerformance(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Req() req: Request) {
@@ -308,6 +374,18 @@ export class HRController {
   @RequirePermissions(PERMISSIONS.HR_READ)
   productivityReport(@CurrentUser() user: AuthenticatedUser, @Query() query: HRQueryDto) {
     return this.svc.productivityReport(user, query);
+  }
+
+  @Get("reports/headcount")
+  @RequirePermissions(PERMISSIONS.HR_READ)
+  reportHeadcount(@CurrentUser() user: AuthenticatedUser, @Query() query: HRQueryDto) {
+    return this.svc.reportHeadcount(user, query);
+  }
+
+  @Get("reports/leave-summary")
+  @RequirePermissions(PERMISSIONS.HR_READ)
+  reportLeaveSummary(@CurrentUser() user: AuthenticatedUser, @Query() query: HRQueryDto) {
+    return this.svc.reportLeaveSummary(user, query);
   }
 
   // ─── Leave Requests ─────────────────────────────────────────────────────────
