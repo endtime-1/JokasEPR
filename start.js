@@ -224,9 +224,9 @@ function launch(name, script, cwd, env) {
   proc.stdout.on("data", (d) => {
     const s = d.toString();
     process.stdout.write(`[${name}] ` + s);
-    if (name === "jokas-web" && s.includes("Ready")) {
+    if (name === "jokas-web" && !webReady && /ready/i.test(s)) {
       webReady = true;
-      console.log("[start] Next.js ready — live traffic forwarding enabled");
+      console.log("[start] Next.js ready (stdout) — live traffic forwarding enabled");
     }
   });
   proc.stderr.on("data", (d) => process.stdout.write(`[${name}-ERR] ` + d));
@@ -374,6 +374,29 @@ startProxy(0);
     }
   }
 
+  // Poll WEB_INTERNAL_PORT via TCP every second until it accepts connections.
+  // This is the fallback for when the "Ready" stdout string is missed (e.g.
+  // output split across chunks or printed to stderr on some Node versions).
+  function pollWebPort(proc) {
+    let stopped = false;
+    proc.once("close", () => { stopped = true; });
+    function probe() {
+      if (stopped || webReady) return;
+      const sock = net.createConnection(WEB_INTERNAL_PORT, "127.0.0.1");
+      sock.setTimeout(1000);
+      sock.once("connect", () => {
+        sock.destroy();
+        if (!webReady && !stopped) {
+          webReady = true;
+          console.log("[start] Next.js ready (TCP probe) — live traffic forwarding enabled");
+        }
+      });
+      sock.once("error", () => { sock.destroy(); if (!stopped && !webReady) setTimeout(probe, 1000); });
+      sock.once("timeout", () => { sock.destroy(); if (!stopped && !webReady) setTimeout(probe, 1000); });
+    }
+    setTimeout(probe, 3000); // give the process 3s before polling
+  }
+
   let webRestarts = 0;
   function startWeb() {
     if (!fs.existsSync(serverScript)) {
@@ -389,6 +412,7 @@ startProxy(0);
       setTimeout(startWeb, 30000);
       return;
     }
+    pollWebPort(webProc);
     webProc.on("close", (code, signal) => {
       webProc = null;
       webReady = false;
