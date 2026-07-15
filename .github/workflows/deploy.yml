@@ -63,20 +63,24 @@ jobs:
           fi
 
           # Copy the .prisma/client runtime (native query engine binary)
-          for CANDIDATE in \
-            "packages/db/node_modules/.prisma/client" \
-            "node_modules/.prisma/client"; do
-            if [ -d "$CANDIDATE" ]; then PRISMA_RUNTIME="$CANDIDATE"; break; fi
-          done
+          # Search broadly — pnpm may place it anywhere in node_modules tree
+          PRISMA_RUNTIME=$(find . -path "*/.prisma/client" -type d 2>/dev/null \
+            | grep -v ".git" | head -1)
+          if [ -z "$PRISMA_RUNTIME" ]; then
+            # Fallback: find by binary filename
+            BINARY=$(find . \( -name "*rhel-openssl*" -o -name "libquery_engine*" \) \
+              2>/dev/null | grep -v ".git" | head -1)
+            [ -n "$BINARY" ] && PRISMA_RUNTIME=$(dirname "$BINARY")
+          fi
+          echo "Prisma runtime: ${PRISMA_RUNTIME:-NOT FOUND}"
           if [ -n "$PRISMA_RUNTIME" ]; then
-            echo "Copying .prisma/client runtime from $PRISMA_RUNTIME"
             mkdir -p /tmp/api-deploy/node_modules/.prisma
             rm -rf /tmp/api-deploy/node_modules/.prisma/client
             cp -rL "$PRISMA_RUNTIME" /tmp/api-deploy/node_modules/.prisma/client
             mkdir -p /tmp/api-deploy/dist/prisma-runtime
             cp -rL "$PRISMA_RUNTIME/." /tmp/api-deploy/dist/prisma-runtime/
           else
-            echo "WARNING: .prisma/client runtime not found"
+            echo "ERROR: Prisma runtime not found — API will crash"; exit 1
           fi
 
       - name: Bundle Web for deployment
@@ -135,14 +139,6 @@ jobs:
                 && echo "Migrations applied." \
                 || echo "WARNING: migrations failed or already up to date."
 
-              # Generate Prisma client on the server so .prisma/client (query engine)
-              # and @prisma/client (enums/types) are written into apps/api/node_modules
-              # where Node.js will find them at runtime.
-              cd $APP_DIR/apps/api && \
-                $NODE $PRISMA generate --schema=$APP_DIR/prisma/schema.prisma \
-                && echo "Prisma client generated." \
-                || echo "WARNING: prisma generate failed."
-              cd ~
             else
               echo "WARNING: prisma binary not found — skipping migrations"
             fi
