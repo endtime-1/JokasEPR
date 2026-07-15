@@ -379,8 +379,15 @@ export class SettingsService {
   async settingsMap(user: AuthenticatedUser) {
     this.requireSettings(user);
     const rows = await this.prisma.systemSetting.findMany({ where: { companyId: user.companyId, deletedAt: null } });
-    const map = { ...DEFAULT_SETTINGS };
-    for (const row of rows) map[row.key] = row.value;
+    const map: Record<string, unknown> = { ...DEFAULT_SETTINGS };
+    for (const row of rows) {
+      const def = DEFAULT_SETTINGS[row.key];
+      if (def && typeof def === "object" && !Array.isArray(def) && row.value && typeof row.value === "object" && !Array.isArray(row.value)) {
+        map[row.key] = { ...(def as object), ...(row.value as object) };
+      } else {
+        map[row.key] = row.value;
+      }
+    }
     return map;
   }
 

@@ -120,7 +120,18 @@ export default function SettingsPage() {
     if (companyRes.status === "fulfilled") setCompany(companyRes.value.data ?? {});
     if (masterRes.status === "fulfilled") setMaster(masterRes.value.data ?? {});
     if (optionsRes.status === "fulfilled") setOptions(optionsRes.value.data ?? {});
-    if (settingsRes.status === "fulfilled") setSettings({ ...DEFAULT_SETTINGS, ...(settingsRes.value as Partial<SettingsMap>) });
+    if (settingsRes.status === "fulfilled") {
+      const api = settingsRes.value as Partial<SettingsMap>;
+      setSettings({
+        "poultry.types": { ...DEFAULT_SETTINGS["poultry.types"], ...(api["poultry.types"] ?? {}) },
+        "feed.types": { ...DEFAULT_SETTINGS["feed.types"], ...(api["feed.types"] ?? {}) },
+        "tax.settings": { ...DEFAULT_SETTINGS["tax.settings"], ...(api["tax.settings"] ?? {}) },
+        "numbering.settings": { ...DEFAULT_SETTINGS["numbering.settings"], ...(api["numbering.settings"] ?? {}) },
+        "ai.settings": { ...DEFAULT_SETTINGS["ai.settings"], ...(api["ai.settings"] ?? {}) },
+        "backup.settings": { ...DEFAULT_SETTINGS["backup.settings"], ...(api["backup.settings"] ?? {}) },
+        "user-access.settings": { ...DEFAULT_SETTINGS["user-access.settings"], ...(api["user-access.settings"] ?? {}) },
+      });
+    }
     if (notificationRes.status === "fulfilled") setNotification(notificationRes.value.data ?? {});
     const firstFailure = results.find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
     if (firstFailure) throw firstFailure.reason;
@@ -271,7 +282,7 @@ export default function SettingsPage() {
             <h1 className="text-2xl font-bold">System Settings</h1>
             <p className="mt-1 max-w-3xl text-sm text-ink/60">Company profile, sites, master data, numbering, notifications, AI, backup, and access controls.</p>
           </div>
-          <span className="rounded-md border border-brand/20 bg-brand/5 px-3 py-2 text-sm font-semibold text-brand">Admin configuration</span>
+          <span className="rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white">Admin configuration</span>
         </div>
 
         {error && <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
@@ -372,7 +383,7 @@ export default function SettingsPage() {
               <input className={inputClass} placeholder="From address" value={notification.emailFromAddress ?? ""} onChange={(e) => setNotification({ ...notification, emailFromAddress: e.target.value })} />
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={bool(settings["ai.settings"].enabled)} onChange={(e) => updateSetting("ai.settings", { ...settings["ai.settings"], enabled: e.target.checked })} /> AI assistant enabled</label>
               <input className={inputClass} placeholder="Default AI model" value={settings["ai.settings"].defaultModel} onChange={(e) => updateSetting("ai.settings", { ...settings["ai.settings"], defaultModel: e.target.value })} />
-              <input className={inputClass} placeholder="Allowed AI models, comma separated" value={settings["ai.settings"].allowedModels.join(", ")} onChange={(e) => updateSetting("ai.settings", { ...settings["ai.settings"], allowedModels: parseList(e.target.value) })} />
+              <input className={inputClass} placeholder="Allowed AI models, comma separated" value={(settings["ai.settings"].allowedModels ?? []).join(", ")} onChange={(e) => updateSetting("ai.settings", { ...settings["ai.settings"], allowedModels: parseList(e.target.value) })} />
               <button className="app-button-primary w-max" onClick={() => save("notifications-ai", async () => { await apiFetch("/settings/notifications", { method: "PUT", body: JSON.stringify(notification) }); await apiFetch("/settings/system/ai", { method: "PUT", body: JSON.stringify(settings["ai.settings"]) }); }, "Notifications & AI saved.")}>Save notifications & AI</button>
             </div>
           </SettingCard>
