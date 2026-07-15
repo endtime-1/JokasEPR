@@ -50,7 +50,7 @@ export function StockMovementScreen() {
   const { data: rawWarehouses } = useLookup("warehouses", async () => { const r = await fetchWarehouses(); return (r.data as any[]) ?? []; });
   const warehouses: SelectOption[] = useMemo(() => {
     const all = rawWarehouses ?? [];
-    const assigned = user?.hasGlobalAccess ? all : all.filter((w: any) => user?.warehouseIds?.includes(w.id));
+    const assigned = (user?.hasGlobalAccess || !user?.warehouseIds?.length) ? all : all.filter((w: any) => user?.warehouseIds?.includes(w.id));
     return assigned.map((w: any) => ({ label: w.name, value: w.id }));
   }, [rawWarehouses, user]);
 

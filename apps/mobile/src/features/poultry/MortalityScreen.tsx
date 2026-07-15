@@ -35,7 +35,7 @@ export function MortalityScreen() {
   });
   const farms: SelectOption[] = useMemo(() => {
     const all = rawFarms ?? [];
-    const assigned = user?.hasGlobalAccess ? all : all.filter((f: any) => user?.farmIds?.includes(f.id));
+    const assigned = (user?.hasGlobalAccess || !user?.farmIds?.length) ? all : all.filter((f: any) => user?.farmIds?.includes(f.id));
     return assigned.map((f: any) => ({ label: f.name, value: f.id }));
   }, [rawFarms, user]);
 
