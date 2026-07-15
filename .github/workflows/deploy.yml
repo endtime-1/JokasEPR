@@ -50,6 +50,11 @@ jobs:
           pnpm --filter @jokas/web deploy --prod --legacy /tmp/web-deploy
           cp -r apps/web/.next /tmp/web-deploy/.next
           cp -r apps/web/public /tmp/web-deploy/public 2>/dev/null || true
+          # Standalone mode: server.js lives at .next/standalone/apps/web/server.js
+          # and resolves static files via __dirname/.next/static — copy them there
+          mkdir -p /tmp/web-deploy/.next/standalone/apps/web/.next
+          cp -r apps/web/.next/static /tmp/web-deploy/.next/standalone/apps/web/.next/static
+          cp -r apps/web/public /tmp/web-deploy/.next/standalone/apps/web/public 2>/dev/null || true
 
       - name: Setup SSH key
         run: |
