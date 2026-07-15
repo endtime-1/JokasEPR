@@ -159,6 +159,8 @@ let webProc = null;
 let apiProc = null;
 let proxy;
 let webReady = false;
+let webRestarts = 0;
+let lastWebLines = [];  // last 20 lines of web stdout/stderr for diagnostics
 
 function killAll() {
   if (webProc) { try { webProc.kill("SIGKILL"); } catch {} }
@@ -224,12 +226,22 @@ function launch(name, script, cwd, env) {
   proc.stdout.on("data", (d) => {
     const s = d.toString();
     process.stdout.write(`[${name}] ` + s);
-    if (name === "jokas-web" && !webReady && /ready/i.test(s)) {
-      webReady = true;
-      console.log("[start] Next.js ready (stdout) — live traffic forwarding enabled");
+    if (name === "jokas-web") {
+      lastWebLines.push(...s.split("\n").filter(Boolean));
+      if (lastWebLines.length > 20) lastWebLines = lastWebLines.slice(-20);
+      if (!webReady && /ready/i.test(s)) {
+        webReady = true;
+        console.log("[start] Next.js ready (stdout) — live traffic forwarding enabled");
+      }
     }
   });
-  proc.stderr.on("data", (d) => process.stdout.write(`[${name}-ERR] ` + d));
+  proc.stderr.on("data", (d) => {
+    process.stdout.write(`[${name}-ERR] ` + d);
+    if (name === "jokas-web") {
+      lastWebLines.push(...("[ERR] " + d.toString()).split("\n").filter(Boolean));
+      if (lastWebLines.length > 20) lastWebLines = lastWebLines.slice(-20);
+    }
+  });
   proc.on("error", (err) => console.error(`[start] ${name} spawn error:`, err.message));
   return proc;
 }
@@ -238,6 +250,23 @@ function launch(name, script, cwd, env) {
 // HTTP proxy (starts immediately — Hostinger requires listen() within 3s)
 // ---------------------------------------------------------------------------
 function handleRequest(req, res) {
+  // Diagnostic endpoint — available even while webReady is false.
+  if (req.url === "/__status") {
+    const status = {
+      webReady,
+      webRestarts,
+      serverScriptExists: fs.existsSync(serverScript),
+      serverScript,
+      apiScriptExists: fs.existsSync(apiScript),
+      lastWebLines,
+      pid: process.pid,
+      uptime: Math.round(process.uptime()) + "s",
+      time: new Date().toISOString(),
+    };
+    res.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+    res.end(JSON.stringify(status, null, 2));
+    return;
+  }
   if (!webReady) {
     res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
     res.end("<!doctype html><html><head><meta http-equiv='refresh' content='2'></head>" +
@@ -397,7 +426,6 @@ startProxy(0);
     setTimeout(probe, 3000); // give the process 3s before polling
   }
 
-  let webRestarts = 0;
   function startWeb() {
     if (!fs.existsSync(serverScript)) {
       console.error(`[start] web server.js missing at ${serverScript} — will retry in 30s`);
