@@ -134,6 +134,15 @@ jobs:
                 --schema=$APP_DIR/prisma/schema.prisma \
                 && echo "Migrations applied." \
                 || echo "WARNING: migrations failed or already up to date."
+
+              # Generate Prisma client on the server so .prisma/client (query engine)
+              # and @prisma/client (enums/types) are written into apps/api/node_modules
+              # where Node.js will find them at runtime.
+              cd $APP_DIR/apps/api && \
+                $NODE $PRISMA generate --schema=$APP_DIR/prisma/schema.prisma \
+                && echo "Prisma client generated." \
+                || echo "WARNING: prisma generate failed."
+              cd ~
             else
               echo "WARNING: prisma binary not found — skipping migrations"
             fi
