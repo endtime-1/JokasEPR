@@ -185,8 +185,8 @@ export default function SettingsPage() {
       setMaster(res.data ?? {});
       const optRes = await apiFetch<ApiEnvelope<Record<string, Option[]>>>("/settings/options");
       setOptions(optRes.data ?? {});
-    } catch {
-      // silent — list will still show the previous state
+    } catch (err) {
+      setMasterMsg({ type: "err", text: `List refresh failed: ${err instanceof Error ? err.message : "unknown error"}. Try reloading the page.` });
     }
   }
 
@@ -344,13 +344,16 @@ export default function SettingsPage() {
           )}
           <div className="overflow-hidden rounded-md border border-line">
             <table className="w-full text-left text-sm">
-              <thead className="bg-field text-xs uppercase text-ink/55"><tr><th className="px-3 py-2">Code</th><th className="px-3 py-2">Name</th><th className="px-3 py-2">Status</th><th className="px-3 py-2"></th></tr></thead>
+              <thead className="bg-field text-xs uppercase text-ink/55"><tr><th className="px-3 py-2">Code</th><th className="px-3 py-2">Name</th><th className="px-3 py-2">{rowDetailLabel(activeMaster)}</th><th className="px-3 py-2"></th></tr></thead>
               <tbody>
                 {rows.map((row) => (
                   <tr key={row.id} className={`border-t border-line ${editingRow?.id === row.id ? "bg-amber-50" : ""}`}>
                     <td className="px-3 py-2 font-semibold">{row.code ?? "-"}</td>
-                    <td className="px-3 py-2">{row.name}</td>
-                    <td className="px-3 py-2">{row.status ?? (row.isActive ? "ACTIVE" : "INACTIVE")}</td>
+                    <td className="px-3 py-2">
+                      <span>{row.name}</span>
+                      {row.branch && <span className="ml-1 text-xs text-ink/45">· {row.branch.name}</span>}
+                    </td>
+                    <td className="px-3 py-2">{rowDetailValue(activeMaster, row)}</td>
                     <td className="px-3 py-2">
                       <div className="flex items-center gap-1">
                         <button type="button" title="Edit" onClick={() => startEdit(row)} className="rounded p-1 text-ink/40 hover:bg-brand/10 hover:text-brand"><Pencil className="h-4 w-4" /></button>
@@ -440,8 +443,30 @@ function camel(resource: string) {
   return map[resource] ?? resource;
 }
 
-function Select({ value, onChange, options, placeholder, required }: { value: string; onChange: (value: string) => void; options: Option[]; placeholder: string; required?: boolean }) {
-  return <select className={inputClass} value={value} onChange={(e) => onChange(e.target.value)} required={required}><option value="">{placeholder}</option>{options.map((option) => <option key={option.id} value={option.id}>{option.code} - {option.name}</option>)}</select>;
+function Select({ value, onChange, options, placeholder, required, emptyLabel }: { value: string; onChange: (value: string) => void; options: Option[]; placeholder: string; required?: boolean; emptyLabel?: string }) {
+  return (
+    <select className={`${inputClass} ${required && options.length === 0 ? "border-amber-400 bg-amber-50" : ""}`} value={value} onChange={(e) => onChange(e.target.value)} required={required}>
+      <option value="">{required && options.length === 0 && emptyLabel ? emptyLabel : placeholder}</option>
+      {options.map((option) => <option key={option.id} value={option.id}>{option.code} - {option.name}</option>)}
+    </select>
+  );
+}
+
+function rowDetailLabel(resource: string) {
+  if (["farms", "warehouses", "production-sites"].includes(resource)) return "Type";
+  if (resource === "branches") return "Location";
+  if (resource === "units-of-measure") return "Symbol";
+  if (resource === "departments") return "Status";
+  return "Status";
+}
+
+function rowDetailValue(resource: string, row: Row) {
+  if (resource === "farms") return row.type ?? row.status ?? "-";
+  if (resource === "warehouses") return row.type ?? row.status ?? "-";
+  if (resource === "production-sites") return row.type ?? row.status ?? "-";
+  if (resource === "branches") return [row.city, row.country].filter(Boolean).join(", ") || "-";
+  if (resource === "units-of-measure") return row.symbol ?? "-";
+  return row.status ?? "-";
 }
 
 function masterFields(resource: string, form: Record<string, string>, setForm: (updater: ((prev: Record<string, string>) => Record<string, string>) | Record<string, string>) => void, options: Record<string, Option[]>) {
@@ -451,7 +476,7 @@ function masterFields(resource: string, form: Record<string, string>, setForm: (
     <input key="code" className={inputClass} placeholder="Code" value={form.code ?? ""} onChange={(e) => set("code", e.target.value)} required />,
   ];
   if (resource === "branches") base.push(<input key="city" className={inputClass} placeholder="City" value={form.city ?? ""} onChange={(e) => set("city", e.target.value)} />);
-  if (["farms", "warehouses", "production-sites", "departments"].includes(resource)) base.push(<Select key="branchId" value={form.branchId ?? ""} onChange={(v) => set("branchId", v)} options={options.branches ?? []} placeholder="Branch" required={["farms", "warehouses", "production-sites"].includes(resource)} />);
+  if (["farms", "warehouses", "production-sites", "departments"].includes(resource)) base.push(<Select key="branchId" value={form.branchId ?? ""} onChange={(v) => set("branchId", v)} options={options.branches ?? []} placeholder="Branch" required={["farms", "warehouses", "production-sites"].includes(resource)} emptyLabel="No branches — add branches first" />);
   if (resource === "farms") base.push(<select key="type" className={inputClass} value={form.type ?? "POULTRY"} onChange={(e) => set("type", e.target.value)}><option value="POULTRY">Poultry</option><option value="CROP">Crop</option><option value="MIXED">Mixed</option></select>);
   if (resource === "warehouses") base.push(<Select key="farmId" value={form.farmId ?? ""} onChange={(v) => set("farmId", v)} options={options.farms ?? []} placeholder="Farm (optional)" />);
   if (resource === "warehouses") base.push(<select key="type" className={inputClass} value={form.type ?? "GENERAL"} onChange={(e) => set("type", e.target.value)}><option value="GENERAL">General</option><option value="FARM_STORE">Farm store</option><option value="FEED_STORE">Feed store</option><option value="SOYA_STORE">Soya store</option><option value="COLD_STORAGE">Cold storage</option></select>);
