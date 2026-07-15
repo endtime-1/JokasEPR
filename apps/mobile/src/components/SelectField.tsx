@@ -14,9 +14,10 @@ type Props = {
   error?: string;
   placeholder?: string;
   required?: boolean;
+  loading?: boolean;
 };
 
-export function SelectField({ label, value, options, onChange, error, placeholder = "Select…", required }: Props) {
+export function SelectField({ label, value, options, onChange, error, placeholder = "Select…", required, loading }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const selected = options.find((o) => o.value === value);
@@ -82,9 +83,15 @@ export function SelectField({ label, value, options, onChange, error, placeholde
             )}
 
             <ScrollView showsVerticalScrollIndicator={false} bounces={false} keyboardShouldPersistTaps="handled">
-              {filtered.length === 0 ? (
+              {loading && options.length === 0 ? (
                 <View style={styles.emptyRow}>
-                  <Text style={styles.emptyText}>No results for "{query}"</Text>
+                  <Text style={styles.emptyText}>Loading…</Text>
+                </View>
+              ) : filtered.length === 0 ? (
+                <View style={styles.emptyRow}>
+                  <Text style={styles.emptyText}>
+                    {query.trim() ? `No results for "${query}"` : "No options available"}
+                  </Text>
                 </View>
               ) : (
                 filtered.map((o) => (

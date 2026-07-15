@@ -29,7 +29,7 @@ export function MortalityScreen() {
   const [reason, setReason] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const { data: rawFarms } = useLookup("farms", async () => {
+  const { data: rawFarms, loading: farmsLoading } = useLookup("farms", async () => {
     const r = await fetchFarms();
     return (r.data as any[]) ?? [];
   });
@@ -89,7 +89,7 @@ export function MortalityScreen() {
       </View>
 
       <FormCard label="FLOCK / BATCH">
-        <SelectField label="Farm" value={farmId} options={farms} onChange={(v) => { setFarmId(v); setErrors((e) => ({ ...e, farmId: "" })); }} error={errors.farmId} required />
+        <SelectField label="Farm" value={farmId} options={farms} onChange={(v) => { setFarmId(v); setErrors((e) => ({ ...e, farmId: "" })); }} error={errors.farmId} required loading={farmsLoading} />
         <SelectField label="Flock Batch" value={batchId} options={batches} onChange={(v) => { setBatchId(v); setErrors((e) => ({ ...e, batchId: "" })); }} error={errors.batchId} required placeholder={farmId ? "Select batch…" : "Select farm first"} />
         <FormField label="Date" required value={date} onChangeText={(v) => { setDate(v); setErrors((e) => ({ ...e, date: "" })); }} error={errors.date} keyboardType="numeric" placeholder="YYYY-MM-DD" />
       </FormCard>
