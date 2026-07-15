@@ -102,6 +102,86 @@ export class SettingsController {
     return this.settings.createExpenseCategory(user, dto, ctx(ipAddress, userAgent));
   }
 
+  @Put("branches/:id")
+  updateBranch(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: CreateBranchSettingDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.settings.updateBranch(user, id, dto, ctx(ipAddress, userAgent));
+  }
+
+  @Delete("branches/:id")
+  deleteBranch(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.settings.deleteBranch(user, id, ctx(ipAddress, userAgent));
+  }
+
+  @Put("farms/:id")
+  updateFarm(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: CreateFarmSettingDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.settings.updateFarm(user, id, dto, ctx(ipAddress, userAgent));
+  }
+
+  @Delete("farms/:id")
+  deleteFarm(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.settings.deleteFarm(user, id, ctx(ipAddress, userAgent));
+  }
+
+  @Put("warehouses/:id")
+  updateWarehouse(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: CreateWarehouseSettingDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.settings.updateWarehouse(user, id, dto, ctx(ipAddress, userAgent));
+  }
+
+  @Delete("warehouses/:id")
+  deleteWarehouse(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.settings.deleteWarehouse(user, id, ctx(ipAddress, userAgent));
+  }
+
+  @Put("production-sites/:id")
+  updateProductionSite(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: CreateProductionSiteSettingDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.settings.updateProductionSite(user, id, dto, ctx(ipAddress, userAgent));
+  }
+
+  @Delete("production-sites/:id")
+  deleteProductionSite(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.settings.deleteProductionSite(user, id, ctx(ipAddress, userAgent));
+  }
+
+  @Put("departments/:id")
+  updateDepartment(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: CreateDepartmentSettingDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.settings.updateDepartment(user, id, dto, ctx(ipAddress, userAgent));
+  }
+
+  @Delete("departments/:id")
+  deleteDepartment(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.settings.deleteDepartment(user, id, ctx(ipAddress, userAgent));
+  }
+
+  @Put("units-of-measure/:id")
+  updateUnitOfMeasure(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: CreateUnitOfMeasureSettingDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.settings.updateUnitOfMeasure(user, id, dto, ctx(ipAddress, userAgent));
+  }
+
+  @Delete("units-of-measure/:id")
+  deleteUnitOfMeasure(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.settings.deleteUnitOfMeasure(user, id, ctx(ipAddress, userAgent));
+  }
+
+  @Put("product-categories/:id")
+  updateProductCategory(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: CreateProductCategorySettingDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.settings.updateProductCategory(user, id, dto, ctx(ipAddress, userAgent));
+  }
+
+  @Delete("product-categories/:id")
+  deleteProductCategory(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.settings.deleteProductCategory(user, id, ctx(ipAddress, userAgent));
+  }
+
+  @Put("expense-categories/:id")
+  updateExpenseCategory(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: CreateExpenseCategorySettingDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.settings.updateExpenseCategory(user, id, dto, ctx(ipAddress, userAgent));
+  }
+
+  @Delete("expense-categories/:id")
+  deleteExpenseCategory(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.settings.deleteExpenseCategory(user, id, ctx(ipAddress, userAgent));
+  }
+
   @Get("system")
   system(@CurrentUser() user: AuthenticatedUser) {
     return this.settings.settingsMap(user);

@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState, type ReactNode } from "react";
-import { Bot, Building2, ChevronRight, HardDrive, Package, Plus, Save, Settings, ShieldCheck } from "lucide-react";
+import { Bot, Building2, ChevronRight, HardDrive, Package, Pencil, Plus, Save, Settings, ShieldCheck, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { AppShell } from "../../components/app-shell";
 import { ApiEnvelope, apiFetch } from "../../lib/api";
@@ -102,6 +102,7 @@ export default function SettingsPage() {
   const [notification, setNotification] = useState<any>({});
   const [activeMaster, setActiveMaster] = useState<(typeof masterSections)[number][0]>("branches");
   const [form, setForm] = useState<Record<string, string>>({});
+  const [editingRow, setEditingRow] = useState<Row | null>(null);
   const [saving, setSaving] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -178,6 +179,33 @@ export default function SettingsPage() {
     }
   }
 
+  function startEdit(row: Row) {
+    setEditingRow(row);
+    setForm(rowToForm(activeMaster, row));
+    setMasterMsg(null);
+  }
+
+  function cancelEdit() {
+    setEditingRow(null);
+    setForm(TAB_DEFAULTS[activeMaster] ?? {});
+    setMasterMsg(null);
+  }
+
+  async function deleteMaster(row: Row) {
+    if (!window.confirm(`Delete "${row.name}"? This cannot be undone.`)) return;
+    setSaving(`delete-${row.id}`);
+    setMasterMsg(null);
+    try {
+      await apiFetch(`/settings/${activeMaster}/${row.id}`, { method: "DELETE" });
+      setMasterMsg({ type: "ok", text: "Record deleted." });
+      await refreshMaster();
+    } catch (err) {
+      setMasterMsg({ type: "err", text: err instanceof Error ? err.message : "Delete failed." });
+    } finally {
+      setSaving("");
+    }
+  }
+
   async function createMaster(event: FormEvent) {
     event.preventDefault();
     setMasterMsg(null);
@@ -196,8 +224,14 @@ export default function SettingsPage() {
     const payload = buildMasterPayload(activeMaster, form);
     setSaving(activeMaster);
     try {
-      await apiFetch(`/settings/${activeMaster}`, { method: "POST", body: JSON.stringify(payload) });
-      setMasterMsg({ type: "ok", text: "Record added." });
+      if (editingRow) {
+        await apiFetch(`/settings/${activeMaster}/${editingRow.id}`, { method: "PUT", body: JSON.stringify(payload) });
+        setMasterMsg({ type: "ok", text: "Record updated." });
+        setEditingRow(null);
+      } else {
+        await apiFetch(`/settings/${activeMaster}`, { method: "POST", body: JSON.stringify(payload) });
+        setMasterMsg({ type: "ok", text: "Record added." });
+      }
       setForm(TAB_DEFAULTS[activeMaster] ?? {});
       await refreshMaster();
     } catch (err) {
@@ -274,14 +308,23 @@ export default function SettingsPage() {
         <SettingCard title="Master Data" icon={Settings}>
           <div className="mb-4 flex flex-wrap gap-2">
             {masterSections.map(([key, label]) => (
-              <button key={key} onClick={() => { setActiveMaster(key); setForm(TAB_DEFAULTS[key] ?? {}); setError(""); setSuccess(""); setMasterMsg(null); }} className={`rounded-md border px-3 py-2 text-sm font-semibold ${activeMaster === key ? "border-brand bg-brand text-white" : "border-line bg-white text-ink/70"}`}>
+              <button key={key} onClick={() => { setActiveMaster(key); setEditingRow(null); setForm(TAB_DEFAULTS[key] ?? {}); setError(""); setSuccess(""); setMasterMsg(null); }} className={`rounded-md border px-3 py-2 text-sm font-semibold ${activeMaster === key ? "border-brand bg-brand text-white" : "border-line bg-white text-ink/70"}`}>
                 {label}
               </button>
             ))}
           </div>
+          {editingRow && (
+            <div className="mb-3 flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+              <Pencil className="h-4 w-4 shrink-0" />
+              <span>Editing <strong>{editingRow.name}</strong></span>
+              <button type="button" className="ml-auto flex items-center gap-1 text-xs underline" onClick={cancelEdit}><X className="h-3 w-3" />Cancel</button>
+            </div>
+          )}
           <form onSubmit={createMaster} className="mb-4 grid gap-3 md:grid-cols-4">
             {masterFields(activeMaster, form, setForm, mergedOptions)}
-            <button className="app-button-primary md:mt-auto" disabled={saving === activeMaster}><Plus className="h-4 w-4" />Add</button>
+            <button className="app-button-primary md:mt-auto" disabled={saving === activeMaster}>
+              {editingRow ? <><Save className="h-4 w-4" />Update</> : <><Plus className="h-4 w-4" />Add</>}
+            </button>
           </form>
           {masterMsg && (
             <p className={`mb-3 rounded-md border px-3 py-2 text-sm ${masterMsg.type === "ok" ? "border-green-200 bg-green-50 text-green-700" : "border-red-200 bg-red-50 text-red-700"}`}>
@@ -290,12 +333,22 @@ export default function SettingsPage() {
           )}
           <div className="overflow-hidden rounded-md border border-line">
             <table className="w-full text-left text-sm">
-              <thead className="bg-field text-xs uppercase text-ink/55"><tr><th className="px-3 py-2">Code</th><th className="px-3 py-2">Name</th><th className="px-3 py-2">Status</th></tr></thead>
+              <thead className="bg-field text-xs uppercase text-ink/55"><tr><th className="px-3 py-2">Code</th><th className="px-3 py-2">Name</th><th className="px-3 py-2">Status</th><th className="px-3 py-2"></th></tr></thead>
               <tbody>
                 {rows.map((row) => (
-                  <tr key={row.id} className="border-t border-line"><td className="px-3 py-2 font-semibold">{row.code ?? "-"}</td><td className="px-3 py-2">{row.name}</td><td className="px-3 py-2">{row.status ?? (row.isActive ? "ACTIVE" : "INACTIVE")}</td></tr>
+                  <tr key={row.id} className={`border-t border-line ${editingRow?.id === row.id ? "bg-amber-50" : ""}`}>
+                    <td className="px-3 py-2 font-semibold">{row.code ?? "-"}</td>
+                    <td className="px-3 py-2">{row.name}</td>
+                    <td className="px-3 py-2">{row.status ?? (row.isActive ? "ACTIVE" : "INACTIVE")}</td>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-1">
+                        <button type="button" title="Edit" onClick={() => startEdit(row)} className="rounded p-1 text-ink/40 hover:bg-brand/10 hover:text-brand"><Pencil className="h-4 w-4" /></button>
+                        <button type="button" title="Delete" disabled={saving === `delete-${row.id}`} onClick={() => deleteMaster(row)} className="rounded p-1 text-ink/40 hover:bg-red-50 hover:text-red-600"><Trash2 className="h-4 w-4" /></button>
+                      </div>
+                    </td>
+                  </tr>
                 ))}
-                {rows.length === 0 && <tr><td colSpan={3} className="px-3 py-8 text-center text-ink/45">No records yet</td></tr>}
+                {rows.length === 0 && <tr><td colSpan={4} className="px-3 py-8 text-center text-ink/45">No records yet</td></tr>}
               </tbody>
             </table>
             {rows.length > 0 && <p className="px-3 py-2 text-xs text-ink/45 border-t border-line">{rows.length} record{rows.length !== 1 ? "s" : ""}</p>}
@@ -351,6 +404,19 @@ export default function SettingsPage() {
       </div>
     </AppShell>
   );
+}
+
+function rowToForm(resource: string, row: Row): Record<string, string> {
+  const form: Record<string, string> = { name: row.name ?? "", code: row.code ?? "" };
+  if (resource === "branches") { form.city = row.city ?? ""; form.country = row.country ?? "Ghana"; }
+  if (["farms", "warehouses", "production-sites", "departments"].includes(resource)) form.branchId = row.branchId ?? "";
+  if (resource === "farms") { form.type = row.type ?? "POULTRY"; form.location = row.location ?? ""; }
+  if (resource === "warehouses") { form.farmId = row.farmId ?? ""; form.type = row.type ?? "GENERAL"; form.location = row.location ?? ""; }
+  if (resource === "production-sites") { form.type = row.type ?? "FEED_PRODUCTION"; form.location = row.location ?? ""; }
+  if (resource === "units-of-measure") form.symbol = row.symbol ?? "";
+  if (resource === "product-categories") form.parentId = row.parentId ?? "";
+  if (resource === "expense-categories") form.accountId = row.accountId ?? "";
+  return form;
 }
 
 function camel(resource: string) {

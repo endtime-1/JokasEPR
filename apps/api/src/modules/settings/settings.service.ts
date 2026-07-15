@@ -229,6 +229,153 @@ export class SettingsService {
     return { data: row };
   }
 
+  async updateBranch(user: AuthenticatedUser, id: string, dto: CreateBranchSettingDto, ctx: RequestContext) {
+    this.requireSettings(user);
+    const existing = await this.prisma.branch.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!existing) throw new BadRequestException("Branch not found.");
+    const row = await this.prisma.branch.update({ where: { id }, data: { name: dto.name, code: dto.code.toUpperCase(), city: dto.city ?? null, country: dto.country ?? "Ghana", isHeadOffice: dto.isHeadOffice ?? false, updatedById: user.id } });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "UPDATE", entityType: "Branch", entityId: row.id, summary: `Updated branch ${row.code}`, ...ctx });
+    return { data: row };
+  }
+
+  async deleteBranch(user: AuthenticatedUser, id: string, ctx: RequestContext) {
+    this.requireSettings(user);
+    const existing = await this.prisma.branch.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!existing) throw new BadRequestException("Branch not found.");
+    await this.prisma.branch.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "DELETE", entityType: "Branch", entityId: id, summary: `Deleted branch ${existing.code}`, ...ctx });
+    return { data: { success: true } };
+  }
+
+  async updateFarm(user: AuthenticatedUser, id: string, dto: CreateFarmSettingDto, ctx: RequestContext) {
+    this.requireSettings(user);
+    const existing = await this.prisma.farm.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!existing) throw new BadRequestException("Farm not found.");
+    await this.requireBranch(user.companyId, dto.branchId);
+    const row = await this.prisma.farm.update({ where: { id }, data: { branchId: dto.branchId, name: dto.name, code: dto.code.toUpperCase(), location: dto.location ?? null, type: dto.type ?? "POULTRY", updatedById: user.id } });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "UPDATE", entityType: "Farm", entityId: row.id, summary: `Updated farm ${row.code}`, branchId: row.branchId, ...ctx });
+    return { data: row };
+  }
+
+  async deleteFarm(user: AuthenticatedUser, id: string, ctx: RequestContext) {
+    this.requireSettings(user);
+    const existing = await this.prisma.farm.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!existing) throw new BadRequestException("Farm not found.");
+    await this.prisma.farm.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "DELETE", entityType: "Farm", entityId: id, summary: `Deleted farm ${existing.code}`, ...ctx });
+    return { data: { success: true } };
+  }
+
+  async updateWarehouse(user: AuthenticatedUser, id: string, dto: CreateWarehouseSettingDto, ctx: RequestContext) {
+    this.requireSettings(user);
+    const existing = await this.prisma.warehouse.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!existing) throw new BadRequestException("Warehouse not found.");
+    await this.requireBranch(user.companyId, dto.branchId);
+    const row = await this.prisma.warehouse.update({ where: { id }, data: { branchId: dto.branchId, farmId: dto.farmId ?? null, productionSiteId: dto.productionSiteId ?? null, name: dto.name, code: dto.code.toUpperCase(), location: dto.location ?? null, type: dto.type ?? "GENERAL", updatedById: user.id } });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "UPDATE", entityType: "Warehouse", entityId: row.id, summary: `Updated warehouse ${row.code}`, branchId: row.branchId, warehouseId: row.id, ...ctx });
+    return { data: row };
+  }
+
+  async deleteWarehouse(user: AuthenticatedUser, id: string, ctx: RequestContext) {
+    this.requireSettings(user);
+    const existing = await this.prisma.warehouse.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!existing) throw new BadRequestException("Warehouse not found.");
+    await this.prisma.warehouse.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "DELETE", entityType: "Warehouse", entityId: id, summary: `Deleted warehouse ${existing.code}`, ...ctx });
+    return { data: { success: true } };
+  }
+
+  async updateProductionSite(user: AuthenticatedUser, id: string, dto: CreateProductionSiteSettingDto, ctx: RequestContext) {
+    this.requireSettings(user);
+    const existing = await this.prisma.productionSite.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!existing) throw new BadRequestException("Production site not found.");
+    await this.requireBranch(user.companyId, dto.branchId);
+    const row = await this.prisma.productionSite.update({ where: { id }, data: { branchId: dto.branchId, name: dto.name, code: dto.code.toUpperCase(), type: dto.type, location: dto.location ?? null, updatedById: user.id } });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "UPDATE", entityType: "ProductionSite", entityId: row.id, summary: `Updated production site ${row.code}`, branchId: row.branchId, productionSiteId: row.id, ...ctx });
+    return { data: row };
+  }
+
+  async deleteProductionSite(user: AuthenticatedUser, id: string, ctx: RequestContext) {
+    this.requireSettings(user);
+    const existing = await this.prisma.productionSite.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!existing) throw new BadRequestException("Production site not found.");
+    await this.prisma.productionSite.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "DELETE", entityType: "ProductionSite", entityId: id, summary: `Deleted production site ${existing.code}`, ...ctx });
+    return { data: { success: true } };
+  }
+
+  async updateDepartment(user: AuthenticatedUser, id: string, dto: CreateDepartmentSettingDto, ctx: RequestContext) {
+    this.requireSettings(user);
+    const existing = await this.prisma.department.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!existing) throw new BadRequestException("Department not found.");
+    const row = await this.prisma.department.update({ where: { id }, data: { branchId: dto.branchId, name: dto.name, code: dto.code.toUpperCase(), updatedById: user.id } });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "UPDATE", entityType: "Department", entityId: row.id, summary: `Updated department ${row.code}`, branchId: row.branchId ?? undefined, ...ctx });
+    return { data: row };
+  }
+
+  async deleteDepartment(user: AuthenticatedUser, id: string, ctx: RequestContext) {
+    this.requireSettings(user);
+    const existing = await this.prisma.department.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!existing) throw new BadRequestException("Department not found.");
+    await this.prisma.department.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "DELETE", entityType: "Department", entityId: id, summary: `Deleted department ${existing.code}`, ...ctx });
+    return { data: { success: true } };
+  }
+
+  async updateUnitOfMeasure(user: AuthenticatedUser, id: string, dto: CreateUnitOfMeasureSettingDto, ctx: RequestContext) {
+    this.requireSettings(user);
+    const existing = await this.prisma.unitOfMeasure.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!existing) throw new BadRequestException("Unit of measure not found.");
+    const row = await this.prisma.unitOfMeasure.update({ where: { id }, data: { name: dto.name, code: dto.code.toUpperCase(), symbol: dto.symbol, updatedById: user.id } });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "UPDATE", entityType: "UnitOfMeasure", entityId: row.id, summary: `Updated unit of measure ${row.code}`, ...ctx });
+    return { data: row };
+  }
+
+  async deleteUnitOfMeasure(user: AuthenticatedUser, id: string, ctx: RequestContext) {
+    this.requireSettings(user);
+    const existing = await this.prisma.unitOfMeasure.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!existing) throw new BadRequestException("Unit of measure not found.");
+    await this.prisma.unitOfMeasure.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "DELETE", entityType: "UnitOfMeasure", entityId: id, summary: `Deleted unit of measure ${existing.code}`, ...ctx });
+    return { data: { success: true } };
+  }
+
+  async updateProductCategory(user: AuthenticatedUser, id: string, dto: CreateProductCategorySettingDto, ctx: RequestContext) {
+    this.requireSettings(user);
+    const existing = await this.prisma.productCategory.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!existing) throw new BadRequestException("Product category not found.");
+    const row = await this.prisma.productCategory.update({ where: { id }, data: { name: dto.name, code: dto.code.toUpperCase(), parentId: dto.parentId ?? null, description: dto.description ?? null, updatedById: user.id } });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "UPDATE", entityType: "ProductCategory", entityId: row.id, summary: `Updated product category ${row.code}`, ...ctx });
+    return { data: row };
+  }
+
+  async deleteProductCategory(user: AuthenticatedUser, id: string, ctx: RequestContext) {
+    this.requireSettings(user);
+    const existing = await this.prisma.productCategory.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!existing) throw new BadRequestException("Product category not found.");
+    await this.prisma.productCategory.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "DELETE", entityType: "ProductCategory", entityId: id, summary: `Deleted product category ${existing.code}`, ...ctx });
+    return { data: { success: true } };
+  }
+
+  async updateExpenseCategory(user: AuthenticatedUser, id: string, dto: CreateExpenseCategorySettingDto, ctx: RequestContext) {
+    this.requireSettings(user);
+    const existing = await this.prisma.expenseCategory.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!existing) throw new BadRequestException("Expense category not found.");
+    const row = await this.prisma.expenseCategory.update({ where: { id }, data: { name: dto.name, code: dto.code.toUpperCase(), description: dto.description ?? null, accountId: dto.accountId ?? null, updatedById: user.id } });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "UPDATE", entityType: "ExpenseCategory", entityId: row.id, summary: `Updated expense category ${row.code}`, ...ctx });
+    return { data: row };
+  }
+
+  async deleteExpenseCategory(user: AuthenticatedUser, id: string, ctx: RequestContext) {
+    this.requireSettings(user);
+    const existing = await this.prisma.expenseCategory.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!existing) throw new BadRequestException("Expense category not found.");
+    await this.prisma.expenseCategory.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "DELETE", entityType: "ExpenseCategory", entityId: id, summary: `Deleted expense category ${existing.code}`, ...ctx });
+    return { data: { success: true } };
+  }
+
   async settingsMap(user: AuthenticatedUser) {
     this.requireSettings(user);
     const rows = await this.prisma.systemSetting.findMany({ where: { companyId: user.companyId, deletedAt: null } });
