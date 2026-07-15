@@ -23,18 +23,29 @@ export async function clearSession() {
   await SecureStore.deleteItemAsync(REFRESH_KEY);
 }
 
+const REQUEST_TIMEOUT_MS = 15_000;
+
 async function refreshSession(): Promise<boolean> {
   const refreshToken = await getRefreshToken();
   if (!refreshToken) return false;
-  const response = await fetch(`${API_URL}/auth/refresh`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ refreshToken })
-  });
-  if (!response.ok) { await clearSession(); return false; }
-  const body = await response.json();
-  await setSession(body.data.accessToken, body.data.refreshToken);
-  return true;
+  const controller = new AbortController();
+  const tid = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${API_URL}/auth/refresh`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ refreshToken }),
+      signal: controller.signal
+    });
+    clearTimeout(tid);
+    if (!response.ok) { await clearSession(); return false; }
+    const body = await response.json();
+    await setSession(body.data.accessToken, body.data.refreshToken);
+    return true;
+  } catch {
+    clearTimeout(tid);
+    return false;
+  }
 }
 
 async function request(path: string, init?: RequestInit): Promise<Response> {
@@ -56,20 +67,34 @@ export class ApiError extends Error {
 }
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const controller = new AbortController();
+  const tid = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const initWithSignal: RequestInit = { ...init, signal: controller.signal };
+
   let response: Response;
   try {
-    response = await request(path, init);
-  } catch {
+    response = await request(path, initWithSignal);
+  } catch (e) {
+    clearTimeout(tid);
+    if (e instanceof Error && e.name === "AbortError") {
+      throw new ApiError(0, "Request timed out — check your connection and try again.");
+    }
     throw new ApiError(0, "Network error — check your connection and try again.");
   }
 
   if (response.status === 401 && (await refreshSession())) {
     try {
-      response = await request(path, init);
-    } catch {
+      response = await request(path, initWithSignal);
+    } catch (e) {
+      clearTimeout(tid);
+      if (e instanceof Error && e.name === "AbortError") {
+        throw new ApiError(0, "Request timed out — check your connection and try again.");
+      }
       throw new ApiError(0, "Network error — check your connection and try again.");
     }
   }
+
+  clearTimeout(tid);
 
   if (!response.ok) {
     let message = "Something went wrong. Please try again.";
