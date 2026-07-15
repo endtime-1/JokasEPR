@@ -135,6 +135,9 @@ jobs:
           key: ${{ secrets.HOSTINGER_SSH_KEY }}
           port: 65002
           script: |
+            # Source shell profile to pick up env vars set via Hostinger panel
+            source ~/.bashrc 2>/dev/null || source ~/.profile 2>/dev/null || true
+
             NODE=/opt/alt/alt-nodejs22/root/usr/bin/node
             APP_DIR=~/domains/jokasfarms.com/nodejs
             PRISMA=$APP_DIR/apps/api/node_modules/.bin/prisma

@@ -23,7 +23,7 @@ export class PermissionsGuard implements CanActivate {
       throw new ForbiddenException("Authenticated user context is missing.");
     }
 
-    const allowed = required.every((permission) => user.permissions.includes(permission));
+    const allowed = user.hasGlobalAccess || required.every((permission) => user.permissions.includes(permission));
     if (!allowed) {
       throw new ForbiddenException("Insufficient permissions for this action.");
     }
