@@ -39,7 +39,7 @@ jobs:
       - name: Build Web
         run: pnpm --filter @jokas/web build
         env:
-          NODE_OPTIONS: --max-old-space-size=3072
+          NODE_OPTIONS: --max-old-space-size=4096
 
       # Create standalone deploy bundles with only production deps
       - name: Bundle API for deployment

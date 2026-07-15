@@ -17,6 +17,23 @@ const nextConfig = {
     workerThreads: false,
     cpus: 1,
   },
+  // Exclude build-only packages from standalone trace to reduce memory and bundle size.
+  // These are compiler/bundler tools never needed at runtime.
+  outputFileTracingExcludes: {
+    "*": [
+      "node_modules/@swc/**",
+      "node_modules/webpack/**",
+      "node_modules/next/dist/compiled/webpack/**",
+      "node_modules/rollup/**",
+      "node_modules/@esbuild/**",
+      "node_modules/esbuild/**",
+      "node_modules/terser/**",
+      "node_modules/typescript/**",
+      "node_modules/prettier/**",
+      "node_modules/eslint/**",
+      "node_modules/@typescript-eslint/**",
+    ],
+  },
   async headers() {
     return [
       {
