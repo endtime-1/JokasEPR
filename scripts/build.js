@@ -1,10 +1,17 @@
 #!/usr/bin/env node
 "use strict";
-// When running on the production server (SKIP_BUILD=1 or NODE_APP_INSTANCE is set
-// by Passenger/PM2), exit immediately — the server runs pre-built artifacts uploaded
-// by CI and must never attempt to compile from source (insufficient memory).
-if (process.env.SKIP_BUILD === "1" || process.env.NODE_APP_INSTANCE !== undefined) {
-  console.log("[build] Production server detected — skipping source build (pre-built artifacts in place).");
+// Detect Hostinger's Git auto-deploy build environment (path contains /public_html/.builds/)
+// or any explicit skip signal. The server runs pre-built artifacts uploaded by GitHub Actions
+// via rsync and must never attempt to compile from source (insufficient memory).
+const isHostingerBuild =
+  __dirname.includes("/public_html/") ||
+  (process.env.HOME || "").includes("u136486538") ||
+  process.env.SKIP_BUILD === "1" ||
+  process.env.NODE_APP_INSTANCE !== undefined;
+
+if (isHostingerBuild) {
+  console.log("[build] Hostinger server environment detected — skipping source build.");
+  console.log("[build] Pre-built artifacts are deployed via GitHub Actions rsync. No action needed.");
   process.exit(0);
 }
 
