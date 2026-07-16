@@ -610,10 +610,22 @@ export function FlockBatchDetailsPage() {
 
 // ─── Records ──────────────────────────────────────────────────────────────────
 
+function makeFormDefaults(type: string): Record<string, string> {
+  const base: Record<string, string> = { flockBatchId: "", penId: "", recordDate: new Date().toISOString().slice(0, 10) };
+  for (const field of recordFields(type)) {
+    if (field.defaultValue !== undefined) {
+      base[field.name] = field.defaultValue;
+    } else if (field.kind === "select" && field.options?.length) {
+      base[field.name] = field.options[0];
+    }
+  }
+  return base;
+}
+
 export function PoultryRecordPage({ title, type, endpoint, health = false }: { title: string; type: string; endpoint: string; health?: boolean }) {
   const { options, optionsError, refreshOptions } = usePoultryOptions();
   const [rows, setRows] = useState<Record<string, any>[]>([]);
-  const [form, setForm] = useState<Record<string, string>>({ flockBatchId: "", penId: "", recordDate: new Date().toISOString().slice(0, 10) });
+  const [form, setForm] = useState<Record<string, string>>(() => makeFormDefaults(type));
   const [submitError, setSubmitError] = useState("");
 
   const batchPens = useMemo(() => options.pens, [options.pens]);
@@ -632,7 +644,7 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
     setSubmitError("");
     try {
       await apiFetch(endpoint, { method: "POST", body: JSON.stringify(buildRecordPayload(type, form, options)) });
-      setForm({ flockBatchId: "", penId: "", recordDate: new Date().toISOString().slice(0, 10) });
+      setForm(makeFormDefaults(type));
       await load();
     } catch (err: any) {
       setSubmitError(err?.message ?? "Failed to save record.");
@@ -718,13 +730,19 @@ function recordFields(type: string) {
 }
 
 function buildRecordPayload(type: string, form: Record<string, string>, options: PoultryOptions) {
+  // Start with field defaults so required fields are never absent from the body.
+  // User-entered values in `form` override the defaults.
+  const merged: Record<string, string> = makeFormDefaults(type);
+  Object.assign(merged, form);
+
   const payload: Record<string, string | number | boolean | undefined> = {
-    ...form,
-    flockBatchId: form.flockBatchId || options.batches[0]?.id,
-    penId: form.penId || undefined
+    ...merged,
+    flockBatchId: merged.flockBatchId || options.batches[0]?.id,
+    penId: merged.penId || undefined
   };
+  const numericKeys = ["mortalityCount", "culledCount", "feedConsumedKg", "totalEggs", "birdCount", "quantityKg", "costAmount", "goodEggs", "crackedEggs", "dirtyEggs", "brokenEggs", "rejectedEggs", "sampleSize", "averageWeightKg", "amount"];
   for (const key of Object.keys(payload)) {
-    if (["mortalityCount", "culledCount", "feedConsumedKg", "totalEggs", "birdCount", "quantityKg", "costAmount", "goodEggs", "crackedEggs", "dirtyEggs", "brokenEggs", "rejectedEggs", "sampleSize", "averageWeightKg", "amount"].includes(key)) {
+    if (numericKeys.includes(key)) {
       payload[key] = Number(payload[key] || 0);
     }
   }
@@ -733,9 +751,16 @@ function buildRecordPayload(type: string, form: Record<string, string>, options:
 }
 
 function SimpleRecordTable({ rows }: { rows: Record<string, any>[] }) {
-  const keys = Object.keys(rows?.[0] ?? {}).filter((key) =>
-    ["recordDate", "startDate", "vaccinationDate", "observationDate", "transferDate", "costDate", "birdCount", "quantityKg", "goodEggs", "crackedEggs", "dirtyEggs", "brokenEggs", "rejectedEggs", "medicationName", "vaccineName", "severity", "amount", "status"].includes(key)
-  );
+  const allowedKeys = new Set([
+    "recordDate", "startDate", "costDate", "vaccinationDate", "observationDate", "transferDate",
+    "mortalityCount", "culledCount", "feedConsumedKg", "totalEggs",
+    "birdCount", "quantityKg", "costAmount",
+    "goodEggs", "crackedEggs", "dirtyEggs", "brokenEggs", "rejectedEggs",
+    "sampleSize", "averageWeightKg",
+    "medicationName", "vaccineName", "severity", "observation", "amount", "costType",
+    "status"
+  ]);
+  const keys = Object.keys(rows?.[0] ?? {}).filter((key) => allowedKeys.has(key));
   return <DataTable rows={rows} empty="No records found" columns={keys.map((key) => ({ key, label: key.replace(/([A-Z])/g, " $1"), render: (row: Record<string, any>) => String(row[key] ?? "-").slice(0, 80) }))} />;
 }
 
