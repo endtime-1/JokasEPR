@@ -101,31 +101,51 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.HOSTINGER_SSH_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          printf 'Host *\n  StrictHostKeyChecking no\n  UserKnownHostsFile /dev/null\n' > ~/.ssh/config
+          # Connection-keeping options so rsync doesn't time out mid-transfer
+          cat > ~/.ssh/config << 'EOF'
+          Host *
+            StrictHostKeyChecking no
+            UserKnownHostsFile /dev/null
+            ConnectTimeout 60
+            ServerAliveInterval 30
+            ServerAliveCountMax 10
+            TCPKeepAlive yes
+          EOF
 
       - name: Upload API to Hostinger
         run: |
-          rsync -avz --delete -e "ssh -p 65002 -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no" \
-            /tmp/api-deploy/ \
-            ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/apps/api/
+          for attempt in 1 2 3; do
+            rsync -avz --partial --timeout=300 \
+              -e "ssh -p 65002 -i ~/.ssh/id_rsa" \
+              /tmp/api-deploy/ \
+              ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/apps/api/ \
+              && { echo "API upload succeeded on attempt $attempt"; break; } \
+              || { echo "Attempt $attempt failed; retrying in 15s..."; sleep 15; }
+          done
 
       - name: Upload Web to Hostinger
         run: |
-          rsync -avz --delete --no-perms --omit-dir-times \
-            --exclude='.next/cache' \
-            -e "ssh -p 65002 -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no" \
-            /tmp/web-deploy/ \
-            ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/apps/web/
+          for attempt in 1 2 3; do
+            rsync -avz --partial --timeout=300 --no-perms --omit-dir-times \
+              --exclude='.next/cache' \
+              -e "ssh -p 65002 -i ~/.ssh/id_rsa" \
+              /tmp/web-deploy/ \
+              ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/apps/web/ \
+              && { echo "Web upload succeeded on attempt $attempt"; break; } \
+              || { echo "Attempt $attempt failed; retrying in 15s..."; sleep 15; }
+          done
 
       - name: Upload DB migrations
         run: |
-          rsync -avz -e "ssh -p 65002 -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no" \
+          rsync -avz --partial --timeout=120 \
+            -e "ssh -p 65002 -i ~/.ssh/id_rsa" \
             packages/db/prisma/ \
             ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/prisma/
 
       - name: Upload root startup files
         run: |
-          rsync -avz -e "ssh -p 65002 -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no" \
+          rsync -avz --partial --timeout=120 \
+            -e "ssh -p 65002 -i ~/.ssh/id_rsa" \
             ecosystem.config.js start.js package.json \
             ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/
 
