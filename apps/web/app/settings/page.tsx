@@ -98,8 +98,9 @@ export default function SettingsPage() {
   const [company, setCompany] = useState<any>({});
   const [master, setMaster] = useState<MasterData>({});
   const [options, setOptions] = useState<Record<string, Option[]>>({});
-  const [settings, setSettings] = useState<SettingsMap | null>(null);
+  const [settings, setSettings] = useState<SettingsMap>(DEFAULT_SETTINGS);
   const [notification, setNotification] = useState<any>({});
+  const [loading, setLoading] = useState(true);
   const [activeMaster, setActiveMaster] = useState<(typeof masterSections)[number][0]>("branches");
   const [form, setForm] = useState<Record<string, string>>({});
   const [editingRow, setEditingRow] = useState<Row | null>(null);
@@ -133,12 +134,16 @@ export default function SettingsPage() {
       });
     }
     if (notificationRes.status === "fulfilled") setNotification(notificationRes.value.data ?? {});
+    setLoading(false);
     const firstFailure = results.find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
     if (firstFailure) throw firstFailure.reason;
   }
 
   useEffect(() => {
-    load().catch((err) => setError(err instanceof Error ? err.message : "Failed to load settings."));
+    load().catch((err) => {
+      setLoading(false);
+      setError(err instanceof Error ? err.message : "Failed to load settings.");
+    });
   }, []);
 
   const rows = useMemo(() => master[camel(activeMaster)] ?? [], [master, activeMaster]);
@@ -256,14 +261,14 @@ export default function SettingsPage() {
     setSettings((prev) => prev ? { ...prev, [key]: value } : prev);
   }
 
-  if (!settings) {
+  if (loading) {
     return (
       <AppShell>
         {error ? (
           <div className="p-6">
             <p className="mb-3 text-sm font-semibold text-red-700">Failed to load settings</p>
             <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
-            <button className="app-button-primary" onClick={() => { setError(""); load().catch((err) => setError(err instanceof Error ? err.message : "Failed to load settings.")); }}>
+            <button className="app-button-primary" onClick={() => { setError(""); setLoading(true); load().catch((err) => setError(err instanceof Error ? err.message : "Failed to load settings.")); }}>
               Retry
             </button>
           </div>
@@ -334,7 +339,7 @@ export default function SettingsPage() {
               const count = master[camel(key)]?.length ?? 0;
               const isActive = activeMaster === key;
               return (
-                <button key={key} onClick={() => { setActiveMaster(key); setEditingRow(null); setForm(TAB_DEFAULTS[key] ?? {}); setError(""); setSuccess(""); setMasterMsg(null); }} className={`flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm font-semibold ${isActive ? "border-brand bg-brand text-white" : "border-line bg-white text-ink/70"}`}>
+                <button key={key} type="button" onClick={() => { setActiveMaster(key); setEditingRow(null); setForm(TAB_DEFAULTS[key] ?? {}); setError(""); setSuccess(""); setMasterMsg(null); }} className={`flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm font-semibold ${isActive ? "border-brand bg-brand text-white" : "border-line bg-white text-ink/70"}`}>
                   {label}
                   <span className={`rounded-full px-1.5 py-0.5 text-xs font-bold tabular-nums ${isActive ? "bg-white/25 text-white" : "bg-brand/10 text-brand"}`}>
                     {count}
