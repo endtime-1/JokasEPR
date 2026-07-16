@@ -139,16 +139,19 @@ const qualityNav = [
   { href: "/quality/reports",                           label: "Reports" },
 ];
 
-function QualityNav() {
+function QualityNav({ checkType }: { checkType?: string } = {}) {
   const pathname = usePathname();
   return (
     <div className="mb-6 flex flex-wrap gap-1.5">
       {qualityNav.map((n) => {
-        const basePath = n.href.split("?")[0];
+        const [basePath, queryStr] = n.href.split("?");
+        const navCheckType = queryStr ? (new URLSearchParams(queryStr).get("checkType") ?? undefined) : undefined;
         const isActive =
-          basePath === "/quality"
-            ? pathname === "/quality"
-            : pathname === basePath || (pathname?.startsWith(basePath + "/") ?? false);
+          basePath === "/quality/checks"
+            ? pathname === "/quality/checks" && navCheckType === (checkType || undefined)
+            : basePath === "/quality"
+              ? pathname === "/quality"
+              : pathname === basePath || (pathname?.startsWith(basePath + "/") ?? false);
         return (
           <Link
             key={n.href}
@@ -505,7 +508,7 @@ export function QualityTemplatesPage() {
         <DataTable
           columns={[
             { key: "code", label: "Code" },
-            { key: "name", label: "Name", render: (r) => <Link href={`/quality/templates/${r.id}`} className="font-medium text-brand hover:underline">{r.name as string}</Link> },
+            { key: "name", label: "Name", render: (r) => <span className="font-medium text-ink">{r.name as string}</span> },
             { key: "checkType", label: "Type", render: (r) => <StatusBadge status={r.checkType as string} /> },
             { key: "params", label: "Parameters", render: (r) => (r._count as { parameters: number })?.parameters ?? 0 },
             { key: "checks", label: "Checks Used", render: (r) => (r._count as { checks: number })?.checks ?? 0 },
@@ -556,7 +559,7 @@ export function QualityChecksPage({ filterType }: { filterType?: string }) {
         subtitle="Review inspection results, batch scores, and decisions for all quality check types."
         actions={<Link href="/quality/checks/create" className="app-button-primary"><Plus className="h-4 w-4" /> New Check</Link>}
       />
-      <QualityNav />
+      <QualityNav checkType={checkType} />
 
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <select value={checkType} onChange={(e) => setCheckType(e.target.value)} className={selectCls}>
@@ -801,6 +804,13 @@ export function QualityCheckDetailPage({ id }: { id: string }) {
   const [actionForm, setActionForm] = useState({ type: "", notes: "", reason: "", conditions: "", score: "" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const opts = useQCOptions();
+  const [showLabForm, setShowLabForm] = useState(false);
+  const [labForm, setLabForm] = useState({ reportNumber: "", labName: "", reportDate: new Date().toISOString().slice(0, 10), summary: "", findings: "", recommendations: "", fileUrl: "", fileType: "" });
+  const [labSaving, setLabSaving] = useState(false);
+  const [showCarForm, setShowCarForm] = useState(false);
+  const [carForm, setCarForm] = useState({ title: "", description: "", rootCause: "", preventiveMeasure: "", priority: "MEDIUM", assignedToId: "", dueDate: "" });
+  const [carSaving, setCarSaving] = useState(false);
 
   function load() {
     apiFetch<ApiEnvelope<CheckDetail>>(`/quality/checks/${id}`)
@@ -832,6 +842,38 @@ export function QualityCheckDetailPage({ id }: { id: string }) {
       }
     } catch (err: unknown) { setError(err instanceof Error ? err.message : "Failed"); }
     finally { setSaving(false); }
+  }
+
+  async function submitLabReport(e: FormEvent) {
+    e.preventDefault();
+    if (!check) return;
+    setLabSaving(true); setError("");
+    try {
+      await apiFetch("/quality/lab-reports", {
+        method: "POST",
+        body: JSON.stringify({ ...labForm, checkId: check.id }),
+      });
+      setShowLabForm(false);
+      setLabForm({ reportNumber: "", labName: "", reportDate: new Date().toISOString().slice(0, 10), summary: "", findings: "", recommendations: "", fileUrl: "", fileType: "" });
+      load();
+    } catch (err: unknown) { setError(err instanceof Error ? err.message : "Failed"); }
+    finally { setLabSaving(false); }
+  }
+
+  async function submitCar(e: FormEvent) {
+    e.preventDefault();
+    if (!check) return;
+    setCarSaving(true); setError("");
+    try {
+      await apiFetch("/quality/corrective-actions", {
+        method: "POST",
+        body: JSON.stringify({ ...carForm, checkId: check.id, assignedToId: carForm.assignedToId || undefined, dueDate: carForm.dueDate || undefined }),
+      });
+      setShowCarForm(false);
+      setCarForm({ title: "", description: "", rootCause: "", preventiveMeasure: "", priority: "MEDIUM", assignedToId: "", dueDate: "" });
+      load();
+    } catch (err: unknown) { setError(err instanceof Error ? err.message : "Failed"); }
+    finally { setCarSaving(false); }
   }
 
   if (!check) return <AppShell><div className="flex h-64 items-center justify-center text-sm text-ink/45">Loading check details…</div></AppShell>;
@@ -1016,7 +1058,24 @@ export function QualityCheckDetailPage({ id }: { id: string }) {
 
       {tab === "lab-reports" && (
         <div className="space-y-4">
-          <Link href={`/quality/lab-reports/create?checkId=${check.id}`} className="app-button-primary inline-flex"><Plus className="h-4 w-4" /> Add Lab Report</Link>
+          <button type="button" onClick={() => setShowLabForm((p) => !p)} className={showLabForm ? "app-button-secondary" : "app-button-primary"}>
+            {showLabForm ? "Cancel" : <><Plus className="h-4 w-4" /> Add Lab Report</>}
+          </button>
+          {showLabForm && (
+            <div className="rounded-2xl border border-line bg-white p-5 shadow-card">
+              <form onSubmit={submitLabReport} className="grid gap-4 sm:grid-cols-2">
+                <div><FormLabel>Report Number *</FormLabel><input required value={labForm.reportNumber} onChange={(e) => setLabForm((p) => ({ ...p, reportNumber: e.target.value }))} className={inputCls} /></div>
+                <div><FormLabel>Laboratory Name *</FormLabel><input required value={labForm.labName} onChange={(e) => setLabForm((p) => ({ ...p, labName: e.target.value }))} className={inputCls} /></div>
+                <div><FormLabel>Report Date *</FormLabel><input required type="date" value={labForm.reportDate} onChange={(e) => setLabForm((p) => ({ ...p, reportDate: e.target.value }))} className={inputCls} /></div>
+                <div><FormLabel>File URL</FormLabel><input value={labForm.fileUrl} onChange={(e) => setLabForm((p) => ({ ...p, fileUrl: e.target.value }))} placeholder="https://..." className={inputCls} /></div>
+                <div className="sm:col-span-2"><FormLabel>Summary</FormLabel><textarea value={labForm.summary} onChange={(e) => setLabForm((p) => ({ ...p, summary: e.target.value }))} rows={2} className={inputCls} /></div>
+                <div className="sm:col-span-2"><FormLabel>Findings</FormLabel><textarea value={labForm.findings} onChange={(e) => setLabForm((p) => ({ ...p, findings: e.target.value }))} rows={2} className={inputCls} /></div>
+                <div className="sm:col-span-2">
+                  <button type="submit" disabled={labSaving} className="app-button-primary disabled:opacity-50">{labSaving ? "Saving..." : "Save Lab Report"}</button>
+                </div>
+              </form>
+            </div>
+          )}
           <div className="overflow-hidden rounded-2xl border border-line bg-white shadow-card">
             <DataTable
               columns={[
@@ -1034,7 +1093,33 @@ export function QualityCheckDetailPage({ id }: { id: string }) {
 
       {tab === "corrective-actions" && (
         <div className="space-y-4">
-          <Link href={`/quality/corrective-actions/create?checkId=${check.id}`} className="app-button-primary inline-flex"><Plus className="h-4 w-4" /> Add Corrective Action</Link>
+          <button type="button" onClick={() => setShowCarForm((p) => !p)} className={showCarForm ? "app-button-secondary" : "app-button-primary"}>
+            {showCarForm ? "Cancel" : <><Plus className="h-4 w-4" /> Add Corrective Action</>}
+          </button>
+          {showCarForm && (
+            <div className="rounded-2xl border border-line bg-white p-5 shadow-card">
+              <form onSubmit={submitCar} className="grid gap-4 sm:grid-cols-2">
+                <div className="sm:col-span-2"><FormLabel>Title *</FormLabel><input required value={carForm.title} onChange={(e) => setCarForm((p) => ({ ...p, title: e.target.value }))} className={inputCls} /></div>
+                <div className="sm:col-span-2"><FormLabel>Description *</FormLabel><textarea required value={carForm.description} onChange={(e) => setCarForm((p) => ({ ...p, description: e.target.value }))} rows={2} className={inputCls} /></div>
+                <div><FormLabel>Priority</FormLabel>
+                  <select value={carForm.priority} onChange={(e) => setCarForm((p) => ({ ...p, priority: e.target.value }))} className={inputCls}>
+                    {["LOW", "MEDIUM", "HIGH", "URGENT"].map((pri) => <option key={pri} value={pri}>{pri}</option>)}
+                  </select>
+                </div>
+                <div><FormLabel>Assign To</FormLabel>
+                  <select value={carForm.assignedToId} onChange={(e) => setCarForm((p) => ({ ...p, assignedToId: e.target.value }))} className={inputCls}>
+                    <option value="">— Unassigned —</option>
+                    {opts.users.map((u) => <option key={u.id} value={u.id}>{u.fullName}</option>)}
+                  </select>
+                </div>
+                <div><FormLabel>Due Date</FormLabel><input type="date" value={carForm.dueDate} onChange={(e) => setCarForm((p) => ({ ...p, dueDate: e.target.value }))} className={inputCls} /></div>
+                <div><FormLabel>Root Cause</FormLabel><input value={carForm.rootCause} onChange={(e) => setCarForm((p) => ({ ...p, rootCause: e.target.value }))} className={inputCls} /></div>
+                <div className="sm:col-span-2">
+                  <button type="submit" disabled={carSaving} className="app-button-primary disabled:opacity-50">{carSaving ? "Saving..." : "Create Corrective Action"}</button>
+                </div>
+              </form>
+            </div>
+          )}
           <div className="overflow-hidden rounded-2xl border border-line bg-white shadow-card">
             <DataTable
               columns={[
@@ -1153,8 +1238,8 @@ export function LabReportsPage() {
 
   useEffect(() => {
     load();
-    apiFetch<ApiEnvelope<{ id: string; reference: string; checkType: string; batchNumber?: string }[]>>("/quality/checks")
-      .then((r) => setChecks(r.data ?? [])).catch(() => undefined);
+    apiFetch<ApiEnvelope<{ total: number; items: { id: string; reference: string; checkType: string; batchNumber?: string }[] }>>("/quality/checks")
+      .then((r) => setChecks(r.data?.items ?? [])).catch(() => undefined);
   }, []);
 
   const f = (k: string) => (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
@@ -1246,6 +1331,8 @@ export function CorrectiveActionsPage() {
   const [error, setError] = useState("");
   const [resolveId, setResolveId] = useState("");
   const [resolution, setResolution] = useState("");
+  const [verifyId, setVerifyId] = useState("");
+  const [verificationNotes, setVerificationNotes] = useState("");
 
   function load() {
     const p = new URLSearchParams();
@@ -1274,6 +1361,12 @@ export function CorrectiveActionsPage() {
     if (!resolveId || !resolution) return;
     await apiFetch(`/quality/corrective-actions/${resolveId}/resolve`, { method: "PATCH", body: JSON.stringify({ resolution }) })
       .then(() => { setResolveId(""); setResolution(""); load(); }).catch(() => undefined);
+  }
+
+  async function verify() {
+    if (!verifyId || !verificationNotes) return;
+    await apiFetch(`/quality/corrective-actions/${verifyId}/verify`, { method: "PATCH", body: JSON.stringify({ verificationNotes }) })
+      .then(() => { setVerifyId(""); setVerificationNotes(""); load(); }).catch(() => undefined);
   }
 
   const today = new Date();
@@ -1344,6 +1437,17 @@ export function CorrectiveActionsPage() {
         </div>
       )}
 
+      {verifyId && (
+        <div className="mb-5 rounded-2xl border border-blue-200 bg-blue-50/40 p-5 shadow-card">
+          <p className="mb-3 font-semibold text-ink">Verify Resolution Effectiveness</p>
+          <textarea value={verificationNotes} onChange={(e) => setVerificationNotes(e.target.value)} placeholder="Confirm the resolution was effective and the root cause has been eliminated..." rows={3} className={inputCls} />
+          <div className="mt-3 flex gap-2">
+            <button onClick={verify} className="rounded-xl bg-blue-600 px-5 py-2 text-sm font-bold text-white hover:bg-blue-700">Confirm Verification</button>
+            <button onClick={() => { setVerifyId(""); setVerificationNotes(""); }} className="app-button-secondary">Cancel</button>
+          </div>
+        </div>
+      )}
+
       <div className="mb-5">
         <select value={status} onChange={(e) => setStatus(e.target.value)} className="rounded-xl border border-line bg-white px-3 py-2 text-sm text-ink outline-none focus:border-brand focus:ring-4 focus:ring-brand/10">
           <option value="">All Statuses</option>
@@ -1361,7 +1465,11 @@ export function CorrectiveActionsPage() {
             { key: "assignedTo", label: "Assigned To", render: (r) => (r.assignedTo as { fullName: string } | undefined)?.fullName ?? "—" },
             { key: "dueDate", label: "Due", render: (r) => fmt(r.dueDate as string) },
             { key: "status", label: "Status", render: (r) => <StatusBadge status={r.status as string} /> },
-            { key: "actions", label: "", render: (r) => (r.status === "OPEN" || r.status === "IN_PROGRESS") ? <button onClick={() => setResolveId(r.id as string)} className="text-xs font-medium text-brand hover:underline">Resolve</button> : null },
+            { key: "actions", label: "", render: (r) => {
+              if (r.status === "OPEN" || r.status === "IN_PROGRESS") return <button onClick={() => setResolveId(r.id as string)} className="text-xs font-medium text-brand hover:underline">Resolve</button>;
+              if (r.status === "RESOLVED") return <button onClick={() => setVerifyId(r.id as string)} className="text-xs font-medium text-emerald-600 hover:underline">Verify</button>;
+              return null;
+            } },
           ]}
           rows={rows as Record<string, unknown>[]}
           empty="No corrective actions"

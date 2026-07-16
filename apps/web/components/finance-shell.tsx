@@ -55,7 +55,7 @@ const sections: NavSection[] = [
       // Revenue Records — stays within finance (was incorrectly /sales/orders)
       { href: "/finance/revenue", label: "Revenue Records", icon: ReceiptText },
       { href: "/finance/customer-payments", label: "Customer Payments", icon: CircleArrowUp },
-      { href: "/finance/reports/product-profitability", label: "Debtors (A/R)", icon: Users }
+      { href: "/finance/debtors", label: "Debtors (A/R)", icon: Users }
     ]
   },
   {
@@ -64,7 +64,8 @@ const sections: NavSection[] = [
     items: [
       { href: "/finance/expenses", label: "Expenses", icon: CircleArrowDown },
       { href: "/finance/supplier-payments", label: "Supplier Payments", icon: Building2 },
-      { href: "/finance/reports/batch-profitability", label: "Creditors (A/P)", icon: FileClock }
+      { href: "/finance/creditors", label: "Creditors (A/P)", icon: FileClock },
+      { href: "/finance/expense-categories", label: "Expense Categories", icon: Receipt }
     ]
   },
   {
@@ -304,10 +305,10 @@ export function FinanceShell({
   }
 
   return (
-    <div className="flex min-h-screen bg-slate-50 text-slate-900">
+    <div className="flex h-screen overflow-hidden bg-slate-50 text-slate-900">
 
       {/* ── Desktop sidebar ────────────────────────────────────────────────── */}
-      <aside className="hidden w-60 shrink-0 flex-col bg-sidebar lg:flex xl:w-64">
+      <aside className="hidden h-full w-60 shrink-0 flex-col overflow-y-auto bg-sidebar lg:flex xl:w-64">
         <div className="flex h-full flex-col px-3 py-5">
           <SidebarContent />
         </div>
@@ -344,7 +345,7 @@ export function FinanceShell({
       )}
 
       {/* ── Main content ───────────────────────────────────────────────────── */}
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
 
         {/* Top header */}
         <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-slate-200 bg-white/95 px-5 py-3.5 shadow-sm backdrop-blur-md lg:px-8">

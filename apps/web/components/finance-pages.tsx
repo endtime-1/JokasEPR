@@ -19,8 +19,8 @@ type FinanceOptions = {
   accounts: Option[];
 };
 
-const inputClass = "min-h-11 rounded-md border border-line px-3 text-sm";
-const selectClass = "min-h-11 rounded-md border border-line px-3 text-sm bg-white";
+const inputClass = "min-h-11 w-full rounded-md border border-line px-3 text-sm";
+const selectClass = "min-h-11 w-full rounded-md border border-line px-3 text-sm bg-white";
 const btnPrimary = "inline-flex min-h-10 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50";
 const btnSecondary = "inline-flex min-h-10 items-center gap-2 rounded-md border border-line px-3 text-sm font-semibold hover:bg-field";
 
@@ -186,6 +186,8 @@ export function FinanceDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [refresh, setRefresh] = useState(0);
   const [approving, setApproving] = useState<string | null>(null);
+  const [rejectingExpense, setRejectingExpense] = useState<{ id: string; desc: string } | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
 
   useEffect(() => {
     const { startDate, endDate } = dashPeriodDates(period);
@@ -210,11 +212,11 @@ export function FinanceDashboardPage() {
     catch { /* noop */ } finally { setApproving(null); }
   }
 
-  async function handleReject(id: string) {
-    const reason = prompt("Rejection reason:");
-    if (!reason) return;
-    setApproving(id);
-    try { await apiFetch(`/finance/expenses/${id}/reject`, { method: "PATCH", body: JSON.stringify({ reason }) }); setRefresh((r) => r + 1); }
+  async function confirmReject(e: FormEvent) {
+    e.preventDefault();
+    if (!rejectingExpense || !rejectReason) return;
+    setApproving(rejectingExpense.id);
+    try { await apiFetch(`/finance/expenses/${rejectingExpense.id}/reject`, { method: "PATCH", body: JSON.stringify({ reason: rejectReason }) }); setRejectingExpense(null); setRejectReason(""); setRefresh((r) => r + 1); }
     catch { /* noop */ } finally { setApproving(null); }
   }
 
@@ -494,7 +496,7 @@ export function FinanceDashboardPage() {
                           {approving === (e.id as string) ? "Approving…" : "Approve"}
                         </button>
                         <button
-                          onClick={() => handleReject(e.id as string)}
+                          onClick={() => setRejectingExpense({ id: e.id as string, desc: e.description as string })}
                           disabled={!!approving}
                           className="flex items-center gap-1.5 rounded-lg bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 transition hover:bg-red-100 disabled:opacity-50"
                         >
@@ -510,6 +512,26 @@ export function FinanceDashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* ── Reject Expense Panel ─────────────────────────────────────────────── */}
+      {rejectingExpense && (
+        <div className="mb-5 rounded-xl border border-red-200 bg-red-50 p-5 shadow-sm">
+          <p className="mb-1 font-semibold text-red-800">Reject Expense</p>
+          <p className="mb-3 text-sm text-red-700 truncate">{rejectingExpense.desc}</p>
+          <form onSubmit={confirmReject} className="flex flex-wrap gap-2">
+            <input
+              className="min-h-10 flex-1 min-w-48 rounded-lg border border-red-200 bg-white px-3 text-sm outline-none focus:border-red-400 focus:ring-2 focus:ring-red-100"
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              placeholder="Reason for rejection…"
+              required
+              autoFocus
+            />
+            <button type="submit" disabled={!!approving} className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50">{approving ? "Rejecting…" : "Confirm Reject"}</button>
+            <button type="button" onClick={() => { setRejectingExpense(null); setRejectReason(""); }} className={btnSecondary}>Cancel</button>
+          </form>
+        </div>
+      )}
 
       {/* ── Bank Accounts ────────────────────────────────────────────────────── */}
       {!loading && bankAccounts.length > 0 && (
@@ -609,6 +631,9 @@ export function ExpenseListPage() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [actionErr, setActionErr] = useState("");
+  const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const [rejecting, setRejecting] = useState(false);
 
   function load() {
     const params = new URLSearchParams();
@@ -632,16 +657,16 @@ export function ExpenseListPage() {
     }
   }
 
-  async function handleReject(id: string) {
-    const reason = prompt("Rejection reason:");
-    if (!reason) return;
-    setActionErr("");
+  async function submitReject(e: FormEvent) {
+    e.preventDefault();
+    if (!rejectingId || !rejectReason) return;
+    setRejecting(true); setActionErr("");
     try {
-      await apiFetch(`/finance/expenses/${id}/reject`, { method: "PATCH", body: JSON.stringify({ reason }) });
-      load();
+      await apiFetch(`/finance/expenses/${rejectingId}/reject`, { method: "PATCH", body: JSON.stringify({ reason: rejectReason }) });
+      setRejectingId(null); setRejectReason(""); load();
     } catch (err: unknown) {
       setActionErr(err instanceof Error ? err.message : "Failed to reject expense");
-    }
+    } finally { setRejecting(false); }
   }
 
   return (
@@ -650,6 +675,16 @@ export function ExpenseListPage() {
         <Link href="/finance/expenses/create" className={btnPrimary}><BadgeDollarSign className="h-4 w-4" /> Record Expense</Link>
       </div>
       {actionErr && <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{actionErr}</p>}
+      {rejectingId && (
+        <div className="mb-4 rounded-md border border-red-200 bg-red-50 p-4">
+          <p className="mb-2 text-sm font-semibold text-red-800">Enter rejection reason:</p>
+          <form onSubmit={submitReject} className="flex flex-wrap gap-2">
+            <input className="min-h-10 flex-1 min-w-48 rounded-md border border-red-200 bg-white px-3 text-sm outline-none focus:border-red-400" value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} placeholder="Reason…" required autoFocus />
+            <button type="submit" disabled={rejecting} className="rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50">{rejecting ? "Rejecting…" : "Confirm"}</button>
+            <button type="button" onClick={() => { setRejectingId(null); setRejectReason(""); }} className={btnSecondary}>Cancel</button>
+          </form>
+        </div>
+      )}
       <div className="mb-4 flex flex-wrap gap-3">
         <select className={selectClass} value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">All Statuses</option>
@@ -673,7 +708,7 @@ export function ExpenseListPage() {
               r.status === "PENDING_APPROVAL" ? (
                 <div className="flex gap-2">
                   <button onClick={() => handleApprove(r.id as string)} className="text-xs text-green-700 hover:underline">Approve</button>
-                  <button onClick={() => handleReject(r.id as string)} className="text-xs text-red-600 hover:underline">Reject</button>
+                  <button onClick={() => setRejectingId(r.id as string)} className="text-xs text-red-600 hover:underline">Reject</button>
                 </div>
               ) : null
           }
@@ -1635,7 +1670,7 @@ export function BatchProfitabilityPage() {
   const [loading, setLoading] = useState(false);
 
   function load() {
-    const params = batchTypeFilter ? `?status=${batchTypeFilter}` : "";
+    const params = batchTypeFilter ? `?batchType=${batchTypeFilter}` : "";
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>(`/finance/reports/batch-profitability${params}`)
       .then((r) => setRecords(r.data ?? []))
       .catch(() => undefined);
@@ -1716,6 +1751,188 @@ export function BatchProfitabilityPage() {
         rows={records}
         empty="No batch profitability records."
       />
+    </FinanceShell>
+  );
+}
+
+// ─── Debtors (A/R) ───────────────────────────────────────────────────────────
+
+export function DebtorsPage() {
+  const [rows, setRows] = useState<Record<string, unknown>[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/finance/debtors")
+      .then((r) => setRows(r.data ?? []))
+      .catch(() => undefined)
+      .finally(() => setLoading(false));
+  }, []);
+
+  const total = rows.reduce((s, r) => s + Number(r.balanceDue ?? 0), 0);
+  const overdueCount = rows.filter((r) => r.status === "OVERDUE").length;
+
+  return (
+    <FinanceShell title="Debtors (A/R)" subtitle="Outstanding customer invoices — amounts customers owe you.">
+      {!loading && rows.length > 0 && (
+        <div className="mb-5 grid gap-3 sm:grid-cols-3">
+          <StatCard label="Total Outstanding" value={money(total)} icon={DollarSign} sub={`${rows.length} invoice${rows.length !== 1 ? "s" : ""}`} />
+          <StatCard label="Overdue" value={String(overdueCount)} icon={CircleAlert} sub={overdueCount > 0 ? "Past due date" : "All current"} />
+          <StatCard label="Partially Paid" value={String(rows.filter((r) => r.status === "PARTIALLY_PAID").length)} icon={CircleCheck} sub="Payments received" />
+        </div>
+      )}
+      {overdueCount > 0 && (
+        <div className="mb-5 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+          <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
+          <p className="text-sm text-red-700"><strong>{overdueCount} overdue invoice{overdueCount !== 1 ? "s" : ""}</strong> — follow up with customers to collect outstanding balances.</p>
+        </div>
+      )}
+      <DataTable
+        columns={[
+          { key: "invoiceNumber", label: "Invoice #" },
+          { key: "customer", label: "Customer", render: (r) => ((r.customer as Record<string, unknown>)?.name as string) ?? "—" },
+          { key: "totalAmount", label: "Total", render: (r) => money(r.totalAmount) },
+          { key: "balanceDue", label: "Balance Due", render: (r) => <span className="font-semibold text-red-600">{money(r.balanceDue)}</span> },
+          { key: "dueDate", label: "Due Date", render: (r) => fmt(r.dueDate) },
+          { key: "status", label: "Status", render: (r) => <StatusBadge status={r.status as string} /> },
+          { key: "createdAt", label: "Issued", render: (r) => fmt(r.createdAt) },
+        ]}
+        rows={rows}
+        empty={loading ? "Loading…" : "No outstanding receivables."}
+      />
+    </FinanceShell>
+  );
+}
+
+// ─── Creditors (A/P) ──────────────────────────────────────────────────────────
+
+export function CreditorsPage() {
+  const [rows, setRows] = useState<Record<string, unknown>[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/finance/creditors")
+      .then((r) => setRows(r.data ?? []))
+      .catch(() => undefined)
+      .finally(() => setLoading(false));
+  }, []);
+
+  const total = rows.reduce((s, r) => s + Number(r.amount ?? 0), 0);
+
+  return (
+    <FinanceShell title="Creditors (A/P)" subtitle="Supplier payment history — amounts paid to vendors.">
+      {!loading && rows.length > 0 && (
+        <div className="mb-5 grid gap-3 sm:grid-cols-2">
+          <StatCard label="Total Paid to Suppliers" value={money(total)} icon={DollarSign} sub={`${rows.length} payment${rows.length !== 1 ? "s" : ""}`} />
+          <StatCard label="Recent Payments" value={money(rows.slice(0, 10).reduce((s, r) => s + Number(r.amount ?? 0), 0))} icon={FileText} sub="Last 10 transactions" />
+        </div>
+      )}
+      <DataTable
+        columns={[
+          { key: "reference", label: "Reference" },
+          { key: "paymentDate", label: "Date", render: (r) => fmt(r.paymentDate) },
+          { key: "supplierName", label: "Supplier" },
+          { key: "description", label: "Description" },
+          { key: "purchaseOrderRef", label: "PO Ref" },
+          { key: "amount", label: "Amount Paid", render: (r) => <span className="font-semibold">{money(r.amount)}</span> },
+          { key: "paymentMethod", label: "Method", render: (r) => String(r.paymentMethod ?? "").replace(/_/g, " ") },
+        ]}
+        rows={rows}
+        empty={loading ? "Loading…" : "No supplier payments recorded."}
+      />
+    </FinanceShell>
+  );
+}
+
+// ─── Expense Categories ───────────────────────────────────────────────────────
+
+export function ExpenseCategoriesPage() {
+  const [categories, setCategories] = useState<Record<string, unknown>[]>([]);
+  const [accounts, setAccounts] = useState<{ id: string; code: string; name: string }[]>([]);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ name: "", code: "", description: "", accountId: "" });
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  function load() {
+    apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/finance/expense-categories")
+      .then((r) => setCategories(r.data ?? [])).catch(() => undefined);
+  }
+
+  useEffect(() => {
+    load();
+    apiFetch<ApiEnvelope<{ id: string; code: string; name: string }[]>>("/finance/accounts?type=EXPENSE")
+      .then((r) => setAccounts(r.data ?? [])).catch(() => undefined);
+  }, []);
+
+  function set(k: string, v: string) { setForm((f) => ({ ...f, [k]: v })); }
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(""); setLoading(true);
+    try {
+      await apiFetch("/finance/expense-categories", { method: "POST", body: JSON.stringify(form) });
+      setShowForm(false);
+      setForm({ name: "", code: "", description: "", accountId: "" });
+      load();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to create category");
+    } finally { setLoading(false); }
+  }
+
+  return (
+    <FinanceShell title="Expense Categories" subtitle="Organise expenses into categories for reporting and GL mapping.">
+      <div className="mb-4 flex justify-end">
+        <button className={btnPrimary} onClick={() => setShowForm((v) => !v)}>
+          <BadgeDollarSign className="h-4 w-4" /> {showForm ? "Cancel" : "New Category"}
+        </button>
+      </div>
+      {showForm && (
+        <form onSubmit={handleSubmit} className="mb-6 rounded-md border border-line bg-white p-6 shadow-panel">
+          <h3 className="mb-4 text-base font-semibold">New Expense Category</h3>
+          {error && <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <FormField label="Code *">
+              <input className={inputClass} value={form.code} onChange={(e) => set("code", e.target.value)} placeholder="e.g. FUEL" required maxLength={24} />
+            </FormField>
+            <FormField label="Name *">
+              <input className={inputClass} value={form.name} onChange={(e) => set("name", e.target.value)} required maxLength={120} />
+            </FormField>
+            <FormField label="GL Account">
+              <select className={selectClass} value={form.accountId} onChange={(e) => set("accountId", e.target.value)}>
+                <option value="">— None —</option>
+                {accounts.map((a) => <option key={a.id} value={a.id}>{a.code} — {a.name}</option>)}
+              </select>
+            </FormField>
+            <FormField label="Description">
+              <input className={inputClass} value={form.description} onChange={(e) => set("description", e.target.value)} maxLength={240} />
+            </FormField>
+          </div>
+          <button type="submit" className={btnPrimary + " mt-4"} disabled={loading}>{loading ? "Saving…" : "Create Category"}</button>
+        </form>
+      )}
+      <div className="overflow-hidden rounded-md border border-line bg-white shadow-panel">
+        {categories.length === 0 ? (
+          <div className="flex flex-col items-center gap-3 py-14 text-center">
+            <BadgeDollarSign className="h-8 w-8 text-brand/40" />
+            <p className="text-sm text-ink/55">No expense categories yet. Add one to start recording expenses.</p>
+            <button className={btnPrimary} onClick={() => setShowForm(true)}>Add first category</button>
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead><tr className="border-b border-line text-left text-xs font-semibold uppercase tracking-wide text-ink/50">{["Code", "Name", "GL Account", "Description"].map((h) => <th key={h} className="px-4 py-3">{h}</th>)}</tr></thead>
+            <tbody className="divide-y divide-line/50">
+              {categories.map((c) => (
+                <tr key={c.id as string} className="hover:bg-field/60">
+                  <td className="px-4 py-3"><code className="rounded bg-field px-1.5 py-0.5 font-mono text-xs font-semibold">{c.code as string}</code></td>
+                  <td className="px-4 py-3 font-medium">{c.name as string}</td>
+                  <td className="px-4 py-3 text-ink/60">{((c.account as Record<string, unknown>)?.name as string) ?? "—"}</td>
+                  <td className="px-4 py-3 text-ink/55">{(c.description as string) ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
     </FinanceShell>
   );
 }
