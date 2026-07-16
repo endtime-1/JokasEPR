@@ -317,12 +317,31 @@ export default function SettingsPage() {
         </Link>
 
         <SettingCard title="Master Data" icon={Settings}>
+          <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {(["branches", "farms", "warehouses", "production-sites"] as const).map((key) => {
+              const count = master[camel(key)]?.length ?? 0;
+              const labels: Record<string, string> = { branches: "Branches", farms: "Farms", warehouses: "Warehouses", "production-sites": "Production Sites" };
+              return (
+                <button key={key} type="button" onClick={() => { setActiveMaster(key); setEditingRow(null); setForm(TAB_DEFAULTS[key] ?? {}); setMasterMsg(null); }} className={`rounded-lg border p-3 text-left transition hover:border-brand/40 ${activeMaster === key ? "border-brand bg-brand/5" : "border-line bg-field"}`}>
+                  <span className={`text-2xl font-bold tabular-nums ${activeMaster === key ? "text-brand" : "text-ink"}`}>{count}</span>
+                  <p className="mt-0.5 text-xs text-ink/55">{labels[key]}</p>
+                </button>
+              );
+            })}
+          </div>
           <div className="mb-4 flex flex-wrap gap-2">
-            {masterSections.map(([key, label]) => (
-              <button key={key} onClick={() => { setActiveMaster(key); setEditingRow(null); setForm(TAB_DEFAULTS[key] ?? {}); setError(""); setSuccess(""); setMasterMsg(null); }} className={`rounded-md border px-3 py-2 text-sm font-semibold ${activeMaster === key ? "border-brand bg-brand text-white" : "border-line bg-white text-ink/70"}`}>
-                {label}
-              </button>
-            ))}
+            {masterSections.map(([key, label]) => {
+              const count = master[camel(key)]?.length ?? 0;
+              const isActive = activeMaster === key;
+              return (
+                <button key={key} onClick={() => { setActiveMaster(key); setEditingRow(null); setForm(TAB_DEFAULTS[key] ?? {}); setError(""); setSuccess(""); setMasterMsg(null); }} className={`flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm font-semibold ${isActive ? "border-brand bg-brand text-white" : "border-line bg-white text-ink/70"}`}>
+                  {label}
+                  <span className={`rounded-full px-1.5 py-0.5 text-xs font-bold tabular-nums ${isActive ? "bg-white/25 text-white" : "bg-brand/10 text-brand"}`}>
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
           </div>
           {editingRow && (
             <div className="mb-3 flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
