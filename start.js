@@ -229,7 +229,7 @@ function launch(name, script, cwd, env) {
     if (name === "jokas-web") {
       lastWebLines.push(...s.split("\n").filter(Boolean));
       if (lastWebLines.length > 20) lastWebLines = lastWebLines.slice(-20);
-      if (!webReady && /ready/i.test(s)) {
+      if (!webReady && /\bready\b/i.test(s)) {
         webReady = true;
         console.log("[start] Next.js ready (stdout) — live traffic forwarding enabled");
       }
@@ -384,11 +384,13 @@ startProxy(0);
     console.log("[start] .prisma/client/default.js present — OK");
   }
 
-  // ── Wait for child ports, then launch ────────────────────────────────────
-  console.log(`[start] waiting for ports ${WEB_INTERNAL_PORT} and ${API_PORT} to be free…`);
+  // ── Kill any stale processes on child ports, then wait for them to free ──
+  console.log(`[start] clearing ports ${WEB_INTERNAL_PORT} and ${API_PORT}…`);
+  killPortOwner(WEB_INTERNAL_PORT);
+  killPortOwner(API_PORT);
   await Promise.all([
-    waitForPortFree(WEB_INTERNAL_PORT),
-    waitForPortFree(API_PORT),
+    waitForPortFree(WEB_INTERNAL_PORT, 8000),
+    waitForPortFree(API_PORT, 8000),
   ]);
   console.log("[start] ports clear");
 
