@@ -34,6 +34,10 @@ export class FinanceQueryDto {
   @IsOptional()
   @IsString()
   status?: string;
+
+  @IsOptional()
+  @IsString()
+  type?: string;
 }
 
 // ─── Account ──────────────────────────────────────────────────────────────────

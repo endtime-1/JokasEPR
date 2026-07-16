@@ -156,6 +156,7 @@ export class FinanceService {
       where: {
         companyId: user.companyId,
         deletedAt: null,
+        ...(query.type ? { type: query.type as never } : {}),
         ...(query.search ? { OR: [{ name: { contains: query.search } }, { code: { contains: query.search } }] } : {})
       },
       orderBy: { code: "asc" }
