@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { Download, Plus } from "lucide-react";
 import { PoultryShell } from "./poultry-shell";
 import { DataTable } from "./data-table";
@@ -57,12 +57,18 @@ const inputClass = "min-h-11 rounded-md border border-line px-3";
 
 function usePoultryOptions() {
   const [options, setOptions] = useState<PoultryOptions>({ farms: [], houses: [], pens: [], batches: [] });
+  const [optionsError, setOptionsError] = useState("");
+  const [optionsKey, setOptionsKey] = useState(0);
+
   useEffect(() => {
+    setOptionsError("");
     apiFetch<ApiEnvelope<PoultryOptions>>("/poultry/options")
       .then((response) => setOptions(response.data ?? { farms: [], houses: [], pens: [], batches: [] }))
-      .catch(() => undefined);
-  }, []);
-  return options;
+      .catch((err) => setOptionsError(err?.message ?? "Failed to load dropdown options. Refresh the page."));
+  }, [optionsKey]);
+
+  const refreshOptions = () => setOptionsKey((k) => k + 1);
+  return { options, optionsError, refreshOptions };
 }
 
 function PageHeader({ title, subtitle }: { title: string; subtitle: string }) {
@@ -76,7 +82,7 @@ function PageHeader({ title, subtitle }: { title: string; subtitle: string }) {
 
 
 export function FarmPoultryOverviewPage() {
-  const options = usePoultryOptions();
+  const { options } = usePoultryOptions();
   const [farmId, setFarmId] = useState("");
   const [overview, setOverview] = useState<Record<string, number> | null>(null);
   const selectedFarmId = farmId || options.farms[0]?.id || "";
@@ -117,11 +123,12 @@ export function FarmPoultryOverviewPage() {
 type HouseRow = { id: string; code: string; name: string; capacity?: number; farm: Option; pens?: PenOption[] };
 
 export function PoultryHousesPage({ create = false }: { create?: boolean }) {
-  const options = usePoultryOptions();
+  const { options, optionsError, refreshOptions } = usePoultryOptions();
   const [rows, setRows] = useState<HouseRow[]>([]);
   const [form, setForm] = useState({ farmId: "", name: "", code: "", capacity: "", defaultPenCount: "5" });
   const [expandedHouseId, setExpandedHouseId] = useState<string | null>(null);
   const [addPenHouseId, setAddPenHouseId] = useState<string | null>(null);
+  const [submitMsg, setSubmitMsg] = useState("");
 
   async function load() {
     const response = await apiFetch<ApiEnvelope<HouseRow[]>>("/poultry/houses");
@@ -134,29 +141,39 @@ export function PoultryHousesPage({ create = false }: { create?: boolean }) {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await apiFetch("/poultry/houses", {
-      method: "POST",
-      body: JSON.stringify({
-        farmId: form.farmId || options.farms[0]?.id,
-        name: form.name,
-        code: form.code,
-        capacity: Number(form.capacity || 0) || undefined,
-        defaultPenCount: Number(form.defaultPenCount || 5)
-      })
-    });
-    setForm({ farmId: "", name: "", code: "", capacity: "", defaultPenCount: "5" });
-    await load();
+    setSubmitMsg("");
+    try {
+      await apiFetch("/poultry/houses", {
+        method: "POST",
+        body: JSON.stringify({
+          farmId: form.farmId || options.farms[0]?.id,
+          name: form.name,
+          code: form.code,
+          capacity: Number(form.capacity || 0) || undefined,
+          defaultPenCount: Number(form.defaultPenCount || 5)
+        })
+      });
+      setForm({ farmId: "", name: "", code: "", capacity: "", defaultPenCount: "5" });
+      await load();
+      refreshOptions();
+      setSubmitMsg("House created successfully.");
+    } catch (err: any) {
+      setSubmitMsg(err?.message ?? "Failed to create house.");
+    }
   }
 
   async function addPen(houseId: string, penData: { name?: string; capacity?: number }) {
     await apiFetch(`/poultry/houses/${houseId}/pens`, { method: "POST", body: JSON.stringify(penData) });
     setAddPenHouseId(null);
     await load();
+    refreshOptions();
   }
 
   return (
     <PoultryShell>
       <PageHeader title={create ? "Create Poultry House" : "Poultry Houses"} subtitle="Manage poultry houses by farm. Each house auto-creates 5 pens." />
+      {optionsError && <p className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">{optionsError}</p>}
+      {submitMsg && <p className="mb-4 rounded-md border border-green-200 bg-green-50 px-4 py-2 text-sm text-green-800">{submitMsg}</p>}
       {create ? (
         <PoultryHouseForm options={options} form={form} setForm={setForm} submit={submit} />
       ) : (
@@ -169,7 +186,8 @@ export function PoultryHousesPage({ create = false }: { create?: boolean }) {
       <div className="space-y-3">
         {rows.length === 0 && <p className="rounded-md border border-line bg-white p-4 text-sm text-ink/65">No poultry houses found.</p>}
         {rows.map((house) => {
-          const pens = house.pens ?? options.pens.filter((p) => p.poultryHouseId === house.id);
+          const housePens = house.pens && house.pens.length > 0 ? house.pens : options.pens.filter((p) => p.poultryHouseId === house.id);
+          const pens = housePens;
           const isExpanded = expandedHouseId === house.id;
           return (
             <div key={house.id} className="rounded-md border border-line bg-white shadow-panel">
@@ -261,7 +279,7 @@ function PoultryHouseForm({ options, form, setForm, submit }: {
 // ─── Batches ──────────────────────────────────────────────────────────────────
 
 export function FlockBatchesPage({ create = false }: { create?: boolean }) {
-  const options = usePoultryOptions();
+  const { options, optionsError } = usePoultryOptions();
   const [rows, setRows] = useState<BatchRow[]>([]);
 
   async function load() {
@@ -276,6 +294,7 @@ export function FlockBatchesPage({ create = false }: { create?: boolean }) {
   return (
     <PoultryShell>
       <PageHeader title={create ? "Create Flock Batch" : "Flock Batches"} subtitle="Register and monitor flock batches distributed across houses and pens." />
+      {optionsError && <p className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">{optionsError}</p>}
       {create ? (
         <FlockBatchForm options={options} onSaved={load} />
       ) : (
@@ -289,6 +308,7 @@ export function FlockBatchesPage({ create = false }: { create?: boolean }) {
 }
 
 function FlockBatchForm({ options, onSaved }: { options: PoultryOptions; onSaved: () => void }) {
+  const router = useRouter();
   const [form, setForm] = useState({
     code: "",
     name: "",
@@ -341,6 +361,8 @@ function FlockBatchForm({ options, onSaved }: { options: PoultryOptions; onSaved
       onSaved();
       setForm({ code: "", name: "", birdType: "LAYERS", openingBirdCount: "", startDate: new Date().toISOString().slice(0, 10), expectedCloseDate: "", notes: "" });
       setAllocations([]);
+      setError("");
+      router.push("/poultry/batches");
     } catch (err: any) {
       setError(err?.message ?? "Failed to create batch.");
     }
@@ -395,7 +417,11 @@ function FlockBatchForm({ options, onSaved }: { options: PoultryOptions; onSaved
             {remaining === 0 ? "Fully allocated" : remaining > 0 ? `${remaining} birds remaining` : `Over-allocated by ${Math.abs(remaining)}`}
           </span>
         </div>
-        {pensByHouse.length === 0 && <p className="text-sm text-ink/65">No pens available. Create houses first.</p>}
+        {pensByHouse.length === 0 && (
+          <p className="text-sm text-ink/65">
+            No pens available. <Link className="font-semibold text-brand hover:underline" href="/poultry/houses/create">Create a poultry house first →</Link>
+          </p>
+        )}
         {pensByHouse.map(({ house, pens }) => (
           <div key={house.id} className="mb-4">
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink/60">{house.code} — {house.name}</p>
@@ -585,17 +611,12 @@ export function FlockBatchDetailsPage() {
 // ─── Records ──────────────────────────────────────────────────────────────────
 
 export function PoultryRecordPage({ title, type, endpoint, health = false }: { title: string; type: string; endpoint: string; health?: boolean }) {
-  const options = usePoultryOptions();
+  const { options, optionsError, refreshOptions } = usePoultryOptions();
   const [rows, setRows] = useState<Record<string, any>[]>([]);
   const [form, setForm] = useState<Record<string, string>>({ flockBatchId: "", penId: "", recordDate: new Date().toISOString().slice(0, 10) });
+  const [submitError, setSubmitError] = useState("");
 
-  const batchPens = useMemo(() => {
-    const batchId = form.flockBatchId || options.batches[0]?.id || "";
-    return options.pens.filter((p) => {
-      // we can't know the batch's pen allocations from options, so show all pens
-      return true;
-    });
-  }, [form.flockBatchId, options.pens, options.batches]);
+  const batchPens = useMemo(() => options.pens, [options.pens]);
 
   async function load() {
     const response = await apiFetch<ApiEnvelope<Record<string, any>[]>>(`/poultry/records/${type}`);
@@ -608,14 +629,31 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await apiFetch(endpoint, { method: "POST", body: JSON.stringify(buildRecordPayload(type, form, options)) });
-    setForm({ flockBatchId: "", penId: "", recordDate: new Date().toISOString().slice(0, 10) });
-    await load();
+    setSubmitError("");
+    try {
+      await apiFetch(endpoint, { method: "POST", body: JSON.stringify(buildRecordPayload(type, form, options)) });
+      setForm({ flockBatchId: "", penId: "", recordDate: new Date().toISOString().slice(0, 10) });
+      await load();
+    } catch (err: any) {
+      setSubmitError(err?.message ?? "Failed to save record.");
+    }
   }
 
   return (
     <PoultryShell>
       <PageHeader title={title} subtitle={health ? "Veterinary and health workflow entries for assigned farms." : "Operational record entry and history for assigned flock batches."} />
+      {optionsError && (
+        <div className="mb-4 flex items-center justify-between rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+          <span>{optionsError}</span>
+          <button className="ml-4 rounded border border-amber-400 px-3 py-1 text-xs font-semibold hover:bg-amber-100" onClick={refreshOptions}>Retry</button>
+        </div>
+      )}
+      {options.batches.length === 0 && !optionsError && (
+        <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          No flock batches found. <Link className="font-semibold underline" href="/poultry/batches/create">Create a batch first →</Link>
+        </div>
+      )}
+      {submitError && <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{submitError}</p>}
       <GenericRecordForm options={options} batchPens={batchPens} form={form} setForm={setForm} submit={submit} type={type} />
       <SimpleRecordTable rows={rows} />
     </PoultryShell>
@@ -634,8 +672,11 @@ function GenericRecordForm({ options, batchPens, form, setForm, submit, type }: 
   return (
     <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-4">
       <FormField label="Flock batch">
-        <select className={inputClass} value={form.flockBatchId || options.batches[0]?.id || ""} onChange={(event) => setForm({ ...form, flockBatchId: event.target.value, penId: "" })}>
-          {options.batches.map((batch) => <option key={batch.id} value={batch.id}>{batch.code} - {batch.name}</option>)}
+        <select className={`${inputClass} ${options.batches.length === 0 ? "border-amber-400 bg-amber-50" : ""}`} value={form.flockBatchId || options.batches[0]?.id || ""} onChange={(event) => setForm({ ...form, flockBatchId: event.target.value, penId: "" })} required>
+          {options.batches.length === 0
+            ? <option value="">— No batches found — create one first —</option>
+            : options.batches.map((batch) => <option key={batch.id} value={batch.id}>{batch.code} - {batch.name}</option>)
+          }
         </select>
       </FormField>
       <FormField label="Pen (optional)">
@@ -701,7 +742,7 @@ function SimpleRecordTable({ rows }: { rows: Record<string, any>[] }) {
 // ─── Transfers ────────────────────────────────────────────────────────────────
 
 export function PoultryTransferPage() {
-  const options = usePoultryOptions();
+  const { options } = usePoultryOptions();
   const [rows, setRows] = useState<Record<string, any>[]>([]);
   const [form, setForm] = useState({ flockBatchId: "", fromPenId: "", toFarmId: "", toPoultryHouseId: "", toPenId: "", birdCount: "", transferDate: new Date().toISOString().slice(0, 10), reason: "" });
 
