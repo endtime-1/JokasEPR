@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Activity,
   AlertTriangle,
+  ArrowRight,
   ChartBar,
   Bird,
   Boxes,
@@ -18,6 +19,7 @@ import {
   SlidersHorizontal,
   Wheat
 } from "lucide-react";
+import Link from "next/link";
 import { AppShell } from "../../components/app-shell";
 import { Skeleton, SkeletonCard } from "../../components/ui";
 import { ApiEnvelope, apiFetch } from "../../lib/api";
@@ -128,6 +130,27 @@ const cardIcons = [
   Activity
 ];
 
+const cardHrefs: Record<string, string> = {
+  totalBirds:                  "/poultry/batches",
+  activeFlockBatches:          "/poultry/batches/create",
+  eggProductionToday:          "/poultry/egg-production",
+  mortalityToday:              "/poultry/mortality",
+  feedConsumedToday:           "/poultry/feed-consumption",
+  feedProducedThisWeek:        "/feed-production/batches",
+  soyaBeansProcessedThisWeek: "/soya-processing/batches",
+  soyaOilProduced:             "/soya-processing/oil-stock",
+  soyaCakeProduced:            "/soya-processing/cake-stock",
+  currentInventoryValue:       "/inventory/items",
+  salesThisMonth:              "/sales/orders",
+  outstandingCustomerDebt:     "/sales/debtors",
+  supplierDebt:                "/procurement/invoices",
+  lowStockAlerts:              "/inventory/low-stock",
+  pendingProductionOrders:     "/feed-production/orders",
+  pendingPurchaseApprovals:    "/procurement/purchase-requests",
+  machineMaintenanceAlerts:    "/alerts",
+  aiAlerts:                    "/alerts",
+};
+
 function defaultFilters(): Filters {
   const end = new Date();
   const start = new Date();
@@ -191,6 +214,7 @@ function SelectField({
 
 function SummaryCard({ card, index }: { card: Card; index: number }) {
   const Icon = cardIcons[index] ?? ChartBar;
+  const href = cardHrefs[card.key];
 
   const styles = {
     critical: {
@@ -219,7 +243,7 @@ function SummaryCard({ card, index }: { card: Card; index: number }) {
     }
   }[card.tone];
 
-  return (
+  const inner = (
     <article
       className={`group relative overflow-hidden rounded-2xl border bg-gradient-to-b ${styles.wrap} to-white p-5 shadow-card transition-all duration-200 hover:-translate-y-0.5 hover:shadow-soft`}
     >
@@ -227,7 +251,12 @@ function SummaryCard({ card, index }: { card: Card; index: number }) {
         <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl shadow-sm ${styles.icon}`}>
           <Icon aria-hidden className="h-5 w-5" />
         </span>
-        <span className={`h-2 w-2 rounded-full ${styles.dot} mt-0.5 opacity-70`} />
+        <div className="flex items-center gap-1.5 mt-0.5">
+          <span className={`h-2 w-2 rounded-full ${styles.dot} opacity-70`} />
+          {href && (
+            <ArrowRight aria-hidden className="h-3.5 w-3.5 text-ink/20 opacity-0 transition-opacity duration-200 group-hover:opacity-100" />
+          )}
+        </div>
       </div>
       <strong className={`mt-4 block text-[26px] font-extrabold leading-none tracking-tight ${styles.val}`}>
         {formatValue(card.value, card.unit)}
@@ -237,6 +266,12 @@ function SummaryCard({ card, index }: { card: Card; index: number }) {
       </p>
     </article>
   );
+
+  return href ? (
+    <Link href={href} className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand rounded-2xl">
+      {inner}
+    </Link>
+  ) : inner;
 }
 
 function LinePanel({ title, series }: { title: string; series: Series[] }) {

@@ -221,6 +221,14 @@ export function SoyaStockPage({ type }: { type: "oil" | "cake" }) {
   return (
     <SoyaProcessingShell>
       <PageHeader title={type === "oil" ? "Soya Oil Stock" : "Soya Cake Stock"} subtitle="Production output stock by warehouse, batch, unit cost, and quantity." />
+      <div className="mb-5 flex flex-wrap items-center gap-3">
+        <Link className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white hover:bg-brand/90" href="/soya-processing/batches/create">
+          <Plus aria-hidden className="h-4 w-4" /> Record new processing batch
+        </Link>
+        <p className="text-sm text-ink/55">
+          {type === "oil" ? "Oil" : "Cake"} stock is added automatically when you post a soya processing batch.
+        </p>
+      </div>
       <SimpleRowsTable rows={rows} />
     </SoyaProcessingShell>
   );
