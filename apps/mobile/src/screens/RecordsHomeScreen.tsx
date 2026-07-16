@@ -158,7 +158,7 @@ const GROUPS: Group[] = [
 export function RecordsHomeScreen() {
   const { user }     = useAuth();
   const navigation   = useNavigation<any>();
-  const userRoles    = user?.roles ?? [];
+  const userRoles    = (user?.roles ?? []).map((r) => r.toUpperCase());
 
   const visibleGroups = GROUPS.map((g) => ({
     ...g,

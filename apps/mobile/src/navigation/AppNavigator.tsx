@@ -301,16 +301,17 @@ export function AppNavigator() {
         options={{ title: "Records" }}
         listeners={({ navigation }) => ({
           tabPress: (e) => {
-            e.preventDefault();
             const state = navigation.getState();
             const recordsRoute = state?.routes?.find((r: any) => r.name === "RecordsTab");
             const stackKey = (recordsRoute as any)?.state?.key;
             const stackDepth: number = (recordsRoute as any)?.state?.routes?.length ?? 0;
             if (stackKey && stackDepth > 1) {
-              // Pop everything above RecordsHome without animation glitch
+              // Only intercept when deep in the stack — pop to RecordsHome
+              e.preventDefault();
               navigation.dispatch({ ...StackActions.popToTop(), target: stackKey });
+              navigation.navigate("RecordsTab");
             }
-            navigation.navigate("RecordsTab");
+            // depth ≤ 1: let default tab press handle it (mounts the navigator correctly)
           },
         })}
       />

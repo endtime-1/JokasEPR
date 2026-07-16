@@ -57,10 +57,6 @@ export function HiproPredictiveScreen() {
       setSimError("Enter planned tons for at least one feed type.");
       return;
     }
-    if (!warehouseId) {
-      setSimError("Select a warehouse to simulate ingredient requirements.");
-      return;
-    }
     setSimulating(true);
     setSimError(null);
     setSimResult(null);
