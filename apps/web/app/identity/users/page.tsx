@@ -70,6 +70,9 @@ export default function UsersPage() {
   const [form, setForm] = useState<UserForm>(emptyForm);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [editingRolesFor, setEditingRolesFor] = useState<UserRow | null>(null);
+  const [editRoleIds, setEditRoleIds] = useState<string[]>([]);
+  const [savingRoles, setSavingRoles] = useState(false);
 
   const defaultRoleIds = useMemo(() => (form.roleIds.length ? form.roleIds : roles[0] ? [roles[0].id] : []), [form.roleIds, roles]);
 
@@ -131,6 +134,31 @@ export default function UsersPage() {
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update status.");
+    }
+  }
+
+  function openEditRoles(user: UserRow) {
+    setEditingRolesFor(user);
+    setEditRoleIds((user.roles ?? []).map((r) => r.role.id));
+  }
+
+  async function saveRoles(e: FormEvent) {
+    e.preventDefault();
+    if (!editingRolesFor) return;
+    setSavingRoles(true);
+    setError("");
+    try {
+      await apiFetch(`/identity/users/${editingRolesFor.id}/roles`, {
+        method: "PUT",
+        body: JSON.stringify({ roleIds: editRoleIds })
+      });
+      setMessage(`Roles updated for ${editingRolesFor.fullName}.`);
+      setEditingRolesFor(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update roles.");
+    } finally {
+      setSavingRoles(false);
     }
   }
 
@@ -205,6 +233,33 @@ export default function UsersPage() {
       {message && <p className="mb-4 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">{message}</p>}
       {error && <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
+      {editingRolesFor && (
+        <form onSubmit={saveRoles} className="mb-4 rounded-md border border-brand/30 bg-brand/5 p-4">
+          <p className="mb-3 text-sm font-semibold">Edit roles for <span className="text-brand">{editingRolesFor.fullName}</span></p>
+          <div className="mb-3 flex flex-wrap gap-2">
+            {roles.map((role) => (
+              <label key={role.id} className="flex cursor-pointer items-center gap-2 rounded-md border border-line bg-white px-3 py-2 text-sm hover:border-brand/40">
+                <input
+                  type="checkbox"
+                  checked={editRoleIds.includes(role.id)}
+                  onChange={(e) => setEditRoleIds(e.target.checked ? [...editRoleIds, role.id] : editRoleIds.filter((id) => id !== role.id))}
+                />
+                {role.name}
+              </label>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <button type="submit" disabled={savingRoles} className="inline-flex min-h-9 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-50">
+              <ShieldCheck className="h-4 w-4" />
+              {savingRoles ? "Saving…" : "Save roles"}
+            </button>
+            <button type="button" onClick={() => setEditingRolesFor(null)} className="inline-flex min-h-9 items-center gap-2 rounded-md border border-line px-4 text-sm font-semibold hover:bg-field">
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+
       <DataTable
         rows={users}
         empty="No users found"
@@ -219,6 +274,10 @@ export default function UsersPage() {
             label: "Actions",
             render: (row) => (
               <div className="flex flex-wrap gap-2">
+                <button className="inline-flex min-h-9 items-center gap-2 rounded-md border border-brand/30 bg-brand/5 px-3 text-xs font-semibold text-brand hover:bg-brand/10" onClick={() => openEditRoles(row)}>
+                  <ShieldCheck aria-hidden className="h-4 w-4" />
+                  Edit Roles
+                </button>
                 <button className="inline-flex min-h-9 items-center gap-2 rounded-md border border-line px-3 text-xs font-semibold hover:bg-field" onClick={() => setStatus(row, "ACTIVE")}>
                   <UserCheck aria-hidden className="h-4 w-4" />
                   Activate
@@ -227,7 +286,6 @@ export default function UsersPage() {
                   <UserX aria-hidden className="h-4 w-4" />
                   Deactivate
                 </button>
-                <ShieldCheck aria-hidden className="mt-2 h-4 w-4 text-brand" />
               </div>
             )
           }
