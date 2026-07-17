@@ -34,6 +34,7 @@ async function request(path: string, init?: RequestInit): Promise<Response> {
   return fetch(`${API_URL}${path}`, {
     ...init,
     credentials: "include",
+    cache: "no-store",
     headers: {
       "content-type": "application/json",
       ...init?.headers
