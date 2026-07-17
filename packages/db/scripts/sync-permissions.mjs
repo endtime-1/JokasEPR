@@ -70,45 +70,60 @@ const rolePermissionMap = {
 };
 
 async function main() {
-  const upserted = await Promise.all(
-    permissions.map(([key, category, description]) =>
-      prisma.permission.upsert({
-        where: { key },
-        update: { category, description },
-        create: { key, category, description },
-      })
-    )
-  );
-  const permByKey = new Map(upserted.map((p) => [p.key, p]));
-  console.log(`[sync-permissions] ${upserted.length} permissions upserted`);
+  // Find all companies to upsert permissions per company
+  const companies = await prisma.company.findMany({ select: { id: true, name: true } });
+  console.log(`[sync-permissions] ${companies.length} companies found`);
 
-  const allRoles = await prisma.role.findMany({ select: { id: true, name: true } });
-  console.log(`[sync-permissions] ${allRoles.length} roles found`);
+  for (const company of companies) {
+    console.log(`[sync-permissions] syncing company: ${company.name} (${company.id})`);
 
-  let linked = 0;
-  for (const role of allRoles) {
-    const keys = rolePermissionMap[role.name];
-    if (!keys) continue;
-
-    const permIds = keys.map((k) => permByKey.get(k)?.id).filter(Boolean);
-    if (!permIds.length) continue;
-
-    const placeholders = permIds.map(() => "?").join(",");
-    await prisma.$executeRawUnsafe(
-      `DELETE FROM _RolePermissions WHERE B = ? AND A NOT IN (${placeholders})`,
-      role.id, ...permIds
+    // Upsert all Permission rows for this company
+    const upserted = await Promise.all(
+      permissions.map(([key, module, description]) =>
+        prisma.permission.upsert({
+          where: { companyId_key: { companyId: company.id, key } },
+          update: { module, description },
+          create: { companyId: company.id, key, module, description },
+        })
+      )
     );
-    for (const permId of permIds) {
+    const permByKey = new Map(upserted.map((p) => [p.key, p]));
+    console.log(`[sync-permissions]   ${upserted.length} permissions upserted`);
+
+    // Find all roles for this company
+    const allRoles = await prisma.role.findMany({
+      where: { companyId: company.id },
+      select: { id: true, name: true },
+    });
+    console.log(`[sync-permissions]   ${allRoles.length} roles found`);
+
+    let linked = 0;
+    for (const role of allRoles) {
+      const keys = rolePermissionMap[role.name];
+      if (!keys) continue;
+
+      const permIds = keys.map((k) => permByKey.get(k)?.id).filter(Boolean);
+      if (!permIds.length) continue;
+
+      const placeholders = permIds.map(() => "?").join(",");
       await prisma.$executeRawUnsafe(
-        `INSERT IGNORE INTO _RolePermissions (A, B) VALUES (?, ?)`,
-        permId, role.id
+        `DELETE FROM _RolePermissions WHERE B = ? AND A NOT IN (${placeholders})`,
+        role.id, ...permIds
       );
+      for (const permId of permIds) {
+        await prisma.$executeRawUnsafe(
+          `INSERT IGNORE INTO _RolePermissions (A, B) VALUES (?, ?)`,
+          permId, role.id
+        );
+      }
+      linked += permIds.length;
+      console.log(`[sync-permissions]   ${role.name}: ${permIds.length} permissions`);
     }
-    linked += permIds.length;
-    console.log(`[sync-permissions] ${role.name}: ${permIds.length} permissions`);
+
+    console.log(`[sync-permissions]   ${linked} total role-permission links for ${company.name}`);
   }
 
-  console.log(`[sync-permissions] done — ${linked} total role-permission links`);
+  console.log("[sync-permissions] done");
 }
 
 main()

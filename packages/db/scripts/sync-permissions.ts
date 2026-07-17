@@ -2,7 +2,6 @@
  * Idempotent permissions sync — safe to run on every deployment.
  * Upserts Permission rows and syncs _RolePermissions for every role
  * that exists in the DB, based on the canonical rolePermissionMap.
- * Does NOT touch users, companies, branches, or any other data.
  */
 import { PrismaClient } from "@prisma/client";
 
@@ -72,52 +71,63 @@ const rolePermissionMap: Record<string, readonly string[]> = {
 };
 
 async function main() {
-  // 1. Upsert all Permission rows (global — no companyId)
-  const upserted = await Promise.all(
-    permissions.map(([key, category, description]) =>
-      prisma.permission.upsert({
-        where: { key },
-        update: { category, description },
-        create: { key, category, description },
-      })
-    )
-  );
-  const permByKey = new Map(upserted.map((p) => [p.key, p]));
-  console.log(`[sync-permissions] ${upserted.length} permissions upserted`);
+  const companies = await prisma.company.findMany({ select: { id: true, name: true } });
+  console.log(`[sync-permissions] ${companies.length} companies found`);
 
-  // 2. Find all roles across all companies
-  const allRoles = await prisma.role.findMany({ select: { id: true, name: true, companyId: true } });
-  console.log(`[sync-permissions] ${allRoles.length} roles found across all companies`);
+  for (const company of companies) {
+    console.log(`[sync-permissions] syncing company: ${company.name} (${company.id})`);
 
-  let linked = 0;
-  for (const role of allRoles) {
-    const keys = rolePermissionMap[role.name];
-    if (!keys) {
-      console.log(`[sync-permissions] no permission map for role "${role.name}" — skipping`);
-      continue;
-    }
-
-    const permIds = keys.map((k) => permByKey.get(k)?.id).filter((id): id is string => !!id);
-
-    // Delete permissions not in the current map, then insert missing ones
-    await prisma.$executeRawUnsafe(
-      `DELETE FROM _RolePermissions WHERE B = ? AND A NOT IN (${permIds.map(() => "?").join(",")})`,
-      role.id,
-      ...permIds
+    const upserted = await Promise.all(
+      permissions.map(([key, module, description]) =>
+        prisma.permission.upsert({
+          where: { companyId_key: { companyId: company.id, key } },
+          update: { module, description },
+          create: { companyId: company.id, key, module, description },
+        })
+      )
     );
+    const permByKey = new Map(upserted.map((p) => [p.key, p]));
+    console.log(`[sync-permissions]   ${upserted.length} permissions upserted`);
 
-    for (const permId of permIds) {
+    const allRoles = await prisma.role.findMany({
+      where: { companyId: company.id },
+      select: { id: true, name: true },
+    });
+    console.log(`[sync-permissions]   ${allRoles.length} roles found`);
+
+    let linked = 0;
+    for (const role of allRoles) {
+      const keys = rolePermissionMap[role.name];
+      if (!keys) {
+        console.log(`[sync-permissions]   no permission map for role "${role.name}" — skipping`);
+        continue;
+      }
+
+      const permIds = keys.map((k) => permByKey.get(k)?.id).filter((id): id is string => !!id);
+      if (!permIds.length) continue;
+
       await prisma.$executeRawUnsafe(
-        `INSERT IGNORE INTO _RolePermissions (A, B) VALUES (?, ?)`,
-        permId,
-        role.id
+        `DELETE FROM _RolePermissions WHERE B = ? AND A NOT IN (${permIds.map(() => "?").join(",")})`,
+        role.id,
+        ...permIds
       );
+
+      for (const permId of permIds) {
+        await prisma.$executeRawUnsafe(
+          `INSERT IGNORE INTO _RolePermissions (A, B) VALUES (?, ?)`,
+          permId,
+          role.id
+        );
+      }
+
+      linked += permIds.length;
+      console.log(`[sync-permissions]   ${role.name}: ${permIds.length} permissions`);
     }
 
-    linked += permIds.length;
+    console.log(`[sync-permissions]   ${linked} total role-permission links for ${company.name}`);
   }
 
-  console.log(`[sync-permissions] done — ${linked} role-permission links ensured`);
+  console.log("[sync-permissions] done");
 }
 
 main()

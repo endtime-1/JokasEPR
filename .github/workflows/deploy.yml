@@ -144,7 +144,7 @@ jobs:
           rsync -avz --partial --timeout=120 \
             -e "ssh -p 65002 -i ~/.ssh/id_rsa" \
             packages/db/scripts/sync-permissions.mjs \
-            ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/prisma/sync-permissions.mjs
+            ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/apps/api/sync-permissions.mjs
 
       - name: Upload root startup files
         run: |
@@ -179,7 +179,8 @@ jobs:
             fi
 
             # Sync permissions for all roles (idempotent — safe on every deploy)
-            SYNC_SCRIPT=$APP_DIR/prisma/sync-permissions.mjs
+            # Script lives in apps/api/ so Node can find @prisma/client in apps/api/node_modules
+            SYNC_SCRIPT=$APP_DIR/apps/api/sync-permissions.mjs
             if [ -f "$SYNC_SCRIPT" ]; then
               DATABASE_URL="${DATABASE_URL}" $NODE $SYNC_SCRIPT \
                 && echo "Permissions synced." \
