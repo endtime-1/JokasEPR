@@ -158,9 +158,18 @@ process.on("exit", (code) => {
 let webProc = null;
 let apiProc = null;
 let proxy;
-let webReady = false;
+let webReady = false;   // proxy switch — true only when BOTH next.js and api are up
+let _nextjsUp = false;  // next.js has bound its port
+let _apiUp = false;     // nestjs has bound its port
 let webRestarts = 0;
 let lastWebLines = [];  // last 20 lines of web stdout/stderr for diagnostics
+
+function checkBothReady() {
+  if (_nextjsUp && _apiUp && !webReady) {
+    webReady = true;
+    console.log("[start] Next.js + API both ready — enabling live traffic");
+  }
+}
 
 function killAll() {
   if (webProc) { try { webProc.kill("SIGKILL"); } catch {} }
@@ -229,9 +238,10 @@ function launch(name, script, cwd, env) {
     if (name === "jokas-web") {
       lastWebLines.push(...s.split("\n").filter(Boolean));
       if (lastWebLines.length > 20) lastWebLines = lastWebLines.slice(-20);
-      if (!webReady && /\bready\b/i.test(s)) {
-        webReady = true;
-        console.log("[start] Next.js ready (stdout) — live traffic forwarding enabled");
+      if (!_nextjsUp && /\bready\b/i.test(s)) {
+        _nextjsUp = true;
+        console.log("[start] Next.js ready (stdout)");
+        checkBothReady();
       }
     }
   });
@@ -406,26 +416,48 @@ startProxy(0);
   }
 
   // Poll WEB_INTERNAL_PORT via TCP every second until it accepts connections.
-  // This is the fallback for when the "Ready" stdout string is missed (e.g.
-  // output split across chunks or printed to stderr on some Node versions).
+  // Fallback for when the "Ready" stdout string is missed.
   function pollWebPort(proc) {
     let stopped = false;
     proc.once("close", () => { stopped = true; });
     function probe() {
-      if (stopped || webReady) return;
+      if (stopped || _nextjsUp) return;
       const sock = net.createConnection(WEB_INTERNAL_PORT, "127.0.0.1");
       sock.setTimeout(1000);
       sock.once("connect", () => {
         sock.destroy();
-        if (!webReady && !stopped) {
-          webReady = true;
-          console.log("[start] Next.js ready (TCP probe) — live traffic forwarding enabled");
+        if (!_nextjsUp && !stopped) {
+          _nextjsUp = true;
+          console.log("[start] Next.js ready (TCP probe)");
+          checkBothReady();
         }
       });
-      sock.once("error", () => { sock.destroy(); if (!stopped && !webReady) setTimeout(probe, 1000); });
-      sock.once("timeout", () => { sock.destroy(); if (!stopped && !webReady) setTimeout(probe, 1000); });
+      sock.once("error", () => { sock.destroy(); if (!stopped && !_nextjsUp) setTimeout(probe, 1000); });
+      sock.once("timeout", () => { sock.destroy(); if (!stopped && !_nextjsUp) setTimeout(probe, 1000); });
     }
     setTimeout(probe, 3000); // give the process 3s before polling
+  }
+
+  // Poll API_PORT via TCP until NestJS accepts connections.
+  function pollApiPort(proc) {
+    let stopped = false;
+    proc.once("close", () => { stopped = true; });
+    function probe() {
+      if (stopped || _apiUp) return;
+      const sock = net.createConnection(API_PORT, "127.0.0.1");
+      sock.setTimeout(1000);
+      sock.once("connect", () => {
+        sock.destroy();
+        if (!_apiUp && !stopped) {
+          _apiUp = true;
+          console.log("[start] NestJS API ready (TCP probe)");
+          checkBothReady();
+        }
+      });
+      sock.once("error", () => { sock.destroy(); if (!stopped && !_apiUp) setTimeout(probe, 1000); });
+      sock.once("timeout", () => { sock.destroy(); if (!stopped && !_apiUp) setTimeout(probe, 1000); });
+    }
+    setTimeout(probe, 2000); // give the API 2s before polling
   }
 
   function startWeb() {
@@ -446,6 +478,7 @@ startProxy(0);
     webProc.on("close", (code, signal) => {
       webProc = null;
       webReady = false;
+      _nextjsUp = false;
       webRestarts++;
       const delay = Math.min(3000 * webRestarts, 30000);
       console.log(`[start] web exited code=${code} signal=${signal} — restart #${webRestarts} in ${delay}ms`);
@@ -462,8 +495,10 @@ startProxy(0);
     });
     if (!apiProc) { console.error("[start] API script missing — not starting API"); return; }
     savePids();
+    pollApiPort(apiProc);
     apiProc.on("close", (code, signal) => {
       apiProc = null;
+      _apiUp = false;
       apiRestarts++;
       const delay = Math.min(3000 * apiRestarts, 30000);
       console.log(`[start] API exited code=${code} signal=${signal} — restart #${apiRestarts} in ${delay}ms`);
