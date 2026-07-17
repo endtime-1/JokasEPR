@@ -78,8 +78,9 @@ export default function UsersPage() {
 
   const empty = { data: [] as ScopeOption[] };
   async function load() {
+    setError("");
     const [userResponse, roleResponse, branchResponse, farmResponse, warehouseResponse, productionSiteResponse] = await Promise.all([
-      apiFetch<ApiEnvelope<UserRow[]>>("/identity/users").catch(() => ({ data: [] as UserRow[] })),
+      apiFetch<ApiEnvelope<UserRow[]>>("/identity/users"),
       apiFetch<ApiEnvelope<Role[]>>("/identity/roles").catch(() => ({ data: [] as Role[] })),
       apiFetch<ApiEnvelope<ScopeOption[]>>("/platform/branches").catch(() => empty),
       apiFetch<ApiEnvelope<ScopeOption[]>>("/platform/farms").catch(() => empty),
