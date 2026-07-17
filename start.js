@@ -55,11 +55,11 @@ const apiScript = fs.existsSync(apiBundle)
 // Tries four methods so we don't depend on a single tool being available.
 // ---------------------------------------------------------------------------
 function killPortOwner(port) {
-  // 1. fuser with numeric signal (most portable SIGKILL syntax)
+  // 1. fuser with -k (kill) flag — -signal alone is silently ignored without -k
   for (const sig of ["-9", "-KILL"]) {
     try {
-      execSync(`fuser ${sig} ${port}/tcp 2>/dev/null`, { timeout: 3000 });
-      console.log(`[start] killed port ${port} owner via fuser ${sig}`);
+      execSync(`fuser -k ${sig} ${port}/tcp 2>/dev/null`, { timeout: 3000 });
+      console.log(`[start] killed port ${port} owner via fuser -k ${sig}`);
       return;
     } catch {}
   }
