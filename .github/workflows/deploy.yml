@@ -135,12 +135,16 @@ jobs:
               || { echo "Attempt $attempt failed; retrying in 15s..."; sleep 15; }
           done
 
-      - name: Upload DB migrations
+      - name: Upload DB migrations and scripts
         run: |
           rsync -avz --partial --timeout=120 \
             -e "ssh -p 65002 -i ~/.ssh/id_rsa" \
             packages/db/prisma/ \
             ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/prisma/
+          rsync -avz --partial --timeout=120 \
+            -e "ssh -p 65002 -i ~/.ssh/id_rsa" \
+            packages/db/scripts/sync-permissions.mjs \
+            ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/prisma/sync-permissions.mjs
 
       - name: Upload root startup files
         run: |
@@ -172,6 +176,16 @@ jobs:
                 || echo "WARNING: migrations failed or already up to date."
             else
               echo "WARNING: prisma binary not found — skipping migrations"
+            fi
+
+            # Sync permissions for all roles (idempotent — safe on every deploy)
+            SYNC_SCRIPT=$APP_DIR/prisma/sync-permissions.mjs
+            if [ -f "$SYNC_SCRIPT" ]; then
+              DATABASE_URL="${DATABASE_URL}" $NODE $SYNC_SCRIPT \
+                && echo "Permissions synced." \
+                || echo "WARNING: permissions sync failed."
+            else
+              echo "WARNING: sync-permissions.mjs not found — skipping"
             fi
 
             # Kill any existing Node processes for this user so start.js gets
