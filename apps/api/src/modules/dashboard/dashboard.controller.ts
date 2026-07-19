@@ -24,6 +24,7 @@ export class DashboardController {
   }
 
   @Get("executive")
+  @RequirePermissions(PERMISSIONS.EXECUTIVE_READ)
   executive(@CurrentUser() user: AuthenticatedUser, @Query() query: DashboardQueryDto) {
     return this.dashboardService.executive(user, query);
   }

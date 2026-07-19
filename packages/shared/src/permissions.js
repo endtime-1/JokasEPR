@@ -38,7 +38,8 @@ exports.PERMISSIONS = {
     ALERTS_READ: "alerts.read",
     ALERTS_MANAGE: "alerts.manage",
     QUICKBOOKS_READ: "quickbooks.read",
-    QUICKBOOKS_MANAGE: "quickbooks.manage"
+    QUICKBOOKS_MANAGE: "quickbooks.manage",
+    EXECUTIVE_READ: "executive.read"
 };
 exports.MODULE_PERMISSIONS = {
     Platform: [exports.PERMISSIONS.PLATFORM_READ, exports.PERMISSIONS.PLATFORM_MANAGE],
@@ -60,5 +61,6 @@ exports.MODULE_PERMISSIONS = {
     Audit: [exports.PERMISSIONS.AUDIT_READ],
     "AI Assistant": [exports.PERMISSIONS.AI_READ],
     "Alerts": [exports.PERMISSIONS.ALERTS_READ, exports.PERMISSIONS.ALERTS_MANAGE],
-    "QuickBooks": [exports.PERMISSIONS.QUICKBOOKS_READ, exports.PERMISSIONS.QUICKBOOKS_MANAGE]
+    "QuickBooks": [exports.PERMISSIONS.QUICKBOOKS_READ, exports.PERMISSIONS.QUICKBOOKS_MANAGE],
+    "Executive": [exports.PERMISSIONS.EXECUTIVE_READ]
 };

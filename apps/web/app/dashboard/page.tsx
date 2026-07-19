@@ -20,7 +20,9 @@ import {
   Wheat
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { AppShell } from "../../components/app-shell";
+import { useAuth } from "../../components/auth-context";
 import { Skeleton, SkeletonCard } from "../../components/ui";
 import { ApiEnvelope, apiFetch } from "../../lib/api";
 
@@ -565,7 +567,24 @@ function DashboardSkeleton() {
   );
 }
 
+const PRIMARY_ROUTE: [string, string][] = [
+  ["poultry.read", "/poultry"],
+  ["feed.read", "/feed-production"],
+  ["soya.read", "/soya-processing"],
+  ["finance.read", "/finance"],
+  ["sales.read", "/sales"],
+  ["hr.read", "/hr"],
+  ["procurement.read", "/procurement"],
+  ["market-planning.read", "/market-planning"],
+  ["inventory.read", "/inventory"],
+  ["maintenance.read", "/maintenance"],
+  ["quality.read", "/quality"],
+  ["audit.read", "/audit"],
+];
+
 export default function DashboardPage() {
+  const { profile, ready } = useAuth();
+  const router = useRouter();
   const [filters, setFilters] = useState<Filters>(defaultFilters);
   const [options, setOptions] = useState<DashboardOptions | null>(null);
   const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
@@ -573,6 +592,18 @@ export default function DashboardPage() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [farmOps, setFarmOps] = useState<FarmOperationsResponse["data"] | null>(null);
   const [farmOpsLoading, setFarmOpsLoading] = useState(true);
+
+  // Redirect non-executive users to their primary module
+  useEffect(() => {
+    if (!ready || !profile) return;
+    const hasExecutiveAccess =
+      profile.hasGlobalAccess || profile.permissions.includes("executive.read");
+    if (!hasExecutiveAccess) {
+      const perms = profile.permissions ?? [];
+      const route = PRIMARY_ROUTE.find(([p]) => perms.includes(p))?.[1] ?? "/profile";
+      router.replace(route);
+    }
+  }, [ready, profile, router]);
 
   const filteredFarms = useMemo(
     () =>

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Ip, Param, Patch, Post, Put, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Headers, Ip, Param, Patch, Post, Put, UseGuards } from "@nestjs/common";
 import { AuthenticatedUser, PERMISSIONS } from "@jokas/shared";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { RequirePermissions } from "../../common/decorators/permissions.decorator";
@@ -8,6 +8,7 @@ import { AssignUserAccessDto } from "./dto/assign-user-access.dto";
 import { AssignUserRolesDto } from "./dto/assign-user-roles.dto";
 import { CreateRoleDto } from "./dto/create-role.dto";
 import { CreateUserDto } from "./dto/create-user.dto";
+import { UpdateUserDto } from "./dto/update-user.dto";
 import { UpdateUserStatusDto } from "./dto/update-user-status.dto";
 import { IdentityService } from "./identity.service";
 
@@ -31,6 +32,29 @@ export class IdentityController {
     @Headers("user-agent") userAgent?: string
   ) {
     return this.identityService.createUser(user, dto, { ipAddress, userAgent });
+  }
+
+  @Put("users/:id")
+  @RequirePermissions(PERMISSIONS.IDENTITY_MANAGE)
+  updateUser(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id") userId: string,
+    @Body() dto: UpdateUserDto,
+    @Ip() ipAddress: string,
+    @Headers("user-agent") userAgent?: string
+  ) {
+    return this.identityService.updateUser(user, userId, dto, { ipAddress, userAgent });
+  }
+
+  @Delete("users/:id")
+  @RequirePermissions(PERMISSIONS.IDENTITY_MANAGE)
+  deleteUser(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id") userId: string,
+    @Ip() ipAddress: string,
+    @Headers("user-agent") userAgent?: string
+  ) {
+    return this.identityService.deleteUser(user, userId, { ipAddress, userAgent });
   }
 
   @Patch("users/:id/status")

@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Plus, ShieldCheck, UserCheck, UserX } from "lucide-react";
+import { Pencil, Plus, ShieldCheck, Trash2, UserCheck, UserX } from "lucide-react";
 import { AppShell } from "../../../components/app-shell";
 import { DataTable } from "../../../components/data-table";
 import { FormField } from "../../../components/form-field";
@@ -73,6 +73,11 @@ export default function UsersPage() {
   const [editingRolesFor, setEditingRolesFor] = useState<UserRow | null>(null);
   const [editRoleIds, setEditRoleIds] = useState<string[]>([]);
   const [savingRoles, setSavingRoles] = useState(false);
+  const [editingUser, setEditingUser] = useState<UserRow | null>(null);
+  const [editUserForm, setEditUserForm] = useState({ fullName: "", email: "", phone: "", password: "" });
+  const [savingUser, setSavingUser] = useState(false);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const defaultRoleIds = useMemo(() => (form.roleIds.length ? form.roleIds : roles[0] ? [roles[0].id] : []), [form.roleIds, roles]);
 
@@ -160,6 +165,53 @@ export default function UsersPage() {
       setError(err instanceof Error ? err.message : "Failed to update roles.");
     } finally {
       setSavingRoles(false);
+    }
+  }
+
+  function openEditUser(user: UserRow) {
+    setEditingUser(user);
+    setEditUserForm({ fullName: user.fullName, email: user.email, phone: "", password: "" });
+  }
+
+  async function saveUser(e: FormEvent) {
+    e.preventDefault();
+    if (!editingUser) return;
+    setSavingUser(true);
+    setError("");
+    try {
+      const body: Record<string, string> = {
+        fullName: editUserForm.fullName,
+        email: editUserForm.email
+      };
+      if (editUserForm.phone) body.phone = editUserForm.phone;
+      if (editUserForm.password) body.password = editUserForm.password;
+      await apiFetch(`/identity/users/${editingUser.id}`, {
+        method: "PUT",
+        body: JSON.stringify(body)
+      });
+      setMessage(`Account updated for ${editUserForm.fullName}.`);
+      setEditingUser(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update user.");
+    } finally {
+      setSavingUser(false);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!deleteConfirmId) return;
+    setDeleting(true);
+    setError("");
+    try {
+      await apiFetch(`/identity/users/${deleteConfirmId}`, { method: "DELETE" });
+      setMessage("User account deleted.");
+      setDeleteConfirmId(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete user.");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -261,6 +313,52 @@ export default function UsersPage() {
         </form>
       )}
 
+      {editingUser && (
+        <form onSubmit={saveUser} className="mb-4 rounded-md border border-sky-200 bg-sky-50 p-4">
+          <p className="mb-3 text-sm font-semibold">Edit account — <span className="text-brand">{editingUser.fullName}</span></p>
+          <div className="mb-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <FormField label="Full name">
+              <input className="min-h-10 rounded-md border border-line px-3 text-sm" required value={editUserForm.fullName} onChange={(e) => setEditUserForm({ ...editUserForm, fullName: e.target.value })} />
+            </FormField>
+            <FormField label="Email">
+              <input className="min-h-10 rounded-md border border-line px-3 text-sm" type="email" required value={editUserForm.email} onChange={(e) => setEditUserForm({ ...editUserForm, email: e.target.value })} />
+            </FormField>
+            <FormField label="Phone (optional)">
+              <input className="min-h-10 rounded-md border border-line px-3 text-sm" value={editUserForm.phone} onChange={(e) => setEditUserForm({ ...editUserForm, phone: e.target.value })} />
+            </FormField>
+            <FormField label="New password (optional — leave blank to keep)">
+              <input className="min-h-10 rounded-md border border-line px-3 text-sm" type="password" minLength={10} value={editUserForm.password} onChange={(e) => setEditUserForm({ ...editUserForm, password: e.target.value })} />
+            </FormField>
+          </div>
+          <div className="flex gap-2">
+            <button type="submit" disabled={savingUser} className="inline-flex min-h-9 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-50">
+              <Pencil className="h-4 w-4" />
+              {savingUser ? "Saving…" : "Save changes"}
+            </button>
+            <button type="button" onClick={() => setEditingUser(null)} className="inline-flex min-h-9 items-center gap-2 rounded-md border border-line px-4 text-sm font-semibold hover:bg-field">
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+
+      {deleteConfirmId && (
+        <div className="mb-4 rounded-md border border-red-200 bg-red-50 p-4">
+          <p className="mb-3 text-sm font-semibold text-red-800">
+            Delete account for <span className="font-bold">{users.find((u) => u.id === deleteConfirmId)?.fullName}</span>? This cannot be undone.
+          </p>
+          <div className="flex gap-2">
+            <button onClick={confirmDelete} disabled={deleting} className="inline-flex min-h-9 items-center gap-2 rounded-md bg-red-600 px-4 text-sm font-semibold text-white disabled:opacity-50 hover:bg-red-700">
+              <Trash2 className="h-4 w-4" />
+              {deleting ? "Deleting…" : "Yes, delete account"}
+            </button>
+            <button onClick={() => setDeleteConfirmId(null)} className="inline-flex min-h-9 items-center gap-2 rounded-md border border-line px-4 text-sm font-semibold hover:bg-field">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       <DataTable
         rows={users}
         empty="No users found"
@@ -275,9 +373,13 @@ export default function UsersPage() {
             label: "Actions",
             render: (row) => (
               <div className="flex flex-wrap gap-2">
+                <button className="inline-flex min-h-9 items-center gap-2 rounded-md border border-sky-200 bg-sky-50 px-3 text-xs font-semibold text-sky-700 hover:bg-sky-100" onClick={() => openEditUser(row)}>
+                  <Pencil aria-hidden className="h-4 w-4" />
+                  Edit
+                </button>
                 <button className="inline-flex min-h-9 items-center gap-2 rounded-md border border-brand/30 bg-brand/5 px-3 text-xs font-semibold text-brand hover:bg-brand/10" onClick={() => openEditRoles(row)}>
                   <ShieldCheck aria-hidden className="h-4 w-4" />
-                  Edit Roles
+                  Roles
                 </button>
                 <button className="inline-flex min-h-9 items-center gap-2 rounded-md border border-line px-3 text-xs font-semibold hover:bg-field" onClick={() => setStatus(row, "ACTIVE")}>
                   <UserCheck aria-hidden className="h-4 w-4" />
@@ -286,6 +388,10 @@ export default function UsersPage() {
                 <button className="inline-flex min-h-9 items-center gap-2 rounded-md border border-line px-3 text-xs font-semibold hover:bg-field" onClick={() => setStatus(row, "DEACTIVATED")}>
                   <UserX aria-hidden className="h-4 w-4" />
                   Deactivate
+                </button>
+                <button className="inline-flex min-h-9 items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 text-xs font-semibold text-red-600 hover:bg-red-100" onClick={() => setDeleteConfirmId(row.id)}>
+                  <Trash2 aria-hidden className="h-4 w-4" />
+                  Delete
                 </button>
               </div>
             )

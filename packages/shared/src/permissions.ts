@@ -35,7 +35,8 @@ export const PERMISSIONS = {
   ALERTS_READ: "alerts.read",
   ALERTS_MANAGE: "alerts.manage",
   QUICKBOOKS_READ: "quickbooks.read",
-  QUICKBOOKS_MANAGE: "quickbooks.manage"
+  QUICKBOOKS_MANAGE: "quickbooks.manage",
+  EXECUTIVE_READ: "executive.read"
 } as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -60,5 +61,6 @@ export const MODULE_PERMISSIONS: Record<string, PermissionKey[]> = {
   Audit: [PERMISSIONS.AUDIT_READ],
   "AI Assistant": [PERMISSIONS.AI_READ],
   "Alerts": [PERMISSIONS.ALERTS_READ, PERMISSIONS.ALERTS_MANAGE],
-  "QuickBooks": [PERMISSIONS.QUICKBOOKS_READ, PERMISSIONS.QUICKBOOKS_MANAGE]
+  "QuickBooks": [PERMISSIONS.QUICKBOOKS_READ, PERMISSIONS.QUICKBOOKS_MANAGE],
+  "Executive": [PERMISSIONS.EXECUTIVE_READ]
 };

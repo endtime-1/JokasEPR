@@ -8,6 +8,7 @@ import { AssignUserAccessDto } from "./dto/assign-user-access.dto";
 import { AssignUserRolesDto } from "./dto/assign-user-roles.dto";
 import { CreateRoleDto } from "./dto/create-role.dto";
 import { CreateUserDto } from "./dto/create-user.dto";
+import { UpdateUserDto } from "./dto/update-user.dto";
 import { UpdateUserStatusDto } from "./dto/update-user-status.dto";
 
 type RequestContext = {
@@ -114,6 +115,66 @@ export class IdentityService {
     });
 
     return { data: user };
+  }
+
+  async updateUser(actor: AuthenticatedUser, userId: string, dto: UpdateUserDto, context: RequestContext) {
+    const existing = await this.getCompanyUser(actor.companyId, userId);
+
+    if (dto.email) {
+      const conflict = await this.prisma.user.findFirst({
+        where: { companyId: actor.companyId, email: dto.email.toLowerCase(), id: { not: userId }, deletedAt: null }
+      });
+      if (conflict) throw new BadRequestException("Email is already in use by another user.");
+    }
+
+    const data: Record<string, unknown> = { updatedById: actor.id };
+    if (dto.fullName) data.fullName = dto.fullName;
+    if (dto.email) data.email = dto.email.toLowerCase();
+    if (dto.phone !== undefined) data.phone = dto.phone;
+    if (dto.password) data.passwordHash = await bcrypt.hash(dto.password, 12);
+
+    const user = await this.prisma.user.update({
+      where: { id: existing.id },
+      data,
+      select: { id: true, email: true, fullName: true, status: true }
+    });
+
+    await this.audit.write({
+      companyId: actor.companyId,
+      actorUserId: actor.id,
+      action: "UPDATE",
+      entityType: "User",
+      entityId: user.id,
+      summary: `Updated user ${user.email}`,
+      metadata: { fields: Object.keys(data).filter((k) => k !== "updatedById") },
+      ipAddress: context.ipAddress,
+      userAgent: context.userAgent
+    });
+
+    return { data: user };
+  }
+
+  async deleteUser(actor: AuthenticatedUser, userId: string, context: RequestContext) {
+    if (actor.id === userId) throw new BadRequestException("You cannot delete your own account.");
+    const existing = await this.getCompanyUser(actor.companyId, userId);
+
+    await this.prisma.user.update({
+      where: { id: existing.id },
+      data: { deletedAt: new Date(), updatedById: actor.id }
+    });
+
+    await this.audit.write({
+      companyId: actor.companyId,
+      actorUserId: actor.id,
+      action: "DELETE",
+      entityType: "User",
+      entityId: userId,
+      summary: `Deleted user account`,
+      ipAddress: context.ipAddress,
+      userAgent: context.userAgent
+    });
+
+    return { data: { id: userId } };
   }
 
   async updateUserStatus(actor: AuthenticatedUser, userId: string, dto: UpdateUserStatusDto, context: RequestContext) {

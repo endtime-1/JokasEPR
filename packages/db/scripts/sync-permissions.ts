@@ -45,6 +45,7 @@ const permissions = [
   ["alerts.manage", "Alerts", "Acknowledge and resolve system alerts"],
   ["quickbooks.read", "QuickBooks", "View QuickBooks integration status and sync logs"],
   ["quickbooks.manage", "QuickBooks", "Manage QuickBooks connection, sync, and mappings"],
+  ["executive.read", "Executive", "Access the executive dashboard, AI assistant, AI alerts, and business intelligence reports"],
 ] as const;
 
 const ALL_KEYS = permissions.map(([key]) => key);
@@ -53,7 +54,7 @@ const rolePermissionMap: Record<string, readonly string[]> = {
   "Super Admin": ALL_KEYS,
   "CEO/Owner": ALL_KEYS,
   "General Manager": ALL_KEYS.filter((k) => k !== "settings.manage"),
-  "Farm Manager": ["platform.read", "inventory.read", "poultry.read", "poultry.manage", "poultry.record", "health.read", "maintenance.read", "maintenance.manage", "reports.export", "ai.read", "alerts.read", "alerts.manage"],
+  "Farm Manager": ["platform.read", "inventory.read", "poultry.read", "poultry.manage", "poultry.record", "health.read", "maintenance.read", "maintenance.manage"],
   "Feed Mill Manager": ["platform.read", "inventory.read", "inventory.manage", "feed.read", "feed.manage", "market-planning.read", "quality.read", "maintenance.read", "maintenance.manage", "reports.export", "ai.read", "alerts.read", "alerts.manage"],
   "Marketing Manager": ["platform.read", "inventory.read", "sales.read", "market-planning.read", "market-planning.manage", "reports.export", "ai.read", "alerts.read"],
   "Sales Manager": ["platform.read", "inventory.read", "sales.read", "sales.manage", "market-planning.read", "market-planning.manage", "reports.export", "ai.read", "alerts.read"],
@@ -62,7 +63,7 @@ const rolePermissionMap: Record<string, readonly string[]> = {
   "Accountant": ["platform.read", "finance.read", "finance.manage", "feed.read", "soya.read", "sales.read", "procurement.read", "reports.export", "ai.read", "alerts.read"],
   "Sales Officer": ["platform.read", "sales.read", "sales.manage", "inventory.read", "market-planning.read", "reports.export", "ai.read", "alerts.read"],
   "Procurement Officer": ["platform.read", "procurement.read", "procurement.manage", "inventory.read", "reports.export", "ai.read", "alerts.read"],
-  "HR/Admin": ["platform.read", "hr.read", "hr.manage", "identity.read", "reports.export"],
+  "HR/Admin": ["platform.read", "hr.read", "hr.manage", "identity.read", "identity.manage"],
   "Maintenance Officer": ["platform.read", "maintenance.read", "maintenance.manage", "reports.export", "ai.read", "alerts.read"],
   "Quality Officer": ["platform.read", "quality.read", "quality.manage", "feed.read", "soya.read", "inventory.read", "reports.export", "ai.read", "alerts.read"],
   "Vet/Health Officer": ["platform.read", "poultry.read", "poultry.record", "health.read", "health.manage", "reports.export", "ai.read", "alerts.read"],
