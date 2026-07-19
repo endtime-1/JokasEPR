@@ -35,7 +35,7 @@ function useFinanceOptions() {
 }
 
 function money(v: unknown) {
-  return `GHS ${Number(v ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `GHS ${Number(v ?? 0).toLocaleString("en-GH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function pct(v: unknown) {

@@ -468,5 +468,5 @@ function formatValue(value: unknown, type?: string) {
 }
 
 function number(value: unknown) {
-  return Number(value ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
+  return Number(value ?? 0).toLocaleString("en-GH", { maximumFractionDigits: 2 });
 }

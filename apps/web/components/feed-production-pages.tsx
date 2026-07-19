@@ -141,11 +141,11 @@ function PageHeader({ title, subtitle }: { title: string; subtitle: string }) {
 }
 
 function money(value: unknown) {
-  return `GHS ${Number(value ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  return `GHS ${Number(value ?? 0).toLocaleString("en-GH", { maximumFractionDigits: 2 })}`;
 }
 
 function number(value: unknown) {
-  return Number(value ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
+  return Number(value ?? 0).toLocaleString("en-GH", { maximumFractionDigits: 2 });
 }
 
 export function FeedFormulaListPage() {
@@ -406,10 +406,10 @@ export function FormulaBuilderPage() {
                           />
                         </td>
                         <td className="py-2 pr-4 text-right text-ink/50 text-xs">
-                          {qtyPerKg.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg
+                          {qtyPerKg.toLocaleString("en-GH", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg
                         </td>
                         <td className="py-2 pr-4 text-right text-ink/50 text-xs">
-                          {qtyPerBag.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg
+                          {qtyPerBag.toLocaleString("en-GH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg
                         </td>
                         <td className="py-2 pr-4 text-right">
                           <input
@@ -423,7 +423,7 @@ export function FormulaBuilderPage() {
                           />
                         </td>
                         <td className="py-2 pr-4 text-right font-semibold text-ink/70">
-                          {lineTotal > 0 ? lineTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : <span className="text-ink/25">—</span>}
+                          {lineTotal > 0 ? lineTotal.toLocaleString("en-GH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : <span className="text-ink/25">—</span>}
                         </td>
                         <td className="py-2 pr-4">
                           <button
@@ -458,7 +458,7 @@ export function FormulaBuilderPage() {
             <div className="grid grid-cols-3 divide-x divide-line border-t border-line bg-field/60">
               <div className="px-5 py-3.5 text-center">
                 <p className="text-[10px] font-bold uppercase tracking-wide text-ink/40">Total kg (batch)</p>
-                <p className="mt-0.5 text-lg font-bold text-ink">{totalKg.toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
+                <p className="mt-0.5 text-lg font-bold text-ink">{totalKg.toLocaleString("en-GH", { maximumFractionDigits: 2 })}</p>
                 {Math.abs(totalKg - batchKg) > 0.1 && totalKg > 0 && (
                   <p className={`text-[10px] font-semibold ${totalKg < batchKg ? "text-amber-600" : "text-blue-600"}`}>
                     {totalKg > batchKg ? `+${(totalKg - batchKg).toFixed(2)} over target` : `${(batchKg - totalKg).toFixed(2)} under target`}
@@ -468,14 +468,14 @@ export function FormulaBuilderPage() {
               <div className="px-5 py-3.5 text-center">
                 <p className="text-[10px] font-bold uppercase tracking-wide text-ink/40">Total Ingredient Cost</p>
                 <p className="mt-0.5 text-lg font-bold text-ink">
-                  {totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {totalCost.toLocaleString("en-GH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   <span className="ml-1 text-xs font-normal text-ink/40">GHS</span>
                 </p>
               </div>
               <div className="px-5 py-3.5 text-center">
                 <p className="text-[10px] font-bold uppercase tracking-wide text-ink/40">Cost per 100 kg</p>
                 <p className="mt-0.5 text-lg font-bold text-brand">
-                  {costPer100Kg.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {costPer100Kg.toLocaleString("en-GH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   <span className="ml-1 text-xs font-normal text-ink/40">GHS</span>
                 </p>
               </div>
@@ -868,7 +868,7 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
                               />
                             ) : number(ing.quantityKg)}
                           </td>
-                          <td className="py-2.5 pr-4 text-right text-ink/60">{qtyPerKg.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg</td>
+                          <td className="py-2.5 pr-4 text-right text-ink/60">{qtyPerKg.toLocaleString("en-GH", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg</td>
                           <td className="py-2.5 pr-4 text-right text-ink/60">{number(qtyPerBag)} kg</td>
                           <td className="py-2.5 pr-4 text-right text-ink/60">
                             {isEditing ? (
@@ -2515,7 +2515,7 @@ function PctBar({ pct, danger = false }: { pct: number; danger?: boolean }) {
 
 function fmt(n: number | null | undefined, dec = 1): string {
   if (n == null) return "—";
-  return n.toLocaleString(undefined, { maximumFractionDigits: dec, minimumFractionDigits: dec });
+  return n.toLocaleString("en-GH", { maximumFractionDigits: dec, minimumFractionDigits: dec });
 }
 
 // ─── Ingredient Sheet (per-ingredient detail view) ───────────────────────────

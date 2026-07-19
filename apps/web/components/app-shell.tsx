@@ -253,12 +253,31 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   if (!ready) {
     return (
-      <main className="grid min-h-screen place-items-center bg-[#0f1623]">
-        <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-6 py-4 text-sm text-white/60 backdrop-blur">
-          <span className="h-2 w-2 animate-pulse rounded-full bg-brand" />
-          Loading secure session…
+      <div className="min-h-screen bg-[#f0f2f5] text-ink lg:grid lg:grid-cols-[300px_1fr]">
+        <aside className="hidden lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:overflow-hidden"
+          style={{ background: "linear-gradient(160deg, #1a2235 0%, #0f1623 60%, #141c2e 100%)" }}>
+          <div className="relative flex h-full flex-col px-5 py-6">
+            <div className="pointer-events-none absolute -top-10 left-4 h-32 w-32 rounded-full bg-brand/12 blur-2xl" />
+            <div className="mb-5 h-11 w-44 animate-pulse rounded-xl bg-white/10" />
+            <div className="mb-4 h-20 animate-pulse rounded-2xl bg-white/8" />
+            <div className="mb-4 h-px bg-white/8" />
+            <div className="space-y-1.5">
+              {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+                <div key={i} className="h-11 animate-pulse rounded-xl bg-white/6" />
+              ))}
+            </div>
+          </div>
+        </aside>
+        <div className="min-w-0">
+          <header className="sticky top-0 z-20 border-b border-black/6 bg-white/80 shadow-sm backdrop-blur-md">
+            <div className="flex items-center justify-between gap-4 px-5 py-3.5 lg:px-8">
+              <div className="h-5 w-48 animate-pulse rounded-md bg-ink/8" />
+              <div className="h-9 w-9 animate-pulse rounded-xl bg-ink/8" />
+            </div>
+          </header>
+          <main className="px-5 py-7 lg:px-8">{children}</main>
         </div>
-      </main>
+      </div>
     );
   }
 

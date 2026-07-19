@@ -290,12 +290,24 @@ export function FinanceShell({
 
   if (!ready) {
     return (
-      <main className="grid min-h-screen place-items-center bg-sidebar">
-        <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-6 py-4 text-sm text-white/60">
-          <span className="h-2 w-2 animate-pulse rounded-full bg-brand" />
-          Loading…
+      <div className="flex h-screen overflow-hidden bg-slate-50 text-slate-900">
+        <aside className="hidden h-full w-60 shrink-0 flex-col overflow-y-auto bg-sidebar lg:flex xl:w-64">
+          <div className="flex h-full flex-col px-3 py-5 gap-3">
+            <div className="h-10 animate-pulse rounded-xl bg-white/10" />
+            <div className="h-10 animate-pulse rounded-xl bg-white/10" />
+            <div className="h-px bg-white/8" />
+            {[1, 2, 3, 4, 5, 6, 7].map((i) => (
+              <div key={i} className="h-9 animate-pulse rounded-lg bg-white/6" />
+            ))}
+          </div>
+        </aside>
+        <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
+          <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-slate-200 bg-white/95 px-5 py-3.5 shadow-sm backdrop-blur-md lg:px-8">
+            <div className="h-5 w-40 animate-pulse rounded-md bg-slate-200" />
+          </header>
+          <main className="flex-1 px-5 py-6 lg:px-8">{children}</main>
         </div>
-      </main>
+      </div>
     );
   }
 

@@ -58,7 +58,7 @@ const nextWeek = () => new Date(Date.now() + 6 * 86400000).toISOString().slice(0
 const monthEnd = () => new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString().slice(0, 10);
 
 function number(value: unknown) {
-  return Number(value ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
+  return Number(value ?? 0).toLocaleString("en-GH", { maximumFractionDigits: 2 });
 }
 
 function money(value: unknown) {

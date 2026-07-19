@@ -15,7 +15,7 @@ import { DataTable } from "./data-table";
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function money(value: unknown) {
-  return `GHS ${Number(value ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `GHS ${Number(value ?? 0).toLocaleString("en-GH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function fmt(d?: string | null) {

@@ -59,7 +59,7 @@ function PageHeader({ title, subtitle }: { title: string; subtitle: string }) {
 }
 
 function number(value: unknown) {
-  return Number(value ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
+  return Number(value ?? 0).toLocaleString("en-GH", { maximumFractionDigits: 2 });
 }
 
 function money(value: unknown) {

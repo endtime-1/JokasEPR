@@ -111,7 +111,7 @@ function PageHeader({ title, subtitle }: { title: string; subtitle: string }) {
 }
 
 function fmt(value: unknown) {
-  return Number(value ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
+  return Number(value ?? 0).toLocaleString("en-GH", { maximumFractionDigits: 2 });
 }
 
 type KpiColor = "blue" | "emerald" | "amber" | "red" | "purple" | "brand";
