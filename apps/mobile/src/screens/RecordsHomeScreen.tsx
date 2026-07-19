@@ -13,6 +13,7 @@ type RecordItem = {
   desc: string;
   screen: string;
   roles: string[];
+  permission?: string;
   color: string;
 };
 
@@ -31,9 +32,9 @@ const GROUPS: Group[] = [
       { icon: "arrow-down-bold",  label: "Mortality Entry",        desc: "Record bird deaths and culling events",        screen: "Mortality",        roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#EF4444" },
       { icon: "egg",              label: "Egg Collection",         desc: "Daily egg counts by grade",                   screen: "EggCollection",    roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#D97706" },
       { icon: "barley",           label: "Feed Consumption",       desc: "Feed dispensed to flocks",                    screen: "FeedConsumption",  roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#10B981" },
-      { icon: "pill",             label: "Medication Record",      desc: "Treatments and dosages administered",         screen: "Medication",       roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#8B5CF6" },
-      { icon: "needle",           label: "Vaccination Record",     desc: "Vaccines administered to birds",              screen: "Vaccination",      roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#06B6D4" },
-      { icon: "heart-pulse",      label: "Health Observation",     desc: "Log a flock health or welfare concern",       screen: "HealthObservation",roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#D97706" },
+      { icon: "pill",             label: "Medication Record",      desc: "Treatments and dosages administered",         screen: "Medication",       roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"], permission: "health.manage", color: "#8B5CF6" },
+      { icon: "needle",           label: "Vaccination Record",     desc: "Vaccines administered to birds",              screen: "Vaccination",      roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"], permission: "health.manage", color: "#06B6D4" },
+      { icon: "heart-pulse",      label: "Health Observation",     desc: "Log a flock health or welfare concern",       screen: "HealthObservation",roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"], permission: "health.manage", color: "#D97706" },
       { icon: "scale",            label: "Bird Weight Record",     desc: "Log body weight samples for growth check",    screen: "BirdWeight",       roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#10B981" },
     ],
   },
@@ -159,10 +160,15 @@ export function RecordsHomeScreen() {
   const { user }     = useAuth();
   const navigation   = useNavigation<any>();
   const userRoles    = (user?.roles ?? []).map((r) => r.toUpperCase());
+  const userPerms    = user?.permissions ?? [];
 
   const visibleGroups = GROUPS.map((g) => ({
     ...g,
-    items: g.items.filter((item) => item.roles.some((r) => userRoles.includes(r))),
+    items: g.items.filter((item) =>
+      item.permission
+        ? userPerms.includes(item.permission)
+        : item.roles.some((r) => userRoles.includes(r))
+    ),
   })).filter((g) => g.items.length > 0);
 
   return (

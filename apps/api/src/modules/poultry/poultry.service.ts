@@ -50,7 +50,7 @@ export class PoultryService {
     todayStart.setHours(0, 0, 0, 0);
     const since7 = new Date(Date.now() - 7 * 86400000);
 
-    const [batches, weekEggs, weekMortality, weekFeed, recentHealth, houses] = await Promise.all([
+    const [batches, weekEggs, weekMortality, weekFeed, recentHealth, houses, prices] = await Promise.all([
       this.prisma.flockBatch.findMany({
         where: this.batchWhere(user),
         include: {
@@ -107,11 +107,12 @@ export class PoultryService {
           }
         },
         orderBy: { code: "asc" }
-      })
+      }),
+      this.poultryPrices(user.companyId)
     ]);
 
     const rows = batches.map((batch) => ({
-      ...this.batchMetrics(batch),
+      ...this.batchMetrics(batch, prices),
       hasTodayRecord: (batch.dailyRecords ?? []).length > 0,
       penCount: (batch.penAllocations ?? []).length,
       penCodes: (batch.penAllocations ?? []).map((a: any) => a.pen.code).join(", ")
@@ -264,20 +265,23 @@ export class PoultryService {
   }
 
   async listBatches(user: AuthenticatedUser, query: PoultryQueryDto) {
-    const batches = await this.prisma.flockBatch.findMany({
-      where: { ...this.batchWhere(user), farmId: query.farmId, poultryHouseId: query.poultryHouseId },
-      include: {
-        farm: { select: { code: true, name: true } },
-        poultryHouse: { select: { code: true, name: true } },
-        mortalityRecords: { where: { deletedAt: null } },
-        feedConsumptionRecords: { where: { deletedAt: null } },
-        eggProductionRecords: { where: { deletedAt: null } },
-        birdWeightRecords: { where: { deletedAt: null }, orderBy: { recordDate: "desc" }, take: 1 },
-        costRecords: { where: { deletedAt: null } }
-      },
-      orderBy: { createdAt: "desc" }
-    });
-    return { data: batches.map((batch) => this.batchMetrics(batch)) };
+    const [batches, prices] = await Promise.all([
+      this.prisma.flockBatch.findMany({
+        where: { ...this.batchWhere(user), farmId: query.farmId, poultryHouseId: query.poultryHouseId },
+        include: {
+          farm: { select: { code: true, name: true } },
+          poultryHouse: { select: { code: true, name: true } },
+          mortalityRecords: { where: { deletedAt: null } },
+          feedConsumptionRecords: { where: { deletedAt: null } },
+          eggProductionRecords: { where: { deletedAt: null } },
+          birdWeightRecords: { where: { deletedAt: null }, orderBy: { recordDate: "desc" }, take: 1 },
+          costRecords: { where: { deletedAt: null } }
+        },
+        orderBy: { createdAt: "desc" }
+      }),
+      this.poultryPrices(user.companyId)
+    ]);
+    return { data: batches.map((batch) => this.batchMetrics(batch, prices)) };
   }
 
   async getBatch(user: AuthenticatedUser, id: string) {
@@ -302,7 +306,8 @@ export class PoultryService {
     if (!batch) {
       throw new NotFoundException("Flock batch was not found.");
     }
-    return { data: { ...batch, metrics: this.batchMetrics(batch) } };
+    const prices = await this.poultryPrices(user.companyId);
+    return { data: { ...batch, metrics: this.batchMetrics(batch, prices) } };
   }
 
   async createBatch(user: AuthenticatedUser, dto: CreateFlockBatchDto, context: RequestContext) {
@@ -565,8 +570,13 @@ export class PoultryService {
   async listRecords(user: AuthenticatedUser, type: string, query: PoultryQueryDto) {
     const where = this.recordWhere(user, query);
     const model = this.recordModel(type);
-    const data = await model.findMany({ where, orderBy: { createdAt: "desc" }, take: 200 });
-    return { data };
+    const take = Math.min(query.take ?? 200, 500);
+    const skip = query.skip ?? 0;
+    const [data, total] = await Promise.all([
+      model.findMany({ where, orderBy: { createdAt: "desc" }, take, skip }),
+      model.count({ where })
+    ]);
+    return { data, meta: { total, take, skip } };
   }
 
   async softDelete(user: AuthenticatedUser, type: string, id: string, context: RequestContext) {
@@ -603,14 +613,16 @@ export class PoultryService {
     return rows.map((row) => row.map((value) => `"${value.replace(/"/g, '""')}"`).join(",")).join("\n");
   }
 
-  private batchMetrics(batch: any) {
+  private batchMetrics(batch: any, prices: { eggPricePerUnit: number; broilerPricePerKg: number }) {
     const mortality = (batch.mortalityRecords ?? []).reduce((sum: number, row: any) => sum + row.birdCount, 0);
     const currentLiveBirds = this.currentLiveBirds(batch.openingBirdCount, batch.mortalityRecords ?? []);
     const totalFeedKg = (batch.feedConsumptionRecords ?? []).reduce((sum: number, row: any) => sum + Number(row.quantityKg), 0);
     const totalEggs = (batch.eggProductionRecords ?? []).reduce((sum: number, row: any) => sum + this.totalEggs(row), 0);
     const totalCosts = (batch.costRecords ?? []).reduce((sum: number, row: any) => sum + Number(row.amount), 0);
     const latestWeight = Number(batch.birdWeightRecords?.[0]?.averageWeightKg ?? 0);
-    const estimatedRevenue = totalEggs * 1.2 + (batch.birdType === "BROILERS" ? currentLiveBirds * latestWeight * 35 : 0);
+    const estimatedRevenue =
+      totalEggs * prices.eggPricePerUnit +
+      (batch.birdType === "BROILERS" ? currentLiveBirds * latestWeight * prices.broilerPricePerKg : 0);
     const birdDays = Math.max(currentLiveBirds, 1) * Math.max((batch.eggProductionRecords ?? []).length, 1);
     return {
       ...batch,
@@ -623,6 +635,21 @@ export class PoultryService {
       totalFeedKg: Number(totalFeedKg.toFixed(2)),
       totalEggs,
       totalCosts: Number(totalCosts.toFixed(2))
+    };
+  }
+
+  private async poultryPrices(companyId: string): Promise<{ eggPricePerUnit: number; broilerPricePerKg: number }> {
+    const settings = await this.prisma.systemSetting.findMany({
+      where: { companyId, key: { in: ["poultry.egg_price_per_unit", "poultry.broiler_price_per_kg"] }, deletedAt: null },
+      select: { key: true, value: true }
+    });
+    const get = (key: string, def: number) => {
+      const s = settings.find((s) => s.key === key);
+      return s ? Number(s.value) : def;
+    };
+    return {
+      eggPricePerUnit: get("poultry.egg_price_per_unit", 1.2),
+      broilerPricePerKg: get("poultry.broiler_price_per_kg", 35)
     };
   }
 
@@ -696,25 +723,37 @@ export class PoultryService {
   }
 
   private recordWhere(user: AuthenticatedUser, query: PoultryQueryDto) {
+    // Build farm scope without a key collision: the old code set farmId: query.farmId then
+    // unconditionally overwrote it with farmId: { in: user.farmIds } via object spread.
+    const farmFilter: Record<string, unknown> = user.hasGlobalAccess
+      ? (query.farmId ? { farmId: query.farmId } : {})
+      : {
+          farmId:
+            query.farmId && user.farmIds.includes(query.farmId)
+              ? query.farmId
+              : { in: user.farmIds }
+        };
+
+    const dateRange = query.startDate || query.endDate
+      ? {
+          OR: [
+            { recordDate: { gte: query.startDate ? new Date(query.startDate) : undefined, lte: query.endDate ? new Date(query.endDate) : undefined } },
+            { startDate: { gte: query.startDate ? new Date(query.startDate) : undefined, lte: query.endDate ? new Date(query.endDate) : undefined } },
+            { vaccinationDate: { gte: query.startDate ? new Date(query.startDate) : undefined, lte: query.endDate ? new Date(query.endDate) : undefined } },
+            { observationDate: { gte: query.startDate ? new Date(query.startDate) : undefined, lte: query.endDate ? new Date(query.endDate) : undefined } },
+            { transferDate: { gte: query.startDate ? new Date(query.startDate) : undefined, lte: query.endDate ? new Date(query.endDate) : undefined } },
+            { costDate: { gte: query.startDate ? new Date(query.startDate) : undefined, lte: query.endDate ? new Date(query.endDate) : undefined } }
+          ]
+        }
+      : {};
+
     return {
       companyId: user.companyId,
       deletedAt: null,
-      farmId: query.farmId,
+      ...farmFilter,
       poultryHouseId: query.poultryHouseId,
       flockBatchId: query.flockBatchId,
-      ...(query.startDate || query.endDate
-        ? {
-            OR: [
-              { recordDate: { gte: query.startDate ? new Date(query.startDate) : undefined, lte: query.endDate ? new Date(query.endDate) : undefined } },
-              { startDate: { gte: query.startDate ? new Date(query.startDate) : undefined, lte: query.endDate ? new Date(query.endDate) : undefined } },
-              { vaccinationDate: { gte: query.startDate ? new Date(query.startDate) : undefined, lte: query.endDate ? new Date(query.endDate) : undefined } },
-              { observationDate: { gte: query.startDate ? new Date(query.startDate) : undefined, lte: query.endDate ? new Date(query.endDate) : undefined } },
-              { transferDate: { gte: query.startDate ? new Date(query.startDate) : undefined, lte: query.endDate ? new Date(query.endDate) : undefined } },
-              { costDate: { gte: query.startDate ? new Date(query.startDate) : undefined, lte: query.endDate ? new Date(query.endDate) : undefined } }
-            ]
-          }
-        : {}),
-      ...(user.hasGlobalAccess ? {} : { farmId: { in: user.farmIds } })
+      ...dateRange
     };
   }
 
