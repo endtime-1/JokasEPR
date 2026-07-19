@@ -143,7 +143,7 @@ export class PlatformService {
         ...(dto.code !== undefined && { code: dto.code.toUpperCase() }),
         ...(dto.location !== undefined && { location: dto.location }),
         ...(dto.type !== undefined && { type: dto.type })
-      }
+      } as any
     });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "UPDATE", entityType: "Farm", entityId: farm.id, summary: `Updated farm ${farm.code}`, ipAddress: context.ipAddress, userAgent: context.userAgent });
     return { data: farm };
@@ -207,7 +207,7 @@ export class PlatformService {
         ...(dto.location !== undefined && { location: dto.location }),
         ...(dto.type !== undefined && { type: dto.type }),
         ...(dto.branchId !== undefined && { branchId: dto.branchId })
-      }
+      } as any
     });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "UPDATE", entityType: "ProductionSite", entityId: site.id, summary: `Updated production site ${site.code}`, ipAddress: context.ipAddress, userAgent: context.userAgent });
     return { data: site };
@@ -277,7 +277,7 @@ export class PlatformService {
         ...(dto.branchId !== undefined && { branchId: dto.branchId }),
         ...(dto.farmId !== undefined && { farmId: dto.farmId }),
         ...(dto.productionSiteId !== undefined && { productionSiteId: dto.productionSiteId })
-      }
+      } as any
     });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "UPDATE", entityType: "Warehouse", entityId: warehouse.id, summary: `Updated warehouse ${warehouse.code}`, ipAddress: context.ipAddress, userAgent: context.userAgent });
     return { data: warehouse };
