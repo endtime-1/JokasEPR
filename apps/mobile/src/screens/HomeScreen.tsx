@@ -37,7 +37,7 @@ const ALL_ACTIONS: Action[] = [
   { id: "quality",     icon: "magnify-scan",             label: "Quality Check",   screen: "QualityCheck",     roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"], permission: "quality.manage", color: "#8B5CF6" },
   { id: "attendance",  icon: "account-clock",            label: "Check-In",        screen: "AttendanceCheckIn",roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#3B82F6" },
   { id: "scanner",     icon: "qrcode-scan",              label: "QR Scanner",      screen: "Scanner",          roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#8B5CF6" },
-  { id: "dashboard",   icon: "chart-areaspline",         label: "Dashboard",       screen: "Dashboard",        roles: ["MANAGER","CEO","SUPER_ADMIN"],                    color: colors.brand },
+  { id: "dashboard",   icon: "chart-areaspline",         label: "Dashboard",       screen: "Dashboard",        roles: ["MANAGER","CEO","SUPER_ADMIN"], permission: "executive.read", color: colors.brand },
   { id: "tasks",       icon: "checkbox-marked-circle",   label: "My Tasks",        screen: "TaskList",         roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#0D9488" },
 ];
 

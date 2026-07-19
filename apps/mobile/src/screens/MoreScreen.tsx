@@ -43,14 +43,12 @@ function SectionHeader({ title }: { title: string }) {
   return <Text style={styles.sectionLabel}>{title}</Text>;
 }
 
-const MANAGER_ROLES = ["SUPER_ADMIN", "CEO", "MANAGER", "HR_MANAGER", "ADMIN", "AUDITOR", "OFFICER"];
-
 export function MoreScreen() {
   const navigation = useNavigation<any>();
   const { user, logout } = useAuth();
   const { pending, syncing } = useSync();
 
-  const isManager = user?.roles?.some((r) => MANAGER_ROLES.includes(r)) ?? false;
+  const canViewExecutive = user?.hasGlobalAccess || (user?.permissions?.includes("executive.read") ?? false);
 
   function confirmLogout() {
     Alert.alert("Log Out", "Are you sure you want to log out of your Jokas ERP account?", [
@@ -86,10 +84,10 @@ export function MoreScreen() {
           <MaterialCommunityIcons name="chevron-right" size={20} color={colors.inkLight} />
         </TouchableOpacity>
 
-        {/* Management section — Dashboard only for managers */}
+        {/* Management section — Dashboard only for executive roles */}
         <SectionHeader title="MANAGEMENT" />
         <View style={styles.menuCard}>
-          {isManager && (
+          {canViewExecutive && (
             <>
               <MenuRow
                 icon="chart-areaspline"
@@ -114,15 +112,15 @@ export function MoreScreen() {
         {/* Tools section */}
         <SectionHeader title="TOOLS" />
         <View style={styles.menuCard}>
-          <MenuRow
-            icon="robot-excited-outline"
-            label="AI Assistant"
-            description="Ask questions about your farm data and operations"
-            onPress={() => navigation.navigate("AiChat")}
-            color={colors.brand}
-          />
-          {isManager && (
+          {canViewExecutive && (
             <>
+              <MenuRow
+                icon="robot-excited-outline"
+                label="AI Assistant"
+                description="Ask questions about your farm data and operations"
+                onPress={() => navigation.navigate("AiChat")}
+                color={colors.brand}
+              />
               <View style={styles.divider} />
               <MenuRow
                 icon="chart-bar"
@@ -131,9 +129,9 @@ export function MoreScreen() {
                 onPress={() => navigation.navigate("ReportsBrowser")}
                 color="#0284c7"
               />
+              <View style={styles.divider} />
             </>
           )}
-          <View style={styles.divider} />
           <MenuRow
             icon="bell-outline"
             label="Notifications"

@@ -271,7 +271,7 @@ function AppStateSync() {
   return null;
 }
 
-const APPROVALS_ROLES = ["SUPER_ADMIN", "CEO", "MANAGER", "HR_MANAGER", "ADMIN", "OFFICER", "AUDITOR"];
+const APPROVALS_ROLES = ["SUPER_ADMIN", "CEO", "MANAGER", "OFFICER", "AUDITOR"];
 
 export function AppNavigator() {
   const { pending } = useSync();
