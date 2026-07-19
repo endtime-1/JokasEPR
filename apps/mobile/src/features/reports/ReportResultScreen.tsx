@@ -82,7 +82,7 @@ export function ReportResultScreen() {
   if (!result) {
     return (
       <SafeAreaView style={styles.safe} edges={["bottom"]}>
-        <EmptyState icon="file-chart-outline" title="No Data" message="No results found for this report" />
+        <EmptyState icon="file-chart-outline" title="No Data" subtitle="No results found for this report" />
       </SafeAreaView>
     );
   }
@@ -103,7 +103,7 @@ export function ReportResultScreen() {
       {Object.keys(totals).length > 0 && <TotalsBar totals={totals} columns={cols} />}
 
       {rows.length === 0 ? (
-        <EmptyState icon="table-off" title="No Records" message="No data matches the report criteria" />
+        <EmptyState icon="table-off" title="No Records" subtitle="No data matches the report criteria" />
       ) : (
         <ScrollView horizontal showsHorizontalScrollIndicator={true}>
           <FlatList

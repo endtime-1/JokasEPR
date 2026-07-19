@@ -47,7 +47,7 @@ export function ProcurementDashboardScreen() {
       <SafeAreaView style={styles.safe} edges={["bottom"]}>
         <ScrollView contentContainerStyle={styles.scroll}>
           <PageHeader icon="truck-delivery" iconColor="#2563eb" title="Procurement" />
-          <SkeletonMetricGrid cols={2} rows={2} />
+          <SkeletonMetricGrid />
         </ScrollView>
       </SafeAreaView>
     );
@@ -66,9 +66,9 @@ export function ProcurementDashboardScreen() {
 
         {/* KPI grid */}
         <View style={styles.grid}>
-          <MetricCard icon="file-document-outline"   value={d?.openPurchaseRequests  ?? 0}  label="Open PRs"         color="#2563eb" />
-          <MetricCard icon="package-variant"          value={d?.pendingPurchaseOrders ?? 0}  label="Pending POs"      color="#d97706" />
-          <MetricCard icon="truck-check-outline"      value={d?.grnsThisMonth         ?? 0}  label="GRNs This Month"  color="#16a34a" />
+          <MetricCard icon="file-document-outline"   value={String(d?.openPurchaseRequests  ?? 0)}  label="Open PRs"         color="#2563eb" />
+          <MetricCard icon="package-variant"          value={String(d?.pendingPurchaseOrders ?? 0)}  label="Pending POs"      color="#d97706" />
+          <MetricCard icon="truck-check-outline"      value={String(d?.grnsThisMonth         ?? 0)}  label="GRNs This Month"  color="#16a34a" />
           <MetricCard icon="cash-multiple"            value={GHS(d?.totalSpendThisMonth ?? 0)} label="Spend This Month" color="#7c3aed" />
         </View>
 

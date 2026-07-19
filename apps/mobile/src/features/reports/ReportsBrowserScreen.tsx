@@ -94,7 +94,7 @@ export function ReportsBrowserScreen() {
       {loading ? (
         <View style={styles.center}><ActivityIndicator size="large" color={colors.brand} /></View>
       ) : filtered.length === 0 ? (
-        <EmptyState icon="file-chart-outline" title="No Reports" message="No reports available for this category" />
+        <EmptyState icon="file-chart-outline" title="No Reports" subtitle="No reports available for this category" />
       ) : (
         <FlatList
           data={filtered}

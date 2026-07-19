@@ -16,6 +16,7 @@ import {
   CreateWarehouseSettingDto,
   DomainListSettingsDto,
   NumberingSettingsDto,
+  PoultryPricingSettingsDto,
   ProductListQueryDto,
   TaxSettingsDto,
   UpdateCompanyProfileDto,
@@ -30,6 +31,7 @@ type RequestContext = { ipAddress?: string; userAgent?: string };
 const DEFAULT_SETTINGS: Record<string, unknown> = {
   "company.logo": { logoUrl: "" },
   "poultry.types": { values: ["LAYERS", "BROILERS", "COCKERELS", "BREEDERS", "CHICKS"] },
+  "poultry.pricing": { eggPricePerUnit: 1.2, broilerPricePerKg: 35 },
   "feed.types": { values: ["CHICK_MASH", "GROWER_MASH", "LAYER_MASH", "BROILER_STARTER", "BROILER_FINISHER", "BREEDER_FEED", "CONCENTRATE", "CUSTOM_FEED", "BROILER_STARTER_MASH", "BROILER_STARTER_CONCENTRATE", "BROILER_FINISHER_MASH", "BROILER_FINISHER_CONCENTRATE", "SUPER_CHICKS_CONCENTRATE", "SUPER_CHICKS_MASH", "CHICKS_STARTER_MASH", "CHICKS_STARTER_CONCENTRATE", "DEVELOPER_MASH", "DEVELOPER_CONCENTRATE", "PRE_LAY_MASH", "PRE_LAY_CONCENTRATE", "LAYER_1_MASH", "LAYER_1_CONCENTRATE", "LAYER_2_MASH", "LAYER_2_CONCENTRATE"] },
   "tax.settings": { enabled: false, taxName: "VAT", ratePercent: 0, taxIdLabel: "Tax ID" },
   "numbering.settings": {
@@ -417,6 +419,10 @@ export class SettingsService {
 
   async updateFeedTypes(user: AuthenticatedUser, dto: DomainListSettingsDto, ctx: RequestContext) {
     return this.setSetting(user, "feed.types", dto, ctx, "Updated feed type settings");
+  }
+
+  async updatePoultryPricing(user: AuthenticatedUser, dto: PoultryPricingSettingsDto, ctx: RequestContext) {
+    return this.setSetting(user, "poultry.pricing", dto, ctx, "Updated poultry pricing settings");
   }
 
   async notificationConfig(user: AuthenticatedUser) {

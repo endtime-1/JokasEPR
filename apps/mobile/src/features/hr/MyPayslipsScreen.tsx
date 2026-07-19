@@ -117,7 +117,7 @@ export function MyPayslipsScreen() {
         <EmptyState
           icon="file-account-outline"
           title="No Payslips"
-          message="Your payslip records will appear here once payroll has been processed for your account."
+          subtitle="Your payslip records will appear here once payroll has been processed for your account."
         />
       ) : (
         <FlatList

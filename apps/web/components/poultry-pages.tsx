@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { Download, Plus } from "lucide-react";
+import { ChevronDown, ChevronUp, Download, Pencil, Plus, X } from "lucide-react";
 import { PoultryShell } from "./poultry-shell";
 import { DataTable } from "./data-table";
 import { FormField } from "./form-field";
@@ -597,14 +597,147 @@ export function FlockBatchDetailsPage() {
             </div>
           )}
 
-          {tab === "records" && (
-            <p className="rounded-md border border-line bg-white p-4 text-sm text-ink/65">
-              Use the daily records, mortality, feed, eggs, health, and vaccination sections to view records for this batch.
-            </p>
+          {tab === "records" && batch && (
+            <BatchRecordsTab batchId={batch.id} />
           )}
         </>
       )}
     </PoultryShell>
+  );
+}
+
+// ─── Batch Records Tab ────────────────────────────────────────────────────────
+
+const BATCH_RECORD_TYPES: Array<{ type: string; label: string; cols: string[] }> = [
+  { type: "daily",        label: "Daily Records",      cols: ["recordDate", "mortalityCount", "culledCount", "feedConsumedKg", "totalEggs"] },
+  { type: "mortality",    label: "Mortality",          cols: ["recordDate", "birdCount", "reason"] },
+  { type: "feed",         label: "Feed Consumption",   cols: ["recordDate", "quantityKg", "costAmount"] },
+  { type: "eggs",         label: "Egg Production",     cols: ["recordDate", "goodEggs", "crackedEggs", "dirtyEggs", "brokenEggs", "rejectedEggs"] },
+  { type: "weights",      label: "Bird Weights",       cols: ["recordDate", "sampleSize", "averageWeightKg"] },
+  { type: "medications",  label: "Medications",        cols: ["startDate", "medicationName", "dosage", "route"] },
+  { type: "vaccinations", label: "Vaccinations",       cols: ["vaccinationDate", "vaccineName", "dose"] },
+  { type: "health",       label: "Health Observations",cols: ["observationDate", "severity", "observation"] },
+];
+
+function BatchRecordSection({ batchId, type, label, cols }: { batchId: string; type: string; label: string; cols: string[] }) {
+  const [rows, setRows] = useState<Record<string, any>[]>([]);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [editRow, setEditRow] = useState<Record<string, any> | null>(null);
+  const [editForm, setEditForm] = useState<Record<string, string>>({});
+  const [editMsg, setEditMsg] = useState("");
+
+  async function load() {
+    setLoading(true);
+    try {
+      const res = await apiFetch<{ data: Record<string, any>[]; meta: any }>(`/poultry/records/${type}?flockBatchId=${batchId}&take=200`);
+      setRows(res.data ?? []);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function toggle() {
+    if (!open && rows.length === 0) load().catch(() => undefined);
+    setOpen((o) => !o);
+  }
+
+  function startEdit(row: Record<string, any>) {
+    const form: Record<string, string> = {};
+    for (const col of cols) form[col] = String(row[col] ?? "");
+    setEditForm(form);
+    setEditRow(row);
+    setEditMsg("");
+  }
+
+  async function saveEdit(event: FormEvent) {
+    event.preventDefault();
+    if (!editRow) return;
+    setEditMsg("");
+    try {
+      const payload: Record<string, any> = {};
+      const numericCols = ["mortalityCount", "culledCount", "feedConsumedKg", "totalEggs", "birdCount", "quantityKg", "costAmount", "goodEggs", "crackedEggs", "dirtyEggs", "brokenEggs", "rejectedEggs", "sampleSize", "averageWeightKg"];
+      for (const [k, v] of Object.entries(editForm)) {
+        if (cols.includes(k) && !["recordDate", "startDate", "vaccinationDate", "observationDate"].includes(k)) {
+          payload[k] = numericCols.includes(k) ? Number(v) : v;
+        }
+      }
+      await apiFetch(`/poultry/records/${type}/${editRow.id}`, { method: "PATCH", body: JSON.stringify(payload) });
+      setEditRow(null);
+      await load();
+    } catch (err: any) {
+      setEditMsg(err?.message ?? "Failed to save correction.");
+    }
+  }
+
+  const editableCols = cols.filter((c) => !["recordDate", "startDate", "vaccinationDate", "observationDate"].includes(c));
+
+  return (
+    <div className="rounded-md border border-line bg-white shadow-panel">
+      <button type="button" className="flex w-full items-center justify-between px-4 py-3 text-sm font-semibold" onClick={toggle}>
+        <span>{label} {rows.length > 0 && open && <span className="ml-1 text-xs font-normal text-ink/50">({rows.length})</span>}</span>
+        {open ? <ChevronUp className="h-4 w-4 text-ink/40" /> : <ChevronDown className="h-4 w-4 text-ink/40" />}
+      </button>
+      {open && (
+        <div className="border-t border-line p-4">
+          {loading && <p className="text-xs text-ink/50">Loading…</p>}
+          {!loading && rows.length === 0 && <p className="text-xs text-ink/50">No records yet.</p>}
+          {!loading && rows.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-field">
+                  <tr>
+                    {cols.map((c) => <th key={c} className="px-2 py-1.5 font-semibold text-ink/60 uppercase text-[10px]">{c.replace(/([A-Z])/g, " $1")}</th>)}
+                    <th className="px-2 py-1.5 w-8"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row) => (
+                    <tr key={row.id} className="border-t border-line">
+                      {cols.map((c) => <td key={c} className="px-2 py-1.5">{String(row[c] ?? "—").slice(0, 50)}</td>)}
+                      <td className="px-2 py-1.5">
+                        <button type="button" title="Correct record" onClick={() => startEdit(row)} className="rounded p-1 text-ink/40 hover:bg-brand/10 hover:text-brand">
+                          <Pencil className="h-3 w-3" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {editRow && (
+            <form onSubmit={saveEdit} className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3">
+              <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-amber-700">
+                <Pencil className="h-3 w-3" />Correct record
+                <button type="button" className="ml-auto" onClick={() => setEditRow(null)}><X className="h-3.5 w-3.5" /></button>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-3">
+                {editableCols.map((col) => (
+                  <div key={col}>
+                    <label className="mb-0.5 block text-[10px] text-ink/60">{col.replace(/([A-Z])/g, " $1")}</label>
+                    <input className="w-full rounded border border-line bg-white px-2 py-1 text-xs" value={editForm[col] ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, [col]: e.target.value }))} />
+                  </div>
+                ))}
+              </div>
+              {editMsg && <p className="mt-2 text-xs text-red-600">{editMsg}</p>}
+              <button type="submit" className="mt-2 rounded bg-brand px-3 py-1 text-xs font-semibold text-white">Save correction</button>
+            </form>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BatchRecordsTab({ batchId }: { batchId: string }) {
+  return (
+    <div className="space-y-3">
+      {BATCH_RECORD_TYPES.map(({ type, label, cols }) => (
+        <BatchRecordSection key={type} batchId={batchId} type={type} label={label} cols={cols} />
+      ))}
+    </div>
   );
 }
 
@@ -626,12 +759,13 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
   const { options, optionsError, refreshOptions } = usePoultryOptions();
   const [rows, setRows] = useState<Record<string, any>[]>([]);
   const [form, setForm] = useState<Record<string, string>>(() => makeFormDefaults(type));
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState("");
 
   const batchPens = useMemo(() => options.pens, [options.pens]);
 
   async function load() {
-    const response = await apiFetch<ApiEnvelope<Record<string, any>[]>>(`/poultry/records/${type}`);
+    const response = await apiFetch<{ data: Record<string, any>[]; meta?: any }>(`/poultry/records/${type}?take=200`);
     setRows(response.data ?? []);
   }
 
@@ -639,11 +773,31 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
     load().catch(() => undefined);
   }, [type]);
 
+  function startEdit(row: Record<string, any>) {
+    const pre: Record<string, string> = { flockBatchId: row.flockBatchId ?? "", penId: row.penId ?? "" };
+    for (const field of recordFields(type)) pre[field.name] = String(row[field.name] ?? field.defaultValue ?? "");
+    setForm(pre);
+    setEditingId(row.id);
+    setSubmitError("");
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setForm(makeFormDefaults(type));
+    setSubmitError("");
+  }
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitError("");
     try {
-      await apiFetch(endpoint, { method: "POST", body: JSON.stringify(buildRecordPayload(type, form, options)) });
+      if (editingId) {
+        const payload = buildRecordPayload(type, form, options);
+        await apiFetch(`/poultry/records/${type}/${editingId}`, { method: "PATCH", body: JSON.stringify(payload) });
+        setEditingId(null);
+      } else {
+        await apiFetch(endpoint, { method: "POST", body: JSON.stringify(buildRecordPayload(type, form, options)) });
+      }
       setForm(makeFormDefaults(type));
       await load();
     } catch (err: any) {
@@ -665,20 +819,28 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
           No flock batches found. <Link className="font-semibold underline" href="/poultry/batches/create">Create a batch first →</Link>
         </div>
       )}
+      {editingId && (
+        <div className="mb-4 flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+          <Pencil className="h-4 w-4 shrink-0" />
+          <span>Editing existing record — submit to save correction</span>
+          <button type="button" className="ml-auto flex items-center gap-1 text-xs underline" onClick={cancelEdit}><X className="h-3 w-3" />Cancel</button>
+        </div>
+      )}
       {submitError && <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{submitError}</p>}
-      <GenericRecordForm options={options} batchPens={batchPens} form={form} setForm={setForm} submit={submit} type={type} />
-      <SimpleRecordTable rows={rows} />
+      <GenericRecordForm options={options} batchPens={batchPens} form={form} setForm={setForm} submit={submit} type={type} isEditing={!!editingId} />
+      <SimpleRecordTable rows={rows} onEdit={startEdit} />
     </PoultryShell>
   );
 }
 
-function GenericRecordForm({ options, batchPens, form, setForm, submit, type }: {
+function GenericRecordForm({ options, batchPens, form, setForm, submit, type, isEditing = false }: {
   options: PoultryOptions;
   batchPens: PenOption[];
   form: Record<string, string>;
   setForm: (form: Record<string, string>) => void;
   submit: (event: FormEvent<HTMLFormElement>) => void;
   type: string;
+  isEditing?: boolean;
 }) {
   const fields = recordFields(type);
   return (
@@ -708,7 +870,9 @@ function GenericRecordForm({ options, batchPens, form, setForm, submit, type }: 
           )}
         </FormField>
       ))}
-      <button className="min-h-11 rounded-md bg-brand px-4 text-sm font-semibold text-white md:col-span-4">Submit record</button>
+      <button className={`min-h-11 rounded-md px-4 text-sm font-semibold text-white md:col-span-4 ${isEditing ? "bg-amber-600" : "bg-brand"}`}>
+        {isEditing ? "Save correction" : "Submit record"}
+      </button>
     </form>
   );
 }
@@ -750,7 +914,7 @@ function buildRecordPayload(type: string, form: Record<string, string>, options:
   return payload;
 }
 
-function SimpleRecordTable({ rows }: { rows: Record<string, any>[] }) {
+function SimpleRecordTable({ rows, onEdit }: { rows: Record<string, any>[]; onEdit?: (row: Record<string, any>) => void }) {
   const allowedKeys = new Set([
     "recordDate", "startDate", "costDate", "vaccinationDate", "observationDate", "transferDate",
     "mortalityCount", "culledCount", "feedConsumedKg", "totalEggs",
@@ -761,7 +925,15 @@ function SimpleRecordTable({ rows }: { rows: Record<string, any>[] }) {
     "status"
   ]);
   const keys = Object.keys(rows?.[0] ?? {}).filter((key) => allowedKeys.has(key));
-  return <DataTable rows={rows} empty="No records found" columns={keys.map((key) => ({ key, label: key.replace(/([A-Z])/g, " $1"), render: (row: Record<string, any>) => String(row[key] ?? "-").slice(0, 80) }))} />;
+  const columns = [
+    ...keys.map((key) => ({ key, label: key.replace(/([A-Z])/g, " $1"), render: (row: Record<string, any>) => String(row[key] ?? "-").slice(0, 80) })),
+    ...(onEdit ? [{ key: "_edit", label: "", render: (row: Record<string, any>) => (
+      <button type="button" title="Correct record" onClick={() => onEdit(row)} className="rounded p-1 text-ink/40 hover:bg-brand/10 hover:text-brand">
+        <Pencil className="h-3.5 w-3.5" />
+      </button>
+    ) }] : [])
+  ];
+  return <DataTable rows={rows} empty="No records found" columns={columns} />;
 }
 
 // ─── Transfers ────────────────────────────────────────────────────────────────

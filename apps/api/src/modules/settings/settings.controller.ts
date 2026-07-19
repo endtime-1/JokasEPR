@@ -19,6 +19,7 @@ import {
   CreateWarehouseSettingDto,
   DomainListSettingsDto,
   NumberingSettingsDto,
+  PoultryPricingSettingsDto,
   ProductListQueryDto,
   TaxSettingsDto,
   UpdateCompanyProfileDto,
@@ -220,6 +221,11 @@ export class SettingsController {
   @Put("system/feed-types")
   updateFeedTypes(@CurrentUser() user: AuthenticatedUser, @Body() dto: DomainListSettingsDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.settings.updateFeedTypes(user, dto, ctx(ipAddress, userAgent));
+  }
+
+  @Put("system/poultry-pricing")
+  updatePoultryPricing(@CurrentUser() user: AuthenticatedUser, @Body() dto: PoultryPricingSettingsDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.settings.updatePoultryPricing(user, dto, ctx(ipAddress, userAgent));
   }
 
   @Get("notifications")

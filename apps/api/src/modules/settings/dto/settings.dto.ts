@@ -151,6 +151,11 @@ export class DomainListSettingsDto {
   values!: string[];
 }
 
+export class PoultryPricingSettingsDto {
+  @IsNumber() @Min(0) eggPricePerUnit!: number;
+  @IsNumber() @Min(0) broilerPricePerKg!: number;
+}
+
 export class UpdateSettingGroupDto {
   @IsObject()
   value!: Record<string, unknown>;

@@ -963,7 +963,7 @@ export type MarketTargetItem = {
   product?: { id: string; name: string; sku: string } | null;
 };
 
-export type MarketTargetFull = MarketTarget & {
+export type MarketTargetFull = Omit<MarketTarget, "items"> & {
   items: MarketTargetItem[];
   createdBy?: { fullName: string } | null;
   approvedBy?: { fullName: string } | null;

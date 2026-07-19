@@ -265,14 +265,14 @@ export function StorefrontOrdersScreen() {
       {/* Tabs */}
       <View style={styles.tabsWrap}>
         <SegmentedControl
-          options={TABS.map((t) => ({
+          segments={TABS.map((t) => ({
+            key: t,
             label: t === "ALL" ? `All (${orders.length})` :
                    t === "PENDING" && pendingCount > 0 ? `Pending (${pendingCount})` :
                    t.charAt(0) + t.slice(1).toLowerCase(),
-            value: t,
           }))}
-          selected={tab}
-          onSelect={(v) => setTab(v as Tab)}
+          active={tab}
+          onChange={(k) => setTab(k as Tab)}
         />
       </View>
 
@@ -282,7 +282,7 @@ export function StorefrontOrdersScreen() {
         <EmptyState
           icon="shopping-outline"
           title="No orders"
-          message={tab === "ALL" ? "Storefront orders will appear here" : `No ${tab.toLowerCase()} orders`}
+          subtitle={tab === "ALL" ? "Storefront orders will appear here" : `No ${tab.toLowerCase()} orders`}
         />
       ) : (
         <FlatList

@@ -436,3 +436,22 @@ export class UpdateBatchStatusDto {
   @IsString()
   notes?: string;
 }
+
+export class UpdatePoultryRecordDto {
+  @IsOptional() @IsInt() @Min(0) mortalityCount?: number;
+  @IsOptional() @IsInt() @Min(0) culledCount?: number;
+  @IsOptional() @IsNumber() @Min(0) feedConsumedKg?: number;
+  @IsOptional() @IsInt() @Min(0) totalEggs?: number;
+  @IsOptional() @IsInt() @Min(1) birdCount?: number;
+  @IsOptional() @IsString() reason?: string;
+  @IsOptional() @IsNumber() @Min(0.001) quantityKg?: number;
+  @IsOptional() @IsNumber() @Min(0) costAmount?: number;
+  @IsOptional() @IsInt() @Min(0) goodEggs?: number;
+  @IsOptional() @IsInt() @Min(0) crackedEggs?: number;
+  @IsOptional() @IsInt() @Min(0) dirtyEggs?: number;
+  @IsOptional() @IsInt() @Min(0) brokenEggs?: number;
+  @IsOptional() @IsInt() @Min(0) rejectedEggs?: number;
+  @IsOptional() @IsInt() @Min(1) sampleSize?: number;
+  @IsOptional() @IsNumber() @Min(0.001) averageWeightKg?: number;
+  @IsOptional() @IsString() notes?: string;
+}

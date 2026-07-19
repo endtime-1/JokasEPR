@@ -150,7 +150,7 @@ export function StorefrontProductsScreen() {
         <EmptyState
           icon="package-variant-closed"
           title="No products"
-          message={search ? "No products match your search" : "No products in the catalog yet"}
+          subtitle={search ? "No products match your search" : "No products in the catalog yet"}
         />
       ) : (
         <FlatList

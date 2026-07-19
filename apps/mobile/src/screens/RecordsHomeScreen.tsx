@@ -105,9 +105,9 @@ const GROUPS: Group[] = [
     title: "Quality",
     icon: "shield-check",
     items: [
-      { icon: "magnify-scan", label: "Quality Inspection", desc: "Log a new quality check with verdict",         screen: "QualityCheck",     roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#8B5CF6" },
-      { icon: "check-circle", label: "Corrective Action",  desc: "Log a corrective action for a quality issue",  screen: "CorrectiveAction", roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#10B981" },
-      { icon: "test-tube",    label: "Lab Report",         desc: "Submit external lab analysis results",          screen: "LabReport",        roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#3B82F6" },
+      { icon: "magnify-scan", label: "Quality Inspection", desc: "Log a new quality check with verdict",         screen: "QualityCheck",     roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"], permission: "quality.manage", color: "#8B5CF6" },
+      { icon: "check-circle", label: "Corrective Action",  desc: "Log a corrective action for a quality issue",  screen: "CorrectiveAction", roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"], permission: "quality.manage", color: "#10B981" },
+      { icon: "test-tube",    label: "Lab Report",         desc: "Submit external lab analysis results",          screen: "LabReport",        roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"], permission: "quality.manage", color: "#3B82F6" },
     ],
   },
   {
@@ -165,9 +165,8 @@ export function RecordsHomeScreen() {
   const visibleGroups = GROUPS.map((g) => ({
     ...g,
     items: g.items.filter((item) =>
-      item.permission
-        ? userPerms.includes(item.permission)
-        : item.roles.some((r) => userRoles.includes(r))
+      item.roles.some((r) => userRoles.includes(r)) &&
+      (item.permission ? userPerms.includes(item.permission) : true)
     ),
   })).filter((g) => g.items.length > 0);
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState, type ReactNode } from "react";
-import { Bot, Building2, ChevronRight, HardDrive, Package, Pencil, Plus, Save, Settings, ShieldCheck, Trash2, X } from "lucide-react";
+import { Bot, Building2, ChevronRight, Egg, HardDrive, Package, Pencil, Plus, Save, Settings, ShieldCheck, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { AppShell } from "../../components/app-shell";
 import { ApiEnvelope, apiFetch } from "../../lib/api";
@@ -12,6 +12,7 @@ type Option = { id: string; code: string; name: string };
 
 type SettingsMap = {
   "poultry.types": { values: string[] };
+  "poultry.pricing": { eggPricePerUnit: number; broilerPricePerKg: number };
   "feed.types": { values: string[] };
   "tax.settings": { enabled: boolean; taxName?: string; ratePercent?: number; taxIdLabel?: string };
   "numbering.settings": {
@@ -54,6 +55,7 @@ const masterSections = [
 
 const DEFAULT_SETTINGS: SettingsMap = {
   "poultry.types": { values: [] },
+  "poultry.pricing": { eggPricePerUnit: 1.2, broilerPricePerKg: 35 },
   "feed.types": { values: [] },
   "tax.settings": { enabled: false, taxName: "", ratePercent: 0 },
   "numbering.settings": {
@@ -125,6 +127,7 @@ export default function SettingsPage() {
       const api = settingsRes.value as Partial<SettingsMap>;
       setSettings({
         "poultry.types": { ...DEFAULT_SETTINGS["poultry.types"], ...(api["poultry.types"] ?? {}) },
+        "poultry.pricing": { ...DEFAULT_SETTINGS["poultry.pricing"], ...(api["poultry.pricing"] ?? {}) },
         "feed.types": { ...DEFAULT_SETTINGS["feed.types"], ...(api["feed.types"] ?? {}) },
         "tax.settings": { ...DEFAULT_SETTINGS["tax.settings"], ...(api["tax.settings"] ?? {}) },
         "numbering.settings": { ...DEFAULT_SETTINGS["numbering.settings"], ...(api["numbering.settings"] ?? {}) },
@@ -422,6 +425,23 @@ export default function SettingsPage() {
               <input className={inputClass} placeholder="Retention days" value={settings["backup.settings"].retentionDays ?? ""} onChange={(e) => updateSetting("backup.settings", { ...settings["backup.settings"], retentionDays: e.target.value })} />
               <input className={inputClass} placeholder="Storage target" value={settings["backup.settings"].storageTarget ?? ""} onChange={(e) => updateSetting("backup.settings", { ...settings["backup.settings"], storageTarget: e.target.value })} />
               <button className="app-button-primary w-max" onClick={() => save("backup", () => apiFetch("/settings/system/backup", { method: "PUT", body: JSON.stringify(settings["backup.settings"]) }))}>Save backup</button>
+            </div>
+          </SettingCard>
+
+          <SettingCard title="Poultry Pricing" icon={Egg}>
+            <div className="grid gap-3">
+              <p className="text-xs text-ink/55">Used to calculate profitability on flock batches. Set your local market prices.</p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-ink/70">Egg price per unit (GHS)</label>
+                  <input className={inputClass} type="number" step="0.01" min="0" value={settings["poultry.pricing"].eggPricePerUnit} onChange={(e) => updateSetting("poultry.pricing", { ...settings["poultry.pricing"], eggPricePerUnit: Number(e.target.value) })} />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-ink/70">Broiler price per kg (GHS)</label>
+                  <input className={inputClass} type="number" step="0.01" min="0" value={settings["poultry.pricing"].broilerPricePerKg} onChange={(e) => updateSetting("poultry.pricing", { ...settings["poultry.pricing"], broilerPricePerKg: Number(e.target.value) })} />
+                </div>
+              </div>
+              <button className="app-button-primary w-max" onClick={() => save("poultry-pricing", () => apiFetch("/settings/system/poultry-pricing", { method: "PUT", body: JSON.stringify(settings["poultry.pricing"]) }), "Poultry pricing saved.")}>Save pricing</button>
             </div>
           </SettingCard>
 

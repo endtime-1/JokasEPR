@@ -15,6 +15,7 @@ type Action = {
   label: string;
   screen: string;
   roles: string[];
+  permission?: string;
   color: string;
   featured?: boolean;
 };
@@ -26,14 +27,14 @@ const ALL_ACTIONS: Action[] = [
   { id: "mortality",   icon: "arrow-down-bold",          label: "Mortality",       screen: "Mortality",        roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#EF4444", featured: true  },
   { id: "weight",      icon: "scale",                    label: "Bird Weight",     screen: "BirdWeight",       roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#3B82F6", featured: true  },
   { id: "hipro",       icon: "calculator-variant",       label: "Feed Predict",    screen: "HiproPredict",     roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"],          color: colors.brand },
-  { id: "medication",  icon: "pill",                     label: "Medication",      screen: "Medication",       roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#8B5CF6" },
-  { id: "vaccination", icon: "needle",                   label: "Vaccination",     screen: "Vaccination",      roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#06B6D4" },
+  { id: "medication",  icon: "pill",                     label: "Medication",      screen: "Medication",       roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"], permission: "health.manage", color: "#8B5CF6" },
+  { id: "vaccination", icon: "needle",                   label: "Vaccination",     screen: "Vaccination",      roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"], permission: "health.manage", color: "#06B6D4" },
   { id: "stock",       icon: "package-variant",          label: "Stock",           screen: "StockMovement",    roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"],          color: "#D97706" },
   { id: "sales",       icon: "cart-plus",                label: "Sales Order",     screen: "SalesOrder",       roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"],          color: "#10B981" },
   { id: "production",  icon: "factory",                  label: "Production",      screen: "ProductionRecord", roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#3B82F6" },
   { id: "soya",        icon: "seed",                     label: "Soya Processing", screen: "SoyaProcessing",   roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"],          color: "#D97706" },
   { id: "prospect",    icon: "map-marker-plus",          label: "Log Visit",       screen: "ProspectVisit",    roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#D97706", featured: true },
-  { id: "quality",     icon: "magnify-scan",             label: "Quality Check",   screen: "QualityCheck",     roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"],          color: "#8B5CF6" },
+  { id: "quality",     icon: "magnify-scan",             label: "Quality Check",   screen: "QualityCheck",     roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"], permission: "quality.manage", color: "#8B5CF6" },
   { id: "attendance",  icon: "account-clock",            label: "Check-In",        screen: "AttendanceCheckIn",roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#3B82F6" },
   { id: "scanner",     icon: "qrcode-scan",              label: "QR Scanner",      screen: "Scanner",          roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#8B5CF6" },
   { id: "dashboard",   icon: "chart-areaspline",         label: "Dashboard",       screen: "Dashboard",        roles: ["MANAGER","CEO","SUPER_ADMIN"],                    color: colors.brand },
@@ -60,12 +61,16 @@ export function HomeScreen() {
   const navigation = useNavigation<any>();
 
   const userRoles = user?.roles ?? [];
+  const userPerms = user?.permissions ?? [];
   const topRole   = userRoles[0] ?? "WORKER";
   const firstName = user?.fullName?.split(" ")[0] ?? "User";
   const farmCount = user?.farmIds?.length ?? 0;
   const initials  = user?.fullName?.split(" ").map((n) => n[0]).slice(0, 2).join("") ?? "JK";
 
-  const permitted = ALL_ACTIONS.filter((a) => a.roles.some((r) => userRoles.includes(r)));
+  const permitted = ALL_ACTIONS.filter((a) =>
+    a.roles.some((r) => userRoles.includes(r)) &&
+    (a.permission ? userPerms.includes(a.permission) : true)
+  );
   const featured  = permitted.filter((a) => a.featured);
   const secondary = permitted.filter((a) => !a.featured);
 

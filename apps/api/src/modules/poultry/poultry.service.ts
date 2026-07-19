@@ -591,6 +591,21 @@ export class PoultryService {
     return { data };
   }
 
+  async updateRecord(user: AuthenticatedUser, type: string, id: string, dto: Record<string, any>, context: RequestContext) {
+    const model = this.recordModel(type);
+    const existing = await model.findFirst({ where: { companyId: user.companyId, id, deletedAt: null } });
+    if (!existing) throw new NotFoundException("Record was not found.");
+    this.assertFarmAccess(user, existing.farmId);
+    const correctable = ["mortalityCount", "culledCount", "feedConsumedKg", "totalEggs", "birdCount", "reason", "quantityKg", "costAmount", "goodEggs", "crackedEggs", "dirtyEggs", "brokenEggs", "rejectedEggs", "sampleSize", "averageWeightKg", "notes"];
+    const updateData: Record<string, any> = { updatedById: user.id };
+    for (const field of correctable) {
+      if (dto[field] !== undefined) updateData[field] = dto[field];
+    }
+    const data = await model.update({ where: { id }, data: updateData });
+    await this.writeAudit(user, "UPDATE", type, id, `Corrected poultry ${type} record`, context, existing.farmId);
+    return { data };
+  }
+
   async reportCsv(user: AuthenticatedUser, query: PoultryQueryDto, context: RequestContext) {
     const batches = await this.listBatches(user, query);
     const rows = [
@@ -639,17 +654,14 @@ export class PoultryService {
   }
 
   private async poultryPrices(companyId: string): Promise<{ eggPricePerUnit: number; broilerPricePerKg: number }> {
-    const settings = await this.prisma.systemSetting.findMany({
-      where: { companyId, key: { in: ["poultry.egg_price_per_unit", "poultry.broiler_price_per_kg"] }, deletedAt: null },
-      select: { key: true, value: true }
+    const setting = await this.prisma.systemSetting.findFirst({
+      where: { companyId, key: "poultry.pricing", deletedAt: null },
+      select: { value: true }
     });
-    const get = (key: string, def: number) => {
-      const s = settings.find((s) => s.key === key);
-      return s ? Number(s.value) : def;
-    };
+    const v = (setting?.value ?? {}) as Record<string, unknown>;
     return {
-      eggPricePerUnit: get("poultry.egg_price_per_unit", 1.2),
-      broilerPricePerKg: get("poultry.broiler_price_per_kg", 35)
+      eggPricePerUnit: v.eggPricePerUnit ? Number(v.eggPricePerUnit) : 1.2,
+      broilerPricePerKg: v.broilerPricePerKg ? Number(v.broilerPricePerKg) : 35
     };
   }
 

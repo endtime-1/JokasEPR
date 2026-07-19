@@ -41,7 +41,7 @@ export function HRDashboardScreen() {
       <SafeAreaView style={styles.safe} edges={["bottom"]}>
         <ScrollView contentContainerStyle={styles.scroll}>
           <PageHeader icon="account-group" iconColor="#2563eb" title="HR Overview" />
-          <SkeletonMetricGrid cols={2} rows={2} />
+          <SkeletonMetricGrid />
         </ScrollView>
       </SafeAreaView>
     );
@@ -62,10 +62,10 @@ export function HRDashboardScreen() {
 
         {/* KPI grid */}
         <View style={styles.grid}>
-          <MetricCard icon="account-multiple"  value={d?.totalEmployees ?? 0}    label="Total Staff"    color="#2563eb" />
-          <MetricCard icon="account-check"     value={d?.presentToday   ?? 0}    label="Present Today"  color="#16a34a" />
-          <MetricCard icon="account-off"       value={d?.absentToday    ?? 0}    label="Absent Today"   color="#dc2626" />
-          <MetricCard icon="calendar-question" value={d?.openLeaveRequests ?? 0} label="Pending Leave"  color="#d97706" />
+          <MetricCard icon="account-multiple"  value={String(d?.totalEmployees    ?? 0)}  label="Total Staff"    color="#2563eb" />
+          <MetricCard icon="account-check"     value={String(d?.presentToday      ?? 0)}  label="Present Today"  color="#16a34a" />
+          <MetricCard icon="account-off"       value={String(d?.absentToday       ?? 0)}  label="Absent Today"   color="#dc2626" />
+          <MetricCard icon="calendar-question" value={String(d?.openLeaveRequests ?? 0)}  label="Pending Leave"  color="#d97706" />
         </View>
 
         {/* Attendance rate */}

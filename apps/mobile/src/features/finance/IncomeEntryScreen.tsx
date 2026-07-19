@@ -188,7 +188,7 @@ export function IncomeEntryScreen() {
                     onPress={() => setBankAccountId(b.id)}
                   >
                     <Text style={[styles.accountChipText, bankAccountId === b.id && styles.accountChipTextActive]} numberOfLines={1}>
-                      {b.bankName} – {b.accountName}
+                      {b.bankName} – {b.name}
                     </Text>
                   </TouchableOpacity>
                 ))}

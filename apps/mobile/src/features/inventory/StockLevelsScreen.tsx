@@ -134,7 +134,7 @@ export function StockLevelsScreen() {
         <EmptyState
           icon="package-variant-closed"
           title="No stock records"
-          message={search ? "No items match your search" : "No inventory items found"}
+          subtitle={search ? "No items match your search" : "No inventory items found"}
         />
       ) : (
         <FlatList

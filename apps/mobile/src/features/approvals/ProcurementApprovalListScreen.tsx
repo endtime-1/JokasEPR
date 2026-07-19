@@ -106,7 +106,7 @@ export function ProcurementApprovalListScreen() {
     );
   }
 
-  const data = tab === "pr" ? prs : pos;
+  const data: (PurchaseRequest | PurchaseOrderListItem)[] = tab === "pr" ? prs : pos;
 
   return (
     <SafeAreaView style={styles.safe} edges={["bottom"]}>
@@ -139,8 +139,8 @@ export function ProcurementApprovalListScreen() {
         }
         renderItem={({ item }) => {
           const isPr  = tab === "pr";
-          const pr    = item as PurchaseRequest;
-          const po    = item as PurchaseOrderListItem;
+          const pr    = item as unknown as PurchaseRequest;
+          const po    = item as unknown as PurchaseOrderListItem;
           const s     = STATUS_MAP[item.status] ?? STATUS_MAP.PENDING;
           const ref   = isPr ? pr.reference : po.reference;
           const supplier = isPr ? pr.supplier?.name : po.supplier?.name;

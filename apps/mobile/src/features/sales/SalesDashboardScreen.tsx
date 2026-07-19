@@ -46,7 +46,7 @@ export function SalesDashboardScreen() {
       <SafeAreaView style={styles.safe} edges={["bottom"]}>
         <ScrollView contentContainerStyle={styles.scroll}>
           <PageHeader icon="chart-line" iconColor="#16a34a" title="Sales" />
-          <SkeletonMetricGrid cols={2} rows={2} />
+          <SkeletonMetricGrid />
         </ScrollView>
       </SafeAreaView>
     );
@@ -66,9 +66,9 @@ export function SalesDashboardScreen() {
         {/* KPI grid */}
         <View style={styles.grid}>
           <MetricCard icon="cash-multiple"        value={GHS(d?.totalRevenue ?? 0)}  label="Total Revenue"    color="#16a34a" />
-          <MetricCard icon="receipt-text-outline" value={d?.totalOrders    ?? 0}     label="Total Orders"     color="#2563eb" />
-          <MetricCard icon="check-circle-outline" value={d?.paidOrders     ?? 0}     label="Paid Orders"      color="#16a34a" />
-          <MetricCard icon="clock-outline"        value={d?.pendingOrders  ?? 0}     label="Pending Orders"   color="#d97706" />
+          <MetricCard icon="receipt-text-outline" value={String(d?.totalOrders    ?? 0)}  label="Total Orders"     color="#2563eb" />
+          <MetricCard icon="check-circle-outline" value={String(d?.paidOrders     ?? 0)}  label="Paid Orders"      color="#16a34a" />
+          <MetricCard icon="clock-outline"        value={String(d?.pendingOrders  ?? 0)}  label="Pending Orders"   color="#d97706" />
         </View>
 
         {/* Quick actions */}

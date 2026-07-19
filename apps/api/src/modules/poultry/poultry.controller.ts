@@ -21,6 +21,7 @@ import {
   CreateVaccinationRecordDto,
   PoultryQueryDto,
   UpdateBatchStatusDto,
+  UpdatePoultryRecordDto,
   UpdatePoultryTransferStatusDto
 } from "./dto/poultry.dto";
 import { PoultryService } from "./poultry.service";
@@ -192,6 +193,12 @@ export class PoultryController {
   @RequirePermissions(PERMISSIONS.FINANCE_MANAGE)
   approveCost(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.poultryService.approveCost(user, id, { ipAddress, userAgent });
+  }
+
+  @Patch("records/:type/:id")
+  @RequirePermissions(PERMISSIONS.POULTRY_MANAGE)
+  updateRecord(@CurrentUser() user: AuthenticatedUser, @Param("type") type: string, @Param("id") id: string, @Body() dto: UpdatePoultryRecordDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.poultryService.updateRecord(user, type, id, dto as Record<string, any>, { ipAddress, userAgent });
   }
 
   @Delete("records/:type/:id")
