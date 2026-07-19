@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Ip, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Headers, Ip, Param, Post, Put, UseGuards } from "@nestjs/common";
 import { PERMISSIONS, AuthenticatedUser } from "@jokas/shared";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { RequirePermissions } from "../../common/decorators/permissions.decorator";
@@ -10,6 +10,10 @@ import { CreateBranchDto } from "./dto/create-branch.dto";
 import { CreateFarmDto } from "./dto/create-farm.dto";
 import { CreateProductionSiteDto } from "./dto/create-production-site.dto";
 import { CreateWarehouseDto } from "./dto/create-warehouse.dto";
+import { UpdateBranchDto } from "./dto/update-branch.dto";
+import { UpdateFarmDto } from "./dto/update-farm.dto";
+import { UpdateProductionSiteDto } from "./dto/update-production-site.dto";
+import { UpdateWarehouseDto } from "./dto/update-warehouse.dto";
 import { PlatformService } from "./platform.service";
 
 @UseGuards(JwtAuthGuard, PermissionsGuard, ScopeAccessGuard)
@@ -39,6 +43,29 @@ export class PlatformController {
     return this.platformService.createBranch(user, dto, { ipAddress, userAgent });
   }
 
+  @Put("branches/:id")
+  @RequirePermissions(PERMISSIONS.PLATFORM_MANAGE)
+  updateBranch(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id") id: string,
+    @Body() dto: UpdateBranchDto,
+    @Ip() ipAddress: string,
+    @Headers("user-agent") userAgent?: string
+  ) {
+    return this.platformService.updateBranch(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Delete("branches/:id")
+  @RequirePermissions(PERMISSIONS.PLATFORM_MANAGE)
+  deleteBranch(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id") id: string,
+    @Ip() ipAddress: string,
+    @Headers("user-agent") userAgent?: string
+  ) {
+    return this.platformService.deleteBranch(user, id, { ipAddress, userAgent });
+  }
+
   @Get("farms")
   farms(@CurrentUser() user: AuthenticatedUser) {
     return this.platformService.listFarms(user);
@@ -54,6 +81,29 @@ export class PlatformController {
     @Headers("user-agent") userAgent?: string
   ) {
     return this.platformService.createFarm(user, dto, { ipAddress, userAgent });
+  }
+
+  @Put("farms/:id")
+  @RequirePermissions(PERMISSIONS.PLATFORM_MANAGE)
+  updateFarm(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id") id: string,
+    @Body() dto: UpdateFarmDto,
+    @Ip() ipAddress: string,
+    @Headers("user-agent") userAgent?: string
+  ) {
+    return this.platformService.updateFarm(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Delete("farms/:id")
+  @RequirePermissions(PERMISSIONS.PLATFORM_MANAGE)
+  deleteFarm(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id") id: string,
+    @Ip() ipAddress: string,
+    @Headers("user-agent") userAgent?: string
+  ) {
+    return this.platformService.deleteFarm(user, id, { ipAddress, userAgent });
   }
 
   @Get("production-sites")
@@ -73,6 +123,29 @@ export class PlatformController {
     return this.platformService.createProductionSite(user, dto, { ipAddress, userAgent });
   }
 
+  @Put("production-sites/:id")
+  @RequirePermissions(PERMISSIONS.PLATFORM_MANAGE)
+  updateProductionSite(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id") id: string,
+    @Body() dto: UpdateProductionSiteDto,
+    @Ip() ipAddress: string,
+    @Headers("user-agent") userAgent?: string
+  ) {
+    return this.platformService.updateProductionSite(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Delete("production-sites/:id")
+  @RequirePermissions(PERMISSIONS.PLATFORM_MANAGE)
+  deleteProductionSite(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id") id: string,
+    @Ip() ipAddress: string,
+    @Headers("user-agent") userAgent?: string
+  ) {
+    return this.platformService.deleteProductionSite(user, id, { ipAddress, userAgent });
+  }
+
   @Get("warehouses")
   warehouses(@CurrentUser() user: AuthenticatedUser) {
     return this.platformService.listWarehouses(user);
@@ -88,6 +161,29 @@ export class PlatformController {
     @Headers("user-agent") userAgent?: string
   ) {
     return this.platformService.createWarehouse(user, dto, { ipAddress, userAgent });
+  }
+
+  @Put("warehouses/:id")
+  @RequirePermissions(PERMISSIONS.PLATFORM_MANAGE)
+  updateWarehouse(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id") id: string,
+    @Body() dto: UpdateWarehouseDto,
+    @Ip() ipAddress: string,
+    @Headers("user-agent") userAgent?: string
+  ) {
+    return this.platformService.updateWarehouse(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Delete("warehouses/:id")
+  @RequirePermissions(PERMISSIONS.PLATFORM_MANAGE)
+  deleteWarehouse(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id") id: string,
+    @Ip() ipAddress: string,
+    @Headers("user-agent") userAgent?: string
+  ) {
+    return this.platformService.deleteWarehouse(user, id, { ipAddress, userAgent });
   }
 }
 

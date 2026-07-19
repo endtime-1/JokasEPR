@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { AlertTriangle, CalendarDays, CircleAlert, ClipboardList, DollarSign, FileText, UserCheck, UserPlus, Users } from "lucide-react";
+import { AlertTriangle, CalendarDays, Camera, CircleAlert, ClipboardList, DollarSign, FileText, Upload, UserCheck, UserPlus, Users } from "lucide-react";
 import { ApiEnvelope, apiFetch } from "../lib/api";
 import { AppShell } from "./app-shell";
 import { DataTable } from "./data-table";
@@ -358,6 +358,8 @@ export function CreateEmployeePage() {
   const [form, setForm] = useState({ code: "", firstName: "", lastName: "", phone: "", email: "", address: "", nationalId: "", startDate: "", gender: "", dateOfBirth: "", employeeRoleId: "", branchId: "", farmId: "", warehouseId: "", productionSiteId: "", basicSalary: "", bankName: "", bankAccount: "", ssnitNumber: "", tinNumber: "", emergencyContactName: "", emergencyContactPhone: "", notes: "" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [passportFile, setPassportFile] = useState<File | null>(null);
+  const [passportPreview, setPassportPreview] = useState<string | null>(null);
 
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setForm((p) => ({ ...p, [k]: e.target.value }));
 
@@ -366,7 +368,7 @@ export function CreateEmployeePage() {
     setSaving(true);
     setError("");
     try {
-      await apiFetch("/hr/employees", {
+      const res = await apiFetch<ApiEnvelope<{ id: string }>>("/hr/employees", {
         method: "POST",
         body: JSON.stringify({
           ...form,
@@ -380,6 +382,13 @@ export function CreateEmployeePage() {
           productionSiteId: form.productionSiteId || undefined,
         }),
       });
+      if (passportFile && res.data?.id) {
+        const fd = new FormData();
+        fd.append("photo", passportFile);
+        await fetch(`/api/v1/hr/employees/${res.data.id}/photo`, {
+          method: "POST", body: fd, credentials: "include",
+        }).catch(() => undefined);
+      }
       router.push("/hr/employees");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to create employee");
@@ -399,6 +408,71 @@ export function CreateEmployeePage() {
         <form onSubmit={submit} className="space-y-5">
           <div className="rounded-lg border border-line bg-white p-5 space-y-4">
             <h2 className="font-semibold">Personal Information</h2>
+
+            {/* Passport / Profile Photo */}
+            <div className="flex items-start gap-5 pb-5 border-b border-line">
+              <div className="shrink-0">
+                {passportPreview ? (
+                  <img src={passportPreview} alt="Passport" className="h-24 w-24 rounded-full object-cover ring-2 ring-brand/20" />
+                ) : (
+                  <div className="grid h-24 w-24 place-items-center rounded-full border-2 border-dashed border-line bg-field text-ink/25">
+                    <Camera className="h-8 w-8" />
+                  </div>
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-ink">Passport / Profile Photo</p>
+                <p className="mt-0.5 text-xs text-ink/50">Optional — can be changed later from the employee profile.</p>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-line bg-white px-3 py-1.5 text-xs font-medium text-ink/70 hover:bg-field">
+                    <Camera className="h-3.5 w-3.5" />
+                    Take Photo
+                    <input
+                      type="file"
+                      accept="image/*"
+                      capture="user"
+                      className="sr-only"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        setPassportFile(file);
+                        const reader = new FileReader();
+                        reader.onload = () => setPassportPreview(reader.result as string);
+                        reader.readAsDataURL(file);
+                      }}
+                    />
+                  </label>
+                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-line bg-white px-3 py-1.5 text-xs font-medium text-ink/70 hover:bg-field">
+                    <Upload className="h-3.5 w-3.5" />
+                    Upload from Device
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="sr-only"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        setPassportFile(file);
+                        const reader = new FileReader();
+                        reader.onload = () => setPassportPreview(reader.result as string);
+                        reader.readAsDataURL(file);
+                      }}
+                    />
+                  </label>
+                  {passportFile && (
+                    <button
+                      type="button"
+                      onClick={() => { setPassportFile(null); setPassportPreview(null); }}
+                      className="text-xs text-red-500 hover:underline"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+                {passportFile && <p className="mt-1.5 text-[11px] text-brand/70">{passportFile.name} selected</p>}
+              </div>
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
               <div><label className="mb-1 block text-xs font-medium">Employee Code *</label><input required value={form.code} onChange={f("code")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
               <div><label className="mb-1 block text-xs font-medium">Role</label>

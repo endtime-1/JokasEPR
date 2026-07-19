@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { AuthenticatedUser } from "@jokas/shared";
 import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -6,6 +6,10 @@ import { CreateBranchDto } from "./dto/create-branch.dto";
 import { CreateFarmDto } from "./dto/create-farm.dto";
 import { CreateProductionSiteDto } from "./dto/create-production-site.dto";
 import { CreateWarehouseDto } from "./dto/create-warehouse.dto";
+import { UpdateBranchDto } from "./dto/update-branch.dto";
+import { UpdateFarmDto } from "./dto/update-farm.dto";
+import { UpdateProductionSiteDto } from "./dto/update-production-site.dto";
+import { UpdateWarehouseDto } from "./dto/update-warehouse.dto";
 
 type RequestContext = {
   ipAddress?: string;
@@ -63,6 +67,35 @@ export class PlatformService {
     return { data: branch };
   }
 
+  async updateBranch(user: AuthenticatedUser, branchId: string, dto: UpdateBranchDto, context: RequestContext) {
+    const existing = await this.prisma.branch.findFirst({
+      where: { id: branchId, companyId: user.companyId, deletedAt: null }
+    });
+    if (!existing) throw new NotFoundException("Branch not found.");
+    const branch = await this.prisma.branch.update({
+      where: { id: branchId },
+      data: {
+        ...(dto.name !== undefined && { name: dto.name }),
+        ...(dto.code !== undefined && { code: dto.code.toUpperCase() }),
+        ...(dto.city !== undefined && { city: dto.city }),
+        ...(dto.country !== undefined && { country: dto.country }),
+        ...(dto.isHeadOffice !== undefined && { isHeadOffice: dto.isHeadOffice })
+      }
+    });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "UPDATE", entityType: "Branch", entityId: branch.id, summary: `Updated branch ${branch.code}`, ipAddress: context.ipAddress, userAgent: context.userAgent });
+    return { data: branch };
+  }
+
+  async deleteBranch(user: AuthenticatedUser, branchId: string, context: RequestContext) {
+    const existing = await this.prisma.branch.findFirst({
+      where: { id: branchId, companyId: user.companyId, deletedAt: null }
+    });
+    if (!existing) throw new NotFoundException("Branch not found.");
+    await this.prisma.branch.update({ where: { id: branchId }, data: { deletedAt: new Date() } });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "DELETE", entityType: "Branch", entityId: branchId, summary: `Deleted branch ${existing.code}`, ipAddress: context.ipAddress, userAgent: context.userAgent });
+    return { data: { id: branchId } };
+  }
+
   async listFarms(user: AuthenticatedUser) {
     const data = await this.prisma.farm.findMany({
       where: this.farmWhere(user),
@@ -98,6 +131,34 @@ export class PlatformService {
     return { data: farm };
   }
 
+  async updateFarm(user: AuthenticatedUser, farmId: string, dto: UpdateFarmDto, context: RequestContext) {
+    const existing = await this.prisma.farm.findFirst({
+      where: { id: farmId, companyId: user.companyId, deletedAt: null }
+    });
+    if (!existing) throw new NotFoundException("Farm not found.");
+    const farm = await this.prisma.farm.update({
+      where: { id: farmId },
+      data: {
+        ...(dto.name !== undefined && { name: dto.name }),
+        ...(dto.code !== undefined && { code: dto.code.toUpperCase() }),
+        ...(dto.location !== undefined && { location: dto.location }),
+        ...(dto.type !== undefined && { type: dto.type })
+      }
+    });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "UPDATE", entityType: "Farm", entityId: farm.id, summary: `Updated farm ${farm.code}`, ipAddress: context.ipAddress, userAgent: context.userAgent });
+    return { data: farm };
+  }
+
+  async deleteFarm(user: AuthenticatedUser, farmId: string, context: RequestContext) {
+    const existing = await this.prisma.farm.findFirst({
+      where: { id: farmId, companyId: user.companyId, deletedAt: null }
+    });
+    if (!existing) throw new NotFoundException("Farm not found.");
+    await this.prisma.farm.update({ where: { id: farmId }, data: { deletedAt: new Date() } });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "DELETE", entityType: "Farm", entityId: farmId, summary: `Deleted farm ${existing.code}`, ipAddress: context.ipAddress, userAgent: context.userAgent });
+    return { data: { id: farmId } };
+  }
+
   async listProductionSites(user: AuthenticatedUser) {
     const data = await this.prisma.productionSite.findMany({
       where: this.productionSiteWhere(user),
@@ -131,6 +192,35 @@ export class PlatformService {
       userAgent: context.userAgent
     });
     return { data: site };
+  }
+
+  async updateProductionSite(user: AuthenticatedUser, siteId: string, dto: UpdateProductionSiteDto, context: RequestContext) {
+    const existing = await this.prisma.productionSite.findFirst({
+      where: { id: siteId, companyId: user.companyId, deletedAt: null }
+    });
+    if (!existing) throw new NotFoundException("Production site not found.");
+    const site = await this.prisma.productionSite.update({
+      where: { id: siteId },
+      data: {
+        ...(dto.name !== undefined && { name: dto.name }),
+        ...(dto.code !== undefined && { code: dto.code.toUpperCase() }),
+        ...(dto.location !== undefined && { location: dto.location }),
+        ...(dto.type !== undefined && { type: dto.type }),
+        ...(dto.branchId !== undefined && { branchId: dto.branchId })
+      }
+    });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "UPDATE", entityType: "ProductionSite", entityId: site.id, summary: `Updated production site ${site.code}`, ipAddress: context.ipAddress, userAgent: context.userAgent });
+    return { data: site };
+  }
+
+  async deleteProductionSite(user: AuthenticatedUser, siteId: string, context: RequestContext) {
+    const existing = await this.prisma.productionSite.findFirst({
+      where: { id: siteId, companyId: user.companyId, deletedAt: null }
+    });
+    if (!existing) throw new NotFoundException("Production site not found.");
+    await this.prisma.productionSite.update({ where: { id: siteId }, data: { deletedAt: new Date() } });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "DELETE", entityType: "ProductionSite", entityId: siteId, summary: `Deleted production site ${existing.code}`, ipAddress: context.ipAddress, userAgent: context.userAgent });
+    return { data: { id: siteId } };
   }
 
   async listWarehouses(user: AuthenticatedUser) {
@@ -170,6 +260,37 @@ export class PlatformService {
       userAgent: context.userAgent
     });
     return { data: warehouse };
+  }
+
+  async updateWarehouse(user: AuthenticatedUser, warehouseId: string, dto: UpdateWarehouseDto, context: RequestContext) {
+    const existing = await this.prisma.warehouse.findFirst({
+      where: { id: warehouseId, companyId: user.companyId, deletedAt: null }
+    });
+    if (!existing) throw new NotFoundException("Warehouse not found.");
+    const warehouse = await this.prisma.warehouse.update({
+      where: { id: warehouseId },
+      data: {
+        ...(dto.name !== undefined && { name: dto.name }),
+        ...(dto.code !== undefined && { code: dto.code.toUpperCase() }),
+        ...(dto.location !== undefined && { location: dto.location }),
+        ...(dto.type !== undefined && { type: dto.type }),
+        ...(dto.branchId !== undefined && { branchId: dto.branchId }),
+        ...(dto.farmId !== undefined && { farmId: dto.farmId }),
+        ...(dto.productionSiteId !== undefined && { productionSiteId: dto.productionSiteId })
+      }
+    });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "UPDATE", entityType: "Warehouse", entityId: warehouse.id, summary: `Updated warehouse ${warehouse.code}`, ipAddress: context.ipAddress, userAgent: context.userAgent });
+    return { data: warehouse };
+  }
+
+  async deleteWarehouse(user: AuthenticatedUser, warehouseId: string, context: RequestContext) {
+    const existing = await this.prisma.warehouse.findFirst({
+      where: { id: warehouseId, companyId: user.companyId, deletedAt: null }
+    });
+    if (!existing) throw new NotFoundException("Warehouse not found.");
+    await this.prisma.warehouse.update({ where: { id: warehouseId }, data: { deletedAt: new Date() } });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "DELETE", entityType: "Warehouse", entityId: warehouseId, summary: `Deleted warehouse ${existing.code}`, ipAddress: context.ipAddress, userAgent: context.userAgent });
+    return { data: { id: warehouseId } };
   }
 
   private async getDefaultBranchId(user: AuthenticatedUser) {
