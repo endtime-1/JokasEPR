@@ -278,7 +278,12 @@ function handleRequest(req, res) {
     return;
   }
   if (!webReady) {
-    res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
+    // 503 (not 200): fetch() callers check r.ok / status — a 200 fools them into thinking
+    // the request succeeded when it actually hit the startup page. refreshSession() returned
+    // "ok", apiFetch skipped its TRANSIENT_STATUSES retry, and auth-context skipped its
+    // !res.ok retry — all because the status code was 200. Browsers render HTML on 503 just
+    // fine and the meta-refresh still fires, so the user experience is identical.
+    res.writeHead(503, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "retry-after": "2" });
     res.end("<!doctype html><html><head><meta http-equiv='refresh' content='2'></head>" +
       "<body>Starting up. Refreshing automatically…</body></html>");
     return;

@@ -93,7 +93,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return;
         }
 
-        const json = (await res.json()) as ApiEnvelope<Profile>;
+        let json: ApiEnvelope<Profile>;
+        try {
+          json = (await res.json()) as ApiEnvelope<Profile>;
+        } catch {
+          // Response body isn't valid JSON (e.g. a startup HTML page that slipped through).
+          // Treat as transient and retry if attempts remain.
+          if (attempt < MAX_ATTEMPTS) {
+            await new Promise<void>(r => setTimeout(r, 3000 * attempt));
+            continue;
+          }
+          return;
+        }
         setProfile(json.data);
         return;
       }
