@@ -88,6 +88,59 @@ class PenAllocationDto {
   notes?: string;
 }
 
+export class UpdatePoultryHouseDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(24)
+  code?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  capacity?: number;
+}
+
+export class UpdatePenDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  name?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  capacity?: number;
+}
+
+export class UpdateFlockBatchDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  code?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  name?: string;
+
+  @IsOptional()
+  @IsEnum(BirdType)
+  birdType?: BirdType;
+
+  @IsOptional()
+  @IsDateString()
+  expectedCloseDate?: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+}
+
 export class CreateFlockBatchDto {
   @IsString()
   @MaxLength(40)

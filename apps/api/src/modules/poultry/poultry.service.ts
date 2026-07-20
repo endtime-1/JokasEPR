@@ -20,6 +20,9 @@ import {
   CreateVaccinationRecordDto,
   PoultryQueryDto,
   UpdateBatchStatusDto,
+  UpdateFlockBatchDto,
+  UpdatePenDto,
+  UpdatePoultryHouseDto,
   UpdatePoultryTransferStatusDto
 } from "./dto/poultry.dto";
 
@@ -269,6 +272,71 @@ export class PoultryService {
     });
     await this.writeAudit(user, "CREATE", "Pen", pen.id, `Added pen ${pen.code} to house ${house.code}`, context, house.farmId);
     return { data: pen };
+  }
+
+  async updateHouse(user: AuthenticatedUser, id: string, dto: UpdatePoultryHouseDto, context: RequestContext) {
+    const house = await this.getHouse(user.companyId, id);
+    this.assertFarmAccess(user, house.farmId);
+    const data = await this.prisma.poultryHouse.update({
+      where: { id },
+      data: { name: dto.name, code: dto.code?.toUpperCase(), capacity: dto.capacity, updatedById: user.id }
+    });
+    await this.writeAudit(user, "UPDATE", "PoultryHouse", id, `Updated poultry house ${house.code}`, context, house.farmId);
+    return { data };
+  }
+
+  async deleteHouse(user: AuthenticatedUser, id: string, context: RequestContext) {
+    const house = await this.getHouse(user.companyId, id);
+    this.assertFarmAccess(user, house.farmId);
+    const data = await this.prisma.poultryHouse.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    await this.writeAudit(user, "DELETE", "PoultryHouse", id, `Deleted poultry house ${house.code}`, context, house.farmId);
+    return { data };
+  }
+
+  async updatePen(user: AuthenticatedUser, id: string, dto: UpdatePenDto, context: RequestContext) {
+    const pen = await this.prisma.pen.findFirst({ where: { companyId: user.companyId, id, deletedAt: null } });
+    if (!pen) throw new NotFoundException("Pen was not found.");
+    this.assertFarmAccess(user, pen.farmId);
+    const data = await this.prisma.pen.update({ where: { id }, data: { name: dto.name, capacity: dto.capacity } });
+    await this.writeAudit(user, "UPDATE", "Pen", id, `Updated pen ${pen.code}`, context, pen.farmId);
+    return { data };
+  }
+
+  async deletePen(user: AuthenticatedUser, id: string, context: RequestContext) {
+    const pen = await this.prisma.pen.findFirst({ where: { companyId: user.companyId, id, deletedAt: null } });
+    if (!pen) throw new NotFoundException("Pen was not found.");
+    this.assertFarmAccess(user, pen.farmId);
+    await this.prisma.pen.update({ where: { id }, data: { deletedAt: new Date() } });
+    await this.writeAudit(user, "DELETE", "Pen", id, `Deleted pen ${pen.code}`, context, pen.farmId);
+    return { data: { id } };
+  }
+
+  async updateBatch(user: AuthenticatedUser, id: string, dto: UpdateFlockBatchDto, context: RequestContext) {
+    const batch = await this.prisma.flockBatch.findFirst({ where: { ...this.batchWhere(user), id } });
+    if (!batch) throw new NotFoundException("Flock batch was not found.");
+    this.assertFarmAccess(user, batch.farmId);
+    const data = await this.prisma.flockBatch.update({
+      where: { id },
+      data: {
+        name: dto.name,
+        code: dto.code,
+        birdType: dto.birdType,
+        expectedCloseDate: dto.expectedCloseDate ? new Date(dto.expectedCloseDate) : undefined,
+        notes: dto.notes,
+        updatedById: user.id
+      }
+    });
+    await this.writeAudit(user, "UPDATE", "FlockBatch", id, `Updated flock batch ${batch.code}`, context, batch.farmId);
+    return { data };
+  }
+
+  async deleteBatch(user: AuthenticatedUser, id: string, context: RequestContext) {
+    const batch = await this.prisma.flockBatch.findFirst({ where: { ...this.batchWhere(user), id } });
+    if (!batch) throw new NotFoundException("Flock batch was not found.");
+    this.assertFarmAccess(user, batch.farmId);
+    await this.prisma.flockBatch.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    await this.writeAudit(user, "DELETE", "FlockBatch", id, `Deleted flock batch ${batch.code}`, context, batch.farmId);
+    return { data: { id } };
   }
 
   async listBatches(user: AuthenticatedUser, query: PoultryQueryDto) {

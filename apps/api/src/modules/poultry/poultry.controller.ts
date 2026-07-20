@@ -21,6 +21,9 @@ import {
   CreateVaccinationRecordDto,
   PoultryQueryDto,
   UpdateBatchStatusDto,
+  UpdateFlockBatchDto,
+  UpdatePenDto,
+  UpdatePoultryHouseDto,
   UpdatePoultryRecordDto,
   UpdatePoultryTransferStatusDto
 } from "./dto/poultry.dto";
@@ -77,6 +80,30 @@ export class PoultryController {
     return this.poultryService.addPen(user, houseId, dto, { ipAddress, userAgent });
   }
 
+  @Patch("houses/:id")
+  @RequirePermissions(PERMISSIONS.POULTRY_MANAGE)
+  updateHouse(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdatePoultryHouseDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.poultryService.updateHouse(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Delete("houses/:id")
+  @RequirePermissions(PERMISSIONS.POULTRY_MANAGE)
+  deleteHouse(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.poultryService.deleteHouse(user, id, { ipAddress, userAgent });
+  }
+
+  @Patch("pens/:id")
+  @RequirePermissions(PERMISSIONS.POULTRY_MANAGE)
+  updatePen(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdatePenDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.poultryService.updatePen(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Delete("pens/:id")
+  @RequirePermissions(PERMISSIONS.POULTRY_MANAGE)
+  deletePen(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.poultryService.deletePen(user, id, { ipAddress, userAgent });
+  }
+
   // ─── Batches ──────────────────────────────────────────────────────────────
 
   @Get("flock-batches")
@@ -107,6 +134,18 @@ export class PoultryController {
   @RequirePermissions(PERMISSIONS.POULTRY_MANAGE)
   updateBatchStatus(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateBatchStatusDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.poultryService.updateBatchStatus(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Patch("batches/:id")
+  @RequirePermissions(PERMISSIONS.POULTRY_MANAGE)
+  updateBatch(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateFlockBatchDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.poultryService.updateBatch(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Delete("batches/:id")
+  @RequirePermissions(PERMISSIONS.POULTRY_MANAGE)
+  deleteBatch(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.poultryService.deleteBatch(user, id, { ipAddress, userAgent });
   }
 
   // ─── Records ──────────────────────────────────────────────────────────────

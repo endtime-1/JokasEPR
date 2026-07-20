@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { ChevronDown, ChevronUp, Download, Pencil, Plus, X } from "lucide-react";
+import { ChevronDown, ChevronUp, Download, Pencil, Plus, Trash2, X } from "lucide-react";
 import { PoultryShell } from "./poultry-shell";
 import { DataTable } from "./data-table";
 import { FormField } from "./form-field";
@@ -128,6 +128,10 @@ export function PoultryHousesPage({ create = false }: { create?: boolean }) {
   const [form, setForm] = useState({ farmId: "", name: "", code: "", capacity: "", defaultPenCount: "5" });
   const [expandedHouseId, setExpandedHouseId] = useState<string | null>(null);
   const [addPenHouseId, setAddPenHouseId] = useState<string | null>(null);
+  const [editHouse, setEditHouse] = useState<HouseRow | null>(null);
+  const [editHouseForm, setEditHouseForm] = useState({ name: "", code: "", capacity: "" });
+  const [editPen, setEditPen] = useState<PenOption | null>(null);
+  const [editPenForm, setEditPenForm] = useState({ name: "", capacity: "" });
   const [submitMsg, setSubmitMsg] = useState("");
 
   async function load() {
@@ -169,6 +173,70 @@ export function PoultryHousesPage({ create = false }: { create?: boolean }) {
     refreshOptions();
   }
 
+  function startEditHouse(house: HouseRow) {
+    setEditHouse(house);
+    setEditHouseForm({ name: house.name, code: house.code, capacity: house.capacity ? String(house.capacity) : "" });
+  }
+
+  async function saveHouse(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editHouse) return;
+    try {
+      await apiFetch(`/poultry/houses/${editHouse.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name: editHouseForm.name || undefined, code: editHouseForm.code || undefined, capacity: Number(editHouseForm.capacity) || undefined })
+      });
+      setEditHouse(null);
+      await load();
+      refreshOptions();
+    } catch (err: any) {
+      setSubmitMsg(err?.message ?? "Failed to update house.");
+    }
+  }
+
+  async function deleteHouse(house: HouseRow) {
+    if (!confirm(`Delete house "${house.name}"? This cannot be undone.`)) return;
+    try {
+      await apiFetch(`/poultry/houses/${house.id}`, { method: "DELETE" });
+      await load();
+      refreshOptions();
+    } catch (err: any) {
+      setSubmitMsg(err?.message ?? "Failed to delete house.");
+    }
+  }
+
+  function startEditPen(pen: PenOption) {
+    setEditPen(pen);
+    setEditPenForm({ name: pen.name ?? "", capacity: pen.capacity ? String(pen.capacity) : "" });
+  }
+
+  async function savePen(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editPen) return;
+    try {
+      await apiFetch(`/poultry/pens/${editPen.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name: editPenForm.name || undefined, capacity: Number(editPenForm.capacity) || undefined })
+      });
+      setEditPen(null);
+      await load();
+      refreshOptions();
+    } catch (err: any) {
+      setSubmitMsg(err?.message ?? "Failed to update pen.");
+    }
+  }
+
+  async function deletePen(pen: PenOption) {
+    if (!confirm(`Delete pen "${pen.code}"?`)) return;
+    try {
+      await apiFetch(`/poultry/pens/${pen.id}`, { method: "DELETE" });
+      await load();
+      refreshOptions();
+    } catch (err: any) {
+      setSubmitMsg(err?.message ?? "Failed to delete pen.");
+    }
+  }
+
   return (
     <PoultryShell>
       <PageHeader title={create ? "Create Poultry House" : "Poultry Houses"} subtitle="Manage poultry houses by farm. Each house auto-creates 5 pens." />
@@ -203,19 +271,52 @@ export function PoultryHousesPage({ create = false }: { create?: boolean }) {
                   <button className="rounded border border-brand px-3 py-1.5 text-xs font-medium text-brand" onClick={() => setAddPenHouseId(house.id)}>
                     + Add pen
                   </button>
+                  <button className="rounded border border-line p-1.5 text-ink/50 hover:border-brand hover:text-brand" title="Edit house" onClick={() => startEditHouse(house)}>
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                  <button className="rounded border border-line p-1.5 text-ink/50 hover:border-red-400 hover:text-red-500" title="Delete house" onClick={() => deleteHouse(house)}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
                 </div>
               </div>
+
+              {editHouse?.id === house.id && (
+                <form onSubmit={saveHouse} className="border-t border-line bg-amber-50 px-4 py-3">
+                  <p className="mb-2 text-xs font-semibold text-amber-700">Edit house</p>
+                  <div className="flex flex-wrap gap-2">
+                    <input className={inputClass + " flex-1"} placeholder="Name" value={editHouseForm.name} onChange={(e) => setEditHouseForm({ ...editHouseForm, name: e.target.value })} />
+                    <input className={inputClass + " w-28"} placeholder="Code" value={editHouseForm.code} onChange={(e) => setEditHouseForm({ ...editHouseForm, code: e.target.value })} />
+                    <input className={inputClass + " w-28"} type="number" placeholder="Capacity" value={editHouseForm.capacity} onChange={(e) => setEditHouseForm({ ...editHouseForm, capacity: e.target.value })} />
+                    <button type="submit" className="min-h-11 rounded-md bg-brand px-4 text-sm font-semibold text-white">Save</button>
+                    <button type="button" className="min-h-11 rounded-md border border-line px-4 text-sm" onClick={() => setEditHouse(null)}>Cancel</button>
+                  </div>
+                </form>
+              )}
+
               {isExpanded && (
                 <div className="border-t border-line px-4 pb-4">
                   <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5">
                     {pens.map((pen) => (
-                      <div key={pen.id} className="rounded border border-line p-2 text-center text-sm">
+                      <div key={pen.id} className="group relative rounded border border-line p-2 text-center text-sm">
                         <div className="font-semibold">{pen.code}</div>
                         {pen.name && <div className="text-xs text-ink/60">{pen.name}</div>}
                         {pen.capacity && <div className="text-xs text-ink/60">cap {pen.capacity}</div>}
+                        <div className="mt-1 flex justify-center gap-1 opacity-0 group-hover:opacity-100">
+                          <button type="button" title="Edit pen" onClick={() => startEditPen(pen)} className="rounded p-0.5 text-ink/40 hover:bg-brand/10 hover:text-brand"><Pencil className="h-3 w-3" /></button>
+                          <button type="button" title="Delete pen" onClick={() => deletePen(pen)} className="rounded p-0.5 text-ink/40 hover:bg-red-50 hover:text-red-500"><Trash2 className="h-3 w-3" /></button>
+                        </div>
                       </div>
                     ))}
                   </div>
+                  {editPen && pens.some((p) => p.id === editPen.id) && (
+                    <form onSubmit={savePen} className="mt-3 flex gap-2 rounded border border-amber-200 bg-amber-50 p-2">
+                      <span className="self-center text-xs font-semibold text-amber-700">{editPen.code}</span>
+                      <input className={inputClass + " flex-1"} placeholder="Name (optional)" value={editPenForm.name} onChange={(e) => setEditPenForm({ ...editPenForm, name: e.target.value })} />
+                      <input className={inputClass + " w-28"} type="number" placeholder="Capacity" value={editPenForm.capacity} onChange={(e) => setEditPenForm({ ...editPenForm, capacity: e.target.value })} />
+                      <button type="submit" className="min-h-11 rounded-md bg-brand px-3 text-sm font-semibold text-white">Save</button>
+                      <button type="button" className="min-h-11 rounded-md border border-line px-3 text-sm" onClick={() => setEditPen(null)}>Cancel</button>
+                    </form>
+                  )}
                   {addPenHouseId === house.id && (
                     <AddPenForm houseId={house.id} onSave={addPen} onCancel={() => setAddPenHouseId(null)} />
                   )}
@@ -281,6 +382,9 @@ function PoultryHouseForm({ options, form, setForm, submit }: {
 export function FlockBatchesPage({ create = false }: { create?: boolean }) {
   const { options, optionsError } = usePoultryOptions();
   const [rows, setRows] = useState<BatchRow[]>([]);
+  const [editBatch, setEditBatch] = useState<BatchRow | null>(null);
+  const [editForm, setEditForm] = useState({ code: "", name: "", birdType: "LAYERS", expectedCloseDate: "", notes: "" });
+  const [editMsg, setEditMsg] = useState("");
 
   async function load() {
     const response = await apiFetch<ApiEnvelope<BatchRow[]>>("/poultry/batches");
@@ -291,10 +395,43 @@ export function FlockBatchesPage({ create = false }: { create?: boolean }) {
     load().catch(() => undefined);
   }, []);
 
+  function startEdit(batch: BatchRow) {
+    setEditBatch(batch);
+    setEditForm({ code: batch.code, name: batch.name, birdType: batch.birdType, expectedCloseDate: "", notes: "" });
+    setEditMsg("");
+  }
+
+  async function saveEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editBatch) return;
+    setEditMsg("");
+    try {
+      await apiFetch(`/poultry/batches/${editBatch.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ code: editForm.code || undefined, name: editForm.name || undefined, birdType: editForm.birdType || undefined, expectedCloseDate: editForm.expectedCloseDate || undefined, notes: editForm.notes || undefined })
+      });
+      setEditBatch(null);
+      await load();
+    } catch (err: any) {
+      setEditMsg(err?.message ?? "Failed to update batch.");
+    }
+  }
+
+  async function deleteBatch(batch: BatchRow) {
+    if (!confirm(`Delete batch "${batch.name}"? This will remove the batch and all its records.`)) return;
+    try {
+      await apiFetch(`/poultry/batches/${batch.id}`, { method: "DELETE" });
+      await load();
+    } catch (err: any) {
+      setEditMsg(err?.message ?? "Failed to delete batch.");
+    }
+  }
+
   return (
     <PoultryShell>
       <PageHeader title={create ? "Create Flock Batch" : "Flock Batches"} subtitle="Register and monitor flock batches distributed across houses and pens." />
       {optionsError && <p className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">{optionsError}</p>}
+      {editMsg && <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{editMsg}</p>}
       {create ? (
         <FlockBatchForm options={options} onSaved={load} />
       ) : (
@@ -302,7 +439,28 @@ export function FlockBatchesPage({ create = false }: { create?: boolean }) {
           <Plus aria-hidden className="h-4 w-4" /> Create batch
         </Link>
       )}
-      <BatchTable rows={rows} />
+      {editBatch && (
+        <form onSubmit={saveEdit} className="mb-4 grid gap-3 rounded-md border border-amber-200 bg-amber-50 p-4 shadow-panel sm:grid-cols-2 md:grid-cols-4">
+          <div className="md:col-span-4 flex items-center justify-between">
+            <p className="text-sm font-semibold text-amber-700">Edit batch — {editBatch.code}</p>
+            <button type="button" onClick={() => setEditBatch(null)}><X className="h-4 w-4 text-amber-600" /></button>
+          </div>
+          <FormField label="Name"><input className={inputClass} value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} /></FormField>
+          <FormField label="Code"><input className={inputClass} value={editForm.code} onChange={(e) => setEditForm({ ...editForm, code: e.target.value })} /></FormField>
+          <FormField label="Bird type">
+            <select className={inputClass} value={editForm.birdType} onChange={(e) => setEditForm({ ...editForm, birdType: e.target.value })}>
+              {["LAYERS", "BROILERS", "COCKERELS", "BREEDERS", "CHICKS"].map((t) => <option key={t}>{t}</option>)}
+            </select>
+          </FormField>
+          <FormField label="Expected close"><input className={inputClass} type="date" value={editForm.expectedCloseDate} onChange={(e) => setEditForm({ ...editForm, expectedCloseDate: e.target.value })} /></FormField>
+          <FormField label="Notes"><input className={inputClass + " md:col-span-4"} value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} /></FormField>
+          <div className="md:col-span-4 flex gap-2">
+            <button type="submit" className="min-h-11 rounded-md bg-brand px-4 text-sm font-semibold text-white">Save changes</button>
+            <button type="button" className="min-h-11 rounded-md border border-line px-4 text-sm" onClick={() => setEditBatch(null)}>Cancel</button>
+          </div>
+        </form>
+      )}
+      <BatchTable rows={rows} onEdit={startEdit} onDelete={deleteBatch} />
     </PoultryShell>
   );
 }
@@ -460,7 +618,7 @@ function FlockBatchForm({ options, onSaved }: { options: PoultryOptions; onSaved
   );
 }
 
-function BatchTable({ rows }: { rows: BatchRow[] }) {
+function BatchTable({ rows, onEdit, onDelete }: { rows: BatchRow[]; onEdit?: (row: BatchRow) => void; onDelete?: (row: BatchRow) => void }) {
   return (
     <DataTable
       rows={rows}
@@ -474,7 +632,16 @@ function BatchTable({ rows }: { rows: BatchRow[] }) {
         { key: "egg", label: "Egg %", render: (row) => `${row.eggProductionPercent}%` },
         { key: "fcr", label: "FCR", render: (row) => row.feedConversionRatio || "-" },
         { key: "profit", label: "Profitability", render: (row) => `GHS ${row.profitability.toLocaleString()}` },
-        { key: "status", label: "Status", render: (row) => <StatusBadge status={row.status} /> }
+        { key: "status", label: "Status", render: (row) => <StatusBadge status={row.status} /> },
+        {
+          key: "_actions", label: "",
+          render: (row) => (
+            <div className="flex gap-1">
+              {onEdit && <button type="button" title="Edit batch" onClick={() => onEdit(row)} className="rounded p-1 text-ink/40 hover:bg-brand/10 hover:text-brand"><Pencil className="h-3.5 w-3.5" /></button>}
+              {onDelete && <button type="button" title="Delete batch" onClick={() => onDelete(row)} className="rounded p-1 text-ink/40 hover:bg-red-50 hover:text-red-500"><Trash2 className="h-3.5 w-3.5" /></button>}
+            </div>
+          )
+        }
       ]}
     />
   );
