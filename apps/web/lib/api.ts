@@ -11,30 +11,31 @@ export type ApiEnvelope<T> = {
 
 // Tokens are now stored in HttpOnly cookies — these are stubs kept for call-site compatibility.
 // The browser sends jokas_at / jokas_rt cookies automatically on every credentialed request.
-export function getAccessToken(): string | null {
-  return null;
-}
-export function getRefreshToken(): string | null {
-  return null;
-}
+export function getAccessToken(): string | null { return null; }
+export function getRefreshToken(): string | null { return null; }
 export function setSession(_accessToken: string, _refreshToken: string): void {}
 export function clearSession(): void {}
 
-// Singleton so concurrent 401s share one refresh call.
-// The API rotates refresh tokens on each use — if multiple calls hit /refresh
-// simultaneously the second gets a revoked token and fails. This ensures only
-// one refresh is in-flight at a time; all waiters share the same result.
-let _refreshPromise: Promise<boolean> | null = null;
+// Three distinct refresh outcomes so callers don't conflate "API down" with "session expired".
+// The API rotates refresh tokens on every use — concurrent 401s must share one refresh call,
+// otherwise the second call arrives with an already-revoked token and gets its own 401,
+// which incorrectly looks like a genuine session expiry and kicks the user to login.
+type RefreshResult = "ok" | "expired" | "unreachable";
+let _refreshPromise: Promise<RefreshResult> | null = null;
 
-async function refreshSession(): Promise<boolean> {
+async function refreshSession(): Promise<RefreshResult> {
   if (_refreshPromise) return _refreshPromise;
   _refreshPromise = fetch("/api/auth/refresh", {
     method: "POST",
     credentials: "include",
     headers: { "content-type": "application/json" },
   })
-    .then((r) => r.ok)
-    .catch(() => false)
+    .then((r): RefreshResult => {
+      if (r.ok) return "ok";
+      if (r.status === 401 || r.status === 403) return "expired";
+      return "unreachable"; // 502 / 503 / etc. — API is slow, not the user's fault
+    })
+    .catch((): RefreshResult => "unreachable") // network error
     .finally(() => { _refreshPromise = null; });
   return _refreshPromise;
 }
@@ -63,19 +64,36 @@ function extractErrorMessage(text: string): string {
   return text;
 }
 
+function signalSessionExpired() {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("auth:session-expired"));
+  }
+}
+
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   let response = await request(path, init);
 
-  if (response.status === 401 && (await refreshSession())) {
-    response = await request(path, init);
+  if (response.status === 401) {
+    const refreshResult = await refreshSession();
+
+    if (refreshResult === "ok") {
+      // Got a fresh access token — retry the original request
+      response = await request(path, init);
+    } else if (refreshResult === "expired") {
+      // Refresh token is genuinely invalid — session is over
+      signalSessionExpired();
+      throw new Error("Session expired. Please log in again.");
+    } else {
+      // API was unreachable during refresh (502/network) — don't kick to login,
+      // just surface a retriable error so the user knows to try again
+      throw new Error("API server is not reachable. Please try again in a moment.");
+    }
   }
 
   if (!response.ok) {
     if (response.status === 401) {
-      // Session fully expired — signal the app to redirect to login
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent("auth:session-expired"));
-      }
+      // Retry after a successful refresh still got 401 — account issue or token mismatch
+      signalSessionExpired();
     }
     throw new Error(extractErrorMessage(await response.text()));
   }
