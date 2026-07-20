@@ -36,7 +36,9 @@ export default function RolesPage() {
           {
             key: "permissions",
             label: "Permissions",
-            render: (row) => row.permissions.map((permission) => permission.key).join(", ")
+            render: (row) => (row.permissions ?? []).length > 0
+              ? (row.permissions ?? []).map((p) => p.key).join(", ")
+              : <span className="text-ink/40">None assigned</span>
           }
         ]}
       />

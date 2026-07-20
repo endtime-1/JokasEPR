@@ -278,7 +278,14 @@ export class IdentityService {
   async listRoles(companyId: string) {
     const data = await this.prisma.role.findMany({
       where: { companyId, deletedAt: null },
-      select: { id: true, name: true, level: true, description: true, isSystem: true },
+      select: {
+        id: true,
+        name: true,
+        level: true,
+        description: true,
+        isSystem: true,
+        permissions: { select: { id: true, key: true, module: true } }
+      },
       orderBy: { name: "asc" }
     });
     return { data };
