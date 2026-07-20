@@ -121,8 +121,11 @@ export default function SettingsPage() {
     ]);
     const [companyRes, masterRes, optionsRes, settingsRes, notificationRes] = results;
     if (companyRes.status === "fulfilled") setCompany(companyRes.value.data ?? {});
-    if (masterRes.status === "fulfilled") setMaster(masterRes.value.data ?? {});
-    if (optionsRes.status === "fulfilled") setOptions(optionsRes.value.data ?? {});
+    if (masterRes.status === "fulfilled") {
+      const d = masterRes.value?.data;
+      if (d && typeof d === "object" && Object.keys(d).length > 0) setMaster(d);
+    }
+    if (optionsRes.status === "fulfilled" && optionsRes.value?.data) setOptions(optionsRes.value.data);
     if (settingsRes.status === "fulfilled") {
       const api = settingsRes.value as Partial<SettingsMap>;
       setSettings({
@@ -177,7 +180,6 @@ export default function SettingsPage() {
     try {
       await action();
       setSuccess(successMsg);
-      await load();
       return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Save failed.");
@@ -190,9 +192,11 @@ export default function SettingsPage() {
   async function refreshMaster() {
     try {
       const res = await apiFetch<ApiEnvelope<MasterData>>("/settings/master-data");
-      setMaster(res.data ?? {});
+      // Only overwrite if we got real data — never wipe with an empty/null response.
+      const d = res?.data;
+      if (d && typeof d === "object" && Object.keys(d).length > 0) setMaster(d);
       const optRes = await apiFetch<ApiEnvelope<Record<string, Option[]>>>("/settings/options");
-      setOptions(optRes.data ?? {});
+      if (optRes?.data) setOptions(optRes.data);
     } catch (err) {
       setMasterMsg({ type: "err", text: `List refresh failed: ${err instanceof Error ? err.message : "unknown error"}. Try reloading the page.` });
     }
