@@ -149,7 +149,7 @@ export function ScopedInventoryViewPage({ scope }: { scope: "warehouses" | "farm
   useEffect(() => {
     if (!id) return;
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>(`/inventory/${scope}/${id}`)
-      .then((response) => setRows(response.data))
+      .then((response) => setRows(response.data ?? []))
       .catch(() => undefined);
   }, [id, scope]);
   return (

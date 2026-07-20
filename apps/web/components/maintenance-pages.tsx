@@ -463,9 +463,9 @@ export function MachinesPage({ create = false }: { create?: boolean }) {
   const [submitError, setSubmitError] = useState("");
   async function load() {
     const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/machines");
-    setRows(response.data);
+    setRows(response.data ?? []);
   }
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { load().catch(() => undefined); }, []);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitError("");
@@ -534,9 +534,9 @@ export function SchedulePage() {
   const [submitError, setSubmitError] = useState("");
   async function load() {
     const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/schedules");
-    setRows(response.data);
+    setRows(response.data ?? []);
   }
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { load().catch(() => undefined); }, []);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitting(true);
@@ -581,9 +581,9 @@ export function BreakdownPage() {
   const [submitError, setSubmitError] = useState("");
   async function load() {
     const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/breakdowns");
-    setRows(response.data);
+    setRows(response.data ?? []);
   }
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { load().catch(() => undefined); }, []);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitting(true);
@@ -624,9 +624,9 @@ export function SparePartsPage() {
   const [submitError, setSubmitError] = useState("");
   async function load() {
     const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/spare-parts");
-    setRows(response.data);
+    setRows(response.data ?? []);
   }
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { load().catch(() => undefined); }, []);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitting(true);
