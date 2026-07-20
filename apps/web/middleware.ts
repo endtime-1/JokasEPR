@@ -10,7 +10,10 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const hasSession = request.cookies.has("jokas_at");
+  // Accept either the access token OR the refresh token — if only the refresh
+  // token is present (access token expired), let the page through so client-side
+  // code can call /api/auth/refresh and get a new access token automatically.
+  const hasSession = request.cookies.has("jokas_at") || request.cookies.has("jokas_rt");
 
   if (!hasSession) {
     const loginUrl = new URL("/login", request.url);

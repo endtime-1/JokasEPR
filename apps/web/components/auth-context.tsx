@@ -33,15 +33,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
+    const timeout = setTimeout(() => controller.abort(), 20000);
 
-    fetch("/api/auth/me", { credentials: "include", signal: controller.signal })
-      .then(async (res) => {
-        if (!res.ok) throw new Error("Unauthorized");
-        const json = (await res.json()) as ApiEnvelope<Profile>;
-        setProfile(json.data);
-      })
-      .catch(() => router.replace("/login"))
+    async function loadProfile() {
+      let res = await fetch("/api/auth/me", { credentials: "include", signal: controller.signal });
+
+      if (res.status === 401) {
+        // Access token expired — try to refresh before giving up
+        const refreshRes = await fetch("/api/auth/refresh", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          credentials: "include",
+        }).catch(() => null);
+
+        if (refreshRes?.ok) {
+          res = await fetch("/api/auth/me", { credentials: "include" });
+        } else {
+          // Refresh token also invalid — genuine session expiry
+          router.replace("/login");
+          return;
+        }
+      }
+
+      if (!res.ok) {
+        // 5xx / API unreachable — don't kick to login; API may be slow on Hostinger
+        return;
+      }
+
+      const json = (await res.json()) as ApiEnvelope<Profile>;
+      setProfile(json.data);
+    }
+
+    loadProfile()
+      .catch(() => undefined) // AbortError (timeout) or network failure — stay on page
       .finally(() => { clearTimeout(timeout); setReady(true); });
   }, [router]);
 

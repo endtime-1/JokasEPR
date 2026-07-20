@@ -60,7 +60,7 @@ export function NotificationBell() {
     setLoading(true);
     try {
       const res = await apiFetch<ApiEnvelope<{ data: Notification[] }>>("/notifications?limit=10");
-      setItems(res.data.data);
+      setItems(res.data?.data ?? []);
     } catch {
       //
     } finally {

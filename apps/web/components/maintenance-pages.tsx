@@ -665,7 +665,7 @@ export function MaintenanceListPage({ title, endpoint, subtitle }: { title: stri
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
   useEffect(() => {
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>(endpoint)
-      .then((response) => setRows(response.data))
+      .then((response) => setRows(response.data ?? []))
       .catch(() => undefined);
   }, [endpoint]);
   return (
@@ -680,7 +680,7 @@ export function MaintenanceCostReportPage() {
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
   useEffect(() => {
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/costs")
-      .then((response) => setRows(response.data))
+      .then((response) => setRows(response.data ?? []))
       .catch(() => undefined);
   }, []);
   return (
