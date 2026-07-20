@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ApiEnvelope, apiFetch } from "../lib/api";
+import { ApiEnvelope, refreshSession } from "../lib/api";
 
 type Profile = {
   id: string;
@@ -32,43 +32,79 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOutRef = useRef(false);
 
   useEffect(() => {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 20000);
+    // 35s covers up to 3 attempts × 3s wait between them plus API response time
+    const timeout = setTimeout(() => setReady(true), 35000);
 
     async function loadProfile() {
-      let res = await fetch("/api/auth/me", { credentials: "include", signal: controller.signal });
+      const MAX_ATTEMPTS = 3;
 
-      if (res.status === 401) {
-        // Access token expired — try to refresh before giving up
-        const refreshRes = await fetch("/api/auth/refresh", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          credentials: "include",
-        }).catch(() => null);
-
-        if (refreshRes?.ok) {
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        // --- Fetch profile ---
+        let res: Response;
+        try {
           res = await fetch("/api/auth/me", { credentials: "include" });
-        } else if (refreshRes?.status === 401 || refreshRes?.status === 403) {
-          // Refresh token genuinely invalid (revoked or expired) — session over
-          router.replace("/login");
-          return;
-        } else {
-          // null = network error, 502 = API unreachable — don't kick to login
+        } catch {
+          // Network error — retry if attempts remain
+          if (attempt < MAX_ATTEMPTS) {
+            await new Promise<void>(r => setTimeout(r, 3000 * attempt));
+            continue;
+          }
           return;
         }
-      }
 
-      if (!res.ok) {
-        // 5xx / API unreachable — don't kick to login; API may be slow on Hostinger
+        // --- Handle 401: access token expired, try to refresh ---
+        if (res.status === 401) {
+          // Share the same singleton as apiFetch — prevents concurrent races where both
+          // fire independent refresh requests with the same old token, causing the second
+          // to receive a "token already revoked" 401 and kicking the user to login.
+          const refreshResult = await refreshSession();
+
+          if (refreshResult === "ok") {
+            // New access token is now in the cookie — retry /me
+            try {
+              res = await fetch("/api/auth/me", { credentials: "include" });
+            } catch {
+              if (attempt < MAX_ATTEMPTS) {
+                await new Promise<void>(r => setTimeout(r, 3000 * attempt));
+                continue;
+              }
+              return;
+            }
+          } else if (refreshResult === "expired") {
+            // Refresh token is genuinely invalid — session is over
+            router.replace("/login");
+            return;
+          } else {
+            // API unreachable (502 / network error) — give it time to warm up and retry
+            if (attempt < MAX_ATTEMPTS) {
+              await new Promise<void>(r => setTimeout(r, 3000 * attempt));
+              continue;
+            }
+            // All retries exhausted: API is down, but don't redirect to login —
+            // the user's session may be valid once the API recovers
+            return;
+          }
+        }
+
+        // --- Handle other non-OK responses ---
+        if (!res.ok) {
+          // 5xx or proxy error — retry if possible, don't redirect
+          if (attempt < MAX_ATTEMPTS) {
+            await new Promise<void>(r => setTimeout(r, 3000 * attempt));
+            continue;
+          }
+          return;
+        }
+
+        // --- Success ---
+        const json = (await res.json()) as ApiEnvelope<Profile>;
+        setProfile(json.data);
         return;
       }
-
-      const json = (await res.json()) as ApiEnvelope<Profile>;
-      setProfile(json.data);
     }
 
     loadProfile()
-      .catch(() => undefined) // AbortError (timeout) or network failure — stay on page
+      .catch(() => undefined)
       .finally(() => { clearTimeout(timeout); setReady(true); });
   }, [router]);
 

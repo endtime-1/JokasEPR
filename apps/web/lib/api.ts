@@ -17,13 +17,17 @@ export function setSession(_accessToken: string, _refreshToken: string): void {}
 export function clearSession(): void {}
 
 // Three distinct refresh outcomes so callers don't conflate "API down" with "session expired".
-// The API rotates refresh tokens on every use — concurrent 401s must share one refresh call,
-// otherwise the second call arrives with an already-revoked token and gets its own 401,
-// which incorrectly looks like a genuine session expiry and kicks the user to login.
-type RefreshResult = "ok" | "expired" | "unreachable";
+//
+// CRITICAL: auth-context and apiFetch both need to refresh tokens. If they each make
+// independent HTTP calls to /api/auth/refresh, they race with the same old refresh token.
+// The API rotates tokens on every use — the second call arrives with an already-revoked
+// token and gets 401, which looks like a genuine session expiry and kicks the user to login.
+//
+// The singleton _refreshPromise is exported so auth-context can share it.
+export type RefreshResult = "ok" | "expired" | "unreachable";
 let _refreshPromise: Promise<RefreshResult> | null = null;
 
-async function refreshSession(): Promise<RefreshResult> {
+export async function refreshSession(): Promise<RefreshResult> {
   if (_refreshPromise) return _refreshPromise;
   _refreshPromise = fetch("/api/auth/refresh", {
     method: "POST",
@@ -70,6 +74,10 @@ function signalSessionExpired() {
   }
 }
 
+// Statuses that indicate the API server is temporarily unavailable (Hostinger 502 on cold start).
+// These are retried once after a short wait before surfacing an error to the component.
+const TRANSIENT_STATUSES = new Set([502, 503, 504]);
+
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   let response = await request(path, init);
 
@@ -84,10 +92,25 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
       signalSessionExpired();
       throw new Error("Session expired. Please log in again.");
     } else {
-      // API was unreachable during refresh (502/network) — don't kick to login,
-      // just surface a retriable error so the user knows to try again
-      throw new Error("API server is not reachable. Please try again in a moment.");
+      // API was unreachable during refresh — wait once and try the whole flow again
+      // This handles Hostinger cold starts where the API process is warming up
+      await new Promise<void>(r => setTimeout(r, 3000));
+      const retryResult = await refreshSession();
+      if (retryResult === "ok") {
+        response = await request(path, init);
+      } else if (retryResult === "expired") {
+        signalSessionExpired();
+        throw new Error("Session expired. Please log in again.");
+      } else {
+        throw new Error("API server is not reachable. Please try again shortly.");
+      }
     }
+  }
+
+  // One automatic retry for transient server errors — handles Hostinger 502 on API cold start
+  if (TRANSIENT_STATUSES.has(response.status)) {
+    await new Promise<void>(r => setTimeout(r, 3000));
+    response = await request(path, init);
   }
 
   if (!response.ok) {
@@ -101,7 +124,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   const text = await response.text();
   if (!text) return {} as T;
   if (text.trimStart().startsWith("<")) {
-    throw new Error("API server is not reachable. Please try again in a moment.");
+    throw new Error("API server is not reachable. Please try again shortly.");
   }
   return JSON.parse(text) as T;
 }
