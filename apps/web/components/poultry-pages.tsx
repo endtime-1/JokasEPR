@@ -911,7 +911,7 @@ function BatchRecordsTab({ batchId }: { batchId: string }) {
 // ─── Records ──────────────────────────────────────────────────────────────────
 
 function makeFormDefaults(type: string): Record<string, string> {
-  const base: Record<string, string> = { flockBatchId: "", penId: "", recordDate: new Date().toISOString().slice(0, 10) };
+  const base: Record<string, string> = { flockBatchId: "", poultryHouseId: "", penId: "", recordDate: new Date().toISOString().slice(0, 10) };
   for (const field of recordFields(type)) {
     if (field.defaultValue !== undefined) {
       base[field.name] = field.defaultValue;
@@ -929,8 +929,6 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
   const [editingId, setEditingId] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState("");
 
-  const batchPens = useMemo(() => options.pens, [options.pens]);
-
   async function load() {
     const response = await apiFetch<{ data: Record<string, any>[]; meta?: any }>(`/poultry/records/${type}?take=200`);
     setRows(response.data ?? []);
@@ -941,7 +939,12 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
   }, [type]);
 
   function startEdit(row: Record<string, any>) {
-    const pre: Record<string, string> = { flockBatchId: row.flockBatchId ?? "", penId: row.penId ?? "" };
+    const pre: Record<string, string> = { flockBatchId: row.flockBatchId ?? "", penId: row.penId ?? "", poultryHouseId: "" };
+    // Restore the house filter so the pen dropdown shows the right options when editing
+    if (row.penId) {
+      const pen = options.pens.find((p) => p.id === row.penId);
+      if (pen) pre.poultryHouseId = pen.poultryHouseId;
+    }
     for (const field of recordFields(type)) pre[field.name] = String(row[field.name] ?? field.defaultValue ?? "");
     setForm(pre);
     setEditingId(row.id);
@@ -994,15 +997,14 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
         </div>
       )}
       {submitError && <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{submitError}</p>}
-      <GenericRecordForm options={options} batchPens={batchPens} form={form} setForm={setForm} submit={submit} type={type} isEditing={!!editingId} />
+      <GenericRecordForm options={options} form={form} setForm={setForm} submit={submit} type={type} isEditing={!!editingId} />
       <SimpleRecordTable rows={rows} onEdit={startEdit} />
     </PoultryShell>
   );
 }
 
-function GenericRecordForm({ options, batchPens, form, setForm, submit, type, isEditing = false }: {
+function GenericRecordForm({ options, form, setForm, submit, type, isEditing = false }: {
   options: PoultryOptions;
-  batchPens: PenOption[];
   form: Record<string, string>;
   setForm: (form: Record<string, string>) => void;
   submit: (event: FormEvent<HTMLFormElement>) => void;
@@ -1010,33 +1012,70 @@ function GenericRecordForm({ options, batchPens, form, setForm, submit, type, is
   isEditing?: boolean;
 }) {
   const fields = recordFields(type);
+
+  // Houses that actually have at least one pen
+  const housesWithPens = useMemo(() => {
+    const houseIds = new Set(options.pens.map((p) => p.poultryHouseId));
+    return options.houses.filter((h) => houseIds.has(h.id));
+  }, [options.houses, options.pens]);
+
+  // Pens filtered to the selected house — empty until a house is chosen
+  const pensInHouse = useMemo(() => {
+    if (!form.poultryHouseId) return [];
+    return options.pens.filter((p) => p.poultryHouseId === form.poultryHouseId);
+  }, [options.pens, form.poultryHouseId]);
+
   return (
     <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-4">
       <FormField label="Flock batch">
-        <select className={`${inputClass} ${options.batches.length === 0 ? "border-amber-400 bg-amber-50" : ""}`} value={form.flockBatchId || options.batches[0]?.id || ""} onChange={(event) => setForm({ ...form, flockBatchId: event.target.value, penId: "" })} required>
+        <select
+          className={`${inputClass} ${options.batches.length === 0 ? "border-amber-400 bg-amber-50" : ""}`}
+          value={form.flockBatchId || options.batches[0]?.id || ""}
+          onChange={(e) => setForm({ ...form, flockBatchId: e.target.value, poultryHouseId: "", penId: "" })}
+          required
+        >
           {options.batches.length === 0
             ? <option value="">— No batches found — create one first —</option>
-            : options.batches.map((batch) => <option key={batch.id} value={batch.id}>{batch.code} - {batch.name}</option>)
+            : options.batches.map((b) => <option key={b.id} value={b.id}>{b.code} — {b.name}</option>)
           }
         </select>
       </FormField>
-      <FormField label="Pen (optional)">
-        <select className={inputClass} value={form.penId ?? ""} onChange={(event) => setForm({ ...form, penId: event.target.value })}>
-          <option value="">— all pens —</option>
-          {batchPens.map((pen) => <option key={pen.id} value={pen.id}>{pen.code}{pen.name ? ` — ${pen.name}` : ""}</option>)}
+
+      <FormField label="House">
+        <select
+          className={inputClass}
+          value={form.poultryHouseId}
+          onChange={(e) => setForm({ ...form, poultryHouseId: e.target.value, penId: "" })}
+        >
+          <option value="">— select a house —</option>
+          {housesWithPens.map((h) => <option key={h.id} value={h.id}>{h.code} — {h.name}</option>)}
         </select>
       </FormField>
+
+      <FormField label="Pen (optional)">
+        <select
+          className={inputClass}
+          value={form.penId}
+          onChange={(e) => setForm({ ...form, penId: e.target.value })}
+          disabled={!form.poultryHouseId}
+        >
+          <option value="">{form.poultryHouseId ? "— all pens in house —" : "— select a house first —"}</option>
+          {pensInHouse.map((pen) => <option key={pen.id} value={pen.id}>{pen.code}{pen.name ? ` — ${pen.name}` : ""}{pen.capacity ? ` (cap ${pen.capacity})` : ""}</option>)}
+        </select>
+      </FormField>
+
       {fields.map((field) => (
         <FormField key={field.name} label={field.label}>
           {field.kind === "select" ? (
-            <select className={inputClass} value={form[field.name] ?? field.defaultValue ?? ""} onChange={(event) => setForm({ ...form, [field.name]: event.target.value })}>
+            <select className={inputClass} value={form[field.name] ?? field.defaultValue ?? ""} onChange={(e) => setForm({ ...form, [field.name]: e.target.value })}>
               {field.options?.map((option) => <option key={option}>{option}</option>)}
             </select>
           ) : (
-            <input className={inputClass} type={field.kind} value={form[field.name] ?? field.defaultValue ?? ""} onChange={(event) => setForm({ ...form, [field.name]: event.target.value })} required={field.required} />
+            <input className={inputClass} type={field.kind} value={form[field.name] ?? field.defaultValue ?? ""} onChange={(e) => setForm({ ...form, [field.name]: e.target.value })} required={field.required} />
           )}
         </FormField>
       ))}
+
       <button className={`min-h-11 rounded-md px-4 text-sm font-semibold text-white md:col-span-4 ${isEditing ? "bg-amber-600" : "bg-brand"}`}>
         {isEditing ? "Save correction" : "Submit record"}
       </button>
@@ -1069,7 +1108,8 @@ function buildRecordPayload(type: string, form: Record<string, string>, options:
   const payload: Record<string, string | number | boolean | undefined> = {
     ...merged,
     flockBatchId: merged.flockBatchId || options.batches[0]?.id,
-    penId: merged.penId || undefined
+    penId: merged.penId || undefined,
+    poultryHouseId: undefined  // UI-only intermediary, never sent to API
   };
   const numericKeys = ["mortalityCount", "culledCount", "feedConsumedKg", "totalEggs", "birdCount", "quantityKg", "costAmount", "goodEggs", "crackedEggs", "dirtyEggs", "brokenEggs", "rejectedEggs", "sampleSize", "averageWeightKg", "amount"];
   for (const key of Object.keys(payload)) {
@@ -1108,8 +1148,13 @@ function SimpleRecordTable({ rows, onEdit }: { rows: Record<string, any>[]; onEd
 export function PoultryTransferPage() {
   const { options } = usePoultryOptions();
   const [rows, setRows] = useState<Record<string, any>[]>([]);
-  const [form, setForm] = useState({ flockBatchId: "", fromPenId: "", toFarmId: "", toPoultryHouseId: "", toPenId: "", birdCount: "", transferDate: new Date().toISOString().slice(0, 10), reason: "" });
+  const [form, setForm] = useState({ flockBatchId: "", fromHouseId: "", fromPenId: "", toFarmId: "", toPoultryHouseId: "", toPenId: "", birdCount: "", transferDate: new Date().toISOString().slice(0, 10), reason: "" });
 
+  const fromHouses = useMemo(() => {
+    const houseIds = new Set(options.pens.map((p) => p.poultryHouseId));
+    return options.houses.filter((h) => houseIds.has(h.id));
+  }, [options.houses, options.pens]);
+  const fromPens = useMemo(() => options.pens.filter((p) => !form.fromHouseId || p.poultryHouseId === form.fromHouseId), [options.pens, form.fromHouseId]);
   const toHouses = useMemo(() => options.houses.filter((h) => !form.toFarmId || h.farmId === form.toFarmId), [options.houses, form.toFarmId]);
   const toPens = useMemo(() => options.pens.filter((p) => !form.toPoultryHouseId || p.poultryHouseId === form.toPoultryHouseId), [options.pens, form.toPoultryHouseId]);
 
@@ -1142,14 +1187,20 @@ export function PoultryTransferPage() {
       <PageHeader title="Poultry Transfers" subtitle="Move birds between pens, houses, or farms with full transfer audit tracking." />
       <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-3">
         <FormField label="Batch">
-          <select className={inputClass} value={form.flockBatchId || options.batches[0]?.id || ""} onChange={(e) => setForm({ ...form, flockBatchId: e.target.value, fromPenId: "" })}>
-            {options.batches.map((batch) => <option key={batch.id} value={batch.id}>{batch.code} - {batch.name}</option>)}
+          <select className={inputClass} value={form.flockBatchId || options.batches[0]?.id || ""} onChange={(e) => setForm({ ...form, flockBatchId: e.target.value, fromHouseId: "", fromPenId: "" })}>
+            {options.batches.map((batch) => <option key={batch.id} value={batch.id}>{batch.code} — {batch.name}</option>)}
+          </select>
+        </FormField>
+        <FormField label="From house (optional)">
+          <select className={inputClass} value={form.fromHouseId} onChange={(e) => setForm({ ...form, fromHouseId: e.target.value, fromPenId: "" })}>
+            <option value="">— any house —</option>
+            {fromHouses.map((h) => <option key={h.id} value={h.id}>{h.code} — {h.name}</option>)}
           </select>
         </FormField>
         <FormField label="From pen (optional)">
-          <select className={inputClass} value={form.fromPenId} onChange={(e) => setForm({ ...form, fromPenId: e.target.value })}>
-            <option value="">— any pen —</option>
-            {options.pens.map((pen) => <option key={pen.id} value={pen.id}>{pen.code}</option>)}
+          <select className={inputClass} value={form.fromPenId} onChange={(e) => setForm({ ...form, fromPenId: e.target.value })} disabled={!form.fromHouseId}>
+            <option value="">{form.fromHouseId ? "— any pen in house —" : "— select a house first —"}</option>
+            {fromPens.map((pen) => <option key={pen.id} value={pen.id}>{pen.code}{pen.name ? ` — ${pen.name}` : ""}</option>)}
           </select>
         </FormField>
         <FormField label="To farm">
