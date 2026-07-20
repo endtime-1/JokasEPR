@@ -24,6 +24,9 @@
       "node": "22.13.0",
       "env": {
         "EXPO_PUBLIC_API_URL": "https://jokasfarms.com/api/v1"
+      },
+      "android": {
+        "buildType": "apk"
       }
     }
   },
