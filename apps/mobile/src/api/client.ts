@@ -69,11 +69,14 @@ export class ApiError extends Error {
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const controller = new AbortController();
   const tid = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  const initWithSignal: RequestInit = { ...init, signal: controller.signal };
+
+  function makeSignaledInit(i?: RequestInit): RequestInit {
+    return { ...i, signal: controller.signal };
+  }
 
   let response: Response;
   try {
-    response = await request(path, initWithSignal);
+    response = await request(path, makeSignaledInit(init));
   } catch (e) {
     clearTimeout(tid);
     if (e instanceof Error && e.name === "AbortError") {
@@ -83,18 +86,31 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   }
 
   if (response.status === 401 && (await refreshSession())) {
+    // Refresh succeeded — build a FRESH controller for the retry so a timer that
+    // fired during the (potentially slow) refresh cycle doesn't immediately abort it.
+    const retryController = new AbortController();
+    const retryTid = setTimeout(() => retryController.abort(), REQUEST_TIMEOUT_MS);
     try {
-      response = await request(path, initWithSignal);
+      response = await request(path, { ...init, signal: retryController.signal });
     } catch (e) {
       clearTimeout(tid);
+      clearTimeout(retryTid);
       if (e instanceof Error && e.name === "AbortError") {
         throw new ApiError(0, "Request timed out — check your connection and try again.");
       }
       throw new ApiError(0, "Network error — check your connection and try again.");
     }
+    clearTimeout(retryTid);
   }
 
   clearTimeout(tid);
+
+  // If the abort fired at the exact moment response headers arrived the body
+  // stream is already cancelled — treat it as a timeout instead of leaking a
+  // raw SyntaxError ("unexpected end of JSON input") to the user.
+  if (controller.signal.aborted) {
+    throw new ApiError(0, "Request timed out — check your connection and try again.");
+  }
 
   if (!response.ok) {
     let message = "Something went wrong. Please try again.";
@@ -109,7 +125,22 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     throw new ApiError(response.status, message);
   }
 
-  return response.json() as Promise<T>;
+  // Use text() + JSON.parse() so an empty or malformed body becomes a clean
+  // ApiError rather than a raw SyntaxError surfacing to the user.
+  let text: string;
+  try {
+    text = await response.text();
+  } catch {
+    throw new ApiError(0, "Network error — check your connection and try again.");
+  }
+  if (!text) {
+    throw new ApiError(0, "Network error — check your connection and try again.");
+  }
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new ApiError(0, "Network error — check your connection and try again.");
+  }
 }
 
 export async function login(email: string, password: string) {

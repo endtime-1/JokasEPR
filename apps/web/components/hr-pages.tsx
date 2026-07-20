@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { AlertTriangle, CalendarDays, Camera, CircleAlert, ClipboardList, DollarSign, FileText, Upload, UserCheck, UserPlus, Users } from "lucide-react";
+import { AlertTriangle, CalendarDays, Camera, CircleAlert, ClipboardList, DollarSign, FileText, Pencil, Trash2, Upload, UserCheck, UserPlus, Users } from "lucide-react";
 import { ApiEnvelope, apiFetch } from "../lib/api";
 import { AppShell } from "./app-shell";
 import { DataTable } from "./data-table";
@@ -297,16 +297,31 @@ export function HRDashboardPage() {
 type Employee = { id: string; code: string; fullName: string; phone?: string; email?: string; status: string; startDate: string; photoUrl?: string; employeeRole?: { name: string }; branch?: { name: string }; farm?: { name: string } };
 
 export function EmployeeListPage() {
+  const router = useRouter();
   const [rows, setRows] = useState<Employee[]>([]);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
+  const [deleteError, setDeleteError] = useState("");
 
-  useEffect(() => {
+  function load() {
     const params = new URLSearchParams();
     if (search) params.set("search", search);
     if (status) params.set("status", status);
     apiFetch<ApiEnvelope<Employee[]>>(`/hr/employees?${params}`).then((r) => setRows(r.data ?? [])).catch(() => undefined);
-  }, [search, status]);
+  }
+
+  useEffect(() => { load(); }, [search, status]);
+
+  async function deleteEmployee(emp: Employee) {
+    if (!confirm(`Delete employee "${emp.fullName}"? This cannot be undone.`)) return;
+    setDeleteError("");
+    try {
+      await apiFetch(`/hr/employees/${emp.id}`, { method: "DELETE" });
+      load();
+    } catch (err: unknown) {
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete employee.");
+    }
+  }
 
   return (
     <AppShell>
@@ -316,6 +331,7 @@ export function EmployeeListPage() {
           <Link href="/hr/employees/create" className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white hover:opacity-90">+ New Employee</Link>
         </div>
         <HRNav />
+        {deleteError && <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{deleteError}</div>}
         <div className="flex flex-wrap gap-3">
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name, code, phone..." className="w-64 rounded-md border border-line px-3 py-2 text-sm" />
           <select value={status} onChange={(e) => setStatus(e.target.value)} className="rounded-md border border-line px-3 py-2 text-sm">
@@ -341,6 +357,26 @@ export function EmployeeListPage() {
             { key: "phone", label: "Phone" },
             { key: "startDate", label: "Start Date", render: (r) => fmt(r.startDate as string) },
             { key: "status", label: "Status", render: (r) => <StatusBadge status={r.status as string} /> },
+            { key: "_actions", label: "", render: (r) => (
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  title="Edit employee"
+                  onClick={() => router.push(`/hr/employees/${r.id}?tab=edit`)}
+                  className="rounded p-1 text-ink/40 hover:bg-brand/10 hover:text-brand"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  title="Delete employee"
+                  onClick={() => deleteEmployee(r as Employee)}
+                  className="rounded p-1 text-ink/40 hover:bg-red-50 hover:text-red-500"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )},
           ]}
           rows={rows as Record<string, any>[]}
           empty="No employees found"
@@ -404,157 +440,153 @@ export function CreateEmployeePage() {
           <Link href="/hr/employees" className="text-sm text-ink/60 hover:text-ink">â† Employees</Link>
           <h1 className="text-xl font-bold">New Employee</h1>
         </div>
-        {error && <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</div>}
-        <form onSubmit={submit} className="space-y-5">
-          <div className="rounded-lg border border-line bg-white p-5 space-y-4">
-            <h2 className="font-semibold">Personal Information</h2>
+        {error && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+        <p className="text-xs text-ink/50">Fields marked <span className="text-red-500">*</span> are required.</p>
 
-            {/* Passport / Profile Photo */}
-            <div className="flex items-start gap-5 pb-5 border-b border-line">
+        <form onSubmit={submit} className="space-y-5">
+
+          {/* Personal Information */}
+          <div className="rounded-xl border border-line bg-white p-6 shadow-sm">
+            <div className="mb-5 flex items-center gap-3 border-b border-line pb-4">
+              <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand/8 text-brand">
+                <Users className="h-4 w-4" />
+              </div>
+              <div>
+                <p className="font-semibold text-ink">Personal Information</p>
+                <p className="text-xs text-ink/50">Basic identity and contact details</p>
+              </div>
+            </div>
+
+            {/* Photo */}
+            <div className="mb-6 flex items-center gap-5 rounded-lg border border-line bg-field/50 p-4">
               <div className="shrink-0">
                 {passportPreview ? (
-                  <img src={passportPreview} alt="Passport" className="h-24 w-24 rounded-full object-cover ring-2 ring-brand/20" />
+                  <img src={passportPreview} alt="Passport" className="h-20 w-20 rounded-full object-cover ring-2 ring-brand/25 ring-offset-2" />
                 ) : (
-                  <div className="grid h-24 w-24 place-items-center rounded-full border-2 border-dashed border-line bg-field text-ink/25">
-                    <Camera className="h-8 w-8" />
+                  <div className="grid h-20 w-20 place-items-center rounded-full border-2 border-dashed border-line bg-white text-ink/20">
+                    <Camera className="h-7 w-7" />
                   </div>
                 )}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-ink">Passport / Profile Photo</p>
+                <p className="text-sm font-semibold">Passport / Profile Photo</p>
                 <p className="mt-0.5 text-xs text-ink/50">Optional — can be changed later from the employee profile.</p>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-line bg-white px-3 py-1.5 text-xs font-medium text-ink/70 hover:bg-field">
-                    <Camera className="h-3.5 w-3.5" />
-                    Take Photo
-                    <input
-                      type="file"
-                      accept="image/*"
-                      capture="user"
-                      className="sr-only"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-                        setPassportFile(file);
-                        const reader = new FileReader();
-                        reader.onload = () => setPassportPreview(reader.result as string);
-                        reader.readAsDataURL(file);
-                      }}
-                    />
+                  <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-medium text-ink/70 hover:border-brand/40 hover:bg-brand/5 hover:text-brand">
+                    <Camera className="h-3.5 w-3.5" />Take Photo
+                    <input type="file" accept="image/*" capture="user" className="sr-only" onChange={(e) => { const file = e.target.files?.[0]; if (!file) return; setPassportFile(file); const rd = new FileReader(); rd.onload = () => setPassportPreview(rd.result as string); rd.readAsDataURL(file); }} />
                   </label>
-                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-line bg-white px-3 py-1.5 text-xs font-medium text-ink/70 hover:bg-field">
-                    <Upload className="h-3.5 w-3.5" />
-                    Upload from Device
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="sr-only"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-                        setPassportFile(file);
-                        const reader = new FileReader();
-                        reader.onload = () => setPassportPreview(reader.result as string);
-                        reader.readAsDataURL(file);
-                      }}
-                    />
+                  <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-medium text-ink/70 hover:border-brand/40 hover:bg-brand/5 hover:text-brand">
+                    <Upload className="h-3.5 w-3.5" />Upload from Device
+                    <input type="file" accept="image/*" className="sr-only" onChange={(e) => { const file = e.target.files?.[0]; if (!file) return; setPassportFile(file); const rd = new FileReader(); rd.onload = () => setPassportPreview(rd.result as string); rd.readAsDataURL(file); }} />
                   </label>
-                  {passportFile && (
-                    <button
-                      type="button"
-                      onClick={() => { setPassportFile(null); setPassportPreview(null); }}
-                      className="text-xs text-red-500 hover:underline"
-                    >
-                      Remove
-                    </button>
-                  )}
+                  {passportFile && <button type="button" onClick={() => { setPassportFile(null); setPassportPreview(null); }} className="text-xs text-red-500 hover:underline">Remove</button>}
                 </div>
-                {passportFile && <p className="mt-1.5 text-[11px] text-brand/70">{passportFile.name} selected</p>}
+                {passportFile && <p className="mt-1.5 text-[11px] text-brand/70">{passportFile.name}</p>}
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div><label className="mb-1 block text-xs font-medium">Employee Code *</label><input required value={form.code} onChange={f("code")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div><label className="mb-1 block text-xs font-medium">Role</label>
-                <select value={form.employeeRoleId} onChange={f("employeeRoleId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Employee Code <span className="text-red-500">*</span></label><input required value={form.code} onChange={f("code")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15" /></div>
+              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Role</label>
+                <select value={form.employeeRoleId} onChange={f("employeeRoleId")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none">
                   <option value="">— None —</option>
                   {opts.employeeRoles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
                 </select>
               </div>
+              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">National ID</label><input value={form.nationalId} onChange={f("nationalId")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15" /></div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div><label className="mb-1 block text-xs font-medium">First Name *</label><input required value={form.firstName} onChange={f("firstName")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div><label className="mb-1 block text-xs font-medium">Last Name *</label><input required value={form.lastName} onChange={f("lastName")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+            <div className="mt-4 grid grid-cols-2 gap-4">
+              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">First Name <span className="text-red-500">*</span></label><input required value={form.firstName} onChange={f("firstName")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15" /></div>
+              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Last Name <span className="text-red-500">*</span></label><input required value={form.lastName} onChange={f("lastName")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15" /></div>
             </div>
-            <div className="grid grid-cols-3 gap-4">
-              <div><label className="mb-1 block text-xs font-medium">Gender</label>
-                <select value={form.gender} onChange={f("gender")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
+            <div className="mt-4 grid grid-cols-3 gap-4">
+              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Gender</label>
+                <select value={form.gender} onChange={f("gender")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none">
                   <option value="">—</option>
-                  {["MALE", "FEMALE", "OTHER"].map((g) => <option key={g} value={g}>{g}</option>)}
+                  {["MALE", "FEMALE", "OTHER"].map((g) => <option key={g}>{g}</option>)}
                 </select>
               </div>
-              <div><label className="mb-1 block text-xs font-medium">Date of Birth</label><input type="date" value={form.dateOfBirth} onChange={f("dateOfBirth")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div><label className="mb-1 block text-xs font-medium">National ID</label><input value={form.nationalId} onChange={f("nationalId")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Date of Birth</label><input type="date" value={form.dateOfBirth} onChange={f("dateOfBirth")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none" /></div>
+              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Phone</label><input value={form.phone} onChange={f("phone")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none" /></div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div><label className="mb-1 block text-xs font-medium">Phone</label><input value={form.phone} onChange={f("phone")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div><label className="mb-1 block text-xs font-medium">Email</label><input type="email" value={form.email} onChange={f("email")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+            <div className="mt-4 grid grid-cols-2 gap-4">
+              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Email</label><input type="email" value={form.email} onChange={f("email")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none" /></div>
+              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Address</label><textarea value={form.address} onChange={f("address")} rows={3} className="w-full rounded-lg border border-line px-3 py-2 text-sm resize-none focus:border-brand focus:outline-none" /></div>
             </div>
-            <div><label className="mb-1 block text-xs font-medium">Address</label><textarea value={form.address} onChange={f("address")} rows={2} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
           </div>
 
-          <div className="rounded-lg border border-line bg-white p-5 space-y-4">
-            <h2 className="font-semibold">Assignment & Payroll</h2>
-            <div className="grid grid-cols-2 gap-4">
-              <div><label className="mb-1 block text-xs font-medium">Start Date *</label><input required type="date" value={form.startDate} onChange={f("startDate")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div><label className="mb-1 block text-xs font-medium">Basic Salary (GHS)</label><input type="number" min={0} step={0.01} value={form.basicSalary} onChange={f("basicSalary")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+          {/* Assignment */}
+          <div className="rounded-xl border border-line bg-white p-6 shadow-sm">
+            <div className="mb-5 flex items-center gap-3 border-b border-line pb-4">
+              <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand/8 text-brand"><UserCheck className="h-4 w-4" /></div>
+              <div><p className="font-semibold text-ink">Assignment</p><p className="text-xs text-ink/50">Where this employee is based</p></div>
             </div>
             <div className="grid grid-cols-2 gap-4">
-              <div><label className="mb-1 block text-xs font-medium">Branch</label>
-                <select value={form.branchId} onChange={f("branchId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
+              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Start Date <span className="text-red-500">*</span></label><input required type="date" value={form.startDate} onChange={f("startDate")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none" /></div>
+              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Branch</label>
+                <select value={form.branchId} onChange={f("branchId")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none">
                   <option value="">— None —</option>
                   {opts.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
                 </select>
               </div>
-              <div><label className="mb-1 block text-xs font-medium">Farm</label>
-                <select value={form.farmId} onChange={f("farmId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
+              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Farm</label>
+                <select value={form.farmId} onChange={f("farmId")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none">
                   <option value="">— None —</option>
                   {opts.farms.map((f_) => <option key={f_.id} value={f_.id}>{f_.name}</option>)}
                 </select>
               </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div><label className="mb-1 block text-xs font-medium">Warehouse</label>
-                <select value={form.warehouseId} onChange={f("warehouseId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
+              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Warehouse</label>
+                <select value={form.warehouseId} onChange={f("warehouseId")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none">
                   <option value="">— None —</option>
                   {opts.warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
                 </select>
               </div>
-              <div><label className="mb-1 block text-xs font-medium">Production Site</label>
-                <select value={form.productionSiteId} onChange={f("productionSiteId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
+              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Production Site</label>
+                <select value={form.productionSiteId} onChange={f("productionSiteId")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none">
                   <option value="">— None —</option>
                   {opts.productionSites.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div><label className="mb-1 block text-xs font-medium">Bank Name</label><input value={form.bankName} onChange={f("bankName")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div><label className="mb-1 block text-xs font-medium">Bank Account</label><input value={form.bankAccount} onChange={f("bankAccount")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div><label className="mb-1 block text-xs font-medium">SSNIT Number</label><input value={form.ssnitNumber} onChange={f("ssnitNumber")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div><label className="mb-1 block text-xs font-medium">TIN Number</label><input value={form.tinNumber} onChange={f("tinNumber")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div><label className="mb-1 block text-xs font-medium">Emergency Contact</label><input value={form.emergencyContactName} onChange={f("emergencyContactName")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div><label className="mb-1 block text-xs font-medium">Emergency Phone</label><input value={form.emergencyContactPhone} onChange={f("emergencyContactPhone")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-            </div>
-            <div><label className="mb-1 block text-xs font-medium">Notes</label><textarea value={form.notes} onChange={f("notes")} rows={2} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
           </div>
 
-          <button type="submit" disabled={saving} className="rounded-md bg-brand px-6 py-2 text-sm font-semibold text-white disabled:opacity-50">
-            {saving ? "Saving..." : "Create Employee"}
-          </button>
+          {/* Payroll & Banking */}
+          <div className="rounded-xl border border-line bg-white p-6 shadow-sm">
+            <div className="mb-5 flex items-center gap-3 border-b border-line pb-4">
+              <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand/8 text-brand"><DollarSign className="h-4 w-4" /></div>
+              <div><p className="font-semibold text-ink">Payroll & Banking</p><p className="text-xs text-ink/50">Salary and bank account for payroll processing</p></div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Basic Salary (GHS)</label><input type="number" min={0} step={0.01} value={form.basicSalary} onChange={f("basicSalary")} placeholder="0.00" className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none" /></div>
+              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Bank Name</label><input value={form.bankName} onChange={f("bankName")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none" /></div>
+              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Bank Account Number</label><input value={form.bankAccount} onChange={f("bankAccount")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none" /></div>
+              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">SSNIT Number</label><input value={form.ssnitNumber} onChange={f("ssnitNumber")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none" /></div>
+              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">TIN Number</label><input value={form.tinNumber} onChange={f("tinNumber")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none" /></div>
+            </div>
+          </div>
+
+          {/* Emergency & Notes */}
+          <div className="rounded-xl border border-line bg-white p-6 shadow-sm">
+            <div className="mb-5 flex items-center gap-3 border-b border-line pb-4">
+              <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-amber-50 text-amber-600"><AlertTriangle className="h-4 w-4" /></div>
+              <div><p className="font-semibold text-ink">Emergency Contact & Notes</p></div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Emergency Contact Name</label><input value={form.emergencyContactName} onChange={f("emergencyContactName")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none" /></div>
+              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Emergency Contact Phone</label><input value={form.emergencyContactPhone} onChange={f("emergencyContactPhone")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none" /></div>
+              <div className="col-span-2"><label className="mb-1.5 block text-xs font-semibold text-ink/70">Notes</label><textarea value={form.notes} onChange={f("notes")} rows={3} className="w-full rounded-lg border border-line px-3 py-2 text-sm resize-none focus:border-brand focus:outline-none" /></div>
+            </div>
+          </div>
+
+          <div className="flex gap-3 pb-6">
+            <button type="submit" disabled={saving} className="min-h-11 rounded-lg bg-brand px-8 text-sm font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-50">
+              {saving ? "Creating..." : "Create Employee"}
+            </button>
+            <Link href="/hr/employees" className="inline-flex min-h-11 items-center rounded-lg border border-line px-6 text-sm font-medium text-ink/60 hover:border-ink/30 hover:text-ink">
+              Cancel
+            </Link>
+          </div>
         </form>
       </div>
     </AppShell>
@@ -577,8 +609,15 @@ type EmployeeDetail = Employee & {
 
 export function EmployeeDetailPage({ id }: { id: string }) {
   const [data, setData] = useState<EmployeeDetail | null>(null);
-  const [tab, setTab] = useState("overview");
   const opts = useHROptions();
+  // Read ?tab= from URL so external links (e.g. edit button in employee list) can deep-link
+  const [tab, setTab] = useState(() => {
+    if (typeof window !== "undefined") {
+      const t = new URLSearchParams(window.location.search).get("tab");
+      if (t && ["overview", "edit", "attendance", "tasks", "payroll", "training", "performance"].includes(t)) return t;
+    }
+    return "overview";
+  });
 
   // edit state
   const [editForm, setEditForm] = useState({ firstName: "", lastName: "", phone: "", email: "", address: "", gender: "", dateOfBirth: "", employeeRoleId: "", branchId: "", farmId: "", warehouseId: "", productionSiteId: "", basicSalary: "", bankName: "", bankAccount: "", ssnitNumber: "", tinNumber: "", emergencyContactName: "", emergencyContactPhone: "", status: "", notes: "" });
