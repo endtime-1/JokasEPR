@@ -124,29 +124,27 @@ export class PermissionSyncService implements OnApplicationBootstrap {
         select: { id: true, name: true },
       });
 
+      let synced = 0;
       for (const role of roles) {
         const keys = ROLE_PERMISSION_MAP[role.name];
-        if (!keys) continue;
+        if (!keys) {
+          this.logger.warn(`No permission map for role "${role.name}" — skipping`);
+          continue;
+        }
 
         const permIds = keys.map((k) => permByKey.get(k)?.id).filter((id): id is string => !!id);
-        if (!permIds.length) continue;
 
-        await this.prisma.$executeRawUnsafe(
-          `DELETE FROM _RolePermissions WHERE B = ? AND A NOT IN (${permIds.map(() => "?").join(",")})`,
-          role.id,
-          ...permIds
-        );
+        // Use Prisma's set operation — replaces ALL permissions for the role atomically
+        await this.prisma.role.update({
+          where: { id: role.id },
+          data: { permissions: { set: permIds.map((id) => ({ id })) } },
+        });
 
-        for (const permId of permIds) {
-          await this.prisma.$executeRawUnsafe(
-            `INSERT IGNORE INTO _RolePermissions (A, B) VALUES (?, ?)`,
-            permId,
-            role.id
-          );
-        }
+        this.logger.log(`  ${role.name}: ${permIds.length} permissions set`);
+        synced++;
       }
 
-      this.logger.log(`${company.name}: permissions synced for ${roles.length} roles`);
+      this.logger.log(`${company.name}: synced ${synced}/${roles.length} roles`);
     }
   }
 }
