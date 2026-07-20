@@ -20,14 +20,23 @@ export function getRefreshToken(): string | null {
 export function setSession(_accessToken: string, _refreshToken: string): void {}
 export function clearSession(): void {}
 
+// Singleton so concurrent 401s share one refresh call.
+// The API rotates refresh tokens on each use — if multiple calls hit /refresh
+// simultaneously the second gets a revoked token and fails. This ensures only
+// one refresh is in-flight at a time; all waiters share the same result.
+let _refreshPromise: Promise<boolean> | null = null;
+
 async function refreshSession(): Promise<boolean> {
-  // Must go through the Next.js proxy so the refreshed cookie is set on the
-  // same origin (3000) and remains visible to the middleware.
-  const response = await fetch("/api/auth/refresh", {
+  if (_refreshPromise) return _refreshPromise;
+  _refreshPromise = fetch("/api/auth/refresh", {
     method: "POST",
-    headers: { "content-type": "application/json" }
-  });
-  return response.ok;
+    credentials: "include",
+    headers: { "content-type": "application/json" },
+  })
+    .then((r) => r.ok)
+    .catch(() => false)
+    .finally(() => { _refreshPromise = null; });
+  return _refreshPromise;
 }
 
 async function request(path: string, init?: RequestInit): Promise<Response> {

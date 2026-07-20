@@ -48,9 +48,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (refreshRes?.ok) {
           res = await fetch("/api/auth/me", { credentials: "include" });
-        } else {
-          // Refresh token also invalid — genuine session expiry
+        } else if (refreshRes?.status === 401 || refreshRes?.status === 403) {
+          // Refresh token genuinely invalid (revoked or expired) — session over
           router.replace("/login");
+          return;
+        } else {
+          // null = network error, 502 = API unreachable — don't kick to login
           return;
         }
       }
