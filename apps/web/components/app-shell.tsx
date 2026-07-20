@@ -198,6 +198,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchFocus, setSearchFocus] = useState(0);
+  const [apiDownBanner, setApiDownBanner] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -212,6 +213,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     window.addEventListener("auth:session-expired", onSessionExpired);
     return () => window.removeEventListener("auth:session-expired", onSessionExpired);
   }, [router]);
+
+  // When the API is still unreachable after all apiFetch retries (startup or crash),
+  // show a banner and auto-reload after 20s — by then NestJS is always up.
+  useEffect(() => {
+    let reloadTimer: ReturnType<typeof setTimeout> | null = null;
+    function onApiUnavailable() {
+      setApiDownBanner(true);
+      reloadTimer = setTimeout(() => window.location.reload(), 20000);
+    }
+    window.addEventListener("api:unavailable", onApiUnavailable);
+    return () => {
+      window.removeEventListener("api:unavailable", onApiUnavailable);
+      if (reloadTimer) clearTimeout(reloadTimer);
+    };
+  }, []);
 
   useEffect(() => {
     apiFetch<ApiEnvelope<{ count: number }>>("/alerts/unread-count")
@@ -251,9 +267,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     await signOut();
   }
 
+  const apiDownBannerEl = apiDownBanner ? (
+    <div className="fixed inset-x-0 top-0 z-[9999] flex items-center justify-between gap-3 bg-amber-500 px-5 py-2.5 text-sm font-medium text-white shadow-lg">
+      <span>Server is starting up — refreshing automatically in a moment…</span>
+      <button
+        className="shrink-0 rounded border border-white/40 px-3 py-1 text-xs font-semibold hover:bg-white/20"
+        onClick={() => window.location.reload()}
+      >
+        Refresh now
+      </button>
+    </div>
+  ) : null;
+
   if (!ready) {
     return (
-      <div className="min-h-screen bg-[#f0f2f5] text-ink lg:grid lg:grid-cols-[300px_1fr]">
+      <>
+        {apiDownBannerEl}
+        <div className="min-h-screen bg-[#f0f2f5] text-ink lg:grid lg:grid-cols-[300px_1fr]">
         <aside className="hidden lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:overflow-hidden"
           style={{ background: "linear-gradient(160deg, #1a2235 0%, #0f1623 60%, #141c2e 100%)" }}>
           <div className="relative flex h-full flex-col px-5 py-6">
@@ -278,6 +308,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <main className="px-5 py-7 lg:px-8">{children}</main>
         </div>
       </div>
+      </>
     );
   }
 
@@ -389,7 +420,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <div className="min-h-screen bg-[#f0f2f5] text-ink lg:grid lg:grid-cols-[300px_1fr]">
+    <>
+      {apiDownBannerEl}
+      <div className="min-h-screen bg-[#f0f2f5] text-ink lg:grid lg:grid-cols-[300px_1fr]">
       {/* ── Desktop sidebar ─────────────────────────────────────────────── */}
       <aside className="hidden lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:overflow-hidden"
         style={{ background: "linear-gradient(160deg, #1a2235 0%, #0f1623 60%, #141c2e 100%)" }}>
@@ -620,5 +653,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         );
       })()}
     </div>
+    </>
   );
 }

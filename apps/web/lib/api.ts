@@ -24,10 +24,15 @@ let _refreshPromise: Promise<RefreshResult> | null = null;
 
 export async function refreshSession(): Promise<RefreshResult> {
   if (_refreshPromise) return _refreshPromise;
+  // Abort after 12s — without a timeout the browser holds the connection open for 30+ seconds
+  // while NestJS is cold-starting on Hostinger, blocking auth-context and every apiFetch call.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12000);
   _refreshPromise = fetch("/api/auth/refresh", {
     method: "POST",
     credentials: "include",
     headers: { "content-type": "application/json" },
+    signal: controller.signal,
   })
     .then((r): RefreshResult => {
       // Only treat as "ok" if we actually got JSON back — a 200+HTML startup page from
@@ -36,8 +41,8 @@ export async function refreshSession(): Promise<RefreshResult> {
       if (r.status === 401 || r.status === 403) return "expired";
       return "unreachable"; // 503 startup page, 502 proxy error, network failure, etc.
     })
-    .catch((): RefreshResult => "unreachable")
-    .finally(() => { _refreshPromise = null; });
+    .catch((): RefreshResult => "unreachable")  // AbortError (timeout) → unreachable
+    .finally(() => { clearTimeout(timer); _refreshPromise = null; });
   return _refreshPromise;
 }
 
@@ -160,6 +165,15 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     retries++;
     await new Promise<void>(r => setTimeout(r, 3000));
     response = await request(path, init);
+  }
+
+  // If we burned through all retries and the API is still unavailable, signal the shell
+  // so it can show a "starting up" banner and schedule an auto-reload. This prevents the
+  // page from silently showing empty data with no recovery path.
+  if (TRANSIENT_STATUSES.has(response.status)) {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("api:unavailable"));
+    }
   }
 
   // ── Final response handling ───────────────────────────────────────────────
