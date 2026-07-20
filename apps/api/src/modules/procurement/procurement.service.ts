@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from "@nestjs/comm
 import { AuthenticatedUser } from "@jokas/shared";
 import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { LookupCacheService } from "../../common/services/lookup-cache.service";
 import {
   ApprovePurchaseOrderDto,
   ApprovePurchaseRequestDto,
@@ -37,7 +38,8 @@ function num(v: unknown) {
 export class ProcurementService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly audit: AuditService
+    private readonly audit: AuditService,
+    private readonly lookupCache: LookupCacheService
   ) {}
 
   // â”€â”€â”€ Dashboard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -102,6 +104,10 @@ export class ProcurementService {
 
   async options(user: AuthenticatedUser) {
     const cid = user.companyId;
+    const cacheKey = `procurement:opts:${cid}`;
+    const cached = this.lookupCache.get<object>(cacheKey);
+    if (cached) return cached;
+
     const [branches, warehouses, suppliers, supplierCategories, bankAccounts] = await Promise.all([
       this.prisma.branch.findMany({ where: { companyId: cid, deletedAt: null }, select: { id: true, code: true, name: true }, orderBy: { name: "asc" } }),
       this.prisma.warehouse.findMany({ where: { companyId: cid, deletedAt: null }, select: { id: true, code: true, name: true }, orderBy: { name: "asc" } }),
@@ -109,7 +115,9 @@ export class ProcurementService {
       this.prisma.supplierCategory.findMany({ where: { companyId: cid, deletedAt: null, isActive: true }, select: { id: true, code: true, name: true }, orderBy: { name: "asc" } }),
       this.prisma.bankAccount.findMany({ where: { companyId: cid, deletedAt: null, isActive: true }, select: { id: true, accountName: true, bankName: true }, orderBy: { accountName: "asc" } }),
     ]);
-    return { data: { branches, warehouses, suppliers, supplierCategories, bankAccounts } };
+    const result = { data: { branches, warehouses, suppliers, supplierCategories, bankAccounts } };
+    this.lookupCache.set(cacheKey, result);
+    return result;
   }
 
   // â”€â”€â”€ Supplier Categories â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

@@ -240,7 +240,7 @@ export function MaintenanceDashboardPage() {
               <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
               {loading ? "Loading…" : "Refresh"}
             </button>
-            <Link className="app-button-primary text-xs" href="/maintenance/breakdowns/create">
+            <Link className="app-button-primary text-xs" href="/maintenance/breakdowns">
               <Plus className="h-3.5 w-3.5" />
               Report breakdown
             </Link>
@@ -398,7 +398,7 @@ export function MaintenanceDashboardPage() {
                   <Wrench className="h-5 w-5 text-ink/20" />
                 </span>
                 <p className="text-sm font-medium text-ink/40">No breakdowns recorded</p>
-                <Link href="/maintenance/breakdowns/create" className="mt-2 text-xs font-semibold text-brand hover:underline">Report a breakdown →</Link>
+                <Link href="/maintenance/breakdowns" className="mt-2 text-xs font-semibold text-brand hover:underline">Report a breakdown →</Link>
               </div>
             ) : (data?.breakdowns ?? []).slice(0, 6).map((b) => (
               <div key={b.id} className="flex items-start gap-3 px-5 py-3.5 transition hover:bg-field/40">

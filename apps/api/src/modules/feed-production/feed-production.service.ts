@@ -3,6 +3,7 @@ import { AuthenticatedUser } from "@jokas/shared";
 import { randomBytes, randomUUID } from "crypto";
 import { Prisma } from "@prisma/client";
 import { AuditService } from "../audit/audit.service";
+import { LookupCacheService } from "../../common/services/lookup-cache.service";
 import { PrismaService } from "../prisma/prisma.service";
 import {
   AddFeedFormulaIngredientDto,
@@ -44,7 +45,8 @@ type IngredientPlan = {
 export class FeedProductionService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly audit: AuditService
+    private readonly audit: AuditService,
+    private readonly lookupCache: LookupCacheService
   ) {}
 
   async dashboard(user: AuthenticatedUser) {
@@ -120,6 +122,10 @@ export class FeedProductionService {
   }
 
   async options(user: AuthenticatedUser) {
+    const cacheKey = `feed:opts:${user.companyId}:${user.hasGlobalAccess ? "g" : user.id}`;
+    const cached = this.lookupCache.get<object>(cacheKey);
+    if (cached) return cached;
+
     const [productionSites, warehouses, farms, poultryHouses, rawMaterials, finishedFeeds, formulas, batches] = await Promise.all([
       this.prisma.productionSite.findMany({
         where: {
@@ -169,7 +175,9 @@ export class FeedProductionService {
       })
     ]);
 
-    return { data: { productionSites, warehouses, farms, poultryHouses, rawMaterials, finishedFeeds, formulas, batches } };
+    const result = { data: { productionSites, warehouses, farms, poultryHouses, rawMaterials, finishedFeeds, formulas, batches } };
+    this.lookupCache.set(cacheKey, result);
+    return result;
   }
 
   async listFormulas(user: AuthenticatedUser, query: FeedProductionQueryDto) {

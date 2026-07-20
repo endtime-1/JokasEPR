@@ -3,6 +3,7 @@ import { AuthenticatedUser } from "@jokas/shared";
 import { Prisma } from "@prisma/client";
 import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { LookupCacheService } from "../../common/services/lookup-cache.service";
 import {
   CreateBreakdownDto,
   CreateDowntimeDto,
@@ -35,7 +36,8 @@ type AssetScope = {
 export class MaintenanceService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly audit: AuditService
+    private readonly audit: AuditService,
+    private readonly lookupCache: LookupCacheService
   ) {}
 
   async dashboard(user: AuthenticatedUser, query: MaintenanceQueryDto) {
@@ -68,6 +70,10 @@ export class MaintenanceService {
   }
 
   async options(user: AuthenticatedUser) {
+    const cacheKey = `maintenance:opts:${user.companyId}:${user.hasGlobalAccess ? "g" : user.id}`;
+    const cached = this.lookupCache.get<object>(cacheKey);
+    if (cached) return cached;
+
     const [branches, farms, warehouses, productionSites, machines, equipment, spareParts, technicians] = await Promise.all([
       this.prisma.branch.findMany({ where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess ? {} : { id: { in: user.branchIds } }) }, select: { id: true, code: true, name: true }, orderBy: { name: "asc" } }),
       this.prisma.farm.findMany({ where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess ? {} : { id: { in: user.farmIds } }) }, select: { id: true, code: true, name: true, branchId: true }, orderBy: { name: "asc" } }),
@@ -78,7 +84,9 @@ export class MaintenanceService {
       this.prisma.product.findMany({ where: { companyId: user.companyId, deletedAt: null, status: "ACTIVE", OR: [{ sku: { contains: "SPARE" } }, { name: { contains: "belt" } }, { name: { contains: "part" } }] }, select: { id: true, sku: true, name: true, uomId: true }, orderBy: { name: "asc" } }),
       this.prisma.user.findMany({ where: { companyId: user.companyId, deletedAt: null, status: "ACTIVE" }, select: { id: true, fullName: true, email: true }, orderBy: { fullName: "asc" } })
     ]);
-    return { data: { branches, farms, warehouses, productionSites, machines, equipment, spareParts, technicians } };
+    const result = { data: { branches, farms, warehouses, productionSites, machines, equipment, spareParts, technicians } };
+    this.lookupCache.set(cacheKey, result);
+    return result;
   }
 
   async listMachines(user: AuthenticatedUser, query: MaintenanceQueryDto) {

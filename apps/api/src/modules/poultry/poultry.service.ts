@@ -3,6 +3,7 @@ import { AuthenticatedUser } from "@jokas/shared";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
+import { LookupCacheService } from "../../common/services/lookup-cache.service";
 import {
   AddPenDto,
   CreateBirdWeightRecordDto,
@@ -42,7 +43,8 @@ type BatchContext = {
 export class PoultryService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly audit: AuditService
+    private readonly audit: AuditService,
+    private readonly lookupCache: LookupCacheService
   ) {}
 
   async dashboard(user: AuthenticatedUser) {
@@ -157,13 +159,18 @@ export class PoultryService {
   }
 
   async options(user: AuthenticatedUser) {
+    const cacheKey = `poultry:opts:${user.companyId}:${user.hasGlobalAccess ? "g" : user.id}`;
+    const cached = this.lookupCache.get<object>(cacheKey);
+    if (cached) return cached;
     const [farms, houses, pens, batches] = await Promise.all([
       this.prisma.farm.findMany({ where: this.farmWhere(user), select: { id: true, code: true, name: true, branchId: true }, orderBy: { name: "asc" } }),
       this.prisma.poultryHouse.findMany({ where: this.houseWhere(user), select: { id: true, code: true, name: true, farmId: true }, orderBy: { name: "asc" } }),
       this.prisma.pen.findMany({ where: { companyId: user.companyId, deletedAt: null, isActive: true }, select: { id: true, code: true, name: true, penNumber: true, poultryHouseId: true, farmId: true, capacity: true }, orderBy: [{ poultryHouseId: "asc" }, { penNumber: "asc" }] }),
       this.prisma.flockBatch.findMany({ where: this.batchWhere(user), select: { id: true, code: true, name: true, farmId: true, birdType: true }, orderBy: { createdAt: "desc" } })
     ]);
-    return { data: { farms, houses, pens, batches } };
+    const result = { data: { farms, houses, pens, batches } };
+    this.lookupCache.set(cacheKey, result);
+    return result;
   }
 
   async farmOverview(user: AuthenticatedUser, farmId: string) {

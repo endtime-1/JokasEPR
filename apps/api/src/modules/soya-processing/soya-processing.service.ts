@@ -3,6 +3,7 @@ import { AuthenticatedUser } from "@jokas/shared";
 import { Prisma } from "@prisma/client";
 import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { LookupCacheService } from "../../common/services/lookup-cache.service";
 import {
   CreateSoyaBeanIntakeDto,
   CreateSoyaInternalTransferDto,
@@ -22,7 +23,8 @@ type RequestContext = {
 export class SoyaProcessingService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly audit: AuditService
+    private readonly audit: AuditService,
+    private readonly lookupCache: LookupCacheService
   ) {}
 
   async dashboard(user: AuthenticatedUser) {
@@ -82,6 +84,10 @@ export class SoyaProcessingService {
   }
 
   async options(user: AuthenticatedUser) {
+    const cacheKey = `soya:opts:${user.companyId}:${user.hasGlobalAccess ? "g" : user.id}`;
+    const cached = this.lookupCache.get<object>(cacheKey);
+    if (cached) return cached;
+
     const [productionSites, warehouses, products, intakes, batches] = await Promise.all([
       this.prisma.productionSite.findMany({
         where: { companyId: user.companyId, deletedAt: null, type: { in: ["SOYA_PROCESSING", "MIXED"] }, ...(user.hasGlobalAccess ? {} : { id: { in: user.productionSiteIds } }) },
@@ -101,7 +107,9 @@ export class SoyaProcessingService {
       this.prisma.soyaBeanIntake.findMany({ where: this.intakeWhere(user, {}), select: { id: true, receiptNumber: true, supplierName: true, quantityKg: true }, orderBy: { receivedAt: "desc" }, take: 50 }),
       this.prisma.soyaProcessingBatch.findMany({ where: this.batchWhere(user, {}), select: { id: true, batchNumber: true, status: true }, orderBy: { processingDate: "desc" }, take: 50 })
     ]);
-    return { data: { productionSites, warehouses, products, intakes, batches } };
+    const result = { data: { productionSites, warehouses, products, intakes, batches } };
+    this.lookupCache.set(cacheKey, result);
+    return result;
   }
 
   async listIntakes(user: AuthenticatedUser, query: SoyaQueryDto) {

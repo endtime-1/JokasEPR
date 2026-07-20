@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from "@nestjs/comm
 import { AuthenticatedUser } from "@jokas/shared";
 import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { LookupCacheService } from "../../common/services/lookup-cache.service";
 import {
   ApproveBatchDto,
   ConditionalPassDto,
@@ -54,7 +55,8 @@ const checkIncludes = {
 export class QualityService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly audit: AuditService
+    private readonly audit: AuditService,
+    private readonly lookupCache: LookupCacheService
   ) {}
 
   // â”€â”€â”€ Dashboard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -96,6 +98,9 @@ export class QualityService {
 
   async options(user: AuthenticatedUser) {
     const cid = user.companyId;
+    const cacheKey = `quality:opts:${cid}`;
+    const cached = this.lookupCache.get<object>(cacheKey);
+    if (cached) return cached;
     const [templates, branches, farms, warehouses, productionSites, suppliers, users] = await Promise.all([
       this.prisma.qualityCheckTemplate.findMany({ where: { companyId: cid, deletedAt: null, isActive: true }, select: { id: true, code: true, name: true, checkType: true } }),
       this.prisma.branch.findMany({ where: { companyId: cid, deletedAt: null }, select: { id: true, code: true, name: true } }),
@@ -105,7 +110,9 @@ export class QualityService {
       this.prisma.supplier.findMany({ where: { companyId: cid, deletedAt: null, status: "ACTIVE" }, select: { id: true, code: true, name: true } }),
       this.prisma.user.findMany({ where: { companyId: cid, deletedAt: null, status: "ACTIVE" }, select: { id: true, fullName: true } }),
     ]);
-    return { templates, branches, farms, warehouses, productionSites, suppliers, users };
+    const result = { templates, branches, farms, warehouses, productionSites, suppliers, users };
+    this.lookupCache.set(cacheKey, result);
+    return result;
   }
 
   // â”€â”€â”€ Templates â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

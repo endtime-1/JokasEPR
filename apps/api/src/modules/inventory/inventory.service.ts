@@ -3,6 +3,7 @@ import { AuthenticatedUser } from "@jokas/shared";
 import { Prisma } from "@prisma/client";
 import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { LookupCacheService } from "../../common/services/lookup-cache.service";
 import {
   ApproveStockDto,
   CreateInventoryItemDto,
@@ -27,7 +28,8 @@ type RequestContext = {
 export class InventoryService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly audit: AuditService
+    private readonly audit: AuditService,
+    private readonly lookupCache: LookupCacheService
   ) {}
 
   async dashboard(user: AuthenticatedUser) {
@@ -65,6 +67,9 @@ export class InventoryService {
   }
 
   async options(user: AuthenticatedUser) {
+    const cacheKey = `inventory:opts:${user.companyId}:${user.hasGlobalAccess ? "g" : user.id}`;
+    const cached = this.lookupCache.get<object>(cacheKey);
+    if (cached) return cached;
     const [warehouses, products, farms, productionSites, items] = await Promise.all([
       this.prisma.warehouse.findMany({ where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess ? {} : { id: { in: user.warehouseIds } }) }, select: { id: true, branchId: true, farmId: true, productionSiteId: true, code: true, name: true }, orderBy: { name: "asc" } }),
       this.prisma.product.findMany({ where: { companyId: user.companyId, deletedAt: null }, select: { id: true, sku: true, name: true, type: true, uomId: true }, orderBy: { name: "asc" } }),
@@ -72,7 +77,9 @@ export class InventoryService {
       this.prisma.productionSite.findMany({ where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess ? {} : { id: { in: user.productionSiteIds } }) }, select: { id: true, code: true, name: true } }),
       this.prisma.inventoryItem.findMany({ where: this.itemWhere(user, {}), include: { product: { select: { sku: true, name: true } }, warehouse: { select: { code: true, name: true } } }, orderBy: { createdAt: "desc" }, take: 200 })
     ]);
-    return { data: { warehouses, products, farms, productionSites, items } };
+    const result = { data: { warehouses, products, farms, productionSites, items } };
+    this.lookupCache.set(cacheKey, result);
+    return result;
   }
 
   async listProducts(user: AuthenticatedUser, type?: string) {

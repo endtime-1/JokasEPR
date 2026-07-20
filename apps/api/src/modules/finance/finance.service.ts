@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from "@nestjs/comm
 import { AuthenticatedUser } from "@jokas/shared";
 import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { LookupCacheService } from "../../common/services/lookup-cache.service";
 import {
   ApproveExpenseDto,
   ApprovePayrollDto,
@@ -38,7 +39,8 @@ function money(v: unknown) {
 export class FinanceService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly audit: AuditService
+    private readonly audit: AuditService,
+    private readonly lookupCache: LookupCacheService
   ) {}
 
   // ─── Dashboard ─────────────────────────────────────────────────────────────
@@ -140,13 +142,18 @@ export class FinanceService {
   // ─── Options ───────────────────────────────────────────────────────────────
 
   async options(user: AuthenticatedUser) {
+    const cacheKey = `finance:opts:${user.companyId}`;
+    const cached = this.lookupCache.get<object>(cacheKey);
+    if (cached) return cached;
     const [branches, bankAccounts, expenseCategories, accounts] = await Promise.all([
       this.prisma.branch.findMany({ where: { companyId: user.companyId, deletedAt: null }, select: { id: true, code: true, name: true }, orderBy: { name: "asc" } }),
       this.prisma.bankAccount.findMany({ where: { companyId: user.companyId, deletedAt: null, isActive: true }, select: { id: true, accountName: true, bankName: true, accountType: true }, orderBy: { accountName: "asc" } }),
       this.prisma.expenseCategory.findMany({ where: { companyId: user.companyId, deletedAt: null, isActive: true }, select: { id: true, code: true, name: true }, orderBy: { name: "asc" } }),
       this.prisma.account.findMany({ where: { companyId: user.companyId, deletedAt: null, isActive: true }, select: { id: true, code: true, name: true, type: true }, orderBy: { code: "asc" } })
     ]);
-    return { data: { branches, bankAccounts, expenseCategories, accounts } };
+    const result = { data: { branches, bankAccounts, expenseCategories, accounts } };
+    this.lookupCache.set(cacheKey, result);
+    return result;
   }
 
   // ─── Chart of Accounts ─────────────────────────────────────────────────────
