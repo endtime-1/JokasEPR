@@ -200,7 +200,7 @@ export function FinanceDashboardPage() {
       .then(([dashRes, chartRes, debtorsRes]) => {
         setDash(dashRes.data);
         setChart(chartRes.data);
-        setDebtors(debtorsRes.data);
+        setDebtors(debtorsRes.data ?? []);
       })
       .catch(() => undefined)
       .finally(() => setLoading(false));
@@ -233,7 +233,7 @@ export function FinanceDashboardPage() {
 
   // Group outstanding invoices by customer for "Who Owes You"
   const debtorGroups: Record<string, { name: string; total: number; count: number }> = {};
-  for (const inv of debtors) {
+  for (const inv of (debtors ?? [])) {
     const name = ((inv.customer as Record<string, unknown>)?.name as string) ?? (inv.customerName as string) ?? "Unknown";
     if (!debtorGroups[name]) debtorGroups[name] = { name, total: 0, count: 0 };
     debtorGroups[name].total += Number(inv.balanceDue ?? 0);

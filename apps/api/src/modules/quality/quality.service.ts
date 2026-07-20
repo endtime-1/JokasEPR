@@ -110,7 +110,7 @@ export class QualityService {
       this.prisma.supplier.findMany({ where: { companyId: cid, deletedAt: null, status: "ACTIVE" }, select: { id: true, code: true, name: true } }),
       this.prisma.user.findMany({ where: { companyId: cid, deletedAt: null, status: "ACTIVE" }, select: { id: true, fullName: true } }),
     ]);
-    const result = { templates, branches, farms, warehouses, productionSites, suppliers, users };
+    const result = { data: { templates, branches, farms, warehouses, productionSites, suppliers, users } };
     this.lookupCache.set(cacheKey, result);
     return result;
   }
