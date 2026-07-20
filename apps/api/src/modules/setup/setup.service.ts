@@ -102,16 +102,23 @@ export class SetupService {
       },
     });
 
-    // Additional standard roles (no permissions yet — admin assigns later)
+    // Standard roles — permissions are applied automatically by PermissionSyncService on startup
     const otherRoles = [
       ["CEO/Owner", RoleLevel.CEO, "Company owner and executive access"],
       ["General Manager", RoleLevel.MANAGER, "General operations management"],
       ["Farm Manager", RoleLevel.MANAGER, "Farm and poultry operations management"],
       ["Feed Mill Manager", RoleLevel.MANAGER, "Feed mill operations management"],
+      ["Marketing Manager", RoleLevel.MANAGER, "Marketing and planning management"],
+      ["Sales Manager", RoleLevel.MANAGER, "Sales and customer management"],
+      ["Soya Manager", RoleLevel.MANAGER, "Soya processing management"],
       ["Storekeeper", RoleLevel.OFFICER, "Warehouse and stock control"],
       ["Accountant", RoleLevel.OFFICER, "Finance and accounting operations"],
       ["Sales Officer", RoleLevel.OFFICER, "Sales and customer operations"],
+      ["Procurement Officer", RoleLevel.OFFICER, "Procurement and supplier operations"],
       ["HR/Admin", RoleLevel.OFFICER, "Human resources and administration"],
+      ["Maintenance Officer", RoleLevel.OFFICER, "Machine and maintenance operations"],
+      ["Quality Officer", RoleLevel.OFFICER, "Quality control operations"],
+      ["Vet/Health Officer", RoleLevel.OFFICER, "Veterinary and flock health operations"],
       ["Worker", RoleLevel.WORKER, "Operational worker"],
       ["Auditor", RoleLevel.AUDITOR, "Read-only audit access"],
     ] as const;

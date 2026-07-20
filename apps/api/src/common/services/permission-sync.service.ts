@@ -45,23 +45,47 @@ const PERMISSIONS = [
 const ALL_KEYS = PERMISSIONS.map(([key]) => key);
 
 const ROLE_PERMISSION_MAP: Record<string, readonly string[]> = {
+  // ── Core roles ──────────────────────────────────────────────────────────────
   "Super Admin": ALL_KEYS,
+  "Admin": ALL_KEYS,
   "CEO/Owner": ALL_KEYS,
+  "CEO": ALL_KEYS,
+  "Owner": ALL_KEYS,
   "General Manager": ALL_KEYS.filter((k) => k !== "settings.manage"),
+
+  // ── Manager-level roles ──────────────────────────────────────────────────────
   "Farm Manager": ["platform.read", "inventory.read", "poultry.read", "poultry.manage", "poultry.record", "health.read", "maintenance.read", "maintenance.manage"],
   "Feed Mill Manager": ["platform.read", "inventory.read", "inventory.manage", "feed.read", "feed.manage", "market-planning.read", "quality.read", "maintenance.read", "maintenance.manage", "reports.export", "ai.read", "alerts.read", "alerts.manage"],
+  "Feed Production Manager": ["platform.read", "inventory.read", "inventory.manage", "feed.read", "feed.manage", "market-planning.read", "quality.read", "maintenance.read", "maintenance.manage", "reports.export", "ai.read", "alerts.read", "alerts.manage"],
   "Marketing Manager": ["platform.read", "inventory.read", "sales.read", "market-planning.read", "market-planning.manage", "reports.export", "ai.read", "alerts.read"],
   "Sales Manager": ["platform.read", "inventory.read", "sales.read", "sales.manage", "market-planning.read", "market-planning.manage", "reports.export", "ai.read", "alerts.read"],
   "Soya Manager": ["platform.read", "inventory.read", "inventory.manage", "soya.read", "soya.manage", "quality.read", "maintenance.read", "maintenance.manage", "reports.export", "ai.read", "alerts.read", "alerts.manage"],
+  "Soya Processing Manager": ["platform.read", "inventory.read", "inventory.manage", "soya.read", "soya.manage", "quality.read", "maintenance.read", "maintenance.manage", "reports.export", "ai.read", "alerts.read", "alerts.manage"],
+
+  // ── Officer-level roles ──────────────────────────────────────────────────────
   "Storekeeper": ["platform.read", "inventory.read", "inventory.manage", "feed.read", "soya.read", "maintenance.read", "reports.export", "ai.read", "alerts.read"],
+  "Store Keeper": ["platform.read", "inventory.read", "inventory.manage", "feed.read", "soya.read", "maintenance.read", "reports.export", "ai.read", "alerts.read"],
   "Accountant": ["platform.read", "finance.read", "finance.manage", "feed.read", "soya.read", "sales.read", "procurement.read", "reports.export", "ai.read", "alerts.read"],
+  "Finance Officer": ["platform.read", "finance.read", "finance.manage", "sales.read", "procurement.read", "reports.export", "ai.read", "alerts.read"],
   "Sales Officer": ["platform.read", "sales.read", "sales.manage", "inventory.read", "market-planning.read", "reports.export", "ai.read", "alerts.read"],
   "Procurement Officer": ["platform.read", "procurement.read", "procurement.manage", "inventory.read", "reports.export", "ai.read", "alerts.read"],
   "HR/Admin": ["platform.read", "hr.read", "hr.manage", "identity.read", "identity.manage"],
+  "HR Officer": ["platform.read", "hr.read", "hr.manage"],
   "Maintenance Officer": ["platform.read", "maintenance.read", "maintenance.manage", "reports.export", "ai.read", "alerts.read"],
   "Quality Officer": ["platform.read", "quality.read", "quality.manage", "feed.read", "soya.read", "inventory.read", "reports.export", "ai.read", "alerts.read"],
+  "Quality Control Officer": ["platform.read", "quality.read", "quality.manage", "feed.read", "soya.read", "inventory.read", "reports.export", "ai.read", "alerts.read"],
   "Vet/Health Officer": ["platform.read", "poultry.read", "poultry.record", "health.read", "health.manage", "reports.export", "ai.read", "alerts.read"],
+  "Vet Officer": ["platform.read", "poultry.read", "poultry.record", "health.read", "health.manage", "reports.export", "ai.read", "alerts.read"],
+  "Health Officer": ["platform.read", "poultry.read", "poultry.record", "health.read", "health.manage", "reports.export", "ai.read", "alerts.read"],
+
+  // ── Worker-level roles ───────────────────────────────────────────────────────
   "Worker": ["platform.read", "poultry.read", "poultry.record", "inventory.read"],
+  "Field Officer": ["platform.read", "poultry.read", "poultry.record", "inventory.read"],
+  "Farm Worker": ["platform.read", "poultry.read", "poultry.record"],
+  "Feed Production Officer": ["platform.read", "feed.read", "inventory.read"],
+  "Soya Processing Officer": ["platform.read", "soya.read", "inventory.read"],
+
+  // ── Audit role ───────────────────────────────────────────────────────────────
   "Auditor": ["platform.read", "identity.read", "inventory.read", "feed.read", "soya.read", "finance.read", "maintenance.read", "market-planning.read", "reports.export", "audit.read", "alerts.read"],
 };
 
