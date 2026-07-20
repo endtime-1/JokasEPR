@@ -18,12 +18,10 @@ export function clearSession(): void {}
 
 // Three distinct refresh outcomes so callers don't conflate "API down" with "session expired".
 //
-// CRITICAL: auth-context and apiFetch both need to refresh tokens. If they each make
-// independent HTTP calls to /api/auth/refresh, they race with the same old refresh token.
-// The API rotates tokens on every use — the second call arrives with an already-revoked
-// token and gets 401, which looks like a genuine session expiry and kicks the user to login.
-//
-// The singleton _refreshPromise is exported so auth-context can share it.
+// EXPORTED so auth-context can share this singleton instead of calling fetch() directly.
+// If auth-context and apiFetch each make independent refresh requests with the same old
+// token, the API rotates on first use and the second caller gets "token already revoked" →
+// spurious auth:session-expired dispatch → user kicked to login.
 export type RefreshResult = "ok" | "expired" | "unreachable";
 let _refreshPromise: Promise<RefreshResult> | null = null;
 
@@ -44,16 +42,35 @@ export async function refreshSession(): Promise<RefreshResult> {
   return _refreshPromise;
 }
 
+// Abort a request after 12 seconds. Converts the AbortError to a synthetic 504 response
+// so the TRANSIENT_STATUSES retry logic below handles it the same way as a real 504.
+// Without this, a hanging NestJS API (e.g. PM2 restart on Hostinger) would leave fetch
+// pending indefinitely and the component would show empty data forever.
 async function request(path: string, init?: RequestInit): Promise<Response> {
-  return fetch(`${API_URL}${path}`, {
-    ...init,
-    credentials: "include",
-    cache: "no-store",
-    headers: {
-      "content-type": "application/json",
-      ...init?.headers
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12000);
+  try {
+    return await fetch(`${API_URL}${path}`, {
+      ...init,
+      credentials: "include",
+      cache: "no-store",
+      signal: controller.signal,
+      headers: {
+        "content-type": "application/json",
+        ...init?.headers
+      }
+    });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      return new Response(
+        JSON.stringify({ message: "API server is not reachable. Please try again shortly." }),
+        { status: 504, headers: { "content-type": "application/json" } }
+      );
     }
-  });
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function extractErrorMessage(text: string): string {
@@ -74,11 +91,21 @@ function signalSessionExpired() {
   }
 }
 
-// Statuses that indicate the API server is temporarily unavailable (Hostinger 502 on cold start).
-// These are retried once after a short wait before surfacing an error to the component.
+// 502/503/504 indicate the NestJS process is temporarily unreachable (Hostinger cold start,
+// PM2 restart, LiteSpeed proxy timeout). Retry once after a short wait instead of surfacing
+// an error immediately — in practice the API responds on the second attempt.
 const TRANSIENT_STATUSES = new Set([502, 503, 504]);
 
+import { authReady } from "./auth-gate";
+
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  // Wait for auth-context to finish its initial session check before firing.
+  // This guarantees the token refresh (if needed) is already done and the fresh jokas_at
+  // cookie is in place before the first API request, eliminating the concurrent-refresh race.
+  if (typeof window !== "undefined") {
+    await authReady;
+  }
+
   let response = await request(path, init);
 
   if (response.status === 401) {
@@ -93,7 +120,6 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
       throw new Error("Session expired. Please log in again.");
     } else {
       // API was unreachable during refresh — wait once and try the whole flow again
-      // This handles Hostinger cold starts where the API process is warming up
       await new Promise<void>(r => setTimeout(r, 3000));
       const retryResult = await refreshSession();
       if (retryResult === "ok") {
@@ -107,7 +133,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     }
   }
 
-  // One automatic retry for transient server errors — handles Hostinger 502 on API cold start
+  // One automatic retry for transient server errors — handles Hostinger 502/504 on cold start
   if (TRANSIENT_STATUSES.has(response.status)) {
     await new Promise<void>(r => setTimeout(r, 3000));
     response = await request(path, init);
@@ -115,7 +141,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
 
   if (!response.ok) {
     if (response.status === 401) {
-      // Retry after a successful refresh still got 401 — account issue or token mismatch
+      // Retry after a successful refresh still got 401 — genuine auth failure
       signalSessionExpired();
     }
     throw new Error(extractErrorMessage(await response.text()));

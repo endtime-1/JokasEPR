@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ApiEnvelope, refreshSession } from "../lib/api";
+import { signalAuthReady } from "../lib/auth-gate";
 
 type Profile = {
   id: string;
@@ -32,14 +33,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOutRef = useRef(false);
 
   useEffect(() => {
-    // 35s covers up to 3 attempts × 3s wait between them plus API response time
-    const timeout = setTimeout(() => setReady(true), 35000);
+    // 35s covers up to 3 attempts × (3s + 6s) wait between them plus API response time.
+    // signalAuthReady is called in finally — this timeout is a last-resort UI unblock only.
+    const timeout = setTimeout(() => { setReady(true); signalAuthReady(); }, 35000);
 
     async function loadProfile() {
       const MAX_ATTEMPTS = 3;
 
       for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-        // --- Fetch profile ---
         let res: Response;
         try {
           res = await fetch("/api/auth/me", { credentials: "include" });
@@ -52,15 +53,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return;
         }
 
-        // --- Handle 401: access token expired, try to refresh ---
         if (res.status === 401) {
-          // Share the same singleton as apiFetch — prevents concurrent races where both
-          // fire independent refresh requests with the same old token, causing the second
-          // to receive a "token already revoked" 401 and kicking the user to login.
+          // Access token expired — use the shared singleton so this refresh call and any
+          // concurrent apiFetch() calls share one HTTP request and don't race on the token.
           const refreshResult = await refreshSession();
 
           if (refreshResult === "ok") {
-            // New access token is now in the cookie — retry /me
             try {
               res = await fetch("/api/auth/me", { credentials: "include" });
             } catch {
@@ -71,7 +69,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               return;
             }
           } else if (refreshResult === "expired") {
-            // Refresh token is genuinely invalid — session is over
+            // Refresh token genuinely invalid — session is over, go to login
             router.replace("/login");
             return;
           } else {
@@ -80,15 +78,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               await new Promise<void>(r => setTimeout(r, 3000 * attempt));
               continue;
             }
-            // All retries exhausted: API is down, but don't redirect to login —
+            // All retries exhausted: API is down but don't redirect to login —
             // the user's session may be valid once the API recovers
             return;
           }
         }
 
-        // --- Handle other non-OK responses ---
         if (!res.ok) {
-          // 5xx or proxy error — retry if possible, don't redirect
+          // 5xx or proxy error — retry if possible
           if (attempt < MAX_ATTEMPTS) {
             await new Promise<void>(r => setTimeout(r, 3000 * attempt));
             continue;
@@ -96,7 +93,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return;
         }
 
-        // --- Success ---
         const json = (await res.json()) as ApiEnvelope<Profile>;
         setProfile(json.data);
         return;
@@ -105,7 +101,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     loadProfile()
       .catch(() => undefined)
-      .finally(() => { clearTimeout(timeout); setReady(true); });
+      .finally(() => {
+        clearTimeout(timeout);
+        setReady(true);
+        // Signal the auth gate so apiFetch() calls that were queued during the session
+        // check are released. They now run with the fresh access token already in place.
+        signalAuthReady();
+      });
   }, [router]);
 
   async function signOut() {
