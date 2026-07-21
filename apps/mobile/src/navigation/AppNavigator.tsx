@@ -1,8 +1,8 @@
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import { StackActions } from "@react-navigation/native";
+import { StackActions, useNavigation } from "@react-navigation/native";
 import { useEffect } from "react";
-import { AppState, StyleSheet, View } from "react-native";
+import { AppState, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSync } from "../hooks/useSync";
 import { colors, font, radius, shadow } from "../constants/theme";
@@ -101,6 +101,66 @@ import { MyPayslipsScreen } from "../features/hr/MyPayslipsScreen";
 import { useAuth } from "../auth/AuthContext";
 import type { ApprovalsStackParams, RecordsStackParams, TabParams, TasksStackParams, MoreStackParams } from "./types";
 
+// ── Role-based access control ──────────────────────────────────────────────
+// Screens marked "manager-only" are hidden from the UI AND blocked at the
+// screen level so that a clever navigation deep-link can't bypass the filter.
+const MANAGER_ROLES = ["SUPER_ADMIN", "CEO", "MANAGER"];
+
+function AccessDeniedView() {
+  const nav = useNavigation<any>();
+  return (
+    <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.bg, padding: 32 }}>
+      <MaterialCommunityIcons name="lock-outline" size={52} color={colors.inkLight} />
+      <Text style={{ fontSize: 18, fontFamily: font.family.bold, color: colors.ink, marginTop: 16, textAlign: "center" }}>
+        Access Restricted
+      </Text>
+      <Text style={{ fontSize: 14, color: colors.inkLight, fontFamily: font.family.regular, textAlign: "center", marginTop: 8, lineHeight: 22 }}>
+        You don't have permission to view this section.{"\n"}Contact your manager if you think this is an error.
+      </Text>
+      <TouchableOpacity
+        onPress={() => nav.goBack()}
+        style={{ marginTop: 24, backgroundColor: colors.brand, paddingHorizontal: 28, paddingVertical: 12, borderRadius: radius.lg }}
+      >
+        <Text style={{ color: "#fff", fontFamily: font.family.bold, fontSize: 14 }}>Go Back</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function protect(Component: React.ComponentType, allowedRoles: string[], permission?: string) {
+  function Protected() {
+    const { user } = useAuth();
+    const userRoles = (user?.roles ?? []).map((r) => r.toUpperCase());
+    const allowed =
+      allowedRoles.some((r) => userRoles.includes(r)) &&
+      (permission ? (user?.permissions ?? []).includes(permission) : true);
+    return allowed ? <Component /> : <AccessDeniedView />;
+  }
+  return Protected;
+}
+
+// Stable references — defined at module level so React Navigation never
+// treats them as new components and unmounts the screen on re-render.
+const P = {
+  FinanceMobile:        protect(FinanceMobileScreen,        MANAGER_ROLES),
+  DebtorList:           protect(DebtorScreen,               MANAGER_ROLES),
+  EmployeeDirectory:    protect(EmployeeDirectoryScreen,    MANAGER_ROLES),
+  ShiftView:            protect(ShiftViewScreen,            MANAGER_ROLES),
+  HRDashboard:          protect(HRDashboardScreen,          MANAGER_ROLES),
+  PlanningDashboard:    protect(PlanningDashboardScreen,    MANAGER_ROLES),
+  MarketTargetDetail:   protect(MarketTargetDetailScreen,   MANAGER_ROLES),
+  MarketTargetCreate:   protect(MarketTargetCreateScreen,   MANAGER_ROLES),
+  SalesDashboard:       protect(SalesDashboardScreen,       MANAGER_ROLES),
+  StorefrontDashboard:  protect(StorefrontDashboardScreen,  MANAGER_ROLES),
+  StorefrontOrders:     protect(StorefrontOrdersScreen,     MANAGER_ROLES),
+  StorefrontProducts:   protect(StorefrontProductsScreen,   MANAGER_ROLES),
+  ProcurementDashboard: protect(ProcurementDashboardScreen, MANAGER_ROLES),
+  Dashboard:            protect(DashboardScreen,            MANAGER_ROLES),
+  AiChat:               protect(AiChatScreen,               MANAGER_ROLES),
+  ReportsBrowser:       protect(ReportsBrowserScreen,       MANAGER_ROLES),
+} as const;
+// ───────────────────────────────────────────────────────────────────────────
+
 const Tab = createBottomTabNavigator<TabParams>();
 const RecordsStack   = createNativeStackNavigator<RecordsStackParams>();
 const ApprovalsStack = createNativeStackNavigator<ApprovalsStackParams>();
@@ -166,34 +226,34 @@ function RecordsNavigator() {
       <RecordsStack.Screen name="GrnCreate"          component={GrnCreateScreen}          options={{ title: "Receive Goods"      }} />
       <RecordsStack.Screen name="Scanner"            component={ScannerScreen}            options={{ title: "QR Scanner"         }} />
       <RecordsStack.Screen name="ScanResult"         component={ScanResultScreen}         options={{ title: "Scan Result"        }} />
-      <RecordsStack.Screen name="FinanceMobile"      component={FinanceMobileScreen}      options={{ title: "Finance Overview"   }} />
-      <RecordsStack.Screen name="DebtorList"         component={DebtorScreen}             options={{ title: "Debtors"            }} />
-      <RecordsStack.Screen name="EmployeeDirectory"  component={EmployeeDirectoryScreen}  options={{ title: "Employees"          }} />
-      <RecordsStack.Screen name="ShiftView"          component={ShiftViewScreen}          options={{ title: "Today's Attendance"    }} />
+      <RecordsStack.Screen name="FinanceMobile"      component={P.FinanceMobile}      options={{ title: "Finance Overview"   }} />
+      <RecordsStack.Screen name="DebtorList"         component={P.DebtorList}         options={{ title: "Debtors"            }} />
+      <RecordsStack.Screen name="EmployeeDirectory"  component={P.EmployeeDirectory}  options={{ title: "Employees"          }} />
+      <RecordsStack.Screen name="ShiftView"          component={P.ShiftView}          options={{ title: "Today's Attendance"    }} />
       <RecordsStack.Screen name="FeedProductionBatch" component={FeedProductionBatchScreen} options={{ title: "Feed Production Batch" }} />
       <RecordsStack.Screen name="SoyaBatch"           component={SoyaBatchScreen}           options={{ title: "Soya Processing Batch" }} />
-      <RecordsStack.Screen name="PlanningDashboard"   component={PlanningDashboardScreen}   options={{ title: "Market Planning"       }} />
+      <RecordsStack.Screen name="PlanningDashboard"   component={P.PlanningDashboard}   options={{ title: "Market Planning"       }} />
       {/* Phase 4 — Sales */}
-      <RecordsStack.Screen name="SalesDashboard"    component={SalesDashboardScreen}    options={{ title: "Sales"            }} />
+      <RecordsStack.Screen name="SalesDashboard"    component={P.SalesDashboard}    options={{ title: "Sales"            }} />
       <RecordsStack.Screen name="CustomerList"      component={CustomerListScreen}      options={{ title: "Customers"        }} />
       <RecordsStack.Screen name="CustomerDetail"    component={CustomerDetailScreen}    options={{ title: "Customer"         }} />
       <RecordsStack.Screen name="SalesOrderHistory" component={SalesOrderHistoryScreen} options={{ title: "Sales Orders"     }} />
       {/* Phase 4 — HR */}
       <RecordsStack.Screen name="LeaveRequest"      component={LeaveRequestScreen}      options={{ title: "Request Leave"    }} />
       <RecordsStack.Screen name="LeaveStatus"       component={LeaveStatusScreen}       options={{ title: "My Leave"         }} />
-      <RecordsStack.Screen name="HRDashboard"       component={HRDashboardScreen}       options={{ title: "HR Overview"      }} />
+      <RecordsStack.Screen name="HRDashboard"       component={P.HRDashboard}       options={{ title: "HR Overview"      }} />
       {/* Phase 4 — Market Planning depth */}
-      <RecordsStack.Screen name="MarketTargetDetail" component={MarketTargetDetailScreen} options={{ title: "Target Detail"  }} />
-      <RecordsStack.Screen name="MarketTargetCreate" component={MarketTargetCreateScreen} options={{ title: "New Target"     }} />
+      <RecordsStack.Screen name="MarketTargetDetail" component={P.MarketTargetDetail} options={{ title: "Target Detail"  }} />
+      <RecordsStack.Screen name="MarketTargetCreate" component={P.MarketTargetCreate} options={{ title: "New Target"     }} />
       {/* Phase 5 — Storefront Admin */}
-      <RecordsStack.Screen name="StorefrontDashboard" component={StorefrontDashboardScreen} options={{ title: "Storefront"       }} />
-      <RecordsStack.Screen name="StorefrontOrders"    component={StorefrontOrdersScreen}    options={{ title: "Online Orders"    }} />
-      <RecordsStack.Screen name="StorefrontProducts"  component={StorefrontProductsScreen}  options={{ title: "Product Catalog"  }} />
+      <RecordsStack.Screen name="StorefrontDashboard" component={P.StorefrontDashboard} options={{ title: "Storefront"       }} />
+      <RecordsStack.Screen name="StorefrontOrders"    component={P.StorefrontOrders}    options={{ title: "Online Orders"    }} />
+      <RecordsStack.Screen name="StorefrontProducts"  component={P.StorefrontProducts}  options={{ title: "Product Catalog"  }} />
       {/* Phase 5 — Inventory & Finance */}
       <RecordsStack.Screen name="StockLevels"  component={StockLevelsScreen}  options={{ title: "Stock Levels"  }} />
       <RecordsStack.Screen name="IncomeEntry"  component={IncomeEntryScreen}  options={{ title: "Record Income" }} />
       {/* Phase 3 — Procurement */}
-      <RecordsStack.Screen name="ProcurementDashboard"  component={ProcurementDashboardScreen}  options={{ title: "Procurement"          }} />
+      <RecordsStack.Screen name="ProcurementDashboard"  component={P.ProcurementDashboard}  options={{ title: "Procurement"          }} />
       <RecordsStack.Screen name="PurchaseRequestList"   component={PurchaseRequestListScreen}   options={{ title: "Purchase Requests"    }} />
       <RecordsStack.Screen name="PurchaseRequestCreate" component={PurchaseRequestCreateScreen} options={{ title: "New Purchase Request" }} />
       {/* Phase 3 — Feed Production Orders */}
@@ -233,7 +293,7 @@ function MoreNavigator() {
   return (
     <MoreStack.Navigator screenOptions={stackOpts}>
       <MoreStack.Screen name="MoreHome"        component={MoreScreen}          options={{ title: "More"            }} />
-      <MoreStack.Screen name="Dashboard"       component={DashboardScreen}     options={{ title: "Dashboard"       }} />
+      <MoreStack.Screen name="Dashboard"       component={P.Dashboard}     options={{ title: "Dashboard"       }} />
       <MoreStack.Screen name="SyncStatus"      component={SyncStatusScreen}    options={{ title: "Sync Status"     }} />
       <MoreStack.Screen name="Scanner"         component={ScannerScreen}       options={{ title: "QR Scanner"      }} />
       <MoreStack.Screen name="ScanResult"      component={ScanResultScreen}    options={{ title: "Scan Result"     }} />
@@ -241,8 +301,8 @@ function MoreNavigator() {
       <MoreStack.Screen name="ChangePassword"  component={ChangePasswordScreen} options={{ title: "Change Password" }} />
       <MoreStack.Screen name="Notifications"   component={NotificationsScreen}  options={{ title: "Notifications"  }} />
       {/* Phase 6 */}
-      <MoreStack.Screen name="AiChat"          component={AiChatScreen}         options={{ title: "AI Assistant"   }} />
-      <MoreStack.Screen name="ReportsBrowser"  component={ReportsBrowserScreen} options={{ title: "Reports"         }} />
+      <MoreStack.Screen name="AiChat"          component={P.AiChat}         options={{ title: "AI Assistant"   }} />
+      <MoreStack.Screen name="ReportsBrowser"  component={P.ReportsBrowser} options={{ title: "Reports"         }} />
       <MoreStack.Screen name="ReportResult"    component={ReportResultScreen}   options={({ route }) => ({ title: (route.params as { title: string }).title })} />
       <MoreStack.Screen name="MyPayslips"      component={MyPayslipsScreen}     options={{ title: "My Payslips"    }} />
     </MoreStack.Navigator>

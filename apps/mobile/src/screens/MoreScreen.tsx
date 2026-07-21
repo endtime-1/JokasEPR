@@ -48,7 +48,10 @@ export function MoreScreen() {
   const { user, logout } = useAuth();
   const { pending, syncing } = useSync();
 
-  const canViewExecutive = user?.hasGlobalAccess || (user?.permissions?.includes("executive.read") ?? false);
+  const EXEC_ROLES = ["SUPER_ADMIN", "CEO", "MANAGER", "AUDITOR"];
+  const canViewExecutive =
+    (user?.roles?.some((r) => EXEC_ROLES.includes(r.toUpperCase())) ?? false) ||
+    (user?.permissions?.includes("executive.read") ?? false);
 
   function confirmLogout() {
     Alert.alert("Log Out", "Are you sure you want to log out of your Jokas ERP account?", [
