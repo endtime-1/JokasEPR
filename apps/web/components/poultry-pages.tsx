@@ -1285,7 +1285,7 @@ type PenSelection = { penId: string; code: string; name?: string; selected: bool
 export function PoultryTransferPage() {
   const { profile } = useAuth();
   const canManage = profile?.hasGlobalAccess ?? false;
-  const { options } = usePoultryOptions();
+  const { options, refreshOptions } = usePoultryOptions();
   const [rows, setRows] = useState<Record<string, any>[]>(() => {
     try {
       const cached = sessionStorage.getItem(TRANSFERS_CACHE);
@@ -1304,7 +1304,8 @@ export function PoultryTransferPage() {
     return options.houses.filter((h) => houseIds.has(h.id));
   }, [options.houses, options.pens]);
   const toHouses = useMemo(() => options.houses.filter((h) => !form.toFarmId || h.farmId === form.toFarmId), [options.houses, form.toFarmId]);
-  const toPens = useMemo(() => options.pens.filter((p) => !form.toPoultryHouseId || p.poultryHouseId === form.toPoultryHouseId), [options.pens, form.toPoultryHouseId]);
+  const effectiveToHouseId = form.toPoultryHouseId || toHouses[0]?.id || "";
+  const toPens = useMemo(() => options.pens.filter((p) => !effectiveToHouseId || p.poultryHouseId === effectiveToHouseId), [options.pens, effectiveToHouseId]);
 
   const selectedPens = penSelections.filter((p) => p.selected);
   const anyPenSelected = selectedPens.length > 0;
@@ -1338,8 +1339,9 @@ export function PoultryTransferPage() {
     setSubmitError("");
     const base = {
       flockBatchId: form.flockBatchId || options.batches[0]?.id,
+      fromPoultryHouseId: form.fromHouseId || undefined,
       toFarmId: form.toFarmId || options.farms[0]?.id,
-      toPoultryHouseId: form.toPoultryHouseId || toHouses[0]?.id,
+      toPoultryHouseId: effectiveToHouseId,
       toPenId: form.toPenId || undefined,
       transferDate: form.transferDate,
       reason: form.reason || undefined
@@ -1354,8 +1356,9 @@ export function PoultryTransferPage() {
       } else {
         await apiFetch("/poultry/transfers", { method: "POST", body: JSON.stringify({ ...base, birdCount: Number(form.birdCount) }) });
       }
-      setForm((f) => ({ ...f, fromHouseId: "", birdCount: "", reason: "" }));
+      setForm({ flockBatchId: "", fromHouseId: "", toFarmId: "", toPoultryHouseId: "", toPenId: "", birdCount: "", transferDate: new Date().toISOString().slice(0, 10), reason: "" });
       setPenSelections([]);
+      refreshOptions();
       await load();
     } catch (err: any) {
       setSubmitError(err?.message ?? "Failed to create transfer.");
@@ -1442,7 +1445,7 @@ export function PoultryTransferPage() {
           </select>
         </FormField>
         <FormField label="To house">
-          <select className={inputClass} value={form.toPoultryHouseId || toHouses[0]?.id || ""} onChange={(e) => setForm({ ...form, toPoultryHouseId: e.target.value, toPenId: "" })}>
+          <select className={inputClass} value={effectiveToHouseId} onChange={(e) => setForm({ ...form, toPoultryHouseId: e.target.value, toPenId: "" })}>
             {toHouses.map((house) => <option key={house.id} value={house.id}>{house.code} - {house.name}</option>)}
           </select>
         </FormField>

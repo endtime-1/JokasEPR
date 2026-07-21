@@ -421,6 +421,10 @@ export class CreatePoultryTransferDto {
 
   @IsOptional()
   @IsUUID()
+  fromPoultryHouseId?: string;
+
+  @IsOptional()
+  @IsUUID()
   fromPenId?: string;
 
   @IsUUID()

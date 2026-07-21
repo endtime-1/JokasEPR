@@ -579,8 +579,8 @@ export class PoultryService {
       throw new BadRequestException("Destination poultry house does not belong to the destination farm.");
     }
     const fromPen = dto.fromPenId ? await this.prisma.pen.findFirst({ where: { id: dto.fromPenId, companyId: user.companyId } }) : null;
-    const fromHouseId = fromPen?.poultryHouseId ?? batch.poultryHouseId;
-    if (!fromHouseId) throw new BadRequestException("Cannot determine source house. Specify fromPenId.");
+    const fromHouseId = fromPen?.poultryHouseId ?? dto.fromPoultryHouseId ?? batch.poultryHouseId;
+    if (!fromHouseId) throw new BadRequestException("Cannot determine source house. Specify a fromPenId or fromPoultryHouseId.");
 
     const data = await this.prisma.$transaction(async (tx) => {
       const transfer = await tx.poultryTransferRecord.create({
