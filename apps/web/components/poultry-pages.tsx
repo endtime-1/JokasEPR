@@ -122,9 +122,17 @@ export function FarmPoultryOverviewPage() {
 
 type HouseRow = { id: string; code: string; name: string; capacity?: number; farm: Option; pens?: PenOption[] };
 
+const HOUSES_CACHE = "jokas_poultry_houses";
+
 export function PoultryHousesPage({ create = false }: { create?: boolean }) {
   const { options, optionsError, refreshOptions } = usePoultryOptions();
-  const [rows, setRows] = useState<HouseRow[]>([]);
+  const [rows, setRows] = useState<HouseRow[]>(() => {
+    // Restore last-known data instantly so the list never flashes empty on navigation.
+    try {
+      const cached = sessionStorage.getItem(HOUSES_CACHE);
+      return cached ? (JSON.parse(cached) as HouseRow[]) : [];
+    } catch { return []; }
+  });
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [form, setForm] = useState({ farmId: "", name: "", code: "", capacity: "", defaultPenCount: "5" });
@@ -139,17 +147,26 @@ export function PoultryHousesPage({ create = false }: { create?: boolean }) {
   async function load() {
     setLoadError("");
     const response = await apiFetch<ApiEnvelope<HouseRow[]>>("/poultry/houses");
-    setRows(response.data ?? []);
+    const data = response.data ?? [];
+    setRows(data);
+    // Keep cache in sync so the next navigation shows this data immediately.
+    try { sessionStorage.setItem(HOUSES_CACHE, JSON.stringify(data)); } catch {}
   }
 
-  function loadHouses() {
-    setLoading(true);
+  function loadHouses(showSpinner = true) {
+    if (showSpinner) setLoading(true);
     load()
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load houses."))
       .finally(() => setLoading(false));
   }
 
-  useEffect(() => { loadHouses(); }, []);
+  useEffect(() => {
+    // If we already have cached data, refresh silently (no spinner) so the list
+    // stays visible while fresh data loads in the background.
+    let hasCached = false;
+    try { hasCached = !!sessionStorage.getItem(HOUSES_CACHE); } catch {}
+    loadHouses(!hasCached);
+  }, []);
 
   // Auto-retry when the API comes back after a cold-start outage.
   useEffect(() => {
