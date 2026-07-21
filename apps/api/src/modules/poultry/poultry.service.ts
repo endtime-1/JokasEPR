@@ -581,23 +581,52 @@ export class PoultryService {
     const fromPen = dto.fromPenId ? await this.prisma.pen.findFirst({ where: { id: dto.fromPenId, companyId: user.companyId } }) : null;
     const fromHouseId = fromPen?.poultryHouseId ?? batch.poultryHouseId;
     if (!fromHouseId) throw new BadRequestException("Cannot determine source house. Specify fromPenId.");
-    const data = await this.prisma.poultryTransferRecord.create({
-      data: {
-        companyId: user.companyId,
-        branchId: batch.branchId,
-        flockBatchId: batch.id,
-        fromFarmId: batch.farmId,
-        fromPoultryHouseId: fromHouseId,
-        fromPenId: dto.fromPenId,
-        toFarmId: dto.toFarmId,
-        toPoultryHouseId: dto.toPoultryHouseId,
-        toPenId: dto.toPenId,
-        birdCount: dto.birdCount,
-        transferDate: new Date(dto.transferDate),
-        reason: dto.reason,
-        createdById: user.id
+
+    const data = await this.prisma.$transaction(async (tx) => {
+      const transfer = await tx.poultryTransferRecord.create({
+        data: {
+          companyId: user.companyId,
+          branchId: batch.branchId,
+          flockBatchId: batch.id,
+          fromFarmId: batch.farmId,
+          fromPoultryHouseId: fromHouseId,
+          fromPenId: dto.fromPenId,
+          toFarmId: dto.toFarmId,
+          toPoultryHouseId: dto.toPoultryHouseId,
+          toPenId: dto.toPenId,
+          birdCount: dto.birdCount,
+          transferDate: new Date(dto.transferDate),
+          reason: dto.reason,
+          createdById: user.id
+        }
+      });
+
+      if (dto.toPenId) {
+        // Activate the destination pen so it appears in dropdowns and can receive records.
+        await tx.pen.update({ where: { id: dto.toPenId }, data: { isActive: true } });
+
+        // Link the destination pen to the batch (create or increment birdCount).
+        await tx.batchPenAllocation.upsert({
+          where: { flockBatchId_penId: { flockBatchId: batch.id, penId: dto.toPenId } },
+          update: { birdCount: { increment: dto.birdCount } },
+          create: {
+            companyId: user.companyId,
+            branchId: toHouse.branchId,
+            flockBatchId: batch.id,
+            penId: dto.toPenId,
+            poultryHouseId: dto.toPoultryHouseId,
+            farmId: dto.toFarmId,
+            birdCount: dto.birdCount,
+            createdById: user.id
+          }
+        });
       }
+
+      return transfer;
     });
+
+    // Bust the options cache so the now-active pen is visible immediately.
+    this.lookupCache.invalidate(`poultry:opts:${user.companyId}`);
     await this.writeAudit(user, "TRANSFER", "PoultryTransferRecord", data.id, "Created poultry transfer request", context, batch.farmId);
     return { data };
   }
