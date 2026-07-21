@@ -1258,12 +1258,16 @@ function SimpleRecordTable({ rows, onEdit, onDelete }: { rows: Record<string, an
 
 const TRANSFER_STATUSES = ["PENDING", "APPROVED", "COMPLETED", "CANCELLED"] as const;
 
+type PenSelection = { penId: string; code: string; name?: string; selected: boolean; birdCount: string };
+
 export function PoultryTransferPage() {
   const { profile } = useAuth();
   const canManage = profile?.hasGlobalAccess ?? false;
   const { options } = usePoultryOptions();
   const [rows, setRows] = useState<Record<string, any>[]>([]);
-  const [form, setForm] = useState({ flockBatchId: "", fromHouseId: "", fromPenId: "", toFarmId: "", toPoultryHouseId: "", toPenId: "", birdCount: "", transferDate: new Date().toISOString().slice(0, 10), reason: "" });
+  const [form, setForm] = useState({ flockBatchId: "", fromHouseId: "", toFarmId: "", toPoultryHouseId: "", toPenId: "", birdCount: "", transferDate: new Date().toISOString().slice(0, 10), reason: "" });
+  const [penSelections, setPenSelections] = useState<PenSelection[]>([]);
+  const [submitError, setSubmitError] = useState("");
   const [editRow, setEditRow] = useState<Record<string, any> | null>(null);
   const [editForm, setEditForm] = useState({ birdCount: "", reason: "", status: "" });
   const [editMsg, setEditMsg] = useState("");
@@ -1272,9 +1276,27 @@ export function PoultryTransferPage() {
     const houseIds = new Set(options.pens.map((p) => p.poultryHouseId));
     return options.houses.filter((h) => houseIds.has(h.id));
   }, [options.houses, options.pens]);
-  const fromPens = useMemo(() => options.pens.filter((p) => !form.fromHouseId || p.poultryHouseId === form.fromHouseId), [options.pens, form.fromHouseId]);
   const toHouses = useMemo(() => options.houses.filter((h) => !form.toFarmId || h.farmId === form.toFarmId), [options.houses, form.toFarmId]);
   const toPens = useMemo(() => options.pens.filter((p) => !form.toPoultryHouseId || p.poultryHouseId === form.toPoultryHouseId), [options.pens, form.toPoultryHouseId]);
+
+  const selectedPens = penSelections.filter((p) => p.selected);
+  const anyPenSelected = selectedPens.length > 0;
+
+  function onFromHouseChange(houseId: string) {
+    const pens = options.pens
+      .filter((p) => p.poultryHouseId === houseId)
+      .map((p) => ({ penId: p.id, code: p.code, name: p.name, selected: false, birdCount: "" }));
+    setForm((f) => ({ ...f, fromHouseId: houseId }));
+    setPenSelections(pens);
+  }
+
+  function togglePen(i: number, checked: boolean) {
+    setPenSelections((prev) => prev.map((p, idx) => idx === i ? { ...p, selected: checked } : p));
+  }
+
+  function setPenBirdCount(i: number, val: string) {
+    setPenSelections((prev) => prev.map((p, idx) => idx === i ? { ...p, birdCount: val } : p));
+  }
 
   async function load() {
     const response = await apiFetch<ApiEnvelope<Record<string, any>[]>>("/poultry/records/transfers");
@@ -1284,20 +1306,31 @@ export function PoultryTransferPage() {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await apiFetch("/poultry/transfers", {
-      method: "POST",
-      body: JSON.stringify({
-        flockBatchId: form.flockBatchId || options.batches[0]?.id,
-        fromPenId: form.fromPenId || undefined,
-        toFarmId: form.toFarmId || options.farms[0]?.id,
-        toPoultryHouseId: form.toPoultryHouseId || toHouses[0]?.id,
-        toPenId: form.toPenId || undefined,
-        birdCount: Number(form.birdCount),
-        transferDate: form.transferDate,
-        reason: form.reason || undefined
-      })
-    });
-    await load();
+    setSubmitError("");
+    const base = {
+      flockBatchId: form.flockBatchId || options.batches[0]?.id,
+      toFarmId: form.toFarmId || options.farms[0]?.id,
+      toPoultryHouseId: form.toPoultryHouseId || toHouses[0]?.id,
+      toPenId: form.toPenId || undefined,
+      transferDate: form.transferDate,
+      reason: form.reason || undefined
+    };
+    try {
+      if (anyPenSelected) {
+        await Promise.all(
+          selectedPens.map((p) =>
+            apiFetch("/poultry/transfers", { method: "POST", body: JSON.stringify({ ...base, fromPenId: p.penId, birdCount: Number(p.birdCount) }) })
+          )
+        );
+      } else {
+        await apiFetch("/poultry/transfers", { method: "POST", body: JSON.stringify({ ...base, birdCount: Number(form.birdCount) }) });
+      }
+      setForm((f) => ({ ...f, fromHouseId: "", birdCount: "", reason: "" }));
+      setPenSelections([]);
+      await load();
+    } catch (err: any) {
+      setSubmitError(err?.message ?? "Failed to create transfer.");
+    }
   }
 
   function startEdit(row: Record<string, any>) {
@@ -1345,22 +1378,35 @@ export function PoultryTransferPage() {
       <PageHeader title="Poultry Transfers" subtitle="Move birds between pens, houses, or farms with full transfer audit tracking." />
       <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-3">
         <FormField label="Batch">
-          <select className={inputClass} value={form.flockBatchId || options.batches[0]?.id || ""} onChange={(e) => setForm({ ...form, flockBatchId: e.target.value, fromHouseId: "", fromPenId: "" })}>
+          <select className={inputClass} value={form.flockBatchId || options.batches[0]?.id || ""} onChange={(e) => { setForm({ ...form, flockBatchId: e.target.value, fromHouseId: "" }); setPenSelections([]); }}>
             {options.batches.map((batch) => <option key={batch.id} value={batch.id}>{batch.code} — {batch.name}</option>)}
           </select>
         </FormField>
         <FormField label="From house (optional)">
-          <select className={inputClass} value={form.fromHouseId} onChange={(e) => setForm({ ...form, fromHouseId: e.target.value, fromPenId: "" })}>
+          <select className={inputClass} value={form.fromHouseId} onChange={(e) => onFromHouseChange(e.target.value)}>
             <option value="">— any house —</option>
             {fromHouses.map((h) => <option key={h.id} value={h.id}>{h.code} — {h.name}</option>)}
           </select>
         </FormField>
-        <FormField label="From pen (optional)">
-          <select className={inputClass} value={form.fromPenId} onChange={(e) => setForm({ ...form, fromPenId: e.target.value })} disabled={!form.fromHouseId}>
-            <option value="">{form.fromHouseId ? "— any pen in house —" : "— select a house first —"}</option>
-            {fromPens.map((pen) => <option key={pen.id} value={pen.id}>{pen.code}{pen.name ? ` — ${pen.name}` : ""}</option>)}
-          </select>
-        </FormField>
+
+        {/* Multi-pen selector — expands below when a house is picked */}
+        {form.fromHouseId && penSelections.length > 0 && (
+          <div className="md:col-span-3">
+            <p className="mb-2 text-sm font-medium">From pens <span className="font-normal text-ink/50 text-xs">— check pens to transfer from, enter birds per pen; leave all unchecked to transfer from the whole house</span></p>
+            <div className="grid gap-2 rounded-md border border-line bg-field p-3 sm:grid-cols-2 lg:grid-cols-3">
+              {penSelections.map((pen, i) => (
+                <div key={pen.penId} className="flex items-center gap-2 rounded-md border border-line bg-white px-3 py-2">
+                  <input type="checkbox" id={`fpen-${pen.penId}`} checked={pen.selected} onChange={(e) => togglePen(i, e.target.checked)} className="h-4 w-4 accent-brand shrink-0" />
+                  <label htmlFor={`fpen-${pen.penId}`} className="flex-1 truncate text-sm">{pen.code}{pen.name ? ` — ${pen.name}` : ""}</label>
+                  {pen.selected && (
+                    <input type="number" min="1" placeholder="Birds" value={pen.birdCount} onChange={(e) => setPenBirdCount(i, e.target.value)} className="w-20 rounded border border-line px-2 py-1 text-sm" required />
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <FormField label="To farm">
           <select className={inputClass} value={form.toFarmId || options.farms[0]?.id || ""} onChange={(e) => setForm({ ...form, toFarmId: e.target.value, toPoultryHouseId: "", toPenId: "" })}>
             {options.farms.map((farm) => <option key={farm.id} value={farm.id}>{farm.code} - {farm.name}</option>)}
@@ -1377,16 +1423,21 @@ export function PoultryTransferPage() {
             {toPens.map((pen) => <option key={pen.id} value={pen.id}>{pen.code}</option>)}
           </select>
         </FormField>
-        <FormField label="Bird count">
-          <input className={inputClass} type="number" min="1" value={form.birdCount} onChange={(e) => setForm({ ...form, birdCount: e.target.value })} required />
-        </FormField>
+        {!anyPenSelected && (
+          <FormField label="Bird count">
+            <input className={inputClass} type="number" min="1" value={form.birdCount} onChange={(e) => setForm({ ...form, birdCount: e.target.value })} required />
+          </FormField>
+        )}
         <FormField label="Transfer date">
           <input className={inputClass} type="date" value={form.transferDate} onChange={(e) => setForm({ ...form, transferDate: e.target.value })} required />
         </FormField>
         <FormField label="Reason">
           <input className={inputClass} value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} />
         </FormField>
-        <button className="min-h-11 rounded-md bg-brand px-4 text-sm font-semibold text-white md:col-span-3">Create transfer</button>
+        {submitError && <p className="text-sm text-red-600 md:col-span-3">{submitError}</p>}
+        <button className="min-h-11 rounded-md bg-brand px-4 text-sm font-semibold text-white md:col-span-3">
+          {anyPenSelected ? `Create ${selectedPens.length} transfer${selectedPens.length > 1 ? "s" : ""}` : "Create transfer"}
+        </button>
       </form>
       <SimpleRecordTable
         rows={rows}
