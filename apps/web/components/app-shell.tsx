@@ -222,11 +222,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     let pollInterval: ReturnType<typeof setInterval> | null = null;
     let fallback: ReturnType<typeof setTimeout> | null = null;
 
+    function clearPolling() {
+      if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
+      if (fallback) { clearTimeout(fallback); fallback = null; }
+    }
+
     function onApiUnavailable() {
       setApiDownBanner(true);
-      // Hard fallback: reload after 90s regardless (server crash / network partition)
+      // Hard fallback reload after 90s only for true crashes (NestJS never comes back).
       fallback = setTimeout(() => window.location.reload(), 90000);
-      // Poll every 5s — even a 401 means NestJS is up and the page needs a fresh load
+      // Poll every 5s. When the API recovers, dismiss the banner without reloading —
+      // a full reload would wipe all loaded page state. apiFetch handles 401→token
+      // refresh inline so the user can keep working with the data already on screen.
       pollInterval = setInterval(async () => {
         try {
           const ctrl = new AbortController();
@@ -234,7 +241,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           const res = await fetch("/api/v1/auth/me", { credentials: "include", signal: ctrl.signal });
           clearTimeout(tid);
           if (res.status !== 502 && res.status !== 503 && res.status !== 504) {
-            window.location.reload();
+            clearPolling();
+            setApiDownBanner(false);
           }
         } catch { /* still down — wait for next poll */ }
       }, 5000);
@@ -243,8 +251,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     window.addEventListener("api:unavailable", onApiUnavailable);
     return () => {
       window.removeEventListener("api:unavailable", onApiUnavailable);
-      if (pollInterval) clearInterval(pollInterval);
-      if (fallback) clearTimeout(fallback);
+      clearPolling();
     };
   }, []);
 
