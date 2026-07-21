@@ -10,19 +10,24 @@ import { AppModule } from "./app.module";
 import { HttpExceptionFilter } from "./common/filters/http-exception.filter";
 import { NoCacheInterceptor } from "./common/interceptors/no-cache.interceptor";
 import { RequestLoggingInterceptor } from "./common/interceptors/request-logging.interceptor";
+import { PrismaService } from "./modules/prisma/prisma.service";
 
 async function bootstrap() {
   process.stderr.write("[api] bootstrap() starting\n");
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: false });
   const config = app.get(ConfigService);
+  const prisma = app.get(PrismaService);
   const port = config.get<number>("API_PORT", 4001);
   const prefix = config.get<string>("API_PREFIX", "api");
   const version = config.get<string>("API_VERSION", "1");
   const isProduction = config.get("NODE_ENV") === "production";
 
-  // Health check — bypasses prefix/versioning so UptimeRobot can ping /health
-  // to keep Render free-tier from suspending the service.
-  app.use("/health", (_req: unknown, res: { send: (s: string) => void }) => res.send("ok"));
+  // Health check — runs a lightweight DB query so that periodic pings from start.js
+  // keep the MySQL connection pool alive (prevents first-query stall after idle).
+  app.use("/health", async (_req: unknown, res: { send: (s: string) => void }) => {
+    try { await prisma.$queryRaw`SELECT 1`; } catch {}
+    res.send("ok");
+  });
 
   app.setGlobalPrefix(prefix);
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: version });

@@ -383,17 +383,24 @@ startProxy(0);
 
   console.log("[start] backup paths — client:", clientBackup, "| runtime:", runtimeBackup);
 
-  if (fs.existsSync(clientBackup)) {
-    try {
-      await fs.promises.rm(clientDir, { recursive: true, force: true });
-      await fs.promises.mkdir(path.dirname(clientDir), { recursive: true });
-      await fs.promises.cp(clientBackup, clientDir, { recursive: true });
-      console.log("[start] @prisma/client overwritten with generated backup");
-    } catch (e) {
-      console.error("[start] @prisma/client restore failed:", e.message);
+  // Only restore @prisma/client if its index.js is missing — mirrors the .prisma/client
+  // check below. On hibernation restarts the files are already present (node_modules is
+  // on-disk between restarts), so skipping the rm+cp saves ~5s every cold-start.
+  const clientIndexExists = fs.existsSync(path.join(clientDir, "index.js"));
+  if (!clientIndexExists) {
+    if (fs.existsSync(clientBackup)) {
+      try {
+        await fs.promises.mkdir(path.dirname(clientDir), { recursive: true });
+        await fs.promises.cp(clientBackup, clientDir, { recursive: true });
+        console.log("[start] @prisma/client restored from backup");
+      } catch (e) {
+        console.error("[start] @prisma/client restore failed:", e.message);
+      }
+    } else {
+      console.warn("[start] @prisma/client backup not found — API will likely fail");
     }
   } else {
-    console.warn("[start] @prisma/client backup not found — API will likely fail");
+    console.log("[start] @prisma/client already present — skipping restore");
   }
 
   if (!fs.existsSync(path.join(prismaDir, "default.js"))) {
@@ -530,6 +537,16 @@ startProxy(0);
 
   savePids();
   startApi();
+
+  // Keep the MySQL connection pool alive. Without this, Prisma's idle connections
+  // time out after ~5 min, making the first query after a quiet period stall while
+  // a new connection is established. Pinging /health (which runs SELECT 1) prevents
+  // that. This does NOT prevent Hostinger from hibernating the process — for that,
+  // use an external cron service (e.g. cron-job.org) to ping the site every 5 min.
+  setInterval(() => {
+    if (!_apiUp) return;
+    http.get(`http://127.0.0.1:${API_PORT}/health`, (r) => r.resume()).on("error", () => {});
+  }, 4 * 60 * 1000);
 })().catch((e) => {
   console.error("[start] FATAL — main startup threw:", e?.stack || e);
 });
