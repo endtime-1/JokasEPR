@@ -37,15 +37,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // signalAuthReady is called in finally — this timeout is a last-resort UI unblock only.
     const timeout = setTimeout(() => { setReady(true); signalAuthReady(); }, 35000);
 
+    // 12s AbortController — prevents /api/auth/me from hanging indefinitely while
+    // Hostinger is cold-starting, which would cause the 35s safety valve to fire
+    // and render the UI with profile=null (blank navigation).
+    async function fetchMe(signal: AbortSignal): Promise<Response | null> {
+      try {
+        return await fetch("/api/auth/me", { credentials: "include", signal });
+      } catch {
+        return null;
+      }
+    }
+
     async function loadProfile() {
       const MAX_ATTEMPTS = 3;
 
       for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-        let res: Response;
-        try {
-          res = await fetch("/api/auth/me", { credentials: "include" });
-        } catch {
-          // Network error — retry if attempts remain
+        const controller = new AbortController();
+        const tid = setTimeout(() => controller.abort(), 12000);
+        const res0 = await fetchMe(controller.signal);
+        clearTimeout(tid);
+
+        if (!res0) {
           if (attempt < MAX_ATTEMPTS) {
             await new Promise<void>(r => setTimeout(r, 3000 * attempt));
             continue;
@@ -53,21 +65,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return;
         }
 
+        let res: Response = res0;
+
         if (res.status === 401) {
           // Access token expired — use the shared singleton so this refresh call and any
           // concurrent apiFetch() calls share one HTTP request and don't race on the token.
           const refreshResult = await refreshSession();
 
           if (refreshResult === "ok") {
-            try {
-              res = await fetch("/api/auth/me", { credentials: "include" });
-            } catch {
+            const c2 = new AbortController();
+            const t2 = setTimeout(() => c2.abort(), 12000);
+            const res2 = await fetchMe(c2.signal);
+            clearTimeout(t2);
+            if (!res2) {
               if (attempt < MAX_ATTEMPTS) {
                 await new Promise<void>(r => setTimeout(r, 3000 * attempt));
                 continue;
               }
               return;
             }
+            res = res2;
           } else if (refreshResult === "expired") {
             // Refresh token genuinely invalid — session is over, go to login
             router.replace("/login");
@@ -119,6 +136,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // check are released. They now run with the fresh access token already in place.
         signalAuthReady();
       });
+  }, [router]);
+
+  // Proactive token refresh every 8 minutes — keeps the access token alive before
+  // the JWT_ACCESS_TTL (default 15m) and keeps the Hostinger NestJS process warm so
+  // the server never hibernates long enough to cause a cold-start at the same moment
+  // the token expires (which was the root cause of "everything vanished after 10 min").
+  useEffect(() => {
+    const REFRESH_INTERVAL_MS = 8 * 60 * 1000; // 8 minutes
+    const id = setInterval(async () => {
+      const result = await refreshSession();
+      if (result === "expired") {
+        router.replace("/login");
+      }
+      // "unreachable" is fine — the reactive 401 handling in apiFetch will catch it
+    }, REFRESH_INTERVAL_MS);
+    return () => clearInterval(id);
   }, [router]);
 
   async function signOut() {

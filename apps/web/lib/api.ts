@@ -176,6 +176,28 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     }
   }
 
+  // ── Post-cold-start 401 recovery ─────────────────────────────────────────
+  // Hostinger hibernates the NestJS process after ~10 minutes of inactivity —
+  // the same window as the JWT_ACCESS_TTL. When both events coincide:
+  //   1. The first request times out (504) while the server warms up.
+  //   2. The initial 401 branch above is NEVER taken (status was 504, not 401).
+  //   3. The transient retry loop runs, the server comes back, but now the
+  //      access-token cookie has also expired → it responds 401.
+  // Without this block, we fall through to the "Final response" section which
+  // immediately fires signalSessionExpired() without ever trying to refresh —
+  // causing a premature redirect to login ("everything vanished").
+  if (response.status === 401) {
+    const postRetryRefresh = await refreshSession();
+    if (postRetryRefresh === "ok") {
+      response = await request(path, init);
+    } else if (postRetryRefresh === "expired") {
+      signalSessionExpired();
+      throw new Error("Session expired. Please log in again.");
+    } else {
+      throw new Error("API server is not reachable. Please try again shortly.");
+    }
+  }
+
   // ── Final response handling ───────────────────────────────────────────────
   if (!response.ok) {
     if (response.status === 401) {
