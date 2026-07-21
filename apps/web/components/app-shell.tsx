@@ -215,17 +215,36 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [router]);
 
   // When the API is still unreachable after all apiFetch retries (startup or crash),
-  // show a banner and auto-reload after 20s — by then NestJS is always up.
+  // show a banner then poll every 5s until the server responds, then reload.
+  // This avoids the old fixed-timer approach that would reload too early during a slow
+  // Hostinger cold-start and leave the user stuck in a reload loop.
   useEffect(() => {
-    let reloadTimer: ReturnType<typeof setTimeout> | null = null;
+    let pollInterval: ReturnType<typeof setInterval> | null = null;
+    let fallback: ReturnType<typeof setTimeout> | null = null;
+
     function onApiUnavailable() {
       setApiDownBanner(true);
-      reloadTimer = setTimeout(() => window.location.reload(), 20000);
+      // Hard fallback: reload after 90s regardless (server crash / network partition)
+      fallback = setTimeout(() => window.location.reload(), 90000);
+      // Poll every 5s — even a 401 means NestJS is up and the page needs a fresh load
+      pollInterval = setInterval(async () => {
+        try {
+          const ctrl = new AbortController();
+          const tid = setTimeout(() => ctrl.abort(), 4000);
+          const res = await fetch("/api/v1/auth/me", { credentials: "include", signal: ctrl.signal });
+          clearTimeout(tid);
+          if (res.status !== 502 && res.status !== 503 && res.status !== 504) {
+            window.location.reload();
+          }
+        } catch { /* still down — wait for next poll */ }
+      }, 5000);
     }
+
     window.addEventListener("api:unavailable", onApiUnavailable);
     return () => {
       window.removeEventListener("api:unavailable", onApiUnavailable);
-      if (reloadTimer) clearTimeout(reloadTimer);
+      if (pollInterval) clearInterval(pollInterval);
+      if (fallback) clearTimeout(fallback);
     };
   }, []);
 
@@ -269,7 +288,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const apiDownBannerEl = apiDownBanner ? (
     <div className="fixed inset-x-0 top-0 z-[9999] flex items-center justify-between gap-3 bg-amber-500 px-5 py-2.5 text-sm font-medium text-white shadow-lg">
-      <span>Server is starting up — refreshing automatically in a moment…</span>
+      <span>Server is starting up — will reload automatically once ready…</span>
       <button
         className="shrink-0 rounded border border-white/40 px-3 py-1 text-xs font-semibold hover:bg-white/20"
         onClick={() => window.location.reload()}
