@@ -243,6 +243,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           if (res.status !== 502 && res.status !== 503 && res.status !== 504) {
             clearPolling();
             setApiDownBanner(false);
+            window.dispatchEvent(new CustomEvent("api:recovered"));
           }
         } catch { /* still down — wait for next poll */ }
       }, 5000);

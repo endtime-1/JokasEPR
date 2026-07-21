@@ -383,24 +383,21 @@ startProxy(0);
 
   console.log("[start] backup paths — client:", clientBackup, "| runtime:", runtimeBackup);
 
-  // Only restore @prisma/client if its index.js is missing — mirrors the .prisma/client
-  // check below. On hibernation restarts the files are already present (node_modules is
-  // on-disk between restarts), so skipping the rm+cp saves ~5s every cold-start.
-  const clientIndexExists = fs.existsSync(path.join(clientDir, "index.js"));
-  if (!clientIndexExists) {
-    if (fs.existsSync(clientBackup)) {
-      try {
-        await fs.promises.mkdir(path.dirname(clientDir), { recursive: true });
-        await fs.promises.cp(clientBackup, clientDir, { recursive: true });
-        console.log("[start] @prisma/client restored from backup");
-      } catch (e) {
-        console.error("[start] @prisma/client restore failed:", e.message);
-      }
-    } else {
-      console.warn("[start] @prisma/client backup not found — API will likely fail");
+  // Always overwrite @prisma/client from the generated backup. pnpm install on a fresh
+  // Hostinger deployment installs the generic npm package (no schema models). Without
+  // this overwrite the generated client would be replaced by the shell version and all
+  // model queries would fail. The copy costs ~5s but correctness is worth it.
+  if (fs.existsSync(clientBackup)) {
+    try {
+      await fs.promises.rm(clientDir, { recursive: true, force: true });
+      await fs.promises.mkdir(path.dirname(clientDir), { recursive: true });
+      await fs.promises.cp(clientBackup, clientDir, { recursive: true });
+      console.log("[start] @prisma/client restored from backup");
+    } catch (e) {
+      console.error("[start] @prisma/client restore failed:", e.message);
     }
   } else {
-    console.log("[start] @prisma/client already present — skipping restore");
+    console.warn("[start] @prisma/client backup not found — API will likely fail");
   }
 
   if (!fs.existsSync(path.join(prismaDir, "default.js"))) {

@@ -151,6 +151,13 @@ export function PoultryHousesPage({ create = false }: { create?: boolean }) {
 
   useEffect(() => { loadHouses(); }, []);
 
+  // Auto-retry when the API comes back after a cold-start outage.
+  useEffect(() => {
+    function onRecovered() { if (rows.length === 0) loadHouses(); }
+    window.addEventListener("api:recovered", onRecovered);
+    return () => window.removeEventListener("api:recovered", onRecovered);
+  }, [rows.length]);
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitMsg("");
@@ -420,6 +427,12 @@ export function FlockBatchesPage({ create = false }: { create?: boolean }) {
   }
 
   useEffect(() => { loadBatches(); }, []);
+
+  useEffect(() => {
+    function onRecovered() { if (rows.length === 0) loadBatches(); }
+    window.addEventListener("api:recovered", onRecovered);
+    return () => window.removeEventListener("api:recovered", onRecovered);
+  }, [rows.length]);
 
   function startEdit(batch: BatchRow) {
     setEditBatch(batch);
