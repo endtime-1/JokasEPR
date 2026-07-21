@@ -422,9 +422,16 @@ function PoultryHouseForm({ options, form, setForm, submit }: {
 
 // ─── Batches ──────────────────────────────────────────────────────────────────
 
+const BATCHES_CACHE = "jokas_poultry_batches";
+
 export function FlockBatchesPage({ create = false }: { create?: boolean }) {
   const { options, optionsError, refreshOptions } = usePoultryOptions();
-  const [rows, setRows] = useState<BatchRow[]>([]);
+  const [rows, setRows] = useState<BatchRow[]>(() => {
+    try {
+      const cached = sessionStorage.getItem(BATCHES_CACHE);
+      return cached ? (JSON.parse(cached) as BatchRow[]) : [];
+    } catch { return []; }
+  });
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [editBatch, setEditBatch] = useState<BatchRow | null>(null);
@@ -434,17 +441,23 @@ export function FlockBatchesPage({ create = false }: { create?: boolean }) {
   async function load() {
     setLoadError("");
     const response = await apiFetch<ApiEnvelope<BatchRow[]>>("/poultry/batches");
-    setRows(response.data ?? []);
+    const data = response.data ?? [];
+    setRows(data);
+    try { sessionStorage.setItem(BATCHES_CACHE, JSON.stringify(data)); } catch {}
   }
 
-  function loadBatches() {
-    setLoading(true);
+  function loadBatches(showSpinner = true) {
+    if (showSpinner) setLoading(true);
     load()
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load batches."))
       .finally(() => setLoading(false));
   }
 
-  useEffect(() => { loadBatches(); }, []);
+  useEffect(() => {
+    let hasCached = false;
+    try { hasCached = !!sessionStorage.getItem(BATCHES_CACHE); } catch {}
+    loadBatches(!hasCached);
+  }, []);
 
   useEffect(() => {
     function onRecovered() { if (rows.length === 0) loadBatches(); }
@@ -1015,14 +1028,22 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
   const { profile } = useAuth();
   const canManage = profile?.hasGlobalAccess ?? false;
   const { options, optionsError, refreshOptions } = usePoultryOptions();
-  const [rows, setRows] = useState<Record<string, any>[]>([]);
+  const recordCacheKey = `jokas_records_${type}`;
+  const [rows, setRows] = useState<Record<string, any>[]>(() => {
+    try {
+      const cached = sessionStorage.getItem(`jokas_records_${type}`);
+      return cached ? JSON.parse(cached) : [];
+    } catch { return []; }
+  });
   const [form, setForm] = useState<Record<string, string>>(() => makeFormDefaults(type));
   const [editingId, setEditingId] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState("");
 
   async function load() {
     const response = await apiFetch<{ data: Record<string, any>[]; meta?: any }>(`/poultry/records/${type}?take=200`);
-    setRows(response.data ?? []);
+    const data = response.data ?? [];
+    setRows(data);
+    try { sessionStorage.setItem(recordCacheKey, JSON.stringify(data)); } catch {}
   }
 
   useEffect(() => {
@@ -1257,6 +1278,7 @@ function SimpleRecordTable({ rows, onEdit, onDelete }: { rows: Record<string, an
 // ─── Transfers ────────────────────────────────────────────────────────────────
 
 const TRANSFER_STATUSES = ["PENDING", "APPROVED", "COMPLETED", "CANCELLED"] as const;
+const TRANSFERS_CACHE = "jokas_poultry_transfers";
 
 type PenSelection = { penId: string; code: string; name?: string; selected: boolean; birdCount: string };
 
@@ -1264,7 +1286,12 @@ export function PoultryTransferPage() {
   const { profile } = useAuth();
   const canManage = profile?.hasGlobalAccess ?? false;
   const { options } = usePoultryOptions();
-  const [rows, setRows] = useState<Record<string, any>[]>([]);
+  const [rows, setRows] = useState<Record<string, any>[]>(() => {
+    try {
+      const cached = sessionStorage.getItem(TRANSFERS_CACHE);
+      return cached ? JSON.parse(cached) : [];
+    } catch { return []; }
+  });
   const [form, setForm] = useState({ flockBatchId: "", fromHouseId: "", toFarmId: "", toPoultryHouseId: "", toPenId: "", birdCount: "", transferDate: new Date().toISOString().slice(0, 10), reason: "" });
   const [penSelections, setPenSelections] = useState<PenSelection[]>([]);
   const [submitError, setSubmitError] = useState("");
@@ -1300,7 +1327,9 @@ export function PoultryTransferPage() {
 
   async function load() {
     const response = await apiFetch<ApiEnvelope<Record<string, any>[]>>("/poultry/records/transfers");
-    setRows(response.data ?? []);
+    const data = response.data ?? [];
+    setRows(data);
+    try { sessionStorage.setItem(TRANSFERS_CACHE, JSON.stringify(data)); } catch {}
   }
   useEffect(() => { load().catch(() => undefined); }, []);
 
