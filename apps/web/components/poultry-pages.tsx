@@ -125,6 +125,7 @@ type HouseRow = { id: string; code: string; name: string; capacity?: number; far
 export function PoultryHousesPage({ create = false }: { create?: boolean }) {
   const { options, optionsError, refreshOptions } = usePoultryOptions();
   const [rows, setRows] = useState<HouseRow[]>([]);
+  const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({ farmId: "", name: "", code: "", capacity: "", defaultPenCount: "5" });
   const [expandedHouseId, setExpandedHouseId] = useState<string | null>(null);
   const [addPenHouseId, setAddPenHouseId] = useState<string | null>(null);
@@ -140,7 +141,9 @@ export function PoultryHousesPage({ create = false }: { create?: boolean }) {
   }
 
   useEffect(() => {
-    load().catch(() => undefined);
+    load()
+      .catch(() => undefined)
+      .finally(() => setLoading(false));
   }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -252,7 +255,10 @@ export function PoultryHousesPage({ create = false }: { create?: boolean }) {
         </div>
       )}
       <div className="space-y-3">
-        {rows.length === 0 && <p className="rounded-md border border-line bg-white p-4 text-sm text-ink/65">No poultry houses found.</p>}
+        {loading
+          ? [1, 2, 3].map((i) => <div key={i} className="h-16 animate-pulse rounded-md border border-line bg-white" />)
+          : rows.length === 0 && <p className="rounded-md border border-line bg-white p-4 text-sm text-ink/65">No poultry houses found.</p>
+        }
         {rows.map((house) => {
           const housePens = house.pens && house.pens.length > 0 ? house.pens : options.pens.filter((p) => p.poultryHouseId === house.id);
           const pens = housePens;
@@ -382,6 +388,7 @@ function PoultryHouseForm({ options, form, setForm, submit }: {
 export function FlockBatchesPage({ create = false }: { create?: boolean }) {
   const { options, optionsError } = usePoultryOptions();
   const [rows, setRows] = useState<BatchRow[]>([]);
+  const [loading, setLoading] = useState(true);
   const [editBatch, setEditBatch] = useState<BatchRow | null>(null);
   const [editForm, setEditForm] = useState({ code: "", name: "", birdType: "LAYERS", expectedCloseDate: "", notes: "" });
   const [editMsg, setEditMsg] = useState("");
@@ -392,7 +399,7 @@ export function FlockBatchesPage({ create = false }: { create?: boolean }) {
   }
 
   useEffect(() => {
-    load().catch(() => undefined);
+    load().catch(() => undefined).finally(() => setLoading(false));
   }, []);
 
   function startEdit(batch: BatchRow) {
@@ -460,7 +467,7 @@ export function FlockBatchesPage({ create = false }: { create?: boolean }) {
           </div>
         </form>
       )}
-      <BatchTable rows={rows} onEdit={startEdit} onDelete={deleteBatch} />
+      <BatchTable rows={rows} loading={loading} onEdit={startEdit} onDelete={deleteBatch} />
     </PoultryShell>
   );
 }
@@ -618,10 +625,11 @@ function FlockBatchForm({ options, onSaved }: { options: PoultryOptions; onSaved
   );
 }
 
-function BatchTable({ rows, onEdit, onDelete }: { rows: BatchRow[]; onEdit?: (row: BatchRow) => void; onDelete?: (row: BatchRow) => void }) {
+function BatchTable({ rows, loading, onEdit, onDelete }: { rows: BatchRow[]; loading?: boolean; onEdit?: (row: BatchRow) => void; onDelete?: (row: BatchRow) => void }) {
   return (
     <DataTable
       rows={rows}
+      loading={loading}
       empty="No flock batches found"
       columns={[
         { key: "code", label: "Batch", render: (row) => <Link className="font-semibold text-brand" href={`/poultry/batches/${row.id}`}>{row.code}</Link> },

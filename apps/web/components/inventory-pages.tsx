@@ -27,14 +27,17 @@ type InventoryOptions = {
 
 const inputClass = "min-h-11 rounded-md border border-line px-3";
 
+const EMPTY_OPTIONS: InventoryOptions = { warehouses: [], products: [], farms: [], productionSites: [], items: [] };
+
 function useInventoryOptions() {
-  const [options, setOptions] = useState<InventoryOptions>({ warehouses: [], products: [], farms: [], productionSites: [], items: [] });
+  const [options, setOptions] = useState<InventoryOptions>(EMPTY_OPTIONS);
+  const [optionsError, setOptionsError] = useState("");
   useEffect(() => {
     apiFetch<ApiEnvelope<InventoryOptions>>("/inventory/options")
-      .then((response) => setOptions(response.data ?? { warehouses: [], products: [], farms: [], productionSites: [], items: [] }))
-      .catch(() => undefined);
+      .then((response) => setOptions(response.data ?? EMPTY_OPTIONS))
+      .catch((err: any) => setOptionsError(err?.message ?? "Failed to load warehouse and product options."));
   }, []);
-  return options;
+  return { options, optionsError };
 }
 
 function PageHeader({ title, subtitle }: { title: string; subtitle: string }) {
@@ -55,14 +58,15 @@ function PageHeader({ title, subtitle }: { title: string; subtitle: string }) {
 
 
 export function InventoryItemsPage({ create = false }: { create?: boolean }) {
-  const options = useInventoryOptions();
+  const { options, optionsError } = useInventoryOptions();
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
+  const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({ warehouseId: "", productId: "", reorderLevel: "", openingQuantity: "" });
   async function load() {
     const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/inventory/items");
     setRows(response.data ?? []);
   }
-  useEffect(() => { load().catch(() => undefined); }, []);
+  useEffect(() => { load().catch(() => undefined).finally(() => setLoading(false)); }, []);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     await apiFetch("/inventory/items", { method: "POST", body: JSON.stringify({ warehouseId: form.warehouseId || options.warehouses[0]?.id, productId: form.productId || options.products[0]?.id, reorderLevel: Number(form.reorderLevel), openingQuantity: Number(form.openingQuantity || 0) }) });
@@ -71,6 +75,7 @@ export function InventoryItemsPage({ create = false }: { create?: boolean }) {
   return (
     <InventoryShell>
       <PageHeader title={create ? "Create Inventory Item" : "Product and Item List"} subtitle="Warehouse-specific stock balances across poultry, feed, soya, eggs, medicine, packaging, spares, equipment, and supplies." />
+      {optionsError && <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{optionsError}</p>}
       {create ? (
         <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-4">
           <SelectField label="Warehouse" value={form.warehouseId || options.warehouses[0]?.id || ""} options={options.warehouses} onChange={(value) => setForm({ ...form, warehouseId: value })} />
@@ -80,13 +85,13 @@ export function InventoryItemsPage({ create = false }: { create?: boolean }) {
           <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white md:col-span-4"><Plus aria-hidden className="h-4 w-4" /> Save item</button>
         </form>
       ) : <Link className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" href="/inventory/items/create"><Plus aria-hidden className="h-4 w-4" /> Create item</Link>}
-      <SimpleRowsTable rows={rows} />
+      <SimpleRowsTable rows={rows} loading={loading} />
     </InventoryShell>
   );
 }
 
 export function StockOperationPage({ mode }: { mode: "stock-in" | "stock-out" | "transfers" | "adjustments" }) {
-  const options = useInventoryOptions();
+  const { options, optionsError } = useInventoryOptions();
   const [form, setForm] = useState<Record<string, string>>({ warehouseId: "", fromWarehouseId: "", toWarehouseId: "", productId: "", batchNumber: "", quantity: "", unitCost: "", reason: "", adjustmentType: "DAMAGE", movementType: "ADJUSTMENT_OUT", expiryDate: "" });
   const title = mode === "stock-in" ? "Stock In" : mode === "stock-out" ? "Stock Out" : mode === "transfers" ? "Stock Transfer" : "Stock Adjustment";
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -104,6 +109,7 @@ export function StockOperationPage({ mode }: { mode: "stock-in" | "stock-out" | 
   return (
     <InventoryShell>
       <PageHeader title={title} subtitle="Validated stock workflow with FIFO issue, stock balance protection, audit trail, and movement records." />
+      {optionsError && <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{optionsError}</p>}
       <form onSubmit={submit} className="grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-4">
         {mode === "transfers" ? (
           <>
@@ -127,30 +133,36 @@ export function StockOperationPage({ mode }: { mode: "stock-in" | "stock-out" | 
 
 export function InventoryListPage({ title, endpoint, subtitle }: { title: string; endpoint: string; subtitle: string }) {
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
+  const [loading, setLoading] = useState(true);
   useEffect(() => {
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>(endpoint)
       .then((response) => setRows(response.data ?? []))
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => setLoading(false));
   }, [endpoint]);
   return (
     <InventoryShell>
       <PageHeader title={title} subtitle={subtitle} />
-      <SimpleRowsTable rows={rows} />
+      <SimpleRowsTable rows={rows} loading={loading} />
     </InventoryShell>
   );
 }
 
 export function ScopedInventoryViewPage({ scope }: { scope: "warehouses" | "farms" | "production-sites" }) {
-  const options = useInventoryOptions();
+  const { options } = useInventoryOptions();
   const [selectedId, setSelectedId] = useState("");
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
+  const [loading, setLoading] = useState(false);
   const source = scope === "warehouses" ? options.warehouses : scope === "farms" ? options.farms : options.productionSites;
   const id = selectedId || source[0]?.id || "";
   useEffect(() => {
     if (!id) return;
+    setLoading(true);
+    setRows([]);
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>(`/inventory/${scope}/${id}`)
       .then((response) => setRows(response.data ?? []))
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => setLoading(false));
   }, [id, scope]);
   return (
     <InventoryShell>
@@ -158,7 +170,7 @@ export function ScopedInventoryViewPage({ scope }: { scope: "warehouses" | "farm
       <div className="mb-6 max-w-md">
         <SelectField label="Scope" value={id} options={source} onChange={setSelectedId} />
       </div>
-      <SimpleRowsTable rows={rows} />
+      <SimpleRowsTable rows={rows} loading={loading} />
     </InventoryShell>
   );
 }
@@ -184,7 +196,27 @@ function SelectField({ label, value, options, onChange }: { label: string; value
   );
 }
 
-function SimpleRowsTable({ rows }: { rows: Record<string, unknown>[] }) {
+function SimpleRowsTable({ rows, loading }: { rows: Record<string, unknown>[]; loading?: boolean }) {
+  if (loading && rows.length === 0) {
+    return (
+      <div className="app-card overflow-hidden">
+        <div className="flex items-center justify-between border-b border-line px-4 py-3">
+          <div className="h-8 w-52 animate-pulse rounded-md bg-ink/6" />
+          <div className="h-4 w-20 animate-pulse rounded-md bg-ink/6" />
+        </div>
+        <div>
+          {[1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className="flex gap-6 border-b border-line/60 px-4 py-3.5">
+              <div className="h-4 animate-pulse rounded bg-ink/6" style={{ width: `${14 + (i * 11) % 12}%` }} />
+              <div className="h-4 animate-pulse rounded bg-ink/6" style={{ width: `${20 + (i * 7) % 18}%` }} />
+              <div className="h-4 animate-pulse rounded bg-ink/6" style={{ width: `${10 + (i * 9) % 14}%` }} />
+              <div className="h-4 flex-1 animate-pulse rounded bg-ink/6" />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
   const keys = Object.keys(rows?.[0] ?? {}).filter((key) => !["id", "companyId", "branchId", "deletedAt", "updatedAt"].includes(key)).slice(0, 8);
   return <DataTable rows={rows} empty="No records found" columns={keys.map((key) => ({ key, label: key.replace(/([A-Z])/g, " $1"), render: (row: Record<string, unknown>) => typeof row[key] === "object" && row[key] !== null ? JSON.stringify(row[key]).slice(0, 80) : String(row[key] ?? "-").slice(0, 90) }))} />;
 }

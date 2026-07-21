@@ -17,7 +17,8 @@ export function DataTable<T extends Record<string, unknown>>({
   empty,
   searchPlaceholder,
   pageSize = 25,
-  actions
+  actions,
+  loading
 }: {
   columns: Column<T>[];
   rows?: T[];
@@ -25,6 +26,7 @@ export function DataTable<T extends Record<string, unknown>>({
   searchPlaceholder?: string;
   pageSize?: number;
   actions?: React.ReactNode;
+  loading?: boolean;
 }) {
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState("");
@@ -94,7 +96,9 @@ export function DataTable<T extends Record<string, unknown>>({
         <div className="flex items-center gap-3">
           {actions}
           <span className="shrink-0 text-xs text-ink/45">
-            {filtered.length} of {rows.length} record{rows.length !== 1 ? "s" : ""}
+            {loading && rows.length === 0
+              ? "Loading…"
+              : `${filtered.length} of ${rows.length} record${rows.length !== 1 ? "s" : ""}`}
           </span>
         </div>
       </div>
@@ -142,7 +146,17 @@ export function DataTable<T extends Record<string, unknown>>({
             </tr>
           </thead>
           <tbody>
-            {paged.length === 0 ? (
+            {loading && rows.length === 0 ? (
+              Array.from({ length: 5 }, (_, i) => (
+                <tr key={i} className="border-t border-line/60">
+                  {columns.map((col) => (
+                    <td key={col.key} className="px-4 py-3.5">
+                      <div className="h-4 animate-pulse rounded bg-ink/6" style={{ width: `${55 + ((i * 13 + col.key.length * 7) % 40)}%` }} />
+                    </td>
+                  ))}
+                </tr>
+              ))
+            ) : paged.length === 0 ? (
               <tr>
                 <td className="px-4 py-14 text-center" colSpan={columns.length}>
                   <p className="text-sm font-medium text-ink/50">

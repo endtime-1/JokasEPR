@@ -305,7 +305,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <div className="h-9 w-9 animate-pulse rounded-xl bg-ink/8" />
             </div>
           </header>
-          <main className="px-5 py-7 lg:px-8">{children}</main>
+          <main className="px-5 py-7 lg:px-8">
+            <div className="space-y-4">
+              <div className="h-7 w-52 animate-pulse rounded-lg bg-ink/8" />
+              <div className="h-4 w-80 animate-pulse rounded-md bg-ink/6" />
+              <div className="mt-2 h-10 w-36 animate-pulse rounded-lg bg-ink/8" />
+              <div className="h-64 animate-pulse rounded-xl border border-line bg-white" />
+            </div>
+          </main>
         </div>
       </div>
       </>

@@ -109,10 +109,11 @@ function Card({ label, value, icon: Icon }: { label: string; value: React.ReactN
   );
 }
 
-function TargetTable({ rows }: { rows: TargetRow[] }) {
+function TargetTable({ rows, loading }: { rows: TargetRow[]; loading?: boolean }) {
   return (
     <DataTable<TargetRow>
       rows={rows}
+      loading={loading}
       empty="No market targets found."
       columns={[
         { key: "targetNumber", label: "Target", render: (row) => <Link className="font-semibold text-brand hover:underline" href={`/market-planning/targets/${row.id}`}>{row.targetNumber}</Link> },
@@ -126,10 +127,11 @@ function TargetTable({ rows }: { rows: TargetRow[] }) {
   );
 }
 
-function PlanTable({ rows }: { rows: PlanRow[] }) {
+function PlanTable({ rows, loading }: { rows: PlanRow[]; loading?: boolean }) {
   return (
     <DataTable<PlanRow>
       rows={rows}
+      loading={loading}
       empty="No production plans found."
       columns={[
         { key: "planNumber", label: "Plan" },
@@ -158,10 +160,11 @@ function MrpTable({ rows }: { rows: MrpRow[] }) {
   );
 }
 
-function RecommendationTable({ rows }: { rows: RecommendationRow[] }) {
+function RecommendationTable({ rows, loading }: { rows: RecommendationRow[]; loading?: boolean }) {
   return (
     <DataTable<RecommendationRow>
       rows={rows}
+      loading={loading}
       empty="No procurement recommendations found."
       columns={[
         { key: "rawMaterialId", label: "Material", render: (row) => row.rawMaterial?.name ?? row.rawMaterialId },
@@ -176,10 +179,12 @@ function RecommendationTable({ rows }: { rows: RecommendationRow[] }) {
 
 export function MarketTargetListPage() {
   const [rows, setRows] = useState<TargetRow[]>([]);
+  const [loading, setLoading] = useState(true);
   useEffect(() => {
     apiFetch<ApiEnvelope<TargetRow[]>>("/market-planning/targets")
       .then((res) => setRows(res.data ?? []))
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => setLoading(false));
   }, []);
   return (
     <MarketPlanningShell>
@@ -188,7 +193,7 @@ export function MarketTargetListPage() {
         <Link className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" href="/market-planning/targets/create-weekly"><Plus className="h-4 w-4" /> Weekly target</Link>
         <Link className="inline-flex min-h-11 items-center gap-2 rounded-md border border-line px-4 text-sm font-semibold hover:bg-field" href="/market-planning/targets/create-monthly"><Plus className="h-4 w-4" /> Monthly target</Link>
       </div>
-      <TargetTable rows={rows} />
+      <TargetTable rows={rows} loading={loading} />
     </MarketPlanningShell>
   );
 }
@@ -327,9 +332,10 @@ export function TargetAdjustmentPage() {
 
 export function ProductionPlanPage() {
   const [plans, setPlans] = useState<PlanRow[]>([]);
+  const [loading, setLoading] = useState(true);
   const [planId, setPlanId] = useState("");
   const [message, setMessage] = useState("");
-  useEffect(() => { apiFetch<ApiEnvelope<PlanRow[]>>("/market-planning/production-plans").then((res) => setPlans(res.data ?? [])).catch(() => undefined); }, []);
+  useEffect(() => { apiFetch<ApiEnvelope<PlanRow[]>>("/market-planning/production-plans").then((res) => setPlans(res.data ?? [])).catch(() => undefined).finally(() => setLoading(false)); }, []);
   async function calculate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const res = await apiFetch<ApiEnvelope<MrpRow>>(`/market-planning/production-plans/${planId}/mrp`, { method: "POST", body: JSON.stringify({}) });
@@ -343,7 +349,7 @@ export function ProductionPlanPage() {
         <button className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" type="submit"><PackageCheck className="h-4 w-4" /> Calculate MRP</button>
         {message && <span className="text-sm font-semibold text-emerald-700">{message}</span>}
       </form>
-      <PlanTable rows={plans} />
+      <PlanTable rows={plans} loading={loading} />
     </MarketPlanningShell>
   );
 }
@@ -378,6 +384,7 @@ export function InventoryAvailabilityCheckPage() {
 
 export function ProcurementRecommendationPage({ convert = false }: { convert?: boolean }) {
   const [rows, setRows] = useState<RecommendationRow[]>([]);
+  const [loading, setLoading] = useState(true);
   const [mrpId, setMrpId] = useState("");
   const [recommendationId, setRecommendationId] = useState("");
   const [message, setMessage] = useState("");
@@ -385,7 +392,7 @@ export function ProcurementRecommendationPage({ convert = false }: { convert?: b
     const res = await apiFetch<ApiEnvelope<RecommendationRow[]>>("/market-planning/recommendations");
     setRows(res.data ?? []);
   }
-  useEffect(() => { load().catch(() => undefined); }, []);
+  useEffect(() => { load().catch(() => undefined).finally(() => setLoading(false)); }, []);
   async function generate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     await apiFetch(`/market-planning/mrp/${mrpId}/recommendations`, { method: "POST", body: JSON.stringify({ notes: "Generated from MRP shortage" }) });
@@ -412,7 +419,7 @@ export function ProcurementRecommendationPage({ convert = false }: { convert?: b
           <button className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" type="submit"><ShoppingCart className="h-4 w-4" /> Generate recommendations</button>
         </form>
       )}
-      <RecommendationTable rows={rows} />
+      <RecommendationTable rows={rows} loading={loading} />
     </MarketPlanningShell>
   );
 }

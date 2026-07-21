@@ -71,10 +71,10 @@ export class InventoryService {
     const cached = this.lookupCache.get<object>(cacheKey);
     if (cached) return cached;
     const [warehouses, products, farms, productionSites, items] = await Promise.all([
-      this.prisma.warehouse.findMany({ where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess ? {} : { id: { in: user.warehouseIds } }) }, select: { id: true, branchId: true, farmId: true, productionSiteId: true, code: true, name: true }, orderBy: { name: "asc" } }),
+      this.prisma.warehouse.findMany({ where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess || user.warehouseIds.length === 0 ? {} : { id: { in: user.warehouseIds } }) }, select: { id: true, branchId: true, farmId: true, productionSiteId: true, code: true, name: true }, orderBy: { name: "asc" } }),
       this.prisma.product.findMany({ where: { companyId: user.companyId, deletedAt: null }, select: { id: true, sku: true, name: true, type: true, uomId: true }, orderBy: { name: "asc" } }),
-      this.prisma.farm.findMany({ where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess ? {} : { id: { in: user.farmIds } }) }, select: { id: true, code: true, name: true } }),
-      this.prisma.productionSite.findMany({ where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess ? {} : { id: { in: user.productionSiteIds } }) }, select: { id: true, code: true, name: true } }),
+      this.prisma.farm.findMany({ where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess || user.farmIds.length === 0 ? {} : { id: { in: user.farmIds } }) }, select: { id: true, code: true, name: true } }),
+      this.prisma.productionSite.findMany({ where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess || user.productionSiteIds.length === 0 ? {} : { id: { in: user.productionSiteIds } }) }, select: { id: true, code: true, name: true } }),
       this.prisma.inventoryItem.findMany({ where: this.itemWhere(user, {}), include: { product: { select: { sku: true, name: true } }, warehouse: { select: { code: true, name: true } } }, orderBy: { createdAt: "desc" }, take: 200 })
     ]);
     const result = { data: { warehouses, products, farms, productionSites, items } };

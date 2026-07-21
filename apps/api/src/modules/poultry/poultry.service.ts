@@ -798,21 +798,21 @@ export class PoultryService {
   }
 
   private farmWhere(user: AuthenticatedUser) {
-    return { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess ? {} : { id: { in: user.farmIds } }) };
+    return { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess || user.farmIds.length === 0 ? {} : { id: { in: user.farmIds } }) };
   }
 
   private houseWhere(user: AuthenticatedUser) {
-    return { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess ? {} : { farmId: { in: user.farmIds } }) };
+    return { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess || user.farmIds.length === 0 ? {} : { farmId: { in: user.farmIds } }) };
   }
 
   private batchWhere(user: AuthenticatedUser) {
-    return { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess ? {} : { farmId: { in: user.farmIds } }) };
+    return { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess || user.farmIds.length === 0 ? {} : { farmId: { in: user.farmIds } }) };
   }
 
   private recordWhere(user: AuthenticatedUser, query: PoultryQueryDto) {
     // Build farm scope without a key collision: the old code set farmId: query.farmId then
     // unconditionally overwrote it with farmId: { in: user.farmIds } via object spread.
-    const farmFilter: Record<string, unknown> = user.hasGlobalAccess
+    const farmFilter: Record<string, unknown> = user.hasGlobalAccess || user.farmIds.length === 0
       ? (query.farmId ? { farmId: query.farmId } : {})
       : {
           farmId:
