@@ -379,11 +379,13 @@ export function QualityTemplatesPage() {
   const [params, setParams] = useState<{ paramCode: string; name: string; paramType: string; unit: string; minValue: string; maxValue: string; isRequired: boolean }[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
 
   function load() {
+    setLoading(true);
     const p = new URLSearchParams();
     if (checkType) p.set("checkType", checkType);
-    apiFetch<ApiEnvelope<Template[]>>(`/quality/templates?${p}`).then((r) => setRows(r.data ?? [])).catch(() => undefined);
+    apiFetch<ApiEnvelope<Template[]>>(`/quality/templates?${p}`).then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
   }
 
   useEffect(() => { load(); }, [checkType]);
@@ -516,6 +518,7 @@ export function QualityTemplatesPage() {
           ]}
           rows={rows as Record<string, unknown>[]}
           empty="No templates yet"
+          loading={loading}
         />
       </div>
     </AppShell>
@@ -536,14 +539,16 @@ export function QualityChecksPage({ filterType }: { filterType?: string }) {
   const [checkType, setCheckType] = useState(filterType ?? "");
   const [status, setStatus] = useState("");
   const [decision, setDecision] = useState("");
+  const [loading, setLoading] = useState(true);
 
   function load() {
+    setLoading(true);
     const p = new URLSearchParams();
     if (checkType) p.set("checkType", checkType);
     if (status) p.set("status", status);
     if (decision) p.set("decision", decision);
     apiFetch<ApiEnvelope<{ total: number; items: QualityCheck[] }>>(`/quality/checks?${p}`)
-      .then((r) => setData(r.data ?? { total: 0, items: [] })).catch(() => undefined);
+      .then((r) => setData(r.data ?? { total: 0, items: [] })).catch(() => undefined).finally(() => setLoading(false));
   }
 
   useEffect(() => { load(); }, [checkType, status, decision]);
@@ -592,6 +597,7 @@ export function QualityChecksPage({ filterType }: { filterType?: string }) {
           ]}
           rows={data.items as Record<string, unknown>[]}
           empty="No quality checks"
+          loading={loading}
         />
       </div>
     </AppShell>
@@ -1149,8 +1155,9 @@ type RejectedBatch = {
 
 export function RejectedBatchesPage() {
   const [rows, setRows] = useState<RejectedBatch[]>([]);
+  const [loading, setLoading] = useState(true);
   useEffect(() => {
-    apiFetch<ApiEnvelope<RejectedBatch[]>>("/quality/rejected-batches").then((r) => setRows(r.data ?? [])).catch(() => undefined);
+    apiFetch<ApiEnvelope<RejectedBatch[]>>("/quality/rejected-batches").then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
   }, []);
 
   return (
@@ -1172,6 +1179,7 @@ export function RejectedBatchesPage() {
           ]}
           rows={rows as Record<string, unknown>[]}
           empty="No rejected batches"
+          loading={loading}
         />
       </div>
     </AppShell>
@@ -1188,8 +1196,9 @@ type ApprovedBatch = {
 
 export function ApprovedBatchesPage() {
   const [rows, setRows] = useState<ApprovedBatch[]>([]);
+  const [loading, setLoading] = useState(true);
   useEffect(() => {
-    apiFetch<ApiEnvelope<ApprovedBatch[]>>("/quality/approved-batches").then((r) => setRows(r.data ?? [])).catch(() => undefined);
+    apiFetch<ApiEnvelope<ApprovedBatch[]>>("/quality/approved-batches").then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
   }, []);
 
   return (
@@ -1210,6 +1219,7 @@ export function ApprovedBatchesPage() {
           ]}
           rows={rows as Record<string, unknown>[]}
           empty="No approved batches"
+          loading={loading}
         />
       </div>
     </AppShell>
@@ -1231,9 +1241,11 @@ export function LabReportsPage() {
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
 
   function load() {
-    apiFetch<ApiEnvelope<LabReport[]>>("/quality/lab-reports").then((r) => setRows(r.data ?? [])).catch(() => undefined);
+    setLoading(true);
+    apiFetch<ApiEnvelope<LabReport[]>>("/quality/lab-reports").then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
   }
 
   useEffect(() => {
@@ -1307,6 +1319,7 @@ export function LabReportsPage() {
           ]}
           rows={rows as Record<string, unknown>[]}
           empty="No lab reports uploaded"
+          loading={loading}
         />
       </div>
     </AppShell>
@@ -1333,11 +1346,13 @@ export function CorrectiveActionsPage() {
   const [resolution, setResolution] = useState("");
   const [verifyId, setVerifyId] = useState("");
   const [verificationNotes, setVerificationNotes] = useState("");
+  const [loading, setLoading] = useState(true);
 
   function load() {
+    setLoading(true);
     const p = new URLSearchParams();
     if (status) p.set("status", status);
-    apiFetch<ApiEnvelope<CorrectiveAction[]>>(`/quality/corrective-actions?${p}`).then((r) => setRows(r.data ?? [])).catch(() => undefined);
+    apiFetch<ApiEnvelope<CorrectiveAction[]>>(`/quality/corrective-actions?${p}`).then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
   }
 
   useEffect(() => { load(); }, [status]);
@@ -1473,6 +1488,7 @@ export function CorrectiveActionsPage() {
           ]}
           rows={rows as Record<string, unknown>[]}
           empty="No corrective actions"
+          loading={loading}
         />
       </div>
     </AppShell>

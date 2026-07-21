@@ -630,19 +630,22 @@ export function ExpenseListPage() {
   const [status, setStatus] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [loading, setLoading] = useState(true);
   const [actionErr, setActionErr] = useState("");
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [rejecting, setRejecting] = useState(false);
 
   function load() {
+    setLoading(true);
     const params = new URLSearchParams();
     if (status) params.set("status", status);
     if (startDate) params.set("startDate", startDate);
     if (endDate) params.set("endDate", endDate);
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>(`/finance/expenses?${params}`)
       .then((r) => setExpenses(r.data ?? []))
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => setLoading(false));
   }
 
   useEffect(() => { load(); }, [status, startDate, endDate]);
@@ -714,6 +717,7 @@ export function ExpenseListPage() {
           }
         ]}
         rows={expenses}
+        loading={loading}
         empty="No expenses found."
       />
     </FinanceShell>

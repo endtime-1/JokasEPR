@@ -77,12 +77,18 @@ function productBySku(options: SoyaOptions, sku: string) {
 export function SoyaIntakesPage({ create = false }: { create?: boolean }) {
   const options = useSoyaOptions();
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
+  const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({ productionSiteId: "", warehouseId: "", productId: "", receiptNumber: "", supplierName: "", quantityKg: "", unitCost: "", moisturePercent: "", qualityStatus: "APPROVED", receivedAt: today() });
   const beanProducts = products(options, (product) => product.sku?.includes("SOYA-BEANS") ?? false);
 
   async function load() {
-    const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/soya-processing/intakes");
-    setRows(response.data ?? []);
+    setLoading(true);
+    try {
+      const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/soya-processing/intakes");
+      setRows(response.data ?? []);
+    } finally {
+      setLoading(false);
+    }
   }
   useEffect(() => { load().catch(() => undefined); }, []);
 
@@ -108,7 +114,7 @@ export function SoyaIntakesPage({ create = false }: { create?: boolean }) {
           <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white md:col-span-4"><Plus aria-hidden className="h-4 w-4" /> Save intake</button>
         </form>
       ) : <Link className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" href="/soya-processing/intakes/create"><Plus aria-hidden className="h-4 w-4" /> Create intake</Link>}
-      <SimpleRowsTable rows={rows} />
+      <SimpleRowsTable rows={rows} loading={loading} />
     </SoyaProcessingShell>
   );
 }
@@ -116,11 +122,17 @@ export function SoyaIntakesPage({ create = false }: { create?: boolean }) {
 export function SoyaBatchesPage({ create = false }: { create?: boolean }) {
   const options = useSoyaOptions();
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
+  const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({ productionSiteId: "", rawWarehouseId: "", oilWarehouseId: "", cakeWarehouseId: "", intakeId: "", beansUsedKg: "", oilProducedLitres: "", cakeProducedKg: "", wasteKg: "", laborCost: "", packagingCost: "", overheadCost: "", expectedOilSalesValue: "", expectedCakeSalesValue: "", processingDate: today() });
 
   async function load() {
-    const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/soya-processing/batches");
-    setRows(response.data ?? []);
+    setLoading(true);
+    try {
+      const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/soya-processing/batches");
+      setRows(response.data ?? []);
+    } finally {
+      setLoading(false);
+    }
   }
   useEffect(() => { load().catch(() => undefined); }, []);
 
@@ -176,7 +188,7 @@ export function SoyaBatchesPage({ create = false }: { create?: boolean }) {
           <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white md:col-span-4"><Plus aria-hidden className="h-4 w-4" /> Save batch</button>
         </form>
       ) : <Link className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" href="/soya-processing/batches/create"><Plus aria-hidden className="h-4 w-4" /> Create batch</Link>}
-      <SimpleRowsTable rows={rows} />
+      <SimpleRowsTable rows={rows} loading={loading} />
     </SoyaProcessingShell>
   );
 }
@@ -184,10 +196,16 @@ export function SoyaBatchesPage({ create = false }: { create?: boolean }) {
 export function SoyaQualityPage() {
   const options = useSoyaOptions();
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
+  const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({ productionBatchId: "", moisturePercent: "", oilPurityPercent: "", cakeProteinPercent: "", status: "APPROVED", notes: "" });
   async function load() {
-    const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/soya-processing/quality-checks");
-    setRows(response.data ?? []);
+    setLoading(true);
+    try {
+      const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/soya-processing/quality-checks");
+      setRows(response.data ?? []);
+    } finally {
+      setLoading(false);
+    }
   }
   useEffect(() => { load().catch(() => undefined); }, []);
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -206,17 +224,20 @@ export function SoyaQualityPage() {
         <FormField label="Status"><select className={inputClass} value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}><option>APPROVED</option><option>ACCEPTED</option><option>REJECTED</option><option>PENDING</option></select></FormField>
         <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white md:col-span-5"><ShieldCheck aria-hidden className="h-4 w-4" /> Save quality check</button>
       </form>
-      <SimpleRowsTable rows={rows} />
+      <SimpleRowsTable rows={rows} loading={loading} />
     </SoyaProcessingShell>
   );
 }
 
 export function SoyaStockPage({ type }: { type: "oil" | "cake" }) {
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
+  const [loading, setLoading] = useState(true);
   useEffect(() => {
+    setLoading(true);
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>(`/soya-processing/${type}-stock`)
       .then((response) => setRows(response.data ?? []))
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => setLoading(false));
   }, [type]);
   return (
     <SoyaProcessingShell>
@@ -229,7 +250,7 @@ export function SoyaStockPage({ type }: { type: "oil" | "cake" }) {
           {type === "oil" ? "Oil" : "Cake"} stock is added automatically when you post a soya processing batch.
         </p>
       </div>
-      <SimpleRowsTable rows={rows} />
+      <SimpleRowsTable rows={rows} loading={loading} />
     </SoyaProcessingShell>
   );
 }
@@ -237,11 +258,17 @@ export function SoyaStockPage({ type }: { type: "oil" | "cake" }) {
 export function SoyaTransferPage() {
   const options = useSoyaOptions();
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
+  const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({ productionBatchId: "", fromWarehouseId: "", toWarehouseId: "", toProductionSiteId: "", outputType: "CAKE", productId: "", quantity: "", notes: "" });
   const outputProducts = useMemo(() => products(options, (product) => ["SOYA-OIL", "SOYA-CAKE"].includes(product.sku ?? "")), [options]);
   async function load() {
-    const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/soya-processing/transfers");
-    setRows(response.data ?? []);
+    setLoading(true);
+    try {
+      const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/soya-processing/transfers");
+      setRows(response.data ?? []);
+    } finally {
+      setLoading(false);
+    }
   }
   useEffect(() => { load().catch(() => undefined); }, []);
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -261,7 +288,7 @@ export function SoyaTransferPage() {
         <FormField label="Quantity"><input className={inputClass} type="number" value={form.quantity} onChange={(event) => setForm({ ...form, quantity: event.target.value })} required /></FormField>
         <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white md:col-span-5">Create transfer</button>
       </form>
-      <SimpleRowsTable rows={rows} />
+      <SimpleRowsTable rows={rows} loading={loading} />
     </SoyaProcessingShell>
   );
 }
@@ -287,8 +314,8 @@ function SelectField({ label, value, options, onChange }: { label: string; value
   );
 }
 
-function SimpleRowsTable({ rows }: { rows: Record<string, unknown>[] }) {
+function SimpleRowsTable({ rows, loading }: { rows: Record<string, unknown>[]; loading?: boolean }) {
   const keys = Object.keys(rows[0] ?? {}).filter((key) => !["id", "companyId", "branchId", "deletedAt", "updatedAt"].includes(key)).slice(0, 8);
-  return <DataTable rows={rows} empty="No records found" columns={keys.map((key) => ({ key, label: key.replace(/([A-Z])/g, " $1"), render: (row: Record<string, unknown>) => typeof row[key] === "object" && row[key] !== null ? JSON.stringify(row[key]).slice(0, 80) : String(row[key] ?? "-").slice(0, 90) }))} />;
+  return <DataTable rows={rows} empty="No records found" loading={loading} columns={keys.map((key) => ({ key, label: key.replace(/([A-Z])/g, " $1"), render: (row: Record<string, unknown>) => typeof row[key] === "object" && row[key] !== null ? JSON.stringify(row[key]).slice(0, 80) : String(row[key] ?? "-").slice(0, 90) }))} />;
 }
 

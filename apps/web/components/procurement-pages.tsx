@@ -488,12 +488,15 @@ type Supplier = {
 export function SuppliersPage() {
   const [rows, setRows] = useState<Supplier[]>([]);
   const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    setLoading(true);
     const q = search ? `?search=${encodeURIComponent(search)}` : "";
     apiFetch<ApiEnvelope<Supplier[]>>(`/procurement/suppliers${q}`)
       .then((r) => setRows(r.data ?? []))
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => setLoading(false));
   }, [search]);
 
   return (
@@ -542,6 +545,7 @@ export function SuppliersPage() {
               { key: "status", label: "Status", render: (r) => <StatusBadge status={r.status as string} /> },
             ]}
             rows={rows as Record<string, unknown>[]}
+            loading={loading}
             empty="No suppliers found"
           />
         </div>
@@ -686,14 +690,17 @@ type SupplierCategory = { id: string; code: string; name: string; description?: 
 
 export function SupplierCategoriesPage() {
   const [rows, setRows] = useState<SupplierCategory[]>([]);
+  const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({ code: "", name: "", description: "" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
   function load() {
+    setLoading(true);
     apiFetch<ApiEnvelope<SupplierCategory[]>>("/procurement/supplier-categories")
       .then((r) => setRows(r.data ?? []))
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => setLoading(false));
   }
   useEffect(() => { load(); }, []);
 
@@ -758,6 +765,7 @@ export function SupplierCategoriesPage() {
                 { key: "description", label: "Description" },
               ]}
               rows={rows as Record<string, unknown>[]}
+              loading={loading}
               empty="No categories yet"
             />
           </div>
@@ -782,15 +790,18 @@ type PurchaseRequest = {
 
 export function PurchaseRequestsPage() {
   const [rows, setRows] = useState<PurchaseRequest[]>([]);
+  const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [actionErr, setActionErr] = useState("");
 
   function load() {
+    setLoading(true);
     const q = statusFilter ? `?status=${statusFilter}` : "";
     apiFetch<ApiEnvelope<PurchaseRequest[]>>(`/procurement/purchase-requests${q}`)
       .then((r) => setRows(r.data ?? []))
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => setLoading(false));
   }
   useEffect(() => { load(); }, [statusFilter]);
 
@@ -888,6 +899,7 @@ export function PurchaseRequestsPage() {
               },
             ]}
             rows={rows as Record<string, unknown>[]}
+            loading={loading}
             empty="No purchase requests yet"
           />
         </div>
@@ -1052,15 +1064,18 @@ type PurchaseOrder = {
 
 export function PurchaseOrdersPage() {
   const [rows, setRows] = useState<PurchaseOrder[]>([]);
+  const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [actionErr, setActionErr] = useState("");
 
   function load() {
+    setLoading(true);
     const q = statusFilter ? `?status=${statusFilter}` : "";
     apiFetch<ApiEnvelope<PurchaseOrder[]>>(`/procurement/purchase-orders${q}`)
       .then((r) => setRows(r.data ?? []))
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => setLoading(false));
   }
   useEffect(() => { load(); }, [statusFilter]);
 
@@ -1159,6 +1174,7 @@ export function PurchaseOrdersPage() {
               },
             ]}
             rows={rows as Record<string, unknown>[]}
+            loading={loading}
             empty="No purchase orders yet"
           />
         </div>
@@ -1353,15 +1369,18 @@ type GRN = {
 
 export function GRNsPage() {
   const [rows, setRows] = useState<GRN[]>([]);
+  const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [actionErr, setActionErr] = useState("");
 
   function load() {
+    setLoading(true);
     const q = statusFilter ? `?status=${statusFilter}` : "";
     apiFetch<ApiEnvelope<GRN[]>>(`/procurement/grns${q}`)
       .then((r) => setRows(r.data ?? []))
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => setLoading(false));
   }
   useEffect(() => { load(); }, [statusFilter]);
 
@@ -1459,6 +1478,7 @@ export function GRNsPage() {
               },
             ]}
             rows={rows as Record<string, unknown>[]}
+            loading={loading}
             empty="No GRNs yet"
           />
         </div>
@@ -1648,6 +1668,7 @@ type SupplierInvoice = {
 
 export function SupplierInvoicesPage() {
   const [rows, setRows] = useState<SupplierInvoice[]>([]);
+  const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("");
   const [showForm, setShowForm] = useState(false);
   const opts = useProcurementOptions();
@@ -1659,10 +1680,12 @@ export function SupplierInvoicesPage() {
   const [error, setError] = useState("");
 
   function load() {
+    setLoading(true);
     const q = statusFilter ? `?status=${statusFilter}` : "";
     apiFetch<ApiEnvelope<SupplierInvoice[]>>(`/procurement/invoices${q}`)
       .then((r) => setRows(r.data ?? []))
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => setLoading(false));
   }
   useEffect(() => { load(); }, [statusFilter]);
 
@@ -1776,6 +1799,7 @@ export function SupplierInvoicesPage() {
               { key: "status", label: "Status", render: (r) => <StatusBadge status={r.status as string} /> },
             ]}
             rows={rows as Record<string, unknown>[]}
+            loading={loading}
             empty="No invoices yet"
           />
         </div>
@@ -1797,6 +1821,7 @@ type ProcurementPayment = {
 
 export function ProcurementPaymentsPage() {
   const [rows, setRows] = useState<ProcurementPayment[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const opts = useProcurementOptions();
   const [form, setForm] = useState({
@@ -1807,9 +1832,11 @@ export function ProcurementPaymentsPage() {
   const [error, setError] = useState("");
 
   function load() {
+    setLoading(true);
     apiFetch<ApiEnvelope<ProcurementPayment[]>>("/procurement/payments")
       .then((r) => setRows(r.data ?? []))
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => setLoading(false));
   }
   useEffect(() => { load(); }, []);
 
@@ -1922,6 +1949,7 @@ export function ProcurementPaymentsPage() {
               { key: "amount", label: "Amount", render: (r) => money(r.amount) },
             ]}
             rows={rows as Record<string, unknown>[]}
+            loading={loading}
             empty="No payments recorded yet"
           />
         </div>
@@ -1946,6 +1974,7 @@ type PerformanceRecord = {
 
 export function SupplierPerformancePage() {
   const [rows, setRows] = useState<PerformanceRecord[]>([]);
+  const [loading, setLoading] = useState(true);
   const opts = useProcurementOptions();
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({
@@ -1957,9 +1986,11 @@ export function SupplierPerformancePage() {
   const [error, setError] = useState("");
 
   function load() {
+    setLoading(true);
     apiFetch<ApiEnvelope<PerformanceRecord[]>>("/procurement/performance")
       .then((r) => setRows(r.data ?? []))
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => setLoading(false));
   }
   useEffect(() => { load(); }, []);
 
@@ -2091,6 +2122,7 @@ export function SupplierPerformancePage() {
               { key: "lateDeliveries", label: "Late" },
             ]}
             rows={rows as Record<string, unknown>[]}
+            loading={loading}
             empty="No performance records yet"
           />
         </div>
@@ -2113,6 +2145,7 @@ type PriceHistoryRow = {
 
 export function PriceHistoryPage() {
   const [rows, setRows] = useState<PriceHistoryRow[]>([]);
+  const [loading, setLoading] = useState(true);
   const opts = useProcurementOptions();
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ supplierId: "", productName: "", unitPrice: "", currency: "GHS", effectiveDate: "", notes: "" });
@@ -2120,9 +2153,11 @@ export function PriceHistoryPage() {
   const [error, setError] = useState("");
 
   function load() {
+    setLoading(true);
     apiFetch<ApiEnvelope<PriceHistoryRow[]>>("/procurement/price-history")
       .then((r) => setRows(r.data ?? []))
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => setLoading(false));
   }
   useEffect(() => { load(); }, []);
 
@@ -2215,6 +2250,7 @@ export function PriceHistoryPage() {
               { key: "notes", label: "Notes" },
             ]}
             rows={rows as Record<string, unknown>[]}
+            loading={loading}
             empty="No price history yet"
           />
         </div>

@@ -503,11 +503,13 @@ export function CustomersPage({ create = false }: { create?: boolean }) {
   const [form, setForm] = useState({ branchId: "", customerGroupId: "", code: "", name: "", phone: "", email: "", address: "", creditLimit: "" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
 
   async function load() {
+    setLoading(true);
     const p = new URLSearchParams();
     if (search) p.set("search", search);
-    apiFetch<ApiEnvelope<Customer[]>>(`/sales/customers?${p}`).then((r) => setRows(r.data ?? [])).catch(() => undefined);
+    apiFetch<ApiEnvelope<Customer[]>>(`/sales/customers?${p}`).then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
   }
 
   useEffect(() => { void load(); }, [search]);
@@ -599,6 +601,7 @@ export function CustomersPage({ create = false }: { create?: boolean }) {
           ]}
           rows={rows as Record<string, unknown>[]}
           empty="No customers yet"
+          loading={loading}
         />
       </div>
     </AppShell>
@@ -771,11 +774,13 @@ export function OrdersPage({ create = false }: { create?: boolean }) {
   const [items, setItems] = useState<OrderItem[]>([{ productId: "", quantity: "", unitPrice: "", discountAmount: "0" }]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
 
   async function load() {
+    setLoading(true);
     const p = new URLSearchParams();
     if (status) p.set("status", status);
-    apiFetch<ApiEnvelope<SalesOrder[]>>(`/sales/orders?${p}`).then((r) => setRows(r.data ?? [])).catch(() => undefined);
+    apiFetch<ApiEnvelope<SalesOrder[]>>(`/sales/orders?${p}`).then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
   }
 
   useEffect(() => { void load(); }, [status]);
@@ -973,6 +978,7 @@ export function OrdersPage({ create = false }: { create?: boolean }) {
           ]}
           rows={rows as Record<string, unknown>[]}
           empty="No sales orders"
+          loading={loading}
         />
       </div>
     </AppShell>
@@ -990,9 +996,10 @@ export function PaymentsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   async function load() {
-    apiFetch<ApiEnvelope<Payment[]>>("/sales/payments").then((r) => setRows(r.data ?? [])).catch(() => undefined);
+    apiFetch<ApiEnvelope<Payment[]>>("/sales/payments").then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
   }
 
   useEffect(() => { void load(); }, []);
@@ -1085,6 +1092,7 @@ export function PaymentsPage() {
           ]}
           rows={rows as Record<string, unknown>[]}
           empty="No payments recorded"
+          loading={loading}
         />
       </div>
     </AppShell>
@@ -1102,9 +1110,10 @@ export function ReturnsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   async function load() {
-    apiFetch<ApiEnvelope<SalesReturn[]>>("/sales/returns").then((r) => setRows(r.data ?? [])).catch(() => undefined);
+    apiFetch<ApiEnvelope<SalesReturn[]>>("/sales/returns").then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
   }
 
   useEffect(() => { void load(); }, []);
@@ -1201,6 +1210,7 @@ export function ReturnsPage() {
           ]}
           rows={rows as Record<string, unknown>[]}
           empty="No sales returns"
+          loading={loading}
         />
       </div>
     </AppShell>

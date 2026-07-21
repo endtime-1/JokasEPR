@@ -459,11 +459,17 @@ export function MaintenanceDashboardPage() {
 export function MachinesPage({ create = false }: { create?: boolean }) {
   const options = useOptions();
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
+  const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({ branchId: "", farmId: "", warehouseId: "", productionSiteId: "", code: "", name: "", machineType: "FEED_MIXER", manufacturer: "", serialNumber: "", capacity: "", location: "" });
   const [submitError, setSubmitError] = useState("");
   async function load() {
-    const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/machines");
-    setRows(response.data ?? []);
+    setLoading(true);
+    try {
+      const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/machines");
+      setRows(response.data ?? []);
+    } finally {
+      setLoading(false);
+    }
   }
   useEffect(() => { load().catch(() => undefined); }, []);
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -501,7 +507,7 @@ export function MachinesPage({ create = false }: { create?: boolean }) {
           {submitError && <p className="col-span-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>}
         </form>
       ) : <Link className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" href="/maintenance/machines/create"><Plus aria-hidden className="h-4 w-4" /> Create machine</Link>}
-      <SimpleRowsTable rows={rows} />
+      <SimpleRowsTable rows={rows} loading={loading} />
     </AppShell>
   );
 }
@@ -529,12 +535,18 @@ export function MachineDetailsPage({ id }: { id: string }) {
 export function SchedulePage() {
   const options = useOptions();
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
+  const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({ branchId: "", machineId: "", title: "", maintenanceType: "PREVENTIVE", priority: "MEDIUM", frequencyDays: "", nextDueDate: "", instructions: "" });
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   async function load() {
-    const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/schedules");
-    setRows(response.data ?? []);
+    setLoading(true);
+    try {
+      const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/schedules");
+      setRows(response.data ?? []);
+    } finally {
+      setLoading(false);
+    }
   }
   useEffect(() => { load().catch(() => undefined); }, []);
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -568,7 +580,7 @@ export function SchedulePage() {
       </button>
       {submitError && <p className="col-span-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>}
       </form>
-      <SimpleRowsTable rows={rows} />
+      <SimpleRowsTable rows={rows} loading={loading} />
     </AppShell>
   );
 }
@@ -576,12 +588,18 @@ export function SchedulePage() {
 export function BreakdownPage() {
   const options = useOptions();
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
+  const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({ machineId: "", severity: "MEDIUM", description: "", rootCause: "" });
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   async function load() {
-    const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/breakdowns");
-    setRows(response.data ?? []);
+    setLoading(true);
+    try {
+      const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/breakdowns");
+      setRows(response.data ?? []);
+    } finally {
+      setLoading(false);
+    }
   }
   useEffect(() => { load().catch(() => undefined); }, []);
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -611,7 +629,7 @@ export function BreakdownPage() {
         </button>
         {submitError && <p className="col-span-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>}
       </form>
-      <SimpleRowsTable rows={rows} />
+      <SimpleRowsTable rows={rows} loading={loading} />
     </AppShell>
   );
 }
@@ -619,12 +637,18 @@ export function BreakdownPage() {
 export function SparePartsPage() {
   const options = useOptions();
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
+  const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({ warehouseId: "", productId: "", machineId: "", quantity: "", unitCost: "", notes: "" });
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   async function load() {
-    const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/spare-parts");
-    setRows(response.data ?? []);
+    setLoading(true);
+    try {
+      const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/spare-parts");
+      setRows(response.data ?? []);
+    } finally {
+      setLoading(false);
+    }
   }
   useEffect(() => { load().catch(() => undefined); }, []);
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -656,32 +680,37 @@ export function SparePartsPage() {
         </button>
         {submitError && <p className="col-span-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>}
       </form>
-      <SimpleRowsTable rows={rows} />
+      <SimpleRowsTable rows={rows} loading={loading} />
     </AppShell>
   );
 }
 
 export function MaintenanceListPage({ title, endpoint, subtitle }: { title: string; endpoint: string; subtitle: string }) {
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
+  const [loading, setLoading] = useState(true);
   useEffect(() => {
+    setLoading(true);
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>(endpoint)
       .then((response) => setRows(response.data ?? []))
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => setLoading(false));
   }, [endpoint]);
   return (
     <AppShell>
       <PageHeader title={title} subtitle={subtitle} />
-      <SimpleRowsTable rows={rows} />
+      <SimpleRowsTable rows={rows} loading={loading} />
     </AppShell>
   );
 }
 
 export function MaintenanceCostReportPage() {
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
+  const [loading, setLoading] = useState(true);
   useEffect(() => {
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/costs")
       .then((response) => setRows(response.data ?? []))
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => setLoading(false));
   }, []);
   return (
     <AppShell>
@@ -689,7 +718,7 @@ export function MaintenanceCostReportPage() {
       <button className="mb-6 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" onClick={() => downloadReport("/maintenance/reports/costs.csv", "maintenance-costs.csv")}>
         <Download aria-hidden className="h-4 w-4" /> Download maintenance costs CSV
       </button>
-      <SimpleRowsTable rows={rows} />
+      <SimpleRowsTable rows={rows} loading={loading} />
     </AppShell>
   );
 }
@@ -713,7 +742,7 @@ function TextField({ label, value, onChange, type = "text", required = false }: 
   );
 }
 
-function SimpleRowsTable({ rows }: { rows: Record<string, unknown>[] }) {
+function SimpleRowsTable({ rows, loading }: { rows: Record<string, unknown>[]; loading?: boolean }) {
   const keys = Object.keys(rows[0] ?? {}).filter((key) => !["id", "companyId", "branchId", "deletedAt", "updatedAt"].includes(key)).slice(0, 8);
-  return <DataTable rows={rows} empty="No records found" columns={keys.map((key) => ({ key, label: key.replace(/([A-Z])/g, " $1"), render: (row: Record<string, unknown>) => typeof row[key] === "object" && row[key] !== null ? JSON.stringify(row[key]).slice(0, 80) : String(row[key] ?? "-").slice(0, 90) }))} />;
+  return <DataTable rows={rows} empty="No records found" loading={loading} columns={keys.map((key) => ({ key, label: key.replace(/([A-Z])/g, " $1"), render: (row: Record<string, unknown>) => typeof row[key] === "object" && row[key] !== null ? JSON.stringify(row[key]).slice(0, 80) : String(row[key] ?? "-").slice(0, 90) }))} />;
 }

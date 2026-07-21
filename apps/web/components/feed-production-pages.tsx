@@ -150,10 +150,15 @@ function number(value: unknown) {
 
 export function FeedFormulaListPage() {
   const [rows, setRows] = useState<FormulaRow[]>([]);
+  const [loading, setLoading] = useState(true);
 
   async function load() {
-    const response = await apiFetch<ApiEnvelope<FormulaRow[]>>("/feed-production/formulas");
-    setRows(response.data ?? []);
+    try {
+      const response = await apiFetch<ApiEnvelope<FormulaRow[]>>("/feed-production/formulas");
+      setRows(response.data ?? []);
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -166,7 +171,7 @@ export function FeedFormulaListPage() {
       <Link className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" href="/feed-production/formulas/create">
         <Plus aria-hidden className="h-4 w-4" /> Create formula
       </Link>
-      <FormulaTable rows={rows} />
+      <FormulaTable rows={rows} loading={loading} />
     </FeedMillShell>
   );
 }
@@ -510,10 +515,11 @@ export function FormulaBuilderPage() {
   );
 }
 
-function FormulaTable({ rows }: { rows: FormulaRow[] }) {
+function FormulaTable({ rows, loading }: { rows: FormulaRow[]; loading?: boolean }) {
   return (
     <DataTable
       rows={rows}
+      loading={loading}
       empty="No feed formulas found"
       columns={[
         { key: "code", label: "Formula", render: (row) => <Link className="font-semibold text-brand" href={`/feed-production/formulas/${row.id}`}>{row.code}</Link> },
@@ -1018,14 +1024,20 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
 export function FeedProductionOrdersPage({ create = false }: { create?: boolean }) {
   const options = useFeedOptions();
   const [rows, setRows] = useState<OrderRow[]>([]);
+  const [loading, setLoading] = useState(true);
   const [form, setForm] = useState<OrderFormState>({ productionSiteId: "", formulaId: "", plannedQuantityKg: "", scheduledDate: today(), rawMaterialWarehouseId: "", notes: "" });
   const [submitErr, setSubmitErr] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [actionErr, setActionErr] = useState("");
 
   async function load() {
-    const response = await apiFetch<ApiEnvelope<OrderRow[]>>("/feed-production/orders");
-    setRows(response.data ?? []);
+    setLoading(true);
+    try {
+      const response = await apiFetch<ApiEnvelope<OrderRow[]>>("/feed-production/orders");
+      setRows(response.data ?? []);
+    } finally {
+      setLoading(false);
+    }
   }
   useEffect(() => { load().catch(() => undefined); }, []);
 
@@ -1088,7 +1100,7 @@ export function FeedProductionOrdersPage({ create = false }: { create?: boolean 
           <Plus aria-hidden className="h-4 w-4" /> Create order
         </Link>
       )}
-      <OrderTable rows={rows} onApprove={approveOrder} />
+      <OrderTable rows={rows} loading={loading} onApprove={approveOrder} />
     </FeedMillShell>
   );
 }
@@ -1115,7 +1127,7 @@ function OrderForm({ options, form, setForm, submit, submitting }: { options: Fe
   );
 }
 
-function OrderTable({ rows, onApprove }: { rows: OrderRow[]; onApprove?: (id: string) => Promise<void> }) {
+function OrderTable({ rows, loading, onApprove }: { rows: OrderRow[]; loading?: boolean; onApprove?: (id: string) => Promise<void> }) {
   const [approvingId, setApprovingId] = useState<string | null>(null);
 
   async function handleApprove(id: string) {
@@ -1124,7 +1136,7 @@ function OrderTable({ rows, onApprove }: { rows: OrderRow[]; onApprove?: (id: st
   }
 
   return (
-    <DataTable rows={rows} empty="No feed production orders found" columns={[
+    <DataTable rows={rows} loading={loading} empty="No feed production orders found" columns={[
       { key: "order", label: "Order #", render: (row) => <span className="font-mono text-xs font-semibold">{row.orderNumber}</span> },
       { key: "site", label: "Site", render: (row) => row.productionSite?.name ?? "-" },
       { key: "formula", label: "Formula", render: (row) => row.formula?.name ?? "-" },
@@ -1155,11 +1167,13 @@ function OrderTable({ rows, onApprove }: { rows: OrderRow[]; onApprove?: (id: st
 
 export function FeedBatchListPage() {
   const [rows, setRows] = useState<BatchRow[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     apiFetch<ApiEnvelope<BatchRow[]>>("/feed-production/batches")
       .then((res) => setRows(res.data ?? []))
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => setLoading(false));
   }, []);
 
   const totalKg = rows.reduce((s, r) => s + Number(r.producedQuantityKg), 0);
@@ -1183,6 +1197,7 @@ export function FeedBatchListPage() {
       </div>
       <DataTable
         rows={rows}
+        loading={loading}
         empty="No production batches found"
         columns={[
           { key: "batch", label: "Batch #", render: (r) => <Link className="font-semibold text-brand" href={`/feed-production/batches/${r.id}`}>{r.batchNumber}</Link> },
@@ -1778,11 +1793,13 @@ type UsageRow = {
 
 export function FeedRawMaterialUsagePage() {
   const [rows, setRows] = useState<UsageRow[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     apiFetch<ApiEnvelope<UsageRow[]>>("/feed-production/raw-material-usage")
       .then((res) => setRows(res.data ?? []))
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => setLoading(false));
   }, []);
 
   const totalKg = rows.reduce((s, r) => s + Number(r.quantityKg), 0);
@@ -1807,6 +1824,7 @@ export function FeedRawMaterialUsagePage() {
       </div>
       <DataTable
         rows={rows}
+        loading={loading}
         empty="No raw material usage records found"
         columns={[
           { key: "ingredient", label: "Ingredient", render: (r) => r.rawMaterial?.name ?? "-" },
@@ -1837,13 +1855,19 @@ type QcRow = {
 export function FeedQualityControlPage() {
   const options = useFeedOptions();
   const [rows, setRows] = useState<QcRow[]>([]);
+  const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({ productionBatchId: "", moisturePercent: "", proteinPercent: "", textureNotes: "" });
   const [submitting, setSubmitting] = useState(false);
   const [submitErr, setSubmitErr] = useState("");
 
   async function load() {
-    const response = await apiFetch<ApiEnvelope<QcRow[]>>("/feed-production/quality-checks");
-    setRows(response.data ?? []);
+    setLoading(true);
+    try {
+      const response = await apiFetch<ApiEnvelope<QcRow[]>>("/feed-production/quality-checks");
+      setRows(response.data ?? []);
+    } finally {
+      setLoading(false);
+    }
   }
   useEffect(() => { load().catch(() => undefined); }, []);
 
@@ -1904,6 +1928,7 @@ export function FeedQualityControlPage() {
       </div>
       <DataTable
         rows={rows}
+        loading={loading}
         empty="No quality checks recorded"
         columns={[
           { key: "batch", label: "Batch", render: (r) => r.productionBatch?.batchNumber ?? "-" },
@@ -1930,10 +1955,12 @@ type StockRow = {
 
 export function FinishedFeedInventoryPage() {
   const [rows, setRows] = useState<StockRow[]>([]);
+  const [loading, setLoading] = useState(true);
   useEffect(() => {
     apiFetch<ApiEnvelope<StockRow[]>>("/feed-production/finished-feed-stock")
       .then((res) => setRows(res.data ?? []))
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => setLoading(false));
   }, []);
 
   const totalKg = rows.reduce((s, r) => s + Number(r.quantityKg), 0);
@@ -1958,6 +1985,7 @@ export function FinishedFeedInventoryPage() {
       </div>
       <DataTable
         rows={rows}
+        loading={loading}
         empty="No finished feed stock found"
         columns={[
           { key: "batch", label: "Batch", render: (r) => r.productionBatch?.batchNumber ?? "-" },
@@ -1987,14 +2015,20 @@ type TransferRow = {
 export function InternalFeedTransferPage() {
   const options = useFeedOptions();
   const [rows, setRows] = useState<TransferRow[]>([]);
+  const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({ productionBatchId: "", fromWarehouseId: "", toFarmId: "", toPoultryHouseId: "", quantityKg: "", notes: "" });
   const [submitting, setSubmitting] = useState(false);
   const [submitErr, setSubmitErr] = useState("");
   const houses = useMemo(() => options.poultryHouses.filter((house) => !form.toFarmId || house.farmId === form.toFarmId), [options.poultryHouses, form.toFarmId]);
 
   async function load() {
-    const response = await apiFetch<ApiEnvelope<TransferRow[]>>("/feed-production/transfers");
-    setRows(response.data ?? []);
+    setLoading(true);
+    try {
+      const response = await apiFetch<ApiEnvelope<TransferRow[]>>("/feed-production/transfers");
+      setRows(response.data ?? []);
+    } finally {
+      setLoading(false);
+    }
   }
   useEffect(() => { load().catch(() => undefined); }, []);
 
@@ -2056,6 +2090,7 @@ export function InternalFeedTransferPage() {
       </div>
       <DataTable
         rows={rows}
+        loading={loading}
         empty="No transfers recorded"
         columns={[
           { key: "batch", label: "Batch", render: (r) => r.productionBatch?.batchNumber ?? "-" },
@@ -2186,13 +2221,19 @@ type PackagingRow = {
 export function FeedPackagingRecordPage() {
   const options = useFeedOptions();
   const [rows, setRows] = useState<PackagingRow[]>([]);
+  const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({ productionBatchId: "", packageSizeKg: "50", packageCount: "", packagedAt: today() });
   const [submitting, setSubmitting] = useState(false);
   const [submitErr, setSubmitErr] = useState("");
 
   async function load() {
-    const response = await apiFetch<ApiEnvelope<PackagingRow[]>>("/feed-production/packaging-records");
-    setRows(response.data ?? []);
+    setLoading(true);
+    try {
+      const response = await apiFetch<ApiEnvelope<PackagingRow[]>>("/feed-production/packaging-records");
+      setRows(response.data ?? []);
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => { load().catch(() => undefined); }, []);
@@ -2282,6 +2323,7 @@ export function FeedPackagingRecordPage() {
       </div>
       <DataTable
         rows={rows}
+        loading={loading}
         empty="No packaging records yet"
         columns={[
           { key: "batch", label: "Batch", render: (row) => row.productionBatch?.batchNumber ?? "-" },

@@ -301,13 +301,15 @@ export function EmployeeListPage() {
   const [rows, setRows] = useState<Employee[]>([]);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
+  const [loading, setLoading] = useState(true);
   const [deleteError, setDeleteError] = useState("");
 
   function load() {
+    setLoading(true);
     const params = new URLSearchParams();
     if (search) params.set("search", search);
     if (status) params.set("status", status);
-    apiFetch<ApiEnvelope<Employee[]>>(`/hr/employees?${params}`).then((r) => setRows(r.data ?? [])).catch(() => undefined);
+    apiFetch<ApiEnvelope<Employee[]>>(`/hr/employees?${params}`).then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
   }
 
   useEffect(() => { load(); }, [search, status]);
@@ -379,6 +381,7 @@ export function EmployeeListPage() {
             )},
           ]}
           rows={rows as Record<string, any>[]}
+          loading={loading}
           empty="No employees found"
         />
       </div>
@@ -975,12 +978,14 @@ export function AttendancePage() {
   const opts = useHROptions();
   const [dateFilter, setDateFilter] = useState(new Date().toISOString().slice(0, 10));
   const [form, setForm] = useState({ employeeId: "", date: new Date().toISOString().slice(0, 10), checkInTime: "", checkOutTime: "", status: "PRESENT", shiftId: "", notes: "" });
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
 
   function load() {
-    apiFetch<ApiEnvelope<AttendanceRow[]>>(`/hr/attendance?dateFrom=${dateFilter}&dateTo=${dateFilter}`).then((r) => setRows(r.data ?? [])).catch(() => undefined);
+    setLoading(true);
+    apiFetch<ApiEnvelope<AttendanceRow[]>>(`/hr/attendance?dateFrom=${dateFilter}&dateTo=${dateFilter}`).then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
   }
 
   useEffect(() => { load(); }, [dateFilter]);
@@ -1074,6 +1079,7 @@ export function AttendancePage() {
             { key: "status", label: "Status", render: (r) => <StatusBadge status={r.status as string} /> },
           ]}
           rows={rows as Record<string, any>[]}
+          loading={loading}
           empty="No attendance records for this date"
         />
       </div>
@@ -1087,13 +1093,15 @@ type Shift = { id: string; code: string; name: string; startTime: string; endTim
 
 export function ShiftSchedulePage() {
   const [rows, setRows] = useState<Shift[]>([]);
+  const [loading, setLoading] = useState(true);
   const opts = useHROptions();
   const [form, setForm] = useState({ code: "", name: "", startTime: "08:00", endTime: "17:00", branchId: "", notes: "" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
   function load() {
-    apiFetch<ApiEnvelope<Shift[]>>("/hr/shifts").then((r) => setRows(r.data ?? [])).catch(() => undefined);
+    setLoading(true);
+    apiFetch<ApiEnvelope<Shift[]>>("/hr/shifts").then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
   }
 
   useEffect(() => { load(); }, []);
@@ -1159,6 +1167,7 @@ export function ShiftSchedulePage() {
                 ) : null },
               ]}
               rows={rows as Record<string, any>[]}
+              loading={loading}
               empty="No shifts defined"
             />
           </div>
@@ -1358,6 +1367,7 @@ type PayrollRow = { id: string; reference: string; period: string; grossPay: num
 
 export function PayrollPage() {
   const [rows, setRows] = useState<PayrollRow[]>([]);
+  const [loading, setLoading] = useState(true);
   const opts = useHROptions();
   const [form, setForm] = useState({ employeeId: "", period: "", periodStart: "", periodEnd: "", basicSalary: "", allowances: "0", deductions: "0", taxDeduction: "0", ssnit: "0", paymentMethod: "BANK_TRANSFER", notes: "" });
   const [saving, setSaving] = useState(false);
@@ -1365,7 +1375,8 @@ export function PayrollPage() {
   const [showForm, setShowForm] = useState(false);
 
   function load() {
-    apiFetch<ApiEnvelope<PayrollRow[]>>("/hr/payroll").then((r) => setRows(r.data ?? [])).catch(() => undefined);
+    setLoading(true);
+    apiFetch<ApiEnvelope<PayrollRow[]>>("/hr/payroll").then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
   }
 
   useEffect(() => { load(); }, []);
@@ -1487,6 +1498,7 @@ export function PayrollPage() {
             },
           ]}
           rows={rows as Record<string, any>[]}
+          loading={loading}
           empty="No payroll records"
         />
       </div>
@@ -1500,6 +1512,7 @@ type TrainingRow = { id: string; title: string; trainer?: string; trainingDate: 
 
 export function TrainingPage() {
   const [rows, setRows] = useState<TrainingRow[]>([]);
+  const [loading, setLoading] = useState(true);
   const opts = useHROptions();
   const [form, setForm] = useState({ employeeId: "", title: "", description: "", trainer: "", trainingDate: "", durationHours: "", outcome: "ONGOING", certificate: "", notes: "" });
   const [saving, setSaving] = useState(false);
@@ -1507,7 +1520,8 @@ export function TrainingPage() {
   const [showForm, setShowForm] = useState(false);
 
   function load() {
-    apiFetch<ApiEnvelope<TrainingRow[]>>("/hr/training").then((r) => setRows(r.data ?? [])).catch(() => undefined);
+    setLoading(true);
+    apiFetch<ApiEnvelope<TrainingRow[]>>("/hr/training").then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
   }
 
   useEffect(() => { load(); }, []);
@@ -1575,6 +1589,7 @@ export function TrainingPage() {
             { key: "outcome", label: "Outcome", render: (r) => <StatusBadge status={r.outcome as string} /> },
           ]}
           rows={rows as Record<string, any>[]}
+          loading={loading}
           empty="No training records"
         />
       </div>
@@ -1588,6 +1603,7 @@ type PerfRow = { id: string; period: string; overallRating: string; attendanceSc
 
 export function PerformancePage() {
   const [rows, setRows] = useState<PerfRow[]>([]);
+  const [loading, setLoading] = useState(true);
   const opts = useHROptions();
   const [form, setForm] = useState({ employeeId: "", period: "", overallRating: "MEETS_EXPECTATIONS", attendanceScore: "0", taskCompletionScore: "0", qualityScore: "0", teamworkScore: "0", comments: "", goals: "" });
   const [saving, setSaving] = useState(false);
@@ -1595,7 +1611,8 @@ export function PerformancePage() {
   const [showForm, setShowForm] = useState(false);
 
   function load() {
-    apiFetch<ApiEnvelope<PerfRow[]>>("/hr/performance").then((r) => setRows(r.data ?? [])).catch(() => undefined);
+    setLoading(true);
+    apiFetch<ApiEnvelope<PerfRow[]>>("/hr/performance").then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
   }
 
   useEffect(() => { load(); }, []);
@@ -1686,6 +1703,7 @@ export function PerformancePage() {
             },
           ]}
           rows={rows as Record<string, any>[]}
+          loading={loading}
           empty="No performance records"
         />
       </div>
@@ -1814,6 +1832,7 @@ type LeaveRow = {
 
 export function LeaveRequestsPage() {
   const [rows, setRows] = useState<LeaveRow[]>([]);
+  const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ leaveType: "ANNUAL", startDate: "", endDate: "", daysRequested: "1", reason: "" });
@@ -1823,9 +1842,10 @@ export function LeaveRequestsPage() {
   const [reviewNote, setReviewNote] = useState("");
 
   function load() {
+    setLoading(true);
     const params = new URLSearchParams();
     if (statusFilter) params.set("status", statusFilter);
-    apiFetch<ApiEnvelope<LeaveRow[]>>(`/hr/leave-requests?${params}`).then((r) => setRows(r.data ?? [])).catch(() => undefined);
+    apiFetch<ApiEnvelope<LeaveRow[]>>(`/hr/leave-requests?${params}`).then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
   }
 
   useEffect(() => { load(); }, [statusFilter]);
@@ -1956,6 +1976,7 @@ export function LeaveRequestsPage() {
             },
           ]}
           rows={rows as Record<string, any>[]}
+          loading={loading}
           empty="No leave requests"
         />
       </div>
@@ -1969,6 +1990,7 @@ type EmployeeRole = { id: string; code: string; name: string; description?: stri
 
 export function EmployeeRolesPage() {
   const [rows, setRows] = useState<EmployeeRole[]>([]);
+  const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({ code: "", name: "", description: "" });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ name: "", description: "" });
@@ -1976,7 +1998,8 @@ export function EmployeeRolesPage() {
   const [error, setError] = useState("");
 
   function load() {
-    apiFetch<ApiEnvelope<EmployeeRole[]>>("/hr/employee-roles").then((r) => setRows(r.data ?? [])).catch(() => undefined);
+    setLoading(true);
+    apiFetch<ApiEnvelope<EmployeeRole[]>>("/hr/employee-roles").then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
   }
 
   useEffect(() => { load(); }, []);
@@ -2063,6 +2086,7 @@ export function EmployeeRolesPage() {
                 )},
               ]}
               rows={rows as Record<string, any>[]}
+              loading={loading}
               empty="No roles defined"
             />
           </div>
