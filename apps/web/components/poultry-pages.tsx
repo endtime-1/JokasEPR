@@ -1256,10 +1256,17 @@ function SimpleRecordTable({ rows, onEdit, onDelete }: { rows: Record<string, an
 
 // ─── Transfers ────────────────────────────────────────────────────────────────
 
+const TRANSFER_STATUSES = ["PENDING", "APPROVED", "COMPLETED", "CANCELLED"] as const;
+
 export function PoultryTransferPage() {
+  const { profile } = useAuth();
+  const canManage = profile?.hasGlobalAccess ?? false;
   const { options } = usePoultryOptions();
   const [rows, setRows] = useState<Record<string, any>[]>([]);
   const [form, setForm] = useState({ flockBatchId: "", fromHouseId: "", fromPenId: "", toFarmId: "", toPoultryHouseId: "", toPenId: "", birdCount: "", transferDate: new Date().toISOString().slice(0, 10), reason: "" });
+  const [editRow, setEditRow] = useState<Record<string, any> | null>(null);
+  const [editForm, setEditForm] = useState({ birdCount: "", reason: "", status: "" });
+  const [editMsg, setEditMsg] = useState("");
 
   const fromHouses = useMemo(() => {
     const houseIds = new Set(options.pens.map((p) => p.poultryHouseId));
@@ -1291,6 +1298,46 @@ export function PoultryTransferPage() {
       })
     });
     await load();
+  }
+
+  function startEdit(row: Record<string, any>) {
+    setEditForm({ birdCount: String(row.birdCount ?? ""), reason: row.reason ?? "", status: row.status ?? "PENDING" });
+    setEditRow(row);
+    setEditMsg("");
+  }
+
+  async function saveEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editRow) return;
+    setEditMsg("");
+    try {
+      await apiFetch(`/poultry/records/transfers/${editRow.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ birdCount: Number(editForm.birdCount), reason: editForm.reason || undefined })
+      });
+      if (editForm.status !== editRow.status) {
+        await apiFetch(`/poultry/transfers/${editRow.id}/status`, {
+          method: "PATCH",
+          body: JSON.stringify({ status: editForm.status })
+        });
+      }
+      setEditRow(null);
+      await load();
+    } catch (err: any) {
+      setEditMsg(err?.message ?? "Failed to save changes.");
+    }
+  }
+
+  async function deleteRow(row: Record<string, any>) {
+    if (!confirm("Delete this transfer? This cannot be undone.")) return;
+    setEditMsg("");
+    try {
+      await apiFetch(`/poultry/records/transfers/${row.id}`, { method: "DELETE" });
+      if (editRow?.id === row.id) setEditRow(null);
+      await load();
+    } catch (err: any) {
+      setEditMsg(err?.message ?? "Failed to delete transfer.");
+    }
   }
 
   return (
@@ -1341,7 +1388,35 @@ export function PoultryTransferPage() {
         </FormField>
         <button className="min-h-11 rounded-md bg-brand px-4 text-sm font-semibold text-white md:col-span-3">Create transfer</button>
       </form>
-      <SimpleRecordTable rows={rows} />
+      <SimpleRecordTable
+        rows={rows}
+        onEdit={canManage ? startEdit : undefined}
+        onDelete={canManage ? deleteRow : undefined}
+      />
+      {editRow && (
+        <form onSubmit={saveEdit} className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-4 shadow-panel">
+          <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-amber-700">
+            <Pencil className="h-4 w-4" />
+            <span>Edit transfer</span>
+            <button type="button" className="ml-auto" onClick={() => setEditRow(null)}><X className="h-4 w-4" /></button>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <FormField label="Bird count">
+              <input className={inputClass} type="number" min="1" value={editForm.birdCount} onChange={(e) => setEditForm((f) => ({ ...f, birdCount: e.target.value }))} required />
+            </FormField>
+            <FormField label="Reason">
+              <input className={inputClass} value={editForm.reason} onChange={(e) => setEditForm((f) => ({ ...f, reason: e.target.value }))} />
+            </FormField>
+            <FormField label="Status">
+              <select className={inputClass} value={editForm.status} onChange={(e) => setEditForm((f) => ({ ...f, status: e.target.value }))}>
+                {TRANSFER_STATUSES.map((s) => <option key={s}>{s}</option>)}
+              </select>
+            </FormField>
+          </div>
+          {editMsg && <p className="mt-2 text-sm text-red-600">{editMsg}</p>}
+          <button type="submit" className="mt-3 rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-white">Save changes</button>
+        </form>
+      )}
     </PoultryShell>
   );
 }
