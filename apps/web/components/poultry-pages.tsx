@@ -126,6 +126,7 @@ export function PoultryHousesPage({ create = false }: { create?: boolean }) {
   const { options, optionsError, refreshOptions } = usePoultryOptions();
   const [rows, setRows] = useState<HouseRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [form, setForm] = useState({ farmId: "", name: "", code: "", capacity: "", defaultPenCount: "5" });
   const [expandedHouseId, setExpandedHouseId] = useState<string | null>(null);
   const [addPenHouseId, setAddPenHouseId] = useState<string | null>(null);
@@ -136,15 +137,19 @@ export function PoultryHousesPage({ create = false }: { create?: boolean }) {
   const [submitMsg, setSubmitMsg] = useState("");
 
   async function load() {
+    setLoadError("");
     const response = await apiFetch<ApiEnvelope<HouseRow[]>>("/poultry/houses");
     setRows(response.data ?? []);
   }
 
-  useEffect(() => {
+  function loadHouses() {
+    setLoading(true);
     load()
-      .catch(() => undefined)
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load houses."))
       .finally(() => setLoading(false));
-  }, []);
+  }
+
+  useEffect(() => { loadHouses(); }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -257,7 +262,14 @@ export function PoultryHousesPage({ create = false }: { create?: boolean }) {
       <div className="space-y-3">
         {loading
           ? [1, 2, 3].map((i) => <div key={i} className="h-16 animate-pulse rounded-md border border-line bg-white" />)
-          : rows.length === 0 && <p className="rounded-md border border-line bg-white p-4 text-sm text-ink/65">No poultry houses found.</p>
+          : loadError
+          ? (
+            <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              <span>{loadError}</span>
+              <button type="button" className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold hover:bg-red-50" onClick={loadHouses}>Retry</button>
+            </div>
+          )
+          : rows.length === 0 && <p className="rounded-md border border-line bg-white p-4 text-sm text-ink/65">No poultry houses found. <Link className="font-semibold text-brand hover:underline" href="/poultry/houses/create">Create one →</Link></p>
         }
         {rows.map((house) => {
           const housePens = house.pens && house.pens.length > 0 ? house.pens : options.pens.filter((p) => p.poultryHouseId === house.id);
@@ -386,21 +398,28 @@ function PoultryHouseForm({ options, form, setForm, submit }: {
 // ─── Batches ──────────────────────────────────────────────────────────────────
 
 export function FlockBatchesPage({ create = false }: { create?: boolean }) {
-  const { options, optionsError } = usePoultryOptions();
+  const { options, optionsError, refreshOptions } = usePoultryOptions();
   const [rows, setRows] = useState<BatchRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [editBatch, setEditBatch] = useState<BatchRow | null>(null);
   const [editForm, setEditForm] = useState({ code: "", name: "", birdType: "LAYERS", expectedCloseDate: "", notes: "" });
   const [editMsg, setEditMsg] = useState("");
 
   async function load() {
+    setLoadError("");
     const response = await apiFetch<ApiEnvelope<BatchRow[]>>("/poultry/batches");
     setRows(response.data ?? []);
   }
 
-  useEffect(() => {
-    load().catch(() => undefined).finally(() => setLoading(false));
-  }, []);
+  function loadBatches() {
+    setLoading(true);
+    load()
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load batches."))
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(() => { loadBatches(); }, []);
 
   function startEdit(batch: BatchRow) {
     setEditBatch(batch);
@@ -437,7 +456,18 @@ export function FlockBatchesPage({ create = false }: { create?: boolean }) {
   return (
     <PoultryShell>
       <PageHeader title={create ? "Create Flock Batch" : "Flock Batches"} subtitle="Register and monitor flock batches distributed across houses and pens." />
-      {optionsError && <p className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">{optionsError}</p>}
+      {optionsError && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+          <span>{optionsError}</span>
+          <button type="button" className="shrink-0 rounded-md border border-amber-300 bg-white px-3 py-1 text-xs font-semibold" onClick={refreshOptions}>Retry</button>
+        </div>
+      )}
+      {loadError && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+          <span>{loadError}</span>
+          <button type="button" className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold" onClick={loadBatches}>Retry</button>
+        </div>
+      )}
       {editMsg && <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{editMsg}</p>}
       {create ? (
         <FlockBatchForm options={options} onSaved={load} />
