@@ -6,7 +6,7 @@ import { Download, Plus, ShieldCheck } from "lucide-react";
 import { SoyaProcessingShell } from "./soya-processing-shell";
 import { DataTable } from "./data-table";
 import { FormField } from "./form-field";
-import { ApiEnvelope, apiFetch, downloadReport } from "../lib/api";
+import { ApiEnvelope, apiFetch, downloadReport, getCached, hasCached } from "../lib/api";
 
 type Option = {
   id: string;
@@ -76,13 +76,12 @@ function productBySku(options: SoyaOptions, sku: string) {
 
 export function SoyaIntakesPage({ create = false }: { create?: boolean }) {
   const options = useSoyaOptions();
-  const [rows, setRows] = useState<Record<string, unknown>[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCached<ApiEnvelope<Record<string, unknown>[]>>("/soya-processing/intakes")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/soya-processing/intakes"));
   const [form, setForm] = useState({ productionSiteId: "", warehouseId: "", productId: "", receiptNumber: "", supplierName: "", quantityKg: "", unitCost: "", moisturePercent: "", qualityStatus: "APPROVED", receivedAt: today() });
   const beanProducts = products(options, (product) => product.sku?.includes("SOYA-BEANS") ?? false);
 
   async function load() {
-    setLoading(true);
     try {
       const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/soya-processing/intakes");
       setRows(response.data ?? []);
@@ -121,12 +120,11 @@ export function SoyaIntakesPage({ create = false }: { create?: boolean }) {
 
 export function SoyaBatchesPage({ create = false }: { create?: boolean }) {
   const options = useSoyaOptions();
-  const [rows, setRows] = useState<Record<string, unknown>[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCached<ApiEnvelope<Record<string, unknown>[]>>("/soya-processing/batches")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/soya-processing/batches"));
   const [form, setForm] = useState({ productionSiteId: "", rawWarehouseId: "", oilWarehouseId: "", cakeWarehouseId: "", intakeId: "", beansUsedKg: "", oilProducedLitres: "", cakeProducedKg: "", wasteKg: "", laborCost: "", packagingCost: "", overheadCost: "", expectedOilSalesValue: "", expectedCakeSalesValue: "", processingDate: today() });
 
   async function load() {
-    setLoading(true);
     try {
       const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/soya-processing/batches");
       setRows(response.data ?? []);
@@ -195,11 +193,10 @@ export function SoyaBatchesPage({ create = false }: { create?: boolean }) {
 
 export function SoyaQualityPage() {
   const options = useSoyaOptions();
-  const [rows, setRows] = useState<Record<string, unknown>[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCached<ApiEnvelope<Record<string, unknown>[]>>("/soya-processing/quality-checks")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/soya-processing/quality-checks"));
   const [form, setForm] = useState({ productionBatchId: "", moisturePercent: "", oilPurityPercent: "", cakeProteinPercent: "", status: "APPROVED", notes: "" });
   async function load() {
-    setLoading(true);
     try {
       const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/soya-processing/quality-checks");
       setRows(response.data ?? []);
@@ -257,12 +254,11 @@ export function SoyaStockPage({ type }: { type: "oil" | "cake" }) {
 
 export function SoyaTransferPage() {
   const options = useSoyaOptions();
-  const [rows, setRows] = useState<Record<string, unknown>[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCached<ApiEnvelope<Record<string, unknown>[]>>("/soya-processing/transfers")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/soya-processing/transfers"));
   const [form, setForm] = useState({ productionBatchId: "", fromWarehouseId: "", toWarehouseId: "", toProductionSiteId: "", outputType: "CAKE", productId: "", quantity: "", notes: "" });
   const outputProducts = useMemo(() => products(options, (product) => ["SOYA-OIL", "SOYA-CAKE"].includes(product.sku ?? "")), [options]);
   async function load() {
-    setLoading(true);
     try {
       const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/soya-processing/transfers");
       setRows(response.data ?? []);

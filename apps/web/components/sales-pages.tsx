@@ -8,7 +8,7 @@ import {
   Clock, DollarSign, Download, FileText, Package, Plus,
   RefreshCw, ShoppingCart, TrendingUp, Users, Wallet,
 } from "lucide-react";
-import { ApiEnvelope, apiFetch, downloadReport } from "../lib/api";
+import { ApiEnvelope, apiFetch, downloadReport, getCached, hasCached } from "../lib/api";
 import { AppShell } from "./app-shell";
 import { DataTable } from "./data-table";
 
@@ -498,15 +498,14 @@ type Customer = {
 export function CustomersPage({ create = false }: { create?: boolean }) {
   const opts = useSalesOptions();
   const router = useRouter();
-  const [rows, setRows] = useState<Customer[]>([]);
+  const [rows, setRows] = useState<Customer[]>(() => getCached<ApiEnvelope<Customer[]>>("/sales/customers")?.data ?? []);
   const [search, setSearch] = useState("");
   const [form, setForm] = useState({ branchId: "", customerGroupId: "", code: "", name: "", phone: "", email: "", address: "", creditLimit: "" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!hasCached("/sales/customers"));
 
   async function load() {
-    setLoading(true);
     const p = new URLSearchParams();
     if (search) p.set("search", search);
     apiFetch<ApiEnvelope<Customer[]>>(`/sales/customers?${p}`).then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
@@ -768,16 +767,15 @@ type SalesOrder = {
 export function OrdersPage({ create = false }: { create?: boolean }) {
   const opts = useSalesOptions();
   const router = useRouter();
-  const [rows, setRows] = useState<SalesOrder[]>([]);
+  const [rows, setRows] = useState<SalesOrder[]>(() => getCached<ApiEnvelope<SalesOrder[]>>("/sales/orders")?.data ?? []);
   const [status, setStatus] = useState("");
   const [form, setForm] = useState({ customerId: "", warehouseId: "", notes: "", discountAmount: "", taxAmount: "" });
   const [items, setItems] = useState<OrderItem[]>([{ productId: "", quantity: "", unitPrice: "", discountAmount: "0" }]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!hasCached("/sales/orders"));
 
   async function load() {
-    setLoading(true);
     const p = new URLSearchParams();
     if (status) p.set("status", status);
     apiFetch<ApiEnvelope<SalesOrder[]>>(`/sales/orders?${p}`).then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
@@ -991,12 +989,12 @@ type Payment = { id: string; paymentNumber: string; amount: number; method: stri
 
 export function PaymentsPage() {
   const opts = useSalesOptions();
-  const [rows, setRows] = useState<Payment[]>([]);
+  const [rows, setRows] = useState<Payment[]>(() => getCached<ApiEnvelope<Payment[]>>("/sales/payments")?.data ?? []);
   const [form, setForm] = useState({ customerId: "", invoiceId: "", amount: "", method: "BANK_TRANSFER", reference: "" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!hasCached("/sales/payments"));
 
   async function load() {
     apiFetch<ApiEnvelope<Payment[]>>("/sales/payments").then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
@@ -1105,12 +1103,12 @@ type SalesReturn = { id: string; returnNumber?: string; reason: string; totalAmo
 
 export function ReturnsPage() {
   const opts = useSalesOptions();
-  const [rows, setRows] = useState<SalesReturn[]>([]);
+  const [rows, setRows] = useState<SalesReturn[]>(() => getCached<ApiEnvelope<SalesReturn[]>>("/sales/returns")?.data ?? []);
   const [form, setForm] = useState({ customerId: "", warehouseId: "", productId: "", quantity: "", unitPrice: "", reason: "" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!hasCached("/sales/returns"));
 
   async function load() {
     apiFetch<ApiEnvelope<SalesReturn[]>>("/sales/returns").then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));

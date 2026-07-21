@@ -8,7 +8,7 @@ import {
   FileText, FlaskConical, Plus, RefreshCw, ShieldCheck,
   ShieldX, TrendingUp, CircleX,
 } from "lucide-react";
-import { ApiEnvelope, apiFetch } from "../lib/api";
+import { ApiEnvelope, apiFetch, getCached, hasCached } from "../lib/api";
 import { AppShell } from "./app-shell";
 import { DataTable } from "./data-table";
 
@@ -372,17 +372,16 @@ type Template = {
 };
 
 export function QualityTemplatesPage() {
-  const [rows, setRows] = useState<Template[]>([]);
+  const [rows, setRows] = useState<Template[]>(() => getCached<ApiEnvelope<Template[]>>("/quality/templates")?.data ?? []);
   const [checkType, setCheckType] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ code: "", name: "", checkType: "RAW_MATERIAL" as CheckType, description: "" });
   const [params, setParams] = useState<{ paramCode: string; name: string; paramType: string; unit: string; minValue: string; maxValue: string; isRequired: boolean }[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!hasCached("/quality/templates"));
 
   function load() {
-    setLoading(true);
     const p = new URLSearchParams();
     if (checkType) p.set("checkType", checkType);
     apiFetch<ApiEnvelope<Template[]>>(`/quality/templates?${p}`).then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
@@ -535,14 +534,13 @@ type QualityCheck = {
 };
 
 export function QualityChecksPage({ filterType }: { filterType?: string }) {
-  const [data, setData] = useState<{ total: number; items: QualityCheck[] }>({ total: 0, items: [] });
+  const [data, setData] = useState<{ total: number; items: QualityCheck[] }>(() => getCached<ApiEnvelope<{ total: number; items: QualityCheck[] }>>("/quality/checks")?.data ?? { total: 0, items: [] });
   const [checkType, setCheckType] = useState(filterType ?? "");
   const [status, setStatus] = useState("");
   const [decision, setDecision] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!hasCached("/quality/checks"));
 
   function load() {
-    setLoading(true);
     const p = new URLSearchParams();
     if (checkType) p.set("checkType", checkType);
     if (status) p.set("status", status);
@@ -1235,16 +1233,15 @@ type LabReport = {
 };
 
 export function LabReportsPage() {
-  const [rows, setRows] = useState<LabReport[]>([]);
+  const [rows, setRows] = useState<LabReport[]>(() => getCached<ApiEnvelope<LabReport[]>>("/quality/lab-reports")?.data ?? []);
   const [checks, setChecks] = useState<{ id: string; reference: string; checkType: string; batchNumber?: string }[]>([]);
   const [form, setForm] = useState({ checkId: "", reportNumber: "", labName: "", reportDate: "", fileUrl: "", fileType: "", summary: "", findings: "", recommendations: "" });
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!hasCached("/quality/lab-reports"));
 
   function load() {
-    setLoading(true);
     apiFetch<ApiEnvelope<LabReport[]>>("/quality/lab-reports").then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
   }
 
@@ -1335,7 +1332,7 @@ type CorrectiveAction = {
 };
 
 export function CorrectiveActionsPage() {
-  const [rows, setRows] = useState<CorrectiveAction[]>([]);
+  const [rows, setRows] = useState<CorrectiveAction[]>(() => getCached<ApiEnvelope<CorrectiveAction[]>>("/quality/corrective-actions")?.data ?? []);
   const opts = useQCOptions();
   const [status, setStatus] = useState("");
   const [showForm, setShowForm] = useState(false);
@@ -1346,10 +1343,9 @@ export function CorrectiveActionsPage() {
   const [resolution, setResolution] = useState("");
   const [verifyId, setVerifyId] = useState("");
   const [verificationNotes, setVerificationNotes] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!hasCached("/quality/corrective-actions"));
 
   function load() {
-    setLoading(true);
     const p = new URLSearchParams();
     if (status) p.set("status", status);
     apiFetch<ApiEnvelope<CorrectiveAction[]>>(`/quality/corrective-actions?${p}`).then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));

@@ -6,7 +6,7 @@ import { Activity, AlertTriangle, Calendar, ChevronRight, Clock, Cpu, DollarSign
 import { AppShell } from "./app-shell";
 import { DataTable } from "./data-table";
 import { FormField } from "./form-field";
-import { ApiEnvelope, apiFetch, downloadReport } from "../lib/api";
+import { ApiEnvelope, apiFetch, downloadReport, getCached, hasCached } from "../lib/api";
 
 type Option = {
   id: string;
@@ -458,12 +458,11 @@ export function MaintenanceDashboardPage() {
 
 export function MachinesPage({ create = false }: { create?: boolean }) {
   const options = useOptions();
-  const [rows, setRows] = useState<Record<string, unknown>[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCached<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/machines")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/maintenance/machines"));
   const [form, setForm] = useState({ branchId: "", farmId: "", warehouseId: "", productionSiteId: "", code: "", name: "", machineType: "FEED_MIXER", manufacturer: "", serialNumber: "", capacity: "", location: "" });
   const [submitError, setSubmitError] = useState("");
   async function load() {
-    setLoading(true);
     try {
       const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/machines");
       setRows(response.data ?? []);
@@ -534,13 +533,12 @@ export function MachineDetailsPage({ id }: { id: string }) {
 
 export function SchedulePage() {
   const options = useOptions();
-  const [rows, setRows] = useState<Record<string, unknown>[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCached<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/schedules")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/maintenance/schedules"));
   const [form, setForm] = useState({ branchId: "", machineId: "", title: "", maintenanceType: "PREVENTIVE", priority: "MEDIUM", frequencyDays: "", nextDueDate: "", instructions: "" });
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   async function load() {
-    setLoading(true);
     try {
       const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/schedules");
       setRows(response.data ?? []);
@@ -587,13 +585,12 @@ export function SchedulePage() {
 
 export function BreakdownPage() {
   const options = useOptions();
-  const [rows, setRows] = useState<Record<string, unknown>[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCached<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/breakdowns")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/maintenance/breakdowns"));
   const [form, setForm] = useState({ machineId: "", severity: "MEDIUM", description: "", rootCause: "" });
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   async function load() {
-    setLoading(true);
     try {
       const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/breakdowns");
       setRows(response.data ?? []);
@@ -636,13 +633,12 @@ export function BreakdownPage() {
 
 export function SparePartsPage() {
   const options = useOptions();
-  const [rows, setRows] = useState<Record<string, unknown>[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCached<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/spare-parts")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/maintenance/spare-parts"));
   const [form, setForm] = useState({ warehouseId: "", productId: "", machineId: "", quantity: "", unitCost: "", notes: "" });
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   async function load() {
-    setLoading(true);
     try {
       const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/spare-parts");
       setRows(response.data ?? []);

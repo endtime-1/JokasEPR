@@ -4,6 +4,35 @@
 // otherwise default to the relative path which works on any host.
 const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "/api/v1").trim();
 
+// Module-level in-memory cache for GET responses.
+// Survives React component mount/unmount so navigating away and back shows data instantly.
+const _getCache = new Map<string, unknown>();
+
+/** Return the last successful GET response for `path`, or undefined if not yet fetched. */
+export function getCached<T>(path: string): T | undefined {
+  return _getCache.get(path) as T | undefined;
+}
+
+/** True if any cached key equals or starts with `pathPrefix`. */
+export function hasCached(pathPrefix: string): boolean {
+  if (_getCache.has(pathPrefix)) return true;
+  for (const k of _getCache.keys()) {
+    if (k.startsWith(pathPrefix + "?") || k.startsWith(pathPrefix + "/")) return true;
+  }
+  return false;
+}
+
+/** Invalidate a cached path (or all paths starting with a prefix when `prefix` is true). */
+export function invalidateCache(pathOrPrefix: string, prefix = false): void {
+  if (prefix) {
+    for (const key of _getCache.keys()) {
+      if (key.startsWith(pathOrPrefix)) _getCache.delete(key);
+    }
+  } else {
+    _getCache.delete(pathOrPrefix);
+  }
+}
+
 export type ApiEnvelope<T> = {
   data: T;
   meta?: Record<string, unknown>;
@@ -212,7 +241,12 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     // Unexpected HTML reached this far (proxy misconfiguration) — don't try to parse
     throw new Error("API server is not reachable. Please try again shortly.");
   }
-  return JSON.parse(text) as T;
+  const parsed = JSON.parse(text) as T;
+  // Cache GET responses so pages show data immediately on re-mount (navigation back).
+  if ((init?.method ?? "GET").toUpperCase() === "GET") {
+    _getCache.set(path, parsed);
+  }
+  return parsed;
 }
 
 export async function downloadReport(path: string, filename: string): Promise<void> {

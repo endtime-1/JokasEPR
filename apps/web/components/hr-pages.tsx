@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { AlertTriangle, CalendarDays, Camera, CircleAlert, ClipboardList, DollarSign, FileText, Pencil, Trash2, Upload, UserCheck, UserPlus, Users } from "lucide-react";
-import { ApiEnvelope, apiFetch } from "../lib/api";
+import { ApiEnvelope, apiFetch, getCached, hasCached } from "../lib/api";
 import { AppShell } from "./app-shell";
 import { DataTable } from "./data-table";
 
@@ -298,14 +298,13 @@ type Employee = { id: string; code: string; fullName: string; phone?: string; em
 
 export function EmployeeListPage() {
   const router = useRouter();
-  const [rows, setRows] = useState<Employee[]>([]);
+  const [rows, setRows] = useState<Employee[]>(() => getCached<ApiEnvelope<Employee[]>>("/hr/employees")?.data ?? []);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!hasCached("/hr/employees"));
   const [deleteError, setDeleteError] = useState("");
 
   function load() {
-    setLoading(true);
     const params = new URLSearchParams();
     if (search) params.set("search", search);
     if (status) params.set("status", status);
@@ -974,17 +973,16 @@ export function EmployeeDetailPage({ id }: { id: string }) {
 type AttendanceRow = { id: string; date: string; status: string; hoursWorked?: number; employee: { fullName: string; code: string }; shift?: { name: string } };
 
 export function AttendancePage() {
-  const [rows, setRows] = useState<AttendanceRow[]>([]);
+  const [rows, setRows] = useState<AttendanceRow[]>(() => getCached<ApiEnvelope<AttendanceRow[]>>("/hr/attendance")?.data ?? []);
   const opts = useHROptions();
   const [dateFilter, setDateFilter] = useState(new Date().toISOString().slice(0, 10));
   const [form, setForm] = useState({ employeeId: "", date: new Date().toISOString().slice(0, 10), checkInTime: "", checkOutTime: "", status: "PRESENT", shiftId: "", notes: "" });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!hasCached("/hr/attendance"));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
 
   function load() {
-    setLoading(true);
     apiFetch<ApiEnvelope<AttendanceRow[]>>(`/hr/attendance?dateFrom=${dateFilter}&dateTo=${dateFilter}`).then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
   }
 
@@ -1092,15 +1090,14 @@ export function AttendancePage() {
 type Shift = { id: string; code: string; name: string; startTime: string; endTime: string; isActive: boolean; branch?: { name: string } };
 
 export function ShiftSchedulePage() {
-  const [rows, setRows] = useState<Shift[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState<Shift[]>(() => getCached<ApiEnvelope<Shift[]>>("/hr/shifts")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/hr/shifts"));
   const opts = useHROptions();
   const [form, setForm] = useState({ code: "", name: "", startTime: "08:00", endTime: "17:00", branchId: "", notes: "" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
   function load() {
-    setLoading(true);
     apiFetch<ApiEnvelope<Shift[]>>("/hr/shifts").then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
   }
 
@@ -1182,7 +1179,7 @@ export function ShiftSchedulePage() {
 type Task = { id: string; title: string; priority: string; status: string; dueDate?: string; taskType?: string; branch?: { name: string }; assignments: Array<{ employee: { fullName: string } }> };
 
 export function TaskBoardPage() {
-  const [rows, setRows] = useState<Task[]>([]);
+  const [rows, setRows] = useState<Task[]>(() => getCached<ApiEnvelope<Task[]>>("/hr/tasks")?.data ?? []);
   const [status, setStatus] = useState("");
   const [priority, setPriority] = useState("");
   const [moveError, setMoveError] = useState("");
@@ -1366,8 +1363,8 @@ export function CreateTaskPage() {
 type PayrollRow = { id: string; reference: string; period: string; grossPay: number; netPay: number; status: string; employee?: { fullName: string; code: string }; paymentDate?: string };
 
 export function PayrollPage() {
-  const [rows, setRows] = useState<PayrollRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState<PayrollRow[]>(() => getCached<ApiEnvelope<PayrollRow[]>>("/hr/payroll")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/hr/payroll"));
   const opts = useHROptions();
   const [form, setForm] = useState({ employeeId: "", period: "", periodStart: "", periodEnd: "", basicSalary: "", allowances: "0", deductions: "0", taxDeduction: "0", ssnit: "0", paymentMethod: "BANK_TRANSFER", notes: "" });
   const [saving, setSaving] = useState(false);
@@ -1375,7 +1372,6 @@ export function PayrollPage() {
   const [showForm, setShowForm] = useState(false);
 
   function load() {
-    setLoading(true);
     apiFetch<ApiEnvelope<PayrollRow[]>>("/hr/payroll").then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
   }
 
@@ -1511,8 +1507,8 @@ export function PayrollPage() {
 type TrainingRow = { id: string; title: string; trainer?: string; trainingDate: string; durationHours?: number; outcome: string; employee: { fullName: string; code: string } };
 
 export function TrainingPage() {
-  const [rows, setRows] = useState<TrainingRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState<TrainingRow[]>(() => getCached<ApiEnvelope<TrainingRow[]>>("/hr/training")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/hr/training"));
   const opts = useHROptions();
   const [form, setForm] = useState({ employeeId: "", title: "", description: "", trainer: "", trainingDate: "", durationHours: "", outcome: "ONGOING", certificate: "", notes: "" });
   const [saving, setSaving] = useState(false);
@@ -1520,7 +1516,6 @@ export function TrainingPage() {
   const [showForm, setShowForm] = useState(false);
 
   function load() {
-    setLoading(true);
     apiFetch<ApiEnvelope<TrainingRow[]>>("/hr/training").then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
   }
 
@@ -1602,8 +1597,8 @@ export function TrainingPage() {
 type PerfRow = { id: string; period: string; overallRating: string; attendanceScore: number; taskCompletionScore: number; qualityScore: number; teamworkScore: number; status: string; employee: { fullName: string; code: string }; reviewer?: { fullName: string } };
 
 export function PerformancePage() {
-  const [rows, setRows] = useState<PerfRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState<PerfRow[]>(() => getCached<ApiEnvelope<PerfRow[]>>("/hr/performance")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/hr/performance"));
   const opts = useHROptions();
   const [form, setForm] = useState({ employeeId: "", period: "", overallRating: "MEETS_EXPECTATIONS", attendanceScore: "0", taskCompletionScore: "0", qualityScore: "0", teamworkScore: "0", comments: "", goals: "" });
   const [saving, setSaving] = useState(false);
@@ -1611,7 +1606,6 @@ export function PerformancePage() {
   const [showForm, setShowForm] = useState(false);
 
   function load() {
-    setLoading(true);
     apiFetch<ApiEnvelope<PerfRow[]>>("/hr/performance").then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
   }
 
@@ -1831,8 +1825,8 @@ type LeaveRow = {
 };
 
 export function LeaveRequestsPage() {
-  const [rows, setRows] = useState<LeaveRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState<LeaveRow[]>(() => getCached<ApiEnvelope<LeaveRow[]>>("/hr/leave-requests")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/hr/leave-requests"));
   const [statusFilter, setStatusFilter] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ leaveType: "ANNUAL", startDate: "", endDate: "", daysRequested: "1", reason: "" });
@@ -1842,7 +1836,6 @@ export function LeaveRequestsPage() {
   const [reviewNote, setReviewNote] = useState("");
 
   function load() {
-    setLoading(true);
     const params = new URLSearchParams();
     if (statusFilter) params.set("status", statusFilter);
     apiFetch<ApiEnvelope<LeaveRow[]>>(`/hr/leave-requests?${params}`).then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
@@ -1989,8 +1982,8 @@ export function LeaveRequestsPage() {
 type EmployeeRole = { id: string; code: string; name: string; description?: string; isActive: boolean };
 
 export function EmployeeRolesPage() {
-  const [rows, setRows] = useState<EmployeeRole[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState<EmployeeRole[]>(() => getCached<ApiEnvelope<EmployeeRole[]>>("/hr/employee-roles")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/hr/employee-roles"));
   const [form, setForm] = useState({ code: "", name: "", description: "" });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ name: "", description: "" });
@@ -1998,7 +1991,6 @@ export function EmployeeRolesPage() {
   const [error, setError] = useState("");
 
   function load() {
-    setLoading(true);
     apiFetch<ApiEnvelope<EmployeeRole[]>>("/hr/employee-roles").then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
   }
 

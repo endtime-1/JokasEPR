@@ -6,7 +6,7 @@ import { Download, Plus } from "lucide-react";
 import { InventoryShell } from "./inventory-shell";
 import { DataTable } from "./data-table";
 import { FormField } from "./form-field";
-import { ApiEnvelope, apiFetch, downloadReport } from "../lib/api";
+import { ApiEnvelope, apiFetch, downloadReport, hasCached, getCached } from "../lib/api";
 
 type Option = {
   id: string;
@@ -59,8 +59,8 @@ function PageHeader({ title, subtitle }: { title: string; subtitle: string }) {
 
 export function InventoryItemsPage({ create = false }: { create?: boolean }) {
   const { options, optionsError } = useInventoryOptions();
-  const [rows, setRows] = useState<Record<string, unknown>[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCached<ApiEnvelope<Record<string, unknown>[]>>("/inventory/items")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/inventory/items"));
   const [form, setForm] = useState({ warehouseId: "", productId: "", reorderLevel: "", openingQuantity: "" });
   async function load() {
     const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/inventory/items");
