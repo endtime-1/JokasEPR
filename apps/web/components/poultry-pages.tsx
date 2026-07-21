@@ -8,6 +8,7 @@ import { PoultryShell } from "./poultry-shell";
 import { DataTable } from "./data-table";
 import { FormField } from "./form-field";
 import { ApiEnvelope, apiFetch, downloadReport } from "../lib/api";
+import { useAuth } from "./auth-context";
 
 type Option = {
   id: string;
@@ -855,6 +856,8 @@ const BATCH_RECORD_TYPES: Array<{ type: string; label: string; cols: string[] }>
 ];
 
 function BatchRecordSection({ batchId, type, label, cols }: { batchId: string; type: string; label: string; cols: string[] }) {
+  const { profile } = useAuth();
+  const canManage = profile?.hasGlobalAccess ?? false;
   const [rows, setRows] = useState<Record<string, any>[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -905,6 +908,17 @@ function BatchRecordSection({ batchId, type, label, cols }: { batchId: string; t
     }
   }
 
+  async function deleteRow(row: Record<string, any>) {
+    if (!confirm("Delete this record? This cannot be undone.")) return;
+    setEditMsg("");
+    try {
+      await apiFetch(`/poultry/records/${type}/${row.id}`, { method: "DELETE" });
+      await load();
+    } catch (err: any) {
+      setEditMsg(err?.message ?? "Failed to delete record.");
+    }
+  }
+
   const editableCols = cols.filter((c) => !["recordDate", "startDate", "vaccinationDate", "observationDate"].includes(c));
 
   return (
@@ -923,7 +937,7 @@ function BatchRecordSection({ batchId, type, label, cols }: { batchId: string; t
                 <thead className="bg-field">
                   <tr>
                     {cols.map((c) => <th key={c} className="px-2 py-1.5 font-semibold text-ink/60 uppercase text-[10px]">{c.replace(/([A-Z])/g, " $1")}</th>)}
-                    <th className="px-2 py-1.5 w-8"></th>
+                    <th className="px-2 py-1.5 w-16"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -931,9 +945,16 @@ function BatchRecordSection({ batchId, type, label, cols }: { batchId: string; t
                     <tr key={row.id} className="border-t border-line">
                       {cols.map((c) => <td key={c} className="px-2 py-1.5">{String(row[c] ?? "—").slice(0, 50)}</td>)}
                       <td className="px-2 py-1.5">
-                        <button type="button" title="Correct record" onClick={() => startEdit(row)} className="rounded p-1 text-ink/40 hover:bg-brand/10 hover:text-brand">
-                          <Pencil className="h-3 w-3" />
-                        </button>
+                        <div className="flex gap-1">
+                          <button type="button" title="Correct record" onClick={() => startEdit(row)} className="rounded p-1 text-ink/40 hover:bg-brand/10 hover:text-brand">
+                            <Pencil className="h-3 w-3" />
+                          </button>
+                          {canManage && (
+                            <button type="button" title="Delete record" onClick={() => deleteRow(row)} className="rounded p-1 text-ink/40 hover:bg-red-50 hover:text-red-600">
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -991,6 +1012,8 @@ function makeFormDefaults(type: string): Record<string, string> {
 }
 
 export function PoultryRecordPage({ title, type, endpoint, health = false }: { title: string; type: string; endpoint: string; health?: boolean }) {
+  const { profile } = useAuth();
+  const canManage = profile?.hasGlobalAccess ?? false;
   const { options, optionsError, refreshOptions } = usePoultryOptions();
   const [rows, setRows] = useState<Record<string, any>[]>([]);
   const [form, setForm] = useState<Record<string, string>>(() => makeFormDefaults(type));
@@ -1023,6 +1046,17 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
     setEditingId(null);
     setForm(makeFormDefaults(type));
     setSubmitError("");
+  }
+
+  async function deleteRow(row: Record<string, any>) {
+    if (!confirm("Delete this record? This cannot be undone.")) return;
+    setSubmitError("");
+    try {
+      await apiFetch(`/poultry/records/${type}/${row.id}`, { method: "DELETE" });
+      await load();
+    } catch (err: any) {
+      setSubmitError(err?.message ?? "Failed to delete record.");
+    }
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -1066,7 +1100,7 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
       )}
       {submitError && <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{submitError}</p>}
       <GenericRecordForm options={options} form={form} setForm={setForm} submit={submit} type={type} isEditing={!!editingId} />
-      <SimpleRecordTable rows={rows} onEdit={startEdit} />
+      <SimpleRecordTable rows={rows} onEdit={startEdit} onDelete={canManage ? deleteRow : undefined} />
     </PoultryShell>
   );
 }
@@ -1189,7 +1223,7 @@ function buildRecordPayload(type: string, form: Record<string, string>, options:
   return payload;
 }
 
-function SimpleRecordTable({ rows, onEdit }: { rows: Record<string, any>[]; onEdit?: (row: Record<string, any>) => void }) {
+function SimpleRecordTable({ rows, onEdit, onDelete }: { rows: Record<string, any>[]; onEdit?: (row: Record<string, any>) => void; onDelete?: (row: Record<string, any>) => void }) {
   const allowedKeys = new Set([
     "recordDate", "startDate", "costDate", "vaccinationDate", "observationDate", "transferDate",
     "mortalityCount", "culledCount", "feedConsumedKg", "totalEggs",
@@ -1202,10 +1236,19 @@ function SimpleRecordTable({ rows, onEdit }: { rows: Record<string, any>[]; onEd
   const keys = Object.keys(rows?.[0] ?? {}).filter((key) => allowedKeys.has(key));
   const columns = [
     ...keys.map((key) => ({ key, label: key.replace(/([A-Z])/g, " $1"), render: (row: Record<string, any>) => String(row[key] ?? "-").slice(0, 80) })),
-    ...(onEdit ? [{ key: "_edit", label: "", render: (row: Record<string, any>) => (
-      <button type="button" title="Correct record" onClick={() => onEdit(row)} className="rounded p-1 text-ink/40 hover:bg-brand/10 hover:text-brand">
-        <Pencil className="h-3.5 w-3.5" />
-      </button>
+    ...((onEdit || onDelete) ? [{ key: "_actions", label: "", render: (row: Record<string, any>) => (
+      <div className="flex gap-1">
+        {onEdit && (
+          <button type="button" title="Correct record" onClick={() => onEdit(row)} className="rounded p-1 text-ink/40 hover:bg-brand/10 hover:text-brand">
+            <Pencil className="h-3.5 w-3.5" />
+          </button>
+        )}
+        {onDelete && (
+          <button type="button" title="Delete record" onClick={() => onDelete(row)} className="rounded p-1 text-ink/40 hover:bg-red-50 hover:text-red-600">
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
     ) }] : [])
   ];
   return <DataTable rows={rows} empty="No records found" columns={columns} />;
