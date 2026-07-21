@@ -165,9 +165,14 @@ let webRestarts = 0;
 let lastWebLines = [];  // last 20 lines of web stdout/stderr for diagnostics
 
 function checkBothReady() {
-  if (_nextjsUp && _apiUp && !webReady) {
+  // Open to traffic as soon as Next.js is up, even if the API is still starting.
+  // The React app handles "API not ready" through its own loading states and the
+  // amber banner, which is far better UX than sitting on the raw 503 startup page
+  // for the full 30-90s NestJS cold-start time on Hostinger.
+  if (_nextjsUp && !webReady) {
     webReady = true;
-    console.log("[start] Next.js + API both ready — enabling live traffic");
+    const apiMsg = _apiUp ? "API also ready" : "API still starting — React app will handle it";
+    console.log(`[start] Next.js ready — opening to traffic (${apiMsg})`);
   }
 }
 
@@ -283,9 +288,21 @@ function handleRequest(req, res) {
     // "ok", apiFetch skipped its TRANSIENT_STATUSES retry, and auth-context skipped its
     // !res.ok retry — all because the status code was 200. Browsers render HTML on 503 just
     // fine and the meta-refresh still fires, so the user experience is identical.
-    res.writeHead(503, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "retry-after": "2" });
-    res.end("<!doctype html><html><head><meta http-equiv='refresh' content='2'></head>" +
-      "<body>Starting up. Refreshing automatically…</body></html>");
+    res.writeHead(503, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "retry-after": "3" });
+    res.end(
+      "<!doctype html><html><head><meta http-equiv='refresh' content='3'>" +
+      "<style>body{margin:0;font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;background:#f0f2f5}" +
+      ".box{text-align:center;max-width:380px;padding:2rem}" +
+      ".spinner{width:36px;height:36px;border:3px solid #e2e5eb;border-top-color:#e07b39;border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto 1.5rem}" +
+      "@keyframes spin{to{transform:rotate(360deg)}}" +
+      "h2{margin:0 0 0.5rem;font-size:1.1rem;color:#1a2235}" +
+      "p{margin:0 0 1.5rem;font-size:0.875rem;color:#6b7280}" +
+      "a{font-size:0.75rem;color:#9ca3af;text-decoration:underline}" +
+      "</style></head>" +
+      "<body><div class='box'><div class='spinner'></div><h2>Jokas ERP is starting…</h2>" +
+      "<p>The server wakes up automatically. This page refreshes every 3 seconds.</p>" +
+      "<a href='/__status'>View startup status</a></div></body></html>"
+    );
     return;
   }
   const up = http.request(

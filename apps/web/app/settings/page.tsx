@@ -110,6 +110,7 @@ export default function SettingsPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [masterMsg, setMasterMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+  const [masterLoadError, setMasterLoadError] = useState(false);
 
   async function load() {
     const results = await Promise.allSettled([
@@ -123,7 +124,12 @@ export default function SettingsPage() {
     if (companyRes.status === "fulfilled") setCompany(companyRes.value.data ?? {});
     if (masterRes.status === "fulfilled") {
       const d = masterRes.value?.data;
-      if (d && typeof d === "object" && Object.keys(d).length > 0) setMaster(d);
+      if (d && typeof d === "object" && Object.keys(d).length > 0) {
+        setMaster(d);
+        setMasterLoadError(false);
+      }
+    } else {
+      setMasterLoadError(true);
     }
     if (optionsRes.status === "fulfilled" && optionsRes.value?.data) setOptions(optionsRes.value.data);
     if (settingsRes.status === "fulfilled") {
@@ -192,13 +198,15 @@ export default function SettingsPage() {
   async function refreshMaster() {
     try {
       const res = await apiFetch<ApiEnvelope<MasterData>>("/settings/master-data");
-      // Only overwrite if we got real data — never wipe with an empty/null response.
       const d = res?.data;
-      if (d && typeof d === "object" && Object.keys(d).length > 0) setMaster(d);
+      if (d && typeof d === "object" && Object.keys(d).length > 0) {
+        setMaster(d);
+        setMasterLoadError(false);
+      }
       const optRes = await apiFetch<ApiEnvelope<Record<string, Option[]>>>("/settings/options");
       if (optRes?.data) setOptions(optRes.data);
     } catch (err) {
-      setMasterMsg({ type: "err", text: `List refresh failed: ${err instanceof Error ? err.message : "unknown error"}. Try reloading the page.` });
+      setMasterMsg({ type: "err", text: `Failed to load master data: ${err instanceof Error ? err.message : "unknown error"}. Try again.` });
     }
   }
 
@@ -329,6 +337,18 @@ export default function SettingsPage() {
         </Link>
 
         <SettingCard title="Master Data" icon={Settings}>
+          {masterLoadError && (
+            <div className="mb-4 flex items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+              <span>Master data failed to load — the server may have been starting up.</span>
+              <button
+                type="button"
+                className="shrink-0 rounded-md border border-amber-300 bg-white px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-50"
+                onClick={() => { setMasterLoadError(false); refreshMaster(); }}
+              >
+                Reload
+              </button>
+            </div>
+          )}
           <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
             {(["branches", "farms", "warehouses", "production-sites"] as const).map((key) => {
               const count = master[camel(key)]?.length ?? 0;
