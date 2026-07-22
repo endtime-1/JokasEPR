@@ -298,7 +298,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     function onKeyDown(e: KeyboardEvent) {
       if ((e.ctrlKey || e.metaKey) && e.key === "k") {
         e.preventDefault();
-        searchOpen ? closeSearch() : openSearch();
+        if (searchOpen) { closeSearch(); } else { openSearch(); }
       }
       if (e.key === "Escape" && searchOpen) closeSearch();
     }

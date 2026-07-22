@@ -2767,7 +2767,7 @@ export function HiproPredictivePage() {
       .finally(() => setLoading(false));
   }
 
-  useEffect(() => { loadData(warehouseId); }, [warehouseId]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { loadData(warehouseId); }, [warehouseId]);
 
   function getBags(formulaId: string, ingId: string): number {
     if (mode === "global") return Number(globalBags[formulaId] ?? 0);

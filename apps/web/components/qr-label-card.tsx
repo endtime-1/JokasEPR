@@ -86,7 +86,7 @@ export function QrLabelCard({ entityType, entityId }: { entityType: QrEntityType
     const safeDataUrl = svgDataUrl(svgText);
     const printWindow = window.open("", "_blank", "width=760,height=520");
     if (!printWindow) return;
-    printWindow.document.write(`<html><head><title>QR Label ${label.label}</title></head><body style="margin:24px"><img src="${safeDataUrl}" alt="QR label" /><script>window.onload=()=>window.print()<\/script></body></html>`);
+    printWindow.document.write(`<html><head><title>QR Label ${label.label}</title></head><body style="margin:24px"><img src="${safeDataUrl}" alt="QR label" /><script>window.onload=()=>window.print()</script></body></html>`);
     printWindow.document.close();
   }
 

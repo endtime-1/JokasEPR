@@ -196,7 +196,7 @@ export default function ProductCatalogPage() {
 
   useEffect(() => {
     load();
-  }, [tab, statusFilter, page]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tab, statusFilter, page]);
 
   function handleSearchChange(val: string) {
     setSearch(val);

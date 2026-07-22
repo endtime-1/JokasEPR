@@ -136,7 +136,7 @@ export function PoultryHousesPage({ create = false }: { create?: boolean }) {
     try {
       const stored = JSON.parse(sessionStorage.getItem(HOUSES_CACHE) ?? "null");
       if (Array.isArray(stored) && stored.length > 0) return stored;
-    } catch {}
+    } catch { /* noop */ }
     return [];
   });
   const [loading, setLoading] = useState(!hasCached("/poultry/houses"));
@@ -158,7 +158,7 @@ export function PoultryHousesPage({ create = false }: { create?: boolean }) {
     if (!Array.isArray(data)) return;
     setRows(data);
     if (data.length > 0) {
-      try { sessionStorage.setItem(HOUSES_CACHE, JSON.stringify(data)); } catch {}
+      try { sessionStorage.setItem(HOUSES_CACHE, JSON.stringify(data)); } catch { /* noop */ }
     }
   }
 
@@ -434,7 +434,7 @@ export function FlockBatchesPage({ create = false }: { create?: boolean }) {
     try {
       const stored = JSON.parse(sessionStorage.getItem(BATCHES_CACHE) ?? "null");
       if (Array.isArray(stored) && stored.length > 0) return stored;
-    } catch {}
+    } catch { /* noop */ }
     return [];
   });
   const [loading, setLoading] = useState(!hasCached("/poultry/batches"));
@@ -451,7 +451,7 @@ export function FlockBatchesPage({ create = false }: { create?: boolean }) {
     if (!Array.isArray(data)) return;
     setRows(data);
     if (data.length > 0) {
-      try { sessionStorage.setItem(BATCHES_CACHE, JSON.stringify(data)); } catch {}
+      try { sessionStorage.setItem(BATCHES_CACHE, JSON.stringify(data)); } catch { /* noop */ }
     }
   }
 
@@ -1117,7 +1117,7 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
     try {
       const stored = JSON.parse(sessionStorage.getItem(recordCacheKey) ?? "null");
       if (Array.isArray(stored) && stored.length > 0) return stored;
-    } catch {}
+    } catch { /* noop */ }
     return [];
   });
   const [form, setForm] = useState<Record<string, string>>(() => makeFormDefaults(type));
@@ -1130,7 +1130,7 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
     if (!Array.isArray(data)) return;
     setRows(data);
     if (data.length > 0) {
-      try { sessionStorage.setItem(recordCacheKey, JSON.stringify(data)); } catch {}
+      try { sessionStorage.setItem(recordCacheKey, JSON.stringify(data)); } catch { /* noop */ }
     }
   }
 
@@ -1380,7 +1380,7 @@ export function PoultryTransferPage() {
     try {
       const stored = JSON.parse(sessionStorage.getItem(TRANSFERS_CACHE) ?? "null");
       if (Array.isArray(stored) && stored.length > 0) return stored;
-    } catch {}
+    } catch { /* noop */ }
     return [];
   });
   const [form, setForm] = useState({ flockBatchId: "", fromHouseId: "", toFarmId: "", toPoultryHouseId: "", toPenId: "", birdCount: "", transferDate: new Date().toISOString().slice(0, 10), reason: "" });
@@ -1423,7 +1423,7 @@ export function PoultryTransferPage() {
     if (!Array.isArray(data)) return;
     setRows(data);
     if (data.length > 0) {
-      try { sessionStorage.setItem(TRANSFERS_CACHE, JSON.stringify(data)); } catch {}
+      try { sessionStorage.setItem(TRANSFERS_CACHE, JSON.stringify(data)); } catch { /* noop */ }
     }
   }
   useEffect(() => { load().catch(() => undefined); }, []);

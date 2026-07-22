@@ -1371,7 +1371,6 @@ export function SalesReportsPage() {
         {rows.length === 0 && <p className="text-sm text-ink/45">No data for period</p>}
       </div>
     );
-    void maxProduct; void maxCustomer; void maxLocation; void maxSalesperson; void max2;
   }
 
   return (
