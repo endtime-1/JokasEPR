@@ -7,7 +7,7 @@ import { ChevronDown, ChevronUp, Download, Pencil, Plus, Trash2, X } from "lucid
 import { PoultryShell } from "./poultry-shell";
 import { DataTable } from "./data-table";
 import { FormField } from "./form-field";
-import { ApiEnvelope, apiFetch, downloadReport } from "../lib/api";
+import { ApiEnvelope, apiFetch, downloadReport, getCached, hasCached } from "../lib/api";
 import { useAuth } from "./auth-context";
 
 type Option = {
@@ -128,13 +128,10 @@ const HOUSES_CACHE = "jokas_poultry_houses";
 export function PoultryHousesPage({ create = false }: { create?: boolean }) {
   const { options, optionsError, refreshOptions } = usePoultryOptions();
   const [rows, setRows] = useState<HouseRow[]>(() => {
-    // Restore last-known data instantly so the list never flashes empty on navigation.
-    try {
-      const cached = sessionStorage.getItem(HOUSES_CACHE);
-      return cached ? (JSON.parse(cached) as HouseRow[]) : [];
-    } catch { return []; }
+    if (getCached<ApiEnvelope<HouseRow[]>>("/poultry/houses")?.data) return getCached<ApiEnvelope<HouseRow[]>>("/poultry/houses")!.data;
+    try { return JSON.parse(sessionStorage.getItem(HOUSES_CACHE) ?? "null") ?? []; } catch { return []; }
   });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!hasCached("/poultry/houses"));
   const [loadError, setLoadError] = useState("");
   const [form, setForm] = useState({ farmId: "", name: "", code: "", capacity: "", defaultPenCount: "5" });
   const [expandedHouseId, setExpandedHouseId] = useState<string | null>(null);
@@ -154,20 +151,13 @@ export function PoultryHousesPage({ create = false }: { create?: boolean }) {
     try { sessionStorage.setItem(HOUSES_CACHE, JSON.stringify(data)); } catch {}
   }
 
-  function loadHouses(showSpinner = true) {
-    if (showSpinner) setLoading(true);
+  function loadHouses() {
     load()
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load houses."))
       .finally(() => setLoading(false));
   }
 
-  useEffect(() => {
-    // If we already have cached data, refresh silently (no spinner) so the list
-    // stays visible while fresh data loads in the background.
-    let hasCached = false;
-    try { hasCached = !!sessionStorage.getItem(HOUSES_CACHE); } catch {}
-    loadHouses(!hasCached);
-  }, []);
+  useEffect(() => { loadHouses(); }, []);
 
   // Auto-retry when the API comes back after a cold-start outage.
   useEffect(() => {
@@ -427,12 +417,10 @@ const BATCHES_CACHE = "jokas_poultry_batches";
 export function FlockBatchesPage({ create = false }: { create?: boolean }) {
   const { options, optionsError, refreshOptions } = usePoultryOptions();
   const [rows, setRows] = useState<BatchRow[]>(() => {
-    try {
-      const cached = sessionStorage.getItem(BATCHES_CACHE);
-      return cached ? (JSON.parse(cached) as BatchRow[]) : [];
-    } catch { return []; }
+    if (getCached<ApiEnvelope<BatchRow[]>>("/poultry/batches")?.data) return getCached<ApiEnvelope<BatchRow[]>>("/poultry/batches")!.data;
+    try { return JSON.parse(sessionStorage.getItem(BATCHES_CACHE) ?? "null") ?? []; } catch { return []; }
   });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!hasCached("/poultry/batches"));
   const [loadError, setLoadError] = useState("");
   const [editBatch, setEditBatch] = useState<BatchRow | null>(null);
   const [editForm, setEditForm] = useState({ code: "", name: "", birdType: "LAYERS", expectedCloseDate: "", notes: "" });
@@ -446,18 +434,13 @@ export function FlockBatchesPage({ create = false }: { create?: boolean }) {
     try { sessionStorage.setItem(BATCHES_CACHE, JSON.stringify(data)); } catch {}
   }
 
-  function loadBatches(showSpinner = true) {
-    if (showSpinner) setLoading(true);
+  function loadBatches() {
     load()
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load batches."))
       .finally(() => setLoading(false));
   }
 
-  useEffect(() => {
-    let hasCached = false;
-    try { hasCached = !!sessionStorage.getItem(BATCHES_CACHE); } catch {}
-    loadBatches(!hasCached);
-  }, []);
+  useEffect(() => { loadBatches(); }, []);
 
   useEffect(() => {
     function onRecovered() { if (rows.length === 0) loadBatches(); }
@@ -754,7 +737,8 @@ type BatchDetail = {
 export function FlockBatchDetailsPage() {
   const params = useParams<{ id: string }>();
   const { options } = usePoultryOptions();
-  const [batch, setBatch] = useState<BatchDetail | null>(null);
+  const [batch, setBatch] = useState<BatchDetail | null>(() => getCached<ApiEnvelope<BatchDetail>>(`/poultry/batches/${params?.id}`)?.data ?? null);
+  const [batchError, setBatchError] = useState("");
   const [tab, setTab] = useState<"overview" | "pens" | "records">("overview");
   const [statusForm, setStatusForm] = useState({ status: "", notes: "" });
   const [statusMsg, setStatusMsg] = useState("");
@@ -762,9 +746,10 @@ export function FlockBatchDetailsPage() {
   const [pendingErr, setPendingErr] = useState<Record<string, string>>({});
 
   function reloadBatch() {
+    setBatchError("");
     apiFetch<ApiEnvelope<BatchDetail>>(`/poultry/batches/${params.id}`)
       .then((response) => setBatch(response.data))
-      .catch(() => undefined);
+      .catch((err: any) => setBatchError(err?.message ?? "Failed to load batch. Please refresh."));
   }
 
   useEffect(() => { reloadBatch(); }, [params.id]);
@@ -799,7 +784,8 @@ export function FlockBatchDetailsPage() {
 
   return (
     <PoultryShell>
-      <PageHeader title={batch?.name ?? "Flock Batch"} subtitle={batch ? `${batch.code} · ${batch.birdType} · ${batch.farm?.name ?? ""}` : "Loading…"} />
+      <PageHeader title={batch?.name ?? "Flock Batch"} subtitle={batch ? `${batch.code} · ${batch.birdType} · ${batch.farm?.name ?? ""}` : batchError ? "Failed to load" : "Loading…"} />
+      {batchError && !batch && <p className="mb-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{batchError} <button className="ml-2 font-semibold underline" onClick={reloadBatch}>Retry</button></p>}
       {batch && (
         <>
           <div className="mb-6 flex gap-2">
@@ -1087,10 +1073,9 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
   const { options, optionsError, refreshOptions } = usePoultryOptions();
   const recordCacheKey = `jokas_records_${type}`;
   const [rows, setRows] = useState<Record<string, any>[]>(() => {
-    try {
-      const cached = sessionStorage.getItem(`jokas_records_${type}`);
-      return cached ? JSON.parse(cached) : [];
-    } catch { return []; }
+    const ep = `/poultry/records/${type}?take=200`;
+    if (getCached<{ data: Record<string, any>[] }>(ep)?.data) return getCached<{ data: Record<string, any>[] }>(ep)!.data;
+    try { return JSON.parse(sessionStorage.getItem(recordCacheKey) ?? "null") ?? []; } catch { return []; }
   });
   const [form, setForm] = useState<Record<string, string>>(() => makeFormDefaults(type));
   const [editingId, setEditingId] = useState<string | null>(null);
