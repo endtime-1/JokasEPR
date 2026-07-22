@@ -7,7 +7,7 @@ import {
   Unlink, Webhook, CircleX, Zap
 } from "lucide-react";
 import { AppShell } from "./app-shell";
-import { apiFetch } from "../lib/api";
+import { apiFetch, getCachedFirst, hasCached } from "../lib/api";
 
 // ─── Shared Styles ────────────────────────────────────────────────────────────
 
@@ -67,14 +67,13 @@ type QBStatus = {
 };
 
 export function QuickBooksConnectionPage() {
-  const [status, setStatus] = useState<QBStatus | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [status, setStatus] = useState<QBStatus | null>(() => getCachedFirst<QBStatus>("/quickbooks/status") ?? null);
+  const [loading, setLoading] = useState(!hasCached("/quickbooks/status"));
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState("");
   const [msg, setMsg] = useState("");
 
   const load = useCallback(() => {
-    setLoading(true);
     apiFetch<{ connection: QBStatus["connection"]; stats: QBStatus["stats"] }>("/quickbooks/status")
       .then((r) => setStatus(r))
       .catch(() => setError("Failed to load QuickBooks status"))
@@ -243,13 +242,12 @@ type SyncLog = {
 };
 
 export function QuickBooksSyncLogsPage() {
-  const [logs, setLogs] = useState<SyncLog[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [logs, setLogs] = useState<SyncLog[]>(() => getCachedFirst<{ data: SyncLog[] }>("/quickbooks/logs")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/quickbooks/logs"));
   const [filter, setFilter] = useState({ operation: "", result: "" });
   const [selected, setSelected] = useState<SyncLog | null>(null);
 
   function load() {
-    setLoading(true);
     const params = new URLSearchParams({ limit: "100", ...(filter.operation && { operation: filter.operation }), ...(filter.result && { result: filter.result }) });
     apiFetch<{ data: SyncLog[] }>(`/quickbooks/logs?${params}`)
       .then((r) => setLogs(r.data ?? []))
@@ -347,12 +345,11 @@ type WebhookEvent = {
 };
 
 export function QuickBooksWebhookEventsPage() {
-  const [events, setEvents] = useState<WebhookEvent[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [events, setEvents] = useState<WebhookEvent[]>(() => getCachedFirst<{ data: WebhookEvent[] }>("/quickbooks/webhook-events")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/quickbooks/webhook-events"));
   const [statusFilter, setStatusFilter] = useState("");
 
   function load() {
-    setLoading(true);
     const params = new URLSearchParams({ limit: "100", ...(statusFilter && { status: statusFilter }) });
     apiFetch<{ data: WebhookEvent[] }>(`/quickbooks/webhook-events?${params}`)
       .then((r) => setEvents(r.data ?? []))
@@ -417,13 +414,13 @@ type QBAccount = { id: string; name: string; type: string; subType: string };
 type QBMapping = { id: string; mappingType: string; erpEntityId: string | null; erpEntityName: string; qbEntityId: string; qbEntityName: string };
 
 export function QuickBooksMappingPage() {
-  const [qbAccounts, setQbAccounts] = useState<QBAccount[]>([]);
-  const [mappings, setMappings] = useState<QBMapping[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [qbAccounts, setQbAccounts] = useState<QBAccount[]>(() => getCachedFirst<{ data: QBAccount[] }>("/quickbooks/accounts")?.data ?? []);
+  const [mappings, setMappings] = useState<QBMapping[]>(() => getCachedFirst<{ data: QBMapping[] }>("/quickbooks/mappings")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/quickbooks/accounts"));
   const [error, setError] = useState("");
   const [msg, setMsg] = useState("");
   const [form, setForm] = useState({ mappingType: "INCOME_ACCOUNT", erpEntityId: "", erpEntityName: "", qbEntityId: "", qbEntityName: "" });
-  const [expenseCategories, setExpenseCategories] = useState<{ id: string; name: string }[]>([]);
+  const [expenseCategories, setExpenseCategories] = useState<{ id: string; name: string }[]>(() => getCachedFirst<{ data: { id: string; name: string }[] }>("/finance/expense-categories")?.data ?? []);
 
   useEffect(() => {
     Promise.all([

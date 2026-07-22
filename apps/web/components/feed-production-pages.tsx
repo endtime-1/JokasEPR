@@ -8,7 +8,7 @@ import type { LucideIcon } from "lucide-react";
 import { FeedMillShell } from "./feed-mill-shell";
 import { DataTable } from "./data-table";
 import { FormField } from "./form-field";
-import { ApiEnvelope, apiFetch, downloadReport, getCached, hasCached } from "../lib/api";
+import { ApiEnvelope, apiFetch, downloadReport, getCached, getCachedFirst, hasCached } from "../lib/api";
 
 type Option = {
   id: string;
@@ -149,7 +149,7 @@ function number(value: unknown) {
 }
 
 export function FeedFormulaListPage() {
-  const [rows, setRows] = useState<FormulaRow[]>(() => getCached<ApiEnvelope<FormulaRow[]>>("/feed-production/formulas")?.data ?? []);
+  const [rows, setRows] = useState<FormulaRow[]>(() => getCachedFirst<ApiEnvelope<FormulaRow[]>>("/feed-production/formulas")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/feed-production/formulas"));
 
   async function load() {
@@ -1023,7 +1023,7 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
 
 export function FeedProductionOrdersPage({ create = false }: { create?: boolean }) {
   const options = useFeedOptions();
-  const [rows, setRows] = useState<OrderRow[]>(() => getCached<ApiEnvelope<OrderRow[]>>("/feed-production/orders")?.data ?? []);
+  const [rows, setRows] = useState<OrderRow[]>(() => getCachedFirst<ApiEnvelope<OrderRow[]>>("/feed-production/orders")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/feed-production/orders"));
   const [form, setForm] = useState<OrderFormState>({ productionSiteId: "", formulaId: "", plannedQuantityKg: "", scheduledDate: today(), rawMaterialWarehouseId: "", notes: "" });
   const [submitErr, setSubmitErr] = useState("");
@@ -1853,7 +1853,7 @@ type QcRow = {
 
 export function FeedQualityControlPage() {
   const options = useFeedOptions();
-  const [rows, setRows] = useState<QcRow[]>(() => getCached<ApiEnvelope<QcRow[]>>("/feed-production/quality-checks")?.data ?? []);
+  const [rows, setRows] = useState<QcRow[]>(() => getCachedFirst<ApiEnvelope<QcRow[]>>("/feed-production/quality-checks")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/feed-production/quality-checks"));
   const [form, setForm] = useState({ productionBatchId: "", moisturePercent: "", proteinPercent: "", textureNotes: "" });
   const [submitting, setSubmitting] = useState(false);
@@ -2012,7 +2012,7 @@ type TransferRow = {
 
 export function InternalFeedTransferPage() {
   const options = useFeedOptions();
-  const [rows, setRows] = useState<TransferRow[]>(() => getCached<ApiEnvelope<TransferRow[]>>("/feed-production/transfers")?.data ?? []);
+  const [rows, setRows] = useState<TransferRow[]>(() => getCachedFirst<ApiEnvelope<TransferRow[]>>("/feed-production/transfers")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/feed-production/transfers"));
   const [form, setForm] = useState({ productionBatchId: "", fromWarehouseId: "", toFarmId: "", toPoultryHouseId: "", quantityKg: "", notes: "" });
   const [submitting, setSubmitting] = useState(false);
@@ -2217,7 +2217,7 @@ type PackagingRow = {
 
 export function FeedPackagingRecordPage() {
   const options = useFeedOptions();
-  const [rows, setRows] = useState<PackagingRow[]>(() => getCached<ApiEnvelope<PackagingRow[]>>("/feed-production/packaging-records")?.data ?? []);
+  const [rows, setRows] = useState<PackagingRow[]>(() => getCachedFirst<ApiEnvelope<PackagingRow[]>>("/feed-production/packaging-records")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/feed-production/packaging-records"));
   const [form, setForm] = useState({ productionBatchId: "", packageSizeKg: "50", packageCount: "", packagedAt: today() });
   const [submitting, setSubmitting] = useState(false);

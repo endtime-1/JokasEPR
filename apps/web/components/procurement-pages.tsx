@@ -9,7 +9,7 @@ import {
   ShoppingCart, Star, Tag, Wallet,
   type LucideIcon,
 } from "lucide-react";
-import { ApiEnvelope, apiFetch, getCached, hasCached } from "../lib/api";
+import { ApiEnvelope, apiFetch, getCached, getCachedFirst, hasCached } from "../lib/api";
 import { AppShell } from "./app-shell";
 import { DataTable } from "./data-table";
 
@@ -689,7 +689,7 @@ export function CreateSupplierPage() {
 type SupplierCategory = { id: string; code: string; name: string; description?: string };
 
 export function SupplierCategoriesPage() {
-  const [rows, setRows] = useState<SupplierCategory[]>(() => getCached<ApiEnvelope<SupplierCategory[]>>("/procurement/supplier-categories")?.data ?? []);
+  const [rows, setRows] = useState<SupplierCategory[]>(() => getCachedFirst<ApiEnvelope<SupplierCategory[]>>("/procurement/supplier-categories")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/procurement/supplier-categories"));
   const [form, setForm] = useState({ code: "", name: "", description: "" });
   const [saving, setSaving] = useState(false);
@@ -788,7 +788,7 @@ type PurchaseRequest = {
 };
 
 export function PurchaseRequestsPage() {
-  const [rows, setRows] = useState<PurchaseRequest[]>(() => getCached<ApiEnvelope<PurchaseRequest[]>>("/procurement/purchase-requests")?.data ?? []);
+  const [rows, setRows] = useState<PurchaseRequest[]>(() => getCachedFirst<ApiEnvelope<PurchaseRequest[]>>("/procurement/purchase-requests")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/procurement/purchase-requests"));
   const [statusFilter, setStatusFilter] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
@@ -1061,7 +1061,7 @@ type PurchaseOrder = {
 };
 
 export function PurchaseOrdersPage() {
-  const [rows, setRows] = useState<PurchaseOrder[]>(() => getCached<ApiEnvelope<PurchaseOrder[]>>("/procurement/purchase-orders")?.data ?? []);
+  const [rows, setRows] = useState<PurchaseOrder[]>(() => getCachedFirst<ApiEnvelope<PurchaseOrder[]>>("/procurement/purchase-orders")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/procurement/purchase-orders"));
   const [statusFilter, setStatusFilter] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
@@ -1365,7 +1365,7 @@ type GRN = {
 };
 
 export function GRNsPage() {
-  const [rows, setRows] = useState<GRN[]>(() => getCached<ApiEnvelope<GRN[]>>("/procurement/grns")?.data ?? []);
+  const [rows, setRows] = useState<GRN[]>(() => getCachedFirst<ApiEnvelope<GRN[]>>("/procurement/grns")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/procurement/grns"));
   const [statusFilter, setStatusFilter] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
@@ -1663,7 +1663,7 @@ type SupplierInvoice = {
 };
 
 export function SupplierInvoicesPage() {
-  const [rows, setRows] = useState<SupplierInvoice[]>(() => getCached<ApiEnvelope<SupplierInvoice[]>>("/procurement/invoices")?.data ?? []);
+  const [rows, setRows] = useState<SupplierInvoice[]>(() => getCachedFirst<ApiEnvelope<SupplierInvoice[]>>("/procurement/invoices")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/procurement/invoices"));
   const [statusFilter, setStatusFilter] = useState("");
   const [showForm, setShowForm] = useState(false);
@@ -1815,7 +1815,7 @@ type ProcurementPayment = {
 };
 
 export function ProcurementPaymentsPage() {
-  const [rows, setRows] = useState<ProcurementPayment[]>(() => getCached<ApiEnvelope<ProcurementPayment[]>>("/procurement/payments")?.data ?? []);
+  const [rows, setRows] = useState<ProcurementPayment[]>(() => getCachedFirst<ApiEnvelope<ProcurementPayment[]>>("/procurement/payments")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/procurement/payments"));
   const [showForm, setShowForm] = useState(false);
   const opts = useProcurementOptions();
@@ -1967,7 +1967,7 @@ type PerformanceRecord = {
 };
 
 export function SupplierPerformancePage() {
-  const [rows, setRows] = useState<PerformanceRecord[]>(() => getCached<ApiEnvelope<PerformanceRecord[]>>("/procurement/performance")?.data ?? []);
+  const [rows, setRows] = useState<PerformanceRecord[]>(() => getCachedFirst<ApiEnvelope<PerformanceRecord[]>>("/procurement/performance")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/procurement/performance"));
   const opts = useProcurementOptions();
   const [showForm, setShowForm] = useState(false);
@@ -2137,7 +2137,7 @@ type PriceHistoryRow = {
 };
 
 export function PriceHistoryPage() {
-  const [rows, setRows] = useState<PriceHistoryRow[]>(() => getCached<ApiEnvelope<PriceHistoryRow[]>>("/procurement/price-history")?.data ?? []);
+  const [rows, setRows] = useState<PriceHistoryRow[]>(() => getCachedFirst<ApiEnvelope<PriceHistoryRow[]>>("/procurement/price-history")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/procurement/price-history"));
   const opts = useProcurementOptions();
   const [showForm, setShowForm] = useState(false);

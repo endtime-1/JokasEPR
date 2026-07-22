@@ -6,7 +6,7 @@ import { CircleAlert, CircleArrowDown, CircleArrowUp, BadgeDollarSign, ChartBar,
 import { FinanceShell } from "./finance-shell";
 import { DataTable } from "./data-table";
 import { FormField } from "./form-field";
-import { ApiEnvelope, apiFetch, getCached, hasCached } from "../lib/api";
+import { ApiEnvelope, apiFetch, getCached, getCachedFirst, hasCached } from "../lib/api";
 
 // ─── Shared Types ────────────────────────────────────────────────────────────
 
@@ -626,7 +626,7 @@ export function FinanceDashboardPage() {
 // ─── Expense List ─────────────────────────────────────────────────────────────
 
 export function ExpenseListPage() {
-  const [expenses, setExpenses] = useState<Record<string, unknown>[]>(() => getCached<ApiEnvelope<Record<string, unknown>[]>>("/finance/expenses")?.data ?? []);
+  const [expenses, setExpenses] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/finance/expenses")?.data ?? []);
   const [status, setStatus] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -821,7 +821,7 @@ export function CreateExpensePage() {
 
 export function RevenuePage() {
   const options = useFinanceOptions();
-  const [revenues, setRevenues] = useState<Record<string, unknown>[]>(() => getCached<ApiEnvelope<Record<string, unknown>[]>>("/finance/revenue")?.data ?? []);
+  const [revenues, setRevenues] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/finance/revenue")?.data ?? []);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ source: "PRODUCT_SALES", description: "", amount: "", revenueDate: new Date().toISOString().slice(0, 10), paymentMethod: "CASH", customerName: "", invoiceRef: "", branchId: "", bankAccountId: "", notes: "" });
   const [error, setError] = useState("");
@@ -916,7 +916,7 @@ export function RevenuePage() {
 
 export function CustomerPaymentsPage() {
   const options = useFinanceOptions();
-  const [payments, setPayments] = useState<Record<string, unknown>[]>(() => getCached<ApiEnvelope<Record<string, unknown>[]>>("/finance/customer-payments")?.data ?? []);
+  const [payments, setPayments] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/finance/customer-payments")?.data ?? []);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ customerName: "", amount: "", paymentDate: new Date().toISOString().slice(0, 10), paymentMethod: "CASH", description: "", invoiceRef: "", bankAccountId: "", notes: "" });
   const [error, setError] = useState("");
@@ -988,7 +988,7 @@ export function CustomerPaymentsPage() {
 
 export function SupplierPaymentsPage() {
   const options = useFinanceOptions();
-  const [payments, setPayments] = useState<Record<string, unknown>[]>(() => getCached<ApiEnvelope<Record<string, unknown>[]>>("/finance/supplier-payments")?.data ?? []);
+  const [payments, setPayments] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/finance/supplier-payments")?.data ?? []);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ supplierName: "", amount: "", paymentDate: new Date().toISOString().slice(0, 10), paymentMethod: "BANK_TRANSFER", description: "", purchaseOrderRef: "", bankAccountId: "", notes: "" });
   const [error, setError] = useState("");
@@ -1060,7 +1060,7 @@ export function SupplierPaymentsPage() {
 
 export function PettyCashPage() {
   const options = useFinanceOptions();
-  const [transactions, setTransactions] = useState<Record<string, unknown>[]>(() => getCached<ApiEnvelope<Record<string, unknown>[]>>("/finance/petty-cash")?.data ?? []);
+  const [transactions, setTransactions] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/finance/petty-cash")?.data ?? []);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ type: "DISBURSEMENT", amount: "", description: "", transactionDate: new Date().toISOString().slice(0, 10), categoryId: "", branchId: "", receiptRef: "", notes: "" });
   const [error, setError] = useState("");
@@ -1150,7 +1150,7 @@ export function PettyCashPage() {
 
 export function PayrollPage() {
   const options = useFinanceOptions();
-  const [records, setRecords] = useState<Record<string, unknown>[]>(() => getCached<ApiEnvelope<Record<string, unknown>[]>>("/finance/payroll")?.data ?? []);
+  const [records, setRecords] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/finance/payroll")?.data ?? []);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ period: new Date().toISOString().slice(0, 7), periodStart: "", periodEnd: "", employeeName: "", employeeCode: "", basicSalary: "", allowances: "0", deductions: "0", taxDeduction: "0", ssnit: "0", branchId: "", bankAccountId: "", notes: "" });
   const [error, setError] = useState("");
@@ -1261,7 +1261,7 @@ export function PayrollPage() {
 // ─── Bank Accounts ────────────────────────────────────────────────────────────
 
 export function BankAccountsPage() {
-  const [accounts, setAccounts] = useState<Record<string, unknown>[]>(() => getCached<ApiEnvelope<Record<string, unknown>[]>>("/finance/bank-accounts")?.data ?? []);
+  const [accounts, setAccounts] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/finance/bank-accounts")?.data ?? []);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ accountName: "", accountNumber: "", bankName: "", branchName: "", accountType: "CURRENT", openingBalance: "0", notes: "" });
   const [error, setError] = useState("");
@@ -1343,7 +1343,7 @@ export function BankAccountsPage() {
 
 export function JournalEntriesPage() {
   const options = useFinanceOptions();
-  const [entries, setEntries] = useState<Record<string, unknown>[]>(() => getCached<ApiEnvelope<Record<string, unknown>[]>>("/finance/journal-entries")?.data ?? []);
+  const [entries, setEntries] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/finance/journal-entries")?.data ?? []);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ entryDate: new Date().toISOString().slice(0, 10), description: "", type: "STANDARD", notes: "" });
   const [lines, setLines] = useState([{ accountId: "", description: "", debit: "", credit: "", sequence: 1 }]);
@@ -1613,7 +1613,7 @@ export function CashFlowReportPage() {
 // ─── Product Profitability ────────────────────────────────────────────────────
 
 export function ProductProfitabilityPage() {
-  const [records, setRecords] = useState<Record<string, unknown>[]>(() => getCached<ApiEnvelope<Record<string, unknown>[]>>("/finance/reports/product-profitability")?.data ?? []);
+  const [records, setRecords] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/finance/reports/product-profitability")?.data ?? []);
   const [startDate, setStartDate] = useState(() => { const d = new Date(); d.setDate(1); return d.toISOString().slice(0, 10); });
   const [endDate, setEndDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [loading, setLoading] = useState(false);

@@ -59,7 +59,7 @@ function PageHeader({ title, subtitle }: { title: string; subtitle: string }) {
 
 export function InventoryItemsPage({ create = false }: { create?: boolean }) {
   const { options, optionsError } = useInventoryOptions();
-  const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCached<ApiEnvelope<Record<string, unknown>[]>>("/inventory/items")?.data ?? []);
+  const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/inventory/items")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/inventory/items"));
   const [form, setForm] = useState({ warehouseId: "", productId: "", reorderLevel: "", openingQuantity: "" });
   async function load() {

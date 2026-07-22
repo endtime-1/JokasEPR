@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -7,7 +7,7 @@ import { ChevronDown, ChevronUp, Download, Pencil, Plus, Trash2, X } from "lucid
 import { PoultryShell } from "./poultry-shell";
 import { DataTable } from "./data-table";
 import { FormField } from "./form-field";
-import { ApiEnvelope, apiFetch, downloadReport, getCached, hasCached } from "../lib/api";
+import { ApiEnvelope, apiFetch, downloadReport, getCached, getCachedFirst, hasCached } from "../lib/api";
 import { useAuth } from "./auth-context";
 
 type Option = {
@@ -128,7 +128,7 @@ const HOUSES_CACHE = "jokas_poultry_houses";
 export function PoultryHousesPage({ create = false }: { create?: boolean }) {
   const { options, optionsError, refreshOptions } = usePoultryOptions();
   const [rows, setRows] = useState<HouseRow[]>(() => {
-    if (getCached<ApiEnvelope<HouseRow[]>>("/poultry/houses")?.data) return getCached<ApiEnvelope<HouseRow[]>>("/poultry/houses")!.data;
+    if (getCachedFirst<ApiEnvelope<HouseRow[]>>("/poultry/houses")?.data) return getCachedFirst<ApiEnvelope<HouseRow[]>>("/poultry/houses")!.data;
     try { return JSON.parse(sessionStorage.getItem(HOUSES_CACHE) ?? "null") ?? []; } catch { return []; }
   });
   const [loading, setLoading] = useState(!hasCached("/poultry/houses"));
@@ -417,7 +417,7 @@ const BATCHES_CACHE = "jokas_poultry_batches";
 export function FlockBatchesPage({ create = false }: { create?: boolean }) {
   const { options, optionsError, refreshOptions } = usePoultryOptions();
   const [rows, setRows] = useState<BatchRow[]>(() => {
-    if (getCached<ApiEnvelope<BatchRow[]>>("/poultry/batches")?.data) return getCached<ApiEnvelope<BatchRow[]>>("/poultry/batches")!.data;
+    if (getCachedFirst<ApiEnvelope<BatchRow[]>>("/poultry/batches")?.data) return getCachedFirst<ApiEnvelope<BatchRow[]>>("/poultry/batches")!.data;
     try { return JSON.parse(sessionStorage.getItem(BATCHES_CACHE) ?? "null") ?? []; } catch { return []; }
   });
   const [loading, setLoading] = useState(!hasCached("/poultry/batches"));
@@ -737,7 +737,7 @@ type BatchDetail = {
 export function FlockBatchDetailsPage() {
   const params = useParams<{ id: string }>();
   const { options } = usePoultryOptions();
-  const [batch, setBatch] = useState<BatchDetail | null>(() => getCached<ApiEnvelope<BatchDetail>>(`/poultry/batches/${params?.id}`)?.data ?? null);
+  const [batch, setBatch] = useState<BatchDetail | null>(() => getCachedFirst<ApiEnvelope<BatchDetail>>(`/poultry/batches/${params?.id}`)?.data ?? null);
   const [batchError, setBatchError] = useState("");
   const [tab, setTab] = useState<"overview" | "pens" | "records">("overview");
   const [statusForm, setStatusForm] = useState({ status: "", notes: "" });
@@ -1074,7 +1074,7 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
   const recordCacheKey = `jokas_records_${type}`;
   const [rows, setRows] = useState<Record<string, any>[]>(() => {
     const ep = `/poultry/records/${type}?take=200`;
-    if (getCached<{ data: Record<string, any>[] }>(ep)?.data) return getCached<{ data: Record<string, any>[] }>(ep)!.data;
+    if (getCachedFirst<{ data: Record<string, any>[] }>(ep)?.data) return getCachedFirst<{ data: Record<string, any>[] }>(ep)!.data;
     try { return JSON.parse(sessionStorage.getItem(recordCacheKey) ?? "null") ?? []; } catch { return []; }
   });
   const [form, setForm] = useState<Record<string, string>>(() => makeFormDefaults(type));

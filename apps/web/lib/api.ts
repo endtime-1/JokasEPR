@@ -8,9 +8,23 @@ const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "/api/v1").trim();
 // Survives React component mount/unmount so navigating away and back shows data instantly.
 const _getCache = new Map<string, unknown>();
 
-/** Return the last successful GET response for `path`, or undefined if not yet fetched. */
+/** Return the last successful GET response for exactly `path`. */
 export function getCached<T>(path: string): T | undefined {
   return _getCache.get(path) as T | undefined;
+}
+
+/**
+ * Return the first cached GET response whose key equals `pathPrefix` or starts
+ * with `pathPrefix + "?"` / `pathPrefix + "/"`.
+ * Use this in useState initializers instead of getCached when the page fetches
+ * with query params (filters, dates) so the cache always hits on re-navigation.
+ */
+export function getCachedFirst<T>(pathPrefix: string): T | undefined {
+  if (_getCache.has(pathPrefix)) return _getCache.get(pathPrefix) as T;
+  for (const [k, v] of _getCache.entries()) {
+    if (k.startsWith(pathPrefix + "?") || k.startsWith(pathPrefix + "/")) return v as T;
+  }
+  return undefined;
 }
 
 /** True if any cached key equals or starts with `pathPrefix`. */

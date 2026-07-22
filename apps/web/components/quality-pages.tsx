@@ -8,7 +8,7 @@ import {
   FileText, FlaskConical, Plus, RefreshCw, ShieldCheck,
   ShieldX, TrendingUp, CircleX,
 } from "lucide-react";
-import { ApiEnvelope, apiFetch, getCached, hasCached } from "../lib/api";
+import { ApiEnvelope, apiFetch, getCached, getCachedFirst, hasCached } from "../lib/api";
 import { AppShell } from "./app-shell";
 import { DataTable } from "./data-table";
 
@@ -372,7 +372,7 @@ type Template = {
 };
 
 export function QualityTemplatesPage() {
-  const [rows, setRows] = useState<Template[]>(() => getCached<ApiEnvelope<Template[]>>("/quality/templates")?.data ?? []);
+  const [rows, setRows] = useState<Template[]>(() => getCachedFirst<ApiEnvelope<Template[]>>("/quality/templates")?.data ?? []);
   const [checkType, setCheckType] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ code: "", name: "", checkType: "RAW_MATERIAL" as CheckType, description: "" });
@@ -534,7 +534,7 @@ type QualityCheck = {
 };
 
 export function QualityChecksPage({ filterType }: { filterType?: string }) {
-  const [data, setData] = useState<{ total: number; items: QualityCheck[] }>(() => getCached<ApiEnvelope<{ total: number; items: QualityCheck[] }>>("/quality/checks")?.data ?? { total: 0, items: [] });
+  const [data, setData] = useState<{ total: number; items: QualityCheck[] }>(() => getCachedFirst<ApiEnvelope<{ total: number; items: QualityCheck[] }>>("/quality/checks")?.data ?? { total: 0, items: [] });
   const [checkType, setCheckType] = useState(filterType ?? "");
   const [status, setStatus] = useState("");
   const [decision, setDecision] = useState("");
@@ -1233,7 +1233,7 @@ type LabReport = {
 };
 
 export function LabReportsPage() {
-  const [rows, setRows] = useState<LabReport[]>(() => getCached<ApiEnvelope<LabReport[]>>("/quality/lab-reports")?.data ?? []);
+  const [rows, setRows] = useState<LabReport[]>(() => getCachedFirst<ApiEnvelope<LabReport[]>>("/quality/lab-reports")?.data ?? []);
   const [checks, setChecks] = useState<{ id: string; reference: string; checkType: string; batchNumber?: string }[]>([]);
   const [form, setForm] = useState({ checkId: "", reportNumber: "", labName: "", reportDate: "", fileUrl: "", fileType: "", summary: "", findings: "", recommendations: "" });
   const [showForm, setShowForm] = useState(false);
@@ -1332,7 +1332,7 @@ type CorrectiveAction = {
 };
 
 export function CorrectiveActionsPage() {
-  const [rows, setRows] = useState<CorrectiveAction[]>(() => getCached<ApiEnvelope<CorrectiveAction[]>>("/quality/corrective-actions")?.data ?? []);
+  const [rows, setRows] = useState<CorrectiveAction[]>(() => getCachedFirst<ApiEnvelope<CorrectiveAction[]>>("/quality/corrective-actions")?.data ?? []);
   const opts = useQCOptions();
   const [status, setStatus] = useState("");
   const [showForm, setShowForm] = useState(false);

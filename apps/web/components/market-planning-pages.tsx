@@ -6,7 +6,7 @@ import { useParams } from "next/navigation";
 import { CircleCheckBig, ClipboardList, Factory, PackageCheck, Plus, RefreshCw, ShoppingCart, TrendingUp } from "lucide-react";
 import { MarketPlanningShell } from "./market-planning-shell";
 import { DataTable } from "./data-table";
-import { ApiEnvelope, apiFetch, getCached, hasCached } from "../lib/api";
+import { ApiEnvelope, apiFetch, getCached, getCachedFirst, hasCached } from "../lib/api";
 
 type Option = { id: string; branchId?: string; productionSiteId?: string; code?: string; sku?: string; name: string; finishedProductId?: string };
 type PlanningOptions = { branches: Option[]; productionSites: Option[]; warehouses: Option[]; finishedFeeds: Option[]; formulas: Option[]; rawMaterials: Option[] };
@@ -178,7 +178,7 @@ function RecommendationTable({ rows, loading }: { rows: RecommendationRow[]; loa
 }
 
 export function MarketTargetListPage() {
-  const [rows, setRows] = useState<TargetRow[]>(() => getCached<ApiEnvelope<TargetRow[]>>("/market-planning/targets")?.data ?? []);
+  const [rows, setRows] = useState<TargetRow[]>(() => getCachedFirst<ApiEnvelope<TargetRow[]>>("/market-planning/targets")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/market-planning/targets"));
   useEffect(() => {
     apiFetch<ApiEnvelope<TargetRow[]>>("/market-planning/targets")
@@ -383,7 +383,7 @@ export function InventoryAvailabilityCheckPage() {
 }
 
 export function ProcurementRecommendationPage({ convert = false }: { convert?: boolean }) {
-  const [rows, setRows] = useState<RecommendationRow[]>(() => getCached<ApiEnvelope<RecommendationRow[]>>("/market-planning/recommendations")?.data ?? []);
+  const [rows, setRows] = useState<RecommendationRow[]>(() => getCachedFirst<ApiEnvelope<RecommendationRow[]>>("/market-planning/recommendations")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/market-planning/recommendations"));
   const [mrpId, setMrpId] = useState("");
   const [recommendationId, setRecommendationId] = useState("");
