@@ -1,9 +1,9 @@
 ﻿import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { diskStorage } from "multer";
-import { extname } from "path";
-import { mkdirSync } from "fs";
 import { join } from "path";
+import { mkdirSync } from "fs";
+import { validateAndCleanImageUpload } from "../../common/utils/validate-image-magic";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { PermissionsGuard } from "../../common/guards/permissions.guard";
 import { RequirePermissions } from "../../common/decorators/permissions.decorator";
@@ -135,9 +135,10 @@ export class HRController {
           mkdirSync(dir, { recursive: true });
           cb(null, dir);
         },
-        filename: (req, file, cb) => {
-          const ext = extname(file.originalname).toLowerCase();
-          cb(null, `${(req as any).params.id}-${Date.now()}${ext}`);
+        filename: (_req, _file, cb) => {
+          // Use a random name — never trust the client-supplied extension here;
+          // magic bytes validation below confirms the actual file type.
+          cb(null, `emp-${Date.now()}-${Math.random().toString(36).slice(2)}.bin`);
         },
       }),
       limits: { fileSize: 5 * 1024 * 1024 },
@@ -153,6 +154,9 @@ export class HRController {
     @UploadedFile() file: Express.Multer.File,
   ) {
     if (!file) throw new BadRequestException("No file uploaded");
+    if (!validateAndCleanImageUpload(file.path)) {
+      throw new BadRequestException("Invalid image file. Upload a JPEG, PNG, WebP, or GIF.");
+    }
     return this.svc.uploadEmployeePhoto(user, id, file.filename);
   }
 

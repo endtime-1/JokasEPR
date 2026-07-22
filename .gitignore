@@ -8,5 +8,6 @@ coverage
 .env.local
 *.log
 uploads
+!apps/api/src/modules/uploads/
 tmp
 *.stackdump

@@ -31,6 +31,7 @@ import { SyncModule } from "./modules/sync/sync.module";
 import { QuickBooksModule } from "./modules/quickbooks/quickbooks.module";
 import { PublicModule } from "./modules/public/public.module";
 import { SetupModule } from "./modules/setup/setup.module";
+import { UploadsModule } from "./modules/uploads/uploads.module";
 
 @Module({
   imports: [
@@ -69,6 +70,7 @@ import { SetupModule } from "./modules/setup/setup.module";
     QuickBooksModule,
     PublicModule,
     SetupModule,
+    UploadsModule,
   ]
 })
 export class AppModule {}

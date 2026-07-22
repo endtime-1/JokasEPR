@@ -84,9 +84,9 @@ async function bootstrap() {
   app.useGlobalFilters(new HttpExceptionFilter());
   app.useGlobalInterceptors(new NoCacheInterceptor(), new RequestLoggingInterceptor());
 
-  const uploadsDir = join(process.cwd(), "uploads");
-  mkdirSync(uploadsDir, { recursive: true });
-  app.useStaticAssets(uploadsDir, { prefix: "/uploads" });
+  // Ensure uploads directory exists. Files are served via the authenticated
+  // UploadsController — not as public static assets.
+  mkdirSync(join(process.cwd(), "uploads"), { recursive: true });
 
   await app.listen(port);
   Logger.log(`API listening on http://localhost:${port}/${prefix}/v${version}`, "Bootstrap");
