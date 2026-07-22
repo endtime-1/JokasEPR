@@ -65,6 +65,16 @@ const nextConfig = {
     const apiPort = process.env.API_PORT || "4001";
     return [
       {
+        // Health check — must come before the /api/v1/:path* catch-all.
+        // Rewrites to the raw /health Express middleware in NestJS (registered
+        // before the global prefix so it has no /api/v1/ segment).
+        // External ping services (UptimeRobot, cron-job.org) should hit
+        // https://<domain>/api/v1/health every 5 min to prevent Hostinger
+        // from hibernating the process between real user visits.
+        source: "/api/v1/health",
+        destination: `http://localhost:${apiPort}/health`,
+      },
+      {
         source: "/api/v1/:path*",
         destination: `http://localhost:${apiPort}/api/v1/:path*`,
       },
