@@ -50,6 +50,11 @@ export function invalidateCache(pathOrPrefix: string, prefix = false): void {
   }
 }
 
+/** Clear every cached GET response (call on logout so the next user never sees stale data). */
+export function clearAllCache(): void {
+  _getCache.clear();
+}
+
 export type ApiEnvelope<T> = {
   data: T;
   meta?: Record<string, unknown>;

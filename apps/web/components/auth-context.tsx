@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ApiEnvelope, refreshSession } from "../lib/api";
+import { ApiEnvelope, clearAllCache, refreshSession } from "../lib/api";
 import { signalAuthReady } from "../lib/auth-gate";
 
 type Profile = {
@@ -161,6 +161,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function signOut() {
     if (signOutRef.current) return;
     signOutRef.current = true;
+    clearAllCache();
+    if (typeof window !== "undefined") {
+      for (const key of [...Object.keys(sessionStorage)]) {
+        if (key.startsWith("jokas_")) sessionStorage.removeItem(key);
+      }
+    }
     await fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
     router.push("/login");
   }
