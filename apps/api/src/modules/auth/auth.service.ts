@@ -24,9 +24,12 @@ type RefreshPayload = {
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_MINUTES = 30;
 
+const PROFILE_CACHE_TTL_MS = 5 * 60 * 1000; // 5 min — well inside the 15-min JWT access TTL
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
+  private readonly profileCache = new Map<string, { profile: AuthenticatedUser; expiresAt: number }>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -133,6 +136,8 @@ export class AuthService {
       data: { revokedAt: new Date() }
     });
 
+    this.clearProfileCache(payload.sub);
+
     await this.audit.write({
       companyId: payload.org,
       actorUserId: payload.sub,
@@ -167,6 +172,8 @@ export class AuthService {
       data: { revokedAt: new Date() }
     });
 
+    this.clearProfileCache(actor.id);
+
     await this.audit.write({
       companyId: actor.companyId,
       actorUserId: actor.id,
@@ -181,7 +188,14 @@ export class AuthService {
     return { data: { success: true } };
   }
 
+  clearProfileCache(userId: string) {
+    this.profileCache.delete(userId);
+  }
+
   async buildProfile(userId: string): Promise<AuthenticatedUser> {
+    const cached = this.profileCache.get(userId);
+    if (cached && cached.expiresAt > Date.now()) return cached.profile;
+
     const user = await this.prisma.user.findFirst({
       where: { id: userId, deletedAt: null, status: UserStatus.ACTIVE },
       include: {
@@ -211,7 +225,7 @@ export class AuthService {
     );
     const hasGlobalAccess = roles.includes("SUPER_ADMIN") || roles.includes("CEO");
 
-    return {
+    const profile: AuthenticatedUser = {
       id: user.id,
       companyId: user.companyId,
       email: user.email,
@@ -224,6 +238,8 @@ export class AuthService {
       productionSiteIds: user.productionSiteAccess.map((access) => access.productionSiteId),
       hasGlobalAccess
     };
+    this.profileCache.set(userId, { profile, expiresAt: Date.now() + PROFILE_CACHE_TTL_MS });
+    return profile;
   }
 
   private async findLoginUser(email: string, companyId?: string) {
