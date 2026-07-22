@@ -170,10 +170,25 @@ jobs:
             APP_DIR=~/domains/jokasfarms.com/nodejs
             PRISMA=$APP_DIR/apps/api/node_modules/.bin/prisma
 
+            # ── Load DATABASE_URL from .env if not in SSH session env ─────────
+            # Hostinger injects hPanel env vars into Passenger, not SSH sessions.
+            # Source the .env file the app writes on first setup as a fallback.
+            if [ -z "$DATABASE_URL" ]; then
+              for ENV_FILE in "$APP_DIR/.env" "$HOME/.env"; do
+                if [ -f "$ENV_FILE" ]; then
+                  set -a; source "$ENV_FILE" 2>/dev/null || true; set +a
+                  echo "Loaded env from $ENV_FILE (DATABASE_URL ${DATABASE_URL:+SET}${DATABASE_URL:-STILL MISSING})"
+                  break
+                fi
+              done
+            fi
+
             # ── Migrations ────────────────────────────────────────────────────
-            if [ -f "$PRISMA" ]; then
-              DATABASE_URL="${DATABASE_URL}" $NODE $PRISMA migrate deploy \
-                --schema=$APP_DIR/prisma/schema.prisma \
+            if [ -z "$DATABASE_URL" ]; then
+              echo "WARNING: DATABASE_URL not set — skipping migrations"
+            elif [ -f "$PRISMA" ]; then
+              $NODE "$PRISMA" migrate deploy \
+                --schema="$APP_DIR/prisma/schema.prisma" \
                 && echo "Migrations applied." \
                 || echo "WARNING: migrations failed or already up to date."
             else
@@ -182,8 +197,10 @@ jobs:
 
             # ── Permission sync ────────────────────────────────────────────────
             SYNC_SCRIPT=$APP_DIR/apps/api/sync-permissions.mjs
-            if [ -f "$SYNC_SCRIPT" ]; then
-              DATABASE_URL="${DATABASE_URL}" $NODE $SYNC_SCRIPT \
+            if [ -z "$DATABASE_URL" ]; then
+              echo "WARNING: DATABASE_URL not set — skipping permission sync"
+            elif [ -f "$SYNC_SCRIPT" ]; then
+              $NODE "$SYNC_SCRIPT" \
                 && echo "Permissions synced." \
                 || echo "WARNING: permissions sync failed."
             else
@@ -191,16 +208,18 @@ jobs:
             fi
 
             # ── Restart via start.js PID file (surgical — avoids killing unrelated processes) ──
+            # start.js writes an array of PIDs: [webPid, apiPid]
             PID_FILE=/tmp/jokas-child-pids.json
             if [ -f "$PID_FILE" ]; then
-              # Kill only the PIDs that start.js registered for itself and its children
               $NODE -e "
                 try {
-                  const pids = JSON.parse(require('fs').readFileSync('$PID_FILE','utf8'));
-                  const all = [pids.proxy, pids.web, pids.api].filter(Boolean);
+                  const data = JSON.parse(require('fs').readFileSync('$PID_FILE','utf8'));
+                  const all = Array.isArray(data)
+                    ? data.filter(Boolean)
+                    : [data.proxy, data.web, data.api].filter(Boolean);
                   all.forEach(pid => { try { process.kill(pid, 9); } catch {} });
-                  console.log('Killed PIDs: ' + all.join(', '));
-                } catch(e) { console.log('PID file unreadable, falling back to grep kill'); }
+                  console.log('Killed PIDs: ' + (all.join(', ') || '(none)'));
+                } catch(e) { console.log('PID file error: ' + e.message); }
               " 2>/dev/null || true
             fi
             # Fallback: kill any remaining jokas start.js processes only
