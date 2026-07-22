@@ -1,12 +1,10 @@
 ﻿"use client";
 
 import { FormEvent, useState } from "react";
-import { useRouter } from "next/navigation";
 import { CircleAlert, ArrowRight, Building2, ShieldCheck } from "lucide-react";
 import { BrandLogo } from "../../components/brand-logo";
 
 export default function LoginPage() {
-  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -22,6 +20,12 @@ export default function LoginPage() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ email, password })
       });
+      // Hard navigate so AuthProvider remounts fresh with the new session cookie,
+      // triggering a clean loadProfile() call instead of stale null profile.
+      if (response.ok) {
+        window.location.href = "/dashboard";
+        return;
+      }
       if (!response.ok) {
         let message = "Sign in failed. Please check your credentials.";
         try {
@@ -42,7 +46,6 @@ export default function LoginPage() {
         setError(message);
         return;
       }
-      router.push("/dashboard");
     } catch {
       setError("Unable to reach the server. Check your connection and try again.");
     } finally {

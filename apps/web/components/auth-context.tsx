@@ -86,8 +86,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
             res = res2;
           } else if (refreshResult === "expired") {
-            // Refresh token genuinely invalid — session is over, go to login
-            router.replace("/login");
+            // Refresh token genuinely invalid — session is over, go to login.
+            // Guard: skip the redirect when already on /login so we don't reset
+            // the form (and avoid a potential re-render loop on the same route).
+            if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
+              router.replace("/login");
+            }
             return;
           } else {
             // API unreachable (502 / network error) — give it time to warm up and retry
