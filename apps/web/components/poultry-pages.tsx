@@ -747,21 +747,40 @@ type BatchDetail = {
   openingBirdCount: number; startDate: string; expectedCloseDate?: string; notes?: string;
   farm?: { name: string }; poultryHouse?: { name: string } | null;
   penAllocations?: Array<{ birdCount: number; pen: { code: string; name?: string; poultryHouse?: { name: string } } }>;
+  poultryTransferRecords?: Array<{ id: string; birdCount: number; transferDate: string; toPenId: string | null; toPoultryHouseId: string; toPoultryHouse?: { name: string; code: string } | null; toPen?: { code: string; name?: string } | null }>;
   metrics?: { currentLiveBirds: number; mortalityRate: number; eggProductionPercent: number; feedConversionRatio: number; costPerBird: number; profitability: number };
 };
 
 export function FlockBatchDetailsPage() {
   const params = useParams<{ id: string }>();
+  const { options } = usePoultryOptions();
   const [batch, setBatch] = useState<BatchDetail | null>(null);
   const [tab, setTab] = useState<"overview" | "pens" | "records">("overview");
   const [statusForm, setStatusForm] = useState({ status: "", notes: "" });
   const [statusMsg, setStatusMsg] = useState("");
+  const [pendingPens, setPendingPens] = useState<Record<string, string>>({});
+  const [pendingErr, setPendingErr] = useState<Record<string, string>>({});
 
-  useEffect(() => {
+  function reloadBatch() {
     apiFetch<ApiEnvelope<BatchDetail>>(`/poultry/batches/${params.id}`)
       .then((response) => setBatch(response.data))
       .catch(() => undefined);
-  }, [params.id]);
+  }
+
+  useEffect(() => { reloadBatch(); }, [params.id]);
+
+  async function assignPen(transferId: string) {
+    const penId = pendingPens[transferId];
+    if (!penId) return;
+    try {
+      await apiFetch(`/poultry/transfers/${transferId}/allocate-pen`, { method: "PATCH", body: JSON.stringify({ penId }) });
+      setPendingPens((p) => { const n = { ...p }; delete n[transferId]; return n; });
+      setPendingErr((p) => { const n = { ...p }; delete n[transferId]; return n; });
+      reloadBatch();
+    } catch (err: any) {
+      setPendingErr((p) => ({ ...p, [transferId]: err?.message ?? "Failed to assign pen." }));
+    }
+  }
 
   async function updateStatus(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -831,18 +850,56 @@ export function FlockBatchDetailsPage() {
           )}
 
           {tab === "pens" && (
-            <div className="rounded-md border border-line bg-white p-4 shadow-panel">
-              <h3 className="mb-3 font-semibold">Pen Allocations</h3>
-              {(batch.penAllocations ?? []).length === 0 && <p className="text-sm text-ink/65">No pen allocations recorded.</p>}
-              <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
-                {(batch.penAllocations ?? []).map((alloc, i) => (
-                  <div key={i} className="rounded border border-line p-3">
-                    <p className="font-semibold">{alloc.pen?.code}{alloc.pen?.name ? ` — ${alloc.pen.name}` : ""}</p>
-                    {alloc.pen?.poultryHouse && <p className="text-xs text-ink/60">{alloc.pen.poultryHouse.name}</p>}
-                    <p className="mt-2 text-lg font-bold">{alloc.birdCount.toLocaleString()} <span className="text-sm font-normal text-ink/60">birds</span></p>
-                  </div>
-                ))}
+            <div className="space-y-4">
+              <div className="rounded-md border border-line bg-white p-4 shadow-panel">
+                <h3 className="mb-3 font-semibold">Pen Allocations</h3>
+                {(batch.penAllocations ?? []).length === 0 && <p className="text-sm text-ink/65">No pen allocations recorded.</p>}
+                <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
+                  {(batch.penAllocations ?? []).map((alloc, i) => (
+                    <div key={i} className="rounded border border-line p-3">
+                      <p className="font-semibold">{alloc.pen?.code}{alloc.pen?.name ? ` — ${alloc.pen.name}` : ""}</p>
+                      {alloc.pen?.poultryHouse && <p className="text-xs text-ink/60">{alloc.pen.poultryHouse.name}</p>}
+                      <p className="mt-2 text-lg font-bold">{alloc.birdCount.toLocaleString()} <span className="text-sm font-normal text-ink/60">birds</span></p>
+                    </div>
+                  ))}
+                </div>
               </div>
+
+              {(batch.poultryTransferRecords ?? []).filter((t) => !t.toPenId).length > 0 && (
+                <div className="rounded-md border border-amber-200 bg-amber-50 p-4 shadow-panel">
+                  <h3 className="mb-1 font-semibold text-amber-800">Pending Pen Assignments</h3>
+                  <p className="mb-3 text-xs text-amber-700">These transfers arrived at a house without a specific pen. Assign a pen to complete the allocation.</p>
+                  <div className="space-y-3">
+                    {(batch.poultryTransferRecords ?? []).filter((t) => !t.toPenId).map((t) => {
+                      const housePens = options.pens.filter((p) => p.poultryHouseId === t.toPoultryHouseId);
+                      return (
+                        <div key={t.id} className="flex flex-wrap items-center gap-3 rounded border border-amber-200 bg-white p-3">
+                          <div className="flex-1">
+                            <p className="text-sm font-semibold">{t.toPoultryHouse?.name ?? t.toPoultryHouseId}</p>
+                            <p className="text-xs text-ink/60">{t.birdCount.toLocaleString()} birds · {t.transferDate?.slice(0, 10)}</p>
+                            {pendingErr[t.id] && <p className="mt-1 text-xs text-red-600">{pendingErr[t.id]}</p>}
+                          </div>
+                          <select
+                            className={inputClass + " text-sm"}
+                            value={pendingPens[t.id] ?? ""}
+                            onChange={(e) => setPendingPens((p) => ({ ...p, [t.id]: e.target.value }))}
+                          >
+                            <option value="">Select pen…</option>
+                            {housePens.map((p) => <option key={p.id} value={p.id}>{p.code}{p.name ? ` — ${p.name}` : ""}</option>)}
+                          </select>
+                          <button
+                            onClick={() => assignPen(t.id)}
+                            disabled={!pendingPens[t.id]}
+                            className="min-h-9 rounded-md bg-brand px-3 text-sm font-semibold text-white disabled:opacity-40"
+                          >
+                            Assign
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

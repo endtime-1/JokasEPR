@@ -454,6 +454,11 @@ export class UpdatePoultryTransferStatusDto {
   status!: PoultryTransferStatus;
 }
 
+export class AllocateTransferPenDto {
+  @IsUUID()
+  penId!: string;
+}
+
 export class CreatePoultryCostRecordDto {
   @IsUUID()
   flockBatchId!: string;

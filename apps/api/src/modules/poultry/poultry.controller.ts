@@ -24,6 +24,7 @@ import {
   UpdateFlockBatchDto,
   UpdatePenDto,
   UpdatePoultryHouseDto,
+  AllocateTransferPenDto,
   UpdatePoultryRecordDto,
   UpdatePoultryTransferStatusDto
 } from "./dto/poultry.dto";
@@ -220,6 +221,12 @@ export class PoultryController {
   @RequirePermissions(PERMISSIONS.POULTRY_MANAGE)
   updateTransfer(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdatePoultryTransferStatusDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.poultryService.updateTransferStatus(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Patch("transfers/:id/allocate-pen")
+  @RequirePermissions(PERMISSIONS.POULTRY_MANAGE)
+  allocateTransferPen(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: AllocateTransferPenDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.poultryService.allocateTransferPen(user, id, dto, { ipAddress, userAgent });
   }
 
   @Post("costs")

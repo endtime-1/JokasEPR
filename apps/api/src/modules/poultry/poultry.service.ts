@@ -23,6 +23,7 @@ import {
   UpdateFlockBatchDto,
   UpdatePenDto,
   UpdatePoultryHouseDto,
+  AllocateTransferPenDto,
   UpdatePoultryTransferStatusDto
 } from "./dto/poultry.dto";
 
@@ -373,7 +374,14 @@ export class PoultryService {
         medicationRecords: { where: { deletedAt: null }, orderBy: { startDate: "desc" } },
         vaccinationRecords: { where: { deletedAt: null }, orderBy: { vaccinationDate: "desc" } },
         healthObservations: { where: { deletedAt: null }, orderBy: { observationDate: "desc" } },
-        poultryTransferRecords: { where: { deletedAt: null }, orderBy: { transferDate: "desc" } },
+        poultryTransferRecords: {
+          where: { deletedAt: null },
+          orderBy: { transferDate: "desc" },
+          include: {
+            toPoultryHouse: { select: { id: true, name: true, code: true } },
+            toPen: { select: { id: true, code: true, name: true } }
+          }
+        },
         costRecords: { where: { deletedAt: null }, orderBy: { costDate: "desc" } },
         penAllocations: { include: { pen: { select: { code: true, name: true, penNumber: true, poultryHouse: { select: { name: true, code: true } } } } } }
       }
@@ -647,6 +655,41 @@ export class PoultryService {
       }
     });
     await this.writeAudit(user, dto.status === "APPROVED" ? "APPROVE" : "UPDATE", "PoultryTransferRecord", data.id, `Updated poultry transfer to ${dto.status}`, context, transfer.fromFarmId);
+    return { data };
+  }
+
+  async allocateTransferPen(user: AuthenticatedUser, id: string, dto: AllocateTransferPenDto, context: RequestContext) {
+    const transfer = await this.prisma.poultryTransferRecord.findFirst({ where: { companyId: user.companyId, id, deletedAt: null } });
+    if (!transfer) throw new NotFoundException("Transfer was not found.");
+    if (transfer.toPenId) throw new BadRequestException("This transfer already has a pen assigned.");
+
+    const pen = await this.prisma.pen.findFirst({ where: { id: dto.penId, companyId: user.companyId } });
+    if (!pen) throw new NotFoundException("Pen not found.");
+    if (pen.poultryHouseId !== transfer.toPoultryHouseId) throw new BadRequestException("Pen does not belong to the transfer's destination house.");
+
+    const house = await this.prisma.poultryHouse.findFirst({ where: { id: transfer.toPoultryHouseId!, companyId: user.companyId } });
+
+    const data = await this.prisma.$transaction(async (tx) => {
+      await tx.pen.update({ where: { id: dto.penId }, data: { isActive: true } });
+      await tx.batchPenAllocation.upsert({
+        where: { flockBatchId_penId: { flockBatchId: transfer.flockBatchId, penId: dto.penId } },
+        update: { birdCount: { increment: transfer.birdCount } },
+        create: {
+          companyId: user.companyId,
+          branchId: house?.branchId ?? transfer.branchId,
+          flockBatchId: transfer.flockBatchId,
+          penId: dto.penId,
+          poultryHouseId: transfer.toPoultryHouseId!,
+          farmId: transfer.toFarmId,
+          birdCount: transfer.birdCount,
+          createdById: user.id
+        }
+      });
+      return tx.poultryTransferRecord.update({ where: { id }, data: { toPenId: dto.penId, updatedById: user.id } });
+    });
+
+    this.lookupCache.invalidate(`poultry:opts:${user.companyId}`);
+    await this.writeAudit(user, "UPDATE", "PoultryTransferRecord", id, `Assigned pen to transfer`, context, transfer.fromFarmId);
     return { data };
   }
 
