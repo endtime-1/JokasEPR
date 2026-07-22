@@ -746,13 +746,17 @@ export function FlockBatchDetailsPage() {
   const [pendingErr, setPendingErr] = useState<Record<string, string>>({});
 
   function reloadBatch() {
+    if (!params?.id) { setBatchError("Batch ID is missing. Please go back and try again."); return; }
     setBatchError("");
     apiFetch<ApiEnvelope<BatchDetail>>(`/poultry/batches/${params.id}`)
-      .then((response) => setBatch(response.data))
+      .then((response) => {
+        if (response?.data) setBatch(response.data);
+        else setBatchError("Batch data not found. Please go back and try again.");
+      })
       .catch((err: any) => setBatchError(err?.message ?? "Failed to load batch. Please refresh."));
   }
 
-  useEffect(() => { reloadBatch(); }, [params.id]);
+  useEffect(() => { reloadBatch(); }, [params?.id]);
 
   async function assignPen(transferId: string) {
     const penId = pendingPens[transferId];
@@ -785,7 +789,18 @@ export function FlockBatchDetailsPage() {
   return (
     <PoultryShell>
       <PageHeader title={batch?.name ?? "Flock Batch"} subtitle={batch ? `${batch.code} · ${batch.birdType} · ${batch.farm?.name ?? ""}` : batchError ? "Failed to load" : "Loading…"} />
-      {batchError && !batch && <p className="mb-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{batchError} <button className="ml-2 font-semibold underline" onClick={reloadBatch}>Retry</button></p>}
+      {batchError && !batch && (
+        <div className="mb-4 rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          <p className="font-medium">{batchError}</p>
+          <button className="mt-2 rounded-md bg-red-100 px-3 py-1.5 text-xs font-semibold hover:bg-red-200" onClick={reloadBatch}>Retry</button>
+        </div>
+      )}
+      {!batch && !batchError && (
+        <div className="flex flex-col items-center justify-center py-20 text-ink/50">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand/20 border-t-brand mb-4" />
+          <p className="text-sm">Loading batch data…</p>
+        </div>
+      )}
       {batch && (
         <>
           <div className="mb-6 flex gap-2">
