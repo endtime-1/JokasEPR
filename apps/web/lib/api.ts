@@ -22,16 +22,19 @@ export function getCached<T>(path: string): T | undefined {
 export function getCachedFirst<T>(pathPrefix: string): T | undefined {
   if (_getCache.has(pathPrefix)) return _getCache.get(pathPrefix) as T;
   for (const [k, v] of _getCache.entries()) {
-    if (k.startsWith(pathPrefix + "?") || k.startsWith(pathPrefix + "/")) return v as T;
+    // Only match query-param variants (e.g. /finance/expenses?startDate=...).
+    // Deliberately do NOT match sub-paths (e.g. /poultry/batches/uuid) — those are
+    // individual item responses and would corrupt a list page's rows state.
+    if (k.startsWith(pathPrefix + "?")) return v as T;
   }
   return undefined;
 }
 
-/** True if any cached key equals or starts with `pathPrefix`. */
+/** True if any cached key equals or starts with `pathPrefix` (query-param variants only). */
 export function hasCached(pathPrefix: string): boolean {
   if (_getCache.has(pathPrefix)) return true;
   for (const k of _getCache.keys()) {
-    if (k.startsWith(pathPrefix + "?") || k.startsWith(pathPrefix + "/")) return true;
+    if (k.startsWith(pathPrefix + "?")) return true;
   }
   return false;
 }

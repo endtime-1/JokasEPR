@@ -390,7 +390,25 @@ export class PoultryService {
       throw new NotFoundException("Flock batch was not found.");
     }
     const prices = await this.poultryPrices(user.companyId);
-    return { data: { ...batch, metrics: this.batchMetrics(batch, prices) } };
+
+    // Compute effective bird count per pen by subtracting outgoing transfers from the
+    // stored allocation. The stored birdCount represents initial allocation + any
+    // incoming transfers (upserted at transfer creation time), but outgoing transfers
+    // were never decremented from the source pen — so we do it here at read time.
+    // This correctly handles both historical data and future transfers consistently.
+    const outgoingByPen = new Map<string, number>();
+    for (const t of batch.poultryTransferRecords) {
+      if (t.fromPenId) {
+        outgoingByPen.set(t.fromPenId, (outgoingByPen.get(t.fromPenId) ?? 0) + t.birdCount);
+      }
+    }
+    const adjustedAllocations = batch.penAllocations.map((alloc: any) => ({
+      ...alloc,
+      birdCount: Math.max(0, alloc.birdCount - (outgoingByPen.get(alloc.penId) ?? 0))
+    }));
+
+    const batchAdj = { ...batch, penAllocations: adjustedAllocations };
+    return { data: { ...batchAdj, metrics: this.batchMetrics(batchAdj, prices) } };
   }
 
   async createBatch(user: AuthenticatedUser, dto: CreateFlockBatchDto, context: RequestContext) {
