@@ -38,7 +38,44 @@ const nextConfig = {
     ],
   },
   async headers() {
+    const securityHeaders = [
+      {
+        key: "X-Frame-Options",
+        value: "DENY",
+      },
+      {
+        key: "X-Content-Type-Options",
+        value: "nosniff",
+      },
+      {
+        key: "Referrer-Policy",
+        value: "strict-origin-when-cross-origin",
+      },
+      {
+        key: "Permissions-Policy",
+        value: "camera=(), microphone=(), geolocation=()",
+      },
+      {
+        key: "Content-Security-Policy",
+        value: [
+          "default-src 'self'",
+          "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
+          "style-src 'self' 'unsafe-inline'",
+          "img-src 'self' data: blob:",
+          "font-src 'self'",
+          "connect-src 'self'",
+          "object-src 'none'",
+          "frame-ancestors 'none'",
+        ].join("; "),
+      },
+    ];
+
     return [
+      {
+        // Security headers on all routes
+        source: "/(.*)",
+        headers: securityHeaders,
+      },
       {
         // Static chunk files have content-addressed URLs (hashed filenames).
         // Cache them for 1 year — if the content changes, Next.js generates
