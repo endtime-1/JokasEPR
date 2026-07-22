@@ -53,7 +53,19 @@ export class SetupService {
     return { setupRequired: count === 0 };
   }
 
-  async setup(dto: SetupDto) {
+  async setup(dto: SetupDto, setupToken?: string) {
+    // If SETUP_DONE is set in env, the route is permanently closed.
+    if (process.env.SETUP_DONE === "true") {
+      throw new ForbiddenException("Setup has already been completed.");
+    }
+
+    // If SETUP_SECRET_TOKEN is configured, the caller must supply the matching
+    // x-setup-token header so random internet users cannot run setup.
+    const envToken = process.env.SETUP_SECRET_TOKEN;
+    if (envToken && setupToken !== envToken) {
+      throw new ForbiddenException("Invalid setup token.");
+    }
+
     const count = await this.prisma.user.count();
     if (count > 0) {
       throw new ForbiddenException("Setup has already been completed.");

@@ -27,7 +27,8 @@ export class AuthController {
   ) {
     const result = await this.authService.login(dto, { ipAddress, userAgent });
     this.setAuthCookies(response, result.data.accessToken, result.data.refreshToken, result.data.refreshTtlDays);
-    return result;
+    // Tokens are delivered via HttpOnly cookies only — never in the response body.
+    return { data: { user: result.data.user } };
   }
 
   @Post("refresh")
@@ -46,7 +47,7 @@ export class AuthController {
     }
     const result = await this.authService.refresh(token, { ipAddress, userAgent });
     this.setAuthCookies(response, result.data.accessToken, result.data.refreshToken, result.data.refreshTtlDays);
-    return result;
+    return { data: { user: result.data.user } };
   }
 
   @Post("logout")
