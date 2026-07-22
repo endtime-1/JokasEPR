@@ -22,7 +22,11 @@ type ListAuditOptions = {
   entityType?: string;
   action?: string;
   actorUserId?: string;
+  page?: number;
+  take?: number;
+  /** @deprecated use page + take */
   limit?: number;
+  /** @deprecated use page */
   offset?: number;
 };
 
@@ -42,8 +46,11 @@ export class AuditService {
   }
 
   async list(companyId: string, options: ListAuditOptions = {}) {
-    const { entityType, action, actorUserId, limit = 50, offset = 0 } = options;
-    const take = Math.min(Math.max(1, limit), 200);
+    const { entityType, action, actorUserId } = options;
+    // Support legacy limit/offset params alongside new page/take params.
+    const take = Math.min(Math.max(1, options.take ?? options.limit ?? 50), 100);
+    const page = options.page ?? 1;
+    const skip = options.offset != null ? options.offset : (page - 1) * take;
 
     const where: Prisma.AuditLogWhereInput = {
       companyId,
@@ -58,11 +65,14 @@ export class AuditService {
         include: { actor: { select: { id: true, fullName: true, email: true } } },
         orderBy: { createdAt: "desc" },
         take,
-        skip: offset
+        skip
       }),
       this.prisma.auditLog.count({ where })
     ]);
 
-    return { data: { data, total } };
+    return {
+      data,
+      meta: { total, page, take, totalPages: Math.max(1, Math.ceil(total / take)) }
+    };
   }
 }

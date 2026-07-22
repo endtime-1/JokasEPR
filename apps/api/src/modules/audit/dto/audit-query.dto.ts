@@ -19,9 +19,24 @@ export class AuditQueryDto {
   @Type(() => Number)
   @IsNumber()
   @Min(1)
+  page?: number = 1;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  @Max(100)
+  take?: number = 50;
+
+  /** @deprecated use page + take instead */
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
   @Max(200)
   limit?: number;
 
+  /** @deprecated use page instead */
   @IsOptional()
   @Type(() => Number)
   @IsNumber()

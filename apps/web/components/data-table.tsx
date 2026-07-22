@@ -18,7 +18,12 @@ export function DataTable<T extends Record<string, unknown>>({
   searchPlaceholder,
   pageSize = 25,
   actions,
-  loading
+  loading,
+  // Server-side pagination props — when provided, client-side filter/sort/page are disabled.
+  totalCount,
+  serverPage,
+  serverPageSize,
+  onPageChange,
 }: {
   columns: Column<T>[];
   rows?: T[];
@@ -27,7 +32,13 @@ export function DataTable<T extends Record<string, unknown>>({
   pageSize?: number;
   actions?: React.ReactNode;
   loading?: boolean;
+  totalCount?: number;
+  serverPage?: number;
+  serverPageSize?: number;
+  onPageChange?: (page: number) => void;
 }) {
+  const isServerPaged = totalCount !== undefined && onPageChange !== undefined;
+
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState("");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
@@ -36,25 +47,31 @@ export function DataTable<T extends Record<string, unknown>>({
   const searchableCols = columns.filter((c) => c.searchable !== false);
 
   const filtered = useMemo(() => {
+    if (isServerPaged) return rows;
     const q = search.trim().toLowerCase();
     if (!q) return rows;
     return rows.filter((row) =>
       searchableCols.some((col) => String(row[col.key] ?? "").toLowerCase().includes(q))
     );
-  }, [rows, search, searchableCols]);
+  }, [rows, search, searchableCols, isServerPaged]);
 
   const sorted = useMemo(() => {
-    if (!sortKey) return filtered;
+    if (isServerPaged || !sortKey) return filtered;
     return [...filtered].sort((a, b) => {
       const av = String(a[sortKey] ?? "");
       const bv = String(b[sortKey] ?? "");
       return sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
     });
-  }, [filtered, sortKey, sortDir]);
+  }, [filtered, sortKey, sortDir, isServerPaged]);
 
-  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
-  const currentPage = Math.min(page, totalPages - 1);
-  const paged = sorted.slice(currentPage * pageSize, (currentPage + 1) * pageSize);
+  const clientTotalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
+  const currentPage = isServerPaged ? (serverPage ?? 1) - 1 : Math.min(page, clientTotalPages - 1);
+  const paged = isServerPaged ? sorted : sorted.slice(currentPage * pageSize, (currentPage + 1) * pageSize);
+
+  const totalPages = isServerPaged
+    ? Math.max(1, Math.ceil((totalCount ?? 0) / (serverPageSize ?? pageSize)))
+    : clientTotalPages;
+  const totalShown = isServerPaged ? totalCount ?? 0 : sorted.length;
 
   function handleSearch(value: string) {
     setSearch(value);
@@ -62,6 +79,7 @@ export function DataTable<T extends Record<string, unknown>>({
   }
 
   function toggleSort(key: string) {
+    if (isServerPaged) return;
     if (sortKey === key) {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     } else {
@@ -69,6 +87,14 @@ export function DataTable<T extends Record<string, unknown>>({
       setSortDir("asc");
     }
     setPage(0);
+  }
+
+  function handlePageChange(p: number) {
+    if (isServerPaged) {
+      onPageChange!(p + 1);
+    } else {
+      setPage(p);
+    }
   }
 
   const pageNumbers = Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
@@ -98,6 +124,8 @@ export function DataTable<T extends Record<string, unknown>>({
           <span className="shrink-0 text-xs text-ink/45">
             {loading && rows.length === 0
               ? "Loading…"
+              : isServerPaged
+              ? `${totalShown} record${totalShown !== 1 ? "s" : ""}`
               : `${filtered.length} of ${rows.length} record${rows.length !== 1 ? "s" : ""}`}
           </span>
         </div>
@@ -197,13 +225,13 @@ export function DataTable<T extends Record<string, unknown>>({
       {totalPages > 1 && (
         <div className="flex items-center justify-between border-t border-line px-4 py-3">
           <span className="text-xs text-ink/50">
-            Page {currentPage + 1} of {totalPages} · {sorted.length} result
-            {sorted.length !== 1 ? "s" : ""}
+            Page {currentPage + 1} of {totalPages} · {totalShown} result
+            {totalShown !== 1 ? "s" : ""}
           </span>
           <nav className="flex gap-1" aria-label="Pagination">
             <button
               className="grid h-8 w-8 place-items-center rounded-md border border-line transition hover:bg-field disabled:pointer-events-none disabled:opacity-30"
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
+              onClick={() => handlePageChange(Math.max(0, currentPage - 1))}
               disabled={currentPage === 0}
               aria-label="Previous page"
             >
@@ -217,7 +245,7 @@ export function DataTable<T extends Record<string, unknown>>({
                     ? "border-brand bg-brand text-white"
                     : "border-line text-ink/60 hover:bg-field"
                 }`}
-                onClick={() => setPage(n)}
+                onClick={() => handlePageChange(n)}
                 aria-label={`Page ${n + 1}`}
                 aria-current={n === currentPage ? "page" : undefined}
               >
@@ -226,7 +254,7 @@ export function DataTable<T extends Record<string, unknown>>({
             ))}
             <button
               className="grid h-8 w-8 place-items-center rounded-md border border-line transition hover:bg-field disabled:pointer-events-none disabled:opacity-30"
-              onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+              onClick={() => handlePageChange(Math.min(totalPages - 1, currentPage + 1))}
               disabled={currentPage === totalPages - 1}
               aria-label="Next page"
             >

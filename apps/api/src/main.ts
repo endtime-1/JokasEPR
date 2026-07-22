@@ -2,6 +2,7 @@ import { Logger, ValidationPipe, VersioningType } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { NestFactory } from "@nestjs/core";
 import { NestExpressApplication } from "@nestjs/platform-express";
+import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import cookieParser from "cookie-parser";
 import helmet from "helmet";
 import { mkdirSync } from "fs";
@@ -95,6 +96,22 @@ async function bootstrap() {
   // Ensure uploads directory exists. Files are served via the authenticated
   // UploadsController — not as public static assets.
   mkdirSync(join(process.cwd(), "uploads"), { recursive: true });
+
+  // Swagger API docs — only enabled outside production so the spec is never
+  // publicly exposed on the live server. Set ENABLE_SWAGGER=true in dev or staging.
+  if (!isProduction || process.env.ENABLE_SWAGGER === "true") {
+    const spec = new DocumentBuilder()
+      .setTitle("Jokas Agribusiness ERP")
+      .setDescription("REST API for poultry, HR, finance, inventory, and operations")
+      .setVersion(version)
+      .addCookieAuth("jokas_at")
+      .build();
+    const document = SwaggerModule.createDocument(app, spec);
+    SwaggerModule.setup(`${prefix}/docs`, app, document, {
+      swaggerOptions: { persistAuthorization: true },
+    });
+    Logger.log(`Swagger docs at http://localhost:${port}/${prefix}/docs`, "Bootstrap");
+  }
 
   await app.listen(port);
   Logger.log(`API listening on http://localhost:${port}/${prefix}/v${version}`, "Bootstrap");

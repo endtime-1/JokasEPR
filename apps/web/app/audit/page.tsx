@@ -15,39 +15,36 @@ type AuditLog = {
   actor?: { fullName: string; email: string };
 };
 
-type AuditResponse = { data: { data: AuditLog[]; total: number } };
+type AuditMeta = { total: number; page: number; take: number; totalPages: number };
+type AuditResponse = { data: AuditLog[]; meta: AuditMeta };
 
 const PAGE_SIZE = 50;
 
 export default function AuditPage() {
   const [logs, setLogs] = useState<AuditLog[]>([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(0);
+  const [meta, setMeta] = useState<AuditMeta>({ total: 0, page: 1, take: PAGE_SIZE, totalPages: 1 });
+  const [page, setPage] = useState(1);
   const [entityType, setEntityType] = useState("");
   const [action, setAction] = useState("");
   const [loading, setLoading] = useState(false);
 
   function load(p = page) {
     setLoading(true);
-    const params = new URLSearchParams();
-    params.set("limit", String(PAGE_SIZE));
-    params.set("offset", String(p * PAGE_SIZE));
+    const params = new URLSearchParams({ page: String(p), take: String(PAGE_SIZE) });
     if (entityType) params.set("entityType", entityType);
     if (action) params.set("action", action);
 
     apiFetch<AuditResponse>(`/audit-logs?${params}`)
       .then((r) => {
-        setLogs(r.data?.data ?? []);
-        setTotal(r.data?.total ?? 0);
+        setLogs(r.data ?? []);
+        if (r.meta) setMeta(r.meta);
       })
       .catch(() => undefined)
       .finally(() => setLoading(false));
   }
 
-  useEffect(() => { setPage(0); load(0); }, [entityType, action]);
+  useEffect(() => { setPage(1); load(1); }, [entityType, action]);
   useEffect(() => { load(page); }, [page]);
-
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const ACTIONS = [
     "CREATE", "UPDATE", "DELETE", "APPROVE", "REJECT", "LOGIN",
@@ -69,7 +66,6 @@ export default function AuditPage() {
           <p className="text-sm text-ink/60">Security and operational events across the system.</p>
         </div>
 
-        {/* Filters */}
         <div className="flex flex-wrap gap-3">
           <input
             value={entityType}
@@ -86,12 +82,17 @@ export default function AuditPage() {
             {ACTIONS.map((a) => <option key={a} value={a}>{a.replace(/_/g, " ")}</option>)}
           </select>
           {loading && <span className="self-center text-xs text-ink/50">Loading...</span>}
-          <span className="self-center text-xs text-ink/50 ml-auto">{total.toLocaleString()} total events</span>
+          <span className="self-center text-xs text-ink/50 ml-auto">{meta.total.toLocaleString()} total events</span>
         </div>
 
         <DataTable
           rows={logs as Record<string, unknown>[]}
           empty="No audit events found"
+          loading={loading}
+          totalCount={meta.total}
+          serverPage={page}
+          serverPageSize={PAGE_SIZE}
+          onPageChange={setPage}
           columns={[
             {
               key: "createdAt",
@@ -130,31 +131,6 @@ export default function AuditPage() {
             },
           ]}
         />
-
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-ink/50">
-              Page {page + 1} of {totalPages} · showing {logs.length} of {total}
-            </span>
-            <div className="flex gap-1">
-              <button
-                disabled={page === 0}
-                onClick={() => setPage((p) => p - 1)}
-                className="rounded-md border border-line px-3 py-1.5 text-xs disabled:opacity-40"
-              >
-                Previous
-              </button>
-              <button
-                disabled={page >= totalPages - 1}
-                onClick={() => setPage((p) => p + 1)}
-                className="rounded-md border border-line px-3 py-1.5 text-xs disabled:opacity-40"
-              >
-                Next
-              </button>
-            </div>
-          </div>
-        )}
       </div>
     </AppShell>
   );

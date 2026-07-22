@@ -153,22 +153,24 @@ jobs:
             ecosystem.config.js start.js package.json \
             ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/
 
-      - name: Restart services on Hostinger
+      - name: Deploy and restart on Hostinger
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.HOSTINGER_HOST }}
           username: ${{ secrets.HOSTINGER_USER }}
           key: ${{ secrets.HOSTINGER_SSH_KEY }}
           port: 65002
+          # command_timeout sets how long the SSH action waits before giving up.
+          command_timeout: 5m
           script: |
-            # Source shell profile to pick up env vars set via Hostinger panel
+            set -e
             source ~/.bashrc 2>/dev/null || source ~/.profile 2>/dev/null || true
 
             NODE=/opt/alt/alt-nodejs22/root/usr/bin/node
             APP_DIR=~/domains/jokasfarms.com/nodejs
             PRISMA=$APP_DIR/apps/api/node_modules/.bin/prisma
 
-            # Run migrations
+            # ── Migrations ────────────────────────────────────────────────────
             if [ -f "$PRISMA" ]; then
               DATABASE_URL="${DATABASE_URL}" $NODE $PRISMA migrate deploy \
                 --schema=$APP_DIR/prisma/schema.prisma \
@@ -178,8 +180,7 @@ jobs:
               echo "WARNING: prisma binary not found — skipping migrations"
             fi
 
-            # Sync permissions for all roles (idempotent — safe on every deploy)
-            # Script lives in apps/api/ so Node can find @prisma/client in apps/api/node_modules
+            # ── Permission sync ────────────────────────────────────────────────
             SYNC_SCRIPT=$APP_DIR/apps/api/sync-permissions.mjs
             if [ -f "$SYNC_SCRIPT" ]; then
               DATABASE_URL="${DATABASE_URL}" $NODE $SYNC_SCRIPT \
@@ -189,16 +190,41 @@ jobs:
               echo "WARNING: sync-permissions.mjs not found — skipping"
             fi
 
-            # Kill any existing Node processes for this user so start.js gets
-            # a clean slate — Passenger will respawn start.js automatically,
-            # and start.js manages the API and web as its own child processes.
-            ps aux | grep -E "node|lsnode" | grep "$(whoami)" | grep -v grep | awk '{print $2}' | xargs kill -9 2>/dev/null || true
+            # ── Restart via start.js PID file (surgical — avoids killing unrelated processes) ──
+            PID_FILE=/tmp/jokas-child-pids.json
+            if [ -f "$PID_FILE" ]; then
+              # Kill only the PIDs that start.js registered for itself and its children
+              $NODE -e "
+                try {
+                  const pids = JSON.parse(require('fs').readFileSync('$PID_FILE','utf8'));
+                  const all = [pids.proxy, pids.web, pids.api].filter(Boolean);
+                  all.forEach(pid => { try { process.kill(pid, 9); } catch {} });
+                  console.log('Killed PIDs: ' + all.join(', '));
+                } catch(e) { console.log('PID file unreadable, falling back to grep kill'); }
+              " 2>/dev/null || true
+            fi
+            # Fallback: kill any remaining jokas start.js processes only
+            pgrep -f "node.*start\.js" -u "$(whoami)" | xargs kill -9 2>/dev/null || true
             sleep 1
 
-            # Touch Passenger's restart file so it picks up the new code immediately.
+            # ── Signal Passenger to respawn start.js ──────────────────────────
             mkdir -p $APP_DIR/tmp
             touch $APP_DIR/tmp/restart.txt
-            echo "Passenger restart signalled — start.js will respawn."
+            echo "Passenger restart signalled."
+            sleep 5
 
-            sleep 3
+            # ── Smoke test — verify the app is actually serving HTTP ───────────
+            DOMAIN="https://jokasfarms.com"
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 "$DOMAIN/__status" || echo "000")
+            if [ "$STATUS" = "200" ]; then
+              echo "Smoke test PASSED — app is live (HTTP $STATUS)"
+            elif [ "$STATUS" = "503" ]; then
+              # 503 = start.js startup page — server is alive and starting up, not crashed
+              echo "Smoke test OK — server is starting up (HTTP $STATUS)"
+            else
+              echo "Smoke test FAILED — unexpected status: HTTP $STATUS"
+              echo "Check Hostinger logs. The previous version may still be running."
+              exit 1
+            fi
+
             echo "Running node processes: $(ps aux | grep '[n]ode' | grep "$(whoami)" | wc -l)"

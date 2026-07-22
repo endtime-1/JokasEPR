@@ -1231,6 +1231,7 @@ model User {
   mobileSyncRecords         MobileSyncRecord[]
   qbConnections             QuickBooksConnection[]  @relation("QBConnectedBy")
   qbSyncLogsTriggered       QuickBooksSyncLog[]      @relation("QBSyncTriggeredBy")
+  employee                  Employee?
 
   @@unique([companyId, email])
   @@index([companyId])
@@ -5716,7 +5717,8 @@ model EmployeeRole {
 
 model Employee {
   id                    String         @id @default(uuid())
-  companyId             String        
+  companyId             String
+  userId                String?        @unique
   code                  String         @db.VarChar(30)
   firstName             String         @db.VarChar(80)
   lastName              String         @db.VarChar(80)
@@ -5730,11 +5732,11 @@ model Employee {
   startDate             DateTime
   endDate               DateTime?
   status                EmployeeStatus @default(ACTIVE)
-  employeeRoleId        String?       
-  branchId              String?       
-  farmId                String?       
-  warehouseId           String?       
-  productionSiteId      String?       
+  employeeRoleId        String?
+  branchId              String?
+  farmId                String?
+  warehouseId           String?
+  productionSiteId      String?
   basicSalary           Decimal?       @db.Decimal(15, 2)
   bankName              String?        @db.VarChar(120)
   bankAccount           String?        @db.VarChar(40)
@@ -5745,12 +5747,13 @@ model Employee {
   notes                 String?        @db.VarChar(500)
   photoUrl              String?        @db.VarChar(500)
   createdById           String?
-  updatedById           String?       
+  updatedById           String?
   createdAt             DateTime       @default(now())
   updatedAt             DateTime       @updatedAt
   deletedAt             DateTime?
 
   company              Company              @relation(fields: [companyId], references: [id])
+  user                 User?                @relation(fields: [userId], references: [id])
   employeeRole         EmployeeRole?        @relation(fields: [employeeRoleId], references: [id])
   branch               Branch?              @relation(fields: [branchId], references: [id])
   farm                 Farm?                @relation(fields: [farmId], references: [id])
