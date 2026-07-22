@@ -8,6 +8,7 @@ import { PoultryShell } from "./poultry-shell";
 import { DataTable } from "./data-table";
 import { FormField } from "./form-field";
 import { ApiEnvelope, apiFetch, downloadReport, getCached, getCachedFirst, hasCached } from "../lib/api";
+import { formatCell } from "../lib/format";
 import { useAuth } from "./auth-context";
 
 type Option = {
@@ -1014,7 +1015,7 @@ function BatchRecordSection({ batchId, type, label, cols }: { batchId: string; t
                 <tbody>
                   {rows.map((row) => (
                     <tr key={row.id} className="border-t border-line">
-                      {cols.map((c) => <td key={c} className="px-2 py-1.5">{String(row[c] ?? "—").slice(0, 50)}</td>)}
+                      {cols.map((c) => <td key={c} className="px-2 py-1.5">{formatCell(c, row[c])}</td>)}
                       <td className="px-2 py-1.5">
                         <div className="flex gap-1">
                           <button type="button" title="Correct record" onClick={() => startEdit(row)} className="rounded p-1 text-ink/40 hover:bg-brand/10 hover:text-brand">
@@ -1313,7 +1314,7 @@ function SimpleRecordTable({ rows, onEdit, onDelete }: { rows: Record<string, an
   ]);
   const keys = Object.keys(rows?.[0] ?? {}).filter((key) => allowedKeys.has(key));
   const columns = [
-    ...keys.map((key) => ({ key, label: key.replace(/([A-Z])/g, " $1"), render: (row: Record<string, any>) => String(row[key] ?? "-").slice(0, 80) })),
+    ...keys.map((key) => ({ key, label: key.replace(/([A-Z])/g, " $1"), render: (row: Record<string, any>) => formatCell(key, row[key], 80) })),
     ...((onEdit || onDelete) ? [{ key: "_actions", label: "", render: (row: Record<string, any>) => (
       <div className="flex gap-1">
         {onEdit && (
@@ -1405,11 +1406,9 @@ export function PoultryTransferPage() {
     };
     try {
       if (anyPenSelected) {
-        await Promise.all(
-          selectedPens.map((p) =>
-            apiFetch("/poultry/transfers", { method: "POST", body: JSON.stringify({ ...base, fromPenId: p.penId, birdCount: Number(p.birdCount) }) })
-          )
-        );
+        for (const p of selectedPens) {
+          await apiFetch("/poultry/transfers", { method: "POST", body: JSON.stringify({ ...base, fromPenId: p.penId, birdCount: Number(p.birdCount) }) });
+        }
       } else {
         await apiFetch("/poultry/transfers", { method: "POST", body: JSON.stringify({ ...base, birdCount: Number(form.birdCount) }) });
       }
