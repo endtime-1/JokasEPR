@@ -407,8 +407,11 @@ export class PoultryService {
       birdCount: Math.max(0, alloc.birdCount - (outgoingByPen.get(alloc.penId) ?? 0))
     }));
 
+    // Sum of adjusted pen counts = openingBirdCount + incoming - outgoing transfers.
+    // Pass this to batchMetrics so currentLiveBirds accounts for transfers, not just mortality.
+    const totalAdjustedBirds = adjustedAllocations.reduce((sum: number, a: any) => sum + a.birdCount, 0);
     const batchAdj = { ...batch, penAllocations: adjustedAllocations };
-    return { data: { ...batchAdj, metrics: this.batchMetrics(batchAdj, prices) } };
+    return { data: { ...batchAdj, metrics: this.batchMetrics(batchAdj, prices, totalAdjustedBirds) } };
   }
 
   async createBatch(user: AuthenticatedUser, dto: CreateFlockBatchDto, context: RequestContext) {
@@ -793,9 +796,12 @@ export class PoultryService {
     return rows.map((row) => row.map((value) => `"${value.replace(/"/g, '""')}"`).join(",")).join("\n");
   }
 
-  private batchMetrics(batch: any, prices: { eggPricePerUnit: number; broilerPricePerKg: number }) {
+  private batchMetrics(batch: any, prices: { eggPricePerUnit: number; broilerPricePerKg: number }, totalAdjustedBirds?: number) {
     const mortality = (batch.mortalityRecords ?? []).reduce((sum: number, row: any) => sum + row.birdCount, 0);
-    const currentLiveBirds = this.currentLiveBirds(batch.openingBirdCount, batch.mortalityRecords ?? []);
+    // Use totalAdjustedBirds (pen sum after transfers) when available (getBatch); fall back
+    // to openingBirdCount for listBatches which doesn't load transfer/pen data.
+    const liveBirdsBase = totalAdjustedBirds ?? batch.openingBirdCount;
+    const currentLiveBirds = Math.max(0, liveBirdsBase - mortality);
     const totalFeedKg = (batch.feedConsumptionRecords ?? []).reduce((sum: number, row: any) => sum + Number(row.quantityKg), 0);
     const totalEggs = (batch.eggProductionRecords ?? []).reduce((sum: number, row: any) => sum + this.totalEggs(row), 0);
     const totalCosts = (batch.costRecords ?? []).reduce((sum: number, row: any) => sum + Number(row.amount), 0);
