@@ -391,20 +391,29 @@ export class PoultryService {
     }
     const prices = await this.poultryPrices(user.companyId);
 
-    // Compute effective bird count per pen by subtracting outgoing transfers from the
-    // stored allocation. The stored birdCount represents initial allocation + any
-    // incoming transfers (upserted at transfer creation time), but outgoing transfers
-    // were never decremented from the source pen — so we do it here at read time.
-    // This correctly handles both historical data and future transfers consistently.
+    // Compute live bird count per pen by subtracting both outgoing transfers and
+    // mortality from the stored allocation. The stored birdCount represents initial
+    // allocation + any incoming transfers (upserted at transfer creation time).
+    // Outgoing transfers and deaths are not stored against the pen — they are
+    // applied at read time so the sum across all pens (across all houses in the
+    // batch) equals currentLiveBirds.
     const outgoingByPen = new Map<string, number>();
     for (const t of batch.poultryTransferRecords) {
       if (t.fromPenId) {
         outgoingByPen.set(t.fromPenId, (outgoingByPen.get(t.fromPenId) ?? 0) + t.birdCount);
       }
     }
+    const mortalityByPen = new Map<string, number>();
+    for (const m of batch.mortalityRecords) {
+      if ((m as any).penId) {
+        mortalityByPen.set((m as any).penId, (mortalityByPen.get((m as any).penId) ?? 0) + m.birdCount);
+      }
+    }
     const adjustedAllocations = batch.penAllocations.map((alloc: any) => ({
       ...alloc,
-      birdCount: Math.max(0, alloc.birdCount - (outgoingByPen.get(alloc.penId) ?? 0))
+      birdCount: Math.max(0, alloc.birdCount
+        - (outgoingByPen.get(alloc.penId) ?? 0)
+        - (mortalityByPen.get(alloc.penId) ?? 0))
     }));
 
     const batchAdj = { ...batch, penAllocations: adjustedAllocations };
