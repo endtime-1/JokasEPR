@@ -135,4 +135,13 @@ export class DutyRemindersService {
 
     this.logger.log(`Sent ${slot} reminders to ${accesses.length} users in company ${companyId}`);
   }
+
+  // ── 3 AM: purge expired login rate-limit windows ─────────────────────────
+  @Cron("0 3 * * *")
+  async purgeExpiredRateLimitWindows() {
+    const { count } = await this.prisma.loginRateLimit.deleteMany({
+      where: { windowEnd: { lt: new Date() } },
+    });
+    if (count > 0) this.logger.log(`Purged ${count} expired LoginRateLimit row(s)`);
+  }
 }
