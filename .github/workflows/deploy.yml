@@ -207,8 +207,12 @@ jobs:
               echo "WARNING: sync-permissions.mjs not found — skipping"
             fi
 
-            # ── Restart via start.js PID file (surgical — avoids killing unrelated processes) ──
-            # start.js writes an array of PIDs: [webPid, apiPid]
+            # ── Kill accumulated old processes ─────────────────────────────────
+            # Strategy: kill web/api children directly (safe), then signal Passenger
+            # to restart start.js cleanly via restart.txt. Do NOT kill start.js via
+            # pgrep — that puts our process in Passenger's group kill blast radius.
+
+            # 1. PID file kill — latest registered web/api child PIDs
             PID_FILE=/tmp/jokas-child-pids.json
             if [ -f "$PID_FILE" ]; then
               $NODE -e "
@@ -222,11 +226,22 @@ jobs:
                 } catch(e) { console.log('PID file error: ' + e.message); }
               " 2>/dev/null || true
             fi
-            # Fallback: kill any remaining jokas start.js processes only
-            pgrep -f "node.*start\.js" -u "$(whoami)" | xargs kill -9 2>/dev/null || true
+
+            # 2. Port-based kill — drains orphaned web/api processes accumulated
+            #    from previous deploys that the PID file never recorded.
+            for PORT in 3001 4001; do
+              { fuser -k -9 "$PORT/tcp" 2>/dev/null && echo "Killed port $PORT owner"; } || \
+              { lsof -ti ":$PORT" 2>/dev/null | xargs kill -9 2>/dev/null && echo "Killed port $PORT owner (lsof)"; } || true
+            done
+
+            # 3. Pattern-based kill — any remaining API/web bundle processes
+            pkill -9 -u "$(whoami)" -f "apps/api/dist/bundle" 2>/dev/null && echo "Killed api bundle processes" || true
+            pkill -9 -u "$(whoami)" -f "apps/web.*server\.js" 2>/dev/null && echo "Killed web server processes" || true
             sleep 1
 
             # ── Signal Passenger to respawn start.js ──────────────────────────
+            # Passenger sends SIGTERM to start.js → start.js calls killAll() and
+            # exits cleanly, then Passenger restarts it with the new code.
             mkdir -p $APP_DIR/tmp
             touch $APP_DIR/tmp/restart.txt
             echo "Passenger restart signalled."
