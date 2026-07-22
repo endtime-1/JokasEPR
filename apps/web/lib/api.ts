@@ -213,12 +213,15 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     response = await request(path, init);
   }
 
+  // Track whether api:unavailable was fired so we don't double-notify below.
+  let firedUnavailable = false;
   // If we burned through all retries and the API is still unavailable, signal the shell
   // so it can show a "starting up" banner and schedule an auto-reload. This prevents the
   // page from silently showing empty data with no recovery path.
   if (TRANSIENT_STATUSES.has(response.status)) {
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent("api:unavailable"));
+      firedUnavailable = true;
     }
   }
 
@@ -249,7 +252,17 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     if (response.status === 401) {
       signalSessionExpired();
     }
-    throw new Error(extractErrorMessage(await response.text()));
+    const errText = await response.text();
+    // For failed GET requests that aren't auth/permission/not-found errors,
+    // fire api:data-error so the shell can show a "failed to load" toast.
+    // Transient errors (502/503/504) are already handled by api:unavailable.
+    // Mutations (POST/PATCH/DELETE) surface their errors inline — skip those.
+    const isGet = (init?.method ?? "GET").toUpperCase() === "GET";
+    const skipStatuses = new Set([401, 403, 404]);
+    if (isGet && !firedUnavailable && !skipStatuses.has(response.status) && typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("api:data-error"));
+    }
+    throw new Error(extractErrorMessage(errText));
   }
 
   const text = await response.text();

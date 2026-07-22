@@ -199,6 +199,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchFocus, setSearchFocus] = useState(0);
   const [apiDownBanner, setApiDownBanner] = useState(false);
+  const [dataErrorToast, setDataErrorToast] = useState(false);
+  const dataErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -258,6 +260,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  // Show a "failed to load" toast when a GET request fails with a non-transient error
+  // (e.g. 500 during DB warm-up on Hostinger). Most pages swallow these errors silently,
+  // leaving users with blank tables and no indication of what happened.
+  useEffect(() => {
+    function onDataError() {
+      if (dataErrorTimer.current) clearTimeout(dataErrorTimer.current);
+      setDataErrorToast(true);
+      dataErrorTimer.current = setTimeout(() => setDataErrorToast(false), 15000);
+    }
+    window.addEventListener("api:data-error", onDataError);
+    return () => {
+      window.removeEventListener("api:data-error", onDataError);
+      if (dataErrorTimer.current) clearTimeout(dataErrorTimer.current);
+    };
+  }, []);
+
   useEffect(() => {
     apiFetch<ApiEnvelope<{ count: number }>>("/alerts/unread-count")
       .then((res) => setUnreadAlerts(res.data.count))
@@ -308,10 +326,30 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     </div>
   ) : null;
 
+  const dataErrorToastEl = dataErrorToast && !apiDownBanner ? (
+    <div className="fixed bottom-4 right-4 z-[9998] flex items-center gap-3 rounded-xl bg-red-600 px-4 py-3 text-sm font-medium text-white shadow-xl">
+      <span>Some data failed to load.</span>
+      <button
+        className="shrink-0 rounded border border-white/40 px-3 py-1 text-xs font-semibold hover:bg-white/20"
+        onClick={() => window.location.reload()}
+      >
+        Retry
+      </button>
+      <button
+        aria-label="Dismiss"
+        className="ml-1 text-white/70 hover:text-white"
+        onClick={() => { setDataErrorToast(false); if (dataErrorTimer.current) clearTimeout(dataErrorTimer.current); }}
+      >
+        ✕
+      </button>
+    </div>
+  ) : null;
+
   if (!ready) {
     return (
       <>
         {apiDownBannerEl}
+        {dataErrorToastEl}
         <div className="min-h-screen bg-[#f0f2f5] text-ink lg:grid lg:grid-cols-[300px_1fr]">
         <aside className="hidden lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:overflow-hidden"
           style={{ background: "linear-gradient(160deg, #1a2235 0%, #0f1623 60%, #141c2e 100%)" }}>
@@ -458,6 +496,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <>
       {apiDownBannerEl}
+      {dataErrorToastEl}
       <div className="min-h-screen bg-[#f0f2f5] text-ink lg:grid lg:grid-cols-[300px_1fr]">
       {/* ── Desktop sidebar ─────────────────────────────────────────────── */}
       <aside className="hidden lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:overflow-hidden"
