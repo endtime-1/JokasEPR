@@ -212,6 +212,7 @@ function AlertBanner({ alerts }: { alerts: AlertData }) {
   );
 }
 
+let _trendChartSeq = 0;
 function TrendChart({ points, color, label, unit = "" }: {
   points: Array<{ label: string; value: number }>;
   color: string;
@@ -228,7 +229,9 @@ function TrendChart({ points, color, label, unit = "" }: {
     y: PB - (p.value / max) * chartH
   }));
   const ptStr = pts.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
-  const gradId = `tg-${label.replace(/\W/g, "")}`;
+  // Use a module-level counter so each TrendChart instance gets a unique gradient
+  // ID regardless of label text, preventing SVG defs collisions between charts.
+  const [gradId] = useState(() => `tg-${++_trendChartSeq}`);
 
   return (
     <div className="app-card overflow-hidden">

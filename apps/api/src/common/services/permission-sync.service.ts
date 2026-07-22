@@ -134,13 +134,14 @@ export class PermissionSyncService implements OnApplicationBootstrap {
 
         const permIds = keys.map((k) => permByKey.get(k)?.id).filter((id): id is string => !!id);
 
-        // Use Prisma's set operation — replaces ALL permissions for the role atomically
+        // Connect only — adds any missing permissions without removing permissions
+        // that an admin has manually customised via the Identity UI.
         await this.prisma.role.update({
           where: { id: role.id },
-          data: { permissions: { set: permIds.map((id) => ({ id })) } },
+          data: { permissions: { connect: permIds.map((id) => ({ id })) } },
         });
 
-        this.logger.log(`  ${role.name}: ${permIds.length} permissions set`);
+        this.logger.log(`  ${role.name}: ${permIds.length} permissions connected`);
         synced++;
       }
 

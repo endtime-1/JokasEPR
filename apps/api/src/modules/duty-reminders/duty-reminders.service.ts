@@ -18,7 +18,7 @@ export class DutyRemindersService {
   // mortality record. If a farm hasn't submitted any of these, notify users
   // who have access to that farm.
 
-  @Cron("0 10 * * *")
+  @Cron("0 10 * * *", { timeZone: "Africa/Accra" })
   async morningReminder() {
     this.logger.log("Running morning duty reminder check");
     await this.remindForDuties("MORNING", [
@@ -31,7 +31,7 @@ export class DutyRemindersService {
   // ── 6 PM: evening duty reminder ──────────────────────────────────────────
   // Fires every day at 18:00. Checks daily poultry summary.
 
-  @Cron("0 18 * * *")
+  @Cron("0 18 * * *", { timeZone: "Africa/Accra" })
   async eveningReminder() {
     this.logger.log("Running evening duty reminder check");
     await this.remindForDuties("EVENING", ["Daily Poultry Summary"]);
@@ -137,7 +137,7 @@ export class DutyRemindersService {
   }
 
   // ── 3 AM: purge expired login rate-limit windows ─────────────────────────
-  @Cron("0 3 * * *")
+  @Cron("0 3 * * *", { timeZone: "Africa/Accra" })
   async purgeExpiredRateLimitWindows() {
     const { count } = await this.prisma.loginRateLimit.deleteMany({
       where: { windowEnd: { lt: new Date() } },

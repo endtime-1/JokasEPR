@@ -43,6 +43,16 @@ export class HttpExceptionFilter implements ExceptionFilter {
         };
         return response.status(404).json(body);
       }
+      if (exception.code === "P2003" || exception.code === "P2014") {
+        const body: ErrorResponse = {
+          success: false,
+          statusCode: 400,
+          message: "Related record not found or access denied.",
+          timestamp: new Date().toISOString(),
+          path: request.originalUrl
+        };
+        return response.status(400).json(body);
+      }
     }
 
     const status = exception instanceof HttpException ? exception.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;

@@ -4,13 +4,12 @@ const API_BASE = (process.env.API_INTERNAL_URL ?? process.env.NEXT_PUBLIC_API_UR
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const body = await request.text();
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  const setupToken = request.headers.get("x-setup-token");
+  if (setupToken) headers["x-setup-token"] = setupToken;
   let upstream: Response;
   try {
-    upstream = await fetch(`${API_BASE}/setup`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body,
-    });
+    upstream = await fetch(`${API_BASE}/setup`, { method: "POST", headers, body });
   } catch {
     return NextResponse.json({ message: "API unreachable" }, { status: 502 });
   }

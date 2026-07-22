@@ -6,6 +6,7 @@ import cookieParser from "cookie-parser";
 import helmet from "helmet";
 import { mkdirSync } from "fs";
 import { join } from "path";
+import { randomUUID } from "crypto";
 import { AppModule } from "./app.module";
 import { HttpExceptionFilter } from "./common/filters/http-exception.filter";
 import { NoCacheInterceptor } from "./common/interceptors/no-cache.interceptor";
@@ -36,6 +37,13 @@ async function bootstrap() {
   // client IP, not the loopback address of the reverse proxy. Without this,
   // the login rate limiter keys on 127.0.0.1 for every user.
   app.set("trust proxy", 1);
+
+  // Assign a unique request ID early so the HttpExceptionFilter can include it
+  // in error responses — enables matching a client-reported error to a server log.
+  app.use((req: { id?: string }, _res: unknown, next: () => void) => {
+    req.id = randomUUID();
+    next();
+  });
 
   app.use(cookieParser());
 
