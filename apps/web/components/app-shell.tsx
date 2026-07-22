@@ -228,12 +228,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
 
     function onApiUnavailable() {
+      // Guard: if a poll is already running (multiple apiFetch calls can each fire this
+      // event after exhausting retries), don't create a second polling loop.
+      if (pollInterval) return;
       setApiDownBanner(true);
-      // Hard fallback reload after 90s only for true crashes (NestJS never comes back).
+      // Hard fallback reload after 90s for true crashes (NestJS never comes back).
       fallback = setTimeout(() => window.location.reload(), 90000);
-      // Poll every 5s. When the API recovers, dismiss the banner without reloading —
-      // a full reload would wipe all loaded page state. apiFetch handles 401→token
-      // refresh inline so the user can keep working with the data already on screen.
+      // Poll every 5s. On recovery, do a full page reload so every page gets fresh data
+      // from the now-warm API — dispatching api:recovered isn't enough because most pages
+      // don't have that listener and would stay with empty/stuck state.
       pollInterval = setInterval(async () => {
         try {
           const ctrl = new AbortController();
@@ -242,8 +245,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           clearTimeout(tid);
           if (res.status !== 502 && res.status !== 503 && res.status !== 504) {
             clearPolling();
-            setApiDownBanner(false);
-            window.dispatchEvent(new CustomEvent("api:recovered"));
+            window.location.reload();
           }
         } catch { /* still down — wait for next poll */ }
       }, 5000);
