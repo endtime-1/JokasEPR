@@ -207,36 +207,25 @@ jobs:
               echo "WARNING: sync-permissions.mjs not found — skipping"
             fi
 
-            # ── Kill accumulated old processes ─────────────────────────────────
-            # Strategy: kill web/api children directly (safe), then signal Passenger
-            # to restart start.js cleanly via restart.txt. Do NOT kill start.js via
-            # pgrep — that puts our process in Passenger's group kill blast radius.
+            # ── Kill old app processes ─────────────────────────────────────────
+            # PID-file kill is NOT used here — on high-load servers PIDs recycle
+            # rapidly; a stale PID from the previous start.js run may now belong
+            # to an unrelated process (even our own SSH shell), causing SIGKILL on
+            # the deploy session. Use only process-identity-based kills instead.
 
-            # 1. PID file kill — latest registered web/api child PIDs
-            PID_FILE=/tmp/jokas-child-pids.json
-            if [ -f "$PID_FILE" ]; then
-              $NODE -e "
-                try {
-                  const data = JSON.parse(require('fs').readFileSync('$PID_FILE','utf8'));
-                  const all = Array.isArray(data)
-                    ? data.filter(Boolean)
-                    : [data.proxy, data.web, data.api].filter(Boolean);
-                  all.forEach(pid => { try { process.kill(pid, 9); } catch {} });
-                  console.log('Killed PIDs: ' + (all.join(', ') || '(none)'));
-                } catch(e) { console.log('PID file error: ' + e.message); }
-              " 2>/dev/null || true
-            fi
-
-            # 2. Port-based kill — drains orphaned web/api processes accumulated
-            #    from previous deploys that the PID file never recorded.
+            # 1. Port-based kill — kill whatever holds our internal ports.
+            #    fuser/lsof identify by port, so there is no stale-PID risk.
             for PORT in 3001 4001; do
               { fuser -k -9 "$PORT/tcp" 2>/dev/null && echo "Killed port $PORT owner"; } || \
               { lsof -ti ":$PORT" 2>/dev/null | xargs kill -9 2>/dev/null && echo "Killed port $PORT owner (lsof)"; } || true
             done
 
-            # 3. Pattern-based kill — any remaining API/web bundle processes
-            pkill -9 -u "$(whoami)" -f "apps/api/dist/bundle" 2>/dev/null && echo "Killed api bundle processes" || true
-            pkill -9 -u "$(whoami)" -f "apps/web.*server\.js" 2>/dev/null && echo "Killed web server processes" || true
+            # 2. Pattern-based kill — any remaining API/web processes by path.
+            pkill -9 -u "$(whoami)" -f "apps/api/dist" 2>/dev/null && echo "Killed API processes" || true
+            pkill -9 -u "$(whoami)" -f "apps/web.*server\.js" 2>/dev/null && echo "Killed web processes" || true
+
+            # 3. Remove stale PID file so start.js starts with a clean slate.
+            rm -f /tmp/jokas-child-pids.json 2>/dev/null || true
             sleep 1
 
             # ── Signal Passenger to respawn start.js ──────────────────────────
