@@ -6,7 +6,7 @@ import { Download, Plus } from "lucide-react";
 import { InventoryShell } from "./inventory-shell";
 import { DataTable } from "./data-table";
 import { FormField } from "./form-field";
-import { ApiEnvelope, apiFetch, downloadReport, hasCached, getCached } from "../lib/api";
+import { ApiEnvelope, apiFetch, downloadReport, hasCached, getCached, getCachedFirst } from "../lib/api";
 
 type Option = {
   id: string;
