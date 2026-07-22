@@ -3,6 +3,7 @@
 const { spawn, execSync } = require("child_process");
 const fs = require("fs");
 const http = require("http");
+const https = require("https");
 const net = require("net");
 const path = require("path");
 
@@ -535,15 +536,37 @@ startProxy(0);
   savePids();
   startApi();
 
-  // Keep the MySQL connection pool alive. Without this, Prisma's idle connections
-  // time out after ~5 min, making the first query after a quiet period stall while
-  // a new connection is established. Pinging /health (which runs SELECT 1) prevents
-  // that. This does NOT prevent Hostinger from hibernating the process — for that,
-  // use an external cron service (e.g. cron-job.org) to ping the site every 5 min.
+  // ── Internal DB keep-alive ───────────────────────────────────────────────
+  // Pings NestJS /health (SELECT 1) every 3 min so Prisma's connection pool
+  // never goes idle — prevents the first-query stall after a quiet period.
   setInterval(() => {
     if (!_apiUp) return;
     http.get(`http://127.0.0.1:${API_PORT}/health`, (r) => r.resume()).on("error", () => {});
-  }, 4 * 60 * 1000);
+  }, 3 * 60 * 1000);
+
+  // ── External self-ping to prevent Hostinger from hibernating ────────────
+  // Passenger/OpenLiteSpeed tracks idle time from the LAST REQUEST it forwarded
+  // to this process. Loopback connections bypass Passenger entirely, so they
+  // don't reset the idle timer. Outbound requests to the public domain travel
+  // through the NIC → LiteSpeed → Passenger → here, which DOES reset the timer.
+  //
+  // WEB_ORIGIN is already set in Hostinger's env for CORS (e.g. https://jokas.com).
+  // No third-party service required — the app keeps itself alive.
+  const selfPingBase = (process.env.SITE_URL || process.env.WEB_ORIGIN || "")
+    .split(",")[0].trim().replace(/\/$/, "");
+  if (selfPingBase) {
+    const selfPingUrl = selfPingBase + "/api/v1/health";
+    const selfPingMod = selfPingUrl.startsWith("https") ? https : http;
+    setInterval(() => {
+      if (!webReady) return;
+      selfPingMod
+        .get(selfPingUrl, { headers: { "user-agent": "jokas-keepalive/1.0" } }, (r) => r.resume())
+        .on("error", () => {});
+    }, 5 * 60 * 1000);
+    console.log(`[start] self-ping active → ${selfPingUrl} every 5 min`);
+  } else {
+    console.warn("[start] self-ping disabled — set SITE_URL or WEB_ORIGIN env var to enable");
+  }
 })().catch((e) => {
   console.error("[start] FATAL — main startup threw:", e?.stack || e);
 });
