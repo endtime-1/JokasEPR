@@ -181,7 +181,7 @@ export class PoultryService {
     this.assertFarmAccess(user, farmId);
     const [houses, batches] = await Promise.all([
       this.prisma.poultryHouse.findMany({ where: { companyId: user.companyId, farmId, deletedAt: null }, orderBy: { code: "asc" } }),
-      this.prisma.flockBatch.findMany({ where: { companyId: user.companyId, farmId, deletedAt: null }, include: { mortalityRecords: true, eggProductionRecords: true, feedConsumptionRecords: true, costRecords: true } })
+      this.prisma.flockBatch.findMany({ where: { companyId: user.companyId, farmId, deletedAt: null }, include: { mortalityRecords: { where: { deletedAt: null } }, eggProductionRecords: { where: { deletedAt: null } }, feedConsumptionRecords: { where: { deletedAt: null } }, costRecords: { where: { deletedAt: null } } } })
     ]);
 
     return {
@@ -436,7 +436,16 @@ export class PoultryService {
     }
 
     const farmIds = [...new Set(pens.map((p) => p.farmId))];
+    if (farmIds.length > 1) {
+      throw new BadRequestException("All pens must belong to the same farm. Split into separate batches for each farm.");
+    }
     farmIds.forEach((fid) => this.assertFarmAccess(user, fid));
+
+    const codeUpper = dto.code.toUpperCase();
+    const codeConflict = await this.prisma.flockBatch.findFirst({ where: { companyId: user.companyId, code: codeUpper, deletedAt: null } });
+    if (codeConflict) {
+      throw new BadRequestException(`A batch with code ${codeUpper} already exists.`);
+    }
 
     const activeBatchCheck = await this.prisma.batchPenAllocation.findFirst({
       where: { penId: { in: penIds }, flockBatch: { status: "ACTIVE", deletedAt: null } }
@@ -451,7 +460,7 @@ export class PoultryService {
         companyId: user.companyId,
         branchId: firstPen.branchId,
         farmId: firstPen.farmId,
-        code: dto.code.toUpperCase(),
+        code: codeUpper,
         name: dto.name,
         birdType: dto.birdType,
         openingBirdCount: dto.openingBirdCount,
@@ -617,6 +626,19 @@ export class PoultryService {
     const fromHouseId = fromPen?.poultryHouseId ?? dto.fromPoultryHouseId ?? batch.poultryHouseId;
     if (!fromHouseId) throw new BadRequestException("Cannot determine source house. Specify a fromPenId or fromPoultryHouseId.");
 
+    if (dto.fromPenId) {
+      const fromAlloc = await this.prisma.batchPenAllocation.findFirst({ where: { flockBatchId: batch.id, penId: dto.fromPenId } });
+      if (!fromAlloc) throw new BadRequestException("Source pen is not allocated to this batch.");
+      const [outgoing, penMortality] = await Promise.all([
+        this.prisma.poultryTransferRecord.aggregate({ where: { flockBatchId: batch.id, fromPenId: dto.fromPenId, deletedAt: null }, _sum: { birdCount: true } }),
+        this.prisma.mortalityRecord.aggregate({ where: { flockBatchId: batch.id, penId: dto.fromPenId, deletedAt: null }, _sum: { birdCount: true } })
+      ]);
+      const available = fromAlloc.birdCount - (outgoing._sum.birdCount ?? 0) - (penMortality._sum.birdCount ?? 0);
+      if (dto.birdCount > available) {
+        throw new BadRequestException(`Source pen only has ${available} birds available. Cannot transfer ${dto.birdCount}.`);
+      }
+    }
+
     const data = await this.prisma.$transaction(async (tx) => {
       const transfer = await tx.poultryTransferRecord.create({
         data: {
@@ -742,7 +764,7 @@ export class PoultryService {
   }
 
   async listRecords(user: AuthenticatedUser, type: string, query: PoultryQueryDto) {
-    const where = this.recordWhere(user, query);
+    const where = this.recordWhere(user, query, type);
     const model = this.recordModel(type);
     const take = Math.min(query.take ?? 200, 500);
     const skip = query.skip ?? 0;
@@ -759,9 +781,26 @@ export class PoultryService {
     if (!existing) {
       throw new NotFoundException("Record was not found.");
     }
-    this.assertFarmAccess(user, existing.farmId);
-    const data = await model.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
-    await this.writeAudit(user, "DELETE", type, id, `Deleted poultry ${type} record`, context, existing.farmId);
+    // Transfer records use fromFarmId/toFarmId, not farmId
+    const farmId: string = existing.farmId ?? existing.fromFarmId;
+    this.assertFarmAccess(user, farmId);
+
+    let data: unknown;
+    if (type === "transfers" && existing.toPenId) {
+      // Reverse the batchPenAllocation increment that was created when the transfer was made.
+      data = await this.prisma.$transaction(async (tx) => {
+        const deleted = await tx.poultryTransferRecord.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+        await tx.batchPenAllocation.update({
+          where: { flockBatchId_penId: { flockBatchId: existing.flockBatchId, penId: existing.toPenId } },
+          data: { birdCount: { decrement: existing.birdCount } }
+        });
+        return deleted;
+      });
+      this.lookupCache.invalidate(`poultry:opts:${user.companyId}`);
+    } else {
+      data = await model.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    }
+    await this.writeAudit(user, "DELETE", type, id, `Deleted poultry ${type} record`, context, farmId);
     return { data };
   }
 
@@ -769,14 +808,30 @@ export class PoultryService {
     const model = this.recordModel(type);
     const existing = await model.findFirst({ where: { companyId: user.companyId, id, deletedAt: null } });
     if (!existing) throw new NotFoundException("Record was not found.");
-    this.assertFarmAccess(user, existing.farmId);
-    const correctable = ["mortalityCount", "culledCount", "feedConsumedKg", "totalEggs", "birdCount", "reason", "quantityKg", "costAmount", "goodEggs", "crackedEggs", "dirtyEggs", "brokenEggs", "rejectedEggs", "sampleSize", "averageWeightKg", "notes"];
+    const farmId: string = existing.farmId ?? existing.fromFarmId;
+    this.assertFarmAccess(user, farmId);
+
+    // Per-type correctable fields. Transfer birdCount is excluded — changing it
+    // would require resyncing batchPenAllocation and is handled via delete+recreate.
+    const CORRECTABLE: Record<string, string[]> = {
+      daily: ["mortalityCount", "culledCount", "feedConsumedKg", "totalEggs", "notes"],
+      mortality: ["birdCount", "reason", "notes"],
+      feed: ["quantityKg", "costAmount", "notes"],
+      eggs: ["goodEggs", "crackedEggs", "dirtyEggs", "brokenEggs", "rejectedEggs", "notes"],
+      weights: ["sampleSize", "averageWeightKg", "notes"],
+      medications: ["notes"],
+      vaccinations: ["notes"],
+      health: ["observation", "recommendation", "notes"],
+      transfers: ["reason", "notes"],
+      costs: ["amount", "description", "notes"]
+    };
+    const correctable = CORRECTABLE[type] ?? [];
     const updateData: Record<string, any> = { updatedById: user.id };
     for (const field of correctable) {
       if (dto[field] !== undefined) updateData[field] = dto[field];
     }
     const data = await model.update({ where: { id }, data: updateData });
-    await this.writeAudit(user, "UPDATE", type, id, `Corrected poultry ${type} record`, context, existing.farmId);
+    await this.writeAudit(user, "UPDATE", type, id, `Corrected poultry ${type} record`, context, farmId);
     return { data };
   }
 
@@ -803,8 +858,12 @@ export class PoultryService {
   }
 
   private batchMetrics(batch: any, prices: { eggPricePerUnit: number; broilerPricePerKg: number }) {
-    const mortality = (batch.mortalityRecords ?? []).reduce((sum: number, row: any) => sum + row.birdCount, 0);
-    const currentLiveBirds = this.currentLiveBirds(batch.openingBirdCount, batch.mortalityRecords ?? []);
+    const records: any[] = batch.mortalityRecords ?? [];
+    // Natural deaths only for mortalityRate — culling is a planned management action,
+    // not a disease/welfare event, and should not trigger high-mortality alerts.
+    const naturalMortality = records.filter((r) => !r.isCulling).reduce((sum: number, r: any) => sum + r.birdCount, 0);
+    // currentLiveBirds subtracts both natural deaths AND culling — culled birds are gone.
+    const currentLiveBirds = this.currentLiveBirds(batch.openingBirdCount, records);
     const totalFeedKg = (batch.feedConsumptionRecords ?? []).reduce((sum: number, row: any) => sum + Number(row.quantityKg), 0);
     const totalEggs = (batch.eggProductionRecords ?? []).reduce((sum: number, row: any) => sum + this.totalEggs(row), 0);
     const totalCosts = (batch.costRecords ?? []).reduce((sum: number, row: any) => sum + Number(row.amount), 0);
@@ -812,12 +871,16 @@ export class PoultryService {
     const estimatedRevenue =
       totalEggs * prices.eggPricePerUnit +
       (batch.birdType === "BROILERS" ? currentLiveBirds * latestWeight * prices.broilerPricePerKg : 0);
-    const birdDays = Math.max(currentLiveBirds, 1) * Math.max((batch.eggProductionRecords ?? []).length, 1);
+    const numEggDays = (batch.eggProductionRecords ?? []).length;
+    // Hen-day production %: eggs / (live birds × days with records). Zero when no egg records.
+    const eggProductionPercent = numEggDays > 0
+      ? Number(((totalEggs / (Math.max(currentLiveBirds, 1) * numEggDays)) * 100).toFixed(2))
+      : 0;
     return {
       ...batch,
       currentLiveBirds,
-      mortalityRate: Number(((mortality / Math.max(batch.openingBirdCount, 1)) * 100).toFixed(2)),
-      eggProductionPercent: Number(((totalEggs / birdDays) * 100).toFixed(2)),
+      mortalityRate: Number(((naturalMortality / Math.max(batch.openingBirdCount, 1)) * 100).toFixed(2)),
+      eggProductionPercent,
       feedConversionRatio: batch.birdType === "BROILERS" && latestWeight > 0 ? Number((totalFeedKg / Math.max(currentLiveBirds * latestWeight, 1)).toFixed(2)) : 0,
       costPerBird: Number((totalCosts / Math.max(currentLiveBirds, 1)).toFixed(2)),
       profitability: Number((estimatedRevenue - totalCosts).toFixed(2)),
@@ -888,6 +951,8 @@ export class PoultryService {
     if (penId) {
       const pen = await this.prisma.pen.findFirst({ where: { id: penId, companyId, deletedAt: null } });
       if (!pen) throw new BadRequestException("Pen not found.");
+      const alloc = await this.prisma.batchPenAllocation.findFirst({ where: { flockBatchId: batch.id, penId } });
+      if (!alloc) throw new BadRequestException("The specified pen is not allocated to this batch.");
       return pen.poultryHouseId;
     }
     if (batch.poultryHouseId) return batch.poultryHouseId;
@@ -908,9 +973,7 @@ export class PoultryService {
     return { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess || user.farmIds.length === 0 ? {} : { farmId: { in: user.farmIds } }) };
   }
 
-  private recordWhere(user: AuthenticatedUser, query: PoultryQueryDto) {
-    // Build farm scope without a key collision: the old code set farmId: query.farmId then
-    // unconditionally overwrote it with farmId: { in: user.farmIds } via object spread.
+  private recordWhere(user: AuthenticatedUser, query: PoultryQueryDto, type?: string) {
     const farmFilter: Record<string, unknown> = user.hasGlobalAccess || user.farmIds.length === 0
       ? (query.farmId ? { farmId: query.farmId } : {})
       : {
@@ -920,17 +983,18 @@ export class PoultryService {
               : { in: user.farmIds }
         };
 
+    // Each record type stores its date under a different field name.
+    // Using an OR across all field names causes Prisma validation errors for types
+    // that don't have those fields. Use the correct field per type instead.
+    const DATE_FIELD: Record<string, string> = {
+      daily: "recordDate", mortality: "recordDate", feed: "recordDate",
+      eggs: "recordDate", weights: "recordDate", medications: "startDate",
+      vaccinations: "vaccinationDate", health: "observationDate",
+      transfers: "transferDate", costs: "costDate"
+    };
+    const dateField = type ? (DATE_FIELD[type] ?? "recordDate") : "recordDate";
     const dateRange = query.startDate || query.endDate
-      ? {
-          OR: [
-            { recordDate: { gte: query.startDate ? new Date(query.startDate) : undefined, lte: query.endDate ? new Date(query.endDate) : undefined } },
-            { startDate: { gte: query.startDate ? new Date(query.startDate) : undefined, lte: query.endDate ? new Date(query.endDate) : undefined } },
-            { vaccinationDate: { gte: query.startDate ? new Date(query.startDate) : undefined, lte: query.endDate ? new Date(query.endDate) : undefined } },
-            { observationDate: { gte: query.startDate ? new Date(query.startDate) : undefined, lte: query.endDate ? new Date(query.endDate) : undefined } },
-            { transferDate: { gte: query.startDate ? new Date(query.startDate) : undefined, lte: query.endDate ? new Date(query.endDate) : undefined } },
-            { costDate: { gte: query.startDate ? new Date(query.startDate) : undefined, lte: query.endDate ? new Date(query.endDate) : undefined } }
-          ]
-        }
+      ? { [dateField]: { gte: query.startDate ? new Date(query.startDate) : undefined, lte: query.endDate ? new Date(query.endDate) : undefined } }
       : {};
 
     return {
