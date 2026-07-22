@@ -32,6 +32,11 @@ async function bootstrap() {
   app.setGlobalPrefix(prefix);
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: version });
 
+  // Trust LiteSpeed's X-Forwarded-For header so request.ip reflects the real
+  // client IP, not the loopback address of the reverse proxy. Without this,
+  // the login rate limiter keys on 127.0.0.1 for every user.
+  app.set("trust proxy", 1);
+
   app.use(cookieParser());
 
   app.use(

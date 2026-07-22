@@ -32,6 +32,7 @@ export class AuthController {
   }
 
   @Post("refresh")
+  @UseGuards(LoginRateLimitGuard)
   async refresh(
     @Body() body: Partial<RefreshTokenDto>,
     @Req() request: Request,
@@ -67,8 +68,8 @@ export class AuthController {
 
   @UseGuards(JwtAuthGuard)
   @Get("me")
-  me(@CurrentUser() user: AuthenticatedUser, @Req() request: Request) {
-    return { data: user, meta: { ip: request.ip } };
+  me(@CurrentUser() user: AuthenticatedUser) {
+    return { data: user };
   }
 
   @UseGuards(JwtAuthGuard)
@@ -84,7 +85,7 @@ export class AuthController {
 
   private baseCookieOpts() {
     const isProduction = this.config.get("NODE_ENV") === "production";
-    return { httpOnly: true, sameSite: "lax" as const, secure: isProduction, path: "/" };
+    return { httpOnly: true, sameSite: "strict" as const, secure: isProduction, path: "/" };
   }
 
   private setAuthCookies(response: Response, accessToken: string, refreshToken: string, refreshTtlDays: number) {
