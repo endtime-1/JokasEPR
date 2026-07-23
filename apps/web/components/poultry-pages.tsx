@@ -13,7 +13,8 @@ import { useAuth } from "./auth-context";
 
 type Option = {
   id: string;
-  code: string;
+  code?: string;
+  sku?: string;
   name: string;
   farmId?: string;
   poultryHouseId?: string;
@@ -1086,7 +1087,7 @@ function BatchRecordSection({ batchId, type, label, cols, endpoint, options }: {
                       <label className="mb-0.5 block text-[10px] text-ink/60">Feed product</label>
                       <select className="w-full rounded border border-line bg-white px-2 py-1 text-xs" value={addForm.feedProductId ?? ""} onChange={(e) => setAddForm((f) => ({ ...f, feedProductId: e.target.value }))}>
                         <option value="">— none —</option>
-                        {options.products.map((p) => <option key={p.id} value={p.id}>{p.code} — {p.name}</option>)}
+                        {options.products.map((p) => <option key={p.id} value={p.id}>{p.sku ?? p.code} — {p.name}</option>)}
                       </select>
                     </div>
                     <div>
@@ -1387,7 +1388,7 @@ function GenericRecordForm({ options, form, setForm, submit, type, isEditing = f
           <FormField label="Feed product">
             <select className={inputClass} value={form.feedProductId ?? ""} onChange={(e) => setForm({ ...form, feedProductId: e.target.value })}>
               <option value="">— select product —</option>
-              {options.products.map((p) => <option key={p.id} value={p.id}>{p.code} — {p.name}</option>)}
+              {options.products.map((p) => <option key={p.id} value={p.id}>{p.sku ?? p.code} — {p.name}</option>)}
             </select>
           </FormField>
           <FormField label="Warehouse">
