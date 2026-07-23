@@ -166,88 +166,24 @@ jobs:
             set -e
             source ~/.bashrc 2>/dev/null || source ~/.profile 2>/dev/null || true
 
-            NODE=/opt/alt/alt-nodejs22/root/usr/bin/node
             APP_DIR=~/domains/jokasfarms.com/nodejs
-            PRISMA=$APP_DIR/apps/api/node_modules/.bin/prisma
 
-            # ── Load DATABASE_URL from .env if not in SSH session env ─────────
-            # Hostinger injects hPanel env vars into Passenger, not SSH sessions.
-            # Source the .env file the app writes on first setup as a fallback.
-            if [ -z "$DATABASE_URL" ]; then
-              for ENV_FILE in "$APP_DIR/.env" "$HOME/.env"; do
-                if [ -f "$ENV_FILE" ]; then
-                  set -a; source "$ENV_FILE" 2>/dev/null || true; set +a
-                  echo "Loaded env from $ENV_FILE (DATABASE_URL ${DATABASE_URL:+SET}${DATABASE_URL:-STILL MISSING})"
-                  break
-                fi
-              done
-            fi
-
-            # ── Migrations ────────────────────────────────────────────────────
-            if [ -z "$DATABASE_URL" ]; then
-              echo "WARNING: DATABASE_URL not set — skipping migrations"
-            elif [ -f "$PRISMA" ]; then
-              $NODE "$PRISMA" migrate deploy \
-                --schema="$APP_DIR/prisma/schema.prisma" \
-                && echo "Migrations applied." \
-                || echo "WARNING: migrations failed or already up to date."
-            else
-              echo "WARNING: prisma binary not found — skipping migrations"
-            fi
-
-            # ── Permission sync ────────────────────────────────────────────────
-            SYNC_SCRIPT=$APP_DIR/apps/api/sync-permissions.mjs
-            if [ -z "$DATABASE_URL" ]; then
-              echo "WARNING: DATABASE_URL not set — skipping permission sync"
-            elif [ -f "$SYNC_SCRIPT" ]; then
-              $NODE "$SYNC_SCRIPT" \
-                && echo "Permissions synced." \
-                || echo "WARNING: permissions sync failed."
-            else
-              echo "WARNING: sync-permissions.mjs not found — skipping"
-            fi
-
-            # ── Kill old app processes ─────────────────────────────────────────
-            # PID-file kill is NOT used here — on high-load servers PIDs recycle
-            # rapidly; a stale PID from the previous start.js run may now belong
-            # to an unrelated process (even our own SSH shell), causing SIGKILL on
-            # the deploy session. Use only process-identity-based kills instead.
-
-            # 1. Port-based kill — kill whatever holds our internal ports.
-            #    fuser/lsof identify by port, so there is no stale-PID risk.
-            for PORT in 3001 4001; do
-              { fuser -k -9 "$PORT/tcp" 2>/dev/null && echo "Killed port $PORT owner"; } || \
-              { lsof -ti ":$PORT" 2>/dev/null | xargs kill -9 2>/dev/null && echo "Killed port $PORT owner (lsof)"; } || true
-            done
-
-            # 2. Pattern-based kill — any remaining API/web processes by path.
-            pkill -9 -u "$(whoami)" -f "apps/api/dist" 2>/dev/null && echo "Killed API processes" || true
-            pkill -9 -u "$(whoami)" -f "apps/web.*server\.js" 2>/dev/null && echo "Killed web processes" || true
-
-            # 3. Remove stale PID file so start.js starts with a clean slate.
-            rm -f /tmp/jokas-child-pids.json 2>/dev/null || true
-            sleep 1
-
-            # ── Signal Passenger to respawn start.js ──────────────────────────
-            # Passenger sends SIGTERM to start.js → start.js calls killAll() and
-            # exits cleanly, then Passenger restarts it with the new code.
+            # Signal Passenger to gracefully restart start.js.
+            # start.js already calls killPortOwner() at startup — no manual kills needed here.
+            # Migrations run separately (see note below) once DATABASE_URL is in server .env.
             mkdir -p $APP_DIR/tmp
             touch $APP_DIR/tmp/restart.txt
             echo "Passenger restart signalled."
-            sleep 5
+            sleep 8
 
-            # ── Smoke test — verify the app is actually serving HTTP ───────────
+            # ── Smoke test ────────────────────────────────────────────────────
             DOMAIN="https://jokasfarms.com"
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 "$DOMAIN/__status" || echo "000")
             if [ "$STATUS" = "200" ]; then
               echo "Smoke test PASSED — app is live (HTTP $STATUS)"
             elif [ "$STATUS" = "503" ]; then
-              # 503 = start.js startup page — server is alive and starting up, not crashed
               echo "Smoke test OK — server is starting up (HTTP $STATUS)"
             else
               echo "Smoke test FAILED — unexpected status: HTTP $STATUS"
-              echo "Check Hostinger logs. The previous version may still be running."
               exit 1
             fi
-
-            echo "Running node processes: $(ps aux | grep '[n]ode' | grep "$(whoami)" | wc -l)"
