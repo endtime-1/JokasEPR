@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Download, Plus } from "lucide-react";
 import { InventoryShell } from "./inventory-shell";
@@ -57,11 +57,25 @@ function PageHeader({ title, subtitle }: { title: string; subtitle: string }) {
 }
 
 
+function formatQtyWithBags(val: unknown): string {
+  const qty = parseFloat(String(val ?? "0"));
+  if (isNaN(qty) || qty <= 0) return String(val ?? "-");
+  const bags = qty / 50;
+  const bagsStr = Number.isInteger(bags) ? `${bags}` : bags.toFixed(2);
+  return `${qty} kg (${bagsStr} bags)`;
+}
+
 export function InventoryItemsPage({ create = false }: { create?: boolean }) {
   const { options, optionsError } = useInventoryOptions();
   const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/inventory/items")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/inventory/items"));
   const [form, setForm] = useState({ warehouseId: "", productId: "", reorderLevel: "", openingQuantity: "" });
+
+  const displayRows = useMemo(() =>
+    rows.map((row) => "quantityOnHand" in row ? { ...row, quantityOnHand: formatQtyWithBags(row.quantityOnHand) } : row),
+    [rows]
+  );
+
   async function load() {
     const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/inventory/items");
     setRows(response.data ?? []);
@@ -85,14 +99,14 @@ export function InventoryItemsPage({ create = false }: { create?: boolean }) {
           <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white md:col-span-4"><Plus aria-hidden className="h-4 w-4" /> Save item</button>
         </form>
       ) : <Link className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" href="/inventory/items/create"><Plus aria-hidden className="h-4 w-4" /> Create item</Link>}
-      <SimpleRowsTable rows={rows} loading={loading} />
+      <SimpleRowsTable rows={displayRows} loading={loading} />
     </InventoryShell>
   );
 }
 
 export function StockOperationPage({ mode }: { mode: "stock-in" | "stock-out" | "transfers" | "adjustments" }) {
   const { options, optionsError } = useInventoryOptions();
-  const [form, setForm] = useState<Record<string, string>>({ warehouseId: "", fromWarehouseId: "", toWarehouseId: "", productId: "", batchNumber: "", quantity: "", unitCost: "", reason: "", adjustmentType: "DAMAGE", movementType: "ADJUSTMENT_OUT", expiryDate: "" });
+  const [form, setForm] = useState<Record<string, string>>({ warehouseId: "", fromWarehouseId: "", toWarehouseId: "", productId: "", batchNumber: "", bags: "", quantity: "", unitCost: "", reason: "", adjustmentType: "DAMAGE", movementType: "ADJUSTMENT_OUT", expiryDate: "" });
   const title = mode === "stock-in" ? "Stock In" : mode === "stock-out" ? "Stock Out" : mode === "transfers" ? "Stock Transfer" : "Stock Adjustment";
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -104,7 +118,7 @@ export function StockOperationPage({ mode }: { mode: "stock-in" | "stock-out" | 
       { ...base, warehouseId: form.warehouseId || options.warehouses[0]?.id, adjustmentType: form.adjustmentType, quantity: Number(form.quantity), reason: form.reason, approveNow: false };
     const endpoint = mode === "transfers" ? "/inventory/transfers" : mode === "adjustments" ? "/inventory/adjustments" : `/inventory/${mode}`;
     await apiFetch(endpoint, { method: "POST", body: JSON.stringify(payload) });
-    setForm({ ...form, batchNumber: "", quantity: "", unitCost: "", reason: "" });
+    setForm({ ...form, batchNumber: "", bags: "", quantity: "", unitCost: "", reason: "" });
   }
   return (
     <InventoryShell>
@@ -119,7 +133,25 @@ export function StockOperationPage({ mode }: { mode: "stock-in" | "stock-out" | 
         ) : <SelectField label="Warehouse" value={form.warehouseId || options.warehouses[0]?.id || ""} options={options.warehouses} onChange={(value) => setForm({ ...form, warehouseId: value })} />}
         <SelectField label="Product" value={form.productId || options.products[0]?.id || ""} options={options.products} onChange={(value) => setForm({ ...form, productId: value })} />
         {mode === "stock-in" ? <FormField label="Batch number"><input className={inputClass} value={form.batchNumber} onChange={(event) => setForm({ ...form, batchNumber: event.target.value })} required /></FormField> : null}
-        <FormField label="Quantity"><input className={inputClass} type="number" value={form.quantity} onChange={(event) => setForm({ ...form, quantity: event.target.value })} required /></FormField>
+        {mode !== "adjustments" && (
+          <FormField label="Bags (50 kg each)">
+            <input
+              className={inputClass}
+              type="number"
+              min="0.5"
+              step="0.5"
+              placeholder="Enter bags to auto-fill kg"
+              value={form.bags}
+              onChange={(event) => {
+                const bags = event.target.value;
+                setForm({ ...form, bags, quantity: bags ? String(Number(bags) * 50) : "" });
+              }}
+            />
+          </FormField>
+        )}
+        <FormField label={form.bags && mode !== "adjustments" ? `Quantity kg — ${form.bags} bag${Number(form.bags) !== 1 ? "s" : ""} × 50` : "Quantity kg"}>
+          <input className={inputClass} type="number" value={form.quantity} onChange={(event) => setForm({ ...form, bags: "", quantity: event.target.value })} required />
+        </FormField>
         {mode === "stock-in" ? <FormField label="Unit cost"><input className={inputClass} type="number" value={form.unitCost} onChange={(event) => setForm({ ...form, unitCost: event.target.value })} required /></FormField> : null}
         {mode === "stock-in" ? <FormField label="Expiry date"><input className={inputClass} type="date" value={form.expiryDate} onChange={(event) => setForm({ ...form, expiryDate: event.target.value })} /></FormField> : null}
         {mode === "stock-out" ? <FormField label="Movement type"><select className={inputClass} value={form.movementType} onChange={(event) => setForm({ ...form, movementType: event.target.value })}><option>ADJUSTMENT_OUT</option><option>SALE_DISPATCH</option><option>PRODUCTION_INPUT</option><option>WASTE</option></select></FormField> : null}
@@ -155,6 +187,10 @@ export function ScopedInventoryViewPage({ scope }: { scope: "warehouses" | "farm
   const [loading, setLoading] = useState(false);
   const source = scope === "warehouses" ? options.warehouses : scope === "farms" ? options.farms : options.productionSites;
   const id = selectedId || source[0]?.id || "";
+  const displayRows = useMemo(() =>
+    rows.map((row) => "quantityOnHand" in row ? { ...row, quantityOnHand: formatQtyWithBags(row.quantityOnHand) } : row),
+    [rows]
+  );
   useEffect(() => {
     if (!id) return;
     setLoading(true);
@@ -170,7 +206,7 @@ export function ScopedInventoryViewPage({ scope }: { scope: "warehouses" | "farm
       <div className="mb-6 max-w-md">
         <SelectField label="Scope" value={id} options={source} onChange={setSelectedId} />
       </div>
-      <SimpleRowsTable rows={rows} loading={loading} />
+      <SimpleRowsTable rows={displayRows} loading={loading} />
     </InventoryShell>
   );
 }
