@@ -167,10 +167,14 @@ export function InventoryListPage({ title, endpoint, subtitle }: { title: string
       .catch(() => undefined)
       .finally(() => setLoading(false));
   }, [endpoint]);
+  const table =
+    endpoint === "/inventory/movements" ? <MovementsTable rows={rows as Record<string, any>[]} loading={loading} /> :
+    endpoint === "/inventory/expiry-alerts" ? <ExpiryAlertsTable rows={rows as Record<string, any>[]} loading={loading} /> :
+    <SimpleRowsTable rows={rows} loading={loading} />;
   return (
     <InventoryShell>
       <PageHeader title={title} subtitle={subtitle} />
-      <SimpleRowsTable rows={rows} loading={loading} />
+      {table}
     </InventoryShell>
   );
 }
@@ -283,7 +287,73 @@ function SimpleRowsTable({ rows, loading }: { rows: Record<string, unknown>[]; l
       </div>
     );
   }
-  const keys = Object.keys(rows?.[0] ?? {}).filter((key) => !["id", "companyId", "branchId", "deletedAt", "updatedAt"].includes(key)).slice(0, 8);
-  return <DataTable rows={rows} empty="No records found" columns={keys.map((key) => ({ key, label: key.replace(/([A-Z])/g, " $1"), render: (row: Record<string, unknown>) => typeof row[key] === "object" && row[key] !== null ? JSON.stringify(row[key]).slice(0, 80) : String(row[key] ?? "-").slice(0, 90) }))} />;
+  const HIDDEN = new Set(["id", "itemId", "companyId", "branchId", "deletedAt", "updatedAt"]);
+  const keys = Object.keys(rows?.[0] ?? {}).filter((key) => !HIDDEN.has(key)).slice(0, 8);
+  return <DataTable rows={rows} empty="No records found" columns={keys.map((key) => ({ key, label: key.replace(/([A-Z])/g, " $1"), render: (row: Record<string, unknown>) => {
+    if (key === "quantityOnHand") return formatQtyWithBags(row[key]);
+    return typeof row[key] === "object" && row[key] !== null ? JSON.stringify(row[key]).slice(0, 80) : String(row[key] ?? "-").slice(0, 90);
+  } }))} />;
+}
+
+function MovementsTable({ rows, loading }: { rows: Record<string, any>[]; loading?: boolean }) {
+  return (
+    <DataTable
+      rows={rows}
+      loading={loading}
+      empty="No stock movements found"
+      columns={[
+        { key: "movementDate", label: "Date", render: (row) => row.movementDate ? new Date(row.movementDate).toLocaleDateString() : "-" },
+        { key: "movementType", label: "Type", render: (row) => String(row.movementType ?? "").replace(/_/g, " ") },
+        {
+          key: "product", label: "Product",
+          render: (row) => {
+            const p = row.product;
+            return p ? <span><span className="font-semibold">{p.sku}</span><span className="text-ink/60"> — {p.name}</span></span> : "-";
+          }
+        },
+        { key: "quantity", label: "Qty (kg / bags)", render: (row) => formatQtyWithBags(row.quantity) },
+        {
+          key: "warehouse", label: "Warehouse",
+          render: (row) => {
+            if (row.fromWarehouse && row.toWarehouse) return `${row.fromWarehouse.name} → ${row.toWarehouse.name}`;
+            return (row.warehouse ?? row.fromWarehouse ?? row.toWarehouse)?.name ?? "-";
+          }
+        },
+        { key: "stockBatch", label: "Batch", render: (row) => row.stockBatch?.batchNumber ?? "-" },
+        { key: "notes", label: "Notes", render: (row) => String(row.notes ?? "-").slice(0, 60) },
+      ]}
+    />
+  );
+}
+
+function ExpiryAlertsTable({ rows, loading }: { rows: Record<string, any>[]; loading?: boolean }) {
+  return (
+    <DataTable
+      rows={rows}
+      loading={loading}
+      empty="No expiry alerts found"
+      columns={[
+        {
+          key: "product", label: "Product",
+          render: (row) => {
+            const p = row.product;
+            return p ? <span><span className="font-semibold">{p.sku}</span><span className="text-ink/60"> — {p.name}</span></span> : "-";
+          }
+        },
+        { key: "warehouse", label: "Warehouse", render: (row) => row.warehouse?.name ?? "-" },
+        { key: "stockBatch", label: "Batch", render: (row) => row.stockBatch?.batchNumber ?? "-" },
+        { key: "expiryDate", label: "Expiry", render: (row) => row.expiryDate ? new Date(row.expiryDate).toLocaleDateString() : "-" },
+        {
+          key: "daysToExpiry", label: "Days left",
+          render: (row) => {
+            const d = Number(row.daysToExpiry);
+            const cls = d <= 7 ? "font-semibold text-red-600" : d <= 14 ? "font-semibold text-amber-600" : "";
+            return <span className={cls}>{d}</span>;
+          }
+        },
+        { key: "quantityRemaining", label: "Qty remaining", render: (row) => formatQtyWithBags(row.stockBatch?.quantityRemaining) },
+      ]}
+    />
+  );
 }
 
