@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { Download, Plus } from "lucide-react";
 import { InventoryShell } from "./inventory-shell";
@@ -71,11 +71,6 @@ export function InventoryItemsPage({ create = false }: { create?: boolean }) {
   const [loading, setLoading] = useState(!hasCached("/inventory/items"));
   const [form, setForm] = useState({ warehouseId: "", productId: "", reorderLevel: "", openingQuantity: "" });
 
-  const displayRows = useMemo(() =>
-    rows.map((row) => "quantityOnHand" in row ? { ...row, quantityOnHand: formatQtyWithBags(row.quantityOnHand) } : row),
-    [rows]
-  );
-
   async function load() {
     const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/inventory/items");
     setRows(response.data ?? []);
@@ -99,7 +94,7 @@ export function InventoryItemsPage({ create = false }: { create?: boolean }) {
           <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white md:col-span-4"><Plus aria-hidden className="h-4 w-4" /> Save item</button>
         </form>
       ) : <Link className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" href="/inventory/items/create"><Plus aria-hidden className="h-4 w-4" /> Create item</Link>}
-      <SimpleRowsTable rows={displayRows} loading={loading} />
+      <InventoryItemsTable rows={rows} loading={loading} />
     </InventoryShell>
   );
 }
@@ -187,10 +182,6 @@ export function ScopedInventoryViewPage({ scope }: { scope: "warehouses" | "farm
   const [loading, setLoading] = useState(false);
   const source = scope === "warehouses" ? options.warehouses : scope === "farms" ? options.farms : options.productionSites;
   const id = selectedId || source[0]?.id || "";
-  const displayRows = useMemo(() =>
-    rows.map((row) => "quantityOnHand" in row ? { ...row, quantityOnHand: formatQtyWithBags(row.quantityOnHand) } : row),
-    [rows]
-  );
   useEffect(() => {
     if (!id) return;
     setLoading(true);
@@ -206,7 +197,7 @@ export function ScopedInventoryViewPage({ scope }: { scope: "warehouses" | "farm
       <div className="mb-6 max-w-md">
         <SelectField label="Scope" value={id} options={source} onChange={setSelectedId} />
       </div>
-      <SimpleRowsTable rows={displayRows} loading={loading} />
+      <InventoryItemsTable rows={rows} loading={loading} />
     </InventoryShell>
   );
 }
@@ -219,6 +210,45 @@ export function InventoryReportsPage() {
         <Download aria-hidden className="h-4 w-4" /> Download valuation CSV
       </button>
     </InventoryShell>
+  );
+}
+
+function InventoryItemsTable({ rows, loading }: { rows: Record<string, any>[]; loading?: boolean }) {
+  return (
+    <DataTable
+      rows={rows}
+      loading={loading}
+      empty="No inventory items found"
+      columns={[
+        {
+          key: "product", label: "Product",
+          render: (row) => {
+            const p = row.product;
+            if (!p) return "-";
+            return <span><span className="font-semibold">{p.sku}</span><span className="text-ink/60"> — {p.name}</span></span>;
+          }
+        },
+        {
+          key: "warehouse", label: "Warehouse",
+          render: (row) => {
+            const w = row.warehouse;
+            return w ? `${w.code} — ${w.name}` : "-";
+          }
+        },
+        { key: "farm", label: "Farm", render: (row) => row.farm?.name ?? "—" },
+        { key: "quantityOnHand", label: "On hand", render: (row) => formatQtyWithBags(row.quantityOnHand) },
+        { key: "reorderLevel", label: "Reorder at", render: (row) => `${Number(row.reorderLevel ?? 0)} kg` },
+        { key: "status", label: "Status", render: (row) => row.status ?? "-" },
+        {
+          key: "stockBatches", label: "Batches",
+          render: (row) => {
+            const batches: any[] = row.stockBatches ?? [];
+            const active = batches.filter((b) => b.quantityRemaining > 0);
+            return active.length > 0 ? `${active.length} active` : "0";
+          }
+        },
+      ]}
+    />
   );
 }
 
