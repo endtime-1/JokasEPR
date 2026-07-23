@@ -955,22 +955,26 @@ function BatchRecordSection({ batchId, type, label, cols }: { batchId: string; t
   const [rows, setRows] = useState<Record<string, any>[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
   const [editRow, setEditRow] = useState<Record<string, any> | null>(null);
   const [editForm, setEditForm] = useState<Record<string, string>>({});
   const [editMsg, setEditMsg] = useState("");
 
   async function load() {
     setLoading(true);
+    setLoadError("");
     try {
       const res = await apiFetch<{ data: Record<string, any>[]; meta: any }>(`/poultry/records/${type}?flockBatchId=${batchId}&take=200`);
       if (Array.isArray(res.data)) setRows(res.data);
+    } catch (err: any) {
+      setLoadError(err?.message ?? "Failed to load records.");
     } finally {
       setLoading(false);
     }
   }
 
   function toggle() {
-    if (!open && rows.length === 0) load().catch(() => undefined);
+    if (!open && rows.length === 0) load();
     setOpen((o) => !o);
   }
 
@@ -1024,7 +1028,13 @@ function BatchRecordSection({ batchId, type, label, cols }: { batchId: string; t
       {open && (
         <div className="border-t border-line p-4">
           {loading && <p className="text-xs text-ink/50">Loading…</p>}
-          {!loading && rows.length === 0 && <p className="text-xs text-ink/50">No records yet.</p>}
+          {!loading && loadError && (
+            <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+              <span>{loadError}</span>
+              <button type="button" className="shrink-0 rounded border border-red-300 bg-white px-2 py-0.5 font-semibold hover:bg-red-100" onClick={load}>Retry</button>
+            </div>
+          )}
+          {!loading && !loadError && rows.length === 0 && <p className="text-xs text-ink/50">No records yet.</p>}
           {!loading && rows.length > 0 && (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
@@ -1123,6 +1133,7 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
   const [form, setForm] = useState<Record<string, string>>(() => makeFormDefaults(type));
   const [editingId, setEditingId] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState("");
+  const recordLoadingRef = useRef(false);
 
   async function load() {
     const response = await apiFetch<{ data: Record<string, any>[]; meta?: any }>(`/poultry/records/${type}?take=200`);
@@ -1134,8 +1145,14 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
     }
   }
 
+  function loadRecords() {
+    if (recordLoadingRef.current) return;
+    recordLoadingRef.current = true;
+    load().catch(() => undefined).finally(() => { recordLoadingRef.current = false; });
+  }
+
   useEffect(() => {
-    load().catch(() => undefined);
+    loadRecords();
   }, [type]);
 
   function startEdit(row: Record<string, any>) {
@@ -1417,6 +1434,8 @@ export function PoultryTransferPage() {
     setPenSelections((prev) => prev.map((p, idx) => idx === i ? { ...p, birdCount: val } : p));
   }
 
+  const transferLoadingRef = useRef(false);
+
   async function load() {
     const response = await apiFetch<ApiEnvelope<Record<string, any>[]>>("/poultry/records/transfers");
     const data = response.data;
@@ -1426,7 +1445,14 @@ export function PoultryTransferPage() {
       try { sessionStorage.setItem(TRANSFERS_CACHE, JSON.stringify(data)); } catch { /* noop */ }
     }
   }
-  useEffect(() => { load().catch(() => undefined); }, []);
+
+  function loadTransfers() {
+    if (transferLoadingRef.current) return;
+    transferLoadingRef.current = true;
+    load().catch(() => undefined).finally(() => { transferLoadingRef.current = false; });
+  }
+
+  useEffect(() => { loadTransfers(); }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

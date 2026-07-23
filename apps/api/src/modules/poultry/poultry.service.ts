@@ -198,7 +198,7 @@ export class PoultryService {
 
   async listHouses(user: AuthenticatedUser, query: PoultryQueryDto) {
     const data = await this.prisma.poultryHouse.findMany({
-      where: { ...this.houseWhere(user), farmId: query.farmId },
+      where: { ...this.houseWhere(user), ...(query.farmId ? { farmId: query.farmId } : {}) },
       include: {
         farm: { select: { id: true, code: true, name: true } },
         pens: { where: { deletedAt: null }, orderBy: { penNumber: "asc" }, include: { batchAllocations: { include: { flockBatch: { select: { id: true, code: true, name: true, status: true, birdType: true } } } } } }
@@ -235,6 +235,7 @@ export class PoultryService {
       },
       include: { pens: true }
     });
+    this.lookupCache.invalidate(`poultry:opts:${user.companyId}`);
     await this.writeAudit(user, "CREATE", "PoultryHouse", house.id, `Created poultry house ${house.code} with ${penCount} pens`, context, farm.id);
     return { data: house };
   }
@@ -271,6 +272,7 @@ export class PoultryService {
         createdById: user.id
       }
     });
+    this.lookupCache.invalidate(`poultry:opts:${user.companyId}`);
     await this.writeAudit(user, "CREATE", "Pen", pen.id, `Added pen ${pen.code} to house ${house.code}`, context, house.farmId);
     return { data: pen };
   }
@@ -282,6 +284,7 @@ export class PoultryService {
       where: { id },
       data: { name: dto.name, code: dto.code?.toUpperCase(), capacity: dto.capacity, updatedById: user.id }
     });
+    this.lookupCache.invalidate(`poultry:opts:${user.companyId}`);
     await this.writeAudit(user, "UPDATE", "PoultryHouse", id, `Updated poultry house ${house.code}`, context, house.farmId);
     return { data };
   }
@@ -290,6 +293,7 @@ export class PoultryService {
     const house = await this.getHouse(user.companyId, id);
     this.assertFarmAccess(user, house.farmId);
     const data = await this.prisma.poultryHouse.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    this.lookupCache.invalidate(`poultry:opts:${user.companyId}`);
     await this.writeAudit(user, "DELETE", "PoultryHouse", id, `Deleted poultry house ${house.code}`, context, house.farmId);
     return { data };
   }
@@ -336,6 +340,7 @@ export class PoultryService {
     if (!batch) throw new NotFoundException("Flock batch was not found.");
     this.assertFarmAccess(user, batch.farmId);
     await this.prisma.flockBatch.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    this.lookupCache.invalidate(`poultry:opts:${user.companyId}`);
     await this.writeAudit(user, "DELETE", "FlockBatch", id, `Deleted flock batch ${batch.code}`, context, batch.farmId);
     return { data: { id } };
   }
@@ -343,7 +348,7 @@ export class PoultryService {
   async listBatches(user: AuthenticatedUser, query: PoultryQueryDto) {
     const [batches, prices] = await Promise.all([
       this.prisma.flockBatch.findMany({
-        where: { ...this.batchWhere(user), farmId: query.farmId, poultryHouseId: query.poultryHouseId },
+        where: { ...this.batchWhere(user), ...(query.farmId ? { farmId: query.farmId } : {}), ...(query.poultryHouseId ? { poultryHouseId: query.poultryHouseId } : {}) },
         include: {
           farm: { select: { code: true, name: true } },
           poultryHouse: { select: { code: true, name: true } },
@@ -487,6 +492,7 @@ export class PoultryService {
       },
       include: { penAllocations: { include: { pen: true } } }
     });
+    this.lookupCache.invalidate(`poultry:opts:${user.companyId}`);
     await this.writeAudit(user, "CREATE", "FlockBatch", batch.id, `Created flock batch ${batch.code} across ${penIds.length} pen(s)`, context, batch.farmId);
     return { data: batch };
   }
@@ -502,6 +508,7 @@ export class PoultryService {
         updatedById: user.id
       }
     });
+    this.lookupCache.invalidate(`poultry:opts:${user.companyId}`);
     await this.writeAudit(user, "UPDATE", "FlockBatch", id, `Updated batch status to ${dto.status}`, context, batch.farmId);
     return { data };
   }
