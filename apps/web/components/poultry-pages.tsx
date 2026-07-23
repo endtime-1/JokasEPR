@@ -34,6 +34,8 @@ type PoultryOptions = {
   houses: Option[];
   pens: PenOption[];
   batches: (Option & { birdType: string })[];
+  warehouses: Option[];
+  products: Option[];
 };
 
 type BatchRow = {
@@ -59,7 +61,7 @@ const inputClass = "min-h-11 rounded-md border border-line px-3";
 
 function usePoultryOptions() {
   const [options, setOptions] = useState<PoultryOptions>(() =>
-    getCached<ApiEnvelope<PoultryOptions>>("/poultry/options")?.data ?? { farms: [], houses: [], pens: [], batches: [] }
+    getCached<ApiEnvelope<PoultryOptions>>("/poultry/options")?.data ?? { farms: [], houses: [], pens: [], batches: [], warehouses: [], products: [] }
   );
   const [optionsError, setOptionsError] = useState("");
   const [optionsKey, setOptionsKey] = useState(0);
@@ -67,7 +69,7 @@ function usePoultryOptions() {
   useEffect(() => {
     setOptionsError("");
     apiFetch<ApiEnvelope<PoultryOptions>>("/poultry/options")
-      .then((response) => setOptions(response.data ?? { farms: [], houses: [], pens: [], batches: [] }))
+      .then((response) => setOptions(response.data ?? { farms: [], houses: [], pens: [], batches: [], warehouses: [], products: [] }))
       .catch((err) => setOptionsError(err?.message ?? "Failed to load dropdown options. Refresh the page."));
   }, [optionsKey]);
 
@@ -928,7 +930,7 @@ export function FlockBatchDetailsPage() {
           )}
 
           {tab === "records" && batch && (
-            <BatchRecordsTab batchId={batch.id} />
+            <BatchRecordsTab batchId={batch.id} options={options} />
           )}
         </>
       )}
@@ -938,24 +940,29 @@ export function FlockBatchDetailsPage() {
 
 // ─── Batch Records Tab ────────────────────────────────────────────────────────
 
-const BATCH_RECORD_TYPES: Array<{ type: string; label: string; cols: string[] }> = [
-  { type: "daily",        label: "Daily Records",      cols: ["recordDate", "mortalityCount", "culledCount", "feedConsumedKg", "totalEggs"] },
-  { type: "mortality",    label: "Mortality",          cols: ["recordDate", "birdCount", "reason"] },
-  { type: "feed",         label: "Feed Consumption",   cols: ["recordDate", "quantityKg", "costAmount"] },
-  { type: "eggs",         label: "Egg Production",     cols: ["recordDate", "goodEggs", "crackedEggs", "dirtyEggs", "brokenEggs", "rejectedEggs"] },
-  { type: "weights",      label: "Bird Weights",       cols: ["recordDate", "sampleSize", "averageWeightKg"] },
-  { type: "medications",  label: "Medications",        cols: ["startDate", "medicationName", "dosage", "route"] },
-  { type: "vaccinations", label: "Vaccinations",       cols: ["vaccinationDate", "vaccineName", "dose"] },
-  { type: "health",       label: "Health Observations",cols: ["observationDate", "severity", "observation"] },
+const BATCH_RECORD_TYPES: Array<{ type: string; label: string; cols: string[]; endpoint: string }> = [
+  { type: "daily",        label: "Daily Records",      cols: ["recordDate", "openingBirdCount", "notes"],                                     endpoint: "/poultry/daily" },
+  { type: "mortality",    label: "Mortality",          cols: ["recordDate", "birdCount", "reason"],                                           endpoint: "/poultry/mortality" },
+  { type: "feed",         label: "Feed Consumption",   cols: ["recordDate", "quantityKg", "costAmount"],                                      endpoint: "/poultry/feed" },
+  { type: "eggs",         label: "Egg Production",     cols: ["recordDate", "goodEggs", "crackedEggs", "dirtyEggs", "brokenEggs", "rejectedEggs"], endpoint: "/poultry/eggs" },
+  { type: "weights",      label: "Bird Weights",       cols: ["recordDate", "sampleSize", "averageWeightKg"],                                 endpoint: "/poultry/weights" },
+  { type: "medications",  label: "Medications",        cols: ["startDate", "medicationName", "dosage", "route"],                              endpoint: "/poultry/medications" },
+  { type: "vaccinations", label: "Vaccinations",       cols: ["vaccinationDate", "vaccineName", "dose"],                                      endpoint: "/poultry/vaccinations" },
+  { type: "health",       label: "Health Observations",cols: ["observationDate", "severity", "observation"],                                  endpoint: "/poultry/health" },
+  { type: "costs",        label: "Costs",              cols: ["costDate", "costType", "amount", "description"],                               endpoint: "/poultry/costs" },
 ];
 
-function BatchRecordSection({ batchId, type, label, cols }: { batchId: string; type: string; label: string; cols: string[] }) {
+function BatchRecordSection({ batchId, type, label, cols, endpoint, options }: { batchId: string; type: string; label: string; cols: string[]; endpoint: string; options: PoultryOptions }) {
   const { profile } = useAuth();
   const canManage = profile?.hasGlobalAccess ?? false;
   const [rows, setRows] = useState<Record<string, any>[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState("");
+  const [addOpen, setAddOpen] = useState(false);
+  const [addForm, setAddForm] = useState<Record<string, string>>({});
+  const [addError, setAddError] = useState("");
+  const [addLoading, setAddLoading] = useState(false);
   const [editRow, setEditRow] = useState<Record<string, any> | null>(null);
   const [editForm, setEditForm] = useState<Record<string, string>>({});
   const [editMsg, setEditMsg] = useState("");
@@ -976,6 +983,40 @@ function BatchRecordSection({ batchId, type, label, cols }: { batchId: string; t
   function toggle() {
     if (!open && rows.length === 0) load();
     setOpen((o) => !o);
+  }
+
+  function openAdd() {
+    const today = new Date().toISOString().slice(0, 10);
+    const defaults: Record<string, string> = { recordDate: today, startDate: today, vaccinationDate: today, observationDate: today, costDate: today };
+    for (const f of recordFields(type)) {
+      if (f.defaultValue !== undefined) defaults[f.name] = String(f.defaultValue);
+      else if (f.kind === "select" && f.options?.length) defaults[f.name] = f.options[0];
+    }
+    if (type === "feed") {
+      defaults.feedProductId = options.products[0]?.id ?? "";
+      defaults.warehouseId = options.warehouses[0]?.id ?? "";
+    }
+    setAddForm(defaults);
+    setAddError("");
+    setAddOpen(true);
+    if (!open) { load(); setOpen(true); }
+  }
+
+  async function submitAdd(event: FormEvent) {
+    event.preventDefault();
+    setAddLoading(true);
+    setAddError("");
+    try {
+      const payload = buildRecordPayload(type, { ...addForm, flockBatchId: batchId }, options);
+      await apiFetch(endpoint, { method: "POST", body: JSON.stringify(payload) });
+      setAddOpen(false);
+      setAddForm({});
+      await load();
+    } catch (err: any) {
+      setAddError(err?.message ?? "Failed to save record.");
+    } finally {
+      setAddLoading(false);
+    }
   }
 
   function startEdit(row: Record<string, any>) {
@@ -1021,12 +1062,61 @@ function BatchRecordSection({ batchId, type, label, cols }: { batchId: string; t
 
   return (
     <div className="rounded-md border border-line bg-white shadow-panel">
-      <button type="button" className="flex w-full items-center justify-between px-4 py-3 text-sm font-semibold" onClick={toggle}>
+      <div className="flex w-full cursor-pointer items-center justify-between px-4 py-3 text-sm font-semibold" onClick={toggle}>
         <span>{label} {rows.length > 0 && open && <span className="ml-1 text-xs font-normal text-ink/50">({rows.length})</span>}</span>
-        {open ? <ChevronUp className="h-4 w-4 text-ink/40" /> : <ChevronDown className="h-4 w-4 text-ink/40" />}
-      </button>
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={(e) => { e.stopPropagation(); openAdd(); }} className="flex items-center gap-1 rounded border border-line bg-white px-2 py-0.5 text-xs font-semibold hover:bg-field">
+            <Plus className="h-3 w-3" /> Add
+          </button>
+          {open ? <ChevronUp className="h-4 w-4 text-ink/40" /> : <ChevronDown className="h-4 w-4 text-ink/40" />}
+        </div>
+      </div>
       {open && (
         <div className="border-t border-line p-4">
+          {addOpen && (
+            <form onSubmit={submitAdd} className="mb-4 rounded-md border border-green-200 bg-green-50 p-3">
+              <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-green-700">
+                <Plus className="h-3 w-3" />Add {label}
+                <button type="button" className="ml-auto" onClick={() => setAddOpen(false)}><X className="h-3.5 w-3.5" /></button>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-3">
+                {type === "feed" && (
+                  <>
+                    <div>
+                      <label className="mb-0.5 block text-[10px] text-ink/60">Feed product</label>
+                      <select className="w-full rounded border border-line bg-white px-2 py-1 text-xs" value={addForm.feedProductId ?? ""} onChange={(e) => setAddForm((f) => ({ ...f, feedProductId: e.target.value }))}>
+                        <option value="">— none —</option>
+                        {options.products.map((p) => <option key={p.id} value={p.id}>{p.code} — {p.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-0.5 block text-[10px] text-ink/60">Warehouse</label>
+                      <select className="w-full rounded border border-line bg-white px-2 py-1 text-xs" value={addForm.warehouseId ?? ""} onChange={(e) => setAddForm((f) => ({ ...f, warehouseId: e.target.value }))}>
+                        <option value="">— none —</option>
+                        {options.warehouses.map((w) => <option key={w.id} value={w.id}>{w.code} — {w.name}</option>)}
+                      </select>
+                    </div>
+                  </>
+                )}
+                {recordFields(type).map((f) => (
+                  <div key={f.name}>
+                    <label className="mb-0.5 block text-[10px] text-ink/60">{f.label}</label>
+                    {f.kind === "select" ? (
+                      <select className="w-full rounded border border-line bg-white px-2 py-1 text-xs" value={addForm[f.name] ?? f.defaultValue ?? ""} onChange={(e) => setAddForm((prev) => ({ ...prev, [f.name]: e.target.value }))}>
+                        {f.options?.map((o) => <option key={o}>{o}</option>)}
+                      </select>
+                    ) : (
+                      <input className="w-full rounded border border-line bg-white px-2 py-1 text-xs" type={f.kind} value={addForm[f.name] ?? f.defaultValue ?? ""} onChange={(e) => setAddForm((prev) => ({ ...prev, [f.name]: e.target.value }))} required={f.required} />
+                    )}
+                  </div>
+                ))}
+              </div>
+              {addError && <p className="mt-2 text-xs text-red-600">{addError}</p>}
+              <button type="submit" disabled={addLoading} className="mt-2 rounded bg-brand px-3 py-1 text-xs font-semibold text-white disabled:opacity-50">
+                {addLoading ? "Saving…" : "Save record"}
+              </button>
+            </form>
+          )}
           {loading && <p className="text-xs text-ink/50">Loading…</p>}
           {!loading && loadError && (
             <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
@@ -1034,7 +1124,7 @@ function BatchRecordSection({ batchId, type, label, cols }: { batchId: string; t
               <button type="button" className="shrink-0 rounded border border-red-300 bg-white px-2 py-0.5 font-semibold hover:bg-red-100" onClick={load}>Retry</button>
             </div>
           )}
-          {!loading && !loadError && rows.length === 0 && <p className="text-xs text-ink/50">No records yet.</p>}
+          {!loading && !loadError && rows.length === 0 && !addOpen && <p className="text-xs text-ink/50">No records yet.</p>}
           {!loading && rows.length > 0 && (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
@@ -1091,11 +1181,11 @@ function BatchRecordSection({ batchId, type, label, cols }: { batchId: string; t
   );
 }
 
-function BatchRecordsTab({ batchId }: { batchId: string }) {
+function BatchRecordsTab({ batchId, options }: { batchId: string; options: PoultryOptions }) {
   return (
     <div className="space-y-3">
-      {BATCH_RECORD_TYPES.map(({ type, label, cols }) => (
-        <BatchRecordSection key={type} batchId={batchId} type={type} label={label} cols={cols} />
+      {BATCH_RECORD_TYPES.map(({ type, label, cols, endpoint }) => (
+        <BatchRecordSection key={type} batchId={batchId} type={type} label={label} cols={cols} endpoint={endpoint} options={options} />
       ))}
     </div>
   );
@@ -1292,6 +1382,23 @@ function GenericRecordForm({ options, form, setForm, submit, type, isEditing = f
         </select>
       </FormField>
 
+      {type === "feed" && (
+        <>
+          <FormField label="Feed product">
+            <select className={inputClass} value={form.feedProductId ?? ""} onChange={(e) => setForm({ ...form, feedProductId: e.target.value })}>
+              <option value="">— select product —</option>
+              {options.products.map((p) => <option key={p.id} value={p.id}>{p.code} — {p.name}</option>)}
+            </select>
+          </FormField>
+          <FormField label="Warehouse">
+            <select className={inputClass} value={form.warehouseId ?? ""} onChange={(e) => setForm({ ...form, warehouseId: e.target.value })}>
+              <option value="">— select warehouse —</option>
+              {options.warehouses.map((w) => <option key={w.id} value={w.id}>{w.code} — {w.name}</option>)}
+            </select>
+          </FormField>
+        </>
+      )}
+
       {fields.map((field) => (
         <FormField key={field.name} label={field.label}>
           {field.kind === "select" ? (
@@ -1314,9 +1421,9 @@ function GenericRecordForm({ options, form, setForm, submit, type, isEditing = f
 function recordFields(type: string) {
   const date = { name: "recordDate", label: "Record date", kind: "date", required: true };
   const map: Record<string, Array<{ name: string; label: string; kind: string; required?: boolean; defaultValue?: string; options?: string[] }>> = {
-    daily: [date, { name: "mortalityCount", label: "Mortality", kind: "number", required: true, defaultValue: "0" }, { name: "culledCount", label: "Culled", kind: "number", required: true, defaultValue: "0" }, { name: "feedConsumedKg", label: "Feed kg", kind: "number", required: true, defaultValue: "0" }, { name: "totalEggs", label: "Total eggs", kind: "number", required: true, defaultValue: "0" }],
+    daily: [date, { name: "openingBirdCount", label: "Opening birds", kind: "number", defaultValue: "0" }, { name: "notes", label: "Notes", kind: "text" }],
     mortality: [date, { name: "birdCount", label: "Bird count", kind: "number", required: true }, { name: "reason", label: "Reason", kind: "text" }],
-    feed: [date, { name: "quantityKg", label: "Quantity kg", kind: "number", required: true }, { name: "costAmount", label: "Cost", kind: "number" }],
+    feed: [date, { name: "bags", label: "Bags (50 kg each)", kind: "number", required: true }, { name: "costAmount", label: "Cost (GHS)", kind: "number" }],
     eggs: [date, { name: "goodEggs", label: "Good", kind: "number", defaultValue: "0" }, { name: "crackedEggs", label: "Cracked", kind: "number", defaultValue: "0" }, { name: "dirtyEggs", label: "Dirty", kind: "number", defaultValue: "0" }, { name: "brokenEggs", label: "Broken", kind: "number", defaultValue: "0" }, { name: "rejectedEggs", label: "Rejected", kind: "number", defaultValue: "0" }],
     weights: [date, { name: "sampleSize", label: "Sample size", kind: "number", required: true }, { name: "averageWeightKg", label: "Average kg", kind: "number", required: true }],
     medications: [{ name: "medicationName", label: "Medication", kind: "text", required: true }, { name: "dosage", label: "Dosage", kind: "text", required: true }, { name: "route", label: "Route", kind: "text" }, { name: "startDate", label: "Start date", kind: "date", required: true }],
@@ -1328,8 +1435,6 @@ function recordFields(type: string) {
 }
 
 function buildRecordPayload(type: string, form: Record<string, string>, options: PoultryOptions) {
-  // Start with field defaults so required fields are never absent from the body.
-  // User-entered values in `form` override the defaults.
   const merged: Record<string, string> = makeFormDefaults(type);
   Object.assign(merged, form);
 
@@ -1337,15 +1442,28 @@ function buildRecordPayload(type: string, form: Record<string, string>, options:
     ...merged,
     flockBatchId: merged.flockBatchId || options.batches[0]?.id,
     penId: merged.penId || undefined,
-    poultryHouseId: undefined  // UI-only intermediary, never sent to API
+    poultryHouseId: undefined
   };
-  const numericKeys = ["mortalityCount", "culledCount", "feedConsumedKg", "totalEggs", "birdCount", "quantityKg", "costAmount", "goodEggs", "crackedEggs", "dirtyEggs", "brokenEggs", "rejectedEggs", "sampleSize", "averageWeightKg", "amount"];
+  const numericKeys = ["mortalityCount", "culledCount", "feedConsumedKg", "totalEggs", "birdCount", "quantityKg", "costAmount", "goodEggs", "crackedEggs", "dirtyEggs", "brokenEggs", "rejectedEggs", "sampleSize", "averageWeightKg", "amount", "openingBirdCount"];
   for (const key of Object.keys(payload)) {
     if (numericKeys.includes(key)) {
       payload[key] = Number(payload[key] || 0);
     }
   }
   if (type === "mortality") payload.isCulling = false;
+
+  // Strip recordDate for record types that use a different date field name
+  const hasRecordDate = recordFields(type).some((f) => f.name === "recordDate");
+  if (!hasRecordDate) payload.recordDate = undefined;
+
+  // Feed: convert bags input → quantityKg (1 bag = 50 kg), wire warehouse and product
+  if (type === "feed") {
+    payload.quantityKg = Number(merged.bags || 0) * 50;
+    payload.bags = undefined;
+    payload.feedProductId = merged.feedProductId || undefined;
+    payload.warehouseId = merged.warehouseId || undefined;
+  }
+
   return payload;
 }
 

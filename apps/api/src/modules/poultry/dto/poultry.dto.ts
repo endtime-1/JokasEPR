@@ -204,21 +204,25 @@ export class CreateDailyPoultryRecordDto extends FlockRecordDto {
   @Min(0)
   openingBirdCount?: number;
 
+  @IsOptional()
   @IsInt()
   @Min(0)
-  mortalityCount!: number;
+  mortalityCount?: number;
 
+  @IsOptional()
   @IsInt()
   @Min(0)
-  culledCount!: number;
+  culledCount?: number;
 
+  @IsOptional()
   @IsNumber()
   @Min(0)
-  feedConsumedKg!: number;
+  feedConsumedKg?: number;
 
+  @IsOptional()
   @IsInt()
   @Min(0)
-  totalEggs!: number;
+  totalEggs?: number;
 }
 
 export class CreateMortalityRecordDto extends FlockRecordDto {
