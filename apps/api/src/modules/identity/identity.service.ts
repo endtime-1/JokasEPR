@@ -3,6 +3,7 @@ import { UserStatus } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { AuthenticatedUser } from "@jokas/shared";
 import { AuditService } from "../audit/audit.service";
+import { AuthService } from "../auth/auth.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { AssignUserAccessDto } from "./dto/assign-user-access.dto";
 import { AssignUserRolesDto } from "./dto/assign-user-roles.dto";
@@ -20,7 +21,8 @@ type RequestContext = {
 export class IdentityService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly audit: AuditService
+    private readonly audit: AuditService,
+    private readonly authService: AuthService
   ) {}
 
   async listUsers(companyId: string) {
@@ -174,6 +176,7 @@ export class IdentityService {
       userAgent: context.userAgent
     });
 
+    this.authService.clearProfileCache(userId);
     return { data: { id: userId } };
   }
 
@@ -197,6 +200,7 @@ export class IdentityService {
       userAgent: context.userAgent
     });
 
+    this.authService.clearProfileCache(userId);
     return { data: user };
   }
 
@@ -224,6 +228,7 @@ export class IdentityService {
       userAgent: context.userAgent
     });
 
+    this.authService.clearProfileCache(userId);
     return this.getUserDetail(actor.companyId, userId);
   }
 
@@ -272,6 +277,7 @@ export class IdentityService {
       userAgent: context.userAgent
     });
 
+    this.authService.clearProfileCache(userId);
     return this.getUserDetail(actor.companyId, userId);
   }
 

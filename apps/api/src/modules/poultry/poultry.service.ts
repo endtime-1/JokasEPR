@@ -532,6 +532,9 @@ export class PoultryService {
 
   async createMortality(user: AuthenticatedUser, dto: CreateMortalityRecordDto, context: RequestContext) {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
+    const { _sum } = await this.prisma.mortalityRecord.aggregate({ where: { flockBatchId: batch.id, deletedAt: null }, _sum: { birdCount: true } });
+    const liveBirds = Math.max(0, batch.openingBirdCount - (_sum.birdCount ?? 0));
+    if (dto.birdCount > liveBirds) throw new BadRequestException(`Cannot record ${dto.birdCount} bird${dto.birdCount !== 1 ? "s" : ""}. Only ${liveBirds} live bird${liveBirds !== 1 ? "s" : ""} remain in this batch.`);
     const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
     const data = await this.prisma.mortalityRecord.create({
       data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), recordDate: new Date(dto.recordDate), birdCount: dto.birdCount, isCulling: dto.isCulling ?? false, reason: dto.reason, notes: dto.notes, status: dto.status ?? "SUBMITTED" }
@@ -542,6 +545,7 @@ export class PoultryService {
 
   async createFeed(user: AuthenticatedUser, dto: CreateFeedConsumptionRecordDto, context: RequestContext) {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
+    if (dto.warehouseId) this.assertWarehouseAccess(user, dto.warehouseId);
     const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
     const data = await this.prisma.$transaction(async (tx) => {
       const record = await tx.feedConsumptionRecord.create({
@@ -584,6 +588,7 @@ export class PoultryService {
 
   async createMedication(user: AuthenticatedUser, dto: CreateMedicationRecordDto, context: RequestContext) {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
+    if (dto.warehouseId) this.assertWarehouseAccess(user, dto.warehouseId);
     const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
     const data = await this.prisma.$transaction(async (tx) => {
       const record = await tx.medicationRecord.create({
@@ -600,6 +605,7 @@ export class PoultryService {
 
   async createVaccination(user: AuthenticatedUser, dto: CreateVaccinationRecordDto, context: RequestContext) {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
+    if (dto.warehouseId) this.assertWarehouseAccess(user, dto.warehouseId);
     const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
     const data = await this.prisma.$transaction(async (tx) => {
       const record = await tx.vaccinationRecord.create({
@@ -646,6 +652,13 @@ export class PoultryService {
       if (dto.birdCount > available) {
         throw new BadRequestException(`Source pen only has ${available} birds available. Cannot transfer ${dto.birdCount}.`);
       }
+    } else {
+      const [mortalityAgg, outgoingAgg] = await Promise.all([
+        this.prisma.mortalityRecord.aggregate({ where: { flockBatchId: batch.id, deletedAt: null }, _sum: { birdCount: true } }),
+        this.prisma.poultryTransferRecord.aggregate({ where: { flockBatchId: batch.id, deletedAt: null }, _sum: { birdCount: true } })
+      ]);
+      const liveBirds = Math.max(0, batch.openingBirdCount - (mortalityAgg._sum.birdCount ?? 0) - (outgoingAgg._sum.birdCount ?? 0));
+      if (dto.birdCount > liveBirds) throw new BadRequestException(`Cannot transfer ${dto.birdCount} birds. Only ${liveBirds} live birds remain in this batch.`);
     }
 
     const data = await this.prisma.$transaction(async (tx) => {
@@ -840,6 +853,21 @@ export class PoultryService {
       if (dto[field] !== undefined) updateData[field] = dto[field];
     }
     const data = await model.update({ where: { id }, data: updateData });
+
+    if (type === "feed" && updateData.quantityKg !== undefined) {
+      const feed = existing as { feedProductId?: string | null; warehouseId?: string | null; quantityKg: number };
+      if (feed.feedProductId && feed.warehouseId) {
+        const delta = Number(updateData.quantityKg) - Number(feed.quantityKg);
+        if (delta !== 0) {
+          const invItem = await this.prisma.inventoryItem.findFirst({ where: { companyId: user.companyId, warehouseId: feed.warehouseId, productId: feed.feedProductId, deletedAt: null } });
+          if (invItem) {
+            await this.prisma.inventoryItem.update({ where: { id: invItem.id }, data: { quantityOnHand: delta > 0 ? { decrement: delta } : { increment: -delta }, updatedById: user.id } });
+            await this.prisma.stockMovement.create({ data: { companyId: user.companyId, branchId: invItem.branchId, productId: feed.feedProductId, inventoryItemId: invItem.id, fromWarehouseId: feed.warehouseId, warehouseId: feed.warehouseId, uomId: invItem.uomId, movementType: delta > 0 ? "PRODUCTION_INPUT" : "ADJUSTMENT_IN", quantity: Math.abs(delta), referenceType: "FeedConsumptionRecord", referenceId: id, notes: "Feed quantity correction", createdById: user.id } });
+          }
+        }
+      }
+    }
+
     await this.writeAudit(user, "UPDATE", type, id, `Corrected poultry ${type} record`, context, farmId);
     return { data };
   }
@@ -1042,6 +1070,12 @@ export class PoultryService {
   private assertFarmAccess(user: AuthenticatedUser, farmId: string) {
     if (!user.hasGlobalAccess && !user.farmIds.includes(farmId)) {
       throw new ForbiddenException("You do not have access to this farm.");
+    }
+  }
+
+  private assertWarehouseAccess(user: AuthenticatedUser, warehouseId: string) {
+    if (!user.hasGlobalAccess && !user.warehouseIds.includes(warehouseId)) {
+      throw new ForbiddenException("You do not have access to this warehouse.");
     }
   }
 

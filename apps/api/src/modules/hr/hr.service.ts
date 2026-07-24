@@ -641,6 +641,7 @@ export class HRService {
     const row = await this.prisma.payrollRecord.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
     if (!row) throw new NotFoundException("Payroll record not found");
     if (row.status !== "DRAFT") throw new BadRequestException("Only DRAFT records can be approved");
+    if (row.createdById === user.id) throw new ForbiddenException("You cannot approve a payroll record you created. A different manager must approve it.");
 
     const updated = await this.prisma.payrollRecord.update({ where: { id }, data: { status: "APPROVED", updatedById: user.id } });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "PayrollRecord", entityId: id, action: "APPROVE", ...ctx });

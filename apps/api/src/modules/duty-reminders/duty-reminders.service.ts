@@ -144,4 +144,14 @@ export class DutyRemindersService {
     });
     if (count > 0) this.logger.log(`Purged ${count} expired LoginRateLimit row(s)`);
   }
+
+  // ── 3:30 AM: transition expired stock reservations to EXPIRED status ──────
+  @Cron("30 3 * * *", { timeZone: "Africa/Accra" })
+  async expireStockReservations() {
+    const { count } = await this.prisma.stockReservation.updateMany({
+      where: { status: "ACTIVE", expiresAt: { lt: new Date() }, deletedAt: null },
+      data: { status: "EXPIRED" },
+    });
+    if (count > 0) this.logger.log(`Expired ${count} stock reservation(s)`);
+  }
 }
