@@ -137,46 +137,40 @@ jobs:
 
       - name: Upload DB migrations and scripts
         run: |
-          rsync -avz --partial --timeout=120 \
-            -e "ssh -p 65002 -i ~/.ssh/id_rsa" \
-            packages/db/prisma/ \
-            ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/prisma/
-          rsync -avz --partial --timeout=120 \
-            -e "ssh -p 65002 -i ~/.ssh/id_rsa" \
-            packages/db/scripts/sync-permissions.mjs \
-            ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/apps/api/sync-permissions.mjs
+          for attempt in 1 2 3; do
+            rsync -avz --partial --timeout=120 \
+              -e "ssh -p 65002 -i ~/.ssh/id_rsa" \
+              packages/db/prisma/ \
+              ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/prisma/ \
+            && rsync -avz --partial --timeout=120 \
+              -e "ssh -p 65002 -i ~/.ssh/id_rsa" \
+              packages/db/scripts/sync-permissions.mjs \
+              ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/apps/api/sync-permissions.mjs \
+            && { echo "DB+scripts upload succeeded on attempt $attempt"; break; } \
+            || { echo "Attempt $attempt failed; retrying in 20s..."; sleep 20; }
+          done
 
       - name: Upload root startup files
         run: |
-          rsync -avz --partial --timeout=120 \
-            -e "ssh -p 65002 -i ~/.ssh/id_rsa" \
-            ecosystem.config.js start.js package.json \
-            ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/
+          for attempt in 1 2 3; do
+            rsync -avz --partial --timeout=120 \
+              -e "ssh -p 65002 -i ~/.ssh/id_rsa" \
+              ecosystem.config.js start.js package.json \
+              ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/ \
+            && { echo "Root files upload succeeded on attempt $attempt"; break; } \
+            || { echo "Attempt $attempt failed; retrying in 20s..."; sleep 20; }
+          done
 
       - name: Deploy and restart on Hostinger
-        uses: appleboy/ssh-action@v1.2.0
-        with:
-          host: ${{ secrets.HOSTINGER_HOST }}
-          username: ${{ secrets.HOSTINGER_USER }}
-          key: ${{ secrets.HOSTINGER_SSH_KEY }}
-          port: 65002
-          # command_timeout sets how long the SSH action waits before giving up.
-          command_timeout: 5m
-          script: |
+        run: |
+          REMOTE_CMD='
             set -e
             source ~/.bashrc 2>/dev/null || source ~/.profile 2>/dev/null || true
-
             APP_DIR=~/domains/jokasfarms.com/nodejs
-
-            # Signal Passenger to gracefully restart start.js.
-            # start.js already calls killPortOwner() at startup — no manual kills needed here.
-            # Migrations run separately (see note below) once DATABASE_URL is in server .env.
             mkdir -p $APP_DIR/tmp
             touch $APP_DIR/tmp/restart.txt
             echo "Passenger restart signalled."
             sleep 8
-
-            # ── Smoke test ────────────────────────────────────────────────────
             DOMAIN="https://jokasfarms.com"
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 "$DOMAIN/__status" || echo "000")
             if [ "$STATUS" = "200" ]; then
@@ -187,3 +181,10 @@ jobs:
               echo "Smoke test FAILED — unexpected status: HTTP $STATUS"
               exit 1
             fi
+          '
+          for attempt in 1 2 3; do
+            ssh -p 65002 -i ~/.ssh/id_rsa -o ConnectTimeout=60 -o StrictHostKeyChecking=no \
+              ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }} "$REMOTE_CMD" \
+            && { echo "Deploy+restart succeeded on attempt $attempt"; break; } \
+            || { echo "Attempt $attempt failed; retrying in 20s..."; sleep 20; }
+          done
