@@ -41,6 +41,7 @@ type BatchContext = {
   poultryHouseId: string | null;
   openingBirdCount: number;
   birdType: string;
+  status: string;
 };
 
 @Injectable()
@@ -74,19 +75,19 @@ export class PoultryService {
       }),
       this.prisma.eggProductionRecord.groupBy({
         by: ["recordDate"],
-        where: { companyId: user.companyId, recordDate: { gte: since7 }, deletedAt: null },
+        where: { companyId: user.companyId, recordDate: { gte: since7 }, deletedAt: null, ...(user.hasGlobalAccess || user.farmIds.length === 0 ? {} : { farmId: { in: user.farmIds } }) },
         _sum: { goodEggs: true, crackedEggs: true, dirtyEggs: true, brokenEggs: true, rejectedEggs: true },
         orderBy: { recordDate: "asc" }
       }),
       this.prisma.mortalityRecord.groupBy({
         by: ["recordDate"],
-        where: { companyId: user.companyId, recordDate: { gte: since7 }, deletedAt: null, isCulling: false },
+        where: { companyId: user.companyId, recordDate: { gte: since7 }, deletedAt: null, isCulling: false, ...(user.hasGlobalAccess || user.farmIds.length === 0 ? {} : { farmId: { in: user.farmIds } }) },
         _sum: { birdCount: true },
         orderBy: { recordDate: "asc" }
       }),
       this.prisma.feedConsumptionRecord.groupBy({
         by: ["recordDate"],
-        where: { companyId: user.companyId, recordDate: { gte: since7 }, deletedAt: null },
+        where: { companyId: user.companyId, recordDate: { gte: since7 }, deletedAt: null, ...(user.hasGlobalAccess || user.farmIds.length === 0 ? {} : { farmId: { in: user.farmIds } }) },
         _sum: { quantityKg: true },
         orderBy: { recordDate: "asc" }
       }),
@@ -322,6 +323,13 @@ export class PoultryService {
     const batch = await this.prisma.flockBatch.findFirst({ where: { ...this.batchWhere(user), id } });
     if (!batch) throw new NotFoundException("Flock batch was not found.");
     this.assertFarmAccess(user, batch.farmId);
+    if (dto.birdType && dto.birdType !== batch.birdType) {
+      const [eggs, weights] = await Promise.all([
+        this.prisma.eggProductionRecord.count({ where: { flockBatchId: id, deletedAt: null } }),
+        this.prisma.birdWeightRecord.count({ where: { flockBatchId: id, deletedAt: null } })
+      ]);
+      if (eggs + weights > 0) throw new BadRequestException(`Cannot change bird type from ${batch.birdType} to ${dto.birdType} — this batch has existing egg production or weight records.`);
+    }
     const data = await this.prisma.flockBatch.update({
       where: { id },
       data: {
@@ -341,6 +349,16 @@ export class PoultryService {
     const batch = await this.prisma.flockBatch.findFirst({ where: { ...this.batchWhere(user), id } });
     if (!batch) throw new NotFoundException("Flock batch was not found.");
     this.assertFarmAccess(user, batch.farmId);
+    const [mortality, feed, eggs, weights, costs, transfers] = await Promise.all([
+      this.prisma.mortalityRecord.count({ where: { flockBatchId: id, deletedAt: null } }),
+      this.prisma.feedConsumptionRecord.count({ where: { flockBatchId: id, deletedAt: null } }),
+      this.prisma.eggProductionRecord.count({ where: { flockBatchId: id, deletedAt: null } }),
+      this.prisma.birdWeightRecord.count({ where: { flockBatchId: id, deletedAt: null } }),
+      this.prisma.poultryCostRecord.count({ where: { flockBatchId: id, deletedAt: null } }),
+      this.prisma.poultryTransferRecord.count({ where: { flockBatchId: id, deletedAt: null } })
+    ]);
+    const total = mortality + feed + eggs + weights + costs + transfers;
+    if (total > 0) throw new BadRequestException(`Cannot delete batch "${batch.code}" — it has ${total} active record${total !== 1 ? "s" : ""} (mortality: ${mortality}, feed: ${feed}, eggs: ${eggs}, weights: ${weights}, costs: ${costs}, transfers: ${transfers}). Delete all records first.`);
     await this.prisma.flockBatch.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
     this.lookupCache.invalidate(`poultry:opts:${user.companyId}`);
     await this.writeAudit(user, "DELETE", "FlockBatch", id, `Deleted flock batch ${batch.code}`, context, batch.farmId);
@@ -501,6 +519,18 @@ export class PoultryService {
 
   async updateBatchStatus(user: AuthenticatedUser, id: string, dto: UpdateBatchStatusDto, context: RequestContext) {
     const batch = await this.getBatchContext(user, id, false);
+    const ALLOWED_TRANSITIONS: Record<string, string[]> = {
+      PLANNED: ["ACTIVE", "CULLED"],
+      ACTIVE: ["TRANSFERRED", "CLOSED", "SOLD", "CULLED"],
+      TRANSFERRED: ["CLOSED", "SOLD", "CULLED"],
+      CLOSED: ["SOLD"],
+      SOLD: [],
+      CULLED: []
+    };
+    const allowed = ALLOWED_TRANSITIONS[batch.status] ?? [];
+    if (!allowed.includes(dto.status)) {
+      throw new BadRequestException(`Cannot transition a batch from ${batch.status} to ${dto.status}.${allowed.length ? ` Allowed: ${allowed.join(", ")}.` : " This status is terminal."}`);
+    }
     const data = await this.prisma.flockBatch.update({
       where: { id },
       data: {
@@ -562,6 +592,9 @@ export class PoultryService {
 
   async createEggs(user: AuthenticatedUser, dto: CreateEggProductionRecordDto, context: RequestContext) {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
+    if (!["LAYERS", "BREEDERS"].includes(batch.birdType)) {
+      throw new BadRequestException(`Egg production cannot be recorded for a ${batch.birdType} batch. Only LAYERS and BREEDERS batches produce eggs.`);
+    }
     const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
     const data = await this.prisma.$transaction(async (tx) => {
       const record = await tx.eggProductionRecord.create({
@@ -812,10 +845,13 @@ export class PoultryService {
       // Reverse the batchPenAllocation increment that was created when the transfer was made.
       data = await this.prisma.$transaction(async (tx) => {
         const deleted = await tx.poultryTransferRecord.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
-        await tx.batchPenAllocation.update({
-          where: { flockBatchId_penId: { flockBatchId: existing.flockBatchId, penId: existing.toPenId } },
-          data: { birdCount: { decrement: existing.birdCount } }
-        });
+        const alloc = await tx.batchPenAllocation.findUnique({ where: { flockBatchId_penId: { flockBatchId: existing.flockBatchId, penId: existing.toPenId } } });
+        if (alloc) {
+          await tx.batchPenAllocation.update({
+            where: { flockBatchId_penId: { flockBatchId: existing.flockBatchId, penId: existing.toPenId } },
+            data: { birdCount: Math.max(0, alloc.birdCount - existing.birdCount) }
+          });
+        }
         return deleted;
       });
       this.lookupCache.invalidate(`poultry:opts:${user.companyId}`);
@@ -1041,7 +1077,7 @@ export class PoultryService {
       companyId: user.companyId,
       deletedAt: null,
       ...farmFilter,
-      poultryHouseId: query.poultryHouseId,
+      ...(type !== "transfers" ? { poultryHouseId: query.poultryHouseId } : {}),
       flockBatchId: query.flockBatchId,
       ...dateRange
     };
