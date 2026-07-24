@@ -22,6 +22,7 @@ import {
   SimulatePredictiveDto,
   UpdateFeedFormulaDto,
   UpdateFeedFormulaIngredientDto,
+  UpdateFeedProductionOrderDto,
   UpdateFeedQualityCheckStatusDto,
   UpdateIngredientDto
 } from "./dto/feed-production.dto";
@@ -443,6 +444,39 @@ export class FeedProductionService {
       data: { status: "APPROVED", approvedById: user.id, approvedAt: new Date(), updatedById: user.id }
     });
     await this.writeAudit(user, "APPROVE", "FeedProductionOrder", id, `Approved feed production order ${order.orderNumber}`, context, { branchId: order.branchId, productionSiteId: order.productionSiteId });
+    return { data };
+  }
+
+  async updateOrder(user: AuthenticatedUser, id: string, dto: UpdateFeedProductionOrderDto, context: RequestContext) {
+    const order = await this.requireOrder(user, id);
+    if (!["DRAFT", "PENDING_STOCK_APPROVAL"].includes(order.status)) {
+      throw new BadRequestException(`Only DRAFT or PENDING_STOCK_APPROVAL orders can be edited. Current status: "${order.status}".`);
+    }
+    const data = await this.prisma.feedProductionOrder.update({
+      where: { id },
+      data: {
+        ...(dto.plannedQuantityKg !== undefined && { plannedQuantityKg: dto.plannedQuantityKg }),
+        ...(dto.scheduledDate !== undefined && { scheduledDate: new Date(dto.scheduledDate) }),
+        ...(dto.notes !== undefined && { notes: dto.notes }),
+        updatedById: user.id
+      }
+    });
+    await this.writeAudit(user, "UPDATE", "FeedProductionOrder", id, `Edited feed production order ${order.orderNumber}`, context, { branchId: order.branchId, productionSiteId: order.productionSiteId });
+    return { data };
+  }
+
+  async cancelOrder(user: AuthenticatedUser, id: string, context: RequestContext) {
+    const order = await this.requireOrder(user, id);
+    if (!["DRAFT", "PENDING_STOCK_APPROVAL"].includes(order.status)) {
+      throw new BadRequestException(`Only DRAFT or PENDING_STOCK_APPROVAL orders can be cancelled. Current status: "${order.status}".`);
+    }
+    const hasBatches = await this.prisma.feedProductionBatch.count({ where: { companyId: user.companyId, productionOrderId: id, deletedAt: null } });
+    if (hasBatches > 0) throw new BadRequestException("Cannot cancel an order that already has posted batches.");
+    const data = await this.prisma.feedProductionOrder.update({
+      where: { id },
+      data: { status: "CANCELLED", updatedById: user.id }
+    });
+    await this.writeAudit(user, "UPDATE", "FeedProductionOrder", id, `Cancelled feed production order ${order.orderNumber}`, context, { branchId: order.branchId, productionSiteId: order.productionSiteId });
     return { data };
   }
 

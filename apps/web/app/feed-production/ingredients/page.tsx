@@ -92,7 +92,7 @@ export default function IngredientsPage() {
     try {
       const body = { name: form.name, sku: form.sku, uomId: form.uomId, description: form.description || undefined, ...(editing ? { status: form.status } : {}) };
       if (editing) {
-        await apiFetch(`/feed-production/ingredients/${editing.id}`, { method: "PUT", body: JSON.stringify(body) });
+        await apiFetch(`/feed-production/ingredients/${editing.id}`, { method: "PATCH", body: JSON.stringify(body) });
       } else {
         await apiFetch("/feed-production/ingredients", { method: "POST", body: JSON.stringify(body) });
       }

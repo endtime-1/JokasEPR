@@ -163,6 +163,21 @@ export class CreateFeedProductionOrderDto {
   notes?: string;
 }
 
+export class UpdateFeedProductionOrderDto {
+  @IsOptional()
+  @IsNumber()
+  @Min(0.001)
+  plannedQuantityKg?: number;
+
+  @IsOptional()
+  @IsDateString()
+  scheduledDate?: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+}
+
 export class CreateFeedProductionBatchDto {
   @IsUUID()
   productionOrderId!: string;

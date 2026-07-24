@@ -22,6 +22,7 @@ import {
   SimulatePredictiveDto,
   UpdateFeedFormulaDto,
   UpdateFeedFormulaIngredientDto,
+  UpdateFeedProductionOrderDto,
   UpdateFeedQualityCheckStatusDto,
   UpdateIngredientDto
 } from "./dto/feed-production.dto";
@@ -126,6 +127,18 @@ export class FeedProductionController {
   @RequirePermissions(PERMISSIONS.FEED_MANAGE)
   approveOrder(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.feedProductionService.approveOrder(user, id, { ipAddress, userAgent });
+  }
+
+  @Patch("orders/:id")
+  @RequirePermissions(PERMISSIONS.FEED_MANAGE)
+  updateOrder(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateFeedProductionOrderDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.feedProductionService.updateOrder(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Patch("orders/:id/cancel")
+  @RequirePermissions(PERMISSIONS.FEED_MANAGE)
+  cancelOrder(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.feedProductionService.cancelOrder(user, id, { ipAddress, userAgent });
   }
 
   @Get("orders/:id/raw-material-availability")

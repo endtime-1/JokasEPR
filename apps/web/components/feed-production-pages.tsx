@@ -148,9 +148,22 @@ function number(value: unknown) {
   return Number(value ?? 0).toLocaleString("en-GH", { maximumFractionDigits: 2 });
 }
 
+type FormulaEditDraft = { name: string; targetBatchKg: string; status: string };
+
 export function FeedFormulaListPage() {
   const [rows, setRows] = useState<FormulaRow[]>(() => getCachedFirst<ApiEnvelope<FormulaRow[]>>("/feed-production/formulas")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/feed-production/formulas"));
+
+  // Edit drawer
+  const [editTarget, setEditTarget] = useState<FormulaRow | null>(null);
+  const [editDraft, setEditDraft] = useState<FormulaEditDraft>({ name: "", targetBatchKg: "", status: "" });
+  const [saving, setSaving] = useState(false);
+  const [saveErr, setSaveErr] = useState("");
+
+  // Delete confirm
+  const [deleteTarget, setDeleteTarget] = useState<FormulaRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteErr, setDeleteErr] = useState("");
 
   async function load() {
     try {
@@ -161,9 +174,48 @@ export function FeedFormulaListPage() {
     }
   }
 
-  useEffect(() => {
-    load().catch(() => undefined);
-  }, []);
+  useEffect(() => { load().catch(() => undefined); }, []);
+
+  function openEdit(row: FormulaRow) {
+    setEditTarget(row);
+    setEditDraft({ name: row.name, targetBatchKg: String(row.targetBatchKg), status: row.status });
+    setSaveErr("");
+  }
+
+  async function handleSave(e: FormEvent) {
+    e.preventDefault();
+    if (!editTarget) return;
+    setSaving(true);
+    setSaveErr("");
+    try {
+      await apiFetch(`/feed-production/formulas/${editTarget.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name: editDraft.name, targetBatchKg: Number(editDraft.targetBatchKg), status: editDraft.status })
+      });
+      setEditTarget(null);
+      await load();
+    } catch (err: unknown) {
+      setSaveErr((err as Error)?.message ?? "Save failed.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    setDeleteErr("");
+    try {
+      await apiFetch(`/feed-production/formulas/${deleteTarget.id}`, { method: "DELETE" });
+      setDeleteTarget(null);
+      await load();
+    } catch (err: unknown) {
+      setDeleteErr((err as Error)?.message ?? "Delete failed.");
+      setDeleting(false);
+    }
+  }
+
+  const inputCls = "min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm transition focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15";
 
   return (
     <FeedMillShell>
@@ -171,7 +223,76 @@ export function FeedFormulaListPage() {
       <Link className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" href="/feed-production/formulas/create">
         <Plus aria-hidden className="h-4 w-4" /> Create formula
       </Link>
-      <FormulaTable rows={rows} loading={loading} />
+      <FormulaTable rows={rows} loading={loading} onEdit={openEdit} onDelete={setDeleteTarget} />
+
+      {/* Edit drawer */}
+      {editTarget && (
+        <div className="fixed inset-0 z-50 flex justify-end">
+          <div className="absolute inset-0 bg-ink/20 backdrop-blur-sm" onClick={() => setEditTarget(null)} />
+          <aside className="relative z-10 flex h-full w-full max-w-md flex-col bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-line px-6 py-4">
+              <div>
+                <p className="app-kicker">Feed Formulas</p>
+                <h2 className="text-base font-bold text-ink">Edit: {editTarget.code}</h2>
+              </div>
+              <button onClick={() => setEditTarget(null)} className="rounded-lg p-2 text-ink/40 hover:bg-field hover:text-ink transition">
+                <span className="text-sm">✕</span>
+              </button>
+            </div>
+            <form onSubmit={handleSave} className="flex flex-1 flex-col overflow-y-auto">
+              <div className="flex-1 space-y-4 px-6 py-5">
+                {saveErr && (
+                  <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                    <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" /><span>{saveErr}</span>
+                  </div>
+                )}
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-ink/60">Formula Name *</label>
+                  <input required className={inputCls} value={editDraft.name} onChange={(e) => setEditDraft({ ...editDraft, name: e.target.value })} />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-ink/60">Target Batch (kg) *</label>
+                  <input required type="number" min="0.001" step="0.001" className={`${inputCls} text-right`} value={editDraft.targetBatchKg} onChange={(e) => setEditDraft({ ...editDraft, targetBatchKg: e.target.value })} />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-ink/60">Status</label>
+                  <select className={inputCls} value={editDraft.status} onChange={(e) => setEditDraft({ ...editDraft, status: e.target.value })}>
+                    <option value="DRAFT">Draft</option>
+                    <option value="ACTIVE">Active</option>
+                    <option value="INACTIVE">Inactive</option>
+                  </select>
+                </div>
+                <p className="text-xs text-ink/45">To edit ingredients or view costing, open the <Link href={`/feed-production/formulas/${editTarget.id}`} className="text-brand underline">formula detail page</Link>.</p>
+              </div>
+              <div className="border-t border-line px-6 py-4 flex gap-3">
+                <button type="button" onClick={() => setEditTarget(null)} className="app-button-secondary flex-1">Cancel</button>
+                <button type="submit" disabled={saving} className="app-button-primary flex-1">{saving ? "Saving…" : "Save changes"}</button>
+              </div>
+            </form>
+          </aside>
+        </div>
+      )}
+
+      {/* Delete confirm */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-ink/20 backdrop-blur-sm" onClick={() => { setDeleteTarget(null); setDeleteErr(""); }} />
+          <div className="relative z-10 w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-red-50">
+              <Trash2 className="h-5 w-5 text-red-600" />
+            </div>
+            <h3 className="text-base font-bold text-ink">Delete formula?</h3>
+            <p className="mt-1 text-sm text-ink/60">
+              <strong>{deleteTarget.name}</strong> ({deleteTarget.code}) will be permanently removed. This will fail if the formula has active production orders — archive it first.
+            </p>
+            {deleteErr && <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{deleteErr}</p>}
+            <div className="mt-5 flex gap-3">
+              <button onClick={() => { setDeleteTarget(null); setDeleteErr(""); }} className="app-button-secondary flex-1">Cancel</button>
+              <button onClick={handleDelete} disabled={deleting} className="app-button-danger flex-1">{deleting ? "Deleting…" : "Delete"}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </FeedMillShell>
   );
 }
@@ -515,7 +636,7 @@ export function FormulaBuilderPage() {
   );
 }
 
-function FormulaTable({ rows, loading }: { rows: FormulaRow[]; loading?: boolean }) {
+function FormulaTable({ rows, loading, onEdit, onDelete }: { rows: FormulaRow[]; loading?: boolean; onEdit?: (row: FormulaRow) => void; onDelete?: (row: FormulaRow) => void }) {
   return (
     <DataTable
       rows={rows}
@@ -528,7 +649,28 @@ function FormulaTable({ rows, loading }: { rows: FormulaRow[]; loading?: boolean
         { key: "product", label: "Finished feed", render: (row) => row.finishedProduct?.name ?? "-" },
         { key: "cost100", label: "Cost / 100kg", render: (row) => money(row.costing?.costPer100Kg) },
         { key: "costBag", label: "Cost / 50kg", render: (row) => money(row.costing?.costPer50KgBag) },
-        { key: "status", label: "Status", render: (row) => row.status }
+        { key: "status", label: "Status", render: (row) => <StatusBadge status={row.status} /> },
+        {
+          key: "actions", label: "",
+          render: (row) => (
+            <div className="flex items-center justify-end gap-1">
+              <button
+                onClick={() => onEdit?.(row)}
+                title="Edit formula"
+                className="rounded-lg p-1.5 text-ink/40 hover:bg-brand/10 hover:text-brand transition"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={() => onDelete?.(row)}
+                title="Delete formula"
+                className="rounded-lg p-1.5 text-ink/40 hover:bg-red-50 hover:text-red-600 transition"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )
+        }
       ]}
     />
   );
@@ -1021,6 +1163,8 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
   );
 }
 
+type OrderEditDraft = { plannedQuantityKg: string; scheduledDate: string; notes: string };
+
 export function FeedProductionOrdersPage({ create = false }: { create?: boolean }) {
   const options = useFeedOptions();
   const [rows, setRows] = useState<OrderRow[]>(() => getCachedFirst<ApiEnvelope<OrderRow[]>>("/feed-production/orders")?.data ?? []);
@@ -1029,6 +1173,17 @@ export function FeedProductionOrdersPage({ create = false }: { create?: boolean 
   const [submitErr, setSubmitErr] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [actionErr, setActionErr] = useState("");
+
+  // Edit order modal
+  const [editTarget, setEditTarget] = useState<OrderRow | null>(null);
+  const [editDraft, setEditDraft] = useState<OrderEditDraft>({ plannedQuantityKg: "", scheduledDate: "", notes: "" });
+  const [editSaving, setEditSaving] = useState(false);
+  const [editErr, setEditErr] = useState("");
+
+  // Cancel confirm
+  const [cancelTarget, setCancelTarget] = useState<OrderRow | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelErr, setCancelErr] = useState("");
 
   async function load() {
     try {
@@ -1075,6 +1230,55 @@ export function FeedProductionOrdersPage({ create = false }: { create?: boolean 
     }
   }
 
+  function openEdit(row: OrderRow) {
+    setEditTarget(row);
+    setEditDraft({
+      plannedQuantityKg: String(row.plannedQuantityKg),
+      scheduledDate: row.scheduledDate.slice(0, 10),
+      notes: ""
+    });
+    setEditErr("");
+  }
+
+  async function handleEditSave(e: FormEvent) {
+    e.preventDefault();
+    if (!editTarget) return;
+    setEditSaving(true);
+    setEditErr("");
+    try {
+      await apiFetch(`/feed-production/orders/${editTarget.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          plannedQuantityKg: Number(editDraft.plannedQuantityKg),
+          scheduledDate: editDraft.scheduledDate,
+          ...(editDraft.notes ? { notes: editDraft.notes } : {})
+        })
+      });
+      setEditTarget(null);
+      await load();
+    } catch (err: unknown) {
+      setEditErr((err as Error)?.message ?? "Update failed.");
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
+  async function handleCancel() {
+    if (!cancelTarget) return;
+    setCancelling(true);
+    setCancelErr("");
+    try {
+      await apiFetch(`/feed-production/orders/${cancelTarget.id}/cancel`, { method: "PATCH" });
+      setCancelTarget(null);
+      await load();
+    } catch (err: unknown) {
+      setCancelErr((err as Error)?.message ?? "Cancel failed.");
+      setCancelling(false);
+    }
+  }
+
+  const inputCls = "min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm transition focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15";
+
   return (
     <FeedMillShell>
       <PageHeader title={create ? "Create Production Order" : "Feed Production Orders"} subtitle="Plan, approve, and monitor feed mill production orders." />
@@ -1099,7 +1303,73 @@ export function FeedProductionOrdersPage({ create = false }: { create?: boolean 
           <Plus aria-hidden className="h-4 w-4" /> Create order
         </Link>
       )}
-      <OrderTable rows={rows} loading={loading} onApprove={approveOrder} />
+      <OrderTable rows={rows} loading={loading} onApprove={approveOrder} onEdit={openEdit} onCancel={setCancelTarget} />
+
+      {/* Edit order drawer */}
+      {editTarget && (
+        <div className="fixed inset-0 z-50 flex justify-end">
+          <div className="absolute inset-0 bg-ink/20 backdrop-blur-sm" onClick={() => setEditTarget(null)} />
+          <aside className="relative z-10 flex h-full w-full max-w-md flex-col bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-line px-6 py-4">
+              <div>
+                <p className="app-kicker">Production Orders</p>
+                <h2 className="text-base font-bold text-ink">Edit: {editTarget.orderNumber}</h2>
+                <p className="text-xs text-ink/50">{editTarget.formula?.name ?? ""} · {editTarget.productionSite?.name ?? ""}</p>
+              </div>
+              <button onClick={() => setEditTarget(null)} className="rounded-lg p-2 text-ink/40 hover:bg-field hover:text-ink transition">
+                <span className="text-sm">✕</span>
+              </button>
+            </div>
+            <form onSubmit={handleEditSave} className="flex flex-1 flex-col overflow-y-auto">
+              <div className="flex-1 space-y-4 px-6 py-5">
+                {editErr && (
+                  <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                    <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" /><span>{editErr}</span>
+                  </div>
+                )}
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-ink/60">Planned Quantity (kg) *</label>
+                  <input required type="number" min="0.001" step="0.001" className={`${inputCls} text-right`} value={editDraft.plannedQuantityKg} onChange={(e) => setEditDraft({ ...editDraft, plannedQuantityKg: e.target.value })} />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-ink/60">Scheduled Date *</label>
+                  <input required type="date" className={inputCls} value={editDraft.scheduledDate} onChange={(e) => setEditDraft({ ...editDraft, scheduledDate: e.target.value })} />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-ink/60">Notes (optional)</label>
+                  <textarea rows={3} className={`${inputCls} resize-none`} placeholder="Add or update notes…" value={editDraft.notes} onChange={(e) => setEditDraft({ ...editDraft, notes: e.target.value })} />
+                </div>
+                <p className="text-xs text-ink/45">Only DRAFT and PENDING_STOCK_APPROVAL orders can be edited.</p>
+              </div>
+              <div className="border-t border-line px-6 py-4 flex gap-3">
+                <button type="button" onClick={() => setEditTarget(null)} className="app-button-secondary flex-1">Cancel</button>
+                <button type="submit" disabled={editSaving} className="app-button-primary flex-1">{editSaving ? "Saving…" : "Save changes"}</button>
+              </div>
+            </form>
+          </aside>
+        </div>
+      )}
+
+      {/* Cancel confirm */}
+      {cancelTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-ink/20 backdrop-blur-sm" onClick={() => { setCancelTarget(null); setCancelErr(""); }} />
+          <div className="relative z-10 w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-50">
+              <Trash2 className="h-5 w-5 text-amber-600" />
+            </div>
+            <h3 className="text-base font-bold text-ink">Cancel this order?</h3>
+            <p className="mt-1 text-sm text-ink/60">
+              Order <strong>{cancelTarget.orderNumber}</strong> will be marked as CANCELLED and cannot be approved or posted. This cannot be undone.
+            </p>
+            {cancelErr && <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{cancelErr}</p>}
+            <div className="mt-5 flex gap-3">
+              <button onClick={() => { setCancelTarget(null); setCancelErr(""); }} className="app-button-secondary flex-1">Keep order</button>
+              <button onClick={handleCancel} disabled={cancelling} className="app-button-danger flex-1">{cancelling ? "Cancelling…" : "Cancel order"}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </FeedMillShell>
   );
 }
@@ -1126,7 +1396,7 @@ function OrderForm({ options, form, setForm, submit, submitting }: { options: Fe
   );
 }
 
-function OrderTable({ rows, loading, onApprove }: { rows: OrderRow[]; loading?: boolean; onApprove?: (id: string) => Promise<void> }) {
+function OrderTable({ rows, loading, onApprove, onEdit, onCancel }: { rows: OrderRow[]; loading?: boolean; onApprove?: (id: string) => Promise<void>; onEdit?: (row: OrderRow) => void; onCancel?: (row: OrderRow) => void }) {
   const [approvingId, setApprovingId] = useState<string | null>(null);
 
   async function handleApprove(id: string) {
@@ -1146,8 +1416,8 @@ function OrderTable({ rows, loading, onApprove }: { rows: OrderRow[]; loading?: 
       {
         key: "actions", label: "",
         render: (row) => (
-          <div className="flex items-center gap-1">
-            {row.status === "DRAFT" && onApprove && (
+          <div className="flex items-center gap-1 flex-wrap">
+            {(row.status === "DRAFT" || row.status === "PENDING_STOCK_APPROVAL") && onApprove && (
               <button onClick={() => handleApprove(row.id)} disabled={approvingId === row.id} className="rounded-lg bg-emerald-500 px-2.5 py-1 text-xs font-bold text-white transition hover:bg-emerald-600 disabled:opacity-50">
                 {approvingId === row.id ? "…" : "Approve"}
               </button>
@@ -1156,6 +1426,24 @@ function OrderTable({ rows, loading, onApprove }: { rows: OrderRow[]; loading?: 
               <Link href={`/feed-production/batches/create?orderId=${row.id}`} className="rounded-lg bg-brand px-2.5 py-1 text-xs font-bold text-white transition hover:bg-brand/90">
                 Post batch
               </Link>
+            )}
+            {(row.status === "DRAFT" || row.status === "PENDING_STOCK_APPROVAL") && (
+              <>
+                <button
+                  onClick={() => onEdit?.(row)}
+                  title="Edit order"
+                  className="rounded-lg p-1.5 text-ink/40 hover:bg-brand/10 hover:text-brand transition"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={() => onCancel?.(row)}
+                  title="Cancel order"
+                  className="rounded-lg p-1.5 text-ink/40 hover:bg-red-50 hover:text-red-600 transition"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </>
             )}
           </div>
         )
