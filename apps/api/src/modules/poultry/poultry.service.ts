@@ -500,7 +500,7 @@ export class PoultryService {
   }
 
   async updateBatchStatus(user: AuthenticatedUser, id: string, dto: UpdateBatchStatusDto, context: RequestContext) {
-    const batch = await this.getBatchContext(user, id);
+    const batch = await this.getBatchContext(user, id, false);
     const data = await this.prisma.flockBatch.update({
       where: { id },
       data: {
@@ -919,12 +919,15 @@ export class PoultryService {
     return row.goodEggs + row.crackedEggs + row.dirtyEggs + row.brokenEggs + row.rejectedEggs;
   }
 
-  private async getBatchContext(user: AuthenticatedUser, flockBatchId: string): Promise<BatchContext> {
+  private async getBatchContext(user: AuthenticatedUser, flockBatchId: string, requireActive = true): Promise<BatchContext> {
     const batch = await this.prisma.flockBatch.findFirst({ where: { ...this.batchWhere(user), id: flockBatchId } });
     if (!batch) {
       throw new NotFoundException("Flock batch was not found.");
     }
     this.assertFarmAccess(user, batch.farmId);
+    if (requireActive && batch.status !== "ACTIVE" && batch.status !== "PLANNED") {
+      throw new BadRequestException(`Cannot add records to a batch with status "${batch.status}". Only ACTIVE or PLANNED batches accept new records.`);
+    }
     return batch;
   }
 

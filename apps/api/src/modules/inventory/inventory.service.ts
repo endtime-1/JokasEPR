@@ -306,7 +306,10 @@ export class InventoryService {
       if (remaining <= 0) break;
       const take = Math.min(remaining, Number(batch.quantityRemaining));
       const unitCost = Number(batch.unitCost ?? 0);
-      await tx.stockBatch.update({ where: { id: batch.id }, data: { quantityRemaining: { decrement: take } } });
+      // Protected decrement: WHERE quantityRemaining >= take uses a current-read lock in InnoDB,
+      // preventing a concurrent transaction's stale snapshot from driving the column negative.
+      const batchUpdate = await tx.stockBatch.updateMany({ where: { id: batch.id, quantityRemaining: { gte: take } }, data: { quantityRemaining: { decrement: take } } });
+      if (batchUpdate.count === 0) throw new BadRequestException("FIFO batches do not contain enough available stock.");
       await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: item.branchId, productId: item.productId, inventoryItemId: item.id, stockBatchId: batch.id, fromWarehouseId: item.warehouseId, warehouseId: item.warehouseId, productionSiteId: item.productionSiteId, uomId: item.uomId, movementType, quantity: take, unitCost, referenceType, referenceId, notes, createdById: user.id } });
       issued.push({ batchId: batch.id, quantity: take, unitCost });
       value += take * unitCost;
