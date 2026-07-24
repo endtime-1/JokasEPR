@@ -955,7 +955,7 @@ const BATCH_RECORD_TYPES: Array<{ type: string; label: string; cols: string[]; e
 
 function BatchRecordSection({ batchId, type, label, cols, endpoint, options }: { batchId: string; type: string; label: string; cols: string[]; endpoint: string; options: PoultryOptions }) {
   const { profile } = useAuth();
-  const canManage = profile?.hasGlobalAccess ?? false;
+  const canManage = !!profile;
   const [rows, setRows] = useState<Record<string, any>[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -1208,7 +1208,7 @@ function makeFormDefaults(type: string): Record<string, string> {
 
 export function PoultryRecordPage({ title, type, endpoint, health = false }: { title: string; type: string; endpoint: string; health?: boolean }) {
   const { profile } = useAuth();
-  const canManage = profile?.hasGlobalAccess ?? false;
+  const canManage = !!profile;
   const { options, optionsError, refreshOptions } = usePoultryOptions();
   const recordCacheKey = `jokas_records_${type}`;
   const [rows, setRows] = useState<Record<string, any>[]>(() => {
@@ -1439,9 +1439,10 @@ function buildRecordPayload(type: string, form: Record<string, string>, options:
   const merged: Record<string, string> = makeFormDefaults(type);
   Object.assign(merged, form);
 
+  if (!merged.flockBatchId) throw new Error("Please select a flock batch before submitting.");
   const payload: Record<string, string | number | boolean | undefined> = {
     ...merged,
-    flockBatchId: merged.flockBatchId || options.batches[0]?.id,
+    flockBatchId: merged.flockBatchId,
     penId: merged.penId || undefined,
     poultryHouseId: undefined
   };
@@ -1508,7 +1509,7 @@ type PenSelection = { penId: string; code: string; name?: string; selected: bool
 
 export function PoultryTransferPage() {
   const { profile } = useAuth();
-  const canManage = profile?.hasGlobalAccess ?? false;
+  const canManage = !!profile;
   const { options, refreshOptions } = usePoultryOptions();
   const [rows, setRows] = useState<Record<string, any>[]>(() => {
     const cached = getCachedFirst<ApiEnvelope<Record<string, any>[]>>("/poultry/records/transfers");
@@ -1576,8 +1577,9 @@ export function PoultryTransferPage() {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitError("");
+    if (!form.flockBatchId) { setSubmitError("Please select a flock batch."); return; }
     const base = {
-      flockBatchId: form.flockBatchId || options.batches[0]?.id,
+      flockBatchId: form.flockBatchId,
       fromPoultryHouseId: form.fromHouseId || undefined,
       toFarmId: form.toFarmId || options.farms[0]?.id,
       toPoultryHouseId: effectiveToHouseId,

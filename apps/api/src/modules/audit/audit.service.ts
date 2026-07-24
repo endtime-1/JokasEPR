@@ -40,7 +40,10 @@ export class AuditService {
     try {
       return await this.prisma.auditLog.create({ data: { ...input, summary: input.summary ?? "" } });
     } catch (error) {
-      this.logger.error(`Failed to write audit log for ${input.entityType}:${input.entityId ?? "n/a"}`, error as Error);
+      this.logger.error(
+        `[AUDIT FAILURE] action=${input.action} entity=${input.entityType}:${input.entityId ?? "n/a"} actor=${input.actorUserId ?? "n/a"} company=${input.companyId} — ${input.summary ?? ""}`,
+        error as Error
+      );
       return null;
     }
   }

@@ -69,11 +69,16 @@ export class AuthService {
       throw new UnauthorizedException("Invalid credentials.");
     }
 
-    // Successful login — reset lockout counters
+    // Successful login — reset lockout counters and in-window rate-limit record
     await this.prisma.user.update({
       where: { id: user.id },
       data: { lastLoginAt: new Date(), failedLoginAttempts: 0, lockedUntil: null }
     });
+    if (context.ipAddress) {
+      await this.prisma.loginRateLimit.deleteMany({
+        where: { key: `${context.ipAddress}:${dto.email.toLowerCase()}` }
+      });
+    }
 
     const profile = await this.buildProfile(user.id);
     const tokens = await this.issueTokens(profile, context);

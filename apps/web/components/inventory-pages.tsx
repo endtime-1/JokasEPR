@@ -78,7 +78,10 @@ export function InventoryItemsPage({ create = false }: { create?: boolean }) {
   useEffect(() => { load().catch(() => undefined).finally(() => setLoading(false)); }, []);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await apiFetch("/inventory/items", { method: "POST", body: JSON.stringify({ warehouseId: form.warehouseId || options.warehouses[0]?.id, productId: form.productId || options.products[0]?.id, reorderLevel: Number(form.reorderLevel), openingQuantity: Number(form.openingQuantity || 0) }) });
+    const warehouseId = form.warehouseId || options.warehouses[0]?.id;
+    const productId = form.productId || options.products[0]?.id;
+    if (!warehouseId || !productId) return;
+    await apiFetch("/inventory/items", { method: "POST", body: JSON.stringify({ warehouseId, productId, reorderLevel: Number(form.reorderLevel), openingQuantity: Number(form.openingQuantity || 0) }) });
     await load();
   }
   return (
@@ -105,12 +108,17 @@ export function StockOperationPage({ mode }: { mode: "stock-in" | "stock-out" | 
   const title = mode === "stock-in" ? "Stock In" : mode === "stock-out" ? "Stock Out" : mode === "transfers" ? "Stock Transfer" : "Stock Adjustment";
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const base = { productId: form.productId || options.products[0]?.id, quantity: Number(form.quantity) };
+    const productId = form.productId || options.products[0]?.id;
+    const warehouseId = form.warehouseId || options.warehouses[0]?.id;
+    const fromWarehouseId = form.fromWarehouseId || options.warehouses[0]?.id;
+    const toWarehouseId = form.toWarehouseId || options.warehouses[1]?.id;
+    if (!productId || (mode === "transfers" ? (!fromWarehouseId || !toWarehouseId) : !warehouseId)) return;
+    const base = { productId, quantity: Number(form.quantity) };
     const payload =
-      mode === "stock-in" ? { ...base, warehouseId: form.warehouseId || options.warehouses[0]?.id, batchNumber: form.batchNumber, unitCost: Number(form.unitCost), expiryDate: form.expiryDate || undefined } :
-      mode === "stock-out" ? { ...base, warehouseId: form.warehouseId || options.warehouses[0]?.id, movementType: form.movementType } :
-      mode === "transfers" ? { ...base, fromWarehouseId: form.fromWarehouseId || options.warehouses[0]?.id, toWarehouseId: form.toWarehouseId || options.warehouses[1]?.id } :
-      { ...base, warehouseId: form.warehouseId || options.warehouses[0]?.id, adjustmentType: form.adjustmentType, quantity: Number(form.quantity), reason: form.reason, approveNow: false };
+      mode === "stock-in" ? { ...base, warehouseId, batchNumber: form.batchNumber, unitCost: Number(form.unitCost), expiryDate: form.expiryDate || undefined } :
+      mode === "stock-out" ? { ...base, warehouseId, movementType: form.movementType } :
+      mode === "transfers" ? { ...base, fromWarehouseId, toWarehouseId } :
+      { ...base, warehouseId, adjustmentType: form.adjustmentType, quantity: Number(form.quantity), reason: form.reason, approveNow: false };
     const endpoint = mode === "transfers" ? "/inventory/transfers" : mode === "adjustments" ? "/inventory/adjustments" : `/inventory/${mode}`;
     await apiFetch(endpoint, { method: "POST", body: JSON.stringify(payload) });
     setForm({ ...form, batchNumber: "", bags: "", quantity: "", unitCost: "", reason: "" });
