@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Headers, Ip, Param, Patch, Post, Put, Query, Res, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Delete, Get, Headers, Ip, Param, Patch, Post, Query, Res, UseGuards } from "@nestjs/common";
 import { Response } from "express";
 import { AuthenticatedUser, PERMISSIONS } from "@jokas/shared";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
@@ -131,7 +131,11 @@ export class FeedProductionController {
   @Get("orders/:id/raw-material-availability")
   @RequirePermissions(PERMISSIONS.FEED_READ)
   orderAvailability(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Query() query: FeedProductionQueryDto) {
-    return this.feedProductionService.orderAvailability(user, id, query.warehouseId ?? "");
+    // L1: warehouseId is required — an empty string silently returns zero stock for every ingredient
+    if (!query.warehouseId) {
+      throw new BadRequestException("warehouseId query parameter is required.");
+    }
+    return this.feedProductionService.orderAvailability(user, id, query.warehouseId);
   }
 
   @Get("batches")
@@ -255,19 +259,20 @@ export class FeedProductionController {
 
   @Post("ingredients")
   @RequirePermissions(PERMISSIONS.FEED_MANAGE)
-  createIngredient(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateIngredientDto) {
-    return this.feedProductionService.createIngredient(user, dto);
+  createIngredient(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateIngredientDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.feedProductionService.createIngredient(user, dto, { ipAddress, userAgent });
   }
 
-  @Put("ingredients/:id")
+  // A3: PATCH (partial update) is semantically correct here, not PUT (full replace)
+  @Patch("ingredients/:id")
   @RequirePermissions(PERMISSIONS.FEED_MANAGE)
-  updateIngredient(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateIngredientDto) {
-    return this.feedProductionService.updateIngredient(user, id, dto);
+  updateIngredient(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateIngredientDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.feedProductionService.updateIngredient(user, id, dto, { ipAddress, userAgent });
   }
 
   @Delete("ingredients/:id")
   @RequirePermissions(PERMISSIONS.FEED_MANAGE)
-  deleteIngredient(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
-    return this.feedProductionService.deleteIngredient(user, id);
+  deleteIngredient(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.feedProductionService.deleteIngredient(user, id, { ipAddress, userAgent });
   }
 }

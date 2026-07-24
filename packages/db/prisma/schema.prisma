@@ -296,6 +296,7 @@ enum FeedFormulaStatus {
 
 enum FeedProductionOrderStatus {
   DRAFT
+  PENDING_STOCK_APPROVAL
   APPROVED
   IN_PROGRESS
   COMPLETED
@@ -3626,6 +3627,7 @@ model FeedProductionBatch {
   packagingRecords FeedPackagingRecord[]
   costs FeedProductionCost[]
   internalTransfers FeedInternalTransfer[]
+  externalSales     FeedExternalSale[]
 
   @@unique([companyId, batchNumber])
   @@index([companyId])
@@ -3823,6 +3825,31 @@ model FeedInternalTransfer {
   @@index([toPoultryHouseId])
   @@index([companyId, status])
   @@index([transferDate])
+  @@index([deletedAt])
+}
+
+model FeedExternalSale {
+  id                String   @id @default(uuid())
+  companyId         String
+  branchId          String
+  productionBatchId String
+  productId         String
+  fromWarehouseId   String
+  quantityKg        Decimal  @db.Decimal(18, 4)
+  unitPrice         Decimal  @db.Decimal(18, 4)
+  totalValue        Decimal  @db.Decimal(18, 4)
+  customerName      String?
+  saleDate          DateTime @default(now())
+  createdById       String?
+  deletedAt         DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  productionBatch FeedProductionBatch @relation(fields: [productionBatchId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([companyId, productionBatchId])
+  @@index([companyId, saleDate])
   @@index([deletedAt])
 }
 

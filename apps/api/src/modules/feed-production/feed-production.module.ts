@@ -6,6 +6,7 @@ import { FeedProductionService } from "./feed-production.service";
 @Module({
   imports: [AuditModule],
   controllers: [FeedProductionController],
-  providers: [FeedProductionService]
+  providers: [FeedProductionService],
+  exports: [FeedProductionService]
 })
 export class FeedProductionModule {}

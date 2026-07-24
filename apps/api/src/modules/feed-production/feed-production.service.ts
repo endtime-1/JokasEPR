@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { AuthenticatedUser } from "@jokas/shared";
-import { randomBytes, randomUUID } from "crypto";
+import { randomBytes } from "crypto";
 import { Prisma } from "@prisma/client";
 import { AuditService } from "../audit/audit.service";
 import { LookupCacheService } from "../../common/services/lookup-cache.service";
@@ -218,12 +218,17 @@ export class FeedProductionService {
     }
     this.assertBranchAccess(user, branchId);
 
+    // M5: check for duplicate formula code before hitting the DB unique constraint
+    const codeUpper = dto.code.toUpperCase();
+    const existing = await this.prisma.feedFormula.findFirst({ where: { companyId: user.companyId, code: codeUpper, deletedAt: null } });
+    if (existing) throw new ConflictException(`Formula code "${codeUpper}" is already in use.`);
+
     const formula = await this.prisma.feedFormula.create({
       data: {
         companyId: user.companyId,
         branchId,
         finishedProductId: finishedProduct.id,
-        code: dto.code.toUpperCase(),
+        code: codeUpper,
         name: dto.name,
         feedType: dto.feedType,
         targetBatchKg: dto.targetBatchKg,
@@ -243,6 +248,9 @@ export class FeedProductionService {
       },
       include: { ingredients: true }
     });
+
+    // M8: invalidate options cache so new formula appears in dropdowns immediately
+    this.lookupCache.invalidate(`feed:opts:${user.companyId}:`);
 
     await this.writeAudit(user, "CREATE", "FeedFormula", formula.id, `Created feed formula ${formula.code}`, context, { branchId });
     return { data: formula };
@@ -310,13 +318,18 @@ export class FeedProductionService {
     const formula = await this.requireFormula(user, formulaId);
     const row = await this.prisma.feedFormulaIngredient.findFirst({ where: { id: ingredientId, formulaId, companyId: user.companyId } });
     if (!row) throw new NotFoundException("Ingredient not found");
-    await this.prisma.feedFormulaIngredient.delete({ where: { id: ingredientId } });
+    // H4: soft delete to preserve formula history and audit trail
+    await this.prisma.feedFormulaIngredient.update({ where: { id: ingredientId }, data: { deletedAt: new Date() } });
     await this.writeAudit(user, "UPDATE", "FeedFormula", formulaId, `Removed ingredient from formula ${formula.code}`, context, { branchId: formula.branchId });
     return { data: { id: ingredientId } };
   }
 
   async createVersion(user: AuthenticatedUser, formulaId: string, dto: CreateFeedFormulaVersionDto, context: RequestContext) {
     const formula = await this.getFormulaForCosting(user, formulaId);
+    // M7: prevent snapshotting a DRAFT formula — it would silently promote it to ACTIVE
+    if (formula.status === "DRAFT") {
+      throw new BadRequestException("Formula must be set to ACTIVE before a version snapshot can be taken. Update the formula status first.");
+    }
     const costing = this.costFormula(formula);
     const latest = await this.prisma.feedFormulaVersion.findFirst({ where: { companyId: user.companyId, formulaId }, orderBy: { versionNo: "desc" } });
     const versionNo = (latest?.versionNo ?? 0) + 1;
@@ -401,13 +414,27 @@ export class FeedProductionService {
       }
     });
 
-    const availability = dto.rawMaterialWarehouseId ? await this.materialAvailability(user, formula.id, dto.rawMaterialWarehouseId, dto.plannedQuantityKg) : null;
+    // M6: check raw material availability and flag the order if stock is insufficient
+    const availability = dto.rawMaterialWarehouseId
+      ? await this.materialAvailability(user, formula.id, dto.rawMaterialWarehouseId, dto.plannedQuantityKg)
+      : null;
+
+    if (availability && !availability.canProduce) {
+      await this.prisma.feedProductionOrder.update({ where: { id: data.id }, data: { status: "PENDING_STOCK_APPROVAL" } });
+      await this.writeAudit(user, "CREATE", "FeedProductionOrder", data.id, `Created feed production order ${orderNumber} (awaiting stock)`, context, { branchId: site.branchId, productionSiteId: site.id });
+      return { data: { ...data, status: "PENDING_STOCK_APPROVAL", availability } };
+    }
+
     await this.writeAudit(user, "CREATE", "FeedProductionOrder", data.id, `Created feed production order ${orderNumber}`, context, { branchId: site.branchId, productionSiteId: site.id });
     return { data: { ...data, availability } };
   }
 
   async approveOrder(user: AuthenticatedUser, id: string, context: RequestContext) {
     const order = await this.requireOrder(user, id);
+    // M1: block self-approval — committing production stock should require segregation of duties
+    if (order.createdById === user.id) {
+      throw new ForbiddenException("You cannot approve a production order you created. A different manager must approve it.");
+    }
     if (!["DRAFT", "PENDING_STOCK_APPROVAL"].includes(order.status)) {
       throw new BadRequestException(`Order cannot be approved from status "${order.status}".`);
     }
@@ -430,10 +457,32 @@ export class FeedProductionService {
     const order = await this.getOrderForBatch(user, dto.productionOrderId);
     const formula = order.formula;
     const inputQuantityKg = dto.producedQuantityKg + (dto.wastageKg ?? 0);
+
+    // H7: enforce planned quantity cap — prevent unlimited batches from one order
+    const produced = await this.prisma.feedProductionBatch.aggregate({
+      where: { companyId: user.companyId, productionOrderId: order.id, deletedAt: null },
+      _sum: { producedQuantityKg: true }
+    });
+    const alreadyProducedKg = Number(produced._sum.producedQuantityKg ?? 0);
+    if (alreadyProducedKg + dto.producedQuantityKg > Number(order.plannedQuantityKg)) {
+      throw new BadRequestException(
+        `Batch would exceed the planned quantity of ${Number(order.plannedQuantityKg)} kg. Already produced: ${alreadyProducedKg} kg.`
+      );
+    }
+
+    // H3: batch-load availability (one query vs N) for the pre-flight check
     const ingredientPlan = await this.materialAvailability(user, formula.id, dto.rawMaterialWarehouseId, inputQuantityKg);
     if (!ingredientPlan.canProduce) {
       throw new BadRequestException({ message: "Raw material stock is not sufficient for this production batch.", shortages: ingredientPlan.ingredients.filter((item) => item.shortageKg > 0) });
     }
+
+    // Pre-load inventory records in one query for use inside the transaction
+    const ingredientIds = ingredientPlan.ingredients.map((i) => i.ingredientId);
+    const inventoryRecords = await this.prisma.inventoryItem.findMany({
+      where: { companyId: user.companyId, warehouseId: dto.rawMaterialWarehouseId, productId: { in: ingredientIds }, deletedAt: null },
+      select: { id: true, productId: true, uomId: true }
+    });
+    const inventoryMap = new Map(inventoryRecords.map((r) => [r.productId, r]));
 
     const batchNumber = dto.batchNumber?.toUpperCase() ?? (await this.nextDocumentNumber(user.companyId, "FB", this.prisma.feedProductionBatch));
     const rawMaterialCost = ingredientPlan.ingredients.reduce((sum, ingredient) => sum + ingredient.quantityKg * ingredient.unitCost, 0);
@@ -458,8 +507,31 @@ export class FeedProductionService {
       });
 
       for (const ingredient of ingredientPlan.ingredients) {
-        const inventory = await this.requireInventory(tx, user.companyId, dto.rawMaterialWarehouseId, ingredient.ingredientId);
-        await tx.inventoryItem.update({ where: { id: inventory.id }, data: { quantityOnHand: { decrement: ingredient.quantityKg }, updatedById: user.id } });
+        const inv = inventoryMap.get(ingredient.ingredientId);
+        if (!inv) throw new BadRequestException(`Inventory record not found for ingredient "${ingredient.productName}".`);
+
+        // H2: floor-guarded updateMany prevents concurrent overdraw at the DB level
+        const invUpdate = await tx.inventoryItem.updateMany({
+          where: { id: inv.id, quantityOnHand: { gte: ingredient.quantityKg }, deletedAt: null },
+          data: { quantityOnHand: { decrement: ingredient.quantityKg }, updatedById: user.id }
+        });
+        if (invUpdate.count === 0) {
+          throw new BadRequestException(`Insufficient stock for "${ingredient.productName}" — possibly consumed concurrently. Please retry.`);
+        }
+
+        // H6: FIFO — consume from oldest StockBatch records first to maintain lot traceability
+        let remaining = ingredient.quantityKg;
+        const stockBatches = await tx.stockBatch.findMany({
+          where: { companyId: user.companyId, warehouseId: dto.rawMaterialWarehouseId, productId: ingredient.ingredientId, quantityRemaining: { gt: 0 }, deletedAt: null },
+          orderBy: { createdAt: "asc" }
+        });
+        for (const sb of stockBatches) {
+          if (remaining <= 0) break;
+          const consumed = Math.min(remaining, Number(sb.quantityRemaining));
+          await tx.stockBatch.update({ where: { id: sb.id }, data: { quantityRemaining: { decrement: consumed } } });
+          remaining -= consumed;
+        }
+
         await tx.feedRawMaterialUsage.create({
           data: {
             companyId: user.companyId,
@@ -478,10 +550,10 @@ export class FeedProductionService {
             companyId: user.companyId,
             branchId: order.branchId,
             productId: ingredient.ingredientId,
-            inventoryItemId: inventory.id,
+            inventoryItemId: inv.id,
             fromWarehouseId: dto.rawMaterialWarehouseId,
             productionSiteId: order.productionSiteId,
-            uomId: inventory.uomId,
+            uomId: inv.uomId,
             movementType: "PRODUCTION_INPUT",
             quantity: ingredient.quantityKg,
             unitCost: ingredient.unitCost,
@@ -575,6 +647,9 @@ export class FeedProductionService {
       return batch;
     });
 
+    // M8: invalidate options cache so new batch appears in form dropdowns immediately
+    this.lookupCache.invalidate(`feed:opts:${user.companyId}:`);
+
     await this.writeAudit(user, "CREATE", "FeedProductionBatch", data.id, `Posted feed production batch ${batchNumber}`, context, { branchId: order.branchId, warehouseId: dto.finishedWarehouseId, productionSiteId: order.productionSiteId });
     return { data: { ...data, costing: { rawMaterialCost, totalCost, unitCost, margin: this.margin(dto.expectedSalesValue ?? 0, totalCost) } } };
   }
@@ -661,6 +736,10 @@ export class FeedProductionService {
       throw new NotFoundException("Quality check was not found.");
     }
     this.assertProductionSiteAccess(user, check.productionSiteId);
+    // M2: the same person who performed the check cannot approve their own work
+    if (check.checkedById === user.id) {
+      throw new ForbiddenException("You cannot approve a quality check you performed. A different user must review and sign off.");
+    }
     const data = await this.prisma.feedQualityCheck.update({
       where: { id },
       data: { status: dto.status, approvedById: ["APPROVED", "FAILED"].includes(dto.status) ? user.id : undefined, approvedAt: ["APPROVED", "FAILED"].includes(dto.status) ? new Date() : undefined }
@@ -690,7 +769,7 @@ export class FeedProductionService {
         productionBatchId: batch.id,
         packageSizeKg: dto.packageSizeKg,
         packageCount: dto.packageCount,
-        labelPrinted: true,
+        labelPrinted: false, // L3: label has not been printed yet at record creation time
         packagedAt: dto.packagedAt ? new Date(dto.packagedAt) : new Date(),
         createdById: user.id
       }
@@ -711,24 +790,37 @@ export class FeedProductionService {
 
   async createProductionCost(user: AuthenticatedUser, dto: CreateFeedProductionCostDto, context: RequestContext) {
     const batch = await this.requireBatch(user, dto.productionBatchId);
-    const rawMaterialCost = await this.prisma.feedRawMaterialUsage.findMany({
+    const rawMaterialRows = await this.prisma.feedRawMaterialUsage.findMany({
       where: { companyId: user.companyId, productionBatchId: batch.id, deletedAt: null },
       select: { quantityKg: true, unitCost: true }
     });
-    const data = await this.prisma.feedProductionCost.create({
-      data: {
-        companyId: user.companyId,
-        branchId: batch.branchId,
-        productionSiteId: batch.productionSiteId,
-        productionBatchId: batch.id,
-        rawMaterialCost: rawMaterialCost.reduce((sum, row) => sum + Number(row.quantityKg) * Number(row.unitCost), 0),
-        laborCost: dto.laborCost,
-        packagingCost: dto.packagingCost,
-        overheadCost: dto.overheadCost,
-        expectedSalesValue: dto.expectedSalesValue,
-        createdById: user.id
-      }
+    const rawMaterialCost = rawMaterialRows.reduce((sum, row) => sum + Number(row.quantityKg) * Number(row.unitCost), 0);
+
+    // H5: update the existing cost record (created automatically at batch time) rather than creating a duplicate
+    const existing = await this.prisma.feedProductionCost.findFirst({
+      where: { companyId: user.companyId, productionBatchId: batch.id, deletedAt: null }
     });
+
+    const data = existing
+      ? await this.prisma.feedProductionCost.update({
+          where: { id: existing.id },
+          data: { rawMaterialCost, laborCost: dto.laborCost, packagingCost: dto.packagingCost, overheadCost: dto.overheadCost, expectedSalesValue: dto.expectedSalesValue }
+        })
+      : await this.prisma.feedProductionCost.create({
+          data: {
+            companyId: user.companyId,
+            branchId: batch.branchId,
+            productionSiteId: batch.productionSiteId,
+            productionBatchId: batch.id,
+            rawMaterialCost,
+            laborCost: dto.laborCost,
+            packagingCost: dto.packagingCost,
+            overheadCost: dto.overheadCost,
+            expectedSalesValue: dto.expectedSalesValue,
+            createdById: user.id
+          }
+        });
+
     await this.writeAudit(user, "CREATE", "FeedProductionCost", data.id, `Recorded feed production cost for ${batch.batchNumber}`, context, { branchId: batch.branchId, productionSiteId: batch.productionSiteId });
     return { data: { ...data, profitMargin: this.margin(dto.expectedSalesValue, Number(data.rawMaterialCost) + dto.laborCost + dto.packagingCost + dto.overheadCost) } };
   }
@@ -970,7 +1062,7 @@ export class FeedProductionService {
     return { data: items };
   }
 
-  async createIngredient(user: AuthenticatedUser, dto: CreateIngredientDto) {
+  async createIngredient(user: AuthenticatedUser, dto: CreateIngredientDto, context: RequestContext) {
     const sku = dto.sku.toUpperCase();
     const conflict = await this.prisma.product.findUnique({ where: { companyId_sku: { companyId: user.companyId, sku } } });
     if (conflict) throw new ConflictException(`SKU "${sku}" is already in use.`);
@@ -982,10 +1074,12 @@ export class FeedProductionService {
       data: { companyId: user.companyId, name: dto.name, sku, type: "RAW_MATERIAL", status: "ACTIVE", uomId: dto.uomId, description: dto.description },
       select: { id: true, name: true, sku: true, description: true, status: true, uom: { select: { id: true, name: true, symbol: true } } }
     });
+    // L5: audit ingredient creation
+    await this.writeAudit(user, "CREATE", "Ingredient", item.id, `Created raw material ingredient "${item.name}" (${item.sku})`, context, {});
     return { data: item };
   }
 
-  async updateIngredient(user: AuthenticatedUser, id: string, dto: UpdateIngredientDto) {
+  async updateIngredient(user: AuthenticatedUser, id: string, dto: UpdateIngredientDto, context: RequestContext) {
     const item = await this.prisma.product.findFirst({ where: { id, companyId: user.companyId, deletedAt: null, type: "RAW_MATERIAL" } });
     if (!item) throw new NotFoundException("Ingredient not found.");
 
@@ -1008,13 +1102,24 @@ export class FeedProductionService {
       },
       select: { id: true, name: true, sku: true, description: true, status: true, uom: { select: { id: true, name: true, symbol: true } } }
     });
+    // L5: audit ingredient update
+    await this.writeAudit(user, "UPDATE", "Ingredient", id, `Updated raw material ingredient "${updated.name}" (${updated.sku})`, context, {});
     return { data: updated };
   }
 
-  async deleteIngredient(user: AuthenticatedUser, id: string) {
+  async deleteIngredient(user: AuthenticatedUser, id: string, context: RequestContext) {
     const item = await this.prisma.product.findFirst({ where: { id, companyId: user.companyId, deletedAt: null, type: "RAW_MATERIAL" } });
     if (!item) throw new NotFoundException("Ingredient not found.");
+
+    // L4: block deletion if the ingredient is referenced by active formula ingredients
+    const formulaUsageCount = await this.prisma.feedFormulaIngredient.count({ where: { ingredientId: id, deletedAt: null } });
+    if (formulaUsageCount > 0) {
+      throw new BadRequestException(`Cannot delete this ingredient — it is used in ${formulaUsageCount} active formula(s). Remove it from all formulas first.`);
+    }
+
     await this.prisma.product.update({ where: { id }, data: { deletedAt: new Date() } });
+    // L5: audit ingredient deletion
+    await this.writeAudit(user, "DELETE", "Ingredient", id, `Deleted raw material ingredient "${item.name}" (${item.sku})`, context, {});
     return { data: { ok: true } };
   }
 
@@ -1022,16 +1127,19 @@ export class FeedProductionService {
     this.assertWarehouseAccess(user, warehouseId);
     const formula = await this.getFormulaForCosting(user, formulaId);
     const scale = totalQuantityKg / Math.max(Number(formula.targetBatchKg), 1);
-    const ingredients: IngredientPlan[] = [];
 
-    for (const ingredient of formula.ingredients) {
-      const inventory = await this.prisma.inventoryItem.findFirst({
-        where: { companyId: user.companyId, warehouseId, productId: ingredient.ingredientId, deletedAt: null },
-        select: { quantityOnHand: true }
-      });
+    // H3: batch-load all ingredient inventory in one query instead of N findFirst calls
+    const ingredientIds = formula.ingredients.map((i) => i.ingredientId);
+    const inventoryItems = await this.prisma.inventoryItem.findMany({
+      where: { companyId: user.companyId, warehouseId, productId: { in: ingredientIds }, deletedAt: null },
+      select: { productId: true, quantityOnHand: true }
+    });
+    const stockMap = new Map(inventoryItems.map((item) => [item.productId, Number(item.quantityOnHand)]));
+
+    const ingredients: IngredientPlan[] = formula.ingredients.map((ingredient) => {
       const quantityKg = Number((Number(ingredient.quantityKg) * scale).toFixed(4));
-      const availableKg = Number(inventory?.quantityOnHand ?? 0);
-      ingredients.push({
+      const availableKg = stockMap.get(ingredient.ingredientId) ?? 0;
+      return {
         ingredientId: ingredient.ingredientId,
         productName: ingredient.ingredient.name,
         sku: ingredient.ingredient.sku,
@@ -1039,22 +1147,22 @@ export class FeedProductionService {
         unitCost: Number(ingredient.unitCost),
         availableKg,
         shortageKg: Number(Math.max(0, quantityKg - availableKg).toFixed(4))
-      });
-    }
+      };
+    });
 
     return {
-      canProduce: ingredients.every((ingredient) => ingredient.shortageKg <= 0),
+      canProduce: ingredients.every((i) => i.shortageKg <= 0),
       targetQuantityKg: totalQuantityKg,
       warehouseId,
       ingredients,
-      estimatedRawMaterialCost: Number(ingredients.reduce((sum, ingredient) => sum + ingredient.quantityKg * ingredient.unitCost, 0).toFixed(2))
+      estimatedRawMaterialCost: Number(ingredients.reduce((sum, i) => sum + i.quantityKg * i.unitCost, 0).toFixed(2))
     };
   }
 
   private async moveFinishedFeed(
     user: AuthenticatedUser,
     input: {
-      batch: { id: string; companyId: string; branchId: string; productionSiteId: string; finishedProductId: string; batchNumber: string };
+      batch: { id: string; companyId: string; branchId: string; productionSiteId: string; finishedProductId: string; batchNumber: string; status: string };
       fromWarehouseId: string;
       quantityKg: number;
       movementType: "TRANSFER" | "SALE_DISPATCH";
@@ -1063,24 +1171,49 @@ export class FeedProductionService {
       context: RequestContext;
     }
   ) {
-    const stock = await this.prisma.finishedFeedStock.findFirst({
-      where: { companyId: user.companyId, productionBatchId: input.batch.id, warehouseId: input.fromWarehouseId, deletedAt: null },
-      orderBy: { createdAt: "asc" }
-    });
-    if (!stock || Number(stock.quantityKg) < input.quantityKg) {
-      throw new BadRequestException("Finished feed stock is not sufficient for this movement.");
-    }
-    const inventory = await this.getInventory(user.companyId, input.fromWarehouseId, input.batch.finishedProductId);
-    if (!inventory || Number(inventory.quantityOnHand) < input.quantityKg) {
-      throw new BadRequestException("Warehouse inventory is not sufficient for this movement.");
+    // M3: block dispatch for batches that failed QC or are on quality hold
+    if (["REJECTED", "QUALITY_HOLD"].includes(input.batch.status)) {
+      throw new BadRequestException(`Batch "${input.batch.batchNumber}" cannot be dispatched with status "${input.batch.status}". Resolve the quality check first.`);
     }
 
     const result = await this.prisma.$transaction(async (tx) => {
-      await tx.finishedFeedStock.update({
-        where: { id: stock.id },
-        data: { quantityKg: { decrement: input.quantityKg }, bag50KgCount: Math.max(0, Math.floor((Number(stock.quantityKg) - input.quantityKg) / 50)) }
+      // H1: read inside transaction for TOCTOU safety — prevents concurrent requests from both passing the sufficiency check
+      const stock = await tx.finishedFeedStock.findFirst({
+        where: { companyId: user.companyId, productionBatchId: input.batch.id, warehouseId: input.fromWarehouseId, deletedAt: null },
+        orderBy: { createdAt: "asc" }
       });
-      await tx.inventoryItem.update({ where: { id: inventory.id }, data: { quantityOnHand: { decrement: input.quantityKg }, updatedById: user.id } });
+
+      if (!stock || Number(stock.quantityKg) < input.quantityKg) {
+        throw new BadRequestException("Finished feed stock is not sufficient for this movement.");
+      }
+
+      // H1: floor-guarded updateMany — only succeeds if stock hasn't been consumed concurrently
+      const stockUpdate = await tx.finishedFeedStock.updateMany({
+        where: { id: stock.id, quantityKg: { gte: input.quantityKg } },
+        data: {
+          quantityKg: { decrement: input.quantityKg },
+          bag50KgCount: Math.max(0, Math.floor((Number(stock.quantityKg) - input.quantityKg) / 50))
+        }
+      });
+      if (stockUpdate.count === 0) {
+        throw new BadRequestException("Finished feed stock was modified concurrently — please retry.");
+      }
+
+      const inventory = await tx.inventoryItem.findFirst({
+        where: { companyId: user.companyId, warehouseId: input.fromWarehouseId, productId: input.batch.finishedProductId, deletedAt: null },
+        select: { id: true, uomId: true, quantityOnHand: true }
+      });
+      if (!inventory || Number(inventory.quantityOnHand) < input.quantityKg) {
+        throw new BadRequestException("Warehouse inventory is not sufficient for this movement.");
+      }
+
+      const invUpdate = await tx.inventoryItem.updateMany({
+        where: { id: inventory.id, quantityOnHand: { gte: input.quantityKg } },
+        data: { quantityOnHand: { decrement: input.quantityKg }, updatedById: user.id }
+      });
+      if (invUpdate.count === 0) {
+        throw new BadRequestException("Warehouse inventory was modified concurrently — please retry.");
+      }
 
       if (input.referenceType === "FeedInternalTransfer") {
         const transfer = await tx.feedInternalTransfer.create({
@@ -1120,7 +1253,22 @@ export class FeedProductionService {
         return transfer;
       }
 
-      const saleReference = randomUUID();
+      // M4: create a persisted FeedExternalSale record (was previously a dangling randomUUID)
+      const unitPrice = input.transferData.unitPrice as number;
+      const sale = await tx.feedExternalSale.create({
+        data: {
+          companyId: user.companyId,
+          branchId: input.batch.branchId,
+          productionBatchId: input.batch.id,
+          productId: input.batch.finishedProductId,
+          fromWarehouseId: input.fromWarehouseId,
+          quantityKg: input.quantityKg,
+          unitPrice,
+          totalValue: input.quantityKg * unitPrice,
+          customerName: input.transferData.customerName as string | undefined,
+          createdById: user.id
+        }
+      });
       await tx.stockMovement.create({
         data: {
           companyId: user.companyId,
@@ -1132,14 +1280,14 @@ export class FeedProductionService {
           uomId: inventory.uomId,
           movementType: input.movementType,
           quantity: input.quantityKg,
-          unitCost: input.transferData.unitPrice as number,
+          unitCost: unitPrice,
           referenceType: input.referenceType,
-          referenceId: saleReference,
+          referenceId: sale.id,
           notes: `External feed sale to ${input.transferData.customerName ?? "customer"}`,
           createdById: user.id
         }
       });
-      return { id: saleReference, ...input.transferData, quantityKg: input.quantityKg };
+      return sale;
     });
 
     await this.writeAudit(user, input.referenceType === "FeedInternalTransfer" ? "TRANSFER" : "CREATE", input.referenceType, result.id, `${input.referenceType} posted for ${input.batch.batchNumber}`, input.context, { branchId: input.batch.branchId, warehouseId: input.fromWarehouseId, productionSiteId: input.batch.productionSiteId });
@@ -1207,14 +1355,6 @@ export class FeedProductionService {
 
   private async getInventory(companyId: string, warehouseId: string, productId: string) {
     return this.prisma.inventoryItem.findFirst({ where: { companyId, warehouseId, productId, deletedAt: null } });
-  }
-
-  private async requireInventory(tx: Prisma.TransactionClient, companyId: string, warehouseId: string, productId: string) {
-    const inventory = await tx.inventoryItem.findFirst({ where: { companyId, warehouseId, productId, deletedAt: null } });
-    if (!inventory) {
-      throw new BadRequestException("Required raw material inventory item was not found.");
-    }
-    return inventory;
   }
 
   private async requireFormula(user: AuthenticatedUser, formulaId: string) {
