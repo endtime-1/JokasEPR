@@ -5,6 +5,7 @@ import { useNavigation, useRoute } from "@react-navigation/native";
 import { Icon } from "../../components/Icon";
 import { useToast } from "../../components/Toast";
 import { fetchFeedFormulaDetail, type FeedFormulaDetail, type FeedFormulaIngredientDetail } from "../../api/endpoints";
+import { useAuth } from "../../auth/AuthContext";
 import type { RecordsScreenProps } from "../../navigation/types";
 import { colors, font, radius, shadow, spacing } from "../../constants/theme";
 
@@ -24,7 +25,9 @@ export function FeedFormulaDetailScreen() {
   const navigation = useNavigation<any>();
   const route      = useRoute<RecordsScreenProps<"FeedFormulaDetail">["route"]>();
   const toast      = useToast();
+  const { user }   = useAuth();
   const { formulaId } = route.params;
+  const canManage  = user?.permissions?.includes("feed.manage") ?? false;
 
   const [formula,  setFormula]  = useState<FeedFormulaDetail | null>(null);
   const [loading,  setLoading]  = useState(true);
@@ -155,10 +158,26 @@ export function FeedFormulaDetailScreen() {
           </View>
         </View>
 
+        {/* Edit formula shortcut — feed.manage only */}
+        {canManage && (
+          <TouchableOpacity style={[styles.orderBtn, { borderColor: "#d97706", backgroundColor: "#fffbeb" }]} onPress={() => navigation.navigate("FeedFormulaEdit", { formulaId, formulaName: formula.name })} activeOpacity={0.8}>
+            <Icon name="pencil-outline" size={18} color="#d97706" />
+            <Text style={[styles.orderBtnText, { color: "#d97706" }]}>Edit Formula</Text>
+          </TouchableOpacity>
+        )}
+
         {/* Create order shortcut */}
         <TouchableOpacity style={styles.orderBtn} onPress={() => navigation.navigate("FeedProductionOrderCreate")} activeOpacity={0.8}>
           <Icon name="plus-circle-outline" size={18} color={colors.brand} />
           <Text style={styles.orderBtnText}>Create Production Order with this Formula</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.orderBtn} onPress={() => navigation.navigate("FeedFormulaCosting", { formulaId, formulaName: formula.name })} activeOpacity={0.8}>
+          <Icon name="currency-usd" size={18} color="#7c3aed" />
+          <Text style={[styles.orderBtnText, { color: "#7c3aed", borderColor: "#7c3aed" }]}>View Formula Costing</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.orderBtn, { borderColor: "#2563eb", backgroundColor: "#eff6ff" }]} onPress={() => navigation.navigate("FeedFormulaVersions", { formulaId, formulaName: formula.name })} activeOpacity={0.8}>
+          <Icon name="history" size={18} color="#2563eb" />
+          <Text style={[styles.orderBtnText, { color: "#2563eb" }]}>Version History</Text>
         </TouchableOpacity>
 
       </ScrollView>

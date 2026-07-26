@@ -1137,3 +1137,90 @@ export type PayslipRecord = {
 
 export const fetchMyPayslips = () =>
   apiFetch<ApiEnvelope<PayslipRecord[]>>("/hr/payroll/me");
+
+// ── Feed Production (new screens) ─────────────────────────────────────────────
+
+export type FeedIngredientItem = {
+  id: string; code: string; name: string;
+  product: { id: string; name: string; sku: string; uomCode?: string };
+  unitCost?: number; updatedAt: string;
+};
+export const fetchFeedIngredients = () =>
+  apiFetch<ApiEnvelope<FeedIngredientItem[]>>("/feed-production/ingredients");
+
+export type FinishedFeedStockItem = {
+  id: string; quantityKg: number;
+  product: { name: string; sku: string };
+  warehouse: { name: string; code: string };
+  updatedAt?: string;
+};
+export const fetchFinishedFeedStock = (warehouseId?: string) =>
+  apiFetch<ApiEnvelope<FinishedFeedStockItem[]>>(
+    `/feed-production/finished-feed-stock${warehouseId ? `?warehouseId=${warehouseId}` : ""}`
+  );
+
+export type FeedBatchItem = {
+  id: string; batchNumber: string; status: string;
+  producedQuantityKg: number; createdAt: string;
+  order?: { orderNumber: string; formula?: { name: string } | null } | null;
+  productionSite?: { name: string } | null;
+};
+export const fetchFeedBatches = () =>
+  apiFetch<ApiEnvelope<FeedBatchItem[]>>("/feed-production/batches?limit=50");
+
+export type FeedPackagingRecordItem = {
+  id: string; packagingDate: string; quantityKg: number;
+  bagWeightKg: number; bagsCount: number; labelPrinted: boolean;
+  product?: { name: string; sku: string } | null;
+  batch?: { batchNumber: string } | null;
+};
+export const fetchFeedPackagingRecords = () =>
+  apiFetch<ApiEnvelope<FeedPackagingRecordItem[]>>("/feed-production/packaging-records?limit=50");
+
+export type RawMaterialUsageItem = {
+  id: string; quantityKg: number; batchNumber: string; createdAt: string;
+  product?: { name: string; sku: string } | null;
+};
+export const fetchRawMaterialUsage = () =>
+  apiFetch<ApiEnvelope<RawMaterialUsageItem[]>>("/feed-production/raw-material-usage?limit=50");
+
+export type FeedTransferItem = {
+  id: string; transferNumber?: string; quantityKg: number; status: string; transferDate: string;
+  product?: { name: string; sku: string } | null;
+  fromWarehouse?: { name: string; code: string } | null;
+  toWarehouse?: { name: string; code: string } | null;
+};
+export const fetchFeedTransfers = () =>
+  apiFetch<ApiEnvelope<FeedTransferItem[]>>("/feed-production/transfers?limit=50");
+export const submitFeedInternalTransfer = (payload: Record<string, unknown>) =>
+  apiFetch<ApiEnvelope<unknown>>("/feed-production/transfers", { method: "POST", body: JSON.stringify(payload) });
+
+export type FeedFormulaCostingData = {
+  formulaName: string; formulaCode: string; feedType: string;
+  targetBatchKg: number; totalCostPerTonne: number; totalCostPerBatch: number;
+  ingredientCosts: Array<{
+    product: { name: string; sku: string };
+    kgPerTonne: number; unitCostGhs: number; totalCostGhs: number; percentageInFormula: number;
+  }>;
+};
+export const fetchFeedFormulaCosting = (formulaId: string) =>
+  apiFetch<ApiEnvelope<FeedFormulaCostingData>>(`/feed-production/formulas/${formulaId}/costing`);
+
+export type FeedFormulaVersion = {
+  id: string; version: number; notes?: string | null; createdAt: string;
+  createdBy?: { fullName: string } | null;
+};
+export const fetchFeedFormulaVersions = (formulaId: string) =>
+  apiFetch<ApiEnvelope<FeedFormulaVersion[]>>(`/feed-production/formulas/${formulaId}/versions`);
+export const createFeedFormulaVersion = (formulaId: string, payload: { notes?: string }) =>
+  apiFetch<ApiEnvelope<unknown>>(`/feed-production/formulas/${formulaId}/versions`, { method: "POST", body: JSON.stringify(payload) });
+
+export const createFeedFormula = (payload: {
+  code: string; name: string; feedType: string; targetBatchKg: number; finishedProductId?: string;
+}) =>
+  apiFetch<ApiEnvelope<{ id: string; code: string; name: string }>>("/feed-production/formulas", { method: "POST", body: JSON.stringify(payload) });
+
+export const updateFeedFormula = (formulaId: string, payload: {
+  name?: string; code?: string; feedType?: string; targetBatchKg?: number; finishedProductId?: string;
+}) =>
+  apiFetch<ApiEnvelope<{ id: string; code: string; name: string }>>(`/feed-production/formulas/${formulaId}`, { method: "PATCH", body: JSON.stringify(payload) });

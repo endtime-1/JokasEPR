@@ -6,11 +6,13 @@ import { Icon } from "../../components/Icon";
 import { PageHeader } from "../../components/PageHeader";
 import { useToast } from "../../components/Toast";
 import { createFeedProductionOrder, fetchFeedProductionOptions, type FeedFormula, type FeedProductionOptions } from "../../api/endpoints";
+import { useAuth } from "../../auth/AuthContext";
 import { colors, font, radius, shadow, spacing } from "../../constants/theme";
 
 export function FeedProductionOrderCreateScreen() {
   const navigation = useNavigation<any>();
   const toast = useToast();
+  const { user } = useAuth();
 
   const [opts,       setOpts]       = useState<FeedProductionOptions["data"] | null>(null);
   const [loading,    setLoading]    = useState(true);
@@ -27,8 +29,15 @@ export function FeedProductionOrderCreateScreen() {
     try {
       const res = await fetchFeedProductionOptions();
       setOpts(res.data);
-      if (res.data.productionSites?.[0]) setProductionSiteId(res.data.productionSites[0].id);
-      if (res.data.warehouses?.[0])      setWarehouseId(res.data.warehouses[0].id);
+      // Auto-select first site/warehouse the user has access to
+      const scopedSites = user?.hasGlobalAccess
+        ? res.data.productionSites ?? []
+        : (res.data.productionSites ?? []).filter((s) => (user?.productionSiteIds ?? []).includes(s.id));
+      const scopedWarehouses = user?.hasGlobalAccess
+        ? res.data.warehouses ?? []
+        : (res.data.warehouses ?? []).filter((w) => (user?.warehouseIds ?? []).includes(w.id));
+      if (scopedSites[0])      setProductionSiteId(scopedSites[0].id);
+      if (scopedWarehouses[0]) setWarehouseId(scopedWarehouses[0].id);
     } finally {
       setLoading(false);
     }
@@ -127,41 +136,51 @@ export function FeedProductionOrderCreateScreen() {
           </View>
         </View>
 
-        {/* Production site */}
-        {opts?.productionSites?.length ? (
-          <View style={styles.sectionCard}>
-            <Text style={styles.sectionTitle}>Production Site</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
-              {opts.productionSites.map((s) => (
-                <TouchableOpacity
-                  key={s.id}
-                  style={[styles.chip, productionSiteId === s.id && styles.chipActive]}
-                  onPress={() => setProductionSiteId(s.id)}
-                >
-                  <Text style={[styles.chipText, productionSiteId === s.id && styles.chipTextActive]}>{s.name}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        ) : null}
+        {/* Production site — scoped to user.productionSiteIds for non-global users */}
+        {(() => {
+          const sites = (opts?.productionSites ?? []).filter(
+            (s) => user?.hasGlobalAccess || (user?.productionSiteIds ?? []).includes(s.id)
+          );
+          return sites.length ? (
+            <View style={styles.sectionCard}>
+              <Text style={styles.sectionTitle}>Production Site</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
+                {sites.map((s) => (
+                  <TouchableOpacity
+                    key={s.id}
+                    style={[styles.chip, productionSiteId === s.id && styles.chipActive]}
+                    onPress={() => setProductionSiteId(s.id)}
+                  >
+                    <Text style={[styles.chipText, productionSiteId === s.id && styles.chipTextActive]}>{s.name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          ) : null;
+        })()}
 
-        {/* Output warehouse */}
-        {opts?.warehouses?.length ? (
-          <View style={styles.sectionCard}>
-            <Text style={styles.sectionTitle}>Output Warehouse</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
-              {opts.warehouses.map((w) => (
-                <TouchableOpacity
-                  key={w.id}
-                  style={[styles.chip, warehouseId === w.id && styles.chipActive]}
-                  onPress={() => setWarehouseId(w.id)}
-                >
-                  <Text style={[styles.chipText, warehouseId === w.id && styles.chipTextActive]}>{w.name}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        ) : null}
+        {/* Output warehouse — scoped to user.warehouseIds for non-global users */}
+        {(() => {
+          const warehouses = (opts?.warehouses ?? []).filter(
+            (w) => user?.hasGlobalAccess || (user?.warehouseIds ?? []).includes(w.id)
+          );
+          return warehouses.length ? (
+            <View style={styles.sectionCard}>
+              <Text style={styles.sectionTitle}>Output Warehouse</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
+                {warehouses.map((w) => (
+                  <TouchableOpacity
+                    key={w.id}
+                    style={[styles.chip, warehouseId === w.id && styles.chipActive]}
+                    onPress={() => setWarehouseId(w.id)}
+                  >
+                    <Text style={[styles.chipText, warehouseId === w.id && styles.chipTextActive]}>{w.name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          ) : null;
+        })()}
 
         {/* Notes */}
         <View style={styles.sectionCard}>

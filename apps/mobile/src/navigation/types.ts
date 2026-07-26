@@ -88,6 +88,17 @@ export type RecordsStackParams = {
   StockLevels: undefined;
   // Phase 5 — Finance
   IncomeEntry: undefined;
+  // Phase 7 — Feed Production expanded
+  FeedBatchList: undefined;
+  FeedFinishedStock: undefined;
+  FeedIngredientsCatalog: undefined;
+  FeedPackagingRecords: undefined;
+  FeedRawMaterialUsage: undefined;
+  FeedInternalTransferCreate: undefined;
+  FeedFormulaCosting: { formulaId: string; formulaName: string };
+  FeedFormulaVersions: { formulaId: string; formulaName: string };
+  FeedFormulaCreate: undefined;
+  FeedFormulaEdit: { formulaId: string; formulaName: string };
 };
 
 // Approvals stack (Phase 3 — new tab)

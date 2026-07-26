@@ -10,10 +10,12 @@ import { SelectField, SelectOption } from "../../components/SelectField";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
 import { fetchInventoryOptions } from "../../api/endpoints";
+import { useAuth } from "../../auth/AuthContext";
 import { colors, font, radius, shadow, spacing } from "../../constants/theme";
 
 export function StockTransferScreen() {
   const navigation = useNavigation<any>();
+  const { user } = useAuth();
 
   const [fromWarehouseId, setFromWarehouseId] = useState("");
   const [toWarehouseId,   setToWarehouseId]   = useState("");
@@ -27,10 +29,13 @@ export function StockTransferScreen() {
     return r.data;
   });
 
-  const warehouses: SelectOption[] = useMemo(
-    () => (opts?.warehouses ?? []).map((w) => ({ label: w.name, value: w.id })),
-    [opts]
-  );
+  const warehouses: SelectOption[] = useMemo(() => {
+    const all = opts?.warehouses ?? [];
+    const visible = user?.hasGlobalAccess
+      ? all
+      : all.filter((w) => (user?.warehouseIds ?? []).includes(w.id));
+    return visible.map((w) => ({ label: w.name, value: w.id }));
+  }, [opts, user]);
 
   const toWarehouses: SelectOption[] = useMemo(
     () => warehouses.filter((w) => w.value !== fromWarehouseId),

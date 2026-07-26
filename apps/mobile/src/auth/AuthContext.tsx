@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import {
   type AuthUser,
+  ApiError,
   clearSession,
   getAccessToken,
   login as apiLogin,
@@ -33,20 +34,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const RESTORE_RETRY_DELAY_MS = 3_000;
+  const RESTORE_MAX_ATTEMPTS = 3;
+  function wait(ms: number) { return new Promise<void>((r) => setTimeout(r, ms)); }
+
   const restoreSession = useCallback(async () => {
     const token = await getAccessToken();
-    // SecureStore has been read — unblock all pending apiFetch() calls. Any
-    // screen that mounted before this point was waiting on the auth-ready gate.
     markAuthReady();
     if (!token) { setLoading(false); return; }
-    try {
-      const res = await apiFetch<{ data: AuthUser }>("/auth/me");
-      setUser(res.data);
-    } catch {
-      await clearSession();
-    } finally {
-      setLoading(false);
+    for (let attempt = 0; attempt < RESTORE_MAX_ATTEMPTS; attempt++) {
+      try {
+        const res = await apiFetch<{ data: AuthUser }>("/auth/me");
+        setUser(res.data);
+        setLoading(false);
+        return;
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 401) { await clearSession(); break; }
+        if (attempt < RESTORE_MAX_ATTEMPTS - 1) await wait(RESTORE_RETRY_DELAY_MS);
+      }
     }
+    setLoading(false);
   }, []);
 
   useEffect(() => { restoreSession(); }, [restoreSession]);
@@ -85,4 +92,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
 export function useAuth() {
   return useContext(AuthContext);
+}
+
+export function useHasGlobalAccess() {
+  return useContext(AuthContext).user?.hasGlobalAccess ?? false;
 }

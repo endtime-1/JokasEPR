@@ -3,10 +3,15 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { useAuth } from "../auth/AuthContext";
 import { LoginScreen } from "../screens/LoginScreen";
 import { AppNavigator } from "./AppNavigator";
+import { BiometricGate } from "../components/BiometricGate";
 import { colors } from "../constants/theme";
 import type { RootStackParams } from "./types";
 
 const Stack = createNativeStackNavigator<RootStackParams>();
+
+function AppWithBiometrics() {
+  return <BiometricGate><AppNavigator /></BiometricGate>;
+}
 
 export function RootNavigator() {
   const { user, loading } = useAuth();
@@ -22,7 +27,7 @@ export function RootNavigator() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       {user ? (
-        <Stack.Screen name="App" component={AppNavigator} />
+        <Stack.Screen name="App" component={AppWithBiometrics} />
       ) : (
         <Stack.Screen name="Login" component={LoginScreen} />
       )}

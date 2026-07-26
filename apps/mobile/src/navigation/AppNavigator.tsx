@@ -70,6 +70,17 @@ import { FeedProductionOrderCreateScreen } from "../features/records/FeedProduct
 import { FeedProductionOrderDetailScreen } from "../features/records/FeedProductionOrderDetailScreen";
 import { FeedFormulaListScreen } from "../features/records/FeedFormulaListScreen";
 import { FeedFormulaDetailScreen } from "../features/records/FeedFormulaDetailScreen";
+// Phase 7 — Feed Production expanded
+import { FeedBatchListScreen } from "../features/records/FeedBatchListScreen";
+import { FeedFormulaCostingScreen } from "../features/records/FeedFormulaCostingScreen";
+import { FeedFormulaVersionsScreen } from "../features/records/FeedFormulaVersionsScreen";
+import { FeedFormulaCreateScreen } from "../features/records/FeedFormulaCreateScreen";
+import { FeedFormulaEditScreen } from "../features/records/FeedFormulaEditScreen";
+import { FeedFinishedStockScreen } from "../features/feed/FeedFinishedStockScreen";
+import { FeedIngredientsScreen } from "../features/feed/FeedIngredientsScreen";
+import { FeedPackagingRecordsScreen } from "../features/feed/FeedPackagingRecordsScreen";
+import { FeedRawMaterialUsageScreen } from "../features/feed/FeedRawMaterialUsageScreen";
+import { FeedInternalTransferScreen } from "../features/feed/FeedInternalTransferScreen";
 // Phase 4 — Settings / Profile
 import { UserProfileScreen } from "../features/settings/UserProfileScreen";
 import { ChangePasswordScreen } from "../features/settings/ChangePasswordScreen";
@@ -167,6 +178,16 @@ const P = {
   FeedFormulaList:      protect(FeedFormulaListScreen,           [], "feed.read"),
   FeedFormulaDetail:    protect(FeedFormulaDetailScreen,         [], "feed.read"),
   HiproPredict:         protect(HiproPredictiveScreen,           [], "feed.read"),
+  FeedBatchList:        protect(FeedBatchListScreen,             [], "feed.read"),
+  FeedFinishedStock:    protect(FeedFinishedStockScreen,         [], "feed.read"),
+  FeedIngredients:      protect(FeedIngredientsScreen,           [], "feed.read"),
+  FeedPackagingRecords: protect(FeedPackagingRecordsScreen,      [], "feed.manage"),
+  FeedRawMaterialUsage: protect(FeedRawMaterialUsageScreen,      [], "feed.read"),
+  FeedInternalTransfer: protect(FeedInternalTransferScreen,      [], "feed.manage"),
+  FeedFormulaCosting:   protect(FeedFormulaCostingScreen,        [], "feed.read"),
+  FeedFormulaVersions:  protect(FeedFormulaVersionsScreen,       [], "feed.read"),
+  FeedFormulaCreate:    protect(FeedFormulaCreateScreen,         [], "feed.manage"),
+  FeedFormulaEdit:      protect(FeedFormulaEditScreen,           [], "feed.manage"),
   StockMovement:        protect(StockMovementScreen,             [], "inventory.manage"),
   StockAdjustment:      protect(StockAdjustmentScreen,          [], "inventory.manage"),
   StockTransfer:        protect(StockTransferScreen,             [], "inventory.manage"),
@@ -292,6 +313,17 @@ function RecordsNavigator() {
       <RecordsStack.Screen name="FeedProductionOrderDetail" component={P.FeedOrderDetail} options={{ title: "Order Detail"          }} />
       <RecordsStack.Screen name="FeedFormulaList"           component={P.FeedFormulaList}   options={{ title: "Feed Formulas"  }} />
       <RecordsStack.Screen name="FeedFormulaDetail"         component={P.FeedFormulaDetail} options={{ title: "Formula Detail"  }} />
+      {/* Phase 7 — Feed Production expanded */}
+      <RecordsStack.Screen name="FeedBatchList"             component={P.FeedBatchList}          options={{ title: "Production Batches"   }} />
+      <RecordsStack.Screen name="FeedFinishedStock"         component={P.FeedFinishedStock}      options={{ title: "Finished Feed Stock"  }} />
+      <RecordsStack.Screen name="FeedIngredientsCatalog"    component={P.FeedIngredients}        options={{ title: "Raw Material Catalog" }} />
+      <RecordsStack.Screen name="FeedPackagingRecords"      component={P.FeedPackagingRecords}   options={{ title: "Packaging Records"    }} />
+      <RecordsStack.Screen name="FeedRawMaterialUsage"      component={P.FeedRawMaterialUsage}   options={{ title: "Raw Material Usage"   }} />
+      <RecordsStack.Screen name="FeedInternalTransferCreate" component={P.FeedInternalTransfer} options={{ title: "Feed Transfer"         }} />
+      <RecordsStack.Screen name="FeedFormulaCosting"        component={P.FeedFormulaCosting}     options={({ route }) => ({ title: `Costing — ${(route.params as any).formulaName}` })} />
+      <RecordsStack.Screen name="FeedFormulaVersions"       component={P.FeedFormulaVersions}    options={({ route }) => ({ title: `Versions — ${(route.params as any).formulaName}` })} />
+      <RecordsStack.Screen name="FeedFormulaCreate"         component={P.FeedFormulaCreate}      options={{ title: "New Formula"          }} />
+      <RecordsStack.Screen name="FeedFormulaEdit"           component={P.FeedFormulaEdit}         options={({ route }) => ({ title: `Edit — ${(route.params as any).formulaName}` })} />
     </RecordsStack.Navigator>
   );
 }
