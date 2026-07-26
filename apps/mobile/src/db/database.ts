@@ -43,8 +43,14 @@ export async function getCachedLookup<T>(key: string): Promise<{ data: T; stale:
     key
   );
   if (!row) return null;
-  const age = Date.now() - new Date(row.cached_at).getTime();
-  return { data: JSON.parse(row.data) as T, stale: age > CACHE_TTL_MS };
+  try {
+    const age = Date.now() - new Date(row.cached_at).getTime();
+    return { data: JSON.parse(row.data) as T, stale: age > CACHE_TTL_MS };
+  } catch {
+    // Corrupted cache entry — evict it and return null so a fresh fetch runs
+    await database.runAsync("DELETE FROM lookup_cache WHERE key = ?", key);
+    return null;
+  }
 }
 
 export async function setCachedLookup(key: string, data: unknown): Promise<void> {

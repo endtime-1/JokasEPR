@@ -41,8 +41,13 @@ export async function runSync(): Promise<SyncResult> {
   if (pending.length === 0) return { synced: 0, failed: 0, duplicates: 0 };
 
   // Build batch payload — strip internal _offlineId from payload before sending
-  const items: BatchSyncItem[] = pending.map((row) => {
-    const rawPayload = JSON.parse(row.payload) as Record<string, unknown>;
+  const items: BatchSyncItem[] = pending.flatMap((row) => {
+    let rawPayload: Record<string, unknown>;
+    try {
+      rawPayload = JSON.parse(row.payload) as Record<string, unknown>;
+    } catch {
+      return []; // skip rows with corrupted payloads
+    }
     const { _offlineId, ...cleanPayload } = rawPayload;
     return {
       localId: row.id,
