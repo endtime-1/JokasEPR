@@ -54,7 +54,7 @@ async function _doRefresh(): Promise<boolean> {
   try {
     const response = await fetch(`${API_URL}/auth/refresh`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", "x-client-type": "mobile" },
       body: JSON.stringify({ refreshToken }),
       signal: controller.signal,
     });
@@ -81,6 +81,7 @@ async function request(path: string, init?: RequestInit): Promise<Response> {
     ...init,
     headers: {
       "content-type": "application/json",
+      "x-client-type": "mobile",
       ...(token ? { authorization: `Bearer ${token}` } : {}),
       ...init?.headers,
     },

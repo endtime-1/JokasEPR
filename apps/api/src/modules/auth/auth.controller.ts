@@ -23,12 +23,20 @@ export class AuthController {
     @Body() dto: LoginDto,
     @Res({ passthrough: true }) response: Response,
     @Ip() ipAddress: string,
-    @Headers("user-agent") userAgent?: string
+    @Headers("user-agent") userAgent?: string,
+    @Headers("x-client-type") clientType?: string
   ) {
     const result = await this.authService.login(dto, { ipAddress, userAgent });
     this.setAuthCookies(response, result.data.accessToken, result.data.refreshToken, result.data.refreshTtlDays);
-    // Tokens are delivered via HttpOnly cookies only — never in the response body.
-    return { data: { user: result.data.user } };
+    // Mobile clients cannot use HttpOnly cookies — return tokens in the body for them.
+    // Web clients receive tokens via cookies only (XSS protection).
+    const isMobile = clientType === "mobile";
+    return {
+      data: {
+        user: result.data.user,
+        ...(isMobile ? { accessToken: result.data.accessToken, refreshToken: result.data.refreshToken } : {}),
+      },
+    };
   }
 
   @Post("refresh")
@@ -38,7 +46,8 @@ export class AuthController {
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
     @Ip() ipAddress: string,
-    @Headers("user-agent") userAgent?: string
+    @Headers("user-agent") userAgent?: string,
+    @Headers("x-client-type") clientType?: string
   ) {
     const token = body.refreshToken ?? (request.cookies as Record<string, string> | undefined)?.["jokas_rt"];
     if (!token) {
@@ -48,7 +57,13 @@ export class AuthController {
     }
     const result = await this.authService.refresh(token, { ipAddress, userAgent });
     this.setAuthCookies(response, result.data.accessToken, result.data.refreshToken, result.data.refreshTtlDays);
-    return { data: { user: result.data.user } };
+    const isMobile = clientType === "mobile";
+    return {
+      data: {
+        user: result.data.user,
+        ...(isMobile ? { accessToken: result.data.accessToken, refreshToken: result.data.refreshToken } : {}),
+      },
+    };
   }
 
   @Post("logout")
