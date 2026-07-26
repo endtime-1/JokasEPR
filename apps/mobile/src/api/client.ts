@@ -198,6 +198,9 @@ export async function login(email: string, password: string) {
     method: "POST",
     body: JSON.stringify({ email, password }),
   });
+  if (typeof res.data.accessToken !== "string" || typeof res.data.refreshToken !== "string") {
+    throw new ApiError(0, "Sign-in failed — server did not return a session. Please try again.");
+  }
   await setSession(res.data.accessToken, res.data.refreshToken);
   return res.data.user;
 }

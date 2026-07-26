@@ -116,7 +116,7 @@ jobs:
         run: |
           for attempt in 1 2 3; do
             rsync -avz --partial --timeout=300 \
-              -e "ssh -p 65002 -i ~/.ssh/id_rsa" \
+              -e "ssh -p 65002 -i ~/.ssh/id_rsa -o StrictHostKeyChecking=accept-new" \
               /tmp/api-deploy/ \
               ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/apps/api/ \
               && { echo "API upload succeeded on attempt $attempt"; break; } \
@@ -128,7 +128,7 @@ jobs:
           for attempt in 1 2 3; do
             rsync -avz --partial --timeout=300 --no-perms --omit-dir-times \
               --exclude='.next/cache' \
-              -e "ssh -p 65002 -i ~/.ssh/id_rsa" \
+              -e "ssh -p 65002 -i ~/.ssh/id_rsa -o StrictHostKeyChecking=accept-new" \
               /tmp/web-deploy/ \
               ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/apps/web/ \
               && { echo "Web upload succeeded on attempt $attempt"; break; } \
@@ -139,11 +139,11 @@ jobs:
         run: |
           for attempt in 1 2 3; do
             rsync -avz --partial --timeout=120 \
-              -e "ssh -p 65002 -i ~/.ssh/id_rsa" \
+              -e "ssh -p 65002 -i ~/.ssh/id_rsa -o StrictHostKeyChecking=accept-new" \
               packages/db/prisma/ \
               ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/prisma/ \
             && rsync -avz --partial --timeout=120 \
-              -e "ssh -p 65002 -i ~/.ssh/id_rsa" \
+              -e "ssh -p 65002 -i ~/.ssh/id_rsa -o StrictHostKeyChecking=accept-new" \
               packages/db/scripts/sync-permissions.mjs \
               ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/apps/api/sync-permissions.mjs \
             && { echo "DB+scripts upload succeeded on attempt $attempt"; break; } \
@@ -154,7 +154,7 @@ jobs:
         run: |
           for attempt in 1 2 3; do
             rsync -avz --partial --timeout=120 \
-              -e "ssh -p 65002 -i ~/.ssh/id_rsa" \
+              -e "ssh -p 65002 -i ~/.ssh/id_rsa -o StrictHostKeyChecking=accept-new" \
               ecosystem.config.js start.js package.json \
               ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/ \
             && { echo "Root files upload succeeded on attempt $attempt"; break; } \
