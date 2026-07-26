@@ -24,8 +24,29 @@ export async function clearSession() {
 }
 
 const REQUEST_TIMEOUT_MS = 15_000;
+const TRANSIENT_STATUSES = new Set([502, 503, 504]);
+const TRANSIENT_RETRY_DELAY_MS = 3_000;
+const TRANSIENT_MAX_RETRIES = 3;
 
-async function refreshSession(): Promise<boolean> {
+// ── Auth-ready gate ───────────────────────────────────────────────────────────
+// Blocks all apiFetch() calls until AuthContext finishes reading SecureStore on
+// cold launch. Without this, screens mounting during app start race with session
+// restore and each fire their own 401 → refresh cycle.
+let _authReadyResolve: (() => void) | null = null;
+const _authReady: Promise<void> = new Promise<void>((resolve) => {
+  _authReadyResolve = resolve;
+});
+export function markAuthReady() {
+  _authReadyResolve?.();
+}
+
+// ── Singleton refresh ─────────────────────────────────────────────────────────
+// Multiple concurrent 401s share one /auth/refresh round-trip. Without this the
+// API's refresh-token rotation means callers 2+ get "token already revoked" and
+// incorrectly clear the session, forcing an unnecessary re-login.
+let _refreshPromise: Promise<boolean> | null = null;
+
+async function _doRefresh(): Promise<boolean> {
   const refreshToken = await getRefreshToken();
   if (!refreshToken) return false;
   const controller = new AbortController();
@@ -35,7 +56,7 @@ async function refreshSession(): Promise<boolean> {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ refreshToken }),
-      signal: controller.signal
+      signal: controller.signal,
     });
     clearTimeout(tid);
     if (!response.ok) { await clearSession(); return false; }
@@ -48,6 +69,12 @@ async function refreshSession(): Promise<boolean> {
   }
 }
 
+export async function refreshSession(): Promise<boolean> {
+  if (_refreshPromise) return _refreshPromise;
+  _refreshPromise = _doRefresh().finally(() => { _refreshPromise = null; });
+  return _refreshPromise;
+}
+
 async function request(path: string, init?: RequestInit): Promise<Response> {
   const token = await getAccessToken();
   return fetch(`${API_URL}${path}`, {
@@ -55,8 +82,8 @@ async function request(path: string, init?: RequestInit): Promise<Response> {
     headers: {
       "content-type": "application/json",
       ...(token ? { authorization: `Bearer ${token}` } : {}),
-      ...init?.headers
-    }
+      ...init?.headers,
+    },
   });
 }
 
@@ -66,7 +93,14 @@ export class ApiError extends Error {
   }
 }
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  // Block until session restore from SecureStore is complete (cold-launch gate).
+  await _authReady;
+
   const controller = new AbortController();
   const tid = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
@@ -101,6 +135,21 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
       throw new ApiError(0, "Network error — check your connection and try again.");
     }
     clearTimeout(retryTid);
+  }
+
+  // Retry on transient Hostinger Passenger cold-start errors (502/503/504).
+  let retries = 0;
+  while (TRANSIENT_STATUSES.has(response.status) && retries < TRANSIENT_MAX_RETRIES) {
+    retries++;
+    await delay(TRANSIENT_RETRY_DELAY_MS);
+    try {
+      const rc = new AbortController();
+      const rt = setTimeout(() => rc.abort(), REQUEST_TIMEOUT_MS);
+      response = await request(path, { ...init, signal: rc.signal });
+      clearTimeout(rt);
+    } catch {
+      break;
+    }
   }
 
   clearTimeout(tid);
@@ -146,7 +195,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
 export async function login(email: string, password: string) {
   const res = await apiFetch<{ data: { accessToken: string; refreshToken: string; user: AuthUser } }>("/auth/login", {
     method: "POST",
-    body: JSON.stringify({ email, password })
+    body: JSON.stringify({ email, password }),
   });
   await setSession(res.data.accessToken, res.data.refreshToken);
   return res.data.user;

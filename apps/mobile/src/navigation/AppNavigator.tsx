@@ -101,9 +101,10 @@ import { MyPayslipsScreen } from "../features/hr/MyPayslipsScreen";
 import { useAuth } from "../auth/AuthContext";
 import type { ApprovalsStackParams, RecordsStackParams, TabParams, TasksStackParams, MoreStackParams } from "./types";
 
-// ── Role-based access control ──────────────────────────────────────────────
-// Screens marked "manager-only" are hidden from the UI AND blocked at the
-// screen level so that a clever navigation deep-link can't bypass the filter.
+// ── Role-based + permission-based access control ──────────────────────────────
+// protect() enforces both a role list AND an optional module permission string.
+// Pass an empty roles array [] to allow any authenticated user but still require
+// the permission — used for operational screens that aren't manager-only.
 const MANAGER_ROLES = ["SUPER_ADMIN", "CEO", "MANAGER"];
 
 function AccessDeniedView() {
@@ -131,9 +132,8 @@ function protect(Component: React.ComponentType, allowedRoles: string[], permiss
   function Protected() {
     const { user } = useAuth();
     const userRoles = (user?.roles ?? []).map((r) => r.toUpperCase());
-    const allowed =
-      allowedRoles.some((r) => userRoles.includes(r)) &&
-      (permission ? (user?.permissions ?? []).includes(permission) : true);
+    const roleOk = allowedRoles.length === 0 || allowedRoles.some((r) => userRoles.includes(r));
+    const allowed = roleOk && (permission ? (user?.permissions ?? []).includes(permission) : true);
     return allowed ? <Component /> : <AccessDeniedView />;
   }
   return Protected;
@@ -142,24 +142,54 @@ function protect(Component: React.ComponentType, allowedRoles: string[], permiss
 // Stable references — defined at module level so React Navigation never
 // treats them as new components and unmounts the screen on re-render.
 const P = {
-  FinanceMobile:        protect(FinanceMobileScreen,        MANAGER_ROLES),
-  DebtorList:           protect(DebtorScreen,               MANAGER_ROLES),
-  EmployeeDirectory:    protect(EmployeeDirectoryScreen,    MANAGER_ROLES),
-  ShiftView:            protect(ShiftViewScreen,            MANAGER_ROLES),
-  HRDashboard:          protect(HRDashboardScreen,          MANAGER_ROLES),
-  PlanningDashboard:    protect(PlanningDashboardScreen,    MANAGER_ROLES),
-  MarketTargetDetail:   protect(MarketTargetDetailScreen,   MANAGER_ROLES),
-  MarketTargetCreate:   protect(MarketTargetCreateScreen,   MANAGER_ROLES),
-  SalesDashboard:       protect(SalesDashboardScreen,       MANAGER_ROLES),
+  // ── Manager-gated + module permission ─────────────────────────────────────
+  FinanceMobile:        protect(FinanceMobileScreen,        MANAGER_ROLES, "finance.read"),
+  DebtorList:           protect(DebtorScreen,               MANAGER_ROLES, "finance.read"),
+  EmployeeDirectory:    protect(EmployeeDirectoryScreen,    MANAGER_ROLES, "hr.read"),
+  ShiftView:            protect(ShiftViewScreen,            MANAGER_ROLES, "hr.read"),
+  HRDashboard:          protect(HRDashboardScreen,          MANAGER_ROLES, "hr.read"),
+  PlanningDashboard:    protect(PlanningDashboardScreen,    MANAGER_ROLES, "market-planning.read"),
+  MarketTargetDetail:   protect(MarketTargetDetailScreen,   MANAGER_ROLES, "market-planning.manage"),
+  MarketTargetCreate:   protect(MarketTargetCreateScreen,   MANAGER_ROLES, "market-planning.manage"),
+  SalesDashboard:       protect(SalesDashboardScreen,       MANAGER_ROLES, "sales.read"),
   StorefrontDashboard:  protect(StorefrontDashboardScreen,  MANAGER_ROLES),
   StorefrontOrders:     protect(StorefrontOrdersScreen,     MANAGER_ROLES),
   StorefrontProducts:   protect(StorefrontProductsScreen,   MANAGER_ROLES),
-  ProcurementDashboard: protect(ProcurementDashboardScreen, MANAGER_ROLES),
-  Dashboard:            protect(DashboardScreen,            MANAGER_ROLES),
+  ProcurementDashboard: protect(ProcurementDashboardScreen, MANAGER_ROLES, "procurement.read"),
+  Dashboard:            protect(DashboardScreen,            MANAGER_ROLES, "executive.read"),
   AiChat:               protect(AiChatScreen,               MANAGER_ROLES),
-  ReportsBrowser:       protect(ReportsBrowserScreen,       MANAGER_ROLES),
+  ReportsBrowser:       protect(ReportsBrowserScreen,       MANAGER_ROLES, "reports.export"),
+  // ── Permission-only gates (any authenticated role) ─────────────────────────
+  FeedBatch:            protect(FeedProductionBatchScreen,       [], "feed.manage"),
+  FeedOrderList:        protect(FeedProductionOrderListScreen,   [], "feed.read"),
+  FeedOrderCreate:      protect(FeedProductionOrderCreateScreen, [], "feed.manage"),
+  FeedOrderDetail:      protect(FeedProductionOrderDetailScreen, [], "feed.read"),
+  FeedFormulaList:      protect(FeedFormulaListScreen,           [], "feed.read"),
+  FeedFormulaDetail:    protect(FeedFormulaDetailScreen,         [], "feed.read"),
+  HiproPredict:         protect(HiproPredictiveScreen,           [], "feed.read"),
+  StockMovement:        protect(StockMovementScreen,             [], "inventory.manage"),
+  StockAdjustment:      protect(StockAdjustmentScreen,          [], "inventory.manage"),
+  StockTransfer:        protect(StockTransferScreen,             [], "inventory.manage"),
+  StockLevels:          protect(StockLevelsScreen,               [], "inventory.read"),
+  PaymentCollect:       protect(PaymentCollectScreen,            [], "finance.manage"),
+  IncomeEntry:          protect(IncomeEntryScreen,               [], "finance.manage"),
+  PurchaseOrderList:    protect(PurchaseOrderListScreen,         [], "procurement.read"),
+  GrnCreate:            protect(GrnCreateScreen,                 [], "procurement.manage"),
+  PurchaseRequestList:  protect(PurchaseRequestListScreen,       [], "procurement.read"),
+  PurchaseRequestCreate: protect(PurchaseRequestCreateScreen,    [], "procurement.manage"),
+  QualityCheck:         protect(QualityCheckScreen,              [], "quality.manage"),
+  CorrectiveAction:     protect(CorrectiveActionScreen,          [], "quality.manage"),
+  LabReport:            protect(LabReportScreen,                 [], "quality.read"),
+  BreakdownReport:      protect(BreakdownReportScreen,           [], "maintenance.manage"),
+  MaintenanceTasks:     protect(MaintenanceTasksScreen,          [], "maintenance.manage"),
+  MaintenanceLog:       protect(MaintenanceLogScreen,            [], "maintenance.manage"),
+  SalesOrder:           protect(SalesOrderScreen,                [], "sales.manage"),
+  CustomerList:         protect(CustomerListScreen,              [], "sales.read"),
+  CustomerDetail:       protect(CustomerDetailScreen,            [], "sales.read"),
+  SalesOrderHistory:    protect(SalesOrderHistoryScreen,         [], "sales.read"),
+  ProspectVisit:        protect(ProspectVisitScreen,             [], "sales.manage"),
 } as const;
-// ───────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 
 const Tab = createBottomTabNavigator<TabParams>();
 const RecordsStack   = createNativeStackNavigator<RecordsStackParams>();
@@ -201,43 +231,43 @@ function RecordsNavigator() {
       <RecordsStack.Screen name="FeedConsumption" component={FeedConsumptionScreen} options={{ title: "Feed Record"     }} />
       <RecordsStack.Screen name="Medication"      component={MedicationScreen}      options={{ title: "Medication"      }} />
       <RecordsStack.Screen name="Vaccination"     component={VaccinationScreen}     options={{ title: "Vaccination"     }} />
-      <RecordsStack.Screen name="StockMovement"   component={StockMovementScreen}   options={{ title: "Stock Movement"  }} />
-      <RecordsStack.Screen name="SalesOrder"      component={SalesOrderScreen}      options={{ title: "Sales Order"     }} />
-      <RecordsStack.Screen name="ProductionRecord"  component={ProductionRecordScreen}  options={{ title: "Production"       }} />
-      <RecordsStack.Screen name="SoyaProcessing"   component={SoyaProcessingScreen}    options={{ title: "Soya Processing"       }} />
+      <RecordsStack.Screen name="StockMovement"   component={P.StockMovement}   options={{ title: "Stock Movement"  }} />
+      <RecordsStack.Screen name="SalesOrder"      component={P.SalesOrder}      options={{ title: "Sales Order"     }} />
+      <RecordsStack.Screen name="ProductionRecord"  component={ProductionRecordScreen}  options={{ title: "Production"           }} />
+      <RecordsStack.Screen name="SoyaProcessing"   component={SoyaProcessingScreen}    options={{ title: "Soya Processing"      }} />
       <RecordsStack.Screen name="AttendanceCheckIn" component={AttendanceCheckInScreen} options={{ title: "Attendance Check-In"  }} />
-      <RecordsStack.Screen name="ProspectVisit"    component={ProspectVisitScreen}     options={{ title: "Prospect Visit"        }} />
-      <RecordsStack.Screen name="QualityCheck"    component={QualityCheckScreen}      options={{ title: "Quality Inspection"   }} />
-      <RecordsStack.Screen name="HiproPredict"    component={HiproPredictiveScreen}   options={{ title: "Feed Predictive"      }} />
+      <RecordsStack.Screen name="ProspectVisit"    component={P.ProspectVisit}     options={{ title: "Prospect Visit"       }} />
+      <RecordsStack.Screen name="QualityCheck"     component={P.QualityCheck}      options={{ title: "Quality Inspection"   }} />
+      <RecordsStack.Screen name="HiproPredict"     component={P.HiproPredict}      options={{ title: "Feed Predictive"      }} />
       <RecordsStack.Screen name="HealthObservation"   component={HealthObservationScreen}  options={{ title: "Health Observation" }} />
-      <RecordsStack.Screen name="BirdWeight"          component={BirdWeightScreen}          options={{ title: "Bird Weight"        }} />
-      <RecordsStack.Screen name="CorrectiveAction"    component={CorrectiveActionScreen}    options={{ title: "Corrective Action"  }} />
-      <RecordsStack.Screen name="LabReport"           component={LabReportScreen}           options={{ title: "Lab Report"         }} />
-      <RecordsStack.Screen name="BreakdownReport"     component={BreakdownReportScreen}    options={{ title: "Report Breakdown"   }} />
-      <RecordsStack.Screen name="MaintenanceTasks"   component={MaintenanceTasksScreen}   options={{ title: "Maintenance"        }} />
-      <RecordsStack.Screen name="MaintenanceLog"     component={MaintenanceLogScreen}     options={{ title: "Log Work Done"      }} />
-      <RecordsStack.Screen name="StockAdjustment"    component={StockAdjustmentScreen}    options={{ title: "Stock Adjustment"   }} />
-      <RecordsStack.Screen name="StockAlerts"        component={StockAlertsScreen}        options={{ title: "Stock Alerts"       }} />
-      <RecordsStack.Screen name="StockTransfer"      component={StockTransferScreen}      options={{ title: "Stock Transfer"     }} />
-      <RecordsStack.Screen name="ExpenseNew"         component={ExpenseNewScreen}         options={{ title: "New Expense"        }} />
-      <RecordsStack.Screen name="ExpenseList"        component={ExpenseListScreen}        options={{ title: "My Expenses"        }} />
-      <RecordsStack.Screen name="PaymentCollect"     component={PaymentCollectScreen}     options={{ title: "Collect Payment"    }} />
-      <RecordsStack.Screen name="PurchaseOrderList"  component={PurchaseOrderListScreen}  options={{ title: "Purchase Orders"    }} />
-      <RecordsStack.Screen name="GrnCreate"          component={GrnCreateScreen}          options={{ title: "Receive Goods"      }} />
-      <RecordsStack.Screen name="Scanner"            component={ScannerScreen}            options={{ title: "QR Scanner"         }} />
-      <RecordsStack.Screen name="ScanResult"         component={ScanResultScreen}         options={{ title: "Scan Result"        }} />
-      <RecordsStack.Screen name="FinanceMobile"      component={P.FinanceMobile}      options={{ title: "Finance Overview"   }} />
-      <RecordsStack.Screen name="DebtorList"         component={P.DebtorList}         options={{ title: "Debtors"            }} />
-      <RecordsStack.Screen name="EmployeeDirectory"  component={P.EmployeeDirectory}  options={{ title: "Employees"          }} />
-      <RecordsStack.Screen name="ShiftView"          component={P.ShiftView}          options={{ title: "Today's Attendance"    }} />
-      <RecordsStack.Screen name="FeedProductionBatch" component={FeedProductionBatchScreen} options={{ title: "Feed Production Batch" }} />
-      <RecordsStack.Screen name="SoyaBatch"           component={SoyaBatchScreen}           options={{ title: "Soya Processing Batch" }} />
-      <RecordsStack.Screen name="PlanningDashboard"   component={P.PlanningDashboard}   options={{ title: "Market Planning"       }} />
+      <RecordsStack.Screen name="BirdWeight"          component={BirdWeightScreen}         options={{ title: "Bird Weight"        }} />
+      <RecordsStack.Screen name="CorrectiveAction"    component={P.CorrectiveAction}   options={{ title: "Corrective Action"  }} />
+      <RecordsStack.Screen name="LabReport"           component={P.LabReport}          options={{ title: "Lab Report"         }} />
+      <RecordsStack.Screen name="BreakdownReport"     component={P.BreakdownReport}    options={{ title: "Report Breakdown"   }} />
+      <RecordsStack.Screen name="MaintenanceTasks"    component={P.MaintenanceTasks}   options={{ title: "Maintenance"        }} />
+      <RecordsStack.Screen name="MaintenanceLog"      component={P.MaintenanceLog}     options={{ title: "Log Work Done"      }} />
+      <RecordsStack.Screen name="StockAdjustment"     component={P.StockAdjustment}    options={{ title: "Stock Adjustment"   }} />
+      <RecordsStack.Screen name="StockAlerts"         component={StockAlertsScreen}    options={{ title: "Stock Alerts"       }} />
+      <RecordsStack.Screen name="StockTransfer"       component={P.StockTransfer}      options={{ title: "Stock Transfer"     }} />
+      <RecordsStack.Screen name="ExpenseNew"          component={ExpenseNewScreen}      options={{ title: "New Expense"        }} />
+      <RecordsStack.Screen name="ExpenseList"         component={ExpenseListScreen}     options={{ title: "My Expenses"        }} />
+      <RecordsStack.Screen name="PaymentCollect"      component={P.PaymentCollect}     options={{ title: "Collect Payment"    }} />
+      <RecordsStack.Screen name="PurchaseOrderList"   component={P.PurchaseOrderList}  options={{ title: "Purchase Orders"    }} />
+      <RecordsStack.Screen name="GrnCreate"           component={P.GrnCreate}          options={{ title: "Receive Goods"      }} />
+      <RecordsStack.Screen name="Scanner"             component={ScannerScreen}        options={{ title: "QR Scanner"         }} />
+      <RecordsStack.Screen name="ScanResult"          component={ScanResultScreen}     options={{ title: "Scan Result"        }} />
+      <RecordsStack.Screen name="FinanceMobile"       component={P.FinanceMobile}      options={{ title: "Finance Overview"   }} />
+      <RecordsStack.Screen name="DebtorList"          component={P.DebtorList}         options={{ title: "Debtors"            }} />
+      <RecordsStack.Screen name="EmployeeDirectory"   component={P.EmployeeDirectory}  options={{ title: "Employees"          }} />
+      <RecordsStack.Screen name="ShiftView"           component={P.ShiftView}          options={{ title: "Today's Attendance" }} />
+      <RecordsStack.Screen name="FeedProductionBatch" component={P.FeedBatch}          options={{ title: "Feed Production Batch" }} />
+      <RecordsStack.Screen name="SoyaBatch"           component={SoyaBatchScreen}      options={{ title: "Soya Processing Batch" }} />
+      <RecordsStack.Screen name="PlanningDashboard"   component={P.PlanningDashboard}  options={{ title: "Market Planning"    }} />
       {/* Phase 4 — Sales */}
       <RecordsStack.Screen name="SalesDashboard"    component={P.SalesDashboard}    options={{ title: "Sales"            }} />
-      <RecordsStack.Screen name="CustomerList"      component={CustomerListScreen}      options={{ title: "Customers"        }} />
-      <RecordsStack.Screen name="CustomerDetail"    component={CustomerDetailScreen}    options={{ title: "Customer"         }} />
-      <RecordsStack.Screen name="SalesOrderHistory" component={SalesOrderHistoryScreen} options={{ title: "Sales Orders"     }} />
+      <RecordsStack.Screen name="CustomerList"      component={P.CustomerList}      options={{ title: "Customers"        }} />
+      <RecordsStack.Screen name="CustomerDetail"    component={P.CustomerDetail}    options={{ title: "Customer"         }} />
+      <RecordsStack.Screen name="SalesOrderHistory" component={P.SalesOrderHistory} options={{ title: "Sales Orders"     }} />
       {/* Phase 4 — HR */}
       <RecordsStack.Screen name="LeaveRequest"      component={LeaveRequestScreen}      options={{ title: "Request Leave"    }} />
       <RecordsStack.Screen name="LeaveStatus"       component={LeaveStatusScreen}       options={{ title: "My Leave"         }} />
@@ -250,18 +280,18 @@ function RecordsNavigator() {
       <RecordsStack.Screen name="StorefrontOrders"    component={P.StorefrontOrders}    options={{ title: "Online Orders"    }} />
       <RecordsStack.Screen name="StorefrontProducts"  component={P.StorefrontProducts}  options={{ title: "Product Catalog"  }} />
       {/* Phase 5 — Inventory & Finance */}
-      <RecordsStack.Screen name="StockLevels"  component={StockLevelsScreen}  options={{ title: "Stock Levels"  }} />
-      <RecordsStack.Screen name="IncomeEntry"  component={IncomeEntryScreen}  options={{ title: "Record Income" }} />
+      <RecordsStack.Screen name="StockLevels"  component={P.StockLevels}  options={{ title: "Stock Levels"  }} />
+      <RecordsStack.Screen name="IncomeEntry"  component={P.IncomeEntry}  options={{ title: "Record Income" }} />
       {/* Phase 3 — Procurement */}
-      <RecordsStack.Screen name="ProcurementDashboard"  component={P.ProcurementDashboard}  options={{ title: "Procurement"          }} />
-      <RecordsStack.Screen name="PurchaseRequestList"   component={PurchaseRequestListScreen}   options={{ title: "Purchase Requests"    }} />
-      <RecordsStack.Screen name="PurchaseRequestCreate" component={PurchaseRequestCreateScreen} options={{ title: "New Purchase Request" }} />
+      <RecordsStack.Screen name="ProcurementDashboard"  component={P.ProcurementDashboard}   options={{ title: "Procurement"          }} />
+      <RecordsStack.Screen name="PurchaseRequestList"   component={P.PurchaseRequestList}    options={{ title: "Purchase Requests"    }} />
+      <RecordsStack.Screen name="PurchaseRequestCreate" component={P.PurchaseRequestCreate}  options={{ title: "New Purchase Request" }} />
       {/* Phase 3 — Feed Production Orders */}
-      <RecordsStack.Screen name="FeedProductionOrderList"   component={FeedProductionOrderListScreen}   options={{ title: "Production Orders"    }} />
-      <RecordsStack.Screen name="FeedProductionOrderCreate" component={FeedProductionOrderCreateScreen} options={{ title: "New Production Order" }} />
-      <RecordsStack.Screen name="FeedProductionOrderDetail" component={FeedProductionOrderDetailScreen} options={{ title: "Order Detail"          }} />
-      <RecordsStack.Screen name="FeedFormulaList"           component={FeedFormulaListScreen}           options={{ title: "Feed Formulas"         }} />
-      <RecordsStack.Screen name="FeedFormulaDetail"         component={FeedFormulaDetailScreen}         options={{ title: "Formula Detail"        }} />
+      <RecordsStack.Screen name="FeedProductionOrderList"   component={P.FeedOrderList}   options={{ title: "Production Orders"    }} />
+      <RecordsStack.Screen name="FeedProductionOrderCreate" component={P.FeedOrderCreate} options={{ title: "New Production Order" }} />
+      <RecordsStack.Screen name="FeedProductionOrderDetail" component={P.FeedOrderDetail} options={{ title: "Order Detail"          }} />
+      <RecordsStack.Screen name="FeedFormulaList"           component={P.FeedFormulaList}   options={{ title: "Feed Formulas"  }} />
+      <RecordsStack.Screen name="FeedFormulaDetail"         component={P.FeedFormulaDetail} options={{ title: "Formula Detail"  }} />
     </RecordsStack.Navigator>
   );
 }
@@ -269,12 +299,12 @@ function RecordsNavigator() {
 function ApprovalsNavigator() {
   return (
     <ApprovalsStack.Navigator screenOptions={stackOpts}>
-      <ApprovalsStack.Screen name="ApprovalsHome"          component={ApprovalsHomeScreen}           options={{ title: "Approvals"           }} />
-      <ApprovalsStack.Screen name="ExpenseApprovalList"    component={ExpenseApprovalListScreen}     options={{ title: "Pending Expenses"    }} />
-      <ApprovalsStack.Screen name="ExpenseApprovalDetail"  component={ExpenseApprovalDetailScreen}   options={{ title: "Expense Detail"      }} />
-      <ApprovalsStack.Screen name="PayrollApprovalList"    component={PayrollApprovalScreen}         options={{ title: "Payroll Runs"        }} />
+      <ApprovalsStack.Screen name="ApprovalsHome"          component={ApprovalsHomeScreen}           options={{ title: "Approvals"            }} />
+      <ApprovalsStack.Screen name="ExpenseApprovalList"    component={ExpenseApprovalListScreen}     options={{ title: "Pending Expenses"     }} />
+      <ApprovalsStack.Screen name="ExpenseApprovalDetail"  component={ExpenseApprovalDetailScreen}   options={{ title: "Expense Detail"       }} />
+      <ApprovalsStack.Screen name="PayrollApprovalList"    component={PayrollApprovalScreen}         options={{ title: "Payroll Runs"         }} />
       <ApprovalsStack.Screen name="ProcurementApprovalList" component={ProcurementApprovalListScreen} options={{ title: "Procurement Approvals" }} />
-      <ApprovalsStack.Screen name="PurchaseOrderDetail"    component={PurchaseOrderDetailScreen}     options={{ title: "Purchase Order"      }} />
+      <ApprovalsStack.Screen name="PurchaseOrderDetail"    component={PurchaseOrderDetailScreen}     options={{ title: "Purchase Order"       }} />
     </ApprovalsStack.Navigator>
   );
 }
@@ -292,19 +322,19 @@ function TasksNavigator() {
 function MoreNavigator() {
   return (
     <MoreStack.Navigator screenOptions={stackOpts}>
-      <MoreStack.Screen name="MoreHome"        component={MoreScreen}          options={{ title: "More"            }} />
-      <MoreStack.Screen name="Dashboard"       component={P.Dashboard}     options={{ title: "Dashboard"       }} />
-      <MoreStack.Screen name="SyncStatus"      component={SyncStatusScreen}    options={{ title: "Sync Status"     }} />
-      <MoreStack.Screen name="Scanner"         component={ScannerScreen}       options={{ title: "QR Scanner"      }} />
-      <MoreStack.Screen name="ScanResult"      component={ScanResultScreen}    options={{ title: "Scan Result"     }} />
-      <MoreStack.Screen name="UserProfile"     component={UserProfileScreen}   options={{ title: "My Profile"      }} />
+      <MoreStack.Screen name="MoreHome"        component={MoreScreen}           options={{ title: "More"            }} />
+      <MoreStack.Screen name="Dashboard"       component={P.Dashboard}          options={{ title: "Dashboard"       }} />
+      <MoreStack.Screen name="SyncStatus"      component={SyncStatusScreen}     options={{ title: "Sync Status"     }} />
+      <MoreStack.Screen name="Scanner"         component={ScannerScreen}        options={{ title: "QR Scanner"      }} />
+      <MoreStack.Screen name="ScanResult"      component={ScanResultScreen}     options={{ title: "Scan Result"     }} />
+      <MoreStack.Screen name="UserProfile"     component={UserProfileScreen}    options={{ title: "My Profile"      }} />
       <MoreStack.Screen name="ChangePassword"  component={ChangePasswordScreen} options={{ title: "Change Password" }} />
-      <MoreStack.Screen name="Notifications"   component={NotificationsScreen}  options={{ title: "Notifications"  }} />
+      <MoreStack.Screen name="Notifications"   component={NotificationsScreen}  options={{ title: "Notifications"   }} />
       {/* Phase 6 */}
-      <MoreStack.Screen name="AiChat"          component={P.AiChat}         options={{ title: "AI Assistant"   }} />
-      <MoreStack.Screen name="ReportsBrowser"  component={P.ReportsBrowser} options={{ title: "Reports"         }} />
-      <MoreStack.Screen name="ReportResult"    component={ReportResultScreen}   options={({ route }) => ({ title: (route.params as { title: string }).title })} />
-      <MoreStack.Screen name="MyPayslips"      component={MyPayslipsScreen}     options={{ title: "My Payslips"    }} />
+      <MoreStack.Screen name="AiChat"          component={P.AiChat}          options={{ title: "AI Assistant" }} />
+      <MoreStack.Screen name="ReportsBrowser"  component={P.ReportsBrowser}  options={{ title: "Reports"      }} />
+      <MoreStack.Screen name="ReportResult"    component={ReportResultScreen} options={({ route }) => ({ title: (route.params as { title: string }).title })} />
+      <MoreStack.Screen name="MyPayslips"      component={MyPayslipsScreen}   options={{ title: "My Payslips"  }} />
     </MoreStack.Navigator>
   );
 }
