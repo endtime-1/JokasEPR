@@ -1,6 +1,113 @@
 import { AssetStatus, BreakdownSeverity, BreakdownStatus, DowntimeStatus, EquipmentType, MachineType, MaintenanceCostType, MaintenancePriority, MaintenanceType, MaintenanceWorkflowStatus, TechnicianAssignmentStatus } from "@prisma/client";
 import { IsDateString, IsEnum, IsInt, IsNumber, IsOptional, IsString, IsUUID, MaxLength, Min, ValidateIf } from "class-validator";
 
+export class UpdateMachineDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  name?: string;
+
+  @IsOptional()
+  @IsEnum(MachineType)
+  machineType?: MachineType;
+
+  @IsOptional()
+  @IsEnum(AssetStatus)
+  status?: AssetStatus;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  manufacturer?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  serialNumber?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  capacity?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  location?: string;
+}
+
+export class UpdateEquipmentDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  name?: string;
+
+  @IsOptional()
+  @IsEnum(EquipmentType)
+  equipmentType?: EquipmentType;
+
+  @IsOptional()
+  @IsEnum(AssetStatus)
+  status?: AssetStatus;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  serialNumber?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  location?: string;
+}
+
+export class UpdateMaintenanceScheduleDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  title?: string;
+
+  @IsOptional()
+  @IsEnum(MaintenanceType)
+  maintenanceType?: MaintenanceType;
+
+  @IsOptional()
+  @IsEnum(MaintenancePriority)
+  priority?: MaintenancePriority;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  frequencyDays?: number;
+
+  @IsOptional()
+  @IsDateString()
+  nextDueDate?: string;
+
+  @IsOptional()
+  @IsString()
+  instructions?: string;
+}
+
+export class UpdateMaintenanceRecordDto {
+  @IsOptional()
+  @IsEnum(MaintenanceType)
+  maintenanceType?: MaintenanceType;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  description?: string;
+
+  @IsOptional()
+  @IsString()
+  findings?: string;
+
+  @IsOptional()
+  @IsDateString()
+  nextDueDate?: string;
+}
+
 export class MaintenanceQueryDto {
   @IsOptional()
   @IsUUID()

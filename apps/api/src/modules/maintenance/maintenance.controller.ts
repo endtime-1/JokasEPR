@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Ip, Param, Patch, Post, Query, Res, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Headers, Ip, Param, Patch, Post, Query, Res, UseGuards } from "@nestjs/common";
 import { Response } from "express";
 import { AuthenticatedUser, PERMISSIONS } from "@jokas/shared";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
@@ -16,7 +16,11 @@ import {
   CreateSparePartUsageDto,
   CreateTechnicianAssignmentDto,
   MaintenanceQueryDto,
-  UpdateBreakdownStatusDto
+  UpdateBreakdownStatusDto,
+  UpdateEquipmentDto,
+  UpdateMachineDto,
+  UpdateMaintenanceRecordDto,
+  UpdateMaintenanceScheduleDto
 } from "./dto/maintenance.dto";
 import { MaintenanceService } from "./maintenance.service";
 
@@ -55,6 +59,18 @@ export class MaintenanceController {
     return this.maintenanceService.getMachine(user, id);
   }
 
+  @Patch("machines/:id")
+  @RequirePermissions(PERMISSIONS.MAINTENANCE_MANAGE)
+  updateMachine(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateMachineDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.maintenanceService.updateMachine(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Delete("machines/:id")
+  @RequirePermissions(PERMISSIONS.MAINTENANCE_MANAGE)
+  deleteMachine(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.maintenanceService.deleteMachine(user, id, { ipAddress, userAgent });
+  }
+
   @Get("equipment")
   @RequirePermissions(PERMISSIONS.MAINTENANCE_READ)
   equipment(@CurrentUser() user: AuthenticatedUser, @Query() query: MaintenanceQueryDto) {
@@ -65,6 +81,18 @@ export class MaintenanceController {
   @RequirePermissions(PERMISSIONS.MAINTENANCE_MANAGE)
   createEquipment(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateEquipmentDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.maintenanceService.createEquipment(user, dto, { ipAddress, userAgent });
+  }
+
+  @Patch("equipment/:id")
+  @RequirePermissions(PERMISSIONS.MAINTENANCE_MANAGE)
+  updateEquipment(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateEquipmentDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.maintenanceService.updateEquipment(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Delete("equipment/:id")
+  @RequirePermissions(PERMISSIONS.MAINTENANCE_MANAGE)
+  deleteEquipment(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.maintenanceService.deleteEquipment(user, id, { ipAddress, userAgent });
   }
 
   @Get("schedules")
@@ -79,6 +107,18 @@ export class MaintenanceController {
     return this.maintenanceService.createSchedule(user, dto, { ipAddress, userAgent });
   }
 
+  @Patch("schedules/:id")
+  @RequirePermissions(PERMISSIONS.MAINTENANCE_MANAGE)
+  updateSchedule(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateMaintenanceScheduleDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.maintenanceService.updateSchedule(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Delete("schedules/:id")
+  @RequirePermissions(PERMISSIONS.MAINTENANCE_MANAGE)
+  deleteSchedule(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.maintenanceService.deleteSchedule(user, id, { ipAddress, userAgent });
+  }
+
   @Get("records")
   @RequirePermissions(PERMISSIONS.MAINTENANCE_READ)
   records(@CurrentUser() user: AuthenticatedUser, @Query() query: MaintenanceQueryDto) {
@@ -89,6 +129,18 @@ export class MaintenanceController {
   @RequirePermissions(PERMISSIONS.MAINTENANCE_MANAGE)
   createRecord(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateMaintenanceRecordDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.maintenanceService.createRecord(user, dto, { ipAddress, userAgent });
+  }
+
+  @Patch("records/:id")
+  @RequirePermissions(PERMISSIONS.MAINTENANCE_MANAGE)
+  updateRecord(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateMaintenanceRecordDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.maintenanceService.updateRecord(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Delete("records/:id")
+  @RequirePermissions(PERMISSIONS.MAINTENANCE_MANAGE)
+  deleteRecord(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.maintenanceService.deleteRecord(user, id, { ipAddress, userAgent });
   }
 
   @Get("breakdowns")

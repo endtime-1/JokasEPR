@@ -1,5 +1,17 @@
-import { IsEmail, IsNotEmpty, IsOptional, IsString, IsArray, ValidateNested, IsNumber, Min, IsUUID } from "class-validator";
+import { IsEmail, IsEnum, IsNotEmpty, IsOptional, IsString, IsArray, ValidateNested, IsNumber, Min, IsUUID } from "class-validator";
 import { Type } from "class-transformer";
+
+export enum PublicOrderStatus {
+  PENDING_STOCK_APPROVAL = "PENDING_STOCK_APPROVAL",
+  APPROVED = "APPROVED",
+  FULFILLED = "FULFILLED",
+  CANCELLED = "CANCELLED",
+}
+
+export class UpdateOrderStatusDto {
+  @IsEnum(PublicOrderStatus)
+  status!: PublicOrderStatus;
+}
 
 export class PublicOrderLineDto {
   @IsUUID() productId!: string;

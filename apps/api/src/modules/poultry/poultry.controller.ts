@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Headers, Ip, Param, Patch, Post, Query, Res, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Headers, Ip, Param, ParseEnumPipe, Patch, Post, Query, Res, UseGuards } from "@nestjs/common";
 import { Response } from "express";
 import { AuthenticatedUser, PERMISSIONS } from "@jokas/shared";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
@@ -20,6 +20,7 @@ import {
   CreatePoultryTransferDto,
   CreateVaccinationRecordDto,
   PoultryQueryDto,
+  PoultryRecordType,
   UpdateBatchStatusDto,
   UpdateFlockBatchDto,
   UpdatePenDto,
@@ -153,7 +154,7 @@ export class PoultryController {
 
   @Get("records/:type")
   @RequirePermissions(PERMISSIONS.POULTRY_READ)
-  records(@CurrentUser() user: AuthenticatedUser, @Param("type") type: string, @Query() query: PoultryQueryDto) {
+  records(@CurrentUser() user: AuthenticatedUser, @Param("type", new ParseEnumPipe(PoultryRecordType)) type: PoultryRecordType, @Query() query: PoultryQueryDto) {
     return this.poultryService.listRecords(user, type, query);
   }
 
@@ -243,13 +244,13 @@ export class PoultryController {
 
   @Patch("records/:type/:id")
   @RequirePermissions(PERMISSIONS.POULTRY_MANAGE)
-  updateRecord(@CurrentUser() user: AuthenticatedUser, @Param("type") type: string, @Param("id") id: string, @Body() dto: UpdatePoultryRecordDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+  updateRecord(@CurrentUser() user: AuthenticatedUser, @Param("type", new ParseEnumPipe(PoultryRecordType)) type: PoultryRecordType, @Param("id") id: string, @Body() dto: UpdatePoultryRecordDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.poultryService.updateRecord(user, type, id, dto as Record<string, any>, { ipAddress, userAgent });
   }
 
   @Delete("records/:type/:id")
   @RequirePermissions(PERMISSIONS.POULTRY_MANAGE)
-  softDelete(@CurrentUser() user: AuthenticatedUser, @Param("type") type: string, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+  softDelete(@CurrentUser() user: AuthenticatedUser, @Param("type", new ParseEnumPipe(PoultryRecordType)) type: PoultryRecordType, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.poultryService.softDelete(user, type, id, { ipAddress, userAgent });
   }
 

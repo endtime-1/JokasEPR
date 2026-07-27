@@ -112,6 +112,15 @@ export class SoyaProcessingService {
     return result;
   }
 
+  async getIntake(user: AuthenticatedUser, id: string) {
+    const data = await this.prisma.soyaBeanIntake.findFirst({
+      where: { ...this.intakeWhere(user, {}), id },
+      include: { product: { select: { name: true, sku: true } }, warehouse: { select: { name: true, code: true } }, productionSite: { select: { name: true, code: true } } }
+    });
+    if (!data) throw new NotFoundException("Soya bean intake was not found.");
+    return { data };
+  }
+
   async listIntakes(user: AuthenticatedUser, query: SoyaQueryDto) {
     const data = await this.prisma.soyaBeanIntake.findMany({
       where: this.intakeWhere(user, query),
@@ -157,6 +166,15 @@ export class SoyaProcessingService {
     });
     await this.writeAudit(user, "CREATE", "SoyaBeanIntake", data.id, `Recorded soya bean intake ${data.receiptNumber}`, context, { branchId: site.branchId, warehouseId: dto.warehouseId, productionSiteId: dto.productionSiteId });
     return { data };
+  }
+
+  async getBatch(user: AuthenticatedUser, id: string) {
+    const data = await this.prisma.soyaProcessingBatch.findFirst({
+      where: { ...this.batchWhere(user, {}), id },
+      include: { productionSite: { select: { name: true, code: true } }, intake: { select: { receiptNumber: true, supplierName: true } }, oilOutputs: true, cakeOutputs: true, wasteRecords: true, qualityChecks: true, costs: true }
+    });
+    if (!data) throw new NotFoundException("Soya processing batch was not found.");
+    return { data: { ...data, metrics: this.batchMetrics(data) } };
   }
 
   async listBatches(user: AuthenticatedUser, query: SoyaQueryDto) {
@@ -253,6 +271,15 @@ export class SoyaProcessingService {
 
   async listTransfers(user: AuthenticatedUser, query: SoyaQueryDto) {
     return { data: await this.prisma.soyaInternalTransfer.findMany({ where: this.transferWhere(user, query), include: { product: true, fromWarehouse: true, toWarehouse: true, productionBatch: { select: { batchNumber: true } } }, orderBy: { transferDate: "desc" } }) };
+  }
+
+  async listSales(user: AuthenticatedUser, query: SoyaQueryDto) {
+    const data = await this.prisma.soyaSalesLink.findMany({
+      where: this.salesWhere(user, query),
+      include: { product: { select: { name: true, sku: true } }, productionBatch: { select: { batchNumber: true } } },
+      orderBy: { createdAt: "desc" }
+    });
+    return { data };
   }
 
   async createSale(user: AuthenticatedUser, dto: CreateSoyaSaleDto, context: RequestContext) {

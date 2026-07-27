@@ -2,6 +2,19 @@ import { BirdType, FlockBatchStatus, PoultryCostType, PoultryHealthSeverity, Pou
 import { Type } from "class-transformer";
 import { IsArray, IsBoolean, IsDateString, IsEnum, IsInt, IsNumber, IsOptional, IsString, IsUUID, MaxLength, Min, ValidateIf, ValidateNested } from "class-validator";
 
+export enum PoultryRecordType {
+  daily = "daily",
+  mortality = "mortality",
+  feed = "feed",
+  eggs = "eggs",
+  weights = "weights",
+  medications = "medications",
+  vaccinations = "vaccinations",
+  health = "health",
+  transfers = "transfers",
+  costs = "costs",
+}
+
 export class PoultryQueryDto {
   @IsOptional()
   @IsUUID()

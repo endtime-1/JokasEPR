@@ -1,7 +1,9 @@
 import { Body, Controller, Get, Param, Patch, Put, Query, UseGuards } from "@nestjs/common";
-import { AuthenticatedUser } from "@jokas/shared";
+import { AuthenticatedUser, PERMISSIONS } from "@jokas/shared";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import { RequirePermissions } from "../../common/decorators/permissions.decorator";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
+import { PermissionsGuard } from "../../common/guards/permissions.guard";
 import { NotificationQueryDto, UpdateNotificationConfigDto, UpdatePreferencesDto } from "./dto/notifications.dto";
 import { NotificationsService } from "./notifications.service";
 
@@ -41,11 +43,15 @@ export class NotificationsController {
   }
 
   @Get("config")
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions(PERMISSIONS.SETTINGS_MANAGE)
   getConfig(@CurrentUser() user: AuthenticatedUser) {
     return this.notifications.getConfig(user);
   }
 
   @Put("config")
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions(PERMISSIONS.SETTINGS_MANAGE)
   updateConfig(@CurrentUser() user: AuthenticatedUser, @Body() dto: UpdateNotificationConfigDto) {
     return this.notifications.updateConfig(user, dto);
   }

@@ -15,7 +15,11 @@ import {
   CreateSparePartUsageDto,
   CreateTechnicianAssignmentDto,
   MaintenanceQueryDto,
-  UpdateBreakdownStatusDto
+  UpdateBreakdownStatusDto,
+  UpdateEquipmentDto,
+  UpdateMachineDto,
+  UpdateMaintenanceRecordDto,
+  UpdateMaintenanceScheduleDto
 } from "./dto/maintenance.dto";
 
 type RequestContext = {
@@ -106,6 +110,22 @@ export class MaintenanceService {
     return { data };
   }
 
+  async updateMachine(user: AuthenticatedUser, id: string, dto: UpdateMachineDto, context: RequestContext) {
+    const existing = await this.prisma.machine.findFirst({ where: { ...this.machineWhere(user, {}), id } });
+    if (!existing) throw new NotFoundException("Machine was not found.");
+    const data = await this.prisma.machine.update({ where: { id }, data: { ...dto, updatedById: user.id } });
+    await this.writeAudit(user, "UPDATE", "Machine", id, `Updated machine ${data.code}`, context, data);
+    return { data };
+  }
+
+  async deleteMachine(user: AuthenticatedUser, id: string, context: RequestContext) {
+    const existing = await this.prisma.machine.findFirst({ where: { ...this.machineWhere(user, {}), id } });
+    if (!existing) throw new NotFoundException("Machine was not found.");
+    const data = await this.prisma.machine.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    await this.writeAudit(user, "REJECT", "Machine", id, `Deleted machine ${existing.code}`, context, existing);
+    return { data };
+  }
+
   async listEquipment(user: AuthenticatedUser, query: MaintenanceQueryDto) {
     return { data: await this.prisma.equipment.findMany({ where: this.equipmentWhere(user, query), include: { branch: true, farm: true, warehouse: true, productionSite: true, machine: true }, orderBy: { createdAt: "desc" } }) };
   }
@@ -114,6 +134,22 @@ export class MaintenanceService {
     this.assertScopeAccess(user, dto);
     const data = await this.prisma.equipment.create({ data: { companyId: user.companyId, branchId: dto.branchId, farmId: dto.farmId, warehouseId: dto.warehouseId, productionSiteId: dto.productionSiteId, machineId: dto.machineId, code: dto.code.toUpperCase(), name: dto.name, equipmentType: dto.equipmentType, status: dto.status ?? "ACTIVE", serialNumber: dto.serialNumber, location: dto.location, createdById: user.id } });
     await this.writeAudit(user, "CREATE", "Equipment", data.id, `Registered equipment ${data.code}`, context, data);
+    return { data };
+  }
+
+  async updateEquipment(user: AuthenticatedUser, id: string, dto: UpdateEquipmentDto, context: RequestContext) {
+    const existing = await this.prisma.equipment.findFirst({ where: { ...this.equipmentWhere(user, {}), id } });
+    if (!existing) throw new NotFoundException("Equipment was not found.");
+    const data = await this.prisma.equipment.update({ where: { id }, data: { ...dto, updatedById: user.id } });
+    await this.writeAudit(user, "UPDATE", "Equipment", id, `Updated equipment ${data.code}`, context, data);
+    return { data };
+  }
+
+  async deleteEquipment(user: AuthenticatedUser, id: string, context: RequestContext) {
+    const existing = await this.prisma.equipment.findFirst({ where: { ...this.equipmentWhere(user, {}), id } });
+    if (!existing) throw new NotFoundException("Equipment was not found.");
+    const data = await this.prisma.equipment.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    await this.writeAudit(user, "REJECT", "Equipment", id, `Deleted equipment ${existing.code}`, context, existing);
     return { data };
   }
 
@@ -129,6 +165,22 @@ export class MaintenanceService {
     return { data };
   }
 
+  async updateSchedule(user: AuthenticatedUser, id: string, dto: UpdateMaintenanceScheduleDto, context: RequestContext) {
+    const existing = await this.prisma.maintenanceSchedule.findFirst({ where: { ...this.scheduleWhere(user, {}), id } });
+    if (!existing) throw new NotFoundException("Maintenance schedule was not found.");
+    const data = await this.prisma.maintenanceSchedule.update({ where: { id }, data: { ...dto, nextDueDate: dto.nextDueDate ? new Date(dto.nextDueDate) : undefined, updatedById: user.id } });
+    await this.writeAudit(user, "UPDATE", "MaintenanceSchedule", id, `Updated maintenance schedule ${existing.scheduleNumber}`, context, existing);
+    return { data };
+  }
+
+  async deleteSchedule(user: AuthenticatedUser, id: string, context: RequestContext) {
+    const existing = await this.prisma.maintenanceSchedule.findFirst({ where: { ...this.scheduleWhere(user, {}), id } });
+    if (!existing) throw new NotFoundException("Maintenance schedule was not found.");
+    const data = await this.prisma.maintenanceSchedule.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    await this.writeAudit(user, "REJECT", "MaintenanceSchedule", id, `Deleted maintenance schedule ${existing.scheduleNumber}`, context, existing);
+    return { data };
+  }
+
   async listRecords(user: AuthenticatedUser, query: MaintenanceQueryDto) {
     return { data: await this.prisma.maintenanceRecord.findMany({ where: this.recordWhere(user, query), include: { machine: true, equipment: true, schedule: true, sparePartUsages: true, costs: true }, orderBy: { maintenanceDate: "desc" } }) };
   }
@@ -139,6 +191,22 @@ export class MaintenanceService {
     const data = await this.prisma.maintenanceRecord.create({ data: { companyId: user.companyId, ...scope, scheduleId: dto.scheduleId, recordNumber, maintenanceDate: dto.maintenanceDate ? new Date(dto.maintenanceDate) : new Date(), maintenanceType: dto.maintenanceType, status: "COMPLETED", completedById: user.id, description: dto.description, findings: dto.findings, nextDueDate: dto.nextDueDate ? new Date(dto.nextDueDate) : undefined, createdById: user.id } });
     if (dto.scheduleId && dto.nextDueDate) await this.prisma.maintenanceSchedule.update({ where: { id: dto.scheduleId }, data: { lastCompletedAt: data.maintenanceDate, nextDueDate: new Date(dto.nextDueDate), status: "SCHEDULED", updatedById: user.id } });
     await this.writeAudit(user, "CREATE", "MaintenanceRecord", data.id, `Recorded maintenance ${recordNumber}`, context, data);
+    return { data };
+  }
+
+  async updateRecord(user: AuthenticatedUser, id: string, dto: UpdateMaintenanceRecordDto, context: RequestContext) {
+    const existing = await this.prisma.maintenanceRecord.findFirst({ where: { ...this.recordWhere(user, {}), id } });
+    if (!existing) throw new NotFoundException("Maintenance record was not found.");
+    const data = await this.prisma.maintenanceRecord.update({ where: { id }, data: { ...dto, nextDueDate: dto.nextDueDate ? new Date(dto.nextDueDate) : undefined, updatedById: user.id } });
+    await this.writeAudit(user, "UPDATE", "MaintenanceRecord", id, `Updated maintenance record ${existing.recordNumber}`, context, existing);
+    return { data };
+  }
+
+  async deleteRecord(user: AuthenticatedUser, id: string, context: RequestContext) {
+    const existing = await this.prisma.maintenanceRecord.findFirst({ where: { ...this.recordWhere(user, {}), id } });
+    if (!existing) throw new NotFoundException("Maintenance record was not found.");
+    const data = await this.prisma.maintenanceRecord.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    await this.writeAudit(user, "REJECT", "MaintenanceRecord", id, `Deleted maintenance record ${existing.recordNumber}`, context, existing);
     return { data };
   }
 

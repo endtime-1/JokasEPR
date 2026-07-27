@@ -7,7 +7,7 @@ import { AppShell } from "../../components/app-shell";
 import { QrEntityType, QrLabelCard, QR_ENTITY_OPTIONS } from "../../components/qr-label-card";
 
 const RECORD_SOURCES: { type: QrEntityType; href: string; hint: string }[] = [
-  { type: "STOCK_BATCH",           href: "/inventory/stock-batches",           hint: "Find batch IDs in Inventory → Stock Batches" },
+  { type: "STOCK_BATCH",           href: "/inventory/items",                   hint: "Find batch IDs in Inventory → Items" },
   { type: "WAREHOUSE_ITEM",        href: "/inventory",                          hint: "Find item IDs in Inventory → Warehouse Items" },
   { type: "FEED_PRODUCTION_BATCH", href: "/feed-production",                   hint: "Find batch IDs in Feed Production → Batches" },
   { type: "SOYA_PROCESSING_BATCH", href: "/soya-processing",                   hint: "Find batch IDs in Soya Processing → Batches" },

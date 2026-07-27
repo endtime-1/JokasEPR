@@ -13,7 +13,7 @@ import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { PermissionsGuard } from "../../common/guards/permissions.guard";
 import { StorefrontBrowseRateLimitGuard, StorefrontOrderRateLimitGuard } from "../../common/guards/storefront-rate-limit.guard";
 import { validateAndCleanImageUpload } from "../../common/utils/validate-image-magic";
-import { PlacePublicOrderDto } from "./dto/public-order.dto";
+import { PlacePublicOrderDto, UpdateOrderStatusDto } from "./dto/public-order.dto";
 import { UpdatePublicProductDto } from "./dto/update-public-product.dto";
 import { PublicService } from "./public.service";
 
@@ -91,9 +91,9 @@ export class PublicController {
   adminUpdateOrderStatus(
     @CurrentUser() user: AuthenticatedUser,
     @Param("id") id: string,
-    @Body("status") status: string,
+    @Body() dto: UpdateOrderStatusDto,
   ) {
-    return this.service.adminUpdateOrderStatus(user.companyId, id, status).then((data) => ({ data }));
+    return this.service.adminUpdateOrderStatus(user.companyId, id, dto.status).then((data) => ({ data }));
   }
 
   @UseGuards(JwtAuthGuard, PermissionsGuard)

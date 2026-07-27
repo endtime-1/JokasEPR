@@ -39,6 +39,12 @@ export class SoyaProcessingController {
     return this.soyaService.listIntakes(user, query);
   }
 
+  @Get("intakes/:id")
+  @RequirePermissions(PERMISSIONS.SOYA_READ)
+  intake(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
+    return this.soyaService.getIntake(user, id);
+  }
+
   @Post("intakes")
   @RequirePermissions(PERMISSIONS.SOYA_MANAGE, PERMISSIONS.INVENTORY_MANAGE)
   createIntake(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateSoyaBeanIntakeDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
@@ -49,6 +55,12 @@ export class SoyaProcessingController {
   @RequirePermissions(PERMISSIONS.SOYA_READ)
   batches(@CurrentUser() user: AuthenticatedUser, @Query() query: SoyaQueryDto) {
     return this.soyaService.listBatches(user, query);
+  }
+
+  @Get("batches/:id")
+  @RequirePermissions(PERMISSIONS.SOYA_READ)
+  batch(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
+    return this.soyaService.getBatch(user, id);
   }
 
   @Post("batches")
@@ -97,6 +109,12 @@ export class SoyaProcessingController {
   @RequirePermissions(PERMISSIONS.INVENTORY_MANAGE)
   createTransfer(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateSoyaInternalTransferDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.soyaService.createTransfer(user, dto, { ipAddress, userAgent });
+  }
+
+  @Get("sales")
+  @RequirePermissions(PERMISSIONS.SOYA_READ)
+  sales(@CurrentUser() user: AuthenticatedUser, @Query() query: SoyaQueryDto) {
+    return this.soyaService.listSales(user, query);
   }
 
   @Post("sales")

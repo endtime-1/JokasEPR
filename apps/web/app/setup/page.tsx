@@ -96,7 +96,7 @@ export default function SetupPage() {
           <div className="flex items-center gap-3">
             <BrandLogo className="h-14 w-14 rounded-xl bg-white shadow-soft" />
             <div>
-              <p className="text-xs font-bold uppercase tracking-wide text-white/75">JOKAS AGRIBUSINESS ERP</p>
+              <p className="text-xs font-bold uppercase tracking-wide text-white/75">AKOKO SOLUTIONS ERP</p>
               <h1 className="text-2xl font-bold tracking-tight">First-time Setup</h1>
             </div>
           </div>
@@ -139,7 +139,7 @@ export default function SetupPage() {
                 One-time setup
               </span>
             </div>
-            <p className="app-kicker">JOKAS AGRIBUSINESS ERP</p>
+            <p className="app-kicker">AKOKO SOLUTIONS ERP</p>
             <h2 className="mt-2 text-3xl font-bold tracking-tight">Set up your workspace</h2>
             <p className="mt-2 text-sm leading-relaxed text-ink/60">
               Enter your company details and create the Super Admin account. This form is only shown once.

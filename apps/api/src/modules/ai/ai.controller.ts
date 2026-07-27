@@ -5,6 +5,7 @@ import { RequirePermissions } from "../../common/decorators/permissions.decorato
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { PermissionsGuard } from "../../common/guards/permissions.guard";
 import { AiChatDto } from "./dto/ai-chat.dto";
+import { FeedAnalysisQueryDto } from "./dto/feed-analysis-query.dto";
 import { AiService } from "./ai.service";
 
 @Controller("ai")
@@ -27,9 +28,9 @@ export class AiController {
   @Get("feed-analysis")
   feedAnalysis(
     @CurrentUser() user: AuthenticatedUser,
-    @Query("batchId") batchId: string
+    @Query() query: FeedAnalysisQueryDto
   ) {
-    return this.ai.feedAnalysis(user, batchId);
+    return this.ai.feedAnalysis(user, query.batchId);
   }
 
   /** Scan all active flocks for mortality spikes, egg drops, or feed anomalies */
