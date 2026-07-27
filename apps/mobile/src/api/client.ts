@@ -17,8 +17,12 @@ export async function setSession(accessToken: string, refreshToken: string) {
   if (typeof accessToken !== "string" || typeof refreshToken !== "string") {
     throw new ApiError(0, "Sign-in failed — server returned an invalid session. Please try again.");
   }
-  await SecureStore.setItemAsync(ACCESS_KEY, accessToken);
-  await SecureStore.setItemAsync(REFRESH_KEY, refreshToken);
+  try {
+    await SecureStore.setItemAsync(ACCESS_KEY, accessToken);
+    await SecureStore.setItemAsync(REFRESH_KEY, refreshToken);
+  } catch {
+    throw new ApiError(0, "Sign-in failed — could not save session securely. Restart the app and try again.");
+  }
 }
 
 export async function clearSession() {
