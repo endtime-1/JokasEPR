@@ -14,6 +14,9 @@ export async function getRefreshToken() {
 }
 
 export async function setSession(accessToken: string, refreshToken: string) {
+  if (typeof accessToken !== "string" || typeof refreshToken !== "string") {
+    throw new ApiError(0, "Sign-in failed — server returned an invalid session. Please try again.");
+  }
   await SecureStore.setItemAsync(ACCESS_KEY, accessToken);
   await SecureStore.setItemAsync(REFRESH_KEY, refreshToken);
 }
@@ -63,6 +66,9 @@ async function _doRefresh(): Promise<boolean> {
     const rawText = await response.text();
     if (!rawText) { return false; }
     const body = JSON.parse(rawText) as { data: { accessToken: string; refreshToken: string } };
+    if (typeof body?.data?.accessToken !== "string" || typeof body?.data?.refreshToken !== "string") {
+      return false;
+    }
     await setSession(body.data.accessToken, body.data.refreshToken);
     return true;
   } catch {
@@ -203,7 +209,7 @@ export async function login(email: string, password: string) {
     method: "POST",
     body: JSON.stringify({ email, password }),
   });
-  if (typeof res.data.accessToken !== "string" || typeof res.data.refreshToken !== "string") {
+  if (!res?.data || typeof res.data.accessToken !== "string" || typeof res.data.refreshToken !== "string") {
     throw new ApiError(0, "Sign-in failed — server did not return a session. Please try again.");
   }
   await setSession(res.data.accessToken, res.data.refreshToken);
