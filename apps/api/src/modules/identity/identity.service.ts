@@ -46,7 +46,8 @@ export class IdentityService {
         warehouseAccesses: { select: { warehouse: { select: { id: true, name: true, code: true } } } },
         productionSiteAccess: { select: { productionSite: { select: { id: true, name: true, code: true } } } }
       },
-      orderBy: { fullName: "asc" }
+      orderBy: { fullName: "asc" },
+      take: 500,
     });
     return { data };
   }

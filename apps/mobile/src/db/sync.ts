@@ -1,5 +1,5 @@
 import { apiFetch } from "../api/client";
-import { countPending, getPendingSubmissions, markSyncError, markSynced, type PendingSubmission } from "./database";
+import { countPending, decryptPayload, getPendingSubmissions, markSyncError, markSynced, type PendingSubmission } from "./database";
 
 export type SyncResult = { synced: number; failed: number; duplicates: number };
 
@@ -41,22 +41,18 @@ export async function runSync(): Promise<SyncResult> {
   if (pending.length === 0) return { synced: 0, failed: 0, duplicates: 0 };
 
   // Build batch payload — strip internal _offlineId from payload before sending
-  const items: BatchSyncItem[] = pending.flatMap((row) => {
+  const itemsOrNull = await Promise.all(pending.map(async (row) => {
     let rawPayload: Record<string, unknown>;
     try {
-      rawPayload = JSON.parse(row.payload) as Record<string, unknown>;
+      const decrypted = await decryptPayload(row.payload);
+      rawPayload = JSON.parse(decrypted) as Record<string, unknown>;
     } catch {
-      return []; // skip rows with corrupted payloads
+      return null; // skip corrupted or undecryptable rows
     }
     const { _offlineId, ...cleanPayload } = rawPayload;
-    return {
-      localId: row.id,
-      endpoint: row.endpoint,
-      method: row.method,
-      module: row.module,
-      payload: cleanPayload
-    };
-  });
+    return { localId: row.id, endpoint: row.endpoint, method: row.method, module: row.module, payload: cleanPayload };
+  }));
+  const items: BatchSyncItem[] = itemsOrNull.filter((item): item is BatchSyncItem => item !== null);
 
   // Attempt batch sync with retry on network error
   let batchResult: BatchSyncResponse | null = null;

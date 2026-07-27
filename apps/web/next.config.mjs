@@ -59,6 +59,9 @@ const nextConfig = {
         key: "Content-Security-Policy",
         value: [
           "default-src 'self'",
+          // TODO (M-02): Replace 'unsafe-inline' with a nonce-based CSP.
+          // Requires middleware.ts to generate a nonce per request and <Script nonce={nonce}> in _document.
+          // Removing unsafe-inline without nonces breaks Next.js hydration.
           "script-src 'self' 'unsafe-inline'",
           "style-src 'self' 'unsafe-inline'",
           "img-src 'self' data: blob:",

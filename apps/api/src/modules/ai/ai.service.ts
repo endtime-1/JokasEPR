@@ -104,6 +104,15 @@ export class AiService {
 
   private enforceRateLimit(userId: string): void {
     const now = Date.now();
+
+    // Evict expired entries to prevent unbounded Map growth under long uptimes.
+    // Only scan when map exceeds 500 entries to avoid doing this every call.
+    if (this.rateLimitMap.size > 500) {
+      for (const [key, val] of this.rateLimitMap) {
+        if (now > val.windowEnd) this.rateLimitMap.delete(key);
+      }
+    }
+
     const entry = this.rateLimitMap.get(userId);
     if (!entry || now > entry.windowEnd) {
       this.rateLimitMap.set(userId, { count: 1, windowEnd: now + AI_RATE_WINDOW_MS });
@@ -416,7 +425,7 @@ export class AiService {
       where: { id: sessionId, userId: user.id, companyId: user.companyId },
     });
     if (!session) throw new ForbiddenException("Session not found.");
-    const messages = await this.prisma.aiChatMessage.findMany({ where: { sessionId }, orderBy: { createdAt: "asc" } });
+    const messages = await this.prisma.aiChatMessage.findMany({ where: { sessionId }, orderBy: { createdAt: "asc" }, take: 200 });
     return { data: { session, messages } };
   }
 

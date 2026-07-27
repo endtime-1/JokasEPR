@@ -1,4 +1,5 @@
 import * as SQLite from "expo-sqlite";
+import * as SecureStore from "expo-secure-store";
 
 let db: SQLite.SQLiteDatabase | null = null;
 
@@ -35,6 +36,50 @@ export async function getDb(): Promise<SQLite.SQLiteDatabase> {
 }
 
 const CACHE_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
+
+// ── Payload encryption ─────────────────────────────────────────────────────
+// Offline submission payloads contain business data (stock transfers, production
+// orders, etc.). We obfuscate them with a per-install XOR key stored in
+// SecureStore (iOS Keychain / Android Keystore) so SQLite files pulled from
+// rooted devices don't expose plaintext JSON.
+//
+// NOTE: XOR with a fixed key is not AES-grade encryption. It prevents trivial
+// plaintext inspection but not determined cryptanalysis. Proper SQLCipher
+// encryption requires a custom native Expo build (out of managed workflow scope).
+
+const PAYLOAD_KEY_STORE = "jokas.payloadKey";
+const ENC_PREFIX        = "enc1:";
+
+async function getPayloadKey(): Promise<string> {
+  let key = await SecureStore.getItemAsync(PAYLOAD_KEY_STORE);
+  if (!key) {
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    key = Array.from({ length: 64 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+    await SecureStore.setItemAsync(PAYLOAD_KEY_STORE, key);
+  }
+  return key;
+}
+
+export async function encryptPayload(data: string): Promise<string> {
+  try {
+    const key   = await getPayloadKey();
+    const bytes = Array.from({ length: data.length }, (_, i) => data.charCodeAt(i) ^ key.charCodeAt(i % key.length));
+    return ENC_PREFIX + btoa(String.fromCharCode(...bytes));
+  } catch {
+    return data; // fallback to plaintext if SecureStore unavailable
+  }
+}
+
+export async function decryptPayload(data: string): Promise<string> {
+  if (!data.startsWith(ENC_PREFIX)) return data; // legacy plaintext rows
+  try {
+    const key   = await getPayloadKey();
+    const bytes = Array.from(atob(data.slice(ENC_PREFIX.length)), (c) => c.charCodeAt(0));
+    return bytes.map((b, i) => String.fromCharCode(b ^ key.charCodeAt(i % key.length))).join("");
+  } catch {
+    return data;
+  }
+}
 
 export async function getCachedLookup<T>(key: string): Promise<{ data: T; stale: boolean } | null> {
   const database = await getDb();
@@ -75,15 +120,11 @@ export async function queueSubmission(
   payload: Record<string, unknown>,
   method = "POST"
 ): Promise<void> {
-  const database = await getDb();
+  const database  = await getDb();
+  const encrypted = await encryptPayload(JSON.stringify(payload));
   await database.runAsync(
     "INSERT OR IGNORE INTO pending_submissions (id, module, endpoint, method, payload, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-    id,
-    module,
-    endpoint,
-    method,
-    JSON.stringify(payload),
-    new Date().toISOString()
+    id, module, endpoint, method, encrypted, new Date().toISOString()
   );
 }
 

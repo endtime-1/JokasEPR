@@ -711,6 +711,13 @@ export class FinanceService {
     const end = new Date(dto.endDate);
     end.setHours(23, 59, 59, 999);
 
+    // Cap the date range to 366 days to prevent unbounded memory usage
+    const MAX_DAYS = 366;
+    const diffMs = end.getTime() - start.getTime();
+    if (diffMs > MAX_DAYS * 24 * 60 * 60 * 1000) {
+      throw new BadRequestException("Date range cannot exceed 12 months.");
+    }
+
     const [salesData, costData] = await Promise.all([
       this.prisma.invoice.findMany({ where: { companyId: user.companyId, deletedAt: null, invoiceDate: { gte: start, lte: end }, status: { notIn: ["DRAFT", "VOID"] } } }) as unknown as Promise<Array<{ items?: Array<{ product?: { sku: string; name: string }; lineTotal?: unknown; quantity?: unknown }> }>>,
       (this.prisma.poultryCostRecord.groupBy as unknown as (a: object) => Promise<Array<{ _sum: { totalCost?: unknown } }>>)({ by: ["type"], where: { companyId: user.companyId, deletedAt: null, recordDate: { gte: start, lte: end } }, _sum: { totalCost: true } })
@@ -800,7 +807,8 @@ export class FinanceService {
     const invoices = await this.prisma.invoice.findMany({
       where: { companyId: user.companyId, deletedAt: null, status: { in: ["ISSUED", "PARTIALLY_PAID", "OVERDUE"] } },
       include: { customer: { select: { name: true, code: true } } },
-      orderBy: { balanceDue: "desc" }
+      orderBy: { balanceDue: "desc" },
+      take: 500,
     });
     return { data: invoices };
   }

@@ -30,8 +30,9 @@ export class QuickBooksWebhookService {
   verifySignature(rawBody: Buffer, signature: string): void {
     const verifierToken = this.config.get<string>("QB_WEBHOOK_VERIFIER_TOKEN");
     if (!verifierToken) {
-      this.logger.warn("QB_WEBHOOK_VERIFIER_TOKEN not configured — skipping webhook verification");
-      return;
+      // Reject all webhooks when the token is not configured rather than silently
+      // accepting them — an unconfigured token is a security misconfiguration.
+      throw new ForbiddenException("Webhook verification is not configured on this server.");
     }
     const hash = createHmac("sha256", verifierToken).update(rawBody).digest("base64");
     if (hash !== signature) throw new ForbiddenException("Invalid webhook signature");

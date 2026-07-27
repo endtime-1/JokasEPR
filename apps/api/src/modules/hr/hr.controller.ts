@@ -1,7 +1,7 @@
 ﻿import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { diskStorage } from "multer";
-import { join } from "path";
+import { extname, join } from "path";
 import { mkdirSync } from "fs";
 import { validateAndCleanImageUpload } from "../../common/utils/validate-image-magic";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
@@ -135,10 +135,12 @@ export class HRController {
           mkdirSync(dir, { recursive: true });
           cb(null, dir);
         },
-        filename: (_req, _file, cb) => {
-          // Use a random name — never trust the client-supplied extension here;
-          // magic bytes validation below confirms the actual file type.
-          cb(null, `emp-${Date.now()}-${Math.random().toString(36).slice(2)}.bin`);
+        filename: (_req, file, cb) => {
+          // Preserve the original extension so UploadsController can serve it.
+          // Magic bytes validation below still confirms the actual file type.
+          const ALLOWED = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif"]);
+          const ext = extname(file.originalname).toLowerCase();
+          cb(null, `emp-${Date.now()}-${Math.random().toString(36).slice(2)}${ALLOWED.has(ext) ? ext : ".jpg"}`);
         },
       }),
       limits: { fileSize: 5 * 1024 * 1024 },

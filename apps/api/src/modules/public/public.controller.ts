@@ -1,77 +1,106 @@
-import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Query, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
+import {
+  BadRequestException, Body, Controller, Get, Param, Patch, Post,
+  Query, UploadedFile, UseGuards, UseInterceptors,
+} from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
-import { PERMISSIONS } from "@jokas/shared";
+import { AuthenticatedUser, PERMISSIONS } from "@jokas/shared";
 import { diskStorage } from "multer";
-import { join } from "path";
+import { extname, join } from "path";
 import { mkdirSync } from "fs";
+import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { RequirePermissions } from "../../common/decorators/permissions.decorator";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { PermissionsGuard } from "../../common/guards/permissions.guard";
+import { StorefrontBrowseRateLimitGuard, StorefrontOrderRateLimitGuard } from "../../common/guards/storefront-rate-limit.guard";
 import { validateAndCleanImageUpload } from "../../common/utils/validate-image-magic";
 import { PlacePublicOrderDto } from "./dto/public-order.dto";
+import { UpdatePublicProductDto } from "./dto/update-public-product.dto";
 import { PublicService } from "./public.service";
+
+const ALLOWED_IMAGE_EXTS = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif"]);
+
+function resolveImageExt(file: Express.Multer.File): string {
+  const ext = extname(file.originalname).toLowerCase();
+  return ALLOWED_IMAGE_EXTS.has(ext) ? ext : ".jpg";
+}
 
 @Controller("public")
 export class PublicController {
   constructor(private readonly service: PublicService) {}
 
-  /* ── Public storefront endpoints (no auth) ────────────────────────── */
+  /* ── Public storefront endpoints (no auth — rate-limited by IP) ── */
 
+  @UseGuards(StorefrontBrowseRateLimitGuard)
   @Get("products")
   products(@Query("category") category?: string) {
     return this.service.listProducts(category).then((data) => ({ data }));
   }
 
+  @UseGuards(StorefrontBrowseRateLimitGuard)
   @Get("products/:slug")
   product(@Param("slug") slug: string) {
     return this.service.getProduct(slug).then((data) => ({ data }));
   }
 
+  @UseGuards(StorefrontOrderRateLimitGuard)
   @Post("orders")
   placeOrder(@Body() dto: PlacePublicOrderDto) {
     return this.service.placeOrder(dto).then((data) => ({ data }));
   }
 
+  @UseGuards(StorefrontBrowseRateLimitGuard)
   @Get("orders/:ref")
   orderStatus(@Param("ref") ref: string) {
     return this.service.getOrderStatus(ref).then((data) => ({ data }));
   }
 
-  /* ── Storefront admin endpoints (JWT + SALES_MANAGE required) ────── */
+  /* ── Storefront admin endpoints (JWT + SALES_MANAGE required) ─── */
 
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions(PERMISSIONS.SALES_MANAGE)
   @Get("admin/products")
-  adminProducts(@Query("search") search?: string) {
-    return this.service.adminListProducts(search).then((data) => ({ data }));
+  adminProducts(@CurrentUser() user: AuthenticatedUser, @Query("search") search?: string) {
+    return this.service.adminListProducts(user.companyId, search).then((data) => ({ data }));
   }
 
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions(PERMISSIONS.SALES_MANAGE)
   @Patch("admin/products/:id")
-  adminUpdateProduct(@Param("id") id: string, @Body() body: Record<string, unknown>) {
-    return this.service.adminUpdateProduct(id, body).then((data) => ({ data }));
+  adminUpdateProduct(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id") id: string,
+    @Body() dto: UpdatePublicProductDto,
+  ) {
+    return this.service.adminUpdateProduct(user.companyId, id, dto).then((data) => ({ data }));
   }
 
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions(PERMISSIONS.SALES_MANAGE)
   @Get("admin/orders")
-  adminOrders(@Query("status") status?: string, @Query("search") search?: string) {
-    return this.service.adminListOrders(status, search).then((data) => ({ data }));
+  adminOrders(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query("status") status?: string,
+    @Query("search") search?: string,
+  ) {
+    return this.service.adminListOrders(user.companyId, status, search).then((data) => ({ data }));
   }
 
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions(PERMISSIONS.SALES_MANAGE)
   @Patch("admin/orders/:id/status")
-  adminUpdateOrderStatus(@Param("id") id: string, @Body("status") status: string) {
-    return this.service.adminUpdateOrderStatus(id, status).then((data) => ({ data }));
+  adminUpdateOrderStatus(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id") id: string,
+    @Body("status") status: string,
+  ) {
+    return this.service.adminUpdateOrderStatus(user.companyId, id, status).then((data) => ({ data }));
   }
 
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions(PERMISSIONS.SALES_MANAGE)
   @Get("admin/stats")
-  adminStats() {
-    return this.service.adminStats().then((data) => ({ data }));
+  adminStats(@CurrentUser() user: AuthenticatedUser) {
+    return this.service.adminStats(user.companyId).then((data) => ({ data }));
   }
 
   @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -84,8 +113,9 @@ export class PublicController {
           mkdirSync(dir, { recursive: true });
           cb(null, dir);
         },
-        filename: (_req, _file, cb) => {
-          cb(null, `prod-${Date.now()}-${Math.random().toString(36).slice(2)}.bin`);
+        filename: (_req, file, cb) => {
+          const ext = resolveImageExt(file);
+          cb(null, `prod-${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`);
         },
       }),
       limits: { fileSize: 5 * 1024 * 1024 },
@@ -97,6 +127,7 @@ export class PublicController {
   )
   @Post("admin/products/:id/image")
   async adminUploadProductImage(
+    @CurrentUser() user: AuthenticatedUser,
     @Param("id") id: string,
     @UploadedFile() file: Express.Multer.File,
   ) {
@@ -104,7 +135,7 @@ export class PublicController {
     if (!validateAndCleanImageUpload(file.path)) {
       throw new BadRequestException("Invalid image file. Upload a JPEG, PNG, WebP, or GIF.");
     }
-    const imageUrl = await this.service.updateProductImageUrl(id, file.filename);
+    const imageUrl = await this.service.updateProductImageUrl(user.companyId, id, file.filename);
     return { data: { imageUrl } };
   }
 }

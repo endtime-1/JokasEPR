@@ -49,8 +49,10 @@ export class SetupService {
   constructor(private readonly prisma: PrismaService) {}
 
   async status() {
-    const count = await this.prisma.user.count();
-    return { setupRequired: count === 0 };
+    // Never reveal whether setup is needed — probing this endpoint would let
+    // scanners identify uninitialized deployments and target the setup endpoint.
+    // The setup page itself handles the redirect logic client-side after a login attempt.
+    return { status: "ok" };
   }
 
   async setup(dto: SetupDto, setupToken?: string) {

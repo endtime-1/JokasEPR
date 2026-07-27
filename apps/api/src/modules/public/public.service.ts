@@ -1,28 +1,41 @@
-import { Injectable, NotFoundException, BadRequestException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import { PrismaService } from "../prisma/prisma.service";
 import { PlacePublicOrderDto } from "./dto/public-order.dto";
+import { UpdatePublicProductDto } from "./dto/update-public-product.dto";
 import { randomBytes } from "crypto";
 
 @Injectable()
 export class PublicService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+  ) {}
+
+  // Resolve the storefront company once and reuse across all public endpoints.
+  // Uses STOREFRONT_COMPANY_ID env var when set; falls back to name-based lookup.
+  private async getStorefrontCompanyId(): Promise<string> {
+    const envId = this.config.get<string>("STOREFRONT_COMPANY_ID");
+    if (envId) return envId;
+
+    const company = await this.prisma.company.findFirst({
+      where: { name: { contains: "Akoko" }, status: "ACTIVE" },
+      select: { id: true },
+    });
+    if (!company) throw new BadRequestException("Store configuration error. Please contact us directly.");
+    return company.id;
+  }
 
   async listProducts(category?: string) {
-    const where: Record<string, unknown> = { isPublic: true, deletedAt: null, status: "ACTIVE" };
+    const companyId = await this.getStorefrontCompanyId();
+    const where: Record<string, unknown> = { companyId, isPublic: true, deletedAt: null, status: "ACTIVE" };
     if (category) where.storefrontCategory = category;
 
     const products = await this.prisma.product.findMany({
       where,
       select: {
-        id: true,
-        name: true,
-        sku: true,
-        publicSlug: true,
-        publicDescription: true,
-        publicImageUrl: true,
-        storefrontCategory: true,
-        minOrderQty: true,
-        unitLabel: true,
+        id: true, name: true, sku: true, publicSlug: true, publicDescription: true,
+        publicImageUrl: true, storefrontCategory: true, minOrderQty: true, unitLabel: true,
         priceLists: {
           where: { status: "ACTIVE" },
           select: { unitPrice: true },
@@ -34,13 +47,8 @@ export class PublicService {
     });
 
     return products.map((p) => ({
-      id: p.id,
-      name: p.name,
-      sku: p.sku,
-      slug: p.publicSlug,
-      description: p.publicDescription,
-      imageUrl: p.publicImageUrl,
-      category: p.storefrontCategory,
+      id: p.id, name: p.name, sku: p.sku, slug: p.publicSlug, description: p.publicDescription,
+      imageUrl: p.publicImageUrl, category: p.storefrontCategory,
       minOrderQty: p.minOrderQty ? Number(p.minOrderQty) : 1,
       unitLabel: p.unitLabel ?? "unit",
       unitPrice: p.priceLists[0]?.unitPrice ? Number(p.priceLists[0].unitPrice) : null,
@@ -48,18 +56,12 @@ export class PublicService {
   }
 
   async getProduct(slug: string) {
+    const companyId = await this.getStorefrontCompanyId();
     const p = await this.prisma.product.findFirst({
-      where: { publicSlug: slug, isPublic: true, deletedAt: null, status: "ACTIVE" },
+      where: { companyId, publicSlug: slug, isPublic: true, deletedAt: null, status: "ACTIVE" },
       select: {
-        id: true,
-        name: true,
-        sku: true,
-        publicSlug: true,
-        publicDescription: true,
-        publicImageUrl: true,
-        storefrontCategory: true,
-        minOrderQty: true,
-        unitLabel: true,
+        id: true, name: true, sku: true, publicSlug: true, publicDescription: true,
+        publicImageUrl: true, storefrontCategory: true, minOrderQty: true, unitLabel: true,
         priceLists: {
           where: { status: "ACTIVE" },
           select: { unitPrice: true },
@@ -72,13 +74,8 @@ export class PublicService {
     if (!p) throw new NotFoundException("Product not found");
 
     return {
-      id: p.id,
-      name: p.name,
-      sku: p.sku,
-      slug: p.publicSlug,
-      description: p.publicDescription,
-      imageUrl: p.publicImageUrl,
-      category: p.storefrontCategory,
+      id: p.id, name: p.name, sku: p.sku, slug: p.publicSlug, description: p.publicDescription,
+      imageUrl: p.publicImageUrl, category: p.storefrontCategory,
       minOrderQty: p.minOrderQty ? Number(p.minOrderQty) : 1,
       unitLabel: p.unitLabel ?? "unit",
       unitPrice: p.priceLists[0]?.unitPrice ? Number(p.priceLists[0].unitPrice) : null,
@@ -86,11 +83,12 @@ export class PublicService {
   }
 
   async placeOrder(dto: PlacePublicOrderDto) {
-    // Find Akoko Solutions company
+    const companyId = await this.getStorefrontCompanyId();
+
     const company = await this.prisma.company.findFirst({
-      where: { name: { contains: "Akoko" }, status: "ACTIVE" },
+      where: { id: companyId, status: "ACTIVE" },
       include: {
-        branches: { where: { status: "ACTIVE" }, take: 1 },
+        branches:   { where: { status: "ACTIVE" }, take: 1 },
         warehouses: { where: { status: "ACTIVE" }, take: 1 },
       },
     });
@@ -99,43 +97,33 @@ export class PublicService {
       throw new BadRequestException("Store configuration error. Please contact us directly.");
     }
 
-    const branch = company.branches[0];
+    const branch    = company.branches[0];
     const warehouse = company.warehouses[0];
 
-    // Find or create customer record
     let customer = await this.prisma.customer.findFirst({
-      where: {
-        companyId: company.id,
-        phone: dto.customerPhone,
-        deletedAt: null,
-      },
+      where: { companyId: company.id, phone: dto.customerPhone, deletedAt: null },
     });
 
     if (!customer) {
       const count = await this.prisma.customer.count({ where: { companyId: company.id } });
       customer = await this.prisma.customer.create({
         data: {
-          companyId: company.id,
-          branchId: branch.id,
-          code: `WEB-${String(count + 1).padStart(4, "0")}`,
-          name: dto.customerName,
-          phone: dto.customerPhone,
-          email: dto.customerEmail,
-          address: dto.deliveryAddress,
+          companyId:  company.id,
+          branchId:   branch.id,
+          code:       `WEB-${String(count + 1).padStart(4, "0")}`,
+          name:       dto.customerName,
+          phone:      dto.customerPhone,
+          email:      dto.customerEmail,
+          address:    dto.deliveryAddress,
         },
       });
     }
 
-    // Resolve products and prices
     const productIds = dto.lines.map((l) => l.productId);
-    const products = await this.prisma.product.findMany({
+    const products   = await this.prisma.product.findMany({
       where: { id: { in: productIds }, isPublic: true, companyId: company.id },
       include: {
-        priceLists: {
-          where: { status: "ACTIVE" },
-          orderBy: { validFrom: "desc" },
-          take: 1,
-        },
+        priceLists: { where: { status: "ACTIVE" }, orderBy: { validFrom: "desc" }, take: 1 },
       },
     });
 
@@ -144,43 +132,43 @@ export class PublicService {
     }
 
     const orderItems = dto.lines.map((line) => {
-      const product = products.find((p) => p.id === line.productId)!;
-      const unitPrice = product.priceLists[0]?.unitPrice ?? 0;
-      const total = Number(unitPrice) * line.quantity;
-      return { product, line, unitPrice: Number(unitPrice), total };
+      const product  = products.find((p) => p.id === line.productId)!;
+      const unitPrice = Number(product.priceLists[0]?.unitPrice ?? 0);
+      return { product, line, unitPrice, total: unitPrice * line.quantity };
     });
 
-    const subtotal = orderItems.reduce((sum, i) => sum + i.total, 0);
-    const storefrontRef = `AKO-${Date.now().toString(36).toUpperCase()}-${randomBytes(2).toString("hex").toUpperCase()}`;
-    const orderCount = await this.prisma.salesOrder.count({ where: { companyId: company.id } });
-    const orderNumber = `SO-WEB-${String(orderCount + 1).padStart(5, "0")}`;
+    const subtotal      = orderItems.reduce((sum, i) => sum + i.total, 0);
+    // Fully random reference — time-predictable references allow order enumeration
+    const storefrontRef = `AKO-${randomBytes(6).toString("hex").toUpperCase()}`;
+    const orderCount    = await this.prisma.salesOrder.count({ where: { companyId: company.id } });
+    const orderNumber   = `SO-WEB-${String(orderCount + 1).padStart(5, "0")}`;
 
-    const order = await this.prisma.salesOrder.create({
+    await this.prisma.salesOrder.create({
       data: {
-        companyId: company.id,
-        branchId: branch.id,
-        customerId: customer.id,
-        warehouseId: warehouse.id,
+        companyId:                  company.id,
+        branchId:                   branch.id,
+        customerId:                 customer.id,
+        warehouseId:                warehouse.id,
         orderNumber,
-        orderDate: new Date(),
-        status: "PENDING_STOCK_APPROVAL",
+        orderDate:                  new Date(),
+        status:                     "PENDING_STOCK_APPROVAL",
         subtotal,
-        totalAmount: subtotal,
-        balanceDue: subtotal,
-        notes: dto.notes,
-        isStorefrontOrder: true,
+        totalAmount:                subtotal,
+        balanceDue:                 subtotal,
+        notes:                      dto.notes,
+        isStorefrontOrder:          true,
         storefrontRef,
-        storefrontCustomerName: dto.customerName,
-        storefrontCustomerPhone: dto.customerPhone,
-        storefrontCustomerEmail: dto.customerEmail,
-        storefrontDeliveryAddress: dto.deliveryAddress,
+        storefrontCustomerName:     dto.customerName,
+        storefrontCustomerPhone:    dto.customerPhone,
+        storefrontCustomerEmail:    dto.customerEmail,
+        storefrontDeliveryAddress:  dto.deliveryAddress,
         items: {
           create: orderItems.map((i) => ({
-            companyId: company.id,
-            productId: i.product.id,
-            quantity: i.line.quantity,
-            unitPrice: i.unitPrice,
-            lineTotal: i.total,
+            companyId:  company.id,
+            productId:  i.product.id,
+            quantity:   i.line.quantity,
+            unitPrice:  i.unitPrice,
+            lineTotal:  i.total,
           })),
         },
       },
@@ -195,25 +183,18 @@ export class PublicService {
     };
   }
 
-  /* ── Storefront admin methods ─────────────────────────────────────── */
+  /* ── Storefront admin methods — all scoped to companyId ─────────── */
 
-  async adminListProducts(search?: string) {
-    const where: Record<string, unknown> = { deletedAt: null, status: "ACTIVE" };
+  async adminListProducts(companyId: string, search?: string) {
+    const where: Record<string, unknown> = { companyId, deletedAt: null, status: "ACTIVE" };
     if (search) where.name = { contains: search };
 
     const products = await this.prisma.product.findMany({
       where,
       select: {
-        id: true,
-        name: true,
-        sku: true,
-        isPublic: true,
-        publicSlug: true,
-        publicDescription: true,
-        publicImageUrl: true,
-        storefrontCategory: true,
-        minOrderQty: true,
-        unitLabel: true,
+        id: true, name: true, sku: true, isPublic: true, publicSlug: true,
+        publicDescription: true, publicImageUrl: true, storefrontCategory: true,
+        minOrderQty: true, unitLabel: true,
         priceLists: {
           where: { status: "ACTIVE" },
           select: { unitPrice: true },
@@ -225,88 +206,68 @@ export class PublicService {
     });
 
     return products.map((p) => ({
-      id: p.id,
-      name: p.name,
-      sku: p.sku,
-      isPublic: p.isPublic,
-      publicSlug: p.publicSlug,
-      publicDescription: p.publicDescription,
-      publicImageUrl: p.publicImageUrl,
-      storefrontCategory: p.storefrontCategory,
+      id: p.id, name: p.name, sku: p.sku, isPublic: p.isPublic,
+      publicSlug: p.publicSlug, publicDescription: p.publicDescription,
+      publicImageUrl: p.publicImageUrl, storefrontCategory: p.storefrontCategory,
       minOrderQty: p.minOrderQty ? Number(p.minOrderQty) : 1,
       unitLabel: p.unitLabel,
       unitPrice: p.priceLists[0]?.unitPrice ? Number(p.priceLists[0].unitPrice) : null,
     }));
   }
 
-  async adminUpdateProduct(id: string, body: Record<string, unknown>) {
-    const allowed = ["isPublic", "publicSlug", "publicDescription", "storefrontCategory", "minOrderQty", "unitLabel"];
+  async adminUpdateProduct(companyId: string, id: string, dto: UpdatePublicProductDto) {
+    // Verify ownership before writing — prevents cross-tenant writes
+    const existing = await this.prisma.product.findFirst({ where: { id, companyId } });
+    if (!existing) throw new NotFoundException("Product not found.");
+
     const data: Record<string, unknown> = {};
-    for (const key of allowed) {
-      if (key in body) data[key] = body[key];
-    }
-    if (data.minOrderQty !== undefined) data.minOrderQty = Number(data.minOrderQty);
+    if (dto.isPublic          !== undefined) data.isPublic          = dto.isPublic;
+    if (dto.publicSlug        !== undefined) data.publicSlug        = dto.publicSlug;
+    if (dto.publicDescription !== undefined) data.publicDescription = dto.publicDescription;
+    if (dto.storefrontCategory !== undefined) data.storefrontCategory = dto.storefrontCategory;
+    if (dto.minOrderQty       !== undefined) data.minOrderQty       = dto.minOrderQty;
+    if (dto.unitLabel         !== undefined) data.unitLabel         = dto.unitLabel;
 
     const product = await this.prisma.product.update({ where: { id }, data });
 
-    if (body.unitPrice !== undefined && body.unitPrice !== null) {
-      const price = Number(body.unitPrice);
-      if (price > 0) {
-        const existing = await this.prisma.priceList.findFirst({
-          where: { productId: id, status: "ACTIVE" },
-          orderBy: { validFrom: "desc" },
+    if (dto.unitPrice !== undefined && dto.unitPrice > 0) {
+      const existingPrice = await this.prisma.priceList.findFirst({
+        where: { productId: id, status: "ACTIVE" },
+        orderBy: { validFrom: "desc" },
+      });
+      if (existingPrice) {
+        await this.prisma.priceList.update({ where: { id: existingPrice.id }, data: { unitPrice: dto.unitPrice } });
+      } else {
+        await this.prisma.priceList.create({
+          data: { companyId, productId: id, name: "Storefront Price", unitPrice: dto.unitPrice, currency: "GHS", status: "ACTIVE" },
         });
-        if (existing) {
-          await this.prisma.priceList.update({ where: { id: existing.id }, data: { unitPrice: price } });
-        } else {
-          await this.prisma.priceList.create({
-            data: {
-              companyId: product.companyId,
-              productId: id,
-              name: "Storefront Price",
-              unitPrice: price,
-              currency: "GHS",
-              status: "ACTIVE",
-            },
-          });
-        }
       }
     }
 
     return { id: product.id, isPublic: product.isPublic, publicSlug: product.publicSlug };
   }
 
-  async adminListOrders(status?: string, search?: string) {
-    const where: Record<string, unknown> = { isStorefrontOrder: true, deletedAt: null };
+  async adminListOrders(companyId: string, status?: string, search?: string) {
+    const where: Record<string, unknown> = { companyId, isStorefrontOrder: true, deletedAt: null };
     if (status && status !== "ALL") where.status = status;
     if (search) {
       where.OR = [
-        { storefrontCustomerName: { contains: search } },
+        { storefrontCustomerName:  { contains: search } },
         { storefrontCustomerPhone: { contains: search } },
-        { storefrontRef: { contains: search } },
-        { orderNumber: { contains: search } },
+        { storefrontRef:           { contains: search } },
+        { orderNumber:             { contains: search } },
       ];
     }
 
     const orders = await this.prisma.salesOrder.findMany({
       where,
       select: {
-        id: true,
-        orderNumber: true,
-        storefrontRef: true,
-        status: true,
-        orderDate: true,
-        totalAmount: true,
-        storefrontCustomerName: true,
-        storefrontCustomerPhone: true,
-        storefrontCustomerEmail: true,
-        storefrontDeliveryAddress: true,
-        notes: true,
+        id: true, orderNumber: true, storefrontRef: true, status: true, orderDate: true,
+        totalAmount: true, storefrontCustomerName: true, storefrontCustomerPhone: true,
+        storefrontCustomerEmail: true, storefrontDeliveryAddress: true, notes: true,
         items: {
           select: {
-            quantity: true,
-            unitPrice: true,
-            lineTotal: true,
+            quantity: true, unitPrice: true, lineTotal: true,
             product: { select: { name: true, unitLabel: true } },
           },
         },
@@ -316,115 +277,100 @@ export class PublicService {
     });
 
     const statusLabel: Record<string, string> = {
-      DRAFT: "Draft",
-      PENDING_STOCK_APPROVAL: "Pending",
-      APPROVED: "Confirmed",
-      FULFILLED: "Delivered",
-      CANCELLED: "Cancelled",
+      DRAFT: "Draft", PENDING_STOCK_APPROVAL: "Pending",
+      APPROVED: "Confirmed", FULFILLED: "Delivered", CANCELLED: "Cancelled",
     };
 
     return orders.map((o) => ({
-      id: o.id,
-      orderNumber: o.orderNumber,
-      ref: o.storefrontRef,
-      status: o.status,
-      statusLabel: statusLabel[o.status] ?? o.status,
-      orderDate: o.orderDate,
-      total: Number(o.totalAmount),
+      id: o.id, orderNumber: o.orderNumber, ref: o.storefrontRef,
+      status: o.status, statusLabel: statusLabel[o.status] ?? o.status,
+      orderDate: o.orderDate, total: Number(o.totalAmount),
       customer: {
-        name: o.storefrontCustomerName,
-        phone: o.storefrontCustomerPhone,
-        email: o.storefrontCustomerEmail,
+        name:    o.storefrontCustomerName,
+        phone:   o.storefrontCustomerPhone,
+        email:   o.storefrontCustomerEmail,
         address: o.storefrontDeliveryAddress,
       },
       notes: o.notes,
       items: o.items.map((i) => ({
-        name: (i.product as { name: string; unitLabel?: string | null }).name,
-        qty: Number(i.quantity),
+        name:      (i.product as { name: string; unitLabel?: string | null }).name,
+        qty:       Number(i.quantity),
         unitPrice: Number(i.unitPrice),
-        total: Number(i.lineTotal),
+        total:     Number(i.lineTotal),
       })),
     }));
   }
 
-  async adminUpdateOrderStatus(id: string, status: string) {
+  async adminUpdateOrderStatus(companyId: string, id: string, status: string) {
     const allowed = ["PENDING_STOCK_APPROVAL", "APPROVED", "FULFILLED", "CANCELLED"];
     if (!allowed.includes(status)) throw new BadRequestException("Invalid status");
+    // Verify ownership before writing — prevents cross-tenant writes
+    const existing = await this.prisma.salesOrder.findFirst({ where: { id, companyId } });
+    if (!existing) throw new NotFoundException("Order not found.");
     const order = await this.prisma.salesOrder.update({ where: { id }, data: { status: status as never } });
     return { id: order.id, status: order.status };
   }
 
-  async adminStats() {
+  async adminStats(companyId: string) {
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const baseWhere = { companyId, isStorefrontOrder: true };
 
-    const [published, totalProducts, pending, confirmed, delivered, cancelled, total, revenueAgg, recentOrders, recentRevAgg] = await Promise.all([
-      this.prisma.product.count({ where: { isPublic: true, deletedAt: null, status: "ACTIVE" } }),
-      this.prisma.product.count({ where: { deletedAt: null, status: "ACTIVE" } }),
-      this.prisma.salesOrder.count({ where: { isStorefrontOrder: true, status: "PENDING_STOCK_APPROVAL" } }),
-      this.prisma.salesOrder.count({ where: { isStorefrontOrder: true, status: "APPROVED" } }),
-      this.prisma.salesOrder.count({ where: { isStorefrontOrder: true, status: "FULFILLED" } }),
-      this.prisma.salesOrder.count({ where: { isStorefrontOrder: true, status: "CANCELLED" } }),
-      this.prisma.salesOrder.count({ where: { isStorefrontOrder: true } }),
-      this.prisma.salesOrder.aggregate({
-        where: { isStorefrontOrder: true, status: { in: ["APPROVED", "FULFILLED"] } },
-        _sum: { totalAmount: true },
-      }),
-      this.prisma.salesOrder.findMany({
-        where: { isStorefrontOrder: true },
-        select: {
-          id: true,
-          orderNumber: true,
-          storefrontRef: true,
-          status: true,
-          orderDate: true,
-          totalAmount: true,
-          storefrontCustomerName: true,
-          storefrontCustomerPhone: true,
-          items: { select: { quantity: true, product: { select: { name: true } } }, take: 3 },
-        },
-        orderBy: { orderDate: "desc" },
-        take: 8,
-      }),
-      this.prisma.salesOrder.aggregate({
-        where: { isStorefrontOrder: true, status: { in: ["APPROVED", "FULFILLED"] }, orderDate: { gte: thirtyDaysAgo } },
-        _sum: { totalAmount: true },
-      }),
-    ]);
+    const [published, totalProducts, pending, confirmed, delivered, cancelled, total, revenueAgg, recentOrders, recentRevAgg] =
+      await Promise.all([
+        this.prisma.product.count({ where: { companyId, isPublic: true, deletedAt: null, status: "ACTIVE" } }),
+        this.prisma.product.count({ where: { companyId, deletedAt: null, status: "ACTIVE" } }),
+        this.prisma.salesOrder.count({ where: { ...baseWhere, status: "PENDING_STOCK_APPROVAL" } }),
+        this.prisma.salesOrder.count({ where: { ...baseWhere, status: "APPROVED" } }),
+        this.prisma.salesOrder.count({ where: { ...baseWhere, status: "FULFILLED" } }),
+        this.prisma.salesOrder.count({ where: { ...baseWhere, status: "CANCELLED" } }),
+        this.prisma.salesOrder.count({ where: baseWhere }),
+        this.prisma.salesOrder.aggregate({
+          where: { ...baseWhere, status: { in: ["APPROVED", "FULFILLED"] } },
+          _sum: { totalAmount: true },
+        }),
+        this.prisma.salesOrder.findMany({
+          where: baseWhere,
+          select: {
+            id: true, orderNumber: true, storefrontRef: true, status: true, orderDate: true,
+            totalAmount: true, storefrontCustomerName: true, storefrontCustomerPhone: true,
+            items: { select: { quantity: true, product: { select: { name: true } } }, take: 3 },
+          },
+          orderBy: { orderDate: "desc" },
+          take: 8,
+        }),
+        this.prisma.salesOrder.aggregate({
+          where: { ...baseWhere, status: { in: ["APPROVED", "FULFILLED"] }, orderDate: { gte: thirtyDaysAgo } },
+          _sum: { totalAmount: true },
+        }),
+      ]);
 
     const statusLabel: Record<string, string> = {
-      PENDING_STOCK_APPROVAL: "Pending",
-      APPROVED: "Confirmed",
-      FULFILLED: "Delivered",
-      CANCELLED: "Cancelled",
+      PENDING_STOCK_APPROVAL: "Pending", APPROVED: "Confirmed",
+      FULFILLED: "Delivered", CANCELLED: "Cancelled",
     };
 
     return {
-      published,
-      totalProducts,
-      pending,
-      confirmed,
-      delivered,
-      cancelled,
-      total,
-      totalRevenue: Number(revenueAgg._sum.totalAmount ?? 0),
-      revenueThisMonth: Number(recentRevAgg._sum.totalAmount ?? 0),
+      published, totalProducts, pending, confirmed, delivered, cancelled, total,
+      totalRevenue:      Number(revenueAgg._sum.totalAmount ?? 0),
+      revenueThisMonth:  Number(recentRevAgg._sum.totalAmount ?? 0),
       recentOrders: recentOrders.map((o) => ({
-        id: o.id,
-        orderNumber: o.orderNumber,
-        ref: o.storefrontRef,
-        status: o.status,
-        statusLabel: statusLabel[o.status] ?? o.status,
-        orderDate: o.orderDate,
-        total: Number(o.totalAmount),
-        customerName: o.storefrontCustomerName,
+        id: o.id, orderNumber: o.orderNumber, ref: o.storefrontRef,
+        status: o.status, statusLabel: statusLabel[o.status] ?? o.status,
+        orderDate: o.orderDate, total: Number(o.totalAmount),
+        customerName:  o.storefrontCustomerName,
         customerPhone: o.storefrontCustomerPhone,
-        itemSummary: o.items.map((i) => `${(i.product as { name: string }).name} ×${Number(i.quantity)}`).join(", "),
+        itemSummary: o.items
+          .map((i) => `${(i.product as { name: string }).name} ×${Number(i.quantity)}`)
+          .join(", "),
       })),
     };
   }
 
-  async updateProductImageUrl(id: string, filename: string) {
+  async updateProductImageUrl(companyId: string, id: string, filename: string) {
+    // Verify ownership before writing — prevents cross-tenant writes
+    const existing = await this.prisma.product.findFirst({ where: { id, companyId } });
+    if (!existing) throw new NotFoundException("Product not found.");
     const imageUrl = `/uploads/products/${filename}`;
     await this.prisma.product.update({ where: { id }, data: { publicImageUrl: imageUrl } });
     return imageUrl;
@@ -434,17 +380,11 @@ export class PublicService {
     const order = await this.prisma.salesOrder.findUnique({
       where: { storefrontRef: ref },
       select: {
-        orderNumber: true,
-        status: true,
-        orderDate: true,
-        totalAmount: true,
-        storefrontCustomerName: true,
-        storefrontDeliveryAddress: true,
+        orderNumber: true, status: true, orderDate: true, totalAmount: true,
+        storefrontCustomerName: true, storefrontDeliveryAddress: true,
         items: {
           select: {
-            quantity: true,
-            unitPrice: true,
-            lineTotal: true,
+            quantity: true, unitPrice: true, lineTotal: true,
             product: { select: { name: true, unitLabel: true } },
           },
         },
@@ -454,26 +394,23 @@ export class PublicService {
     if (!order) throw new NotFoundException("Order not found");
 
     const statusLabel: Record<string, string> = {
-      DRAFT: "Processing",
-      PENDING_STOCK_APPROVAL: "Pending Confirmation",
-      APPROVED: "Confirmed — Preparing",
-      FULFILLED: "Delivered",
-      CANCELLED: "Cancelled",
+      DRAFT: "Processing", PENDING_STOCK_APPROVAL: "Pending Confirmation",
+      APPROVED: "Confirmed — Preparing", FULFILLED: "Delivered", CANCELLED: "Cancelled",
     };
 
     return {
       storefrontRef: ref,
-      orderNumber: order.orderNumber,
-      status: order.status,
-      statusLabel: statusLabel[order.status] ?? order.status,
-      createdAt: order.orderDate,
-      total: Number(order.totalAmount),
-      customerName: order.storefrontCustomerName,
+      orderNumber:   order.orderNumber,
+      status:        order.status,
+      statusLabel:   statusLabel[order.status] ?? order.status,
+      createdAt:     order.orderDate,
+      total:         Number(order.totalAmount),
+      customerName:  order.storefrontCustomerName,
       deliveryAddress: order.storefrontDeliveryAddress,
       lines: order.items.map((i) => ({
         productName: (i.product as { name: string; unitLabel?: string | null }).name,
-        qty: Number(i.quantity),
-        unitPrice: Number(i.unitPrice),
+        qty:         Number(i.quantity),
+        unitPrice:   Number(i.unitPrice),
       })),
     };
   }
