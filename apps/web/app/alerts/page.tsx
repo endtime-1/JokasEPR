@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -101,6 +101,18 @@ const STATUS_CONFIG = {
   RESOLVED: { label: "Resolved", color: "bg-emerald-100 text-emerald-700" }
 };
 
+function timeAgo(dateStr: string): string {
+  const secs = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
+  if (secs < 60) return "just now";
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 7) return `${days} days ago`;
+  return new Date(dateStr).toLocaleDateString();
+}
+
 function formatForecast(forecast: AiForecast) {
   if (forecast.unit === "probability") return `${Math.round(forecast.forecastValue * 100)}%`;
   if (forecast.unit === "GHS") return `GHS ${Number(forecast.forecastValue).toLocaleString()}`;
@@ -111,12 +123,18 @@ function AlertCard({
   alert,
   onAcknowledge,
   onResolve,
-  canManage
+  canManage,
+  actioning,
+  selected,
+  onToggleSelect
 }: {
   alert: AiAlert;
   onAcknowledge: (id: string) => void;
   onResolve: (id: string) => void;
   canManage: boolean;
+  actioning: string | null;
+  selected: boolean;
+  onToggleSelect: (id: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const cfg = SEVERITY_CONFIG[alert.severity];
@@ -129,43 +147,59 @@ function AlertCard({
     alert.branch?.name ??
     "Company wide";
 
+  const isActioning = actioning === alert.id;
+
   return (
     <article
       className={`overflow-hidden rounded-xl border border-line border-l-[3px] bg-white shadow-card ${cfg.border}`}
     >
-      <button className="w-full text-left" onClick={() => setExpanded((v) => !v)}>
-        <div className="flex items-start gap-3 px-4 py-3.5">
-          <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl ${cfg.icon}`}>
-            <StatusIcon aria-hidden className="h-4 w-4" />
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-start justify-between gap-3">
-              <span className="text-sm font-bold text-ink leading-snug">{alert.title}</span>
-              <span
-                className={`shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${status.color}`}
-              >
-                {status.label}
-              </span>
+      <div className="flex items-start gap-2 px-3 py-3.5">
+        {/* Checkbox */}
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={() => onToggleSelect(alert.id)}
+          onClick={(e) => e.stopPropagation()}
+          className="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-brand"
+          aria-label={`Select alert: ${alert.title}`}
+        />
+        <button className="flex-1 text-left" onClick={() => setExpanded((v) => !v)}>
+          <div className="flex items-start gap-3">
+            <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl ${cfg.icon}`}>
+              <StatusIcon aria-hidden className="h-4 w-4" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-start justify-between gap-3">
+                <span className="text-sm font-bold text-ink leading-snug">{alert.title}</span>
+                <span
+                  className={`shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${status.color}`}
+                >
+                  {status.label}
+                </span>
+              </div>
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${cfg.badge}`}>
+                  {cfg.label}
+                </span>
+                <span className="text-xs text-ink/45">
+                  {CATEGORY_LABELS[alert.category] ?? alert.category}
+                </span>
+                <span className="text-xs text-ink/45">{location}</span>
+                <span
+                  className="text-xs text-ink/35"
+                  title={new Date(alert.createdAt).toLocaleString()}
+                >
+                  {timeAgo(alert.createdAt)}
+                </span>
+              </div>
             </div>
-            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-              <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${cfg.badge}`}>
-                {cfg.label}
-              </span>
-              <span className="text-xs text-ink/45">
-                {CATEGORY_LABELS[alert.category] ?? alert.category}
-              </span>
-              <span className="text-xs text-ink/45">{location}</span>
-              <span className="text-xs text-ink/35">
-                {new Date(alert.createdAt).toLocaleDateString()}
-              </span>
-            </div>
+            <ChevronDown
+              aria-hidden
+              className={`mt-2 h-4 w-4 shrink-0 text-ink/30 transition-transform ${expanded ? "rotate-180" : ""}`}
+            />
           </div>
-          <ChevronDown
-            aria-hidden
-            className={`mt-2 h-4 w-4 shrink-0 text-ink/30 transition-transform ${expanded ? "rotate-180" : ""}`}
-          />
-        </div>
-      </button>
+        </button>
+      </div>
 
       {expanded && (
         <div className="border-t border-line bg-field/50 px-4 py-4 text-sm">
@@ -183,17 +217,27 @@ function AlertCard({
               {alert.status === "UNREAD" ? (
                 <button
                   onClick={() => onAcknowledge(alert.id)}
-                  className="app-button-secondary min-h-9 px-3 text-xs"
+                  disabled={isActioning}
+                  className="app-button-secondary min-h-9 px-3 text-xs disabled:opacity-50"
                 >
-                  <Bell aria-hidden className="h-3.5 w-3.5" />
+                  {isActioning ? (
+                    <LoaderCircle aria-hidden className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Bell aria-hidden className="h-3.5 w-3.5" />
+                  )}
                   Acknowledge
                 </button>
               ) : null}
               <button
                 onClick={() => onResolve(alert.id)}
-                className="app-button-secondary min-h-9 px-3 text-xs"
+                disabled={isActioning}
+                className="app-button-secondary min-h-9 px-3 text-xs disabled:opacity-50"
               >
-                <CircleCheckBig aria-hidden className="h-3.5 w-3.5" />
+                {isActioning ? (
+                  <LoaderCircle aria-hidden className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <CircleCheckBig aria-hidden className="h-3.5 w-3.5" />
+                )}
                 Resolve
               </button>
             </div>
@@ -203,6 +247,8 @@ function AlertCard({
     </article>
   );
 }
+
+const PAGE_SIZE = 25;
 
 export default function AlertsPage() {
   const [alerts, setAlerts] = useState<AiAlert[]>([]);
@@ -215,6 +261,11 @@ export default function AlertsPage() {
   const [filterSeverity, setFilterSeverity] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
   const [canManage, setCanManage] = useState(false);
+  const [actioning, setActioning] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [page, setPage] = useState(1);
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const reportPath = useMemo(() => {
     const params = new URLSearchParams();
@@ -233,7 +284,8 @@ export default function AlertsPage() {
       if (filterCategory) params.set("category", filterCategory);
       if (filterSeverity) params.set("severity", filterSeverity);
       if (filterStatus) params.set("status", filterStatus);
-      params.set("limit", "100");
+      params.set("limit", PAGE_SIZE.toString());
+      params.set("offset", ((page - 1) * PAGE_SIZE).toString());
 
       const [alertResponse, forecastResponse] = await Promise.all([
         apiFetch<ApiEnvelope<AiAlert[]>>(`/alerts?${params}`),
@@ -243,6 +295,7 @@ export default function AlertsPage() {
       setAlerts(alertResponse.data ?? []);
       setTotal(Number(alertResponse.meta?.total ?? alertResponse.data?.length ?? 0));
       setForecasts(forecastResponse.data ?? []);
+      setSelected(new Set()); // clear selection on load
     } catch {
       setError("Failed to load AI alerts and forecasts.");
     } finally {
@@ -256,9 +309,15 @@ export default function AlertsPage() {
       .catch(() => undefined);
   }, []);
 
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setPage(1);
+  }, [filterCategory, filterSeverity, filterStatus]);
+
   useEffect(() => {
     void load();
-  }, [filterCategory, filterSeverity, filterStatus]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterCategory, filterSeverity, filterStatus, page]);
 
   async function generate() {
     setGenerating(true);
@@ -279,25 +338,76 @@ export default function AlertsPage() {
   }
 
   async function acknowledge(id: string) {
+    setActioning(id);
     try {
       await apiFetch(`/alerts/${id}/acknowledge`, { method: "PATCH" });
       await load();
     } catch {
       setError("Failed to acknowledge alert.");
+    } finally {
+      setActioning(null);
     }
   }
 
   async function resolve(id: string) {
+    setActioning(id);
     try {
       await apiFetch(`/alerts/${id}/resolve`, { method: "PATCH" });
       await load();
     } catch {
       setError("Failed to resolve alert.");
+    } finally {
+      setActioning(null);
+    }
+  }
+
+  async function bulkAcknowledge() {
+    const ids = alerts.filter((a) => selected.has(a.id) && a.status === "UNREAD").map((a) => a.id);
+    if (!ids.length) return;
+    setActioning("bulk");
+    try {
+      await Promise.all(ids.map((id) => apiFetch(`/alerts/${id}/acknowledge`, { method: "PATCH" })));
+      await load();
+    } catch {
+      setError("Failed to acknowledge some alerts.");
+    } finally {
+      setActioning(null);
+    }
+  }
+
+  async function bulkResolve() {
+    const ids = alerts.filter((a) => selected.has(a.id) && a.status !== "RESOLVED").map((a) => a.id);
+    if (!ids.length) return;
+    setActioning("bulk");
+    try {
+      await Promise.all(ids.map((id) => apiFetch(`/alerts/${id}/resolve`, { method: "PATCH" })));
+      await load();
+    } catch {
+      setError("Failed to resolve some alerts.");
+    } finally {
+      setActioning(null);
+    }
+  }
+
+  function toggleSelect(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    if (selected.size === alerts.length) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(alerts.map((a) => a.id)));
     }
   }
 
   const unread = alerts.filter((a) => a.status === "UNREAD").length;
   const critical = alerts.filter((a) => a.severity === "CRITICAL").length;
+  const allSelected = alerts.length > 0 && selected.size === alerts.length;
 
   return (
     <AppShell>
@@ -505,16 +615,57 @@ export default function AlertsPage() {
 
         {/* Alert list */}
         <section>
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-base font-bold text-ink">
+          {/* List header */}
+          <div className="mb-3 flex items-center gap-3">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              onChange={toggleSelectAll}
+              className="h-4 w-4 cursor-pointer accent-brand"
+              aria-label="Select all alerts"
+            />
+            <h2 className="text-base font-bold text-ink flex-1">
               Active Alerts
               {alerts.length > 0 && (
                 <span className="ml-2 rounded-full bg-brand/10 px-2 py-0.5 text-xs font-bold text-brand">
-                  {alerts.length}
+                  {total}
                 </span>
               )}
             </h2>
           </div>
+
+          {/* Bulk action bar */}
+          {selected.size > 0 && (
+            <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-line bg-brand/5 px-4 py-2.5">
+              <span className="text-sm font-semibold text-ink">{selected.size} selected</span>
+              {canManage && (
+                <>
+                  <button
+                    onClick={() => void bulkAcknowledge()}
+                    disabled={actioning === "bulk"}
+                    className="app-button-secondary min-h-8 px-3 text-xs disabled:opacity-50"
+                  >
+                    {actioning === "bulk" ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Bell className="h-3.5 w-3.5" />}
+                    Acknowledge all
+                  </button>
+                  <button
+                    onClick={() => void bulkResolve()}
+                    disabled={actioning === "bulk"}
+                    className="app-button-secondary min-h-8 px-3 text-xs disabled:opacity-50"
+                  >
+                    {actioning === "bulk" ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <CircleCheckBig className="h-3.5 w-3.5" />}
+                    Resolve all
+                  </button>
+                </>
+              )}
+              <button
+                onClick={() => setSelected(new Set())}
+                className="ml-auto text-xs text-ink/50 hover:text-ink transition"
+              >
+                Clear selection
+              </button>
+            </div>
+          )}
 
           {loading ? (
             <div className="flex justify-center py-16">
@@ -539,8 +690,34 @@ export default function AlertsPage() {
                   onAcknowledge={acknowledge}
                   onResolve={resolve}
                   canManage={canManage}
+                  actioning={actioning}
+                  selected={selected.has(alert.id)}
+                  onToggleSelect={toggleSelect}
                 />
               ))}
+            </div>
+          )}
+
+          {/* Pagination */}
+          {!loading && totalPages > 1 && (
+            <div className="mt-4 flex items-center justify-center gap-3">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="app-button-secondary min-h-9 px-3 text-xs disabled:opacity-40"
+              >
+                ← Prev
+              </button>
+              <span className="text-sm text-ink/60">
+                Page <strong className="text-ink">{page}</strong> of {totalPages}
+              </span>
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+                className="app-button-secondary min-h-9 px-3 text-xs disabled:opacity-40"
+              >
+                Next →
+              </button>
             </div>
           )}
         </section>

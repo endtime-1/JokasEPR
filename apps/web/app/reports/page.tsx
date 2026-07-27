@@ -80,6 +80,8 @@ export default function ReportsPage() {
   });
   const [result, setResult] = useState<ReportResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [catalogSearch, setCatalogSearch] = useState("");
 
   useEffect(() => {
     apiFetch<ApiEnvelope<ReportDefinition[]>>("/reports")
@@ -88,15 +90,21 @@ export default function ReportsPage() {
         setCatalog(catalog);
         setActiveId(catalog[0]?.id ?? "");
       })
-      .catch(() => undefined);
+      .catch((err) => setLoadError(err?.message ?? "Failed to load reports."));
     apiFetch<ApiEnvelope<ReportOptions>>("/reports/options")
       .then((res) => setOptions(res.data ?? emptyOptions))
-      .catch(() => undefined);
+      .catch((err) => setLoadError(err?.message ?? "Failed to load reports."));
   }, []);
 
+  const filteredCatalog = useMemo(() => {
+    if (!catalogSearch.trim()) return catalog;
+    const q = catalogSearch.toLowerCase();
+    return catalog.filter((r) => r.title.toLowerCase().includes(q));
+  }, [catalog, catalogSearch]);
+
   const categories = useMemo(
-    () => [...new Set(catalog.map((r) => r.category))],
-    [catalog]
+    () => [...new Set(filteredCatalog.map((r) => r.category))],
+    [filteredCatalog]
   );
   const activeReport = catalog.find((r) => r.id === activeId);
 
@@ -104,11 +112,15 @@ export default function ReportsPage() {
     event?.preventDefault();
     if (!activeId) return;
     setLoading(true);
+    setLoadError(null);
     try {
       const res = await apiFetch<ApiEnvelope<ReportResult>>(
         `/reports/${activeId}${queryString(filters)}`
       );
       setResult(res.data);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to run report.";
+      setLoadError(msg);
     } finally {
       setLoading(false);
     }
@@ -172,6 +184,12 @@ export default function ReportsPage() {
         </div>
       </div>
 
+      {loadError && (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {loadError}
+        </div>
+      )}
+
       <div className="grid gap-6 xl:grid-cols-[260px_minmax(0,1fr)]">
 
         {/* ── Report catalog sidebar ──────────────────────────────────────── */}
@@ -184,14 +202,27 @@ export default function ReportsPage() {
               {catalog.length} available reports
             </p>
           </div>
-          <div className="divide-y divide-line/60 overflow-y-auto p-3" style={{ maxHeight: "calc(100vh - 280px)" }}>
+          {/* Catalog search */}
+          <div className="border-b border-line px-3 py-2">
+            <div className="flex items-center gap-2 rounded-lg border border-line bg-field/60 px-2.5 py-1.5">
+              <Search aria-hidden className="h-3.5 w-3.5 shrink-0 text-ink/30" />
+              <input
+                className="flex-1 bg-transparent text-xs text-ink outline-none placeholder:text-ink/35"
+                placeholder="Search reports…"
+                value={catalogSearch}
+                onChange={(e) => setCatalogSearch(e.target.value)}
+                aria-label="Search catalog"
+              />
+            </div>
+          </div>
+          <div className="divide-y divide-line/60 overflow-y-auto p-3" style={{ maxHeight: "calc(100vh - 320px)" }}>
             {categories.map((category) => (
               <div key={category} className="py-3 first:pt-0">
                 <p className="mb-2 px-2 text-[10px] font-bold uppercase tracking-wider text-ink/40">
                   {category}
                 </p>
                 <div className="space-y-0.5">
-                  {catalog
+                  {filteredCatalog
                     .filter((r) => r.category === category)
                     .map((report) => (
                       <button
@@ -330,30 +361,40 @@ export default function ReportsPage() {
             </div>
 
             <div className="p-5">
-              {result?.chart ? <ReportBarChart chart={result.chart} /> : null}
-
-              {result ? (
-                <>
-                  <DataTable
-                    rows={result.rows}
-                    empty="No report rows found"
-                    columns={result.definition.columns.map((col) => ({
-                      key: col.key,
-                      label: col.label,
-                      render: (row) => formatValue(row[col.key], col.type)
-                    }))}
-                  />
-                  <Totals totals={result.totals} columns={result.definition.columns} />
-                </>
-              ) : (
-                <div className="flex flex-col items-center justify-center py-16 text-center">
-                  <span className="mb-3 grid h-12 w-12 place-items-center rounded-2xl bg-field">
-                    <TrendingUp className="h-6 w-6 text-ink/20" />
-                  </span>
-                  <p className="text-sm font-semibold text-ink/45">
-                    Select a report and run it to view analytics
-                  </p>
+              {loading ? (
+                <div className="space-y-2" aria-label="Loading report…" aria-busy="true">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <div key={i} className="h-8 animate-pulse rounded bg-line/40 mb-2" />
+                  ))}
                 </div>
+              ) : (
+                <>
+                  {result?.chart ? <ReportBarChart chart={result.chart} /> : null}
+
+                  {result ? (
+                    <>
+                      <DataTable
+                        rows={result.rows}
+                        empty="No report rows found"
+                        columns={result.definition.columns.map((col) => ({
+                          key: col.key,
+                          label: col.label,
+                          render: (row) => formatValue(row[col.key], col.type)
+                        }))}
+                      />
+                      <Totals totals={result.totals} columns={result.definition.columns} />
+                    </>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-16 text-center">
+                      <span className="mb-3 grid h-12 w-12 place-items-center rounded-2xl bg-field">
+                        <TrendingUp className="h-6 w-6 text-ink/20" />
+                      </span>
+                      <p className="text-sm font-semibold text-ink/45">
+                        Select a report and run it to view analytics
+                      </p>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </section>

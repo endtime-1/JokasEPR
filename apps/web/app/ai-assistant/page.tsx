@@ -1,9 +1,11 @@
-﻿"use client";
+"use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 import {
   Bot,
+  Check,
   ChevronRight,
+  Copy,
   LoaderCircle,
   MessageSquare,
   Plus,
@@ -60,12 +62,86 @@ const EXAMPLE_QUESTIONS = [
   "What should management focus on this week?"
 ];
 
+/** Parse basic markdown to React JSX nodes for assistant messages. */
+function renderMarkdown(content: string): React.ReactNode {
+  const lines = content.split("\n");
+  const nodes: React.ReactNode[] = [];
+  let listItems: React.ReactNode[] = [];
+  let key = 0;
+
+  function flushList() {
+    if (listItems.length > 0) {
+      nodes.push(<ul key={key++} className="my-2 ml-4 list-disc space-y-0.5">{listItems}</ul>);
+      listItems = [];
+    }
+  }
+
+  function renderInline(text: string): React.ReactNode {
+    // Split on ** bold **, * italic *, `code`
+    const parts: React.ReactNode[] = [];
+    const regex = /(\*\*(.+?)\*\*|\*(.+?)\*|`(.+?)`)/g;
+    let last = 0;
+    let m: RegExpExecArray | null;
+    let ki = 0;
+    while ((m = regex.exec(text)) !== null) {
+      if (m.index > last) parts.push(<span key={ki++}>{text.slice(last, m.index)}</span>);
+      if (m[2] !== undefined) parts.push(<strong key={ki++}>{m[2]}</strong>);
+      else if (m[3] !== undefined) parts.push(<em key={ki++}>{m[3]}</em>);
+      else if (m[4] !== undefined) parts.push(<code key={ki++} className="rounded bg-ink/10 px-1 font-mono text-[0.85em]">{m[4]}</code>);
+      last = m.index + m[0].length;
+    }
+    if (last < text.length) parts.push(<span key={ki++}>{text.slice(last)}</span>);
+    return parts;
+  }
+
+  for (const line of lines) {
+    if (line.match(/^###\s+/)) {
+      flushList();
+      const text = line.replace(/^###\s+/, "");
+      nodes.push(<p key={key++} className="my-1.5 font-bold text-sm">{renderInline(text)}</p>);
+    } else if (line.match(/^[-•]\s+/)) {
+      const text = line.replace(/^[-•]\s+/, "");
+      listItems.push(<li key={key++}>{renderInline(text)}</li>);
+    } else if (line.trim() === "") {
+      flushList();
+      nodes.push(<br key={key++} />);
+    } else {
+      flushList();
+      nodes.push(<p key={key++} className="leading-relaxed">{renderInline(line)}</p>);
+    }
+  }
+  flushList();
+  return nodes;
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  function handleCopy() {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    }).catch(() => undefined);
+  }
+
+  return (
+    <button
+      onClick={handleCopy}
+      title={copied ? "Copied!" : "Copy message"}
+      className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-lg bg-white/80 text-ink/40 opacity-0 shadow-sm ring-1 ring-line transition group-hover:opacity-100 hover:text-ink"
+      aria-label="Copy message"
+    >
+      {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+    </button>
+  );
+}
+
 function MessageBubble({ message }: { message: Message }) {
   const isUser = message.role === "user";
   const lines = message.content.split("\n");
 
   return (
-    <div className={`flex gap-3 ${isUser ? "flex-row-reverse" : ""}`}>
+    <div className={`group relative flex gap-3 ${isUser ? "flex-row-reverse" : ""}`}>
       <div
         className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-bold shadow-sm ${
           isUser
@@ -76,19 +152,105 @@ function MessageBubble({ message }: { message: Message }) {
         {isUser ? "You" : <Bot className="h-4 w-4" />}
       </div>
       <div
-        className={`max-w-[76%] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-card ${
+        className={`relative max-w-[76%] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-card ${
           isUser
             ? "rounded-tr-sm bg-gradient-to-br from-brand to-[#dd741b] text-white"
             : "rounded-tl-sm border border-line bg-white text-ink"
         }`}
       >
-        {lines.map((line, i) => (
-          <span key={i}>
-            {line}
-            {i < lines.length - 1 ? <br /> : null}
-          </span>
-        ))}
+        {isUser ? (
+          lines.map((line, i) => (
+            <span key={i}>
+              {line}
+              {i < lines.length - 1 ? <br /> : null}
+            </span>
+          ))
+        ) : (
+          renderMarkdown(message.content)
+        )}
+        <CopyButton text={message.content} />
       </div>
+    </div>
+  );
+}
+
+function SessionItem({
+  session,
+  isActive,
+  onLoad,
+  onDelete,
+  onRename
+}: {
+  session: Session;
+  isActive: boolean;
+  onLoad: () => void;
+  onDelete: () => void;
+  onRename: (newTitle: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(session.title ?? "Untitled");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  function startEdit(e: React.MouseEvent) {
+    e.stopPropagation();
+    setDraft(session.title ?? "Untitled");
+    setEditing(true);
+    setTimeout(() => inputRef.current?.select(), 0);
+  }
+
+  function commitRename() {
+    setEditing(false);
+    const trimmed = draft.trim();
+    if (trimmed && trimmed !== (session.title ?? "Untitled")) {
+      onRename(trimmed);
+    }
+  }
+
+  function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") { e.preventDefault(); commitRename(); }
+    if (e.key === "Escape") { setEditing(false); }
+  }
+
+  return (
+    <div
+      className={`group flex cursor-pointer items-center gap-2.5 rounded-xl px-3 py-2.5 transition ${
+        isActive ? "bg-brand/10 text-brand" : "text-ink hover:bg-field"
+      }`}
+      onClick={onLoad}
+    >
+      <MessageSquare
+        className={`h-3.5 w-3.5 shrink-0 ${isActive ? "text-brand" : "text-ink/35"}`}
+      />
+      {editing ? (
+        <input
+          ref={inputRef}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commitRename}
+          onKeyDown={onKeyDown}
+          onClick={(e) => e.stopPropagation()}
+          className="flex-1 truncate rounded bg-white/80 px-1 text-sm text-ink outline-none ring-1 ring-brand"
+          autoFocus
+        />
+      ) : (
+        <span
+          className="flex-1 truncate text-sm font-medium"
+          onDoubleClick={startEdit}
+          title="Double-click to rename"
+        >
+          {session.title ?? "Untitled"}
+        </span>
+      )}
+      <span className="shrink-0 rounded-md bg-line/60 px-1.5 py-0.5 text-[10px] font-semibold text-ink/50">
+        {session._count.messages}
+      </span>
+      <button
+        className="hidden shrink-0 text-ink/30 transition hover:text-red-500 group-hover:block"
+        onClick={(e) => { e.stopPropagation(); onDelete(); }}
+        aria-label="Delete session"
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+      </button>
     </div>
   );
 }
@@ -158,6 +320,19 @@ export default function AiAssistantPage() {
     }
   }
 
+  async function renameSession(id: string, newTitle: string) {
+    // Optimistic update
+    setSessions((prev) => prev.map((s) => s.id === id ? { ...s, title: newTitle } : s));
+    try {
+      await apiFetch(`/ai/sessions/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ title: newTitle })
+      });
+    } catch {
+      console.warn("PUT /ai/sessions/:id not available — rename kept in local state only.");
+    }
+  }
+
   async function sendMessage(text: string) {
     if (!text.trim() || loading) return;
     setInput("");
@@ -220,7 +395,7 @@ export default function AiAssistantPage() {
     <AppShell>
       <div className="flex h-[calc(100vh-5.5rem)] gap-4 overflow-hidden">
 
-        {/* ── Sidebar ──────────────────────────────────────────────────────── */}
+        {/* Sidebar */}
         <aside className="hidden w-64 shrink-0 flex-col overflow-hidden rounded-2xl border border-line bg-white shadow-panel lg:flex">
 
           {/* Sidebar header */}
@@ -254,42 +429,19 @@ export default function AiAssistantPage() {
               </div>
             )}
             {sessions.map((s) => (
-              <div
+              <SessionItem
                 key={s.id}
-                className={`group flex cursor-pointer items-center gap-2.5 rounded-xl px-3 py-2.5 transition ${
-                  activeSessionId === s.id
-                    ? "bg-brand/10 text-brand"
-                    : "text-ink hover:bg-field"
-                }`}
-                onClick={() => void loadSession(s.id)}
-              >
-                <MessageSquare
-                  className={`h-3.5 w-3.5 shrink-0 ${
-                    activeSessionId === s.id ? "text-brand" : "text-ink/35"
-                  }`}
-                />
-                <span className="flex-1 truncate text-sm font-medium">
-                  {s.title ?? "Untitled"}
-                </span>
-                <span className="shrink-0 rounded-md bg-line/60 px-1.5 py-0.5 text-[10px] font-semibold text-ink/50">
-                  {s._count.messages}
-                </span>
-                <button
-                  className="hidden shrink-0 text-ink/30 transition hover:text-red-500 group-hover:block"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    void deleteSession(s.id);
-                  }}
-                  aria-label="Delete session"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              </div>
+                session={s}
+                isActive={activeSessionId === s.id}
+                onLoad={() => void loadSession(s.id)}
+                onDelete={() => void deleteSession(s.id)}
+                onRename={(title) => void renameSession(s.id, title)}
+              />
             ))}
           </div>
         </aside>
 
-        {/* ── Main chat ────────────────────────────────────────────────────── */}
+        {/* Main chat */}
         <div className="flex flex-1 flex-col overflow-hidden rounded-2xl border border-line bg-white shadow-panel">
 
           {/* Chat header */}

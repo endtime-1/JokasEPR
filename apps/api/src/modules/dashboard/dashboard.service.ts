@@ -10,12 +10,21 @@ type Card = {
   value: number;
   unit?: string;
   tone: "neutral" | "good" | "warning" | "critical";
+  delta: number | null;
 };
 
 type Series = {
   name: string;
   data: { label: string; value: number }[];
 };
+
+// Keys representing point-in-time state — no meaningful period delta
+const POINT_IN_TIME_KEYS = new Set([
+  "totalBirds", "activeFlockBatches", "currentInventoryValue",
+  "outstandingCustomerDebt", "supplierDebt",
+  "lowStockAlerts", "pendingProductionOrders", "pendingPurchaseApprovals",
+  "machineMaintenanceAlerts", "aiAlerts"
+]);
 
 const CARD_CONFIG: Array<{ key: string; label: string; metricKey: DashboardMetricKey; unit?: string; tone: Card["tone"] }> = [
   { key: "totalBirds", label: "Total birds", metricKey: "TOTAL_BIRDS", unit: "birds", tone: "neutral" },
@@ -94,12 +103,25 @@ export class DashboardService {
     this.assertScope(user, query.productionSiteId, user.productionSiteIds, "production site");
 
     const range = this.resolveRange(query);
+    const prior = this.priorRange(range);
 
-    const [summary, charts, alerts] = await Promise.all([
-      this.liveSummary(user, query, range),
+    const [currentValues, priorValues, charts, alerts] = await Promise.all([
+      this.computeMetricValues(user, query, range),
+      this.computeMetricValues(user, query, prior),
       this.liveCharts(user, query, range),
       this.alerts(user, query, range)
     ]);
+
+    const summary: Card[] = CARD_CONFIG.map((card) => {
+      const value = currentValues[card.key] ?? 0;
+      const priorValue = priorValues[card.key] ?? 0;
+      const delta: number | null = POINT_IN_TIME_KEYS.has(card.key)
+        ? null
+        : priorValue === 0
+          ? null
+          : Math.round(((value - priorValue) / priorValue) * 1000) / 10;
+      return { key: card.key, label: card.label, value, unit: card.unit, tone: card.tone, delta };
+    });
 
     return { data: { filters: { ...query, startDate: range.start.toISOString(), endDate: range.end.toISOString() }, summary, charts, alerts } };
   }
@@ -304,20 +326,12 @@ export class DashboardService {
 
   // ── Live query helpers (executive dashboard) ────────────────────────────
 
-  private async liveSummary(user: AuthenticatedUser, query: DashboardQueryDto, range: { start: Date; end: Date }): Promise<Card[]> {
+  private async computeMetricValues(user: AuthenticatedUser, query: DashboardQueryDto, range: { start: Date; end: Date }): Promise<Record<string, number>> {
     const cid = user.companyId;
     const farmF = this.liveFarmFilter(user, query);
     const siteF = this.liveSiteFilter(user, query);
     const branchF = this.liveBranchFilter(user, query);
-
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const todayEnd = new Date(todayStart);
-    todayEnd.setDate(todayEnd.getDate() + 1);
-    const weekStart = new Date(todayStart);
-    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
-    const monthStart = new Date(todayStart);
-    monthStart.setDate(1);
+    const dateRange = { gte: range.start, lte: range.end };
 
     const [
       totalBirds, activeFlockBatches,
@@ -334,7 +348,7 @@ export class DashboardService {
         .catch(() => 0),
 
       this.prisma.eggProductionRecord.aggregate({
-        where: { companyId: cid, ...farmF, recordDate: { gte: todayStart, lt: todayEnd } },
+        where: { companyId: cid, ...farmF, recordDate: dateRange },
         _sum: { goodEggs: true, crackedEggs: true, dirtyEggs: true, brokenEggs: true, rejectedEggs: true }
       }).then(r => {
         const s = r._sum;
@@ -342,37 +356,37 @@ export class DashboardService {
       }).catch(() => 0),
 
       this.prisma.mortalityRecord.aggregate({
-        where: { companyId: cid, ...farmF, recordDate: { gte: todayStart, lt: todayEnd } },
+        where: { companyId: cid, ...farmF, recordDate: dateRange },
         _sum: { birdCount: true }
       }).then(r => Number(r._sum.birdCount ?? 0)).catch(() => 0),
 
       this.prisma.feedConsumptionRecord.aggregate({
-        where: { companyId: cid, ...farmF, recordDate: { gte: todayStart, lt: todayEnd } },
+        where: { companyId: cid, ...farmF, recordDate: dateRange },
         _sum: { quantityKg: true }
       }).then(r => Number(r._sum.quantityKg ?? 0)).catch(() => 0),
 
       this.prisma.feedProductionBatch.aggregate({
-        where: { companyId: cid, ...siteF, createdAt: { gte: weekStart } },
+        where: { companyId: cid, ...siteF, createdAt: dateRange },
         _sum: { producedQuantityKg: true }
       }).then(r => Number(r._sum.producedQuantityKg ?? 0)).catch(() => 0),
 
       this.prisma.soyaBeanIntake.aggregate({
-        where: { companyId: cid, ...siteF, receivedAt: { gte: weekStart } },
+        where: { companyId: cid, ...siteF, receivedAt: dateRange },
         _sum: { quantityKg: true }
       }).then(r => Number(r._sum.quantityKg ?? 0)).catch(() => 0),
 
       this.prisma.soyaOilOutput.aggregate({
-        where: { deletedAt: null, createdAt: { gte: range.start, lte: range.end } },
+        where: { deletedAt: null, createdAt: dateRange },
         _sum: { quantityLitres: true }
       }).then(r => Number(r._sum.quantityLitres ?? 0)).catch(() => 0),
 
       this.prisma.soyaCakeOutput.aggregate({
-        where: { deletedAt: null, createdAt: { gte: range.start, lte: range.end } },
+        where: { deletedAt: null, createdAt: dateRange },
         _sum: { quantityKg: true }
       }).then(r => Number(r._sum.quantityKg ?? 0)).catch(() => 0),
 
       this.prisma.salesOrder.aggregate({
-        where: { companyId: cid, ...branchF, status: { not: "CANCELLED" }, orderDate: { gte: monthStart } },
+        where: { companyId: cid, ...branchF, status: { not: "CANCELLED" }, orderDate: dateRange },
         _sum: { totalAmount: true }
       }).then(r => Number(r._sum.totalAmount ?? 0)).catch(() => 0),
 
@@ -397,7 +411,7 @@ export class DashboardService {
         .catch(() => 0),
     ]);
 
-    const values: Record<string, number> = {
+    return {
       totalBirds,
       activeFlockBatches,
       eggProductionToday: eggAgg,
@@ -417,14 +431,6 @@ export class DashboardService {
       machineMaintenanceAlerts: maintenanceAlerts,
       aiAlerts,
     };
-
-    return CARD_CONFIG.map((card) => ({
-      key: card.key,
-      label: card.label,
-      value: values[card.key] ?? 0,
-      unit: card.unit,
-      tone: card.tone,
-    }));
   }
 
   private async liveCharts(user: AuthenticatedUser, query: DashboardQueryDto, range: { start: Date; end: Date }) {
@@ -752,6 +758,13 @@ export class DashboardService {
     }
     start.setHours(0, 0, 0, 0);
     return { start, end };
+  }
+
+  private priorRange(range: { start: Date; end: Date }): { start: Date; end: Date } {
+    const durationMs = range.end.getTime() - range.start.getTime();
+    const priorEnd = new Date(range.start.getTime() - 1);
+    const priorStart = new Date(range.start.getTime() - durationMs - 1);
+    return { start: priorStart, end: priorEnd };
   }
 
   private formatDate(date: Date) {

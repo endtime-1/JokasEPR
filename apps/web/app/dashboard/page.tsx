@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -11,9 +11,11 @@ import {
   CalendarDays,
   CircleCheckBig,
   Clock,
+  Copy,
   Factory,
   ChartLine as LineIcon,
   PackageCheck,
+  RefreshCw,
   Scale,
   ShoppingCart,
   SlidersHorizontal,
@@ -47,6 +49,7 @@ type Card = {
   value: number;
   unit?: string;
   tone: "neutral" | "good" | "warning" | "critical";
+  delta?: number | null;
 };
 
 type Series = {
@@ -153,6 +156,35 @@ const cardHrefs: Record<string, string> = {
   aiAlerts:                    "/alerts",
 };
 
+type DatePreset = "today" | "7d" | "30d" | "mtd" | "qtd" | "ytd";
+
+function applyPreset(preset: DatePreset): { startDate: string; endDate: string } {
+  const today = new Date();
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  const end = fmt(today);
+  if (preset === "today") return { startDate: end, endDate: end };
+  if (preset === "7d") {
+    const s = new Date(today); s.setDate(s.getDate() - 6);
+    return { startDate: fmt(s), endDate: end };
+  }
+  if (preset === "30d") {
+    const s = new Date(today); s.setDate(s.getDate() - 29);
+    return { startDate: fmt(s), endDate: end };
+  }
+  if (preset === "mtd") {
+    const s = new Date(today.getFullYear(), today.getMonth(), 1);
+    return { startDate: fmt(s), endDate: end };
+  }
+  if (preset === "qtd") {
+    const q = Math.floor(today.getMonth() / 3);
+    const s = new Date(today.getFullYear(), q * 3, 1);
+    return { startDate: fmt(s), endDate: end };
+  }
+  // ytd
+  const s = new Date(today.getFullYear(), 0, 1);
+  return { startDate: fmt(s), endDate: end };
+}
+
 function defaultFilters(): Filters {
   const end = new Date();
   const start = new Date();
@@ -167,6 +199,14 @@ function defaultFilters(): Filters {
     startDate: start.toISOString().slice(0, 10),
     endDate: end.toISOString().slice(0, 10)
   };
+}
+
+function timeAgoLabel(date: Date): string {
+  const secs = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (secs < 60) return "just now";
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return `${mins}m ago`;
+  return `${Math.floor(mins / 60)}h ago`;
 }
 
 function formatValue(value: number, unit?: string) {
@@ -266,6 +306,11 @@ function SummaryCard({ card, index }: { card: Card; index: number }) {
       <p className="mt-2.5 text-[11px] font-semibold uppercase tracking-wide text-ink/50 leading-snug">
         {card.label}
       </p>
+      {card.delta != null && (
+        <p className={`mt-1 text-[11px] font-bold ${card.delta >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+          {card.delta >= 0 ? "↑" : "↓"} {Math.abs(card.delta)}%
+        </p>
+      )}
     </article>
   );
 
@@ -289,6 +334,16 @@ function LinePanel({ title, series }: { title: string; series: Series[] }) {
     y: PB - (data[i].value / max) * chartH
   });
 
+  // Pick up to 6 evenly-spaced tick indices from the longest series
+  const refData = series.reduce((a, b) => (b.data.length > a.data.length ? b : a), { data: [] as { label: string; value: number }[] }).data;
+  const tickIndices: number[] = [];
+  const maxTicks = Math.min(6, refData.length);
+  if (maxTicks > 0) {
+    for (let t = 0; t < maxTicks; t++) {
+      tickIndices.push(Math.round((t / Math.max(maxTicks - 1, 1)) * (refData.length - 1)));
+    }
+  }
+
   return (
     <section className="app-card overflow-hidden">
       <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-4">
@@ -299,8 +354,8 @@ function LinePanel({ title, series }: { title: string; series: Series[] }) {
       </div>
       <div className="px-5 pb-4 pt-5">
         <svg
-          viewBox={`0 0 ${W} ${PB + 4}`}
-          className="h-52 w-full overflow-visible"
+          viewBox={`0 0 ${W} ${PB + 20}`}
+          className="h-56 w-full overflow-visible"
           role="img"
           aria-label={title}
         >
@@ -317,6 +372,25 @@ function LinePanel({ title, series }: { title: string; series: Series[] }) {
             />
           ))}
           <line x1={PL} y1={PB} x2={W - 10} y2={PB} stroke="#eadfd2" strokeWidth="1.5" />
+
+          {/* x-axis tick labels */}
+          {tickIndices.map((idx) => {
+            const x = PL + (idx / Math.max(refData.length - 1, 1)) * chartW;
+            const label = refData[idx]?.label ?? "";
+            return (
+              <text
+                key={idx}
+                x={x}
+                y={PB + 16}
+                textAnchor="middle"
+                fontSize="9"
+                fill="#9a8e83"
+                fontFamily="system-ui, sans-serif"
+              >
+                {label.slice(5)} {/* show MM-DD portion */}
+              </text>
+            );
+          })}
 
           {series.map((s, si) => {
             const pts = s.data.map((_, i) => toXY(s.data, i));
@@ -586,12 +660,17 @@ export default function DashboardPage() {
   const { profile, ready } = useAuth();
   const router = useRouter();
   const [filters, setFilters] = useState<Filters>(defaultFilters);
+  const [activePreset, setActivePreset] = useState<DatePreset | null>("30d");
   const [options, setOptions] = useState<DashboardOptions | null>(null);
   const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
   const [dashboardLoading, setDashboardLoading] = useState(true);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [farmOps, setFarmOps] = useState<FarmOperationsResponse["data"] | null>(null);
   const [farmOpsLoading, setFarmOpsLoading] = useState(true);
+  const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [, forceRefreshLabel] = useState(0);
 
   // Redirect non-executive users to their primary module
   useEffect(() => {
@@ -634,23 +713,29 @@ export default function DashboardPage() {
         setOptions(opts);
         setFilters((f) => ({ ...f, companyId: opts.companies[0]?.id ?? "" }));
       })
-      .catch(() => undefined);
+      .catch((err) => console.error("dashboard options:", err));
   }, []);
 
   useEffect(() => {
     setDashboardLoading(true);
     apiFetch<ApiEnvelope<DashboardResponse>>(`/dashboard/executive?${buildQuery(filters)}`)
-      .then((res) => setDashboard(res.data))
+      .then((res) => { setDashboard(res.data); setLastRefreshed(new Date()); })
       .catch(() => setDashboard(null))
       .finally(() => setDashboardLoading(false));
-  }, [filters]);
+  }, [filters, refreshKey]);
 
   useEffect(() => {
     setFarmOpsLoading(true);
     apiFetch<FarmOperationsResponse>("/dashboard/farm-operations-today")
       .then((res) => setFarmOps(res.data))
-      .catch(() => setFarmOps(null))
+      .catch((err) => { console.error("farm-ops:", err); setFarmOps(null); })
       .finally(() => setFarmOpsLoading(false));
+  }, []);
+
+  // Tick "X min ago" label every 30s
+  useEffect(() => {
+    refreshTimerRef.current = setInterval(() => forceRefreshLabel((n) => n + 1), 30_000);
+    return () => { if (refreshTimerRef.current) clearInterval(refreshTimerRef.current); };
   }, []);
 
   return (
@@ -671,23 +756,40 @@ export default function DashboardPage() {
               maintenance, and AI alerts consolidated for scoped decision-making.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {[
-              { label: "Date window", value: `${filters.startDate.slice(5)} — ${filters.endDate.slice(5)}` },
-              { label: "Scope", value: filters.branchId ? "Branch filtered" : "All branches" },
-              {
-                label: "Active alerts",
-                value: dashboardLoading ? "—" : String(dashboard?.alerts.length ?? 0)
-              }
-            ].map(({ label, value }) => (
-              <div
-                key={label}
-                className="rounded-xl border border-line bg-white/80 px-4 py-2.5 backdrop-blur-sm"
+          <div className="flex flex-col items-end gap-2">
+            <div className="flex flex-wrap gap-2">
+              {[
+                { label: "Date window", value: `${filters.startDate.slice(5)} — ${filters.endDate.slice(5)}` },
+                { label: "Scope", value: filters.branchId ? "Branch filtered" : "All branches" },
+                {
+                  label: "Active alerts",
+                  value: dashboardLoading ? "—" : String(dashboard?.alerts.length ?? 0)
+                }
+              ].map(({ label, value }) => (
+                <div
+                  key={label}
+                  className="rounded-xl border border-line bg-white/80 px-4 py-2.5 backdrop-blur-sm"
+                >
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-ink/40">{label}</p>
+                  <p className="mt-0.5 text-sm font-bold text-ink">{value}</p>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center gap-2">
+              {lastRefreshed && (
+                <span className="text-[11px] text-ink/40">
+                  Updated {timeAgoLabel(lastRefreshed)}
+                </span>
+              )}
+              <button
+                onClick={() => setRefreshKey((k) => k + 1)}
+                disabled={dashboardLoading}
+                className="flex items-center gap-1.5 rounded-lg border border-line bg-white/80 px-3 py-1.5 text-xs font-semibold text-ink/70 shadow-card transition hover:bg-white hover:text-ink disabled:opacity-50"
               >
-                <p className="text-[10px] font-bold uppercase tracking-wider text-ink/40">{label}</p>
-                <p className="mt-0.5 text-sm font-bold text-ink">{value}</p>
-              </div>
-            ))}
+                <RefreshCw aria-hidden className={`h-3.5 w-3.5 ${dashboardLoading ? "animate-spin" : ""}`} />
+                Refresh
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -705,7 +807,37 @@ export default function DashboardPage() {
           </span>
         </button>
         {filtersOpen && (
-          <div className="grid gap-3 border-t border-line p-5 md:grid-cols-2 xl:grid-cols-7">
+          <div className="border-t border-line">
+            {/* Date presets */}
+            <div className="flex flex-wrap gap-1.5 px-5 pt-4 pb-0">
+              {(
+                [
+                  { id: "today", label: "Today" },
+                  { id: "7d",    label: "7 days" },
+                  { id: "30d",   label: "30 days" },
+                  { id: "mtd",   label: "MTD" },
+                  { id: "qtd",   label: "QTD" },
+                  { id: "ytd",   label: "YTD" },
+                ] as { id: DatePreset; label: string }[]
+              ).map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => {
+                    const dates = applyPreset(p.id);
+                    setActivePreset(p.id);
+                    setFilters((f) => ({ ...f, ...dates }));
+                  }}
+                  className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                    activePreset === p.id
+                      ? "bg-brand text-white shadow-sm"
+                      : "bg-field text-ink/60 hover:bg-line hover:text-ink"
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          <div className="grid gap-3 p-5 md:grid-cols-2 xl:grid-cols-7">
             <SelectField
               label="Company"
               value={filters.companyId}
@@ -762,7 +894,7 @@ export default function DashboardPage() {
                   className="app-control text-sm"
                   type="date"
                   value={filters.startDate}
-                  onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
+                  onChange={(e) => { setActivePreset(null); setFilters({ ...filters, startDate: e.target.value }); }}
                 />
               </label>
               <label className="grid gap-1">
@@ -771,10 +903,11 @@ export default function DashboardPage() {
                   className="app-control text-sm"
                   type="date"
                   value={filters.endDate}
-                  onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
+                  onChange={(e) => { setActivePreset(null); setFilters({ ...filters, endDate: e.target.value }); }}
                 />
               </label>
             </div>
+          </div>
           </div>
         )}
       </div>
