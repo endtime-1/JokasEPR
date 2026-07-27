@@ -1,16 +1,23 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { Cron } from "@nestjs/schedule";
 import { PrismaService } from "../prisma/prisma.service";
 import { AlertGenerationService } from "./alert-generation.service";
 
 @Injectable()
-export class AlertsSchedulerService {
+export class AlertsSchedulerService implements OnModuleInit {
   private readonly logger = new Logger(AlertsSchedulerService.name);
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly alertGeneration: AlertGenerationService
   ) {}
+
+  async onModuleInit() {
+    // Run once on startup so the dashboard is populated immediately after a
+    // deploy/restart, without waiting up to 4 hours for the first cron tick.
+    // generateAll() deduplicates by (category, entityId) per day, so this is safe.
+    setTimeout(() => this.generateAlertsForAllCompanies().catch(() => undefined), 10_000);
+  }
 
   @Cron("0 */4 * * *")
   async generateAlertsForAllCompanies(): Promise<void> {

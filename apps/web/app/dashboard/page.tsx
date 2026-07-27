@@ -970,7 +970,7 @@ export default function DashboardPage() {
             <span className="mb-2 grid h-10 w-10 place-items-center rounded-xl bg-emerald-100">
               <AlertTriangle aria-hidden className="h-5 w-5 text-emerald-600" />
             </span>
-            <p className="text-sm font-semibold text-ink/60">No alerts in the selected period</p>
+            <p className="text-sm font-semibold text-ink/60">No active alerts — all clear</p>
           </div>
         ) : (
           <div className="grid gap-3 xl:grid-cols-2">

@@ -668,9 +668,9 @@ export class DashboardService {
     return [{ name: metricKey.toLowerCase(), data: Array.from(grouped, ([label, value]) => ({ label, value })) }];
   }
 
-  private async alerts(user: AuthenticatedUser, query: DashboardQueryDto, range: { start: Date; end: Date }) {
+  private async alerts(user: AuthenticatedUser, query: DashboardQueryDto, _range: { start: Date; end: Date }) {
     const rows = await this.prisma.aiAlert.findMany({
-      where: this.aiAlertWhere(user, query, range),
+      where: this.aiAlertWhere(user, query),
       select: { id: true, title: true, message: true, severity: true, status: true, category: true, createdAt: true },
       orderBy: [{ severity: "desc" }, { createdAt: "desc" }],
       take: 8
@@ -718,11 +718,10 @@ export class DashboardService {
     };
   }
 
-  private aiAlertWhere(user: AuthenticatedUser, query: DashboardQueryDto, range: { start: Date; end: Date }): Prisma.AiAlertWhereInput {
+  private aiAlertWhere(user: AuthenticatedUser, query: DashboardQueryDto): Prisma.AiAlertWhereInput {
     return {
       companyId: user.companyId,
-      status: "UNREAD",
-      createdAt: { gte: range.start, lte: range.end },
+      status: { not: "RESOLVED" },
       branchId: query.branchId ?? undefined,
       farmId: query.farmId ?? undefined,
       warehouseId: query.warehouseId ?? undefined,
