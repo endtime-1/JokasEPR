@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "./auth-context";
@@ -200,6 +200,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [searchFocus, setSearchFocus] = useState(0);
   const [apiDownBanner, setApiDownBanner] = useState(false);
   const [dataErrorToast, setDataErrorToast] = useState(false);
+  const [recoveryKey, setRecoveryKey] = useState(0);
   const dataErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -252,6 +253,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           if (res.status !== 502 && res.status !== 503 && res.status !== 504) {
             clearPolling();
             setApiDownBanner(false);
+            // Increment recoveryKey so all page components remount. Their
+            // useState initializers read from _getCache / sessionStorage, so
+            // cached data shows instantly while fresh data is re-fetched in
+            // the background — no blank skeleton, no full browser reload.
+            setRecoveryKey((k) => k + 1);
             window.dispatchEvent(new CustomEvent("api:recovered"));
           }
         } catch { /* still down — wait for next poll */ }
@@ -598,7 +604,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <main className="px-5 py-7 lg:px-8">{children}</main>
+        <main className="px-5 py-7 lg:px-8">
+          <Fragment key={recoveryKey}>{children}</Fragment>
+        </main>
       </div>
 
       {/* ── Global Search Modal ──────────────────────────────────────────── */}
