@@ -577,7 +577,8 @@ export class DashboardService {
         label: card.label,
         value: await this.sumMetric(baseWhere, card.metricKey),
         unit: card.unit,
-        tone: card.tone
+        tone: card.tone,
+        delta: null,
       }))
     );
   }
