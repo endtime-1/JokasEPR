@@ -996,6 +996,18 @@ export class MarketPlanningService {
   }
 
   private productionPlanWhere(user: AuthenticatedUser, query: MarketPlanningQueryDto): Prisma.ProductionPlanWhereInput {
+    const accessFilter: Prisma.ProductionPlanWhereInput = user.hasGlobalAccess
+      ? {}
+      : {
+          OR: [
+            ...(user.branchIds.length ? [{ branchId: { in: user.branchIds } }] : []),
+            ...(user.productionSiteIds.length ? [{ productionSiteId: { in: user.productionSiteIds } }] : []),
+            ...(user.warehouseIds.length ? [{ centralWarehouseId: { in: user.warehouseIds } }] : []),
+            // If the user has no access entries at all, OR [] would be vacuously true.
+            // Force a never-match so they see no plans rather than all plans.
+            ...(!user.branchIds.length && !user.productionSiteIds.length && !user.warehouseIds.length ? [{ id: "__no_access__" }] : []),
+          ],
+        };
     return {
       companyId: user.companyId,
       deletedAt: null,
@@ -1003,18 +1015,27 @@ export class MarketPlanningService {
       ...(query.branchId ? { branchId: query.branchId } : {}),
       ...(query.productionSiteId ? { productionSiteId: query.productionSiteId } : {}),
       ...(query.warehouseId ? { centralWarehouseId: query.warehouseId } : {}),
-      ...(user.hasGlobalAccess ? {} : { branchId: { in: user.branchIds }, productionSiteId: { in: user.productionSiteIds }, centralWarehouseId: { in: user.warehouseIds } })
+      ...accessFilter,
     };
   }
 
   private mrpWhere(user: AuthenticatedUser, query: MarketPlanningQueryDto): Prisma.MaterialRequirementPlanWhereInput {
+    const accessFilter: Prisma.MaterialRequirementPlanWhereInput = user.hasGlobalAccess
+      ? {}
+      : {
+          OR: [
+            ...(user.branchIds.length ? [{ branchId: { in: user.branchIds } }] : []),
+            ...(user.warehouseIds.length ? [{ centralWarehouseId: { in: user.warehouseIds } }] : []),
+            ...(!user.branchIds.length && !user.warehouseIds.length ? [{ id: "__no_access__" }] : []),
+          ],
+        };
     return {
       companyId: user.companyId,
       deletedAt: null,
       ...(query.status ? { status: query.status as never } : {}),
       ...(query.branchId ? { branchId: query.branchId } : {}),
       ...(query.warehouseId ? { centralWarehouseId: query.warehouseId } : {}),
-      ...(user.hasGlobalAccess ? {} : { branchId: { in: user.branchIds }, centralWarehouseId: { in: user.warehouseIds } })
+      ...accessFilter,
     };
   }
 
@@ -1024,7 +1045,7 @@ export class MarketPlanningService {
       deletedAt: null,
       ...(query.status ? { status: query.status as never } : {}),
       ...(query.branchId ? { branchId: query.branchId } : {}),
-      ...(user.hasGlobalAccess ? {} : { branchId: { in: user.branchIds } })
+      ...(user.hasGlobalAccess ? {} : user.branchIds.length ? { branchId: { in: user.branchIds } } : { id: "__no_access__" }),
     };
   }
 
