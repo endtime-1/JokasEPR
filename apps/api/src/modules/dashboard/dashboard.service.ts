@@ -407,7 +407,7 @@ export class DashboardService {
       this.prisma.maintenanceRecord.count({ where: { companyId: cid, status: { in: ["OPEN", "OVERDUE", "PENDING"] as any[] } } } as any)
         .catch(() => 0),
 
-      this.prisma.dashboardAlert.count({ where: { companyId: cid, status: "OPEN", deletedAt: null } })
+      this.prisma.aiAlert.count({ where: { companyId: cid, status: "UNREAD" } })
         .catch(() => 0),
     ]);
 
@@ -669,12 +669,39 @@ export class DashboardService {
   }
 
   private async alerts(user: AuthenticatedUser, query: DashboardQueryDto, range: { start: Date; end: Date }) {
-    return this.prisma.dashboardAlert.findMany({
-      where: this.alertWhere(user, query, range),
-      select: { id: true, title: true, message: true, severity: true, status: true, businessUnit: true, occurredAt: true },
-      orderBy: [{ severity: "desc" }, { occurredAt: "desc" }],
+    const rows = await this.prisma.aiAlert.findMany({
+      where: this.aiAlertWhere(user, query, range),
+      select: { id: true, title: true, message: true, severity: true, status: true, category: true, createdAt: true },
+      orderBy: [{ severity: "desc" }, { createdAt: "desc" }],
       take: 8
     });
+    return rows.map((a) => ({
+      id: a.id,
+      title: a.title,
+      message: a.message,
+      severity: a.severity === "CRITICAL" ? "CRITICAL" : a.severity === "HIGH" ? "WARNING" : ("INFO" as string),
+      status: "OPEN",
+      businessUnit: this.categoryToBusinessUnit(a.category as string),
+      occurredAt: a.createdAt
+    }));
+  }
+
+  private categoryToBusinessUnit(category: string): string {
+    const map: Record<string, string> = {
+      MORTALITY_ANOMALY: "POULTRY",
+      EGG_PRODUCTION_DROP: "POULTRY",
+      FEED_CONSUMPTION_ANOMALY: "POULTRY",
+      FEED_DEMAND_FORECAST: "FEED_MILL",
+      LOW_STOCK_PREDICTION: "INVENTORY",
+      SALES_FORECAST: "SALES",
+      CUSTOMER_REORDER_PREDICTION: "SALES",
+      SMART_PRICING: "SALES",
+      CUSTOMER_DEBT_RISK: "SALES",
+      SUPPLIER_DELAY_RISK: "INVENTORY",
+      SOYA_YIELD_ANOMALY: "SOYA_PROCESSING",
+      MACHINE_MAINTENANCE: "FEED_MILL"
+    };
+    return map[category] ?? "INVENTORY";
   }
 
   private metricWhere(user: AuthenticatedUser, query: DashboardQueryDto, range: { start: Date; end: Date }): Prisma.DashboardMetricSnapshotWhereInput {
@@ -691,18 +718,16 @@ export class DashboardService {
     };
   }
 
-  private alertWhere(user: AuthenticatedUser, query: DashboardQueryDto, range: { start: Date; end: Date }): Prisma.DashboardAlertWhereInput {
+  private aiAlertWhere(user: AuthenticatedUser, query: DashboardQueryDto, range: { start: Date; end: Date }): Prisma.AiAlertWhereInput {
     return {
       companyId: user.companyId,
-      deletedAt: null,
-      status: "OPEN",
-      occurredAt: { gte: range.start, lte: range.end },
-      branchId: query.branchId,
-      farmId: query.farmId,
-      warehouseId: query.warehouseId,
-      productionSiteId: query.productionSiteId,
-      businessUnit: query.businessUnit,
-      AND: this.scopeClauses(user)
+      status: "UNREAD",
+      createdAt: { gte: range.start, lte: range.end },
+      branchId: query.branchId ?? undefined,
+      farmId: query.farmId ?? undefined,
+      warehouseId: query.warehouseId ?? undefined,
+      productionSiteId: query.productionSiteId ?? undefined,
+      AND: this.scopeClauses(user) as Prisma.AiAlertWhereInput[]
     };
   }
 
