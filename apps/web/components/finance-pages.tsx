@@ -25,13 +25,14 @@ const btnPrimary = "inline-flex min-h-10 items-center gap-2 rounded-md bg-brand 
 const btnSecondary = "inline-flex min-h-10 items-center gap-2 rounded-md border border-line px-3 text-sm font-semibold hover:bg-field";
 
 function useFinanceOptions() {
-  const [options, setOptions] = useState<FinanceOptions>({ branches: [], bankAccounts: [], expenseCategories: [], accounts: [] });
+  const [options, setOptions] = useState<FinanceOptions>(() => getCached<ApiEnvelope<FinanceOptions>>("/finance/options")?.data ?? { branches: [], bankAccounts: [], expenseCategories: [], accounts: [] });
+  const [optionsError, setOptionsError] = useState("");
   useEffect(() => {
     apiFetch<ApiEnvelope<FinanceOptions>>("/finance/options")
       .then((r) => setOptions(r.data ?? { branches: [], bankAccounts: [], expenseCategories: [], accounts: [] }))
-      .catch(() => undefined);
+      .catch((err: any) => setOptionsError(err?.message ?? "Failed to load options."));
   }, []);
-  return options;
+  return { options, optionsError };
 }
 
 function money(v: unknown) {
@@ -184,6 +185,7 @@ export function FinanceDashboardPage() {
   const [debtors, setDebtors] = useState<Record<string, unknown>[]>([]);
   const [period, setPeriod] = useState("this_month");
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [refresh, setRefresh] = useState(0);
   const [approving, setApproving] = useState<string | null>(null);
   const [rejectingExpense, setRejectingExpense] = useState<{ id: string; desc: string } | null>(null);
@@ -192,6 +194,7 @@ export function FinanceDashboardPage() {
   useEffect(() => {
     const { startDate, endDate } = dashPeriodDates(period);
     setLoading(true);
+    setLoadError("");
     Promise.all([
       apiFetch<ApiEnvelope<Record<string, unknown>>>(`/finance/dashboard?startDate=${startDate}&endDate=${endDate}`),
       apiFetch<ApiEnvelope<{ months: ChartMonth[]; expensesByCategory: DonutSlice[] }>>("/finance/dashboard/chart?months=6"),
@@ -202,7 +205,7 @@ export function FinanceDashboardPage() {
         setChart(chartRes.data);
         setDebtors(debtorsRes.data ?? []);
       })
-      .catch(() => undefined)
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load dashboard."))
       .finally(() => setLoading(false));
   }, [period, refresh]);
 
@@ -244,7 +247,12 @@ export function FinanceDashboardPage() {
 
   return (
     <FinanceShell title="Business Overview" subtitle="Financial performance at a glance">
-
+      {loadError && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <span>{loadError}</span>
+          <button type="button" className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold hover:bg-red-50" onClick={() => setRefresh((r) => r + 1)}>Retry</button>
+        </div>
+      )}
       {/* ── Business Snapshot (QuickBooks-style hero) ────────────────────────── */}
       <div className="mb-6 overflow-hidden rounded-2xl bg-sidebar shadow-panel">
         {/* Header row: title + period tabs */}
@@ -279,7 +287,7 @@ export function FinanceDashboardPage() {
           {/* Money In */}
           <div className="border-b border-white/10 px-6 py-5 sm:border-b-0 sm:border-r">
             <p className="text-[11px] font-bold uppercase tracking-widest text-white/40">Money In</p>
-            {loading
+            {!dash && loading
               ? <div className="mt-2 h-9 w-36 animate-pulse rounded-lg bg-white/10" />
               : <p className="mt-2 text-3xl font-bold leading-none text-emerald-400">{money(totalRevenue)}</p>
             }
@@ -291,7 +299,7 @@ export function FinanceDashboardPage() {
           {/* Money Out */}
           <div className="border-b border-white/10 px-6 py-5 sm:border-b-0 sm:border-r">
             <p className="text-[11px] font-bold uppercase tracking-widest text-white/40">Money Out</p>
-            {loading
+            {!dash && loading
               ? <div className="mt-2 h-9 w-36 animate-pulse rounded-lg bg-white/10" />
               : <p className="mt-2 text-3xl font-bold leading-none text-red-400">{money(totalExpenses)}</p>
             }
@@ -303,7 +311,7 @@ export function FinanceDashboardPage() {
           {/* Net Position */}
           <div className="px-6 py-5">
             <p className="text-[11px] font-bold uppercase tracking-widest text-white/40">Net Position</p>
-            {loading
+            {!dash && loading
               ? <div className="mt-2 h-9 w-36 animate-pulse rounded-lg bg-white/10" />
               : <p className={`mt-2 text-3xl font-bold leading-none ${isProfitable ? "text-emerald-400" : "text-red-400"}`}>{money(netProfit)}</p>
             }
@@ -635,15 +643,17 @@ export function ExpenseListPage() {
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [rejecting, setRejecting] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   function load() {
+    setLoadError("");
     const params = new URLSearchParams();
     if (status) params.set("status", status);
     if (startDate) params.set("startDate", startDate);
     if (endDate) params.set("endDate", endDate);
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>(`/finance/expenses?${params}`)
       .then((r) => setExpenses(r.data ?? []))
-      .catch(() => undefined)
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load expenses."))
       .finally(() => setLoading(false));
   }
 
@@ -726,7 +736,7 @@ export function ExpenseListPage() {
 // ─── Create Expense ───────────────────────────────────────────────────────────
 
 export function CreateExpensePage() {
-  const options = useFinanceOptions();
+  const { options, optionsError } = useFinanceOptions();
   const [form, setForm] = useState({ categoryId: "", description: "", amount: "", expenseDate: new Date().toISOString().slice(0, 10), paymentMethod: "CASH", vendorName: "", receiptRef: "", branchId: "", bankAccountId: "", notes: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -820,17 +830,19 @@ export function CreateExpensePage() {
 // ─── Revenue Page ─────────────────────────────────────────────────────────────
 
 export function RevenuePage() {
-  const options = useFinanceOptions();
+  const { options, optionsError } = useFinanceOptions();
   const [revenues, setRevenues] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/finance/revenue")?.data ?? []);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ source: "PRODUCT_SALES", description: "", amount: "", revenueDate: new Date().toISOString().slice(0, 10), paymentMethod: "CASH", customerName: "", invoiceRef: "", branchId: "", bankAccountId: "", notes: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   function load() {
+    setLoadError("");
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/finance/revenue")
       .then((r) => setRevenues(r.data ?? []))
-      .catch(() => undefined);
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load revenue."));
   }
 
   useEffect(() => { load(); }, []);
@@ -915,17 +927,19 @@ export function RevenuePage() {
 // ─── Customer Payments ────────────────────────────────────────────────────────
 
 export function CustomerPaymentsPage() {
-  const options = useFinanceOptions();
+  const { options, optionsError } = useFinanceOptions();
   const [payments, setPayments] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/finance/customer-payments")?.data ?? []);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ customerName: "", amount: "", paymentDate: new Date().toISOString().slice(0, 10), paymentMethod: "CASH", description: "", invoiceRef: "", bankAccountId: "", notes: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   function load() {
+    setLoadError("");
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/finance/customer-payments")
       .then((r) => setPayments(r.data ?? []))
-      .catch(() => undefined);
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load."));
   }
 
   useEffect(() => { load(); }, []);
@@ -987,17 +1001,19 @@ export function CustomerPaymentsPage() {
 // ─── Supplier Payments ────────────────────────────────────────────────────────
 
 export function SupplierPaymentsPage() {
-  const options = useFinanceOptions();
+  const { options, optionsError } = useFinanceOptions();
   const [payments, setPayments] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/finance/supplier-payments")?.data ?? []);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ supplierName: "", amount: "", paymentDate: new Date().toISOString().slice(0, 10), paymentMethod: "BANK_TRANSFER", description: "", purchaseOrderRef: "", bankAccountId: "", notes: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   function load() {
+    setLoadError("");
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/finance/supplier-payments")
       .then((r) => setPayments(r.data ?? []))
-      .catch(() => undefined);
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load."));
   }
 
   useEffect(() => { load(); }, []);
@@ -1059,17 +1075,19 @@ export function SupplierPaymentsPage() {
 // ─── Petty Cash ───────────────────────────────────────────────────────────────
 
 export function PettyCashPage() {
-  const options = useFinanceOptions();
+  const { options, optionsError } = useFinanceOptions();
   const [transactions, setTransactions] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/finance/petty-cash")?.data ?? []);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ type: "DISBURSEMENT", amount: "", description: "", transactionDate: new Date().toISOString().slice(0, 10), categoryId: "", branchId: "", receiptRef: "", notes: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   function load() {
+    setLoadError("");
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/finance/petty-cash")
       .then((r) => setTransactions(r.data ?? []))
-      .catch(() => undefined);
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load."));
   }
 
   useEffect(() => { load(); }, []);
@@ -1149,18 +1167,20 @@ export function PettyCashPage() {
 // ─── Payroll ──────────────────────────────────────────────────────────────────
 
 export function PayrollPage() {
-  const options = useFinanceOptions();
+  const { options, optionsError } = useFinanceOptions();
   const [records, setRecords] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/finance/payroll")?.data ?? []);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ period: new Date().toISOString().slice(0, 7), periodStart: "", periodEnd: "", employeeName: "", employeeCode: "", basicSalary: "", allowances: "0", deductions: "0", taxDeduction: "0", ssnit: "0", branchId: "", bankAccountId: "", notes: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [actionErr, setActionErr] = useState("");
+  const [loadError, setLoadError] = useState("");
 
   function load() {
+    setLoadError("");
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/finance/payroll")
       .then((r) => setRecords(r.data ?? []))
-      .catch(() => undefined);
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load."));
   }
 
   useEffect(() => { load(); }, []);
@@ -1266,11 +1286,13 @@ export function BankAccountsPage() {
   const [form, setForm] = useState({ accountName: "", accountNumber: "", bankName: "", branchName: "", accountType: "CURRENT", openingBalance: "0", notes: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   function load() {
+    setLoadError("");
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/finance/bank-accounts")
       .then((r) => setAccounts(r.data ?? []))
-      .catch(() => undefined);
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load."));
   }
 
   useEffect(() => { load(); }, []);
@@ -1342,7 +1364,7 @@ export function BankAccountsPage() {
 // ─── Journal Entries ──────────────────────────────────────────────────────────
 
 export function JournalEntriesPage() {
-  const options = useFinanceOptions();
+  const { options, optionsError } = useFinanceOptions();
   const [entries, setEntries] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/finance/journal-entries")?.data ?? []);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ entryDate: new Date().toISOString().slice(0, 10), description: "", type: "STANDARD", notes: "" });
@@ -1350,11 +1372,13 @@ export function JournalEntriesPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [actionErr, setActionErr] = useState("");
+  const [loadError, setLoadError] = useState("");
 
   function load() {
+    setLoadError("");
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/finance/journal-entries")
       .then((r) => setEntries(r.data ?? []))
-      .catch(() => undefined);
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load."));
   }
 
   useEffect(() => { load(); }, []);
@@ -1475,11 +1499,13 @@ export function ProfitLossReportPage() {
   const [endDate, setEndDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [current, setCurrent] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
+    setLoadError("");
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/finance/reports/profit-loss")
       .then((r) => setReports(r.data ?? []))
-      .catch(() => undefined);
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load."));
   }, []);
 
   async function generate() {
@@ -1537,11 +1563,13 @@ export function CashFlowReportPage() {
   const [endDate, setEndDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [current, setCurrent] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
+    setLoadError("");
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/finance/reports/cash-flow")
       .then((r) => setReports(r.data ?? []))
-      .catch(() => undefined);
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load."));
   }, []);
 
   async function generate() {
@@ -1617,11 +1645,13 @@ export function ProductProfitabilityPage() {
   const [startDate, setStartDate] = useState(() => { const d = new Date(); d.setDate(1); return d.toISOString().slice(0, 10); });
   const [endDate, setEndDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   function load() {
+    setLoadError("");
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/finance/reports/product-profitability")
       .then((r) => setRecords(r.data ?? []))
-      .catch(() => undefined);
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load."));
   }
 
   useEffect(() => { load(); }, []);
@@ -1671,12 +1701,14 @@ export function BatchProfitabilityPage() {
   const [form, setForm] = useState({ batchType: "FLOCK", batchId: "", batchReference: "", batchName: "", periodStart: "", periodEnd: "", totalRevenue: "", totalCost: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   function load() {
+    setLoadError("");
     const params = batchTypeFilter ? `?batchType=${batchTypeFilter}` : "";
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>(`/finance/reports/batch-profitability${params}`)
       .then((r) => setRecords(r.data ?? []))
-      .catch(() => undefined);
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load."));
   }
 
   useEffect(() => { load(); }, [batchTypeFilter]);
@@ -1763,13 +1795,16 @@ export function BatchProfitabilityPage() {
 export function DebtorsPage() {
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [refresh, setRefresh] = useState(0);
 
   useEffect(() => {
+    setLoadError("");
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/finance/debtors")
       .then((r) => setRows(r.data ?? []))
-      .catch(() => undefined)
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
       .finally(() => setLoading(false));
-  }, []);
+  }, [refresh]);
 
   const total = rows.reduce((s, r) => s + Number(r.balanceDue ?? 0), 0);
   const overdueCount = rows.filter((r) => r.status === "OVERDUE").length;
@@ -1855,10 +1890,12 @@ export function ExpenseCategoriesPage() {
   const [form, setForm] = useState({ name: "", code: "", description: "", accountId: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   function load() {
+    setLoadError("");
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/finance/expense-categories")
-      .then((r) => setCategories(r.data ?? [])).catch(() => undefined);
+      .then((r) => setCategories(r.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load."));
   }
 
   useEffect(() => {
@@ -1962,13 +1999,15 @@ export function ChartOfAccountsPage() {
   const [form, setForm] = useState({ code: "", name: "", type: "ASSET", description: "" });
   const [formErr, setFormErr] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
+    setLoadError("");
     const t = setTimeout(() => {
       const params = search ? `?search=${encodeURIComponent(search)}` : "";
       apiFetch<ApiEnvelope<AccountRow[]>>(`/finance/accounts${params}`)
         .then((r) => setAccounts(r.data ?? []))
-        .catch(() => undefined);
+        .catch((err: any) => setLoadError(err?.message ?? "Failed to load."));
     }, search ? 300 : 0);
     return () => clearTimeout(t);
   }, [search, refresh]);

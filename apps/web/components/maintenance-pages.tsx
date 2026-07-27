@@ -78,13 +78,14 @@ type DashboardData = {
 const inputClass = "min-h-11 rounded-md border border-line px-3";
 
 function useOptions() {
-  const [options, setOptions] = useState<MaintenanceOptions>({ branches: [], farms: [], warehouses: [], productionSites: [], machines: [], equipment: [], spareParts: [], technicians: [] });
+  const [options, setOptions] = useState<MaintenanceOptions>(() => getCached<ApiEnvelope<MaintenanceOptions>>("/maintenance/options")?.data ?? { branches: [], farms: [], warehouses: [], productionSites: [], machines: [], equipment: [], spareParts: [], technicians: [] });
+  const [optionsError, setOptionsError] = useState("");
   useEffect(() => {
     apiFetch<ApiEnvelope<MaintenanceOptions>>("/maintenance/options")
       .then((response) => setOptions(response.data ?? { branches: [], farms: [], warehouses: [], productionSites: [], machines: [], equipment: [], spareParts: [], technicians: [] }))
-      .catch(() => undefined);
+      .catch((err: any) => setOptionsError(err?.message ?? "Failed to load options."));
   }, []);
-  return options;
+  return { options, optionsError };
 }
 
 function PageHeader({ title, subtitle }: { title: string; subtitle: string }) {
@@ -457,12 +458,14 @@ export function MaintenanceDashboardPage() {
 }
 
 export function MachinesPage({ create = false }: { create?: boolean }) {
-  const options = useOptions();
+  const { options, optionsError } = useOptions();
   const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/machines")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/maintenance/machines"));
   const [form, setForm] = useState({ branchId: "", farmId: "", warehouseId: "", productionSiteId: "", code: "", name: "", machineType: "FEED_MIXER", manufacturer: "", serialNumber: "", capacity: "", location: "" });
   const [submitError, setSubmitError] = useState("");
+  const [loadError, setLoadError] = useState("");
   async function load() {
+    setLoadError("");
     try {
       const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/machines");
       setRows(response.data ?? []);
@@ -470,7 +473,7 @@ export function MachinesPage({ create = false }: { create?: boolean }) {
       setLoading(false);
     }
   }
-  useEffect(() => { load().catch(() => undefined); }, []);
+  useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, []);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitError("");
@@ -532,13 +535,15 @@ export function MachineDetailsPage({ id }: { id: string }) {
 }
 
 export function SchedulePage() {
-  const options = useOptions();
+  const { options, optionsError } = useOptions();
   const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/schedules")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/maintenance/schedules"));
   const [form, setForm] = useState({ branchId: "", machineId: "", title: "", maintenanceType: "PREVENTIVE", priority: "MEDIUM", frequencyDays: "", nextDueDate: "", instructions: "" });
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
+  const [loadError, setLoadError] = useState("");
   async function load() {
+    setLoadError("");
     try {
       const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/schedules");
       setRows(response.data ?? []);
@@ -546,7 +551,7 @@ export function SchedulePage() {
       setLoading(false);
     }
   }
-  useEffect(() => { load().catch(() => undefined); }, []);
+  useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, []);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitting(true);
@@ -584,13 +589,15 @@ export function SchedulePage() {
 }
 
 export function BreakdownPage() {
-  const options = useOptions();
+  const { options, optionsError } = useOptions();
   const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/breakdowns")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/maintenance/breakdowns"));
   const [form, setForm] = useState({ machineId: "", severity: "MEDIUM", description: "", rootCause: "" });
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
+  const [loadError, setLoadError] = useState("");
   async function load() {
+    setLoadError("");
     try {
       const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/breakdowns");
       setRows(response.data ?? []);
@@ -598,7 +605,7 @@ export function BreakdownPage() {
       setLoading(false);
     }
   }
-  useEffect(() => { load().catch(() => undefined); }, []);
+  useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, []);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitting(true);
@@ -632,13 +639,15 @@ export function BreakdownPage() {
 }
 
 export function SparePartsPage() {
-  const options = useOptions();
+  const { options, optionsError } = useOptions();
   const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/spare-parts")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/maintenance/spare-parts"));
   const [form, setForm] = useState({ warehouseId: "", productId: "", machineId: "", quantity: "", unitCost: "", notes: "" });
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
+  const [loadError, setLoadError] = useState("");
   async function load() {
+    setLoadError("");
     try {
       const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/spare-parts");
       setRows(response.data ?? []);
@@ -646,7 +655,7 @@ export function SparePartsPage() {
       setLoading(false);
     }
   }
-  useEffect(() => { load().catch(() => undefined); }, []);
+  useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, []);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitting(true);

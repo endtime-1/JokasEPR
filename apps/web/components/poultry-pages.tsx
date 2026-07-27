@@ -1126,7 +1126,7 @@ function BatchRecordSection({ batchId, type, label, cols, endpoint, options }: {
             </div>
           )}
           {!loading && !loadError && rows.length === 0 && !addOpen && <p className="text-xs text-ink/50">No records yet.</p>}
-          {!loading && rows.length > 0 && (
+          {rows.length > 0 && (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead className="bg-field">

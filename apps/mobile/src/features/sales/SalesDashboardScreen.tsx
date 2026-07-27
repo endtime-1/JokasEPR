@@ -28,7 +28,7 @@ export function SalesDashboardScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async (isRefresh = false) => {
-    if (!isRefresh) setLoading(true);
+    if (!isRefresh && !data) setLoading(true);
     else setRefreshing(true);
     try {
       const res = await fetchSalesDashboard();
@@ -37,7 +37,7 @@ export function SalesDashboardScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [data]);
 
   useEffect(() => { load(); }, [load]);
 

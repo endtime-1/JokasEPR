@@ -30,7 +30,7 @@ const inputClass = "min-h-11 rounded-md border border-line px-3";
 const EMPTY_OPTIONS: InventoryOptions = { warehouses: [], products: [], farms: [], productionSites: [], items: [] };
 
 function useInventoryOptions() {
-  const [options, setOptions] = useState<InventoryOptions>(EMPTY_OPTIONS);
+  const [options, setOptions] = useState<InventoryOptions>(() => getCached<ApiEnvelope<InventoryOptions>>("/inventory/options")?.data ?? EMPTY_OPTIONS);
   const [optionsError, setOptionsError] = useState("");
   useEffect(() => {
     apiFetch<ApiEnvelope<InventoryOptions>>("/inventory/options")
@@ -70,12 +70,14 @@ export function InventoryItemsPage({ create = false }: { create?: boolean }) {
   const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/inventory/items")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/inventory/items"));
   const [form, setForm] = useState({ warehouseId: "", productId: "", reorderLevel: "", openingQuantity: "" });
+  const [loadError, setLoadError] = useState("");
 
   async function load() {
+    setLoadError("");
     const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/inventory/items");
     setRows(response.data ?? []);
   }
-  useEffect(() => { load().catch(() => undefined).finally(() => setLoading(false)); }, []);
+  useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false)); }, []);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const warehouseId = form.warehouseId || options.warehouses[0]?.id;
@@ -88,6 +90,12 @@ export function InventoryItemsPage({ create = false }: { create?: boolean }) {
     <InventoryShell>
       <PageHeader title={create ? "Create Inventory Item" : "Product and Item List"} subtitle="Warehouse-specific stock balances across poultry, feed, soya, eggs, medicine, packaging, spares, equipment, and supplies." />
       {optionsError && <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{optionsError}</p>}
+      {loadError && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <span>{loadError}</span>
+          <button type="button" className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold hover:bg-red-50" onClick={load}>Retry</button>
+        </div>
+      )}
       {create ? (
         <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-4">
           <SelectField label="Warehouse" value={form.warehouseId || options.warehouses[0]?.id || ""} options={options.warehouses} onChange={(value) => setForm({ ...form, warehouseId: value })} />
@@ -167,14 +175,17 @@ export function StockOperationPage({ mode }: { mode: "stock-in" | "stock-out" | 
 }
 
 export function InventoryListPage({ title, endpoint, subtitle }: { title: string; endpoint: string; subtitle: string }) {
-  const [rows, setRows] = useState<Record<string, unknown>[]>([]);
-  const [loading, setLoading] = useState(true);
-  useEffect(() => {
+  const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>(endpoint)?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached(endpoint));
+  const [loadError, setLoadError] = useState("");
+  function load() {
+    setLoadError("");
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>(endpoint)
       .then((response) => setRows(response.data ?? []))
-      .catch(() => undefined)
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
       .finally(() => setLoading(false));
-  }, [endpoint]);
+  }
+  useEffect(() => { load(); }, [endpoint]);
   const table =
     endpoint === "/inventory/movements" ? <MovementsTable rows={rows as Record<string, any>[]} loading={loading} /> :
     endpoint === "/inventory/expiry-alerts" ? <ExpiryAlertsTable rows={rows as Record<string, any>[]} loading={loading} /> :
@@ -182,6 +193,12 @@ export function InventoryListPage({ title, endpoint, subtitle }: { title: string
   return (
     <InventoryShell>
       <PageHeader title={title} subtitle={subtitle} />
+      {loadError && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <span>{loadError}</span>
+          <button type="button" className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold hover:bg-red-50" onClick={load}>Retry</button>
+        </div>
+      )}
       {table}
     </InventoryShell>
   );
@@ -192,15 +209,16 @@ export function ScopedInventoryViewPage({ scope }: { scope: "warehouses" | "farm
   const [selectedId, setSelectedId] = useState("");
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
   const source = scope === "warehouses" ? options.warehouses : scope === "farms" ? options.farms : options.productionSites;
   const id = selectedId || source[0]?.id || "";
   useEffect(() => {
     if (!id) return;
     setLoading(true);
-    setRows([]);
+    setLoadError("");
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>(`/inventory/${scope}/${id}`)
       .then((response) => setRows(response.data ?? []))
-      .catch(() => undefined)
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
       .finally(() => setLoading(false));
   }, [id, scope]);
   return (
@@ -209,6 +227,12 @@ export function ScopedInventoryViewPage({ scope }: { scope: "warehouses" | "farm
       <div className="mb-6 max-w-md">
         <SelectField label="Scope" value={id} options={source} onChange={setSelectedId} />
       </div>
+      {loadError && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <span>{loadError}</span>
+          <button type="button" className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold hover:bg-red-50" onClick={() => { setLoading(true); setLoadError(""); apiFetch<ApiEnvelope<Record<string, unknown>[]>>(`/inventory/${scope}/${id}`).then((r) => setRows(r.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false)); }}>Retry</button>
+        </div>
+      )}
       <InventoryItemsTable rows={rows} loading={loading} />
     </InventoryShell>
   );

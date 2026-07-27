@@ -66,13 +66,14 @@ function money(value: unknown) {
 }
 
 function useOptions() {
-  const [options, setOptions] = useState<PlanningOptions>({ branches: [], productionSites: [], warehouses: [], finishedFeeds: [], formulas: [], rawMaterials: [] });
+  const [options, setOptions] = useState<PlanningOptions>(() => getCached<ApiEnvelope<PlanningOptions>>("/market-planning/options")?.data ?? { branches: [], productionSites: [], warehouses: [], finishedFeeds: [], formulas: [], rawMaterials: [] });
+  const [optionsError, setOptionsError] = useState("");
   useEffect(() => {
     apiFetch<ApiEnvelope<PlanningOptions>>("/market-planning/options")
       .then((res) => setOptions(res.data ?? { branches: [], productionSites: [], warehouses: [], finishedFeeds: [], formulas: [], rawMaterials: [] }))
-      .catch(() => undefined);
+      .catch((err: any) => setOptionsError(err?.message ?? "Failed to load options."));
   }, []);
-  return options;
+  return { options, optionsError };
 }
 
 function Header({ title, subtitle }: { title: string; subtitle: string }) {
@@ -180,10 +181,12 @@ function RecommendationTable({ rows, loading }: { rows: RecommendationRow[]; loa
 export function MarketTargetListPage() {
   const [rows, setRows] = useState<TargetRow[]>(() => getCachedFirst<ApiEnvelope<TargetRow[]>>("/market-planning/targets")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/market-planning/targets"));
+  const [loadError, setLoadError] = useState("");
   useEffect(() => {
+    setLoadError("");
     apiFetch<ApiEnvelope<TargetRow[]>>("/market-planning/targets")
       .then((res) => setRows(res.data ?? []))
-      .catch(() => undefined)
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
       .finally(() => setLoading(false));
   }, []);
   return (
@@ -199,7 +202,7 @@ export function MarketTargetListPage() {
 }
 
 export function CreateMarketTargetPage({ period }: { period: "WEEKLY" | "MONTHLY" }) {
-  const options = useOptions();
+  const { options, optionsError } = useOptions();
   const [message, setMessage] = useState("");
   const [form, setForm] = useState({
     title: period === "WEEKLY" ? "Weekly feed market target" : "Monthly feed market target",
@@ -265,14 +268,16 @@ export function CreateMarketTargetPage({ period }: { period: "WEEKLY" | "MONTHLY
 
 export function MarketTargetDetailsPage() {
   const params = useParams<{ id: string }>();
-  const options = useOptions();
+  const { options, optionsError } = useOptions();
   const [target, setTarget] = useState<TargetDetail | null>(null);
   const [approve, setApprove] = useState({ productionSiteId: "", centralWarehouseId: "", notes: "" });
+  const [loadError, setLoadError] = useState("");
   async function load() {
+    setLoadError("");
     const res = await apiFetch<ApiEnvelope<TargetDetail>>(`/market-planning/targets/${params.id}`);
     setTarget(res.data);
   }
-  useEffect(() => { load().catch(() => undefined); }, [params.id]);
+  useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, [params.id]);
   async function approveTarget(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     await apiFetch(`/market-planning/targets/${params.id}/approve`, { method: "PATCH", body: JSON.stringify(approve) });
@@ -307,11 +312,13 @@ export function TargetAdjustmentPage() {
   const [itemId, setItemId] = useState("");
   const [adjustmentPercent, setAdjustmentPercent] = useState("10");
   const [reason, setReason] = useState("Demand change");
+  const [loadError, setLoadError] = useState("");
   async function load() {
+    setLoadError("");
     const res = await apiFetch<ApiEnvelope<TargetDetail>>(`/market-planning/targets/${params.id}`);
     setTarget(res.data);
   }
-  useEffect(() => { load().catch(() => undefined); }, [params.id]);
+  useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, [params.id]);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     await apiFetch(`/market-planning/targets/${params.id}/items/${itemId || target?.items?.[0]?.id}/adjust`, { method: "PATCH", body: JSON.stringify({ adjustmentPercent: Number(adjustmentPercent), reason }) });
@@ -335,7 +342,8 @@ export function ProductionPlanPage() {
   const [loading, setLoading] = useState(true);
   const [planId, setPlanId] = useState("");
   const [message, setMessage] = useState("");
-  useEffect(() => { apiFetch<ApiEnvelope<PlanRow[]>>("/market-planning/production-plans").then((res) => setPlans(res.data ?? [])).catch(() => undefined).finally(() => setLoading(false)); }, []);
+  const [loadError, setLoadError] = useState("");
+  useEffect(() => { apiFetch<ApiEnvelope<PlanRow[]>>("/market-planning/production-plans").then((res) => setPlans(res.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false)); }, []);
   async function calculate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const res = await apiFetch<ApiEnvelope<MrpRow>>(`/market-planning/production-plans/${planId}/mrp`, { method: "POST", body: JSON.stringify({}) });
@@ -358,8 +366,9 @@ export function MaterialRequirementPlanningPage() {
   const [plans, setPlans] = useState<PlanRow[]>([]);
   const [mrps, setMrps] = useState<MrpRow[]>([]);
   const [planId, setPlanId] = useState("");
+  const [loadError, setLoadError] = useState("");
   useEffect(() => {
-    apiFetch<ApiEnvelope<PlanRow[]>>("/market-planning/production-plans").then((res) => setPlans(res.data ?? [])).catch(() => undefined);
+    apiFetch<ApiEnvelope<PlanRow[]>>("/market-planning/production-plans").then((res) => setPlans(res.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load."));
   }, []);
   async function calculate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -388,11 +397,13 @@ export function ProcurementRecommendationPage({ convert = false }: { convert?: b
   const [mrpId, setMrpId] = useState("");
   const [recommendationId, setRecommendationId] = useState("");
   const [message, setMessage] = useState("");
+  const [loadError, setLoadError] = useState("");
   async function load() {
+    setLoadError("");
     const res = await apiFetch<ApiEnvelope<RecommendationRow[]>>("/market-planning/recommendations");
     setRows(res.data ?? []);
   }
-  useEffect(() => { load().catch(() => undefined).finally(() => setLoading(false)); }, []);
+  useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false)); }, []);
   async function generate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     await apiFetch(`/market-planning/mrp/${mrpId}/recommendations`, { method: "POST", body: JSON.stringify({ notes: "Generated from MRP shortage" }) });
@@ -425,12 +436,13 @@ export function ProcurementRecommendationPage({ convert = false }: { convert?: b
 }
 
 export function ProductionExecutionPage() {
-  const options = useOptions();
+  const { options, optionsError } = useOptions();
   const [plans, setPlans] = useState<PlanRow[]>([]);
   const [plan, setPlan] = useState<PlanRow | null>(null);
   const [form, setForm] = useState({ planId: "", productionPlanItemId: "", rawMaterialWarehouseId: "", finishedGoodsWarehouseId: "", producedQuantityKg: "1000", wastageKg: "0" });
   const [message, setMessage] = useState("");
-  useEffect(() => { apiFetch<ApiEnvelope<PlanRow[]>>("/market-planning/production-plans").then((res) => setPlans(res.data ?? [])).catch(() => undefined); }, []);
+  const [loadError, setLoadError] = useState("");
+  useEffect(() => { apiFetch<ApiEnvelope<PlanRow[]>>("/market-planning/production-plans").then((res) => setPlans(res.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, []);
   async function selectPlan(planId: string) {
     setForm({ ...form, planId, productionPlanItemId: "" });
     if (!planId) return setPlan(null);

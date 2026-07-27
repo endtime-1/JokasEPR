@@ -190,16 +190,17 @@ type QCOptions = {
 };
 
 function useQCOptions() {
-  const [opts, setOpts] = useState<QCOptions>({
+  const [opts, setOpts] = useState<QCOptions>(() => getCached<ApiEnvelope<QCOptions>>("/quality/options")?.data ?? {
     templates: [], branches: [], farms: [], warehouses: [],
     productionSites: [], suppliers: [], users: [],
   });
+  const [optionsError, setOptionsError] = useState("");
   useEffect(() => {
     apiFetch<ApiEnvelope<QCOptions>>("/quality/options")
       .then((r) => setOpts(r.data ?? { templates: [], branches: [], farms: [], warehouses: [], productionSites: [], suppliers: [], users: [] }))
-      .catch(() => undefined);
+      .catch((err: any) => setOptionsError(err?.message ?? "Failed to load options."));
   }, []);
-  return opts;
+  return { opts, optionsError };
 }
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
@@ -380,11 +381,13 @@ export function QualityTemplatesPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(!hasCached("/quality/templates"));
+  const [loadError, setLoadError] = useState("");
 
   function load() {
+    setLoadError("");
     const p = new URLSearchParams();
     if (checkType) p.set("checkType", checkType);
-    apiFetch<ApiEnvelope<Template[]>>(`/quality/templates?${p}`).then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
+    apiFetch<ApiEnvelope<Template[]>>(`/quality/templates?${p}`).then((r) => setRows(r.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
   }
 
   useEffect(() => { load(); }, [checkType]);
@@ -539,14 +542,16 @@ export function QualityChecksPage({ filterType }: { filterType?: string }) {
   const [status, setStatus] = useState("");
   const [decision, setDecision] = useState("");
   const [loading, setLoading] = useState(!hasCached("/quality/checks"));
+  const [loadError, setLoadError] = useState("");
 
   function load() {
+    setLoadError("");
     const p = new URLSearchParams();
     if (checkType) p.set("checkType", checkType);
     if (status) p.set("status", status);
     if (decision) p.set("decision", decision);
     apiFetch<ApiEnvelope<{ total: number; items: QualityCheck[] }>>(`/quality/checks?${p}`)
-      .then((r) => setData(r.data ?? { total: 0, items: [] })).catch(() => undefined).finally(() => setLoading(false));
+      .then((r) => setData(r.data ?? { total: 0, items: [] })).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
   }
 
   useEffect(() => { load(); }, [checkType, status, decision]);
@@ -609,7 +614,7 @@ type TemplateDetail = { parameters: TemplateParam[] };
 
 export function CreateQualityCheckPage() {
   const router = useRouter();
-  const opts = useQCOptions();
+  const { opts, optionsError } = useQCOptions();
   const [form, setForm] = useState({
     checkType: "RAW_MATERIAL" as CheckType,
     templateId: "", referenceType: "", referenceId: "",
@@ -808,17 +813,19 @@ export function QualityCheckDetailPage({ id }: { id: string }) {
   const [actionForm, setActionForm] = useState({ type: "", notes: "", reason: "", conditions: "", score: "" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const opts = useQCOptions();
+  const { opts, optionsError } = useQCOptions();
   const [showLabForm, setShowLabForm] = useState(false);
   const [labForm, setLabForm] = useState({ reportNumber: "", labName: "", reportDate: new Date().toISOString().slice(0, 10), summary: "", findings: "", recommendations: "", fileUrl: "", fileType: "" });
   const [labSaving, setLabSaving] = useState(false);
   const [showCarForm, setShowCarForm] = useState(false);
   const [carForm, setCarForm] = useState({ title: "", description: "", rootCause: "", preventiveMeasure: "", priority: "MEDIUM", assignedToId: "", dueDate: "" });
   const [carSaving, setCarSaving] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   function load() {
+    setLoadError("");
     apiFetch<ApiEnvelope<CheckDetail>>(`/quality/checks/${id}`)
-      .then((r) => setCheck(r.data)).catch(() => undefined);
+      .then((r) => setCheck(r.data)).catch((err: any) => setLoadError(err?.message ?? "Failed to load."));
   }
 
   useEffect(() => { load(); }, [id]);
@@ -1154,8 +1161,9 @@ type RejectedBatch = {
 export function RejectedBatchesPage() {
   const [rows, setRows] = useState<RejectedBatch[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   useEffect(() => {
-    apiFetch<ApiEnvelope<RejectedBatch[]>>("/quality/rejected-batches").then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
+    apiFetch<ApiEnvelope<RejectedBatch[]>>("/quality/rejected-batches").then((r) => setRows(r.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
   }, []);
 
   return (
@@ -1195,8 +1203,9 @@ type ApprovedBatch = {
 export function ApprovedBatchesPage() {
   const [rows, setRows] = useState<ApprovedBatch[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   useEffect(() => {
-    apiFetch<ApiEnvelope<ApprovedBatch[]>>("/quality/approved-batches").then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
+    apiFetch<ApiEnvelope<ApprovedBatch[]>>("/quality/approved-batches").then((r) => setRows(r.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
   }, []);
 
   return (
@@ -1240,9 +1249,11 @@ export function LabReportsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(!hasCached("/quality/lab-reports"));
+  const [loadError, setLoadError] = useState("");
 
   function load() {
-    apiFetch<ApiEnvelope<LabReport[]>>("/quality/lab-reports").then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
+    setLoadError("");
+    apiFetch<ApiEnvelope<LabReport[]>>("/quality/lab-reports").then((r) => setRows(r.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
   }
 
   useEffect(() => {
@@ -1333,7 +1344,7 @@ type CorrectiveAction = {
 
 export function CorrectiveActionsPage() {
   const [rows, setRows] = useState<CorrectiveAction[]>(() => getCachedFirst<ApiEnvelope<CorrectiveAction[]>>("/quality/corrective-actions")?.data ?? []);
-  const opts = useQCOptions();
+  const { opts, optionsError } = useQCOptions();
   const [status, setStatus] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ title: "", description: "", checkId: "", rejectedBatchId: "", rootCause: "", preventiveMeasure: "", priority: "MEDIUM", assignedToId: "", dueDate: "" });
@@ -1344,11 +1355,13 @@ export function CorrectiveActionsPage() {
   const [verifyId, setVerifyId] = useState("");
   const [verificationNotes, setVerificationNotes] = useState("");
   const [loading, setLoading] = useState(!hasCached("/quality/corrective-actions"));
+  const [loadError, setLoadError] = useState("");
 
   function load() {
+    setLoadError("");
     const p = new URLSearchParams();
     if (status) p.set("status", status);
-    apiFetch<ApiEnvelope<CorrectiveAction[]>>(`/quality/corrective-actions?${p}`).then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
+    apiFetch<ApiEnvelope<CorrectiveAction[]>>(`/quality/corrective-actions?${p}`).then((r) => setRows(r.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
   }
 
   useEffect(() => { load(); }, [status]);

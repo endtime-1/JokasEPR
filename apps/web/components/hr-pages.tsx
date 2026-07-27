@@ -125,11 +125,12 @@ type HROptions = {
 };
 
 function useHROptions() {
-  const [opts, setOpts] = useState<HROptions>({ branches: [], farms: [], warehouses: [], productionSites: [], employeeRoles: [], shifts: [], employees: [], bankAccounts: [] });
+  const [opts, setOpts] = useState<HROptions>(() => getCached<ApiEnvelope<HROptions>>("/hr/options")?.data ?? { branches: [], farms: [], warehouses: [], productionSites: [], employeeRoles: [], shifts: [], employees: [], bankAccounts: [] });
+  const [optionsError, setOptionsError] = useState("");
   useEffect(() => {
-    apiFetch<ApiEnvelope<HROptions>>("/hr/options").then((r) => setOpts(r.data ?? { branches: [], farms: [], warehouses: [], productionSites: [], employeeRoles: [], shifts: [], employees: [], bankAccounts: [] })).catch(() => undefined);
+    apiFetch<ApiEnvelope<HROptions>>("/hr/options").then((r) => setOpts(r.data ?? { branches: [], farms: [], warehouses: [], productionSites: [], employeeRoles: [], shifts: [], employees: [], bankAccounts: [] })).catch((err: any) => setOptionsError(err?.message ?? "Failed to load options."));
   }, []);
-  return opts;
+  return { opts, optionsError };
 }
 
 // â"€â"€â"€ Dashboard â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
@@ -151,9 +152,12 @@ type DashData = {
 
 export function HRDashboardPage() {
   const [data, setData] = useState<DashData | null>(null);
+  const [loadError, setLoadError] = useState("");
+  const [refresh, setRefresh] = useState(0);
   useEffect(() => {
-    apiFetch<ApiEnvelope<DashData>>("/hr/dashboard").then((r) => setData(r.data)).catch(() => undefined);
-  }, []);
+    setLoadError("");
+    apiFetch<ApiEnvelope<DashData>>("/hr/dashboard").then((r) => setData(r.data)).catch((err: any) => setLoadError(err?.message ?? "Failed to load dashboard."));
+  }, [refresh]);
 
   const kpis = [
     { label: "Total Employees", value: data?.totalEmployees, icon: Users, color: "text-sky-400" },
@@ -169,7 +173,12 @@ export function HRDashboardPage() {
   return (
     <AppShell>
       <div className="space-y-6">
-
+        {loadError && (
+          <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <span>{loadError}</span>
+            <button type="button" className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold hover:bg-red-50" onClick={() => setRefresh((r) => r + 1)}>Retry</button>
+          </div>
+        )}
         {/* ── Hero ─────────────────────────────────────────────────────────── */}
         <div className="overflow-hidden rounded-2xl bg-sidebar shadow-panel">
           <div className="flex flex-wrap items-start justify-between gap-4 px-6 py-5">
@@ -303,12 +312,14 @@ export function EmployeeListPage() {
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(!hasCached("/hr/employees"));
   const [deleteError, setDeleteError] = useState("");
+  const [loadError, setLoadError] = useState("");
 
   function load() {
+    setLoadError("");
     const params = new URLSearchParams();
     if (search) params.set("search", search);
     if (status) params.set("status", status);
-    apiFetch<ApiEnvelope<Employee[]>>(`/hr/employees?${params}`).then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
+    apiFetch<ApiEnvelope<Employee[]>>(`/hr/employees?${params}`).then((r) => setRows(r.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
   }
 
   useEffect(() => { load(); }, [search, status]);
@@ -392,7 +403,7 @@ export function EmployeeListPage() {
 
 export function CreateEmployeePage() {
   const router = useRouter();
-  const opts = useHROptions();
+  const { opts, optionsError } = useHROptions();
   const [form, setForm] = useState({ code: "", firstName: "", lastName: "", phone: "", email: "", address: "", nationalId: "", startDate: "", gender: "", dateOfBirth: "", employeeRoleId: "", branchId: "", farmId: "", warehouseId: "", productionSiteId: "", basicSalary: "", bankName: "", bankAccount: "", ssnitNumber: "", tinNumber: "", emergencyContactName: "", emergencyContactPhone: "", notes: "" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -611,7 +622,7 @@ type EmployeeDetail = Employee & {
 
 export function EmployeeDetailPage({ id }: { id: string }) {
   const [data, setData] = useState<EmployeeDetail | null>(null);
-  const opts = useHROptions();
+  const { opts, optionsError } = useHROptions();
   // Read ?tab= from URL so external links (e.g. edit button in employee list) can deep-link
   const [tab, setTab] = useState(() => {
     if (typeof window !== "undefined") {
@@ -974,16 +985,18 @@ type AttendanceRow = { id: string; date: string; status: string; hoursWorked?: n
 
 export function AttendancePage() {
   const [rows, setRows] = useState<AttendanceRow[]>(() => getCachedFirst<ApiEnvelope<AttendanceRow[]>>("/hr/attendance")?.data ?? []);
-  const opts = useHROptions();
+  const { opts, optionsError } = useHROptions();
   const [dateFilter, setDateFilter] = useState(new Date().toISOString().slice(0, 10));
   const [form, setForm] = useState({ employeeId: "", date: new Date().toISOString().slice(0, 10), checkInTime: "", checkOutTime: "", status: "PRESENT", shiftId: "", notes: "" });
   const [loading, setLoading] = useState(!hasCached("/hr/attendance"));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   function load() {
-    apiFetch<ApiEnvelope<AttendanceRow[]>>(`/hr/attendance?dateFrom=${dateFilter}&dateTo=${dateFilter}`).then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
+    setLoadError("");
+    apiFetch<ApiEnvelope<AttendanceRow[]>>(`/hr/attendance?dateFrom=${dateFilter}&dateTo=${dateFilter}`).then((r) => setRows(r.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
   }
 
   useEffect(() => { load(); }, [dateFilter]);
@@ -1092,13 +1105,15 @@ type Shift = { id: string; code: string; name: string; startTime: string; endTim
 export function ShiftSchedulePage() {
   const [rows, setRows] = useState<Shift[]>(() => getCachedFirst<ApiEnvelope<Shift[]>>("/hr/shifts")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/hr/shifts"));
-  const opts = useHROptions();
+  const { opts, optionsError } = useHROptions();
   const [form, setForm] = useState({ code: "", name: "", startTime: "08:00", endTime: "17:00", branchId: "", notes: "" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [loadError, setLoadError] = useState("");
 
   function load() {
-    apiFetch<ApiEnvelope<Shift[]>>("/hr/shifts").then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
+    setLoadError("");
+    apiFetch<ApiEnvelope<Shift[]>>("/hr/shifts").then((r) => setRows(r.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
   }
 
   useEffect(() => { load(); }, []);
@@ -1183,12 +1198,14 @@ export function TaskBoardPage() {
   const [status, setStatus] = useState("");
   const [priority, setPriority] = useState("");
   const [moveError, setMoveError] = useState("");
+  const [loadError, setLoadError] = useState("");
 
   function load() {
+    setLoadError("");
     const params = new URLSearchParams();
     if (status) params.set("status", status);
     if (priority) params.set("priority", priority);
-    apiFetch<ApiEnvelope<Task[]>>(`/hr/tasks?${params}`).then((r) => setRows(r.data ?? [])).catch(() => undefined);
+    apiFetch<ApiEnvelope<Task[]>>(`/hr/tasks?${params}`).then((r) => setRows(r.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load."));
   }
 
   useEffect(() => { load(); }, [status, priority]);
@@ -1278,7 +1295,7 @@ export function TaskBoardPage() {
 
 export function CreateTaskPage() {
   const router = useRouter();
-  const opts = useHROptions();
+  const { opts, optionsError } = useHROptions();
   const [form, setForm] = useState({ title: "", description: "", taskType: "", priority: "MEDIUM", dueDate: "", branchId: "", farmId: "", productionSiteId: "", notes: "" });
   const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
@@ -1365,14 +1382,16 @@ type PayrollRow = { id: string; reference: string; period: string; grossPay: num
 export function PayrollPage() {
   const [rows, setRows] = useState<PayrollRow[]>(() => getCachedFirst<ApiEnvelope<PayrollRow[]>>("/hr/payroll")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/hr/payroll"));
-  const opts = useHROptions();
+  const { opts, optionsError } = useHROptions();
   const [form, setForm] = useState({ employeeId: "", period: "", periodStart: "", periodEnd: "", basicSalary: "", allowances: "0", deductions: "0", taxDeduction: "0", ssnit: "0", paymentMethod: "BANK_TRANSFER", notes: "" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   function load() {
-    apiFetch<ApiEnvelope<PayrollRow[]>>("/hr/payroll").then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
+    setLoadError("");
+    apiFetch<ApiEnvelope<PayrollRow[]>>("/hr/payroll").then((r) => setRows(r.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
   }
 
   useEffect(() => { load(); }, []);
@@ -1509,14 +1528,16 @@ type TrainingRow = { id: string; title: string; trainer?: string; trainingDate: 
 export function TrainingPage() {
   const [rows, setRows] = useState<TrainingRow[]>(() => getCachedFirst<ApiEnvelope<TrainingRow[]>>("/hr/training")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/hr/training"));
-  const opts = useHROptions();
+  const { opts, optionsError } = useHROptions();
   const [form, setForm] = useState({ employeeId: "", title: "", description: "", trainer: "", trainingDate: "", durationHours: "", outcome: "ONGOING", certificate: "", notes: "" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   function load() {
-    apiFetch<ApiEnvelope<TrainingRow[]>>("/hr/training").then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
+    setLoadError("");
+    apiFetch<ApiEnvelope<TrainingRow[]>>("/hr/training").then((r) => setRows(r.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
   }
 
   useEffect(() => { load(); }, []);
@@ -1599,14 +1620,16 @@ type PerfRow = { id: string; period: string; overallRating: string; attendanceSc
 export function PerformancePage() {
   const [rows, setRows] = useState<PerfRow[]>(() => getCachedFirst<ApiEnvelope<PerfRow[]>>("/hr/performance")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/hr/performance"));
-  const opts = useHROptions();
+  const { opts, optionsError } = useHROptions();
   const [form, setForm] = useState({ employeeId: "", period: "", overallRating: "MEETS_EXPECTATIONS", attendanceScore: "0", taskCompletionScore: "0", qualityScore: "0", teamworkScore: "0", comments: "", goals: "" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   function load() {
-    apiFetch<ApiEnvelope<PerfRow[]>>("/hr/performance").then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
+    setLoadError("");
+    apiFetch<ApiEnvelope<PerfRow[]>>("/hr/performance").then((r) => setRows(r.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
   }
 
   useEffect(() => { load(); }, []);
@@ -1834,11 +1857,13 @@ export function LeaveRequestsPage() {
   const [error, setError] = useState("");
   const [reviewingId, setReviewingId] = useState<string | null>(null);
   const [reviewNote, setReviewNote] = useState("");
+  const [loadError, setLoadError] = useState("");
 
   function load() {
+    setLoadError("");
     const params = new URLSearchParams();
     if (statusFilter) params.set("status", statusFilter);
-    apiFetch<ApiEnvelope<LeaveRow[]>>(`/hr/leave-requests?${params}`).then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
+    apiFetch<ApiEnvelope<LeaveRow[]>>(`/hr/leave-requests?${params}`).then((r) => setRows(r.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
   }
 
   useEffect(() => { load(); }, [statusFilter]);
@@ -1989,9 +2014,11 @@ export function EmployeeRolesPage() {
   const [editForm, setEditForm] = useState({ name: "", description: "" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [loadError, setLoadError] = useState("");
 
   function load() {
-    apiFetch<ApiEnvelope<EmployeeRole[]>>("/hr/employee-roles").then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
+    setLoadError("");
+    apiFetch<ApiEnvelope<EmployeeRole[]>>("/hr/employee-roles").then((r) => setRows(r.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
   }
 
   useEffect(() => { load(); }, []);

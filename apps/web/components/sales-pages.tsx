@@ -166,11 +166,12 @@ type SalesOptions = {
 };
 
 function useSalesOptions() {
-  const [opts, setOpts] = useState<SalesOptions>({ branches: [], warehouses: [], products: [], customerGroups: [], customers: [], priceLists: [], invoices: [] });
+  const [opts, setOpts] = useState<SalesOptions>(() => getCached<ApiEnvelope<SalesOptions>>("/sales/options")?.data ?? { branches: [], warehouses: [], products: [], customerGroups: [], customers: [], priceLists: [], invoices: [] });
+  const [optionsError, setOptionsError] = useState("");
   useEffect(() => {
-    apiFetch<ApiEnvelope<SalesOptions>>("/sales/options").then((r) => setOpts(r.data ?? { branches: [], warehouses: [], products: [], customerGroups: [], customers: [], priceLists: [], invoices: [] })).catch(() => undefined);
+    apiFetch<ApiEnvelope<SalesOptions>>("/sales/options").then((r) => setOpts(r.data ?? { branches: [], warehouses: [], products: [], customerGroups: [], customers: [], priceLists: [], invoices: [] })).catch((err: any) => setOptionsError(err?.message ?? "Failed to load options."));
   }, []);
-  return opts;
+  return { opts, optionsError };
 }
 
 function optLabel(o: Opt) {
@@ -496,7 +497,7 @@ type Customer = {
 };
 
 export function CustomersPage({ create = false }: { create?: boolean }) {
-  const opts = useSalesOptions();
+  const { opts, optionsError } = useSalesOptions();
   const router = useRouter();
   const [rows, setRows] = useState<Customer[]>(() => getCachedFirst<ApiEnvelope<Customer[]>>("/sales/customers")?.data ?? []);
   const [search, setSearch] = useState("");
@@ -765,7 +766,7 @@ type SalesOrder = {
 };
 
 export function OrdersPage({ create = false }: { create?: boolean }) {
-  const opts = useSalesOptions();
+  const { opts, optionsError } = useSalesOptions();
   const router = useRouter();
   const [rows, setRows] = useState<SalesOrder[]>(() => getCachedFirst<ApiEnvelope<SalesOrder[]>>("/sales/orders")?.data ?? []);
   const [status, setStatus] = useState("");
@@ -988,7 +989,7 @@ export function OrdersPage({ create = false }: { create?: boolean }) {
 type Payment = { id: string; paymentNumber: string; amount: number; method: string; paymentDate: string; reference?: string; customer?: { name: string }; invoice?: { invoiceNumber: string } };
 
 export function PaymentsPage() {
-  const opts = useSalesOptions();
+  const { opts, optionsError } = useSalesOptions();
   const [rows, setRows] = useState<Payment[]>(() => getCachedFirst<ApiEnvelope<Payment[]>>("/sales/payments")?.data ?? []);
   const [form, setForm] = useState({ customerId: "", invoiceId: "", amount: "", method: "BANK_TRANSFER", reference: "" });
   const [saving, setSaving] = useState(false);
@@ -1102,7 +1103,7 @@ export function PaymentsPage() {
 type SalesReturn = { id: string; returnNumber?: string; reason: string; totalAmount: number; status: string; createdAt: string; customer?: { name: string }; product?: { name: string } };
 
 export function ReturnsPage() {
-  const opts = useSalesOptions();
+  const { opts, optionsError } = useSalesOptions();
   const [rows, setRows] = useState<SalesReturn[]>(() => getCachedFirst<ApiEnvelope<SalesReturn[]>>("/sales/returns")?.data ?? []);
   const [form, setForm] = useState({ customerId: "", warehouseId: "", productId: "", quantity: "", unitPrice: "", reason: "" });
   const [saving, setSaving] = useState(false);
@@ -1267,16 +1268,19 @@ function colsForEndpoint(endpoint: string): ColDef[] {
 }
 
 export function SalesListPage({ title, endpoint, subtitle }: { title: string; endpoint: string; subtitle: string }) {
-  const [rows, setRows] = useState<Record<string, unknown>[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>(endpoint)?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached(endpoint));
+  const [loadError, setLoadError] = useState("");
 
-  useEffect(() => {
-    setLoading(true);
+  function load() {
+    setLoadError("");
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>(endpoint)
       .then((r) => setRows(r.data ?? []))
-      .catch(() => undefined)
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
       .finally(() => setLoading(false));
-  }, [endpoint]);
+  }
+
+  useEffect(() => { load(); }, [endpoint]);
 
   const iconMap: Record<string, ComponentType<{ className?: string }>> = {
     Invoices: FileText,
@@ -1308,6 +1312,13 @@ export function SalesListPage({ title, endpoint, subtitle }: { title: string; en
             <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-red-500" />
             <p className="text-sm font-medium text-ink">Some invoices are overdue — follow up with customers to clear outstanding balances.</p>
           </div>
+        </div>
+      )}
+
+      {loadError && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl border border-red-200 bg-white p-4 text-sm text-red-700 shadow-card">
+          <span>{loadError}</span>
+          <button type="button" className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold hover:bg-red-50" onClick={load}>Retry</button>
         </div>
       )}
 

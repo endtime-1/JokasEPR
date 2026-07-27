@@ -33,13 +33,14 @@ const inputClass = "min-h-11 rounded-md border border-line px-3";
 const today = () => new Date().toISOString().slice(0, 10);
 
 function useSoyaOptions() {
-  const [options, setOptions] = useState<SoyaOptions>({ productionSites: [], warehouses: [], products: [], intakes: [], batches: [] });
+  const [options, setOptions] = useState<SoyaOptions>(() => getCached<ApiEnvelope<SoyaOptions>>("/soya-processing/options")?.data ?? { productionSites: [], warehouses: [], products: [], intakes: [], batches: [] });
+  const [optionsError, setOptionsError] = useState("");
   useEffect(() => {
     apiFetch<ApiEnvelope<SoyaOptions>>("/soya-processing/options")
       .then((response) => setOptions(response.data ?? { productionSites: [], warehouses: [], products: [], intakes: [], batches: [] }))
-      .catch(() => undefined);
+      .catch((err: any) => setOptionsError(err?.message ?? "Failed to load options."));
   }, []);
-  return options;
+  return { options, optionsError };
 }
 
 function PageHeader({ title, subtitle }: { title: string; subtitle: string }) {
@@ -75,13 +76,15 @@ function productBySku(options: SoyaOptions, sku: string) {
 }
 
 export function SoyaIntakesPage({ create = false }: { create?: boolean }) {
-  const options = useSoyaOptions();
+  const { options, optionsError } = useSoyaOptions();
   const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/soya-processing/intakes")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/soya-processing/intakes"));
+  const [loadError, setLoadError] = useState("");
   const [form, setForm] = useState({ productionSiteId: "", warehouseId: "", productId: "", receiptNumber: "", supplierName: "", quantityKg: "", unitCost: "", moisturePercent: "", qualityStatus: "APPROVED", receivedAt: today() });
   const beanProducts = products(options, (product) => product.sku?.includes("SOYA-BEANS") ?? false);
 
   async function load() {
+    setLoadError("");
     try {
       const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/soya-processing/intakes");
       setRows(response.data ?? []);
@@ -89,7 +92,7 @@ export function SoyaIntakesPage({ create = false }: { create?: boolean }) {
       setLoading(false);
     }
   }
-  useEffect(() => { load().catch(() => undefined); }, []);
+  useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -119,12 +122,14 @@ export function SoyaIntakesPage({ create = false }: { create?: boolean }) {
 }
 
 export function SoyaBatchesPage({ create = false }: { create?: boolean }) {
-  const options = useSoyaOptions();
+  const { options, optionsError } = useSoyaOptions();
   const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/soya-processing/batches")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/soya-processing/batches"));
+  const [loadError, setLoadError] = useState("");
   const [form, setForm] = useState({ productionSiteId: "", rawWarehouseId: "", oilWarehouseId: "", cakeWarehouseId: "", intakeId: "", beansUsedKg: "", oilProducedLitres: "", cakeProducedKg: "", wasteKg: "", laborCost: "", packagingCost: "", overheadCost: "", expectedOilSalesValue: "", expectedCakeSalesValue: "", processingDate: today() });
 
   async function load() {
+    setLoadError("");
     try {
       const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/soya-processing/batches");
       setRows(response.data ?? []);
@@ -132,7 +137,7 @@ export function SoyaBatchesPage({ create = false }: { create?: boolean }) {
       setLoading(false);
     }
   }
-  useEffect(() => { load().catch(() => undefined); }, []);
+  useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -192,11 +197,13 @@ export function SoyaBatchesPage({ create = false }: { create?: boolean }) {
 }
 
 export function SoyaQualityPage() {
-  const options = useSoyaOptions();
+  const { options, optionsError } = useSoyaOptions();
   const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/soya-processing/quality-checks")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/soya-processing/quality-checks"));
+  const [loadError, setLoadError] = useState("");
   const [form, setForm] = useState({ productionBatchId: "", moisturePercent: "", oilPurityPercent: "", cakeProteinPercent: "", status: "APPROVED", notes: "" });
   async function load() {
+    setLoadError("");
     try {
       const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/soya-processing/quality-checks");
       setRows(response.data ?? []);
@@ -204,7 +211,7 @@ export function SoyaQualityPage() {
       setLoading(false);
     }
   }
-  useEffect(() => { load().catch(() => undefined); }, []);
+  useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, []);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     await apiFetch("/soya-processing/quality-checks", { method: "POST", body: JSON.stringify({ productionBatchId: form.productionBatchId || options.batches[0]?.id, moisturePercent: Number(form.moisturePercent || 0), oilPurityPercent: Number(form.oilPurityPercent || 0), cakeProteinPercent: Number(form.cakeProteinPercent || 0), status: form.status, notes: form.notes }) });
@@ -229,11 +236,13 @@ export function SoyaQualityPage() {
 export function SoyaStockPage({ type }: { type: "oil" | "cake" }) {
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   useEffect(() => {
     setLoading(true);
+    setLoadError("");
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>(`/soya-processing/${type}-stock`)
       .then((response) => setRows(response.data ?? []))
-      .catch(() => undefined)
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
       .finally(() => setLoading(false));
   }, [type]);
   return (
@@ -253,12 +262,14 @@ export function SoyaStockPage({ type }: { type: "oil" | "cake" }) {
 }
 
 export function SoyaTransferPage() {
-  const options = useSoyaOptions();
+  const { options, optionsError } = useSoyaOptions();
   const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/soya-processing/transfers")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/soya-processing/transfers"));
+  const [loadError, setLoadError] = useState("");
   const [form, setForm] = useState({ productionBatchId: "", fromWarehouseId: "", toWarehouseId: "", toProductionSiteId: "", outputType: "CAKE", productId: "", quantity: "", notes: "" });
   const outputProducts = useMemo(() => products(options, (product) => ["SOYA-OIL", "SOYA-CAKE"].includes(product.sku ?? "")), [options]);
   async function load() {
+    setLoadError("");
     try {
       const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/soya-processing/transfers");
       setRows(response.data ?? []);
@@ -266,7 +277,7 @@ export function SoyaTransferPage() {
       setLoading(false);
     }
   }
-  useEffect(() => { load().catch(() => undefined); }, []);
+  useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, []);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     await apiFetch("/soya-processing/transfers", { method: "POST", body: JSON.stringify({ ...form, productionBatchId: form.productionBatchId || options.batches[0]?.id, fromWarehouseId: form.fromWarehouseId || options.warehouses[0]?.id, toWarehouseId: form.toWarehouseId || options.warehouses[0]?.id, toProductionSiteId: form.toProductionSiteId || undefined, productId: form.productId || outputProducts[0]?.id, quantity: Number(form.quantity) }) });

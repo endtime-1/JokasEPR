@@ -186,19 +186,20 @@ type ProcurementOptions = {
 };
 
 function useProcurementOptions() {
-  const [opts, setOpts] = useState<ProcurementOptions>({
+  const [opts, setOpts] = useState<ProcurementOptions>(() => getCached<ApiEnvelope<ProcurementOptions>>("/procurement/options")?.data ?? {
     branches: [],
     warehouses: [],
     suppliers: [],
     supplierCategories: [],
     bankAccounts: [],
   });
+  const [optionsError, setOptionsError] = useState("");
   useEffect(() => {
     apiFetch<ApiEnvelope<ProcurementOptions>>("/procurement/options")
       .then((r) => setOpts(r.data ?? { branches: [], warehouses: [], suppliers: [], supplierCategories: [], bankAccounts: [] }))
-      .catch(() => undefined);
+      .catch((err: any) => setOptionsError(err?.message ?? "Failed to load options."));
   }, []);
-  return opts;
+  return { opts, optionsError };
 }
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
@@ -234,6 +235,8 @@ type DashData = {
 export function ProcurementDashboardPage() {
   const [data, setData] = useState<DashData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [refresh, setRefresh] = useState(0);
   const today = new Date().toLocaleDateString("en-GH", {
     weekday: "long",
     day: "numeric",
@@ -243,11 +246,12 @@ export function ProcurementDashboardPage() {
 
   useEffect(() => {
     setLoading(true);
+    setLoadError("");
     apiFetch<ApiEnvelope<DashData>>("/procurement/dashboard")
       .then((r) => setData(r.data))
-      .catch(() => undefined)
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load dashboard."))
       .finally(() => setLoading(false));
-  }, []);
+  }, [refresh]);
 
   const quickLinks = [
     { href: "/procurement/purchase-requests/create", label: "New Request",  Icon: ClipboardList, cls: "border-brand/20 bg-brand/5 text-brand hover:bg-brand/10" },
@@ -489,13 +493,15 @@ export function SuppliersPage() {
   const [rows, setRows] = useState<Supplier[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
     setLoading(true);
+    setLoadError("");
     const q = search ? `?search=${encodeURIComponent(search)}` : "";
     apiFetch<ApiEnvelope<Supplier[]>>(`/procurement/suppliers${q}`)
       .then((r) => setRows(r.data ?? []))
-      .catch(() => undefined)
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
       .finally(() => setLoading(false));
   }, [search]);
 
@@ -558,7 +564,7 @@ export function SuppliersPage() {
 
 export function CreateSupplierPage() {
   const router = useRouter();
-  const opts = useProcurementOptions();
+  const { opts, optionsError } = useProcurementOptions();
   const [form, setForm] = useState({
     code: "", name: "", contactPerson: "", phone: "", email: "",
     address: "", categoryId: "", paymentTerms: "", currency: "GHS",
@@ -694,11 +700,13 @@ export function SupplierCategoriesPage() {
   const [form, setForm] = useState({ code: "", name: "", description: "" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [loadError, setLoadError] = useState("");
 
   function load() {
+    setLoadError("");
     apiFetch<ApiEnvelope<SupplierCategory[]>>("/procurement/supplier-categories")
       .then((r) => setRows(r.data ?? []))
-      .catch(() => undefined)
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
       .finally(() => setLoading(false));
   }
   useEffect(() => { load(); }, []);
@@ -793,12 +801,14 @@ export function PurchaseRequestsPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [actionErr, setActionErr] = useState("");
+  const [loadError, setLoadError] = useState("");
 
   function load() {
+    setLoadError("");
     const q = statusFilter ? `?status=${statusFilter}` : "";
     apiFetch<ApiEnvelope<PurchaseRequest[]>>(`/procurement/purchase-requests${q}`)
       .then((r) => setRows(r.data ?? []))
-      .catch(() => undefined)
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
       .finally(() => setLoading(false));
   }
   useEffect(() => { load(); }, [statusFilter]);
@@ -912,7 +922,7 @@ type PRItem = { description: string; quantity: string; unit: string; estimatedUn
 
 export function CreatePurchaseRequestPage() {
   const router = useRouter();
-  const opts = useProcurementOptions();
+  const { opts, optionsError } = useProcurementOptions();
   const [form, setForm] = useState({ branchId: "", requiredDate: "", notes: "" });
   const [items, setItems] = useState<PRItem[]>([{ description: "", quantity: "1", unit: "PCS", estimatedUnitPrice: "" }]);
   const [saving, setSaving] = useState(false);
@@ -1066,12 +1076,14 @@ export function PurchaseOrdersPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [actionErr, setActionErr] = useState("");
+  const [loadError, setLoadError] = useState("");
 
   function load() {
+    setLoadError("");
     const q = statusFilter ? `?status=${statusFilter}` : "";
     apiFetch<ApiEnvelope<PurchaseOrder[]>>(`/procurement/purchase-orders${q}`)
       .then((r) => setRows(r.data ?? []))
-      .catch(() => undefined)
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
       .finally(() => setLoading(false));
   }
   useEffect(() => { load(); }, [statusFilter]);
@@ -1186,7 +1198,7 @@ type POItem = { description: string; quantity: string; unit: string; unitPrice: 
 
 export function CreatePurchaseOrderPage() {
   const router = useRouter();
-  const opts = useProcurementOptions();
+  const { opts, optionsError } = useProcurementOptions();
   const [form, setForm] = useState({
     supplierId: "", branchId: "", orderDate: "", expectedDeliveryDate: "",
     paymentTerms: "", notes: "",
@@ -1370,12 +1382,14 @@ export function GRNsPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [actionErr, setActionErr] = useState("");
+  const [loadError, setLoadError] = useState("");
 
   function load() {
+    setLoadError("");
     const q = statusFilter ? `?status=${statusFilter}` : "";
     apiFetch<ApiEnvelope<GRN[]>>(`/procurement/grns${q}`)
       .then((r) => setRows(r.data ?? []))
-      .catch(() => undefined)
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
       .finally(() => setLoading(false));
   }
   useEffect(() => { load(); }, [statusFilter]);
@@ -1490,7 +1504,7 @@ type POOption = { id: string; reference: string };
 
 export function CreateGRNPage() {
   const router = useRouter();
-  const opts = useProcurementOptions();
+  const { opts, optionsError } = useProcurementOptions();
   const [poOptions, setPoOptions] = useState<POOption[]>([]);
   const [form, setForm] = useState({
     supplierId: "", warehouseId: "", purchaseOrderId: "",
@@ -1667,7 +1681,7 @@ export function SupplierInvoicesPage() {
   const [loading, setLoading] = useState(!hasCached("/procurement/invoices"));
   const [statusFilter, setStatusFilter] = useState("");
   const [showForm, setShowForm] = useState(false);
-  const opts = useProcurementOptions();
+  const { opts, optionsError } = useProcurementOptions();
   const [form, setForm] = useState({
     supplierId: "", invoiceNumber: "", invoiceDate: "", dueDate: "",
     totalAmount: "", notes: "",
@@ -1675,11 +1689,14 @@ export function SupplierInvoicesPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
+  const [loadError, setLoadError] = useState("");
+
   function load() {
+    setLoadError("");
     const q = statusFilter ? `?status=${statusFilter}` : "";
     apiFetch<ApiEnvelope<SupplierInvoice[]>>(`/procurement/invoices${q}`)
       .then((r) => setRows(r.data ?? []))
-      .catch(() => undefined)
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
       .finally(() => setLoading(false));
   }
   useEffect(() => { load(); }, [statusFilter]);
@@ -1818,18 +1835,20 @@ export function ProcurementPaymentsPage() {
   const [rows, setRows] = useState<ProcurementPayment[]>(() => getCachedFirst<ApiEnvelope<ProcurementPayment[]>>("/procurement/payments")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/procurement/payments"));
   const [showForm, setShowForm] = useState(false);
-  const opts = useProcurementOptions();
+  const { opts, optionsError } = useProcurementOptions();
   const [form, setForm] = useState({
     supplierId: "", amount: "", paymentDate: "",
     paymentMethod: "BANK_TRANSFER", bankAccountId: "", reference: "", notes: "",
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [loadError, setLoadError] = useState("");
 
   function load() {
+    setLoadError("");
     apiFetch<ApiEnvelope<ProcurementPayment[]>>("/procurement/payments")
       .then((r) => setRows(r.data ?? []))
-      .catch(() => undefined)
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
       .finally(() => setLoading(false));
   }
   useEffect(() => { load(); }, []);
@@ -1969,7 +1988,7 @@ type PerformanceRecord = {
 export function SupplierPerformancePage() {
   const [rows, setRows] = useState<PerformanceRecord[]>(() => getCachedFirst<ApiEnvelope<PerformanceRecord[]>>("/procurement/performance")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/procurement/performance"));
-  const opts = useProcurementOptions();
+  const { opts, optionsError } = useProcurementOptions();
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({
     supplierId: "", period: "", rating: "GOOD", onTimeDelivery: true,
@@ -1978,11 +1997,13 @@ export function SupplierPerformancePage() {
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [loadError, setLoadError] = useState("");
 
   function load() {
+    setLoadError("");
     apiFetch<ApiEnvelope<PerformanceRecord[]>>("/procurement/performance")
       .then((r) => setRows(r.data ?? []))
-      .catch(() => undefined)
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
       .finally(() => setLoading(false));
   }
   useEffect(() => { load(); }, []);
@@ -2139,16 +2160,18 @@ type PriceHistoryRow = {
 export function PriceHistoryPage() {
   const [rows, setRows] = useState<PriceHistoryRow[]>(() => getCachedFirst<ApiEnvelope<PriceHistoryRow[]>>("/procurement/price-history")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/procurement/price-history"));
-  const opts = useProcurementOptions();
+  const { opts, optionsError } = useProcurementOptions();
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ supplierId: "", productName: "", unitPrice: "", currency: "GHS", effectiveDate: "", notes: "" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [loadError, setLoadError] = useState("");
 
   function load() {
+    setLoadError("");
     apiFetch<ApiEnvelope<PriceHistoryRow[]>>("/procurement/price-history")
       .then((r) => setRows(r.data ?? []))
-      .catch(() => undefined)
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
       .finally(() => setLoading(false));
   }
   useEffect(() => { load(); }, []);

@@ -109,13 +109,14 @@ const inputClass = "min-h-11 rounded-md border border-line px-3";
 const today = () => new Date().toISOString().slice(0, 10);
 
 function useFeedOptions() {
-  const [options, setOptions] = useState<FeedOptions>({ productionSites: [], warehouses: [], farms: [], poultryHouses: [], rawMaterials: [], finishedFeeds: [], formulas: [], batches: [] });
+  const [options, setOptions] = useState<FeedOptions>(() => getCached<ApiEnvelope<FeedOptions>>("/feed-production/options")?.data ?? { productionSites: [], warehouses: [], farms: [], poultryHouses: [], rawMaterials: [], finishedFeeds: [], formulas: [], batches: [] });
+  const [optionsError, setOptionsError] = useState("");
   useEffect(() => {
     apiFetch<ApiEnvelope<FeedOptions>>("/feed-production/options")
       .then((response) => setOptions(response.data ?? { productionSites: [], warehouses: [], farms: [], poultryHouses: [], rawMaterials: [], finishedFeeds: [], formulas: [], batches: [] }))
-      .catch(() => undefined);
+      .catch((err: any) => setOptionsError(err?.message ?? "Failed to load options."));
   }, []);
-  return options;
+  return { options, optionsError };
 }
 
 function PageHeader({ title, subtitle }: { title: string; subtitle: string }) {
@@ -165,7 +166,10 @@ export function FeedFormulaListPage() {
   const [deleting, setDeleting] = useState(false);
   const [deleteErr, setDeleteErr] = useState("");
 
+  const [loadError, setLoadError] = useState("");
+
   async function load() {
+    setLoadError("");
     try {
       const response = await apiFetch<ApiEnvelope<FormulaRow[]>>("/feed-production/formulas");
       setRows(response.data ?? []);
@@ -174,7 +178,7 @@ export function FeedFormulaListPage() {
     }
   }
 
-  useEffect(() => { load().catch(() => undefined); }, []);
+  useEffect(() => { load().catch((err: any) => { setLoadError(err?.message ?? "Failed to load."); setLoading(false); }); }, []);
 
   function openEdit(row: FormulaRow) {
     setEditTarget(row);
@@ -329,7 +333,7 @@ const FEED_TYPES = [
 ] as const;
 
 export function FormulaBuilderPage() {
-  const options = useFeedOptions();
+  const { options, optionsError } = useFeedOptions();
   const router = useRouter();
 
   const [finishedProductId, setFinishedProductId] = useState("");
@@ -679,7 +683,7 @@ function FormulaTable({ rows, loading, onEdit, onDelete }: { rows: FormulaRow[];
 export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" | "costing" | "versions" }) {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const options = useFeedOptions();
+  const { options, optionsError } = useFeedOptions();
   const [formula, setFormula] = useState<FormulaRow | null>(null);
   const [costing, setCosting] = useState<FormulaRow["costing"] | null>(null);
 
@@ -707,7 +711,10 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
   // Add form
   const [ingredient, setIngredient] = useState({ ingredientId: "", quantityKg: "", unitCost: "" });
 
+  const [loadError, setLoadError] = useState("");
+
   async function load() {
+    setLoadError("");
     const response = await apiFetch<ApiEnvelope<FormulaRow>>(`/feed-production/formulas/${params.id}`);
     setFormula(response.data);
     if (mode === "costing") {
@@ -716,7 +723,7 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
     }
   }
 
-  useEffect(() => { load().catch(() => undefined); }, [mode, params.id]);
+  useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, [mode, params.id]);
 
   function openHeaderEdit() {
     setHeaderDraft({ name: formula?.name ?? "", targetBatchKg: String(formula?.targetBatchKg ?? "") });
@@ -1166,7 +1173,7 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
 type OrderEditDraft = { plannedQuantityKg: string; scheduledDate: string; notes: string };
 
 export function FeedProductionOrdersPage({ create = false }: { create?: boolean }) {
-  const options = useFeedOptions();
+  const { options, optionsError } = useFeedOptions();
   const [rows, setRows] = useState<OrderRow[]>(() => getCachedFirst<ApiEnvelope<OrderRow[]>>("/feed-production/orders")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/feed-production/orders"));
   const [form, setForm] = useState<OrderFormState>({ productionSiteId: "", formulaId: "", plannedQuantityKg: "", scheduledDate: today(), rawMaterialWarehouseId: "", notes: "" });
@@ -1184,8 +1191,10 @@ export function FeedProductionOrdersPage({ create = false }: { create?: boolean 
   const [cancelTarget, setCancelTarget] = useState<OrderRow | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [cancelErr, setCancelErr] = useState("");
+  const [loadError, setLoadError] = useState("");
 
   async function load() {
+    setLoadError("");
     try {
       const response = await apiFetch<ApiEnvelope<OrderRow[]>>("/feed-production/orders");
       setRows(response.data ?? []);
@@ -1193,7 +1202,7 @@ export function FeedProductionOrdersPage({ create = false }: { create?: boolean 
       setLoading(false);
     }
   }
-  useEffect(() => { load().catch(() => undefined); }, []);
+  useEffect(() => { load().catch((err: any) => { setLoadError(err?.message ?? "Failed to load."); setLoading(false); }); }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1511,7 +1520,7 @@ type ApprovedOrder = {
 };
 
 export function FeedBatchCreatePage() {
-  const options = useFeedOptions();
+  const { options, optionsError } = useFeedOptions();
   const router = useRouter();
   const [approvedOrders, setApprovedOrders] = useState<ApprovedOrder[]>([]);
   const [form, setForm] = useState({
@@ -1741,7 +1750,7 @@ type BatchLabel = {
 
 export function FeedBatchDetailsPage() {
   const params = useParams<{ id: string }>();
-  const options = useFeedOptions();
+  const { options, optionsError } = useFeedOptions();
   const [batch, setBatch] = useState<BatchDetail | null>(null);
   const [label, setLabel] = useState<BatchLabel | null>(null);
   const [showLabel, setShowLabel] = useState(false);
@@ -1757,12 +1766,15 @@ export function FeedBatchDetailsPage() {
   const [submittingCost, setSubmittingCost] = useState(false);
   const [costErr, setCostErr] = useState("");
 
+  const [loadError, setLoadError] = useState("");
+
   async function load() {
+    setLoadError("");
     const res = await apiFetch<ApiEnvelope<BatchDetail>>(`/feed-production/batches/${params.id}`);
     setBatch(res.data);
   }
 
-  useEffect(() => { load().catch(() => undefined); }, [params.id]);
+  useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, [params.id]);
 
   async function fetchLabel() {
     const res = await apiFetch<ApiEnvelope<BatchLabel>>(`/feed-production/batches/${params.id}/label`);
@@ -2140,7 +2152,7 @@ type QcRow = {
 };
 
 export function FeedQualityControlPage() {
-  const options = useFeedOptions();
+  const { options, optionsError } = useFeedOptions();
   const [rows, setRows] = useState<QcRow[]>(() => getCachedFirst<ApiEnvelope<QcRow[]>>("/feed-production/quality-checks")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/feed-production/quality-checks"));
   const [form, setForm] = useState({ productionBatchId: "", moisturePercent: "", proteinPercent: "", textureNotes: "" });
@@ -2299,7 +2311,7 @@ type TransferRow = {
 };
 
 export function InternalFeedTransferPage() {
-  const options = useFeedOptions();
+  const { options, optionsError } = useFeedOptions();
   const [rows, setRows] = useState<TransferRow[]>(() => getCachedFirst<ApiEnvelope<TransferRow[]>>("/feed-production/transfers")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/feed-production/transfers"));
   const [form, setForm] = useState({ productionBatchId: "", fromWarehouseId: "", toFarmId: "", toPoultryHouseId: "", quantityKg: "", notes: "" });
@@ -2504,7 +2516,7 @@ type PackagingRow = {
 };
 
 export function FeedPackagingRecordPage() {
-  const options = useFeedOptions();
+  const { options, optionsError } = useFeedOptions();
   const [rows, setRows] = useState<PackagingRow[]>(() => getCachedFirst<ApiEnvelope<PackagingRow[]>>("/feed-production/packaging-records")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/feed-production/packaging-records"));
   const [form, setForm] = useState({ productionBatchId: "", packageSizeKg: "50", packageCount: "", packagedAt: today() });
@@ -3024,7 +3036,7 @@ function IngredientSheet({ ing, mode, getBags, onBagChange }: IngSheetProps) {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export function HiproPredictivePage() {
-  const options = useFeedOptions();
+  const { options, optionsError } = useFeedOptions();
   const [mode, setMode] = useState<"global" | "individual">("global");
   const [warehouseId, setWarehouseId] = useState<string>("");
   const [data, setData] = useState<HiproPredictiveData | null>(null);
