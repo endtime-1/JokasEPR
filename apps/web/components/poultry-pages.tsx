@@ -409,16 +409,16 @@ function PoultryHouseForm({ options, form, setForm, submit }: {
         </select>
       </FormField>
       <FormField label="House name">
-        <input className={inputClass} value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required />
+        <input name="name" className={inputClass} value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required />
       </FormField>
       <FormField label="Code">
-        <input className={inputClass} value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value })} required />
+        <input name="code" className={inputClass} value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value })} required />
       </FormField>
       <FormField label="Capacity">
-        <input className={inputClass} type="number" value={form.capacity} onChange={(event) => setForm({ ...form, capacity: event.target.value })} />
+        <input name="capacity" className={inputClass} type="number" value={form.capacity} onChange={(event) => setForm({ ...form, capacity: event.target.value })} />
       </FormField>
       <FormField label="Default pens (auto-created)">
-        <input className={inputClass} type="number" min="1" max="20" value={form.defaultPenCount} onChange={(event) => setForm({ ...form, defaultPenCount: event.target.value })} />
+        <input name="defaultPenCount" className={inputClass} type="number" min="1" max="20" value={form.defaultPenCount} onChange={(event) => setForm({ ...form, defaultPenCount: event.target.value })} />
       </FormField>
       <button className="min-h-11 rounded-md bg-brand px-4 text-sm font-semibold text-white md:col-span-4">Save poultry house</button>
     </form>
@@ -632,28 +632,28 @@ function FlockBatchForm({ options, onSaved }: { options: PoultryOptions; onSaved
       {error && <div className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
       <div className="grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-3">
         <FormField label="Batch name">
-          <input className={inputClass} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+          <input name="name" className={inputClass} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
         </FormField>
         <FormField label="Code">
-          <input className={inputClass} value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} required />
+          <input name="code" className={inputClass} value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} required />
         </FormField>
         <FormField label="Bird type">
-          <select className={inputClass} value={form.birdType} onChange={(e) => setForm({ ...form, birdType: e.target.value })}>
+          <select name="birdType" className={inputClass} value={form.birdType} onChange={(e) => setForm({ ...form, birdType: e.target.value })}>
             {["LAYERS", "BROILERS", "COCKERELS", "BREEDERS", "CHICKS"].map((type) => <option key={type}>{type}</option>)}
           </select>
         </FormField>
         <FormField label="Opening bird count">
-          <input className={inputClass} type="number" min="1" value={form.openingBirdCount} onChange={(e) => setForm({ ...form, openingBirdCount: e.target.value })} required />
+          <input name="openingBirdCount" className={inputClass} type="number" min="1" value={form.openingBirdCount} onChange={(e) => setForm({ ...form, openingBirdCount: e.target.value })} required />
         </FormField>
         <FormField label="Start date">
-          <input className={inputClass} type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} required />
+          <input name="startDate" className={inputClass} type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} required />
         </FormField>
         <FormField label="Expected close date">
-          <input className={inputClass} type="date" value={form.expectedCloseDate} onChange={(e) => setForm({ ...form, expectedCloseDate: e.target.value })} />
+          <input name="expectedCloseDate" className={inputClass} type="date" value={form.expectedCloseDate} onChange={(e) => setForm({ ...form, expectedCloseDate: e.target.value })} />
         </FormField>
         <div className="md:col-span-3">
           <FormField label="Notes">
-            <input className={inputClass + " w-full"} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+            <input name="notes" className={inputClass + " w-full"} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
           </FormField>
         </div>
       </div>
@@ -1103,11 +1103,11 @@ function BatchRecordSection({ batchId, type, label, cols, endpoint, options }: {
                   <div key={f.name}>
                     <label className="mb-0.5 block text-[10px] text-ink/60">{f.label}</label>
                     {f.kind === "select" ? (
-                      <select className="w-full rounded border border-line bg-white px-2 py-1 text-xs" value={addForm[f.name] ?? f.defaultValue ?? ""} onChange={(e) => setAddForm((prev) => ({ ...prev, [f.name]: e.target.value }))}>
+                      <select name={f.name} className="w-full rounded border border-line bg-white px-2 py-1 text-xs" value={addForm[f.name] ?? f.defaultValue ?? ""} onChange={(e) => setAddForm((prev) => ({ ...prev, [f.name]: e.target.value }))}>
                         {f.options?.map((o) => <option key={o}>{o}</option>)}
                       </select>
                     ) : (
-                      <input className="w-full rounded border border-line bg-white px-2 py-1 text-xs" type={f.kind} value={addForm[f.name] ?? f.defaultValue ?? ""} onChange={(e) => setAddForm((prev) => ({ ...prev, [f.name]: e.target.value }))} required={f.required} />
+                      <input name={f.name} className="w-full rounded border border-line bg-white px-2 py-1 text-xs" type={f.kind} value={addForm[f.name] ?? f.defaultValue ?? ""} onChange={(e) => setAddForm((prev) => ({ ...prev, [f.name]: e.target.value }))} required={f.required} />
                     )}
                   </div>
                 ))}
@@ -1348,6 +1348,7 @@ function GenericRecordForm({ options, form, setForm, submit, type, isEditing = f
     <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-4">
       <FormField label="Flock batch">
         <select
+          name="flockBatchId"
           className={`${inputClass} ${options.batches.length === 0 ? "border-amber-400 bg-amber-50" : ""}`}
           value={form.flockBatchId || options.batches[0]?.id || ""}
           onChange={(e) => setForm({ ...form, flockBatchId: e.target.value, poultryHouseId: "", penId: "" })}
@@ -1362,6 +1363,7 @@ function GenericRecordForm({ options, form, setForm, submit, type, isEditing = f
 
       <FormField label="House">
         <select
+          name="poultryHouseId"
           className={inputClass}
           value={form.poultryHouseId}
           onChange={(e) => setForm({ ...form, poultryHouseId: e.target.value, penId: "" })}
@@ -1373,6 +1375,7 @@ function GenericRecordForm({ options, form, setForm, submit, type, isEditing = f
 
       <FormField label="Pen (optional)">
         <select
+          name="penId"
           className={inputClass}
           value={form.penId}
           onChange={(e) => setForm({ ...form, penId: e.target.value })}
@@ -1386,13 +1389,13 @@ function GenericRecordForm({ options, form, setForm, submit, type, isEditing = f
       {type === "feed" && (
         <>
           <FormField label="Feed product">
-            <select className={inputClass} value={form.feedProductId ?? ""} onChange={(e) => setForm({ ...form, feedProductId: e.target.value })}>
+            <select name="feedProductId" className={inputClass} value={form.feedProductId ?? ""} onChange={(e) => setForm({ ...form, feedProductId: e.target.value })}>
               <option value="">— select product —</option>
               {options.products.map((p) => <option key={p.id} value={p.id}>{p.sku ?? p.code} — {p.name}</option>)}
             </select>
           </FormField>
           <FormField label="Warehouse">
-            <select className={inputClass} value={form.warehouseId ?? ""} onChange={(e) => setForm({ ...form, warehouseId: e.target.value })}>
+            <select name="warehouseId" className={inputClass} value={form.warehouseId ?? ""} onChange={(e) => setForm({ ...form, warehouseId: e.target.value })}>
               <option value="">— select warehouse —</option>
               {options.warehouses.map((w) => <option key={w.id} value={w.id}>{w.code} — {w.name}</option>)}
             </select>
@@ -1403,11 +1406,11 @@ function GenericRecordForm({ options, form, setForm, submit, type, isEditing = f
       {fields.map((field) => (
         <FormField key={field.name} label={field.label}>
           {field.kind === "select" ? (
-            <select className={inputClass} value={form[field.name] ?? field.defaultValue ?? ""} onChange={(e) => setForm({ ...form, [field.name]: e.target.value })}>
+            <select name={field.name} className={inputClass} value={form[field.name] ?? field.defaultValue ?? ""} onChange={(e) => setForm({ ...form, [field.name]: e.target.value })}>
               {field.options?.map((option) => <option key={option}>{option}</option>)}
             </select>
           ) : (
-            <input className={inputClass} type={field.kind} value={form[field.name] ?? field.defaultValue ?? ""} onChange={(e) => setForm({ ...form, [field.name]: e.target.value })} required={field.required} />
+            <input name={field.name} className={inputClass} type={field.kind} value={form[field.name] ?? field.defaultValue ?? ""} onChange={(e) => setForm({ ...form, [field.name]: e.target.value })} required={field.required} />
           )}
         </FormField>
       ))}
