@@ -27,6 +27,13 @@ const apiScript = fs.existsSync(apiBundle)
 // Tries four methods so we don't depend on a single tool being available.
 // ---------------------------------------------------------------------------
 function killPortOwner(port) {
+  // 0. ss -K — kernel-level socket teardown. Releases the port immediately even
+  //    if the owning process is in uninterruptible (D) sleep or ignores signals.
+  try {
+    execSync(`ss -K 'sport = :${port}' 2>/dev/null`, { timeout: 3000 });
+    console.log(`[start] ss -K released socket on port ${port}`);
+  } catch {}
+
   // 1. fuser with -k (kill) flag — -signal alone is silently ignored without -k
   for (const sig of ["-9", "-KILL"]) {
     try {
@@ -397,8 +404,8 @@ startProxy(0);
   killPortOwner(WEB_INTERNAL_PORT);
   killPortOwner(API_PORT);
   await Promise.all([
-    waitForPortFree(WEB_INTERNAL_PORT, 8000),
-    waitForPortFree(API_PORT, 8000),
+    waitForPortFree(WEB_INTERNAL_PORT, 20000),
+    waitForPortFree(API_PORT, 20000),
   ]);
   console.log("[start] ports clear");
 
@@ -464,23 +471,30 @@ startProxy(0);
       setTimeout(startWeb, 30000);
       return;
     }
-    webProc = launch("jokas-web", serverScript, standaloneDir, {
-      PORT: String(WEB_INTERNAL_PORT),
-      HOSTNAME: "0.0.0.0",
-    });
-    if (!webProc) {
-      setTimeout(startWeb, 30000);
-      return;
-    }
-    pollWebPort(webProc);
-    webProc.on("close", (code, signal) => {
-      webProc = null;
-      webReady = false;
-      _nextjsUp = false;
-      webRestarts++;
-      const delay = Math.min(3000 * webRestarts, 30000);
-      console.log(`[start] web exited code=${code} signal=${signal} — restart #${webRestarts} in ${delay}ms`);
-      setTimeout(startWeb, delay);
+    // Kill any stale holder of WEB_INTERNAL_PORT before EVERY spawn (initial and restart).
+    // The restart path previously skipped this — any zombie from the previous run that
+    // killOrphans() missed would hold the port indefinitely, causing the EADDRINUSE loop.
+    killPortOwner(WEB_INTERNAL_PORT);
+    waitForPortFree(WEB_INTERNAL_PORT, 20000).then(() => {
+      webProc = launch("jokas-web", serverScript, standaloneDir, {
+        PORT: String(WEB_INTERNAL_PORT),
+        HOSTNAME: "0.0.0.0",
+      });
+      if (!webProc) {
+        setTimeout(startWeb, 30000);
+        return;
+      }
+      savePids(); // track web PID so killOrphans() reaches it on the next boot
+      pollWebPort(webProc);
+      webProc.on("close", (code, signal) => {
+        webProc = null;
+        webReady = false;
+        _nextjsUp = false;
+        webRestarts++;
+        const delay = Math.min(3000 * webRestarts, 30000);
+        console.log(`[start] web exited code=${code} signal=${signal} — restart #${webRestarts} in ${delay}ms`);
+        setTimeout(startWeb, delay);
+      });
     });
   }
   startWeb();
