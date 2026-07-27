@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { UserStatus } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { AuthenticatedUser } from "@jokas/shared";
@@ -9,6 +9,7 @@ import { AssignUserAccessDto } from "./dto/assign-user-access.dto";
 import { AssignUserRolesDto } from "./dto/assign-user-roles.dto";
 import { CreateRoleDto } from "./dto/create-role.dto";
 import { CreateUserDto } from "./dto/create-user.dto";
+import { ResetUserPasswordDto } from "./dto/reset-user-password.dto";
 import { UpdateUserDto } from "./dto/update-user.dto";
 import { UpdateUserStatusDto } from "./dto/update-user-status.dto";
 
@@ -231,6 +232,38 @@ export class IdentityService {
 
     this.authService.clearProfileCache(userId);
     return this.getUserDetail(actor.companyId, userId);
+  }
+
+  async resetUserPassword(actor: AuthenticatedUser, userId: string, dto: ResetUserPasswordDto, context: RequestContext) {
+    if (actor.id === userId) throw new ForbiddenException("Use /auth/change-password to update your own password.");
+    await this.getCompanyUser(actor.companyId, userId);
+
+    const newHash = await bcrypt.hash(dto.newPassword, 12);
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash: newHash, passwordChangedAt: new Date(), updatedById: actor.id }
+    });
+
+    // Revoke all active sessions so the user must log in with the new password
+    await this.prisma.refreshToken.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: new Date() }
+    });
+
+    this.authService.clearProfileCache(userId);
+
+    await this.audit.write({
+      companyId: actor.companyId,
+      actorUserId: actor.id,
+      action: "UPDATE",
+      entityType: "User",
+      entityId: userId,
+      summary: "Admin reset user password",
+      ipAddress: context.ipAddress,
+      userAgent: context.userAgent
+    });
+
+    return { data: { success: true } };
   }
 
   async assignUserAccess(actor: AuthenticatedUser, userId: string, dto: AssignUserAccessDto, context: RequestContext) {

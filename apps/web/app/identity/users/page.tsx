@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Pencil, Plus, ShieldCheck, Trash2, UserCheck, UserX } from "lucide-react";
+import { KeyRound, Pencil, Plus, ShieldCheck, Trash2, UserCheck, UserX } from "lucide-react";
 import { AppShell } from "../../../components/app-shell";
 import { DataTable } from "../../../components/data-table";
 import { FormField } from "../../../components/form-field";
@@ -78,6 +78,10 @@ export default function UsersPage() {
   const [savingUser, setSavingUser] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [resetPasswordFor, setResetPasswordFor] = useState<UserRow | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [savingReset, setSavingReset] = useState(false);
 
   const defaultRoleIds = useMemo(() => (form.roleIds.length ? form.roleIds : roles[0] ? [roles[0].id] : []), [form.roleIds, roles]);
 
@@ -196,6 +200,36 @@ export default function UsersPage() {
       setError(err instanceof Error ? err.message : "Failed to update user.");
     } finally {
       setSavingUser(false);
+    }
+  }
+
+  function openResetPassword(user: UserRow) {
+    setResetPasswordFor(user);
+    setNewPassword("");
+    setConfirmPassword("");
+    setError("");
+  }
+
+  async function submitResetPassword(e: FormEvent) {
+    e.preventDefault();
+    if (!resetPasswordFor) return;
+    if (newPassword !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+    setSavingReset(true);
+    setError("");
+    try {
+      await apiFetch(`/identity/users/${resetPasswordFor.id}/reset-password`, {
+        method: "POST",
+        body: JSON.stringify({ newPassword })
+      });
+      setMessage(`Password reset for ${resetPasswordFor.fullName}. All their sessions have been invalidated.`);
+      setResetPasswordFor(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to reset password.");
+    } finally {
+      setSavingReset(false);
     }
   }
 
@@ -342,6 +376,46 @@ export default function UsersPage() {
         </form>
       )}
 
+      {resetPasswordFor && (
+        <form onSubmit={submitResetPassword} className="mb-4 rounded-md border border-amber-200 bg-amber-50 p-4">
+          <p className="mb-3 text-sm font-semibold">Reset password — <span className="text-amber-700">{resetPasswordFor.fullName}</span></p>
+          <p className="mb-3 text-xs text-amber-700">All active sessions for this user will be terminated. They must log in again with the new password.</p>
+          <div className="mb-3 grid gap-3 md:grid-cols-2">
+            <FormField label="New password">
+              <input
+                className="min-h-10 rounded-md border border-line px-3 text-sm"
+                type="password"
+                required
+                minLength={10}
+                autoComplete="new-password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+              />
+            </FormField>
+            <FormField label="Confirm new password">
+              <input
+                className="min-h-10 rounded-md border border-line px-3 text-sm"
+                type="password"
+                required
+                minLength={10}
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+              />
+            </FormField>
+          </div>
+          <div className="flex gap-2">
+            <button type="submit" disabled={savingReset} className="inline-flex min-h-9 items-center gap-2 rounded-md bg-amber-600 px-4 text-sm font-semibold text-white disabled:opacity-50 hover:bg-amber-700">
+              <KeyRound className="h-4 w-4" />
+              {savingReset ? "Resetting…" : "Reset password"}
+            </button>
+            <button type="button" onClick={() => setResetPasswordFor(null)} className="inline-flex min-h-9 items-center gap-2 rounded-md border border-line px-4 text-sm font-semibold hover:bg-field">
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+
       {deleteConfirmId && (
         <div className="mb-4 rounded-md border border-red-200 bg-red-50 p-4">
           <p className="mb-3 text-sm font-semibold text-red-800">
@@ -388,6 +462,10 @@ export default function UsersPage() {
                 <button className="inline-flex min-h-9 items-center gap-2 rounded-md border border-line px-3 text-xs font-semibold hover:bg-field" onClick={() => setStatus(row, "DEACTIVATED")}>
                   <UserX aria-hidden className="h-4 w-4" />
                   Deactivate
+                </button>
+                <button className="inline-flex min-h-9 items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 text-xs font-semibold text-amber-700 hover:bg-amber-100" onClick={() => openResetPassword(row)}>
+                  <KeyRound aria-hidden className="h-4 w-4" />
+                  Reset pwd
                 </button>
                 <button className="inline-flex min-h-9 items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 text-xs font-semibold text-red-600 hover:bg-red-100" onClick={() => setDeleteConfirmId(row.id)}>
                   <Trash2 aria-hidden className="h-4 w-4" />

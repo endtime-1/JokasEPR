@@ -8,6 +8,7 @@ import { AssignUserAccessDto } from "./dto/assign-user-access.dto";
 import { AssignUserRolesDto } from "./dto/assign-user-roles.dto";
 import { CreateRoleDto } from "./dto/create-role.dto";
 import { CreateUserDto } from "./dto/create-user.dto";
+import { ResetUserPasswordDto } from "./dto/reset-user-password.dto";
 import { UpdateUserDto } from "./dto/update-user.dto";
 import { UpdateUserStatusDto } from "./dto/update-user-status.dto";
 import { IdentityService } from "./identity.service";
@@ -67,6 +68,18 @@ export class IdentityController {
     @Headers("user-agent") userAgent?: string
   ) {
     return this.identityService.updateUserStatus(user, userId, dto, { ipAddress, userAgent });
+  }
+
+  @Post("users/:id/reset-password")
+  @RequirePermissions(PERMISSIONS.IDENTITY_MANAGE)
+  resetUserPassword(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id") userId: string,
+    @Body() dto: ResetUserPasswordDto,
+    @Ip() ipAddress: string,
+    @Headers("user-agent") userAgent?: string
+  ) {
+    return this.identityService.resetUserPassword(user, userId, dto, { ipAddress, userAgent });
   }
 
   @Put("users/:id/roles")
