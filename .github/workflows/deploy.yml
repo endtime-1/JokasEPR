@@ -125,7 +125,7 @@ jobs:
         run: |
           for attempt in 1 2 3; do
             rsync -avz --partial --timeout=300 \
-              -e "ssh -p 65002 -i ~/.ssh/id_rsa -o StrictHostKeyChecking=accept-new" \
+              -e "ssh -p 65002 -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes" \
               /tmp/api-deploy/ \
               ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/apps/api/ \
               && { echo "API upload succeeded on attempt $attempt"; break; } \
@@ -137,7 +137,7 @@ jobs:
           for attempt in 1 2 3; do
             rsync -avz --partial --timeout=300 --no-perms --omit-dir-times \
               --exclude='.next/cache' \
-              -e "ssh -p 65002 -i ~/.ssh/id_rsa -o StrictHostKeyChecking=accept-new" \
+              -e "ssh -p 65002 -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes" \
               /tmp/web-deploy/ \
               ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/apps/web/ \
               && { echo "Web upload succeeded on attempt $attempt"; break; } \
@@ -148,11 +148,11 @@ jobs:
         run: |
           for attempt in 1 2 3; do
             rsync -avz --partial --timeout=120 \
-              -e "ssh -p 65002 -i ~/.ssh/id_rsa -o StrictHostKeyChecking=accept-new" \
+              -e "ssh -p 65002 -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes" \
               packages/db/prisma/ \
               ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/prisma/ \
             && rsync -avz --partial --timeout=120 \
-              -e "ssh -p 65002 -i ~/.ssh/id_rsa -o StrictHostKeyChecking=accept-new" \
+              -e "ssh -p 65002 -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes" \
               packages/db/scripts/sync-permissions.mjs \
               ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/apps/api/sync-permissions.mjs \
             && { echo "DB+scripts upload succeeded on attempt $attempt"; break; } \
@@ -163,7 +163,7 @@ jobs:
         run: |
           for attempt in 1 2 3; do
             rsync -avz --partial --timeout=120 \
-              -e "ssh -p 65002 -i ~/.ssh/id_rsa -o StrictHostKeyChecking=accept-new" \
+              -e "ssh -p 65002 -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes" \
               ecosystem.config.js start.js package.json \
               ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/ \
             && { echo "Root files upload succeeded on attempt $attempt"; break; } \
@@ -192,7 +192,7 @@ jobs:
             fi
           '
           for attempt in 1 2 3; do
-            ssh -p 65002 -i ~/.ssh/id_rsa -o ConnectTimeout=60 -o StrictHostKeyChecking=no \
+            ssh -p 65002 -i ~/.ssh/id_rsa -o ConnectTimeout=60 -o StrictHostKeyChecking=yes \
               ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }} "$REMOTE_CMD" \
             && { echo "Deploy+restart succeeded on attempt $attempt"; break; } \
             || { echo "Attempt $attempt failed; retrying in 20s..."; sleep 20; }

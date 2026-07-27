@@ -278,7 +278,7 @@ function handleRequest(req, res) {
       "p{margin:0 0 1.5rem;font-size:0.875rem;color:#6b7280}" +
       "a{font-size:0.75rem;color:#9ca3af;text-decoration:underline}" +
       "</style></head>" +
-      "<body><div class='box'><div class='spinner'></div><h2>Jokas ERP is starting…</h2>" +
+      "<body><div class='box'><div class='spinner'></div><h2>Akoko Solutions ERP is starting…</h2>" +
       "<p>The server wakes up automatically. This page refreshes every 3 seconds.</p>" +
       "<a href='/__status'>View startup status</a></div></body></html>"
     );
@@ -522,12 +522,12 @@ startProxy(0);
   startApi();
 
   // ── Internal DB keep-alive ───────────────────────────────────────────────
-  // Pings NestJS /health (SELECT 1) every 3 min so Prisma's connection pool
+  // Pings NestJS /health (SELECT 1) every 90s so Prisma's connection pool
   // never goes idle — prevents the first-query stall after a quiet period.
   setInterval(() => {
     if (!_apiUp) return;
     http.get(`http://127.0.0.1:${API_PORT}/health`, (r) => r.resume()).on("error", () => {});
-  }, 3 * 60 * 1000);
+  }, 90 * 1000);
 
   // ── External self-ping to prevent Hostinger from hibernating ────────────
   // Passenger/OpenLiteSpeed tracks idle time from the LAST REQUEST it forwarded
@@ -535,8 +535,9 @@ startProxy(0);
   // don't reset the idle timer. Outbound requests to the public domain travel
   // through the NIC → LiteSpeed → Passenger → here, which DOES reset the timer.
   //
+  // 2-minute interval: Hostinger's idle timeout is typically 3-5 minutes.
+  // Pinging every 2 minutes ensures we always stay under that threshold.
   // WEB_ORIGIN is already set in Hostinger's env for CORS (e.g. https://jokas.com).
-  // No third-party service required — the app keeps itself alive.
   const selfPingBase = (process.env.SITE_URL || process.env.WEB_ORIGIN || "")
     .split(",")[0].trim().replace(/\/$/, "");
   if (selfPingBase) {
@@ -547,8 +548,8 @@ startProxy(0);
       selfPingMod
         .get(selfPingUrl, { headers: { "user-agent": "jokas-keepalive/1.0" } }, (r) => r.resume())
         .on("error", () => {});
-    }, 5 * 60 * 1000);
-    console.log(`[start] self-ping active → ${selfPingUrl} every 5 min`);
+    }, 2 * 60 * 1000);
+    console.log(`[start] self-ping active → ${selfPingUrl} every 2 min`);
   } else {
     console.warn("[start] self-ping disabled — set SITE_URL or WEB_ORIGIN env var to enable");
   }

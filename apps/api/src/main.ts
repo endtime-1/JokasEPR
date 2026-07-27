@@ -117,6 +117,18 @@ async function bootstrap() {
   Logger.log(`API listening on http://localhost:${port}/${prefix}/v${version}`, "Bootstrap");
 }
 
+// Prevent a stray unhandled promise rejection from crashing the NestJS process.
+// NestJS catches request-level errors via HttpExceptionFilter, but cron jobs or
+// background promises that throw without a try-catch reach here first.
+// Log and continue — the API stays up; the scheduler job is simply skipped.
+process.on("uncaughtException", (err) => {
+  process.stderr.write("[api] uncaughtException: " + (err?.stack || err) + "\n");
+});
+process.on("unhandledRejection", (reason) => {
+  const msg = reason instanceof Error ? reason.stack : String(reason);
+  process.stderr.write("[api] unhandledRejection: " + msg + "\n");
+});
+
 bootstrap().catch((err) => {
   process.stderr.write("[api] FATAL: " + (err?.stack || err) + "\n");
   process.exit(1);
