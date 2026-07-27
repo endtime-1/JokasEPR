@@ -316,7 +316,6 @@ export default function AlertsPage() {
 
   useEffect(() => {
     void load();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterCategory, filterSeverity, filterStatus, page]);
 
   async function generate() {
