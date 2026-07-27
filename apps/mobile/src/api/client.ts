@@ -60,7 +60,9 @@ async function _doRefresh(): Promise<boolean> {
     });
     clearTimeout(tid);
     if (!response.ok) { await clearSession(); return false; }
-    const body = await response.json();
+    const rawText = await response.text();
+    if (!rawText) { return false; }
+    const body = JSON.parse(rawText) as { data: { accessToken: string; refreshToken: string } };
     await setSession(body.data.accessToken, body.data.refreshToken);
     return true;
   } catch {
@@ -165,12 +167,15 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   if (!response.ok) {
     let message = "Something went wrong. Please try again.";
     try {
-      const body = await response.json();
-      if (typeof body?.message === "string" && body.message.length < 200) {
-        message = body.message;
+      const errText = await response.text();
+      if (errText) {
+        const body = JSON.parse(errText) as { message?: unknown };
+        if (typeof body?.message === "string" && body.message.length < 200) {
+          message = body.message;
+        }
       }
     } catch {
-      // keep generic message — never expose raw server text
+      // keep generic message — non-JSON or empty error body
     }
     throw new ApiError(response.status, message);
   }
