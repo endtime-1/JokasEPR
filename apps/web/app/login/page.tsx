@@ -27,16 +27,16 @@ export default function LoginPage() {
         return;
       }
       if (!response.ok) {
-        let message = "Sign in failed. Please check your credentials.";
+        let message = "Server error — please try again in a moment.";
         try {
           const body = await response.json();
           if (response.status === 429) {
             message = "Too many sign-in attempts. Please wait 15 minutes and try again.";
           } else if (response.status === 401) {
-            message =
-              body.message === "Account is locked"
-                ? "Your account is locked after too many failed attempts. Contact your administrator."
-                : "Invalid email or password. Please try again.";
+            const locked = typeof body.message === "string" && body.message.toLowerCase().includes("locked");
+            message = locked
+              ? "Your account is locked after too many failed attempts. Contact your administrator."
+              : "Invalid email or password. Please try again.";
           } else if (response.status === 400) {
             message = body.message ?? message;
           }
