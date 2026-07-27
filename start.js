@@ -522,12 +522,13 @@ startProxy(0);
   startApi();
 
   // ── Internal DB keep-alive ───────────────────────────────────────────────
-  // Pings NestJS /health (SELECT 1) every 90s so Prisma's connection pool
-  // never goes idle — prevents the first-query stall after a quiet period.
+  // Pings NestJS /health (SELECT 1) every 45s so Prisma's connection pool
+  // never goes idle. MySQL on Hostinger drops idle connections at ~60s
+  // (wait_timeout); 45s ensures we ping before the connection is reclaimed.
   setInterval(() => {
     if (!_apiUp) return;
     http.get(`http://127.0.0.1:${API_PORT}/health`, (r) => r.resume()).on("error", () => {});
-  }, 90 * 1000);
+  }, 45 * 1000);
 
   // ── External self-ping to prevent Hostinger from hibernating ────────────
   // Passenger/OpenLiteSpeed tracks idle time from the LAST REQUEST it forwarded

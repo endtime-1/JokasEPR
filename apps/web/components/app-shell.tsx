@@ -236,9 +236,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       setApiDownBanner(true);
       // Hard fallback reload after 90s for true crashes (NestJS never comes back).
       fallback = setTimeout(() => window.location.reload(), 90000);
-      // Poll every 5s. On recovery, do a full page reload so every page gets fresh data
-      // from the now-warm API — dispatching api:recovered isn't enough because most pages
-      // don't have that listener and would stay with empty/stuck state.
+      // Poll every 5s. On recovery, hide the banner and fire api:recovered so
+      // pages can re-fetch their data in place — without a full page reload.
+      // A full reload wipes the in-memory _getCache, forcing every page to show
+      // a blank skeleton while data re-fetches, which is the "disappearing content"
+      // bug. Pages that already had data keep it visible; pages that had nothing
+      // (because they mounted during the outage) re-fetch via their api:recovered
+      // listeners. The 90s hard fallback below handles true NestJS crashes.
       pollInterval = setInterval(async () => {
         try {
           const ctrl = new AbortController();
@@ -247,7 +251,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           clearTimeout(tid);
           if (res.status !== 502 && res.status !== 503 && res.status !== 504) {
             clearPolling();
-            window.location.reload();
+            setApiDownBanner(false);
+            window.dispatchEvent(new CustomEvent("api:recovered"));
           }
         } catch { /* still down — wait for next poll */ }
       }, 5000);
