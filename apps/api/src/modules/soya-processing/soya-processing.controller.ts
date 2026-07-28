@@ -117,6 +117,12 @@ export class SoyaProcessingController {
     return this.soyaService.listSales(user, query);
   }
 
+  @Get("sales/:id")
+  @RequirePermissions(PERMISSIONS.SOYA_READ)
+  getSale(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
+    return this.soyaService.findSale(user, id);
+  }
+
   @Post("sales")
   @RequirePermissions(PERMISSIONS.INVENTORY_MANAGE)
   createSale(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateSoyaSaleDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {

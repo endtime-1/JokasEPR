@@ -282,6 +282,15 @@ export class SoyaProcessingService {
     return { data };
   }
 
+  async findSale(user: AuthenticatedUser, id: string) {
+    const sale = await this.prisma.soyaSalesLink.findFirst({
+      where: { id, companyId: user.companyId, deletedAt: null },
+      include: { product: { select: { name: true, sku: true } }, productionBatch: { select: { batchNumber: true } } }
+    });
+    if (!sale) throw new NotFoundException("Soya sale was not found.");
+    return { data: sale };
+  }
+
   async createSale(user: AuthenticatedUser, dto: CreateSoyaSaleDto, context: RequestContext) {
     this.assertWarehouseAccess(user, dto.warehouseId);
     const batch = await this.requireBatch(user, dto.productionBatchId);

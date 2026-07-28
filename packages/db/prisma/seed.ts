@@ -128,6 +128,10 @@ function metricDate(daysAgo: number) {
 }
 
 async function main() {
+  if (process.env.NODE_ENV === "production") {
+    console.error("seed.ts must not run in production — aborting.");
+    process.exit(1);
+  }
   const passwordHash = await bcrypt.hash("Admin@12345", 12);
 
   const company = await prisma.company.upsert({

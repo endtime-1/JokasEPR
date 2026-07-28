@@ -176,6 +176,16 @@ jobs:
             set -e
             source ~/.bashrc 2>/dev/null || source ~/.profile 2>/dev/null || true
             APP_DIR=~/domains/jokasfarms.com/nodejs
+
+            echo "==> Backing up current deploy for rollback..."
+            if [ -d $APP_DIR/apps/api/dist ]; then
+              rm -rf $APP_DIR/../nodejs_prev && cp -r $APP_DIR $APP_DIR/../nodejs_prev && echo "Backup complete."
+            fi
+
+            echo "==> Running database migrations..."
+            cd $APP_DIR && npx --yes prisma@6 migrate deploy --schema ./prisma/schema.prisma
+            echo "Migrations complete."
+
             mkdir -p $APP_DIR/tmp
             touch $APP_DIR/tmp/restart.txt
             echo "Passenger restart signalled."

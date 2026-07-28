@@ -378,7 +378,8 @@ export class PoultryService {
           birdWeightRecords: { where: { deletedAt: null }, orderBy: { recordDate: "desc" }, take: 1 },
           costRecords: { where: { deletedAt: null } }
         },
-        orderBy: { createdAt: "desc" }
+        orderBy: { createdAt: "desc" },
+        take: 100
       }),
       this.poultryPrices(user.companyId)
     ]);

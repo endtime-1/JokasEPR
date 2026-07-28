@@ -1246,6 +1246,12 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
     loadRecords();
   }, [type]);
 
+  useEffect(() => {
+    if (!editingId && !form.flockBatchId && options.batches.length > 0) {
+      setForm((prev) => ({ ...prev, flockBatchId: options.batches[0].id }));
+    }
+  }, [options.batches]);
+
   function startEdit(row: Record<string, any>) {
     const pre: Record<string, string> = { flockBatchId: row.flockBatchId ?? "", penId: row.penId ?? "", poultryHouseId: "" };
     // Restore the house filter so the pen dropdown shows the right options when editing
@@ -1350,7 +1356,7 @@ function GenericRecordForm({ options, form, setForm, submit, type, isEditing = f
         <select
           name="flockBatchId"
           className={`${inputClass} ${options.batches.length === 0 ? "border-amber-400 bg-amber-50" : ""}`}
-          value={form.flockBatchId || options.batches[0]?.id || ""}
+          value={form.flockBatchId}
           onChange={(e) => setForm({ ...form, flockBatchId: e.target.value, poultryHouseId: "", penId: "" })}
           required
         >

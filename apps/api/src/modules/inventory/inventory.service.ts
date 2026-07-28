@@ -108,7 +108,7 @@ export class InventoryService {
   }
 
   async listItems(user: AuthenticatedUser, query: InventoryQueryDto) {
-    const data = await this.prisma.inventoryItem.findMany({ where: this.itemWhere(user, query), include: { product: true, warehouse: true, farm: true, productionSite: true, stockBatches: { where: { deletedAt: null }, orderBy: { expiryDate: "asc" } } }, orderBy: { createdAt: "desc" } });
+    const data = await this.prisma.inventoryItem.findMany({ where: this.itemWhere(user, query), include: { product: true, warehouse: true, farm: true, productionSite: true, stockBatches: { where: { deletedAt: null }, orderBy: { expiryDate: "asc" }, take: 30 } }, orderBy: { createdAt: "desc" }, take: 500 });
     return { data };
   }
 

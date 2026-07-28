@@ -43,7 +43,7 @@ export default function StorefrontLayout({ children }: { children: React.ReactNo
             })}
           </nav>
           <a
-            href="http://localhost:3002"
+            href={process.env.NEXT_PUBLIC_SITE_URL ?? "/"}
             target="_blank"
             rel="noreferrer"
             className="mb-1 flex shrink-0 items-center gap-1.5 rounded-xl border border-line bg-white px-3 py-1.5 text-xs font-semibold text-ink/50 shadow-sm transition hover:border-brand/30 hover:text-brand"
