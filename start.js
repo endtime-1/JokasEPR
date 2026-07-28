@@ -142,6 +142,19 @@ let _nextjsUp = false;  // next.js has bound its port
 let _apiUp = false;     // nestjs has bound its port
 let webRestarts = 0;
 let lastWebLines = [];  // last 20 lines of web stdout/stderr for diagnostics
+let lastStartLines = []; // last 30 lines of start.js own log for diagnostics
+
+const _origLog = console.log.bind(console);
+const _origErr = console.error.bind(console);
+const _origWarn = console.warn.bind(console);
+function captureStartLine(prefix, args) {
+  const line = prefix + args.map(a => (typeof a === "object" ? JSON.stringify(a) : String(a))).join(" ");
+  lastStartLines.push(line);
+  if (lastStartLines.length > 30) lastStartLines = lastStartLines.slice(-30);
+}
+console.log  = (...a) => { captureStartLine("", a);       _origLog(...a);  };
+console.error = (...a) => { captureStartLine("[ERR] ", a); _origErr(...a); };
+console.warn  = (...a) => { captureStartLine("[WARN] ", a); _origWarn(...a); };
 
 function checkBothReady() {
   // Open to traffic as soon as Next.js is up, even if the API is still starting.
@@ -246,6 +259,7 @@ function launch(name, script, cwd, env) {
 function handleRequest(req, res) {
   // Diagnostic endpoint — available even while webReady is false.
   if (req.url === "/__status") {
+    const mem = process.memoryUsage();
     const status = {
       webReady,
       webRestarts,
@@ -253,6 +267,12 @@ function handleRequest(req, res) {
       serverScript,
       apiScriptExists: fs.existsSync(apiScript),
       lastWebLines,
+      lastStartLines,
+      memoryMB: {
+        rss: Math.round(mem.rss / 1024 / 1024),
+        heapUsed: Math.round(mem.heapUsed / 1024 / 1024),
+        heapTotal: Math.round(mem.heapTotal / 1024 / 1024),
+      },
       pid: process.pid,
       uptime: Math.round(process.uptime()) + "s",
       time: new Date().toISOString(),
@@ -479,6 +499,10 @@ startProxy(0);
       webProc = launch("jokas-web", serverScript, standaloneDir, {
         PORT: String(WEB_INTERNAL_PORT),
         HOSTNAME: "0.0.0.0",
+        // Cap Next.js heap to 512 MB — prevents OOM kills on shared hosting.
+        // If the process is being killed by SIGKILL due to hitting the host's
+        // memory limit, lower this. If it's stable, this value is fine.
+        NODE_OPTIONS: process.env.WEB_NODE_OPTIONS || "--max-old-space-size=512",
       });
       if (!webProc) {
         setTimeout(startWeb, 30000);
@@ -492,6 +516,9 @@ startProxy(0);
         _nextjsUp = false;
         webRestarts++;
         const delay = Math.min(3000 * webRestarts, 30000);
+        const exitMsg = `[WEB EXIT] code=${code} signal=${signal ?? "none"} restart=#${webRestarts} delay=${delay}ms`;
+        lastWebLines.push(exitMsg);
+        if (lastWebLines.length > 20) lastWebLines = lastWebLines.slice(-20);
         console.log(`[start] web exited code=${code} signal=${signal} — restart #${webRestarts} in ${delay}ms`);
         setTimeout(startWeb, delay);
       });
