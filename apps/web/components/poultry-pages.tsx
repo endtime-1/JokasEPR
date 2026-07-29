@@ -65,17 +65,20 @@ function usePoultryOptions() {
     getCached<ApiEnvelope<PoultryOptions>>("/poultry/options")?.data ?? { farms: [], houses: [], pens: [], batches: [], warehouses: [], products: [] }
   );
   const [optionsError, setOptionsError] = useState("");
+  const [optionsLoading, setOptionsLoading] = useState(true);
   const [optionsKey, setOptionsKey] = useState(0);
 
   useEffect(() => {
     setOptionsError("");
+    setOptionsLoading(true);
     apiFetch<ApiEnvelope<PoultryOptions>>("/poultry/options")
       .then((response) => setOptions(response.data ?? { farms: [], houses: [], pens: [], batches: [], warehouses: [], products: [] }))
-      .catch((err) => setOptionsError(err?.message ?? "Failed to load dropdown options. Refresh the page."));
+      .catch((err) => setOptionsError(err?.message ?? "Failed to load dropdown options. Refresh the page."))
+      .finally(() => setOptionsLoading(false));
   }, [optionsKey]);
 
   const refreshOptions = () => setOptionsKey((k) => k + 1);
-  return { options, optionsError, refreshOptions };
+  return { options, optionsError, optionsLoading, refreshOptions };
 }
 
 function PageHeader({ title, subtitle }: { title: string; subtitle: string }) {
@@ -1209,7 +1212,7 @@ function makeFormDefaults(type: string): Record<string, string> {
 export function PoultryRecordPage({ title, type, endpoint, health = false }: { title: string; type: string; endpoint: string; health?: boolean }) {
   const { profile } = useAuth();
   const canManage = !!profile;
-  const { options, optionsError, refreshOptions } = usePoultryOptions();
+  const { options, optionsError, optionsLoading, refreshOptions } = usePoultryOptions();
   const recordCacheKey = `jokas_records_${type}`;
   const [rows, setRows] = useState<Record<string, any>[]>(() => {
     const ep = `/poultry/records/${type}?take=200`;
@@ -1309,7 +1312,7 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
           <button className="ml-4 rounded border border-amber-400 px-3 py-1 text-xs font-semibold hover:bg-amber-100" onClick={refreshOptions}>Retry</button>
         </div>
       )}
-      {options.batches.length === 0 && !optionsError && (
+      {options.batches.length === 0 && !optionsError && !optionsLoading && (
         <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           No flock batches found. <Link className="font-semibold underline" href="/poultry/batches/create">Create a batch first →</Link>
         </div>
@@ -1322,14 +1325,15 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
         </div>
       )}
       {submitError && <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{submitError}</p>}
-      <GenericRecordForm options={options} form={form} setForm={setForm} submit={submit} type={type} isEditing={!!editingId} />
+      <GenericRecordForm options={options} optionsLoading={optionsLoading} form={form} setForm={setForm} submit={submit} type={type} isEditing={!!editingId} />
       <SimpleRecordTable rows={rows} onEdit={startEdit} onDelete={canManage ? deleteRow : undefined} />
     </PoultryShell>
   );
 }
 
-function GenericRecordForm({ options, form, setForm, submit, type, isEditing = false }: {
+function GenericRecordForm({ options, optionsLoading = false, form, setForm, submit, type, isEditing = false }: {
   options: PoultryOptions;
+  optionsLoading?: boolean;
   form: Record<string, string>;
   setForm: (form: Record<string, string>) => void;
   submit: (event: FormEvent<HTMLFormElement>) => void;
@@ -1355,14 +1359,17 @@ function GenericRecordForm({ options, form, setForm, submit, type, isEditing = f
       <FormField label="Flock batch">
         <select
           name="flockBatchId"
-          className={`${inputClass} ${options.batches.length === 0 ? "border-amber-400 bg-amber-50" : ""}`}
+          className={`${inputClass} ${!optionsLoading && options.batches.length === 0 ? "border-amber-400 bg-amber-50" : ""}`}
           value={form.flockBatchId}
           onChange={(e) => setForm({ ...form, flockBatchId: e.target.value, poultryHouseId: "", penId: "" })}
+          disabled={optionsLoading && options.batches.length === 0}
           required
         >
-          {options.batches.length === 0
-            ? <option value="">— No batches found — create one first —</option>
-            : options.batches.map((b) => <option key={b.id} value={b.id}>{b.code} — {b.name}</option>)
+          {optionsLoading && options.batches.length === 0
+            ? <option value="">Loading batches…</option>
+            : options.batches.length === 0
+              ? <option value="">— No batches found — create one first —</option>
+              : options.batches.map((b) => <option key={b.id} value={b.id}>{b.code} — {b.name}</option>)
           }
         </select>
       </FormField>
@@ -1519,7 +1526,7 @@ type PenSelection = { penId: string; code: string; name?: string; selected: bool
 export function PoultryTransferPage() {
   const { profile } = useAuth();
   const canManage = !!profile;
-  const { options, refreshOptions } = usePoultryOptions();
+  const { options, optionsLoading, refreshOptions } = usePoultryOptions();
   const [rows, setRows] = useState<Record<string, any>[]>(() => {
     const cached = getCachedFirst<ApiEnvelope<Record<string, any>[]>>("/poultry/records/transfers");
     if (Array.isArray(cached?.data) && cached.data.length > 0) return cached.data;
@@ -1658,8 +1665,18 @@ export function PoultryTransferPage() {
       <PageHeader title="Poultry Transfers" subtitle="Move birds between pens, houses, or farms with full transfer audit tracking." />
       <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-3">
         <FormField label="Batch">
-          <select className={inputClass} value={form.flockBatchId || options.batches[0]?.id || ""} onChange={(e) => { setForm({ ...form, flockBatchId: e.target.value, fromHouseId: "" }); setPenSelections([]); }}>
-            {options.batches.map((batch) => <option key={batch.id} value={batch.id}>{batch.code} — {batch.name}</option>)}
+          <select
+            className={inputClass}
+            value={form.flockBatchId || options.batches[0]?.id || ""}
+            onChange={(e) => { setForm({ ...form, flockBatchId: e.target.value, fromHouseId: "" }); setPenSelections([]); }}
+            disabled={optionsLoading && options.batches.length === 0}
+          >
+            {optionsLoading && options.batches.length === 0
+              ? <option value="">Loading batches…</option>
+              : options.batches.length === 0
+                ? <option value="">— No batches found —</option>
+                : options.batches.map((batch) => <option key={batch.id} value={batch.id}>{batch.code} — {batch.name}</option>)
+            }
           </select>
         </FormField>
         <FormField label="From house (optional)">
