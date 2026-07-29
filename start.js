@@ -557,15 +557,15 @@ startProxy(0);
   }, 45 * 1000);
 
   // ── Internal Next.js keep-alive ──────────────────────────────────────────
-  // Hostinger's process monitor kills child processes that receive no inbound
-  // connections on their port for ~30 seconds. We ping Next.js directly on
-  // its internal port every 25 seconds to prevent that. This is separate from
-  // the external self-ping below — loopback bypasses Passenger but still keeps
-  // the process active from the OS/monitoring perspective.
+  // Hostinger's process monitor kills Next.js if it receives no connections for
+  // ~30 seconds. Ping every 5 seconds — well inside that threshold — so the
+  // first ping arrives within 5s of Next.js becoming ready regardless of when
+  // the interval started relative to the spawn. Loopback bypasses Passenger but
+  // still keeps the process active from the OS/monitoring perspective.
   setInterval(() => {
     if (!_nextjsUp) return;
     http.get(`http://127.0.0.1:${WEB_INTERNAL_PORT}/api/v1/health`, (r) => r.resume()).on("error", () => {});
-  }, 25 * 1000);
+  }, 5 * 1000);
 
   // ── External self-ping to prevent Hostinger from hibernating ────────────
   // Passenger/OpenLiteSpeed tracks idle time from the LAST REQUEST it forwarded
