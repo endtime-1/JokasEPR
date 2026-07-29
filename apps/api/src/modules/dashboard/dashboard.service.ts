@@ -674,7 +674,7 @@ export class DashboardService {
       select: { id: true, title: true, message: true, severity: true, status: true, category: true, createdAt: true },
       orderBy: [{ severity: "desc" }, { createdAt: "desc" }],
       take: 8
-    });
+    }).catch(() => [] as any[]);
     return rows.map((a) => ({
       id: a.id,
       title: a.title,
