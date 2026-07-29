@@ -10,6 +10,30 @@ import { DataTable } from "./data-table";
 
 // â"€â"€â"€ Helpers â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
+// Resize + convert any image (including HEIC/AVIF) to a JPEG blob before upload.
+// Browsers can render HEIC/AVIF in an <img> element, so drawing to canvas and
+// exporting as JPEG works even for formats the server's magic-bytes validator
+// doesn't accept. Also caps file size to a manageable ~200-400 KB for most photos.
+async function compressImage(file: File, maxDim = 1024, quality = 0.85): Promise<Blob> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      const w = Math.round(img.width * scale);
+      const h = Math.round(img.height * scale);
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      canvas.getContext("2d")!.drawImage(img, 0, 0, w, h);
+      canvas.toBlob((blob) => resolve(blob ?? file), "image/jpeg", quality);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+    img.src = url;
+  });
+}
+
 function money(v: unknown) {
   return `GHS ${Number(v ?? 0).toLocaleString("en-GH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
@@ -438,8 +462,9 @@ export function CreateEmployeePage() {
         }),
       });
       if (passportFile && res.data?.id) {
+        const compressed = await compressImage(passportFile);
         const fd = new FormData();
-        fd.append("photo", passportFile);
+        fd.append("photo", compressed, "photo.jpg");
         await fetch(`/api/v1/hr/employees/${res.data.id}/photo`, {
           method: "POST", body: fd, credentials: "include",
         }).catch(() => undefined);
@@ -728,8 +753,9 @@ export function EmployeeDetailPage({ id }: { id: string }) {
     setPhotoUploading(true);
     setPhotoError("");
     try {
+      const compressed = await compressImage(file);
       const body = new FormData();
-      body.append("photo", file);
+      body.append("photo", compressed, "photo.jpg");
       const res = await fetch(`/api/v1/hr/employees/${id}/photo`, {
         method: "POST",
         body,

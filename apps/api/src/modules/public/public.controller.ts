@@ -118,7 +118,7 @@ export class PublicController {
           cb(null, `prod-${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`);
         },
       }),
-      limits: { fileSize: 5 * 1024 * 1024 },
+      limits: { fileSize: 15 * 1024 * 1024 },
       fileFilter: (_req, file, cb) => {
         if (file.mimetype.startsWith("image/")) cb(null, true);
         else cb(new BadRequestException("Only image files are allowed"), false);

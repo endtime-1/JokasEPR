@@ -143,7 +143,7 @@ export class HRController {
           cb(null, `emp-${Date.now()}-${Math.random().toString(36).slice(2)}${ALLOWED.has(ext) ? ext : ".jpg"}`);
         },
       }),
-      limits: { fileSize: 5 * 1024 * 1024 },
+      limits: { fileSize: 15 * 1024 * 1024 },
       fileFilter: (_req, file, cb) => {
         if (file.mimetype.startsWith("image/")) cb(null, true);
         else cb(new BadRequestException("Only image files are allowed"), false);
