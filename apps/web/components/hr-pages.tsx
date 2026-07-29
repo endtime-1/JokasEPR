@@ -343,6 +343,7 @@ export function EmployeeListPage() {
           <Link href="/hr/employees/create" className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white hover:opacity-90">+ New Employee</Link>
         </div>
         <HRNav />
+        {loadError && <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{loadError}</div>}
         {deleteError && <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{deleteError}</div>}
         <div className="flex flex-wrap gap-3">
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name, code, phone..." className="w-64 rounded-md border border-line px-3 py-2 text-sm" />
@@ -752,70 +753,90 @@ export function EmployeeDetailPage({ id }: { id: string }) {
           <StatusBadge status={data.status} />
         </div>
 
-        {/* Profile photo strip */}
-        <div className="flex items-center gap-4 rounded-lg border border-line bg-white p-4">
+        {/* Profile strip */}
+        <div className="flex flex-wrap items-center gap-5 rounded-xl border border-line bg-white px-5 py-4 shadow-sm">
           <div className="relative shrink-0">
             {data.photoUrl ? (
-              <img src={data.photoUrl} alt={data.fullName} className="h-20 w-20 rounded-full object-cover ring-2 ring-brand/20" />
+              <img src={data.photoUrl} alt={data.fullName} className="h-20 w-20 rounded-full object-cover ring-2 ring-brand/20 ring-offset-1" />
             ) : (
               <div className="grid h-20 w-20 place-items-center rounded-full bg-brand/10 text-2xl font-bold text-brand">
                 {data.fullName.charAt(0).toUpperCase()}
               </div>
             )}
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-base font-semibold text-ink">{data.fullName}</p>
-            <p className="text-xs text-ink/55">{data.code} · {data.employeeRole?.name ?? "No role"}</p>
-            <label className="mt-2 inline-flex cursor-pointer items-center gap-2 rounded-md border border-line px-3 py-1.5 text-xs font-medium text-ink/70 hover:bg-field">
-              {photoUploading ? "Uploading..." : "Change Photo"}
-              <input
-                type="file"
-                accept="image/*"
-                className="sr-only"
-                disabled={photoUploading}
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadPhoto(f); e.target.value = ""; }}
-              />
+            <label className={`absolute -bottom-1 -right-1 grid h-7 w-7 cursor-pointer place-items-center rounded-full border-2 border-white shadow-sm transition ${photoUploading ? "bg-ink/20" : "bg-brand hover:bg-brandDark"}`} title="Change photo">
+              <Camera className="h-3.5 w-3.5 text-white" aria-hidden />
+              <input type="file" accept="image/*" className="sr-only" disabled={photoUploading} onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadPhoto(f); e.target.value = ""; }} />
             </label>
-            {photoError && <p className="mt-1 text-xs text-red-600">{photoError}</p>}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-lg font-bold text-ink leading-tight">{data.fullName}</p>
+            <p className="mt-0.5 text-sm text-ink/55">{data.code} · {data.employeeRole?.name ?? "No role assigned"}</p>
+            <div className="mt-1 flex flex-wrap gap-3 text-xs text-ink/50">
+              {data.startDate && <span>Started {fmt(data.startDate)}</span>}
+              {(data.branch?.name || data.farm?.name) && <span>· {data.branch?.name ?? data.farm?.name}</span>}
+            </div>
+            {photoUploading && <p className="mt-1.5 text-xs text-brand/80 animate-pulse">Uploading photo…</p>}
+            {photoError && <p className="mt-1.5 text-xs text-red-600">{photoError}</p>}
           </div>
         </div>
 
-        <div className="flex gap-2 border-b border-line pb-1">
+        {/* Tab nav */}
+        <div className="flex gap-0.5 border-b border-line">
           {tabs.map((t) => (
-            <button key={t} onClick={() => setTab(t)} className={`px-3 py-1.5 text-xs font-medium capitalize rounded-t-md ${tab === t ? "bg-brand text-white" : "hover:bg-field"}`}>{t}</button>
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={`relative px-4 py-2.5 text-sm font-medium capitalize transition-colors ${
+                tab === t
+                  ? "text-brand after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:rounded-full after:bg-brand"
+                  : "text-ink/50 hover:text-ink"
+              }`}
+            >
+              {t}
+            </button>
           ))}
         </div>
 
         {tab === "overview" && (
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-            <div className="rounded-lg border border-line bg-white p-5 space-y-3">
-              <h2 className="font-semibold">Personal Details</h2>
-              <dl className="grid grid-cols-2 gap-y-2 text-sm">
-                <dt className="text-ink/60">Code</dt><dd className="font-medium">{data.code}</dd>
-                <dt className="text-ink/60">Gender</dt><dd>{data.gender ?? "—"}</dd>
-                <dt className="text-ink/60">Date of Birth</dt><dd>{fmt(data.dateOfBirth)}</dd>
-                <dt className="text-ink/60">National ID</dt><dd>{data.nationalId ?? "—"}</dd>
-                <dt className="text-ink/60">Phone</dt><dd>{data.phone ?? "—"}</dd>
-                <dt className="text-ink/60">Email</dt><dd>{data.email ?? "—"}</dd>
-                <dt className="text-ink/60">Address</dt><dd>{data.address ?? "—"}</dd>
-                <dt className="text-ink/60">Emergency Contact</dt><dd>{data.emergencyContactName ?? "—"}</dd>
-                <dt className="text-ink/60">Emergency Phone</dt><dd>{data.emergencyContactPhone ?? "—"}</dd>
-              </dl>
+            <div className="rounded-xl border border-line bg-white p-5 shadow-sm space-y-1">
+              <h2 className="mb-3 font-semibold text-ink">Personal Details</h2>
+              {([
+                ["Code", data.code],
+                ["Gender", data.gender],
+                ["Date of Birth", fmt(data.dateOfBirth)],
+                ["National ID", data.nationalId],
+                ["Phone", data.phone],
+                ["Email", data.email],
+                ["Address", data.address],
+                ["Emergency Contact", data.emergencyContactName],
+                ["Emergency Phone", data.emergencyContactPhone],
+              ] as [string, string | undefined | null][]).map(([label, value]) => (
+                <div key={label} className="flex items-start justify-between gap-3 border-b border-line/50 py-2 last:border-0 text-sm">
+                  <span className="shrink-0 text-ink/50 w-36">{label}</span>
+                  <span className="text-right font-medium text-ink break-words min-w-0">{value || "—"}</span>
+                </div>
+              ))}
             </div>
-            <div className="rounded-lg border border-line bg-white p-5 space-y-3">
-              <h2 className="font-semibold">Employment & Payroll</h2>
-              <dl className="grid grid-cols-2 gap-y-2 text-sm">
-                <dt className="text-ink/60">Role</dt><dd>{data.employeeRole?.name ?? "—"}</dd>
-                <dt className="text-ink/60">Start Date</dt><dd>{fmt(data.startDate)}</dd>
-                <dt className="text-ink/60">Branch</dt><dd>{data.branch?.name ?? "—"}</dd>
-                <dt className="text-ink/60">Farm</dt><dd>{data.farm?.name ?? "—"}</dd>
-                <dt className="text-ink/60">Warehouse</dt><dd>{data.warehouse?.name ?? "—"}</dd>
-                <dt className="text-ink/60">Basic Salary</dt><dd>{data.basicSalary ? money(data.basicSalary) : "—"}</dd>
-                <dt className="text-ink/60">Bank Name</dt><dd>{data.bankName ?? "—"}</dd>
-                <dt className="text-ink/60">Bank Account</dt><dd>{data.bankAccount ?? "—"}</dd>
-                <dt className="text-ink/60">SSNIT</dt><dd>{data.ssnitNumber ?? "—"}</dd>
-                <dt className="text-ink/60">TIN</dt><dd>{data.tinNumber ?? "—"}</dd>
-              </dl>
+            <div className="rounded-xl border border-line bg-white p-5 shadow-sm space-y-1">
+              <h2 className="mb-3 font-semibold text-ink">Employment & Payroll</h2>
+              {([
+                ["Role", data.employeeRole?.name],
+                ["Start Date", fmt(data.startDate)],
+                ["Branch", data.branch?.name],
+                ["Farm", data.farm?.name],
+                ["Warehouse", data.warehouse?.name],
+                ["Basic Salary", data.basicSalary ? money(data.basicSalary) : null],
+                ["Bank Name", data.bankName],
+                ["Bank Account", data.bankAccount],
+                ["SSNIT", data.ssnitNumber],
+                ["TIN", data.tinNumber],
+              ] as [string, string | undefined | null][]).map(([label, value]) => (
+                <div key={label} className="flex items-start justify-between gap-3 border-b border-line/50 py-2 last:border-0 text-sm">
+                  <span className="shrink-0 text-ink/50 w-36">{label}</span>
+                  <span className="text-right font-medium text-ink break-words min-w-0">{value || "—"}</span>
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -1453,6 +1474,7 @@ export function PayrollPage() {
           <button onClick={() => setShowForm((p) => !p)} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white">{showForm ? "Cancel" : "+ Add Payroll"}</button>
         </div>
         <HRNav />
+        {loadError && <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{loadError}</div>}
 
         {showForm && (
           <div className="rounded-lg border border-line bg-white p-5">
@@ -1567,6 +1589,7 @@ export function TrainingPage() {
           <button onClick={() => setShowForm((p) => !p)} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white">{showForm ? "Cancel" : "+ Add Training"}</button>
         </div>
         <HRNav />
+        {loadError && <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{loadError}</div>}
         {showForm && (
           <div className="rounded-lg border border-line bg-white p-5">
             <h2 className="mb-4 font-semibold">New Training Record</h2>
@@ -1670,6 +1693,7 @@ export function PerformancePage() {
           <button onClick={() => setShowForm((p) => !p)} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white">{showForm ? "Cancel" : "+ Add Review"}</button>
         </div>
         <HRNav />
+        {loadError && <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{loadError}</div>}
         {showForm && (
           <div className="rounded-lg border border-line bg-white p-5">
             <h2 className="mb-4 font-semibold">New Performance Review</h2>
@@ -1921,6 +1945,7 @@ export function LeaveRequestsPage() {
           </button>
         </div>
         <HRNav />
+        {loadError && <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{loadError}</div>}
 
         {showForm && (
           <div className="rounded-lg border border-line bg-white p-5">
@@ -2067,6 +2092,7 @@ export function EmployeeRolesPage() {
       <div className="space-y-5">
         <h1 className="text-xl font-bold">Employee Roles</h1>
         <HRNav />
+        {loadError && <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{loadError}</div>}
         {error && <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</div>}
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">

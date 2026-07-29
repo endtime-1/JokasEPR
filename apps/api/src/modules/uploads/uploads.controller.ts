@@ -1,13 +1,11 @@
-import { Controller, Get, NotFoundException, Param, Res, UseGuards } from "@nestjs/common";
+import { Controller, Get, NotFoundException, Param, Res } from "@nestjs/common";
 import { Response } from "express";
 import { join, resolve } from "path";
-import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 
 const ALLOWED_TYPES = new Set(["employees", "products"]);
 const SAFE_FILENAME_RE = /^[a-zA-Z0-9_-]+\.(jpg|jpeg|png|webp|gif)$/i;
 
 @Controller("uploads")
-@UseGuards(JwtAuthGuard)
 export class UploadsController {
   private readonly uploadsDir = join(process.cwd(), "uploads");
 

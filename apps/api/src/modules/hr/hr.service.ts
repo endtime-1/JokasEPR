@@ -263,7 +263,7 @@ export class HRService {
   async uploadEmployeePhoto(user: AuthenticatedUser, id: string, filename: string) {
     const row = await this.prisma.employee.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
     if (!row) throw new NotFoundException("Employee not found");
-    const photoUrl = `/uploads/employees/${filename}`;
+    const photoUrl = `/api/v1/uploads/employees/${filename}`;
     await this.prisma.employee.update({ where: { id }, data: { photoUrl } });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "Employee", entityId: id, action: "UPDATE", summary: "Updated employee photo" });
     return { data: { photoUrl } };

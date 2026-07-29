@@ -120,7 +120,7 @@ const nextConfig = {
       },
       {
         source: "/uploads/:path*",
-        destination: `http://localhost:${apiPort}/uploads/:path*`,
+        destination: `http://localhost:${apiPort}/api/v1/uploads/:path*`,
       },
     ];
   },
