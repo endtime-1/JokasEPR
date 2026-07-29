@@ -499,9 +499,9 @@ startProxy(0);
       webProc = launch("jokas-web", serverScript, standaloneDir, {
         PORT: String(WEB_INTERNAL_PORT),
         HOSTNAME: "0.0.0.0",
-        // Cap Next.js heap to 256 MB — conservative for Hostinger shared hosting.
-        // Overridable via WEB_NODE_OPTIONS env var (e.g. "--max-old-space-size=512").
-        NODE_OPTIONS: process.env.WEB_NODE_OPTIONS || "--max-old-space-size=256",
+        // Let WEB_NODE_OPTIONS override Node.js flags if needed (e.g. "--max-old-space-size=512").
+        // No default cap — V8 manages its own heap; over-constraining caused OOM SIGKILL on startup.
+        ...(process.env.WEB_NODE_OPTIONS ? { NODE_OPTIONS: process.env.WEB_NODE_OPTIONS } : {}),
       });
       if (!webProc) {
         setTimeout(startWeb, 30000);

@@ -175,6 +175,12 @@ jobs:
           REMOTE_CMD='
             set -e
             source ~/.bashrc 2>/dev/null || source ~/.profile 2>/dev/null || true
+            # Load nvm explicitly — .bashrc nvm setup is skipped in non-interactive shells
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" 2>/dev/null || true
+            nvm use default 2>/dev/null || nvm use node 2>/dev/null || true
+            # Also try common Hostinger Node.js paths
+            for p in /usr/local/bin /usr/bin; do [ -x "$p/npx" ] && export PATH="$p:$PATH" && break; done
             APP_DIR=~/domains/jokasfarms.com/nodejs
 
             echo "==> Backing up current deploy for rollback..."
