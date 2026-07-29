@@ -256,10 +256,37 @@ function launch(name, script, cwd, env) {
 // ---------------------------------------------------------------------------
 // HTTP proxy (starts immediately — Hostinger requires listen() within 3s)
 // ---------------------------------------------------------------------------
+function readProcRssMB(pid) {
+  try {
+    const s = fs.readFileSync(`/proc/${pid}/status`, "utf8");
+    const m = s.match(/VmRSS:\s*(\d+)/);
+    return m ? Math.round(+m[1] / 1024) : null;
+  } catch { return null; }
+}
+
+function readCgroupMB(v1limitFile, v1usageFile) {
+  function tryFile(f) {
+    try {
+      const v = fs.readFileSync(f, "utf8").trim();
+      if (v === "max") return "unlimited";
+      const n = parseInt(v, 10);
+      return (Number.isNaN(n) || n > 9e15) ? "unlimited" : Math.round(n / 1024 / 1024);
+    } catch { return null; }
+  }
+  return {
+    limit: tryFile(v1limitFile) ?? tryFile("/sys/fs/cgroup/memory.max"),
+    usage: tryFile(v1usageFile) ?? tryFile("/sys/fs/cgroup/memory.current"),
+  };
+}
+
 function handleRequest(req, res) {
   // Diagnostic endpoint — available even while webReady is false.
   if (req.url === "/__status") {
     const mem = process.memoryUsage();
+    const cgroup = readCgroupMB(
+      "/sys/fs/cgroup/memory/memory.limit_in_bytes",
+      "/sys/fs/cgroup/memory/memory.usage_in_bytes"
+    );
     const status = {
       webReady,
       webRestarts,
@@ -273,6 +300,12 @@ function handleRequest(req, res) {
         heapUsed: Math.round(mem.heapUsed / 1024 / 1024),
         heapTotal: Math.round(mem.heapTotal / 1024 / 1024),
       },
+      childMemoryMB: {
+        web: webProc?.pid ? readProcRssMB(webProc.pid) : null,
+        api: apiProc?.pid ? readProcRssMB(apiProc.pid) : null,
+      },
+      cgroupMemLimitMB: cgroup.limit,
+      cgroupMemUsageMB: cgroup.usage,
       pid: process.pid,
       uptime: Math.round(process.uptime()) + "s",
       time: new Date().toISOString(),
@@ -514,7 +547,12 @@ startProxy(0);
         webReady = false;
         _nextjsUp = false;
         webRestarts++;
-        const delay = Math.min(3000 * webRestarts, 30000);
+        // External kills (SIGKILL from Hostinger's 30-second process lifetime limiter) arrive as
+        // code=null + signal=SIGKILL. Restart immediately (500ms) — the 30-second backoff was making
+        // availability 50% (30s up, 30s waiting). Code-based crashes (unhandled exception) still get
+        // exponential backoff so a buggy build doesn't thrash the server.
+        const isExternalKill = code === null && signal === "SIGKILL";
+        const delay = isExternalKill ? 500 : Math.min(3000 * webRestarts, 30000);
         const exitMsg = `[WEB EXIT] code=${code} signal=${signal ?? "none"} restart=#${webRestarts} delay=${delay}ms`;
         lastWebLines.push(exitMsg);
         if (lastWebLines.length > 20) lastWebLines = lastWebLines.slice(-20);
