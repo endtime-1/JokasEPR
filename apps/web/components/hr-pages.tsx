@@ -343,7 +343,12 @@ export function EmployeeListPage() {
           <Link href="/hr/employees/create" className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white hover:opacity-90">+ New Employee</Link>
         </div>
         <HRNav />
-        {loadError && <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{loadError}</div>}
+        {loadError && (
+          <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <span>{loadError}</span>
+            <button type="button" className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold hover:bg-red-50" onClick={load}>Retry</button>
+          </div>
+        )}
         {deleteError && <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{deleteError}</div>}
         <div className="flex flex-wrap gap-3">
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name, code, phone..." className="w-64 rounded-md border border-line px-3 py-2 text-sm" />
@@ -1050,6 +1055,12 @@ export function AttendancePage() {
           <button onClick={() => setShowForm((p) => !p)} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white">{showForm ? "Cancel" : "+ Record Attendance"}</button>
         </div>
         <HRNav />
+        {loadError && (
+          <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <span>{loadError}</span>
+            <button type="button" className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold hover:bg-red-50" onClick={load}>Retry</button>
+          </div>
+        )}
 
         {showForm && (
           <div className="rounded-lg border border-line bg-white p-5">
@@ -1166,6 +1177,12 @@ export function ShiftSchedulePage() {
       <div className="space-y-5">
         <h1 className="text-xl font-bold">Shift Schedule</h1>
         <HRNav />
+        {loadError && (
+          <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <span>{loadError}</span>
+            <button type="button" className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold hover:bg-red-50" onClick={load}>Retry</button>
+          </div>
+        )}
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <div className="rounded-lg border border-line bg-white p-5">
             <h2 className="mb-4 font-semibold">Add Shift</h2>
@@ -1259,6 +1276,12 @@ export function TaskBoardPage() {
           <Link href="/hr/tasks/create" className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white hover:opacity-90">+ New Task</Link>
         </div>
         <HRNav />
+        {loadError && (
+          <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <span>{loadError}</span>
+            <button type="button" className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold hover:bg-red-50" onClick={load}>Retry</button>
+          </div>
+        )}
         {moveError && <div className="rounded-md bg-red-50 p-2 text-sm text-red-700">{moveError}</div>}
         <div className="flex gap-3">
           <select value={status} onChange={(e) => setStatus(e.target.value)} className="rounded-md border border-line px-3 py-2 text-sm">
@@ -1474,7 +1497,12 @@ export function PayrollPage() {
           <button onClick={() => setShowForm((p) => !p)} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white">{showForm ? "Cancel" : "+ Add Payroll"}</button>
         </div>
         <HRNav />
-        {loadError && <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{loadError}</div>}
+        {loadError && (
+          <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <span>{loadError}</span>
+            <button type="button" className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold hover:bg-red-50" onClick={load}>Retry</button>
+          </div>
+        )}
 
         {showForm && (
           <div className="rounded-lg border border-line bg-white p-5">
@@ -1589,7 +1617,12 @@ export function TrainingPage() {
           <button onClick={() => setShowForm((p) => !p)} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white">{showForm ? "Cancel" : "+ Add Training"}</button>
         </div>
         <HRNav />
-        {loadError && <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{loadError}</div>}
+        {loadError && (
+          <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <span>{loadError}</span>
+            <button type="button" className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold hover:bg-red-50" onClick={load}>Retry</button>
+          </div>
+        )}
         {showForm && (
           <div className="rounded-lg border border-line bg-white p-5">
             <h2 className="mb-4 font-semibold">New Training Record</h2>
@@ -1693,7 +1726,12 @@ export function PerformancePage() {
           <button onClick={() => setShowForm((p) => !p)} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white">{showForm ? "Cancel" : "+ Add Review"}</button>
         </div>
         <HRNav />
-        {loadError && <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{loadError}</div>}
+        {loadError && (
+          <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <span>{loadError}</span>
+            <button type="button" className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold hover:bg-red-50" onClick={load}>Retry</button>
+          </div>
+        )}
         {showForm && (
           <div className="rounded-lg border border-line bg-white p-5">
             <h2 className="mb-4 font-semibold">New Performance Review</h2>
@@ -1945,7 +1983,12 @@ export function LeaveRequestsPage() {
           </button>
         </div>
         <HRNav />
-        {loadError && <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{loadError}</div>}
+        {loadError && (
+          <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <span>{loadError}</span>
+            <button type="button" className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold hover:bg-red-50" onClick={load}>Retry</button>
+          </div>
+        )}
 
         {showForm && (
           <div className="rounded-lg border border-line bg-white p-5">
@@ -2092,7 +2135,12 @@ export function EmployeeRolesPage() {
       <div className="space-y-5">
         <h1 className="text-xl font-bold">Employee Roles</h1>
         <HRNav />
-        {loadError && <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{loadError}</div>}
+        {loadError && (
+          <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <span>{loadError}</span>
+            <button type="button" className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold hover:bg-red-50" onClick={load}>Retry</button>
+          </div>
+        )}
         {error && <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</div>}
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">

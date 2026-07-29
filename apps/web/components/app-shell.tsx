@@ -200,12 +200,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [searchFocus, setSearchFocus] = useState(0);
   const [apiDownBanner, setApiDownBanner] = useState(false);
   const [dataErrorToast, setDataErrorToast] = useState(false);
+  const [dataErrorRetrying, setDataErrorRetrying] = useState(false);
   const [recoveryKey, setRecoveryKey] = useState(0);
   const dataErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dataErrorRetryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoRetryCount = useRef(0);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setMobileOpen(false);
+    // Reset auto-retry budget on page navigation so each new page gets fresh retries.
+    autoRetryCount.current = 0;
+    if (dataErrorRetryTimer.current) { clearTimeout(dataErrorRetryTimer.current); dataErrorRetryTimer.current = null; }
   }, [pathname]);
 
   // Redirect to login when any apiFetch signals the session has fully expired
@@ -274,16 +280,37 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // Show a "failed to load" toast when a GET request fails with a non-transient error
   // (e.g. 500 during DB warm-up on Hostinger). Most pages swallow these errors silently,
   // leaving users with blank tables and no indication of what happened.
+  //
+  // Auto-retry: after each data-error, schedule a soft remount (recoveryKey++) after a
+  // short delay. This transparently retries all page data fetches without a full page
+  // reload — on Hostinger, NestJS sometimes responds to /auth/me (so auth succeeds) but
+  // individual data endpoints still fail for a few seconds while the DB connection warms up.
+  // Up to 3 auto-retries (5s → 10s → 20s). After that the user must click "Retry" manually.
+  const AUTO_RETRY_DELAYS = [5000, 10000, 20000] as const;
   useEffect(() => {
     function onDataError() {
       if (dataErrorTimer.current) clearTimeout(dataErrorTimer.current);
       setDataErrorToast(true);
-      dataErrorTimer.current = setTimeout(() => setDataErrorToast(false), 15000);
+      dataErrorTimer.current = setTimeout(() => { setDataErrorToast(false); setDataErrorRetrying(false); }, 25000);
+
+      const delay = AUTO_RETRY_DELAYS[autoRetryCount.current];
+      if (delay !== undefined) {
+        autoRetryCount.current += 1;
+        setDataErrorRetrying(true);
+        if (dataErrorRetryTimer.current) clearTimeout(dataErrorRetryTimer.current);
+        dataErrorRetryTimer.current = setTimeout(() => {
+          setDataErrorRetrying(false);
+          setRecoveryKey((k) => k + 1);
+        }, delay);
+      } else {
+        setDataErrorRetrying(false);
+      }
     }
     window.addEventListener("api:data-error", onDataError);
     return () => {
       window.removeEventListener("api:data-error", onDataError);
       if (dataErrorTimer.current) clearTimeout(dataErrorTimer.current);
+      if (dataErrorRetryTimer.current) clearTimeout(dataErrorRetryTimer.current);
     };
   }, []);
 
@@ -339,17 +366,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const dataErrorToastEl = dataErrorToast && !apiDownBanner ? (
     <div className="fixed bottom-4 right-4 z-[9998] flex items-center gap-3 rounded-xl bg-red-600 px-4 py-3 text-sm font-medium text-white shadow-xl">
-      <span>Some data failed to load.</span>
+      <span>{dataErrorRetrying ? "Some data failed to load — retrying…" : "Some data failed to load."}</span>
       <button
         className="shrink-0 rounded border border-white/40 px-3 py-1 text-xs font-semibold hover:bg-white/20"
         onClick={() => window.location.reload()}
       >
-        Retry
+        Refresh
       </button>
       <button
         aria-label="Dismiss"
         className="ml-1 text-white/70 hover:text-white"
-        onClick={() => { setDataErrorToast(false); if (dataErrorTimer.current) clearTimeout(dataErrorTimer.current); }}
+        onClick={() => { setDataErrorToast(false); setDataErrorRetrying(false); if (dataErrorTimer.current) clearTimeout(dataErrorTimer.current); if (dataErrorRetryTimer.current) clearTimeout(dataErrorRetryTimer.current); }}
       >
         ✕
       </button>
