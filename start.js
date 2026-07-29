@@ -499,10 +499,9 @@ startProxy(0);
       webProc = launch("jokas-web", serverScript, standaloneDir, {
         PORT: String(WEB_INTERNAL_PORT),
         HOSTNAME: "0.0.0.0",
-        // Cap Next.js heap to 512 MB — prevents OOM kills on shared hosting.
-        // If the process is being killed by SIGKILL due to hitting the host's
-        // memory limit, lower this. If it's stable, this value is fine.
-        NODE_OPTIONS: process.env.WEB_NODE_OPTIONS || "--max-old-space-size=512",
+        // Cap Next.js heap to 256 MB — conservative for Hostinger shared hosting.
+        // Overridable via WEB_NODE_OPTIONS env var (e.g. "--max-old-space-size=512").
+        NODE_OPTIONS: process.env.WEB_NODE_OPTIONS || "--max-old-space-size=256",
       });
       if (!webProc) {
         setTimeout(startWeb, 30000);
@@ -557,15 +556,26 @@ startProxy(0);
     http.get(`http://127.0.0.1:${API_PORT}/health`, (r) => r.resume()).on("error", () => {});
   }, 45 * 1000);
 
+  // ── Internal Next.js keep-alive ──────────────────────────────────────────
+  // Hostinger's process monitor kills child processes that receive no inbound
+  // connections on their port for ~30 seconds. We ping Next.js directly on
+  // its internal port every 25 seconds to prevent that. This is separate from
+  // the external self-ping below — loopback bypasses Passenger but still keeps
+  // the process active from the OS/monitoring perspective.
+  setInterval(() => {
+    if (!_nextjsUp) return;
+    http.get(`http://127.0.0.1:${WEB_INTERNAL_PORT}/api/v1/health`, (r) => r.resume()).on("error", () => {});
+  }, 25 * 1000);
+
   // ── External self-ping to prevent Hostinger from hibernating ────────────
   // Passenger/OpenLiteSpeed tracks idle time from the LAST REQUEST it forwarded
   // to this process. Loopback connections bypass Passenger entirely, so they
   // don't reset the idle timer. Outbound requests to the public domain travel
   // through the NIC → LiteSpeed → Passenger → here, which DOES reset the timer.
   //
-  // 2-minute interval: Hostinger's idle timeout is typically 3-5 minutes.
-  // Pinging every 2 minutes ensures we always stay under that threshold.
-  // WEB_ORIGIN is already set in Hostinger's env for CORS (e.g. https://jokas.com).
+  // 25-second interval: Hostinger's idle timeout appears to be ~30 seconds.
+  // Pinging every 25 seconds stays safely under that threshold.
+  // WEB_ORIGIN is already set in Hostinger's env for CORS (e.g. https://jokasfarms.com).
   const selfPingBase = (process.env.SITE_URL || process.env.WEB_ORIGIN || "")
     .split(",")[0].trim().replace(/\/$/, "");
   if (selfPingBase) {
@@ -576,10 +586,10 @@ startProxy(0);
       selfPingMod
         .get(selfPingUrl, { headers: { "user-agent": "jokas-keepalive/1.0" } }, (r) => r.resume())
         .on("error", () => {});
-    }, 2 * 60 * 1000);
-    console.log(`[start] self-ping active → ${selfPingUrl} every 2 min`);
+    }, 25 * 1000);
+    console.log(`[start] self-ping active → ${selfPingUrl} every 25s`);
   } else {
-    console.warn("[start] self-ping disabled — set SITE_URL or WEB_ORIGIN env var to enable");
+    console.warn("[start] external self-ping disabled — set SITE_URL or WEB_ORIGIN env var to enable (internal ping is still active)");
   }
 })().catch((e) => {
   console.error("[start] FATAL — main startup threw:", e?.stack || e);

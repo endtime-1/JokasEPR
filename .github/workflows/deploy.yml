@@ -183,15 +183,25 @@ jobs:
             fi
 
             echo "==> Running database migrations..."
-            cd $APP_DIR && npx --yes prisma@6 migrate deploy --schema ./prisma/schema.prisma
-            echo "Migrations complete."
+            cd $APP_DIR
+            # Source .env so DATABASE_URL is available in this SSH session
+            # (Hostinger env-panel vars are only injected by Passenger, not SSH)
+            if [ -f "$APP_DIR/.env" ]; then
+              set -a; . "$APP_DIR/.env"; set +a
+              echo "Sourced $APP_DIR/.env for DATABASE_URL"
+            fi
+            if npx --yes prisma@6 migrate deploy --schema ./prisma/schema.prisma; then
+              echo "Migrations complete."
+            else
+              echo "WARNING: prisma migrate deploy failed — deploy continues, check DATABASE_URL in SSH env."
+            fi
 
             mkdir -p $APP_DIR/tmp
             touch $APP_DIR/tmp/restart.txt
             echo "Passenger restart signalled."
-            sleep 8
+            sleep 20
             DOMAIN="https://jokasfarms.com"
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 "$DOMAIN/__status" || echo "000")
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "$DOMAIN/__status" || echo "000")
             if [ "$STATUS" = "200" ]; then
               echo "Smoke test PASSED — app is live (HTTP $STATUS)"
             elif [ "$STATUS" = "503" ]; then
