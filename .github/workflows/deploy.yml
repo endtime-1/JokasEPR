@@ -164,7 +164,7 @@ jobs:
           for attempt in 1 2 3; do
             rsync -avz --partial --timeout=120 \
               -e "ssh -p 65002 -i ~/.ssh/id_rsa -o StrictHostKeyChecking=accept-new" \
-              ecosystem.config.js start.js package.json \
+              ecosystem.config.js start.js web-worker-wrapper.js package.json \
               ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/ \
             && { echo "Root files upload succeeded on attempt $attempt"; break; } \
             || { echo "Attempt $attempt failed; retrying in 20s..."; sleep 20; }

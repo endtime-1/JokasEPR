@@ -6,6 +6,7 @@ const http = require("http");
 const https = require("https");
 const net = require("net");
 const path = require("path");
+const { Worker } = require("worker_threads");
 
 const root = __dirname;
 
@@ -21,6 +22,7 @@ const apiBundle = path.join(root, "apps/api/dist/bundle.js");
 const apiScript = fs.existsSync(apiBundle)
   ? apiBundle
   : path.join(root, "apps/api/dist/main.js");
+const workerWrapper = path.join(root, "web-worker-wrapper.js");
 
 // ---------------------------------------------------------------------------
 // Kill any process listening on a given port.
@@ -135,6 +137,7 @@ process.on("exit", (code) => {
 // Child tracking
 // ---------------------------------------------------------------------------
 let webProc = null;
+let webWorker = null; // the Worker thread running Next.js (shares start.js's PID)
 let apiProc = null;
 let proxy;
 let webReady = false;   // proxy switch — true only when BOTH next.js and api are up
@@ -477,7 +480,10 @@ startProxy(0);
   // Fallback for when the "Ready" stdout string is missed.
   function pollWebPort(proc) {
     let stopped = false;
-    proc.once("close", () => { stopped = true; });
+    const _stop = () => { stopped = true; };
+    // ChildProcess fires "close"; Worker threads fire "exit" — handle both.
+    try { proc.once("close", _stop); } catch {}
+    try { proc.once("exit", _stop); } catch {}
     function probe() {
       if (stopped || _nextjsUp) return;
       const sock = net.createConnection(WEB_INTERNAL_PORT, "127.0.0.1");
@@ -519,44 +525,83 @@ startProxy(0);
   }
 
   function startWeb() {
+    // Terminate any in-flight worker from a prior call before starting fresh.
+    if (webWorker) {
+      try { webWorker.terminate(); } catch {}
+      webWorker = null;
+    }
     if (!fs.existsSync(serverScript)) {
       console.error(`[start] web server.js missing at ${serverScript} — will retry in 30s`);
       setTimeout(startWeb, 30000);
       return;
     }
-    // Kill any stale holder of WEB_INTERNAL_PORT before EVERY spawn (initial and restart).
-    // The restart path previously skipped this — any zombie from the previous run that
-    // killOrphans() missed would hold the port indefinitely, causing the EADDRINUSE loop.
-    killPortOwner(WEB_INTERNAL_PORT);
-    waitForPortFree(WEB_INTERNAL_PORT, 20000).then(() => {
-      webProc = launch("jokas-web", serverScript, standaloneDir, {
-        PORT: String(WEB_INTERNAL_PORT),
-        HOSTNAME: "0.0.0.0",
-        // Let WEB_NODE_OPTIONS override Node.js flags if needed (e.g. "--max-old-space-size=512").
-        // No default cap — V8 manages its own heap; over-constraining caused OOM SIGKILL on startup.
-        ...(process.env.WEB_NODE_OPTIONS ? { NODE_OPTIONS: process.env.WEB_NODE_OPTIONS } : {}),
+    // For Worker threads, port 3001 is held by THIS process's PID (start.js).
+    // Calling killPortOwner(WEB_INTERNAL_PORT) would SIGKILL start.js itself —
+    // so we only wait for the port rather than actively killing anything.
+    // On the very first boot the outer async block already called killPortOwner
+    // to clear any orphans from a previous run, so this is safe.
+    waitForPortFree(WEB_INTERNAL_PORT, 10000).then(() => {
+      console.log(`[start] launching jokas-web as worker thread — ${serverScript}`);
+      const worker = new Worker(workerWrapper, {
+        workerData: { serverScript },
+        // Isolated env copy: PORT/HOSTNAME changes in the worker won't bleed
+        // into start.js's process.env (which still holds PORT=3000 for the proxy).
+        env: {
+          ...process.env,
+          PORT: String(WEB_INTERNAL_PORT),
+          HOSTNAME: "0.0.0.0",
+          NODE_ENV: "production",
+        },
       });
-      if (!webProc) {
-        setTimeout(startWeb, 30000);
-        return;
-      }
-      savePids(); // track web PID so killOrphans() reaches it on the next boot
-      pollWebPort(webProc);
-      webProc.on("close", (code, signal) => {
+      webWorker = worker;
+
+      // Facade so killAll() and savePids() keep working without changes.
+      // Worker threads share start.js's PID — no separate PID to track.
+      webProc = {
+        pid: null,
+        kill: () => { try { worker.terminate(); } catch {} },
+      };
+      savePids(); // saves only the API pid (webProc.pid is null for a worker)
+
+      worker.on("message", (msg) => {
+        if (msg.type === "log") {
+          // Capture Next.js stdout for /__status lastWebLines buffer.
+          const lines = msg.data.split("\n").filter(l => l.trim());
+          lastWebLines.push(...lines);
+          if (lastWebLines.length > 20) lastWebLines = lastWebLines.slice(-20);
+          if (!_nextjsUp && /\bready\b/i.test(msg.data)) {
+            _nextjsUp = true;
+            console.log("[start] Next.js ready (worker stdout)");
+            checkBothReady();
+          }
+        } else if (msg.type === "exit") {
+          // Next.js called process.exit() internally — terminate the worker cleanly.
+          console.log(`[start] Next.js worker called process.exit(${msg.code}) — terminating`);
+          worker.terminate();
+        }
+      });
+
+      worker.on("error", (err) => {
+        console.error("[start] Next.js worker error:", err.message);
+        lastWebLines.push("[WEB-ERR] " + err.message);
+        if (lastWebLines.length > 20) lastWebLines = lastWebLines.slice(-20);
+      });
+
+      pollWebPort(worker); // TCP fallback if stdout readiness is missed
+
+      worker.on("exit", (code) => {
+        if (webWorker === worker) webWorker = null;
         webProc = null;
         webReady = false;
         _nextjsUp = false;
         webRestarts++;
-        // External kills (SIGKILL from Hostinger's 30-second process lifetime limiter) arrive as
-        // code=null + signal=SIGKILL. Restart immediately (500ms) — the 30-second backoff was making
-        // availability 50% (30s up, 30s waiting). Code-based crashes (unhandled exception) still get
-        // exponential backoff so a buggy build doesn't thrash the server.
-        const isExternalKill = code === null && signal === "SIGKILL";
-        const delay = isExternalKill ? 500 : Math.min(3000 * webRestarts, 30000);
-        const exitMsg = `[WEB EXIT] code=${code} signal=${signal ?? "none"} restart=#${webRestarts} delay=${delay}ms`;
+        // Worker threads are not subject to Hostinger's 30s PID-based kill, so
+        // an exit here is a real crash. Use modest backoff to avoid thrashing.
+        const delay = Math.min(3000 * webRestarts, 10000);
+        const exitMsg = `[WEB EXIT] worker code=${code} restart=#${webRestarts} delay=${delay}ms`;
         lastWebLines.push(exitMsg);
         if (lastWebLines.length > 20) lastWebLines = lastWebLines.slice(-20);
-        console.log(`[start] web exited code=${code} signal=${signal} — restart #${webRestarts} in ${delay}ms`);
+        console.log(`[start] Next.js worker exited code=${code} — restart #${webRestarts} in ${delay}ms`);
         setTimeout(startWeb, delay);
       });
     });
