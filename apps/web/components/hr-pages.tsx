@@ -10,6 +10,17 @@ import { DataTable } from "./data-table";
 
 // â"€â"€â"€ Helpers â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
+// Normalise any legacy photoUrl format to the current /api/v1/uploads/employees/ path.
+// Handles: bare filename, /uploads/employees/file, /api/v1/uploads/employees/file.
+function normalizePhotoUrl(url: string | undefined | null, type: "employees" | "products" = "employees"): string | undefined {
+  if (!url) return undefined;
+  if (url.startsWith("/api/v1/uploads/")) return url;
+  if (url.startsWith("/uploads/")) return `/api/v1${url}`;
+  // bare filename (no path separator)
+  if (!url.includes("/")) return `/api/v1/uploads/${type}/${url}`;
+  return url;
+}
+
 // Resize + convert any image (including HEIC/AVIF) to a JPEG blob before upload.
 // Browsers can render HEIC/AVIF in an <img> element, so drawing to canvas and
 // exporting as JPEG works even for formats the server's magic-bytes validator
@@ -263,7 +274,7 @@ export function HRDashboardPage() {
               {data?.recentEmployees.map((emp) => (
                 <li key={emp.id} className="flex items-center gap-3 px-5 py-3.5">
                   {emp.photoUrl ? (
-                    <img src={emp.photoUrl} alt="" className="h-9 w-9 shrink-0 rounded-full object-cover" />
+                    <img src={normalizePhotoUrl(emp.photoUrl)} alt="" className="h-9 w-9 shrink-0 rounded-full object-cover" />
                   ) : (
                     <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand/10 text-sm font-bold text-brand">
                       {emp.fullName.charAt(0).toUpperCase()}
@@ -387,7 +398,7 @@ export function EmployeeListPage() {
             { key: "fullName", label: "Name", render: (r) => (
               <Link href={`/hr/employees/${r.id}`} className="flex items-center gap-2 hover:text-brand">
                 {r.photoUrl ? (
-                  <img src={r.photoUrl as string} alt="" className="h-7 w-7 rounded-full object-cover shrink-0" />
+                  <img src={normalizePhotoUrl(r.photoUrl as string)} alt="" className="h-7 w-7 rounded-full object-cover shrink-0" />
                 ) : (
                   <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-brand/10 text-xs font-bold text-brand">{(r.fullName as string).charAt(0).toUpperCase()}</span>
                 )}
@@ -788,7 +799,7 @@ export function EmployeeDetailPage({ id }: { id: string }) {
         <div className="flex flex-wrap items-center gap-5 rounded-xl border border-line bg-white px-5 py-4 shadow-sm">
           <div className="relative shrink-0">
             {data.photoUrl ? (
-              <img src={data.photoUrl} alt={data.fullName} className="h-20 w-20 rounded-full object-cover ring-2 ring-brand/20 ring-offset-1" />
+              <img src={normalizePhotoUrl(data.photoUrl)} alt={data.fullName} className="h-20 w-20 rounded-full object-cover ring-2 ring-brand/20 ring-offset-1" />
             ) : (
               <div className="grid h-20 w-20 place-items-center rounded-full bg-brand/10 text-2xl font-bold text-brand">
                 {data.fullName.charAt(0).toUpperCase()}

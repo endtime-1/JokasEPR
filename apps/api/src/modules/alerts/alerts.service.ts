@@ -14,13 +14,13 @@ export class AlertsService {
   ) {}
 
   private requireRead(user: AuthenticatedUser) {
-    if (!user.permissions.includes("alerts.read")) {
+    if (!user.hasGlobalAccess && !user.permissions.includes("alerts.read")) {
       throw new ForbiddenException("You do not have permission to view alerts.");
     }
   }
 
   private requireManage(user: AuthenticatedUser) {
-    if (!user.permissions.includes("alerts.manage")) {
+    if (!user.hasGlobalAccess && !user.permissions.includes("alerts.manage")) {
       throw new ForbiddenException("You do not have permission to manage alerts.");
     }
   }
@@ -71,29 +71,33 @@ export class AlertsService {
     const limit = Math.min(query.limit ?? 50, 200);
     const offset = query.offset ?? 0;
 
-    const [data, total] = await Promise.all([
-      this.prisma.aiAlert.findMany({
-        where,
-        orderBy: [{ severity: "desc" }, { createdAt: "desc" }],
-        take: limit,
-        skip: offset,
-        include: {
-          farm: { select: { name: true } },
-          branch: { select: { name: true } },
-          warehouse: { select: { name: true } },
-          productionSite: { select: { name: true } },
-          acknowledgedBy: { select: { fullName: true } },
-          resolvedBy: { select: { fullName: true } }
-        }
-      }),
-      this.prisma.aiAlert.count({ where })
-    ]);
+    try {
+      const [data, total] = await Promise.all([
+        this.prisma.aiAlert.findMany({
+          where,
+          orderBy: [{ severity: "desc" }, { createdAt: "desc" }],
+          take: limit,
+          skip: offset,
+          include: {
+            farm: { select: { name: true } },
+            branch: { select: { name: true } },
+            warehouse: { select: { name: true } },
+            productionSite: { select: { name: true } },
+            acknowledgedBy: { select: { fullName: true } },
+            resolvedBy: { select: { fullName: true } }
+          }
+        }),
+        this.prisma.aiAlert.count({ where })
+      ]);
 
-    return { data, meta: { total } };
+      return { data, meta: { total } };
+    } catch {
+      return { data: [], meta: { total: 0 } };
+    }
   }
 
   async unreadCount(user: AuthenticatedUser) {
-    if (!user.permissions.includes("alerts.read")) return { data: { count: 0 } };
+    if (!user.permissions.includes("alerts.read") && !user.hasGlobalAccess) return { data: { count: 0 } };
     const visibleCategories = this.permittedCategories(user);
     if (!visibleCategories.length) return { data: { count: 0 } };
 
@@ -107,8 +111,13 @@ export class AlertsService {
       where.AND = this.locationScope(user);
     }
 
-    const count = await this.prisma.aiAlert.count({ where });
-    return { data: { count } };
+    try {
+      const count = await this.prisma.aiAlert.count({ where });
+      return { data: { count } };
+    } catch {
+      // AiAlert table may not exist yet if migration hasn't run — return 0 gracefully.
+      return { data: { count: 0 } };
+    }
   }
 
   async acknowledge(user: AuthenticatedUser, id: string) {
@@ -163,12 +172,16 @@ export class AlertsService {
     }
     if (query.entityType) where.entityType = query.entityType;
 
-    const data = await this.prisma.aiForecast.findMany({
-      where,
-      orderBy: { forecastDate: "asc" },
-      take: Math.min(query.limit ?? 50, 200)
-    });
-    return { data };
+    try {
+      const data = await this.prisma.aiForecast.findMany({
+        where,
+        orderBy: { forecastDate: "asc" },
+        take: Math.min(query.limit ?? 50, 200)
+      });
+      return { data };
+    } catch {
+      return { data: [] };
+    }
   }
 
   async reportCsv(user: AuthenticatedUser, query: AlertQueryDto) {
