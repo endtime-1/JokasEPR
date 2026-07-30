@@ -664,6 +664,7 @@ type EmployeeDetail = Employee & {
 
 export function EmployeeDetailPage({ id }: { id: string }) {
   const [data, setData] = useState<EmployeeDetail | null>(null);
+  const [loadError, setLoadError] = useState("");
   const { opts, optionsError } = useHROptions();
   // Read ?tab= from URL so external links (e.g. edit button in employee list) can deep-link
   const [tab, setTab] = useState(() => {
@@ -683,6 +684,7 @@ export function EmployeeDetailPage({ id }: { id: string }) {
   const [photoError, setPhotoError] = useState("");
 
   function load() {
+    setLoadError("");
     apiFetch<ApiEnvelope<EmployeeDetail>>(`/hr/employees/${id}`).then((r) => {
       if (!r.data) return;
       setData(r.data);
@@ -710,12 +712,22 @@ export function EmployeeDetailPage({ id }: { id: string }) {
         status: d.status ?? "",
         notes: d.notes ?? "",
       });
-    }).catch(() => undefined);
+    }).catch((err: unknown) => setLoadError(err instanceof Error ? err.message : "Failed to load employee."));
   }
 
   useEffect(() => { load(); }, [id]);
 
-  if (!data) return <AppShell><div className="flex items-center justify-center p-12"><div className="h-6 w-6 animate-spin rounded-full border-2 border-brand border-t-transparent" /></div></AppShell>;
+  if (!data && !loadError) return <AppShell><div className="flex items-center justify-center p-12"><div className="h-6 w-6 animate-spin rounded-full border-2 border-brand border-t-transparent" /></div></AppShell>;
+
+  if (loadError) return (
+    <AppShell>
+      <div className="flex flex-col items-center justify-center gap-4 p-12 text-center">
+        <p className="text-sm text-red-600">{loadError}</p>
+        <button type="button" onClick={load} className="rounded-lg bg-brand px-5 py-2 text-sm font-semibold text-white hover:opacity-90">Retry</button>
+        <Link href="/hr/employees" className="text-sm text-ink/50 hover:text-ink">← Back to Employees</Link>
+      </div>
+    </AppShell>
+  );
 
   const ef = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setEditForm((p) => ({ ...p, [k]: e.target.value }));
 
@@ -1838,16 +1850,18 @@ type TaskDetail = {
 
 export function TaskDetailPage({ id }: { id: string }) {
   const [data, setData] = useState<TaskDetail | null>(null);
+  const [taskLoadError, setTaskLoadError] = useState("");
   const [statusValue, setStatusValue] = useState("");
   const [statusNotes, setStatusNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [statusError, setStatusError] = useState("");
 
   function load() {
+    setTaskLoadError("");
     apiFetch<ApiEnvelope<TaskDetail>>(`/hr/tasks/${id}`).then((r) => {
       setData(r.data);
       setStatusValue(r.data?.status ?? "");
-    }).catch(() => undefined);
+    }).catch((err: unknown) => setTaskLoadError(err instanceof Error ? err.message : "Failed to load task."));
   }
 
   useEffect(() => { load(); }, [id]);
@@ -1867,7 +1881,16 @@ export function TaskDetailPage({ id }: { id: string }) {
     }
   }
 
-  if (!data) return <AppShell><div className="flex items-center justify-center p-12"><div className="h-6 w-6 animate-spin rounded-full border-2 border-brand border-t-transparent" /></div></AppShell>;
+  if (!data && !taskLoadError) return <AppShell><div className="flex items-center justify-center p-12"><div className="h-6 w-6 animate-spin rounded-full border-2 border-brand border-t-transparent" /></div></AppShell>;
+  if (taskLoadError) return (
+    <AppShell>
+      <div className="flex flex-col items-center justify-center gap-4 p-12 text-center">
+        <p className="text-sm text-red-600">{taskLoadError}</p>
+        <button type="button" onClick={load} className="rounded-lg bg-brand px-5 py-2 text-sm font-semibold text-white hover:opacity-90">Retry</button>
+        <Link href="/hr/tasks" className="text-sm text-ink/50 hover:text-ink">← Back to Tasks</Link>
+      </div>
+    </AppShell>
+  );
 
   return (
     <AppShell>
