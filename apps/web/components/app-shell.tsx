@@ -220,6 +220,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("auth:session-expired", onSessionExpired);
   }, [router]);
 
+  // Keep-alive ping every 3 minutes so Hostinger/Passenger doesn't hibernate the
+  // Node.js process between user interactions. Without this, any ~10-min gap in
+  // traffic causes a 20-30s cold start which shows the "server starting" banner.
+  useEffect(() => {
+    const ping = () => {
+      fetch("/api/v1/health", { credentials: "include", cache: "no-store" }).catch(() => undefined);
+    };
+    const id = setInterval(ping, 3 * 60 * 1000); // every 3 minutes
+    return () => clearInterval(id);
+  }, []);
+
   // When the API is still unreachable after all apiFetch retries (startup or crash),
   // show a banner then poll every 5s until the server responds, then reload.
   // This avoids the old fixed-timer approach that would reload too early during a slow
@@ -255,11 +266,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           clearTimeout(tid);
           if (res.status !== 502 && res.status !== 503 && res.status !== 504) {
             clearPolling();
+            // Wait 3s after the server responds before re-fetching. NestJS comes
+            // up before its DB connection pool is fully warm — without this gap,
+            // page fetches hit 500s immediately after recovery, showing a second
+            // "data failed to load" error right after the "starting up" banner clears.
+            await new Promise<void>(r => setTimeout(r, 3000));
             setApiDownBanner(false);
-            // Increment recoveryKey so all page components remount. Their
-            // useState initializers read from _getCache / sessionStorage, so
-            // cached data shows instantly while fresh data is re-fetched in
-            // the background — no blank skeleton, no full browser reload.
             setRecoveryKey((k) => k + 1);
             window.dispatchEvent(new CustomEvent("api:recovered"));
           }

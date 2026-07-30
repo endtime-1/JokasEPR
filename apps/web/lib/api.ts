@@ -167,9 +167,9 @@ function signalSessionExpired() {
 
 // 502/503/504 = API temporarily unavailable (startup, crash, Hostinger proxy timeout).
 // Retry up to MAX_TRANSIENT_RETRIES times with 3s gaps to ride out Hostinger cold starts.
-// NestJS + Next.js typically come up within 10-15s, so 4 retries (12s) covers most cases.
+// NestJS cold-start on Hostinger typically takes 15-30s, so 8 retries (24s) covers most cases.
 const TRANSIENT_STATUSES = new Set([502, 503, 504]);
-const MAX_TRANSIENT_RETRIES = 4;
+const MAX_TRANSIENT_RETRIES = 8;
 
 import { authReady } from "./auth-gate";
 
