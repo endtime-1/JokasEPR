@@ -835,33 +835,41 @@ export class HRService {
   }
 
   async myLeaveRequests(user: AuthenticatedUser) {
-    const emp = await this.prisma.employee.findFirst({
-      where: { companyId: user.companyId, email: user.email, deletedAt: null },
-    });
+    try {
+      const emp = await this.prisma.employee.findFirst({
+        where: { companyId: user.companyId, email: user.email, deletedAt: null },
+      });
 
-    if (!emp) return { data: [] };
+      if (!emp) return { data: [] };
 
-    const rows = await this.prisma.leaveRequest.findMany({
-      where: { companyId: user.companyId, employeeId: emp.id, deletedAt: null },
-      orderBy: { createdAt: "desc" },
-      take: 20,
-      include: { employee: { select: { fullName: true, code: true } } },
-    });
-    return { data: rows };
+      const rows = await this.prisma.leaveRequest.findMany({
+        where: { companyId: user.companyId, employeeId: emp.id, deletedAt: null },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+        include: { employee: { select: { fullName: true, code: true } } },
+      });
+      return { data: rows };
+    } catch {
+      return { data: [] };
+    }
   }
 
   async listLeaveRequests(user: AuthenticatedUser, query: HRQueryDto) {
-    const rows = await this.prisma.leaveRequest.findMany({
-      where: {
-        companyId: user.companyId,
-        deletedAt: null,
-        ...(query.status ? { status: query.status as never } : {}),
-      },
-      orderBy: { createdAt: "desc" },
-      take: 50,
-      include: { employee: { select: { fullName: true, code: true } } },
-    });
-    return { data: rows };
+    try {
+      const rows = await this.prisma.leaveRequest.findMany({
+        where: {
+          companyId: user.companyId,
+          deletedAt: null,
+          ...(query.status ? { status: query.status as never } : {}),
+        },
+        orderBy: { createdAt: "desc" },
+        take: 50,
+        include: { employee: { select: { fullName: true, code: true } } },
+      });
+      return { data: rows };
+    } catch {
+      return { data: [] };
+    }
   }
 
   async reviewLeaveRequest(user: AuthenticatedUser, id: string, dto: ReviewLeaveRequestDto, ctx: RequestContext) {
@@ -1071,7 +1079,7 @@ export class HRService {
       where: { companyId: cid, deletedAt: null, startDate: { gte: dateFrom, lte: dateTo } },
       _count: { id: true },
       _sum: { daysRequested: true },
-    });
+    }).catch(() => [] as any[]);
 
     return { data: { period: { from: dateFrom, to: dateTo }, breakdown: byType } };
   }

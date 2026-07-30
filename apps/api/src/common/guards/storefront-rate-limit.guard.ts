@@ -18,22 +18,28 @@ export class StorefrontOrderRateLimitGuard implements CanActivate {
     const now = new Date();
     const windowEnd = new Date(now.getTime() + ORDER_WINDOW_MS);
 
-    const existing = await this.prisma.loginRateLimit.findFirst({
-      where: { key, windowEnd: { gt: now } },
-    });
+    try {
+      const existing = await this.prisma.loginRateLimit.findFirst({
+        where: { key, windowEnd: { gt: now } },
+      });
 
-    if (!existing) {
-      await this.prisma.loginRateLimit.create({ data: { key, attempts: 1, windowEnd } });
+      if (!existing) {
+        await this.prisma.loginRateLimit.create({ data: { key, attempts: 1, windowEnd } });
+        return true;
+      }
+      if (existing.attempts >= ORDER_MAX) {
+        throw new HttpException("Too many orders from this IP. Try again later.", HttpStatus.TOO_MANY_REQUESTS);
+      }
+      await this.prisma.loginRateLimit.update({
+        where: { id: existing.id },
+        data: { attempts: { increment: 1 } },
+      });
+      return true;
+    } catch (err) {
+      // Rethrow our own rate-limit rejection; on DB errors, allow the request.
+      if (err instanceof HttpException) throw err;
       return true;
     }
-    if (existing.attempts >= ORDER_MAX) {
-      throw new HttpException("Too many orders from this IP. Try again later.", HttpStatus.TOO_MANY_REQUESTS);
-    }
-    await this.prisma.loginRateLimit.update({
-      where: { id: existing.id },
-      data: { attempts: { increment: 1 } },
-    });
-    return true;
   }
 }
 
@@ -47,21 +53,26 @@ export class StorefrontBrowseRateLimitGuard implements CanActivate {
     const now = new Date();
     const windowEnd = new Date(now.getTime() + BROWSE_WINDOW_MS);
 
-    const existing = await this.prisma.loginRateLimit.findFirst({
-      where: { key, windowEnd: { gt: now } },
-    });
+    try {
+      const existing = await this.prisma.loginRateLimit.findFirst({
+        where: { key, windowEnd: { gt: now } },
+      });
 
-    if (!existing) {
-      await this.prisma.loginRateLimit.create({ data: { key, attempts: 1, windowEnd } });
+      if (!existing) {
+        await this.prisma.loginRateLimit.create({ data: { key, attempts: 1, windowEnd } });
+        return true;
+      }
+      if (existing.attempts >= BROWSE_MAX) {
+        throw new HttpException("Too many requests. Slow down.", HttpStatus.TOO_MANY_REQUESTS);
+      }
+      await this.prisma.loginRateLimit.update({
+        where: { id: existing.id },
+        data: { attempts: { increment: 1 } },
+      });
+      return true;
+    } catch (err) {
+      if (err instanceof HttpException) throw err;
       return true;
     }
-    if (existing.attempts >= BROWSE_MAX) {
-      throw new HttpException("Too many requests. Slow down.", HttpStatus.TOO_MANY_REQUESTS);
-    }
-    await this.prisma.loginRateLimit.update({
-      where: { id: existing.id },
-      data: { attempts: { increment: 1 } },
-    });
-    return true;
   }
 }

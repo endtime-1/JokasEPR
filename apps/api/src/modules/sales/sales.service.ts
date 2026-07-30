@@ -794,14 +794,14 @@ export class SalesService {
       };
     }
     const [total, visits] = await Promise.all([
-      this.prisma.prospectVisit.count({ where: where as never }),
-      this.prisma.prospectVisit.findMany({
-        where: where as never,
+      (this.prisma.prospectVisit as any).count({ where }).catch(() => 0),
+      (this.prisma.prospectVisit as any).findMany({
+        where,
         orderBy: { visitedAt: "desc" },
         skip: (page - 1) * limit,
         take: limit,
         include: { company: { select: { name: true } } },
-      }),
+      }).catch(() => [] as any[]),
     ]);
     return { data: visits, meta: { total, page, limit } };
   }

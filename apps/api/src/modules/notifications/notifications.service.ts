@@ -152,18 +152,24 @@ export class NotificationsService {
   // ── Preferences ─────────────────────────────────────────────────────────────
 
   private async buildPreferences(userId: string) {
-    const saved = await this.prisma.notificationPreference.findMany({ where: { userId } });
-    const savedMap = new Map(saved.map((p) => [p.notificationType, p]));
-    return Object.values(NotificationType).map((type) => {
-      const existing = savedMap.get(type as any);
-      return {
-        notificationType: type,
-        inApp: existing?.inApp ?? true,
-        email: existing?.email ?? false,
-        sms: existing?.sms ?? false,
-        whatsapp: existing?.whatsapp ?? false
-      };
-    });
+    try {
+      const saved = await this.prisma.notificationPreference.findMany({ where: { userId } });
+      const savedMap = new Map(saved.map((p) => [p.notificationType, p]));
+      return Object.values(NotificationType).map((type) => {
+        const existing = savedMap.get(type as any);
+        return {
+          notificationType: type,
+          inApp: existing?.inApp ?? true,
+          email: existing?.email ?? false,
+          sms: existing?.sms ?? false,
+          whatsapp: existing?.whatsapp ?? false
+        };
+      });
+    } catch {
+      return Object.values(NotificationType).map((type) => ({
+        notificationType: type, inApp: true, email: false, sms: false, whatsapp: false
+      }));
+    }
   }
 
   async getPreferences(user: AuthenticatedUser) {
@@ -194,8 +200,12 @@ export class NotificationsService {
 
   async getConfig(user: AuthenticatedUser) {
     this.requireAdmin(user);
-    const config = await this.prisma.notificationConfig.findUnique({ where: { companyId: user.companyId } });
-    return { data: config ?? { companyId: user.companyId, emailEnabled: false, smsEnabled: false, whatsappEnabled: false, emailFromAddress: null, emailFromName: null } };
+    try {
+      const config = await this.prisma.notificationConfig.findUnique({ where: { companyId: user.companyId } });
+      return { data: config ?? { companyId: user.companyId, emailEnabled: false, smsEnabled: false, whatsappEnabled: false, emailFromAddress: null, emailFromName: null } };
+    } catch {
+      return { data: { companyId: user.companyId, emailEnabled: false, smsEnabled: false, whatsappEnabled: false, emailFromAddress: null, emailFromName: null } };
+    }
   }
 
   async updateConfig(user: AuthenticatedUser, dto: UpdateNotificationConfigDto) {

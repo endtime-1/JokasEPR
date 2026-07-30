@@ -81,21 +81,25 @@ export class DashboardService {
     monthStart.setDate(1);
     monthStart.setHours(0, 0, 0, 0);
 
-    const [salesAgg, openOrders, totalBirds, pendingAlerts] = await Promise.all([
-      this.prisma.salesOrder.aggregate({ where: { companyId, status: { not: "CANCELLED" }, createdAt: { gte: monthStart } }, _sum: { totalAmount: true } }),
-      this.prisma.salesOrder.count({ where: { companyId, status: { in: ["DRAFT", "PENDING_STOCK_APPROVAL", "APPROVED"] } } }),
-      this.prisma.flockBatch.aggregate({ where: { companyId, status: "ACTIVE", deletedAt: null }, _sum: { openingBirdCount: true } }),
-      this.prisma.stockExpiryAlert.count({ where: { companyId, deletedAt: null, daysToExpiry: { lte: 30 } } }),
-    ]);
+    try {
+      const [salesAgg, openOrders, totalBirds, pendingAlerts] = await Promise.all([
+        this.prisma.salesOrder.aggregate({ where: { companyId, status: { not: "CANCELLED" }, createdAt: { gte: monthStart } }, _sum: { totalAmount: true } }),
+        this.prisma.salesOrder.count({ where: { companyId, status: { in: ["DRAFT", "PENDING_STOCK_APPROVAL", "APPROVED"] } } }),
+        this.prisma.flockBatch.aggregate({ where: { companyId, status: "ACTIVE", deletedAt: null }, _sum: { openingBirdCount: true } }),
+        this.prisma.stockExpiryAlert.count({ where: { companyId, deletedAt: null, daysToExpiry: { lte: 30 } } }),
+      ]);
 
-    return {
-      data: {
-        totalRevenue: salesAgg._sum.totalAmount ?? 0,
-        openOrders,
-        totalBirds: totalBirds._sum.openingBirdCount ?? 0,
-        pendingAlerts,
-      },
-    };
+      return {
+        data: {
+          totalRevenue: salesAgg._sum.totalAmount ?? 0,
+          openOrders,
+          totalBirds: totalBirds._sum.openingBirdCount ?? 0,
+          pendingAlerts,
+        },
+      };
+    } catch {
+      return { data: { totalRevenue: 0, openOrders: 0, totalBirds: 0, pendingAlerts: 0 } };
+    }
   }
 
   async executive(user: AuthenticatedUser, query: DashboardQueryDto) {
@@ -153,38 +157,38 @@ export class DashboardService {
     const selfEmployee = await this.prisma.employee.findFirst({
       where: { companyId: user.companyId, email: user.email, deletedAt: null },
       select: { id: true },
-    });
+    }).catch(() => null);
 
     const [eggCount, feedCount, mortalityCount, dailyCount, prodCount, salesCount, stockCount, soyaCount, attendanceCount, visitCount] = await Promise.all([
       hasFarms
-        ? this.prisma.eggProductionRecord.count({ where: { ...base, ...farmFilter, recordDate: dateRange } })
+        ? this.prisma.eggProductionRecord.count({ where: { ...base, ...farmFilter, recordDate: dateRange } }).catch(() => -1)
         : Promise.resolve(-1),
       hasFarms
-        ? this.prisma.feedConsumptionRecord.count({ where: { ...base, ...farmFilter, recordDate: dateRange } })
+        ? this.prisma.feedConsumptionRecord.count({ where: { ...base, ...farmFilter, recordDate: dateRange } }).catch(() => -1)
         : Promise.resolve(-1),
       hasFarms
-        ? this.prisma.mortalityRecord.count({ where: { ...base, ...farmFilter, recordDate: dateRange } })
+        ? this.prisma.mortalityRecord.count({ where: { ...base, ...farmFilter, recordDate: dateRange } }).catch(() => -1)
         : Promise.resolve(-1),
       hasFarms
-        ? this.prisma.dailyPoultryRecord.count({ where: { ...base, ...farmFilter, recordDate: dateRange } })
+        ? this.prisma.dailyPoultryRecord.count({ where: { ...base, ...farmFilter, recordDate: dateRange } }).catch(() => -1)
         : Promise.resolve(-1),
       hasSites
-        ? this.prisma.feedProductionBatch.count({ where: { ...base, ...siteFilter, createdAt: dateRange } })
+        ? this.prisma.feedProductionBatch.count({ where: { ...base, ...siteFilter, createdAt: dateRange } }).catch(() => -1)
         : Promise.resolve(-1),
       canSales
-        ? this.prisma.salesOrder.count({ where: { ...base, createdAt: dateRange } })
+        ? this.prisma.salesOrder.count({ where: { ...base, createdAt: dateRange } }).catch(() => -1)
         : Promise.resolve(-1),
       canStock
-        ? this.prisma.stockMovement.count({ where: { ...base, createdAt: dateRange } })
+        ? this.prisma.stockMovement.count({ where: { ...base, createdAt: dateRange } }).catch(() => -1)
         : Promise.resolve(-1),
       canSoya
-        ? this.prisma.soyaBeanIntake.count({ where: { ...base, ...siteFilter, receivedAt: dateRange } })
+        ? this.prisma.soyaBeanIntake.count({ where: { ...base, ...siteFilter, receivedAt: dateRange } }).catch(() => -1)
         : Promise.resolve(-1),
       selfEmployee
-        ? this.prisma.attendanceRecord.count({ where: { companyId: user.companyId, employeeId: selfEmployee.id, date: dateRange } })
+        ? this.prisma.attendanceRecord.count({ where: { companyId: user.companyId, employeeId: selfEmployee.id, date: dateRange } }).catch(() => -1)
         : Promise.resolve(-1),
       canSales
-        ? this.prisma.prospectVisit.count({ where: { companyId: user.companyId, repId: user.id, visitedAt: dateRange } } as never)
+        ? (this.prisma.prospectVisit as any).count({ where: { companyId: user.companyId, repId: user.id, visitedAt: dateRange } }).catch(() => -1)
         : Promise.resolve(-1),
     ]);
 
