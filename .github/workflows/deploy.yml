@@ -201,12 +201,17 @@ jobs:
           REMOTE_CMD='
             set -e
             source ~/.bashrc 2>/dev/null || source ~/.profile 2>/dev/null || true
-            # Load nvm explicitly — .bashrc nvm setup is skipped in non-interactive shells
+            # Load nvm — .bashrc nvm setup is skipped in non-interactive SSH shells
             export NVM_DIR="$HOME/.nvm"
             [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" 2>/dev/null || true
             nvm use default 2>/dev/null || nvm use node 2>/dev/null || true
-            # Also try common Hostinger Node.js paths
-            for p in /usr/local/bin /usr/bin; do [ -x "$p/npx" ] && export PATH="$p:$PATH" && break; done
+            # If nvm loaded but PATH not updated, find node directly in nvm tree
+            if ! command -v node >/dev/null 2>&1; then
+              _NBIN=$(ls "$HOME"/.nvm/versions/node/*/bin/node 2>/dev/null | sort -V | tail -1)
+              [ -n "$_NBIN" ] && export PATH="$(dirname "$_NBIN"):$PATH"
+            fi
+            # Also try common system paths
+            for p in /usr/local/bin /usr/bin; do [ -x "$p/node" ] && export PATH="$p:$PATH" && break; done
             APP_DIR=~/domains/jokasfarms.com/nodejs
 
             echo "==> Backing up current deploy for rollback..."
@@ -222,10 +227,19 @@ jobs:
               set -a; . "$APP_DIR/.env"; set +a
               echo "Sourced $APP_DIR/.env for DATABASE_URL"
             fi
-            if npx --yes prisma@6 migrate deploy --schema ./prisma/schema.prisma; then
-              echo "Migrations complete."
+            # Use the Prisma CLI bundled with the already-deployed API rather than
+            # downloading via npx (npx is not always in PATH in non-interactive SSH).
+            PRISMA_BIN="$APP_DIR/apps/api/node_modules/.bin/prisma"
+            NODE_BIN=$(command -v node 2>/dev/null || true)
+            echo "node: ${NODE_BIN:-NOT FOUND}  prisma: $([ -x "$PRISMA_BIN" ] && echo found || echo NOT FOUND)"
+            if [ -n "$NODE_BIN" ] && [ -x "$PRISMA_BIN" ]; then
+              if "$NODE_BIN" "$PRISMA_BIN" migrate deploy --schema "$APP_DIR/prisma/schema.prisma"; then
+                echo "Migrations complete."
+              else
+                echo "WARNING: prisma migrate deploy failed — deploy continues."
+              fi
             else
-              echo "WARNING: prisma migrate deploy failed — deploy continues, check DATABASE_URL in SSH env."
+              echo "WARNING: cannot run migrations — node or prisma binary not found."
             fi
 
             mkdir -p $APP_DIR/tmp
