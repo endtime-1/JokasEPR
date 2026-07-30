@@ -39,14 +39,14 @@ function Hero() {
 
         {/* Display headline */}
         <h1 className="animate-fade-up-1 font-display text-[clamp(3.5rem,9vw,7.5rem)] font-normal leading-[1.0] tracking-tight text-white">
-          The Freshest Feed.<br />
-          <em className="not-italic text-brand">The Finest Farm.</em>
+          Quality Feed,<br />
+          <em className="not-italic text-brand">Higher Production.</em>
         </h1>
 
         <p className="animate-fade-up-2 mt-7 max-w-xl text-[1.15rem] leading-relaxed text-white/65">
-          Ghana's most trusted source for premium poultry feed, fresh eggs, ready
-          broiler chickens, and soya products — milled and packed daily at Akoko Solutions
-          and delivered to your door.
+          We Help Farmers Achieve Optimum Production. Science-based poultry feed
+          with free technical advice, consistent quality, and nationwide distribution
+          across Ghana — Your Choice for Profit.
         </p>
 
         {/* CTAs */}
@@ -58,13 +58,13 @@ function Hero() {
           </Link>
           <Link href="/about"
             className="glass flex items-center gap-2 rounded-xl px-8 py-4 text-sm font-semibold text-white transition hover:bg-white/14">
-            Our Farm Story
+            Our Story
           </Link>
         </div>
 
         {/* Trust chips */}
         <div className="animate-fade-up-3 mt-9 flex flex-wrap gap-2.5">
-          {["50,000+ birds fed daily","500+ farms served","Since 2015","Farm-direct pricing"].map(t => (
+          {["Science-based formulation","Free technical advice","9 distribution points","Abrepo Road, Kumasi"].map(t => (
             <span key={t}
               className="glass rounded-full px-3.5 py-1.5 text-[11px] font-semibold text-white/80">
               {t}
@@ -140,26 +140,27 @@ function FarmStory() {
               The Akoko Solutions Story
             </p>
             <h2 className="font-display text-[clamp(2.5rem,5vw,4rem)] leading-[1.05] text-ink">
-              We don't just sell feed.<br />
-              <em className="text-brand">We raise it.</em>
+              Science-based feed.<br />
+              <em className="text-brand">Proven results.</em>
             </h2>
             <p className="mt-6 text-[1.05rem] leading-relaxed text-stone">
-              Every bag of feed that leaves Akoko Solutions is the same formula we feed
-              our own 50,000-bird flock. We started with 500 birds in 2015 and built our
-              own feed mill because we couldn't trust what was on the market.
+              Akoko Solutions is on a mission to empower farmers with innovative feed
+              solutions, technical expertise, and consistent quality that drive sustainable
+              poultry production. Our feeds are formulated by nutritionists and backed by
+              free technical advice.
             </p>
             <p className="mt-4 text-[1.05rem] leading-relaxed text-stone">
-              Now, that same feed — mill-fresh and quality-checked on every batch — is
-              available to farms and households across Ghana. No middlemen. No shelf-sitting.
-              Direct from our mill to your farm.
+              Based in Kumasi at Abrepo Road, we serve farmers across Ghana through 9
+              distribution points — so our quality feed reaches you wherever you farm.
+              Your success is our success.
             </p>
 
             <div className="mt-8 grid grid-cols-2 gap-4">
               {[
-                { n: "50,000+", l: "Birds on our farm" },
-                { n: "5 t/day",  l: "Feed mill capacity" },
-                { n: "48 hrs",   l: "Mill to delivery" },
-                { n: "100%",     l: "Quality checked" },
+                { n: "6+",       l: "Feed product lines" },
+                { n: "9",        l: "Distribution points" },
+                { n: "Free",     l: "Technical advice" },
+                { n: "100%",     l: "Quality assured" },
               ].map(s => (
                 <div key={s.l} className="rounded-2xl bg-warm p-4 ring-1 ring-warmBorder">
                   <div className="text-2xl font-black text-brand">{s.n}</div>
@@ -194,8 +195,8 @@ async function ProductShowcase() {
               Our Products
             </p>
             <h2 className="font-display text-[clamp(2.5rem,5vw,4.5rem)] leading-[1.05] text-white">
-              14 Products.<br />
-              <em className="text-brand">One Farm.</em>
+              Quality Feed.<br />
+              <em className="text-brand">Higher Production.</em>
             </h2>
           </div>
           <Link href="/products"
@@ -218,7 +219,7 @@ async function ProductShowcase() {
         <div className="mt-10 text-center lg:hidden">
           <Link href="/products"
             className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-6 py-3 text-sm font-semibold text-white/70 hover:border-brand hover:text-brand">
-            See all 14 products <ArrowRight size={14} />
+            See all products <ArrowRight size={14} />
           </Link>
         </div>
       </div>
@@ -232,25 +233,25 @@ function CategoryTrio() {
     {
       href: "/products?category=Feed",
       img: CATEGORY_IMAGES["Feed"],
-      tag: "10 Products",
+      tag: "Chick Starter · Developer · Layer",
       title: "Poultry Feed",
-      body: "Broiler starter to layer mash — 10 varieties, mill-fresh daily at Akoko Solutions. Same formula we feed our own 50,000 birds.",
-      cta: "Browse Feed",
+      body: "Science-based formulas for every growth stage — Chick Starter, Super Chick, Developer, Pre-Lay, Layer 1 and more. Quality Feed, Higher Production.",
+      cta: "Browse Feed Products",
     },
     {
       href: "/products?category=Eggs+%26+Poultry",
       img: CATEGORY_IMAGES["Eggs & Poultry"],
-      tag: "2 Products",
+      tag: "Farm Fresh",
       title: "Eggs & Poultry",
-      body: "Fresh-graded eggs collected each morning + ready broiler chickens raised on Akoko Mix feed. Farm-pure, daily-fresh.",
+      body: "Fresh-graded eggs and ready broiler chickens raised on Akoko nutrition. Farm-pure quality, available for farms and households.",
       cta: "Browse Eggs & Poultry",
     },
     {
       href: "/products?category=Soya+Products",
       img: CATEGORY_IMAGES["Soya Products"],
-      tag: "2 Products",
+      tag: "High Protein",
       title: "Soya Products",
-      body: "On-site expeller-pressed soya cake (44–48% CP) and food-grade soya oil. No blending, no additives — pure soya.",
+      body: "Quality soya cake (44–48% CP) and food-grade soya oil — ideal as protein source for poultry, fish, and pig feeds.",
       cta: "Browse Soya",
     },
   ];
@@ -316,10 +317,10 @@ function NumbersSection() {
       <div className="relative mx-auto max-w-8xl px-5 sm:px-8">
         <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
           {[
-            { n:"50,000+", l:"Birds on our farm",    s:"Fed on Akoko Mix daily"   },
-            { n:"500+",    l:"Farms we supply",      s:"Across all 16 regions"    },
-            { n:"5 t",     l:"Feed milled per day",  s:"Fresh on every batch"     },
-            { n:"11+",     l:"Years in business",    s:"Growing since 2015"       },
+            { n:"6+",      l:"Feed product lines",   s:"For every growth stage"   },
+            { n:"9",       l:"Distribution points",  s:"Serving all regions"      },
+            { n:"Free",    l:"Technical advice",     s:"With every purchase"      },
+            { n:"West Africa", l:"Trusted brand",    s:"Your Choice for Profit"   },
           ].map(s => (
             <div key={s.l} className="text-white">
               <div className="font-display text-6xl italic">{s.n}</div>
@@ -434,12 +435,13 @@ function FinalCTA() {
           Start Today
         </p>
         <h2 className="font-display text-[clamp(2.5rem,6vw,5rem)] leading-[1.05] text-white">
-          Ready to Feed<br />
-          <em className="text-brand">Your Farm?</em>
+          Your Choice<br />
+          <em className="text-brand">for Profit.</em>
         </h2>
         <p className="mx-auto mt-6 max-w-lg text-[1.1rem] leading-relaxed text-white/55">
-          Browse 14 products, place your order online, and our team personally confirms
-          every order before dispatch. Ghana's best feed, delivered to your gate.
+          Browse our product range, place your order online, and our team personally
+          confirms every order. Quality feed, free technical advice, and 9 distribution
+          points across Ghana.
         </p>
         <div className="mt-10 flex flex-wrap justify-center gap-4">
           <Link href="/products"
@@ -447,7 +449,7 @@ function FinalCTA() {
             Shop All Products
             <ArrowRight size={15} className="transition-transform group-hover:translate-x-0.5" />
           </Link>
-          <a href="tel:+233XXXXXXXX"
+          <a href="tel:+233505455090"
             className="glass inline-flex items-center gap-2 rounded-xl px-10 py-4 text-sm font-semibold text-white/80 transition hover:bg-white/14">
             Call to Order
           </a>

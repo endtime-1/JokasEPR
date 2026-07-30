@@ -50,12 +50,17 @@ export default function ContactPage() {
 
             {/* Quick contact strip */}
             <div className="mt-10 flex flex-wrap gap-3">
-              <a href="tel:+233XXXXXXXX"
+              <a href="tel:+233505455090"
                 className="glass flex items-center gap-2.5 rounded-2xl px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/14">
                 <Phone size={15} className="text-brand" />
-                +233 XX XXX XXXX
+                +233 505 455 090
               </a>
-              <a href="https://wa.me/233XXXXXXXX" target="_blank" rel="noopener noreferrer"
+              <a href="tel:+233505455055"
+                className="glass flex items-center gap-2.5 rounded-2xl px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/14">
+                <Phone size={15} className="text-brand" />
+                +233 505 455 055
+              </a>
+              <a href="https://wa.me/233505455090" target="_blank" rel="noopener noreferrer"
                 className="glass flex items-center gap-2.5 rounded-2xl px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/14">
                 <MessageCircle size={15} className="text-green-400" />
                 WhatsApp
@@ -73,9 +78,9 @@ export default function ContactPage() {
               {
                 icon: Phone,
                 title: "Call Us",
-                detail: "+233 XX XXX XXXX",
-                note: "Mon – Sat · 7 am – 5 pm",
-                href: "tel:+233XXXXXXXX",
+                detail: "+233 505 455 090 / 055",
+                note: "Mon – Sat 8am – 6pm · Sun 6am – 12pm",
+                href: "tel:+233505455090",
                 cta: "Call now",
                 accent: "bg-brand",
                 iconBg: "bg-brand/10 text-brand",
@@ -85,7 +90,7 @@ export default function ContactPage() {
                 title: "WhatsApp",
                 detail: "Chat with the team",
                 note: "Fastest response · under 2 hrs",
-                href: "https://wa.me/233XXXXXXXX",
+                href: "https://wa.me/233505455090",
                 cta: "Open WhatsApp",
                 accent: "bg-green-500",
                 iconBg: "bg-green-50 text-green-600",
@@ -93,18 +98,18 @@ export default function ContactPage() {
               {
                 icon: Mail,
                 title: "Email",
-                detail: "orders@akokosolutions.com",
+                detail: "info@akokosolutionsgh.com",
                 note: "Response within 24 hours",
-                href: "mailto:orders@akokosolutions.com",
+                href: "mailto:info@akokosolutionsgh.com",
                 cta: "Send email",
                 accent: "bg-blue-500",
                 iconBg: "bg-blue-50 text-blue-600",
               },
               {
                 icon: MapPin,
-                title: "Farm Pickup",
-                detail: "Akoko Solutions Farm, Ghana",
-                note: "Call ahead to arrange pickup",
+                title: "Visit Us",
+                detail: "Abrepo Road, Kumasi",
+                note: "Ghana · Call ahead to confirm",
                 href: undefined,
                 cta: undefined,
                 accent: "bg-purple-500",
@@ -214,7 +219,7 @@ export default function ContactPage() {
                           onChange={(e) => field("phone", e.target.value)}
                           onFocus={() => setFocused("phone")}
                           onBlur={() => setFocused(null)}
-                          placeholder="+233 XX XXX XXXX"
+                          placeholder="+233 505 455 090"
                           className={inputClass("phone")}
                         />
                       </div>
@@ -287,7 +292,7 @@ export default function ContactPage() {
                   ))}
                 </ul>
                 <a
-                  href="mailto:orders@akokosolutions.com?subject=Bulk Order Partnership"
+                  href="mailto:info@akokosolutionsgh.com?subject=Bulk%20Order%20Partnership"
                   className="mt-6 flex items-center justify-center gap-2 rounded-2xl bg-brand px-6 py-3.5 text-sm font-bold text-white shadow-brand transition hover:bg-brandDark"
                 >
                   <Mail size={14} /> Email for Bulk Pricing
@@ -307,7 +312,7 @@ export default function ContactPage() {
                   Send us a message for the fastest response — typically under 2 hours during business hours.
                 </p>
                 <a
-                  href="https://wa.me/233XXXXXXXX"
+                  href="https://wa.me/233505455090"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="mt-4 inline-flex items-center gap-2 rounded-2xl bg-white px-5 py-2.5 text-sm font-bold text-[#25D366] shadow transition hover:bg-white/90"
@@ -316,6 +321,63 @@ export default function ContactPage() {
                 </a>
               </div>
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Distribution Network ─────────────────────────────────────── */}
+      <section className="bg-cream py-20 lg:py-28">
+        <div className="mx-auto max-w-8xl px-5 sm:px-8">
+          <div className="mb-12 text-center">
+            <p className="mb-4 text-xs font-semibold uppercase tracking-[0.22em] text-brand">
+              Find Us Near You
+            </p>
+            <h2 className="font-display text-[clamp(2rem,4vw,3.5rem)] leading-[1.05] text-ink">
+              9 Distribution Points<br />
+              <em className="text-brand">Across Ghana.</em>
+            </h2>
+            <p className="mx-auto mt-4 max-w-lg text-sm leading-relaxed text-muted">
+              Akoko quality feed is available at authorised distributors across Ghana.
+              Call the outlet nearest to you or contact headquarters for directions.
+            </p>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {[
+              { name: "Boateng Stores", area: "Juaben Shell, Kumasi",     phone: "0244 325 888" },
+              { name: "Bsrima Company", area: "Kotei, Kumasi",            phone: "0594 848 566" },
+              { name: "Ama Stores",     area: "Nhyiaeso, Kumasi",         phone: "0246 337 376" },
+              { name: "Akoko Depot",    area: "Oyibi, Accra",             phone: "0243 897 063" },
+              { name: "Fofie's Place",  area: "Suame, Kumasi",            phone: "0240 028 899" },
+              { name: "Freddie Stores", area: "Oduom, Kumasi",            phone: "0508 538 010" },
+              { name: "Maame Yaa Stores", area: "Abuakwa Ashanti",        phone: "0241 399 028" },
+              { name: "Akoko Dome",     area: "Dome, Accra",              phone: "0264 001 220" },
+              { name: "Comfort's Place", area: "Asafo, Kumasi",           phone: "0246 494 059" },
+            ].map((d) => (
+              <div key={d.name} className="flex items-start gap-4 rounded-2xl bg-white p-5 shadow-panel ring-1 ring-sand">
+                <div className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-brand/10">
+                  <MapPin size={16} className="text-brand" />
+                </div>
+                <div>
+                  <div className="font-semibold text-ink">{d.name}</div>
+                  <div className="text-sm text-muted">{d.area}</div>
+                  <a href={`tel:+233${d.phone.replace(/\s/g, "").slice(1)}`}
+                    className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-brand hover:underline">
+                    <Phone size={11} /> {d.phone}
+                  </a>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-10 rounded-3xl border border-brand/20 bg-brand/5 px-6 py-5 text-center">
+            <p className="text-sm text-stone">
+              Can&apos;t find a distributor near you?{" "}
+              <a href="tel:+233505455090" className="font-semibold text-brand hover:underline">
+                Call +233 505 455 090
+              </a>{" "}
+              and we&apos;ll arrange direct delivery or find your nearest point.
+            </p>
           </div>
         </div>
       </section>

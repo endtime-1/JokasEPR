@@ -28,13 +28,13 @@ export default function Footer() {
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-4 py-5 sm:flex-row sm:px-6">
           <div>
             <p className="font-semibold text-white">Prefer to order by phone?</p>
-            <p className="text-sm text-white/55">Our team is available Mon–Sat, 7am–5pm</p>
+            <p className="text-sm text-white/55">Our team is available Mon–Sat 8am–6pm · Sun 6am–12pm</p>
           </div>
           <a
-            href="tel:+233XXXXXXXX"
+            href="tel:+233505455090"
             className="inline-flex items-center gap-2 rounded-xl bg-brand px-6 py-2.5 text-sm font-bold text-white shadow-brand transition hover:bg-brandDark"
           >
-            <Phone size={14} /> +233 XX XXX XXXX
+            <Phone size={14} /> +233 505 455 090
           </a>
         </div>
       </div>
@@ -47,9 +47,9 @@ export default function Footer() {
             {/* Real brand logo — light variant */}
             <Logo variant="light-lockup" height={42} />
             <p className="mt-5 max-w-xs text-sm leading-relaxed text-white/50">
-              Akoko Solutions — Ghana's trusted source for quality poultry feed,
-              fresh eggs, ready broiler chickens, and soya products. Mill-fresh,
-              farm-direct, delivered across Ghana.
+              Akoko Solutions — We Help Farmers Achieve Optimum Production. Quality
+              poultry feed with science-based formulation, free technical advice,
+              and nationwide distribution from Kumasi, Ghana.
             </p>
           </div>
 
@@ -92,24 +92,30 @@ export default function Footer() {
             </h3>
             <ul className="space-y-4">
               <li>
-                <a href="tel:+233XXXXXXXX" className="flex items-start gap-3 text-sm text-white/55 transition hover:text-brand">
+                <a href="tel:+233505455090" className="flex items-start gap-3 text-sm text-white/55 transition hover:text-brand">
                   <Phone size={14} className="mt-0.5 shrink-0 text-brand" />
-                  +233 XX XXX XXXX
+                  +233 505 455 090
                 </a>
               </li>
               <li>
-                <a href="mailto:orders@akokosolutions.com" className="flex items-start gap-3 text-sm text-white/55 transition hover:text-brand">
+                <a href="tel:+233505455055" className="flex items-start gap-3 text-sm text-white/55 transition hover:text-brand">
+                  <Phone size={14} className="mt-0.5 shrink-0 text-brand" />
+                  +233 505 455 055
+                </a>
+              </li>
+              <li>
+                <a href="mailto:info@akokosolutionsgh.com" className="flex items-start gap-3 text-sm text-white/55 transition hover:text-brand">
                   <Mail size={14} className="mt-0.5 shrink-0 text-brand" />
-                  orders@akokosolutions.com
+                  info@akokosolutionsgh.com
                 </a>
               </li>
               <li className="flex items-start gap-3 text-sm text-white/55">
                 <MapPin size={14} className="mt-0.5 shrink-0 text-brand" />
-                Akoko Solutions Farm, Ghana
+                Abrepo Road, Kumasi, Ghana
               </li>
             </ul>
             <a
-              href="https://wa.me/233XXXXXXXX"
+              href="https://wa.me/233505455090"
               target="_blank"
               rel="noopener noreferrer"
               className="mt-5 flex items-center gap-2 rounded-xl border border-green-500/30 bg-green-500/10 px-4 py-2.5 text-sm font-semibold text-green-400 transition hover:bg-green-500/20"

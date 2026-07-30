@@ -16,11 +16,11 @@ const NAV = [
 ];
 
 const TICKERS = [
-  "🌾  Mill-fresh feed — same formula Akoko Solutions feeds its own birds",
-  "🐓  Ready broilers at market weight — vaccinated & disease-screened",
-  "🥚  Fresh eggs collected daily — 5-crate minimum, all grades",
-  "💰  Bulk pricing from 20 bags · call +233 XX XXX XXXX",
-  "🚚  Delivery across Ghana · farm pickup available",
+  "🌾  Quality Feed, Higher Production — We Help Farmers Achieve Optimum Production",
+  "🐓  Akoko Solutions — Your Choice for Profit · Kumasi, Ghana",
+  "🥚  Free Technical Advice with every order — our farm experts are available",
+  "💰  Bulk pricing available · Call +233 505 455 090",
+  "🚚  9 distribution points across Ghana · Abrepo Road, Kumasi headquarters",
 ];
 
 export default function Header() {
@@ -84,13 +84,13 @@ export default function Header() {
 
           {/* Actions */}
           <div className="flex items-center gap-2">
-            <a href="tel:+233XXXXXXXX"
+            <a href="tel:+233505455090"
               className={`hidden items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition lg:flex ${
                 transparent
                   ? "text-white/70 hover:bg-white/10 hover:text-white"
                   : "border border-sand text-stone hover:border-brand hover:text-brand"
               }`}>
-              <Phone size={12} /> +233 XX XXX XXXX
+              <Phone size={12} /> +233 505 455 090
             </a>
 
             {/* Cart */}
@@ -137,9 +137,9 @@ export default function Header() {
                 className="block rounded-xl bg-brand py-3 text-center text-sm font-bold text-white shadow-brand">
                 Order Now
               </Link>
-              <a href="tel:+233XXXXXXXX"
+              <a href="tel:+233505455090"
                 className="flex items-center justify-center gap-2 rounded-xl border border-sand py-3 text-sm font-medium text-stone">
-                <Phone size={14} /> +233 XX XXX XXXX
+                <Phone size={14} /> +233 505 455 090
               </a>
             </div>
           </div>

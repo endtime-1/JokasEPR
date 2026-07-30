@@ -8,39 +8,39 @@ import RevealSection from "@/components/RevealSection";
 export const metadata = { title: "Our Story — Akoko Solutions" };
 
 const MILESTONES = [
-  { year: "2015", label: "Akoko Solutions founded",      desc: "Started with 500 layer birds and a small on-site feed mill in rural Ghana." },
-  { year: "2020", label: "Feed mill expansion",         desc: "Scaled to 5 tonnes per day. Our formula proven on 50,000+ birds year-round." },
-  { year: "2022", label: "Soya processing added",       desc: "Built an expeller press on-site — full control over cake protein and oil purity." },
-  { year: "2023", label: "Akoko Solutions launched",    desc: "Opened to farms and households. The same quality we demand, now available to all." },
-  { year: "2024", label: "500+ farms across Ghana",     desc: "Supplying from Accra to Tamale — daily milling, direct delivery, no middlemen." },
+  { year: "2015", label: "Akoko Solutions founded",           desc: "Established in Kumasi, Ghana with a clear vision: to become West Africa's most trusted poultry nutrition brand." },
+  { year: "2018", label: "Science-based feed formulations",   desc: "Partnered with veterinary nutritionists to develop precision feed formulas for each growth stage — Chick Starter, Developer, Pre-Lay, and Layer." },
+  { year: "2021", label: "Nationwide distribution network",   desc: "Launched 9 distribution points across Ghana so quality Akoko feed reaches farmers wherever they are." },
+  { year: "2023", label: "Super Chick & Layer 1 launched",    desc: "Expanded the product range with high-performance formulas for broiler chicks and peak-production layers." },
+  { year: "2024", label: "Free Technical Advice programme",   desc: "Introduced free on-call farm advisory — nutritionists and vets available to every Akoko customer at no extra cost." },
 ];
 
 const USPS = [
   {
-    icon: "🌾",
-    title: "Own-Mill Feed",
-    desc: "Formulated and milled daily at our own facility. Every bag is the same formula our own 50,000 birds eat — no outsourcing, no guessing.",
+    icon: "🔬",
+    title: "Science-Based Formulation",
+    desc: "Every Akoko feed formula is developed by qualified nutritionists for each specific growth stage — Chick Starter, Developer, Pre-Lay, Layer 1 and more. No guesswork.",
     bg: "bg-amber-50",
     accent: "text-amber-600",
   },
   {
-    icon: "🥚",
-    title: "Daily-Fresh Eggs",
-    desc: "Collected and graded every morning from our disease-tested flock. Farm to crate in under 12 hours — no cold-store, no age.",
+    icon: "📞",
+    title: "Free Technical Advice",
+    desc: "Every purchase comes with free access to our farm advisory team. Get expert guidance on feeding schedules, flock health, and productivity — at no extra cost.",
     bg: "bg-orange-50",
     accent: "text-orange-600",
   },
   {
-    icon: "💧",
-    title: "On-Site Soya Press",
-    desc: "We expel our own soya — full control over protein levels, moisture, and purity. No blending with inferior stock.",
+    icon: "📦",
+    title: "Nationwide Availability",
+    desc: "9 distribution points across Ghana mean Akoko quality feed is never far from your farm. Consistent supply, no shortages.",
     bg: "bg-emerald-50",
     accent: "text-emerald-600",
   },
   {
-    icon: "🤝",
-    title: "Farmer-First Terms",
-    desc: "Minimum orders designed for small-to-medium farms. Standing orders, bulk pricing, and a team that actually picks up the phone.",
+    icon: "📈",
+    title: "Improving Productivity",
+    desc: "Our mission is your profit. Farmers who switch to Akoko report measurable improvements in egg production, bird weight, and feed conversion ratios.",
     bg: "bg-blue-50",
     accent: "text-blue-600",
   },
@@ -71,16 +71,16 @@ export default function AboutPage() {
             </span>
           </div>
           <h1 className="font-display text-[clamp(3rem,8vw,7rem)] leading-[1.0] text-white">
-            Built on a Farm.<br />
-            <em className="text-brand">Grown by Passion.</em>
+            Your Choice<br />
+            <em className="text-brand">for Profit.</em>
           </h1>
           <p className="mt-7 max-w-xl text-[1.1rem] leading-relaxed text-white/60">
-            Akoko Solutions is Ghana's trusted integrated poultry operation — growing,
-            milling, pressing, and selling since 2015. No middlemen. No shortcuts.
-            Just farm-honest quality, delivered direct.
+            Akoko Solutions is West Africa's rising poultry nutrition brand — empowering
+            farmers with innovative feed solutions, free technical expertise, and consistent
+            quality that drives sustainable poultry production.
           </p>
           <div className="mt-10 flex flex-wrap gap-3">
-            {["Founded 2015", "50,000+ birds", "500+ farms served", "Daily production"].map((t) => (
+            {["Founded 2015", "Kumasi, Ghana", "9 distribution points", "Free technical advice"].map((t) => (
               <span key={t} className="glass rounded-full px-4 py-1.5 text-xs font-semibold text-white/80">
                 {t}
               </span>
@@ -123,30 +123,30 @@ export default function AboutPage() {
             {/* Copy */}
             <RevealSection className="reveal-delay-2">
               <p className="mb-5 text-xs font-semibold uppercase tracking-[0.22em] text-brand">
-                Why "Akoko"?
+                Our Vision &amp; Mission
               </p>
               <h2 className="font-display text-[clamp(2.5rem,5vw,4rem)] leading-[1.05] text-ink">
-                A Name Rooted<br />
-                <em className="text-brand">in Purpose.</em>
+                West Africa's Most<br />
+                <em className="text-brand">Trusted Feed Brand.</em>
               </h2>
               <p className="mt-6 text-[1.05rem] leading-relaxed text-stone">
-                <em className="font-semibold not-italic text-ink">Akoko</em> is the Akan word for
-                hen — and the hen is everything at Akoko Solutions. She eats our feed, lays our eggs,
-                and raises our broilers. She is the product we serve and the reason we exist.
+                <strong className="font-semibold text-ink">Vision:</strong> To become West Africa's
+                most trusted poultry nutrition brand — raising the standard for quality,
+                consistency, and farmer success across the continent.
               </p>
               <p className="mt-4 text-[1.05rem] leading-relaxed text-stone">
-                We started in 2015 with a simple conviction: Ghanaian farmers deserve feed that
-                is genuinely nutritious, honestly priced, and actually delivered on time. So we
-                built our own mill. Then our own soya press. Then this storefront — so you can
-                order direct.
+                <strong className="font-semibold text-ink">Mission:</strong> To empower farmers
+                with innovative feed solutions, technical expertise, and consistent quality that
+                drive sustainable poultry production. Every Akoko product is backed by science
+                and a genuine commitment to your farm's profitability.
               </p>
 
               <div className="mt-8 space-y-3">
                 {[
-                  "Every bag milled at our own facility",
-                  "Eggs collected and graded daily",
-                  "Soya cake pressed on-site for full protein control",
-                  "Team picks up the phone — always",
+                  "Science-based feed formulation for every growth stage",
+                  "Free technical advice with every purchase",
+                  "9 distribution points across Ghana for consistent availability",
+                  "Integrity, Innovation, Quality, and Impact — our core values",
                 ].map((line) => (
                   <div key={line} className="flex items-start gap-3 text-sm text-stone">
                     <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-brand" />
@@ -167,7 +167,7 @@ export default function AboutPage() {
               What Sets Us Apart
             </p>
             <h2 className="font-display text-[clamp(2.5rem,5vw,4.5rem)] leading-[1.05] text-white">
-              Four Reasons Farmers<br />
+              Why Farmers<br />
               <em className="text-brand">Choose Akoko.</em>
             </h2>
           </RevealSection>
@@ -193,10 +193,10 @@ export default function AboutPage() {
         <div className="relative mx-auto max-w-8xl px-5 sm:px-8">
           <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
             {[
-              { n:"50,000+", l:"Birds on our farm",   s:"Fed on Akoko Mix daily" },
-              { n:"5 t",     l:"Feed milled per day", s:"Mill-fresh every batch" },
-              { n:"500+",    l:"Farms supplied",       s:"Across all 16 regions" },
-              { n:"11+",     l:"Years in business",    s:"Since 2015" },
+              { n:"6+",   l:"Feed product lines",    s:"Chick Starter to Layer 1" },
+              { n:"9",    l:"Distribution points",   s:"Serving farmers nationwide" },
+              { n:"Free", l:"Technical advice",      s:"With every purchase" },
+              { n:"2015", l:"Years in business",     s:"Established in Kumasi, Ghana" },
             ].map((s) => (
               <div key={s.l}>
                 <div className="font-display text-6xl italic text-white">{s.n}</div>
@@ -216,8 +216,8 @@ export default function AboutPage() {
               Our Journey
             </p>
             <h2 className="font-display text-[clamp(2.5rem,5vw,4rem)] leading-[1.05] text-ink">
-              Eleven Years of<br />
-              <em className="text-brand">Quiet Progress.</em>
+              A Decade of<br />
+              <em className="text-brand">Farmer Impact.</em>
             </h2>
           </RevealSection>
 
@@ -280,8 +280,9 @@ export default function AboutPage() {
             <em className="text-brand">The Difference?</em>
           </h2>
           <p className="mx-auto mt-6 max-w-lg text-[1.05rem] leading-relaxed text-white/50">
-            Join 500+ farms across Ghana who trust Akoko Solutions for their feed,
-            eggs, and soya. Order online — our team confirms every order personally.
+            Join the growing number of farmers across Ghana who trust Akoko Solutions
+            for quality feed and free technical advice. Order online — our team
+            confirms every order personally.
           </p>
           <div className="mt-10 flex flex-wrap justify-center gap-4">
             <Link href="/products"

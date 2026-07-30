@@ -1,41 +1,37 @@
 import type { PublicProduct } from "./api";
 
-// Curated Unsplash photo IDs — each maps to a real, category-appropriate image.
-// These are fetched client-side via images.unsplash.com with onError fallback.
-const U = (id: string, w = 800, h = 520) =>
-  `https://images.unsplash.com/photo-${id}?auto=format&fit=crop&w=${w}&h=${h}&q=85`;
+// Real Akoko Solutions images served from their own website
+const AK = (path: string) => `https://www.akokosolutions.com/images/${path}`;
 
-// These Unsplash IDs have been verified to return 200.
-// The gradient fallback in ProductCard activates automatically for any that fail.
 export const PRODUCT_IMAGES: Record<string, string> = {
-  // Feed — use two alternating confirmed-working grain photos
-  "broiler-starter-mash":  U("1574323347407-f5e1ad6d020b"),
-  "broiler-finisher-mash": U("1574323347407-f5e1ad6d020b", 800, 530),
-  "chicks-starter-mash":   U("1574323347407-f5e1ad6d020b", 820, 510),
-  "super-chicks-mash":     U("1574323347407-f5e1ad6d020b", 800, 540),
-  "developer-mash":        U("1574323347407-f5e1ad6d020b", 830, 520),
-  "pre-lay-mash":          U("1574323347407-f5e1ad6d020b", 810, 515),
-  "layer-1-mash":          U("1574323347407-f5e1ad6d020b", 840, 525),
-  "layer-2-mash":          U("1574323347407-f5e1ad6d020b", 795, 510),
-  "jokas-mix":             U("1574323347407-f5e1ad6d020b", 815, 520),
-  "jokas-mix-broiler":     U("1574323347407-f5e1ad6d020b", 825, 515),
-  // Soya products
-  "soya-cake":             U("1568162788641-ab1cc20c17b1"),
-  "soya-oil":              U("1620706857370-e1b9770e8bb1"),
-  // Eggs & Poultry — gradient fallback activates if image unavailable
-  "fresh-farm-eggs":       U("1498654077788-b0f4d9e35e2a"),
-  "ready-broiler-chicken": U("1548550023-2bdb3c5beed7"),
+  // Feed products — real Akoko Solutions service photos
+  "broiler-starter-mash":  AK("services/service3.jpg"),
+  "broiler-finisher-mash": AK("services/service1.jpg"),
+  "chicks-starter-mash":   AK("services/service3.jpg"),
+  "super-chicks-mash":     AK("services/service2.jpg"),
+  "developer-mash":        AK("services/service4.jpg"),
+  "pre-lay-mash":          AK("services/service5.jpg"),
+  "layer-1-mash":          AK("services/service6.jpg"),
+  "layer-2-mash":          AK("services/service1.jpg"),
+  "jokas-mix":             AK("services/service2.jpg"),
+  "jokas-mix-broiler":     AK("services/service4.jpg"),
+  // Soya & animal products
+  "soya-cake":             AK("services/service5.jpg"),
+  "soya-oil":              AK("services/service6.jpg"),
+  // Eggs & Poultry — real farm project photos
+  "fresh-farm-eggs":       AK("projects/project4.jpg"),
+  "ready-broiler-chicken": AK("projects/project5.jpg"),
 };
 
 // Category hero images (used on category cards & product listing header)
 export const CATEGORY_IMAGES: Record<string, string> = {
-  "Feed":            U("1574323347407-f5e1ad6d020b", 1200, 700),
-  "Eggs & Poultry":  U("1548550023-2bdb3c5beed7", 1200, 700),
-  "Soya Products":   U("1568162788641-ab1cc20c17b1", 1200, 700),
+  "Feed":            AK("services/service1.jpg"),
+  "Eggs & Poultry":  AK("projects/project4.jpg"),
+  "Soya Products":   AK("services/service5.jpg"),
 };
 
-// Hero background
-export const HERO_BG = U("1500382017468-9049fed747ef", 1920, 1080);
+// Hero background — real Akoko Solutions farm photo
+export const HERO_BG = AK("projects/project1.jpg");
 
 export const MOCK_PRODUCTS: PublicProduct[] = [
   // ── Poultry Feed ───────────────────────────────────────────────────────────
@@ -220,7 +216,7 @@ export const MOCK_TESTIMONIALS = [
     initials: "KA",
     color: "from-orange-400 to-amber-500",
     rating: 5,
-    text: "I've been buying Broiler Starter and Finisher Mash from Akoko for over a year. My FCR has never been better — consistently under 1.8. The delivery is always on time and the bags are full weight. I trust no other supplier.",
+    text: "I switched to Akoko Layer 1 and my production jumped immediately. The technical advice team helped me adjust feeding schedules — that alone was worth it. The quality is consistent and I never worry about supply.",
   },
   {
     id: "t2",
@@ -230,25 +226,25 @@ export const MOCK_TESTIMONIALS = [
     initials: "AM",
     color: "from-rose-400 to-orange-400",
     rating: 5,
-    text: "Switched to Akoko Layer Mix six months ago and my flock's production jumped from 78% to 93% lay rate. The shells are stronger too. Akoko Solutions has become my most reliable farm partner.",
+    text: "Started with Akoko Chick Starter then moved to Developer and Pre-Lay on schedule. My pullets hit peak production faster than ever before. The free technical advice is genuinely useful — they really know their nutrition.",
   },
   {
     id: "t3",
     name: "Emmanuel Ofori",
-    role: "Feed Mill Operator",
+    role: "Commercial Poultry Farmer",
     location: "Tamale, Northern Region",
     initials: "EO",
     color: "from-green-400 to-emerald-500",
     rating: 5,
-    text: "The Soya Cake quality from Akoko is exceptional — consistently 46% protein and toasted properly. I use it as my primary protein source in all my formulations. Pricing is fair and they're honest about availability.",
+    text: "Akoko Super Chick took my broiler chicks from zero to market weight faster than any other feed I've tried. The team called to check on results after delivery — that kind of service is rare in Ghana.",
   },
 ];
 
 export const MOCK_STATS = [
-  { value: "14+", label: "Product Lines", sub: "Feed, eggs, chicken & soya" },
-  { value: "500+", label: "Farms Served", sub: "Across Ghana" },
-  { value: "Daily", label: "Fresh Collection", sub: "Eggs & birds available" },
-  { value: "2015", label: "In Business Since", sub: "Established in Ghana" },
+  { value: "6+",   label: "Feed Product Lines", sub: "Chick starter to layer mash" },
+  { value: "9",    label: "Distribution Points", sub: "Covering all regions of Ghana" },
+  { value: "Free", label: "Technical Advice",   sub: "With every purchase" },
+  { value: "2015", label: "In Business Since",  sub: "Established in Kumasi, Ghana" },
 ];
 
 export const HOW_IT_WORKS = [
