@@ -77,7 +77,7 @@ export class AuthService {
     if (context.ipAddress) {
       await this.prisma.loginRateLimit.deleteMany({
         where: { key: `${context.ipAddress}:${dto.email.toLowerCase()}` }
-      });
+      }).catch(() => undefined);
     }
 
     const profile = await this.buildProfile(user.id);

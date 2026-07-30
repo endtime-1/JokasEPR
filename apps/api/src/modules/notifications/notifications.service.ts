@@ -112,19 +112,26 @@ export class NotificationsService {
     const limit = Math.min(query.limit ?? 30, 100);
     const offset = query.offset ?? 0;
 
-    const [data, total] = await Promise.all([
-      this.prisma.notification.findMany({ where, orderBy: { createdAt: "desc" }, take: limit, skip: offset }),
-      this.prisma.notification.count({ where })
-    ]);
-
-    return { data: { data, total } };
+    try {
+      const [data, total] = await Promise.all([
+        this.prisma.notification.findMany({ where, orderBy: { createdAt: "desc" }, take: limit, skip: offset }),
+        this.prisma.notification.count({ where })
+      ]);
+      return { data: { data, total } };
+    } catch {
+      return { data: { data: [], total: 0 } };
+    }
   }
 
   async unreadCount(user: AuthenticatedUser) {
-    const count = await this.prisma.notification.count({
-      where: { companyId: user.companyId, userId: user.id, status: "UNREAD", channel: "IN_APP" }
-    });
-    return { data: { count } };
+    try {
+      const count = await this.prisma.notification.count({
+        where: { companyId: user.companyId, userId: user.id, status: "UNREAD", channel: "IN_APP" }
+      });
+      return { data: { count } };
+    } catch {
+      return { data: { count: 0 } };
+    }
   }
 
   async markRead(user: AuthenticatedUser, id: string) {

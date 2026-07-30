@@ -263,7 +263,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     // Transient errors (502/503/504) are already handled by api:unavailable.
     // Mutations (POST/PATCH/DELETE) surface their errors inline — skip those.
     const isGet = (init?.method ?? "GET").toUpperCase() === "GET";
-    const skipStatuses = new Set([401, 403, 404]);
+    const skipStatuses = new Set([400, 401, 403, 404, 409, 422, 429]);
     if (isGet && !firedUnavailable && !skipStatuses.has(response.status) && typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent("api:data-error"));
     }

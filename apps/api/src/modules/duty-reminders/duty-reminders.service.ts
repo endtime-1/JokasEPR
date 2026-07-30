@@ -139,10 +139,14 @@ export class DutyRemindersService {
   // ── 3 AM: purge expired login rate-limit windows ─────────────────────────
   @Cron("0 3 * * *", { timeZone: "Africa/Accra" })
   async purgeExpiredRateLimitWindows() {
-    const { count } = await this.prisma.loginRateLimit.deleteMany({
-      where: { windowEnd: { lt: new Date() } },
-    });
-    if (count > 0) this.logger.log(`Purged ${count} expired LoginRateLimit row(s)`);
+    try {
+      const { count } = await this.prisma.loginRateLimit.deleteMany({
+        where: { windowEnd: { lt: new Date() } },
+      });
+      if (count > 0) this.logger.log(`Purged ${count} expired LoginRateLimit row(s)`);
+    } catch (err) {
+      this.logger.warn("purgeExpiredRateLimitWindows: skipped — " + (err instanceof Error ? err.message : String(err)));
+    }
   }
 
   // ── 3:30 AM: transition expired stock reservations to EXPIRED status ──────

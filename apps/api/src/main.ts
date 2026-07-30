@@ -80,7 +80,7 @@ async function bootstrap() {
     origin: allowedOrigins,
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["content-type", "authorization"]
+    allowedHeaders: ["content-type", "authorization", "x-client-type"]
   });
 
   app.useGlobalPipes(

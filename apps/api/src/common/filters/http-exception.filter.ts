@@ -53,6 +53,17 @@ export class HttpExceptionFilter implements ExceptionFilter {
         };
         return response.status(400).json(body);
       }
+      if (exception.code === "P2021") {
+        this.logger.error(`Missing DB table — migration may not have run: ${JSON.stringify(exception.meta)}`);
+        const body: ErrorResponse = {
+          success: false,
+          statusCode: 503,
+          message: "Service temporarily unavailable. Please try again shortly.",
+          timestamp: new Date().toISOString(),
+          path: request.originalUrl
+        };
+        return response.status(503).json(body);
+      }
     }
 
     const status = exception instanceof HttpException ? exception.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;

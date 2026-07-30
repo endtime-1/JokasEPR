@@ -52,24 +52,27 @@ export class DashboardService {
   constructor(private readonly prisma: PrismaService) {}
 
   async options(user: AuthenticatedUser) {
-    const [company, branches, farms, warehouses, productionSites] = await Promise.all([
-      this.prisma.company.findUnique({ where: { id: user.companyId }, select: { id: true, name: true } }),
-      this.prisma.branch.findMany({ where: this.branchWhere(user), select: { id: true, code: true, name: true }, orderBy: { name: "asc" } }),
-      this.prisma.farm.findMany({ where: this.farmWhere(user), select: { id: true, code: true, name: true, branchId: true }, orderBy: { name: "asc" } }),
-      this.prisma.warehouse.findMany({ where: this.warehouseWhere(user), select: { id: true, code: true, name: true, branchId: true, farmId: true, productionSiteId: true }, orderBy: { name: "asc" } }),
-      this.prisma.productionSite.findMany({ where: this.productionSiteWhere(user), select: { id: true, code: true, name: true, branchId: true, type: true }, orderBy: { name: "asc" } })
-    ]);
-
-    return {
-      data: {
-        companies: company ? [company] : [],
-        branches,
-        farms,
-        warehouses,
-        productionSites,
-        businessUnits: Object.values(BusinessUnit)
-      }
-    };
+    try {
+      const [company, branches, farms, warehouses, productionSites] = await Promise.all([
+        this.prisma.company.findUnique({ where: { id: user.companyId }, select: { id: true, name: true } }),
+        this.prisma.branch.findMany({ where: this.branchWhere(user), select: { id: true, code: true, name: true }, orderBy: { name: "asc" } }),
+        this.prisma.farm.findMany({ where: this.farmWhere(user), select: { id: true, code: true, name: true, branchId: true }, orderBy: { name: "asc" } }),
+        this.prisma.warehouse.findMany({ where: this.warehouseWhere(user), select: { id: true, code: true, name: true, branchId: true, farmId: true, productionSiteId: true }, orderBy: { name: "asc" } }),
+        this.prisma.productionSite.findMany({ where: this.productionSiteWhere(user), select: { id: true, code: true, name: true, branchId: true, type: true }, orderBy: { name: "asc" } })
+      ]);
+      return {
+        data: {
+          companies: company ? [company] : [],
+          branches,
+          farms,
+          warehouses,
+          productionSites,
+          businessUnits: Object.values(BusinessUnit)
+        }
+      };
+    } catch {
+      return { data: { companies: [], branches: [], farms: [], warehouses: [], productionSites: [], businessUnits: Object.values(BusinessUnit) } };
+    }
   }
 
   async summary(user: AuthenticatedUser) {
@@ -258,6 +261,7 @@ export class DashboardService {
   // ── Farm Operations Today (manager overview) ─────────────────────────────
 
   async farmOperationsToday(user: AuthenticatedUser) {
+    try {
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     const todayEnd = new Date(todayStart);
@@ -322,6 +326,9 @@ export class DashboardService {
         summary: { total: duties.length, complete, partial, notStarted },
       },
     };
+    } catch {
+      return { data: { date: new Date().toISOString().slice(0, 10), duties: [], summary: { total: 0, complete: 0, partial: 0, notStarted: 0 } } };
+    }
   }
 
   // ── Live query helpers (executive dashboard) ────────────────────────────

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Ip, Post, Req, Res, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Headers, Ip, Post, Req, Res, UnauthorizedException, UseGuards } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Request, Response } from "express";
 import { AuthenticatedUser } from "@jokas/shared";
@@ -40,7 +40,6 @@ export class AuthController {
   }
 
   @Post("refresh")
-  @UseGuards(LoginRateLimitGuard)
   async refresh(
     @Body() body: Partial<RefreshTokenDto>,
     @Req() request: Request,
@@ -53,7 +52,7 @@ export class AuthController {
     if (!token) {
       response.clearCookie("jokas_at", this.baseCookieOpts());
       response.clearCookie("jokas_rt", this.baseCookieOpts());
-      throw new Error("Refresh token required.");
+      throw new UnauthorizedException("Refresh token required.");
     }
     const result = await this.authService.refresh(token, { ipAddress, userAgent });
     this.setAuthCookies(response, result.data.accessToken, result.data.refreshToken, result.data.refreshTtlDays);
