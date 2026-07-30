@@ -103,6 +103,10 @@ const nextConfig = {
     // This lets the browser call /api/v1/* on the same origin instead of directly
     // hitting localhost:4001 (which would be the user's own machine).
     const apiPort = process.env.API_PORT || "4001";
+    // IMPORTANT: use 127.0.0.1, NOT localhost.
+    // On Linux, `localhost` resolves to ::1 (IPv6 loopback) first. NestJS listens
+    // on 0.0.0.0 (IPv4 only), so a connection to ::1:4001 is refused, causing every
+    // API rewrite to fail with 502 — making ALL data endpoints appear to be down.
     return [
       {
         // Health check — must come before the /api/v1/:path* catch-all.
@@ -112,15 +116,15 @@ const nextConfig = {
         // https://<domain>/api/v1/health every 5 min to prevent Hostinger
         // from hibernating the process between real user visits.
         source: "/api/v1/health",
-        destination: `http://localhost:${apiPort}/health`,
+        destination: `http://127.0.0.1:${apiPort}/health`,
       },
       {
         source: "/api/v1/:path*",
-        destination: `http://localhost:${apiPort}/api/v1/:path*`,
+        destination: `http://127.0.0.1:${apiPort}/api/v1/:path*`,
       },
       {
         source: "/uploads/:path*",
-        destination: `http://localhost:${apiPort}/api/v1/uploads/:path*`,
+        destination: `http://127.0.0.1:${apiPort}/api/v1/uploads/:path*`,
       },
     ];
   },

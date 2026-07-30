@@ -262,7 +262,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         try {
           const ctrl = new AbortController();
           const tid = setTimeout(() => ctrl.abort(), 4000);
-          const res = await fetch("/api/v1/auth/me", { credentials: "include", signal: ctrl.signal });
+          // Poll /health (not /auth/me): the health endpoint returns 200 as soon as
+          // NestJS is up regardless of auth token state, preventing a false "recovered"
+          // signal on 401 (expired token during a long outage) from kicking users to login.
+          const res = await fetch("/api/v1/health", { signal: ctrl.signal });
           clearTimeout(tid);
           if (res.status !== 502 && res.status !== 503 && res.status !== 504) {
             clearPolling();

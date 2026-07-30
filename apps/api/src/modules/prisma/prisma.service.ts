@@ -28,8 +28,23 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   }
 
   async onModuleInit() {
-    await this.$connect();
-    this.installTenantGuard();
+    // Retry connecting up to 5 times with increasing delays.
+    // MySQL on Hostinger shared hosting can take 20-30s to accept new connections
+    // after a cold start or under load. Without retries, a single failed $connect()
+    // crashes NestJS immediately, then start.js restarts it with exponential backoff
+    // (3s, 6s, 9s…), extending the outage window unnecessarily.
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      try {
+        await this.$connect();
+        this.installTenantGuard();
+        return;
+      } catch (err) {
+        if (attempt === 5) throw err;
+        const delay = attempt * 6000; // 6s, 12s, 18s, 24s
+        this.logger.warn(`[Prisma] $connect attempt ${attempt}/5 failed — retrying in ${delay / 1000}s`);
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
   }
 
   async onModuleDestroy() {
