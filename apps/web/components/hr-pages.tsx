@@ -717,8 +717,6 @@ export function EmployeeDetailPage({ id }: { id: string }) {
 
   useEffect(() => { load(); }, [id]);
 
-  if (!data && !loadError) return <AppShell><div className="flex items-center justify-center p-12"><div className="h-6 w-6 animate-spin rounded-full border-2 border-brand border-t-transparent" /></div></AppShell>;
-
   if (loadError) return (
     <AppShell>
       <div className="flex flex-col items-center justify-center gap-4 p-12 text-center">
@@ -728,6 +726,8 @@ export function EmployeeDetailPage({ id }: { id: string }) {
       </div>
     </AppShell>
   );
+
+  if (!data) return <AppShell><div className="flex items-center justify-center p-12"><div className="h-6 w-6 animate-spin rounded-full border-2 border-brand border-t-transparent" /></div></AppShell>;
 
   const ef = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setEditForm((p) => ({ ...p, [k]: e.target.value }));
 
@@ -1881,7 +1881,6 @@ export function TaskDetailPage({ id }: { id: string }) {
     }
   }
 
-  if (!data && !taskLoadError) return <AppShell><div className="flex items-center justify-center p-12"><div className="h-6 w-6 animate-spin rounded-full border-2 border-brand border-t-transparent" /></div></AppShell>;
   if (taskLoadError) return (
     <AppShell>
       <div className="flex flex-col items-center justify-center gap-4 p-12 text-center">
@@ -1891,6 +1890,8 @@ export function TaskDetailPage({ id }: { id: string }) {
       </div>
     </AppShell>
   );
+
+  if (!data) return <AppShell><div className="flex items-center justify-center p-12"><div className="h-6 w-6 animate-spin rounded-full border-2 border-brand border-t-transparent" /></div></AppShell>;
 
   return (
     <AppShell>

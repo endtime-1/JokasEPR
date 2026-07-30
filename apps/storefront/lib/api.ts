@@ -1,6 +1,13 @@
 import { MOCK_PRODUCTS } from "./mock-data";
 
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4001/api/v1";
+// Server-side (SSR/SSG): call NestJS directly on the internal port — avoids
+// the full round-trip through LiteSpeed and the reverse proxy.
+// Client-side (browser): use a same-origin relative path so the request goes
+// through the main proxy, which rewrites /api/v1/* to the NestJS backend.
+const BASE =
+  typeof window === "undefined"
+    ? `http://127.0.0.1:${process.env.API_PORT ?? "4001"}/api/v1`
+    : "/api/v1";
 
 export interface PublicProduct {
   id: string;

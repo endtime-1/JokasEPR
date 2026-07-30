@@ -13,9 +13,11 @@ const root = __dirname;
 const PORT = parseInt(process.env.PORT || "3000", 10);
 const API_PORT = parseInt(process.env.API_PORT || "4001", 10);
 const WEB_INTERNAL_PORT = 3001;
+const STOREFRONT_PORT = 3002;
 
 const standaloneDir = path.join(root, "apps/web/.next/standalone");
 const serverScript = path.join(standaloneDir, "apps/web", "server.js");
+const storefrontServerScript = path.join(root, "apps/storefront/.next/standalone/apps/storefront", "server.js");
 // Prefer the esbuild bundle (self-contained, no node_modules needed).
 // Fall back to tsc output if bundle wasn't created.
 const apiBundle = path.join(root, "apps/api/dist/bundle.js");
@@ -146,6 +148,9 @@ let _apiUp = false;     // nestjs has bound its port
 let webRestarts = 0;
 let lastWebLines = [];  // last 20 lines of web stdout/stderr for diagnostics
 let lastStartLines = []; // last 30 lines of start.js own log for diagnostics
+let storefrontWorker = null;
+let _storefrontUp = false;
+let storefrontRestarts = 0;
 
 const _origLog = console.log.bind(console);
 const _origErr = console.error.bind(console);
@@ -174,6 +179,7 @@ function checkBothReady() {
 function killAll() {
   if (webProc) { try { webProc.kill("SIGKILL"); } catch {} }
   if (apiProc) { try { apiProc.kill("SIGKILL"); } catch {} }
+  if (storefrontWorker) { try { storefrontWorker.terminate(); } catch {} }
 }
 
 function savePids() {
@@ -317,6 +323,26 @@ function handleRequest(req, res) {
     res.end(JSON.stringify(status, null, 2));
     return;
   }
+  // Route customer storefront: /shop and /shop/*
+  if (req.url === "/shop" || req.url === "/shop/" || (req.url || "").startsWith("/shop/")) {
+    if (!_storefrontUp) {
+      res.writeHead(503, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "retry-after": "5" });
+      res.end(
+        "<!doctype html><html><head><meta http-equiv='refresh' content='5'>" +
+        "<style>body{margin:0;font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;background:#faf8f4}</style></head>" +
+        "<body><p style='color:#78716c;font-size:0.9rem'>Shop is starting up&hellip; refreshing in 5 s.</p></body></html>"
+      );
+      return;
+    }
+    const up = http.request(
+      { hostname: "127.0.0.1", port: STOREFRONT_PORT, path: req.url, method: req.method, headers: req.headers },
+      (pRes) => { res.writeHead(pRes.statusCode, pRes.headers); pRes.pipe(res); }
+    );
+    up.on("error", () => { if (!res.headersSent) { res.writeHead(502); res.end("Bad Gateway"); } });
+    req.pipe(up);
+    return;
+  }
+
   if (!webReady) {
     // 503 (not 200): fetch() callers check r.ok / status — a 200 fools them into thinking
     // the request succeeded when it actually hit the startup page. refreshSession() returned
@@ -629,6 +655,65 @@ startProxy(0);
 
   savePids();
   startApi();
+
+  // ── Customer storefront (port 3002, served at /shop/*) ───────────────────
+  function startStorefront() {
+    if (!fs.existsSync(storefrontServerScript)) {
+      console.log("[start] Storefront server.js not found — skipping (will be available after next deploy)");
+      return;
+    }
+    if (storefrontWorker) {
+      try { storefrontWorker.terminate(); } catch {}
+      storefrontWorker = null;
+    }
+    waitForPortFree(STOREFRONT_PORT, 10000).then(() => {
+      console.log(`[start] launching jokas-storefront as worker thread — ${storefrontServerScript}`);
+      const worker = new Worker(workerWrapper, {
+        workerData: { serverScript: storefrontServerScript },
+        env: {
+          ...process.env,
+          PORT: String(STOREFRONT_PORT),
+          HOSTNAME: "0.0.0.0",
+          NODE_ENV: "production",
+          API_PORT: String(API_PORT),
+        },
+      });
+      storefrontWorker = worker;
+
+      worker.on("message", (msg) => {
+        if (msg.type === "log" && !_storefrontUp && /\bready\b/i.test(msg.data)) {
+          _storefrontUp = true;
+          console.log("[start] Storefront ready (worker stdout)");
+        } else if (msg.type === "exit") {
+          worker.terminate();
+        }
+      });
+
+      // TCP probe fallback in case the "ready" log line is missed
+      let sfStopped = false;
+      worker.once("exit", () => { sfStopped = true; });
+      function probeSF() {
+        if (sfStopped || _storefrontUp) return;
+        const sock = net.createConnection(STOREFRONT_PORT, "127.0.0.1");
+        sock.setTimeout(1000);
+        sock.once("connect", () => { sock.destroy(); if (!_storefrontUp && !sfStopped) { _storefrontUp = true; console.log("[start] Storefront ready (TCP probe)"); } });
+        sock.once("error", () => { sock.destroy(); if (!sfStopped && !_storefrontUp) setTimeout(probeSF, 1000); });
+        sock.once("timeout", () => { sock.destroy(); if (!sfStopped && !_storefrontUp) setTimeout(probeSF, 1000); });
+      }
+      setTimeout(probeSF, 3000);
+
+      worker.on("error", (err) => console.error("[start] Storefront worker error:", err.message));
+      worker.on("exit", (code) => {
+        if (storefrontWorker === worker) storefrontWorker = null;
+        _storefrontUp = false;
+        storefrontRestarts++;
+        const delay = Math.min(5000 * storefrontRestarts, 30000);
+        console.log(`[start] Storefront exited code=${code} — restart #${storefrontRestarts} in ${delay}ms`);
+        setTimeout(startStorefront, delay);
+      });
+    });
+  }
+  startStorefront();
 
   // ── Internal DB keep-alive ───────────────────────────────────────────────
   // Pings NestJS /health (SELECT 1) every 45s so Prisma's connection pool
