@@ -299,7 +299,7 @@ jobs:
             else
               echo "WARNING: smoke test could not confirm HTTP 200 after 180s (got HTTP $STATUS)."
               echo "  Files were uploaded and Passenger restart was signalled."
-              echo "  High server load ($(cut -d' ' -f1 /proc/loadavg 2>/dev/null || echo unknown)) may delay startup."
+              echo "  High server load may be delaying startup — see diagnostics above."
               echo "  Node procs now: $(pgrep -ac node 2>/dev/null || echo 0)"
               echo "  Passenger log tail:"
               tail -20 $APP_DIR/log/passenger.log 2>/dev/null || echo "  (no passenger log found)"
