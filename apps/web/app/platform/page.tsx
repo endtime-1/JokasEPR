@@ -75,7 +75,6 @@ export default function PlatformPage() {
     function onRecovered() { if (branches.length === 0) load().catch(() => undefined); }
     window.addEventListener("api:recovered", onRecovered);
     return () => window.removeEventListener("api:recovered", onRecovered);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [branches.length]);
 
   // ── Create helpers ───────────────────────────────────────────────────────

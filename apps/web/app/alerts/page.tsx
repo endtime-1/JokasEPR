@@ -322,7 +322,6 @@ export default function AlertsPage() {
     function onRecovered() { if (alerts.length === 0) void load(); }
     window.addEventListener("api:recovered", onRecovered);
     return () => window.removeEventListener("api:recovered", onRecovered);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [alerts.length]);
 
   async function generate() {
