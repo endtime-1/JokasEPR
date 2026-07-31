@@ -195,10 +195,16 @@ function useQCOptions() {
     productionSites: [], suppliers: [], users: [],
   });
   const [optionsError, setOptionsError] = useState("");
+  const [_qcOptKey, _setQcOptKey] = useState(0);
   useEffect(() => {
     apiFetch<ApiEnvelope<QCOptions>>("/quality/options")
       .then((r) => setOpts(r.data ?? { templates: [], branches: [], farms: [], warehouses: [], productionSites: [], suppliers: [], users: [] }))
       .catch((err: any) => setOptionsError(err?.message ?? "Failed to load options."));
+  }, [_qcOptKey]);
+  useEffect(() => {
+    function onRecovered() { _setQcOptKey((k) => k + 1); }
+    window.addEventListener("api:recovered", onRecovered);
+    return () => window.removeEventListener("api:recovered", onRecovered);
   }, []);
   return { opts, optionsError };
 }

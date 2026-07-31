@@ -72,10 +72,20 @@ function usePoultryOptions() {
     setOptionsError("");
     setOptionsLoading(true);
     apiFetch<ApiEnvelope<PoultryOptions>>("/poultry/options")
-      .then((response) => setOptions(response.data ?? { farms: [], houses: [], pens: [], batches: [], warehouses: [], products: [] }))
+      .then((response) => {
+        const fresh = response.data ?? { farms: [], houses: [], pens: [], batches: [], warehouses: [], products: [] };
+        setOptions(fresh);
+      })
       .catch((err) => setOptionsError(err?.message ?? "Failed to load dropdown options. Refresh the page."))
       .finally(() => setOptionsLoading(false));
   }, [optionsKey]);
+
+  // On API recovery, always re-fetch options so stale/empty dropdowns self-heal.
+  useEffect(() => {
+    function onRecovered() { setOptionsKey((k) => k + 1); }
+    window.addEventListener("api:recovered", onRecovered);
+    return () => window.removeEventListener("api:recovered", onRecovered);
+  }, []);
 
   const refreshOptions = () => setOptionsKey((k) => k + 1);
   return { options, optionsError, optionsLoading, refreshOptions };
@@ -1248,6 +1258,13 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
   useEffect(() => {
     loadRecords();
   }, [type]);
+
+  // Reload records after API recovery if the table is empty (mounted during outage).
+  useEffect(() => {
+    function onRecovered() { if (rows.length === 0) loadRecords(); }
+    window.addEventListener("api:recovered", onRecovered);
+    return () => window.removeEventListener("api:recovered", onRecovered);
+  }, [rows.length]);
 
   useEffect(() => {
     if (!editingId && !form.flockBatchId && options.batches.length > 0) {

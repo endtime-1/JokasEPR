@@ -110,6 +110,13 @@ export default function UsersPage() {
     load().catch((err) => setError(err instanceof Error ? err.message : "Failed to load users."));
   }, []);
 
+  useEffect(() => {
+    function onRecovered() { if (users.length === 0) load().catch(() => undefined); }
+    window.addEventListener("api:recovered", onRecovered);
+    return () => window.removeEventListener("api:recovered", onRecovered);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [users.length]);
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMessage("");

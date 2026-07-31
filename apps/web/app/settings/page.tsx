@@ -158,6 +158,13 @@ export default function SettingsPage() {
     });
   }, []);
 
+  useEffect(() => {
+    function onRecovered() { if (Object.keys(company).length === 0) load().catch(() => undefined); }
+    window.addEventListener("api:recovered", onRecovered);
+    return () => window.removeEventListener("api:recovered", onRecovered);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [Object.keys(company).length]);
+
   const rows = useMemo(() => master[camel(activeMaster)] ?? [], [master, activeMaster]);
 
   // Merge API options with master-data so dropdowns populate even if the

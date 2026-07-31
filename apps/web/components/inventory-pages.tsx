@@ -32,10 +32,16 @@ const EMPTY_OPTIONS: InventoryOptions = { warehouses: [], products: [], farms: [
 function useInventoryOptions() {
   const [options, setOptions] = useState<InventoryOptions>(() => getCached<ApiEnvelope<InventoryOptions>>("/inventory/options")?.data ?? EMPTY_OPTIONS);
   const [optionsError, setOptionsError] = useState("");
+  const [_invOptKey, _setInvOptKey] = useState(0);
   useEffect(() => {
     apiFetch<ApiEnvelope<InventoryOptions>>("/inventory/options")
       .then((response) => setOptions(response.data ?? EMPTY_OPTIONS))
       .catch((err: any) => setOptionsError(err?.message ?? "Failed to load warehouse and product options."));
+  }, [_invOptKey]);
+  useEffect(() => {
+    function onRecovered() { _setInvOptKey((k) => k + 1); }
+    window.addEventListener("api:recovered", onRecovered);
+    return () => window.removeEventListener("api:recovered", onRecovered);
   }, []);
   return { options, optionsError };
 }

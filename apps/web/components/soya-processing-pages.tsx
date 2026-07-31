@@ -35,10 +35,16 @@ const today = () => new Date().toISOString().slice(0, 10);
 function useSoyaOptions() {
   const [options, setOptions] = useState<SoyaOptions>(() => getCached<ApiEnvelope<SoyaOptions>>("/soya-processing/options")?.data ?? { productionSites: [], warehouses: [], products: [], intakes: [], batches: [] });
   const [optionsError, setOptionsError] = useState("");
+  const [_soyaOptKey, _setSoyaOptKey] = useState(0);
   useEffect(() => {
     apiFetch<ApiEnvelope<SoyaOptions>>("/soya-processing/options")
       .then((response) => setOptions(response.data ?? { productionSites: [], warehouses: [], products: [], intakes: [], batches: [] }))
       .catch((err: any) => setOptionsError(err?.message ?? "Failed to load options."));
+  }, [_soyaOptKey]);
+  useEffect(() => {
+    function onRecovered() { _setSoyaOptKey((k) => k + 1); }
+    window.addEventListener("api:recovered", onRecovered);
+    return () => window.removeEventListener("api:recovered", onRecovered);
   }, []);
   return { options, optionsError };
 }

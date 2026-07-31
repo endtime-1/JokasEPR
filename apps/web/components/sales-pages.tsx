@@ -168,8 +168,14 @@ type SalesOptions = {
 function useSalesOptions() {
   const [opts, setOpts] = useState<SalesOptions>(() => getCached<ApiEnvelope<SalesOptions>>("/sales/options")?.data ?? { branches: [], warehouses: [], products: [], customerGroups: [], customers: [], priceLists: [], invoices: [] });
   const [optionsError, setOptionsError] = useState("");
+  const [_salesOptKey, _setSalesOptKey] = useState(0);
   useEffect(() => {
     apiFetch<ApiEnvelope<SalesOptions>>("/sales/options").then((r) => setOpts(r.data ?? { branches: [], warehouses: [], products: [], customerGroups: [], customers: [], priceLists: [], invoices: [] })).catch((err: any) => setOptionsError(err?.message ?? "Failed to load options."));
+  }, [_salesOptKey]);
+  useEffect(() => {
+    function onRecovered() { _setSalesOptKey((k) => k + 1); }
+    window.addEventListener("api:recovered", onRecovered);
+    return () => window.removeEventListener("api:recovered", onRecovered);
   }, []);
   return { opts, optionsError };
 }

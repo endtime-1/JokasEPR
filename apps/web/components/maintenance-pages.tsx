@@ -80,10 +80,16 @@ const inputClass = "min-h-11 rounded-md border border-line px-3";
 function useOptions() {
   const [options, setOptions] = useState<MaintenanceOptions>(() => getCached<ApiEnvelope<MaintenanceOptions>>("/maintenance/options")?.data ?? { branches: [], farms: [], warehouses: [], productionSites: [], machines: [], equipment: [], spareParts: [], technicians: [] });
   const [optionsError, setOptionsError] = useState("");
+  const [_maintOptKey, _setMaintOptKey] = useState(0);
   useEffect(() => {
     apiFetch<ApiEnvelope<MaintenanceOptions>>("/maintenance/options")
       .then((response) => setOptions(response.data ?? { branches: [], farms: [], warehouses: [], productionSites: [], machines: [], equipment: [], spareParts: [], technicians: [] }))
       .catch((err: any) => setOptionsError(err?.message ?? "Failed to load options."));
+  }, [_maintOptKey]);
+  useEffect(() => {
+    function onRecovered() { _setMaintOptKey((k) => k + 1); }
+    window.addEventListener("api:recovered", onRecovered);
+    return () => window.removeEventListener("api:recovered", onRecovered);
   }, []);
   return { options, optionsError };
 }

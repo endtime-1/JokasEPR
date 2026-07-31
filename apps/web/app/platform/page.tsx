@@ -71,6 +71,13 @@ export default function PlatformPage() {
     load().catch((err) => setError(err instanceof Error ? err.message : "Failed to load sites."));
   }, []);
 
+  useEffect(() => {
+    function onRecovered() { if (branches.length === 0) load().catch(() => undefined); }
+    window.addEventListener("api:recovered", onRecovered);
+    return () => window.removeEventListener("api:recovered", onRecovered);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [branches.length]);
+
   // ── Create helpers ───────────────────────────────────────────────────────
   async function handleCreate(event: FormEvent, endpoint: string, body: object, reset: () => void) {
     event.preventDefault();

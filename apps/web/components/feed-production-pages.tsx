@@ -111,10 +111,16 @@ const today = () => new Date().toISOString().slice(0, 10);
 function useFeedOptions() {
   const [options, setOptions] = useState<FeedOptions>(() => getCached<ApiEnvelope<FeedOptions>>("/feed-production/options")?.data ?? { productionSites: [], warehouses: [], farms: [], poultryHouses: [], rawMaterials: [], finishedFeeds: [], formulas: [], batches: [] });
   const [optionsError, setOptionsError] = useState("");
+  const [_feedOptKey, _setFeedOptKey] = useState(0);
   useEffect(() => {
     apiFetch<ApiEnvelope<FeedOptions>>("/feed-production/options")
       .then((response) => setOptions(response.data ?? { productionSites: [], warehouses: [], farms: [], poultryHouses: [], rawMaterials: [], finishedFeeds: [], formulas: [], batches: [] }))
       .catch((err: any) => setOptionsError(err?.message ?? "Failed to load options."));
+  }, [_feedOptKey]);
+  useEffect(() => {
+    function onRecovered() { _setFeedOptKey((k) => k + 1); }
+    window.addEventListener("api:recovered", onRecovered);
+    return () => window.removeEventListener("api:recovered", onRecovered);
   }, []);
   return { options, optionsError };
 }

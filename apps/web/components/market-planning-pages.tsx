@@ -68,10 +68,16 @@ function money(value: unknown) {
 function useOptions() {
   const [options, setOptions] = useState<PlanningOptions>(() => getCached<ApiEnvelope<PlanningOptions>>("/market-planning/options")?.data ?? { branches: [], productionSites: [], warehouses: [], finishedFeeds: [], formulas: [], rawMaterials: [] });
   const [optionsError, setOptionsError] = useState("");
+  const [_planOptKey, _setPlanOptKey] = useState(0);
   useEffect(() => {
     apiFetch<ApiEnvelope<PlanningOptions>>("/market-planning/options")
       .then((res) => setOptions(res.data ?? { branches: [], productionSites: [], warehouses: [], finishedFeeds: [], formulas: [], rawMaterials: [] }))
       .catch((err: any) => setOptionsError(err?.message ?? "Failed to load options."));
+  }, [_planOptKey]);
+  useEffect(() => {
+    function onRecovered() { _setPlanOptKey((k) => k + 1); }
+    window.addEventListener("api:recovered", onRecovered);
+    return () => window.removeEventListener("api:recovered", onRecovered);
   }, []);
   return { options, optionsError };
 }

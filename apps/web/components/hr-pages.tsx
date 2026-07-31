@@ -162,8 +162,14 @@ type HROptions = {
 function useHROptions() {
   const [opts, setOpts] = useState<HROptions>(() => getCached<ApiEnvelope<HROptions>>("/hr/options")?.data ?? { branches: [], farms: [], warehouses: [], productionSites: [], employeeRoles: [], shifts: [], employees: [], bankAccounts: [] });
   const [optionsError, setOptionsError] = useState("");
+  const [_hrOptKey, _setHrOptKey] = useState(0);
   useEffect(() => {
     apiFetch<ApiEnvelope<HROptions>>("/hr/options").then((r) => setOpts(r.data ?? { branches: [], farms: [], warehouses: [], productionSites: [], employeeRoles: [], shifts: [], employees: [], bankAccounts: [] })).catch((err: any) => setOptionsError(err?.message ?? "Failed to load options."));
+  }, [_hrOptKey]);
+  useEffect(() => {
+    function onRecovered() { _setHrOptKey((k) => k + 1); }
+    window.addEventListener("api:recovered", onRecovered);
+    return () => window.removeEventListener("api:recovered", onRecovered);
   }, []);
   return { opts, optionsError };
 }

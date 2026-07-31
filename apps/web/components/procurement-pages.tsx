@@ -194,10 +194,16 @@ function useProcurementOptions() {
     bankAccounts: [],
   });
   const [optionsError, setOptionsError] = useState("");
+  const [_procOptKey, _setProcOptKey] = useState(0);
   useEffect(() => {
     apiFetch<ApiEnvelope<ProcurementOptions>>("/procurement/options")
       .then((r) => setOpts(r.data ?? { branches: [], warehouses: [], suppliers: [], supplierCategories: [], bankAccounts: [] }))
       .catch((err: any) => setOptionsError(err?.message ?? "Failed to load options."));
+  }, [_procOptKey]);
+  useEffect(() => {
+    function onRecovered() { _setProcOptKey((k) => k + 1); }
+    window.addEventListener("api:recovered", onRecovered);
+    return () => window.removeEventListener("api:recovered", onRecovered);
   }, []);
   return { opts, optionsError };
 }

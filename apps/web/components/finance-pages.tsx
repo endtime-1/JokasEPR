@@ -27,10 +27,16 @@ const btnSecondary = "inline-flex min-h-10 items-center gap-2 rounded-md border 
 function useFinanceOptions() {
   const [options, setOptions] = useState<FinanceOptions>(() => getCached<ApiEnvelope<FinanceOptions>>("/finance/options")?.data ?? { branches: [], bankAccounts: [], expenseCategories: [], accounts: [] });
   const [optionsError, setOptionsError] = useState("");
+  const [_finOptKey, _setFinOptKey] = useState(0);
   useEffect(() => {
     apiFetch<ApiEnvelope<FinanceOptions>>("/finance/options")
       .then((r) => setOptions(r.data ?? { branches: [], bankAccounts: [], expenseCategories: [], accounts: [] }))
       .catch((err: any) => setOptionsError(err?.message ?? "Failed to load options."));
+  }, [_finOptKey]);
+  useEffect(() => {
+    function onRecovered() { _setFinOptKey((k) => k + 1); }
+    window.addEventListener("api:recovered", onRecovered);
+    return () => window.removeEventListener("api:recovered", onRecovered);
   }, []);
   return { options, optionsError };
 }

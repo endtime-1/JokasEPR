@@ -269,8 +269,6 @@ jobs:
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "$DOMAIN/__status" || echo "000")
             if [ "$STATUS" = "200" ]; then
               echo "Smoke test PASSED — app is live (HTTP $STATUS)"
-            elif [ "$STATUS" = "503" ]; then
-              echo "Smoke test OK — server is starting up (HTTP $STATUS)"
             else
               echo "Smoke test FAILED — unexpected status: HTTP $STATUS"
               exit 1
