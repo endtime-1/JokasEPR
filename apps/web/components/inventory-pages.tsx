@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Download, Plus } from "lucide-react";
 import { InventoryShell } from "./inventory-shell";
@@ -33,9 +33,15 @@ function useInventoryOptions() {
   const [options, setOptions] = useState<InventoryOptions>(() => getCached<ApiEnvelope<InventoryOptions>>("/inventory/options")?.data ?? EMPTY_OPTIONS);
   const [optionsError, setOptionsError] = useState("");
   const [_invOptKey, _setInvOptKey] = useState(0);
+  const forceAccept = useRef(false);
   useEffect(() => {
+    const force = forceAccept.current;
+    forceAccept.current = false;
     apiFetch<ApiEnvelope<InventoryOptions>>("/inventory/options")
-      .then((response) => setOptions(response.data ?? EMPTY_OPTIONS))
+      .then((response) => {
+        const fresh = response.data ?? EMPTY_OPTIONS;
+        setOptions((prev) => !force && fresh.products.length === 0 && prev.products.length > 0 ? prev : fresh);
+      })
       .catch((err: any) => setOptionsError(err?.message ?? "Failed to load warehouse and product options."));
   }, [_invOptKey]);
   useEffect(() => {

@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { CircleAlert, CircleArrowDown, CircleArrowUp, BadgeDollarSign, ChartBar, BookOpen, Building2, CircleCheck, ChevronRight, DollarSign, FileChartColumn, FileText, Landmark, PiggyBank, TrendingDown, TrendingUp, Users, Wallet, CircleX } from "lucide-react";
 import { FinanceShell } from "./finance-shell";
@@ -28,9 +28,15 @@ function useFinanceOptions() {
   const [options, setOptions] = useState<FinanceOptions>(() => getCached<ApiEnvelope<FinanceOptions>>("/finance/options")?.data ?? { branches: [], bankAccounts: [], expenseCategories: [], accounts: [] });
   const [optionsError, setOptionsError] = useState("");
   const [_finOptKey, _setFinOptKey] = useState(0);
+  const forceAccept = useRef(false);
   useEffect(() => {
+    const force = forceAccept.current;
+    forceAccept.current = false;
     apiFetch<ApiEnvelope<FinanceOptions>>("/finance/options")
-      .then((r) => setOptions(r.data ?? { branches: [], bankAccounts: [], expenseCategories: [], accounts: [] }))
+      .then((r) => {
+        const fresh = r.data ?? { branches: [], bankAccounts: [], expenseCategories: [], accounts: [] };
+        setOptions((prev) => !force && fresh.accounts.length === 0 && prev.accounts.length > 0 ? prev : fresh);
+      })
       .catch((err: any) => setOptionsError(err?.message ?? "Failed to load options."));
   }, [_finOptKey]);
   useEffect(() => {

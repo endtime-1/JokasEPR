@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Download, Plus, ShieldCheck } from "lucide-react";
 import { SoyaProcessingShell } from "./soya-processing-shell";
@@ -36,9 +36,15 @@ function useSoyaOptions() {
   const [options, setOptions] = useState<SoyaOptions>(() => getCached<ApiEnvelope<SoyaOptions>>("/soya-processing/options")?.data ?? { productionSites: [], warehouses: [], products: [], intakes: [], batches: [] });
   const [optionsError, setOptionsError] = useState("");
   const [_soyaOptKey, _setSoyaOptKey] = useState(0);
+  const forceAccept = useRef(false);
   useEffect(() => {
+    const force = forceAccept.current;
+    forceAccept.current = false;
     apiFetch<ApiEnvelope<SoyaOptions>>("/soya-processing/options")
-      .then((response) => setOptions(response.data ?? { productionSites: [], warehouses: [], products: [], intakes: [], batches: [] }))
+      .then((response) => {
+        const fresh = response.data ?? { productionSites: [], warehouses: [], products: [], intakes: [], batches: [] };
+        setOptions((prev) => !force && fresh.batches.length === 0 && prev.batches.length > 0 ? prev : fresh);
+      })
       .catch((err: any) => setOptionsError(err?.message ?? "Failed to load options."));
   }, [_soyaOptKey]);
   useEffect(() => {

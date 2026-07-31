@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import {
@@ -186,6 +186,7 @@ type ProcurementOptions = {
 };
 
 function useProcurementOptions() {
+  const forceAccept = useRef(false);
   const [opts, setOpts] = useState<ProcurementOptions>(() => getCached<ApiEnvelope<ProcurementOptions>>("/procurement/options")?.data ?? {
     branches: [],
     warehouses: [],
@@ -196,8 +197,13 @@ function useProcurementOptions() {
   const [optionsError, setOptionsError] = useState("");
   const [_procOptKey, _setProcOptKey] = useState(0);
   useEffect(() => {
+    const force = forceAccept.current;
+    forceAccept.current = false;
     apiFetch<ApiEnvelope<ProcurementOptions>>("/procurement/options")
-      .then((r) => setOpts(r.data ?? { branches: [], warehouses: [], suppliers: [], supplierCategories: [], bankAccounts: [] }))
+      .then((r) => {
+        const fresh = r.data ?? { branches: [], warehouses: [], suppliers: [], supplierCategories: [], bankAccounts: [] };
+        setOpts((prev) => !force && fresh.suppliers.length === 0 && prev.suppliers.length > 0 ? prev : fresh);
+      })
       .catch((err: any) => setOptionsError(err?.message ?? "Failed to load options."));
   }, [_procOptKey]);
   useEffect(() => {

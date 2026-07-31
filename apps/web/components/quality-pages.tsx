@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { ChangeEvent, ComponentType, FormEvent, ReactNode, useEffect, useState } from "react";
+import { ChangeEvent, ComponentType, FormEvent, ReactNode, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -196,9 +196,15 @@ function useQCOptions() {
   });
   const [optionsError, setOptionsError] = useState("");
   const [_qcOptKey, _setQcOptKey] = useState(0);
+  const forceAccept = useRef(false);
   useEffect(() => {
+    const force = forceAccept.current;
+    forceAccept.current = false;
     apiFetch<ApiEnvelope<QCOptions>>("/quality/options")
-      .then((r) => setOpts(r.data ?? { templates: [], branches: [], farms: [], warehouses: [], productionSites: [], suppliers: [], users: [] }))
+      .then((r) => {
+        const fresh = r.data ?? { templates: [], branches: [], farms: [], warehouses: [], productionSites: [], suppliers: [], users: [] };
+        setOpts((prev) => !force && fresh.users.length === 0 && prev.users.length > 0 ? prev : fresh);
+      })
       .catch((err: any) => setOptionsError(err?.message ?? "Failed to load options."));
   }, [_qcOptKey]);
   useEffect(() => {

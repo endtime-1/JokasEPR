@@ -67,21 +67,25 @@ function usePoultryOptions() {
   const [optionsError, setOptionsError] = useState("");
   const [optionsLoading, setOptionsLoading] = useState(true);
   const [optionsKey, setOptionsKey] = useState(0);
-  const isRecoveryFetch = useRef(false);
+  // When true, the next fetch accepts an empty result even if we have existing data.
+  // Only set by explicit user-triggered refreshOptions() so normal navigation and
+  // api:recovered re-fetches never overwrite good cached data with a transient empty response.
+  const forceAccept = useRef(false);
 
   useEffect(() => {
-    const fromRecovery = isRecoveryFetch.current;
-    isRecoveryFetch.current = false;
+    const force = forceAccept.current;
+    forceAccept.current = false;
     setOptionsError("");
     setOptionsLoading(true);
     apiFetch<ApiEnvelope<PoultryOptions>>("/poultry/options")
       .then((response) => {
         const fresh = response.data ?? { farms: [], houses: [], pens: [], batches: [], warehouses: [], products: [] };
         setOptions((prev) =>
-          // If this re-fetch was triggered by api:recovered and the server returned
-          // empty batches while we already have batches — the server may still be
-          // warming up. Keep existing data to avoid a spurious "No batches found" flash.
-          fromRecovery && fresh.batches.length === 0 && prev.batches.length > 0 ? prev : fresh
+          // Guard: if the server returned empty batches but we already have batches in
+          // state, keep the existing data unless the user explicitly triggered a refresh.
+          // This prevents the "appears then goes" flash caused by a stale server-side
+          // LookupCache entry (from a cold-start DB warmup) overwriting good cached data.
+          !force && fresh.batches.length === 0 && prev.batches.length > 0 ? prev : fresh
         );
       })
       .catch((err) => setOptionsError(err?.message ?? "Failed to load dropdown options. Refresh the page."))
@@ -90,15 +94,13 @@ function usePoultryOptions() {
 
   // On API recovery, re-fetch options so stale dropdowns self-heal.
   useEffect(() => {
-    function onRecovered() {
-      isRecoveryFetch.current = true;
-      setOptionsKey((k) => k + 1);
-    }
+    function onRecovered() { setOptionsKey((k) => k + 1); }
     window.addEventListener("api:recovered", onRecovered);
     return () => window.removeEventListener("api:recovered", onRecovered);
   }, []);
 
-  const refreshOptions = () => setOptionsKey((k) => k + 1);
+  // Explicit user-triggered refresh: force-accept the server response even if empty.
+  const refreshOptions = () => { forceAccept.current = true; setOptionsKey((k) => k + 1); };
   return { options, optionsError, optionsLoading, refreshOptions };
 }
 

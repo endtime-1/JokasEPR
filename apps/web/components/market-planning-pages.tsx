@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { CircleCheckBig, ClipboardList, Factory, PackageCheck, Plus, RefreshCw, ShoppingCart, TrendingUp } from "lucide-react";
@@ -69,9 +69,15 @@ function useOptions() {
   const [options, setOptions] = useState<PlanningOptions>(() => getCached<ApiEnvelope<PlanningOptions>>("/market-planning/options")?.data ?? { branches: [], productionSites: [], warehouses: [], finishedFeeds: [], formulas: [], rawMaterials: [] });
   const [optionsError, setOptionsError] = useState("");
   const [_planOptKey, _setPlanOptKey] = useState(0);
+  const forceAccept = useRef(false);
   useEffect(() => {
+    const force = forceAccept.current;
+    forceAccept.current = false;
     apiFetch<ApiEnvelope<PlanningOptions>>("/market-planning/options")
-      .then((res) => setOptions(res.data ?? { branches: [], productionSites: [], warehouses: [], finishedFeeds: [], formulas: [], rawMaterials: [] }))
+      .then((res) => {
+        const fresh = res.data ?? { branches: [], productionSites: [], warehouses: [], finishedFeeds: [], formulas: [], rawMaterials: [] };
+        setOptions((prev) => !force && fresh.rawMaterials.length === 0 && prev.rawMaterials.length > 0 ? prev : fresh);
+      })
       .catch((err: any) => setOptionsError(err?.message ?? "Failed to load options."));
   }, [_planOptKey]);
   useEffect(() => {

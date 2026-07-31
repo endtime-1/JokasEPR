@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { AlertTriangle, CalendarDays, Camera, CircleAlert, ClipboardList, DollarSign, FileText, Pencil, Trash2, Upload, UserCheck, UserPlus, Users } from "lucide-react";
@@ -163,8 +163,16 @@ function useHROptions() {
   const [opts, setOpts] = useState<HROptions>(() => getCached<ApiEnvelope<HROptions>>("/hr/options")?.data ?? { branches: [], farms: [], warehouses: [], productionSites: [], employeeRoles: [], shifts: [], employees: [], bankAccounts: [] });
   const [optionsError, setOptionsError] = useState("");
   const [_hrOptKey, _setHrOptKey] = useState(0);
+  const forceAccept = useRef(false);
   useEffect(() => {
-    apiFetch<ApiEnvelope<HROptions>>("/hr/options").then((r) => setOpts(r.data ?? { branches: [], farms: [], warehouses: [], productionSites: [], employeeRoles: [], shifts: [], employees: [], bankAccounts: [] })).catch((err: any) => setOptionsError(err?.message ?? "Failed to load options."));
+    const force = forceAccept.current;
+    forceAccept.current = false;
+    apiFetch<ApiEnvelope<HROptions>>("/hr/options")
+      .then((r) => {
+        const fresh = r.data ?? { branches: [], farms: [], warehouses: [], productionSites: [], employeeRoles: [], shifts: [], employees: [], bankAccounts: [] };
+        setOpts((prev) => !force && fresh.employees.length === 0 && prev.employees.length > 0 ? prev : fresh);
+      })
+      .catch((err: any) => setOptionsError(err?.message ?? "Failed to load options."));
   }, [_hrOptKey]);
   useEffect(() => {
     function onRecovered() { _setHrOptKey((k) => k + 1); }

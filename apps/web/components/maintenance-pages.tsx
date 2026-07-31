@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { ComponentType, FormEvent, useEffect, useState } from "react";
+import { ComponentType, FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Activity, AlertTriangle, Calendar, ChevronRight, Clock, Cpu, DollarSign, Download, Plus, RefreshCw, Save, User, Wrench } from "lucide-react";
 import { AppShell } from "./app-shell";
@@ -81,9 +81,15 @@ function useOptions() {
   const [options, setOptions] = useState<MaintenanceOptions>(() => getCached<ApiEnvelope<MaintenanceOptions>>("/maintenance/options")?.data ?? { branches: [], farms: [], warehouses: [], productionSites: [], machines: [], equipment: [], spareParts: [], technicians: [] });
   const [optionsError, setOptionsError] = useState("");
   const [_maintOptKey, _setMaintOptKey] = useState(0);
+  const forceAccept = useRef(false);
   useEffect(() => {
+    const force = forceAccept.current;
+    forceAccept.current = false;
     apiFetch<ApiEnvelope<MaintenanceOptions>>("/maintenance/options")
-      .then((response) => setOptions(response.data ?? { branches: [], farms: [], warehouses: [], productionSites: [], machines: [], equipment: [], spareParts: [], technicians: [] }))
+      .then((response) => {
+        const fresh = response.data ?? { branches: [], farms: [], warehouses: [], productionSites: [], machines: [], equipment: [], spareParts: [], technicians: [] };
+        setOptions((prev) => !force && fresh.machines.length === 0 && prev.machines.length > 0 ? prev : fresh);
+      })
       .catch((err: any) => setOptionsError(err?.message ?? "Failed to load options."));
   }, [_maintOptKey]);
   useEffect(() => {

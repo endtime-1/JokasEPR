@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { ChangeEvent, ComponentType, FormEvent, ReactNode, useEffect, useState } from "react";
+import { ChangeEvent, ComponentType, FormEvent, ReactNode, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -169,8 +169,16 @@ function useSalesOptions() {
   const [opts, setOpts] = useState<SalesOptions>(() => getCached<ApiEnvelope<SalesOptions>>("/sales/options")?.data ?? { branches: [], warehouses: [], products: [], customerGroups: [], customers: [], priceLists: [], invoices: [] });
   const [optionsError, setOptionsError] = useState("");
   const [_salesOptKey, _setSalesOptKey] = useState(0);
+  const forceAccept = useRef(false);
   useEffect(() => {
-    apiFetch<ApiEnvelope<SalesOptions>>("/sales/options").then((r) => setOpts(r.data ?? { branches: [], warehouses: [], products: [], customerGroups: [], customers: [], priceLists: [], invoices: [] })).catch((err: any) => setOptionsError(err?.message ?? "Failed to load options."));
+    const force = forceAccept.current;
+    forceAccept.current = false;
+    apiFetch<ApiEnvelope<SalesOptions>>("/sales/options")
+      .then((r) => {
+        const fresh = r.data ?? { branches: [], warehouses: [], products: [], customerGroups: [], customers: [], priceLists: [], invoices: [] };
+        setOpts((prev) => !force && fresh.customers.length === 0 && prev.customers.length > 0 ? prev : fresh);
+      })
+      .catch((err: any) => setOptionsError(err?.message ?? "Failed to load options."));
   }, [_salesOptKey]);
   useEffect(() => {
     function onRecovered() { _setSalesOptKey((k) => k + 1); }

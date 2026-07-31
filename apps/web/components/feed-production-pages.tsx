@@ -112,9 +112,15 @@ function useFeedOptions() {
   const [options, setOptions] = useState<FeedOptions>(() => getCached<ApiEnvelope<FeedOptions>>("/feed-production/options")?.data ?? { productionSites: [], warehouses: [], farms: [], poultryHouses: [], rawMaterials: [], finishedFeeds: [], formulas: [], batches: [] });
   const [optionsError, setOptionsError] = useState("");
   const [_feedOptKey, _setFeedOptKey] = useState(0);
+  const forceAccept = useRef(false);
   useEffect(() => {
+    const force = forceAccept.current;
+    forceAccept.current = false;
     apiFetch<ApiEnvelope<FeedOptions>>("/feed-production/options")
-      .then((response) => setOptions(response.data ?? { productionSites: [], warehouses: [], farms: [], poultryHouses: [], rawMaterials: [], finishedFeeds: [], formulas: [], batches: [] }))
+      .then((response) => {
+        const fresh = response.data ?? { productionSites: [], warehouses: [], farms: [], poultryHouses: [], rawMaterials: [], finishedFeeds: [], formulas: [], batches: [] };
+        setOptions((prev) => !force && fresh.rawMaterials.length === 0 && prev.rawMaterials.length > 0 ? prev : fresh);
+      })
       .catch((err: any) => setOptionsError(err?.message ?? "Failed to load options."));
   }, [_feedOptKey]);
   useEffect(() => {
