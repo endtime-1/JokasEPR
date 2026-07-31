@@ -176,7 +176,12 @@ export class PoultryService {
       this.prisma.product.findMany({ where: { companyId: user.companyId, deletedAt: null }, select: { id: true, sku: true, name: true }, orderBy: { name: "asc" } })
     ]);
     const result = { data: { farms, houses, pens, batches, warehouses, products } };
-    this.lookupCache.set(cacheKey, result);
+    // Only cache when batches exist — an empty-batches response can be transient (DB
+    // warmup, first request during cold-start) and caching it would serve stale empty
+    // data for the full 45-second TTL, causing "No flock batches found" to flash.
+    if (batches.length > 0) {
+      this.lookupCache.set(cacheKey, result);
+    }
     return result;
   }
 

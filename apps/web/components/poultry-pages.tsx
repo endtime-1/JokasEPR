@@ -67,22 +67,33 @@ function usePoultryOptions() {
   const [optionsError, setOptionsError] = useState("");
   const [optionsLoading, setOptionsLoading] = useState(true);
   const [optionsKey, setOptionsKey] = useState(0);
+  const isRecoveryFetch = useRef(false);
 
   useEffect(() => {
+    const fromRecovery = isRecoveryFetch.current;
+    isRecoveryFetch.current = false;
     setOptionsError("");
     setOptionsLoading(true);
     apiFetch<ApiEnvelope<PoultryOptions>>("/poultry/options")
       .then((response) => {
         const fresh = response.data ?? { farms: [], houses: [], pens: [], batches: [], warehouses: [], products: [] };
-        setOptions(fresh);
+        setOptions((prev) =>
+          // If this re-fetch was triggered by api:recovered and the server returned
+          // empty batches while we already have batches — the server may still be
+          // warming up. Keep existing data to avoid a spurious "No batches found" flash.
+          fromRecovery && fresh.batches.length === 0 && prev.batches.length > 0 ? prev : fresh
+        );
       })
       .catch((err) => setOptionsError(err?.message ?? "Failed to load dropdown options. Refresh the page."))
       .finally(() => setOptionsLoading(false));
   }, [optionsKey]);
 
-  // On API recovery, always re-fetch options so stale/empty dropdowns self-heal.
+  // On API recovery, re-fetch options so stale dropdowns self-heal.
   useEffect(() => {
-    function onRecovered() { setOptionsKey((k) => k + 1); }
+    function onRecovered() {
+      isRecoveryFetch.current = true;
+      setOptionsKey((k) => k + 1);
+    }
     window.addEventListener("api:recovered", onRecovered);
     return () => window.removeEventListener("api:recovered", onRecovered);
   }, []);
