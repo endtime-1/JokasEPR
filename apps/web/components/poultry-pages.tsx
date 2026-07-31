@@ -185,7 +185,7 @@ export function PoultryHousesPage({ create = false }: { create?: boolean }) {
     const response = await apiFetch<ApiEnvelope<HouseRow[]>>("/poultry/houses");
     const data = response.data;
     if (!Array.isArray(data)) return;
-    setRows(data);
+    setRows((prev) => data.length === 0 && prev.length > 0 ? prev : data);
     if (data.length > 0) {
       try { sessionStorage.setItem(HOUSES_CACHE, JSON.stringify(data)); } catch { /* noop */ }
     }
@@ -262,7 +262,8 @@ export function PoultryHousesPage({ create = false }: { create?: boolean }) {
     if (!confirm(`Delete house "${house.name}"? This cannot be undone.`)) return;
     try {
       await apiFetch(`/poultry/houses/${house.id}`, { method: "DELETE" });
-      await load();
+      setRows((prev) => prev.filter((h) => h.id !== house.id));
+      load().catch(() => undefined);
       refreshOptions();
     } catch (err: any) {
       setSubmitMsg(err?.message ?? "Failed to delete house.");
@@ -478,7 +479,7 @@ export function FlockBatchesPage({ create = false }: { create?: boolean }) {
     const response = await apiFetch<ApiEnvelope<BatchRow[]>>("/poultry/batches");
     const data = response.data;
     if (!Array.isArray(data)) return;
-    setRows(data);
+    setRows((prev) => data.length === 0 && prev.length > 0 ? prev : data);
     if (data.length > 0) {
       try { sessionStorage.setItem(BATCHES_CACHE, JSON.stringify(data)); } catch { /* noop */ }
     }
@@ -526,7 +527,8 @@ export function FlockBatchesPage({ create = false }: { create?: boolean }) {
     if (!confirm(`Delete batch "${batch.name}"? This will remove the batch and all its records.`)) return;
     try {
       await apiFetch(`/poultry/batches/${batch.id}`, { method: "DELETE" });
-      await load();
+      setRows((prev) => prev.filter((b) => b.id !== batch.id));
+      load().catch(() => undefined);
     } catch (err: any) {
       setEditMsg(err?.message ?? "Failed to delete batch.");
     }
@@ -1256,7 +1258,7 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
     const response = await apiFetch<{ data: Record<string, any>[]; meta?: any }>(`/poultry/records/${type}?take=200`);
     const data = response.data;
     if (!Array.isArray(data)) return;
-    setRows(data);
+    setRows((prev) => data.length === 0 && prev.length > 0 ? prev : data);
     if (data.length > 0) {
       try { sessionStorage.setItem(recordCacheKey, JSON.stringify(data)); } catch { /* noop */ }
     }
@@ -1309,7 +1311,8 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
     setSubmitError("");
     try {
       await apiFetch(`/poultry/records/${type}/${row.id}`, { method: "DELETE" });
-      await load();
+      setRows((prev) => prev.filter((r) => r.id !== row.id));
+      load().catch(() => undefined);
     } catch (err: any) {
       setSubmitError(err?.message ?? "Failed to delete record.");
     }
@@ -1606,7 +1609,7 @@ export function PoultryTransferPage() {
     const response = await apiFetch<ApiEnvelope<Record<string, any>[]>>("/poultry/records/transfers");
     const data = response.data;
     if (!Array.isArray(data)) return;
-    setRows(data);
+    setRows((prev) => data.length === 0 && prev.length > 0 ? prev : data);
     if (data.length > 0) {
       try { sessionStorage.setItem(TRANSFERS_CACHE, JSON.stringify(data)); } catch { /* noop */ }
     }
@@ -1684,7 +1687,8 @@ export function PoultryTransferPage() {
     try {
       await apiFetch(`/poultry/records/transfers/${row.id}`, { method: "DELETE" });
       if (editRow?.id === row.id) setEditRow(null);
-      await load();
+      setRows((prev) => prev.filter((r) => r.id !== row.id));
+      load().catch(() => undefined);
     } catch (err: any) {
       setEditMsg(err?.message ?? "Failed to delete transfer.");
     }

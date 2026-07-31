@@ -717,7 +717,10 @@ export function SupplierCategoriesPage() {
   function load() {
     setLoadError("");
     apiFetch<ApiEnvelope<SupplierCategory[]>>("/procurement/supplier-categories")
-      .then((r) => setRows(r.data ?? []))
+      .then((r) => {
+        const fresh = r.data ?? [];
+        setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh);
+      })
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
       .finally(() => setLoading(false));
   }
