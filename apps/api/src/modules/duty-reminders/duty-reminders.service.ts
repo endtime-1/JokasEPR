@@ -47,10 +47,16 @@ export class DutyRemindersService {
 
     const dateRange = { gte: todayStart, lt: todayEnd };
 
-    const companies = await this.prisma.company.findMany({
-      where: { deletedAt: null },
-      select: { id: true, name: true },
-    });
+    let companies: { id: string; name: string }[];
+    try {
+      companies = await this.prisma.company.findMany({
+        where: { deletedAt: null },
+        select: { id: true, name: true },
+      });
+    } catch (err) {
+      this.logger.warn(`remindForDuties (${slot}): skipped — DB unavailable: ${err instanceof Error ? err.message : String(err)}`);
+      return;
+    }
 
     for (const company of companies) {
       try {
@@ -152,10 +158,14 @@ export class DutyRemindersService {
   // ── 3:30 AM: transition expired stock reservations to EXPIRED status ──────
   @Cron("30 3 * * *", { timeZone: "Africa/Accra" })
   async expireStockReservations() {
-    const { count } = await this.prisma.stockReservation.updateMany({
-      where: { status: "ACTIVE", expiresAt: { lt: new Date() }, deletedAt: null },
-      data: { status: "EXPIRED" },
-    });
-    if (count > 0) this.logger.log(`Expired ${count} stock reservation(s)`);
+    try {
+      const { count } = await this.prisma.stockReservation.updateMany({
+        where: { status: "ACTIVE", expiresAt: { lt: new Date() }, deletedAt: null },
+        data: { status: "EXPIRED" },
+      });
+      if (count > 0) this.logger.log(`Expired ${count} stock reservation(s)`);
+    } catch (err) {
+      this.logger.warn("expireStockReservations: skipped — " + (err instanceof Error ? err.message : String(err)));
+    }
   }
 }

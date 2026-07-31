@@ -64,6 +64,18 @@ export class HttpExceptionFilter implements ExceptionFilter {
         };
         return response.status(503).json(body);
       }
+      if (exception.code === "P2024") {
+        // Connection pool exhausted — Hostinger shared MySQL limits simultaneous connections.
+        // Return 503 so the client retry logic (transient status) kicks in automatically.
+        const body: ErrorResponse = {
+          success: false,
+          statusCode: 503,
+          message: "Service temporarily unavailable. Please try again shortly.",
+          timestamp: new Date().toISOString(),
+          path: request.originalUrl
+        };
+        return response.status(503).json(body);
+      }
     }
 
     const status = exception instanceof HttpException ? exception.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;

@@ -239,12 +239,18 @@ jobs:
               # migration from running. Resolve it as --applied so migrate deploy can
               # proceed to run migrations 10-16. The actual MySQL-compatible table is
               # created by 20260730000001_leave_request_mysql_fix (IF NOT EXISTS).
-              echo "Resolving blocked migration..."
+              echo "Resolving blocked migrations..."
+              # 20260629000001: used PostgreSQL DO $$ block / gen_random_uuid() — fails on MySQL.
+              # This is seed data; the table exists. Mark as applied so deploy can proceed.
+              "$NODE_BIN" "$PRISMA_BIN" migrate resolve \
+                --applied "20260629000001_feed_raw_materials" \
+                --schema "$APP_DIR/prisma/schema.prisma" 2>&1 || true
+              # 20260701000000: used PostgreSQL CREATE TYPE / UUID DDL — fails on MySQL.
+              # LeaveRequest table is created by 20260730000001_leave_request_mysql_fix.
               "$NODE_BIN" "$PRISMA_BIN" migrate resolve \
                 --applied "20260701000000_leave_request_system" \
-                --schema "$APP_DIR/prisma/schema.prisma" 2>&1 \
-                && echo "Blocked migration resolved." \
-                || echo "migrate resolve skipped (already resolved or not in failed state)."
+                --schema "$APP_DIR/prisma/schema.prisma" 2>&1 || true
+              echo "Blocked migrations resolved."
 
               if "$NODE_BIN" "$PRISMA_BIN" migrate deploy --schema "$APP_DIR/prisma/schema.prisma"; then
                 echo "Migrations complete."

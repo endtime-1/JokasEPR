@@ -28,7 +28,15 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: AccessPayload): Promise<AuthenticatedUser> {
-    const profile = await this.authService.buildProfile(payload.sub);
+    let profile: AuthenticatedUser;
+    try {
+      profile = await this.authService.buildProfile(payload.sub);
+    } catch (err) {
+      // DB errors during profile load (pool timeout, connection loss) should not
+      // surface as 500 — convert them to 401 so the client refreshes the session
+      // rather than showing a generic "Internal server error" to the user.
+      throw new UnauthorizedException("Session could not be verified. Please try again.");
+    }
     if (profile.companyId !== payload.org) {
       throw new UnauthorizedException("Token Company mismatch.");
     }
