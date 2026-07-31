@@ -99,7 +99,8 @@ export function SoyaIntakesPage({ create = false }: { create?: boolean }) {
     setLoadError("");
     try {
       const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/soya-processing/intakes");
-      setRows(response.data ?? []);
+      const fresh = response.data ?? [];
+      setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh);
     } finally {
       setLoading(false);
     }
@@ -144,7 +145,8 @@ export function SoyaBatchesPage({ create = false }: { create?: boolean }) {
     setLoadError("");
     try {
       const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/soya-processing/batches");
-      setRows(response.data ?? []);
+      const fresh = response.data ?? [];
+      setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh);
     } finally {
       setLoading(false);
     }
@@ -218,7 +220,8 @@ export function SoyaQualityPage() {
     setLoadError("");
     try {
       const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/soya-processing/quality-checks");
-      setRows(response.data ?? []);
+      const fresh = response.data ?? [];
+      setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh);
     } finally {
       setLoading(false);
     }
@@ -284,7 +287,8 @@ export function SoyaTransferPage() {
     setLoadError("");
     try {
       const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/soya-processing/transfers");
-      setRows(response.data ?? []);
+      const fresh = response.data ?? [];
+      setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh);
     } finally {
       setLoading(false);
     }

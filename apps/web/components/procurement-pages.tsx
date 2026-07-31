@@ -512,7 +512,7 @@ export function SuppliersPage() {
     setLoadError("");
     const q = search ? `?search=${encodeURIComponent(search)}` : "";
     apiFetch<ApiEnvelope<Supplier[]>>(`/procurement/suppliers${q}`)
-      .then((r) => setRows(r.data ?? []))
+      .then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
       .finally(() => setLoading(false));
   }, [search]);
@@ -822,7 +822,7 @@ export function PurchaseRequestsPage() {
     setLoadError("");
     const q = statusFilter ? `?status=${statusFilter}` : "";
     apiFetch<ApiEnvelope<PurchaseRequest[]>>(`/procurement/purchase-requests${q}`)
-      .then((r) => setRows(r.data ?? []))
+      .then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
       .finally(() => setLoading(false));
   }
@@ -1097,7 +1097,7 @@ export function PurchaseOrdersPage() {
     setLoadError("");
     const q = statusFilter ? `?status=${statusFilter}` : "";
     apiFetch<ApiEnvelope<PurchaseOrder[]>>(`/procurement/purchase-orders${q}`)
-      .then((r) => setRows(r.data ?? []))
+      .then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
       .finally(() => setLoading(false));
   }
@@ -1403,7 +1403,7 @@ export function GRNsPage() {
     setLoadError("");
     const q = statusFilter ? `?status=${statusFilter}` : "";
     apiFetch<ApiEnvelope<GRN[]>>(`/procurement/grns${q}`)
-      .then((r) => setRows(r.data ?? []))
+      .then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
       .finally(() => setLoading(false));
   }
@@ -1710,7 +1710,7 @@ export function SupplierInvoicesPage() {
     setLoadError("");
     const q = statusFilter ? `?status=${statusFilter}` : "";
     apiFetch<ApiEnvelope<SupplierInvoice[]>>(`/procurement/invoices${q}`)
-      .then((r) => setRows(r.data ?? []))
+      .then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
       .finally(() => setLoading(false));
   }
@@ -1862,7 +1862,7 @@ export function ProcurementPaymentsPage() {
   function load() {
     setLoadError("");
     apiFetch<ApiEnvelope<ProcurementPayment[]>>("/procurement/payments")
-      .then((r) => setRows(r.data ?? []))
+      .then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
       .finally(() => setLoading(false));
   }
@@ -2017,7 +2017,7 @@ export function SupplierPerformancePage() {
   function load() {
     setLoadError("");
     apiFetch<ApiEnvelope<PerformanceRecord[]>>("/procurement/performance")
-      .then((r) => setRows(r.data ?? []))
+      .then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
       .finally(() => setLoading(false));
   }
@@ -2185,7 +2185,7 @@ export function PriceHistoryPage() {
   function load() {
     setLoadError("");
     apiFetch<ApiEnvelope<PriceHistoryRow[]>>("/procurement/price-history")
-      .then((r) => setRows(r.data ?? []))
+      .then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
       .finally(() => setLoading(false));
   }

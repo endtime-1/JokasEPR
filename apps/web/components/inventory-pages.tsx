@@ -87,7 +87,8 @@ export function InventoryItemsPage({ create = false }: { create?: boolean }) {
   async function load() {
     setLoadError("");
     const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/inventory/items");
-    setRows(response.data ?? []);
+    const fresh = response.data ?? [];
+    setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh);
   }
   useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false)); }, []);
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -193,7 +194,7 @@ export function InventoryListPage({ title, endpoint, subtitle }: { title: string
   function load() {
     setLoadError("");
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>(endpoint)
-      .then((response) => setRows(response.data ?? []))
+      .then((response) => { const fresh = response.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
       .finally(() => setLoading(false));
   }

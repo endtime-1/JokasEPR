@@ -664,7 +664,7 @@ export function ExpenseListPage() {
     if (startDate) params.set("startDate", startDate);
     if (endDate) params.set("endDate", endDate);
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>(`/finance/expenses?${params}`)
-      .then((r) => setExpenses(r.data ?? []))
+      .then((r) => { const fresh = r.data ?? []; setExpenses((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load expenses."))
       .finally(() => setLoading(false));
   }
@@ -853,7 +853,7 @@ export function RevenuePage() {
   function load() {
     setLoadError("");
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/finance/revenue")
-      .then((r) => setRevenues(r.data ?? []))
+      .then((r) => { const fresh = r.data ?? []; setRevenues((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load revenue."));
   }
 
@@ -950,7 +950,7 @@ export function CustomerPaymentsPage() {
   function load() {
     setLoadError("");
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/finance/customer-payments")
-      .then((r) => setPayments(r.data ?? []))
+      .then((r) => { const fresh = r.data ?? []; setPayments((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load."));
   }
 
@@ -1024,7 +1024,7 @@ export function SupplierPaymentsPage() {
   function load() {
     setLoadError("");
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/finance/supplier-payments")
-      .then((r) => setPayments(r.data ?? []))
+      .then((r) => { const fresh = r.data ?? []; setPayments((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load."));
   }
 
@@ -1098,7 +1098,7 @@ export function PettyCashPage() {
   function load() {
     setLoadError("");
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/finance/petty-cash")
-      .then((r) => setTransactions(r.data ?? []))
+      .then((r) => { const fresh = r.data ?? []; setTransactions((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load."));
   }
 
@@ -1191,7 +1191,7 @@ export function PayrollPage() {
   function load() {
     setLoadError("");
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/finance/payroll")
-      .then((r) => setRecords(r.data ?? []))
+      .then((r) => { const fresh = r.data ?? []; setRecords((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load."));
   }
 
@@ -1303,7 +1303,7 @@ export function BankAccountsPage() {
   function load() {
     setLoadError("");
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/finance/bank-accounts")
-      .then((r) => setAccounts(r.data ?? []))
+      .then((r) => { const fresh = r.data ?? []; setAccounts((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load."));
   }
 
@@ -1389,7 +1389,7 @@ export function JournalEntriesPage() {
   function load() {
     setLoadError("");
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/finance/journal-entries")
-      .then((r) => setEntries(r.data ?? []))
+      .then((r) => { const fresh = r.data ?? []; setEntries((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load."));
   }
 
@@ -1662,7 +1662,7 @@ export function ProductProfitabilityPage() {
   function load() {
     setLoadError("");
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/finance/reports/product-profitability")
-      .then((r) => setRecords(r.data ?? []))
+      .then((r) => { const fresh = r.data ?? []; setRecords((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load."));
   }
 

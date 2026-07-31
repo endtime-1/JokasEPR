@@ -480,7 +480,8 @@ export function MachinesPage({ create = false }: { create?: boolean }) {
     setLoadError("");
     try {
       const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/machines");
-      setRows(response.data ?? []);
+      const fresh = response.data ?? [];
+      setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh);
     } finally {
       setLoading(false);
     }
@@ -558,7 +559,8 @@ export function SchedulePage() {
     setLoadError("");
     try {
       const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/schedules");
-      setRows(response.data ?? []);
+      const fresh = response.data ?? [];
+      setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh);
     } finally {
       setLoading(false);
     }
@@ -612,7 +614,8 @@ export function BreakdownPage() {
     setLoadError("");
     try {
       const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/breakdowns");
-      setRows(response.data ?? []);
+      const fresh = response.data ?? [];
+      setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh);
     } finally {
       setLoading(false);
     }
@@ -662,7 +665,8 @@ export function SparePartsPage() {
     setLoadError("");
     try {
       const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/spare-parts");
-      setRows(response.data ?? []);
+      const fresh = response.data ?? [];
+      setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh);
     } finally {
       setLoading(false);
     }

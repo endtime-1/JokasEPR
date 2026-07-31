@@ -250,7 +250,7 @@ export function QuickBooksSyncLogsPage() {
   function load() {
     const params = new URLSearchParams({ limit: "100", ...(filter.operation && { operation: filter.operation }), ...(filter.result && { result: filter.result }) });
     apiFetch<{ data: SyncLog[] }>(`/quickbooks/logs?${params}`)
-      .then((r) => setLogs(r.data ?? []))
+      .then((r) => { const fresh = r.data ?? []; setLogs((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
       .catch(() => undefined)
       .finally(() => setLoading(false));
   }
@@ -352,7 +352,7 @@ export function QuickBooksWebhookEventsPage() {
   function load() {
     const params = new URLSearchParams({ limit: "100", ...(statusFilter && { status: statusFilter }) });
     apiFetch<{ data: WebhookEvent[] }>(`/quickbooks/webhook-events?${params}`)
-      .then((r) => setEvents(r.data ?? []))
+      .then((r) => { const fresh = r.data ?? []; setEvents((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
       .catch(() => undefined)
       .finally(() => setLoading(false));
   }
@@ -429,9 +429,12 @@ export function QuickBooksMappingPage() {
       apiFetch<{ data: { id: string; name: string }[] }>("/finance/expense-categories")
     ])
       .then(([accts, maps, cats]) => {
-        setQbAccounts(accts.data);
-        setMappings(maps.data);
-        setExpenseCategories(cats.data);
+        const freshAccts = accts.data ?? [];
+        const freshMaps = maps.data ?? [];
+        const freshCats = cats.data ?? [];
+        setQbAccounts((prev) => freshAccts.length === 0 && prev.length > 0 ? prev : freshAccts);
+        setMappings((prev) => freshMaps.length === 0 && prev.length > 0 ? prev : freshMaps);
+        setExpenseCategories((prev) => freshCats.length === 0 && prev.length > 0 ? prev : freshCats);
       })
       .catch(() => setError("Failed to load data — ensure QuickBooks is connected"))
       .finally(() => setLoading(false));

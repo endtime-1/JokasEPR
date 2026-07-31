@@ -184,7 +184,8 @@ export function FeedFormulaListPage() {
     setLoadError("");
     try {
       const response = await apiFetch<ApiEnvelope<FormulaRow[]>>("/feed-production/formulas");
-      setRows(response.data ?? []);
+      const fresh = response.data ?? [];
+      setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh);
     } finally {
       setLoading(false);
     }
@@ -1209,7 +1210,8 @@ export function FeedProductionOrdersPage({ create = false }: { create?: boolean 
     setLoadError("");
     try {
       const response = await apiFetch<ApiEnvelope<OrderRow[]>>("/feed-production/orders");
-      setRows(response.data ?? []);
+      const fresh = response.data ?? [];
+      setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh);
     } finally {
       setLoading(false);
     }
@@ -2174,7 +2176,8 @@ export function FeedQualityControlPage() {
   async function load() {
     try {
       const response = await apiFetch<ApiEnvelope<QcRow[]>>("/feed-production/quality-checks");
-      setRows(response.data ?? []);
+      const fresh = response.data ?? [];
+      setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh);
     } finally {
       setLoading(false);
     }
@@ -2334,7 +2337,8 @@ export function InternalFeedTransferPage() {
   async function load() {
     try {
       const response = await apiFetch<ApiEnvelope<TransferRow[]>>("/feed-production/transfers");
-      setRows(response.data ?? []);
+      const fresh = response.data ?? [];
+      setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh);
     } finally {
       setLoading(false);
     }
@@ -2538,7 +2542,8 @@ export function FeedPackagingRecordPage() {
   async function load() {
     try {
       const response = await apiFetch<ApiEnvelope<PackagingRow[]>>("/feed-production/packaging-records");
-      setRows(response.data ?? []);
+      const fresh = response.data ?? [];
+      setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh);
     } finally {
       setLoading(false);
     }

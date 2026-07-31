@@ -523,7 +523,7 @@ export function CustomersPage({ create = false }: { create?: boolean }) {
   async function load() {
     const p = new URLSearchParams();
     if (search) p.set("search", search);
-    apiFetch<ApiEnvelope<Customer[]>>(`/sales/customers?${p}`).then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
+    apiFetch<ApiEnvelope<Customer[]>>(`/sales/customers?${p}`).then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); }).catch(() => undefined).finally(() => setLoading(false));
   }
 
   useEffect(() => { void load(); }, [search]);
@@ -793,7 +793,7 @@ export function OrdersPage({ create = false }: { create?: boolean }) {
   async function load() {
     const p = new URLSearchParams();
     if (status) p.set("status", status);
-    apiFetch<ApiEnvelope<SalesOrder[]>>(`/sales/orders?${p}`).then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
+    apiFetch<ApiEnvelope<SalesOrder[]>>(`/sales/orders?${p}`).then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); }).catch(() => undefined).finally(() => setLoading(false));
   }
 
   useEffect(() => { void load(); }, [status]);
@@ -1012,7 +1012,7 @@ export function PaymentsPage() {
   const [loading, setLoading] = useState(!hasCached("/sales/payments"));
 
   async function load() {
-    apiFetch<ApiEnvelope<Payment[]>>("/sales/payments").then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
+    apiFetch<ApiEnvelope<Payment[]>>("/sales/payments").then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); }).catch(() => undefined).finally(() => setLoading(false));
   }
 
   useEffect(() => { void load(); }, []);
@@ -1126,7 +1126,7 @@ export function ReturnsPage() {
   const [loading, setLoading] = useState(!hasCached("/sales/returns"));
 
   async function load() {
-    apiFetch<ApiEnvelope<SalesReturn[]>>("/sales/returns").then((r) => setRows(r.data ?? [])).catch(() => undefined).finally(() => setLoading(false));
+    apiFetch<ApiEnvelope<SalesReturn[]>>("/sales/returns").then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); }).catch(() => undefined).finally(() => setLoading(false));
   }
 
   useEffect(() => { void load(); }, []);
@@ -1289,7 +1289,7 @@ export function SalesListPage({ title, endpoint, subtitle }: { title: string; en
   function load() {
     setLoadError("");
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>(endpoint)
-      .then((r) => setRows(r.data ?? []))
+      .then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
       .finally(() => setLoading(false));
   }

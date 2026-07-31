@@ -399,7 +399,7 @@ export function QualityTemplatesPage() {
     setLoadError("");
     const p = new URLSearchParams();
     if (checkType) p.set("checkType", checkType);
-    apiFetch<ApiEnvelope<Template[]>>(`/quality/templates?${p}`).then((r) => setRows(r.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
+    apiFetch<ApiEnvelope<Template[]>>(`/quality/templates?${p}`).then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); }).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
   }
 
   useEffect(() => { load(); }, [checkType]);
@@ -563,7 +563,7 @@ export function QualityChecksPage({ filterType }: { filterType?: string }) {
     if (status) p.set("status", status);
     if (decision) p.set("decision", decision);
     apiFetch<ApiEnvelope<{ total: number; items: QualityCheck[] }>>(`/quality/checks?${p}`)
-      .then((r) => setData(r.data ?? { total: 0, items: [] })).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
+      .then((r) => { const fresh = r.data ?? { total: 0, items: [] }; setData((prev) => fresh.items.length === 0 && prev.items.length > 0 ? prev : fresh); }).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
   }
 
   useEffect(() => { load(); }, [checkType, status, decision]);
@@ -1265,7 +1265,7 @@ export function LabReportsPage() {
 
   function load() {
     setLoadError("");
-    apiFetch<ApiEnvelope<LabReport[]>>("/quality/lab-reports").then((r) => setRows(r.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
+    apiFetch<ApiEnvelope<LabReport[]>>("/quality/lab-reports").then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); }).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
   }
 
   useEffect(() => {
@@ -1373,7 +1373,7 @@ export function CorrectiveActionsPage() {
     setLoadError("");
     const p = new URLSearchParams();
     if (status) p.set("status", status);
-    apiFetch<ApiEnvelope<CorrectiveAction[]>>(`/quality/corrective-actions?${p}`).then((r) => setRows(r.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
+    apiFetch<ApiEnvelope<CorrectiveAction[]>>(`/quality/corrective-actions?${p}`).then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); }).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
   }
 
   useEffect(() => { load(); }, [status]);

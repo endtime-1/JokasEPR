@@ -368,7 +368,7 @@ export function EmployeeListPage() {
     const params = new URLSearchParams();
     if (search) params.set("search", search);
     if (status) params.set("status", status);
-    apiFetch<ApiEnvelope<Employee[]>>(`/hr/employees?${params}`).then((r) => setRows(r.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
+    apiFetch<ApiEnvelope<Employee[]>>(`/hr/employees?${params}`).then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); }).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
   }
 
   useEffect(() => { load(); }, [search, status]);
@@ -1085,7 +1085,7 @@ export function AttendancePage() {
 
   function load() {
     setLoadError("");
-    apiFetch<ApiEnvelope<AttendanceRow[]>>(`/hr/attendance?dateFrom=${dateFilter}&dateTo=${dateFilter}`).then((r) => setRows(r.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
+    apiFetch<ApiEnvelope<AttendanceRow[]>>(`/hr/attendance?dateFrom=${dateFilter}&dateTo=${dateFilter}`).then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); }).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
   }
 
   useEffect(() => { load(); }, [dateFilter]);
@@ -1208,7 +1208,7 @@ export function ShiftSchedulePage() {
 
   function load() {
     setLoadError("");
-    apiFetch<ApiEnvelope<Shift[]>>("/hr/shifts").then((r) => setRows(r.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
+    apiFetch<ApiEnvelope<Shift[]>>("/hr/shifts").then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); }).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
   }
 
   useEffect(() => { load(); }, []);
@@ -1306,7 +1306,7 @@ export function TaskBoardPage() {
     const params = new URLSearchParams();
     if (status) params.set("status", status);
     if (priority) params.set("priority", priority);
-    apiFetch<ApiEnvelope<Task[]>>(`/hr/tasks?${params}`).then((r) => setRows(r.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load."));
+    apiFetch<ApiEnvelope<Task[]>>(`/hr/tasks?${params}`).then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); }).catch((err: any) => setLoadError(err?.message ?? "Failed to load."));
   }
 
   useEffect(() => { load(); }, [status, priority]);
@@ -1498,7 +1498,7 @@ export function PayrollPage() {
 
   function load() {
     setLoadError("");
-    apiFetch<ApiEnvelope<PayrollRow[]>>("/hr/payroll").then((r) => setRows(r.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
+    apiFetch<ApiEnvelope<PayrollRow[]>>("/hr/payroll").then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); }).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
   }
 
   useEffect(() => { load(); }, []);
@@ -1650,7 +1650,7 @@ export function TrainingPage() {
 
   function load() {
     setLoadError("");
-    apiFetch<ApiEnvelope<TrainingRow[]>>("/hr/training").then((r) => setRows(r.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
+    apiFetch<ApiEnvelope<TrainingRow[]>>("/hr/training").then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); }).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
   }
 
   useEffect(() => { load(); }, []);
@@ -1748,7 +1748,7 @@ export function PerformancePage() {
 
   function load() {
     setLoadError("");
-    apiFetch<ApiEnvelope<PerfRow[]>>("/hr/performance").then((r) => setRows(r.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
+    apiFetch<ApiEnvelope<PerfRow[]>>("/hr/performance").then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); }).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
   }
 
   useEffect(() => { load(); }, []);
@@ -2000,7 +2000,7 @@ export function LeaveRequestsPage() {
     setLoadError("");
     const params = new URLSearchParams();
     if (statusFilter) params.set("status", statusFilter);
-    apiFetch<ApiEnvelope<LeaveRow[]>>(`/hr/leave-requests?${params}`).then((r) => setRows(r.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
+    apiFetch<ApiEnvelope<LeaveRow[]>>(`/hr/leave-requests?${params}`).then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); }).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
   }
 
   useEffect(() => { load(); }, [statusFilter]);
@@ -2161,7 +2161,7 @@ export function EmployeeRolesPage() {
 
   function load() {
     setLoadError("");
-    apiFetch<ApiEnvelope<EmployeeRole[]>>("/hr/employee-roles").then((r) => setRows(r.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
+    apiFetch<ApiEnvelope<EmployeeRole[]>>("/hr/employee-roles").then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); }).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
   }
 
   useEffect(() => { load(); }, []);

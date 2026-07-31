@@ -197,7 +197,7 @@ export function MarketTargetListPage() {
   useEffect(() => {
     setLoadError("");
     apiFetch<ApiEnvelope<TargetRow[]>>("/market-planning/targets")
-      .then((res) => setRows(res.data ?? []))
+      .then((res) => { const fresh = res.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
       .finally(() => setLoading(false));
   }, []);
@@ -413,7 +413,8 @@ export function ProcurementRecommendationPage({ convert = false }: { convert?: b
   async function load() {
     setLoadError("");
     const res = await apiFetch<ApiEnvelope<RecommendationRow[]>>("/market-planning/recommendations");
-    setRows(res.data ?? []);
+    const fresh = res.data ?? [];
+    setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh);
   }
   useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false)); }, []);
   async function generate(event: FormEvent<HTMLFormElement>) {
