@@ -671,6 +671,7 @@ export default function DashboardPage() {
   const [refreshKey, setRefreshKey] = useState(0);
   const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [, forceRefreshLabel] = useState(0);
+  const retryCountRef = useRef(0);
 
   // Redirect non-executive users to their primary module
   useEffect(() => {
@@ -717,19 +718,64 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    retryCountRef.current = 0;
     setDashboardLoading(true);
-    apiFetch<ApiEnvelope<DashboardResponse>>(`/dashboard/executive?${buildQuery(filters)}`)
-      .then((res) => { setDashboard(res.data); setLastRefreshed(new Date()); })
-      .catch(() => setDashboard(null))
-      .finally(() => setDashboardLoading(false));
+    function load() {
+      apiFetch<ApiEnvelope<DashboardResponse>>(`/dashboard/executive?${buildQuery(filters)}`)
+        .then((res) => {
+          if (cancelled) return;
+          const data = res.data ?? null;
+          // Retry on genuinely empty response — may be a cold-start artefact
+          const isEmpty = !data || (
+            (data.summary?.length ?? 0) === 0 &&
+            (data.alerts?.length ?? 0) === 0 &&
+            Object.keys(data.charts ?? {}).length === 0
+          );
+          if (isEmpty && retryCountRef.current < 3) {
+            retryCountRef.current++;
+            setTimeout(() => { if (!cancelled) load(); }, 4000);
+            return;
+          }
+          setDashboard(data);
+          setLastRefreshed(new Date());
+          setDashboardLoading(false);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          if (retryCountRef.current < 3) {
+            retryCountRef.current++;
+            setTimeout(() => { if (!cancelled) load(); }, 4000);
+            return;
+          }
+          setDashboard(null);
+          setDashboardLoading(false);
+        });
+    }
+    load();
+    return () => { cancelled = true; };
   }, [filters, refreshKey]);
 
   useEffect(() => {
+    let cancelled = false;
+    let retries = 0;
     setFarmOpsLoading(true);
-    apiFetch<FarmOperationsResponse>("/dashboard/farm-operations-today")
-      .then((res) => setFarmOps(res.data))
-      .catch((err) => { console.error("farm-ops:", err); setFarmOps(null); })
-      .finally(() => setFarmOpsLoading(false));
+    function load() {
+      apiFetch<FarmOperationsResponse>("/dashboard/farm-operations-today")
+        .then((res) => {
+          if (cancelled) return;
+          setFarmOps(res.data ?? null);
+          setFarmOpsLoading(false);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          if (retries < 3) { retries++; setTimeout(() => { if (!cancelled) load(); }, 4000); return; }
+          setFarmOps(null);
+          setFarmOpsLoading(false);
+        });
+    }
+    load();
+    return () => { cancelled = true; };
   }, []);
 
   // Tick "X min ago" label every 30s
