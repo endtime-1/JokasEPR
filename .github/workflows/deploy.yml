@@ -210,8 +210,15 @@ jobs:
               _NBIN=$(ls "$HOME"/.nvm/versions/node/*/bin/node 2>/dev/null | sort -V | tail -1)
               [ -n "$_NBIN" ] && export PATH="$(dirname "$_NBIN"):$PATH"
             fi
-            # Also try common system paths
-            for p in /usr/local/bin /usr/bin; do [ -x "$p/node" ] && export PATH="$p:$PATH" && break; done
+            # Also try common system paths and Hostinger/Plesk paths
+            for p in /usr/local/bin /usr/bin /usr/local/sbin /opt/plesk/node18/bin /opt/plesk/node20/bin; do
+              [ -x "$p/node" ] && export PATH="$p:$PATH" && break
+            done
+            # Last resort: find any node binary on the filesystem
+            if ! command -v node >/dev/null 2>&1; then
+              _FOUND=$(find /opt /usr/local /usr/bin -maxdepth 5 -name "node" -type f -executable 2>/dev/null | head -1)
+              [ -n "$_FOUND" ] && export PATH="$(dirname "$_FOUND"):$PATH"
+            fi
             APP_DIR=~/domains/jokasfarms.com/nodejs
 
             echo "==> Backing up current deploy for rollback..."
@@ -264,9 +271,15 @@ jobs:
             mkdir -p $APP_DIR/tmp
             touch $APP_DIR/tmp/restart.txt
             echo "Passenger restart signalled."
-            sleep 20
             DOMAIN="https://jokasfarms.com"
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "$DOMAIN/__status" || echo "000")
+            STATUS="000"
+            echo "==> Waiting for app to come online (up to 120s)..."
+            for i in $(seq 1 24); do
+              sleep 5
+              STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$DOMAIN/__status" 2>/dev/null || echo "000")
+              echo "  try $i/24: HTTP $STATUS"
+              [ "$STATUS" = "200" ] && break
+            done
             if [ "$STATUS" = "200" ]; then
               echo "Smoke test PASSED — app is live (HTTP $STATUS)"
             else
