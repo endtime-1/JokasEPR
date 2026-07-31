@@ -233,6 +233,19 @@ jobs:
             NODE_BIN=$(command -v node 2>/dev/null || true)
             echo "node: ${NODE_BIN:-NOT FOUND}  prisma: $([ -x "$PRISMA_BIN" ] && echo found || echo NOT FOUND)"
             if [ -n "$NODE_BIN" ] && [ -x "$PRISMA_BIN" ]; then
+              # The original 20260701000000_leave_request_system migration used PostgreSQL
+              # DDL (CREATE TYPE, UUID, gen_random_uuid()) which MySQL rejected. Prisma
+              # marks it as FAILED in _prisma_migrations, which blocks every subsequent
+              # migration from running. Resolve it as --applied so migrate deploy can
+              # proceed to run migrations 10-16. The actual MySQL-compatible table is
+              # created by 20260730000001_leave_request_mysql_fix (IF NOT EXISTS).
+              echo "Resolving blocked migration..."
+              "$NODE_BIN" "$PRISMA_BIN" migrate resolve \
+                --applied "20260701000000_leave_request_system" \
+                --schema "$APP_DIR/prisma/schema.prisma" 2>&1 \
+                && echo "Blocked migration resolved." \
+                || echo "migrate resolve skipped (already resolved or not in failed state)."
+
               if "$NODE_BIN" "$PRISMA_BIN" migrate deploy --schema "$APP_DIR/prisma/schema.prisma"; then
                 echo "Migrations complete."
               else
