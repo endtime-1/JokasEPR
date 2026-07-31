@@ -45,6 +45,28 @@ async function compressImage(file: File, maxDim = 1024, quality = 0.85): Promise
   });
 }
 
+// Renders an employee avatar with automatic initials fallback when the photo
+// URL returns an error (404, network failure, etc.). Resets to photo when url changes.
+function EmployeeAvatar({ url, name, size, text = "text-sm", ring = "" }: {
+  url?: string | null;
+  name: string;
+  size: string;
+  text?: string;
+  ring?: string;
+}) {
+  const [broken, setBroken] = useState(false);
+  const src = normalizePhotoUrl(url);
+  useEffect(() => { setBroken(false); }, [url]);
+  if (src && !broken) {
+    return <img src={src} alt="" className={`${size} shrink-0 rounded-full object-cover ${ring}`.trim()} onError={() => setBroken(true)} />;
+  }
+  return (
+    <span className={`${size} grid shrink-0 place-items-center rounded-full bg-brand/10 ${text} font-bold text-brand`}>
+      {name.charAt(0).toUpperCase()}
+    </span>
+  );
+}
+
 function money(v: unknown) {
   return `GHS ${Number(v ?? 0).toLocaleString("en-GH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
@@ -287,13 +309,7 @@ export function HRDashboardPage() {
               ))}
               {data?.recentEmployees.map((emp) => (
                 <li key={emp.id} className="flex items-center gap-3 px-5 py-3.5">
-                  {emp.photoUrl ? (
-                    <img src={normalizePhotoUrl(emp.photoUrl)} alt="" className="h-9 w-9 shrink-0 rounded-full object-cover" />
-                  ) : (
-                    <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand/10 text-sm font-bold text-brand">
-                      {emp.fullName.charAt(0).toUpperCase()}
-                    </div>
-                  )}
+                  <EmployeeAvatar url={emp.photoUrl} name={emp.fullName} size="h-9 w-9" text="text-sm" />
                   <div className="min-w-0 flex-1">
                     <Link href={`/hr/employees/${emp.id}`} className="text-sm font-medium text-slate-800 hover:text-brand hover:underline">
                       {emp.fullName}
@@ -411,11 +427,7 @@ export function EmployeeListPage() {
             { key: "code", label: "Code" },
             { key: "fullName", label: "Name", render: (r) => (
               <Link href={`/hr/employees/${r.id}`} className="flex items-center gap-2 hover:text-brand">
-                {r.photoUrl ? (
-                  <img src={normalizePhotoUrl(r.photoUrl as string)} alt="" className="h-7 w-7 rounded-full object-cover shrink-0" />
-                ) : (
-                  <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-brand/10 text-xs font-bold text-brand">{(r.fullName as string).charAt(0).toUpperCase()}</span>
-                )}
+                <EmployeeAvatar url={r.photoUrl as string} name={r.fullName as string} size="h-7 w-7" text="text-xs" />
                 <span className="font-medium text-brand">{r.fullName as string}</span>
               </Link>
             ) },
@@ -824,13 +836,7 @@ export function EmployeeDetailPage({ id }: { id: string }) {
         {/* Profile strip */}
         <div className="flex flex-wrap items-center gap-5 rounded-xl border border-line bg-white px-5 py-4 shadow-sm">
           <div className="relative shrink-0">
-            {data.photoUrl ? (
-              <img src={normalizePhotoUrl(data.photoUrl)} alt={data.fullName} className="h-20 w-20 rounded-full object-cover ring-2 ring-brand/20 ring-offset-1" />
-            ) : (
-              <div className="grid h-20 w-20 place-items-center rounded-full bg-brand/10 text-2xl font-bold text-brand">
-                {data.fullName.charAt(0).toUpperCase()}
-              </div>
-            )}
+            <EmployeeAvatar url={data.photoUrl} name={data.fullName} size="h-20 w-20" text="text-2xl" ring="ring-2 ring-brand/20 ring-offset-1" />
             <label className={`absolute -bottom-1 -right-1 grid h-7 w-7 cursor-pointer place-items-center rounded-full border-2 border-white shadow-sm transition ${photoUploading ? "bg-ink/20" : "bg-brand hover:bg-brandDark"}`} title="Change photo">
               <Camera className="h-3.5 w-3.5 text-white" aria-hidden />
               <input type="file" accept="image/*" className="sr-only" disabled={photoUploading} onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadPhoto(f); e.target.value = ""; }} />
