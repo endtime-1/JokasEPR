@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { AppShell } from "../../../components/app-shell";
-import { ApiEnvelope, apiFetch } from "../../../lib/api";
+import { ApiEnvelope, apiFetch, getCachedFirst } from "../../../lib/api";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -133,8 +133,8 @@ function StatCard({
 
 export default function ProductCatalogPage() {
   const [data, setData] = useState<CatalogData | null>(null);
-  const [uoms, setUoms] = useState<Option[]>([]);
-  const [categories, setCategories] = useState<Option[]>([]);
+  const [uoms, setUoms] = useState<Option[]>(() => getCachedFirst<ApiEnvelope<{ unitsOfMeasure: Option[]; productCategories: Option[] }>>("/settings/master-data")?.data?.unitsOfMeasure ?? []);
+  const [categories, setCategories] = useState<Option[]>(() => getCachedFirst<ApiEnvelope<{ unitsOfMeasure: Option[]; productCategories: Option[] }>>("/settings/master-data")?.data?.productCategories ?? []);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -183,8 +183,10 @@ export default function ProductCatalogPage() {
   const loadOptions = useCallback(async () => {
     try {
       const res = await apiFetch<ApiEnvelope<{ unitsOfMeasure: Option[]; productCategories: Option[] }>>("/settings/master-data");
-      setUoms(res.data?.unitsOfMeasure ?? []);
-      setCategories(res.data?.productCategories ?? []);
+      const freshUoms = res.data?.unitsOfMeasure ?? [];
+      const freshCats = res.data?.productCategories ?? [];
+      setUoms((prev) => freshUoms.length === 0 && prev.length > 0 ? prev : freshUoms);
+      setCategories((prev) => freshCats.length === 0 && prev.length > 0 ? prev : freshCats);
     } catch {
       // non-fatal
     }

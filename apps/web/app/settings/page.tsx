@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Bot, Building2, ChevronRight, Egg, HardDrive, Package, Pencil, Plus, Save, Settings, ShieldCheck, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { AppShell } from "../../components/app-shell";
-import { ApiEnvelope, apiFetch } from "../../lib/api";
+import { ApiEnvelope, apiFetch, getCachedFirst } from "../../lib/api";
 
 type Row = Record<string, any> & { id: string; code?: string; name?: string };
 type MasterData = Record<string, Row[]>;
@@ -98,7 +98,7 @@ function SettingCard({ title, icon: Icon, children }: { title: string; icon: any
 
 export default function SettingsPage() {
   const [company, setCompany] = useState<any>({});
-  const [master, setMaster] = useState<MasterData>({});
+  const [master, setMaster] = useState<MasterData>(() => getCachedFirst<ApiEnvelope<MasterData>>("/settings/master-data")?.data ?? {});
   const [options, setOptions] = useState<Record<string, Option[]>>({});
   const [settings, setSettings] = useState<SettingsMap>(DEFAULT_SETTINGS);
   const [notification, setNotification] = useState<any>({});
