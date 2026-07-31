@@ -39,7 +39,7 @@ export default function IngredientsPage() {
     setError(null);
     try {
       const res = await apiFetch<ApiEnvelope<Ingredient[]>>("/feed-production/ingredients");
-      setItems(res.data);
+      setItems(res.data ?? []);
     } catch (e: unknown) {
       setError((e as Error)?.message ?? "Failed to load ingredients.");
     } finally {
@@ -50,7 +50,7 @@ export default function IngredientsPage() {
   const loadUoms = useCallback(async () => {
     try {
       const res = await apiFetch<ApiEnvelope<{ unitsOfMeasure: UOM[] }>>("/settings/master-data");
-      setUoms(res.data.unitsOfMeasure ?? []);
+      setUoms(res.data?.unitsOfMeasure ?? []);
     } catch {
       // non-fatal
     }

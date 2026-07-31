@@ -45,7 +45,7 @@ export default function NotificationPreferencesPage() {
 
   useEffect(() => {
     apiFetch<{ data: Preference[] }>("/notifications/preferences")
-      .then((res) => setPrefs(res.data))
+      .then((res) => setPrefs(res.data ?? []))
       .finally(() => setLoading(false));
   }, []);
 

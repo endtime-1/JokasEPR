@@ -183,8 +183,8 @@ export default function ProductCatalogPage() {
   const loadOptions = useCallback(async () => {
     try {
       const res = await apiFetch<ApiEnvelope<{ unitsOfMeasure: Option[]; productCategories: Option[] }>>("/settings/master-data");
-      setUoms(res.data.unitsOfMeasure ?? []);
-      setCategories(res.data.productCategories ?? []);
+      setUoms(res.data?.unitsOfMeasure ?? []);
+      setCategories(res.data?.productCategories ?? []);
     } catch {
       // non-fatal
     }

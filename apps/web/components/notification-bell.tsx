@@ -50,7 +50,7 @@ export function NotificationBell() {
   const fetchCount = useCallback(async () => {
     try {
       const res = await apiFetch<ApiEnvelope<{ count: number }>>("/notifications/unread-count");
-      setCount(res.data.count);
+      setCount(res.data?.count ?? 0);
     } catch {
       // silently ignore if not authenticated yet
     }

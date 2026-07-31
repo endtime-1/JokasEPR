@@ -309,7 +309,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     apiFetch<ApiEnvelope<{ count: number }>>("/alerts/unread-count")
-      .then((res) => setUnreadAlerts(res.data.count))
+      .then((res) => setUnreadAlerts(res.data?.count ?? 0))
       .catch(() => undefined);
   }, []);
 

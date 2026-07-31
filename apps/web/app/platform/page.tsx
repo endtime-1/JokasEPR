@@ -61,10 +61,10 @@ export default function PlatformPage() {
       apiFetch<ApiEnvelope<WarehouseRow[]>>("/platform/warehouses"),
       apiFetch<ApiEnvelope<ProductionSiteRow[]>>("/platform/production-sites"),
     ]);
-    setBranches(branchRes.data);
-    setFarms(farmRes.data);
-    setWarehouses(warehouseRes.data);
-    setProductionSites(siteRes.data);
+    setBranches(branchRes.data ?? []);
+    setFarms(farmRes.data ?? []);
+    setWarehouses(warehouseRes.data ?? []);
+    setProductionSites(siteRes.data ?? []);
   }
 
   useEffect(() => {

@@ -87,8 +87,8 @@ export default function NotificationsPage() {
       const params = new URLSearchParams({ limit: String(limit), offset: String(page * limit) });
       if (statusFilter) params.set("status", statusFilter);
       const res = await apiFetch<ApiEnvelope<{ data: Notification[]; total: number }>>(`/notifications?${params}`);
-      setItems(res.data.data);
-      setTotal(res.data.total);
+      setItems(res.data?.data ?? []);
+      setTotal(res.data?.total ?? 0);
     } finally {
       setLoading(false);
     }

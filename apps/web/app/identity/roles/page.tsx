@@ -17,7 +17,7 @@ export default function RolesPage() {
 
   useEffect(() => {
     apiFetch<ApiEnvelope<Role[]>>("/identity/roles")
-      .then((response) => setRoles(response.data))
+      .then((response) => setRoles(response.data ?? []))
       .catch(() => undefined);
   }, []);
 

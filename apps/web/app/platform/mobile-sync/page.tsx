@@ -86,8 +86,8 @@ export default function MobileSyncPage() {
         apiFetch<ApiEnvelope<{ data: MobileSyncRecord[]; total: number }>>(`/sync/records?${params}`),
         apiFetch<ApiEnvelope<SyncStats>>("/sync/stats")
       ]);
-      setRecords(recordsRes.data.data);
-      setStats(statsRes.data);
+      setRecords(recordsRes.data?.data ?? []);
+      setStats(statsRes.data ?? null);
     } catch {
       //
     } finally {

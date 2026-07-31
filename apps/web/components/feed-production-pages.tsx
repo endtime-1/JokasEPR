@@ -1553,7 +1553,7 @@ export function FeedBatchCreatePage() {
 
   useEffect(() => {
     apiFetch<ApiEnvelope<ApprovedOrder[]>>("/feed-production/orders?status=APPROVED")
-      .then((res) => setApprovedOrders(res.data))
+      .then((res) => setApprovedOrders(res.data ?? []))
       .catch(() => undefined);
   }, []);
 
