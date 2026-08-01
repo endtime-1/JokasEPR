@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
@@ -7,6 +7,7 @@ import { PageHeader } from "../../components/PageHeader";
 import { SelectField, type SelectOption } from "../../components/SelectField";
 import { useToast } from "../../components/Toast";
 import { createFeedFormula, fetchFeedProducts } from "../../api/endpoints";
+import { useLookup } from "../../hooks/useLookup";
 import { colors, font, radius, spacing } from "../../constants/theme";
 
 const FEED_TYPE_OPTIONS: SelectOption[] = [
@@ -22,8 +23,16 @@ export function FeedFormulaCreateScreen() {
   const navigation = useNavigation<any>();
   const toast = useToast();
 
-  const [products,    setProducts]    = useState<{ id: string; name: string; sku: string }[]>([]);
-  const [loadingOpts, setLoadingOpts] = useState(true);
+  const { data: rawFeedProducts, loading: loadingOpts } = useLookup("feedProducts", async () => {
+    const res = await fetchFeedProducts();
+    return (res.data as any[]) ?? [];
+  });
+
+  const productOptions: SelectOption[] = useMemo(
+    () => (rawFeedProducts ?? []).map((p: any) => ({ label: `${p.name} (${p.sku})`, value: p.id })),
+    [rawFeedProducts]
+  );
+
   const [submitting,  setSubmitting]  = useState(false);
 
   const [name,               setName]               = useState("");
@@ -31,22 +40,6 @@ export function FeedFormulaCreateScreen() {
   const [feedType,           setFeedType]           = useState("");
   const [targetBatchKg,      setTargetBatchKg]      = useState("");
   const [finishedProductId,  setFinishedProductId]  = useState("");
-
-  const load = useCallback(async () => {
-    try {
-      const res = await fetchFeedProducts();
-      setProducts((res.data as any) ?? []);
-    } finally {
-      setLoadingOpts(false);
-    }
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
-
-  const productOptions: SelectOption[] = useMemo(
-    () => products.map((p) => ({ label: `${p.name} (${p.sku})`, value: p.id })),
-    [products]
-  );
 
   async function handleSubmit() {
     if (!name.trim())    { toast.show({ type: "warning", message: "Enter a formula name." }); return; }

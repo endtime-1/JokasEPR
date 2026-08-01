@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
@@ -6,6 +6,7 @@ import { Icon } from "../../components/Icon";
 import { PageHeader } from "../../components/PageHeader";
 import { useToast } from "../../components/Toast";
 import { fetchProducts, submitMarketTarget } from "../../api/endpoints";
+import { useLookup } from "../../hooks/useLookup";
 import { colors, font, radius, shadow, spacing } from "../../constants/theme";
 
 type TargetLine = { productId: string; productName: string; targetQuantityKg: string };
@@ -16,25 +17,21 @@ export function MarketTargetCreateScreen() {
   const navigation = useNavigation<any>();
   const toast = useToast();
 
-  const [products,   setProducts]   = useState<{ id: string; name: string; sku: string }[]>([]);
-  const [loading,    setLoading]    = useState(true);
+  const { data: rawProducts, loading } = useLookup("products", async () => {
+    const res = await fetchProducts();
+    return (res.data as any[]) ?? [];
+  });
+  const products: { id: string; name: string; sku: string }[] = useMemo(
+    () => rawProducts ?? [],
+    [rawProducts]
+  );
+
   const [submitting, setSubmitting] = useState(false);
 
   const [periodStart, setPeriodStart] = useState("");
   const [periodEnd,   setPeriodEnd]   = useState("");
   const [notes,       setNotes]       = useState("");
   const [items,       setItems]       = useState<TargetLine[]>([emptyLine()]);
-
-  const load = useCallback(async () => {
-    try {
-      const res = await fetchProducts();
-      setProducts((res.data as any) ?? []);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
 
   function updateItem(idx: number, field: keyof TargetLine, val: string) {
     setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, [field]: val } : it)));

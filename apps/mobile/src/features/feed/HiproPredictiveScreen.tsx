@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { fetchHiproPredictive, fetchWarehouses, simulateHiproPredictive } from "../../api/endpoints";
+import { useLookup } from "../../hooks/useLookup";
 import type { HiproPredictiveFormula, HiproPredictiveIngredientView, SimulatePredictiveResult } from "../../api/endpoints";
 import { colors, font, radius, shadow, spacing } from "../../constants/theme";
 
@@ -9,10 +10,15 @@ type Mode = "stock" | "plan";
 type StockSubView = "formulas" | "ingredients";
 
 export function HiproPredictiveScreen() {
+  const { data: rawWarehouses } = useLookup("warehouses", async () => {
+    const res = await fetchWarehouses();
+    return res.data ?? [];
+  });
+  const warehouses: { id: string; name: string }[] = useMemo(() => rawWarehouses ?? [], [rawWarehouses]);
+
   const [mode, setMode] = useState<Mode>("stock");
   const [stockSubView, setStockSubView] = useState<StockSubView>("formulas");
   const [warehouseId, setWarehouseId] = useState<string | undefined>(undefined);
-  const [warehouses, setWarehouses] = useState<{ id: string; name: string }[]>([]);
   const [formulas, setFormulas] = useState<HiproPredictiveFormula[]>([]);
   const [ingredientView, setIngredientView] = useState<HiproPredictiveIngredientView[]>([]);
   const [asOf, setAsOf] = useState<string | null>(null);
@@ -30,14 +36,10 @@ export function HiproPredictiveScreen() {
     if (refresh) setRefreshing(true); else setLoading(true);
     setError(null);
     try {
-      const [stockRes, whRes] = await Promise.all([
-        fetchHiproPredictive(warehouseId),
-        fetchWarehouses()
-      ]);
+      const stockRes = await fetchHiproPredictive(warehouseId);
       setFormulas(stockRes.data.formulas);
       setIngredientView(stockRes.data.ingredientView);
       setAsOf(stockRes.data.asOf);
-      setWarehouses(whRes.data);
     } catch {
       setError("Failed to load predictive data. Check your connection.");
     } finally {

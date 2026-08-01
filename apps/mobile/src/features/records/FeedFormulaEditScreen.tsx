@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
@@ -7,6 +8,7 @@ import { PageHeader } from "../../components/PageHeader";
 import { SelectField, type SelectOption } from "../../components/SelectField";
 import { useToast } from "../../components/Toast";
 import { fetchFeedFormulaDetail, fetchFeedProducts, updateFeedFormula } from "../../api/endpoints";
+import { useLookup } from "../../hooks/useLookup";
 import type { RecordsScreenProps } from "../../navigation/types";
 import { colors, font, radius, spacing } from "../../constants/theme";
 
@@ -25,7 +27,16 @@ export function FeedFormulaEditScreen() {
   const toast      = useToast();
   const { formulaId } = route.params;
 
-  const [products,    setProducts]    = useState<{ id: string; name: string; sku: string }[]>([]);
+  const { data: rawFeedProducts } = useLookup("feedProducts", async () => {
+    const res = await fetchFeedProducts();
+    return (res.data as any[]) ?? [];
+  });
+
+  const productOptions: SelectOption[] = useMemo(
+    () => (rawFeedProducts ?? []).map((p: any) => ({ label: `${p.name} (${p.sku})`, value: p.id })),
+    [rawFeedProducts]
+  );
+
   const [loadingOpts, setLoadingOpts] = useState(true);
   const [submitting,  setSubmitting]  = useState(false);
 
@@ -37,28 +48,19 @@ export function FeedFormulaEditScreen() {
 
   const load = useCallback(async () => {
     try {
-      const [formulaRes, productsRes] = await Promise.all([
-        fetchFeedFormulaDetail(formulaId),
-        fetchFeedProducts(),
-      ]);
+      const formulaRes = await fetchFeedFormulaDetail(formulaId);
       const f = formulaRes.data as any;
       setName(f.name ?? "");
       setCode(f.code ?? "");
       setFeedType(f.feedType ?? "");
       setTargetBatchKg(String(f.targetBatchKg ?? ""));
       setFinishedProductId(f.finishedProduct?.id ?? "");
-      setProducts((productsRes.data as any) ?? []);
     } finally {
       setLoadingOpts(false);
     }
   }, [formulaId]);
 
   useEffect(() => { load(); }, [load]);
-
-  const productOptions: SelectOption[] = useMemo(
-    () => products.map((p) => ({ label: `${p.name} (${p.sku})`, value: p.id })),
-    [products]
-  );
 
   async function handleSubmit() {
     if (!name.trim())    { toast.show({ type: "warning", message: "Enter a formula name." }); return; }

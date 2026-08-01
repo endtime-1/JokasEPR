@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -18,6 +18,7 @@ import { Icon } from "../../components/Icon";
 import { PageHeader } from "../../components/PageHeader";
 import { colors, font, radius, shadow, spacing } from "../../constants/theme";
 import { fetchEmployees, submitCreateTask, type EmployeeItem } from "../../api/endpoints";
+import { useLookup } from "../../hooks/useLookup";
 
 const PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"] as const;
 type Priority = (typeof PRIORITIES)[number];
@@ -32,29 +33,20 @@ const PRIORITY_COLORS: Record<Priority, string> = {
 export function TaskAssignScreen() {
   const navigation = useNavigation<any>();
 
+  const { data: rawEmployees, loading: loadingEmp } = useLookup("employees", async () => {
+    const res = await fetchEmployees();
+    return (res.data as EmployeeItem[]) ?? [];
+  });
+  const employees: EmployeeItem[] = rawEmployees ?? [];
+
   const [title, setTitle]           = useState("");
   const [description, setDesc]      = useState("");
   const [notes, setNotes]           = useState("");
   const [priority, setPriority]     = useState<Priority>("MEDIUM");
   const [dueDate, setDueDate]       = useState("");
-  const [employees, setEmployees]   = useState<EmployeeItem[]>([]);
   const [selected, setSelected]     = useState<Set<string>>(new Set());
   const [empSearch, setEmpSearch]   = useState("");
-  const [loadingEmp, setLoadingEmp] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-
-  const loadEmployees = useCallback(async () => {
-    try {
-      const res = await fetchEmployees();
-      setEmployees((res.data as any) ?? []);
-    } catch {
-      //
-    } finally {
-      setLoadingEmp(false);
-    }
-  }, []);
-
-  useEffect(() => { loadEmployees(); }, [loadEmployees]);
 
   const filteredEmps = empSearch.trim()
     ? employees.filter((e) =>
