@@ -32,7 +32,7 @@ export class QuickBooksController {
   @Post("oauth/initiate")
   initiateOAuth(@CurrentUser() user: AuthenticatedUser) {
     const url = this.oauthSvc.getAuthorizationUrl(user.companyId, user.id);
-    return { authorizationUrl: url };
+    return { data: { authorizationUrl: url } };
   }
 
   @Get("oauth/callback")
@@ -57,7 +57,7 @@ export class QuickBooksController {
       select: { id: true, realmId: true, environment: true, connectedAt: true, disconnectedAt: true, isActive: true }
     });
     const stats = conn?.isActive ? await this.syncSvc.getStats(user.companyId) : null;
-    return { connection: conn, stats };
+    return { data: { connection: conn, stats } };
   }
 
   @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -65,7 +65,7 @@ export class QuickBooksController {
   @Delete("disconnect")
   async disconnect(@CurrentUser() user: AuthenticatedUser) {
     await this.oauthSvc.disconnect(user.companyId);
-    return { message: "Disconnected from QuickBooks" };
+    return { data: { message: "Disconnected from QuickBooks" } };
   }
 
   // ─── Sync ────────────────────────────────────────────────────────────────
@@ -76,7 +76,7 @@ export class QuickBooksController {
   async triggerFullSync(@CurrentUser() user: AuthenticatedUser) {
     // Fire and forget — full sync runs in background
     setImmediate(() => this.syncSvc.syncAll(user.companyId, user.id).catch(() => undefined));
-    return { message: "Full sync started" };
+    return { data: { message: "Full sync started" } };
   }
 
   @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -84,7 +84,7 @@ export class QuickBooksController {
   @Post("sync/:entity")
   async triggerEntitySync(@Param("entity") entity: string, @CurrentUser() user: AuthenticatedUser) {
     setImmediate(() => this.syncSvc.syncEntity(user.companyId, entity as SyncEntity, user.id).catch(() => undefined));
-    return { message: `${entity} sync started` };
+    return { data: { message: `${entity} sync started` } };
   }
 
   @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -92,7 +92,7 @@ export class QuickBooksController {
   @Post("sync/:entity/:id")
   async syncRecord(@Param("entity") entity: string, @Param("id") id: string, @CurrentUser() user: AuthenticatedUser) {
     await this.syncSvc.syncRecord(user.companyId, entity as SyncEntity, id);
-    return { message: "Record synced" };
+    return { data: { message: "Record synced" } };
   }
 
   // ─── Sync Logs ────────────────────────────────────────────────────────────
@@ -158,7 +158,7 @@ export class QuickBooksController {
   @Delete("mappings/:id")
   async deleteMapping(@Param("id") id: string, @CurrentUser() user: AuthenticatedUser) {
     await this.mappingSvc.deleteMapping(id, user.companyId);
-    return { message: "Mapping deleted" };
+    return { data: { message: "Mapping deleted" } };
   }
 
   // ─── Webhooks ────────────────────────────────────────────────────────────

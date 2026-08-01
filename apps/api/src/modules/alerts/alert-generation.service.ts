@@ -262,19 +262,28 @@ export class AlertGenerationService {
       select: { id: true, quantityOnHand: true, product: { select: { name: true } } },
       take: 60
     });
+    if (!items.length) return;
+
     const since30 = new Date(Date.now() - 30 * 86400000);
+    const itemIds = items.map((i) => i.id);
+
+    // Single bulk groupBy replaces N sequential aggregate calls
+    const usageRows = await this.prisma.stockMovement.groupBy({
+      by: ["inventoryItemId"],
+      where: {
+        companyId,
+        inventoryItemId: { in: itemIds },
+        createdAt: { gte: since30 },
+        movementType: { in: ["SALE_DISPATCH", "PRODUCTION_INPUT", "TRANSFER", "ADJUSTMENT_OUT", "WASTE"] }
+      },
+      _sum: { quantity: true },
+      _count: { id: true }
+    });
+    const usageByItem = new Map(usageRows.map((r) => [r.inventoryItemId, r]));
+
     for (const item of items) {
-      const usage = await this.prisma.stockMovement.aggregate({
-        where: {
-          companyId,
-          inventoryItemId: item.id,
-          createdAt: { gte: since30 },
-          movementType: { in: ["SALE_DISPATCH", "PRODUCTION_INPUT", "TRANSFER", "ADJUSTMENT_OUT", "WASTE"] }
-        },
-        _sum: { quantity: true },
-        _count: { id: true }
-      });
-      const dailyUsage = Number(usage._sum.quantity ?? 0) / 30;
+      const usage = usageByItem.get(item.id);
+      const dailyUsage = Number(usage?._sum.quantity ?? 0) / 30;
       if (dailyUsage <= 0) continue;
       const daysRemaining = Number(item.quantityOnHand) / dailyUsage;
       if (daysRemaining <= 21) {
@@ -287,7 +296,7 @@ export class AlertGenerationService {
           forecastDate: new Date(Date.now() + Math.max(1, Math.ceil(daysRemaining)) * 86400000),
           forecastValue: daysRemaining,
           unit: "days_to_stockout",
-          confidence: usage._count.id >= 4 ? 0.76 : 0.6,
+          confidence: (usage?._count.id ?? 0) >= 4 ? 0.76 : 0.6,
           metadata: { dailyUsage, quantityOnHand: Number(item.quantityOnHand) }
         });
       }
@@ -500,12 +509,22 @@ export class AlertGenerationService {
       }
     });
 
+    // Single bulk groupBy replaces N sequential aggregate calls
+    const batchTotals = await this.prisma.stockBatch.groupBy({
+      by: ["inventoryItemId", "warehouseId"],
+      where: {
+        companyId,
+        inventoryItemId: { in: reorderLevels.map((r) => r.inventoryItemId) },
+        deletedAt: null
+      },
+      _sum: { quantityRemaining: true }
+    });
+    const batchMap = new Map(
+      batchTotals.map((b) => [`${b.inventoryItemId}:${b.warehouseId}`, Number(b._sum.quantityRemaining ?? 0)])
+    );
+
     for (const rl of reorderLevels) {
-      const agg = await this.prisma.stockBatch.aggregate({
-        where: { companyId, inventoryItemId: rl.inventoryItemId, warehouseId: rl.warehouseId, deletedAt: null },
-        _sum: { quantityRemaining: true }
-      });
-      const onHand = Number(agg._sum.quantityRemaining ?? 0);
+      const onHand = batchMap.get(`${rl.inventoryItemId}:${rl.warehouseId}`) ?? 0;
       const minQty = Number(rl.minimumQuantity);
       if (onHand <= minQty) {
         const ratio = minQty > 0 ? onHand / minQty : 0;

@@ -87,7 +87,7 @@ export class AuthController {
     return { data: user };
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(LoginRateLimitGuard, JwtAuthGuard)
   @Post("change-password")
   changePassword(
     @CurrentUser() user: AuthenticatedUser,

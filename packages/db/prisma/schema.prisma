@@ -6699,7 +6699,7 @@ model LoginRateLimit {
   attempts  Int      @default(1)
   windowEnd DateTime
 
-  @@index([key])
+  @@index([key, windowEnd])
   @@index([windowEnd])
 }
 
