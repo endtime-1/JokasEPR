@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { api, type PublicProduct } from "@/lib/api";
 import { PRODUCT_IMAGES } from "@/lib/mock-data";
 import { useCart } from "@/lib/cart-context";
@@ -25,7 +25,7 @@ function ProductHeroImage({ product }: { product: PublicProduct }) {
     return (
       <div className={`flex h-full min-h-[360px] items-end justify-start rounded-3xl bg-gradient-to-br ${style.bg} p-8`}>
         <div>
-          <div className="text-xs font-bold uppercase tracking-widest text-white/60">Akoko Solutions</div>
+          <div className="text-xs font-bold uppercase tracking-widest text-white/60">Jokas Farms</div>
           <div className="mt-1 text-2xl font-extrabold uppercase leading-tight text-white">{product.name}</div>
           {product.unitLabel && <div className="mt-2 text-sm text-white/50">{product.unitLabel}</div>}
         </div>
@@ -62,11 +62,11 @@ const GUARANTEES = [
 
 export default function ProductDetailPage() {
   const { slug } = useParams<{ slug: string }>();
-  const router = useRouter();
   const { addItem, items } = useCart();
 
   const [product, setProduct] = useState<PublicProduct | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [qty, setQty] = useState(1);
   const [added, setAdded] = useState(false);
 
@@ -79,9 +79,9 @@ export default function ProductDetailPage() {
         setProduct(p);
         setQty(p.minOrderQty || 1);
       })
-      .catch(() => router.replace("/products"))
+      .catch(() => setLoadError(true))
       .finally(() => setLoading(false));
-  }, [slug, router]);
+  }, [slug]);
 
   if (loading)
     return (
@@ -93,6 +93,27 @@ export default function ProductDetailPage() {
               <div key={i} className="h-4 animate-pulse rounded-full bg-gray-100" style={{ width: w }} />
             ))}
           </div>
+        </div>
+      </div>
+    );
+
+  if (loadError)
+    return (
+      <div className="flex min-h-[60vh] flex-col items-center justify-center px-4 py-24 text-center">
+        <h2 className="text-xl font-bold text-ink">Product unavailable</h2>
+        <p className="mt-2 text-sm text-muted">
+          We couldn't load this product. It may have been removed or is temporarily unavailable.
+        </p>
+        <div className="mt-6 flex gap-3">
+          <button
+            onClick={() => { setLoadError(false); setLoading(true); api.products.get(slug).then((p) => { setProduct(p); setQty(p.minOrderQty || 1); }).catch(() => setLoadError(true)).finally(() => setLoading(false)); }}
+            className="rounded-xl bg-brand px-5 py-2.5 text-sm font-bold text-white shadow-brand hover:bg-brandDark"
+          >
+            Try again
+          </button>
+          <Link href="/products" className="rounded-xl border border-gray-200 px-5 py-2.5 text-sm font-semibold text-ink hover:border-brand hover:text-brand transition">
+            Browse all products
+          </Link>
         </div>
       </div>
     );

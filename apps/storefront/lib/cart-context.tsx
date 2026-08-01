@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useReducer, useCallback, ReactNode } from "react";
+import { createContext, useContext, useReducer, useCallback, useEffect, ReactNode } from "react";
 import type { PublicProduct } from "./api";
 
 export interface CartItem {
@@ -56,8 +56,28 @@ interface CartContextValue {
 
 const CartContext = createContext<CartContextValue | null>(null);
 
+const STORAGE_KEY = "jokas_cart";
+
+function loadCart(): CartState {
+  if (typeof window === "undefined") return { items: [] };
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as CartState) : { items: [] };
+  } catch {
+    return { items: [] };
+  }
+}
+
 export function CartProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(reducer, { items: [] });
+  const [state, dispatch] = useReducer(reducer, undefined, loadCart);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch {
+      // localStorage unavailable (private mode, quota exceeded)
+    }
+  }, [state]);
 
   const addItem = useCallback((product: PublicProduct, qty: number) =>
     dispatch({ type: "ADD", product, qty }), []);

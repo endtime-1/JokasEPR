@@ -165,7 +165,7 @@ export default function OrderStatusPage() {
             Continue Shopping <ArrowRight size={14} />
           </Link>
           <a
-            href="tel:+233XXXXXXXX"
+            href="tel:+233505455090"
             className="flex items-center justify-center gap-2 rounded-xl border border-gray-200 px-7 py-3 text-sm font-semibold text-ink hover:border-brand hover:text-brand transition"
           >
             <Phone size={14} /> Call Us About This Order
