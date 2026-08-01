@@ -3,7 +3,7 @@ import { Reflector } from "@nestjs/core";
 import { PermissionsGuard } from "./permissions.guard";
 import { REQUIRED_PERMISSIONS_KEY } from "../decorators/permissions.decorator";
 import { PERMISSIONS } from "@jokas/shared";
-import { makeAuthUser } from "../../../../test/factories";
+import { makeAuthUser } from "../../../test/factories";
 
 function makeContext(user: unknown, permissions: string[] | undefined): ExecutionContext {
   return {

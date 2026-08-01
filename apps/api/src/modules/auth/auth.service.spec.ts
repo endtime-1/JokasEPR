@@ -3,8 +3,8 @@ import { JwtService } from "@nestjs/jwt";
 import { ConfigService } from "@nestjs/config";
 import bcrypt from "bcryptjs";
 import { AuthService } from "./auth.service";
-import { TEST_ACCESS_SECRET, TEST_REFRESH_SECRET } from "../../../../test/setup/env";
-import { TEST_USER_ID, TEST_COMPANY_ID, makeDbUser, makeAuthUser } from "../../../../test/factories";
+import { TEST_ACCESS_SECRET, TEST_REFRESH_SECRET } from "../../../test/setup/env";
+import { TEST_USER_ID, TEST_COMPANY_ID, makeDbUser, makeAuthUser } from "../../../test/factories";
 
 jest.mock("bcryptjs", () => ({
   compare: jest.fn(),
@@ -23,6 +23,10 @@ const mockPrisma = {
     update: jest.fn(),
     updateMany: jest.fn(),
   },
+  loginRateLimit: {
+    deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+  },
+  $transaction: jest.fn().mockImplementation(async (cb: (tx: typeof mockPrisma) => Promise<unknown>) => cb(mockPrisma as never)),
 };
 
 const mockJwt = {
@@ -79,7 +83,7 @@ describe("AuthService", () => {
       mockPrisma.user.update.mockResolvedValue(dbUser);
       mockPrisma.user.findFirst.mockResolvedValue({
         ...dbUser,
-        roles: [{ role: { name: "Manager", permissions: [{ key: "poultry.read" }] } }],
+        roles: [{ role: { name: "Manager", level: "Manager", permissions: [{ key: "poultry.read" }] } }],
         branchAccesses: [],
         farmAccesses: [],
         warehouseAccesses: [],
@@ -112,9 +116,8 @@ describe("AuthService", () => {
         service.login({ email: "unknown@jokas.local", password: "Admin@12345!" }, CTX)
       ).rejects.toThrow(UnauthorizedException);
 
-      expect(mockAudit.write).toHaveBeenCalledWith(
-        expect.objectContaining({ action: "FAILED_LOGIN" })
-      );
+      // No companyId → logs to console instead of writing to audit
+      expect(mockAudit.write).not.toHaveBeenCalled();
     });
 
     it("throws UnauthorizedException when user is INACTIVE", async () => {
@@ -234,7 +237,7 @@ describe("AuthService", () => {
       mockPrisma.refreshToken.update.mockResolvedValue({});
       mockPrisma.user.findFirst.mockResolvedValue({
         ...makeDbUser(),
-        roles: [{ role: { name: "Manager", permissions: [{ key: "poultry.read" }] } }],
+        roles: [{ role: { name: "Manager", level: "Manager", permissions: [{ key: "poultry.read" }] } }],
         branchAccesses: [],
         farmAccesses: [],
         warehouseAccesses: [],
@@ -373,6 +376,7 @@ describe("AuthService", () => {
           {
             role: {
               name: "Farm Manager",
+              level: "Farm Manager",
               permissions: [{ key: "poultry.read" }, { key: "poultry.manage" }],
             },
           },
@@ -396,7 +400,7 @@ describe("AuthService", () => {
     it("sets hasGlobalAccess=true for Super Admin", async () => {
       mockPrisma.user.findFirst.mockResolvedValue({
         ...makeDbUser(),
-        roles: [{ role: { name: "Super Admin", permissions: [] } }],
+        roles: [{ role: { name: "Super Admin", level: "SUPER_ADMIN", permissions: [] } }],
         branchAccesses: [],
         farmAccesses: [],
         warehouseAccesses: [],
@@ -412,8 +416,8 @@ describe("AuthService", () => {
       mockPrisma.user.findFirst.mockResolvedValue({
         ...makeDbUser(),
         roles: [
-          { role: { name: "Role A", permissions: [{ key: "poultry.read" }, { key: "sales.read" }] } },
-          { role: { name: "Role B", permissions: [{ key: "poultry.read" }, { key: "finance.read" }] } },
+          { role: { name: "Role A", level: "ROLE_A", permissions: [{ key: "poultry.read" }, { key: "sales.read" }] } },
+          { role: { name: "Role B", level: "ROLE_B", permissions: [{ key: "poultry.read" }, { key: "finance.read" }] } },
         ],
         branchAccesses: [],
         farmAccesses: [],

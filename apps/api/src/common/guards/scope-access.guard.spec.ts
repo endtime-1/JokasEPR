@@ -2,7 +2,7 @@ import { ExecutionContext, ForbiddenException } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { ScopeAccessGuard } from "./scope-access.guard";
 import { REQUIRED_SCOPE_ACCESS_KEY, ScopeAccessRule } from "../decorators/scope-access.decorator";
-import { makeAuthUser, makeSuperAdmin, TEST_FARM_ID, TEST_WAREHOUSE_ID } from "../../../../test/factories";
+import { makeAuthUser, makeSuperAdmin, TEST_FARM_ID, TEST_WAREHOUSE_ID } from "../../../test/factories";
 import { AuthenticatedUser } from "@jokas/shared";
 
 function makeContext(user: AuthenticatedUser, body: Record<string, unknown>, rule: ScopeAccessRule | undefined): ExecutionContext {
