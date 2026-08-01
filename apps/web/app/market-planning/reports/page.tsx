@@ -1,5 +1,3 @@
-import { redirect } from "next/navigation";
+import { TargetVsActualReportPage } from "../../../components/market-planning-pages";
 
-export default function Page() {
-  redirect("/market-planning/reports/target-vs-actual");
-}
+export default TargetVsActualReportPage;
