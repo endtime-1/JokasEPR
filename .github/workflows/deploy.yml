@@ -211,7 +211,8 @@ jobs:
               [ -n "$_NBIN" ] && export PATH="$(dirname "$_NBIN"):$PATH"
             fi
             # Also try common system paths and Hostinger/Plesk paths
-            for p in /usr/local/bin /usr/bin /usr/local/sbin /opt/plesk/node18/bin /opt/plesk/node20/bin; do
+            # /opt/alt/alt-nodejs22 is the confirmed Hostinger Node22 path (from ps aux output)
+            for p in /opt/alt/alt-nodejs22/root/usr/bin /usr/local/bin /usr/bin /usr/local/sbin /opt/plesk/node18/bin /opt/plesk/node20/bin; do
               [ -x "$p/node" ] && export PATH="$p:$PATH" && break
             done
             # Last resort: find any node binary on the filesystem
@@ -242,7 +243,7 @@ jobs:
             # Use the Prisma CLI bundled with the already-deployed API rather than
             # downloading via npx (npx is not always in PATH in non-interactive SSH).
             PRISMA_BIN="$APP_DIR/apps/api/node_modules/.bin/prisma"
-            NODE_BIN=$(command -v node 2>/dev/null || true)
+            NODE_BIN=$(command -v node 2>/dev/null || echo "/opt/alt/alt-nodejs22/root/usr/bin/node")
             echo "node: ${NODE_BIN:-NOT FOUND}  prisma: $([ -x "$PRISMA_BIN" ] && echo found || echo NOT FOUND)"
             if [ -n "$NODE_BIN" ] && [ -x "$PRISMA_BIN" ]; then
               # The original 20260701000000_leave_request_system migration used PostgreSQL
@@ -272,6 +273,12 @@ jobs:
             else
               echo "WARNING: cannot run migrations — node or prisma binary not found."
             fi
+
+            echo "==> Killing stale API processes before restart..."
+            pkill -f "apps/api/dist/main.js" 2>/dev/null \
+              && echo "  Stale API processes killed." \
+              || echo "  No stale API processes found."
+            sleep 3
 
             mkdir -p $APP_DIR/tmp
             touch $APP_DIR/tmp/restart.txt
