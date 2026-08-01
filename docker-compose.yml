@@ -1,19 +1,20 @@
 services:
-  postgres:
-    image: postgres:16-alpine
+  mysql:
+    image: mysql:8.0
     environment:
-      POSTGRES_USER: jokas
-      POSTGRES_PASSWORD: jokas_dev_password
-      POSTGRES_DB: jokas_erp
+      MYSQL_ROOT_PASSWORD: jokas_dev_root
+      MYSQL_DATABASE: jokas_erp
+      MYSQL_USER: jokas
+      MYSQL_PASSWORD: jokas_dev_password
     ports:
-      - "15432:5432"
+      - "13306:3306"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - mysql_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U jokas -d jokas_erp"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "jokas", "-pjokas_dev_password"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
 
   api:
     build:
@@ -22,7 +23,7 @@ services:
     env_file:
       - .env
     depends_on:
-      postgres:
+      mysql:
         condition: service_healthy
     ports:
       - "4001:4001"
@@ -39,4 +40,4 @@ services:
       - "3000:3000"
 
 volumes:
-  postgres_data:
+  mysql_data:
