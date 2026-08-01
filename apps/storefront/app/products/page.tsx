@@ -8,7 +8,27 @@ export const revalidate = 60;
 export const metadata = { title: "Products — Akoko Solutions" };
 
 async function ProductGrid({ category }: { category?: string }) {
-  const products = await api.products.list(category).catch(() => []);
+  let products: Awaited<ReturnType<typeof api.products.list>> = [];
+  let apiError = false;
+  try {
+    products = await api.products.list(category);
+  } catch {
+    apiError = true;
+  }
+
+  if (apiError)
+    return (
+      <div className="col-span-full py-24 text-center">
+        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-red-50">
+          <SlidersHorizontal size={28} className="text-red-400" />
+        </div>
+        <p className="font-semibold text-ink">Products temporarily unavailable</p>
+        <p className="mt-1 text-sm text-muted">
+          We&apos;re having trouble connecting right now. Please try again shortly, or call us on{" "}
+          <a href="tel:+233505455090" className="text-brand font-semibold hover:underline">+233 505 455 090</a>.
+        </p>
+      </div>
+    );
 
   if (!products.length)
     return (
@@ -18,7 +38,7 @@ async function ProductGrid({ category }: { category?: string }) {
         </div>
         <p className="font-semibold text-ink">No products found</p>
         <p className="mt-1 text-sm text-muted">
-          {category ? `No products in "${category}"` : "Check back soon"}
+          {category ? `No products in "${category}" yet` : "Check back soon"}
         </p>
       </div>
     );

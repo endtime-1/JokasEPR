@@ -52,7 +52,13 @@ export default function CheckoutPage() {
       clear();
       router.push(`/order/${result.storefrontRef}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
+      const msg = err instanceof Error ? err.message : "";
+      const isNetwork = !msg || msg.includes("fetch") || msg.includes("timeout") || msg.includes("network") || msg.startsWith("API error");
+      setError(
+        isNetwork
+          ? "We couldn't reach our server right now. Please try again, or call us on +233 505 455 090 to place your order."
+          : msg
+      );
     } finally {
       setLoading(false);
     }

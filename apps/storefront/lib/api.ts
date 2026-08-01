@@ -1,5 +1,3 @@
-import { MOCK_PRODUCTS } from "./mock-data";
-
 // Server-side (SSR/SSG): call NestJS directly on the internal port — avoids
 // the full round-trip through LiteSpeed and the reverse proxy.
 // Client-side (browser): use a same-origin relative path so the request goes
@@ -46,7 +44,7 @@ export interface PublicOrder {
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}/public${path}`, {
     cache: "no-store",
-    signal: AbortSignal.timeout(1500),
+    signal: AbortSignal.timeout(10000),
   });
   if (!res.ok) throw new Error(`API error ${res.status}`);
   const json = await res.json();
@@ -58,80 +56,26 @@ async function post<T>(path: string, body: unknown): Promise<T> {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(8000),
+    signal: AbortSignal.timeout(15000),
   });
   const json = await res.json();
   if (!res.ok) throw new Error(json.message ?? `API error ${res.status}`);
   return json.data as T;
 }
 
-function filterMock(category?: string): PublicProduct[] {
-  if (!category) return MOCK_PRODUCTS;
-  return MOCK_PRODUCTS.filter((p) => p.storefrontCategory === category);
-}
-
 export const api = {
   products: {
-    list: async (category?: string): Promise<PublicProduct[]> => {
-      try {
-        return await get<PublicProduct[]>(
-          category ? `/products?category=${encodeURIComponent(category)}` : "/products"
-        );
-      } catch {
-        return filterMock(category);
-      }
-    },
-    get: async (slug: string): Promise<PublicProduct> => {
-      try {
-        return await get<PublicProduct>(`/products/${slug}`);
-      } catch {
-        const found = MOCK_PRODUCTS.find((p) => p.publicSlug === slug);
-        if (!found) throw new Error("Product not found");
-        return found;
-      }
-    },
+    list: (category?: string): Promise<PublicProduct[]> =>
+      get<PublicProduct[]>(
+        category ? `/products?category=${encodeURIComponent(category)}` : "/products"
+      ),
+    get: (slug: string): Promise<PublicProduct> =>
+      get<PublicProduct>(`/products/${slug}`),
   },
   orders: {
-    place: async (payload: PlaceOrderPayload): Promise<{ storefrontRef: string }> => {
-      try {
-        return await post<{ storefrontRef: string }>("/orders", payload);
-      } catch {
-        // Demo mode: generate a fake ref so the UI flow still works
-        const ref = `AK-DEMO-${Date.now().toString(36).toUpperCase()}`;
-        // Store in sessionStorage so order status page can retrieve it
-        if (typeof window !== "undefined") {
-          sessionStorage.setItem(
-            `order:${ref}`,
-            JSON.stringify({
-              storefrontRef: ref,
-              status: "PENDING",
-              createdAt: new Date().toISOString(),
-              lines: payload.lines.map((l) => {
-                const product = MOCK_PRODUCTS.find((p) => p.id === l.productId);
-                return {
-                  productName: product?.name ?? l.productId,
-                  qty: l.quantity,
-                  unitPrice: product?.price ?? 0,
-                };
-              }),
-              total: payload.lines.reduce((s, l) => s + (MOCK_PRODUCTS.find((p) => p.id === l.productId)?.price ?? 0) * l.quantity, 0),
-            })
-          );
-        }
-        return { storefrontRef: ref };
-      }
-    },
-    status: async (ref: string): Promise<PublicOrder> => {
-      try {
-        return await get<PublicOrder>(`/orders/${ref}`);
-      } catch {
-        // Check demo session storage
-        if (typeof window !== "undefined") {
-          const raw = sessionStorage.getItem(`order:${ref}`);
-          if (raw) return JSON.parse(raw) as PublicOrder;
-        }
-        throw new Error("Order not found");
-      }
-    },
+    place: (payload: PlaceOrderPayload): Promise<{ storefrontRef: string }> =>
+      post<{ storefrontRef: string }>("/orders", payload),
+    status: (ref: string): Promise<PublicOrder> =>
+      get<PublicOrder>(`/orders/${ref}`),
   },
 };
