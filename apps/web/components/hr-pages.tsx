@@ -167,7 +167,7 @@ function HRNav() {
   return (
     <div className="flex gap-1 overflow-x-auto rounded-xl border border-line bg-field/60 p-1 [scrollbar-width:none]">
       {hrNav.map((n) => {
-        const active = n.href === "/hr" ? pathname === "/hr" : pathname.startsWith(n.href);
+        const active = n.href === "/hr" ? pathname === "/hr" : pathname === n.href || pathname.startsWith(n.href + "/");
         return (
           <Link
             key={n.href}
