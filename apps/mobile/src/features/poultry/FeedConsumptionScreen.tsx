@@ -9,7 +9,7 @@ import { FormField } from "../../components/FormField";
 import { SelectField, SelectOption } from "../../components/SelectField";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
-import { fetchFlockBatches, fetchFarms, fetchWarehouses, fetchFeedProducts } from "../../api/endpoints";
+import { fetchFlockBatches, fetchFarms, fetchWarehouses, fetchFeedProducts, fetchPoultryOptions } from "../../api/endpoints";
 import { useAuth } from "../../auth/AuthContext";
 import { colors, font, spacing } from "../../constants/theme";
 
@@ -58,6 +58,13 @@ export function FeedConsumptionScreen() {
   const birdCount: number = selectedBatch
     ? (Number(selectedBatch.currentBirdCount ?? selectedBatch.birdCount ?? selectedBatch.openingBirds) || 0)
     : 0;
+
+  const [penId, setPenId] = useState("");
+  const { data: opts } = useLookup("poultry-options", fetchPoultryOptions);
+  const pens: SelectOption[] = useMemo(
+    () => (opts?.data.pens ?? []).filter((p) => p.farmId === (selectedBatch as any)?.farmId).map((p) => ({ label: `Pen ${p.penNumber} — ${p.name}`, value: p.id })),
+    [opts, selectedBatch]
+  );
 
   const { data: rawWarehouses } = useLookup("warehouses", async () => { const r = await fetchWarehouses(); return (r.data as any[]) ?? []; });
   const warehouses: SelectOption[] = useMemo(
@@ -115,8 +122,9 @@ export function FeedConsumptionScreen() {
       quantityKg:    Number(quantityKg),
       costAmount:    costAmount ? Number(costAmount) : undefined,
       notes:         notes || undefined,
-      warehouseId:   warehouseId  || undefined,
+      warehouseId:   warehouseId   || undefined,
       feedProductId: feedProductId || undefined,
+      penId:         penId         || undefined,
     });
   }
 
@@ -149,11 +157,12 @@ export function FeedConsumptionScreen() {
           label="Flock Batch"
           value={batchId}
           options={batches}
-          onChange={setBatchId}
+          onChange={(v) => { setBatchId(v); setPenId(""); }}
           error={errors.batchId}
           required
           placeholder={farmId ? (batches.length === 0 ? "No active batches" : "Select batch…") : "Select farm first"}
         />
+        {pens.length > 0 && <SelectField label="Pen (optional)" value={penId} options={pens} onChange={setPenId} placeholder="All pens" />}
         {/* Bird count chip — shows once a batch with known population is selected */}
         {birdCount > 0 && (
           <View style={styles.birdChip}>

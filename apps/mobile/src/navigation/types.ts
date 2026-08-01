@@ -99,6 +99,10 @@ export type RecordsStackParams = {
   FeedFormulaVersions: { formulaId: string; formulaName: string };
   FeedFormulaCreate: undefined;
   FeedFormulaEdit: { formulaId: string; formulaName: string };
+  // Poultry batch management
+  BatchCreate: undefined;
+  PoultryCost: undefined;
+  BatchStatusUpdate: undefined;
 };
 
 // Approvals stack (Phase 3 — new tab)

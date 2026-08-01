@@ -36,6 +36,9 @@ const GROUPS: Group[] = [
       { icon: "needle",           label: "Vaccination Record",     desc: "Vaccines administered to birds",              screen: "Vaccination",      roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"], permission: "health.manage", color: "#06B6D4" },
       { icon: "heart-pulse",      label: "Health Observation",     desc: "Log a flock health or welfare concern",       screen: "HealthObservation",roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"], permission: "health.manage", color: "#D97706" },
       { icon: "scale",            label: "Bird Weight Record",     desc: "Log body weight samples for growth check",    screen: "BirdWeight",       roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#10B981" },
+      { icon: "bird",             label: "Create Flock Batch",    desc: "Register a new batch to a pen",              screen: "BatchCreate",      roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"], permission: "poultry.manage", color: colors.brand },
+      { icon: "currency-usd",     label: "Poultry Cost Entry",    desc: "Log a production cost to a batch",           screen: "PoultryCost",      roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"], permission: "finance.manage", color: "#EF4444" },
+      { icon: "swap-horizontal",  label: "Update Batch Status",   desc: "Transition a batch to a new status",         screen: "BatchStatusUpdate",roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"], permission: "poultry.manage", color: "#D97706" },
     ],
   },
   {

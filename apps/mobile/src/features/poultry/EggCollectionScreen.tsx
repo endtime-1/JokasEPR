@@ -9,7 +9,7 @@ import { Button } from "../../components/Button";
 import { SyncBanner } from "../../components/SyncBanner";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
-import { fetchFlockBatches, fetchFarms, fetchWarehouses, fetchProducts } from "../../api/endpoints";
+import { fetchFlockBatches, fetchFarms, fetchWarehouses, fetchProducts, fetchPoultryOptions } from "../../api/endpoints";
 import { useAuth } from "../../auth/AuthContext";
 import { colors, font, radius, shadow, spacing } from "../../constants/theme";
 
@@ -28,6 +28,7 @@ export function EggCollectionScreen() {
   const [notes, setNotes]             = useState("");
   const [warehouseId, setWarehouseId] = useState("");
   const [eggProductId, setEggProductId] = useState("");
+  const [penId, setPenId]             = useState("");
   const [errors, setErrors]           = useState<Record<string, string>>({});
 
   // ── Lookups ──────────────────────────────────────────────────────────
@@ -57,6 +58,13 @@ export function EggCollectionScreen() {
   const batches: SelectOption[] = useMemo(
     () => (rawBatches ?? []).filter((b: any) => !b.status || b.status === "ACTIVE").map((b: any) => ({ label: b.code ?? b.batchCode ?? b.name, value: b.id })),
     [rawBatches]
+  );
+
+  const { data: opts } = useLookup("poultry-options", fetchPoultryOptions);
+  const selectedBatch = useMemo(() => (rawBatches ?? []).find((b: any) => b.id === batchId), [rawBatches, batchId]);
+  const pens: SelectOption[] = useMemo(
+    () => (opts?.data.pens ?? []).filter((p) => p.farmId === (selectedBatch as any)?.farmId).map((p) => ({ label: `Pen ${p.penNumber} — ${p.name}`, value: p.id })),
+    [opts, selectedBatch]
   );
 
   const { data: rawWarehouses } = useLookup("warehouses", async () => { const r = await fetchWarehouses(); return (r.data as any[]) ?? []; });
@@ -111,6 +119,7 @@ export function EggCollectionScreen() {
       notes:         notes || undefined,
       warehouseId:   warehouseId  || undefined,
       eggProductId:  eggProductId || undefined,
+      penId:         penId        || undefined,
     });
   }
 
@@ -137,8 +146,9 @@ export function EggCollectionScreen() {
           {/* ── Flock Info ── */}
           <View style={styles.card}>
             <Text style={styles.cardLabel}>FLOCK DETAILS</Text>
-            <SelectField label="Farm" value={farmId} options={farms} onChange={(v) => { setFarmId(v); setBatchId(""); }} error={errors.farmId} required />
-            <SelectField label="Flock Batch" value={batchId} options={batches} onChange={setBatchId} error={errors.batchId} required placeholder={farmId ? "Select batch…" : "Select farm first"} />
+            <SelectField label="Farm" value={farmId} options={farms} onChange={(v) => { setFarmId(v); setBatchId(""); setPenId(""); }} error={errors.farmId} required />
+            <SelectField label="Flock Batch" value={batchId} options={batches} onChange={(v) => { setBatchId(v); setPenId(""); }} error={errors.batchId} required placeholder={farmId ? "Select batch…" : "Select farm first"} />
+            {pens.length > 0 && <SelectField label="Pen (optional)" value={penId} options={pens} onChange={setPenId} placeholder="All pens" />}
             <FormField label="Collection Date" required value={date} onChangeText={setDate} error={errors.date} keyboardType="numeric" placeholder="YYYY-MM-DD" />
           </View>
 

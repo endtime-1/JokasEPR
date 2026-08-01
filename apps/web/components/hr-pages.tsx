@@ -3153,7 +3153,7 @@ export function TrainingCatalogPage() {
     try {
       await apiFetch(`/hr/training-courses/${row.id}`, { method: "PUT", body: JSON.stringify({ isActive: !row.isActive }) });
       await load();
-    } catch {}
+    } catch { /* noop */ }
   }
 
   return (
@@ -3328,7 +3328,7 @@ export function RecruitmentPage() {
   }
 
   async function moveStatus(appId: string, status: string) {
-    try { await apiFetch(`/hr/applications/${appId}/status`, { method: "PATCH", body: JSON.stringify({ status }) }); await load(); } catch {}
+    try { await apiFetch(`/hr/applications/${appId}/status`, { method: "PATCH", body: JSON.stringify({ status }) }); await load(); } catch { /* noop */ }
   }
 
   async function hire(appId: string) {
@@ -3448,7 +3448,7 @@ export function OnboardingPage() {
     if (!employeeId || !confirm("Load 10 standard onboarding items?")) return;
     setSaving(true);
     try { await apiFetch(`/hr/employees/${employeeId}/onboarding/template`, { method: "POST" }); await loadItems(employeeId); }
-    catch {}
+    catch { /* noop */ }
     finally { setSaving(false); }
   }
 
@@ -3456,13 +3456,13 @@ export function OnboardingPage() {
     e.preventDefault(); if (!newTitle.trim() || !employeeId) return;
     setSaving(true);
     try { await apiFetch(`/hr/employees/${employeeId}/onboarding`, { method: "POST", body: JSON.stringify({ title: newTitle.trim() }) }); setNewTitle(""); await loadItems(employeeId); }
-    catch {}
+    catch { /* noop */ }
     finally { setSaving(false); }
   }
 
   async function toggleComplete(item: OnboardingItem) {
     if (item.completedAt) return;
-    try { await apiFetch(`/hr/onboarding/${item.id}/complete`, { method: "PATCH" }); await loadItems(employeeId); } catch {}
+    try { await apiFetch(`/hr/onboarding/${item.id}/complete`, { method: "PATCH" }); await loadItems(employeeId); } catch { /* noop */ }
   }
 
   const done = items.filter((i) => i.completedAt).length;

@@ -9,7 +9,7 @@ import { FormField } from "../../components/FormField";
 import { SelectField, SelectOption } from "../../components/SelectField";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
-import { fetchFlockBatches, fetchFarms } from "../../api/endpoints";
+import { fetchFlockBatches, fetchFarms, fetchPoultryOptions } from "../../api/endpoints";
 import { useAuth } from "../../auth/AuthContext";
 import { colors, font, spacing } from "../../constants/theme";
 
@@ -23,11 +23,12 @@ type Form = {
   feedConsumedKg: string;
   totalEggs: string;
   notes: string;
+  penId: string;
 };
 
 const EMPTY: Form = {
   farmId: "", flockBatchId: "", recordDate: new Date().toISOString().split("T")[0],
-  openingBirdCount: "", mortalityCount: "0", culledCount: "0", feedConsumedKg: "0", totalEggs: "0", notes: ""
+  openingBirdCount: "", mortalityCount: "0", culledCount: "0", feedConsumedKg: "0", totalEggs: "0", notes: "", penId: ""
 };
 
 type Err = Partial<Record<keyof Form, string>>;
@@ -53,6 +54,13 @@ export function DailyPoultryScreen() {
   const batches: SelectOption[] = useMemo(
     () => (rawBatches ?? []).filter((b: any) => !b.status || b.status === "ACTIVE").map((b: any) => ({ label: `${b.code} — ${b.name}`, value: b.id })),
     [rawBatches]
+  );
+
+  const { data: opts } = useLookup("poultry-options", fetchPoultryOptions);
+  const selectedBatch = useMemo(() => (rawBatches ?? []).find((b: any) => b.id === form.flockBatchId), [rawBatches, form.flockBatchId]);
+  const pens: SelectOption[] = useMemo(
+    () => (opts?.data.pens ?? []).filter((p) => p.farmId === (selectedBatch as any)?.farmId).map((p) => ({ label: `Pen ${p.penNumber} — ${p.name}`, value: p.id })),
+    [opts, selectedBatch]
   );
 
   const set = (k: keyof Form) => (v: string) => {
@@ -87,7 +95,8 @@ export function DailyPoultryScreen() {
       culledCount: Number(form.culledCount) || 0,
       feedConsumedKg: Number(form.feedConsumedKg) || 0,
       totalEggs: Number(form.totalEggs) || 0,
-      notes: form.notes || undefined
+      notes: form.notes || undefined,
+      penId: form.penId || undefined
     });
   }
 
@@ -106,6 +115,7 @@ export function DailyPoultryScreen() {
       <FormCard label="FLOCK / BATCH">
         <SelectField label="Farm" value={form.farmId} options={farms} onChange={set("farmId")} error={errors.farmId} required placeholder="Select farm…" />
         <SelectField label="Flock Batch" value={form.flockBatchId} options={batches} onChange={set("flockBatchId")} error={errors.flockBatchId} required placeholder={form.farmId ? "Select batch…" : "Select farm first"} />
+        {pens.length > 0 && <SelectField label="Pen (optional)" value={form.penId} options={pens} onChange={set("penId")} placeholder="All pens" />}
         <FormField label="Record Date" required value={form.recordDate} onChangeText={set("recordDate")} error={errors.recordDate} placeholder="YYYY-MM-DD" keyboardType="numeric" />
       </FormCard>
 

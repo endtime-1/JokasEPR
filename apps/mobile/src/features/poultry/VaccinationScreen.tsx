@@ -9,7 +9,7 @@ import { FormField } from "../../components/FormField";
 import { SelectField, SelectOption } from "../../components/SelectField";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
-import { fetchFlockBatches, fetchFarms, fetchWarehouses, fetchProducts } from "../../api/endpoints";
+import { fetchFlockBatches, fetchFarms, fetchWarehouses, fetchProducts, fetchPoultryOptions } from "../../api/endpoints";
 import { useAuth } from "../../auth/AuthContext";
 import { colors, font, spacing } from "../../constants/theme";
 
@@ -55,6 +55,14 @@ export function VaccinationScreen() {
     [rawBatches]
   );
 
+  const [penId, setPenId] = useState("");
+  const { data: opts } = useLookup("poultry-options", fetchPoultryOptions);
+  const selectedBatch = useMemo(() => (rawBatches ?? []).find((b: any) => b.id === batchId), [rawBatches, batchId]);
+  const pens: SelectOption[] = useMemo(
+    () => (opts?.data.pens ?? []).filter((p) => p.farmId === (selectedBatch as any)?.farmId).map((p) => ({ label: `Pen ${p.penNumber} — ${p.name}`, value: p.id })),
+    [opts, selectedBatch]
+  );
+
   const { data: rawWarehouses } = useLookup("warehouses", async () => { const r = await fetchWarehouses(); return (r.data as any[]) ?? []; });
   const warehouses: SelectOption[] = useMemo(
     () => (rawWarehouses ?? []).map((w: any) => ({ label: w.name, value: w.id })),
@@ -96,6 +104,7 @@ export function VaccinationScreen() {
       warehouseId: warehouseId || undefined,
       vaccineProductId: vaccineProductId || undefined,
       quantityUsed: quantityUsed ? Number(quantityUsed) : undefined,
+      penId: penId || undefined,
     });
   }
 
@@ -112,8 +121,9 @@ export function VaccinationScreen() {
       </View>
 
       <FormCard label="FLOCK / BATCH">
-        <SelectField label="Farm" value={farmId} options={farms} onChange={(v) => { setFarmId(v); setBatchId(""); }} error={errors.farmId} required />
-        <SelectField label="Flock Batch" value={batchId} options={batches} onChange={setBatchId} error={errors.batchId} required placeholder={farmId ? "Select batch…" : "Select farm first"} />
+        <SelectField label="Farm" value={farmId} options={farms} onChange={(v) => { setFarmId(v); setBatchId(""); setPenId(""); }} error={errors.farmId} required />
+        <SelectField label="Flock Batch" value={batchId} options={batches} onChange={(v) => { setBatchId(v); setPenId(""); }} error={errors.batchId} required placeholder={farmId ? "Select batch…" : "Select farm first"} />
+        {pens.length > 0 && <SelectField label="Pen (optional)" value={penId} options={pens} onChange={setPenId} placeholder="All pens" />}
         <FormField label="Vaccination Date" required value={date} onChangeText={setDate} error={errors.date} keyboardType="numeric" placeholder="YYYY-MM-DD" />
       </FormCard>
 

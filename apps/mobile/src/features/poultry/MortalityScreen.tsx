@@ -9,7 +9,7 @@ import { FormField } from "../../components/FormField";
 import { SelectField, SelectOption } from "../../components/SelectField";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
-import { fetchFlockBatches, fetchFarms } from "../../api/endpoints";
+import { fetchFlockBatches, fetchFarms, fetchPoultryOptions } from "../../api/endpoints";
 import { useAuth } from "../../auth/AuthContext";
 import { colors, font, spacing } from "../../constants/theme";
 
@@ -49,6 +49,14 @@ export function MortalityScreen() {
     [rawBatches]
   );
 
+  const [penId, setPenId] = useState("");
+  const { data: opts } = useLookup("poultry-options", fetchPoultryOptions);
+  const selectedBatch = useMemo(() => (rawBatches ?? []).find((b: any) => b.id === batchId), [rawBatches, batchId]);
+  const pens: SelectOption[] = useMemo(
+    () => (opts?.data.pens ?? []).filter((p) => p.farmId === (selectedBatch as any)?.farmId).map((p) => ({ label: `Pen ${p.penNumber} — ${p.name}`, value: p.id })),
+    [opts, selectedBatch]
+  );
+
   function validate() {
     const e: Record<string, string> = {};
     if (!farmId) e.farmId = "Select a farm";
@@ -72,7 +80,8 @@ export function MortalityScreen() {
       recordDate: date,
       birdCount: Number(birdCount),
       isCulling: isCulling === "true",
-      reason: reason || undefined
+      reason: reason || undefined,
+      penId: penId || undefined
     });
   }
 
@@ -90,7 +99,8 @@ export function MortalityScreen() {
 
       <FormCard label="FLOCK / BATCH">
         <SelectField label="Farm" value={farmId} options={farms} onChange={(v) => { setFarmId(v); setErrors((e) => ({ ...e, farmId: "" })); }} error={errors.farmId} required loading={farmsLoading} />
-        <SelectField label="Flock Batch" value={batchId} options={batches} onChange={(v) => { setBatchId(v); setErrors((e) => ({ ...e, batchId: "" })); }} error={errors.batchId} required placeholder={farmId ? "Select batch…" : "Select farm first"} />
+        <SelectField label="Flock Batch" value={batchId} options={batches} onChange={(v) => { setBatchId(v); setPenId(""); setErrors((e) => ({ ...e, batchId: "" })); }} error={errors.batchId} required placeholder={farmId ? "Select batch…" : "Select farm first"} />
+        {pens.length > 0 && <SelectField label="Pen (optional)" value={penId} options={pens} onChange={setPenId} placeholder="All pens" />}
         <FormField label="Date" required value={date} onChangeText={(v) => { setDate(v); setErrors((e) => ({ ...e, date: "" })); }} error={errors.date} keyboardType="numeric" placeholder="YYYY-MM-DD" />
       </FormCard>
 

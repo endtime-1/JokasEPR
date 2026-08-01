@@ -76,6 +76,10 @@ import { FeedFormulaCostingScreen } from "../features/records/FeedFormulaCosting
 import { FeedFormulaVersionsScreen } from "../features/records/FeedFormulaVersionsScreen";
 import { FeedFormulaCreateScreen } from "../features/records/FeedFormulaCreateScreen";
 import { FeedFormulaEditScreen } from "../features/records/FeedFormulaEditScreen";
+// Poultry batch management
+import { BatchCreateScreen } from "../features/poultry/BatchCreateScreen";
+import { PoultryCostScreen } from "../features/poultry/PoultryCostScreen";
+import { BatchStatusUpdateScreen } from "../features/poultry/BatchStatusUpdateScreen";
 import { FeedFinishedStockScreen } from "../features/feed/FeedFinishedStockScreen";
 import { FeedIngredientsScreen } from "../features/feed/FeedIngredientsScreen";
 import { FeedPackagingRecordsScreen } from "../features/feed/FeedPackagingRecordsScreen";
@@ -188,6 +192,10 @@ const P = {
   FeedFormulaVersions:  protect(FeedFormulaVersionsScreen,       [], "feed.read"),
   FeedFormulaCreate:    protect(FeedFormulaCreateScreen,         [], "feed.manage"),
   FeedFormulaEdit:      protect(FeedFormulaEditScreen,           [], "feed.manage"),
+  // Poultry batch management
+  BatchCreate:          protect(BatchCreateScreen,               [], "poultry.manage"),
+  PoultryCost:          protect(PoultryCostScreen,               [], "finance.manage"),
+  BatchStatusUpdate:    protect(BatchStatusUpdateScreen,         [], "poultry.manage"),
   StockMovement:        protect(StockMovementScreen,             [], "inventory.manage"),
   StockAdjustment:      protect(StockAdjustmentScreen,          [], "inventory.manage"),
   StockTransfer:        protect(StockTransferScreen,             [], "inventory.manage"),
@@ -324,6 +332,10 @@ function RecordsNavigator() {
       <RecordsStack.Screen name="FeedFormulaVersions"       component={P.FeedFormulaVersions}    options={({ route }) => ({ title: `Versions — ${(route.params as any).formulaName}` })} />
       <RecordsStack.Screen name="FeedFormulaCreate"         component={P.FeedFormulaCreate}      options={{ title: "New Formula"          }} />
       <RecordsStack.Screen name="FeedFormulaEdit"           component={P.FeedFormulaEdit}         options={({ route }) => ({ title: `Edit — ${(route.params as any).formulaName}` })} />
+      {/* Poultry batch management */}
+      <RecordsStack.Screen name="BatchCreate"       component={P.BatchCreate}       options={{ title: "New Flock Batch"    }} />
+      <RecordsStack.Screen name="PoultryCost"       component={P.PoultryCost}       options={{ title: "Poultry Cost Entry" }} />
+      <RecordsStack.Screen name="BatchStatusUpdate" component={P.BatchStatusUpdate} options={{ title: "Update Batch Status"}} />
     </RecordsStack.Navigator>
   );
 }

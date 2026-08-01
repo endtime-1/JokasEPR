@@ -1237,3 +1237,14 @@ export const updateFeedFormula = (formulaId: string, payload: {
   name?: string; code?: string; feedType?: string; targetBatchKg?: number; finishedProductId?: string;
 }) =>
   apiFetch<ApiEnvelope<{ id: string; code: string; name: string }>>(`/feed-production/formulas/${formulaId}`, { method: "PATCH", body: JSON.stringify(payload) });
+
+// ── Poultry batch management ──────────────────────────────────────────────────
+
+export const createFlockBatch = (payload: Record<string, unknown>) =>
+  apiFetch<ApiEnvelope<{ id: string; code: string; name: string }>>("/poultry/batches", { method: "POST", body: JSON.stringify(payload) });
+
+export const submitPoultryCost = (payload: Record<string, unknown>) =>
+  apiFetch<ApiEnvelope<unknown>>("/poultry/costs", { method: "POST", body: JSON.stringify(payload) });
+
+export const updateBatchStatus = (id: string, payload: { status: string; notes?: string }) =>
+  apiFetch<ApiEnvelope<unknown>>(`/poultry/batches/${id}/status`, { method: "PATCH", body: JSON.stringify(payload) });
