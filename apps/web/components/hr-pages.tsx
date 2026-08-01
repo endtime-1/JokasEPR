@@ -113,6 +113,12 @@ function StatusBadge({ status }: { status: string }) {
     MEETS_EXPECTATIONS: "bg-green-100 text-green-700",
     NEEDS_IMPROVEMENT: "bg-yellow-100 text-yellow-800",
     UNSATISFACTORY: "bg-red-100 text-red-700",
+    ANNUAL: "bg-blue-100 text-blue-700",
+    SICK: "bg-red-100 text-red-700",
+    MATERNITY: "bg-pink-100 text-pink-700",
+    PATERNITY: "bg-indigo-100 text-indigo-700",
+    COMPASSIONATE: "bg-purple-100 text-purple-700",
+    UNPAID: "bg-gray-100 text-gray-600",
   };
   const c = colours[status] ?? "bg-gray-100 text-gray-600";
   return <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${c}`}>{status.replace(/_/g, " ")}</span>;
@@ -138,9 +144,21 @@ const hrNav = [
   { href: "/hr/shifts", label: "Shifts" },
   { href: "/hr/tasks", label: "Task Board" },
   { href: "/hr/leave-requests", label: "Leave Requests" },
+  { href: "/hr/leave-policies", label: "Leave Policies" },
+  { href: "/hr/leave-balance", label: "Leave Balance" },
+  { href: "/hr/public-holidays", label: "Public Holidays" },
   { href: "/hr/payroll", label: "Payroll" },
   { href: "/hr/training", label: "Training" },
   { href: "/hr/performance", label: "Performance" },
+  { href: "/hr/disciplinary", label: "Disciplinary" },
+  { href: "/hr/grievances", label: "Grievances" },
+  { href: "/hr/org-chart", label: "Org Chart" },
+  { href: "/hr/training-courses", label: "Training Catalog" },
+  { href: "/hr/salary-bands", label: "Salary Bands" },
+  { href: "/hr/recruitment", label: "Recruitment" },
+  { href: "/hr/onboarding", label: "Onboarding" },
+  { href: "/hr/approval-workflows", label: "Approval Workflows" },
+  { href: "/hr/compliance", label: "Compliance" },
   { href: "/hr/reports/productivity", label: "Productivity Report" },
 ];
 
@@ -1492,15 +1510,25 @@ export function CreateTaskPage() {
 
 type PayrollRow = { id: string; reference: string; period: string; grossPay: number; netPay: number; status: string; employee?: { fullName: string; code: string }; paymentDate?: string };
 
+type PayrollEstimate = { grossMonthly: number; ssnit: number; paye: number; netPay: number; employerSsnit: number; pensionTier2: number };
+type PrefillResult = { basicSalary: number; overtimePay: number; taxDeduction: number; ssnit: number; employerSsnit: number; pensionTier2: number; netPay: number; attendanceSummary: { daysPresent: number; daysAbsent: number; totalHours: number; overtimeHours: number } };
+
 export function PayrollPage() {
   const [rows, setRows] = useState<PayrollRow[]>(() => getCachedFirst<ApiEnvelope<PayrollRow[]>>("/hr/payroll")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/hr/payroll"));
   const { opts, optionsError } = useHROptions();
-  const [form, setForm] = useState({ employeeId: "", period: "", periodStart: "", periodEnd: "", basicSalary: "", allowances: "0", deductions: "0", taxDeduction: "0", ssnit: "0", paymentMethod: "BANK_TRANSFER", notes: "" });
+  const [form, setForm] = useState({ employeeId: "", period: "", periodStart: "", periodEnd: "", basicSalary: "", allowances: "0", deductions: "0", overtimePay: "0", taxDeduction: "0", ssnit: "0", employerSsnit: "0", pensionTier2: "0", paymentMethod: "BANK_TRANSFER", notes: "" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
+  const [showBulk, setShowBulk] = useState(false);
   const [loadError, setLoadError] = useState("");
+  const [payeEst, setPayeEst] = useState<PayrollEstimate | null>(null);
+  const [payeLoading, setPayeLoading] = useState(false);
+  const [prefillLoading, setPrefillLoading] = useState(false);
+  const [bulkForm, setBulkForm] = useState({ period: "", periodStart: "", periodEnd: "", branchId: "" });
+  const [bulkSaving, setBulkSaving] = useState(false);
+  const [bulkResult, setBulkResult] = useState("");
 
   function load() {
     setLoadError("");
@@ -1509,61 +1537,69 @@ export function PayrollPage() {
 
   useEffect(() => { load(); }, []);
 
-  const [payeEst, setPayeEst] = useState<{ grossMonthly: number; ssnit: number; paye: number; netPay: number } | null>(null);
-  const [payeLoading, setPayeLoading] = useState(false);
-
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm((p) => ({ ...p, [k]: e.target.value }));
+  const fb = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setBulkForm((p) => ({ ...p, [k]: e.target.value }));
 
-  async function computePaye() {
+  async function runComputePaye() {
     if (!form.basicSalary) return;
     setPayeLoading(true);
     try {
       const params = new URLSearchParams({ basicSalary: form.basicSalary, allowances: form.allowances || "0", deductions: form.deductions || "0" });
-      const r = await apiFetch<ApiEnvelope<{ grossMonthly: number; ssnit: number; paye: number; netPay: number }>>(`/hr/payroll/compute?${params}`);
+      const r = await apiFetch<ApiEnvelope<PayrollEstimate>>(`/hr/payroll/compute?${params}`);
       setPayeEst(r.data);
       if (r.data) {
-        setForm((p) => ({ ...p, taxDeduction: r.data!.paye.toFixed(2), ssnit: r.data!.ssnit.toFixed(2) }));
+        setForm((p) => ({ ...p, taxDeduction: r.data!.paye.toFixed(2), ssnit: r.data!.ssnit.toFixed(2), employerSsnit: r.data!.employerSsnit.toFixed(2), pensionTier2: r.data!.pensionTier2.toFixed(2) }));
       }
-    } catch { /* ignore */ } finally {
-      setPayeLoading(false);
-    }
+    } catch { /* ignore */ } finally { setPayeLoading(false); }
   }
 
-  const gross = (Number(form.basicSalary) || 0) + (Number(form.allowances) || 0) - (Number(form.deductions) || 0);
+  async function prefillFromAttendance() {
+    if (!form.employeeId || !form.period) { setError("Select an employee and enter the period (YYYY-MM) first."); return; }
+    setPrefillLoading(true); setError("");
+    try {
+      const r = await apiFetch<ApiEnvelope<PrefillResult>>(`/hr/payroll/prefill?employeeId=${form.employeeId}&period=${form.period}`);
+      const d = r.data;
+      setForm((p) => ({ ...p, basicSalary: d.basicSalary.toFixed(2), overtimePay: d.overtimePay.toFixed(2), taxDeduction: d.taxDeduction.toFixed(2), ssnit: d.ssnit.toFixed(2), employerSsnit: d.employerSsnit.toFixed(2), pensionTier2: d.pensionTier2.toFixed(2) }));
+      setPayeEst({ grossMonthly: d.basicSalary + d.overtimePay, ssnit: d.ssnit, paye: d.taxDeduction, netPay: d.netPay, employerSsnit: d.employerSsnit, pensionTier2: d.pensionTier2 });
+    } catch (err: unknown) { setError(err instanceof Error ? err.message : "Prefill failed"); }
+    finally { setPrefillLoading(false); }
+  }
+
+  async function bulkRun(e: React.FormEvent) {
+    e.preventDefault(); setBulkSaving(true); setBulkResult("");
+    try {
+      const r = await apiFetch<ApiEnvelope<{ created: number; skipped: number; errors: string[]; period: string }>>("/hr/payroll/bulk-run", { method: "POST", body: JSON.stringify({ ...bulkForm, branchId: bulkForm.branchId || undefined }) });
+      setBulkResult(`Period ${r.data.period}: ${r.data.created} records created, ${r.data.skipped} skipped.${r.data.errors.length ? ` Errors: ${r.data.errors.join("; ")}` : ""}`);
+      load();
+    } catch (err: unknown) { setBulkResult(err instanceof Error ? err.message : "Bulk run failed"); }
+    finally { setBulkSaving(false); }
+  }
+
+  const gross = (Number(form.basicSalary) || 0) + (Number(form.allowances) || 0) + (Number(form.overtimePay) || 0) - (Number(form.deductions) || 0);
   const net = gross - (Number(form.taxDeduction) || 0) - (Number(form.ssnit) || 0);
 
   async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    setSaving(true);
-    setError("");
+    e.preventDefault(); setSaving(true); setError("");
     try {
-      await apiFetch("/hr/payroll", {
-        method: "POST",
-        body: JSON.stringify({ ...form, basicSalary: Number(form.basicSalary), allowances: Number(form.allowances), deductions: Number(form.deductions), taxDeduction: Number(form.taxDeduction), ssnit: Number(form.ssnit) }),
-      });
-      setShowForm(false);
-      load();
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to save");
-    } finally {
-      setSaving(false);
-    }
+      await apiFetch("/hr/payroll", { method: "POST", body: JSON.stringify({ ...form, basicSalary: Number(form.basicSalary), allowances: Number(form.allowances), deductions: Number(form.deductions), overtimePay: Number(form.overtimePay), taxDeduction: Number(form.taxDeduction), ssnit: Number(form.ssnit), employerSsnit: Number(form.employerSsnit), pensionTier2: Number(form.pensionTier2) }) });
+      setShowForm(false); load();
+    } catch (err: unknown) { setError(err instanceof Error ? err.message : "Failed to save"); }
+    finally { setSaving(false); }
   }
 
-  async function approve(id: string) {
-    await apiFetch(`/hr/payroll/${id}/approve`, { method: "PATCH" }).then(() => load()).catch(() => undefined);
-  }
-
-  async function markPaid(id: string) {
-    await apiFetch(`/hr/payroll/${id}/mark-paid`, { method: "PATCH" }).then(() => load()).catch(() => undefined);
-  }
+  async function approve(id: string) { await apiFetch(`/hr/payroll/${id}/approve`, { method: "PATCH" }).then(() => load()).catch(() => undefined); }
+  async function markPaid(id: string) { await apiFetch(`/hr/payroll/${id}/mark-paid`, { method: "PATCH" }).then(() => load()).catch(() => undefined); }
 
   return (
     <AppShell>
       <div className="space-y-5">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-bold">Payroll Records</h1>
-          <button onClick={() => setShowForm((p) => !p)} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white">{showForm ? "Cancel" : "+ Add Payroll"}</button>
+          <div className="flex gap-2">
+            <button onClick={() => { setShowBulk(p => !p); setBulkResult(""); }} className="rounded-md border border-line px-4 py-2 text-sm font-medium hover:bg-field">Bulk Run</button>
+            <a href={`/api/v1/hr/payroll/bank-export?period=${bulkForm.period || form.period || ""}`} target="_blank" rel="noreferrer" className="rounded-md border border-line px-4 py-2 text-sm font-medium hover:bg-field">Export Bank CSV</a>
+            <button onClick={() => { setShowForm(p => !p); setError(""); setPayeEst(null); }} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white">{showForm ? "Cancel" : "+ Add Payroll"}</button>
+          </div>
         </div>
         <HRNav />
         {loadError && (
@@ -1573,38 +1609,77 @@ export function PayrollPage() {
           </div>
         )}
 
+        {showBulk && (
+          <form onSubmit={bulkRun} className="rounded-lg border border-amber-200 bg-amber-50 p-5 space-y-4">
+            <p className="font-semibold text-amber-800">Bulk Payroll Run — creates DRAFT records from attendance</p>
+            <div className="grid grid-cols-4 gap-4">
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-ink/70">Period (YYYY-MM) *</label>
+                <input required value={bulkForm.period} onChange={fb("period")} placeholder="2026-01" className="w-full rounded-lg border border-line px-3 py-2 text-sm" />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-ink/70">Period Start *</label>
+                <input required type="date" value={bulkForm.periodStart} onChange={fb("periodStart")} className="w-full rounded-lg border border-line px-3 py-2 text-sm" />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-ink/70">Period End *</label>
+                <input required type="date" value={bulkForm.periodEnd} onChange={fb("periodEnd")} className="w-full rounded-lg border border-line px-3 py-2 text-sm" />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-ink/70">Branch (optional)</label>
+                <select value={bulkForm.branchId} onChange={fb("branchId")} className="w-full rounded-lg border border-line px-3 py-2 text-sm">
+                  <option value="">All branches</option>
+                  {opts.branches?.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <button type="submit" disabled={bulkSaving} className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{bulkSaving ? "Running..." : "Run Bulk Payroll"}</button>
+            </div>
+            {bulkResult && <p className="text-sm text-amber-800">{bulkResult}</p>}
+          </form>
+        )}
+
         {showForm && (
           <div className="rounded-lg border border-line bg-white p-5">
             <h2 className="mb-4 font-semibold">New Payroll Record</h2>
             {error && <div className="mb-3 rounded bg-red-50 p-2 text-sm text-red-700">{error}</div>}
             <form onSubmit={submit} className="grid grid-cols-2 gap-4">
-              <div><label className="mb-1 block text-xs font-medium">Employee *</label>
+              <div>
+                <label className="mb-1 block text-xs font-medium">Employee *</label>
                 <select required value={form.employeeId} onChange={f("employeeId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
                   <option value="">— Select —</option>
                   {opts.employees.map((e) => <option key={e.id} value={e.id}>{e.fullName}</option>)}
                 </select>
               </div>
-              <div><label className="mb-1 block text-xs font-medium">Period (e.g. 2025-01) *</label><input required value={form.period} onChange={f("period")} placeholder="2025-01" className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Period (e.g. 2026-01) *</label><input required value={form.period} onChange={f("period")} placeholder="2026-01" className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
               <div><label className="mb-1 block text-xs font-medium">Period Start *</label><input required type="date" value={form.periodStart} onChange={f("periodStart")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
               <div><label className="mb-1 block text-xs font-medium">Period End *</label><input required type="date" value={form.periodEnd} onChange={f("periodEnd")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+              <div className="col-span-2 flex items-center gap-3">
+                <button type="button" onClick={prefillFromAttendance} disabled={prefillLoading || !form.employeeId || !form.period} className="rounded-md border border-brand px-3 py-2 text-xs font-semibold text-brand hover:bg-brand/5 disabled:opacity-50">
+                  {prefillLoading ? "Loading..." : "Prefill from Attendance"}
+                </button>
+                <button type="button" onClick={runComputePaye} disabled={payeLoading || !form.basicSalary} className="rounded-md border border-ink/30 px-3 py-2 text-xs font-medium hover:bg-field disabled:opacity-50">
+                  {payeLoading ? "Computing..." : "Auto-compute PAYE"}
+                </button>
+                {payeEst && <span className="text-xs text-ink/60">SSNIT {money(payeEst.ssnit)} · PAYE {money(payeEst.paye)} · Net {money(payeEst.netPay)}</span>}
+              </div>
               <div><label className="mb-1 block text-xs font-medium">Basic Salary *</label><input required type="number" min={0} step={0.01} value={form.basicSalary} onChange={f("basicSalary")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Overtime Pay</label><input type="number" min={0} step={0.01} value={form.overtimePay} onChange={f("overtimePay")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
               <div><label className="mb-1 block text-xs font-medium">Allowances</label><input type="number" min={0} step={0.01} value={form.allowances} onChange={f("allowances")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
               <div><label className="mb-1 block text-xs font-medium">Deductions</label><input type="number" min={0} step={0.01} value={form.deductions} onChange={f("deductions")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div className="col-span-2 flex items-center gap-3">
-                <button type="button" onClick={computePaye} disabled={payeLoading || !form.basicSalary} className="rounded-md border border-brand px-3 py-2 text-xs font-semibold text-brand hover:bg-brand/5 disabled:opacity-50">
-                  {payeLoading ? "Computing..." : "Auto-compute Ghana PAYE"}
-                </button>
-                {payeEst && <span className="text-xs text-ink/60">Estimated: SSNIT {money(payeEst.ssnit)} · PAYE {money(payeEst.paye)} · Net {money(payeEst.netPay)}</span>}
-              </div>
               <div><label className="mb-1 block text-xs font-medium">Tax (PAYE)</label><input type="number" min={0} step={0.01} value={form.taxDeduction} onChange={f("taxDeduction")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div><label className="mb-1 block text-xs font-medium">SSNIT</label><input type="number" min={0} step={0.01} value={form.ssnit} onChange={f("ssnit")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Employee SSNIT (5.5%)</label><input type="number" min={0} step={0.01} value={form.ssnit} onChange={f("ssnit")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
               <div><label className="mb-1 block text-xs font-medium">Payment Method</label>
                 <select value={form.paymentMethod} onChange={f("paymentMethod")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
                   {["CASH", "BANK_TRANSFER", "MOBILE_MONEY", "CHEQUE"].map((m) => <option key={m} value={m}>{m.replace(/_/g, " ")}</option>)}
                 </select>
               </div>
-              <div className="col-span-2 rounded-md bg-field p-3 text-sm">
-                Gross Pay: <strong>{money(gross)}</strong> Â· Net Pay: <strong>{money(net)}</strong>
+              <div className="col-span-2 grid grid-cols-2 gap-3 rounded-md bg-field p-3 text-sm">
+                <div>Gross Pay: <strong>{money(gross)}</strong> · Net Pay: <strong>{money(net)}</strong></div>
+                <div className="text-xs text-ink/60">
+                  Employer contributions: SSNIT {money(Number(form.employerSsnit))} + Tier 2 {money(Number(form.pensionTier2))} = {money(Number(form.employerSsnit) + Number(form.pensionTier2))}
+                </div>
               </div>
               <div className="col-span-2">
                 <button type="submit" disabled={saving} className="rounded-md bg-brand px-5 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Saving..." : "Save Record"}</button>
@@ -1616,17 +1691,22 @@ export function PayrollPage() {
         <DataTable
           columns={[
             { key: "reference", label: "Reference" },
-            { key: "employee", label: "Employee", render: (r) => r.employee?.fullName ?? "—" },
+            { key: "employee", label: "Employee", render: (r) => (r.employee as any)?.fullName ?? "—" },
             { key: "period", label: "Period" },
             { key: "grossPay", label: "Gross", render: (r) => money(r.grossPay) },
             { key: "netPay", label: "Net Pay", render: (r) => money(r.netPay) },
+            { key: "employerSsnit", label: "Employer SSNIT", render: (r) => <span className="text-xs text-ink/60">{money((r.employerSsnit as number ?? 0) + (r.pensionTier2 as number ?? 0))}</span> },
             { key: "paymentDate", label: "Paid On", render: (r) => fmt(r.paymentDate as string) },
             { key: "status", label: "Status", render: (r) => <StatusBadge status={r.status as string} /> },
             {
               key: "actions", label: "Actions", render: (r) => (
-                <div className="flex gap-1">
+                <div className="flex gap-1 flex-wrap">
                   {r.status === "DRAFT" && <button onClick={() => approve(r.id as string)} className="rounded bg-green-100 px-2 py-0.5 text-xs text-green-700 hover:bg-green-200">Approve</button>}
                   {r.status === "APPROVED" && <button onClick={() => markPaid(r.id as string)} className="rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-700 hover:bg-blue-200">Mark Paid</button>}
+                  <a href={`/api/v1/hr/payroll/${r.id}/payslip`} target="_blank" rel="noreferrer" className="rounded border border-line bg-white px-2 py-0.5 text-xs hover:bg-field flex items-center gap-1"><FileText size={10} /> PDF</a>
+                  {["APPROVED","PAID"].includes(r.status as string) && (
+                    <button onClick={async () => { await apiFetch(`/hr/payroll/${r.id}/email-payslip`, { method: "POST" }).catch(() => undefined); }} className="rounded border border-line bg-white px-2 py-0.5 text-xs hover:bg-field">Email</button>
+                  )}
                 </div>
               ),
             },
@@ -2281,6 +2361,624 @@ type ProductivityData = {
   }>;
 };
 
+// ─── HR-A: Leave Policies ─────────────────────────────────────────────────────
+
+type LeavePolicy = { id: string; name: string; leaveType: string; daysPerYear: number; carryOverDays: number; isActive: boolean; employeeRole?: { name: string } | null };
+
+export function LeavePoliciesPage() {
+  const { opts } = useHROptions();
+  const [rows, setRows] = useState<LeavePolicy[]>(() => getCachedFirst<ApiEnvelope<LeavePolicy[]>>("/hr/leave-policies")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/hr/leave-policies"));
+  const [loadError, setLoadError] = useState("");
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState<LeavePolicy | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [form, setForm] = useState({ name: "", leaveType: "ANNUAL", daysPerYear: "21", carryOverDays: "0", employeeRoleId: "", isActive: "true" });
+  const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm(p => ({ ...p, [k]: e.target.value }));
+
+  function load() {
+    setLoadError("");
+    apiFetch<ApiEnvelope<LeavePolicy[]>>("/hr/leave-policies")
+      .then((r) => { const fresh = r.data ?? []; setRows(prev => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
+      .finally(() => setLoading(false));
+  }
+  useEffect(() => { load(); }, []);
+
+  function openCreate() { setEditing(null); setForm({ name: "", leaveType: "ANNUAL", daysPerYear: "21", carryOverDays: "0", employeeRoleId: "", isActive: "true" }); setShowForm(true); setError(""); }
+  function openEdit(row: LeavePolicy) { setEditing(row); setForm({ name: row.name, leaveType: row.leaveType, daysPerYear: String(row.daysPerYear), carryOverDays: String(row.carryOverDays), employeeRoleId: "", isActive: String(row.isActive) }); setShowForm(true); setError(""); }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault(); setSaving(true); setError("");
+    try {
+      if (editing) {
+        await apiFetch(`/hr/leave-policies/${editing.id}`, { method: "PUT", body: JSON.stringify({ name: form.name, daysPerYear: Number(form.daysPerYear), carryOverDays: Number(form.carryOverDays), isActive: form.isActive === "true" }) });
+      } else {
+        await apiFetch("/hr/leave-policies", { method: "POST", body: JSON.stringify({ name: form.name, leaveType: form.leaveType, daysPerYear: Number(form.daysPerYear), carryOverDays: Number(form.carryOverDays), employeeRoleId: form.employeeRoleId || undefined }) });
+      }
+      setShowForm(false); load();
+    } catch (err: unknown) { setError(err instanceof Error ? err.message : "Failed to save"); }
+    finally { setSaving(false); }
+  }
+
+  async function remove(id: string) {
+    if (!confirm("Delete this leave policy?")) return;
+    await apiFetch(`/hr/leave-policies/${id}`, { method: "DELETE" }).catch(() => undefined);
+    load();
+  }
+
+  return (
+    <AppShell>
+      <div className="space-y-5">
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-bold">Leave Policies</h1>
+          <button onClick={openCreate} className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand/90">+ Add Policy</button>
+        </div>
+        <HRNav />
+        {loadError && (
+          <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <span>{loadError}</span>
+            <button type="button" className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold hover:bg-red-50" onClick={load}>Retry</button>
+          </div>
+        )}
+        {showForm && (
+          <form onSubmit={submit} className="rounded-lg border border-line bg-white p-5 space-y-4">
+            <p className="font-semibold">{editing ? "Edit Policy" : "New Leave Policy"}</p>
+            {error && <div className="rounded bg-red-50 p-2 text-sm text-red-700">{error}</div>}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-ink/70">Policy Name <span className="text-red-500">*</span></label>
+                <input required value={form.name} onChange={f("name")} placeholder="e.g. Annual Leave — All Staff" className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15" />
+              </div>
+              {!editing && (
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-ink/70">Leave Type <span className="text-red-500">*</span></label>
+                  <select required value={form.leaveType} onChange={f("leaveType")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15">
+                    {["ANNUAL","SICK","MATERNITY","PATERNITY","COMPASSIONATE","UNPAID"].map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+              )}
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-ink/70">Days Per Year <span className="text-red-500">*</span></label>
+                <input required type="number" min={1} value={form.daysPerYear} onChange={f("daysPerYear")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15" />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-ink/70">Carry-Over Days</label>
+                <input type="number" min={0} value={form.carryOverDays} onChange={f("carryOverDays")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15" />
+              </div>
+              {!editing && (
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-ink/70">Role (leave blank for all roles)</label>
+                  <select value={form.employeeRoleId} onChange={f("employeeRoleId")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15">
+                    <option value="">All roles</option>
+                    {opts.employeeRoles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                  </select>
+                </div>
+              )}
+              {editing && (
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-ink/70">Status</label>
+                  <select value={form.isActive} onChange={f("isActive")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15">
+                    <option value="true">Active</option>
+                    <option value="false">Inactive</option>
+                  </select>
+                </div>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <button type="submit" disabled={saving} className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Saving..." : "Save Policy"}</button>
+              <button type="button" onClick={() => setShowForm(false)} className="rounded-lg border border-line px-4 py-2 text-sm font-medium">Cancel</button>
+            </div>
+          </form>
+        )}
+        <DataTable
+          columns={[
+            { key: "name", label: "Policy Name" },
+            { key: "leaveType", label: "Type", render: (r) => <StatusBadge status={r.leaveType as string} /> },
+            { key: "daysPerYear", label: "Days/Year" },
+            { key: "carryOverDays", label: "Carry-Over" },
+            { key: "role", label: "Role", render: (r) => (r.employeeRole as any)?.name ?? <span className="text-ink/40">All roles</span> },
+            { key: "isActive", label: "Status", render: (r) => <StatusBadge status={r.isActive ? "ACTIVE" : "CANCELLED"} /> },
+            { key: "_actions", label: "", render: (r) => (
+              <div className="flex gap-1">
+                <button onClick={() => openEdit(r as never)} className="rounded border border-line bg-white px-2 py-1 text-xs hover:bg-field"><Pencil size={12} /></button>
+                <button onClick={() => remove(r.id as string)} className="rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-600 hover:bg-red-100"><Trash2 size={12} /></button>
+              </div>
+            )},
+          ]}
+          rows={rows as Record<string, any>[]}
+          loading={loading}
+          empty="No leave policies. Click '+ Add Policy' to create one."
+        />
+      </div>
+    </AppShell>
+  );
+}
+
+// ─── HR-A: Leave Balance ──────────────────────────────────────────────────────
+
+type LeaveBalance = { id: string; employeeId: string; leaveType: string; year: number; entitled: number; taken: number; pending: number; remaining: number; carryOver: number; employee?: { fullName: string; code: string } | null };
+
+export function LeaveBalancePage() {
+  const { opts } = useHROptions();
+  const currentYear = new Date().getFullYear();
+  const [rows, setRows] = useState<LeaveBalance[]>(() => getCachedFirst<ApiEnvelope<LeaveBalance[]>>("/hr/leave-balance")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/hr/leave-balance"));
+  const [loadError, setLoadError] = useState("");
+  const [yearFilter, setYearFilter] = useState(String(currentYear));
+  const [employeeFilter, setEmployeeFilter] = useState("");
+  const [showInit, setShowInit] = useState(false);
+  const [initYear, setInitYear] = useState(String(currentYear));
+  const [initSaving, setInitSaving] = useState(false);
+  const [initResult, setInitResult] = useState("");
+
+  function load() {
+    setLoadError("");
+    const params = new URLSearchParams({ period: yearFilter });
+    if (employeeFilter) params.set("employeeId", employeeFilter);
+    apiFetch<ApiEnvelope<LeaveBalance[]>>(`/hr/leave-balance?${params}`)
+      .then((r) => { const fresh = r.data ?? []; setRows(prev => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
+      .finally(() => setLoading(false));
+  }
+  useEffect(() => { load(); }, [yearFilter, employeeFilter]);
+
+  async function initializeBalances() {
+    setInitSaving(true); setInitResult("");
+    try {
+      const r = await apiFetch<ApiEnvelope<{ created: number; skipped: number; year: number }>>("/hr/leave-balance/initialize", { method: "POST", body: JSON.stringify({ year: Number(initYear) }) });
+      setInitResult(`Done: ${r.data.created} created, ${r.data.skipped} already existed for ${r.data.year}.`);
+      load();
+    } catch (err: unknown) { setInitResult(err instanceof Error ? err.message : "Failed to initialize"); }
+    finally { setInitSaving(false); }
+  }
+
+  function remainingColor(remaining: number, entitled: number) {
+    if (entitled === 0) return "text-ink/40";
+    if (remaining <= 0) return "text-red-600 font-semibold";
+    if (remaining <= 5) return "text-amber-600 font-semibold";
+    return "text-green-700 font-semibold";
+  }
+
+  return (
+    <AppShell>
+      <div className="space-y-5">
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-bold">Leave Balance</h1>
+          <button onClick={() => setShowInit(p => !p)} className="rounded-lg border border-line px-4 py-2 text-sm font-medium hover:bg-field">Initialize Balances</button>
+        </div>
+        <HRNav />
+        {loadError && (
+          <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <span>{loadError}</span>
+            <button type="button" className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold hover:bg-red-50" onClick={load}>Retry</button>
+          </div>
+        )}
+        {showInit && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 space-y-3">
+            <p className="text-sm font-semibold text-amber-800">Initialize leave balances from active policies</p>
+            <p className="text-xs text-amber-700">This creates LeaveBalance records for all active employees based on your current leave policies. Existing records are skipped.</p>
+            <div className="flex items-center gap-3">
+              <input type="number" value={initYear} onChange={(e) => setInitYear(e.target.value)} min={2020} max={2099} className="w-24 rounded-lg border border-line px-3 py-2 text-sm" />
+              <button onClick={initializeBalances} disabled={initSaving} className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{initSaving ? "Initializing..." : "Initialize"}</button>
+            </div>
+            {initResult && <p className="text-sm text-amber-800">{initResult}</p>}
+          </div>
+        )}
+        <div className="flex gap-3">
+          <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} className="rounded-lg border border-line px-3 py-2 text-sm">
+            {[currentYear + 1, currentYear, currentYear - 1].map(y => <option key={y} value={String(y)}>{y}</option>)}
+          </select>
+          <select value={employeeFilter} onChange={(e) => setEmployeeFilter(e.target.value)} className="rounded-lg border border-line px-3 py-2 text-sm min-w-[180px]">
+            <option value="">All employees</option>
+            {opts.employees.map(e => <option key={e.id} value={e.id}>{e.fullName}</option>)}
+          </select>
+        </div>
+        <DataTable
+          columns={[
+            { key: "employee", label: "Employee", render: (r) => (r.employee as any)?.fullName ?? r.employeeId },
+            { key: "code", label: "Code", render: (r) => (r.employee as any)?.code ?? "—" },
+            { key: "leaveType", label: "Type", render: (r) => <StatusBadge status={r.leaveType as string} /> },
+            { key: "year", label: "Year" },
+            { key: "entitled", label: "Entitled" },
+            { key: "carryOver", label: "Carry-Over" },
+            { key: "taken", label: "Taken" },
+            { key: "pending", label: "Pending" },
+            { key: "remaining", label: "Remaining", render: (r) => <span className={remainingColor(r.remaining as number, r.entitled as number)}>{r.remaining}</span> },
+          ]}
+          rows={rows as Record<string, any>[]}
+          loading={loading}
+          empty={`No leave balances for ${yearFilter}. Use "Initialize Balances" to set them up.`}
+        />
+      </div>
+    </AppShell>
+  );
+}
+
+// ─── HR-A: Public Holidays ────────────────────────────────────────────────────
+
+type PublicHoliday = { id: string; name: string; date: string; isRecurring: boolean; year?: number | null };
+
+export function PublicHolidaysPage() {
+  const currentYear = new Date().getFullYear();
+  const [rows, setRows] = useState<PublicHoliday[]>(() => getCachedFirst<ApiEnvelope<PublicHoliday[]>>("/hr/public-holidays")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/hr/public-holidays"));
+  const [loadError, setLoadError] = useState("");
+  const [yearFilter, setYearFilter] = useState(String(currentYear));
+  const [showForm, setShowForm] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [seeding, setSeeding] = useState(false);
+  const [seedMsg, setSeedMsg] = useState("");
+  const [error, setError] = useState("");
+  const [form, setForm] = useState({ name: "", date: "", isRecurring: "true" });
+  const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm(p => ({ ...p, [k]: e.target.value }));
+
+  function load() {
+    setLoadError("");
+    apiFetch<ApiEnvelope<PublicHoliday[]>>(`/hr/public-holidays?period=${yearFilter}`)
+      .then((r) => { const fresh = r.data ?? []; setRows(prev => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
+      .finally(() => setLoading(false));
+  }
+  useEffect(() => { load(); }, [yearFilter]);
+
+  async function seedGhana() {
+    setSeeding(true); setSeedMsg("");
+    try {
+      const r = await apiFetch<ApiEnvelope<{ created: number; skipped: number; year: number }>>("/hr/public-holidays/seed-ghana", { method: "POST" });
+      setSeedMsg(`Seeded ${r.data.created} Ghana public holidays for ${r.data.year} (${r.data.skipped} already existed).`);
+      load();
+    } catch (err: unknown) { setSeedMsg(err instanceof Error ? err.message : "Seeding failed"); }
+    finally { setSeeding(false); }
+  }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault(); setSaving(true); setError("");
+    try {
+      await apiFetch("/hr/public-holidays", { method: "POST", body: JSON.stringify({ name: form.name, date: form.date, isRecurring: form.isRecurring === "true" }) });
+      setShowForm(false); setForm({ name: "", date: "", isRecurring: "true" }); load();
+    } catch (err: unknown) { setError(err instanceof Error ? err.message : "Failed to save"); }
+    finally { setSaving(false); }
+  }
+
+  async function remove(id: string) {
+    if (!confirm("Remove this public holiday?")) return;
+    await apiFetch(`/hr/public-holidays/${id}`, { method: "DELETE" }).catch(() => undefined);
+    load();
+  }
+
+  return (
+    <AppShell>
+      <div className="space-y-5">
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-bold">Public Holidays</h1>
+          <div className="flex gap-2">
+            <button onClick={seedGhana} disabled={seeding} className="rounded-lg border border-brand px-4 py-2 text-sm font-semibold text-brand hover:bg-brand/5 disabled:opacity-50">{seeding ? "Seeding..." : "Seed Ghana Holidays"}</button>
+            <button onClick={() => { setShowForm(p => !p); setError(""); }} className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand/90">+ Add Holiday</button>
+          </div>
+        </div>
+        <HRNav />
+        {seedMsg && <div className="rounded-md bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700">{seedMsg}</div>}
+        {loadError && (
+          <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <span>{loadError}</span>
+            <button type="button" className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold hover:bg-red-50" onClick={load}>Retry</button>
+          </div>
+        )}
+        {showForm && (
+          <form onSubmit={submit} className="rounded-lg border border-line bg-white p-5 space-y-4">
+            <p className="font-semibold">Add Public Holiday</p>
+            {error && <div className="rounded bg-red-50 p-2 text-sm text-red-700">{error}</div>}
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-ink/70">Holiday Name <span className="text-red-500">*</span></label>
+                <input required value={form.name} onChange={f("name")} placeholder="e.g. Founders' Day" className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15" />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-ink/70">Date <span className="text-red-500">*</span></label>
+                <input required type="date" value={form.date} onChange={f("date")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15" />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-ink/70">Recurring Annually</label>
+                <select value={form.isRecurring} onChange={f("isRecurring")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15">
+                  <option value="true">Yes</option>
+                  <option value="false">No (one-off)</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button type="submit" disabled={saving} className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Saving..." : "Save Holiday"}</button>
+              <button type="button" onClick={() => setShowForm(false)} className="rounded-lg border border-line px-4 py-2 text-sm font-medium">Cancel</button>
+            </div>
+          </form>
+        )}
+        <div>
+          <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} className="rounded-lg border border-line px-3 py-2 text-sm">
+            {[currentYear - 1, currentYear, currentYear + 1].map(y => <option key={y} value={String(y)}>{y}</option>)}
+          </select>
+        </div>
+        <DataTable
+          columns={[
+            { key: "name", label: "Holiday Name" },
+            { key: "date", label: "Date", render: (r) => fmt(r.date as string) },
+            { key: "isRecurring", label: "Recurring", render: (r) => r.isRecurring ? <span className="text-green-700 text-xs font-semibold">Annual</span> : <span className="text-ink/50 text-xs">One-off</span> },
+            { key: "_actions", label: "", render: (r) => (
+              <button onClick={() => remove(r.id as string)} className="rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-600 hover:bg-red-100"><Trash2 size={12} /></button>
+            )},
+          ]}
+          rows={rows as Record<string, any>[]}
+          loading={loading}
+          empty="No public holidays. Click 'Seed Ghana Holidays' to add Ghana's statutory holidays."
+        />
+      </div>
+    </AppShell>
+  );
+}
+
+// ─── HR-D: Disciplinary Page ──────────────────────────────────────────────────
+
+type DisciplinaryRecord = { id: string; reference: string; incidentDate: string; category: string; description: string; actionTaken: string; acknowledgedAt?: string | null; employee?: { fullName: string; code: string } | null };
+
+const DISC_CATEGORIES = ["Attendance","Insubordination","Policy Violation","Misconduct","Performance","Safety Breach","Substance Abuse","Other"];
+
+export function DisciplinaryPage() {
+  const { opts } = useHROptions();
+  const [rows, setRows] = useState<DisciplinaryRecord[]>(() => getCachedFirst<ApiEnvelope<DisciplinaryRecord[]>>("/hr/disciplinary")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/hr/disciplinary"));
+  const [loadError, setLoadError] = useState("");
+  const [showForm, setShowForm] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [form, setForm] = useState({ employeeId: "", incidentDate: "", category: "Attendance", description: "", actionTaken: "", notes: "" });
+  const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setForm(p => ({ ...p, [k]: e.target.value }));
+
+  function load() {
+    setLoadError("");
+    apiFetch<ApiEnvelope<DisciplinaryRecord[]>>("/hr/disciplinary")
+      .then(r => { const fresh = r.data ?? []; setRows(prev => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
+      .finally(() => setLoading(false));
+  }
+  useEffect(() => { load(); }, []);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault(); setSaving(true); setError("");
+    try {
+      await apiFetch("/hr/disciplinary", { method: "POST", body: JSON.stringify({ ...form }) });
+      setShowForm(false); setForm({ employeeId: "", incidentDate: "", category: "Attendance", description: "", actionTaken: "", notes: "" }); load();
+    } catch (err: unknown) { setError(err instanceof Error ? err.message : "Failed to save"); }
+    finally { setSaving(false); }
+  }
+
+  async function remove(id: string) {
+    if (!confirm("Delete this disciplinary record?")) return;
+    await apiFetch(`/hr/disciplinary/${id}`, { method: "DELETE" }).catch(() => undefined);
+    load();
+  }
+
+  return (
+    <AppShell>
+      <div className="space-y-5">
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-bold">Disciplinary Records</h1>
+          <button onClick={() => { setShowForm(p => !p); setError(""); }} className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white">+ Record Action</button>
+        </div>
+        <HRNav />
+        {loadError && (
+          <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <span>{loadError}</span>
+            <button type="button" className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold hover:bg-red-50" onClick={load}>Retry</button>
+          </div>
+        )}
+        {showForm && (
+          <form onSubmit={submit} className="rounded-lg border border-line bg-white p-5 space-y-4">
+            <p className="font-semibold">New Disciplinary Action</p>
+            {error && <div className="rounded bg-red-50 p-2 text-sm text-red-700">{error}</div>}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-ink/70">Employee *</label>
+                <select required value={form.employeeId} onChange={f("employeeId")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm">
+                  <option value="">— Select —</option>
+                  {opts.employees.map(e => <option key={e.id} value={e.id}>{e.fullName}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-ink/70">Incident Date *</label>
+                <input required type="date" value={form.incidentDate} onChange={f("incidentDate")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm" />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-ink/70">Category *</label>
+                <select required value={form.category} onChange={f("category")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm">
+                  {DISC_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <div className="col-span-2">
+                <label className="mb-1.5 block text-xs font-semibold text-ink/70">Description *</label>
+                <textarea required value={form.description} onChange={f("description")} rows={3} className="w-full rounded-lg border border-line px-3 py-2 text-sm" />
+              </div>
+              <div className="col-span-2">
+                <label className="mb-1.5 block text-xs font-semibold text-ink/70">Action Taken *</label>
+                <textarea required value={form.actionTaken} onChange={f("actionTaken")} rows={2} className="w-full rounded-lg border border-line px-3 py-2 text-sm" />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button type="submit" disabled={saving} className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Saving..." : "Record Action"}</button>
+              <button type="button" onClick={() => setShowForm(false)} className="rounded-lg border border-line px-4 py-2 text-sm">Cancel</button>
+            </div>
+          </form>
+        )}
+        <DataTable
+          columns={[
+            { key: "reference", label: "Ref" },
+            { key: "employee", label: "Employee", render: r => (r.employee as any)?.fullName ?? "—" },
+            { key: "incidentDate", label: "Incident Date", render: r => fmt(r.incidentDate as string) },
+            { key: "category", label: "Category" },
+            { key: "actionTaken", label: "Action Taken", render: r => <span className="line-clamp-1 max-w-xs text-xs">{r.actionTaken as string}</span> },
+            { key: "acknowledgedAt", label: "Acknowledged", render: r => r.acknowledgedAt ? <span className="text-green-700 text-xs">Yes</span> : <span className="text-ink/40 text-xs">No</span> },
+            { key: "_actions", label: "", render: r => (
+              <button onClick={() => remove(r.id as string)} className="rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-600 hover:bg-red-100"><Trash2 size={12} /></button>
+            )},
+          ]}
+          rows={rows as Record<string, any>[]}
+          loading={loading}
+          empty="No disciplinary records found."
+        />
+      </div>
+    </AppShell>
+  );
+}
+
+// ─── HR-D: Grievances Page ────────────────────────────────────────────────────
+
+type GrievanceRecord = { id: string; reference: string; submittedDate: string; category: string; description: string; status: string; resolution?: string | null; resolvedAt?: string | null; employee?: { fullName: string } | null };
+
+const GRIEVANCE_CATEGORIES = ["Harassment","Unfair Treatment","Safety Concern","Pay Dispute","Work Conditions","Management Issues","Discrimination","Other"];
+
+export function GrievancesPage() {
+  const { opts } = useHROptions();
+  const [rows, setRows] = useState<GrievanceRecord[]>(() => getCachedFirst<ApiEnvelope<GrievanceRecord[]>>("/hr/grievances")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/hr/grievances"));
+  const [loadError, setLoadError] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [showForm, setShowForm] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [resolveId, setResolveId] = useState("");
+  const [resolution, setResolution] = useState("");
+  const [resolving, setResolving] = useState(false);
+  const [form, setForm] = useState({ employeeId: "", submittedDate: new Date().toISOString().slice(0,10), category: "Harassment", description: "" });
+  const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setForm(p => ({ ...p, [k]: e.target.value }));
+
+  function load() {
+    setLoadError("");
+    const params = statusFilter ? `?status=${statusFilter}` : "";
+    apiFetch<ApiEnvelope<GrievanceRecord[]>>(`/hr/grievances${params}`)
+      .then(r => { const fresh = r.data ?? []; setRows(prev => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
+      .finally(() => setLoading(false));
+  }
+  useEffect(() => { load(); }, [statusFilter]);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault(); setSaving(true); setError("");
+    try {
+      await apiFetch("/hr/grievances", { method: "POST", body: JSON.stringify({ ...form }) });
+      setShowForm(false); setForm({ employeeId: "", submittedDate: new Date().toISOString().slice(0,10), category: "Harassment", description: "" }); load();
+    } catch (err: unknown) { setError(err instanceof Error ? err.message : "Failed to save"); }
+    finally { setSaving(false); }
+  }
+
+  async function resolve(id: string) {
+    if (!resolution.trim()) return;
+    setResolving(true);
+    try {
+      await apiFetch(`/hr/grievances/${id}/resolve`, { method: "PATCH", body: JSON.stringify({ resolution }) });
+      setResolveId(""); setResolution(""); load();
+    } catch { /* ignore */ } finally { setResolving(false); }
+  }
+
+  async function close(id: string) {
+    if (!confirm("Close this grievance?")) return;
+    await apiFetch(`/hr/grievances/${id}/close`, { method: "PATCH" }).catch(() => undefined);
+    load();
+  }
+
+  async function remove(id: string) {
+    if (!confirm("Delete this grievance record?")) return;
+    await apiFetch(`/hr/grievances/${id}`, { method: "DELETE" }).catch(() => undefined);
+    load();
+  }
+
+  const STATUS_COLORS: Record<string, string> = { OPEN: "bg-amber-100 text-amber-700", RESOLVED: "bg-green-100 text-green-700", CLOSED: "bg-slate-100 text-slate-500" };
+
+  return (
+    <AppShell>
+      <div className="space-y-5">
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-bold">Grievances</h1>
+          <button onClick={() => { setShowForm(p => !p); setError(""); }} className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white">+ Submit Grievance</button>
+        </div>
+        <HRNav />
+        {loadError && (
+          <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <span>{loadError}</span>
+            <button type="button" className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold hover:bg-red-50" onClick={load}>Retry</button>
+          </div>
+        )}
+        {showForm && (
+          <form onSubmit={submit} className="rounded-lg border border-line bg-white p-5 space-y-4">
+            <p className="font-semibold">New Grievance</p>
+            {error && <div className="rounded bg-red-50 p-2 text-sm text-red-700">{error}</div>}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-ink/70">Employee *</label>
+                <select required value={form.employeeId} onChange={f("employeeId")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm">
+                  <option value="">— Select —</option>
+                  {opts.employees.map(e => <option key={e.id} value={e.id}>{e.fullName}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-ink/70">Date *</label>
+                <input required type="date" value={form.submittedDate} onChange={f("submittedDate")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm" />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-ink/70">Category *</label>
+                <select required value={form.category} onChange={f("category")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm">
+                  {GRIEVANCE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <div className="col-span-2">
+                <label className="mb-1.5 block text-xs font-semibold text-ink/70">Description *</label>
+                <textarea required value={form.description} onChange={f("description")} rows={3} className="w-full rounded-lg border border-line px-3 py-2 text-sm" />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button type="submit" disabled={saving} className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Saving..." : "Submit"}</button>
+              <button type="button" onClick={() => setShowForm(false)} className="rounded-lg border border-line px-4 py-2 text-sm">Cancel</button>
+            </div>
+          </form>
+        )}
+        <div className="flex gap-2">
+          {["", "OPEN", "RESOLVED", "CLOSED"].map(s => (
+            <button key={s} onClick={() => setStatusFilter(s)} className={`rounded-full px-3 py-1 text-xs font-semibold border ${statusFilter === s ? "bg-brand text-white border-brand" : "border-line text-ink/60 hover:bg-field"}`}>{s || "All"}</button>
+          ))}
+        </div>
+        {resolveId && (
+          <div className="rounded-lg border border-green-200 bg-green-50 p-4 space-y-2">
+            <p className="text-sm font-semibold text-green-800">Resolve Grievance</p>
+            <textarea value={resolution} onChange={e => setResolution(e.target.value)} placeholder="Describe the resolution..." rows={3} className="w-full rounded-lg border border-line px-3 py-2 text-sm" />
+            <div className="flex gap-2">
+              <button onClick={() => resolve(resolveId)} disabled={resolving || !resolution.trim()} className="rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{resolving ? "Resolving..." : "Mark Resolved"}</button>
+              <button onClick={() => { setResolveId(""); setResolution(""); }} className="rounded-lg border border-line px-4 py-2 text-sm">Cancel</button>
+            </div>
+          </div>
+        )}
+        <DataTable
+          columns={[
+            { key: "reference", label: "Ref" },
+            { key: "employee", label: "Employee", render: r => (r.employee as any)?.fullName ?? "—" },
+            { key: "submittedDate", label: "Date", render: r => fmt(r.submittedDate as string) },
+            { key: "category", label: "Category" },
+            { key: "description", label: "Description", render: r => <span className="line-clamp-1 max-w-xs text-xs">{r.description as string}</span> },
+            { key: "status", label: "Status", render: r => <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_COLORS[r.status as string] ?? ""}`}>{r.status as string}</span> },
+            { key: "_actions", label: "", render: r => (
+              <div className="flex gap-1">
+                {r.status === "OPEN" && <button onClick={() => { setResolveId(r.id as string); setResolution(""); }} className="rounded border border-green-200 bg-green-50 px-2 py-1 text-xs text-green-700 hover:bg-green-100">Resolve</button>}
+                {r.status === "RESOLVED" && <button onClick={() => close(r.id as string)} className="rounded border border-line px-2 py-1 text-xs hover:bg-field">Close</button>}
+                <button onClick={() => remove(r.id as string)} className="rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-600 hover:bg-red-100"><Trash2 size={12} /></button>
+              </div>
+            )},
+          ]}
+          rows={rows as Record<string, any>[]}
+          loading={loading}
+          empty="No grievances found."
+        />
+      </div>
+    </AppShell>
+  );
+}
+
 export function ProductivityReportPage() {
   const [data, setData] = useState<ProductivityData | null>(null);
   const [dateFrom, setDateFrom] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10));
@@ -2335,4 +3033,638 @@ export function ProductivityReportPage() {
   );
 }
 
+// ─── HR-F: Org Chart ─────────────────────────────────────────────────────────
 
+type OrgNode = { id: string; fullName: string; managerId: string | null; photoUrl?: string; roleTitle?: string; branchName?: string };
+
+function buildTree(nodes: OrgNode[]): OrgNode & { children: any[] } {
+  const map = new Map(nodes.map((n) => [n.id, { ...n, children: [] as any[] }]));
+  const roots: any[] = [];
+  for (const n of map.values()) {
+    if (n.managerId && map.has(n.managerId)) {
+      map.get(n.managerId)!.children.push(n);
+    } else {
+      roots.push(n);
+    }
+  }
+  return { id: "root", fullName: "", managerId: null, children: roots };
+}
+
+function OrgCard({ node }: { node: OrgNode & { children: any[] } }) {
+  const initial = node.fullName.split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase();
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <div className="rounded-xl border border-line bg-surface p-3 shadow-sm w-44 text-center">
+        {node.photoUrl
+          ? <img src={node.photoUrl} alt={node.fullName} className="w-10 h-10 rounded-full object-cover mx-auto mb-1" />
+          : <div className="w-10 h-10 rounded-full bg-brand/10 flex items-center justify-center text-sm font-bold text-brand mx-auto mb-1">{initial}</div>
+        }
+        <p className="text-xs font-semibold text-ink truncate">{node.fullName}</p>
+        {node.roleTitle && <p className="text-[10px] text-ink/60 truncate">{node.roleTitle}</p>}
+        {node.branchName && <p className="text-[10px] text-ink/50 truncate">{node.branchName}</p>}
+      </div>
+      {node.children.length > 0 && (
+        <div className="flex flex-col items-center">
+          <div className="w-px h-4 bg-line" />
+          <div className="flex gap-6 items-start">
+            {node.children.map((child: any) => (
+              <OrgCard key={child.id} node={child} />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function OrgChartPage() {
+  const [nodes, setNodes] = useState<OrgNode[]>([]);
+  const [loading, setLoading] = useState(!hasCached("org-chart-nodes"));
+
+  async function load() {
+    const r = await apiFetch<ApiEnvelope<OrgNode[]>>("/hr/org-chart");
+    setNodes(getCachedFirst("org-chart-nodes", r.data ?? [], setNodes));
+    setLoading(false);
+  }
+
+  useEffect(() => { setNodes(getCachedFirst("org-chart-nodes", [], setNodes)); void load(); }, []);
+
+  const tree = buildTree(nodes);
+
+  return (
+    <AppShell>
+      <div className="space-y-5">
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-bold">Organisation Chart</h1>
+          <span className="text-sm text-ink/60">{nodes.length} employees</span>
+        </div>
+        <HRNav />
+        {loading && <p className="text-sm text-ink/50">Loading org chart…</p>}
+        {!loading && nodes.length === 0 && <p className="text-sm text-ink/50">No active employees found.</p>}
+        {tree.children.length > 0 && (
+          <div className="overflow-x-auto pb-4">
+            <div className="flex gap-8 items-start min-w-max">
+              {tree.children.map((root: any) => (
+                <OrgCard key={root.id} node={root} />
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </AppShell>
+  );
+}
+
+// ─── HR-F: Training Catalog ───────────────────────────────────────────────────
+
+type TrainingCourseRow = { id: string; code: string; title: string; category?: string; durationHours?: number; provider?: string; isActive: boolean };
+
+export function TrainingCatalogPage() {
+  const [rows, setRows] = useState<TrainingCourseRow[]>(getCachedFirst("training-courses", [], () => {}));
+  const [loading, setLoading] = useState(!hasCached("training-courses"));
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ code: "", title: "", category: "", durationHours: "", provider: "", description: "" });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setForm((p) => ({ ...p, [k]: e.target.value }));
+
+  async function load() {
+    const r = await apiFetch<ApiEnvelope<TrainingCourseRow[]>>("/hr/training-courses");
+    const fresh = r.data ?? [];
+    setRows(fresh.length === 0 && rows.length > 0 ? rows : fresh);
+    setLoading(false);
+  }
+
+  useEffect(() => { void load(); }, []);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true); setError("");
+    try {
+      await apiFetch("/hr/training-courses", { method: "POST", body: JSON.stringify({ ...form, durationHours: form.durationHours ? Number(form.durationHours) : undefined, description: form.description || undefined }) });
+      setForm({ code: "", title: "", category: "", durationHours: "", provider: "", description: "" });
+      setShowForm(false);
+      await load();
+    } catch (err: any) { setError(err.message ?? "Failed to save"); }
+    finally { setSaving(false); }
+  }
+
+  async function toggleActive(row: TrainingCourseRow) {
+    try {
+      await apiFetch(`/hr/training-courses/${row.id}`, { method: "PUT", body: JSON.stringify({ isActive: !row.isActive }) });
+      await load();
+    } catch {}
+  }
+
+  return (
+    <AppShell>
+      <div className="space-y-5">
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-bold">Training Catalog</h1>
+          <button onClick={() => { setShowForm((p) => !p); setError(""); }} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white">{showForm ? "Cancel" : "+ Add Course"}</button>
+        </div>
+        <HRNav />
+
+        {showForm && (
+          <form onSubmit={handleSubmit} className="rounded-lg border border-line bg-surface p-5 space-y-4">
+            <p className="font-semibold">New Training Course</p>
+            {error && <p className="text-sm text-red-600">{error}</p>}
+            <div className="grid grid-cols-3 gap-4">
+              <div><label className="mb-1 block text-xs font-medium">Code *</label><input required value={form.code} onChange={f("code")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+              <div className="col-span-2"><label className="mb-1 block text-xs font-medium">Title *</label><input required value={form.title} onChange={f("title")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Category</label><input value={form.category} onChange={f("category")} placeholder="e.g. Safety" className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Duration (hrs)</label><input type="number" step="0.5" min="0" value={form.durationHours} onChange={f("durationHours")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Provider</label><input value={form.provider} onChange={f("provider")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+              <div className="col-span-3"><label className="mb-1 block text-xs font-medium">Description</label><textarea value={form.description} onChange={f("description")} rows={2} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+            </div>
+            <button type="submit" disabled={saving} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Saving…" : "Save Course"}</button>
+          </form>
+        )}
+
+        <DataTable
+          columns={[
+            { key: "code", label: "Code" },
+            { key: "title", label: "Title" },
+            { key: "category", label: "Category", render: (r) => r.category ?? "—" },
+            { key: "durationHours", label: "Duration (hrs)", render: (r) => r.durationHours ?? "—" },
+            { key: "provider", label: "Provider", render: (r) => r.provider ?? "—" },
+            { key: "isActive", label: "Status", render: (r) => <StatusBadge status={r.isActive ? "ACTIVE" : "INACTIVE"} /> },
+            { key: "actions", label: "", render: (r) => <button onClick={() => toggleActive(r)} className="text-xs text-ink/60 hover:text-ink">{r.isActive ? "Deactivate" : "Activate"}</button> },
+          ]}
+          rows={rows}
+          empty={loading ? "Loading…" : "No training courses yet"}
+        />
+      </div>
+    </AppShell>
+  );
+}
+
+// ─── HR-G: Salary Bands ───────────────────────────────────────────────────────
+
+type SalaryBandRow = { id: string; grade: string; minSalary: number; midSalary?: number; maxSalary: number; currency: string; effectiveDate: string; employeeRole?: { name: string } };
+
+export function SalaryBandsPage() {
+  const { employees: _, roles } = useHROptions();
+  const [rows, setRows] = useState<SalaryBandRow[]>(getCachedFirst("salary-bands", [], () => {}));
+  const [loading, setLoading] = useState(!hasCached("salary-bands"));
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ grade: "", employeeRoleId: "", minSalary: "", midSalary: "", maxSalary: "", effectiveDate: "", notes: "" });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm((p) => ({ ...p, [k]: e.target.value }));
+
+  async function load() {
+    const r = await apiFetch<ApiEnvelope<SalaryBandRow[]>>("/hr/salary-bands");
+    const fresh = r.data ?? [];
+    setRows(fresh.length === 0 && rows.length > 0 ? rows : fresh);
+    setLoading(false);
+  }
+  useEffect(() => { void load(); }, []);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault(); setSaving(true); setError("");
+    try {
+      await apiFetch("/hr/salary-bands", { method: "POST", body: JSON.stringify({ ...form, employeeRoleId: form.employeeRoleId || undefined, minSalary: Number(form.minSalary), midSalary: form.midSalary ? Number(form.midSalary) : undefined, maxSalary: Number(form.maxSalary) }) });
+      setForm({ grade: "", employeeRoleId: "", minSalary: "", midSalary: "", maxSalary: "", effectiveDate: "", notes: "" });
+      setShowForm(false); await load();
+    } catch (err: any) { setError(err.message ?? "Failed to save"); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <AppShell>
+      <div className="space-y-5">
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-bold">Salary Bands</h1>
+          <button onClick={() => { setShowForm((p) => !p); setError(""); }} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white">{showForm ? "Cancel" : "+ Add Band"}</button>
+        </div>
+        <HRNav />
+
+        {showForm && (
+          <form onSubmit={handleSubmit} className="rounded-lg border border-line bg-surface p-5 space-y-4">
+            <p className="font-semibold">New Salary Band</p>
+            {error && <p className="text-sm text-red-600">{error}</p>}
+            <div className="grid grid-cols-3 gap-4">
+              <div><label className="mb-1 block text-xs font-medium">Grade *</label><input required value={form.grade} onChange={f("grade")} placeholder="e.g. L2" className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Role</label>
+                <select value={form.employeeRoleId} onChange={f("employeeRoleId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
+                  <option value="">— Any Role —</option>
+                  {roles.map((r: any) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                </select>
+              </div>
+              <div><label className="mb-1 block text-xs font-medium">Effective Date *</label><input required type="date" value={form.effectiveDate} onChange={f("effectiveDate")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Min Salary (GHS) *</label><input required type="number" min="0" value={form.minSalary} onChange={f("minSalary")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Mid Salary (GHS)</label><input type="number" min="0" value={form.midSalary} onChange={f("midSalary")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Max Salary (GHS) *</label><input required type="number" min="0" value={form.maxSalary} onChange={f("maxSalary")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+            </div>
+            <button type="submit" disabled={saving} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Saving…" : "Save"}</button>
+          </form>
+        )}
+
+        <DataTable
+          columns={[
+            { key: "grade", label: "Grade" },
+            { key: "role", label: "Role", render: (r) => r.employeeRole?.name ?? "—" },
+            { key: "minSalary", label: "Min (GHS)", render: (r) => Number(r.minSalary).toLocaleString() },
+            { key: "midSalary", label: "Mid (GHS)", render: (r) => r.midSalary ? Number(r.midSalary).toLocaleString() : "—" },
+            { key: "maxSalary", label: "Max (GHS)", render: (r) => Number(r.maxSalary).toLocaleString() },
+            { key: "effectiveDate", label: "Effective", render: (r) => r.effectiveDate?.slice(0, 10) },
+          ]}
+          rows={rows}
+          empty={loading ? "Loading…" : "No salary bands yet"}
+        />
+      </div>
+    </AppShell>
+  );
+}
+
+// ─── HR-G: Recruitment ────────────────────────────────────────────────────────
+
+const APP_STATUSES = ["RECEIVED", "SHORTLISTED", "INTERVIEW", "OFFER", "HIRED", "REJECTED"];
+type JobRow = { id: string; reference: string; title: string; status: string; department?: string; closingDate?: string };
+type AppRow = { id: string; reference: string; applicantName: string; status: string; jobPostingId: string; interviewDate?: string; jobPosting?: { title: string } };
+
+export function RecruitmentPage() {
+  const [jobs, setJobs] = useState<JobRow[]>([]);
+  const [apps, setApps] = useState<AppRow[]>([]);
+  const [selectedJob, setSelectedJob] = useState<string>("");
+  const [showJobForm, setShowJobForm] = useState(false);
+  const [showAppForm, setShowAppForm] = useState(false);
+  const [jobForm, setJobForm] = useState({ title: "", department: "", description: "", requirements: "", closingDate: "" });
+  const [appForm, setAppForm] = useState({ applicantName: "", applicantEmail: "", applicantPhone: "" });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const fj = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setJobForm((p) => ({ ...p, [k]: e.target.value }));
+  const fa = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) => setAppForm((p) => ({ ...p, [k]: e.target.value }));
+
+  async function load() {
+    const [jr, ar] = await Promise.all([
+      apiFetch<ApiEnvelope<JobRow[]>>("/hr/job-postings"),
+      apiFetch<ApiEnvelope<AppRow[]>>("/hr/applications"),
+    ]);
+    setJobs(jr.data ?? []);
+    setApps(ar.data ?? []);
+  }
+  useEffect(() => { void load(); }, []);
+
+  async function saveJob(e: React.FormEvent) {
+    e.preventDefault(); setSaving(true); setError("");
+    try {
+      await apiFetch("/hr/job-postings", { method: "POST", body: JSON.stringify({ ...jobForm, closingDate: jobForm.closingDate || undefined }) });
+      setJobForm({ title: "", department: "", description: "", requirements: "", closingDate: "" });
+      setShowJobForm(false); await load();
+    } catch (err: any) { setError(err.message ?? "Error"); }
+    finally { setSaving(false); }
+  }
+
+  async function saveApp(e: React.FormEvent) {
+    e.preventDefault(); if (!selectedJob) return; setSaving(true); setError("");
+    try {
+      await apiFetch(`/hr/job-postings/${selectedJob}/applications`, { method: "POST", body: JSON.stringify(appForm) });
+      setAppForm({ applicantName: "", applicantEmail: "", applicantPhone: "" });
+      setShowAppForm(false); await load();
+    } catch (err: any) { setError(err.message ?? "Error"); }
+    finally { setSaving(false); }
+  }
+
+  async function moveStatus(appId: string, status: string) {
+    try { await apiFetch(`/hr/applications/${appId}/status`, { method: "PATCH", body: JSON.stringify({ status }) }); await load(); } catch {}
+  }
+
+  async function hire(appId: string) {
+    if (!confirm("Create an Employee record from this applicant?")) return;
+    try { await apiFetch(`/hr/applications/${appId}/hire`, { method: "POST" }); await load(); } catch (err: any) { alert(err.message); }
+  }
+
+  const filteredApps = selectedJob ? apps.filter((a) => a.jobPostingId === selectedJob) : apps;
+
+  return (
+    <AppShell>
+      <div className="space-y-5">
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-bold">Recruitment</h1>
+          <div className="flex gap-2">
+            <button onClick={() => { setShowJobForm((p) => !p); setError(""); }} className="rounded-md border border-line px-4 py-2 text-sm font-medium hover:bg-field">+ Post Job</button>
+            {selectedJob && <button onClick={() => { setShowAppForm((p) => !p); setError(""); }} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white">+ Add Application</button>}
+          </div>
+        </div>
+        <HRNav />
+        {error && <p className="text-sm text-red-600">{error}</p>}
+
+        {showJobForm && (
+          <form onSubmit={saveJob} className="rounded-lg border border-line bg-surface p-5 space-y-4">
+            <p className="font-semibold">New Job Posting</p>
+            <div className="grid grid-cols-2 gap-4">
+              <div><label className="mb-1 block text-xs font-medium">Job Title *</label><input required value={jobForm.title} onChange={fj("title")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Department</label><input value={jobForm.department} onChange={fj("department")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Closing Date</label><input type="date" value={jobForm.closingDate} onChange={fj("closingDate")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+            </div>
+            <div><label className="mb-1 block text-xs font-medium">Description *</label><textarea required value={jobForm.description} onChange={fj("description")} rows={3} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+            <button type="submit" disabled={saving} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Saving…" : "Post Job"}</button>
+          </form>
+        )}
+
+        {showAppForm && selectedJob && (
+          <form onSubmit={saveApp} className="rounded-lg border border-line bg-surface p-5 space-y-4">
+            <p className="font-semibold">New Application</p>
+            <div className="grid grid-cols-3 gap-4">
+              <div><label className="mb-1 block text-xs font-medium">Name *</label><input required value={appForm.applicantName} onChange={fa("applicantName")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Email</label><input type="email" value={appForm.applicantEmail} onChange={fa("applicantEmail")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Phone</label><input value={appForm.applicantPhone} onChange={fa("applicantPhone")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+            </div>
+            <button type="submit" disabled={saving} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Saving…" : "Submit"}</button>
+          </form>
+        )}
+
+        <div className="grid grid-cols-3 gap-4">
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-ink/60 uppercase tracking-wide">Job Postings ({jobs.length})</p>
+            {jobs.map((j) => (
+              <button key={j.id} onClick={() => setSelectedJob(j.id === selectedJob ? "" : j.id)} className={`w-full rounded-lg border p-3 text-left text-sm hover:border-brand/40 transition-colors ${selectedJob === j.id ? "border-brand bg-brand/5" : "border-line bg-surface"}`}>
+                <p className="font-medium">{j.title}</p>
+                <p className="text-xs text-ink/60">{j.reference} · <StatusBadge status={j.status} /></p>
+              </button>
+            ))}
+            {jobs.length === 0 && <p className="text-sm text-ink/50">No postings</p>}
+          </div>
+
+          <div className="col-span-2">
+            <div className="flex gap-3 overflow-x-auto pb-2">
+              {APP_STATUSES.map((s) => {
+                const col = filteredApps.filter((a) => a.status === s);
+                return (
+                  <div key={s} className="min-w-44 flex-shrink-0 space-y-2">
+                    <p className="text-xs font-semibold text-ink/60 uppercase tracking-wide">{s} ({col.length})</p>
+                    {col.map((a) => (
+                      <div key={a.id} className="rounded-lg border border-line bg-surface p-3 space-y-1">
+                        <p className="text-sm font-medium">{a.applicantName}</p>
+                        <p className="text-xs text-ink/50">{a.reference}</p>
+                        <div className="flex flex-wrap gap-1 pt-1">
+                          {APP_STATUSES.filter((st) => st !== a.status && st !== "HIRED").map((st) => (
+                            <button key={st} onClick={() => moveStatus(a.id, st)} className="rounded px-2 py-0.5 text-[10px] font-medium border border-line hover:bg-field">{st}</button>
+                          ))}
+                          {a.status !== "HIRED" && <button onClick={() => hire(a.id)} className="rounded px-2 py-0.5 text-[10px] font-semibold text-green-700 border border-green-300 hover:bg-green-50">Hire</button>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+    </AppShell>
+  );
+}
+
+// ─── HR-G: Onboarding ─────────────────────────────────────────────────────────
+
+type OnboardingItem = { id: string; title: string; completedAt?: string; dueDate?: string; sortOrder: number };
+
+export function OnboardingPage() {
+  const { employees } = useHROptions();
+  const [employeeId, setEmployeeId] = useState("");
+  const [items, setItems] = useState<OnboardingItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [newTitle, setNewTitle] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function loadItems(eid: string) {
+    if (!eid) return;
+    setLoading(true);
+    const r = await apiFetch<ApiEnvelope<OnboardingItem[]>>(`/hr/employees/${eid}/onboarding`);
+    setItems(r.data ?? []);
+    setLoading(false);
+  }
+
+  function handleEmployeeChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const id = e.target.value;
+    setEmployeeId(id);
+    void loadItems(id);
+  }
+
+  async function applyTemplate() {
+    if (!employeeId || !confirm("Load 10 standard onboarding items?")) return;
+    setSaving(true);
+    try { await apiFetch(`/hr/employees/${employeeId}/onboarding/template`, { method: "POST" }); await loadItems(employeeId); }
+    catch {}
+    finally { setSaving(false); }
+  }
+
+  async function addItem(e: React.FormEvent) {
+    e.preventDefault(); if (!newTitle.trim() || !employeeId) return;
+    setSaving(true);
+    try { await apiFetch(`/hr/employees/${employeeId}/onboarding`, { method: "POST", body: JSON.stringify({ title: newTitle.trim() }) }); setNewTitle(""); await loadItems(employeeId); }
+    catch {}
+    finally { setSaving(false); }
+  }
+
+  async function toggleComplete(item: OnboardingItem) {
+    if (item.completedAt) return;
+    try { await apiFetch(`/hr/onboarding/${item.id}/complete`, { method: "PATCH" }); await loadItems(employeeId); } catch {}
+  }
+
+  const done = items.filter((i) => i.completedAt).length;
+
+  return (
+    <AppShell>
+      <div className="space-y-5">
+        <h1 className="text-xl font-bold">Onboarding Checklists</h1>
+        <HRNav />
+
+        <div className="flex items-end gap-4">
+          <div className="flex-1">
+            <label className="mb-1 block text-xs font-semibold text-ink/70">Select Employee</label>
+            <select value={employeeId} onChange={handleEmployeeChange} className="w-full rounded-lg border border-line px-3 py-2 text-sm">
+              <option value="">— Pick an employee —</option>
+              {employees.map((e: any) => <option key={e.id} value={e.id}>{e.fullName} ({e.code})</option>)}
+            </select>
+          </div>
+          {employeeId && <button onClick={applyTemplate} disabled={saving} className="rounded-md border border-line px-4 py-2 text-sm font-medium hover:bg-field disabled:opacity-50">Load Template</button>}
+        </div>
+
+        {employeeId && (
+          <>
+            {items.length > 0 && <div className="text-sm text-ink/70">{done}/{items.length} completed</div>}
+            <form onSubmit={addItem} className="flex gap-2">
+              <input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="Add checklist item…" className="flex-1 rounded-lg border border-line px-3 py-2 text-sm" />
+              <button type="submit" disabled={saving || !newTitle.trim()} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Add</button>
+            </form>
+
+            {loading && <p className="text-sm text-ink/50">Loading…</p>}
+            <div className="space-y-2">
+              {items.map((item) => (
+                <div key={item.id} className={`flex items-center gap-3 rounded-lg border p-3 ${item.completedAt ? "border-green-200 bg-green-50" : "border-line bg-surface"}`}>
+                  <button onClick={() => toggleComplete(item)} className={`w-5 h-5 rounded border flex items-center justify-center flex-shrink-0 ${item.completedAt ? "bg-green-500 border-green-500 text-white" : "border-line hover:border-brand"}`}>
+                    {item.completedAt && <span className="text-xs">✓</span>}
+                  </button>
+                  <p className={`flex-1 text-sm ${item.completedAt ? "line-through text-ink/50" : "text-ink"}`}>{item.title}</p>
+                  {item.dueDate && <span className="text-xs text-ink/50">Due {item.dueDate.slice(0, 10)}</span>}
+                </div>
+              ))}
+              {!loading && items.length === 0 && <p className="text-sm text-ink/50">No checklist items yet. Click "Load Template" to start.</p>}
+            </div>
+          </>
+        )}
+      </div>
+    </AppShell>
+  );
+}
+
+// ─── HR-H: Approval Workflows ─────────────────────────────────────────────────
+
+type ApprovalChainRow = { id: string; entityType: string; minAmount?: number; steps: any[]; isActive: boolean };
+
+export function ApprovalWorkflowPage() {
+  const [chains, setChains] = useState<ApprovalChainRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ entityType: "", minAmount: "", steps: "[{\"role\":\"HR_MANAGE\",\"label\":\"HR Manager\"}]" });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setForm((p) => ({ ...p, [k]: e.target.value }));
+
+  async function load() {
+    const r = await apiFetch<ApiEnvelope<ApprovalChainRow[]>>("/hr/approval-chains");
+    setChains(r.data ?? []);
+    setLoading(false);
+  }
+  useEffect(() => { void load(); }, []);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault(); setSaving(true); setError("");
+    try {
+      let steps: object[];
+      try { steps = JSON.parse(form.steps); } catch { setError("Steps must be valid JSON array"); setSaving(false); return; }
+      await apiFetch("/hr/approval-chains", { method: "POST", body: JSON.stringify({ entityType: form.entityType, minAmount: form.minAmount ? Number(form.minAmount) : undefined, steps }) });
+      setForm({ entityType: "", minAmount: "", steps: "[{\"role\":\"HR_MANAGE\",\"label\":\"HR Manager\"}]" });
+      setShowForm(false); await load();
+    } catch (err: any) { setError(err.message ?? "Error"); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <AppShell>
+      <div className="space-y-5">
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-bold">Approval Workflows</h1>
+          <button onClick={() => { setShowForm((p) => !p); setError(""); }} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white">{showForm ? "Cancel" : "+ Add Chain"}</button>
+        </div>
+        <HRNav />
+
+        {showForm && (
+          <form onSubmit={handleSubmit} className="rounded-lg border border-line bg-surface p-5 space-y-4">
+            <p className="font-semibold">New Approval Chain</p>
+            {error && <p className="text-sm text-red-600">{error}</p>}
+            <div className="grid grid-cols-2 gap-4">
+              <div><label className="mb-1 block text-xs font-medium">Entity Type *</label><input required value={form.entityType} onChange={f("entityType")} placeholder="e.g. LEAVE, PAYROLL" className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Min Amount (GHS)</label><input type="number" min="0" value={form.minAmount} onChange={f("minAmount")} placeholder="Optional threshold" className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+              <div className="col-span-2"><label className="mb-1 block text-xs font-medium">Steps (JSON array) *</label><textarea required value={form.steps} onChange={f("steps")} rows={3} className="w-full rounded-md border border-line px-3 py-2 text-sm font-mono text-xs" /></div>
+            </div>
+            <button type="submit" disabled={saving} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Saving…" : "Save"}</button>
+          </form>
+        )}
+
+        {loading && <p className="text-sm text-ink/50">Loading…</p>}
+        <div className="space-y-3">
+          {chains.map((c) => (
+            <div key={c.id} className="rounded-lg border border-line bg-surface p-4">
+              <div className="flex items-center justify-between mb-2">
+                <p className="font-semibold">{c.entityType}</p>
+                <StatusBadge status={c.isActive ? "ACTIVE" : "INACTIVE"} />
+              </div>
+              {c.minAmount && <p className="text-xs text-ink/60 mb-2">Threshold: GHS {Number(c.minAmount).toLocaleString()}</p>}
+              <div className="flex gap-2 flex-wrap">
+                {(c.steps ?? []).map((step: any, i: number) => (
+                  <div key={i} className="flex items-center gap-1">
+                    <span className="rounded-full bg-brand/10 px-3 py-1 text-xs font-medium text-brand">{step.label ?? step.role ?? `Step ${i + 1}`}</span>
+                    {i < (c.steps ?? []).length - 1 && <span className="text-ink/30 text-xs">→</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+          {!loading && chains.length === 0 && <p className="text-sm text-ink/50">No approval chains configured yet.</p>}
+        </div>
+      </div>
+    </AppShell>
+  );
+}
+
+// ─── HR-H: Compliance Reports ─────────────────────────────────────────────────
+
+type ComplianceReportRow = { id: string; reportType: string; period: string; createdAt: string };
+
+export function ComplianceReportPage() {
+  const [reports, setReports] = useState<ComplianceReportRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [period, setPeriod] = useState(new Date().toISOString().slice(0, 7));
+  const [generating, setGenerating] = useState<string>("");
+  const [result, setResult] = useState<any>(null);
+  const [error, setError] = useState("");
+
+  async function load() {
+    const r = await apiFetch<ApiEnvelope<ComplianceReportRow[]>>("/hr/compliance/reports");
+    setReports(r.data ?? []);
+    setLoading(false);
+  }
+  useEffect(() => { void load(); }, []);
+
+  async function generate(type: "ssnit" | "paye" | "headcount") {
+    setGenerating(type); setError(""); setResult(null);
+    try {
+      const r = await apiFetch<ApiEnvelope<any>>(`/hr/compliance/${type}`, { method: "POST", body: JSON.stringify({ period }) });
+      setResult({ type, ...r.data });
+      await load();
+    } catch (err: any) { setError(err.message ?? "Error generating report"); }
+    finally { setGenerating(""); }
+  }
+
+  return (
+    <AppShell>
+      <div className="space-y-5">
+        <h1 className="text-xl font-bold">Compliance Reports</h1>
+        <HRNav />
+
+        <div className="rounded-lg border border-line bg-surface p-5 space-y-4">
+          <p className="font-semibold">Generate Report</p>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          <div className="flex items-end gap-4 flex-wrap">
+            <div>
+              <label className="mb-1 block text-xs font-medium">Period (YYYY-MM)</label>
+              <input value={period} onChange={(e) => setPeriod(e.target.value)} placeholder="2026-01" className="rounded-md border border-line px-3 py-2 text-sm w-40" />
+            </div>
+            <button onClick={() => generate("ssnit")} disabled={!!generating || !period} className="rounded-md border border-line px-4 py-2 text-sm font-medium hover:bg-field disabled:opacity-50">{generating === "ssnit" ? "Generating…" : "SSNIT Report"}</button>
+            <button onClick={() => generate("paye")} disabled={!!generating || !period} className="rounded-md border border-line px-4 py-2 text-sm font-medium hover:bg-field disabled:opacity-50">{generating === "paye" ? "Generating…" : "PAYE Report"}</button>
+            <button onClick={() => generate("headcount")} disabled={!!generating || !period} className="rounded-md border border-line px-4 py-2 text-sm font-medium hover:bg-field disabled:opacity-50">{generating === "headcount" ? "Generating…" : "Headcount Report"}</button>
+          </div>
+
+          {result && (
+            <div className="rounded-lg border border-green-200 bg-green-50 p-4 text-sm space-y-1">
+              <p className="font-semibold text-green-800 capitalize">{result.type} Report Generated — {result.report?.period}</p>
+              {result.totalEmployees !== undefined && <p>Employees: <strong>{result.totalEmployees}</strong></p>}
+              {result.totalEmployeeSsnit !== undefined && <p>Total Employee SSNIT: <strong>GHS {Number(result.totalEmployeeSsnit).toFixed(2)}</strong></p>}
+              {result.totalEmployerSsnit !== undefined && <p>Total Employer SSNIT: <strong>GHS {Number(result.totalEmployerSsnit).toFixed(2)}</strong></p>}
+              {result.totalPaye !== undefined && <p>Total PAYE: <strong>GHS {Number(result.totalPaye).toFixed(2)}</strong></p>}
+              {result.total !== undefined && <p>Total Headcount: <strong>{result.total}</strong></p>}
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-1">
+          <p className="text-xs font-semibold text-ink/60 uppercase tracking-wide">Generated Reports ({reports.length})</p>
+          <DataTable
+            columns={[
+              { key: "reportType", label: "Type" },
+              { key: "period", label: "Period" },
+              { key: "createdAt", label: "Generated", render: (r) => r.createdAt?.slice(0, 16).replace("T", " ") },
+            ]}
+            rows={reports}
+            empty={loading ? "Loading…" : "No reports generated yet"}
+          />
+        </div>
+      </div>
+    </AppShell>
+  );
+}

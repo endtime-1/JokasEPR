@@ -44,4 +44,19 @@ export class EmailService {
       return false;
     }
   }
+
+  async sendWithAttachment(to: string, subject: string, html: string, attachment: { filename: string; content: Buffer }): Promise<boolean> {
+    if (!this.transporter) {
+      this.logger.warn("SMTP not configured — skipping email with attachment to " + to);
+      return false;
+    }
+    const from = `"${this.config.get("SMTP_FROM_NAME", "Jokas ERP")}" <${this.config.get("SMTP_FROM_ADDRESS", "noreply@jokas.app")}>`;
+    try {
+      await this.transporter.sendMail({ from, to, subject, html, attachments: [{ filename: attachment.filename, content: attachment.content }] });
+      return true;
+    } catch (err) {
+      this.logger.error(`Email with attachment failed to ${to}: ${(err as Error).message}`);
+      return false;
+    }
+  }
 }

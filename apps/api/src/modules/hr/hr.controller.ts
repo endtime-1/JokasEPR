@@ -1,4 +1,5 @@
-﻿import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
+﻿import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req, Res, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
+import { Request, Response } from "express";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { diskStorage } from "multer";
 import { extname, join } from "path";
@@ -26,17 +27,39 @@ import {
   CreateTaskDto,
   CreateTrainingRecordDto,
   HRQueryDto,
+  CreateEmployeeDocumentDto,
+  CreateLeavePolicyDto,
+  CreatePublicHolidayDto,
+  InitializeLeaveBalanceDto,
   RecordAttendanceDto,
   ReviewLeaveRequestDto,
   ReviewPerformanceDto,
   UpdateAssignmentStatusDto,
   UpdateEmployeeDto,
   UpdateEmployeeRoleDto,
+  UpdateLeavePolicyDto,
   UpdateShiftDto,
   UpdateTaskDto,
   UpdateTaskStatusDto,
+  BulkPayrollRunDto,
+  PayrollPrefillQueryDto,
+  CreateDisciplinaryDto,
+  CreateGrievanceDto,
+  ResolveGrievanceDto,
+  CreateTrainingCourseDto,
+  UpdateTrainingCourseDto,
+  CreateSalaryBandDto,
+  UpdateSalaryBandDto,
+  CreateJobPostingDto,
+  UpdateJobPostingDto,
+  CreateJobApplicationDto,
+  UpdateApplicationStatusDto,
+  CreateOnboardingItemDto,
+  CreatePeerReviewDto,
+  CreateApprovalChainDto,
+  UpdateApprovalChainDto,
+  ComplianceReportQueryDto,
 } from "./dto/hr.dto";
-import { Request } from "express";
 
 function ctx(req: Request) {
   return { ipAddress: req.ip, userAgent: req.headers["user-agent"] };
@@ -290,6 +313,24 @@ export class HRController {
     return this.svc.computePayrollEstimate(user, dto);
   }
 
+  @Get("payroll/prefill")
+  @RequirePermissions(PERMISSIONS.HR_READ)
+  prefillPayroll(@CurrentUser() user: AuthenticatedUser, @Query() query: PayrollPrefillQueryDto) {
+    return this.svc.prefillPayroll(user, query.employeeId, query.period);
+  }
+
+  @Post("payroll/bulk-run")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  bulkPayrollRun(@CurrentUser() user: AuthenticatedUser, @Body() dto: BulkPayrollRunDto, @Req() req: Request) {
+    return this.svc.bulkPayrollRun(user, dto, ctx(req));
+  }
+
+  @Get("payroll/bank-export")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  bankExportCsv(@CurrentUser() user: AuthenticatedUser, @Query("period") period: string, @Res() res: Response) {
+    return this.svc.bankExportCsv(user, period, res);
+  }
+
   @Get("payroll")
   @RequirePermissions(PERMISSIONS.HR_READ)
   listPayroll(@CurrentUser() user: AuthenticatedUser, @Query() query: HRQueryDto) {
@@ -312,6 +353,24 @@ export class HRController {
   @RequirePermissions(PERMISSIONS.HR_MANAGE)
   markPayrollPaid(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Req() req: Request) {
     return this.svc.markPayrollPaid(user, id, ctx(req));
+  }
+
+  @Post("payroll/bulk-email")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  bulkEmailPayslips(@CurrentUser() user: AuthenticatedUser, @Body("period") period: string, @Req() req: Request) {
+    return this.svc.bulkEmailPayslips(user, period, ctx(req));
+  }
+
+  @Get("payroll/:id/payslip")
+  @RequirePermissions(PERMISSIONS.HR_READ)
+  streamPayslip(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Res() res: Response) {
+    return this.svc.streamPayslipPdf(user, id, res);
+  }
+
+  @Post("payroll/:id/email-payslip")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  emailPayslip(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Req() req: Request) {
+    return this.svc.emailPayslip(user, id, ctx(req));
   }
 
   // ─── Training ───────────────────────────────────────────────────────────────
@@ -424,5 +483,402 @@ export class HRController {
   @RequirePermissions(PERMISSIONS.PLATFORM_READ)
   cancelLeaveRequest(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Req() req: Request) {
     return this.svc.cancelLeaveRequest(user, id, ctx(req));
+  }
+
+  // ─── HR-A: Leave Policies ───────────────────────────────────────────────────
+
+  @Get("leave-policies")
+  @RequirePermissions(PERMISSIONS.HR_READ)
+  listLeavePolicies(@CurrentUser() user: AuthenticatedUser) {
+    return this.svc.listLeavePolicies(user);
+  }
+
+  @Post("leave-policies")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  createLeavePolicy(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateLeavePolicyDto, @Req() req: Request) {
+    return this.svc.createLeavePolicy(user, dto, ctx(req));
+  }
+
+  @Put("leave-policies/:id")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  updateLeavePolicy(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateLeavePolicyDto, @Req() req: Request) {
+    return this.svc.updateLeavePolicy(user, id, dto, ctx(req));
+  }
+
+  @Delete("leave-policies/:id")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  deleteLeavePolicy(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Req() req: Request) {
+    return this.svc.deleteLeavePolicy(user, id, ctx(req));
+  }
+
+  // ─── HR-A: Leave Balance ────────────────────────────────────────────────────
+
+  @Get("leave-balance/me")
+  @RequirePermissions(PERMISSIONS.PLATFORM_READ)
+  myLeaveBalance(@CurrentUser() user: AuthenticatedUser) {
+    return this.svc.myLeaveBalance(user);
+  }
+
+  @Get("leave-balance")
+  @RequirePermissions(PERMISSIONS.HR_READ)
+  listLeaveBalances(@CurrentUser() user: AuthenticatedUser, @Query() query: HRQueryDto) {
+    return this.svc.listLeaveBalances(user, query);
+  }
+
+  @Post("leave-balance/initialize")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  initializeLeaveBalances(@CurrentUser() user: AuthenticatedUser, @Body() dto: InitializeLeaveBalanceDto, @Req() req: Request) {
+    return this.svc.initializeLeaveBalances(user, dto, ctx(req));
+  }
+
+  // ─── HR-A: Public Holidays ──────────────────────────────────────────────────
+
+  @Get("public-holidays")
+  @RequirePermissions(PERMISSIONS.HR_READ)
+  listPublicHolidays(@CurrentUser() user: AuthenticatedUser, @Query() query: HRQueryDto) {
+    return this.svc.listPublicHolidays(user, query);
+  }
+
+  @Post("public-holidays/seed-ghana")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  seedGhanaHolidays(@CurrentUser() user: AuthenticatedUser, @Req() req: Request) {
+    return this.svc.seedGhanaHolidays(user, ctx(req));
+  }
+
+  @Post("public-holidays")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  createPublicHoliday(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreatePublicHolidayDto, @Req() req: Request) {
+    return this.svc.createPublicHoliday(user, dto, ctx(req));
+  }
+
+  @Delete("public-holidays/:id")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  deletePublicHoliday(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Req() req: Request) {
+    return this.svc.deletePublicHoliday(user, id, ctx(req));
+  }
+
+  // ─── HR-A: Employee Documents ───────────────────────────────────────────────
+
+  @Get("employees/:id/documents")
+  @RequirePermissions(PERMISSIONS.HR_READ)
+  listEmployeeDocuments(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
+    return this.svc.listEmployeeDocuments(user, id);
+  }
+
+  @Post("employees/:id/documents")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  @UseInterceptors(
+    FileInterceptor("document", {
+      storage: diskStorage({
+        destination: (req, file, cb) => {
+          const dest = join(process.cwd(), "uploads", "documents");
+          mkdirSync(dest, { recursive: true });
+          cb(null, dest);
+        },
+        filename: (req, file, cb) => {
+          const unique = `${Date.now()}-${Math.round(Math.random() * 1e6)}`;
+          cb(null, `${unique}${extname(file.originalname)}`);
+        },
+      }),
+      limits: { fileSize: 10 * 1024 * 1024 },
+      fileFilter: (req, file, cb) => {
+        const allowed = [".jpg", ".jpeg", ".png", ".webp", ".pdf"];
+        if (allowed.includes(extname(file.originalname).toLowerCase()) || file.mimetype === "application/pdf" || file.mimetype.startsWith("image/")) {
+          cb(null, true);
+        } else {
+          cb(new BadRequestException("Only images and PDF files are allowed") as never, false);
+        }
+      },
+    }),
+  )
+  uploadEmployeeDocument(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id") id: string,
+    @Body() dto: CreateEmployeeDocumentDto,
+    @UploadedFile() file: Express.Multer.File,
+    @Req() req: Request,
+  ) {
+    if (!file) throw new BadRequestException("No file uploaded");
+    return this.svc.uploadEmployeeDocument(user, id, dto, file.filename, ctx(req));
+  }
+
+  @Delete("employees/:id/documents/:docId")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  deleteEmployeeDocument(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Param("docId") docId: string, @Req() req: Request) {
+    return this.svc.deleteEmployeeDocument(user, id, docId, ctx(req));
+  }
+
+  // ─── HR-D: Disciplinary ──────────────────────────────────────────────────────
+
+  @Get("disciplinary")
+  @RequirePermissions(PERMISSIONS.HR_READ)
+  listDisciplinary(@CurrentUser() user: AuthenticatedUser, @Query() query: HRQueryDto) {
+    return this.svc.listDisciplinary(user, query);
+  }
+
+  @Post("disciplinary")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  createDisciplinary(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateDisciplinaryDto, @Req() req: Request) {
+    return this.svc.createDisciplinaryRecord(user, dto, ctx(req));
+  }
+
+  @Patch("disciplinary/:id/acknowledge")
+  @RequirePermissions(PERMISSIONS.PLATFORM_READ)
+  acknowledgeDisciplinary(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Req() req: Request) {
+    return this.svc.acknowledgeDisciplinary(user, id, ctx(req));
+  }
+
+  @Delete("disciplinary/:id")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  deleteDisciplinary(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Req() req: Request) {
+    return this.svc.deleteDisciplinaryRecord(user, id, ctx(req));
+  }
+
+  // ─── HR-D: Grievances ────────────────────────────────────────────────────────
+
+  @Get("grievances")
+  @RequirePermissions(PERMISSIONS.HR_READ)
+  listGrievances(@CurrentUser() user: AuthenticatedUser, @Query() query: HRQueryDto) {
+    return this.svc.listGrievances(user, query);
+  }
+
+  @Post("grievances")
+  @RequirePermissions(PERMISSIONS.PLATFORM_READ)
+  submitGrievance(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateGrievanceDto, @Req() req: Request) {
+    return this.svc.submitGrievance(user, dto, ctx(req));
+  }
+
+  @Patch("grievances/:id/resolve")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  resolveGrievance(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: ResolveGrievanceDto, @Req() req: Request) {
+    return this.svc.resolveGrievance(user, id, dto, ctx(req));
+  }
+
+  @Patch("grievances/:id/close")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  closeGrievance(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Req() req: Request) {
+    return this.svc.closeGrievance(user, id, ctx(req));
+  }
+
+  @Delete("grievances/:id")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  deleteGrievance(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Req() req: Request) {
+    return this.svc.deleteGrievance(user, id, ctx(req));
+  }
+
+  // ─── HR-F: Org Chart ─────────────────────────────────────────────────────────
+
+  @Get("org-chart")
+  @RequirePermissions(PERMISSIONS.HR_READ)
+  getOrgChart(@CurrentUser() user: AuthenticatedUser) {
+    return this.svc.getOrgChart(user);
+  }
+
+  // ─── HR-F: Training Courses ───────────────────────────────────────────────────
+
+  @Get("training-courses")
+  @RequirePermissions(PERMISSIONS.HR_READ)
+  listTrainingCourses(@CurrentUser() user: AuthenticatedUser) {
+    return this.svc.listTrainingCourses(user);
+  }
+
+  @Post("training-courses")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  createTrainingCourse(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateTrainingCourseDto, @Req() req: Request) {
+    return this.svc.createTrainingCourse(user, dto, ctx(req));
+  }
+
+  @Put("training-courses/:id")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  updateTrainingCourse(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateTrainingCourseDto, @Req() req: Request) {
+    return this.svc.updateTrainingCourse(user, id, dto, ctx(req));
+  }
+
+  @Delete("training-courses/:id")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  deleteTrainingCourse(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Req() req: Request) {
+    return this.svc.deleteTrainingCourse(user, id, ctx(req));
+  }
+
+  // ─── HR-G: Salary Bands ───────────────────────────────────────────────────────
+
+  @Get("salary-bands")
+  @RequirePermissions(PERMISSIONS.HR_READ)
+  listSalaryBands(@CurrentUser() user: AuthenticatedUser) {
+    return this.svc.listSalaryBands(user);
+  }
+
+  @Post("salary-bands")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  createSalaryBand(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateSalaryBandDto, @Req() req: Request) {
+    return this.svc.createSalaryBand(user, dto, ctx(req));
+  }
+
+  @Put("salary-bands/:id")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  updateSalaryBand(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateSalaryBandDto, @Req() req: Request) {
+    return this.svc.updateSalaryBand(user, id, dto, ctx(req));
+  }
+
+  @Delete("salary-bands/:id")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  deleteSalaryBand(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Req() req: Request) {
+    return this.svc.deleteSalaryBand(user, id, ctx(req));
+  }
+
+  // ─── HR-G: Job Postings ───────────────────────────────────────────────────────
+
+  @Get("job-postings")
+  @RequirePermissions(PERMISSIONS.HR_READ)
+  listJobPostings(@CurrentUser() user: AuthenticatedUser, @Query() query: HRQueryDto) {
+    return this.svc.listJobPostings(user, query);
+  }
+
+  @Post("job-postings")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  createJobPosting(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateJobPostingDto, @Req() req: Request) {
+    return this.svc.createJobPosting(user, dto, ctx(req));
+  }
+
+  @Put("job-postings/:id")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  updateJobPosting(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateJobPostingDto, @Req() req: Request) {
+    return this.svc.updateJobPosting(user, id, dto, ctx(req));
+  }
+
+  @Patch("job-postings/:id/close")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  closeJobPosting(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Req() req: Request) {
+    return this.svc.closeJobPosting(user, id, ctx(req));
+  }
+
+  @Delete("job-postings/:id")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  deleteJobPosting(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Req() req: Request) {
+    return this.svc.deleteJobPosting(user, id, ctx(req));
+  }
+
+  // ─── HR-G: Applications ───────────────────────────────────────────────────────
+
+  @Get("applications")
+  @RequirePermissions(PERMISSIONS.HR_READ)
+  listApplications(@CurrentUser() user: AuthenticatedUser, @Query() query: HRQueryDto) {
+    return this.svc.listApplications(user, query);
+  }
+
+  @Post("job-postings/:id/applications")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  createApplication(@CurrentUser() user: AuthenticatedUser, @Param("id") jobPostingId: string, @Body() dto: CreateJobApplicationDto, @Req() req: Request) {
+    return this.svc.createApplication(user, jobPostingId, dto, ctx(req));
+  }
+
+  @Patch("applications/:id/status")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  updateApplicationStatus(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateApplicationStatusDto, @Req() req: Request) {
+    return this.svc.updateApplicationStatus(user, id, dto, ctx(req));
+  }
+
+  @Post("applications/:id/hire")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  hireApplicant(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Req() req: Request) {
+    return this.svc.hireApplicant(user, id, ctx(req));
+  }
+
+  // ─── HR-G: Onboarding ─────────────────────────────────────────────────────────
+
+  @Get("employees/:id/onboarding")
+  @RequirePermissions(PERMISSIONS.HR_READ)
+  listOnboarding(@CurrentUser() user: AuthenticatedUser, @Param("id") employeeId: string) {
+    return this.svc.listOnboarding(user, employeeId);
+  }
+
+  @Post("employees/:id/onboarding")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  createOnboardingItem(@CurrentUser() user: AuthenticatedUser, @Param("id") employeeId: string, @Body() dto: CreateOnboardingItemDto, @Req() req: Request) {
+    return this.svc.createOnboardingItem(user, employeeId, dto, ctx(req));
+  }
+
+  @Post("employees/:id/onboarding/template")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  applyOnboardingTemplate(@CurrentUser() user: AuthenticatedUser, @Param("id") employeeId: string, @Req() req: Request) {
+    return this.svc.applyOnboardingTemplate(user, employeeId, ctx(req));
+  }
+
+  @Patch("onboarding/:id/complete")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  completeOnboardingItem(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Req() req: Request) {
+    return this.svc.completeOnboardingItem(user, id, ctx(req));
+  }
+
+  @Delete("onboarding/:id")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  deleteOnboardingItem(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Req() req: Request) {
+    return this.svc.deleteOnboardingItem(user, id, ctx(req));
+  }
+
+  // ─── HR-H: 360 Peer Reviews ───────────────────────────────────────────────────
+
+  @Get("performance/:id/peer-reviews")
+  @RequirePermissions(PERMISSIONS.HR_READ)
+  listPeerReviews(@CurrentUser() user: AuthenticatedUser, @Param("id") performanceId: string) {
+    return this.svc.listPeerReviews(user, performanceId);
+  }
+
+  @Post("performance/:id/peer-reviews")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  createPeerReview(@CurrentUser() user: AuthenticatedUser, @Param("id") performanceId: string, @Body() dto: CreatePeerReviewDto, @Req() req: Request) {
+    return this.svc.createPeerReview(user, performanceId, dto, ctx(req));
+  }
+
+  @Patch("peer-reviews/:id/submit")
+  @RequirePermissions(PERMISSIONS.PLATFORM_READ)
+  submitPeerReview(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Req() req: Request) {
+    return this.svc.submitPeerReview(user, id, ctx(req));
+  }
+
+  // ─── HR-H: Approval Chains ────────────────────────────────────────────────────
+
+  @Get("approval-chains")
+  @RequirePermissions(PERMISSIONS.HR_READ)
+  listApprovalChains(@CurrentUser() user: AuthenticatedUser) {
+    return this.svc.listApprovalChains(user);
+  }
+
+  @Post("approval-chains")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  upsertApprovalChain(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateApprovalChainDto, @Req() req: Request) {
+    return this.svc.upsertApprovalChain(user, dto, ctx(req));
+  }
+
+  @Put("approval-chains/:id")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  updateApprovalChain(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateApprovalChainDto, @Req() req: Request) {
+    return this.svc.updateApprovalChain(user, id, dto, ctx(req));
+  }
+
+  // ─── HR-H: Compliance Reports ─────────────────────────────────────────────────
+
+  @Get("compliance/reports")
+  @RequirePermissions(PERMISSIONS.HR_READ)
+  listComplianceReports(@CurrentUser() user: AuthenticatedUser) {
+    return this.svc.listComplianceReports(user);
+  }
+
+  @Post("compliance/ssnit")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  generateSsnitReport(@CurrentUser() user: AuthenticatedUser, @Body() dto: ComplianceReportQueryDto, @Req() req: Request) {
+    return this.svc.generateSsnitReport(user, dto, ctx(req));
+  }
+
+  @Post("compliance/paye")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  generatePayeReport(@CurrentUser() user: AuthenticatedUser, @Body() dto: ComplianceReportQueryDto, @Req() req: Request) {
+    return this.svc.generatePayeReport(user, dto, ctx(req));
+  }
+
+  @Post("compliance/headcount")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  generateHeadcountReport(@CurrentUser() user: AuthenticatedUser, @Body() dto: ComplianceReportQueryDto, @Req() req: Request) {
+    return this.svc.generateHeadcountReport(user, dto, ctx(req));
   }
 }

@@ -136,6 +136,7 @@ export class UpdateEmployeeDto {
   @IsOptional() @IsUUID() farmId?: string;
   @IsOptional() @IsUUID() warehouseId?: string;
   @IsOptional() @IsUUID() productionSiteId?: string;
+  @IsOptional() @IsUUID() managerId?: string;
   @IsOptional() @IsNumber() @Min(0) basicSalary?: number;
   @IsOptional() @IsString() @MaxLength(120) bankName?: string;
   @IsOptional() @IsString() @MaxLength(40) bankAccount?: string;
@@ -153,6 +154,8 @@ export class RecordAttendanceDto {
   @IsOptional() @IsDateString() checkOutTime?: string;
   @IsOptional() @IsEnum(AttendanceStatus) status?: AttendanceStatus;
   @IsOptional() @IsUUID() shiftId?: string;
+  @IsOptional() @IsNumber() geoLat?: number;
+  @IsOptional() @IsNumber() geoLon?: number;
   @IsOptional() @IsString() @MaxLength(240) notes?: string;
 }
 
@@ -160,6 +163,9 @@ export class CheckInSelfDto {
   @IsDateString() date!: string;
   @IsOptional() @IsDateString() checkInTime?: string;
   @IsOptional() @IsEnum(AttendanceStatus) status?: AttendanceStatus;
+  @IsOptional() @IsNumber() @Min(0) overtimeHours?: number;
+  @IsOptional() @IsNumber() geoLat?: number;
+  @IsOptional() @IsNumber() geoLon?: number;
   @IsOptional() @IsString() @MaxLength(240) notes?: string;
 }
 
@@ -225,14 +231,57 @@ export class CreatePayrollRecordDto {
   @IsOptional() @IsNumber() @Min(0) deductions?: number;
   @IsOptional() @IsNumber() @Min(0) taxDeduction?: number;
   @IsOptional() @IsNumber() @Min(0) ssnit?: number;
+  @IsOptional() @IsNumber() @Min(0) employerSsnit?: number;
+  @IsOptional() @IsNumber() @Min(0) pensionTier2?: number;
+  @IsOptional() @IsNumber() @Min(0) pensionTier3?: number;
+  @IsOptional() @IsNumber() @Min(0) overtimePay?: number;
+  @IsOptional() allowanceBreakdown?: Record<string, number>;
   @IsOptional() @IsDateString() paymentDate?: string;
   @IsOptional() @IsString() paymentMethod?: string;
   @IsOptional() @IsUUID() bankAccountId?: string;
   @IsOptional() @IsString() @MaxLength(500) notes?: string;
 }
 
+// ── HR-B: Payroll Intelligence ────────────────────────────────────────────────
+
+export class PayrollPrefillQueryDto {
+  @IsUUID() employeeId!: string;
+  @IsString() @MaxLength(7) period!: string; // YYYY-MM
+}
+
+export class BulkPayrollRunDto {
+  @IsString() @MaxLength(10) period!: string;
+  @IsDateString() periodStart!: string;
+  @IsDateString() periodEnd!: string;
+  @IsOptional() @IsArray() @IsUUID(undefined, { each: true }) employeeIds?: string[];
+  @IsOptional() @IsUUID() branchId?: string;
+}
+
+// ── HR-D: Disciplinary & Grievance ────────────────────────────────────────────
+
+export class CreateDisciplinaryDto {
+  @IsUUID() employeeId!: string;
+  @IsDateString() incidentDate!: string;
+  @IsString() @MaxLength(60) category!: string;
+  @IsString() @MaxLength(1000) description!: string;
+  @IsString() @MaxLength(500) actionTaken!: string;
+  @IsOptional() @IsString() @MaxLength(500) notes?: string;
+}
+
+export class CreateGrievanceDto {
+  @IsUUID() employeeId!: string;
+  @IsDateString() submittedDate!: string;
+  @IsString() @MaxLength(60) category!: string;
+  @IsString() @MaxLength(1000) description!: string;
+}
+
+export class ResolveGrievanceDto {
+  @IsString() @MaxLength(1000) resolution!: string;
+}
+
 export class CreateTrainingRecordDto {
   @IsUUID() employeeId!: string;
+  @IsOptional() @IsUUID() courseId?: string;
   @IsString() @MaxLength(200) title!: string;
   @IsOptional() @IsString() @MaxLength(500) description?: string;
   @IsOptional() @IsString() @MaxLength(120) trainer?: string;
@@ -240,6 +289,7 @@ export class CreateTrainingRecordDto {
   @IsOptional() @IsNumber() @Min(0) durationHours?: number;
   @IsOptional() @IsEnum(TrainingOutcome) outcome?: TrainingOutcome;
   @IsOptional() @IsString() @MaxLength(120) certificate?: string;
+  @IsOptional() @IsDateString() certificateExpiry?: string;
   @IsOptional() @IsString() @MaxLength(500) notes?: string;
 }
 
@@ -328,5 +378,167 @@ export class ComputePayrollDto {
   @IsNumber() @Min(0) basicSalary!: number;
   @IsOptional() @IsNumber() @Min(0) allowances?: number;
   @IsOptional() @IsNumber() @Min(0) deductions?: number;
+}
+
+// ── HR-A: Leave Policies ──────────────────────────────────────────────────────
+
+export class CreateLeavePolicyDto {
+  @IsString() @MaxLength(120) name!: string;
+  @IsEnum(["ANNUAL", "SICK", "MATERNITY", "PATERNITY", "COMPASSIONATE", "UNPAID"]) leaveType!: string;
+  @IsInt() @Min(1) daysPerYear!: number;
+  @IsOptional() @IsInt() @Min(0) carryOverDays?: number;
+  @IsOptional() @IsUUID() employeeRoleId?: string;
+  @IsOptional() @IsBoolean() isActive?: boolean;
+}
+
+export class UpdateLeavePolicyDto {
+  @IsOptional() @IsString() @MaxLength(120) name?: string;
+  @IsOptional() @IsInt() @Min(1) daysPerYear?: number;
+  @IsOptional() @IsInt() @Min(0) carryOverDays?: number;
+  @IsOptional() @IsBoolean() isActive?: boolean;
+}
+
+export class InitializeLeaveBalanceDto {
+  @IsInt() @Min(2020) year!: number;
+  @IsOptional() @IsArray() @IsUUID(undefined, { each: true }) employeeIds?: string[];
+}
+
+// ── HR-A: Public Holidays ─────────────────────────────────────────────────────
+
+export class CreatePublicHolidayDto {
+  @IsString() @MaxLength(120) name!: string;
+  @IsDateString() date!: string;
+  @IsOptional() @IsBoolean() isRecurring?: boolean;
+  @IsOptional() @IsInt() year?: number;
+}
+
+// ── HR-A: Employee Documents ──────────────────────────────────────────────────
+
+export class CreateEmployeeDocumentDto {
+  @IsString() @MaxLength(60) docType!: string;
+  @IsString() @MaxLength(200) title!: string;
+  @IsOptional() @IsDateString() expiryDate?: string;
+  @IsOptional() @IsString() @MaxLength(500) notes?: string;
+}
+
+// ── HR-F: Training Courses ────────────────────────────────────────────────────
+
+export class CreateTrainingCourseDto {
+  @IsString() @MaxLength(30) code!: string;
+  @IsString() @MaxLength(200) title!: string;
+  @IsOptional() @IsString() @MaxLength(500) description?: string;
+  @IsOptional() @IsString() @MaxLength(80) category?: string;
+  @IsOptional() @IsNumber() @Min(0) durationHours?: number;
+  @IsOptional() @IsString() @MaxLength(120) provider?: string;
+  @IsOptional() @IsBoolean() isActive?: boolean;
+}
+
+export class UpdateTrainingCourseDto {
+  @IsOptional() @IsString() @MaxLength(200) title?: string;
+  @IsOptional() @IsString() @MaxLength(500) description?: string;
+  @IsOptional() @IsString() @MaxLength(80) category?: string;
+  @IsOptional() @IsNumber() @Min(0) durationHours?: number;
+  @IsOptional() @IsString() @MaxLength(120) provider?: string;
+  @IsOptional() @IsBoolean() isActive?: boolean;
+}
+
+// ── HR-G: Salary Bands ────────────────────────────────────────────────────────
+
+export class CreateSalaryBandDto {
+  @IsOptional() @IsUUID() employeeRoleId?: string;
+  @IsString() @MaxLength(30) grade!: string;
+  @IsNumber() @Min(0) minSalary!: number;
+  @IsOptional() @IsNumber() @Min(0) midSalary?: number;
+  @IsNumber() @Min(0) maxSalary!: number;
+  @IsDateString() effectiveDate!: string;
+  @IsOptional() @IsString() @MaxLength(500) notes?: string;
+}
+
+export class UpdateSalaryBandDto {
+  @IsOptional() @IsUUID() employeeRoleId?: string;
+  @IsOptional() @IsString() @MaxLength(30) grade?: string;
+  @IsOptional() @IsNumber() @Min(0) minSalary?: number;
+  @IsOptional() @IsNumber() @Min(0) midSalary?: number;
+  @IsOptional() @IsNumber() @Min(0) maxSalary?: number;
+  @IsOptional() @IsDateString() effectiveDate?: string;
+  @IsOptional() @IsString() @MaxLength(500) notes?: string;
+}
+
+// ── HR-G: Job Postings ────────────────────────────────────────────────────────
+
+export class CreateJobPostingDto {
+  @IsString() @MaxLength(200) title!: string;
+  @IsOptional() @IsString() @MaxLength(120) department?: string;
+  @IsOptional() @IsUUID() branchId?: string;
+  @IsOptional() @IsUUID() salaryBandId?: string;
+  @IsString() description!: string;
+  @IsOptional() @IsString() requirements?: string;
+  @IsOptional() @IsDateString() closingDate?: string;
+}
+
+export class UpdateJobPostingDto {
+  @IsOptional() @IsString() @MaxLength(200) title?: string;
+  @IsOptional() @IsString() @MaxLength(120) department?: string;
+  @IsOptional() @IsUUID() branchId?: string;
+  @IsOptional() @IsUUID() salaryBandId?: string;
+  @IsOptional() @IsString() description?: string;
+  @IsOptional() @IsString() requirements?: string;
+  @IsOptional() @IsDateString() closingDate?: string;
+}
+
+// ── HR-G: Job Applications ────────────────────────────────────────────────────
+
+export class CreateJobApplicationDto {
+  @IsString() @MaxLength(160) applicantName!: string;
+  @IsOptional() @IsString() @MaxLength(160) applicantEmail?: string;
+  @IsOptional() @IsString() @MaxLength(40) applicantPhone?: string;
+  @IsOptional() @IsString() @MaxLength(500) resumeUrl?: string;
+  @IsOptional() @IsString() coverLetter?: string;
+  @IsOptional() @IsString() @MaxLength(1000) notes?: string;
+}
+
+export class UpdateApplicationStatusDto {
+  @IsString() @MaxLength(30) status!: string;
+  @IsOptional() @IsString() @MaxLength(1000) notes?: string;
+  @IsOptional() @IsDateString() interviewDate?: string;
+}
+
+// ── HR-G: Onboarding ──────────────────────────────────────────────────────────
+
+export class CreateOnboardingItemDto {
+  @IsString() @MaxLength(200) title!: string;
+  @IsOptional() @IsDateString() dueDate?: string;
+  @IsOptional() @IsString() @MaxLength(500) notes?: string;
+  @IsOptional() @IsInt() @Min(0) sortOrder?: number;
+}
+
+// ── HR-H: Peer Reviews ────────────────────────────────────────────────────────
+
+export class CreatePeerReviewDto {
+  @IsUUID() reviewerEmployeeId!: string;
+  @IsString() @MaxLength(30) relationship!: string;
+  @IsEnum(HRRating) overallRating!: HRRating;
+  @IsOptional() @IsString() @MaxLength(1000) comments?: string;
+}
+
+// ── HR-H: Approval Chains ─────────────────────────────────────────────────────
+
+export class CreateApprovalChainDto {
+  @IsString() @MaxLength(60) entityType!: string;
+  @IsOptional() @IsNumber() @Min(0) minAmount?: number;
+  @IsArray() steps!: object[];
+  @IsOptional() @IsBoolean() isActive?: boolean;
+}
+
+export class UpdateApprovalChainDto {
+  @IsOptional() @IsNumber() @Min(0) minAmount?: number;
+  @IsOptional() @IsArray() steps?: object[];
+  @IsOptional() @IsBoolean() isActive?: boolean;
+}
+
+// ── HR-H: Compliance Reports ──────────────────────────────────────────────────
+
+export class ComplianceReportQueryDto {
+  @IsString() @MaxLength(10) period!: string;
 }
 

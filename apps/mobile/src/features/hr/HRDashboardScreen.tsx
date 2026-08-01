@@ -7,7 +7,7 @@ import { Icon } from "../../components/Icon";
 import { MetricCard } from "../../components/MetricCard";
 import { PageHeader } from "../../components/PageHeader";
 import { SkeletonMetricGrid } from "../../components/SkeletonLoader";
-import { fetchHRDashboard, type HRDashboardData, type LeaveRequest } from "../../api/endpoints";
+import { fetchHRDashboard, fetchMyLeaveBalance, type HRDashboardData, type LeaveBalance, type LeaveRequest } from "../../api/endpoints";
 import { colors, font, radius, semantic, shadow, spacing } from "../../constants/theme";
 
 const LEAVE_STATUS: Record<string, { color: string; bg: string; border: string; label: string }> = {
@@ -19,6 +19,7 @@ const LEAVE_STATUS: Record<string, { color: string; bg: string; border: string; 
 export function HRDashboardScreen() {
   const navigation = useNavigation<any>();
   const [data,       setData]       = useState<HRDashboardData["data"] | null>(null);
+  const [balances,   setBalances]   = useState<LeaveBalance[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -26,8 +27,9 @@ export function HRDashboardScreen() {
     if (!isRefresh && !data) setLoading(true);
     else setRefreshing(true);
     try {
-      const res = await fetchHRDashboard();
-      setData(res.data);
+      const [res, balRes] = await Promise.allSettled([fetchHRDashboard(), fetchMyLeaveBalance()]);
+      if (res.status === "fulfilled") setData(res.value.data);
+      if (balRes.status === "fulfilled") setBalances(balRes.value.data ?? []);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -98,6 +100,31 @@ export function HRDashboardScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* My leave balance */}
+        {balances.length > 0 && (
+          <View style={styles.sectionCard}>
+            <Text style={styles.sectionTitle}>My Leave Balance</Text>
+            {balances.map((b, i) => {
+              const pct = b.entitled > 0 ? Math.max(0, Math.min(100, Math.round((b.remaining / b.entitled) * 100))) : 0;
+              const barColor = b.remaining <= 0 ? "#dc2626" : b.remaining <= 5 ? "#d97706" : "#16a34a";
+              return (
+                <View key={`${b.leaveType}-${b.year}`} style={[styles.balanceRow, i === 0 && styles.leaveRowFirst]}>
+                  <View style={styles.balanceLeft}>
+                    <Text style={styles.leaveType}>{b.leaveType.replace(/_/g, " ")}</Text>
+                    <View style={styles.balanceBar}>
+                      <View style={[styles.balanceFill, { width: `${pct}%` as any, backgroundColor: barColor }]} />
+                    </View>
+                  </View>
+                  <View style={styles.balanceRight}>
+                    <Text style={[styles.balanceRemaining, { color: barColor }]}>{b.remaining}</Text>
+                    <Text style={styles.balanceOf}>of {b.entitled} days</Text>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        )}
+
         {/* Recent leave requests */}
         {d?.recentLeaveRequests?.length ? (
           <View style={styles.sectionCard}>
@@ -152,4 +179,12 @@ const styles = StyleSheet.create({
   leaveLeft:     { flex: 1, gap: 2 },
   leaveType:     { fontSize: font.size.sm, fontFamily: font.family.semibold, color: colors.ink, textTransform: "capitalize" },
   leaveDates:    { fontSize: font.size.xs, color: colors.inkLight, fontFamily: font.family.regular },
+
+  balanceRow:       { flexDirection: "row", alignItems: "center", padding: spacing.lg, borderTopWidth: 1, borderTopColor: colors.border, gap: spacing.md },
+  balanceLeft:      { flex: 1, gap: 6 },
+  balanceBar:       { height: 5, backgroundColor: colors.border, borderRadius: 3, overflow: "hidden" },
+  balanceFill:      { height: 5, borderRadius: 3 },
+  balanceRight:     { alignItems: "flex-end", gap: 1, minWidth: 52 },
+  balanceRemaining: { fontSize: font.size.lg, fontFamily: font.family.extrabold },
+  balanceOf:        { fontSize: font.size.xs, color: colors.inkLight, fontFamily: font.family.regular },
 });

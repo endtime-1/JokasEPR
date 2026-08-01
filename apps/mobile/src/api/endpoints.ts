@@ -955,6 +955,19 @@ export const submitLeaveRequest = (payload: Record<string, unknown>) =>
 export const fetchHRDashboard = () =>
   apiFetch<HRDashboardData>("/hr/dashboard");
 
+export type LeaveBalance = {
+  leaveType: LeaveType | string;
+  year: number;
+  entitled: number;
+  taken: number;
+  pending: number;
+  remaining: number;
+  carryOver: number;
+};
+
+export const fetchMyLeaveBalance = () =>
+  apiFetch<ApiEnvelope<LeaveBalance[]>>("/hr/leave-balance/me");
+
 // ── Market Planning (depth) ───────────────────────────────────────────────────
 export type MarketTargetItem = {
   id: string;

@@ -168,4 +168,39 @@ export class DutyRemindersService {
       this.logger.warn("expireStockReservations: skipped — " + (err instanceof Error ? err.message : String(err)));
     }
   }
+
+  // ── 8 AM on 1st of month: alert HR managers about certificates expiring within 30 days ─
+  @Cron("0 8 1 * *", { timeZone: "Africa/Accra" })
+  async certificateExpiryAlert() {
+    try {
+      const now = new Date();
+      const in30 = new Date(now.getTime() + 30 * 24 * 3_600_000);
+      const expiring = await this.prisma.trainingRecord.findMany({
+        where: { certificateExpiry: { gte: now, lte: in30 }, deletedAt: null },
+        include: { employee: { select: { companyId: true, fullName: true } } },
+      });
+
+      const byCompany = new Map<string, string[]>();
+      for (const rec of expiring) {
+        const cid = (rec as any).employee?.companyId;
+        if (!cid) continue;
+        const list = byCompany.get(cid) ?? [];
+        list.push(`${(rec as any).employee.fullName} — ${rec.title}`);
+        byCompany.set(cid, list);
+      }
+
+      for (const [companyId, names] of byCompany) {
+        const body = `${names.length} certificate(s) expiring within 30 days:\n${names.slice(0, 10).join("\n")}${names.length > 10 ? `\n…and ${names.length - 10} more` : ""}`;
+        await this.notifications.broadcast(companyId, "HR_MANAGE", {
+          type: "DOCUMENT_EXPIRY_ALERT" as never,
+          title: "Certificate Expiry Alert",
+          body,
+          entityType: "TrainingRecord",
+        });
+      }
+      if (expiring.length > 0) this.logger.log(`certificateExpiryAlert: notified ${byCompany.size} company/ies for ${expiring.length} certificate(s)`);
+    } catch (err) {
+      this.logger.warn("certificateExpiryAlert: skipped — " + (err instanceof Error ? err.message : String(err)));
+    }
+  }
 }

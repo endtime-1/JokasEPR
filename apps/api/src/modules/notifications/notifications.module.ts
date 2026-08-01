@@ -10,6 +10,6 @@ import { WhatsAppService } from "./whatsapp.service";
   imports: [ConfigModule],
   controllers: [NotificationsController],
   providers: [NotificationsService, EmailService, SmsService, WhatsAppService],
-  exports: [NotificationsService]
+  exports: [NotificationsService, EmailService]
 })
 export class NotificationsModule {}

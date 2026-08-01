@@ -765,6 +765,20 @@ model Company {
   quickBooksSyncLogs       QuickBooksSyncLog[]
   quickBooksMappings       QuickBooksMapping[]
   leaveRequests            LeaveRequest[]
+  leavePolicies            LeavePolicy[]
+  leaveBalances            LeaveBalance[]
+  publicHolidays           PublicHoliday[]
+  employeeDocuments        EmployeeDocument[]
+  disciplinaryRecords      DisciplinaryRecord[]
+  grievanceRecords         GrievanceRecord[]
+  trainingCourses          TrainingCourse[]
+  salaryBands              SalaryBand[]
+  jobPostings              JobPosting[]
+  jobApplications          JobApplication[]
+  onboardingChecklists     OnboardingChecklist[]
+  performancePeerReviews   PerformancePeerReview[]
+  approvalChains           ApprovalChain[]
+  complianceReports        ComplianceReport[]
 
   @@index([status])
   @@index([createdAt])
@@ -4980,10 +4994,15 @@ model PayrollRecord {
   allowances    Decimal        @default(0) @db.Decimal(15, 2)
   deductions    Decimal        @default(0) @db.Decimal(15, 2)
   grossPay      Decimal        @db.Decimal(15, 2)
-  taxDeduction  Decimal        @default(0) @db.Decimal(15, 2)
-  ssnit         Decimal        @default(0) @db.Decimal(15, 2)
-  netPay        Decimal        @db.Decimal(15, 2)
-  paymentDate   DateTime?
+  taxDeduction       Decimal        @default(0) @db.Decimal(15, 2)
+  ssnit              Decimal        @default(0) @db.Decimal(15, 2)
+  employerSsnit      Decimal        @default(0) @db.Decimal(15, 2)
+  pensionTier2       Decimal        @default(0) @db.Decimal(15, 2)
+  pensionTier3       Decimal        @default(0) @db.Decimal(15, 2)
+  overtimePay        Decimal        @default(0) @db.Decimal(15, 2)
+  allowanceBreakdown Json?
+  netPay             Decimal        @db.Decimal(15, 2)
+  paymentDate        DateTime?
   paymentMethod PaymentMethod?
   bankAccountId String?       
   status        PayrollStatus  @default(DRAFT)
@@ -5734,8 +5753,10 @@ model EmployeeRole {
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
 
-  company   Company    @relation(fields: [companyId], references: [id])
-  employees Employee[]
+  company       Company      @relation(fields: [companyId], references: [id])
+  employees     Employee[]
+  leavePolicies LeavePolicy[]
+  salaryBands   SalaryBand[]
 
   @@unique([companyId, code])
   @@index([companyId])
@@ -5773,6 +5794,7 @@ model Employee {
   emergencyContactPhone String?        @db.VarChar(40)
   notes                 String?        @db.VarChar(500)
   photoUrl              String?        @db.VarChar(500)
+  managerId             String?
   createdById           String?
   updatedById           String?
   createdAt             DateTime       @default(now())
@@ -5786,6 +5808,8 @@ model Employee {
   farm                 Farm?                @relation(fields: [farmId], references: [id])
   warehouse            Warehouse?           @relation(fields: [warehouseId], references: [id])
   productionSite       ProductionSite?      @relation(fields: [productionSiteId], references: [id])
+  manager              Employee?            @relation("EmployeeManager", fields: [managerId], references: [id])
+  reports              Employee[]           @relation("EmployeeManager")
   attendanceRecords     AttendanceRecord[]
   taskAssignments       TaskAssignment[]
   payrollRecords        PayrollRecord[]
@@ -5793,11 +5817,17 @@ model Employee {
   performanceRecords    HRPerformanceRecord[]
   departmentAssignments DepartmentAssignment[]
   leaveRequests         LeaveRequest[]
+  leaveBalances         LeaveBalance[]
+  employeeDocuments     EmployeeDocument[]
+  disciplinaryRecords   DisciplinaryRecord[]
+  grievanceRecords      GrievanceRecord[]
+  onboardingChecklists  OnboardingChecklist[]
 
   @@unique([companyId, code])
   @@index([companyId])
   @@index([companyId, status])
   @@index([companyId, employeeRoleId])
+  @@index([companyId, managerId])
   @@index([branchId])
   @@index([farmId])
   @@index([warehouseId])
@@ -5813,9 +5843,12 @@ model AttendanceRecord {
   checkInTime  DateTime?
   checkOutTime DateTime?
   status       AttendanceStatus @default(PRESENT)
-  hoursWorked  Decimal?         @db.Decimal(5, 2)
-  shiftId      String?         
-  notes        String?          @db.VarChar(240)
+  hoursWorked   Decimal?         @db.Decimal(5, 2)
+  overtimeHours Decimal?         @db.Decimal(5, 2)
+  geoLat        Decimal?         @db.Decimal(10, 7)
+  geoLon        Decimal?         @db.Decimal(10, 7)
+  shiftId       String?
+  notes         String?          @db.VarChar(240)
   recordedById String?         
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
@@ -5918,23 +5951,47 @@ model TaskAssignment {
   @@index([companyId, status])
 }
 
-model TrainingRecord {
-  id            String          @id @default(uuid())
-  companyId     String         
-  employeeId    String         
-  title         String          @db.VarChar(200)
-  description   String?         @db.VarChar(500)
-  trainer       String?         @db.VarChar(120)
-  trainingDate  DateTime
-  durationHours Decimal?        @db.Decimal(5, 1)
-  outcome       TrainingOutcome @default(ONGOING)
-  certificate   String?         @db.VarChar(120)
-  notes         String?         @db.VarChar(500)
-  createdById   String?        
-  updatedById   String?        
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+model TrainingCourse {
+  id            String    @id @default(uuid())
+  companyId     String
+  code          String    @db.VarChar(30)
+  title         String    @db.VarChar(200)
+  description   String?   @db.VarChar(500)
+  category      String?   @db.VarChar(80)
+  durationHours Decimal?  @db.Decimal(5, 1)
+  provider      String?   @db.VarChar(120)
+  isActive      Boolean   @default(true)
+  createdById   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
   deletedAt     DateTime?
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@index([deletedAt])
+}
+
+model TrainingRecord {
+  id                String          @id @default(uuid())
+  companyId         String
+  employeeId        String
+  courseId          String?
+  title             String          @db.VarChar(200)
+  description       String?         @db.VarChar(500)
+  trainer           String?         @db.VarChar(120)
+  trainingDate      DateTime
+  durationHours     Decimal?        @db.Decimal(5, 1)
+  outcome           TrainingOutcome @default(ONGOING)
+  certificate       String?         @db.VarChar(120)
+  certificateExpiry DateTime?
+  notes             String?         @db.VarChar(500)
+  createdById       String?
+  updatedById       String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  deletedAt         DateTime?
 
   company  Company  @relation(fields: [companyId], references: [id])
   employee Employee @relation(fields: [employeeId], references: [id])
@@ -5942,6 +5999,7 @@ model TrainingRecord {
   @@index([companyId])
   @@index([employeeId])
   @@index([companyId, trainingDate])
+  @@index([certificateExpiry])
   @@index([deletedAt])
 }
 
@@ -5966,9 +6024,10 @@ model HRPerformanceRecord {
   updatedAt           DateTime            @updatedAt
   deletedAt           DateTime?
 
-  company  Company  @relation(fields: [companyId], references: [id])
-  employee Employee @relation(fields: [employeeId], references: [id])
-  reviewer User?    @relation("PerformanceReviewer", fields: [reviewerId], references: [id])
+  company     Company                 @relation(fields: [companyId], references: [id])
+  employee    Employee                @relation(fields: [employeeId], references: [id])
+  reviewer    User?                   @relation("PerformanceReviewer", fields: [reviewerId], references: [id])
+  peerReviews PerformancePeerReview[]
 
   @@unique([companyId, employeeId, period])
   @@index([companyId])
@@ -6422,6 +6481,14 @@ enum NotificationType {
   TASK_ASSIGNED
   QUALITY_BATCH_REJECTED
   STOCK_TRANSFER_REQUEST
+  LEAVE_REQUEST_SUBMITTED
+  LEAVE_APPROVED
+  LEAVE_REJECTED
+  PAYROLL_APPROVED
+  PAYROLL_PAID
+  DOCUMENT_EXPIRY_ALERT
+  DISCIPLINARY_ISSUED
+  GRIEVANCE_UPDATED
 }
 
 enum NotificationChannel {
@@ -6436,10 +6503,216 @@ enum NotificationStatus {
   READ
 }
 
+// ─── HR-D: Disciplinary & Grievance ──────────────────────────────────────────
+
+model DisciplinaryRecord {
+  id            String    @id @default(uuid())
+  companyId     String
+  employeeId    String
+  reference     String    @db.VarChar(30)
+  incidentDate  DateTime
+  category      String    @db.VarChar(60)
+  description   String    @db.VarChar(1000)
+  actionTaken   String    @db.VarChar(500)
+  issuedById    String?
+  acknowledgedAt DateTime?
+  notes         String?   @db.VarChar(500)
+  createdById   String?
+  updatedById   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+  company  Company  @relation(fields: [companyId], references: [id])
+  employee Employee @relation(fields: [employeeId], references: [id])
+  @@unique([companyId, reference])
+  @@index([companyId, employeeId])
+  @@index([deletedAt])
+}
+
+model GrievanceRecord {
+  id            String    @id @default(uuid())
+  companyId     String
+  employeeId    String
+  reference     String    @db.VarChar(30)
+  submittedDate DateTime
+  category      String    @db.VarChar(60)
+  description   String    @db.VarChar(1000)
+  status        String    @default("OPEN") @db.VarChar(30)
+  resolution    String?   @db.VarChar(1000)
+  resolvedById  String?
+  resolvedAt    DateTime?
+  createdById   String?
+  updatedById   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+  company  Company  @relation(fields: [companyId], references: [id])
+  employee Employee @relation(fields: [employeeId], references: [id])
+  @@unique([companyId, reference])
+  @@index([companyId, employeeId])
+  @@index([companyId, status])
+  @@index([deletedAt])
+}
+
+// ─── HR-G: Recruitment + Onboarding + Salary Bands ──────────────────────────
+
+model SalaryBand {
+  id             String    @id @default(uuid())
+  companyId      String
+  employeeRoleId String?
+  grade          String    @db.VarChar(30)
+  minSalary      Decimal   @db.Decimal(15, 2)
+  midSalary      Decimal?  @db.Decimal(15, 2)
+  maxSalary      Decimal   @db.Decimal(15, 2)
+  currency       String    @default("GHS") @db.VarChar(10)
+  effectiveDate  DateTime
+  notes          String?   @db.VarChar(500)
+  createdById    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  company      Company       @relation(fields: [companyId], references: [id])
+  employeeRole EmployeeRole? @relation(fields: [employeeRoleId], references: [id])
+
+  @@index([companyId, employeeRoleId])
+  @@index([deletedAt])
+}
+
+model JobPosting {
+  id           String    @id @default(uuid())
+  companyId    String
+  reference    String    @db.VarChar(30)
+  title        String    @db.VarChar(200)
+  department   String?   @db.VarChar(120)
+  branchId     String?
+  salaryBandId String?
+  description  String    @db.Text
+  requirements String?   @db.Text
+  status       String    @default("OPEN") @db.VarChar(30)
+  closingDate  DateTime?
+  createdById  String?
+  updatedById  String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  company      Company          @relation(fields: [companyId], references: [id])
+  applications JobApplication[]
+
+  @@unique([companyId, reference])
+  @@index([companyId, status])
+  @@index([deletedAt])
+}
+
+model JobApplication {
+  id                  String    @id @default(uuid())
+  companyId           String
+  jobPostingId        String
+  reference           String    @db.VarChar(30)
+  applicantName       String    @db.VarChar(160)
+  applicantEmail      String?   @db.VarChar(160)
+  applicantPhone      String?   @db.VarChar(40)
+  resumeUrl           String?   @db.VarChar(500)
+  coverLetter         String?   @db.Text
+  status              String    @default("RECEIVED") @db.VarChar(30)
+  notes               String?   @db.VarChar(1000)
+  interviewDate       DateTime?
+  reviewedById        String?
+  convertedEmployeeId String?
+  createdById         String?
+  updatedById         String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  deletedAt           DateTime?
+
+  company    Company    @relation(fields: [companyId], references: [id])
+  jobPosting JobPosting @relation(fields: [jobPostingId], references: [id])
+
+  @@unique([companyId, reference])
+  @@index([companyId, jobPostingId])
+  @@index([companyId, status])
+  @@index([deletedAt])
+}
+
+model OnboardingChecklist {
+  id            String    @id @default(uuid())
+  companyId     String
+  employeeId    String
+  title         String    @db.VarChar(200)
+  dueDate       DateTime?
+  completedAt   DateTime?
+  completedById String?
+  notes         String?   @db.VarChar(500)
+  sortOrder     Int       @default(0)
+  createdById   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  company  Company  @relation(fields: [companyId], references: [id])
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@index([companyId, employeeId])
+}
+
+// ─── HR-H: Enterprise Features ───────────────────────────────────────────────
+
+model PerformancePeerReview {
+  id                 String    @id @default(uuid())
+  companyId          String
+  performanceId      String
+  reviewerEmployeeId String
+  relationship       String    @db.VarChar(30)
+  overallRating      HRRating
+  comments           String?   @db.VarChar(1000)
+  submittedAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  company     Company             @relation(fields: [companyId], references: [id])
+  performance HRPerformanceRecord @relation(fields: [performanceId], references: [id])
+
+  @@unique([companyId, performanceId, reviewerEmployeeId])
+  @@index([companyId, performanceId])
+}
+
+model ApprovalChain {
+  id          String    @id @default(uuid())
+  companyId   String
+  entityType  String    @db.VarChar(60)
+  minAmount   Decimal?  @db.Decimal(15, 2)
+  steps       Json
+  isActive    Boolean   @default(true)
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, entityType])
+  @@index([deletedAt])
+}
+
+model ComplianceReport {
+  id            String   @id @default(uuid())
+  companyId     String
+  reportType    String   @db.VarChar(60)
+  period        String   @db.VarChar(10)
+  fileUrl       String?  @db.VarChar(500)
+  data          Json?
+  generatedById String?
+  createdAt     DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@index([companyId, reportType, period])
+}
+
 model Notification {
   id          String             @id @default(uuid())
-  companyId   String            
-  userId      String            
+  companyId   String
+  userId      String
   type        NotificationType
   channel     NotificationChannel @default(IN_APP)
   status      NotificationStatus  @default(UNREAD)
@@ -6701,6 +6974,93 @@ model LoginRateLimit {
 
   @@index([key, windowEnd])
   @@index([windowEnd])
+}
+
+// ── HR Advanced: Leave Policies + Balances + Public Holidays + Documents ─────
+
+model LeavePolicy {
+  id             String    @id @default(uuid())
+  companyId      String
+  name           String    @db.VarChar(120)
+  leaveType      LeaveType
+  daysPerYear    Int
+  carryOverDays  Int       @default(0)
+  employeeRoleId String?
+  isActive       Boolean   @default(true)
+  createdById    String?
+  updatedById    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  company      Company       @relation(fields: [companyId], references: [id])
+  employeeRole EmployeeRole? @relation(fields: [employeeRoleId], references: [id])
+
+  @@unique([companyId, leaveType, employeeRoleId])
+  @@index([companyId])
+  @@index([deletedAt])
+}
+
+model LeaveBalance {
+  id         String    @id @default(uuid())
+  companyId  String
+  employeeId String
+  leaveType  LeaveType
+  year       Int
+  entitled   Int
+  taken      Int       @default(0)
+  pending    Int       @default(0)
+  remaining  Int
+  carryOver  Int       @default(0)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  company  Company  @relation(fields: [companyId], references: [id])
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@unique([companyId, employeeId, leaveType, year])
+  @@index([companyId, employeeId])
+  @@index([companyId, year])
+}
+
+model PublicHoliday {
+  id          String   @id @default(uuid())
+  companyId   String
+  name        String   @db.VarChar(120)
+  date        DateTime
+  isRecurring Boolean  @default(true)
+  year        Int?
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, date])
+  @@index([companyId, date])
+}
+
+model EmployeeDocument {
+  id          String    @id @default(uuid())
+  companyId   String
+  employeeId  String
+  docType     String    @db.VarChar(60)
+  title       String    @db.VarChar(200)
+  fileUrl     String    @db.VarChar(500)
+  expiryDate  DateTime?
+  notes       String?   @db.VarChar(500)
+  createdById String?
+  updatedById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  company  Company  @relation(fields: [companyId], references: [id])
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@index([companyId, employeeId])
+  @@index([companyId, docType])
+  @@index([expiryDate])
+  @@index([deletedAt])
 }
 
 // ── Leave Request System ──────────────────────────────────────────────────────
