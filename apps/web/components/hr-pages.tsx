@@ -3078,16 +3078,16 @@ function OrgCard({ node }: { node: OrgNode & { children: any[] } }) {
 }
 
 export function OrgChartPage() {
-  const [nodes, setNodes] = useState<OrgNode[]>([]);
-  const [loading, setLoading] = useState(!hasCached("org-chart-nodes"));
+  const [nodes, setNodes] = useState<OrgNode[]>(() => getCachedFirst<ApiEnvelope<OrgNode[]>>("/hr/org-chart")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/hr/org-chart"));
 
   async function load() {
     const r = await apiFetch<ApiEnvelope<OrgNode[]>>("/hr/org-chart");
-    setNodes(getCachedFirst("org-chart-nodes", r.data ?? [], setNodes) ?? []);
+    setNodes(r.data ?? []);
     setLoading(false);
   }
 
-  useEffect(() => { setNodes(getCachedFirst("org-chart-nodes", [], setNodes) ?? []); void load(); }, []);
+  useEffect(() => { void load(); }, []);
 
   const tree = buildTree(nodes);
 
@@ -3120,8 +3120,8 @@ export function OrgChartPage() {
 type TrainingCourseRow = { id: string; code: string; title: string; category?: string; durationHours?: number; provider?: string; isActive: boolean };
 
 export function TrainingCatalogPage() {
-  const [rows, setRows] = useState<TrainingCourseRow[]>(getCachedFirst("training-courses", [], () => {}));
-  const [loading, setLoading] = useState(!hasCached("training-courses"));
+  const [rows, setRows] = useState<TrainingCourseRow[]>(() => getCachedFirst<ApiEnvelope<TrainingCourseRow[]>>("/hr/training-courses")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/hr/training-courses"));
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ code: "", title: "", category: "", durationHours: "", provider: "", description: "" });
   const [saving, setSaving] = useState(false);
@@ -3205,8 +3205,8 @@ type SalaryBandRow = { id: string; grade: string; minSalary: number; midSalary?:
 
 export function SalaryBandsPage() {
   const { employees: _, roles } = useHROptions();
-  const [rows, setRows] = useState<SalaryBandRow[]>(getCachedFirst("salary-bands", [], () => {}));
-  const [loading, setLoading] = useState(!hasCached("salary-bands"));
+  const [rows, setRows] = useState<SalaryBandRow[]>(() => getCachedFirst<ApiEnvelope<SalaryBandRow[]>>("/hr/salary-bands")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/hr/salary-bands"));
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ grade: "", employeeRoleId: "", minSalary: "", midSalary: "", maxSalary: "", effectiveDate: "", notes: "" });
   const [saving, setSaving] = useState(false);
