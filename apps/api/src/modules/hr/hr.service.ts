@@ -1679,7 +1679,7 @@ export class HRService {
     const html = `<p>Dear ${row.employeeName},</p><p>Please find your payslip for ${row.period} attached.</p><p>If you have any queries, please contact HR.</p>`;
     const sent = await this.email.sendWithAttachment(empEmail, `Payslip — ${row.period}`, html, { filename, content: pdf });
     if (!sent) throw new BadRequestException("Email service not configured or send failed.");
-    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "PayrollRecord", entityId: id, action: "EMAIL", ...ctx });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "PayrollRecord", entityId: id, action: "EXPORT", ...ctx });
     return { data: { sent: true, to: empEmail } };
   }
 
@@ -1702,7 +1702,7 @@ export class HRService {
       } catch { failed++; }
     }));
 
-    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "PayrollRecord", entityId: "bulk-email", action: "EMAIL", summary: `Sent ${sent}, failed ${failed} for ${period}`, ...ctx });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "PayrollRecord", entityId: "bulk-email", action: "EXPORT", summary: `Sent ${sent}, failed ${failed} for ${period}`, ...ctx });
     return { data: { sent, failed, period } };
   }
 
