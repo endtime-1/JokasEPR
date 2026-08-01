@@ -203,4 +203,84 @@ export class DutyRemindersService {
       this.logger.warn("certificateExpiryAlert: skipped — " + (err instanceof Error ? err.message : String(err)));
     }
   }
+
+  // ── 7 AM daily: vaccination due-date reminders ───────────────────────────
+  // Finds VaccinationRecords with nextDueDate within 7 days and notifies
+  // POULTRY_MANAGE users per company.
+  @Cron("0 7 * * *", { timeZone: "Africa/Accra" })
+  async vaccinationDueDateReminder() {
+    try {
+      const now = new Date();
+      const in7 = new Date(now.getTime() + 7 * 24 * 3_600_000);
+      const due = await this.prisma.vaccinationRecord.findMany({
+        where: { nextDueDate: { gte: now, lte: in7 }, deletedAt: null },
+        include: { flockBatch: { select: { companyId: true, code: true, name: true } } },
+      });
+
+      const byCompany = new Map<string, { batchCode: string; vaccineName: string; dueDate: Date }[]>();
+      for (const rec of due) {
+        const cid = rec.flockBatch?.companyId;
+        if (!cid) continue;
+        const list = byCompany.get(cid) ?? [];
+        list.push({ batchCode: rec.flockBatch!.code, vaccineName: rec.vaccineName, dueDate: rec.nextDueDate! });
+        byCompany.set(cid, list);
+      }
+
+      for (const [companyId, items] of byCompany) {
+        const body = `${items.length} vaccination(s) due within 7 days:\n` +
+          items.slice(0, 10).map((i) => `${i.batchCode} — ${i.vaccineName} (due ${i.dueDate.toISOString().slice(0, 10)})`).join("\n") +
+          (items.length > 10 ? `\n…and ${items.length - 10} more` : "");
+        await this.notifications.broadcast(companyId, "POULTRY_MANAGE", {
+          type: NotificationType.VACCINATION_REMINDER,
+          title: "Vaccination Due Soon",
+          body,
+          entityType: "VaccinationRecord",
+        });
+      }
+      if (due.length > 0) this.logger.log(`vaccinationDueDateReminder: ${due.length} record(s) in ${byCompany.size} company/ies`);
+    } catch (err) {
+      this.logger.warn("vaccinationDueDateReminder: skipped — " + (err instanceof Error ? err.message : String(err)));
+    }
+  }
+
+  // ── 7 AM daily: medication withdrawal period alert ───────────────────────
+  // Finds MedicationRecords where withdrawalUntil is in the future (birds
+  // still under withdrawal — cannot be sold/slaughtered). Notifies
+  // POULTRY_MANAGE users per company.
+  @Cron("0 7 * * *", { timeZone: "Africa/Accra" })
+  async withdrawalPeriodAlert() {
+    try {
+      const now = new Date();
+      const in3 = new Date(now.getTime() + 3 * 24 * 3_600_000);
+      // Alert for records where withdrawal ends within 3 days OR is already active today
+      const active = await this.prisma.medicationRecord.findMany({
+        where: { withdrawalUntil: { gte: now, lte: in3 }, deletedAt: null },
+        include: { flockBatch: { select: { companyId: true, code: true, name: true } } },
+      });
+
+      const byCompany = new Map<string, { batchCode: string; medicationName: string; until: Date }[]>();
+      for (const rec of active) {
+        const cid = rec.flockBatch?.companyId;
+        if (!cid) continue;
+        const list = byCompany.get(cid) ?? [];
+        list.push({ batchCode: rec.flockBatch!.code, medicationName: rec.medicationName, until: rec.withdrawalUntil! });
+        byCompany.set(cid, list);
+      }
+
+      for (const [companyId, items] of byCompany) {
+        const body = `${items.length} batch(es) still under medication withdrawal (do not sell/slaughter):\n` +
+          items.slice(0, 10).map((i) => `${i.batchCode} — ${i.medicationName} (withdrawal ends ${i.until.toISOString().slice(0, 10)})`).join("\n") +
+          (items.length > 10 ? `\n…and ${items.length - 10} more` : "");
+        await this.notifications.broadcast(companyId, "POULTRY_MANAGE", {
+          type: NotificationType.MEDICATION_REMINDER,
+          title: "⚠️ Withdrawal Period Active",
+          body,
+          entityType: "MedicationRecord",
+        });
+      }
+      if (active.length > 0) this.logger.log(`withdrawalPeriodAlert: ${active.length} record(s) in ${byCompany.size} company/ies`);
+    } catch (err) {
+      this.logger.warn("withdrawalPeriodAlert: skipped — " + (err instanceof Error ? err.message : String(err)));
+    }
+  }
 }

@@ -45,7 +45,7 @@ export function MortalityScreen() {
     !farmId
   );
   const batches: SelectOption[] = useMemo(
-    () => (rawBatches ?? []).map((b: any) => ({ label: `${b.code} — ${b.name}`, value: b.id })),
+    () => (rawBatches ?? []).filter((b: any) => !b.status || b.status === "ACTIVE").map((b: any) => ({ label: `${b.code} — ${b.name}`, value: b.id })),
     [rawBatches]
   );
 

@@ -55,7 +55,7 @@ export function EggCollectionScreen() {
     !farmId
   );
   const batches: SelectOption[] = useMemo(
-    () => (rawBatches ?? []).map((b: any) => ({ label: b.code ?? b.batchCode ?? b.name, value: b.id })),
+    () => (rawBatches ?? []).filter((b: any) => !b.status || b.status === "ACTIVE").map((b: any) => ({ label: b.code ?? b.batchCode ?? b.name, value: b.id })),
     [rawBatches]
   );
 

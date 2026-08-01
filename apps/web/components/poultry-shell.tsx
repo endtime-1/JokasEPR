@@ -9,6 +9,7 @@ const NAV_GROUPS = [
     label: "Flock",
     items: [
       { href: "/poultry", label: "Dashboard", exact: true },
+      { href: "/poultry/farms", label: "Farm Overview" },
       { href: "/poultry/houses", label: "Houses & Pens" },
       { href: "/poultry/batches", label: "Batches" }
     ]

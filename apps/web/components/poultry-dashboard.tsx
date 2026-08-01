@@ -274,7 +274,8 @@ function BatchStatusBadge({ status }: { status: string }) {
     PLANNED: "bg-blue-100 text-blue-700",
     CLOSED: "bg-line text-ink/55",
     SOLD: "bg-purple-100 text-purple-700",
-    CULLED: "bg-red-100 text-red-700"
+    CULLED: "bg-red-100 text-red-700",
+    TRANSFERRED: "bg-amber-100 text-amber-700"
   };
   return (
     <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${map[status] ?? "bg-line text-ink/55"}`}>

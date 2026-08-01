@@ -895,7 +895,10 @@ export function FlockBatchDetailsPage() {
                 <form onSubmit={updateStatus} className="flex gap-3">
                   <select className={inputClass} value={statusForm.status} onChange={(e) => setStatusForm({ ...statusForm, status: e.target.value })} required>
                     <option value="">Select status…</option>
-                    {["ACTIVE", "PLANNED", "SOLD", "CULLED", "CLOSED"].map((s) => <option key={s}>{s}</option>)}
+                    {(batch.status === "PLANNED" ? ["ACTIVE", "CULLED"] :
+                      batch.status === "ACTIVE" ? ["TRANSFERRED", "CLOSED", "SOLD", "CULLED"] :
+                      batch.status === "TRANSFERRED" ? ["CLOSED", "SOLD", "CULLED"] :
+                      batch.status === "CLOSED" ? ["SOLD"] : []).map((s) => <option key={s}>{s}</option>)}
                   </select>
                   <input className={inputClass + " flex-1"} placeholder="Notes (optional)" value={statusForm.notes} onChange={(e) => setStatusForm({ ...statusForm, notes: e.target.value })} />
                   <button type="submit" className="min-h-11 rounded-md bg-brand px-4 text-sm font-semibold text-white">Update</button>
@@ -970,14 +973,14 @@ export function FlockBatchDetailsPage() {
 // ─── Batch Records Tab ────────────────────────────────────────────────────────
 
 const BATCH_RECORD_TYPES: Array<{ type: string; label: string; cols: string[]; endpoint: string }> = [
-  { type: "daily",        label: "Daily Records",      cols: ["recordDate", "openingBirdCount", "notes"],                                     endpoint: "/poultry/daily" },
-  { type: "mortality",    label: "Mortality",          cols: ["recordDate", "birdCount", "reason"],                                           endpoint: "/poultry/mortality" },
-  { type: "feed",         label: "Feed Consumption",   cols: ["recordDate", "quantityKg", "costAmount"],                                      endpoint: "/poultry/feed" },
-  { type: "eggs",         label: "Egg Production",     cols: ["recordDate", "goodEggs", "crackedEggs", "dirtyEggs", "brokenEggs", "rejectedEggs"], endpoint: "/poultry/eggs" },
-  { type: "weights",      label: "Bird Weights",       cols: ["recordDate", "sampleSize", "averageWeightKg"],                                 endpoint: "/poultry/weights" },
-  { type: "medications",  label: "Medications",        cols: ["startDate", "medicationName", "dosage", "route"],                              endpoint: "/poultry/medications" },
-  { type: "vaccinations", label: "Vaccinations",       cols: ["vaccinationDate", "vaccineName", "dose"],                                      endpoint: "/poultry/vaccinations" },
-  { type: "health",       label: "Health Observations",cols: ["observationDate", "severity", "observation"],                                  endpoint: "/poultry/health" },
+  { type: "daily",        label: "Daily Records",      cols: ["recordDate", "openingBirdCount", "notes"],                                     endpoint: "/poultry/daily-records" },
+  { type: "mortality",    label: "Mortality",          cols: ["recordDate", "birdCount", "reason"],                                           endpoint: "/poultry/mortality-records" },
+  { type: "feed",         label: "Feed Consumption",   cols: ["recordDate", "quantityKg", "costAmount"],                                      endpoint: "/poultry/feed-consumption-records" },
+  { type: "eggs",         label: "Egg Production",     cols: ["recordDate", "goodEggs", "crackedEggs", "dirtyEggs", "brokenEggs", "rejectedEggs"], endpoint: "/poultry/egg-production-records" },
+  { type: "weights",      label: "Bird Weights",       cols: ["recordDate", "sampleSize", "averageWeightKg"],                                 endpoint: "/poultry/bird-weight-records" },
+  { type: "medications",  label: "Medications",        cols: ["startDate", "medicationName", "dosage", "route"],                              endpoint: "/poultry/medication-records" },
+  { type: "vaccinations", label: "Vaccinations",       cols: ["vaccinationDate", "vaccineName", "dose"],                                      endpoint: "/poultry/vaccination-records" },
+  { type: "health",       label: "Health Observations",cols: ["observationDate", "severity", "observation"],                                  endpoint: "/poultry/health-observations" },
   { type: "costs",        label: "Costs",              cols: ["costDate", "costType", "amount", "description"],                               endpoint: "/poultry/costs" },
 ];
 

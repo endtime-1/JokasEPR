@@ -55,7 +55,7 @@ export class PoultryService {
   async dashboard(user: AuthenticatedUser) {
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
-    const since7 = new Date(Date.now() - 7 * 86400000);
+    const since7 = new Date(todayStart.getTime() - 6 * 86400000);
 
     const [batches, weekEggs, weekMortality, weekFeed, recentHealth, houses, prices] = await Promise.all([
       this.prisma.flockBatch.findMany({
@@ -384,7 +384,7 @@ export class PoultryService {
           costRecords: { where: { deletedAt: null } }
         },
         orderBy: { createdAt: "desc" },
-        take: 100
+        take: query.take ?? 50
       }),
       this.poultryPrices(user.companyId)
     ]);
@@ -548,6 +548,10 @@ export class PoultryService {
     });
     this.lookupCache.invalidate(`poultry:opts:${user.companyId}`);
     await this.writeAudit(user, "UPDATE", "FlockBatch", id, `Updated batch status to ${dto.status}`, context, batch.farmId);
+
+    if (["CLOSED", "SOLD", "CULLED"].includes(dto.status)) {
+      void this.snapshotBatchProfitability(user, id).catch(() => undefined);
+    }
     return { data };
   }
 
@@ -585,7 +589,7 @@ export class PoultryService {
     const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
     const data = await this.prisma.$transaction(async (tx) => {
       const record = await tx.feedConsumptionRecord.create({
-        data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), recordDate: new Date(dto.recordDate), feedProductId: dto.feedProductId, quantityKg: dto.quantityKg, costAmount: dto.costAmount, notes: dto.notes, status: dto.status ?? "SUBMITTED" }
+        data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), recordDate: new Date(dto.recordDate), feedProductId: dto.feedProductId, warehouseId: dto.warehouseId, quantityKg: dto.quantityKg, costAmount: dto.costAmount, notes: dto.notes, status: dto.status ?? "SUBMITTED" }
       });
       if (dto.feedProductId && dto.warehouseId) {
         await this.consumeInventoryTx(tx, user, batch, dto.warehouseId, dto.feedProductId, dto.quantityKg, "PRODUCTION_INPUT", "FeedConsumptionRecord", record.id, `Feed consumption for flock ${batch.code}`);
@@ -979,6 +983,33 @@ export class PoultryService {
       eggPricePerUnit: v.eggPricePerUnit ? Number(v.eggPricePerUnit) : 1.2,
       broilerPricePerKg: v.broilerPricePerKg ? Number(v.broilerPricePerKg) : 35
     };
+  }
+
+  private async snapshotBatchProfitability(user: AuthenticatedUser, batchId: string) {
+    const batch = await this.prisma.flockBatch.findFirst({
+      where: { id: batchId, companyId: user.companyId },
+      include: {
+        mortalityRecords: { where: { deletedAt: null }, select: { birdCount: true, isCulling: true } },
+        feedConsumptionRecords: { where: { deletedAt: null }, select: { quantityKg: true } },
+        eggProductionRecords: { where: { deletedAt: null }, select: { goodEggs: true, crackedEggs: true, dirtyEggs: true, brokenEggs: true, rejectedEggs: true } },
+        birdWeightRecords: { where: { deletedAt: null }, orderBy: { recordDate: "desc" }, take: 1 },
+        costRecords: { where: { deletedAt: null }, select: { amount: true } }
+      }
+    });
+    if (!batch) return;
+    const prices = await this.poultryPrices(user.companyId);
+    const m = this.batchMetrics(batch, prices);
+    const totalRevenue = Number((m.estimatedRevenue ?? 0).toFixed(2));
+    const totalCost = Number(m.totalCosts.toFixed(2));
+    const grossProfit = Number((totalRevenue - totalCost).toFixed(2));
+    const margin = totalRevenue > 0 ? Number(((grossProfit / totalRevenue) * 100).toFixed(2)) : 0;
+    const reportData = { currentLiveBirds: m.currentLiveBirds, totalEggs: m.totalEggs, totalFeedKg: m.totalFeedKg, mortalityRate: m.mortalityRate };
+    const existing = await this.prisma.batchProfitability.findFirst({ where: { companyId: user.companyId, batchType: "FLOCK" as never, batchId } });
+    if (existing) {
+      await this.prisma.batchProfitability.update({ where: { id: existing.id }, data: { totalRevenue, totalCost, grossProfit, margin, periodEnd: batch.actualCloseDate ?? new Date(), reportData } });
+    } else {
+      await this.prisma.batchProfitability.create({ data: { companyId: user.companyId, batchType: "FLOCK" as never, batchId, batchReference: batch.code, batchName: batch.name ?? batch.code, periodStart: batch.startDate ?? batch.createdAt, periodEnd: batch.actualCloseDate ?? new Date(), totalRevenue, totalCost, grossProfit, margin, createdById: user.id, reportData } });
+    }
   }
 
   private currentLiveBirds(openingBirdCount: number, mortalityRecords: Array<{ birdCount: number }>) {

@@ -1112,6 +1112,7 @@ model Warehouse {
   dashboardMetricSnapshots DashboardMetricSnapshot[]
   dashboardAlerts DashboardAlert[]
   aiAlerts        AiAlert[]
+  feedConsumptionRecords FeedConsumptionRecord[]
   finishedFeedStocks FinishedFeedStock[]
   feedInternalTransfersFrom FeedInternalTransfer[] @relation("FeedTransferFromWarehouse")
   soyaBeanIntakes SoyaBeanIntake[]
@@ -3109,14 +3110,15 @@ model FeedConsumptionRecord {
   poultryHouseId String             
   penId          String?            
   flockBatchId   String             
-  feedProductId  String?            
+  feedProductId  String?
+  warehouseId    String?
   recordDate     DateTime
   quantityKg     Decimal             @db.Decimal(18, 4)
   costAmount     Decimal?            @db.Decimal(18, 4)
   notes          String?
   status         PoultryRecordStatus @default(SUBMITTED)
-  createdById    String?            
-  updatedById    String?            
+  createdById    String?
+  updatedById    String?
   createdAt      DateTime            @default(now())
   updatedAt      DateTime            @updatedAt
   deletedAt      DateTime?
@@ -3128,6 +3130,7 @@ model FeedConsumptionRecord {
   pen          Pen?         @relation(fields: [penId], references: [id])
   flockBatch   FlockBatch   @relation(fields: [flockBatchId], references: [id])
   feedProduct  Product?     @relation(fields: [feedProductId], references: [id])
+  warehouse    Warehouse?   @relation(fields: [warehouseId], references: [id])
 
   @@index([companyId])
   @@index([branchId])
@@ -3135,6 +3138,7 @@ model FeedConsumptionRecord {
   @@index([poultryHouseId])
   @@index([flockBatchId])
   @@index([feedProductId])
+  @@index([warehouseId])
   @@index([companyId, status])
   @@index([companyId, recordDate])
   @@index([deletedAt])
@@ -3306,6 +3310,7 @@ model PoultryTransferRecord {
   transferDate       DateTime
   status             PoultryTransferStatus @default(PENDING)
   reason             String?
+  notes              String?
   approvedById       String?              
   approvedAt         DateTime?
   createdById        String?              
