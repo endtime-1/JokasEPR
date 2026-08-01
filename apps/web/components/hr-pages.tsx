@@ -3204,7 +3204,7 @@ export function TrainingCatalogPage() {
 type SalaryBandRow = { id: string; grade: string; minSalary: number; midSalary?: number; maxSalary: number; currency: string; effectiveDate: string; employeeRole?: { name: string } };
 
 export function SalaryBandsPage() {
-  const { employees: _, roles } = useHROptions();
+  const { opts } = useHROptions();
   const [rows, setRows] = useState<SalaryBandRow[]>(() => getCachedFirst<ApiEnvelope<SalaryBandRow[]>>("/hr/salary-bands")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/hr/salary-bands"));
   const [showForm, setShowForm] = useState(false);
@@ -3249,7 +3249,7 @@ export function SalaryBandsPage() {
               <div><label className="mb-1 block text-xs font-medium">Role</label>
                 <select value={form.employeeRoleId} onChange={f("employeeRoleId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
                   <option value="">— Any Role —</option>
-                  {roles.map((r: any) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                  {opts.employeeRoles.map((r: any) => <option key={r.id} value={r.id}>{r.name}</option>)}
                 </select>
               </div>
               <div><label className="mb-1 block text-xs font-medium">Effective Date *</label><input required type="date" value={form.effectiveDate} onChange={f("effectiveDate")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
@@ -3423,7 +3423,7 @@ export function RecruitmentPage() {
 type OnboardingItem = { id: string; title: string; completedAt?: string; dueDate?: string; sortOrder: number };
 
 export function OnboardingPage() {
-  const { employees } = useHROptions();
+  const { opts } = useHROptions();
   const [employeeId, setEmployeeId] = useState("");
   const [items, setItems] = useState<OnboardingItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -3478,7 +3478,7 @@ export function OnboardingPage() {
             <label className="mb-1 block text-xs font-semibold text-ink/70">Select Employee</label>
             <select value={employeeId} onChange={handleEmployeeChange} className="w-full rounded-lg border border-line px-3 py-2 text-sm">
               <option value="">— Pick an employee —</option>
-              {employees.map((e: any) => <option key={e.id} value={e.id}>{e.fullName} ({e.code})</option>)}
+              {opts.employees.map((e: any) => <option key={e.id} value={e.id}>{e.fullName} ({e.code})</option>)}
             </select>
           </div>
           {employeeId && <button onClick={applyTemplate} disabled={saving} className="rounded-md border border-line px-4 py-2 text-sm font-medium hover:bg-field disabled:opacity-50">Load Template</button>}
