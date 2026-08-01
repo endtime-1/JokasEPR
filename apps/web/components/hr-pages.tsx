@@ -3083,11 +3083,11 @@ export function OrgChartPage() {
 
   async function load() {
     const r = await apiFetch<ApiEnvelope<OrgNode[]>>("/hr/org-chart");
-    setNodes(getCachedFirst("org-chart-nodes", r.data ?? [], setNodes));
+    setNodes(getCachedFirst("org-chart-nodes", r.data ?? [], setNodes) ?? []);
     setLoading(false);
   }
 
-  useEffect(() => { setNodes(getCachedFirst("org-chart-nodes", [], setNodes)); void load(); }, []);
+  useEffect(() => { setNodes(getCachedFirst("org-chart-nodes", [], setNodes) ?? []); void load(); }, []);
 
   const tree = buildTree(nodes);
 
