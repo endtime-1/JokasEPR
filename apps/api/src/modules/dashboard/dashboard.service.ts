@@ -350,7 +350,7 @@ export class DashboardService {
       feedProdAgg, soyaBeanAgg, soyaOilAgg, soyaCakeAgg,
       salesAgg, debtAgg,
       lowStockAlerts, pendingProdOrders, pendingPurchaseApprovals,
-      maintenanceAlerts, aiAlerts
+      maintenanceAlerts, aiAlerts, invValue
     ] = await Promise.all([
       this.prisma.flockBatch.aggregate({ where: { companyId: cid, status: "ACTIVE", deletedAt: null, ...farmF }, _sum: { openingBirdCount: true } })
         .then(r => Number(r._sum.openingBirdCount ?? 0)).catch(() => 0),
@@ -420,6 +420,12 @@ export class DashboardService {
 
       this.prisma.aiAlert.count({ where: { companyId: cid, status: "UNREAD" } })
         .catch(() => 0),
+
+      this.prisma.stockBatch.findMany({
+        where: { companyId: cid, deletedAt: null, status: "AVAILABLE" as any, quantityRemaining: { gt: 0 }, unitCost: { not: null } },
+        select: { quantityRemaining: true, unitCost: true }
+      }).then(rows => rows.reduce((sum, b) => sum + Number(b.quantityRemaining) * Number(b.unitCost), 0))
+        .catch(() => 0),
     ]);
 
     return {
@@ -432,7 +438,7 @@ export class DashboardService {
       soyaBeansProcessedThisWeek: soyaBeanAgg,
       soyaOilProduced: soyaOilAgg,
       soyaCakeProduced: soyaCakeAgg,
-      currentInventoryValue: 0,
+      currentInventoryValue: invValue,
       salesThisMonth: salesAgg,
       outstandingCustomerDebt: debtAgg,
       supplierDebt: 0,
@@ -554,11 +560,48 @@ export class DashboardService {
       feedProductionTrend: [{ name: "Feed produced", data: sumToMap(feedProdRows, "createdAt", "producedQuantityKg") }] as Series[],
       soyaProductionTrend: [mapToSeries(soyaBeanByDate, "Beans processed"), mapToSeries(soyaOilByDate, "Oil produced"), mapToSeries(soyaCakeByDate, "Cake produced")] as Series[],
       salesTrend: [{ name: "Sales", data: sumToMap(salesRows, "orderDate", "totalAmount") }] as Series[],
-      inventoryValueByCategory: [{ name: "current_inventory_value", data: [] }] as Series[],
-      profitabilityByProduct: [{ name: "gross_profit", data: [] }] as Series[],
+      inventoryValueByCategory: await this.liveInventoryValueByCategory(cid),
+      profitabilityByProduct: await this.liveProfitabilityByProduct(cid, range),
       farmPerformanceComparison: [{ name: "farm_performance_index", data: farmPerfData }] as Series[],
       branchPerformanceComparison: [{ name: "branch_performance_index", data: branchPerfData }] as Series[],
     };
+  }
+
+  private async liveInventoryValueByCategory(companyId: string): Promise<Series[]> {
+    try {
+      const batches = await this.prisma.stockBatch.findMany({
+        where: { companyId, deletedAt: null, status: "AVAILABLE" as any, quantityRemaining: { gt: 0 }, unitCost: { not: null } },
+        select: { quantityRemaining: true, unitCost: true, product: { select: { category: { select: { name: true } } } } }
+      });
+      const grouped = new Map<string, number>();
+      for (const b of batches) {
+        const cat = (b.product as any)?.category?.name ?? "Uncategorised";
+        grouped.set(cat, (grouped.get(cat) ?? 0) + Number(b.quantityRemaining) * Number(b.unitCost));
+      }
+      const data = Array.from(grouped, ([label, value]) => ({ label, value: Math.round(value * 100) / 100 }))
+        .sort((a, b) => b.value - a.value);
+      return [{ name: "inventory_value", data }];
+    } catch {
+      return [{ name: "inventory_value", data: [] }];
+    }
+  }
+
+  private async liveProfitabilityByProduct(companyId: string, range: { start: Date; end: Date }): Promise<Series[]> {
+    try {
+      const rows = await this.prisma.productProfitability.findMany({
+        where: { companyId, deletedAt: null, periodStart: { lte: range.end }, periodEnd: { gte: range.start } },
+        select: { productName: true, grossProfit: true }
+      });
+      const grouped = new Map<string, number>();
+      for (const r of rows) {
+        grouped.set(r.productName, (grouped.get(r.productName) ?? 0) + Number(r.grossProfit));
+      }
+      const data = Array.from(grouped, ([label, value]) => ({ label, value: Math.round(value * 100) / 100 }))
+        .sort((a, b) => b.value - a.value);
+      return [{ name: "gross_profit", data }];
+    } catch {
+      return [{ name: "gross_profit", data: [] }];
+    }
   }
 
   private liveFarmFilter(user: AuthenticatedUser, query: DashboardQueryDto) {
