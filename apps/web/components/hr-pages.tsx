@@ -164,15 +164,23 @@ const hrNav = [
 
 function HRNav() {
   const pathname = usePathname();
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = containerRef.current?.querySelector<HTMLElement>("[data-active]");
+    el?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+  }, [pathname]);
+
   return (
-    <div className="flex gap-1 overflow-x-auto rounded-xl border border-line bg-field/60 p-1 [scrollbar-width:none]">
+    <div ref={containerRef} className="flex flex-wrap gap-1 rounded-xl border border-line bg-field/60 p-1">
       {hrNav.map((n) => {
         const active = n.href === "/hr" ? pathname === "/hr" : pathname === n.href || pathname.startsWith(n.href + "/");
         return (
           <Link
             key={n.href}
             href={n.href}
-            className={`shrink-0 rounded-lg px-4 py-2 text-sm font-medium whitespace-nowrap transition-all ${
+            {...(active ? { "data-active": "" } : {})}
+            className={`rounded-lg px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-all ${
               active
                 ? "bg-white text-brand shadow-sm font-semibold"
                 : "text-ink/55 hover:text-ink"
