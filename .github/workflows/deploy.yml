@@ -176,22 +176,19 @@ jobs:
           GH_RUN_ID: ${{ github.run_id }}
         run: |
           set -e
+          # Parse artifact ID with grep — no python3/jq needed
           ARTIFACT_ID=$(curl -sf \
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/$GH_REPO/actions/runs/$GH_RUN_ID/artifacts" \
-            | python3 -c "
-          import sys, json
-          arts = json.load(sys.stdin)['artifacts']
-          print(next(a['id'] for a in arts if a['name'] == 'deploy-pkg'))
-          ")
+            | grep -o '"id":[0-9]*' | head -1 | grep -o '[0-9]*')
           echo "Artifact ID: $ARTIFACT_ID"
           curl -fL \
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/$GH_REPO/actions/artifacts/$ARTIFACT_ID/zip" \
             -o /tmp/deploy.zip
-          python3 -c "import zipfile; zipfile.ZipFile('/tmp/deploy.zip').extractall('/tmp')"
+          unzip -o /tmp/deploy.zip -d /tmp/
           echo "Downloaded: $(ls -lh /tmp/deploy.tar.gz)"
 
       - name: Backup current deploy
