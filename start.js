@@ -288,6 +288,38 @@ function readCgroupMB(v1limitFile, v1usageFile) {
   };
 }
 
+// MIME types for direct static file serving.
+const MIME_MAP = {
+  ".js":   "application/javascript; charset=utf-8",
+  ".mjs":  "application/javascript; charset=utf-8",
+  ".css":  "text/css; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".png":  "image/png",
+  ".jpg":  "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif":  "image/gif",
+  ".webp": "image/webp",
+  ".svg":  "image/svg+xml; charset=utf-8",
+  ".ico":  "image/x-icon",
+  ".woff": "font/woff",
+  ".woff2":"font/woff2",
+  ".ttf":  "font/ttf",
+  ".eot":  "application/vnd.ms-fontobject",
+  ".map":  "application/json; charset=utf-8",
+  ".txt":  "text/plain; charset=utf-8",
+  ".html": "text/html; charset=utf-8",
+};
+
+// Helper: proxy a request to the Next.js worker on WEB_INTERNAL_PORT.
+function proxyToWeb(req, res) {
+  const up = http.request(
+    { hostname: "127.0.0.1", port: WEB_INTERNAL_PORT, path: req.url, method: req.method, headers: req.headers },
+    (pRes) => { res.writeHead(pRes.statusCode, pRes.headers); pRes.pipe(res); }
+  );
+  up.on("error", () => { if (!res.headersSent) { res.writeHead(502); res.end("Bad Gateway"); } });
+  req.pipe(up);
+}
+
 function handleRequest(req, res) {
   // Diagnostic endpoint — available even while webReady is false.
   if (req.url === "/__status") {
@@ -343,6 +375,38 @@ function handleRequest(req, res) {
     return;
   }
 
+  // Serve /_next/static/ files directly from the filesystem.
+  // Next.js standalone mode expects a separate static file server for /_next/static/.
+  // Going through Next.js internally can produce MIME-type mismatches that `nosniff`
+  // blocks. Direct serving guarantees correct Content-Type, Cache-Control, and avoids
+  // 404s from Next.js path-resolution edge cases.
+  const reqUrl = req.url || "/";
+  if (reqUrl.startsWith("/_next/static/")) {
+    const relPath = reqUrl.split("?")[0].slice("/_next/static/".length);
+    // Reject path traversal attempts
+    if (!relPath.startsWith("..") && !relPath.includes("/../")) {
+      const candidates = [
+        path.join(root, "apps/web/.next/standalone/apps/web/.next/static", relPath),
+        path.join(root, "apps/web/.next/static", relPath),
+      ];
+      (function tryNext(i) {
+        if (i >= candidates.length) { proxyToWeb(req, res); return; }
+        fs.stat(candidates[i], (err, stat) => {
+          if (err || !stat.isFile()) { tryNext(i + 1); return; }
+          const ext = path.extname(candidates[i]).toLowerCase();
+          res.writeHead(200, {
+            "Content-Type": MIME_MAP[ext] || "application/octet-stream",
+            "Content-Length": stat.size,
+            "Cache-Control": "public, max-age=31536000, immutable",
+            "X-Content-Type-Options": "nosniff",
+          });
+          fs.createReadStream(candidates[i]).pipe(res);
+        });
+      }(0));
+      return;
+    }
+  }
+
   if (!webReady) {
     // 503 (not 200): fetch() callers check r.ok / status — a 200 fools them into thinking
     // the request succeeded when it actually hit the startup page. refreshSession() returned
@@ -366,12 +430,7 @@ function handleRequest(req, res) {
     );
     return;
   }
-  const up = http.request(
-    { hostname: "127.0.0.1", port: WEB_INTERNAL_PORT, path: req.url, method: req.method, headers: req.headers },
-    (pRes) => { res.writeHead(pRes.statusCode, pRes.headers); pRes.pipe(res); }
-  );
-  up.on("error", () => { if (!res.headersSent) { res.writeHead(502); res.end("Bad Gateway"); } });
-  req.pipe(up);
+  proxyToWeb(req, res);
 }
 
 function handleUpgrade(req, clientSocket, head) {
