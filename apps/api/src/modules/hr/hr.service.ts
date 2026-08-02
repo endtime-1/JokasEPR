@@ -110,7 +110,7 @@ export class HRService {
       this.prisma.payrollRecord.count({ where: { companyId: cid, deletedAt: null, status: "DRAFT" } }).catch(() => 0),
       this.prisma.leaveRequest.count({ where: { companyId: cid, deletedAt: null, status: "PENDING" } }).catch(() => 0),
       this.prisma.leaveRequest.findMany({ where: { companyId: cid, deletedAt: null }, orderBy: { createdAt: "desc" }, take: 5 }).catch(() => []),
-      this.prisma.employee.findMany({ where: { companyId: cid, deletedAt: null }, orderBy: { createdAt: "desc" }, take: 8, include: { employeeRole: { select: { name: true } }, branch: { select: { name: true } } } }).catch(() => []),
+      this.prisma.employee.findMany({ where: { companyId: cid, deletedAt: null }, orderBy: { createdAt: "desc" }, take: 8, select: { id: true, code: true, fullName: true, status: true, photoUrl: true, employeeRole: { select: { name: true } }, branch: { select: { name: true } } } }).catch(() => []),
       this.prisma.task.findMany({ where: { companyId: cid, deletedAt: null }, orderBy: { createdAt: "desc" }, take: 8, include: { assignments: { include: { employee: { select: { fullName: true } } } } } }).catch(() => []),
     ]);
 
