@@ -163,13 +163,36 @@ jobs:
   deploy:
     needs: build
     runs-on: self-hosted
+    permissions:
+      actions: read
 
     steps:
       - name: Download deployment artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: deploy-pkg
-          path: /tmp
+        # Use curl + Python instead of actions/download-artifact so the "Set up job"
+        # phase downloads zero Node.js actions — avoids OOM on memory-limited hosts.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          GH_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -e
+          ARTIFACT_ID=$(curl -sf \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GH_REPO/actions/runs/$GH_RUN_ID/artifacts" \
+            | python3 -c "
+          import sys, json
+          arts = json.load(sys.stdin)['artifacts']
+          print(next(a['id'] for a in arts if a['name'] == 'deploy-pkg'))
+          ")
+          echo "Artifact ID: $ARTIFACT_ID"
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GH_REPO/actions/artifacts/$ARTIFACT_ID/zip" \
+            -o /tmp/deploy.zip
+          python3 -c "import zipfile; zipfile.ZipFile('/tmp/deploy.zip').extractall('/tmp')"
+          echo "Downloaded: $(ls -lh /tmp/deploy.tar.gz)"
 
       - name: Backup current deploy
         run: |
