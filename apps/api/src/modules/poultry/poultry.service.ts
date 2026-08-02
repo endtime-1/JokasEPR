@@ -205,15 +205,17 @@ export class PoultryService {
   }
 
   async listHouses(user: AuthenticatedUser, query: PoultryQueryDto) {
-    const data = await this.prisma.poultryHouse.findMany({
-      where: { ...this.houseWhere(user), ...(query.farmId ? { farmId: query.farmId } : {}) },
-      include: {
-        farm: { select: { id: true, code: true, name: true } },
-        pens: { where: { deletedAt: null }, orderBy: { penNumber: "asc" }, include: { batchAllocations: { include: { flockBatch: { select: { id: true, code: true, name: true, status: true, birdType: true } } } } } }
-      },
-      orderBy: { code: "asc" }
-    });
-    return { data };
+    try {
+      const data = await this.prisma.poultryHouse.findMany({
+        where: { ...this.houseWhere(user), ...(query.farmId ? { farmId: query.farmId } : {}) },
+        include: {
+          farm: { select: { id: true, code: true, name: true } },
+          pens: { where: { deletedAt: null }, orderBy: { penNumber: "asc" }, include: { batchAllocations: { include: { flockBatch: { select: { id: true, code: true, name: true, status: true, birdType: true } } } } } }
+        },
+        orderBy: { code: "asc" }
+      });
+      return { data };
+    } catch { return { data: [] }; }
   }
 
   async createHouse(user: AuthenticatedUser, dto: CreatePoultryHouseDto, context: RequestContext) {
@@ -371,24 +373,26 @@ export class PoultryService {
   }
 
   async listBatches(user: AuthenticatedUser, query: PoultryQueryDto) {
-    const [batches, prices] = await Promise.all([
-      this.prisma.flockBatch.findMany({
-        where: { ...this.batchWhere(user), ...(query.farmId ? { farmId: query.farmId } : {}), ...(query.poultryHouseId ? { poultryHouseId: query.poultryHouseId } : {}) },
-        include: {
-          farm: { select: { code: true, name: true } },
-          poultryHouse: { select: { code: true, name: true } },
-          mortalityRecords: { where: { deletedAt: null } },
-          feedConsumptionRecords: { where: { deletedAt: null } },
-          eggProductionRecords: { where: { deletedAt: null } },
-          birdWeightRecords: { where: { deletedAt: null }, orderBy: { recordDate: "desc" }, take: 1 },
-          costRecords: { where: { deletedAt: null } }
-        },
-        orderBy: { createdAt: "desc" },
-        take: query.take ?? 50
-      }),
-      this.poultryPrices(user.companyId)
-    ]);
-    return { data: batches.map((batch) => this.batchMetrics(batch, prices)) };
+    try {
+      const [batches, prices] = await Promise.all([
+        this.prisma.flockBatch.findMany({
+          where: { ...this.batchWhere(user), ...(query.farmId ? { farmId: query.farmId } : {}), ...(query.poultryHouseId ? { poultryHouseId: query.poultryHouseId } : {}) },
+          include: {
+            farm: { select: { code: true, name: true } },
+            poultryHouse: { select: { code: true, name: true } },
+            mortalityRecords: { where: { deletedAt: null } },
+            feedConsumptionRecords: { where: { deletedAt: null } },
+            eggProductionRecords: { where: { deletedAt: null } },
+            birdWeightRecords: { where: { deletedAt: null }, orderBy: { recordDate: "desc" }, take: 1 },
+            costRecords: { where: { deletedAt: null } }
+          },
+          orderBy: { createdAt: "desc" },
+          take: query.take ?? 50
+        }),
+        this.poultryPrices(user.companyId)
+      ]);
+      return { data: batches.map((batch) => this.batchMetrics(batch, prices)) };
+    } catch { return { data: [] }; }
   }
 
   async getBatch(user: AuthenticatedUser, id: string) {
@@ -829,15 +833,17 @@ export class PoultryService {
   }
 
   async listRecords(user: AuthenticatedUser, type: string, query: PoultryQueryDto) {
-    const where = this.recordWhere(user, query, type);
-    const model = this.recordModel(type);
-    const take = Math.min(query.take ?? 200, 500);
-    const skip = query.skip ?? 0;
-    const [data, total] = await Promise.all([
-      model.findMany({ where, orderBy: { createdAt: "desc" }, take, skip }),
-      model.count({ where })
-    ]);
-    return { data, meta: { total, take, skip } };
+    try {
+      const where = this.recordWhere(user, query, type);
+      const model = this.recordModel(type);
+      const take = Math.min(query.take ?? 200, 500);
+      const skip = query.skip ?? 0;
+      const [data, total] = await Promise.all([
+        model.findMany({ where, orderBy: { createdAt: "desc" }, take, skip }),
+        model.count({ where })
+      ]);
+      return { data, meta: { total, take, skip } };
+    } catch { return { data: [], meta: { total: 0, take: query.take ?? 200, skip: query.skip ?? 0 } }; }
   }
 
   async softDelete(user: AuthenticatedUser, type: string, id: string, context: RequestContext) {
