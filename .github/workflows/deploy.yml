@@ -176,13 +176,21 @@ jobs:
           GH_RUN_ID: ${{ github.run_id }}
         run: |
           set -e
-          # Parse artifact ID with grep — no python3/jq needed
-          ARTIFACT_ID=$(curl -sf \
+          # Fetch artifact list; capture response for error reporting
+          API_RESPONSE=$(curl -sf \
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/$GH_REPO/actions/runs/$GH_RUN_ID/artifacts" \
-            | grep -o '"id":[0-9]*' | head -1 | grep -o '[0-9]*')
+            "https://api.github.com/repos/$GH_REPO/actions/runs/$GH_RUN_ID/artifacts") \
+            || { echo "ERROR: artifacts API call failed"; exit 1; }
+          # GitHub API uses "id": 123 (space after colon) — pattern must allow for it
+          ARTIFACT_ID=$(echo "$API_RESPONSE" \
+            | grep -o '"id":[[:space:]]*[0-9]*' | head -1 | grep -o '[0-9]*')
           echo "Artifact ID: $ARTIFACT_ID"
+          if [ -z "$ARTIFACT_ID" ]; then
+            echo "ERROR: could not parse artifact ID. API response:"
+            echo "$API_RESPONSE" | head -60
+            exit 1
+          fi
           curl -fL \
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
