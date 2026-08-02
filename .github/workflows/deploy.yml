@@ -6,7 +6,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  deploy:
+  # ── Job 1: build on GitHub-hosted runner (plenty of RAM, fast disk) ──────────
+  build:
     runs-on: ubuntu-latest
 
     steps:
@@ -55,14 +56,13 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=2048
 
-      # Create standalone deploy bundles with only production deps
       - name: Bundle API for deployment
         run: |
           pnpm --filter @jokas/api deploy --prod --legacy /tmp/api-deploy
           cp -r apps/api/dist /tmp/api-deploy/dist
 
           # pnpm deploy copies @prisma/client from the npm store (pre-generate stub).
-          # We must overwrite it with the generated version so enums like AuditAction exist.
+          # Overwrite with the generated version so enums like AuditAction exist.
           for CANDIDATE in \
             "packages/db/node_modules/@prisma/client" \
             "node_modules/@prisma/client"; do
@@ -78,9 +78,7 @@ jobs:
             echo "ERROR: generated @prisma/client not found"; exit 1
           fi
 
-          # Copy prisma CLI (build tool) with resolved symlinks.
-          # pnpm deploy creates .bin/prisma as an absolute symlink that becomes
-          # dangling after rsync to the server — copy the whole package explicitly.
+          # Copy prisma CLI with resolved symlinks so it survives tar/extract intact.
           PRISMA_CLI_PKG=""
           for CANDIDATE in \
             "packages/db/node_modules/prisma" \
@@ -104,12 +102,10 @@ jobs:
             echo "WARNING: prisma CLI not found — migrations will be skipped on server"
           fi
 
-          # Copy the .prisma/client runtime (native query engine binary)
-          # Search broadly — pnpm may place it anywhere in node_modules tree
+          # Copy .prisma/client runtime (native query engine binary)
           PRISMA_RUNTIME=$(find . -path "*/.prisma/client" -type d 2>/dev/null \
             | grep -v ".git" | head -1)
           if [ -z "$PRISMA_RUNTIME" ]; then
-            # Fallback: find by binary filename
             BINARY=$(find . \( -name "*rhel-openssl*" -o -name "libquery_engine*" \) \
               2>/dev/null | grep -v ".git" | head -1)
             [ -n "$BINARY" ] && PRISMA_RUNTIME=$(dirname "$BINARY")
@@ -130,8 +126,6 @@ jobs:
           pnpm --filter @jokas/web deploy --prod --legacy /tmp/web-deploy
           cp -r apps/web/.next /tmp/web-deploy/.next
           cp -r apps/web/public /tmp/web-deploy/public 2>/dev/null || true
-          # Standalone mode: server.js lives at .next/standalone/apps/web/server.js
-          # and resolves static files via __dirname/.next/static — copy them there
           mkdir -p /tmp/web-deploy/.next/standalone/apps/web/.next
           cp -r apps/web/.next/static /tmp/web-deploy/.next/standalone/apps/web/.next/static
           cp -r apps/web/public /tmp/web-deploy/.next/standalone/apps/web/public 2>/dev/null || true
@@ -145,225 +139,135 @@ jobs:
           cp -r apps/storefront/.next/static /tmp/storefront-deploy/.next/standalone/apps/storefront/.next/static
           cp -r apps/storefront/public /tmp/storefront-deploy/.next/standalone/apps/storefront/public 2>/dev/null || true
 
-      - name: Setup SSH key
+      - name: Create deployment tarball
         run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.HOSTINGER_SSH_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          echo "${{ secrets.HOSTINGER_SSH_KNOWN_HOST }}" >> ~/.ssh/known_hosts
-          chmod 644 ~/.ssh/known_hosts
-          # Connection-keeping options so rsync doesn't time out mid-transfer
-          cat > ~/.ssh/config << 'EOF'
-          Host *
-            ConnectTimeout 60
-            ServerAliveInterval 30
-            ServerAliveCountMax 10
-            TCPKeepAlive yes
-          EOF
+          mkdir -p /tmp/deploy-pkg/apps
+          cp -r /tmp/api-deploy /tmp/deploy-pkg/apps/api
+          cp -r /tmp/web-deploy /tmp/deploy-pkg/apps/web
+          cp -r /tmp/storefront-deploy /tmp/deploy-pkg/apps/storefront
+          cp -r packages/db/prisma /tmp/deploy-pkg/prisma
+          cp packages/db/scripts/sync-permissions.mjs /tmp/deploy-pkg/apps/api/sync-permissions.mjs 2>/dev/null || true
+          cp ecosystem.config.js start.js package.json /tmp/deploy-pkg/
+          cp web-worker-wrapper.js /tmp/deploy-pkg/ 2>/dev/null || true
+          tar -czf /tmp/deploy.tar.gz -C /tmp/deploy-pkg .
+          echo "Tarball size: $(du -sh /tmp/deploy.tar.gz | cut -f1)"
 
-      - name: Upload API to Hostinger
+      - name: Upload deployment artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-pkg
+          path: /tmp/deploy.tar.gz
+          retention-days: 1
+
+  # ── Job 2: deploy on self-hosted runner (runs directly on Hostinger) ──────────
+  deploy:
+    needs: build
+    runs-on: self-hosted
+
+    steps:
+      - name: Download deployment artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: deploy-pkg
+          path: /tmp
+
+      - name: Backup current deploy
         run: |
-          for attempt in 1 2 3; do
-            rsync -avz --partial --timeout=300 \
-              -e "ssh -p 65002 -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes" \
-              /tmp/api-deploy/ \
-              ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/apps/api/ \
-              && { echo "API upload succeeded on attempt $attempt"; break; } \
-              || { echo "Attempt $attempt failed; retrying in 15s..."; sleep 15; }
+          APP_DIR="$HOME/domains/jokasfarms.com/nodejs"
+          if [ -d "$APP_DIR/apps/api/dist" ]; then
+            rm -rf "$APP_DIR/../nodejs_prev"
+            cp -al "$APP_DIR" "$APP_DIR/../nodejs_prev" \
+              && echo "Backup complete (hardlinks)." \
+              || echo "WARNING: backup failed, continuing."
+          else
+            echo "No existing deploy to back up."
+          fi
+
+      - name: Extract files to APP_DIR
+        run: |
+          APP_DIR="$HOME/domains/jokasfarms.com/nodejs"
+          mkdir -p "$APP_DIR"
+          tar -xzf /tmp/deploy.tar.gz -C "$APP_DIR"
+          echo "Extraction complete."
+          echo "  api dist: $([ -f "$APP_DIR/apps/api/dist/bundle.js" ] && echo EXISTS || echo MISSING)"
+          echo "  start.js: $([ -f "$APP_DIR/start.js" ] && echo EXISTS || echo MISSING)"
+
+      - name: Run database migrations
+        run: |
+          APP_DIR="$HOME/domains/jokasfarms.com/nodejs"
+
+          # Source .env so DATABASE_URL is available
+          # (Hostinger env-panel vars are only injected by Passenger, not the runner)
+          if [ -f "$APP_DIR/.env" ]; then
+            set -a; . "$APP_DIR/.env"; set +a
+            echo "Sourced $APP_DIR/.env"
+          fi
+
+          # Locate node — runner PATH may not include the system node
+          NODE_BIN=$(command -v node 2>/dev/null || true)
+          for p in /opt/alt/alt-nodejs22/root/usr/bin /usr/local/bin /usr/bin; do
+            [ -z "$NODE_BIN" ] && [ -x "$p/node" ] && NODE_BIN="$p/node"
           done
 
-      - name: Upload Web to Hostinger
+          PRISMA_BIN="$APP_DIR/apps/api/node_modules/.bin/prisma"
+          if [ ! -e "$PRISMA_BIN" ]; then
+            _JS="$APP_DIR/apps/api/node_modules/prisma/build/index.js"
+            [ -f "$_JS" ] && PRISMA_BIN="$_JS"
+          fi
+
+          echo "node: ${NODE_BIN:-NOT FOUND}  prisma: $([ -e "$PRISMA_BIN" ] && echo found || echo NOT FOUND)"
+
+          if [ -n "$NODE_BIN" ] && [ -e "$PRISMA_BIN" ]; then
+            echo "Resolving blocked migrations..."
+            "$NODE_BIN" "$PRISMA_BIN" migrate resolve \
+              --applied "20260629000001_feed_raw_materials" \
+              --schema "$APP_DIR/prisma/schema.prisma" 2>&1 || true
+            "$NODE_BIN" "$PRISMA_BIN" migrate resolve \
+              --applied "20260701000000_leave_request_system" \
+              --schema "$APP_DIR/prisma/schema.prisma" 2>&1 || true
+            "$NODE_BIN" "$PRISMA_BIN" migrate resolve \
+              --applied "20260616200000_notification_system" \
+              --schema "$APP_DIR/prisma/schema.prisma" 2>&1 || true
+            "$NODE_BIN" "$PRISMA_BIN" migrate resolve \
+              --rolled-back "20260801030000_hr_d_disciplinary_grievance" \
+              --schema "$APP_DIR/prisma/schema.prisma" 2>&1 || true
+            echo "Blocked migrations resolved."
+
+            "$NODE_BIN" "$PRISMA_BIN" migrate deploy \
+              --schema "$APP_DIR/prisma/schema.prisma" \
+              && echo "Migrations complete." \
+              || echo "WARNING: migrations failed — deploy continues."
+          else
+            echo "WARNING: cannot run migrations — node or prisma not found."
+          fi
+
+      - name: Restart application
         run: |
-          for attempt in 1 2 3; do
-            rsync -avz --partial --timeout=300 --no-perms --omit-dir-times \
-              --exclude='.next/cache' \
-              -e "ssh -p 65002 -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes" \
-              /tmp/web-deploy/ \
-              ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/apps/web/ \
-              && { echo "Web upload succeeded on attempt $attempt"; break; } \
-              || { echo "Attempt $attempt failed; retrying in 15s..."; sleep 15; }
-          done
+          APP_DIR="$HOME/domains/jokasfarms.com/nodejs"
+          pkill -f "apps/api/dist/main.js" 2>/dev/null \
+            && echo "Stale API processes killed." \
+            || echo "No stale API processes found."
+          sleep 3
+          mkdir -p "$APP_DIR/tmp"
+          touch "$APP_DIR/tmp/restart.txt"
+          echo "Passenger restart signalled."
 
-      - name: Upload Storefront to Hostinger
+      - name: Smoke test
         run: |
-          for attempt in 1 2 3; do
-            rsync -avz --partial --timeout=300 --no-perms --omit-dir-times \
-              --exclude='.next/cache' \
-              -e "ssh -p 65002 -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes" \
-              /tmp/storefront-deploy/ \
-              ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/apps/storefront/ \
-              && { echo "Storefront upload succeeded on attempt $attempt"; break; } \
-              || { echo "Attempt $attempt failed; retrying in 15s..."; sleep 15; }
+          STATUS="000"
+          echo "Waiting for app to come online (up to 180s)..."
+          for i in $(seq 1 36); do
+            sleep 5
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 \
+              "https://jokasfarms.com/__status" 2>/dev/null || echo "000")
+            echo "  try $i/36: HTTP $STATUS"
+            [ "$STATUS" = "200" ] && break
           done
-
-      - name: Upload DB migrations and scripts
-        run: |
-          for attempt in 1 2 3; do
-            rsync -avz --partial --timeout=120 \
-              -e "ssh -p 65002 -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes" \
-              packages/db/prisma/ \
-              ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/prisma/ \
-            && rsync -avz --partial --timeout=120 \
-              -e "ssh -p 65002 -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes" \
-              packages/db/scripts/sync-permissions.mjs \
-              ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/apps/api/sync-permissions.mjs \
-            && { echo "DB+scripts upload succeeded on attempt $attempt"; break; } \
-            || { echo "Attempt $attempt failed; retrying in 20s..."; sleep 20; }
-          done
-
-      - name: Upload root startup files
-        run: |
-          for attempt in 1 2 3; do
-            rsync -avz --partial --timeout=120 \
-              -e "ssh -p 65002 -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes" \
-              ecosystem.config.js start.js web-worker-wrapper.js package.json \
-              ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:~/domains/jokasfarms.com/nodejs/ \
-            && { echo "Root files upload succeeded on attempt $attempt"; break; } \
-            || { echo "Attempt $attempt failed; retrying in 20s..."; sleep 20; }
-          done
-
-      - name: Deploy and restart on Hostinger
-        run: |
-          REMOTE_CMD='
-            set -e
-            source ~/.bashrc 2>/dev/null || source ~/.profile 2>/dev/null || true
-            # Load nvm — .bashrc nvm setup is skipped in non-interactive SSH shells
-            export NVM_DIR="$HOME/.nvm"
-            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" 2>/dev/null || true
-            nvm use default 2>/dev/null || nvm use node 2>/dev/null || true
-            # If nvm loaded but PATH not updated, find node directly in nvm tree
-            if ! command -v node >/dev/null 2>&1; then
-              _NBIN=$(ls "$HOME"/.nvm/versions/node/*/bin/node 2>/dev/null | sort -V | tail -1)
-              [ -n "$_NBIN" ] && export PATH="$(dirname "$_NBIN"):$PATH"
-            fi
-            # Also try common system paths and Hostinger/Plesk paths
-            # /opt/alt/alt-nodejs22 is the confirmed Hostinger Node22 path (from ps aux output)
-            for p in /opt/alt/alt-nodejs22/root/usr/bin /usr/local/bin /usr/bin /usr/local/sbin /opt/plesk/node18/bin /opt/plesk/node20/bin; do
-              [ -x "$p/node" ] && export PATH="$p:$PATH" && break
-            done
-            # Last resort: find any node binary on the filesystem
-            if ! command -v node >/dev/null 2>&1; then
-              _FOUND=$(find /opt /usr/local /usr/bin -maxdepth 5 -name "node" -type f -executable 2>/dev/null | head -1)
-              [ -n "$_FOUND" ] && export PATH="$(dirname "$_FOUND"):$PATH"
-            fi
-            APP_DIR=~/domains/jokasfarms.com/nodejs
-
-            echo "==> Backing up current deploy for rollback..."
-            if [ -d $APP_DIR/apps/api/dist ]; then
-              rm -rf $APP_DIR/../nodejs_prev
-              # Use hard-links (cp -al) — instant, no disk duplication, no I/O spike.
-              # Hardlinks point to original inodes; rsync overwrites create new inodes
-              # so nodejs_prev retains the pre-deploy content for rollback.
-              cp -al $APP_DIR $APP_DIR/../nodejs_prev && echo "Backup complete (hardlinks)." \
-                || echo "WARNING: hardlink backup failed, skipping (continuing deploy)."
-            fi
-
-            echo "==> Running database migrations..."
-            cd $APP_DIR
-            # Source .env so DATABASE_URL is available in this SSH session
-            # (Hostinger env-panel vars are only injected by Passenger, not SSH)
-            if [ -f "$APP_DIR/.env" ]; then
-              set -a; . "$APP_DIR/.env"; set +a
-              echo "Sourced $APP_DIR/.env for DATABASE_URL"
-            fi
-            # Use the Prisma CLI bundled with the already-deployed API rather than
-            # downloading via npx (npx is not always in PATH in non-interactive SSH).
-            PRISMA_BIN="$APP_DIR/apps/api/node_modules/.bin/prisma"
-            # Fallback: use prisma JS entry directly if .bin symlink is dangling
-            if [ ! -e "$PRISMA_BIN" ]; then
-              _JS="$APP_DIR/apps/api/node_modules/prisma/build/index.js"
-              [ -f "$_JS" ] && PRISMA_BIN="$_JS"
-            fi
-            if [ ! -e "$PRISMA_BIN" ]; then
-              PRISMA_BIN=$(find "$APP_DIR/apps/api/node_modules" -maxdepth 5 \
-                -name "index.js" -path "*/prisma/build/index.js" 2>/dev/null \
-                | grep -v "@prisma" | head -1)
-            fi
-            NODE_BIN=$(command -v node 2>/dev/null || echo "/opt/alt/alt-nodejs22/root/usr/bin/node")
-            echo "node: ${NODE_BIN:-NOT FOUND}  prisma: $([ -n "$PRISMA_BIN" ] && echo found || echo NOT FOUND)"
-            if [ -n "$NODE_BIN" ] && [ -n "$PRISMA_BIN" ]; then
-              # The original 20260701000000_leave_request_system migration used PostgreSQL
-              # DDL (CREATE TYPE, UUID, gen_random_uuid()) which MySQL rejected. Prisma
-              # marks it as FAILED in _prisma_migrations, which blocks every subsequent
-              # migration from running. Resolve it as --applied so migrate deploy can
-              # proceed to run migrations 10-16. The actual MySQL-compatible table is
-              # created by 20260730000001_leave_request_mysql_fix (IF NOT EXISTS).
-              echo "Resolving blocked migrations..."
-              # 20260629000001: used PostgreSQL DO $$ block / gen_random_uuid() — fails on MySQL.
-              # This is seed data; the table exists. Mark as applied so deploy can proceed.
-              "$NODE_BIN" "$PRISMA_BIN" migrate resolve \
-                --applied "20260629000001_feed_raw_materials" \
-                --schema "$APP_DIR/prisma/schema.prisma" 2>&1 || true
-              # 20260701000000: used PostgreSQL CREATE TYPE / UUID DDL — fails on MySQL.
-              # LeaveRequest table is created by 20260730000001_leave_request_mysql_fix.
-              "$NODE_BIN" "$PRISMA_BIN" migrate resolve \
-                --applied "20260701000000_leave_request_system" \
-                --schema "$APP_DIR/prisma/schema.prisma" 2>&1 || true
-              # 20260616200000: used PostgreSQL CREATE TYPE / UUID / JSONB DDL — fails on MySQL.
-              # Notification/NotificationPreference/NotificationConfig tables are created by
-              # 20260801025000_notification_system_mysql (IF NOT EXISTS, MySQL syntax).
-              "$NODE_BIN" "$PRISMA_BIN" migrate resolve \
-                --applied "20260616200000_notification_system" \
-                --schema "$APP_DIR/prisma/schema.prisma" 2>&1 || true
-              # 20260801030000_hr_d: first statement ALTER TABLE Notification failed because
-              # Notification table did not exist yet. Mark as rolled-back so migrate deploy
-              # can re-run it now that 20260801025000_notification_system_mysql creates it first.
-              "$NODE_BIN" "$PRISMA_BIN" migrate resolve \
-                --rolled-back "20260801030000_hr_d_disciplinary_grievance" \
-                --schema "$APP_DIR/prisma/schema.prisma" 2>&1 || true
-              echo "Blocked migrations resolved."
-
-              if "$NODE_BIN" "$PRISMA_BIN" migrate deploy --schema "$APP_DIR/prisma/schema.prisma"; then
-                echo "Migrations complete."
-              else
-                echo "WARNING: prisma migrate deploy failed — deploy continues."
-              fi
-            else
-              echo "WARNING: cannot run migrations — node or prisma binary not found."
-            fi
-
-            echo "==> Killing stale API processes before restart..."
-            pkill -f "apps/api/dist/main.js" 2>/dev/null \
-              && echo "  Stale API processes killed." \
-              || echo "  No stale API processes found."
-            sleep 3
-
-            mkdir -p $APP_DIR/tmp
-            touch $APP_DIR/tmp/restart.txt
-            echo "Passenger restart signalled."
-
-            echo "==> Server diagnostics before smoke test..."
-            echo "  Load avg: $(cat /proc/loadavg 2>/dev/null || uptime)"
-            echo "  start.js: $([ -f $APP_DIR/start.js ] && echo EXISTS || echo MISSING)"
-            echo "  api bundle: $([ -f $APP_DIR/apps/api/dist/bundle.js ] && echo EXISTS || echo MISSING)"
-            echo "  Node procs: $(pgrep -ac node 2>/dev/null || echo 0)"
-            echo "  Passenger log tail:"
-            tail -20 $APP_DIR/log/passenger.log 2>/dev/null || echo "  (no passenger log found)"
-
-            DOMAIN="https://jokasfarms.com"
-            STATUS="000"
-            echo "==> Waiting for app to come online (up to 180s)..."
-            for i in $(seq 1 36); do
-              sleep 5
-              STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$DOMAIN/__status" 2>/dev/null || echo "000")
-              echo "  try $i/36: HTTP $STATUS"
-              [ "$STATUS" = "200" ] && break
-            done
-            if [ "$STATUS" = "200" ]; then
-              echo "Smoke test PASSED — app is live (HTTP $STATUS)"
-            else
-              echo "WARNING: smoke test could not confirm HTTP 200 after 180s (got HTTP $STATUS)."
-              echo "  Files were uploaded and Passenger restart was signalled."
-              echo "  High server load may be delaying startup — see diagnostics above."
-              echo "  Node procs now: $(pgrep -ac node 2>/dev/null || echo 0)"
-              echo "  Passenger log tail:"
-              tail -20 $APP_DIR/log/passenger.log 2>/dev/null || echo "  (no passenger log found)"
-              echo "  The app should come online within a few minutes — check jokasfarms.com manually."
-            fi
-          '
-          for attempt in 1 2 3; do
-            ssh -p 65002 -i ~/.ssh/id_rsa -o ConnectTimeout=60 -o StrictHostKeyChecking=yes \
-              ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }} "$REMOTE_CMD" \
-            && { echo "Deploy+restart succeeded on attempt $attempt"; break; } \
-            || { echo "Attempt $attempt failed; retrying in 20s..."; sleep 20; }
-          done
+          if [ "$STATUS" = "200" ]; then
+            echo "Smoke test PASSED — app is live."
+          else
+            echo "WARNING: app not responding after 180s (HTTP $STATUS)."
+            echo "  Passenger log:"
+            tail -20 "$HOME/domains/jokasfarms.com/nodejs/log/passenger.log" 2>/dev/null || true
+            echo "  Check jokasfarms.com manually — Passenger may still be starting."
+          fi
