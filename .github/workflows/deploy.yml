@@ -270,8 +270,8 @@ jobs:
                 --applied "20260616200000_notification_system" \
                 --schema "$APP_DIR/prisma/schema.prisma" 2>&1 || true
               # 20260801030000_hr_d: first statement ALTER TABLE Notification failed because
-              # Notification table didn't exist yet. Mark as rolled-back so migrate deploy
-              # can re-run it now that 20260801025000_notification_system_mysql creates the table first.
+              # Notification table did not exist yet. Mark as rolled-back so migrate deploy
+              # can re-run it now that 20260801025000_notification_system_mysql creates it first.
               "$NODE_BIN" "$PRISMA_BIN" migrate resolve \
                 --rolled-back "20260801030000_hr_d_disciplinary_grievance" \
                 --schema "$APP_DIR/prisma/schema.prisma" 2>&1 || true
