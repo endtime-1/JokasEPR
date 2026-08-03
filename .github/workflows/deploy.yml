@@ -237,15 +237,16 @@ jobs:
             [ -z "$NODE_BIN" ] && [ -x "$p/node" ] && NODE_BIN="$p/node"
           done
 
-          PRISMA_BIN="$APP_DIR/apps/api/node_modules/.bin/prisma"
-          if [ ! -e "$PRISMA_BIN" ]; then
-            _JS="$APP_DIR/apps/api/node_modules/prisma/build/index.js"
-            [ -f "$_JS" ] && PRISMA_BIN="$_JS"
+          # Always use the JS entry-point directly — .bin/prisma is a shell script
+          # and running `node /path/to/.bin/prisma` would crash on the #!/bin/sh line.
+          PRISMA_BIN="$APP_DIR/apps/api/node_modules/prisma/build/index.js"
+          if [ ! -f "$PRISMA_BIN" ]; then
+            PRISMA_BIN=$(find "$APP_DIR" -maxdepth 7 -path "*/prisma/build/index.js" 2>/dev/null | head -1)
           fi
 
-          echo "node: ${NODE_BIN:-NOT FOUND}  prisma: $([ -e "$PRISMA_BIN" ] && echo found || echo NOT FOUND)"
+          echo "node: ${NODE_BIN:-NOT FOUND}  prisma: $([ -f "$PRISMA_BIN" ] && echo found || echo NOT FOUND)"
 
-          if [ -n "$NODE_BIN" ] && [ -e "$PRISMA_BIN" ]; then
+          if [ -n "$NODE_BIN" ] && [ -f "$PRISMA_BIN" ]; then
             echo "Resolving blocked migrations..."
             "$NODE_BIN" "$PRISMA_BIN" migrate resolve \
               --applied "20260629000001_feed_raw_materials" \
