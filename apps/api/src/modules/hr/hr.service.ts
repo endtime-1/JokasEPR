@@ -198,7 +198,18 @@ export class HRService {
           ...(query.branchId ? { branchId: query.branchId } : {}),
           ...(query.search ? { OR: [{ fullName: { contains: query.search } }, { code: { contains: query.search } }, { phone: { contains: query.search } }] } : {}),
         },
-        include: {
+        select: {
+          id: true,
+          code: true,
+          fullName: true,
+          status: true,
+          phone: true,
+          startDate: true,
+          photoUrl: true,
+          email: true,
+          employeeRoleId: true,
+          branchId: true,
+          farmId: true,
           employeeRole: { select: { name: true, code: true } },
           branch: { select: { name: true } },
           farm: { select: { name: true } },
@@ -206,13 +217,14 @@ export class HRService {
         orderBy: { fullName: "asc" },
       });
       return { data: rows };
-    } catch { return { data: [] }; }
+    } catch (e: any) { return { data: [], error: e?.message }; }
   }
 
   async getMyEmployee(user: AuthenticatedUser) {
     const emp = await this.prisma.employee.findFirst({
       where: { companyId: user.companyId, email: user.email, deletedAt: null },
-      include: {
+      select: {
+        id: true, code: true, fullName: true, email: true, phone: true, photoUrl: true,
         employeeRole: { select: { name: true, code: true } },
         branch: { select: { id: true, name: true, code: true } },
         farm: { select: { id: true, name: true, code: true } },
@@ -236,9 +248,10 @@ export class HRService {
   async updateMyEmployee(user: AuthenticatedUser, dto: { phone?: string }, ctx: RequestContext) {
     const emp = await this.prisma.employee.findFirst({
       where: { companyId: user.companyId, email: user.email, deletedAt: null },
+      select: { id: true },
     });
     if (!emp) throw new NotFoundException("No employee record linked to your account");
-    await this.prisma.employee.update({ where: { id: emp.id }, data: { phone: dto.phone, updatedById: user.id } });
+    await this.prisma.employee.update({ where: { id: emp.id }, data: { phone: dto.phone, updatedById: user.id }, select: { id: true } });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "Employee", entityId: emp.id, action: "UPDATE", ...ctx });
     return this.getMyEmployee(user);
   }
@@ -246,16 +259,33 @@ export class HRService {
   async getEmployee(user: AuthenticatedUser, id: string) {
     const row = await this.prisma.employee.findFirst({
       where: { id, companyId: user.companyId, deletedAt: null },
-      include: {
+      select: {
+        id: true, companyId: true, userId: true, code: true,
+        firstName: true, lastName: true, fullName: true,
+        dateOfBirth: true, gender: true, phone: true, email: true,
+        address: true, nationalId: true, startDate: true, endDate: true,
+        status: true, employeeRoleId: true, branchId: true, farmId: true,
+        warehouseId: true, productionSiteId: true,
+        basicSalary: true, bankName: true, bankAccount: true,
+        ssnitNumber: true, tinNumber: true,
+        emergencyContactName: true, emergencyContactPhone: true,
+        notes: true, photoUrl: true,
+        createdById: true, updatedById: true, createdAt: true, updatedAt: true, deletedAt: true,
         employeeRole: true,
         branch: { select: { name: true } },
         farm: { select: { name: true } },
         warehouse: { select: { name: true } },
         productionSite: { select: { name: true } },
-        attendanceRecords: { orderBy: { date: "desc" }, take: 30 },
+        attendanceRecords: {
+          orderBy: { date: "desc" }, take: 30,
+          select: { id: true, date: true, status: true, checkInTime: true, checkOutTime: true, hoursWorked: true, overtimeHours: true, notes: true, createdAt: true },
+        },
         taskAssignments: { where: { status: { notIn: ["COMPLETED", "REJECTED"] } }, include: { task: { select: { title: true, priority: true, dueDate: true } } } },
         payrollRecords: { where: { deletedAt: null }, orderBy: { createdAt: "desc" }, take: 6 },
-        trainingRecords: { where: { deletedAt: null }, orderBy: { trainingDate: "desc" }, take: 10 },
+        trainingRecords: {
+          where: { deletedAt: null }, orderBy: { trainingDate: "desc" }, take: 10,
+          select: { id: true, title: true, trainingDate: true, outcome: true, certificate: true, notes: true, createdAt: true },
+        },
         performanceRecords: { where: { deletedAt: null }, orderBy: { period: "desc" }, take: 6 },
         departmentAssignments: { orderBy: { startDate: "desc" } },
       },
@@ -265,46 +295,50 @@ export class HRService {
   }
 
   async createEmployee(user: AuthenticatedUser, dto: CreateEmployeeDto, ctx: RequestContext) {
-    const exists = await this.prisma.employee.findUnique({ where: { companyId_code: { companyId: user.companyId, code: dto.code } } });
+    const exists = await this.prisma.employee.findUnique({ where: { companyId_code: { companyId: user.companyId, code: dto.code } }, select: { id: true } });
     if (exists) throw new BadRequestException(`Employee code "${dto.code}" already exists`);
 
     const fullName = `${dto.firstName} ${dto.lastName}`;
+    const { managerId: _mgr, ...safeDto } = dto as any;
     const row = await this.prisma.employee.create({
       data: {
         companyId: user.companyId,
         createdById: user.id,
-        ...dto,
+        ...safeDto,
         fullName,
         startDate: new Date(dto.startDate),
         dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined,
         basicSalary: dto.basicSalary,
       },
+      select: { id: true, code: true, fullName: true, status: true, startDate: true, email: true, phone: true, photoUrl: true, employeeRoleId: true, branchId: true, createdAt: true },
     });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "Employee", entityId: row.id, action: "CREATE", ...ctx });
     return { data: row };
   }
 
   async updateEmployee(user: AuthenticatedUser, id: string, dto: UpdateEmployeeDto, ctx: RequestContext) {
-    const row = await this.prisma.employee.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    const row = await this.prisma.employee.findFirst({ where: { id, companyId: user.companyId, deletedAt: null }, select: { id: true, firstName: true, lastName: true } });
     if (!row) throw new NotFoundException("Employee not found");
 
     const fullName = dto.firstName || dto.lastName
       ? `${dto.firstName ?? row.firstName} ${dto.lastName ?? row.lastName}`
       : undefined;
 
+    const { managerId: _mgr2, ...safeUpdateDto } = dto as any;
     const updated = await this.prisma.employee.update({
       where: { id },
-      data: { updatedById: user.id, ...dto, ...(fullName ? { fullName } : {}), dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined },
+      data: { updatedById: user.id, ...safeUpdateDto, ...(fullName ? { fullName } : {}), dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined },
+      select: { id: true, code: true, fullName: true, firstName: true, lastName: true, phone: true, email: true, status: true, startDate: true, photoUrl: true, employeeRoleId: true, branchId: true, farmId: true, updatedAt: true },
     });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "Employee", entityId: id, action: "UPDATE", ...ctx });
     return { data: updated };
   }
 
   async uploadEmployeePhoto(user: AuthenticatedUser, id: string, filename: string) {
-    const row = await this.prisma.employee.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    const row = await this.prisma.employee.findFirst({ where: { id, companyId: user.companyId, deletedAt: null }, select: { id: true } });
     if (!row) throw new NotFoundException("Employee not found");
     const photoUrl = `/api/v1/uploads/employees/${filename}`;
-    await this.prisma.employee.update({ where: { id }, data: { photoUrl } });
+    await this.prisma.employee.update({ where: { id }, data: { photoUrl }, select: { id: true } });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "Employee", entityId: id, action: "UPDATE", summary: "Updated employee photo" });
     return { data: { photoUrl } };
   }
@@ -325,7 +359,13 @@ export class HRService {
     try {
       const rows = await this.prisma.attendanceRecord.findMany({
         where,
-        include: { employee: { select: { fullName: true, code: true } }, shift: { select: { name: true, startTime: true, endTime: true } } },
+        select: {
+          id: true, companyId: true, employeeId: true, date: true, status: true,
+          checkInTime: true, checkOutTime: true, hoursWorked: true, overtimeHours: true,
+          shiftId: true, notes: true, recordedById: true, createdAt: true, updatedAt: true,
+          employee: { select: { fullName: true, code: true } },
+          shift: { select: { name: true, startTime: true, endTime: true } },
+        },
         orderBy: [{ date: "desc" }, { createdAt: "desc" }],
         take: 200,
       });
@@ -345,6 +385,7 @@ export class HRService {
 
     const existing = await this.prisma.attendanceRecord.findUnique({
       where: { companyId_employeeId_date: { companyId: user.companyId, employeeId: employee.id, date } },
+      select: { id: true },
     });
 
     const data = {
@@ -354,22 +395,21 @@ export class HRService {
       checkInTime: dto.checkInTime ? new Date(dto.checkInTime) : new Date(),
       status: dto.status ?? "PRESENT",
       overtimeHours: dto.overtimeHours ?? undefined,
-      geoLat: dto.geoLat ?? undefined,
-      geoLon: dto.geoLon ?? undefined,
       notes: dto.notes,
       recordedById: user.id,
     };
 
+    const AR_SELECT = { id: true, date: true, status: true, checkInTime: true, checkOutTime: true, hoursWorked: true, overtimeHours: true, notes: true } as const;
     const row = existing
-      ? await this.prisma.attendanceRecord.update({ where: { id: existing.id }, data: data as never })
-      : await this.prisma.attendanceRecord.create({ data: data as never });
+      ? await this.prisma.attendanceRecord.update({ where: { id: existing.id }, data: data as never, select: AR_SELECT })
+      : await this.prisma.attendanceRecord.create({ data: data as never, select: AR_SELECT });
 
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "AttendanceRecord", entityId: row.id, action: existing ? "UPDATE" : "CREATE", ...ctx });
     return { data: row };
   }
 
   async recordAttendance(user: AuthenticatedUser, dto: RecordAttendanceDto, ctx: RequestContext) {
-    const employee = await this.prisma.employee.findFirst({ where: { id: dto.employeeId, companyId: user.companyId, deletedAt: null } });
+    const employee = await this.prisma.employee.findFirst({ where: { id: dto.employeeId, companyId: user.companyId, deletedAt: null }, select: { id: true, fullName: true, code: true, basicSalary: true } });
     if (!employee) throw new NotFoundException("Employee not found");
 
     const date = new Date(dto.date);
@@ -377,6 +417,7 @@ export class HRService {
 
     const existing = await this.prisma.attendanceRecord.findUnique({
       where: { companyId_employeeId_date: { companyId: user.companyId, employeeId: dto.employeeId, date } },
+      select: { id: true },
     });
 
     let hoursWorked: number | undefined;
@@ -395,15 +436,14 @@ export class HRService {
       status: dto.status ?? "PRESENT",
       hoursWorked,
       shiftId: dto.shiftId,
-      geoLat: dto.geoLat ?? undefined,
-      geoLon: dto.geoLon ?? undefined,
       notes: dto.notes,
       recordedById: user.id,
     };
 
+    const AR_SELECT2 = { id: true, date: true, status: true, checkInTime: true, checkOutTime: true, hoursWorked: true, overtimeHours: true, notes: true } as const;
     const row = existing
-      ? await this.prisma.attendanceRecord.update({ where: { id: existing.id }, data: data as never })
-      : await this.prisma.attendanceRecord.create({ data: data as never });
+      ? await this.prisma.attendanceRecord.update({ where: { id: existing.id }, data: data as never, select: AR_SELECT2 })
+      : await this.prisma.attendanceRecord.create({ data: data as never, select: AR_SELECT2 });
 
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "AttendanceRecord", entityId: row.id, action: existing ? "UPDATE" : "CREATE", ...ctx });
     return { data: row };
@@ -425,6 +465,7 @@ export class HRService {
         where: { companyId_employeeId_date: { companyId: user.companyId, employeeId: rec.employeeId, date } },
         create: { companyId: user.companyId, employeeId: rec.employeeId, date, status: rec.status, checkInTime: rec.checkInTime ? new Date(rec.checkInTime) : undefined, checkOutTime: rec.checkOutTime ? new Date(rec.checkOutTime) : undefined, hoursWorked, shiftId: rec.shiftId, notes: rec.notes, recordedById: user.id },
         update: { status: rec.status, checkInTime: rec.checkInTime ? new Date(rec.checkInTime) : undefined, checkOutTime: rec.checkOutTime ? new Date(rec.checkOutTime) : undefined, hoursWorked, shiftId: rec.shiftId, notes: rec.notes, recordedById: user.id },
+        select: { id: true, date: true, status: true, checkInTime: true, checkOutTime: true, hoursWorked: true },
       });
       results.push(row);
     }
@@ -620,6 +661,7 @@ export class HRService {
   async getMyPayslips(user: AuthenticatedUser) {
     const emp = await this.prisma.employee.findFirst({
       where: { companyId: user.companyId, email: user.email, deletedAt: null },
+      select: { id: true },
     });
     if (!emp) return { data: [] };
 
@@ -649,7 +691,7 @@ export class HRService {
   }
 
   async createPayrollRecord(user: AuthenticatedUser, dto: CreatePayrollRecordDto, ctx: RequestContext) {
-    const employee = await this.prisma.employee.findFirst({ where: { id: dto.employeeId, companyId: user.companyId, deletedAt: null } });
+    const employee = await this.prisma.employee.findFirst({ where: { id: dto.employeeId, companyId: user.companyId, deletedAt: null }, select: { id: true, fullName: true, code: true, basicSalary: true } });
     if (!employee) throw new NotFoundException("Employee not found");
 
     const allowances = dto.allowances ?? 0;
@@ -745,7 +787,11 @@ export class HRService {
           ...(query.status ? { outcome: query.status as never } : {}),
           ...(query.search ? { title: { contains: query.search } } : {}),
         },
-        include: { employee: { select: { fullName: true, code: true } } },
+        select: {
+          id: true, companyId: true, employeeId: true, title: true, trainingDate: true,
+          outcome: true, certificate: true, notes: true, createdById: true, createdAt: true, updatedAt: true, deletedAt: true,
+          employee: { select: { fullName: true, code: true } },
+        },
         orderBy: { trainingDate: "desc" },
       });
       return { data: rows };
@@ -753,15 +799,17 @@ export class HRService {
   }
 
   async createTrainingRecord(user: AuthenticatedUser, dto: CreateTrainingRecordDto, ctx: RequestContext) {
-    const employee = await this.prisma.employee.findFirst({ where: { id: dto.employeeId, companyId: user.companyId, deletedAt: null } });
+    const employee = await this.prisma.employee.findFirst({ where: { id: dto.employeeId, companyId: user.companyId, deletedAt: null }, select: { id: true, fullName: true, code: true, basicSalary: true } });
     if (!employee) throw new NotFoundException("Employee not found");
 
     const row = await this.prisma.trainingRecord.create({
       data: {
-        companyId: user.companyId, createdById: user.id, ...dto,
+        companyId: user.companyId, createdById: user.id,
+        employeeId: dto.employeeId, title: dto.title, outcome: dto.outcome,
+        certificate: dto.certificate, notes: dto.notes,
         trainingDate: new Date(dto.trainingDate),
-        certificateExpiry: dto.certificateExpiry ? new Date(dto.certificateExpiry) : undefined,
       },
+      select: { id: true, companyId: true, employeeId: true, title: true, trainingDate: true, outcome: true, certificate: true, notes: true, createdAt: true },
     });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "TrainingRecord", entityId: row.id, action: "CREATE", ...ctx });
     return { data: row };
@@ -787,7 +835,7 @@ export class HRService {
   }
 
   async createPerformanceRecord(user: AuthenticatedUser, dto: CreatePerformanceRecordDto, ctx: RequestContext) {
-    const employee = await this.prisma.employee.findFirst({ where: { id: dto.employeeId, companyId: user.companyId, deletedAt: null } });
+    const employee = await this.prisma.employee.findFirst({ where: { id: dto.employeeId, companyId: user.companyId, deletedAt: null }, select: { id: true, fullName: true, code: true, basicSalary: true } });
     if (!employee) throw new NotFoundException("Employee not found");
 
     const exists = await this.prisma.hRPerformanceRecord.findUnique({
@@ -830,7 +878,7 @@ export class HRService {
   }
 
   async createDepartmentAssignment(user: AuthenticatedUser, dto: CreateDepartmentAssignmentDto, ctx: RequestContext) {
-    const employee = await this.prisma.employee.findFirst({ where: { id: dto.employeeId, companyId: user.companyId, deletedAt: null } });
+    const employee = await this.prisma.employee.findFirst({ where: { id: dto.employeeId, companyId: user.companyId, deletedAt: null }, select: { id: true, fullName: true, code: true, basicSalary: true } });
     if (!employee) throw new NotFoundException("Employee not found");
 
     if (dto.isPrimary !== false) {
@@ -896,6 +944,7 @@ export class HRService {
   async submitLeaveRequest(user: AuthenticatedUser, dto: CreateLeaveRequestDto, ctx: RequestContext) {
     const emp = await this.prisma.employee.findFirst({
       where: { companyId: user.companyId, email: user.email, deletedAt: null },
+      select: { id: true, fullName: true, code: true },
     });
 
     const reference = nextRef("LVR");
@@ -930,6 +979,7 @@ export class HRService {
     try {
       const emp = await this.prisma.employee.findFirst({
         where: { companyId: user.companyId, email: user.email, deletedAt: null },
+        select: { id: true },
       });
 
       if (!emp) return { data: [] };
@@ -1010,7 +1060,7 @@ export class HRService {
   }
 
   async cancelLeaveRequest(user: AuthenticatedUser, id: string, ctx: RequestContext) {
-    const emp = await this.prisma.employee.findFirst({ where: { companyId: user.companyId, email: user.email, deletedAt: null } });
+    const emp = await this.prisma.employee.findFirst({ where: { companyId: user.companyId, email: user.email, deletedAt: null }, select: { id: true } });
     if (!emp) throw new ForbiddenException("Cannot cancel leave — no employee record linked to your account");
     const row = await this.prisma.leaveRequest.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
     if (!row) throw new NotFoundException("Leave request not found");
@@ -1077,11 +1127,12 @@ export class HRService {
   }
 
   async deleteEmployee(user: AuthenticatedUser, id: string, ctx: RequestContext) {
-    const row = await this.prisma.employee.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    const row = await this.prisma.employee.findFirst({ where: { id, companyId: user.companyId, deletedAt: null }, select: { id: true } });
     if (!row) throw new NotFoundException("Employee not found");
     await this.prisma.employee.update({
       where: { id },
       data: { deletedAt: new Date(), status: "TERMINATED" as never, updatedById: user.id },
+      select: { id: true },
     });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "Employee", entityId: id, action: "DELETE", ...ctx });
     return { success: true };
@@ -1113,12 +1164,13 @@ export class HRService {
   // ─── Self check-out ───────────────────────────────────────────────────────────
 
   async checkoutSelf(user: AuthenticatedUser, dto: CheckOutSelfDto, ctx: RequestContext) {
-    const emp = await this.prisma.employee.findFirst({ where: { companyId: user.companyId, email: user.email, deletedAt: null } });
+    const emp = await this.prisma.employee.findFirst({ where: { companyId: user.companyId, email: user.email, deletedAt: null }, select: { id: true } });
     if (!emp) throw new ForbiddenException("No employee record linked to your account");
 
     const date = new Date(dto.date);
     const row = await this.prisma.attendanceRecord.findFirst({
       where: { companyId: user.companyId, employeeId: emp.id, date },
+      select: { id: true, checkOutTime: true, notes: true },
     });
     if (!row) throw new NotFoundException("No check-in record found for this date");
     if (row.checkOutTime) throw new BadRequestException("Already checked out for this date");
@@ -1129,6 +1181,7 @@ export class HRService {
         checkOutTime: dto.checkOutTime ? new Date(dto.checkOutTime) : new Date(),
         notes: dto.notes ?? row.notes,
       },
+      select: { id: true, date: true, status: true, checkInTime: true, checkOutTime: true, hoursWorked: true, notes: true },
     });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "AttendanceRecord", entityId: row.id, action: "UPDATE", ...ctx });
     return { data: updated };
@@ -1176,7 +1229,7 @@ export class HRService {
   }
 
   async prefillPayroll(user: AuthenticatedUser, employeeId: string, period: string) {
-    const employee = await this.prisma.employee.findFirst({ where: { id: employeeId, companyId: user.companyId, deletedAt: null } });
+    const employee = await this.prisma.employee.findFirst({ where: { id: employeeId, companyId: user.companyId, deletedAt: null }, select: { id: true, basicSalary: true } });
     if (!employee) throw new NotFoundException("Employee not found");
 
     const [year, month] = period.split("-").map(Number);
@@ -1185,6 +1238,7 @@ export class HRService {
 
     const attendance = await this.prisma.attendanceRecord.findMany({
       where: { companyId: user.companyId, employeeId, date: { gte: periodStart, lte: periodEnd } },
+      select: { id: true, status: true, hoursWorked: true, overtimeHours: true },
     });
 
     const daysPresent = attendance.filter(a => ["PRESENT", "LATE", "HALF_DAY"].includes(a.status)).length;
@@ -1223,7 +1277,7 @@ export class HRService {
     if (dto.branchId) where.branchId = dto.branchId;
     if (dto.employeeIds?.length) where.id = { in: dto.employeeIds };
 
-    const employees = await this.prisma.employee.findMany({ where });
+    const employees = await this.prisma.employee.findMany({ where, select: { id: true, fullName: true, code: true, basicSalary: true, employeeRoleId: true } });
     const [year, month] = dto.period.split("-").map(Number);
     const periodStart = new Date(year, month - 1, 1);
     const periodEnd = new Date(year, month, 0, 23, 59, 59);
@@ -1237,7 +1291,7 @@ export class HRService {
         const existing = await this.prisma.payrollRecord.findFirst({ where: { companyId: user.companyId, employeeId: employee.id, period: dto.period, deletedAt: null } });
         if (existing) { skipped++; continue; }
 
-        const attendance = await this.prisma.attendanceRecord.findMany({ where: { companyId: user.companyId, employeeId: employee.id, date: { gte: periodStart, lte: periodEnd } } });
+        const attendance = await this.prisma.attendanceRecord.findMany({ where: { companyId: user.companyId, employeeId: employee.id, date: { gte: periodStart, lte: periodEnd } }, select: { id: true, status: true, hoursWorked: true, overtimeHours: true } });
         const overtimeHoursTotal = attendance.reduce((s, a) => s + num((a as any).overtimeHours), 0);
         const basicSalary = num(employee.basicSalary);
         const overtimePay = Math.round(overtimeHoursTotal * (basicSalary / 208) * 1.5 * 100) / 100;
@@ -1422,7 +1476,7 @@ export class HRService {
 
   async myLeaveBalance(user: AuthenticatedUser) {
     try {
-      const emp = await this.prisma.employee.findFirst({ where: { companyId: user.companyId, email: user.email, deletedAt: null } });
+      const emp = await this.prisma.employee.findFirst({ where: { companyId: user.companyId, email: user.email, deletedAt: null }, select: { id: true } });
       if (!emp) return { data: [] };
       const year = new Date().getFullYear();
       const rows = await this.prisma.leaveBalance.findMany({
@@ -1566,7 +1620,7 @@ export class HRService {
   // ─── HR-A: Employee Documents ─────────────────────────────────────────────────
 
   async listEmployeeDocuments(user: AuthenticatedUser, employeeId: string) {
-    const emp = await this.prisma.employee.findFirst({ where: { id: employeeId, companyId: user.companyId, deletedAt: null } });
+    const emp = await this.prisma.employee.findFirst({ where: { id: employeeId, companyId: user.companyId, deletedAt: null }, select: { id: true } });
     if (!emp) throw new NotFoundException("Employee not found");
     try {
       const rows = await this.prisma.employeeDocument.findMany({
@@ -1580,7 +1634,7 @@ export class HRService {
   }
 
   async uploadEmployeeDocument(user: AuthenticatedUser, employeeId: string, dto: CreateEmployeeDocumentDto, filename: string, ctx: RequestContext) {
-    const emp = await this.prisma.employee.findFirst({ where: { id: employeeId, companyId: user.companyId, deletedAt: null } });
+    const emp = await this.prisma.employee.findFirst({ where: { id: employeeId, companyId: user.companyId, deletedAt: null }, select: { id: true, fullName: true, code: true } });
     if (!emp) throw new NotFoundException("Employee not found");
 
     const doc = await this.prisma.employeeDocument.create({
@@ -1797,7 +1851,7 @@ export class HRService {
   }
 
   async createDisciplinaryRecord(user: AuthenticatedUser, dto: CreateDisciplinaryDto, ctx: RequestContext) {
-    const employee = await this.prisma.employee.findFirst({ where: { id: dto.employeeId, companyId: user.companyId, deletedAt: null } });
+    const employee = await this.prisma.employee.findFirst({ where: { id: dto.employeeId, companyId: user.companyId, deletedAt: null }, select: { id: true, fullName: true, code: true, basicSalary: true } });
     if (!employee) throw new NotFoundException("Employee not found");
 
     const row = await this.prisma.disciplinaryRecord.create({
@@ -1856,7 +1910,7 @@ export class HRService {
   }
 
   async submitGrievance(user: AuthenticatedUser, dto: CreateGrievanceDto, ctx: RequestContext) {
-    const employee = await this.prisma.employee.findFirst({ where: { id: dto.employeeId, companyId: user.companyId, deletedAt: null } });
+    const employee = await this.prisma.employee.findFirst({ where: { id: dto.employeeId, companyId: user.companyId, deletedAt: null }, select: { id: true, fullName: true, code: true, basicSalary: true } });
     if (!employee) throw new NotFoundException("Employee not found");
 
     const row = await this.prisma.grievanceRecord.create({
@@ -2107,6 +2161,7 @@ export class HRService {
         status: "ACTIVE",
         createdById: user.id,
       },
+      select: { id: true, code: true, fullName: true, status: true, createdAt: true },
     });
 
     await this.prisma.jobApplication.update({ where: { id }, data: { status: "HIRED", convertedEmployeeId: employee.id, updatedById: user.id } });
@@ -2135,7 +2190,7 @@ export class HRService {
   }
 
   async createOnboardingItem(user: AuthenticatedUser, employeeId: string, dto: CreateOnboardingItemDto, ctx: RequestContext) {
-    const emp = await this.prisma.employee.findFirst({ where: { id: employeeId, companyId: user.companyId, deletedAt: null } });
+    const emp = await this.prisma.employee.findFirst({ where: { id: employeeId, companyId: user.companyId, deletedAt: null }, select: { id: true } });
     if (!emp) throw new NotFoundException("Employee not found");
     const row = await this.prisma.onboardingChecklist.create({
       data: { companyId: user.companyId, employeeId, createdById: user.id, ...dto, dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined },
@@ -2145,7 +2200,7 @@ export class HRService {
   }
 
   async applyOnboardingTemplate(user: AuthenticatedUser, employeeId: string, ctx: RequestContext) {
-    const emp = await this.prisma.employee.findFirst({ where: { id: employeeId, companyId: user.companyId, deletedAt: null } });
+    const emp = await this.prisma.employee.findFirst({ where: { id: employeeId, companyId: user.companyId, deletedAt: null }, select: { id: true } });
     if (!emp) throw new NotFoundException("Employee not found");
     const items = this.ONBOARDING_TEMPLATE.map((title, i) => ({
       id: undefined as any,
