@@ -253,7 +253,7 @@ export function HRDashboardPage() {
   const [refresh, setRefresh] = useState(0);
   useEffect(() => {
     setLoadError("");
-    apiFetch<ApiEnvelope<DashData>>("/hr/dashboard").then((r) => setData(r.data)).catch((err: any) => setLoadError(err?.message ?? "Failed to load dashboard."));
+    apiFetch<ApiEnvelope<DashData>>("/hr/dashboard").then((r) => setData(r.data)).catch((err: any) => setLoadError(err?.message || "Failed to load HR dashboard data. Please retry."));
   }, [refresh]);
 
   const kpis = [

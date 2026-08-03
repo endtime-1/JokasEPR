@@ -84,6 +84,7 @@ export class HRService {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
+    try {
     const [
       totalEmployees,
       activeEmployees,
@@ -133,6 +134,9 @@ export class HRService {
         recentTasks,
       },
     };
+    } catch (e: any) {
+      throw new Error(e?.message || "HR dashboard failed to load");
+    }
   }
 
   // â"€â"€â"€ Options â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
