@@ -13,7 +13,7 @@ CREATE TABLE `PerformancePeerReview` (
   `updatedAt`          DATETIME(3)   NOT NULL,
 
   PRIMARY KEY (`id`),
-  UNIQUE INDEX `PerformancePeerReview_companyId_performanceId_reviewerEmployeeId_key` (`companyId`, `performanceId`, `reviewerEmployeeId`),
+  UNIQUE INDEX `PeerReview_company_perf_reviewer_key` (`companyId`, `performanceId`, `reviewerEmployeeId`),
   INDEX `PerformancePeerReview_companyId_performanceId_idx` (`companyId`, `performanceId`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
