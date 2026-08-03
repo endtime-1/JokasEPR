@@ -102,6 +102,22 @@ jobs:
             echo "WARNING: prisma CLI not found — migrations will be skipped on server"
           fi
 
+          # Copy @prisma/engines — migration + introspection engine binaries required by the CLI
+          PRISMA_ENGINES_PKG=""
+          for CANDIDATE in \
+            "packages/db/node_modules/@prisma/engines" \
+            "node_modules/@prisma/engines"; do
+            if [ -d "$CANDIDATE" ]; then PRISMA_ENGINES_PKG="$CANDIDATE"; break; fi
+          done
+          if [ -n "$PRISMA_ENGINES_PKG" ]; then
+            echo "Copying @prisma/engines from $PRISMA_ENGINES_PKG"
+            rm -rf /tmp/api-deploy/node_modules/@prisma/engines
+            cp -rL "$PRISMA_ENGINES_PKG" /tmp/api-deploy/node_modules/@prisma/engines
+            echo "@prisma/engines bundled OK"
+          else
+            echo "WARNING: @prisma/engines not found — migrations will fail on server"
+          fi
+
           # Copy .prisma/client runtime (native query engine binary)
           PRISMA_RUNTIME=$(find . -path "*/.prisma/client" -type d 2>/dev/null \
             | grep -v ".git" | head -1)
