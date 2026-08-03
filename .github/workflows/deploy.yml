@@ -239,52 +239,79 @@ jobs:
       - name: Run database migrations
         run: |
           APP_DIR="$HOME/domains/jokasfarms.com/nodejs"
+          MIGRATIONS_DIR="$APP_DIR/prisma/migrations"
 
-          # Source .env so DATABASE_URL is available
-          # (Hostinger env-panel vars are only injected by Passenger, not the runner)
           if [ -f "$APP_DIR/.env" ]; then
             set -a; . "$APP_DIR/.env"; set +a
-            echo "Sourced $APP_DIR/.env"
           fi
 
-          # Locate node — runner PATH may not include the system node
-          NODE_BIN=$(command -v node 2>/dev/null || true)
-          for p in /opt/alt/alt-nodejs22/root/usr/bin /usr/local/bin /usr/bin; do
-            [ -z "$NODE_BIN" ] && [ -x "$p/node" ] && NODE_BIN="$p/node"
+          if [ -z "$DATABASE_URL" ]; then
+            echo "WARNING: DATABASE_URL not set — skipping migrations"; exit 0
+          fi
+
+          # Parse mysql://user:pass@host:port/dbname in pure bash (no heredocs, no Python).
+          # %@* removes shortest suffix starting with @, so passwords containing @ work.
+          _u="${DATABASE_URL#mysql://}"
+          DB_USER="${_u%%:*}"
+          _ap="${_u#*:}"
+          DB_PASS="${_ap%@*}"
+          _hp="${_ap##*@}"
+          DB_HOST="${_hp%%[:/*]*}"
+          _ah="${_hp#"$DB_HOST"}"
+          case "$_ah" in :*) DB_PORT="${_ah#:}"; DB_PORT="${DB_PORT%%/*}" ;; *) DB_PORT="3306" ;; esac
+          DB_NAME="${_hp#*/}"; DB_NAME="${DB_NAME%%[?#]*}"
+
+          # Write options file — keeps credentials out of process args and logs
+          printf '[client]\nhost=%s\nport=%s\nuser=%s\npassword=%s\ndatabase=%s\n' \
+            "$DB_HOST" "$DB_PORT" "$DB_USER" "$DB_PASS" "$DB_NAME" > /tmp/deploy-my.cnf
+          chmod 600 /tmp/deploy-my.cnf
+          MYSQL="mysql --defaults-file=/tmp/deploy-my.cnf --batch --silent"
+          echo "DB: $DB_USER@$DB_HOST:$DB_PORT/$DB_NAME"
+
+          if ! $MYSQL -e "SELECT 1" > /dev/null 2>&1; then
+            echo "WARNING: cannot connect to database — skipping migrations"
+            rm -f /tmp/deploy-my.cnf; exit 0
+          fi
+          echo "Database connection OK"
+
+          # Create Prisma migration-tracking table if it does not yet exist.
+          # Written as a single -e string to avoid YAML-breaking heredocs.
+          $MYSQL -e "CREATE TABLE IF NOT EXISTS \`_prisma_migrations\` (\`id\` varchar(36) NOT NULL,\`checksum\` varchar(64) NOT NULL DEFAULT '',\`finished_at\` datetime(3) DEFAULT NULL,\`migration_name\` varchar(255) NOT NULL,\`logs\` text DEFAULT NULL,\`rolled_back_at\` datetime(3) DEFAULT NULL,\`started_at\` datetime(3) NOT NULL DEFAULT current_timestamp(3),\`applied_steps_count\` int NOT NULL DEFAULT 0,PRIMARY KEY (\`id\`),UNIQUE KEY \`_prisma_migrations_migration_name_key\` (\`migration_name\`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;"
+
+          # Mark migrations already in the database as applied (idempotent via ON DUPLICATE KEY).
+          for MIG in "20260629000001_feed_raw_materials" "20260701000000_leave_request_system" "20260616200000_notification_system"; do
+            $MYSQL -e "INSERT INTO \`_prisma_migrations\` (id,checksum,migration_name,started_at,finished_at,applied_steps_count) VALUES (UUID(),'','$MIG',NOW(3),NOW(3),1) ON DUPLICATE KEY UPDATE finished_at=COALESCE(finished_at,NOW(3)),applied_steps_count=GREATEST(applied_steps_count,1);" 2>&1 || true
+          done
+          # HR-D failed mid-run — mark rolled-back so it is never re-attempted.
+          $MYSQL -e "INSERT INTO \`_prisma_migrations\` (id,checksum,migration_name,started_at,rolled_back_at,applied_steps_count) VALUES (UUID(),'','20260801030000_hr_d_disciplinary_grievance',NOW(3),NOW(3),0) ON DUPLICATE KEY UPDATE rolled_back_at=COALESCE(rolled_back_at,NOW(3)),applied_steps_count=0,finished_at=NULL;" 2>&1 || true
+
+          echo "--- Applying pending migrations ---"
+          APPLIED=0; FAILED=0
+
+          for SQL_FILE in $(find "$MIGRATIONS_DIR" -name "migration.sql" 2>/dev/null | sort); do
+            MIG_NAME=$(basename "$(dirname "$SQL_FILE")")
+            echo "$MIG_NAME" | grep -qE '^[0-9]{14}_' || continue
+
+            STATUS=$($MYSQL -N -e "SELECT COALESCE((SELECT CASE WHEN finished_at IS NOT NULL AND rolled_back_at IS NULL AND applied_steps_count>0 THEN 'applied' WHEN rolled_back_at IS NOT NULL THEN 'rolled_back' ELSE 'pending' END FROM \`_prisma_migrations\` WHERE migration_name='$MIG_NAME'),'not_found');" 2>/dev/null || echo "error")
+
+            case "$STATUS" in
+              applied)     echo "  [ok]   $MIG_NAME"; continue ;;
+              rolled_back) echo "  [skip] $MIG_NAME (rolled-back)"; continue ;;
+            esac
+
+            echo "  [run]  $MIG_NAME"
+            if $MYSQL < "$SQL_FILE" 2>&1; then
+              $MYSQL -e "INSERT INTO \`_prisma_migrations\` (id,checksum,migration_name,started_at,finished_at,applied_steps_count) VALUES (UUID(),'','$MIG_NAME',NOW(3),NOW(3),1) ON DUPLICATE KEY UPDATE finished_at=NOW(3),applied_steps_count=1,rolled_back_at=NULL;" 2>&1 || true
+              echo "  [done] $MIG_NAME"
+              APPLIED=$((APPLIED + 1))
+            else
+              echo "  [FAIL] $MIG_NAME"
+              FAILED=$((FAILED + 1))
+            fi
           done
 
-          # Always use the JS entry-point directly — .bin/prisma is a shell script
-          # and running `node /path/to/.bin/prisma` would crash on the #!/bin/sh line.
-          PRISMA_BIN="$APP_DIR/apps/api/node_modules/prisma/build/index.js"
-          if [ ! -f "$PRISMA_BIN" ]; then
-            PRISMA_BIN=$(find "$APP_DIR" -maxdepth 7 -path "*/prisma/build/index.js" 2>/dev/null | head -1)
-          fi
-
-          echo "node: ${NODE_BIN:-NOT FOUND}  prisma: $([ -f "$PRISMA_BIN" ] && echo found || echo NOT FOUND)"
-
-          if [ -n "$NODE_BIN" ] && [ -f "$PRISMA_BIN" ]; then
-            echo "Resolving blocked migrations..."
-            "$NODE_BIN" "$PRISMA_BIN" migrate resolve \
-              --applied "20260629000001_feed_raw_materials" \
-              --schema "$APP_DIR/prisma/schema.prisma" 2>&1 || true
-            "$NODE_BIN" "$PRISMA_BIN" migrate resolve \
-              --applied "20260701000000_leave_request_system" \
-              --schema "$APP_DIR/prisma/schema.prisma" 2>&1 || true
-            "$NODE_BIN" "$PRISMA_BIN" migrate resolve \
-              --applied "20260616200000_notification_system" \
-              --schema "$APP_DIR/prisma/schema.prisma" 2>&1 || true
-            "$NODE_BIN" "$PRISMA_BIN" migrate resolve \
-              --rolled-back "20260801030000_hr_d_disciplinary_grievance" \
-              --schema "$APP_DIR/prisma/schema.prisma" 2>&1 || true
-            echo "Blocked migrations resolved."
-
-            "$NODE_BIN" "$PRISMA_BIN" migrate deploy \
-              --schema "$APP_DIR/prisma/schema.prisma" \
-              && echo "Migrations complete." \
-              || echo "WARNING: migrations failed — deploy continues."
-          else
-            echo "WARNING: cannot run migrations — node or prisma not found."
-          fi
+          rm -f /tmp/deploy-my.cnf
+          echo "Migrations: $APPLIED applied, $FAILED failed."
 
       - name: Restart application
         run: |
