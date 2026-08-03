@@ -801,19 +801,18 @@ export class MarketPlanningService {
 
   private async buildTargetVsActual(user: AuthenticatedUser, marketTargetId: string) {
     const target = await this.requireTarget(user, marketTargetId);
-    const [targetItems, plans, mrps, recommendations, batches, inventory, sales] = await Promise.all([
+    const [targetItems, plans, mrps, recommendations, batches, sales] = await Promise.all([
       this.prisma.marketTargetItem.findMany({ where: { companyId: user.companyId, marketTargetId, deletedAt: null } }),
       this.prisma.productionPlan.findMany({ where: { companyId: user.companyId, marketTargetId, deletedAt: null } }),
       this.prisma.materialRequirementPlan.findMany({ where: { companyId: user.companyId, marketTargetId, deletedAt: null } }),
       this.prisma.procurementRecommendation.findMany({ where: { companyId: user.companyId, marketTargetId, deletedAt: null } }),
       this.prisma.feedProductionBatch.findMany({ where: { companyId: user.companyId, marketTargetId, deletedAt: null }, select: { producedQuantityKg: true } }),
-      this.prisma.inventoryItem.findMany({ where: { companyId: user.companyId, deletedAt: null, productId: { in: [] } }, select: { quantityOnHand: true } }),
       this.prisma.salesOrder.findMany({ where: { companyId: user.companyId, marketTargetId, deletedAt: null }, include: { items: true } })
     ]);
     const productIds = targetItems.map((item) => item.productId);
     const finishedInventory = productIds.length
       ? await this.prisma.inventoryItem.findMany({ where: { companyId: user.companyId, deletedAt: null, productId: { in: productIds } }, select: { quantityOnHand: true } })
-      : inventory;
+      : [];
     const targetKg = targetItems.reduce((sum, item) => sum + num(item.targetQuantityKg), 0);
     const productionTargetKg = plans.reduce((sum, item) => sum + num(item.totalPlannedKg), 0);
     const requiredRawMaterialKg = mrps.reduce((sum, item) => sum + num(item.totalRequiredKg), 0);

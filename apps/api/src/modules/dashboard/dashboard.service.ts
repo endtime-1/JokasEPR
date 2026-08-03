@@ -273,8 +273,8 @@ export class DashboardService {
 
     const dateRange = { gte: todayStart, lt: todayEnd };
     const base = { companyId: user.companyId };
-    const farmFilter = user.hasGlobalAccess ? {} : { farmId: { in: user.farmIds } };
-    const siteFilter = user.hasGlobalAccess ? {} : { productionSiteId: { in: user.productionSiteIds } };
+    const farmFilter = user.hasGlobalAccess ? {} : user.farmIds.length ? { farmId: { in: user.farmIds } } : { farmId: '__' };
+    const siteFilter = user.hasGlobalAccess ? {} : user.productionSiteIds.length ? { productionSiteId: { in: user.productionSiteIds } } : { productionSiteId: '__' };
 
     const [totalFarms, totalSites, eggFarms, feedFarms, mortalityFarms, dailyFarms, prodSites] = await Promise.all([
       user.hasGlobalAccess
@@ -790,26 +790,30 @@ export class DashboardService {
     }
 
     return [
-      { OR: [{ branchId: null }, { branchId: { in: user.branchIds } }] },
-      { OR: [{ farmId: null }, { farmId: { in: user.farmIds } }] },
-      { OR: [{ warehouseId: null }, { warehouseId: { in: user.warehouseIds } }] },
-      { OR: [{ productionSiteId: null }, { productionSiteId: { in: user.productionSiteIds } }] }
+      user.branchIds.length ? { OR: [{ branchId: null }, { branchId: { in: user.branchIds } }] } : { branchId: null },
+      user.farmIds.length ? { OR: [{ farmId: null }, { farmId: { in: user.farmIds } }] } : { farmId: null },
+      user.warehouseIds.length ? { OR: [{ warehouseId: null }, { warehouseId: { in: user.warehouseIds } }] } : { warehouseId: null },
+      user.productionSiteIds.length ? { OR: [{ productionSiteId: null }, { productionSiteId: { in: user.productionSiteIds } }] } : { productionSiteId: null },
     ];
   }
 
   private branchWhere(user: AuthenticatedUser) {
+    if (!user.hasGlobalAccess && !user.branchIds.length) return { companyId: user.companyId, deletedAt: null, id: '__' };
     return { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess ? {} : { id: { in: user.branchIds } }) };
   }
 
   private farmWhere(user: AuthenticatedUser) {
+    if (!user.hasGlobalAccess && !user.farmIds.length) return { companyId: user.companyId, deletedAt: null, id: '__' };
     return { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess ? {} : { id: { in: user.farmIds } }) };
   }
 
   private warehouseWhere(user: AuthenticatedUser) {
+    if (!user.hasGlobalAccess && !user.warehouseIds.length) return { companyId: user.companyId, deletedAt: null, id: '__' };
     return { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess ? {} : { id: { in: user.warehouseIds } }) };
   }
 
   private productionSiteWhere(user: AuthenticatedUser) {
+    if (!user.hasGlobalAccess && !user.productionSiteIds.length) return { companyId: user.companyId, deletedAt: null, id: '__' };
     return { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess ? {} : { id: { in: user.productionSiteIds } }) };
   }
 

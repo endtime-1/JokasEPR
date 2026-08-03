@@ -224,10 +224,10 @@ export class AlertsService {
 
   private locationScope(user: AuthenticatedUser) {
     return [
-      { OR: [{ branchId: null }, { branchId: { in: user.branchIds } }] },
-      { OR: [{ farmId: null }, { farmId: { in: user.farmIds } }] },
-      { OR: [{ warehouseId: null }, { warehouseId: { in: user.warehouseIds } }] },
-      { OR: [{ productionSiteId: null }, { productionSiteId: { in: user.productionSiteIds } }] }
+      user.branchIds.length ? { OR: [{ branchId: null }, { branchId: { in: user.branchIds } }] } : { branchId: null },
+      user.farmIds.length ? { OR: [{ farmId: null }, { farmId: { in: user.farmIds } }] } : { farmId: null },
+      user.warehouseIds.length ? { OR: [{ warehouseId: null }, { warehouseId: { in: user.warehouseIds } }] } : { warehouseId: null },
+      user.productionSiteIds.length ? { OR: [{ productionSiteId: null }, { productionSiteId: { in: user.productionSiteIds } }] } : { productionSiteId: null },
     ];
   }
 
