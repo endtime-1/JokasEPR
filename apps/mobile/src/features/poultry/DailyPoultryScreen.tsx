@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Alert, StyleSheet, Text, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -10,6 +10,7 @@ import { SelectField, SelectOption } from "../../components/SelectField";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
 import { fetchFlockBatches, fetchFarms, fetchPoultryOptions } from "../../api/endpoints";
+import { apiFetch } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
 import { colors, font, spacing } from "../../constants/theme";
 
@@ -67,6 +68,18 @@ export function DailyPoultryScreen() {
     setForm((f) => ({ ...f, [k]: v }));
     setErrors((e) => ({ ...e, [k]: undefined }));
   };
+
+  useEffect(() => {
+    if (!form.flockBatchId || !form.recordDate) return;
+    let cancelled = false;
+    apiFetch<{ data: { openingBirdCount: number; source: string } }>(
+      `/poultry/daily-records/prefill?flockBatchId=${encodeURIComponent(form.flockBatchId)}&date=${encodeURIComponent(form.recordDate)}`
+    ).then((res) => {
+      if (cancelled) return;
+      setForm((f) => ({ ...f, openingBirdCount: String(res.data.openingBirdCount) }));
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [form.flockBatchId, form.recordDate]);
 
   function validate() {
     const e: Err = {};
