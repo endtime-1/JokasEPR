@@ -112,6 +112,7 @@ export class CreateEmployeeDto {
   @IsOptional() @IsUUID() farmId?: string;
   @IsOptional() @IsUUID() warehouseId?: string;
   @IsOptional() @IsUUID() productionSiteId?: string;
+  @IsOptional() @IsUUID() managerId?: string;
   @IsOptional() @IsNumber() @Min(0) basicSalary?: number;
   @IsOptional() @IsString() @MaxLength(120) bankName?: string;
   @IsOptional() @IsString() @MaxLength(40) bankAccount?: string;

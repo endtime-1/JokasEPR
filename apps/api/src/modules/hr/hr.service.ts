@@ -1,4 +1,4 @@
-﻿import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+﻿import { BadRequestException, ForbiddenException, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
 import { Response } from "express";
 import { AuthenticatedUser } from "@jokas/shared";
 import { AuditService } from "../audit/audit.service";
@@ -100,19 +100,19 @@ export class HRService {
       recentEmployees,
       recentTasks,
     ] = await Promise.all([
-      this.prisma.employee.count({ where: { companyId: cid, deletedAt: null } }).catch(() => 0),
-      this.prisma.employee.count({ where: { companyId: cid, deletedAt: null, status: "ACTIVE" } }).catch(() => 0),
-      this.prisma.employee.count({ where: { companyId: cid, deletedAt: null, status: "ON_LEAVE" } }).catch(() => 0),
-      this.prisma.attendanceRecord.count({ where: { companyId: cid, date: { gte: today }, status: "PRESENT" } }).catch(() => 0),
-      this.prisma.attendanceRecord.count({ where: { companyId: cid, date: { gte: today }, status: "ABSENT" } }).catch(() => 0),
-      this.prisma.attendanceRecord.count({ where: { companyId: cid, date: { gte: today } } }).catch(() => 0),
-      this.prisma.task.count({ where: { companyId: cid, deletedAt: null, status: { in: ["OPEN", "IN_PROGRESS"] } } }).catch(() => 0),
-      this.prisma.task.count({ where: { companyId: cid, deletedAt: null, status: "OPEN", priority: "URGENT" } }).catch(() => 0),
-      this.prisma.payrollRecord.count({ where: { companyId: cid, deletedAt: null, status: "DRAFT" } }).catch(() => 0),
-      this.prisma.leaveRequest.count({ where: { companyId: cid, deletedAt: null, status: "PENDING" } }).catch(() => 0),
-      this.prisma.leaveRequest.findMany({ where: { companyId: cid, deletedAt: null }, orderBy: { createdAt: "desc" }, take: 5 }).catch(() => []),
-      this.prisma.employee.findMany({ where: { companyId: cid, deletedAt: null }, orderBy: { createdAt: "desc" }, take: 8, select: { id: true, code: true, fullName: true, status: true, photoUrl: true, employeeRole: { select: { name: true } }, branch: { select: { name: true } } } }).catch(() => []),
-      this.prisma.task.findMany({ where: { companyId: cid, deletedAt: null }, orderBy: { createdAt: "desc" }, take: 8, include: { assignments: { include: { employee: { select: { fullName: true } } } } } }).catch(() => []),
+      this.prisma.employee.count({ where: { companyId: cid, deletedAt: null } }).catch((e) => { console.error("[HR dash:totalEmployees]", e?.message); return 0; }),
+      this.prisma.employee.count({ where: { companyId: cid, deletedAt: null, status: "ACTIVE" } }).catch((e) => { console.error("[HR dash:activeEmployees]", e?.message); return 0; }),
+      this.prisma.employee.count({ where: { companyId: cid, deletedAt: null, status: "ON_LEAVE" } }).catch((e) => { console.error("[HR dash:onLeave]", e?.message); return 0; }),
+      this.prisma.attendanceRecord.count({ where: { companyId: cid, date: { gte: today }, status: "PRESENT" } }).catch((e) => { console.error("[HR dash:todayPresent]", e?.message); return 0; }),
+      this.prisma.attendanceRecord.count({ where: { companyId: cid, date: { gte: today }, status: "ABSENT" } }).catch((e) => { console.error("[HR dash:todayAbsent]", e?.message); return 0; }),
+      this.prisma.attendanceRecord.count({ where: { companyId: cid, date: { gte: today } } }).catch((e) => { console.error("[HR dash:totalAttendance]", e?.message); return 0; }),
+      this.prisma.task.count({ where: { companyId: cid, deletedAt: null, status: { in: ["OPEN", "IN_PROGRESS"] } } }).catch((e) => { console.error("[HR dash:openTasks]", e?.message); return 0; }),
+      this.prisma.task.count({ where: { companyId: cid, deletedAt: null, status: "OPEN", priority: "URGENT" } }).catch((e) => { console.error("[HR dash:urgentTasks]", e?.message); return 0; }),
+      this.prisma.payrollRecord.count({ where: { companyId: cid, deletedAt: null, status: "DRAFT" } }).catch((e) => { console.error("[HR dash:pendingPayroll]", e?.message); return 0; }),
+      this.prisma.leaveRequest.count({ where: { companyId: cid, deletedAt: null, status: "PENDING" } }).catch((e) => { console.error("[HR dash:openLeaveRequests]", e?.message); return 0; }),
+      this.prisma.leaveRequest.findMany({ where: { companyId: cid, deletedAt: null }, orderBy: { createdAt: "desc" }, take: 5, select: { id: true, reference: true, employeeName: true, leaveType: true, startDate: true, endDate: true, daysRequested: true, status: true, createdAt: true } }).catch((e) => { console.error("[HR dash:recentLeaveRequests]", e?.message); return []; }),
+      this.prisma.employee.findMany({ where: { companyId: cid, deletedAt: null }, orderBy: { createdAt: "desc" }, take: 8, select: { id: true, code: true, fullName: true, status: true, photoUrl: true, employeeRole: { select: { name: true } }, branch: { select: { name: true } } } }).catch((e) => { console.error("[HR dash:recentEmployees]", e?.message); return []; }),
+      this.prisma.task.findMany({ where: { companyId: cid, deletedAt: null }, orderBy: { createdAt: "desc" }, take: 8, select: { id: true, title: true, priority: true, status: true, dueDate: true, assignments: { select: { id: true, employeeId: true, employee: { select: { fullName: true } } } } } }).catch((e) => { console.error("[HR dash:recentTasks]", e?.message); return []; }),
     ]);
 
     const attendanceRate = todayTotalAttendance > 0 ? (todayPresent / todayTotalAttendance * 100) : 0;
@@ -135,7 +135,8 @@ export class HRService {
       },
     };
     } catch (e: any) {
-      throw new Error(e?.message || "HR dashboard failed to load");
+      console.error("[HR dash:outer]", e?.message, e?.stack);
+      throw new InternalServerErrorException(e?.message || "HR dashboard failed to load");
     }
   }
 
@@ -265,13 +266,13 @@ export class HRService {
         dateOfBirth: true, gender: true, phone: true, email: true,
         address: true, nationalId: true, startDate: true, endDate: true,
         status: true, employeeRoleId: true, branchId: true, farmId: true,
-        warehouseId: true, productionSiteId: true,
+        warehouseId: true, productionSiteId: true, managerId: true,
         basicSalary: true, bankName: true, bankAccount: true,
         ssnitNumber: true, tinNumber: true,
         emergencyContactName: true, emergencyContactPhone: true,
         notes: true, photoUrl: true,
         createdById: true, updatedById: true, createdAt: true, updatedAt: true, deletedAt: true,
-        employeeRole: true,
+        employeeRole: { select: { id: true, code: true, name: true } },
         branch: { select: { name: true } },
         farm: { select: { name: true } },
         warehouse: { select: { name: true } },
@@ -290,7 +291,7 @@ export class HRService {
         },
         trainingRecords: {
           where: { deletedAt: null }, orderBy: { trainingDate: "desc" }, take: 10,
-          select: { id: true, title: true, trainingDate: true, outcome: true, certificate: true, notes: true, createdAt: true },
+          select: { id: true, title: true, trainingDate: true, outcome: true, certificate: true, notes: true, courseId: true, certificateExpiry: true, createdAt: true },
         },
         performanceRecords: {
           where: { deletedAt: null }, orderBy: { period: "desc" }, take: 6,
@@ -311,12 +312,11 @@ export class HRService {
     if (exists) throw new BadRequestException(`Employee code "${dto.code}" already exists`);
 
     const fullName = `${dto.firstName} ${dto.lastName}`;
-    const { managerId: _mgr, ...safeDto } = dto as any;
     const row = await this.prisma.employee.create({
       data: {
         companyId: user.companyId,
         createdById: user.id,
-        ...safeDto,
+        ...(dto as any),
         fullName,
         startDate: new Date(dto.startDate),
         dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined,
@@ -336,10 +336,9 @@ export class HRService {
       ? `${dto.firstName ?? row.firstName} ${dto.lastName ?? row.lastName}`
       : undefined;
 
-    const { managerId: _mgr2, ...safeUpdateDto } = dto as any;
     const updated = await this.prisma.employee.update({
       where: { id },
-      data: { updatedById: user.id, ...safeUpdateDto, ...(fullName ? { fullName } : {}), dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined },
+      data: { updatedById: user.id, ...(dto as any), ...(fullName ? { fullName } : {}), dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined },
       select: { id: true, code: true, fullName: true, firstName: true, lastName: true, phone: true, email: true, status: true, startDate: true, photoUrl: true, employeeRoleId: true, branchId: true, farmId: true, updatedAt: true },
     });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "Employee", entityId: id, action: "UPDATE", ...ctx });
@@ -407,6 +406,8 @@ export class HRService {
       checkInTime: dto.checkInTime ? new Date(dto.checkInTime) : new Date(),
       status: dto.status ?? "PRESENT",
       overtimeHours: dto.overtimeHours ?? undefined,
+      geoLat: dto.geoLat ?? undefined,
+      geoLon: dto.geoLon ?? undefined,
       notes: dto.notes,
       recordedById: user.id,
     };
@@ -447,6 +448,8 @@ export class HRService {
       status: dto.status ?? "PRESENT",
       hoursWorked,
       shiftId: dto.shiftId,
+      geoLat: dto.geoLat ?? undefined,
+      geoLon: dto.geoLon ?? undefined,
       notes: dto.notes,
       recordedById: user.id,
     };
@@ -599,7 +602,7 @@ export class HRService {
             }
           : {}),
       },
-      include: { assignments: true },
+      select: { id: true, companyId: true, title: true, priority: true, status: true, dueDate: true, notes: true, createdAt: true, assignments: { select: { id: true, employeeId: true, status: true } } },
     });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "Task", entityId: row.id, action: "CREATE", ...ctx });
     return { data: row };
@@ -800,7 +803,8 @@ export class HRService {
         select: {
           id: true, companyId: true, employeeId: true, title: true, description: true,
           trainer: true, durationHours: true, trainingDate: true,
-          outcome: true, certificate: true, notes: true, createdById: true, createdAt: true, updatedAt: true, deletedAt: true,
+          outcome: true, certificate: true, notes: true, courseId: true, certificateExpiry: true,
+          createdById: true, createdAt: true, updatedAt: true, deletedAt: true,
           employee: { select: { fullName: true, code: true } },
         },
         orderBy: { trainingDate: "desc" },
@@ -821,8 +825,10 @@ export class HRService {
         durationHours: dto.durationHours,
         outcome: dto.outcome, certificate: dto.certificate, notes: dto.notes,
         trainingDate: new Date(dto.trainingDate),
+        courseId: dto.courseId ?? undefined,
+        certificateExpiry: dto.certificateExpiry ? new Date(dto.certificateExpiry) : undefined,
       },
-      select: { id: true, companyId: true, employeeId: true, title: true, description: true, trainer: true, durationHours: true, trainingDate: true, outcome: true, certificate: true, notes: true, createdAt: true },
+      select: { id: true, companyId: true, employeeId: true, title: true, description: true, trainer: true, durationHours: true, trainingDate: true, outcome: true, certificate: true, notes: true, courseId: true, certificateExpiry: true, createdAt: true },
     });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "TrainingRecord", entityId: row.id, action: "CREATE", ...ctx });
     return { data: row };
