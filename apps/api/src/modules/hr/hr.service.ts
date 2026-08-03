@@ -280,14 +280,26 @@ export class HRService {
           orderBy: { date: "desc" }, take: 30,
           select: { id: true, date: true, status: true, checkInTime: true, checkOutTime: true, hoursWorked: true, overtimeHours: true, notes: true, createdAt: true },
         },
-        taskAssignments: { where: { status: { notIn: ["COMPLETED", "REJECTED"] } }, include: { task: { select: { title: true, priority: true, dueDate: true } } } },
-        payrollRecords: { where: { deletedAt: null }, orderBy: { createdAt: "desc" }, take: 6 },
+        taskAssignments: {
+          where: { status: { notIn: ["COMPLETED", "REJECTED"] } },
+          select: { id: true, status: true, task: { select: { title: true, priority: true, dueDate: true } } },
+        },
+        payrollRecords: {
+          where: { deletedAt: null }, orderBy: { createdAt: "desc" }, take: 6,
+          select: { id: true, reference: true, period: true, basicSalary: true, grossPay: true, netPay: true, status: true, paymentDate: true, createdAt: true },
+        },
         trainingRecords: {
           where: { deletedAt: null }, orderBy: { trainingDate: "desc" }, take: 10,
           select: { id: true, title: true, trainingDate: true, outcome: true, certificate: true, notes: true, createdAt: true },
         },
-        performanceRecords: { where: { deletedAt: null }, orderBy: { period: "desc" }, take: 6 },
-        departmentAssignments: { orderBy: { startDate: "desc" } },
+        performanceRecords: {
+          where: { deletedAt: null }, orderBy: { period: "desc" }, take: 6,
+          select: { id: true, period: true, overallRating: true, status: true, reviewerId: true, createdAt: true },
+        },
+        departmentAssignments: {
+          orderBy: { startDate: "desc" },
+          select: { id: true, department: true, startDate: true, endDate: true, isPrimary: true, notes: true },
+        },
       },
     });
     if (!row) throw new NotFoundException("Employee not found");
@@ -399,10 +411,9 @@ export class HRService {
       recordedById: user.id,
     };
 
-    const AR_SELECT = { id: true, date: true, status: true, checkInTime: true, checkOutTime: true, hoursWorked: true, overtimeHours: true, notes: true } as const;
     const row = existing
-      ? await this.prisma.attendanceRecord.update({ where: { id: existing.id }, data: data as never, select: AR_SELECT })
-      : await this.prisma.attendanceRecord.create({ data: data as never, select: AR_SELECT });
+      ? await this.prisma.attendanceRecord.update({ where: { id: existing.id }, data: data as never, select: { id: true, date: true, status: true, checkInTime: true, checkOutTime: true, hoursWorked: true, overtimeHours: true, notes: true } })
+      : await this.prisma.attendanceRecord.create({ data: data as never, select: { id: true, date: true, status: true, checkInTime: true, checkOutTime: true, hoursWorked: true, overtimeHours: true, notes: true } });
 
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "AttendanceRecord", entityId: row.id, action: existing ? "UPDATE" : "CREATE", ...ctx });
     return { data: row };
@@ -440,10 +451,9 @@ export class HRService {
       recordedById: user.id,
     };
 
-    const AR_SELECT2 = { id: true, date: true, status: true, checkInTime: true, checkOutTime: true, hoursWorked: true, overtimeHours: true, notes: true } as const;
     const row = existing
-      ? await this.prisma.attendanceRecord.update({ where: { id: existing.id }, data: data as never, select: AR_SELECT2 })
-      : await this.prisma.attendanceRecord.create({ data: data as never, select: AR_SELECT2 });
+      ? await this.prisma.attendanceRecord.update({ where: { id: existing.id }, data: data as never, select: { id: true, date: true, status: true, checkInTime: true, checkOutTime: true, hoursWorked: true, overtimeHours: true, notes: true } })
+      : await this.prisma.attendanceRecord.create({ data: data as never, select: { id: true, date: true, status: true, checkInTime: true, checkOutTime: true, hoursWorked: true, overtimeHours: true, notes: true } });
 
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "AttendanceRecord", entityId: row.id, action: existing ? "UPDATE" : "CREATE", ...ctx });
     return { data: row };
@@ -788,7 +798,8 @@ export class HRService {
           ...(query.search ? { title: { contains: query.search } } : {}),
         },
         select: {
-          id: true, companyId: true, employeeId: true, title: true, trainingDate: true,
+          id: true, companyId: true, employeeId: true, title: true, description: true,
+          trainer: true, durationHours: true, trainingDate: true,
           outcome: true, certificate: true, notes: true, createdById: true, createdAt: true, updatedAt: true, deletedAt: true,
           employee: { select: { fullName: true, code: true } },
         },
@@ -805,11 +816,13 @@ export class HRService {
     const row = await this.prisma.trainingRecord.create({
       data: {
         companyId: user.companyId, createdById: user.id,
-        employeeId: dto.employeeId, title: dto.title, outcome: dto.outcome,
-        certificate: dto.certificate, notes: dto.notes,
+        employeeId: dto.employeeId, title: dto.title,
+        description: dto.description, trainer: dto.trainer,
+        durationHours: dto.durationHours,
+        outcome: dto.outcome, certificate: dto.certificate, notes: dto.notes,
         trainingDate: new Date(dto.trainingDate),
       },
-      select: { id: true, companyId: true, employeeId: true, title: true, trainingDate: true, outcome: true, certificate: true, notes: true, createdAt: true },
+      select: { id: true, companyId: true, employeeId: true, title: true, description: true, trainer: true, durationHours: true, trainingDate: true, outcome: true, certificate: true, notes: true, createdAt: true },
     });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "TrainingRecord", entityId: row.id, action: "CREATE", ...ctx });
     return { data: row };
