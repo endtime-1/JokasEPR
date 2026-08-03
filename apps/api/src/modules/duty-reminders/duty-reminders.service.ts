@@ -204,6 +204,44 @@ export class DutyRemindersService {
     }
   }
 
+  // ── Public: today's duty status per farm ─────────────────────────────────
+  async getTodayStatus(companyId: string) {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const dateRange = { gte: todayStart, lt: new Date(todayStart.getTime() + 86_400_000) };
+
+    const [farms, eggs, feed, mortality, daily] = await Promise.all([
+      this.prisma.farm.findMany({ where: { companyId, deletedAt: null }, select: { id: true, name: true } }),
+      this.prisma.eggProductionRecord.findMany({ where: { companyId, recordDate: dateRange }, distinct: ["farmId"], select: { farmId: true } }),
+      this.prisma.feedConsumptionRecord.findMany({ where: { companyId, recordDate: dateRange }, distinct: ["farmId"], select: { farmId: true } }),
+      this.prisma.mortalityRecord.findMany({ where: { companyId, recordDate: dateRange }, distinct: ["farmId"], select: { farmId: true } }),
+      this.prisma.dailyPoultryRecord.findMany({ where: { companyId, recordDate: dateRange }, distinct: ["farmId"], select: { farmId: true } }),
+    ]);
+
+    const eggDone = new Set(eggs.map((r) => r.farmId));
+    const feedDone = new Set(feed.map((r) => r.farmId));
+    const mortalityDone = new Set(mortality.map((r) => r.farmId));
+    const dailyDone = new Set(daily.map((r) => r.farmId));
+
+    const statuses = farms.map((f) => ({
+      farmId: f.id,
+      farmName: f.name,
+      morning: {
+        eggCollection: eggDone.has(f.id),
+        feedRecord: feedDone.has(f.id),
+        mortalityRecord: mortalityDone.has(f.id),
+        complete: eggDone.has(f.id) && feedDone.has(f.id) && mortalityDone.has(f.id),
+      },
+      evening: {
+        dailySummary: dailyDone.has(f.id),
+        complete: dailyDone.has(f.id),
+      },
+    }));
+
+    const pending = statuses.filter((s) => !s.morning.complete || !s.evening.complete).length;
+    return { data: { date: todayStart.toISOString().slice(0, 10), farms: statuses, pendingFarms: pending, totalFarms: farms.length } };
+  }
+
   // ── 7 AM daily: vaccination due-date reminders ───────────────────────────
   // Finds VaccinationRecords with nextDueDate within 7 days and notifies
   // POULTRY_MANAGE users per company.

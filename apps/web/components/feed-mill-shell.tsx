@@ -10,7 +10,8 @@ const NAV_GROUPS = [
     items: [
       { href: "/feed-production", label: "Dashboard", exact: true },
       { href: "/feed-production/formulas", label: "Formulas" },
-      { href: "/feed-production/orders", label: "Orders" }
+      { href: "/feed-production/orders", label: "Orders" },
+      { href: "/feed-production/ingredients", label: "Ingredients" }
     ]
   },
   {

@@ -400,7 +400,84 @@ export function MaterialRequirementPlanningPage() {
 }
 
 export function InventoryAvailabilityCheckPage() {
-  return <MaterialRequirementPlanningPage />;
+  const [mrps, setMrps] = useState<MrpRow[]>([]);
+  const [selected, setSelected] = useState<MrpRow | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+
+  useEffect(() => {
+    apiFetch<ApiEnvelope<MrpRow[]>>("/market-planning/mrp")
+      .then((r) => { setMrps(r.data ?? []); if (r.data?.length) setSelected(r.data[0]); })
+      .catch((e: any) => setLoadError(e?.message ?? "Failed to load MRP data."))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const items: MrpItem[] = (selected as any)?.items ?? [];
+  const statusColor = (item: MrpItem) => {
+    const shortage = Number(item.shortageQuantityKg ?? 0);
+    if (shortage > 0) return "text-red-600 font-semibold";
+    const avail = Number(item.availableQuantityKg ?? 0);
+    const req = Number(item.requiredQuantityKg ?? 0);
+    if (req > 0 && avail / req < 1.2) return "text-amber-600 font-semibold";
+    return "text-emerald-600 font-semibold";
+  };
+  const statusLabel = (item: MrpItem) => {
+    const shortage = Number(item.shortageQuantityKg ?? 0);
+    if (shortage > 0) return "Shortage";
+    const avail = Number(item.availableQuantityKg ?? 0);
+    const req = Number(item.requiredQuantityKg ?? 0);
+    if (req > 0 && avail / req < 1.2) return "Low";
+    return "OK";
+  };
+
+  return (
+    <MarketPlanningShell>
+      <div className="mb-6 flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-extrabold text-ink">Inventory Availability</h1>
+          <p className="text-sm text-ink/55">Raw material stock vs. requirements from the latest MRP runs.</p>
+        </div>
+      </div>
+
+      {loadError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</p>}
+
+      {mrps.length > 0 && (
+        <div className="app-card mb-6 flex flex-wrap items-end gap-4 p-5">
+          <label className="grid min-w-80 gap-1 text-sm font-semibold">
+            MRP run
+            <select className={inputClass} value={selected?.id ?? ""} onChange={(e) => setSelected(mrps.find((m) => m.id === e.target.value) ?? null)}>
+              {mrps.map((m) => (
+                <option key={m.id} value={m.id}>{m.mrpNumber} — {new Date(m.createdAt).toLocaleDateString("en-GH")} ({m.status})</option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
+
+      {selected && (
+        <div className="app-card mb-6 grid grid-cols-2 gap-4 p-5 sm:grid-cols-4">
+          <div><p className="text-xs text-ink/50 uppercase tracking-wide">Required</p><p className="text-xl font-extrabold text-ink">{number(selected.totalRequiredKg)} kg</p></div>
+          <div><p className="text-xs text-ink/50 uppercase tracking-wide">Available</p><p className="text-xl font-extrabold text-emerald-600">{number(selected.totalAvailableKg)} kg</p></div>
+          <div><p className="text-xs text-ink/50 uppercase tracking-wide">Shortage</p><p className={`text-xl font-extrabold ${Number(selected.totalShortageKg) > 0 ? "text-red-600" : "text-ink"}`}>{number(selected.totalShortageKg)} kg</p></div>
+          <div><p className="text-xs text-ink/50 uppercase tracking-wide">Status</p><p className={`text-xl font-extrabold ${Number(selected.totalShortageKg) > 0 ? "text-red-600" : "text-emerald-600"}`}>{Number(selected.totalShortageKg) > 0 ? "Shortages" : "Sufficient"}</p></div>
+        </div>
+      )}
+
+      <DataTable
+        columns={[
+          { key: "name", label: "Raw Material", render: (row) => { const r = row as unknown as MrpItem; return <span className="font-medium">{r.rawMaterial?.name ?? r.rawMaterialId}<span className="ml-2 text-xs text-ink/40">{r.rawMaterial?.sku}</span></span>; } },
+          { key: "required", label: "Required (kg)", render: (row) => number((row as unknown as MrpItem).requiredQuantityKg) },
+          { key: "available", label: "Available (kg)", render: (row) => number((row as unknown as MrpItem).availableQuantityKg) },
+          { key: "shortage", label: "Shortage (kg)", render: (row) => { const r = row as unknown as MrpItem; return <span className={Number(r.shortageQuantityKg) > 0 ? "text-red-600 font-semibold" : "text-ink/40"}>{number(r.shortageQuantityKg)}</span>; } },
+          { key: "cost", label: "Est. Cost (GHS)", render: (row) => { const r = row as unknown as MrpItem; return Number(r.estimatedShortageCost) > 0 ? money(r.estimatedShortageCost) : "—"; } },
+          { key: "status", label: "Status", render: (row) => { const r = row as unknown as MrpItem; return <span className={statusColor(r)}>{statusLabel(r)}</span>; } },
+        ]}
+        rows={items as unknown as Record<string, unknown>[]}
+        loading={loading}
+        empty={selected ? "No material items in this MRP run." : "Select an MRP run above to view availability."}
+      />
+    </MarketPlanningShell>
+  );
 }
 
 export function ProcurementRecommendationPage({ convert = false }: { convert?: boolean }) {

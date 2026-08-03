@@ -282,8 +282,10 @@ jobs:
           $MYSQL -e "CREATE TABLE IF NOT EXISTS \`_prisma_migrations\` (\`id\` varchar(36) NOT NULL,\`checksum\` varchar(64) NOT NULL DEFAULT '',\`finished_at\` datetime(3) DEFAULT NULL,\`migration_name\` varchar(255) NOT NULL,\`logs\` text DEFAULT NULL,\`rolled_back_at\` datetime(3) DEFAULT NULL,\`started_at\` datetime(3) NOT NULL DEFAULT current_timestamp(3),\`applied_steps_count\` int NOT NULL DEFAULT 0,PRIMARY KEY (\`id\`),UNIQUE KEY \`_prisma_migrations_migration_name_key\` (\`migration_name\`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;"
 
           # Seed _prisma_migrations in ONE connection (avoids connection-pool exhaustion).
-          # These migrations either used PostgreSQL syntax that never ran on MySQL,
-          # or their schema changes already exist in the database from earlier manual setup.
+          # "applied" rows: migrations that used PostgreSQL syntax or whose schema
+          #   changes were applied manually before this automation existed.
+          # "rolled_back" rows: migrations that failed mid-run and were superseded
+          #   by a recovery migration; they must never be re-attempted.
           $MYSQL -e "
             INSERT INTO \`_prisma_migrations\` (id,checksum,migration_name,started_at,finished_at,applied_steps_count) VALUES
               (UUID(),'','20260615143000_initial_erp_foundation',NOW(3),NOW(3),1),
@@ -304,8 +306,17 @@ jobs:
               finished_at=COALESCE(finished_at,NOW(3)),
               applied_steps_count=GREATEST(applied_steps_count,1);
           " 2>&1 || true
-          # HR-D failed mid-run — mark rolled-back so it is never re-attempted.
-          $MYSQL -e "INSERT INTO \`_prisma_migrations\` (id,checksum,migration_name,started_at,rolled_back_at,applied_steps_count) VALUES (UUID(),'','20260801030000_hr_d_disciplinary_grievance',NOW(3),NOW(3),0) ON DUPLICATE KEY UPDATE rolled_back_at=COALESCE(rolled_back_at,NOW(3)),applied_steps_count=0,finished_at=NULL;" 2>&1 || true
+          # 20260801030000_hr_d_disciplinary_grievance ran against the wrong DB state
+          # (Notification table didn't exist yet). Superseded by 20260801085000_hr_d_tables_recovery.
+          # Mark as rolled-back so the runner skips it permanently.
+          $MYSQL -e "
+            INSERT INTO \`_prisma_migrations\` (id,checksum,migration_name,started_at,rolled_back_at,applied_steps_count)
+              VALUES (UUID(),'','20260801030000_hr_d_disciplinary_grievance',NOW(3),NOW(3),0)
+            ON DUPLICATE KEY UPDATE
+              rolled_back_at=COALESCE(rolled_back_at,NOW(3)),
+              applied_steps_count=0,
+              finished_at=NULL;
+          " 2>&1 || true
 
           # Pre-fetch ALL migration statuses in ONE query — eliminates per-migration
           # DB connections that trigger Hostinger's connection rate limit (ERROR 2002).
