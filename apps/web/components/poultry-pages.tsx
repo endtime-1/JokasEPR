@@ -1298,7 +1298,9 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
       `/poultry/daily-records/prefill?flockBatchId=${encodeURIComponent(form.flockBatchId)}&date=${encodeURIComponent(form.recordDate)}`
     ).then((res) => {
       if (cancelled) return;
-      setForm((prev) => ({ ...prev, openingBirdCount: String(res.data.openingBirdCount) }));
+      const count = res?.data?.openingBirdCount;
+      if (count == null) return;
+      setForm((prev) => ({ ...prev, openingBirdCount: String(count) }));
     }).catch(() => undefined);
     return () => { cancelled = true; };
   }, [type, form.flockBatchId, form.recordDate, editingId]);

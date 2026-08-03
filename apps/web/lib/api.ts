@@ -154,7 +154,11 @@ function extractErrorMessage(text: string): string {
     if (typeof m === "string") return m;
     if (Array.isArray(m) && m.length > 0) return String(m[0]);
   } catch {
-    // text is plain
+    // text is plain or HTML
+  }
+  // Cloudflare challenge pages and proxy error pages are HTML — never display raw HTML as an error.
+  if (text.trimStart().startsWith("<")) {
+    return "API server is not reachable. Please try again shortly.";
   }
   return text;
 }

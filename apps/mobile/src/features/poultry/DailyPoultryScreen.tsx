@@ -76,7 +76,9 @@ export function DailyPoultryScreen() {
       `/poultry/daily-records/prefill?flockBatchId=${encodeURIComponent(form.flockBatchId)}&date=${encodeURIComponent(form.recordDate)}`
     ).then((res) => {
       if (cancelled) return;
-      setForm((f) => ({ ...f, openingBirdCount: String(res.data.openingBirdCount) }));
+      const count = res?.data?.openingBirdCount;
+      if (count == null) return;
+      setForm((f) => ({ ...f, openingBirdCount: String(count) }));
     }).catch(() => undefined);
     return () => { cancelled = true; };
   }, [form.flockBatchId, form.recordDate]);
