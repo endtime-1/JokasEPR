@@ -114,6 +114,7 @@ const salesNavLinks = [
   { href: "/sales/debtors",       label: "Debtors" },
   { href: "/sales/delivery-notes",label: "Delivery Notes" },
   { href: "/sales/statements",    label: "Statements" },
+  { href: "/sales/price-lists",   label: "Price Lists" },
   { href: "/sales/reports",       label: "Reports" },
 ];
 
@@ -1461,6 +1462,117 @@ export function SalesReportsPage() {
           </div>
         </div>
       )}
+    </AppShell>
+  );
+}
+
+// ─── Price Lists ───────────────────────────────────────────────────────────────
+
+export function PriceListsPage() {
+  const { opts } = useSalesOptions();
+  const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/sales/price-lists")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/sales/price-lists"));
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ productId: "", customerGroupId: "", branchId: "", name: "", unitPrice: "", validFrom: new Date().toISOString().slice(0, 10), validTo: "" });
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  const f = (k: string) => (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm((p) => ({ ...p, [k]: e.target.value }));
+
+  function load() {
+    apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/sales/price-lists")
+      .then((r) => { const d = r.data ?? []; setRows((prev) => d.length === 0 && prev.length > 0 ? prev : d); })
+      .catch(() => undefined)
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(() => { load(); }, []);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setError(""); setSubmitting(true);
+    try {
+      await apiFetch("/sales/price-lists", { method: "POST", body: JSON.stringify({ productId: form.productId, customerGroupId: form.customerGroupId || undefined, branchId: form.branchId || undefined, name: form.name, unitPrice: Number(form.unitPrice), validFrom: form.validFrom || undefined, validTo: form.validTo || undefined }) });
+      setForm({ productId: "", customerGroupId: "", branchId: "", name: "", unitPrice: "", validFrom: new Date().toISOString().slice(0, 10), validTo: "" });
+      setShowForm(false);
+      load();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to create price list.");
+    } finally { setSubmitting(false); }
+  }
+
+  const selectCls = "min-h-10 w-full rounded-md border border-line bg-white px-3 text-sm outline-none focus:border-brand";
+  const inputCls = "min-h-10 w-full rounded-md border border-line bg-white px-3 text-sm outline-none focus:border-brand";
+
+  return (
+    <AppShell>
+      <PageHero
+        kicker="Sales"
+        title="Price Lists"
+        subtitle="Manage product pricing for customer groups, branches, or company-wide."
+        actions={<button onClick={() => setShowForm((v) => !v)} className="app-button-primary"><DollarSign className="h-4 w-4" /> {showForm ? "Cancel" : "New Price"}</button>}
+      />
+      {showForm && (
+        <form onSubmit={submit} className="mb-6 grid gap-4 rounded-xl border border-line bg-white p-5 shadow-panel md:grid-cols-3">
+          <div>
+            <label className="mb-1 block text-xs font-bold text-ink/60">Product *</label>
+            <select value={form.productId} onChange={f("productId")} className={selectCls} required>
+              <option value="">— select product —</option>
+              {opts.products.map((p) => <option key={p.id} value={p.id}>{p.sku ?? p.code} — {p.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-bold text-ink/60">Price list name *</label>
+            <input value={form.name} onChange={f("name")} className={inputCls} placeholder="e.g. Standard GHS" required />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-bold text-ink/60">Unit price (GHS) *</label>
+            <input type="number" step="0.01" min="0" value={form.unitPrice} onChange={f("unitPrice")} className={inputCls} placeholder="0.00" required />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-bold text-ink/60">Customer group</label>
+            <select value={form.customerGroupId} onChange={f("customerGroupId")} className={selectCls}>
+              <option value="">All customer groups</option>
+              {opts.customerGroups.map((g) => <option key={g.id} value={g.id}>{g.code} — {g.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-bold text-ink/60">Branch</label>
+            <select value={form.branchId} onChange={f("branchId")} className={selectCls}>
+              <option value="">All branches</option>
+              {opts.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-bold text-ink/60">Valid from</label>
+            <input type="date" value={form.validFrom} onChange={f("validFrom")} className={inputCls} />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-bold text-ink/60">Valid to (leave blank = no expiry)</label>
+            <input type="date" value={form.validTo} onChange={f("validTo")} className={inputCls} />
+          </div>
+          {error && <p className="col-span-full text-sm text-red-600">{error}</p>}
+          <div className="col-span-full flex gap-3">
+            <button type="submit" disabled={submitting} className="app-button-primary disabled:opacity-50">{submitting ? "Saving…" : "Create price list"}</button>
+            <button type="button" onClick={() => setShowForm(false)} className="app-button-secondary">Cancel</button>
+          </div>
+        </form>
+      )}
+      <DataTable
+        columns={[
+          { key: "name", label: "Name" },
+          { key: "product", label: "Product", render: (r) => { const p = r.product as Record<string, unknown>; return p ? `${p.sku ?? p.code ?? ""} — ${p.name ?? ""}` : "—"; } },
+          { key: "unitPrice", label: "Unit Price (GHS)", render: (r) => Number(r.unitPrice ?? 0).toLocaleString("en-GH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) },
+          { key: "customerGroup", label: "Customer Group", render: (r) => { const g = r.customerGroup as Record<string, unknown>; return g ? `${g.code} — ${g.name}` : "All"; } },
+          { key: "branch", label: "Branch", render: (r) => { const b = r.branch as Record<string, unknown>; return (b?.name as string) ?? "All"; } },
+          { key: "validFrom", label: "Valid From", render: (r) => fmt(r.validFrom as string) },
+          { key: "validTo", label: "Valid To", render: (r) => r.validTo ? fmt(r.validTo as string) : "No expiry" },
+          { key: "status", label: "Status" },
+        ]}
+        rows={rows}
+        loading={loading}
+        empty="No price lists configured. Click 'New Price' to create one."
+      />
     </AppShell>
   );
 }
