@@ -307,6 +307,13 @@ jobs:
           # HR-D failed mid-run — mark rolled-back so it is never re-attempted.
           $MYSQL -e "INSERT INTO \`_prisma_migrations\` (id,checksum,migration_name,started_at,rolled_back_at,applied_steps_count) VALUES (UUID(),'','20260801030000_hr_d_disciplinary_grievance',NOW(3),NOW(3),0) ON DUPLICATE KEY UPDATE rolled_back_at=COALESCE(rolled_back_at,NOW(3)),applied_steps_count=0,finished_at=NULL;" 2>&1 || true
 
+          # Pre-fetch ALL migration statuses in ONE query — eliminates per-migration
+          # DB connections that trigger Hostinger's connection rate limit (ERROR 2002).
+          sleep 2
+          MIGS_APPLIED=$($MYSQL -N -e "SELECT COALESCE(GROUP_CONCAT(migration_name SEPARATOR '|'),'') FROM \`_prisma_migrations\` WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL AND applied_steps_count>0;" 2>/dev/null || echo "")
+          sleep 1
+          MIGS_ROLLEDBACK=$($MYSQL -N -e "SELECT COALESCE(GROUP_CONCAT(migration_name SEPARATOR '|'),'') FROM \`_prisma_migrations\` WHERE rolled_back_at IS NOT NULL;" 2>/dev/null || echo "")
+
           echo "--- Applying pending migrations ---"
           APPLIED=0; FAILED=0
 
@@ -314,21 +321,21 @@ jobs:
             MIG_NAME=$(basename "$(dirname "$SQL_FILE")")
             echo "$MIG_NAME" | grep -qE '^[0-9]{14}_' || continue
 
-            STATUS=$($MYSQL -N -e "SELECT COALESCE((SELECT CASE WHEN finished_at IS NOT NULL AND rolled_back_at IS NULL AND applied_steps_count>0 THEN 'applied' WHEN rolled_back_at IS NOT NULL THEN 'rolled_back' ELSE 'pending' END FROM \`_prisma_migrations\` WHERE migration_name='$MIG_NAME'),'not_found');" 2>/dev/null || echo "error")
-
-            case "$STATUS" in
-              applied)     echo "  [ok]   $MIG_NAME"; continue ;;
-              rolled_back) echo "  [skip] $MIG_NAME (rolled-back)"; continue ;;
-            esac
+            # Pure shell match against pre-fetched pipe-separated lists — no DB connection
+            case "|${MIGS_APPLIED}|"    in *"|${MIG_NAME}|"*) echo "  [ok]   $MIG_NAME"; continue ;; esac
+            case "|${MIGS_ROLLEDBACK}|" in *"|${MIG_NAME}|"*) echo "  [skip] $MIG_NAME (rolled-back)"; continue ;; esac
 
             echo "  [run]  $MIG_NAME"
+            sleep 1
             if $MYSQL < "$SQL_FILE" 2>&1; then
+              sleep 1
               $MYSQL -e "INSERT INTO \`_prisma_migrations\` (id,checksum,migration_name,started_at,finished_at,applied_steps_count) VALUES (UUID(),'','$MIG_NAME',NOW(3),NOW(3),1) ON DUPLICATE KEY UPDATE finished_at=NOW(3),applied_steps_count=1,rolled_back_at=NULL;" 2>&1 || true
               echo "  [done] $MIG_NAME"
               APPLIED=$((APPLIED + 1))
             else
               echo "  [FAIL] $MIG_NAME"
               FAILED=$((FAILED + 1))
+              sleep 1
             fi
           done
 
