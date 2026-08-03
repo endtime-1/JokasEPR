@@ -237,11 +237,14 @@ jobs:
           echo "  start.js: $([ -f "$APP_DIR/start.js" ] && echo EXISTS || echo MISSING)"
 
       - name: Run database migrations
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           APP_DIR="$HOME/domains/jokasfarms.com/nodejs"
           MIGRATIONS_DIR="$APP_DIR/prisma/migrations"
 
-          if [ -f "$APP_DIR/.env" ]; then
+          # Prefer the GitHub secret; fall back to the on-disk .env for local runner runs.
+          if [ -z "$DATABASE_URL" ] && [ -f "$APP_DIR/.env" ]; then
             set -a; . "$APP_DIR/.env"; set +a
           fi
 
