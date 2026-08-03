@@ -701,7 +701,7 @@ export class HRService {
   }
 
   async createPayrollRecord(user: AuthenticatedUser, dto: CreatePayrollRecordDto, ctx: RequestContext) {
-    const employee = await this.prisma.employee.findFirst({ where: { id: dto.employeeId, companyId: user.companyId, deletedAt: null }, select: { id: true, fullName: true, code: true, basicSalary: true } });
+    const employee = await this.prisma.employee.findFirst({ where: { id: dto.employeeId, companyId: user.companyId, deletedAt: null }, select: { id: true, fullName: true, code: true, basicSalary: true, branchId: true } });
     if (!employee) throw new NotFoundException("Employee not found");
 
     const allowances = dto.allowances ?? 0;
@@ -1242,7 +1242,7 @@ export class HRService {
   }
 
   async prefillPayroll(user: AuthenticatedUser, employeeId: string, period: string) {
-    const employee = await this.prisma.employee.findFirst({ where: { id: employeeId, companyId: user.companyId, deletedAt: null }, select: { id: true, basicSalary: true } });
+    const employee = await this.prisma.employee.findFirst({ where: { id: employeeId, companyId: user.companyId, deletedAt: null }, select: { id: true, fullName: true, code: true, basicSalary: true } });
     if (!employee) throw new NotFoundException("Employee not found");
 
     const [year, month] = period.split("-").map(Number);
@@ -1290,7 +1290,7 @@ export class HRService {
     if (dto.branchId) where.branchId = dto.branchId;
     if (dto.employeeIds?.length) where.id = { in: dto.employeeIds };
 
-    const employees = await this.prisma.employee.findMany({ where, select: { id: true, fullName: true, code: true, basicSalary: true, employeeRoleId: true } });
+    const employees = await this.prisma.employee.findMany({ where, select: { id: true, fullName: true, code: true, basicSalary: true, employeeRoleId: true, branchId: true } });
     const [year, month] = dto.period.split("-").map(Number);
     const periodStart = new Date(year, month - 1, 1);
     const periodEnd = new Date(year, month, 0, 23, 59, 59);
@@ -1864,7 +1864,7 @@ export class HRService {
   }
 
   async createDisciplinaryRecord(user: AuthenticatedUser, dto: CreateDisciplinaryDto, ctx: RequestContext) {
-    const employee = await this.prisma.employee.findFirst({ where: { id: dto.employeeId, companyId: user.companyId, deletedAt: null }, select: { id: true, fullName: true, code: true, basicSalary: true } });
+    const employee = await this.prisma.employee.findFirst({ where: { id: dto.employeeId, companyId: user.companyId, deletedAt: null }, select: { id: true, fullName: true, code: true, basicSalary: true, email: true } });
     if (!employee) throw new NotFoundException("Employee not found");
 
     const row = await this.prisma.disciplinaryRecord.create({
