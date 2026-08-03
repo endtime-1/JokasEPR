@@ -334,8 +334,8 @@ export const submitIncomeEntry = (payload: Record<string, unknown>) =>
 export const submitExpense = (payload: Record<string, unknown>) =>
   apiFetch<ApiEnvelope<unknown>>("/finance/expenses", { method: "POST", body: JSON.stringify(payload) });
 
-export const fetchExpenses = () =>
-  apiFetch<ApiEnvelope<ExpenseRecord[]>>("/finance/expenses?limit=50");
+export const fetchExpenses = (status?: string) =>
+  apiFetch<ApiEnvelope<ExpenseRecord[]>>(`/finance/expenses${status ? `?status=${encodeURIComponent(status)}` : ""}`);
 
 export const submitCustomerPayment = (payload: Record<string, unknown>) =>
   apiFetch<ApiEnvelope<unknown>>("/finance/customer-payments", { method: "POST", body: JSON.stringify(payload) });

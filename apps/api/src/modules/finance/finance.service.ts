@@ -241,19 +241,25 @@ export class FinanceService {
   // ─── Expenses ──────────────────────────────────────────────────────────────
 
   async listExpenses(user: AuthenticatedUser, query: FinanceQueryDto) {
-    const expenses = await this.prisma.expense.findMany({
-      where: {
-        companyId: user.companyId,
-        deletedAt: null,
-        ...(query.branchId ? { branchId: query.branchId } : {}),
-        ...(query.status ? { status: query.status as never } : {}),
-        ...this.dateBetween(query, "expenseDate")
-      },
-      include: { category: { select: { name: true, code: true } }, submittedBy: { select: { fullName: true } }, branch: { select: { name: true } } },
-      orderBy: { expenseDate: "desc" },
-      take: 200
-    });
-    return { data: expenses };
+    const where = {
+      companyId: user.companyId,
+      deletedAt: null,
+      ...(query.branchId ? { branchId: query.branchId } : {}),
+      ...(query.status ? { status: query.status as never } : {}),
+      ...this.dateBetween(query, "expenseDate")
+    };
+    const { take, skip, page, pageSize } = this.pageArgs(query);
+    const [expenses, total] = await Promise.all([
+      this.prisma.expense.findMany({
+        where,
+        include: { category: { select: { name: true, code: true } }, submittedBy: { select: { fullName: true } }, branch: { select: { name: true } } },
+        orderBy: { expenseDate: "desc" },
+        take,
+        skip
+      }),
+      this.prisma.expense.count({ where })
+    ]);
+    return { data: expenses, meta: { total, page, pageSize } };
   }
 
   async getExpense(user: AuthenticatedUser, id: string) {
@@ -320,18 +326,18 @@ export class FinanceService {
   // ─── Revenue ───────────────────────────────────────────────────────────────
 
   async listRevenue(user: AuthenticatedUser, query: FinanceQueryDto) {
-    const revenues = await this.prisma.revenue.findMany({
-      where: {
-        companyId: user.companyId,
-        deletedAt: null,
-        ...(query.branchId ? { branchId: query.branchId } : {}),
-        ...this.dateBetween(query, "revenueDate")
-      },
-      include: { branch: { select: { name: true } } },
-      orderBy: { revenueDate: "desc" },
-      take: 200
-    });
-    return { data: revenues };
+    const where = {
+      companyId: user.companyId,
+      deletedAt: null,
+      ...(query.branchId ? { branchId: query.branchId } : {}),
+      ...this.dateBetween(query, "revenueDate")
+    };
+    const { take, skip, page, pageSize } = this.pageArgs(query);
+    const [revenues, total] = await Promise.all([
+      this.prisma.revenue.findMany({ where, include: { branch: { select: { name: true } } }, orderBy: { revenueDate: "desc" }, take, skip }),
+      this.prisma.revenue.count({ where })
+    ]);
+    return { data: revenues, meta: { total, page, pageSize } };
   }
 
   async createRevenue(user: AuthenticatedUser, dto: CreateRevenueDto, ctx: RequestContext) {
@@ -360,13 +366,13 @@ export class FinanceService {
   // ─── Supplier Payments ─────────────────────────────────────────────────────
 
   async listSupplierPayments(user: AuthenticatedUser, query: FinanceQueryDto) {
-    const payments = await this.prisma.supplierPayment.findMany({
-      where: { companyId: user.companyId, deletedAt: null, ...this.dateBetween(query, "paymentDate") },
-      include: { bankAccount: { select: { accountName: true, bankName: true } } },
-      orderBy: { paymentDate: "desc" },
-      take: 200
-    });
-    return { data: payments };
+    const where = { companyId: user.companyId, deletedAt: null, ...this.dateBetween(query, "paymentDate") };
+    const { take, skip, page, pageSize } = this.pageArgs(query);
+    const [payments, total] = await Promise.all([
+      this.prisma.supplierPayment.findMany({ where, include: { bankAccount: { select: { accountName: true, bankName: true } } }, orderBy: { paymentDate: "desc" }, take, skip }),
+      this.prisma.supplierPayment.count({ where })
+    ]);
+    return { data: payments, meta: { total, page, pageSize } };
   }
 
   async createSupplierPayment(user: AuthenticatedUser, dto: CreateSupplierPaymentDto, ctx: RequestContext) {
@@ -393,13 +399,13 @@ export class FinanceService {
   // ─── Customer Payments ─────────────────────────────────────────────────────
 
   async listCustomerPayments(user: AuthenticatedUser, query: FinanceQueryDto) {
-    const payments = await this.prisma.customerPayment.findMany({
-      where: { companyId: user.companyId, deletedAt: null, ...this.dateBetween(query, "paymentDate") },
-      include: { bankAccount: { select: { accountName: true, bankName: true } } },
-      orderBy: { paymentDate: "desc" },
-      take: 200
-    });
-    return { data: payments };
+    const where = { companyId: user.companyId, deletedAt: null, ...this.dateBetween(query, "paymentDate") };
+    const { take, skip, page, pageSize } = this.pageArgs(query);
+    const [payments, total] = await Promise.all([
+      this.prisma.customerPayment.findMany({ where, include: { bankAccount: { select: { accountName: true, bankName: true } } }, orderBy: { paymentDate: "desc" }, take, skip }),
+      this.prisma.customerPayment.count({ where })
+    ]);
+    return { data: payments, meta: { total, page, pageSize } };
   }
 
   async createCustomerPayment(user: AuthenticatedUser, dto: CreateCustomerPaymentDto, ctx: RequestContext) {
@@ -426,13 +432,13 @@ export class FinanceService {
   // ─── Payroll ───────────────────────────────────────────────────────────────
 
   async listPayroll(user: AuthenticatedUser, query: FinanceQueryDto) {
-    const records = await this.prisma.payrollRecord.findMany({
-      where: { companyId: user.companyId, deletedAt: null, ...(query.status ? { status: query.status as never } : {}) },
-      include: { branch: { select: { name: true } } },
-      orderBy: [{ period: "desc" }, { employeeName: "asc" }],
-      take: 200
-    });
-    return { data: records };
+    const where = { companyId: user.companyId, deletedAt: null, ...(query.status ? { status: query.status as never } : {}) };
+    const { take, skip, page, pageSize } = this.pageArgs(query, 100);
+    const [records, total] = await Promise.all([
+      this.prisma.payrollRecord.findMany({ where, include: { branch: { select: { name: true } } }, orderBy: [{ period: "desc" }, { employeeName: "asc" }], take, skip }),
+      this.prisma.payrollRecord.count({ where })
+    ]);
+    return { data: records, meta: { total, page, pageSize } };
   }
 
   async createPayrollRecord(user: AuthenticatedUser, dto: CreatePayrollRecordDto, ctx: RequestContext) {
@@ -492,18 +498,18 @@ export class FinanceService {
   // ─── Petty Cash ────────────────────────────────────────────────────────────
 
   async listPettyCash(user: AuthenticatedUser, query: FinanceQueryDto) {
-    const transactions = await this.prisma.pettyCashTransaction.findMany({
-      where: {
-        companyId: user.companyId,
-        deletedAt: null,
-        ...(query.branchId ? { branchId: query.branchId } : {}),
-        ...this.dateBetween(query, "transactionDate")
-      },
-      include: { category: { select: { name: true } }, branch: { select: { name: true } } },
-      orderBy: { transactionDate: "desc" },
-      take: 200
-    });
-    return { data: transactions };
+    const where = {
+      companyId: user.companyId,
+      deletedAt: null,
+      ...(query.branchId ? { branchId: query.branchId } : {}),
+      ...this.dateBetween(query, "transactionDate")
+    };
+    const { take, skip, page, pageSize } = this.pageArgs(query);
+    const [transactions, total] = await Promise.all([
+      this.prisma.pettyCashTransaction.findMany({ where, include: { category: { select: { name: true } }, branch: { select: { name: true } } }, orderBy: { transactionDate: "desc" }, take, skip }),
+      this.prisma.pettyCashTransaction.count({ where })
+    ]);
+    return { data: transactions, meta: { total, page, pageSize } };
   }
 
   async createPettyCashTransaction(user: AuthenticatedUser, dto: CreatePettyCashTransactionDto, ctx: RequestContext) {
@@ -543,18 +549,18 @@ export class FinanceService {
   // ─── Journal Entries ───────────────────────────────────────────────────────
 
   async listJournalEntries(user: AuthenticatedUser, query: FinanceQueryDto) {
-    const entries = await this.prisma.journalEntry.findMany({
-      where: {
-        companyId: user.companyId,
-        deletedAt: null,
-        ...(query.status ? { status: query.status as never } : {}),
-        ...this.dateBetween(query, "entryDate")
-      },
-      include: { lines: { include: { account: { select: { code: true, name: true } } } } },
-      orderBy: { entryDate: "desc" },
-      take: 100
-    });
-    return { data: entries };
+    const where = {
+      companyId: user.companyId,
+      deletedAt: null,
+      ...(query.status ? { status: query.status as never } : {}),
+      ...this.dateBetween(query, "entryDate")
+    };
+    const { take, skip, page, pageSize } = this.pageArgs(query, 50);
+    const [entries, total] = await Promise.all([
+      this.prisma.journalEntry.findMany({ where, include: { lines: { include: { account: { select: { code: true, name: true } } } } }, orderBy: { entryDate: "desc" }, take, skip }),
+      this.prisma.journalEntry.count({ where })
+    ]);
+    return { data: entries, meta: { total, page, pageSize } };
   }
 
   async createJournalEntry(user: AuthenticatedUser, dto: CreateJournalEntryDto, ctx: RequestContext) {
@@ -829,5 +835,11 @@ export class FinanceService {
       ...(query.endDate ? { lte: new Date(query.endDate) } : {})
     };
     return result;
+  }
+
+  private pageArgs(query: FinanceQueryDto, defaultSize = 50) {
+    const pageSize = Math.min(query.pageSize ?? defaultSize, 200);
+    const page = Math.max(query.page ?? 1, 1);
+    return { take: pageSize, skip: (page - 1) * pageSize, page, pageSize };
   }
 }

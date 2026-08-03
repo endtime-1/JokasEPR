@@ -645,8 +645,12 @@ export function FinanceDashboardPage() {
 
 // ─── Expense List ─────────────────────────────────────────────────────────────
 
+const EXPENSE_PAGE_SIZE = 50;
+
 export function ExpenseListPage() {
   const [expenses, setExpenses] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/finance/expenses")?.data ?? []);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [status, setStatus] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -657,19 +661,22 @@ export function ExpenseListPage() {
   const [rejecting, setRejecting] = useState(false);
   const [loadError, setLoadError] = useState("");
 
-  function load() {
+  function load(p = page) {
     setLoadError("");
     const params = new URLSearchParams();
     if (status) params.set("status", status);
     if (startDate) params.set("startDate", startDate);
     if (endDate) params.set("endDate", endDate);
-    apiFetch<ApiEnvelope<Record<string, unknown>[]>>(`/finance/expenses?${params}`)
-      .then((r) => { const fresh = r.data ?? []; setExpenses((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
+    params.set("page", String(p));
+    params.set("pageSize", String(EXPENSE_PAGE_SIZE));
+    apiFetch<{ data: Record<string, unknown>[]; meta?: { total: number } }>(`/finance/expenses?${params}`)
+      .then((r) => { const fresh = r.data ?? []; setExpenses((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); setTotal(r.meta?.total ?? fresh.length); })
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load expenses."))
       .finally(() => setLoading(false));
   }
 
-  useEffect(() => { load(); }, [status, startDate, endDate]);
+  useEffect(() => { setPage(1); load(1); }, [status, startDate, endDate]);
+  useEffect(() => { load(page); }, [page]);
 
   async function handleApprove(id: string) {
     setActionErr("");
@@ -740,6 +747,10 @@ export function ExpenseListPage() {
         rows={expenses}
         loading={loading}
         empty="No expenses found."
+        totalCount={total}
+        serverPage={page}
+        serverPageSize={EXPENSE_PAGE_SIZE}
+        onPageChange={setPage}
       />
     </FinanceShell>
   );

@@ -43,24 +43,32 @@ function ExpenseRow({ item }: { item: ExpenseRecord }) {
   );
 }
 
+const FILTER_TABS: Array<{ key: string; label: string }> = [
+  { key: "", label: "All" },
+  { key: "PENDING_APPROVAL", label: "Needs Approval" },
+  { key: "APPROVED", label: "Approved" },
+  { key: "REJECTED", label: "Rejected" },
+];
+
 export function ExpenseListScreen() {
   const navigation = useNavigation<any>();
   const [expenses, setExpenses] = useState<ExpenseRecord[]>([]);
   const [loading,  setLoading]  = useState(true);
   const [error,    setError]    = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const r = await fetchExpenses();
+      const r = await fetchExpenses(statusFilter || undefined);
       setExpenses((r.data as ExpenseRecord[]) ?? []);
     } catch {
       setError("Could not load expenses. Pull down to retry.");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [statusFilter]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -79,6 +87,15 @@ export function ExpenseListScreen() {
         <TouchableOpacity style={styles.newBtn} onPress={() => navigation.navigate("ExpenseNew")}>
           <Text style={styles.newBtnText}>＋ New</Text>
         </TouchableOpacity>
+      </View>
+
+      {/* Filter tabs */}
+      <View style={styles.filterRow}>
+        {FILTER_TABS.map((tab) => (
+          <TouchableOpacity key={tab.key} style={[styles.filterTab, statusFilter === tab.key && styles.filterTabActive]} onPress={() => setStatusFilter(tab.key)}>
+            <Text style={[styles.filterTabText, statusFilter === tab.key && styles.filterTabTextActive]}>{tab.label}</Text>
+          </TouchableOpacity>
+        ))}
       </View>
 
       {loading && !expenses.length ? (
@@ -110,6 +127,12 @@ export function ExpenseListScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   list: { padding: spacing.lg, paddingBottom: spacing.xxxl },
+
+  filterRow: { flexDirection: "row", paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, gap: spacing.sm, backgroundColor: colors.bgCard, borderBottomWidth: 1, borderBottomColor: colors.border },
+  filterTab: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: radius.full, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.bg },
+  filterTabActive: { backgroundColor: colors.brand, borderColor: colors.brand },
+  filterTabText: { fontSize: font.size.xs, fontWeight: font.weight.medium, color: colors.inkLight },
+  filterTabTextActive: { color: colors.white },
 
   header: {
     flexDirection: "row",

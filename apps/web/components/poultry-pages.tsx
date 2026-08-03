@@ -1290,6 +1290,19 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
     }
   }, [options.batches]);
 
+  // Auto-prefill opening bird count from previous day's closing count (daily records only).
+  useEffect(() => {
+    if (type !== "daily" || editingId || !form.flockBatchId || !form.recordDate) return;
+    let cancelled = false;
+    apiFetch<{ data: { openingBirdCount: number; source: string } }>(
+      `/poultry/daily-records/prefill?flockBatchId=${encodeURIComponent(form.flockBatchId)}&date=${encodeURIComponent(form.recordDate)}`
+    ).then((res) => {
+      if (cancelled) return;
+      setForm((prev) => ({ ...prev, openingBirdCount: String(res.data.openingBirdCount) }));
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [type, form.flockBatchId, form.recordDate, editingId]);
+
   function startEdit(row: Record<string, any>) {
     const pre: Record<string, string> = { flockBatchId: row.flockBatchId ?? "", penId: row.penId ?? "", poultryHouseId: "" };
     // Restore the house filter so the pen dropdown shows the right options when editing

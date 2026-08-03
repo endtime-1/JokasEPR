@@ -573,6 +573,31 @@ export class PoultryService {
     return { data };
   }
 
+  async getDailyRecordPrefill(user: AuthenticatedUser, flockBatchId: string, date: string) {
+    const batch = await this.getBatchContext(user, flockBatchId);
+    const targetDate = new Date(date);
+    const prevDate = new Date(targetDate);
+    prevDate.setDate(prevDate.getDate() - 1);
+
+    const prev = await this.prisma.dailyPoultryRecord.findFirst({
+      where: { companyId: user.companyId, flockBatchId: batch.id, recordDate: prevDate },
+      select: { openingBirdCount: true, mortalityCount: true, culledCount: true },
+    });
+
+    if (prev) {
+      const closing = Math.max(0, (prev.openingBirdCount ?? 0) - (prev.mortalityCount ?? 0) - (prev.culledCount ?? 0));
+      return { data: { openingBirdCount: closing, source: "previous_day" } };
+    }
+
+    // Fall back to batch opening count minus all mortality recorded so far
+    const { _sum } = await this.prisma.mortalityRecord.aggregate({
+      where: { companyId: user.companyId, flockBatchId: batch.id, deletedAt: null },
+      _sum: { birdCount: true },
+    });
+    const fallback = Math.max(0, batch.openingBirdCount - Number(_sum.birdCount ?? 0));
+    return { data: { openingBirdCount: fallback, source: "batch_total" } };
+  }
+
   async createDailyRecord(user: AuthenticatedUser, dto: CreateDailyPoultryRecordDto, context: RequestContext) {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
     const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);

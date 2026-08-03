@@ -164,6 +164,12 @@ export class PoultryController {
     return this.poultryService.listRecords(user, "costs", query);
   }
 
+  @Get("daily-records/prefill")
+  @RequirePermissions(PERMISSIONS.POULTRY_READ)
+  dailyPrefill(@CurrentUser() user: AuthenticatedUser, @Query("flockBatchId") flockBatchId: string, @Query("date") date: string) {
+    return this.poultryService.getDailyRecordPrefill(user, flockBatchId, date);
+  }
+
   @Post("daily-records")
   @RequirePermissions(PERMISSIONS.POULTRY_RECORD)
   createDaily(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateDailyPoultryRecordDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
