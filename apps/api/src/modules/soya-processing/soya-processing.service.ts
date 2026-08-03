@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { LookupCacheService } from "../../common/services/lookup-cache.service";
+import { nextRef } from "../../common/next-ref";
 import {
   CreateSoyaBeanIntakeDto,
   CreateSoyaInternalTransferDto,
@@ -197,7 +198,7 @@ export class SoyaProcessingService {
     if (!beanInventory || Number(beanInventory.quantityOnHand) < dto.beansUsedKg) {
       throw new BadRequestException("Soya bean stock is not sufficient for this processing batch.");
     }
-    const batchNumber = dto.batchNumber?.toUpperCase() ?? (await this.nextDocumentNumber(user.companyId, "SPB", this.prisma.soyaProcessingBatch));
+    const batchNumber = dto.batchNumber?.toUpperCase() ?? (await nextRef(this.prisma, user.companyId, "SPB"));
     const rawBeanCost = await this.rawBeanCost(user.companyId, dto.rawWarehouseId, dto.beanProductId, dto.beansUsedKg);
     const totalCost = rawBeanCost + (dto.laborCost ?? 0) + (dto.packagingCost ?? 0) + (dto.overheadCost ?? 0);
     const oilCost = totalCost * 0.42;
@@ -353,11 +354,6 @@ export class SoyaProcessingService {
   private async rawBeanCost(companyId: string, warehouseId: string, productId: string, quantityKg: number) {
     const intake = await this.prisma.soyaBeanIntake.findFirst({ where: { companyId, warehouseId, productId, deletedAt: null }, orderBy: { receivedAt: "desc" } });
     return quantityKg * Number(intake?.unitCost ?? 0);
-  }
-
-  private async nextDocumentNumber(companyId: string, prefix: string, model: { count: (args: { where: { companyId: string } }) => Promise<number> }) {
-    const count = await model.count({ where: { companyId } });
-    return `${prefix}-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}`;
   }
 
   private intakeWhere(user: AuthenticatedUser, query: SoyaQueryDto) {

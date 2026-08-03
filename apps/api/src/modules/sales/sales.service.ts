@@ -3,6 +3,7 @@ import { AuthenticatedUser } from "@jokas/shared";
 import { Prisma, SalesReturnStatus } from "@prisma/client";
 import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { nextRef } from "../../common/next-ref";
 import {
   CreateCustomerDto,
   CreateCustomerGroupDto,
@@ -210,7 +211,7 @@ export class SalesService {
     if (totalAmount < 0) throw new BadRequestException("Sales order total cannot be negative.");
 
     await this.assertCreditLimit(customer.id, totalAmount);
-    const orderNumber = await this.nextDocumentNumber(user.companyId, "SO", this.prisma.salesOrder);
+    const orderNumber = await nextRef(this.prisma, user.companyId, "SO");
     const data = await this.prisma.salesOrder.create({
       data: {
         companyId: user.companyId,
@@ -269,7 +270,7 @@ export class SalesService {
           branchId: order.branchId,
           customerId: order.customerId,
           salesOrderId: order.id,
-          invoiceNumber: await this.nextDocumentNumber(user.companyId, "INV", tx.invoice),
+          invoiceNumber: await nextRef(tx, user.companyId, "INV"),
           invoiceDate: new Date(),
           dueDate: this.daysFromNow(14),
           status: "ISSUED",
@@ -287,7 +288,7 @@ export class SalesService {
           branchId: order.branchId,
           salesOrderId: order.id,
           warehouseId: order.warehouseId,
-          deliveryNumber: await this.nextDocumentNumber(user.companyId, "DN", tx.deliveryNote),
+          deliveryNumber: await nextRef(tx, user.companyId, "DN"),
           status: "RELEASED",
           releasedById: user.id,
           createdById: user.id
@@ -323,7 +324,7 @@ export class SalesService {
           branchId: customer.branchId,
           customerId: customer.id,
           invoiceId: invoice?.id,
-          paymentNumber: await this.nextDocumentNumber(user.companyId, "PAY", tx.payment),
+          paymentNumber: await nextRef(tx, user.companyId, "PAY"),
           paymentDate: dto.paymentDate ? new Date(dto.paymentDate) : new Date(),
           amount: dto.amount,
           method: dto.method,
@@ -348,7 +349,7 @@ export class SalesService {
           customerId: customer.id,
           invoiceId: invoice?.id,
           paymentId: payment.id,
-          receiptNumber: await this.nextDocumentNumber(user.companyId, "RCT", tx.receipt),
+          receiptNumber: await nextRef(tx, user.companyId, "RCT"),
           receiptDate: new Date(),
           amount: dto.amount,
           issuedById: user.id,
@@ -739,11 +740,6 @@ export class SalesService {
 
   private assertWarehouseAccess(user: AuthenticatedUser, warehouseId: string) {
     if (!user.hasGlobalAccess && !user.warehouseIds.includes(warehouseId)) throw new ForbiddenException("You do not have access to this warehouse.");
-  }
-
-  private async nextDocumentNumber(companyId: string, prefix: string, model: { count: (args: { where: { companyId: string } }) => Promise<number> }) {
-    const count = await model.count({ where: { companyId } });
-    return `${prefix}-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}`;
   }
 
   private daysFromNow(days: number) {

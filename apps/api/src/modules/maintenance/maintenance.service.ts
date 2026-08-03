@@ -322,10 +322,21 @@ export class MaintenanceService {
   }
 
   private async consumeSparePartTx(tx: Prisma.TransactionClient, user: AuthenticatedUser, item: { id: string; branchId: string; warehouseId: string; productionSiteId: string | null; productId: string; uomId: string }, quantity: number, usageId: string, unitCost: number) {
-    const batch = await tx.stockBatch.findFirst({ where: { companyId: user.companyId, inventoryItemId: item.id, quantityRemaining: { gte: quantity }, deletedAt: null }, orderBy: [{ expiryDate: "asc" }, { createdAt: "asc" }] });
+    let remaining = quantity;
+    const batches = await tx.stockBatch.findMany({
+      where: { companyId: user.companyId, inventoryItemId: item.id, deletedAt: null, quantityRemaining: { gt: 0 } },
+      orderBy: [{ expiryDate: "asc" }, { createdAt: "asc" }],
+    });
+    for (const batch of batches) {
+      if (remaining <= 0) break;
+      const take = Math.min(remaining, Number(batch.quantityRemaining));
+      const updated = await tx.stockBatch.updateMany({ where: { id: batch.id, quantityRemaining: { gte: take } }, data: { quantityRemaining: { decrement: take } } });
+      if (updated.count === 0) continue;
+      await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: item.branchId, productId: item.productId, inventoryItemId: item.id, stockBatchId: batch.id, fromWarehouseId: item.warehouseId, warehouseId: item.warehouseId, productionSiteId: item.productionSiteId, uomId: item.uomId, movementType: "ADJUSTMENT_OUT", quantity: take, unitCost: Number(batch.unitCost ?? unitCost), referenceType: "SparePartUsage", referenceId: usageId, notes: "Spare part issued for maintenance", createdById: user.id } });
+      remaining -= take;
+    }
+    if (remaining > 0) throw new BadRequestException("Insufficient stock across batches for spare part consumption.");
     await tx.inventoryItem.update({ where: { id: item.id }, data: { quantityOnHand: { decrement: quantity }, updatedById: user.id } });
-    if (batch) await tx.stockBatch.update({ where: { id: batch.id }, data: { quantityRemaining: { decrement: quantity } } });
-    await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: item.branchId, productId: item.productId, inventoryItemId: item.id, stockBatchId: batch?.id, fromWarehouseId: item.warehouseId, warehouseId: item.warehouseId, productionSiteId: item.productionSiteId, uomId: item.uomId, movementType: "ADJUSTMENT_OUT", quantity, unitCost, referenceType: "SparePartUsage", referenceId: usageId, notes: "Spare part issued for maintenance", createdById: user.id } });
   }
 
   private machineWhere(user: AuthenticatedUser, query: MaintenanceQueryDto) {

@@ -3,6 +3,7 @@ import { AuthenticatedUser } from "@jokas/shared";
 import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { LookupCacheService } from "../../common/services/lookup-cache.service";
+import { nextRef } from "../../common/next-ref";
 import {
   ApproveExpenseDto,
   ApprovePayrollDto,
@@ -26,10 +27,6 @@ type RequestContext = { ipAddress?: string; userAgent?: string };
 
 const LARGE_EXPENSE_THRESHOLD = 5000;
 
-function nextRef(prefix: string, count: number) {
-  const year = new Date().getFullYear();
-  return `${prefix}-${year}-${String(count + 1).padStart(4, "0")}`;
-}
 
 function money(v: unknown) {
   return Number(v ?? 0);
@@ -266,8 +263,7 @@ export class FinanceService {
   }
 
   async createExpense(user: AuthenticatedUser, dto: CreateExpenseDto, ctx: RequestContext) {
-    const count = await this.prisma.expense.count({ where: { companyId: user.companyId } });
-    const reference = nextRef("EXP", count);
+    const reference = await nextRef(this.prisma, user.companyId, "EXP");
     const requiresApproval = dto.amount >= LARGE_EXPENSE_THRESHOLD;
     const status = requiresApproval ? "PENDING_APPROVAL" : "PENDING";
 
@@ -339,8 +335,7 @@ export class FinanceService {
   }
 
   async createRevenue(user: AuthenticatedUser, dto: CreateRevenueDto, ctx: RequestContext) {
-    const count = await this.prisma.revenue.count({ where: { companyId: user.companyId } });
-    const reference = nextRef("REV", count);
+    const reference = await nextRef(this.prisma, user.companyId, "REV");
     const revenue = await this.prisma.revenue.create({
       data: {
         companyId: user.companyId,
@@ -375,8 +370,7 @@ export class FinanceService {
   }
 
   async createSupplierPayment(user: AuthenticatedUser, dto: CreateSupplierPaymentDto, ctx: RequestContext) {
-    const count = await this.prisma.supplierPayment.count({ where: { companyId: user.companyId } });
-    const reference = nextRef("SP", count);
+    const reference = await nextRef(this.prisma, user.companyId, "SP");
     const payment = await this.prisma.supplierPayment.create({
       data: {
         companyId: user.companyId,
@@ -409,8 +403,7 @@ export class FinanceService {
   }
 
   async createCustomerPayment(user: AuthenticatedUser, dto: CreateCustomerPaymentDto, ctx: RequestContext) {
-    const count = await this.prisma.customerPayment.count({ where: { companyId: user.companyId } });
-    const reference = nextRef("CP", count);
+    const reference = await nextRef(this.prisma, user.companyId, "CP");
     const payment = await this.prisma.customerPayment.create({
       data: {
         companyId: user.companyId,
@@ -443,8 +436,7 @@ export class FinanceService {
   }
 
   async createPayrollRecord(user: AuthenticatedUser, dto: CreatePayrollRecordDto, ctx: RequestContext) {
-    const count = await this.prisma.payrollRecord.count({ where: { companyId: user.companyId } });
-    const reference = nextRef("PAY", count);
+    const reference = await nextRef(this.prisma, user.companyId, "PAY");
     const gross = (dto.basicSalary ?? 0) + (dto.allowances ?? 0) - (dto.deductions ?? 0);
     const net = gross - (dto.taxDeduction ?? 0) - (dto.ssnit ?? 0);
 
@@ -515,8 +507,7 @@ export class FinanceService {
   }
 
   async createPettyCashTransaction(user: AuthenticatedUser, dto: CreatePettyCashTransactionDto, ctx: RequestContext) {
-    const count = await this.prisma.pettyCashTransaction.count({ where: { companyId: user.companyId } });
-    const reference = nextRef("PCT", count);
+    const reference = await nextRef(this.prisma, user.companyId, "PCT");
 
     const last = await this.prisma.pettyCashTransaction.findFirst({
       where: { companyId: user.companyId, deletedAt: null, ...(dto.branchId ? { branchId: dto.branchId } : {}) },
@@ -571,8 +562,7 @@ export class FinanceService {
     const totalCredit = dto.lines.reduce((s, l) => s + (l.credit ?? 0), 0);
     if (Math.abs(totalDebit - totalCredit) > 0.01) throw new BadRequestException("Debits must equal credits");
 
-    const count = await this.prisma.journalEntry.count({ where: { companyId: user.companyId } });
-    const reference = nextRef("JE", count);
+    const reference = await nextRef(this.prisma, user.companyId, "JE");
 
     const entry = await this.prisma.journalEntry.create({
       data: {

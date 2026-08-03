@@ -3,6 +3,7 @@ import { AuthenticatedUser } from "@jokas/shared";
 import { Prisma } from "@prisma/client";
 import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { nextRef } from "../../common/next-ref";
 import {
   AdjustTargetItemDto,
   ApproveMarketTargetDto,
@@ -192,8 +193,7 @@ export class MarketPlanningService {
     if (dto.branchId) this.assertBranchAccess(user, dto.branchId);
     if (dto.productionSiteId) this.assertProductionSiteAccess(user, dto.productionSiteId);
 
-    const count = await this.prisma.marketTarget.count({ where: { companyId: user.companyId } });
-    const targetNumber = await this.nextDocumentNumber(user.companyId, "MT", count);
+    const targetNumber = await nextRef(this.prisma, user.companyId, "MT");
     const items = await Promise.all(
       dto.items.map(async (item) => {
         const product = await this.getProduct(user.companyId, item.productId);
@@ -303,8 +303,7 @@ export class MarketPlanningService {
 
     const items = await this.prisma.marketTargetItem.findMany({ where: { companyId: user.companyId, marketTargetId: id, deletedAt: null } });
     if (!items.length) throw new BadRequestException("Cannot approve a target without target items.");
-    const count = await this.prisma.productionPlan.count({ where: { companyId: user.companyId } });
-    const planNumber = await this.nextDocumentNumber(user.companyId, "PP", count);
+    const planNumber = await nextRef(this.prisma, user.companyId, "PP");
     const totalPlannedKg = items.reduce((sum, item) => sum + num(item.targetQuantityKg), 0);
 
     const plan = await this.prisma.$transaction(async (tx) => {
@@ -384,8 +383,7 @@ export class MarketPlanningService {
     if (!planItems.length) throw new BadRequestException("Production plan has no items to calculate.");
     const needs = await this.calculateIngredientNeeds(user.companyId, planItems);
     const availability = await this.inventoryAvailability(user.companyId, warehouseId, needs.map((need) => need.rawMaterialId));
-    const count = await this.prisma.materialRequirementPlan.count({ where: { companyId: user.companyId } });
-    const mrpNumber = await this.nextDocumentNumber(user.companyId, "MRP", count);
+    const mrpNumber = await nextRef(this.prisma, user.companyId, "MRP");
 
     const itemRows = needs.map((need) => {
       const availableQuantityKg = availability.get(need.rawMaterialId)?.quantityOnHand ?? 0;
@@ -518,8 +516,7 @@ export class MarketPlanningService {
     if (!recommendation) throw new NotFoundException("Procurement recommendation was not found.");
     if (recommendation.status !== "OPEN") throw new BadRequestException("Only open recommendations can be converted.");
     const product = await this.getProduct(user.companyId, recommendation.rawMaterialId);
-    const count = await this.prisma.purchaseRequest.count({ where: { companyId: user.companyId } });
-    const reference = await this.nextDocumentNumber(user.companyId, "PR", count);
+    const reference = await nextRef(this.prisma, user.companyId, "PR");
     const totalEstimate = num(recommendation.recommendedQuantityKg) * num(recommendation.estimatedUnitCost);
 
     const purchaseRequest = await this.prisma.$transaction(async (tx) => {
@@ -573,12 +570,11 @@ export class MarketPlanningService {
     const shortages = ingredientPlan.filter((item) => item.shortageKg > 0);
     if (shortages.length) throw new BadRequestException({ message: "Raw material stock is not sufficient for this production execution.", shortages });
 
-    const orderCount = await this.prisma.feedProductionOrder.count({ where: { companyId: user.companyId } });
-    const batchCount = await this.prisma.feedProductionBatch.count({ where: { companyId: user.companyId } });
-    const executionCount = await this.prisma.productionExecution.count({ where: { companyId: user.companyId } });
-    const orderNumber = await this.nextDocumentNumber(user.companyId, "FPO", orderCount);
-    const batchNumber = await this.nextDocumentNumber(user.companyId, "FB", batchCount);
-    const executionRef = await this.nextDocumentNumber(user.companyId, "PE", executionCount);
+    const [orderNumber, batchNumber, executionRef] = await Promise.all([
+      nextRef(this.prisma, user.companyId, "FPO"),
+      nextRef(this.prisma, user.companyId, "FB"),
+      nextRef(this.prisma, user.companyId, "PE"),
+    ]);
     const rawMaterialCost = ingredientPlan.reduce((sum, item) => sum + item.quantityKg * item.unitCost, 0);
     const totalCost = rawMaterialCost + (dto.laborCost ?? 0) + (dto.packagingCost ?? 0) + (dto.overheadCost ?? 0);
     const unitCost = totalCost / Math.max(dto.producedQuantityKg, 1);
@@ -1064,11 +1060,6 @@ export class MarketPlanningService {
     if (!user.hasGlobalAccess && !user.warehouseIds.includes(warehouseId)) {
       throw new ForbiddenException("You do not have access to this warehouse.");
     }
-  }
-
-  private async nextDocumentNumber(companyId: string, prefix: string, count: number) {
-    const year = new Date().getFullYear();
-    return `${prefix}-${year}-${String(count + 1).padStart(4, "0")}`;
   }
 
   private async writeAudit(user: AuthenticatedUser, action: any, entityType: string, entityId: string, message: string, context: RequestContext, scope: { branchId?: string; warehouseId?: string; productionSiteId?: string }) {

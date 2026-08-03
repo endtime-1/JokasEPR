@@ -3,6 +3,7 @@ import { AuthenticatedUser } from "@jokas/shared";
 import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { LookupCacheService } from "../../common/services/lookup-cache.service";
+import { nextRef } from "../../common/next-ref";
 import {
   ApproveBatchDto,
   ConditionalPassDto,
@@ -23,11 +24,6 @@ import {
 } from "./dto/quality.dto";
 
 type RequestContext = { ipAddress?: string; userAgent?: string };
-
-function nextRef(prefix: string, count: number) {
-  const year = new Date().getFullYear();
-  return `${prefix}-${year}-${String(count + 1).padStart(4, "0")}`;
-}
 
 function num(v: unknown) {
   return Number(v ?? 0);
@@ -98,15 +94,22 @@ export class QualityService {
 
   async options(user: AuthenticatedUser) {
     const cid = user.companyId;
-    const cacheKey = `quality:opts:${cid}`;
+    const scopeKey = user.hasGlobalAccess ? "g" : user.id;
+    const cacheKey = `quality:opts:${cid}:${scopeKey}`;
     const cached = this.lookupCache.get<object>(cacheKey);
     if (cached) return cached;
+
+    const branchWhere = user.hasGlobalAccess ? { companyId: cid, deletedAt: null } : user.branchIds.length ? { companyId: cid, deletedAt: null, id: { in: user.branchIds } } : { companyId: cid, deletedAt: null, id: "__" };
+    const farmWhere = user.hasGlobalAccess ? { companyId: cid, deletedAt: null } : user.farmIds.length ? { companyId: cid, deletedAt: null, id: { in: user.farmIds } } : { companyId: cid, deletedAt: null, id: "__" };
+    const warehouseWhere = user.hasGlobalAccess ? { companyId: cid, deletedAt: null } : user.warehouseIds.length ? { companyId: cid, deletedAt: null, id: { in: user.warehouseIds } } : { companyId: cid, deletedAt: null, id: "__" };
+    const productionSiteWhere = user.hasGlobalAccess ? { companyId: cid, deletedAt: null } : user.productionSiteIds.length ? { companyId: cid, deletedAt: null, id: { in: user.productionSiteIds } } : { companyId: cid, deletedAt: null, id: "__" };
+
     const [templates, branches, farms, warehouses, productionSites, suppliers, users] = await Promise.all([
       this.prisma.qualityCheckTemplate.findMany({ where: { companyId: cid, deletedAt: null, isActive: true }, select: { id: true, code: true, name: true, checkType: true } }),
-      this.prisma.branch.findMany({ where: { companyId: cid, deletedAt: null }, select: { id: true, code: true, name: true } }),
-      this.prisma.farm.findMany({ where: { companyId: cid, deletedAt: null }, select: { id: true, code: true, name: true } }),
-      this.prisma.warehouse.findMany({ where: { companyId: cid, deletedAt: null }, select: { id: true, code: true, name: true } }),
-      this.prisma.productionSite.findMany({ where: { companyId: cid, deletedAt: null }, select: { id: true, code: true, name: true } }),
+      this.prisma.branch.findMany({ where: branchWhere, select: { id: true, code: true, name: true } }),
+      this.prisma.farm.findMany({ where: farmWhere, select: { id: true, code: true, name: true } }),
+      this.prisma.warehouse.findMany({ where: warehouseWhere, select: { id: true, code: true, name: true } }),
+      this.prisma.productionSite.findMany({ where: productionSiteWhere, select: { id: true, code: true, name: true } }),
       this.prisma.supplier.findMany({ where: { companyId: cid, deletedAt: null, status: "ACTIVE" }, select: { id: true, code: true, name: true } }),
       this.prisma.user.findMany({ where: { companyId: cid, deletedAt: null, status: "ACTIVE" }, select: { id: true, fullName: true } }),
     ]);
@@ -244,8 +247,7 @@ export class QualityService {
 
   async createCheck(user: AuthenticatedUser, dto: CreateQualityCheckDto, ctx: RequestContext) {
     const cid = user.companyId;
-    const count = await this.prisma.qualityCheck.count({ where: { companyId: cid } });
-    const reference = nextRef("QC", count);
+    const reference = await nextRef(this.prisma, cid, "QC");
 
     let totalParameters = 0;
     if (dto.templateId) {
@@ -381,8 +383,7 @@ export class QualityService {
     const existing = await this.prisma.approvedBatch.findFirst({ where: { checkId } });
     if (existing) throw new BadRequestException("Batch already approved");
 
-    const count = await this.prisma.approvedBatch.count({ where: { companyId: user.companyId } });
-    const reference = nextRef("APB", count);
+    const reference = await nextRef(this.prisma, user.companyId, "APB");
 
     const batch = await this.prisma.$transaction(async (tx) => {
       const ab = await tx.approvedBatch.create({
@@ -417,8 +418,7 @@ export class QualityService {
     const existing = await this.prisma.rejectedBatch.findFirst({ where: { checkId } });
     if (existing) throw new BadRequestException("Batch already rejected");
 
-    const count = await this.prisma.rejectedBatch.count({ where: { companyId: user.companyId } });
-    const reference = nextRef("RJB", count);
+    const reference = await nextRef(this.prisma, user.companyId, "RJB");
 
     const batch = await this.prisma.$transaction(async (tx) => {
       const rb = await tx.rejectedBatch.create({
@@ -570,8 +570,7 @@ export class QualityService {
 
   async createCorrectiveAction(user: AuthenticatedUser, dto: CreateCorrectiveActionDto, ctx: RequestContext) {
     const cid = user.companyId;
-    const count = await this.prisma.correctiveAction.count({ where: { companyId: cid } });
-    const reference = nextRef("CA", count);
+    const reference = await nextRef(this.prisma, cid, "CA");
 
     const ca = await this.prisma.correctiveAction.create({
       data: {

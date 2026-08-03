@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { LookupCacheService } from "../../common/services/lookup-cache.service";
+import { nextRef } from "../../common/next-ref";
 import {
   ApproveStockDto,
   CreateInventoryItemDto,
@@ -167,7 +168,7 @@ export class InventoryService {
     if (dto.fromWarehouseId === dto.toWarehouseId) throw new BadRequestException("Source and destination warehouses must be different.");
     const [sourceItem, toWarehouse, product] = await Promise.all([this.requireItem(user.companyId, dto.fromWarehouseId, dto.productId), this.getWarehouse(user.companyId, dto.toWarehouseId), this.getProduct(user.companyId, dto.productId)]);
     await this.assertAvailable(user, sourceItem, dto.quantity, false);
-    const transferNumber = await this.nextDocumentNumber(user.companyId, "STR", this.prisma.stockTransfer);
+    const transferNumber = await nextRef(this.prisma, user.companyId, "STR");
     let data;
     try {
       data = await this.prisma.$transaction(async (tx) => {
@@ -189,10 +190,10 @@ export class InventoryService {
   async createAdjustment(user: AuthenticatedUser, dto: StockAdjustmentDto, context: RequestContext) {
     this.assertWarehouseAccess(user, dto.warehouseId);
     const item = await this.requireItem(user.companyId, dto.warehouseId, dto.productId);
-    const adjustmentNumber = await this.nextDocumentNumber(user.companyId, "ADJ", this.prisma.stockAdjustment);
+    const adjustmentNumber = await nextRef(this.prisma, user.companyId, "ADJ");
     const status = dto.approveNow && user.hasGlobalAccess ? "APPROVED" : "PENDING_APPROVAL";
     const adjustment = await this.prisma.stockAdjustment.create({ data: { companyId: user.companyId, branchId: item.branchId, warehouseId: item.warehouseId, productionSiteId: item.productionSiteId, inventoryItemId: item.id, productId: item.productId, adjustmentNumber, adjustmentType: dto.adjustmentType, quantity: dto.quantity, reason: dto.reason, status, requestedById: user.id, approvedById: status === "APPROVED" ? user.id : undefined, approvedAt: status === "APPROVED" ? new Date() : undefined, createdById: user.id } });
-    await this.prisma.stockApproval.create({ data: { companyId: user.companyId, branchId: item.branchId, approvalNumber: await this.nextDocumentNumber(user.companyId, "SAP", this.prisma.stockApproval), entityType: "StockAdjustment", entityId: adjustment.id, status, requestedById: user.id, approvedById: status === "APPROVED" ? user.id : undefined, approvedAt: status === "APPROVED" ? new Date() : undefined } });
+    await this.prisma.stockApproval.create({ data: { companyId: user.companyId, branchId: item.branchId, approvalNumber: await nextRef(this.prisma, user.companyId, "SAP"), entityType: "StockAdjustment", entityId: adjustment.id, status, requestedById: user.id, approvedById: status === "APPROVED" ? user.id : undefined, approvedAt: status === "APPROVED" ? new Date() : undefined } });
     if (status === "APPROVED") await this.applyAdjustment(user, adjustment.id);
     await this.writeAudit(user, "CREATE", "StockAdjustment", adjustment.id, `Created stock adjustment ${adjustmentNumber}`, context, { branchId: item.branchId, warehouseId: item.warehouseId });
     return { data: adjustment };
@@ -215,7 +216,7 @@ export class InventoryService {
     this.assertWarehouseAccess(user, dto.warehouseId);
     const item = await this.requireItem(user.companyId, dto.warehouseId, dto.productId);
     await this.assertAvailable(user, item, dto.quantity, false);
-    const reservation = await this.prisma.stockReservation.create({ data: { companyId: user.companyId, branchId: item.branchId, warehouseId: item.warehouseId, farmId: dto.farmId, productionSiteId: dto.productionSiteId ?? item.productionSiteId, inventoryItemId: item.id, productId: item.productId, reservationNumber: await this.nextDocumentNumber(user.companyId, "RSV", this.prisma.stockReservation), quantity: dto.quantity, requestedById: user.id, purpose: dto.purpose, expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : undefined, createdById: user.id } });
+    const reservation = await this.prisma.stockReservation.create({ data: { companyId: user.companyId, branchId: item.branchId, warehouseId: item.warehouseId, farmId: dto.farmId, productionSiteId: dto.productionSiteId ?? item.productionSiteId, inventoryItemId: item.id, productId: item.productId, reservationNumber: await nextRef(this.prisma, user.companyId, "RSV"), quantity: dto.quantity, requestedById: user.id, purpose: dto.purpose, expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : undefined, createdById: user.id } });
     await this.writeAudit(user, "CREATE", "StockReservation", reservation.id, "Reserved stock", context, { branchId: item.branchId, warehouseId: item.warehouseId });
     return { data: reservation };
   }
@@ -442,10 +443,6 @@ export class InventoryService {
     if (!user.hasGlobalAccess && !user.warehouseIds.includes(warehouseId)) throw new ForbiddenException("You do not have access to this warehouse.");
   }
 
-  private async nextDocumentNumber(companyId: string, prefix: string, model: { count: (args: { where: { companyId: string } }) => Promise<number> }) {
-    const count = await model.count({ where: { companyId } });
-    return `${prefix}-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}`;
-  }
 
   private sum<T extends Record<string, unknown>>(rows: T[], key: keyof T) {
     return rows.reduce((sum, row) => sum + Number(row[key] ?? 0), 0);

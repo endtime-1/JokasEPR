@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { AuthenticatedUser } from "@jokas/shared";
-import { randomBytes } from "crypto";
 import { Prisma } from "@prisma/client";
+import { nextRef } from "../../common/next-ref";
 import { AuditService } from "../audit/audit.service";
 import { LookupCacheService } from "../../common/services/lookup-cache.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -397,7 +397,7 @@ export class FeedProductionService {
       where: { companyId: user.companyId, formulaId: formula.id, status: "ACTIVE" },
       orderBy: { versionNo: "desc" }
     });
-    const orderNumber = await this.nextDocumentNumber(user.companyId, "FPO", this.prisma.feedProductionOrder);
+    const orderNumber = await nextRef(this.prisma, user.companyId, "FPO");
     const data = await this.prisma.feedProductionOrder.create({
       data: {
         companyId: user.companyId,
@@ -518,7 +518,7 @@ export class FeedProductionService {
     });
     const inventoryMap = new Map(inventoryRecords.map((r) => [r.productId, r]));
 
-    const batchNumber = dto.batchNumber?.toUpperCase() ?? (await this.nextDocumentNumber(user.companyId, "FB", this.prisma.feedProductionBatch));
+    const batchNumber = dto.batchNumber?.toUpperCase() ?? (await nextRef(this.prisma, user.companyId, "FB"));
     const rawMaterialCost = ingredientPlan.ingredients.reduce((sum, ingredient) => sum + ingredient.quantityKg * ingredient.unitCost, 0);
     const totalCost = rawMaterialCost + (dto.laborCost ?? 0) + (dto.packagingCost ?? 0) + (dto.overheadCost ?? 0);
     const unitCost = totalCost / Math.max(dto.producedQuantityKg, 1);
@@ -1363,12 +1363,6 @@ export class FeedProductionService {
       return 0;
     }
     return Number((((expectedSalesValue - totalCost) / expectedSalesValue) * 100).toFixed(2));
-  }
-
-  private async nextDocumentNumber(companyId: string, prefix: string, model: { count: (args: { where: { companyId: string } }) => Promise<number> }) {
-    const count = await model.count({ where: { companyId } });
-    const nonce = randomBytes(2).toString("hex").toUpperCase();
-    return `${prefix}-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}-${nonce}`;
   }
 
   private async getProduct(companyId: string, productId: string) {

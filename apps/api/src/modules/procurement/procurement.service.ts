@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from "@nestjs/comm
 import { AuthenticatedUser } from "@jokas/shared";
 import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { nextRef } from "../../common/next-ref";
 import { LookupCacheService } from "../../common/services/lookup-cache.service";
 import {
   ApprovePurchaseOrderDto,
@@ -24,11 +25,6 @@ import {
 } from "./dto/procurement.dto";
 
 type RequestContext = { ipAddress?: string; userAgent?: string };
-
-function nextRef(prefix: string, count: number) {
-  const year = new Date().getFullYear();
-  return `${prefix}-${year}-${String(count + 1).padStart(4, "0")}`;
-}
 
 function num(v: unknown) {
   return Number(v ?? 0);
@@ -104,13 +100,25 @@ export class ProcurementService {
 
   async options(user: AuthenticatedUser) {
     const cid = user.companyId;
-    const cacheKey = `procurement:opts:${cid}`;
+    const scopeKey = user.hasGlobalAccess ? "g" : user.id;
+    const cacheKey = `procurement:opts:${cid}:${scopeKey}`;
     const cached = this.lookupCache.get<object>(cacheKey);
     if (cached) return cached;
 
+    const branchWhere = user.hasGlobalAccess
+      ? { companyId: cid, deletedAt: null }
+      : user.branchIds.length
+        ? { companyId: cid, deletedAt: null, id: { in: user.branchIds } }
+        : { companyId: cid, deletedAt: null, id: "__" };
+    const warehouseWhere = user.hasGlobalAccess
+      ? { companyId: cid, deletedAt: null }
+      : user.warehouseIds.length
+        ? { companyId: cid, deletedAt: null, id: { in: user.warehouseIds } }
+        : { companyId: cid, deletedAt: null, id: "__" };
+
     const [branches, warehouses, suppliers, supplierCategories, bankAccounts] = await Promise.all([
-      this.prisma.branch.findMany({ where: { companyId: cid, deletedAt: null }, select: { id: true, code: true, name: true }, orderBy: { name: "asc" } }),
-      this.prisma.warehouse.findMany({ where: { companyId: cid, deletedAt: null }, select: { id: true, code: true, name: true }, orderBy: { name: "asc" } }),
+      this.prisma.branch.findMany({ where: branchWhere, select: { id: true, code: true, name: true }, orderBy: { name: "asc" } }),
+      this.prisma.warehouse.findMany({ where: warehouseWhere, select: { id: true, code: true, name: true }, orderBy: { name: "asc" } }),
       this.prisma.supplier.findMany({ where: { companyId: cid, deletedAt: null, status: "ACTIVE" }, select: { id: true, code: true, name: true }, orderBy: { name: "asc" } }),
       this.prisma.supplierCategory.findMany({ where: { companyId: cid, deletedAt: null, isActive: true }, select: { id: true, code: true, name: true }, orderBy: { name: "asc" } }),
       this.prisma.bankAccount.findMany({ where: { companyId: cid, deletedAt: null, isActive: true }, select: { id: true, accountName: true, bankName: true }, orderBy: { accountName: "asc" } }),
@@ -233,8 +241,7 @@ export class ProcurementService {
   }
 
   async createPurchaseRequest(user: AuthenticatedUser, dto: CreatePurchaseRequestDto, ctx: RequestContext) {
-    const count = await this.prisma.purchaseRequest.count({ where: { companyId: user.companyId } });
-    const reference = nextRef("PR", count);
+    const reference = await nextRef(this.prisma, user.companyId, "PR");
 
     const totalEstimate = dto.items.reduce((s, i) => s + (i.quantity * (i.estimatedUnitCost ?? 0)), 0);
 
@@ -350,8 +357,7 @@ export class ProcurementService {
   }
 
   async createPurchaseOrder(user: AuthenticatedUser, dto: CreatePurchaseOrderDto, ctx: RequestContext) {
-    const count = await this.prisma.purchaseOrder.count({ where: { companyId: user.companyId } });
-    const reference = nextRef("PO", count);
+    const reference = await nextRef(this.prisma, user.companyId, "PO");
 
     const subtotal = dto.items.reduce((s, i) => s + i.quantity * i.unitCost, 0);
     const totalAmount = subtotal;
@@ -490,8 +496,7 @@ export class ProcurementService {
       throw new BadRequestException("Purchase Order must be APPROVED or SENT_TO_SUPPLIER to receive goods");
     }
 
-    const count = await this.prisma.goodsReceivedNote.count({ where: { companyId: user.companyId } });
-    const reference = nextRef("GRN", count);
+    const reference = await nextRef(this.prisma, user.companyId, "GRN");
 
     const row = await this.prisma.goodsReceivedNote.create({
       data: {
@@ -569,7 +574,19 @@ export class ProcurementService {
     if (!grn) throw new NotFoundException("GRN not found");
     if (grn.status !== "QUALITY_PASSED") throw new BadRequestException("GRN must be QUALITY_PASSED before posting");
 
-    // Auto stock-in in a transaction
+    const warehouse = await this.prisma.warehouse.findFirst({
+      where: { id: grn.warehouseId, companyId: user.companyId },
+      select: { branchId: true, farmId: true, productionSiteId: true },
+    });
+    if (!warehouse) throw new NotFoundException("Warehouse not found");
+
+    const productIds = [...new Set(grn.items.filter((i) => i.productId).map((i) => i.productId as string))];
+    const products = await this.prisma.product.findMany({
+      where: { id: { in: productIds }, companyId: user.companyId },
+      select: { id: true, uomId: true },
+    });
+    const productMap = Object.fromEntries(products.map((p) => [p.id, p]));
+
     await this.prisma.$transaction(async (tx) => {
       for (const item of grn.items) {
         if (!item.productId || num(item.receivedQty) <= 0) continue;
@@ -577,47 +594,67 @@ export class ProcurementService {
         const acceptedQty = num(item.receivedQty) - num(item.rejectedQty);
         if (acceptedQty <= 0) continue;
 
-        // Upsert inventory item
-        await tx.inventoryItem.upsert({
-          where: { companyId_productId_warehouseId: { companyId: grn.companyId, productId: item.productId, warehouseId: grn.warehouseId } } as never,
-          create: { companyId: grn.companyId, productId: item.productId, warehouseId: grn.warehouseId, quantityOnHand: acceptedQty, uomCode: item.uomCode ?? "UNIT" } as never,
-          update: { quantityOnHand: { increment: acceptedQty } },
+        const product = productMap[item.productId];
+        if (!product) continue;
+
+        const inventoryItem = await tx.inventoryItem.upsert({
+          where: { companyId_warehouseId_productId: { companyId: grn.companyId, warehouseId: grn.warehouseId, productId: item.productId } },
+          create: {
+            companyId: grn.companyId,
+            productId: item.productId,
+            warehouseId: grn.warehouseId,
+            branchId: warehouse.branchId,
+            farmId: warehouse.farmId,
+            productionSiteId: warehouse.productionSiteId,
+            uomId: product.uomId,
+            quantityOnHand: acceptedQty,
+            createdById: user.id,
+          },
+          update: { quantityOnHand: { increment: acceptedQty }, updatedById: user.id },
         });
 
-        // Create stock batch
         const batch = await tx.stockBatch.create({
           data: {
             companyId: grn.companyId,
             productId: item.productId,
             warehouseId: grn.warehouseId,
+            branchId: warehouse.branchId,
+            farmId: warehouse.farmId,
+            productionSiteId: warehouse.productionSiteId,
+            inventoryItemId: inventoryItem.id,
+            uomId: product.uomId,
             batchNumber: item.batchNumber ?? `GRN-${grn.reference}-${item.id.slice(-6)}`,
-            remainingQty: acceptedQty,
+            quantityReceived: acceptedQty,
+            quantityRemaining: acceptedQty,
             unitCost: item.unitCost,
             expiryDate: item.expiryDate,
-            receivedDate: grn.receivedDate,
             createdById: user.id,
-          } as never,
+          },
         });
 
-        // Create stock movement
         await tx.stockMovement.create({
           data: {
             companyId: grn.companyId,
             productId: item.productId,
             warehouseId: grn.warehouseId,
+            toWarehouseId: grn.warehouseId,
+            branchId: warehouse.branchId,
+            farmId: warehouse.farmId,
+            productionSiteId: warehouse.productionSiteId,
+            inventoryItemId: inventoryItem.id,
             stockBatchId: batch.id,
+            uomId: product.uomId,
             movementType: "PURCHASE_RECEIPT",
+            quantity: acceptedQty,
             unitCost: item.unitCost,
             referenceType: "GoodsReceivedNote",
             referenceId: grn.id,
-            movementDate: new Date(),
             createdById: user.id,
             notes: `Auto stock-in from GRN ${grn.reference}`,
-          } as never,
+          },
         });
       }
 
-      // Mark GRN as posted
       await tx.goodsReceivedNote.update({ where: { id }, data: { status: "POSTED", postedAt: new Date(), updatedById: user.id } });
     });
 
@@ -646,8 +683,7 @@ export class ProcurementService {
   }
 
   async createInvoice(user: AuthenticatedUser, dto: CreateSupplierInvoiceDto, ctx: RequestContext) {
-    const count = await this.prisma.supplierInvoice.count({ where: { companyId: user.companyId } });
-    const reference = nextRef("SINV", count);
+    const reference = await nextRef(this.prisma, user.companyId, "SINV");
     const totalAmount = dto.subtotal + (dto.taxAmount ?? 0);
 
     const row = await this.prisma.supplierInvoice.create({
@@ -692,8 +728,7 @@ export class ProcurementService {
   }
 
   async createPayment(user: AuthenticatedUser, dto: CreateProcurementPaymentDto, ctx: RequestContext) {
-    const count = await this.prisma.procurementPayment.count({ where: { companyId: user.companyId } });
-    const reference = nextRef("PAY", count);
+    const reference = await nextRef(this.prisma, user.companyId, "PAY");
 
     const row = await this.prisma.procurementPayment.create({
       data: {

@@ -7117,3 +7117,15 @@ model LeaveRequest {
   @@index([companyId, employeeId])
   @@index([deletedAt])
 }
+
+// ── Document sequence counter (atomic, race-condition-free) ───────────────────
+model RefSequence {
+  id        String @id @default(uuid())
+  companyId String
+  prefix    String @db.VarChar(20)
+  year      Int
+  lastSeq   Int    @default(0)
+
+  @@unique([companyId, prefix, year])
+  @@index([companyId])
+}
