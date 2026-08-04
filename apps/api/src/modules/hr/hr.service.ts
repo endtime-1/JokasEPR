@@ -168,6 +168,7 @@ export class HRService {
       },
       include: { _count: { select: { employees: true } } },
       orderBy: { name: "asc" },
+      take: 200,
     });
     return { data: rows };
   }
@@ -209,6 +210,7 @@ export class HRService {
         farm: { select: { name: true } },
       },
       orderBy: { fullName: "asc" },
+      take: 500,
     });
     return { data: rows };
   }
@@ -484,6 +486,7 @@ export class HRService {
       where: { companyId: user.companyId, deletedAt: null },
       include: { branch: { select: { name: true } } },
       orderBy: { name: "asc" },
+      take: 200,
     });
     return { data: rows };
   }
@@ -683,6 +686,7 @@ export class HRService {
       },
       include: { employee: { select: { fullName: true, code: true } }, branch: { select: { name: true } } },
       orderBy: [{ period: "desc" }, { createdAt: "desc" }],
+      take: 200,
     });
     return { data: rows };
   }
@@ -791,6 +795,7 @@ export class HRService {
         employee: { select: { fullName: true, code: true } },
       },
       orderBy: { trainingDate: "desc" },
+      take: 200,
     });
     return { data: rows };
   }
@@ -829,6 +834,7 @@ export class HRService {
       },
       include: { employee: { select: { fullName: true, code: true } }, reviewer: { select: { fullName: true } } },
       orderBy: [{ period: "desc" }, { createdAt: "desc" }],
+      take: 200,
     });
     return { data: rows };
   }
@@ -870,6 +876,7 @@ export class HRService {
       },
       include: { employee: { select: { fullName: true, code: true } }, branch: { select: { name: true } }, farm: { select: { name: true } } },
       orderBy: { startDate: "desc" },
+      take: 200,
     });
     return { data: rows };
   }
@@ -1381,6 +1388,7 @@ export class HRService {
       where: { companyId: user.companyId, deletedAt: null },
       orderBy: { leaveType: "asc" },
       include: { employeeRole: { select: { name: true } } },
+      take: 200,
     });
     return { data: rows };
   }
@@ -1451,6 +1459,7 @@ export class HRService {
       },
       orderBy: [{ employeeId: "asc" }, { leaveType: "asc" }],
       include: { employee: { select: { fullName: true, code: true } } },
+      take: 500,
     });
     return { data: rows };
   }
@@ -1927,6 +1936,7 @@ export class HRService {
         branch: { select: { name: true } },
       },
       orderBy: { fullName: "asc" },
+      take: 500,
     });
     const data = employees.map((e) => ({
       id: e.id,
@@ -1945,6 +1955,7 @@ export class HRService {
     const rows = await this.prisma.trainingCourse.findMany({
       where: { companyId: user.companyId, deletedAt: null },
       orderBy: { title: "asc" },
+      take: 200,
     });
     return { data: rows };
   }
@@ -1980,6 +1991,7 @@ export class HRService {
       where: { companyId: user.companyId, deletedAt: null },
       include: { employeeRole: { select: { name: true } } },
       orderBy: [{ grade: "asc" }, { effectiveDate: "desc" }],
+      take: 200,
     });
     return { data: rows };
   }
@@ -2198,6 +2210,7 @@ export class HRService {
     const rows = await this.prisma.approvalChain.findMany({
       where: { companyId: user.companyId, deletedAt: null },
       orderBy: { entityType: "asc" },
+      take: 200,
     });
     return { data: rows };
   }
