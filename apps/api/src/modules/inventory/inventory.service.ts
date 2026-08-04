@@ -37,8 +37,10 @@ export class InventoryService {
     const sevenDaysAgo = new Date(Date.now() - 7 * 86400000);
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
-    const [items, movements, lowStock, expiryAlerts, valuation, pendingApprovals, weekMovements, adjustmentStats, movementsToday] = await Promise.all([
-      this.prisma.inventoryItem.findMany({ where: this.itemWhere(user, {}), include: { product: true, warehouse: true } }),
+    const [items, itemCount, totalQty, movements, lowStock, expiryAlerts, valuation, pendingApprovals, weekMovements, adjustmentStats, movementsToday] = await Promise.all([
+      this.prisma.inventoryItem.findMany({ where: this.itemWhere(user, {}), include: { product: true, warehouse: true }, orderBy: { updatedAt: "desc" }, take: 200 }),
+      this.prisma.inventoryItem.count({ where: this.itemWhere(user, {}) }),
+      this.prisma.inventoryItem.aggregate({ where: this.itemWhere(user, {}), _sum: { quantityOnHand: true } }),
       this.prisma.stockMovement.findMany({ where: this.movementWhere(user, {}), orderBy: { movementDate: "desc" }, take: 10, include: { product: { select: { sku: true, name: true } }, warehouse: { select: { name: true } } } }),
       this.lowStockRows(user),
       this.prisma.stockExpiryAlert.findMany({ where: this.expiryWhere(user, {}), include: { product: { select: { sku: true, name: true } }, warehouse: { select: { name: true } }, stockBatch: { select: { batchNumber: true, quantityRemaining: true } } }, orderBy: { expiryDate: "asc" }, take: 10 }),
@@ -51,8 +53,8 @@ export class InventoryService {
     return {
       data: {
         skuCount: new Set(items.map((item) => item.productId)).size,
-        itemCount: items.length,
-        totalQuantity: this.sum(items, "quantityOnHand"),
+        itemCount,
+        totalQuantity: Number(totalQty._sum.quantityOnHand ?? 0),
         inventoryValue: valuation.reduce((sum, row) => sum + row.totalValue, 0),
         lowStockCount: lowStock.length,
         expiryAlertCount: expiryAlerts.length,
@@ -396,12 +398,12 @@ export class InventoryService {
   }
 
   private async lowStockRows(user: AuthenticatedUser) {
-    const items = await this.prisma.inventoryItem.findMany({ where: this.itemWhere(user, {}), include: { product: true, warehouse: true, stockReorderLevels: true } });
+    const items = await this.prisma.inventoryItem.findMany({ where: this.itemWhere(user, {}), include: { product: true, warehouse: true, stockReorderLevels: true }, orderBy: { quantityOnHand: "asc" }, take: 50 });
     return items.filter((item) => Number(item.quantityOnHand) <= Number(item.stockReorderLevels[0]?.minimumQuantity ?? item.reorderLevel)).map((item) => ({ id: item.id, sku: item.product.sku, product: item.product.name, warehouse: item.warehouse.name, quantityOnHand: Number(item.quantityOnHand), reorderLevel: Number(item.stockReorderLevels[0]?.minimumQuantity ?? item.reorderLevel) }));
   }
 
   private async valuationRows(user: AuthenticatedUser, query: InventoryQueryDto) {
-    const items = await this.prisma.inventoryItem.findMany({ where: this.itemWhere(user, query), include: { product: true, warehouse: true, stockBatches: { where: { deletedAt: null, quantityRemaining: { gt: 0 } } } } });
+    const items = await this.prisma.inventoryItem.findMany({ where: this.itemWhere(user, query), include: { product: true, warehouse: true, stockBatches: { where: { deletedAt: null, quantityRemaining: { gt: 0 } } } }, orderBy: { updatedAt: "desc" }, take: 200 });
     return items.map((item) => {
       const value = item.stockBatches.reduce((sum, batch) => sum + Number(batch.quantityRemaining) * Number(batch.unitCost ?? 0), 0);
       const quantity = Number(item.quantityOnHand);

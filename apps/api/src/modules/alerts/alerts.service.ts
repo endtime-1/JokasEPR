@@ -71,29 +71,25 @@ export class AlertsService {
     const limit = Math.min(query.limit ?? 50, 200);
     const offset = query.offset ?? 0;
 
-    try {
-      const [data, total] = await Promise.all([
-        this.prisma.aiAlert.findMany({
-          where,
-          orderBy: [{ severity: "desc" }, { createdAt: "desc" }],
-          take: limit,
-          skip: offset,
-          include: {
-            farm: { select: { name: true } },
-            branch: { select: { name: true } },
-            warehouse: { select: { name: true } },
-            productionSite: { select: { name: true } },
-            acknowledgedBy: { select: { fullName: true } },
-            resolvedBy: { select: { fullName: true } }
-          }
-        }),
-        this.prisma.aiAlert.count({ where })
-      ]);
+    const [data, total] = await Promise.all([
+      this.prisma.aiAlert.findMany({
+        where,
+        orderBy: [{ severity: "desc" }, { createdAt: "desc" }],
+        take: limit,
+        skip: offset,
+        include: {
+          farm: { select: { name: true } },
+          branch: { select: { name: true } },
+          warehouse: { select: { name: true } },
+          productionSite: { select: { name: true } },
+          acknowledgedBy: { select: { fullName: true } },
+          resolvedBy: { select: { fullName: true } }
+        }
+      }),
+      this.prisma.aiAlert.count({ where })
+    ]);
 
-      return { data, meta: { total } };
-    } catch {
-      return { data: [], meta: { total: 0 } };
-    }
+    return { data, meta: { total } };
   }
 
   async unreadCount(user: AuthenticatedUser) {
@@ -172,16 +168,12 @@ export class AlertsService {
     }
     if (query.entityType) where.entityType = query.entityType;
 
-    try {
-      const data = await this.prisma.aiForecast.findMany({
-        where,
-        orderBy: { forecastDate: "asc" },
-        take: Math.min(query.limit ?? 50, 200)
-      });
-      return { data };
-    } catch {
-      return { data: [] };
-    }
+    const data = await this.prisma.aiForecast.findMany({
+      where,
+      orderBy: { forecastDate: "asc" },
+      take: Math.min(query.limit ?? 50, 200)
+    });
+    return { data };
   }
 
   async reportCsv(user: AuthenticatedUser, query: AlertQueryDto) {

@@ -53,8 +53,8 @@ export class MaintenanceService {
       this.prisma.breakdownRecord.count({ where: { ...this.breakdownWhere(user, query), status: { notIn: ["RESOLVED", "CLOSED", "CANCELLED"] } } }),
       this.prisma.maintenanceSchedule.findMany({ where: this.scheduleWhere(user, query), include: { machine: true, equipment: true }, orderBy: { nextDueDate: "asc" }, take: 12 }),
       this.prisma.breakdownRecord.findMany({ where: this.breakdownWhere(user, query), include: { machine: true, equipment: true }, orderBy: { reportedAt: "desc" }, take: 12 }),
-      this.prisma.machineDowntimeRecord.findMany({ where: this.downtimeWhere(user, query), select: { durationHours: true, status: true } }),
-      this.prisma.maintenanceCost.findMany({ where: this.costWhere(user, query), select: { amount: true, costType: true } }),
+      this.prisma.machineDowntimeRecord.aggregate({ where: this.downtimeWhere(user, query), _sum: { durationHours: true } }),
+      this.prisma.maintenanceCost.aggregate({ where: this.costWhere(user, query), _sum: { amount: true } }),
       this.prisma.technicianAssignment.findMany({ where: this.assignmentWhere(user, query), include: { technician: { select: { fullName: true, email: true } }, machine: true, equipment: true }, orderBy: { assignedAt: "desc" }, take: 12 })
     ]);
 
@@ -64,8 +64,8 @@ export class MaintenanceService {
         activeMachines,
         maintenanceAlerts,
         openBreakdowns,
-        downtimeHours: this.sum(downtime, "durationHours"),
-        maintenanceCost: this.sum(costs, "amount"),
+        downtimeHours: Number(downtime._sum.durationHours ?? 0),
+        maintenanceCost: Number(costs._sum.amount ?? 0),
         schedules,
         breakdowns,
         assignments

@@ -7,8 +7,12 @@ import { PrismaClient } from "@prisma/client";
 const TENANT_GUARDED_MODELS = [
   "user", "employee", "flockBatch", "mortalityRecord", "eggProductionRecord",
   "feedConsumptionRecord", "dailyPoultryRecord", "poultryTransfer", "poultryHouse",
-  "attendance", "payroll", "leave", "invoice", "payment", "salesOrder",
+  // Corrected names — previous strings didn't match Prisma client keys so proxies never installed
+  "attendanceRecord", "payrollRecord", "leaveRequest",
+  "invoice", "payment", "salesOrder",
   "stockMovement", "stockBatch", "inventoryItem", "auditLog",
+  // Additional high-value models missing from original list
+  "expense", "customer", "supplier", "product",
 ] as const;
 
 const GUARDED_OPS = new Set([

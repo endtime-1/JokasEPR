@@ -462,7 +462,7 @@ export class SalesService {
   }
 
   private async salesByProduct(user: AuthenticatedUser, query: SalesQueryDto) {
-    const orders = await this.prisma.salesOrder.findMany({ where: this.orderWhere(user, query), include: { items: { include: { product: true } } } });
+    const orders = await this.prisma.salesOrder.findMany({ where: this.orderWhere(user, query), include: { items: { include: { product: true } } }, orderBy: { orderDate: "desc" }, take: 200 });
     const map = new Map<string, { sku: string; product: string; quantity: number; salesValue: number }>();
     for (const order of orders) {
       for (const item of order.items) {
@@ -476,7 +476,7 @@ export class SalesService {
   }
 
   private async salesByCustomer(user: AuthenticatedUser, query: SalesQueryDto) {
-    const rows = await this.prisma.salesOrder.findMany({ where: this.orderWhere(user, query), include: { customer: true } });
+    const rows = await this.prisma.salesOrder.findMany({ where: this.orderWhere(user, query), include: { customer: true }, orderBy: { orderDate: "desc" }, take: 200 });
     const map = new Map<string, { code: string; customer: string; orders: number; salesValue: number; balanceDue: number }>();
     for (const row of rows) {
       const current = map.get(row.customerId) ?? { code: row.customer.code, customer: row.customer.name, orders: 0, salesValue: 0, balanceDue: 0 };
@@ -489,7 +489,7 @@ export class SalesService {
   }
 
   private async salesByLocation(user: AuthenticatedUser, query: SalesQueryDto) {
-    const rows = await this.prisma.salesOrder.findMany({ where: this.orderWhere(user, query), include: { branch: true, warehouse: true } });
+    const rows = await this.prisma.salesOrder.findMany({ where: this.orderWhere(user, query), include: { branch: true, warehouse: true }, orderBy: { orderDate: "desc" }, take: 200 });
     const map = new Map<string, { branch: string; warehouse: string; orders: number; salesValue: number }>();
     for (const row of rows) {
       const key = `${row.branchId}:${row.warehouseId}`;
@@ -502,7 +502,7 @@ export class SalesService {
   }
 
   private async salespersonPerformance(user: AuthenticatedUser, query: SalesQueryDto) {
-    const rows = await this.prisma.salesOrder.findMany({ where: this.orderWhere(user, query), select: { salespersonId: true, totalAmount: true, balanceDue: true } });
+    const rows = await this.prisma.salesOrder.findMany({ where: this.orderWhere(user, query), select: { salespersonId: true, totalAmount: true, balanceDue: true }, orderBy: { orderDate: "desc" }, take: 200 });
     const map = new Map<string, { salespersonId: string; orders: number; salesValue: number; collectionsOutstanding: number }>();
     for (const row of rows) {
       const key = row.salespersonId ?? "unassigned";

@@ -60,7 +60,7 @@ export class PoultryService {
 
     const [batches, weekEggs, weekMortality, weekFeed, recentHealth, houses, prices] = await Promise.all([
       this.prisma.flockBatch.findMany({
-        where: this.batchWhere(user),
+        where: { ...this.batchWhere(user), status: "ACTIVE" as never },
         include: {
           farm: { select: { name: true, code: true } },
           poultryHouse: { select: { name: true, code: true } },
@@ -72,7 +72,8 @@ export class PoultryService {
           dailyRecords: { where: { deletedAt: null, recordDate: { gte: todayStart } }, select: { id: true } },
           penAllocations: { select: { birdCount: true, pen: { select: { code: true, name: true } } } }
         },
-        orderBy: { createdAt: "desc" }
+        orderBy: { createdAt: "desc" },
+        take: 100
       }),
       this.prisma.eggProductionRecord.groupBy({
         by: ["recordDate"],
@@ -219,17 +220,15 @@ export class PoultryService {
   }
 
   async listHouses(user: AuthenticatedUser, query: PoultryQueryDto) {
-    try {
-      const data = await this.prisma.poultryHouse.findMany({
-        where: { ...this.houseWhere(user), ...(query.farmId ? { farmId: query.farmId } : {}) },
-        include: {
-          farm: { select: { id: true, code: true, name: true } },
-          pens: { where: { deletedAt: null }, orderBy: { penNumber: "asc" }, include: { batchAllocations: { include: { flockBatch: { select: { id: true, code: true, name: true, status: true, birdType: true } } } } } }
-        },
-        orderBy: { code: "asc" }
-      });
-      return { data };
-    } catch { return { data: [] }; }
+    const data = await this.prisma.poultryHouse.findMany({
+      where: { ...this.houseWhere(user), ...(query.farmId ? { farmId: query.farmId } : {}) },
+      include: {
+        farm: { select: { id: true, code: true, name: true } },
+        pens: { where: { deletedAt: null }, orderBy: { penNumber: "asc" }, include: { batchAllocations: { include: { flockBatch: { select: { id: true, code: true, name: true, status: true, birdType: true } } } } } }
+      },
+      orderBy: { code: "asc" }
+    });
+    return { data };
   }
 
   async createHouse(user: AuthenticatedUser, dto: CreatePoultryHouseDto, context: RequestContext) {
@@ -387,26 +386,24 @@ export class PoultryService {
   }
 
   async listBatches(user: AuthenticatedUser, query: PoultryQueryDto) {
-    try {
-      const [batches, prices] = await Promise.all([
-        this.prisma.flockBatch.findMany({
-          where: { ...this.batchWhere(user), ...(query.farmId ? { farmId: query.farmId } : {}), ...(query.poultryHouseId ? { poultryHouseId: query.poultryHouseId } : {}) },
-          include: {
-            farm: { select: { code: true, name: true } },
-            poultryHouse: { select: { code: true, name: true } },
-            mortalityRecords: { where: { deletedAt: null } },
-            feedConsumptionRecords: { where: { deletedAt: null } },
-            eggProductionRecords: { where: { deletedAt: null } },
-            birdWeightRecords: { where: { deletedAt: null }, orderBy: { recordDate: "desc" }, take: 1 },
-            costRecords: { where: { deletedAt: null } }
-          },
-          orderBy: { createdAt: "desc" },
-          take: query.take ?? 50
-        }),
-        this.poultryPrices(user.companyId)
-      ]);
-      return { data: batches.map((batch) => this.batchMetrics(batch, prices)) };
-    } catch { return { data: [] }; }
+    const [batches, prices] = await Promise.all([
+      this.prisma.flockBatch.findMany({
+        where: { ...this.batchWhere(user), ...(query.farmId ? { farmId: query.farmId } : {}), ...(query.poultryHouseId ? { poultryHouseId: query.poultryHouseId } : {}) },
+        include: {
+          farm: { select: { code: true, name: true } },
+          poultryHouse: { select: { code: true, name: true } },
+          mortalityRecords: { where: { deletedAt: null } },
+          feedConsumptionRecords: { where: { deletedAt: null } },
+          eggProductionRecords: { where: { deletedAt: null } },
+          birdWeightRecords: { where: { deletedAt: null }, orderBy: { recordDate: "desc" }, take: 1 },
+          costRecords: { where: { deletedAt: null } }
+        },
+        orderBy: { createdAt: "desc" },
+        take: query.take ?? 50
+      }),
+      this.poultryPrices(user.companyId)
+    ]);
+    return { data: batches.map((batch) => this.batchMetrics(batch, prices)) };
   }
 
   async getBatch(user: AuthenticatedUser, id: string) {
@@ -872,17 +869,15 @@ export class PoultryService {
   }
 
   async listRecords(user: AuthenticatedUser, type: string, query: PoultryQueryDto) {
-    try {
-      const where = this.recordWhere(user, query, type);
-      const model = this.recordModel(type);
-      const take = Math.min(query.take ?? 200, 500);
-      const skip = query.skip ?? 0;
-      const [data, total] = await Promise.all([
-        model.findMany({ where, orderBy: { createdAt: "desc" }, take, skip }),
-        model.count({ where })
-      ]);
-      return { data, meta: { total, take, skip } };
-    } catch { return { data: [], meta: { total: 0, take: query.take ?? 200, skip: query.skip ?? 0 } }; }
+    const where = this.recordWhere(user, query, type);
+    const model = this.recordModel(type);
+    const take = Math.min(query.take ?? 200, 500);
+    const skip = query.skip ?? 0;
+    const [data, total] = await Promise.all([
+      model.findMany({ where, orderBy: { createdAt: "desc" }, take, skip }),
+      model.count({ where })
+    ]);
+    return { data, meta: { total, take, skip } };
   }
 
   async softDelete(user: AuthenticatedUser, type: string, id: string, context: RequestContext) {

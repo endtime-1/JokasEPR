@@ -236,6 +236,39 @@ jobs:
           echo "  api dist: $([ -f "$APP_DIR/apps/api/dist/bundle.js" ] && echo EXISTS || echo MISSING)"
           echo "  start.js: $([ -f "$APP_DIR/start.js" ] && echo EXISTS || echo MISSING)"
 
+      - name: Patch DATABASE_URL with connection pool limit
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          APP_DIR="$HOME/domains/jokasfarms.com/nodejs"
+          ENV_FILE="$APP_DIR/.env"
+          # Determine the URL to write — prefer the secret, fall back to existing .env
+          if [ -n "$DATABASE_URL" ]; then
+            DB_URL="$DATABASE_URL"
+          elif [ -f "$ENV_FILE" ]; then
+            DB_URL=$(grep '^DATABASE_URL=' "$ENV_FILE" | head -1 | cut -d= -f2-)
+          fi
+          if [ -n "$DB_URL" ]; then
+            # Append connection_limit=5 unless it's already present
+            if echo "$DB_URL" | grep -q "connection_limit"; then
+              echo "connection_limit already set — skipping"
+            elif echo "$DB_URL" | grep -q "?"; then
+              DB_URL="${DB_URL}&connection_limit=5"
+            else
+              DB_URL="${DB_URL}?connection_limit=5"
+            fi
+            # Write/update the DATABASE_URL line in .env
+            if [ -f "$ENV_FILE" ] && grep -q '^DATABASE_URL=' "$ENV_FILE"; then
+              sed -i "s|^DATABASE_URL=.*|DATABASE_URL=${DB_URL}|" "$ENV_FILE"
+            else
+              mkdir -p "$APP_DIR"
+              echo "DATABASE_URL=${DB_URL}" >> "$ENV_FILE"
+            fi
+            echo "DATABASE_URL patched with connection_limit=5"
+          else
+            echo "WARNING: no DATABASE_URL found — skipping connection pool patch"
+          fi
+
       - name: Run database migrations
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -383,3 +416,13 @@ jobs:
             tail -20 "$HOME/domains/jokasfarms.com/nodejs/log/passenger.log" 2>/dev/null || true
             echo "  Check jokasfarms.com manually — Passenger may still be starting."
           fi
+
+      - name: Ensure runner keepalive cron
+        run: |
+          # Keep the self-hosted runner alive between deploys.
+          # Checks every 10 min — restarts run.sh if the process is gone.
+          (crontab -l 2>/dev/null | grep -v 'actions-runner/run.sh'; \
+           echo "*/10 * * * * pgrep -f 'actions-runner/run.sh' > /dev/null || nohup \$HOME/actions-runner/run.sh >> \$HOME/jokas-build/runner.log 2>&1 &") \
+          | crontab -
+          echo "Runner keepalive cron installed."
+          crontab -l | grep actions-runner || true

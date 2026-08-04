@@ -164,18 +164,16 @@ export class HRService {
   // â"€â"€â"€ Employee Roles â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
   async listEmployeeRoles(user: AuthenticatedUser, query: HRQueryDto) {
-    try {
-      const rows = await this.prisma.employeeRole.findMany({
-        where: {
-          companyId: user.companyId,
-          deletedAt: null,
-          ...(query.search ? { OR: [{ name: { contains: query.search } }, { code: { contains: query.search } }] } : {}),
-        },
-        include: { _count: { select: { employees: true } } },
-        orderBy: { name: "asc" },
-      });
-      return { data: rows };
-    } catch { return { data: [] }; }
+    const rows = await this.prisma.employeeRole.findMany({
+      where: {
+        companyId: user.companyId,
+        deletedAt: null,
+        ...(query.search ? { OR: [{ name: { contains: query.search } }, { code: { contains: query.search } }] } : {}),
+      },
+      include: { _count: { select: { employees: true } } },
+      orderBy: { name: "asc" },
+    });
+    return { data: rows };
   }
 
   async createEmployeeRole(user: AuthenticatedUser, dto: CreateEmployeeRoleDto, ctx: RequestContext) {
@@ -190,35 +188,33 @@ export class HRService {
   // â"€â"€â"€ Employees â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
   async listEmployees(user: AuthenticatedUser, query: HRQueryDto) {
-    try {
-      const rows = await this.prisma.employee.findMany({
-        where: {
-          companyId: user.companyId,
-          deletedAt: null,
-          ...(query.status ? { status: query.status as never } : {}),
-          ...(query.branchId ? { branchId: query.branchId } : {}),
-          ...(query.search ? { OR: [{ fullName: { contains: query.search } }, { code: { contains: query.search } }, { phone: { contains: query.search } }] } : {}),
-        },
-        select: {
-          id: true,
-          code: true,
-          fullName: true,
-          status: true,
-          phone: true,
-          startDate: true,
-          photoUrl: true,
-          email: true,
-          employeeRoleId: true,
-          branchId: true,
-          farmId: true,
-          employeeRole: { select: { name: true, code: true } },
-          branch: { select: { name: true } },
-          farm: { select: { name: true } },
-        },
-        orderBy: { fullName: "asc" },
-      });
-      return { data: rows };
-    } catch (e: any) { return { data: [], error: e?.message }; }
+    const rows = await this.prisma.employee.findMany({
+      where: {
+        companyId: user.companyId,
+        deletedAt: null,
+        ...(query.status ? { status: query.status as never } : {}),
+        ...(query.branchId ? { branchId: query.branchId } : {}),
+        ...(query.search ? { OR: [{ fullName: { contains: query.search } }, { code: { contains: query.search } }, { phone: { contains: query.search } }] } : {}),
+      },
+      select: {
+        id: true,
+        code: true,
+        fullName: true,
+        status: true,
+        phone: true,
+        startDate: true,
+        photoUrl: true,
+        email: true,
+        employeeRoleId: true,
+        branchId: true,
+        farmId: true,
+        employeeRole: { select: { name: true, code: true } },
+        branch: { select: { name: true } },
+        farm: { select: { name: true } },
+      },
+      orderBy: { fullName: "asc" },
+    });
+    return { data: rows };
   }
 
   async getMyEmployee(user: AuthenticatedUser) {
@@ -367,21 +363,19 @@ export class HRService {
       };
     }
 
-    try {
-      const rows = await this.prisma.attendanceRecord.findMany({
-        where,
-        select: {
-          id: true, companyId: true, employeeId: true, date: true, status: true,
-          checkInTime: true, checkOutTime: true, hoursWorked: true, overtimeHours: true,
-          shiftId: true, notes: true, recordedById: true, createdAt: true, updatedAt: true,
-          employee: { select: { fullName: true, code: true } },
-          shift: { select: { name: true, startTime: true, endTime: true } },
-        },
-        orderBy: [{ date: "desc" }, { createdAt: "desc" }],
-        take: 200,
-      });
-      return { data: rows };
-    } catch { return { data: [] }; }
+    const rows = await this.prisma.attendanceRecord.findMany({
+      where,
+      select: {
+        id: true, companyId: true, employeeId: true, date: true, status: true,
+        checkInTime: true, checkOutTime: true, hoursWorked: true, overtimeHours: true,
+        shiftId: true, notes: true, recordedById: true, createdAt: true, updatedAt: true,
+        employee: { select: { fullName: true, code: true } },
+        shift: { select: { name: true, startTime: true, endTime: true } },
+      },
+      orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+      take: 200,
+    });
+    return { data: rows };
   }
 
   async checkInSelf(user: AuthenticatedUser, dto: CheckInSelfDto, ctx: RequestContext) {
@@ -490,14 +484,12 @@ export class HRService {
   // â"€â"€â"€ Shifts â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
   async listShifts(user: AuthenticatedUser) {
-    try {
-      const rows = await this.prisma.shift.findMany({
-        where: { companyId: user.companyId, deletedAt: null },
-        include: { branch: { select: { name: true } } },
-        orderBy: { name: "asc" },
-      });
-      return { data: rows };
-    } catch { return { data: [] }; }
+    const rows = await this.prisma.shift.findMany({
+      where: { companyId: user.companyId, deletedAt: null },
+      include: { branch: { select: { name: true } } },
+      orderBy: { name: "asc" },
+    });
+    return { data: rows };
   }
 
   async createShift(user: AuthenticatedUser, dto: CreateShiftDto, ctx: RequestContext) {
@@ -548,26 +540,24 @@ export class HRService {
   }
 
   async listTasks(user: AuthenticatedUser, query: HRQueryDto) {
-    try {
-      const rows = await this.prisma.task.findMany({
-        where: {
-          companyId: user.companyId,
-          deletedAt: null,
-          ...(query.status ? { status: query.status as never } : {}),
-          ...(query.priority ? { priority: query.priority as never } : {}),
-          ...(query.branchId ? { branchId: query.branchId } : {}),
-          ...(query.search ? { OR: [{ title: { contains: query.search } }, { taskType: { contains: query.search } }] } : {}),
-        },
-        include: {
-          branch: { select: { name: true } },
-          farm: { select: { name: true } },
-          assignments: { include: { employee: { select: { fullName: true, code: true } } } },
-        },
-        orderBy: [{ priority: "asc" }, { dueDate: "asc" }, { createdAt: "desc" }],
-        take: 500,
-      });
-      return { data: rows };
-    } catch { return { data: [] }; }
+    const rows = await this.prisma.task.findMany({
+      where: {
+        companyId: user.companyId,
+        deletedAt: null,
+        ...(query.status ? { status: query.status as never } : {}),
+        ...(query.priority ? { priority: query.priority as never } : {}),
+        ...(query.branchId ? { branchId: query.branchId } : {}),
+        ...(query.search ? { OR: [{ title: { contains: query.search } }, { taskType: { contains: query.search } }] } : {}),
+      },
+      include: {
+        branch: { select: { name: true } },
+        farm: { select: { name: true } },
+        assignments: { include: { employee: { select: { fullName: true, code: true } } } },
+      },
+      orderBy: [{ priority: "asc" }, { dueDate: "asc" }, { createdAt: "desc" }],
+      take: 500,
+    });
+    return { data: rows };
   }
 
   async getTask(user: AuthenticatedUser, id: string) {
@@ -687,20 +677,18 @@ export class HRService {
   }
 
   async listPayroll(user: AuthenticatedUser, query: HRQueryDto) {
-    try {
-      const rows = await this.prisma.payrollRecord.findMany({
-        where: {
-          companyId: user.companyId,
-          deletedAt: null,
-          employeeId: { not: null },
-          ...(query.status ? { status: query.status as never } : {}),
-          ...(query.period ? { period: query.period } : {}),
-        },
-        include: { employee: { select: { fullName: true, code: true } }, branch: { select: { name: true } } },
-        orderBy: [{ period: "desc" }, { createdAt: "desc" }],
-      });
-      return { data: rows };
-    } catch { return { data: [] }; }
+    const rows = await this.prisma.payrollRecord.findMany({
+      where: {
+        companyId: user.companyId,
+        deletedAt: null,
+        employeeId: { not: null },
+        ...(query.status ? { status: query.status as never } : {}),
+        ...(query.period ? { period: query.period } : {}),
+      },
+      include: { employee: { select: { fullName: true, code: true } }, branch: { select: { name: true } } },
+      orderBy: [{ period: "desc" }, { createdAt: "desc" }],
+    });
+    return { data: rows };
   }
 
   async createPayrollRecord(user: AuthenticatedUser, dto: CreatePayrollRecordDto, ctx: RequestContext) {
@@ -791,26 +779,24 @@ export class HRService {
   // â"€â"€â"€ Training â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
   async listTraining(user: AuthenticatedUser, query: HRQueryDto) {
-    try {
-      const rows = await this.prisma.trainingRecord.findMany({
-        where: {
-          companyId: user.companyId,
-          deletedAt: null,
-          ...(query.employeeId ? { employeeId: query.employeeId } : {}),
-          ...(query.status ? { outcome: query.status as never } : {}),
-          ...(query.search ? { title: { contains: query.search } } : {}),
-        },
-        select: {
-          id: true, companyId: true, employeeId: true, title: true, description: true,
-          trainer: true, durationHours: true, trainingDate: true,
-          outcome: true, certificate: true, notes: true, courseId: true, certificateExpiry: true,
-          createdById: true, createdAt: true, updatedAt: true, deletedAt: true,
-          employee: { select: { fullName: true, code: true } },
-        },
-        orderBy: { trainingDate: "desc" },
-      });
-      return { data: rows };
-    } catch { return { data: [] }; }
+    const rows = await this.prisma.trainingRecord.findMany({
+      where: {
+        companyId: user.companyId,
+        deletedAt: null,
+        ...(query.employeeId ? { employeeId: query.employeeId } : {}),
+        ...(query.status ? { outcome: query.status as never } : {}),
+        ...(query.search ? { title: { contains: query.search } } : {}),
+      },
+      select: {
+        id: true, companyId: true, employeeId: true, title: true, description: true,
+        trainer: true, durationHours: true, trainingDate: true,
+        outcome: true, certificate: true, notes: true, courseId: true, certificateExpiry: true,
+        createdById: true, createdAt: true, updatedAt: true, deletedAt: true,
+        employee: { select: { fullName: true, code: true } },
+      },
+      orderBy: { trainingDate: "desc" },
+    });
+    return { data: rows };
   }
 
   async createTrainingRecord(user: AuthenticatedUser, dto: CreateTrainingRecordDto, ctx: RequestContext) {
@@ -837,20 +823,18 @@ export class HRService {
   // â"€â"€â"€ Performance â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
   async listPerformance(user: AuthenticatedUser, query: HRQueryDto) {
-    try {
-      const rows = await this.prisma.hRPerformanceRecord.findMany({
-        where: {
-          companyId: user.companyId,
-          deletedAt: null,
-          ...(query.employeeId ? { employeeId: query.employeeId } : {}),
-          ...(query.period ? { period: query.period } : {}),
-          ...(query.status ? { status: query.status as never } : {}),
-        },
-        include: { employee: { select: { fullName: true, code: true } }, reviewer: { select: { fullName: true } } },
-        orderBy: [{ period: "desc" }, { createdAt: "desc" }],
-      });
-      return { data: rows };
-    } catch { return { data: [] }; }
+    const rows = await this.prisma.hRPerformanceRecord.findMany({
+      where: {
+        companyId: user.companyId,
+        deletedAt: null,
+        ...(query.employeeId ? { employeeId: query.employeeId } : {}),
+        ...(query.period ? { period: query.period } : {}),
+        ...(query.status ? { status: query.status as never } : {}),
+      },
+      include: { employee: { select: { fullName: true, code: true } }, reviewer: { select: { fullName: true } } },
+      orderBy: [{ period: "desc" }, { createdAt: "desc" }],
+    });
+    return { data: rows };
   }
 
   async createPerformanceRecord(user: AuthenticatedUser, dto: CreatePerformanceRecordDto, ctx: RequestContext) {
@@ -882,18 +866,16 @@ export class HRService {
   // â"€â"€â"€ Department Assignments â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
   async listDepartmentAssignments(user: AuthenticatedUser, query: HRQueryDto) {
-    try {
-      const rows = await this.prisma.departmentAssignment.findMany({
-        where: {
-          companyId: user.companyId,
-          ...(query.employeeId ? { employeeId: query.employeeId } : {}),
-          ...(query.branchId ? { branchId: query.branchId } : {}),
-        },
-        include: { employee: { select: { fullName: true, code: true } }, branch: { select: { name: true } }, farm: { select: { name: true } } },
-        orderBy: { startDate: "desc" },
-      });
-      return { data: rows };
-    } catch { return { data: [] }; }
+    const rows = await this.prisma.departmentAssignment.findMany({
+      where: {
+        companyId: user.companyId,
+        ...(query.employeeId ? { employeeId: query.employeeId } : {}),
+        ...(query.branchId ? { branchId: query.branchId } : {}),
+      },
+      include: { employee: { select: { fullName: true, code: true } }, branch: { select: { name: true } }, farm: { select: { name: true } } },
+      orderBy: { startDate: "desc" },
+    });
+    return { data: rows };
   }
 
   async createDepartmentAssignment(user: AuthenticatedUser, dto: CreateDepartmentAssignmentDto, ctx: RequestContext) {
@@ -995,42 +977,34 @@ export class HRService {
   }
 
   async myLeaveRequests(user: AuthenticatedUser) {
-    try {
-      const emp = await this.prisma.employee.findFirst({
-        where: { companyId: user.companyId, email: user.email, deletedAt: null },
-        select: { id: true },
-      });
+    const emp = await this.prisma.employee.findFirst({
+      where: { companyId: user.companyId, email: user.email, deletedAt: null },
+      select: { id: true },
+    });
 
-      if (!emp) return { data: [] };
+    if (!emp) return { data: [] };
 
-      const rows = await this.prisma.leaveRequest.findMany({
-        where: { companyId: user.companyId, employeeId: emp.id, deletedAt: null },
-        orderBy: { createdAt: "desc" },
-        take: 20,
-        include: { employee: { select: { fullName: true, code: true } } },
-      });
-      return { data: rows };
-    } catch {
-      return { data: [] };
-    }
+    const rows = await this.prisma.leaveRequest.findMany({
+      where: { companyId: user.companyId, employeeId: emp.id, deletedAt: null },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+      include: { employee: { select: { fullName: true, code: true } } },
+    });
+    return { data: rows };
   }
 
   async listLeaveRequests(user: AuthenticatedUser, query: HRQueryDto) {
-    try {
-      const rows = await this.prisma.leaveRequest.findMany({
-        where: {
-          companyId: user.companyId,
-          deletedAt: null,
-          ...(query.status ? { status: query.status as never } : {}),
-        },
-        orderBy: { createdAt: "desc" },
-        take: 50,
-        include: { employee: { select: { fullName: true, code: true } } },
-      });
-      return { data: rows };
-    } catch {
-      return { data: [] };
-    }
+    const rows = await this.prisma.leaveRequest.findMany({
+      where: {
+        companyId: user.companyId,
+        deletedAt: null,
+        ...(query.status ? { status: query.status as never } : {}),
+      },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+      include: { employee: { select: { fullName: true, code: true } } },
+    });
+    return { data: rows };
   }
 
   async reviewLeaveRequest(user: AuthenticatedUser, id: string, dto: ReviewLeaveRequestDto, ctx: RequestContext) {
@@ -1407,16 +1381,12 @@ export class HRService {
   }
 
   async listLeavePolicies(user: AuthenticatedUser) {
-    try {
-      const rows = await this.prisma.leavePolicy.findMany({
-        where: { companyId: user.companyId, deletedAt: null },
-        orderBy: { leaveType: "asc" },
-        include: { employeeRole: { select: { name: true } } },
-      });
-      return { data: rows };
-    } catch {
-      return { data: [] };
-    }
+    const rows = await this.prisma.leavePolicy.findMany({
+      where: { companyId: user.companyId, deletedAt: null },
+      orderBy: { leaveType: "asc" },
+      include: { employeeRole: { select: { name: true } } },
+    });
+    return { data: rows };
   }
 
   async updateLeavePolicy(user: AuthenticatedUser, id: string, dto: UpdateLeavePolicyDto, ctx: RequestContext) {
@@ -1476,36 +1446,28 @@ export class HRService {
   }
 
   async listLeaveBalances(user: AuthenticatedUser, query: HRQueryDto) {
-    try {
-      const year = query.period ? parseInt(query.period) : new Date().getFullYear();
-      const rows = await this.prisma.leaveBalance.findMany({
-        where: {
-          companyId: user.companyId,
-          year,
-          ...(query.employeeId ? { employeeId: query.employeeId } : {}),
-        },
-        orderBy: [{ employeeId: "asc" }, { leaveType: "asc" }],
-        include: { employee: { select: { fullName: true, code: true } } },
-      });
-      return { data: rows };
-    } catch {
-      return { data: [] };
-    }
+    const year = query.period ? parseInt(query.period) : new Date().getFullYear();
+    const rows = await this.prisma.leaveBalance.findMany({
+      where: {
+        companyId: user.companyId,
+        year,
+        ...(query.employeeId ? { employeeId: query.employeeId } : {}),
+      },
+      orderBy: [{ employeeId: "asc" }, { leaveType: "asc" }],
+      include: { employee: { select: { fullName: true, code: true } } },
+    });
+    return { data: rows };
   }
 
   async myLeaveBalance(user: AuthenticatedUser) {
-    try {
-      const emp = await this.prisma.employee.findFirst({ where: { companyId: user.companyId, email: user.email, deletedAt: null }, select: { id: true } });
-      if (!emp) return { data: [] };
-      const year = new Date().getFullYear();
-      const rows = await this.prisma.leaveBalance.findMany({
-        where: { companyId: user.companyId, employeeId: emp.id, year },
-        orderBy: { leaveType: "asc" },
-      });
-      return { data: rows };
-    } catch {
-      return { data: [] };
-    }
+    const emp = await this.prisma.employee.findFirst({ where: { companyId: user.companyId, email: user.email, deletedAt: null }, select: { id: true } });
+    if (!emp) return { data: [] };
+    const year = new Date().getFullYear();
+    const rows = await this.prisma.leaveBalance.findMany({
+      where: { companyId: user.companyId, employeeId: emp.id, year },
+      orderBy: { leaveType: "asc" },
+    });
+    return { data: rows };
   }
 
   async initializeLeaveBalances(user: AuthenticatedUser, dto: InitializeLeaveBalanceDto, ctx: RequestContext) {
@@ -1576,19 +1538,15 @@ export class HRService {
   ];
 
   async listPublicHolidays(user: AuthenticatedUser, query: HRQueryDto) {
-    try {
-      const year = query.period ? parseInt(query.period) : undefined;
-      const rows = await this.prisma.publicHoliday.findMany({
-        where: {
-          companyId: user.companyId,
-          ...(year ? { date: { gte: new Date(`${year}-01-01`), lt: new Date(`${year + 1}-01-01`) } } : {}),
-        },
-        orderBy: { date: "asc" },
-      });
-      return { data: rows };
-    } catch {
-      return { data: [] };
-    }
+    const year = query.period ? parseInt(query.period) : undefined;
+    const rows = await this.prisma.publicHoliday.findMany({
+      where: {
+        companyId: user.companyId,
+        ...(year ? { date: { gte: new Date(`${year}-01-01`), lt: new Date(`${year + 1}-01-01`) } } : {}),
+      },
+      orderBy: { date: "asc" },
+    });
+    return { data: rows };
   }
 
   async createPublicHoliday(user: AuthenticatedUser, dto: CreatePublicHolidayDto, ctx: RequestContext) {
@@ -1641,15 +1599,11 @@ export class HRService {
   async listEmployeeDocuments(user: AuthenticatedUser, employeeId: string) {
     const emp = await this.prisma.employee.findFirst({ where: { id: employeeId, companyId: user.companyId, deletedAt: null }, select: { id: true } });
     if (!emp) throw new NotFoundException("Employee not found");
-    try {
-      const rows = await this.prisma.employeeDocument.findMany({
-        where: { employeeId, companyId: user.companyId, deletedAt: null },
-        orderBy: { createdAt: "desc" },
-      });
-      return { data: rows };
-    } catch {
-      return { data: [] };
-    }
+    const rows = await this.prisma.employeeDocument.findMany({
+      where: { employeeId, companyId: user.companyId, deletedAt: null },
+      orderBy: { createdAt: "desc" },
+    });
+    return { data: rows };
   }
 
   async uploadEmployeeDocument(user: AuthenticatedUser, employeeId: string, dto: CreateEmployeeDocumentDto, filename: string, ctx: RequestContext) {
@@ -1856,17 +1810,13 @@ export class HRService {
   // ─── HR-D: Disciplinary Records ───────────────────────────────────────────────
 
   async listDisciplinary(user: AuthenticatedUser, query: HRQueryDto) {
-    try {
-      const rows = await this.prisma.disciplinaryRecord.findMany({
-        where: { companyId: user.companyId, deletedAt: null, ...(query.employeeId ? { employeeId: query.employeeId } : {}), ...(query.search ? { category: { contains: query.search } } : {}) },
-        include: { employee: { select: { fullName: true, code: true } } },
-        orderBy: { incidentDate: "desc" },
-        take: 100,
-      });
-      return { data: rows };
-    } catch {
-      return { data: [] };
-    }
+    const rows = await this.prisma.disciplinaryRecord.findMany({
+      where: { companyId: user.companyId, deletedAt: null, ...(query.employeeId ? { employeeId: query.employeeId } : {}), ...(query.search ? { category: { contains: query.search } } : {}) },
+      include: { employee: { select: { fullName: true, code: true } } },
+      orderBy: { incidentDate: "desc" },
+      take: 100,
+    });
+    return { data: rows };
   }
 
   async createDisciplinaryRecord(user: AuthenticatedUser, dto: CreateDisciplinaryDto, ctx: RequestContext) {
@@ -1915,17 +1865,13 @@ export class HRService {
   // ─── HR-D: Grievance Records ──────────────────────────────────────────────────
 
   async listGrievances(user: AuthenticatedUser, query: HRQueryDto) {
-    try {
-      const rows = await this.prisma.grievanceRecord.findMany({
-        where: { companyId: user.companyId, deletedAt: null, ...(query.status ? { status: query.status } : {}), ...(query.employeeId ? { employeeId: query.employeeId } : {}) },
-        include: { employee: { select: { fullName: true, code: true } } },
-        orderBy: { submittedDate: "desc" },
-        take: 100,
-      });
-      return { data: rows };
-    } catch {
-      return { data: [] };
-    }
+    const rows = await this.prisma.grievanceRecord.findMany({
+      where: { companyId: user.companyId, deletedAt: null, ...(query.status ? { status: query.status } : {}), ...(query.employeeId ? { employeeId: query.employeeId } : {}) },
+      include: { employee: { select: { fullName: true, code: true } } },
+      orderBy: { submittedDate: "desc" },
+      take: 100,
+    });
+    return { data: rows };
   }
 
   async submitGrievance(user: AuthenticatedUser, dto: CreateGrievanceDto, ctx: RequestContext) {
@@ -1977,42 +1923,34 @@ export class HRService {
   // ─── HR-F: Org Chart ─────────────────────────────────────────────────────────
 
   async getOrgChart(user: AuthenticatedUser) {
-    try {
-      const employees = await this.prisma.employee.findMany({
-        where: { companyId: user.companyId, status: "ACTIVE" as never, deletedAt: null },
-        select: {
-          id: true, fullName: true, managerId: true, photoUrl: true,
-          employeeRole: { select: { name: true } },
-          branch: { select: { name: true } },
-        },
-        orderBy: { fullName: "asc" },
-      });
-      const data = employees.map((e) => ({
-        id: e.id,
-        fullName: e.fullName,
-        managerId: e.managerId,
-        photoUrl: e.photoUrl,
-        roleTitle: (e as any).employeeRole?.name ?? null,
-        branchName: (e as any).branch?.name ?? null,
-      }));
-      return { data };
-    } catch {
-      return { data: [] };
-    }
+    const employees = await this.prisma.employee.findMany({
+      where: { companyId: user.companyId, status: "ACTIVE" as never, deletedAt: null },
+      select: {
+        id: true, fullName: true, managerId: true, photoUrl: true,
+        employeeRole: { select: { name: true } },
+        branch: { select: { name: true } },
+      },
+      orderBy: { fullName: "asc" },
+    });
+    const data = employees.map((e) => ({
+      id: e.id,
+      fullName: e.fullName,
+      managerId: e.managerId,
+      photoUrl: e.photoUrl,
+      roleTitle: (e as any).employeeRole?.name ?? null,
+      branchName: (e as any).branch?.name ?? null,
+    }));
+    return { data };
   }
 
   // ─── HR-F: Training Catalog ───────────────────────────────────────────────────
 
   async listTrainingCourses(user: AuthenticatedUser) {
-    try {
-      const rows = await this.prisma.trainingCourse.findMany({
-        where: { companyId: user.companyId, deletedAt: null },
-        orderBy: { title: "asc" },
-      });
-      return { data: rows };
-    } catch {
-      return { data: [] };
-    }
+    const rows = await this.prisma.trainingCourse.findMany({
+      where: { companyId: user.companyId, deletedAt: null },
+      orderBy: { title: "asc" },
+    });
+    return { data: rows };
   }
 
   async createTrainingCourse(user: AuthenticatedUser, dto: CreateTrainingCourseDto, ctx: RequestContext) {
@@ -2042,16 +1980,12 @@ export class HRService {
   // ─── HR-G: Salary Bands ───────────────────────────────────────────────────────
 
   async listSalaryBands(user: AuthenticatedUser) {
-    try {
-      const rows = await this.prisma.salaryBand.findMany({
-        where: { companyId: user.companyId, deletedAt: null },
-        include: { employeeRole: { select: { name: true } } },
-        orderBy: [{ grade: "asc" }, { effectiveDate: "desc" }],
-      });
-      return { data: rows };
-    } catch {
-      return { data: [] };
-    }
+    const rows = await this.prisma.salaryBand.findMany({
+      where: { companyId: user.companyId, deletedAt: null },
+      include: { employeeRole: { select: { name: true } } },
+      orderBy: [{ grade: "asc" }, { effectiveDate: "desc" }],
+    });
+    return { data: rows };
   }
 
   async createSalaryBand(user: AuthenticatedUser, dto: CreateSalaryBandDto, ctx: RequestContext) {
@@ -2081,16 +2015,12 @@ export class HRService {
   // ─── HR-G: Job Postings ───────────────────────────────────────────────────────
 
   async listJobPostings(user: AuthenticatedUser, query: HRQueryDto) {
-    try {
-      const rows = await this.prisma.jobPosting.findMany({
-        where: { companyId: user.companyId, deletedAt: null, ...(query.status ? { status: query.status } : {}) },
-        orderBy: { createdAt: "desc" },
-        take: 100,
-      });
-      return { data: rows };
-    } catch {
-      return { data: [] };
-    }
+    const rows = await this.prisma.jobPosting.findMany({
+      where: { companyId: user.companyId, deletedAt: null, ...(query.status ? { status: query.status } : {}) },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    });
+    return { data: rows };
   }
 
   async createJobPosting(user: AuthenticatedUser, dto: CreateJobPostingDto, ctx: RequestContext) {
@@ -2129,17 +2059,13 @@ export class HRService {
   // ─── HR-G: Applications ───────────────────────────────────────────────────────
 
   async listApplications(user: AuthenticatedUser, query: HRQueryDto) {
-    try {
-      const rows = await this.prisma.jobApplication.findMany({
-        where: { companyId: user.companyId, deletedAt: null, ...(query.status ? { status: query.status } : {}) },
-        include: { jobPosting: { select: { title: true, reference: true } } },
-        orderBy: { createdAt: "desc" },
-        take: 200,
-      });
-      return { data: rows };
-    } catch {
-      return { data: [] };
-    }
+    const rows = await this.prisma.jobApplication.findMany({
+      where: { companyId: user.companyId, deletedAt: null, ...(query.status ? { status: query.status } : {}) },
+      include: { jobPosting: { select: { title: true, reference: true } } },
+      orderBy: { createdAt: "desc" },
+      take: 200,
+    });
+    return { data: rows };
   }
 
   async createApplication(user: AuthenticatedUser, jobPostingId: string, dto: CreateJobApplicationDto, ctx: RequestContext) {
@@ -2197,15 +2123,11 @@ export class HRService {
   ];
 
   async listOnboarding(user: AuthenticatedUser, employeeId: string) {
-    try {
-      const rows = await this.prisma.onboardingChecklist.findMany({
-        where: { companyId: user.companyId, employeeId },
-        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
-      });
-      return { data: rows };
-    } catch {
-      return { data: [] };
-    }
+    const rows = await this.prisma.onboardingChecklist.findMany({
+      where: { companyId: user.companyId, employeeId },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    });
+    return { data: rows };
   }
 
   async createOnboardingItem(user: AuthenticatedUser, employeeId: string, dto: CreateOnboardingItemDto, ctx: RequestContext) {
@@ -2249,15 +2171,11 @@ export class HRService {
   // ─── HR-H: 360 Peer Reviews ───────────────────────────────────────────────────
 
   async listPeerReviews(user: AuthenticatedUser, performanceId: string) {
-    try {
-      const rows = await this.prisma.performancePeerReview.findMany({
-        where: { companyId: user.companyId, performanceId },
-        orderBy: { createdAt: "asc" },
-      });
-      return { data: rows };
-    } catch {
-      return { data: [] };
-    }
+    const rows = await this.prisma.performancePeerReview.findMany({
+      where: { companyId: user.companyId, performanceId },
+      orderBy: { createdAt: "asc" },
+    });
+    return { data: rows };
   }
 
   async createPeerReview(user: AuthenticatedUser, performanceId: string, dto: CreatePeerReviewDto, ctx: RequestContext) {
@@ -2281,15 +2199,11 @@ export class HRService {
   // ─── HR-H: Approval Chains ────────────────────────────────────────────────────
 
   async listApprovalChains(user: AuthenticatedUser) {
-    try {
-      const rows = await this.prisma.approvalChain.findMany({
-        where: { companyId: user.companyId, deletedAt: null },
-        orderBy: { entityType: "asc" },
-      });
-      return { data: rows };
-    } catch {
-      return { data: [] };
-    }
+    const rows = await this.prisma.approvalChain.findMany({
+      where: { companyId: user.companyId, deletedAt: null },
+      orderBy: { entityType: "asc" },
+    });
+    return { data: rows };
   }
 
   async upsertApprovalChain(user: AuthenticatedUser, dto: CreateApprovalChainDto, ctx: RequestContext) {
@@ -2315,16 +2229,12 @@ export class HRService {
   // ─── HR-H: Compliance Reports ─────────────────────────────────────────────────
 
   async listComplianceReports(user: AuthenticatedUser) {
-    try {
-      const rows = await this.prisma.complianceReport.findMany({
-        where: { companyId: user.companyId },
-        orderBy: { createdAt: "desc" },
-        take: 50,
-      });
-      return { data: rows };
-    } catch {
-      return { data: [] };
-    }
+    const rows = await this.prisma.complianceReport.findMany({
+      where: { companyId: user.companyId },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    });
+    return { data: rows };
   }
 
   async generateSsnitReport(user: AuthenticatedUser, dto: ComplianceReportQueryDto, ctx: RequestContext) {

@@ -62,9 +62,9 @@ export class FeedProductionService {
         take: 8
       }),
       this.prisma.feedQualityCheck.count({ where: { ...this.qualityWhere(user, {}), status: "PENDING" } }),
-      this.prisma.finishedFeedStock.findMany({ where: this.finishedStockWhere(user, {}), select: { quantityKg: true, bag50KgCount: true, unitCost: true } }),
-      this.prisma.feedRawMaterialUsage.findMany({ where: this.usageWhere(user, {}), select: { quantityKg: true, unitCost: true, wastageKg: true } }),
-      this.prisma.feedProductionCost.findMany({ where: this.costWhere(user, {}), select: { rawMaterialCost: true, laborCost: true, packagingCost: true, overheadCost: true, expectedSalesValue: true } }),
+      this.prisma.finishedFeedStock.findMany({ where: this.finishedStockWhere(user, {}), select: { quantityKg: true, bag50KgCount: true, unitCost: true }, orderBy: { updatedAt: "desc" }, take: 500 }),
+      this.prisma.feedRawMaterialUsage.findMany({ where: this.usageWhere(user, {}), select: { quantityKg: true, unitCost: true, wastageKg: true }, orderBy: { createdAt: "desc" }, take: 500 }),
+      this.prisma.feedProductionCost.aggregate({ where: this.costWhere(user, {}), _sum: { rawMaterialCost: true, laborCost: true, packagingCost: true, overheadCost: true, expectedSalesValue: true } }),
       this.prisma.feedProductionOrder.findMany({
         where: { ...this.orderWhere(user, {}), status: { in: ["DRAFT", "APPROVED"] }, scheduledDate: { lt: new Date() } },
         select: { id: true, orderNumber: true, status: true, scheduledDate: true, plannedQuantityKg: true, formula: { select: { name: true, code: true } } },
@@ -91,8 +91,8 @@ export class FeedProductionService {
     const finishedValue = finishedStocks.reduce((sum, row) => sum + Number(row.quantityKg) * Number(row.unitCost), 0);
     const rawMaterialCost = usage.reduce((sum, row) => sum + Number(row.quantityKg) * Number(row.unitCost), 0);
     const wastageKg = usage.reduce((sum, row) => sum + Number(row.wastageKg), 0);
-    const productionCost = costs.reduce((sum, row) => sum + Number(row.rawMaterialCost) + Number(row.laborCost) + Number(row.packagingCost) + Number(row.overheadCost), 0);
-    const expectedSalesValue = costs.reduce((sum, row) => sum + Number(row.expectedSalesValue), 0);
+    const productionCost = Number(costs._sum.rawMaterialCost ?? 0) + Number(costs._sum.laborCost ?? 0) + Number(costs._sum.packagingCost ?? 0) + Number(costs._sum.overheadCost ?? 0);
+    const expectedSalesValue = Number(costs._sum.expectedSalesValue ?? 0);
 
     return {
       data: {
