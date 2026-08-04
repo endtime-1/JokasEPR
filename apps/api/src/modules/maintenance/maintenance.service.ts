@@ -94,7 +94,7 @@ export class MaintenanceService {
   }
 
   async listMachines(user: AuthenticatedUser, query: MaintenanceQueryDto) {
-    return { data: await this.prisma.machine.findMany({ where: this.machineWhere(user, query), include: { branch: true, farm: true, warehouse: true, productionSite: true }, orderBy: { createdAt: "desc" } }) };
+    return { data: await this.prisma.machine.findMany({ where: this.machineWhere(user, query), include: { branch: true, farm: true, warehouse: true, productionSite: true }, orderBy: { createdAt: "desc" }, take: 200 }) };
   }
 
   async createMachine(user: AuthenticatedUser, dto: CreateMachineDto, context: RequestContext) {
@@ -127,7 +127,7 @@ export class MaintenanceService {
   }
 
   async listEquipment(user: AuthenticatedUser, query: MaintenanceQueryDto) {
-    return { data: await this.prisma.equipment.findMany({ where: this.equipmentWhere(user, query), include: { branch: true, farm: true, warehouse: true, productionSite: true, machine: true }, orderBy: { createdAt: "desc" } }) };
+    return { data: await this.prisma.equipment.findMany({ where: this.equipmentWhere(user, query), include: { branch: true, farm: true, warehouse: true, productionSite: true, machine: true }, orderBy: { createdAt: "desc" }, take: 200 }) };
   }
 
   async createEquipment(user: AuthenticatedUser, dto: CreateEquipmentDto, context: RequestContext) {
@@ -154,7 +154,7 @@ export class MaintenanceService {
   }
 
   async listSchedules(user: AuthenticatedUser, query: MaintenanceQueryDto) {
-    return { data: await this.prisma.maintenanceSchedule.findMany({ where: this.scheduleWhere(user, query), include: { machine: true, equipment: true, assignments: true }, orderBy: { nextDueDate: "asc" } }) };
+    return { data: await this.prisma.maintenanceSchedule.findMany({ where: this.scheduleWhere(user, query), include: { machine: true, equipment: true, assignments: true }, orderBy: { nextDueDate: "asc" }, take: 200 }) };
   }
 
   async createSchedule(user: AuthenticatedUser, dto: CreateMaintenanceScheduleDto, context: RequestContext) {
@@ -182,7 +182,7 @@ export class MaintenanceService {
   }
 
   async listRecords(user: AuthenticatedUser, query: MaintenanceQueryDto) {
-    return { data: await this.prisma.maintenanceRecord.findMany({ where: this.recordWhere(user, query), include: { machine: true, equipment: true, schedule: true, sparePartUsages: true, costs: true }, orderBy: { maintenanceDate: "desc" } }) };
+    return { data: await this.prisma.maintenanceRecord.findMany({ where: this.recordWhere(user, query), include: { machine: true, equipment: true, schedule: true, sparePartUsages: true, costs: true }, orderBy: { maintenanceDate: "desc" }, take: 200 }) };
   }
 
   async createRecord(user: AuthenticatedUser, dto: CreateMaintenanceRecordDto, context: RequestContext) {
@@ -211,7 +211,7 @@ export class MaintenanceService {
   }
 
   async listBreakdowns(user: AuthenticatedUser, query: MaintenanceQueryDto) {
-    return { data: await this.prisma.breakdownRecord.findMany({ where: this.breakdownWhere(user, query), include: { machine: true, equipment: true, assignments: true, downtimeRecords: true, costs: true }, orderBy: { reportedAt: "desc" } }) };
+    return { data: await this.prisma.breakdownRecord.findMany({ where: this.breakdownWhere(user, query), include: { machine: true, equipment: true, assignments: true, downtimeRecords: true, costs: true }, orderBy: { reportedAt: "desc" }, take: 200 }) };
   }
 
   async createBreakdown(user: AuthenticatedUser, dto: CreateBreakdownDto, context: RequestContext) {
@@ -255,7 +255,7 @@ export class MaintenanceService {
   }
 
   async listSpareParts(user: AuthenticatedUser, query: MaintenanceQueryDto) {
-    return { data: await this.prisma.sparePartUsage.findMany({ where: this.spareWhere(user, query), include: { product: true, warehouse: true, machine: true, equipment: true }, orderBy: { usedAt: "desc" } }) };
+    return { data: await this.prisma.sparePartUsage.findMany({ where: this.spareWhere(user, query), include: { product: true, warehouse: true, machine: true, equipment: true }, orderBy: { usedAt: "desc" }, take: 200 }) };
   }
 
   async createAssignment(user: AuthenticatedUser, dto: CreateTechnicianAssignmentDto, context: RequestContext) {
@@ -266,7 +266,7 @@ export class MaintenanceService {
   }
 
   async listAssignments(user: AuthenticatedUser, query: MaintenanceQueryDto) {
-    return { data: await this.prisma.technicianAssignment.findMany({ where: this.assignmentWhere(user, query), include: { technician: { select: { fullName: true, email: true } }, machine: true, equipment: true }, orderBy: { assignedAt: "desc" } }) };
+    return { data: await this.prisma.technicianAssignment.findMany({ where: this.assignmentWhere(user, query), include: { technician: { select: { fullName: true, email: true } }, machine: true, equipment: true }, orderBy: { assignedAt: "desc" }, take: 200 }) };
   }
 
   async createDowntime(user: AuthenticatedUser, dto: CreateDowntimeDto, context: RequestContext) {
@@ -281,7 +281,7 @@ export class MaintenanceService {
   }
 
   async listDowntime(user: AuthenticatedUser, query: MaintenanceQueryDto) {
-    return { data: await this.prisma.machineDowntimeRecord.findMany({ where: this.downtimeWhere(user, query), include: { machine: true, equipment: true, breakdownRecord: true }, orderBy: { startAt: "desc" } }) };
+    return { data: await this.prisma.machineDowntimeRecord.findMany({ where: this.downtimeWhere(user, query), include: { machine: true, equipment: true, breakdownRecord: true }, orderBy: { startAt: "desc" }, take: 200 }) };
   }
 
   async createCost(user: AuthenticatedUser, dto: CreateMaintenanceCostDto, context: RequestContext) {
@@ -292,7 +292,7 @@ export class MaintenanceService {
   }
 
   async listCosts(user: AuthenticatedUser, query: MaintenanceQueryDto) {
-    return { data: await this.prisma.maintenanceCost.findMany({ where: this.costWhere(user, query), include: { machine: true, equipment: true, maintenanceRecord: true, breakdownRecord: true }, orderBy: { costDate: "desc" } }) };
+    return { data: await this.prisma.maintenanceCost.findMany({ where: this.costWhere(user, query), include: { machine: true, equipment: true, maintenanceRecord: true, breakdownRecord: true }, orderBy: { costDate: "desc" }, take: 200 }) };
   }
 
   async reportCsv(user: AuthenticatedUser, query: MaintenanceQueryDto, context: RequestContext) {

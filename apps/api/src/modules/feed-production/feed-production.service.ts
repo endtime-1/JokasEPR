@@ -52,7 +52,7 @@ export class FeedProductionService {
 
   async dashboard(user: AuthenticatedUser) {
     const sevenDaysAgo = new Date(Date.now() - 7 * 86400000);
-    const [formulas, orders, batches, qualityChecks, finishedStocks, usage, costs, stalledOrders, weekBatches, formulaStats, orderStats, systemAlerts] = await Promise.all([
+    const [formulas, orders, batches, qualityChecks, finishedStockAgg, usageAgg, costs, stalledOrders, weekBatches, formulaStats, orderStats, systemAlerts] = await Promise.all([
       this.prisma.feedFormula.count({ where: this.formulaWhere(user, {}) }),
       this.prisma.feedProductionOrder.findMany({ where: this.orderWhere(user, {}), orderBy: { createdAt: "desc" }, take: 8 }),
       this.prisma.feedProductionBatch.findMany({
@@ -62,8 +62,8 @@ export class FeedProductionService {
         take: 8
       }),
       this.prisma.feedQualityCheck.count({ where: { ...this.qualityWhere(user, {}), status: "PENDING" } }),
-      this.prisma.finishedFeedStock.findMany({ where: this.finishedStockWhere(user, {}), select: { quantityKg: true, bag50KgCount: true, unitCost: true }, orderBy: { updatedAt: "desc" }, take: 500 }),
-      this.prisma.feedRawMaterialUsage.findMany({ where: this.usageWhere(user, {}), select: { quantityKg: true, unitCost: true, wastageKg: true }, orderBy: { createdAt: "desc" }, take: 500 }),
+      this.prisma.finishedFeedStock.aggregate({ where: this.finishedStockWhere(user, {}), _sum: { quantityKg: true, bag50KgCount: true } }),
+      this.prisma.feedRawMaterialUsage.aggregate({ where: this.usageWhere(user, {}), _sum: { quantityKg: true, wastageKg: true } }),
       this.prisma.feedProductionCost.aggregate({ where: this.costWhere(user, {}), _sum: { rawMaterialCost: true, laborCost: true, packagingCost: true, overheadCost: true, expectedSalesValue: true } }),
       this.prisma.feedProductionOrder.findMany({
         where: { ...this.orderWhere(user, {}), status: { in: ["DRAFT", "APPROVED"] }, scheduledDate: { lt: new Date() } },
@@ -87,10 +87,9 @@ export class FeedProductionService {
     ]);
 
     const totalProducedKg = batches.reduce((sum, batch) => sum + Number(batch.producedQuantityKg), 0);
-    const totalFinishedKg = finishedStocks.reduce((sum, row) => sum + Number(row.quantityKg), 0);
-    const finishedValue = finishedStocks.reduce((sum, row) => sum + Number(row.quantityKg) * Number(row.unitCost), 0);
-    const rawMaterialCost = usage.reduce((sum, row) => sum + Number(row.quantityKg) * Number(row.unitCost), 0);
-    const wastageKg = usage.reduce((sum, row) => sum + Number(row.wastageKg), 0);
+    const totalFinishedKg = Number(finishedStockAgg._sum.quantityKg ?? 0);
+    const rawMaterialCost = Number(costs._sum.rawMaterialCost ?? 0);
+    const wastageKg = Number(usageAgg._sum.wastageKg ?? 0);
     const productionCost = Number(costs._sum.rawMaterialCost ?? 0) + Number(costs._sum.laborCost ?? 0) + Number(costs._sum.packagingCost ?? 0) + Number(costs._sum.overheadCost ?? 0);
     const expectedSalesValue = Number(costs._sum.expectedSalesValue ?? 0);
 
@@ -101,8 +100,8 @@ export class FeedProductionService {
         pendingQualityChecks: qualityChecks,
         totalProducedKg,
         totalFinishedKg,
-        bag50KgCount: finishedStocks.reduce((sum, row) => sum + row.bag50KgCount, 0),
-        finishedValue: Number(finishedValue.toFixed(2)),
+        bag50KgCount: finishedStockAgg._sum.bag50KgCount ?? 0,
+        finishedValue: Number(productionCost.toFixed(2)),
         rawMaterialCost: Number(rawMaterialCost.toFixed(2)),
         wastageKg: Number(wastageKg.toFixed(2)),
         productionProfitMargin: this.margin(expectedSalesValue, productionCost),
