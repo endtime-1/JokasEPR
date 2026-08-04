@@ -18,7 +18,15 @@ jobs:
 
           echo "" >> "$OUT"
           echo "--- PM2 Logs (last 100 lines) ---" >> "$OUT"
-          pm2 logs --nostream --lines 100 2>&1 >> "$OUT" || echo "No PM2 logs" >> "$OUT"
+          PM2_LOGS="$HOME/.pm2/logs"
+          if [ -d "$PM2_LOGS" ]; then
+            for f in "$PM2_LOGS"/*.log; do
+              echo "-- $f --" >> "$OUT"
+              tail -50 "$f" >> "$OUT" 2>/dev/null
+            done
+          else
+            echo "No PM2 log directory found" >> "$OUT"
+          fi
 
           echo "" >> "$OUT"
           echo "--- Passenger Error Log (last 100 lines) ---" >> "$OUT"
