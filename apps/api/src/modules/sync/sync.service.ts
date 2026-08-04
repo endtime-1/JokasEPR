@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, Logger } from "@nestjs/common";
+import { UserStatus } from "@prisma/client";
 import { AuthenticatedUser } from "@jokas/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { PoultryService } from "../poultry/poultry.service";
@@ -184,9 +185,9 @@ export class SyncService {
       payload: (record.payload as any) ?? {}
     };
 
-    // Look up the original submitting user for auth context
+    // Look up the original submitting user for auth context — must still be active
     const submitter = await this.prisma.user.findFirst({
-      where: { id: record.userId },
+      where: { id: record.userId, deletedAt: null, status: UserStatus.ACTIVE },
       include: {
         roles: { include: { role: { include: { permissions: true } } } },
         farmAccesses: true,
@@ -208,7 +209,7 @@ export class SyncService {
       farmIds: submitter.farmAccesses.map((f: any) => f.farmId),
       warehouseIds: submitter.warehouseAccesses.map((w: any) => w.warehouseId),
       productionSiteIds: submitter.productionSiteAccess.map((ps: any) => ps.productionSiteId),
-      hasGlobalAccess: submitter.roles.some((r: any) => r.role.name === "SUPER_ADMIN" || r.role.name === "CEO")
+      hasGlobalAccess: submitter.roles.some((r: any) => r.role.level === "SUPER_ADMIN" || r.role.level === "CEO")
     };
 
     const result = await this.processSyncItem(retryUser, item, ctx);

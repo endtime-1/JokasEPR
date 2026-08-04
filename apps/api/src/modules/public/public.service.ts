@@ -12,12 +12,14 @@ export class PublicService {
     private readonly config: ConfigService,
   ) {}
 
-  // Resolve the storefront company once and reuse across all public endpoints.
-  // Uses STOREFRONT_COMPANY_ID env var when set; falls back to name-based lookup.
+  // Resolve the storefront company. Prefer STOREFRONT_COMPANY_ID env var (explicit).
+  // Name-based fallback is kept for backwards compatibility but logs a warning because
+  // a name match can silently target the wrong company in multi-tenant setups.
   private async getStorefrontCompanyId(): Promise<string> {
     const envId = this.config.get<string>("STOREFRONT_COMPANY_ID");
     if (envId) return envId;
 
+    // TODO: Set STOREFRONT_COMPANY_ID in production .env and remove this fallback.
     const company = await this.prisma.company.findFirst({
       where: { name: { contains: "Akoko" }, status: "ACTIVE" },
       select: { id: true },
@@ -100,24 +102,20 @@ export class PublicService {
     const branch    = company.branches[0];
     const warehouse = company.warehouses[0];
 
-    let customer = await this.prisma.customer.findFirst({
-      where: { companyId: company.id, phone: dto.customerPhone, deletedAt: null },
+    // Always create a new anonymous customer record per storefront order — reusing
+    // an existing customer by phone alone allows phone spoofing to access another
+    // customer's account history and credit terms.
+    const customer = await this.prisma.customer.create({
+      data: {
+        companyId:  company.id,
+        branchId:   branch.id,
+        code:       `WEB-${randomBytes(4).toString("hex").toUpperCase()}`,
+        name:       dto.customerName,
+        phone:      dto.customerPhone,
+        email:      dto.customerEmail,
+        address:    dto.deliveryAddress,
+      },
     });
-
-    if (!customer) {
-      const count = await this.prisma.customer.count({ where: { companyId: company.id } });
-      customer = await this.prisma.customer.create({
-        data: {
-          companyId:  company.id,
-          branchId:   branch.id,
-          code:       `WEB-${String(count + 1).padStart(4, "0")}`,
-          name:       dto.customerName,
-          phone:      dto.customerPhone,
-          email:      dto.customerEmail,
-          address:    dto.deliveryAddress,
-        },
-      });
-    }
 
     const productIds = dto.lines.map((l) => l.productId);
     const products   = await this.prisma.product.findMany({
@@ -138,10 +136,10 @@ export class PublicService {
     });
 
     const subtotal      = orderItems.reduce((sum, i) => sum + i.total, 0);
-    // Fully random reference — time-predictable references allow order enumeration
+    // Both references are fully random — sequential numbers allow order enumeration
+    // and count + 1 has a race condition under concurrent requests.
     const storefrontRef = `AKO-${randomBytes(6).toString("hex").toUpperCase()}`;
-    const orderCount    = await this.prisma.salesOrder.count({ where: { companyId: company.id } });
-    const orderNumber   = `SO-WEB-${String(orderCount + 1).padStart(5, "0")}`;
+    const orderNumber   = `SO-WEB-${randomBytes(5).toString("hex").toUpperCase()}`;
 
     await this.prisma.salesOrder.create({
       data: {

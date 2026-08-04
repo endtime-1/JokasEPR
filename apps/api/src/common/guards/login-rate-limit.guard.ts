@@ -19,12 +19,17 @@ export class LoginRateLimitGuard implements CanActivate {
     const windowEnd = new Date(now.getTime() + WINDOW_MS);
 
     try {
-      const existing = await this.prisma.loginRateLimit.findFirst({
-        where: { key, windowEnd: { gt: now } }
+      const existing = await this.prisma.loginRateLimit.findUnique({
+        where: { key }
       });
 
-      if (!existing) {
-        await this.prisma.loginRateLimit.create({ data: { key, attempts: 1, windowEnd } });
+      if (!existing || existing.windowEnd <= now) {
+        // Upsert — unique key constraint prevents duplicate rows under concurrency.
+        await this.prisma.loginRateLimit.upsert({
+          where: { key },
+          create: { key, attempts: 1, windowEnd },
+          update: { attempts: 1, windowEnd },
+        });
         return true;
       }
 
@@ -33,7 +38,7 @@ export class LoginRateLimitGuard implements CanActivate {
       }
 
       await this.prisma.loginRateLimit.update({
-        where: { id: existing.id },
+        where: { key },
         data: { attempts: { increment: 1 } }
       });
     } catch (err) {

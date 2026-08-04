@@ -1,4 +1,4 @@
-import { IsEmail, IsEnum, IsNotEmpty, IsOptional, IsString, IsArray, ValidateNested, IsNumber, Min, IsUUID } from "class-validator";
+import { IsEmail, IsEnum, IsNotEmpty, IsOptional, IsString, IsArray, ValidateNested, IsNumber, Min, IsUUID, MaxLength } from "class-validator";
 import { Type } from "class-transformer";
 
 export enum PublicOrderStatus {
@@ -19,10 +19,10 @@ export class PublicOrderLineDto {
 }
 
 export class PlacePublicOrderDto {
-  @IsNotEmpty() @IsString() customerName!: string;
-  @IsNotEmpty() @IsString() customerPhone!: string;
+  @IsNotEmpty() @IsString() @MaxLength(160) customerName!: string;
+  @IsNotEmpty() @IsString() @MaxLength(30) customerPhone!: string;
   @IsOptional() @IsEmail() customerEmail?: string;
-  @IsNotEmpty() @IsString() deliveryAddress!: string;
-  @IsOptional() @IsString() notes?: string;
+  @IsNotEmpty() @IsString() @MaxLength(500) deliveryAddress!: string;
+  @IsOptional() @IsString() @MaxLength(1000) notes?: string;
   @IsArray() @ValidateNested({ each: true }) @Type(() => PublicOrderLineDto) lines!: PublicOrderLineDto[];
 }

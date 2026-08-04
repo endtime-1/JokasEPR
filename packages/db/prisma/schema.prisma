@@ -6973,11 +6973,10 @@ model QuickBooksWebhookEvent {
 
 model LoginRateLimit {
   id        String   @id @default(uuid())
-  key       String   @db.VarChar(320)
+  key       String   @unique @db.VarChar(320)
   attempts  Int      @default(1)
   windowEnd DateTime
 
-  @@index([key, windowEnd])
   @@index([windowEnd])
 }
 

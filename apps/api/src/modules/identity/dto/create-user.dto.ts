@@ -33,6 +33,7 @@ export class CreateUserDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(30)
   phone?: string;
 
   @IsArray()

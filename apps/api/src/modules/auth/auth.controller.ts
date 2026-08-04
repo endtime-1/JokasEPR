@@ -40,7 +40,6 @@ export class AuthController {
   }
 
   @Post("refresh")
-  @UseGuards(LoginRateLimitGuard)
   async refresh(
     @Body() body: Partial<RefreshTokenDto>,
     @Req() request: Request,

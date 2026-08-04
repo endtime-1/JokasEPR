@@ -26,9 +26,14 @@ async function bootstrap() {
 
   // Health check — runs a lightweight DB query so that periodic pings from start.js
   // keep the MySQL connection pool alive (prevents first-query stall after idle).
-  app.use("/health", async (_req: unknown, res: { send: (s: string) => void }) => {
-    try { await prisma.$queryRaw`SELECT 1`; } catch {}
-    res.send("ok");
+  // Returns 503 when the DB is unavailable so load balancers can act on it.
+  app.use("/health", async (_req: unknown, res: { status: (c: number) => { send: (s: string) => void }; send: (s: string) => void }) => {
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      res.send("ok");
+    } catch {
+      res.status(503).send("db_unavailable");
+    }
   });
 
   app.setGlobalPrefix(prefix);

@@ -61,10 +61,13 @@ export class SetupService {
       throw new ForbiddenException("Setup has already been completed.");
     }
 
-    // If SETUP_SECRET_TOKEN is configured, the caller must supply the matching
-    // x-setup-token header so random internet users cannot run setup.
+    // SETUP_SECRET_TOKEN must always be set — if missing we refuse rather than
+    // silently allowing anyone to run setup on a fresh server.
     const envToken = process.env.SETUP_SECRET_TOKEN;
-    if (envToken && setupToken !== envToken) {
+    if (!envToken) {
+      throw new ForbiddenException("Setup is locked — SETUP_SECRET_TOKEN is not configured.");
+    }
+    if (setupToken !== envToken) {
       throw new ForbiddenException("Invalid setup token.");
     }
 

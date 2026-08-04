@@ -30,6 +30,7 @@ const PROFILE_CACHE_TTL_MS = 5 * 60 * 1000; // 5 min — well inside the 15-min 
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
   private readonly profileCache = new Map<string, { profile: AuthenticatedUser; expiresAt: number }>();
+  private readonly PROFILE_CACHE_MAX = 1000;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -243,6 +244,10 @@ export class AuthService {
       productionSiteIds: user.productionSiteAccess.map((access) => access.productionSiteId),
       hasGlobalAccess
     };
+    if (this.profileCache.size >= this.PROFILE_CACHE_MAX) {
+      // Map iterates in insertion order — evict the oldest entry
+      this.profileCache.delete(this.profileCache.keys().next().value!);
+    }
     this.profileCache.set(userId, { profile, expiresAt: Date.now() + PROFILE_CACHE_TTL_MS });
     return profile;
   }
