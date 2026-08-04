@@ -85,36 +85,35 @@ export class HRService {
     today.setHours(0, 0, 0, 0);
 
     try {
-    const [
-      totalEmployees,
-      activeEmployees,
-      onLeave,
-      todayPresent,
-      todayAbsent,
-      todayTotalAttendance,
-      openTasks,
-      urgentTasks,
-      pendingPayroll,
-      openLeaveRequests,
-      recentLeaveRequests,
-      recentEmployees,
-      recentTasks,
-    ] = await Promise.all([
-      this.prisma.employee.count({ where: { companyId: cid, deletedAt: null } }).catch((e) => { console.error("[HR dash:totalEmployees]", e?.message); return 0; }),
-      this.prisma.employee.count({ where: { companyId: cid, deletedAt: null, status: "ACTIVE" } }).catch((e) => { console.error("[HR dash:activeEmployees]", e?.message); return 0; }),
-      this.prisma.employee.count({ where: { companyId: cid, deletedAt: null, status: "ON_LEAVE" } }).catch((e) => { console.error("[HR dash:onLeave]", e?.message); return 0; }),
-      this.prisma.attendanceRecord.count({ where: { companyId: cid, date: { gte: today }, status: "PRESENT" } }).catch((e) => { console.error("[HR dash:todayPresent]", e?.message); return 0; }),
-      this.prisma.attendanceRecord.count({ where: { companyId: cid, date: { gte: today }, status: "ABSENT" } }).catch((e) => { console.error("[HR dash:todayAbsent]", e?.message); return 0; }),
-      this.prisma.attendanceRecord.count({ where: { companyId: cid, date: { gte: today } } }).catch((e) => { console.error("[HR dash:totalAttendance]", e?.message); return 0; }),
+    // Batch 1 — 5 queries: employee groupBy (replaces 3 counts), attendance groupBy
+    // (replaces 3 counts), open tasks, urgent tasks, pending payroll.
+    // Running all 14 original queries in one Promise.all exhausted the 5-connection
+    // pool and caused timeouts on Hostinger shared hosting.
+    const [empStats, attStats, openTasks, urgentTasks, pendingPayroll] = await Promise.all([
+      this.prisma.employee.groupBy({ by: ["status" as never], where: { companyId: cid, deletedAt: null }, _count: { _all: true } }).catch((e) => { console.error("[HR dash:empStats]", e?.message); return []; }),
+      this.prisma.attendanceRecord.groupBy({ by: ["status" as never], where: { companyId: cid, date: { gte: today } }, _count: { _all: true } }).catch((e) => { console.error("[HR dash:attStats]", e?.message); return []; }),
       this.prisma.task.count({ where: { companyId: cid, deletedAt: null, status: { in: ["OPEN", "IN_PROGRESS"] } } }).catch((e) => { console.error("[HR dash:openTasks]", e?.message); return 0; }),
       this.prisma.task.count({ where: { companyId: cid, deletedAt: null, status: "OPEN", priority: "URGENT" } }).catch((e) => { console.error("[HR dash:urgentTasks]", e?.message); return 0; }),
       this.prisma.payrollRecord.count({ where: { companyId: cid, deletedAt: null, status: "DRAFT" } }).catch((e) => { console.error("[HR dash:pendingPayroll]", e?.message); return 0; }),
+    ]);
+
+    // Batch 2 — 4 queries: leave count + recent items (runs after batch 1 frees connections).
+    const [openLeaveRequests, recentLeaveRequests, recentEmployees, recentTasks] = await Promise.all([
       this.prisma.leaveRequest.count({ where: { companyId: cid, deletedAt: null, status: "PENDING" } }).catch((e) => { console.error("[HR dash:openLeaveRequests]", e?.message); return 0; }),
       this.prisma.leaveRequest.findMany({ where: { companyId: cid, deletedAt: null }, orderBy: { createdAt: "desc" }, take: 5, select: { id: true, reference: true, employeeName: true, leaveType: true, startDate: true, endDate: true, daysRequested: true, status: true, createdAt: true } }).catch((e) => { console.error("[HR dash:recentLeaveRequests]", e?.message); return []; }),
       this.prisma.employee.findMany({ where: { companyId: cid, deletedAt: null }, orderBy: { createdAt: "desc" }, take: 8, select: { id: true, code: true, fullName: true, status: true, photoUrl: true, employeeRole: { select: { name: true } }, branch: { select: { name: true } } } }).catch((e) => { console.error("[HR dash:recentEmployees]", e?.message); return []; }),
       this.prisma.task.findMany({ where: { companyId: cid, deletedAt: null }, orderBy: { createdAt: "desc" }, take: 8, select: { id: true, title: true, priority: true, status: true, dueDate: true, assignments: { select: { id: true, employeeId: true, employee: { select: { fullName: true } } } } } }).catch((e) => { console.error("[HR dash:recentTasks]", e?.message); return []; }),
     ]);
 
+    // Derive counts from groupBy results.
+    const empArr = empStats as Array<{ status: string; _count: { _all: number } }>;
+    const attArr = attStats as Array<{ status: string; _count: { _all: number } }>;
+    const totalEmployees = empArr.reduce((s, r) => s + r._count._all, 0);
+    const activeEmployees = empArr.find((r) => r.status === "ACTIVE")?._count._all ?? 0;
+    const onLeave = empArr.find((r) => r.status === "ON_LEAVE")?._count._all ?? 0;
+    const todayPresent = attArr.find((r) => r.status === "PRESENT")?._count._all ?? 0;
+    const todayAbsent = attArr.find((r) => r.status === "ABSENT")?._count._all ?? 0;
+    const todayTotalAttendance = attArr.reduce((s, r) => s + r._count._all, 0);
     const attendanceRate = todayTotalAttendance > 0 ? (todayPresent / todayTotalAttendance * 100) : 0;
 
     return {
