@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import axios from "axios";
-import { randomBytes } from "crypto";
+import { createHmac, randomBytes, timingSafeEqual } from "crypto";
 import { PrismaService } from "../../prisma/prisma.service";
 import { QuickBooksTokenService } from "./quickbooks-token.service";
 
@@ -9,10 +9,14 @@ const QB_AUTH_URL = "https://appcenter.intuit.com/connect/oauth2";
 const QB_TOKEN_URL = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer";
 const QB_REVOKE_URL = "https://developer.api.intuit.com/v2/oauth2/tokens/revoke";
 const QB_SCOPE = "com.intuit.quickbooks.accounting";
+const STATE_TTL_MS = 600_000; // 10 minutes
+
+type OAuthStatePayload = { nonce: string; companyId: string; userId: string; exp: number };
 
 @Injectable()
 export class QuickBooksOAuthService {
-  private pendingStates = new Map<string, { companyId: string; userId: string; expiresAt: number }>();
+  // State is encoded as a signed token (base64url payload + "." + HMAC-SHA256 hex).
+  // No in-memory Map — survives server restarts and PM2 cluster forks.
 
   constructor(
     private readonly prisma: PrismaService,
@@ -20,14 +24,49 @@ export class QuickBooksOAuthService {
     private readonly tokenService: QuickBooksTokenService
   ) {}
 
+  private get stateSigningKey(): string {
+    return this.config.getOrThrow<string>("JWT_ACCESS_SECRET");
+  }
+
+  private signState(payload: OAuthStatePayload): string {
+    const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");
+    const sig = createHmac("sha256", this.stateSigningKey).update(encoded).digest("hex");
+    return `${encoded}.${sig}`;
+  }
+
+  private verifyState(state: string): OAuthStatePayload {
+    const dot = state.lastIndexOf(".");
+    if (dot < 0) throw new UnauthorizedException("Invalid OAuth state format");
+
+    const encoded = state.slice(0, dot);
+    const sig = state.slice(dot + 1);
+    const expectedSig = createHmac("sha256", this.stateSigningKey).update(encoded).digest("hex");
+
+    // Constant-time comparison prevents timing-oracle attacks on the HMAC.
+    if (
+      sig.length !== expectedSig.length ||
+      !timingSafeEqual(Buffer.from(sig, "hex"), Buffer.from(expectedSig, "hex"))
+    ) {
+      throw new UnauthorizedException("Invalid OAuth state signature");
+    }
+
+    const payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf-8")) as OAuthStatePayload;
+    if (payload.exp < Date.now()) throw new UnauthorizedException("OAuth state expired — please retry the connection");
+
+    return payload;
+  }
+
   getAuthorizationUrl(companyId: string, userId: string): string {
     const clientId = this.config.get<string>("QB_CLIENT_ID");
     const redirectUri = this.config.get<string>("QB_REDIRECT_URI");
     if (!clientId || !redirectUri) throw new BadRequestException("QuickBooks client credentials not configured");
 
-    const state = randomBytes(16).toString("hex");
-    // State expires in 10 minutes
-    this.pendingStates.set(state, { companyId, userId, expiresAt: Date.now() + 600_000 });
+    const state = this.signState({
+      nonce: randomBytes(16).toString("hex"),
+      companyId,
+      userId,
+      exp: Date.now() + STATE_TTL_MS,
+    });
 
     const params = new URLSearchParams({
       client_id: clientId,
@@ -40,14 +79,7 @@ export class QuickBooksOAuthService {
   }
 
   async handleCallback(code: string, state: string, realmId: string): Promise<{ companyId: string; redirectUrl: string }> {
-    const pending = this.pendingStates.get(state);
-    if (!pending || pending.expiresAt < Date.now()) {
-      this.pendingStates.delete(state);
-      throw new UnauthorizedException("Invalid or expired OAuth state");
-    }
-    this.pendingStates.delete(state);
-
-    const { companyId, userId } = pending;
+    const { companyId, userId } = this.verifyState(state);
     const tokens = await this.exchangeCodeForTokens(code, realmId);
 
     const environment = (this.config.get<string>("QB_ENVIRONMENT") ?? "sandbox").toUpperCase() as "SANDBOX" | "PRODUCTION";
