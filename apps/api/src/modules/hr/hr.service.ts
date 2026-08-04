@@ -144,21 +144,17 @@ export class HRService {
 
   async options(user: AuthenticatedUser) {
     const cid = user.companyId;
-    try {
-      const [branches, farms, warehouses, productionSites, employeeRoles, shifts, employees, bankAccounts] = await Promise.all([
-        this.prisma.branch.findMany({ where: { companyId: cid, deletedAt: null }, select: { id: true, code: true, name: true }, orderBy: { name: "asc" } }).catch(() => []),
-        this.prisma.farm.findMany({ where: { companyId: cid, deletedAt: null }, select: { id: true, code: true, name: true }, orderBy: { name: "asc" } }).catch(() => []),
-        this.prisma.warehouse.findMany({ where: { companyId: cid, deletedAt: null }, select: { id: true, code: true, name: true }, orderBy: { name: "asc" } }).catch(() => []),
-        this.prisma.productionSite.findMany({ where: { companyId: cid, deletedAt: null }, select: { id: true, code: true, name: true }, orderBy: { name: "asc" } }).catch(() => []),
-        this.prisma.employeeRole.findMany({ where: { companyId: cid, deletedAt: null, isActive: true }, select: { id: true, code: true, name: true }, orderBy: { name: "asc" } }).catch(() => []),
-        this.prisma.shift.findMany({ where: { companyId: cid, deletedAt: null, isActive: true }, select: { id: true, code: true, name: true, startTime: true, endTime: true }, orderBy: { name: "asc" } }).catch(() => []),
-        this.prisma.employee.findMany({ where: { companyId: cid, deletedAt: null, status: "ACTIVE" }, select: { id: true, code: true, fullName: true }, orderBy: { fullName: "asc" } }).catch(() => []),
-        this.prisma.bankAccount.findMany({ where: { companyId: cid, deletedAt: null, isActive: true }, select: { id: true, accountName: true, bankName: true }, orderBy: { accountName: "asc" } }).catch(() => []),
-      ]);
-      return { data: { branches, farms, warehouses, productionSites, employeeRoles, shifts, employees, bankAccounts } };
-    } catch {
-      return { data: { branches: [], farms: [], warehouses: [], productionSites: [], employeeRoles: [], shifts: [], employees: [], bankAccounts: [] } };
-    }
+    const [branches, farms, warehouses, productionSites, employeeRoles, shifts, employees, bankAccounts] = await Promise.all([
+      this.prisma.branch.findMany({ where: { companyId: cid, deletedAt: null }, select: { id: true, code: true, name: true }, orderBy: { name: "asc" } }),
+      this.prisma.farm.findMany({ where: { companyId: cid, deletedAt: null }, select: { id: true, code: true, name: true }, orderBy: { name: "asc" } }),
+      this.prisma.warehouse.findMany({ where: { companyId: cid, deletedAt: null }, select: { id: true, code: true, name: true }, orderBy: { name: "asc" } }),
+      this.prisma.productionSite.findMany({ where: { companyId: cid, deletedAt: null }, select: { id: true, code: true, name: true }, orderBy: { name: "asc" } }),
+      this.prisma.employeeRole.findMany({ where: { companyId: cid, deletedAt: null, isActive: true }, select: { id: true, code: true, name: true }, orderBy: { name: "asc" } }),
+      this.prisma.shift.findMany({ where: { companyId: cid, deletedAt: null, isActive: true }, select: { id: true, code: true, name: true, startTime: true, endTime: true }, orderBy: { name: "asc" } }),
+      this.prisma.employee.findMany({ where: { companyId: cid, deletedAt: null, status: "ACTIVE" }, select: { id: true, code: true, fullName: true }, orderBy: { fullName: "asc" } }),
+      this.prisma.bankAccount.findMany({ where: { companyId: cid, deletedAt: null, isActive: true }, select: { id: true, accountName: true, bankName: true }, orderBy: { accountName: "asc" } }),
+    ]);
+    return { data: { branches, farms, warehouses, productionSites, employeeRoles, shifts, employees, bankAccounts } };
   }
 
   // â"€â"€â"€ Employee Roles â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€

@@ -73,7 +73,7 @@ export class FinanceService {
         expenseCount: expenses._count,
         revenueCount: revenues._count,
         pendingApprovals: pendingExpenses,
-        bankAccounts,
+        bankAccounts: bankAccounts.map((a) => ({ ...a, currentBalance: Number(a.currentBalance) })),
         recentExpenses,
         recentRevenue
       }

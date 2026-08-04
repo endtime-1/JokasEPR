@@ -53,7 +53,6 @@ export class PoultryService {
   ) {}
 
   async dashboard(user: AuthenticatedUser) {
-    try {
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     const since7 = new Date(todayStart.getTime() - 6 * 86400000);
@@ -163,7 +162,6 @@ export class PoultryService {
         }))
       }
     };
-    } catch { return { data: { summary: { totalOpeningBirds: 0, currentLiveBirds: 0, activeBatches: 0, totalBatches: 0, totalEggs: 0, totalFeedKg: 0, totalCosts: 0, totalProfitability: 0 }, batches: [], alerts: { noTodayRecord: [], highMortality: [], criticalHealth: [] }, trends: { eggs: [], mortality: [], feed: [] }, houses: [] } }; }
   }
 
   async options(user: AuthenticatedUser) {
@@ -190,10 +188,9 @@ export class PoultryService {
 
   async farmOverview(user: AuthenticatedUser, farmId: string) {
     this.assertFarmAccess(user, farmId);
-    try {
-      const [houses, batches] = await Promise.all([
-        this.prisma.poultryHouse.findMany({ where: { companyId: user.companyId, farmId, deletedAt: null }, orderBy: { code: "asc" } }),
-        this.prisma.flockBatch.findMany({
+    const [houses, batches] = await Promise.all([
+      this.prisma.poultryHouse.findMany({ where: { companyId: user.companyId, farmId, deletedAt: null }, orderBy: { code: "asc" } }),
+      this.prisma.flockBatch.findMany({
           where: { companyId: user.companyId, farmId, deletedAt: null },
           include: {
             mortalityRecords: { where: { deletedAt: null } },
@@ -204,19 +201,16 @@ export class PoultryService {
         })
       ]);
 
-      return {
-        data: {
-          houses,
-          batchCount: batches.length,
-          currentLiveBirds: batches.reduce((sum, batch) => sum + this.currentLiveBirds(batch.openingBirdCount, batch.mortalityRecords), 0),
-          eggs: batches.flatMap((batch) => batch.eggProductionRecords).reduce((sum, row) => sum + this.totalEggs(row), 0),
-          feedKg: batches.flatMap((batch) => batch.feedConsumptionRecords).reduce((sum, row) => sum + Number(row.quantityKg), 0),
-          costs: batches.flatMap((batch) => batch.costRecords).reduce((sum, row) => sum + Number(row.amount), 0)
-        }
-      };
-    } catch {
-      return { data: { houses: [], batchCount: 0, currentLiveBirds: 0, eggs: 0, feedKg: 0, costs: 0 } };
-    }
+    return {
+      data: {
+        houses,
+        batchCount: batches.length,
+        currentLiveBirds: batches.reduce((sum, batch) => sum + this.currentLiveBirds(batch.openingBirdCount, batch.mortalityRecords), 0),
+        eggs: batches.flatMap((batch) => batch.eggProductionRecords).reduce((sum, row) => sum + this.totalEggs(row), 0),
+        feedKg: batches.flatMap((batch) => batch.feedConsumptionRecords).reduce((sum, row) => sum + Number(row.quantityKg), 0),
+        costs: batches.flatMap((batch) => batch.costRecords).reduce((sum, row) => sum + Number(row.amount), 0)
+      }
+    };
   }
 
   async listHouses(user: AuthenticatedUser, query: PoultryQueryDto) {

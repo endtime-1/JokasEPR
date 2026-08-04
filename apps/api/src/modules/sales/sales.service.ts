@@ -103,7 +103,8 @@ export class SalesService {
     const data = await this.prisma.customer.findMany({
       where: this.customerWhere(user, query),
       include: { branch: true, customerGroup: true, creditLimits: { where: { deletedAt: null } } },
-      orderBy: { createdAt: "desc" }
+      orderBy: { createdAt: "desc" },
+      take: 200
     });
     return { data };
   }
@@ -154,7 +155,7 @@ export class SalesService {
   }
 
   async listPriceLists(user: AuthenticatedUser, query: SalesQueryDto) {
-    const data = await this.prisma.priceList.findMany({ where: this.priceListWhere(user, query), include: { product: true, branch: true, customerGroup: true }, orderBy: { createdAt: "desc" } });
+    const data = await this.prisma.priceList.findMany({ where: this.priceListWhere(user, query), include: { product: true, branch: true, customerGroup: true }, orderBy: { createdAt: "desc" }, take: 200 });
     return { data };
   }
 
@@ -182,7 +183,8 @@ export class SalesService {
     const data = await this.prisma.salesOrder.findMany({
       where: this.orderWhere(user, query),
       include: { customer: true, warehouse: true, items: { include: { product: true } }, invoices: true, deliveryNotes: true },
-      orderBy: { orderDate: "desc" }
+      orderBy: { orderDate: "desc" },
+      take: 200
     });
     return { data };
   }
@@ -304,7 +306,7 @@ export class SalesService {
   }
 
   async listInvoices(user: AuthenticatedUser, query: SalesQueryDto) {
-    const data = await this.prisma.invoice.findMany({ where: this.invoiceWhere(user, query), include: { customer: true, salesOrder: true, payments: true }, orderBy: { invoiceDate: "desc" } });
+    const data = await this.prisma.invoice.findMany({ where: this.invoiceWhere(user, query), include: { customer: true, salesOrder: true, payments: true }, orderBy: { invoiceDate: "desc" }, take: 200 });
     return { data };
   }
 
@@ -698,28 +700,40 @@ export class SalesService {
     return { companyId: user.companyId, deletedAt: null, branchId: query.branchId, ...(user.hasGlobalAccess ? {} : { OR: [{ branchId: null }, { branchId: { in: user.branchIds } }] }) };
   }
 
+  // Combines a caller-supplied branchId filter with the user's branch restriction.
+  // Plain spread would overwrite one with the other; AND applies both simultaneously.
+  private branchScope(user: AuthenticatedUser, query: SalesQueryDto) {
+    const conditions: object[] = [];
+    if (query.branchId) conditions.push({ branchId: query.branchId });
+    if (!user.hasGlobalAccess) conditions.push({ branchId: { in: user.branchIds } });
+    return conditions.length ? { AND: conditions } : {};
+  }
+
   private customerWhere(user: AuthenticatedUser, query: SalesQueryDto) {
-    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId, id: query.customerId, ...(user.hasGlobalAccess ? {} : { branchId: { in: user.branchIds } }) };
+    return { companyId: user.companyId, deletedAt: null, id: query.customerId, ...this.branchScope(user, query) };
   }
 
   private priceListWhere(user: AuthenticatedUser, query: SalesQueryDto) {
-    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId, productId: query.productId, ...(user.hasGlobalAccess ? {} : { OR: [{ branchId: null }, { branchId: { in: user.branchIds } }] }) };
+    const andConditions: object[] = [];
+    if (query.branchId) andConditions.push({ branchId: query.branchId });
+    if (!user.hasGlobalAccess) andConditions.push({ OR: [{ branchId: null }, { branchId: { in: user.branchIds } }] });
+    return { companyId: user.companyId, deletedAt: null, productId: query.productId, ...(andConditions.length ? { AND: andConditions } : {}) };
   }
 
   private orderWhere(user: AuthenticatedUser, query: SalesQueryDto) {
-    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId, customerId: query.customerId, warehouseId: query.warehouseId, ...(this.dateRange(query, "orderDate")), ...(user.hasGlobalAccess ? {} : { branchId: { in: user.branchIds } }) };
+    return { companyId: user.companyId, deletedAt: null, customerId: query.customerId, warehouseId: query.warehouseId, ...(this.dateRange(query, "orderDate")), ...this.branchScope(user, query) };
   }
 
   private invoiceWhere(user: AuthenticatedUser, query: SalesQueryDto) {
-    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId, customerId: query.customerId, ...(this.dateRange(query, "invoiceDate")), ...(user.hasGlobalAccess ? {} : { branchId: { in: user.branchIds } }) };
+    return { companyId: user.companyId, deletedAt: null, customerId: query.customerId, ...(this.dateRange(query, "invoiceDate")), ...this.branchScope(user, query) };
   }
 
   private paymentWhere(user: AuthenticatedUser, query: SalesQueryDto) {
-    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId, customerId: query.customerId, ...(this.dateRange(query, "paymentDate")), ...(user.hasGlobalAccess ? {} : { branchId: { in: user.branchIds } }) };
+    return { companyId: user.companyId, deletedAt: null, customerId: query.customerId, ...(this.dateRange(query, "paymentDate")), ...this.branchScope(user, query) };
   }
 
   private receiptWhere(user: AuthenticatedUser, query: SalesQueryDto) {
-    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId, customerId: query.customerId, ...(this.dateRange(query, "receiptDate")), ...(user.hasGlobalAccess ? {} : { branchId: { in: user.branchIds } }) };
+    return { companyId: user.companyId, deletedAt: null, customerId: query.customerId, ...(this.dateRange(query, "receiptDate")), ...this.branchScope(user, query) };
   }
 
   private returnWhere(user: AuthenticatedUser, query: SalesQueryDto) {

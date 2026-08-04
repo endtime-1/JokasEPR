@@ -52,27 +52,23 @@ export class DashboardService {
   constructor(private readonly prisma: PrismaService) {}
 
   async options(user: AuthenticatedUser) {
-    try {
-      const [company, branches, farms, warehouses, productionSites] = await Promise.all([
-        this.prisma.company.findUnique({ where: { id: user.companyId }, select: { id: true, name: true } }),
-        this.prisma.branch.findMany({ where: this.branchWhere(user), select: { id: true, code: true, name: true }, orderBy: { name: "asc" } }),
-        this.prisma.farm.findMany({ where: this.farmWhere(user), select: { id: true, code: true, name: true, branchId: true }, orderBy: { name: "asc" } }),
-        this.prisma.warehouse.findMany({ where: this.warehouseWhere(user), select: { id: true, code: true, name: true, branchId: true, farmId: true, productionSiteId: true }, orderBy: { name: "asc" } }),
-        this.prisma.productionSite.findMany({ where: this.productionSiteWhere(user), select: { id: true, code: true, name: true, branchId: true, type: true }, orderBy: { name: "asc" } })
-      ]);
-      return {
-        data: {
-          companies: company ? [company] : [],
-          branches,
-          farms,
-          warehouses,
-          productionSites,
-          businessUnits: Object.values(BusinessUnit)
-        }
-      };
-    } catch {
-      return { data: { companies: [], branches: [], farms: [], warehouses: [], productionSites: [], businessUnits: Object.values(BusinessUnit) } };
-    }
+    const [company, branches, farms, warehouses, productionSites] = await Promise.all([
+      this.prisma.company.findUnique({ where: { id: user.companyId }, select: { id: true, name: true } }),
+      this.prisma.branch.findMany({ where: this.branchWhere(user), select: { id: true, code: true, name: true }, orderBy: { name: "asc" } }),
+      this.prisma.farm.findMany({ where: this.farmWhere(user), select: { id: true, code: true, name: true, branchId: true }, orderBy: { name: "asc" } }),
+      this.prisma.warehouse.findMany({ where: this.warehouseWhere(user), select: { id: true, code: true, name: true, branchId: true, farmId: true, productionSiteId: true }, orderBy: { name: "asc" } }),
+      this.prisma.productionSite.findMany({ where: this.productionSiteWhere(user), select: { id: true, code: true, name: true, branchId: true, type: true }, orderBy: { name: "asc" } })
+    ]);
+    return {
+      data: {
+        companies: company ? [company] : [],
+        branches,
+        farms,
+        warehouses,
+        productionSites,
+        businessUnits: Object.values(BusinessUnit)
+      }
+    };
   }
 
   async summary(user: AuthenticatedUser) {
@@ -81,25 +77,21 @@ export class DashboardService {
     monthStart.setDate(1);
     monthStart.setHours(0, 0, 0, 0);
 
-    try {
-      const [salesAgg, openOrders, totalBirds, pendingAlerts] = await Promise.all([
-        this.prisma.salesOrder.aggregate({ where: { companyId, status: { not: "CANCELLED" }, createdAt: { gte: monthStart } }, _sum: { totalAmount: true } }),
-        this.prisma.salesOrder.count({ where: { companyId, status: { in: ["DRAFT", "PENDING_STOCK_APPROVAL", "APPROVED"] } } }),
-        this.prisma.flockBatch.aggregate({ where: { companyId, status: "ACTIVE", deletedAt: null }, _sum: { openingBirdCount: true } }),
-        this.prisma.stockExpiryAlert.count({ where: { companyId, deletedAt: null, daysToExpiry: { lte: 30 } } }),
-      ]);
+    const [salesAgg, openOrders, totalBirds, pendingAlerts] = await Promise.all([
+      this.prisma.salesOrder.aggregate({ where: { companyId, status: { not: "CANCELLED" }, createdAt: { gte: monthStart } }, _sum: { totalAmount: true } }),
+      this.prisma.salesOrder.count({ where: { companyId, status: { in: ["DRAFT", "PENDING_STOCK_APPROVAL", "APPROVED"] } } }),
+      this.prisma.flockBatch.aggregate({ where: { companyId, status: "ACTIVE", deletedAt: null }, _sum: { openingBirdCount: true } }),
+      this.prisma.stockExpiryAlert.count({ where: { companyId, deletedAt: null, daysToExpiry: { lte: 30 } } }),
+    ]);
 
-      return {
-        data: {
-          totalRevenue: salesAgg._sum.totalAmount ?? 0,
-          openOrders,
-          totalBirds: totalBirds._sum.openingBirdCount ?? 0,
-          pendingAlerts,
-        },
-      };
-    } catch {
-      return { data: { totalRevenue: 0, openOrders: 0, totalBirds: 0, pendingAlerts: 0 } };
-    }
+    return {
+      data: {
+        totalRevenue: Number(salesAgg._sum.totalAmount ?? 0),
+        openOrders,
+        totalBirds: totalBirds._sum.openingBirdCount ?? 0,
+        pendingAlerts,
+      },
+    };
   }
 
   async executive(user: AuthenticatedUser, query: DashboardQueryDto) {
@@ -265,7 +257,6 @@ export class DashboardService {
   // ── Farm Operations Today (manager overview) ─────────────────────────────
 
   async farmOperationsToday(user: AuthenticatedUser) {
-    try {
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     const todayEnd = new Date(todayStart);
@@ -330,9 +321,6 @@ export class DashboardService {
         summary: { total: duties.length, complete, partial, notStarted },
       },
     };
-    } catch {
-      return { data: { date: new Date().toISOString().slice(0, 10), duties: [], summary: { total: 0, complete: 0, partial: 0, notStarted: 0 } } };
-    }
   }
 
   // ── Live query helpers (executive dashboard) ────────────────────────────
@@ -387,12 +375,12 @@ export class DashboardService {
       }).then(r => Number(r._sum.quantityKg ?? 0)).catch(() => 0),
 
       this.prisma.soyaOilOutput.aggregate({
-        where: { deletedAt: null, createdAt: dateRange },
+        where: { companyId: cid, ...siteF, deletedAt: null, createdAt: dateRange },
         _sum: { quantityLitres: true }
       }).then(r => Number(r._sum.quantityLitres ?? 0)).catch(() => 0),
 
       this.prisma.soyaCakeOutput.aggregate({
-        where: { deletedAt: null, createdAt: dateRange },
+        where: { companyId: cid, ...siteF, deletedAt: null, createdAt: dateRange },
         _sum: { quantityKg: true }
       }).then(r => Number(r._sum.quantityKg ?? 0)).catch(() => 0),
 
@@ -479,12 +467,12 @@ export class DashboardService {
       }).catch(() => [] as any[]),
 
       this.prisma.soyaOilOutput.findMany({
-        where: { deletedAt: null, createdAt: dateRange },
+        where: { companyId: cid, ...siteF, deletedAt: null, createdAt: dateRange },
         select: { createdAt: true, quantityLitres: true }
       }).catch(() => [] as any[]),
 
       this.prisma.soyaCakeOutput.findMany({
-        where: { deletedAt: null, createdAt: dateRange },
+        where: { companyId: cid, ...siteF, deletedAt: null, createdAt: dateRange },
         select: { createdAt: true, quantityKg: true }
       }).catch(() => [] as any[]),
 

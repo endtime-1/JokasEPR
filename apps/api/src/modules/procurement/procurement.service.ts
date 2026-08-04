@@ -166,6 +166,7 @@ export class ProcurementService {
       },
       include: { category: { select: { name: true, code: true } }, _count: { select: { purchaseOrders: true } } },
       orderBy: { name: "asc" },
+      take: 200,
     });
     return { data: rows };
   }
@@ -221,6 +222,7 @@ export class ProcurementService {
         _count: { select: { items: true } },
       },
       orderBy: { createdAt: "desc" },
+      take: 200,
     });
     return { data: rows };
   }
@@ -336,6 +338,7 @@ export class ProcurementService {
         _count: { select: { items: true, grnRecords: true } },
       },
       orderBy: { createdAt: "desc" },
+      take: 200,
     });
     return { data: rows };
   }
@@ -467,6 +470,7 @@ export class ProcurementService {
         _count: { select: { items: true } },
       },
       orderBy: { createdAt: "desc" },
+      take: 200,
     });
     return { data: rows };
   }
@@ -678,6 +682,7 @@ export class ProcurementService {
         purchaseOrder: { select: { reference: true } },
       },
       orderBy: { createdAt: "desc" },
+      take: 200,
     });
     return { data: rows };
   }
@@ -723,6 +728,7 @@ export class ProcurementService {
         invoice: { select: { invoiceNumber: true, reference: true } },
       },
       orderBy: { paymentDate: "desc" },
+      take: 200,
     });
     return { data: rows };
   }

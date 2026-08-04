@@ -6,7 +6,7 @@ import { PrismaClient } from "@prisma/client";
 // in onModuleInit() so that warning fire whenever companyId is absent.
 const TENANT_GUARDED_MODELS = [
   "user", "employee", "flockBatch", "mortalityRecord", "eggProductionRecord",
-  "feedConsumptionRecord", "dailyPoultryRecord", "poultryTransfer", "poultryHouse",
+  "feedConsumptionRecord", "dailyPoultryRecord", "poultryTransferRecord", "poultryHouse",
   // Corrected names — previous strings didn't match Prisma client keys so proxies never installed
   "attendanceRecord", "payrollRecord", "leaveRequest",
   "invoice", "payment", "salesOrder",

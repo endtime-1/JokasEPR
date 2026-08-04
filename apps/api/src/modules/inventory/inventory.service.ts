@@ -412,7 +412,18 @@ export class InventoryService {
   }
 
   private itemWhere(user: AuthenticatedUser, query: InventoryQueryDto) {
-    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId, warehouseId: query.warehouseId, farmId: query.farmId, productionSiteId: query.productionSiteId, productId: query.productId, ...(user.hasGlobalAccess ? {} : { warehouseId: { in: user.warehouseIds } }) };
+    const andConditions: object[] = [];
+    if (query.warehouseId) andConditions.push({ warehouseId: query.warehouseId });
+    if (!user.hasGlobalAccess) andConditions.push({ warehouseId: { in: user.warehouseIds } });
+    return {
+      companyId: user.companyId,
+      deletedAt: null,
+      branchId: query.branchId,
+      farmId: query.farmId,
+      productionSiteId: query.productionSiteId,
+      productId: query.productId,
+      ...(andConditions.length ? { AND: andConditions } : {})
+    };
   }
 
   private movementWhere(user: AuthenticatedUser, query: InventoryQueryDto) {
