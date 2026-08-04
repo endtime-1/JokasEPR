@@ -1,0 +1,45 @@
+name: Dump Logs
+
+on:
+  workflow_dispatch:
+
+jobs:
+  dump:
+    runs-on: self-hosted
+    steps:
+      - name: Collect logs and diagnostics
+        run: |
+          OUT="$HOME/jokas-build/diagnostic.txt"
+          echo "===== DIAGNOSTICS $(date) =====" > "$OUT"
+
+          echo "" >> "$OUT"
+          echo "--- PM2 Status ---" >> "$OUT"
+          pm2 status 2>&1 >> "$OUT" || echo "PM2 not found" >> "$OUT"
+
+          echo "" >> "$OUT"
+          echo "--- PM2 Logs (last 100 lines) ---" >> "$OUT"
+          pm2 logs --nostream --lines 100 2>&1 >> "$OUT" || echo "No PM2 logs" >> "$OUT"
+
+          echo "" >> "$OUT"
+          echo "--- Passenger Error Log (last 100 lines) ---" >> "$OUT"
+          ERRLOG="$HOME/logs/error.log"
+          if [ -f "$ERRLOG" ]; then
+            tail -100 "$ERRLOG" >> "$OUT"
+          else
+            find "$HOME" -name "error.log" 2>/dev/null | head -5 >> "$OUT"
+            echo "(error.log not found at $ERRLOG)" >> "$OUT"
+          fi
+
+          echo "" >> "$OUT"
+          echo "--- Node Processes ---" >> "$OUT"
+          ps aux | grep node | grep -v grep >> "$OUT"
+
+          echo "" >> "$OUT"
+          echo "--- Listening Ports ---" >> "$OUT"
+          ss -tlnp 2>/dev/null | grep -E '3000|3001|4001|3002' >> "$OUT" || netstat -tlnp 2>/dev/null | grep -E '3000|3001|4001|3002' >> "$OUT"
+
+          echo "" >> "$OUT"
+          echo "--- Disk Usage ---" >> "$OUT"
+          df -h >> "$OUT"
+
+          echo "Done. Read the file at ~/jokas-build/diagnostic.txt"
