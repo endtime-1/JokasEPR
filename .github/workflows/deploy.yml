@@ -417,12 +417,13 @@ jobs:
             echo "  Check jokasfarms.com manually — Passenger may still be starting."
           fi
 
-      - name: Ensure runner keepalive cron
+      - name: Ensure runner keepalive watcher
         run: |
-          # Keep the self-hosted runner alive between deploys.
-          # Checks every 10 min — restarts run.sh if the process is gone.
-          (crontab -l 2>/dev/null | grep -v 'actions-runner/run.sh'; \
-           echo "*/10 * * * * pgrep -f 'actions-runner/run.sh' > /dev/null || nohup \$HOME/actions-runner/run.sh >> \$HOME/jokas-build/runner.log 2>&1 &") \
-          | crontab -
-          echo "Runner keepalive cron installed."
-          crontab -l | grep actions-runner || true
+          if pgrep -f 'keep-runner.sh' > /dev/null; then
+            echo "Runner watcher already running — skipping."
+          else
+            printf '#!/bin/bash\nwhile true; do\n  if ! pgrep -f "actions-runner/run.sh" > /dev/null; then\n    cd $HOME/actions-runner\n    nohup ./run.sh >> $HOME/jokas-build/runner.log 2>&1 &\n  fi\n  sleep 600\ndone\n' > "$HOME/keep-runner.sh"
+            chmod +x "$HOME/keep-runner.sh"
+            nohup bash "$HOME/keep-runner.sh" >> "$HOME/jokas-build/keep-runner.log" 2>&1 &
+            echo "Runner watcher started (PID $!)."
+          fi
