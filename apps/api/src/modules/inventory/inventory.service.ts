@@ -431,7 +431,10 @@ export class InventoryService {
   }
 
   private expiryWhere(user: AuthenticatedUser, query: InventoryQueryDto) {
-    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId, warehouseId: query.warehouseId, productionSiteId: query.productionSiteId, productId: query.productId, ...(user.hasGlobalAccess ? {} : { warehouseId: { in: user.warehouseIds } }) };
+    const andConditions: object[] = [];
+    if (query.warehouseId) andConditions.push({ warehouseId: query.warehouseId });
+    if (!user.hasGlobalAccess) andConditions.push({ warehouseId: { in: user.warehouseIds } });
+    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId, productionSiteId: query.productionSiteId, productId: query.productId, ...(andConditions.length ? { AND: andConditions } : {}) };
   }
 
   private async requireItem(companyId: string, warehouseId: string, productId: string) {

@@ -406,12 +406,13 @@ export function EmployeeListPage() {
   const [rows, setRows] = useState<Employee[]>(() => getCachedFirst<ApiEnvelope<Employee[]>>("/hr/employees")?.data ?? []);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
-  const [loading, setLoading] = useState(!hasCached("/hr/employees"));
+  const [loading, setLoading] = useState(rows.length === 0);
   const [deleteError, setDeleteError] = useState("");
   const [loadError, setLoadError] = useState("");
 
   function load() {
     setLoadError("");
+    if (rows.length === 0) setLoading(true);
     const params = new URLSearchParams();
     if (search) params.set("search", search);
     if (status) params.set("status", status);

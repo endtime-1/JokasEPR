@@ -139,6 +139,7 @@ export class ProcurementService {
       },
       include: { _count: { select: { suppliers: true } } },
       orderBy: { name: "asc" },
+      take: 200,
     });
     return { data: rows };
   }
@@ -784,6 +785,7 @@ export class ProcurementService {
       },
       include: { supplier: { select: { name: true, code: true } } },
       orderBy: [{ period: "desc" }, { createdAt: "desc" }],
+      take: 200,
     });
     return { data: rows };
   }
@@ -823,6 +825,7 @@ export class ProcurementService {
       },
       include: { supplier: { select: { name: true, code: true } } },
       orderBy: [{ supplierId: "asc" }, { effectiveDate: "desc" }],
+      take: 200,
     });
     return { data: rows };
   }

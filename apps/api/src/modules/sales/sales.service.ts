@@ -737,15 +737,15 @@ export class SalesService {
   }
 
   private returnWhere(user: AuthenticatedUser, query: SalesQueryDto) {
-    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId, customerId: query.customerId, productId: query.productId, warehouseId: query.warehouseId, ...(user.hasGlobalAccess ? {} : { branchId: { in: user.branchIds } }) };
+    return { companyId: user.companyId, deletedAt: null, customerId: query.customerId, productId: query.productId, warehouseId: query.warehouseId, ...this.branchScope(user, query) };
   }
 
   private deliveryWhere(user: AuthenticatedUser, query: SalesQueryDto) {
-    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId, warehouseId: query.warehouseId, ...(this.dateRange(query, "deliveryDate")), ...(user.hasGlobalAccess ? {} : { branchId: { in: user.branchIds } }) };
+    return { companyId: user.companyId, deletedAt: null, warehouseId: query.warehouseId, ...(this.dateRange(query, "deliveryDate")), ...this.branchScope(user, query) };
   }
 
   private statementWhere(user: AuthenticatedUser, query: SalesQueryDto) {
-    return { companyId: user.companyId, branchId: query.branchId, customerId: query.customerId, ...(this.dateRange(query, "entryDate")), ...(user.hasGlobalAccess ? {} : { branchId: { in: user.branchIds } }) };
+    return { companyId: user.companyId, customerId: query.customerId, ...(this.dateRange(query, "entryDate")), ...this.branchScope(user, query) };
   }
 
   private assertBranchAccess(user: AuthenticatedUser, branchId: string) {
