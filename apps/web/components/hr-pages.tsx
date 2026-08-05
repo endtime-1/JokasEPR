@@ -403,20 +403,20 @@ type Employee = { id: string; code: string; fullName: string; phone?: string; em
 
 export function EmployeeListPage() {
   const router = useRouter();
-  const [rows, setRows] = useState<Employee[]>(() => getCachedFirst<ApiEnvelope<Employee[]>>("/hr/employees")?.data ?? []);
+  const [rows, setRows] = useState<Employee[]>([]);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
-  const [loading, setLoading] = useState(rows.length === 0);
+  const [loading, setLoading] = useState(true);
   const [deleteError, setDeleteError] = useState("");
   const [loadError, setLoadError] = useState("");
 
   function load() {
     setLoadError("");
-    if (rows.length === 0) setLoading(true);
+    setLoading(true);
     const params = new URLSearchParams();
     if (search) params.set("search", search);
     if (status) params.set("status", status);
-    apiFetch<ApiEnvelope<Employee[]>>(`/hr/employees?${params}`).then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); }).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
+    apiFetch<ApiEnvelope<Employee[]>>(`/hr/employees?${params}`).then((r) => { setRows(r.data ?? []); }).catch((err: any) => setLoadError(err?.message ?? "Failed to load employees. Please retry.")).finally(() => setLoading(false));
   }
 
   useEffect(() => { load(); }, [search, status]);

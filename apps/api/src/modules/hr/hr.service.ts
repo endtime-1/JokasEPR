@@ -1,4 +1,4 @@
-﻿import { BadRequestException, ForbiddenException, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
+﻿import { BadRequestException, ForbiddenException, Injectable, InternalServerErrorException, Logger, NotFoundException } from "@nestjs/common";
 import { Response } from "express";
 import { AuthenticatedUser } from "@jokas/shared";
 import { AuditService } from "../audit/audit.service";
@@ -70,6 +70,8 @@ function num(v: unknown) {
 
 @Injectable()
 export class HRService {
+  private readonly logger = new Logger(HRService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
@@ -207,6 +209,7 @@ export class HRService {
       orderBy: { fullName: "asc" },
       take: 500,
     });
+    this.logger.log(`[listEmployees] companyId=${user.companyId} found=${rows.length}`);
     return { data: rows };
   }
 
