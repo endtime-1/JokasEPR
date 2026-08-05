@@ -403,23 +403,30 @@ type Employee = { id: string; code: string; fullName: string; phone?: string; em
 
 export function EmployeeListPage() {
   const router = useRouter();
-  const [rows, setRows] = useState<Employee[]>([]);
+  const pathname = usePathname();
+  // Seed from cache so navigation back shows data instantly (stale-while-revalidate).
+  const _cached = getCachedFirst<ApiEnvelope<Employee[]>>("/hr/employees");
+  const [rows, setRows] = useState<Employee[]>(_cached?.data ?? []);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!(_cached?.data?.length));
   const [deleteError, setDeleteError] = useState("");
   const [loadError, setLoadError] = useState("");
 
   function load() {
     setLoadError("");
-    setLoading(true);
+    // Only show the skeleton when there is no data to display yet; otherwise the
+    // background refresh is silent so cached employees stay visible while re-fetching.
+    if (!rows.length) setLoading(true);
     const params = new URLSearchParams();
     if (search) params.set("search", search);
     if (status) params.set("status", status);
     apiFetch<ApiEnvelope<Employee[]>>(`/hr/employees?${params}`).then((r) => { setRows(r.data ?? []); }).catch((err: any) => setLoadError(err?.message ?? "Failed to load employees. Please retry.")).finally(() => setLoading(false));
   }
 
-  useEffect(() => { load(); }, [search, status]);
+  // pathname in deps: re-fires load() on every client-side navigation to this page
+  // even if Next.js keeps the component instance alive across soft navigations.
+  useEffect(() => { load(); }, [search, status, pathname]);
 
   async function deleteEmployee(emp: Employee) {
     if (!confirm(`Delete employee "${emp.fullName}"? This cannot be undone.`)) return;
