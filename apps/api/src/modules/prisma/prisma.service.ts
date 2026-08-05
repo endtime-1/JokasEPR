@@ -5,14 +5,29 @@ import { PrismaClient } from "@prisma/client";
 // Prisma 6 removed $use() middleware — we install a Proxy on each model delegate
 // in onModuleInit() so that warning fire whenever companyId is absent.
 const TENANT_GUARDED_MODELS = [
-  "user", "employee", "flockBatch", "mortalityRecord", "eggProductionRecord",
+  // Identity & HR
+  "user", "employee", "attendanceRecord", "payrollRecord", "leaveRequest",
+  "task", "shift", "employeeRole",
+  // Poultry
+  "flockBatch", "mortalityRecord", "eggProductionRecord",
   "feedConsumptionRecord", "dailyPoultryRecord", "poultryTransferRecord", "poultryHouse",
-  // Corrected names — previous strings didn't match Prisma client keys so proxies never installed
-  "attendanceRecord", "payrollRecord", "leaveRequest",
-  "invoice", "payment", "salesOrder",
-  "stockMovement", "stockBatch", "inventoryItem", "auditLog",
-  // Additional high-value models missing from original list
-  "expense", "customer", "supplier", "product",
+  // Sales
+  "invoice", "payment", "receipt", "salesOrder", "salesReturn",
+  "deliveryNote", "customerStatement", "customerCreditLimit",
+  "customer", "customerGroup",
+  // Inventory
+  "stockMovement", "stockBatch", "inventoryItem", "stockApproval",
+  // Procurement
+  "purchaseOrder", "purchaseRequest", "goodsReceivedNote", "supplierInvoice",
+  "supplier",
+  // Finance
+  "expense",
+  // Feed & Production
+  "feedProductionOrder", "feedFormula",
+  // Maintenance
+  "maintenanceTask", "machineDowntimeRecord",
+  // Shared
+  "product", "auditLog",
 ] as const;
 
 const GUARDED_OPS = new Set([

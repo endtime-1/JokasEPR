@@ -5,6 +5,10 @@ import { PrismaService } from "../../modules/prisma/prisma.service";
 const WINDOW_MS = 15 * 60 * 1000;
 const MAX_ATTEMPTS = 8;
 
+// In-memory fallback used when the DB is unavailable — preserves rate limiting
+// during transient DB outages so an attacker can't bypass limits via a DB blip.
+const _memFallback = new Map<string, { attempts: number; windowEnd: number }>();
+
 @Injectable()
 export class LoginRateLimitGuard implements CanActivate {
   private readonly logger = new Logger(LoginRateLimitGuard.name);
@@ -43,10 +47,24 @@ export class LoginRateLimitGuard implements CanActivate {
       });
     } catch (err) {
       if (err instanceof HttpException) throw err;
-      // DB unavailable or table missing — log and allow login to proceed rather than blocking all users.
-      this.logger.error("LoginRateLimit DB error — rate limiting skipped", (err as Error).message);
+      // DB unavailable — fall back to in-memory tracking so rate limiting is preserved.
+      this.logger.error("LoginRateLimit DB error — using in-memory fallback", (err as Error).message);
+      return this.memCheck(key, now.getTime(), windowEnd.getTime());
     }
 
+    return true;
+  }
+
+  private memCheck(key: string, nowMs: number, windowEndMs: number): boolean {
+    const entry = _memFallback.get(key);
+    if (!entry || entry.windowEnd <= nowMs) {
+      _memFallback.set(key, { attempts: 1, windowEnd: windowEndMs });
+      return true;
+    }
+    if (entry.attempts >= MAX_ATTEMPTS) {
+      throw new HttpException("Too many login attempts. Try again later.", HttpStatus.TOO_MANY_REQUESTS);
+    }
+    entry.attempts += 1;
     return true;
   }
 }

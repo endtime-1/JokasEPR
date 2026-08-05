@@ -37,7 +37,16 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
     private readonly audit: AuditService
-  ) {}
+  ) {
+    // Evict expired profile cache entries every 60 seconds so heap memory doesn't
+    // grow indefinitely for long-running sessions with many distinct users.
+    setInterval(() => {
+      const now = Date.now();
+      for (const [k, v] of this.profileCache.entries()) {
+        if (v.expiresAt < now) this.profileCache.delete(k);
+      }
+    }, 60_000).unref();
+  }
 
   async login(dto: LoginDto, context: RequestContext) {
     const user = await this.findLoginUser(dto.email, dto.companyId);

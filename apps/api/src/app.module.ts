@@ -1,6 +1,8 @@
 import { Module } from "@nestjs/common";
+import { APP_GUARD } from "@nestjs/core";
 import { ConfigModule } from "@nestjs/config";
 import { ScheduleModule } from "@nestjs/schedule";
+import { ThrottlerModule, ThrottlerGuard } from "@nestjs/throttler";
 import { CacheModule } from "./common/cache.module";
 import { DutyRemindersModule } from "./modules/duty-reminders/duty-reminders.module";
 import { validateEnvironment } from "./config/env.validation";
@@ -40,6 +42,7 @@ import { UploadsModule } from "./modules/uploads/uploads.module";
       cache: true,
       validate: validateEnvironment
     }),
+    ThrottlerModule.forRoot([{ ttl: 60000, limit: 300 }]),
     ScheduleModule.forRoot(),
     CacheModule,
     PrismaModule,
@@ -71,6 +74,9 @@ import { UploadsModule } from "./modules/uploads/uploads.module";
     PublicModule,
     SetupModule,
     UploadsModule,
-  ]
+  ],
+  providers: [
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+  ],
 })
 export class AppModule {}

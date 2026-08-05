@@ -48,21 +48,21 @@ export class SalesService {
 
   async dashboard(user: AuthenticatedUser, query: SalesQueryDto) {
     const where = this.orderWhere(user, query);
-    const [orders, invoices, payments, returns, topProducts, topCustomers] = await Promise.all([
+    const [orders, invoiceAgg, paymentAgg, returnAgg, topProducts, topCustomers] = await Promise.all([
       this.prisma.salesOrder.findMany({ where, include: { customer: true, warehouse: true }, orderBy: { orderDate: "desc" }, take: 12 }),
-      this.prisma.invoice.findMany({ where: this.invoiceWhere(user, query), select: { totalAmount: true, paidAmount: true, balanceDue: true, status: true } }),
-      this.prisma.payment.findMany({ where: this.paymentWhere(user, query), select: { amount: true } }),
-      this.prisma.salesReturn.findMany({ where: this.returnWhere(user, query), select: { totalAmount: true } }),
+      this.prisma.invoice.aggregate({ where: this.invoiceWhere(user, query), _sum: { totalAmount: true, balanceDue: true } }),
+      this.prisma.payment.aggregate({ where: this.paymentWhere(user, query), _sum: { amount: true } }),
+      this.prisma.salesReturn.aggregate({ where: this.returnWhere(user, query), _sum: { totalAmount: true } }),
       this.salesByProduct(user, query),
       this.salesByCustomer(user, query)
     ]);
 
     return {
       data: {
-        salesValue: this.sum(invoices, "totalAmount"),
-        paidValue: this.sum(payments, "amount"),
-        outstandingDebt: this.sum(invoices, "balanceDue"),
-        returnValue: this.sum(returns, "totalAmount"),
+        salesValue: Number(invoiceAgg._sum.totalAmount ?? 0),
+        paidValue: Number(paymentAgg._sum.amount ?? 0),
+        outstandingDebt: Number(invoiceAgg._sum.balanceDue ?? 0),
+        returnValue: Number(returnAgg._sum.totalAmount ?? 0),
         pendingStockApprovals: orders.filter((order) => order.status === "PENDING_STOCK_APPROVAL").length,
         fulfilledOrders: orders.filter((order) => order.status === "FULFILLED").length,
         recentOrders: orders,
@@ -80,7 +80,7 @@ export class SalesService {
       this.prisma.customerGroup.findMany({ where: this.customerGroupWhere(user, {}), select: { id: true, code: true, name: true }, orderBy: { name: "asc" } }),
       this.prisma.customer.findMany({ where: this.customerWhere(user, {}), select: { id: true, code: true, name: true, customerGroupId: true }, orderBy: { name: "asc" } }),
       this.prisma.priceList.findMany({ where: this.priceListWhere(user, {}), include: { product: { select: { sku: true, name: true } }, customerGroup: { select: { code: true, name: true } } }, orderBy: { createdAt: "desc" }, take: 100 }),
-      this.prisma.invoice.findMany({ where: { ...this.invoiceWhere(user, {}), status: { in: ["ISSUED", "PARTIALLY_PAID", "OVERDUE"] } }, select: { id: true, invoiceNumber: true, customerId: true, balanceDue: true }, orderBy: { invoiceDate: "desc" } })
+      this.prisma.invoice.findMany({ where: { ...this.invoiceWhere(user, {}), status: { in: ["ISSUED", "PARTIALLY_PAID", "OVERDUE"] } }, select: { id: true, invoiceNumber: true, customerId: true, balanceDue: true }, orderBy: { invoiceDate: "desc" }, take: 100 })
     ]);
     return { data: { branches, warehouses, products, customerGroups, customers, priceLists, invoices } };
   }
@@ -365,12 +365,12 @@ export class SalesService {
   }
 
   async listPayments(user: AuthenticatedUser, query: SalesQueryDto) {
-    const data = await this.prisma.payment.findMany({ where: this.paymentWhere(user, query), include: { customer: true, invoice: true, receipt: true }, orderBy: { paymentDate: "desc" } });
+    const data = await this.prisma.payment.findMany({ where: this.paymentWhere(user, query), include: { customer: true, invoice: true, receipt: true }, orderBy: { paymentDate: "desc" }, take: 200 });
     return { data };
   }
 
   async listReceipts(user: AuthenticatedUser, query: SalesQueryDto) {
-    const data = await this.prisma.receipt.findMany({ where: this.receiptWhere(user, query), include: { customer: true, invoice: true, payment: true }, orderBy: { receiptDate: "desc" } });
+    const data = await this.prisma.receipt.findMany({ where: this.receiptWhere(user, query), include: { customer: true, invoice: true, payment: true }, orderBy: { receiptDate: "desc" }, take: 200 });
     return { data };
   }
 
@@ -424,37 +424,74 @@ export class SalesService {
   }
 
   async listReturns(user: AuthenticatedUser, query: SalesQueryDto) {
-    const data = await this.prisma.salesReturn.findMany({ where: this.returnWhere(user, query), include: { customer: true, product: true, warehouse: true, salesOrder: true }, orderBy: { createdAt: "desc" } });
+    const data = await this.prisma.salesReturn.findMany({ where: this.returnWhere(user, query), include: { customer: true, product: true, warehouse: true, salesOrder: true }, orderBy: { createdAt: "desc" }, take: 200 });
     return { data };
   }
 
   async listDeliveryNotes(user: AuthenticatedUser, query: SalesQueryDto) {
-    const data = await this.prisma.deliveryNote.findMany({ where: this.deliveryWhere(user, query), include: { salesOrder: { include: { customer: true } }, warehouse: true }, orderBy: { deliveryDate: "desc" } });
+    const data = await this.prisma.deliveryNote.findMany({ where: this.deliveryWhere(user, query), include: { salesOrder: { include: { customer: true } }, warehouse: true }, orderBy: { deliveryDate: "desc" }, take: 200 });
     return { data };
   }
 
   async statements(user: AuthenticatedUser, query: SalesQueryDto) {
-    const data = await this.prisma.customerStatement.findMany({ where: this.statementWhere(user, query), include: { customer: true, invoice: true, payment: true, salesReturn: true }, orderBy: { entryDate: "desc" } });
+    const data = await this.prisma.customerStatement.findMany({ where: this.statementWhere(user, query), include: { customer: true, invoice: true, payment: true, salesReturn: true }, orderBy: { entryDate: "desc" }, take: 200 });
     return { data };
   }
 
   async debtors(user: AuthenticatedUser, query: SalesQueryDto) {
     const data = await this.prisma.customerCreditLimit.findMany({
-      where: { companyId: user.companyId, deletedAt: null, currentBalance: { gt: 0 }, branchId: query.branchId, customerId: query.customerId, ...(user.hasGlobalAccess ? {} : { branchId: { in: user.branchIds } }) },
+      where: { companyId: user.companyId, deletedAt: null, currentBalance: { gt: 0 }, customerId: query.customerId, ...(user.hasGlobalAccess ? (query.branchId ? { branchId: query.branchId } : {}) : { branchId: { in: user.branchIds } }) },
       include: { customer: true, branch: true },
-      orderBy: { currentBalance: "desc" }
+      orderBy: { currentBalance: "desc" },
+      take: 200
     });
     return { data };
   }
 
   async reports(user: AuthenticatedUser, query: SalesQueryDto) {
-    const [byProduct, byCustomer, byLocation, salesperson] = await Promise.all([
-      this.salesByProduct(user, query),
-      this.salesByCustomer(user, query),
-      this.salesByLocation(user, query),
-      this.salespersonPerformance(user, query)
-    ]);
-    return { data: { byProduct, byCustomer, byLocation, salesperson } };
+    // Single query with all needed includes — avoids 4 independent DB round-trips
+    // each fetching up to 200 orders against the same filter (same rows, different includes).
+    const orders = await this.prisma.salesOrder.findMany({
+      where: this.orderWhere(user, query),
+      include: { items: { include: { product: true } }, customer: true, branch: true, warehouse: true },
+      orderBy: { orderDate: "desc" },
+      take: 200
+    });
+
+    const productMap = new Map<string, { sku: string; product: string; quantity: number; salesValue: number }>();
+    const customerMap = new Map<string, { code: string; customer: string; orders: number; salesValue: number; balanceDue: number }>();
+    const locationMap = new Map<string, { branch: string; warehouse: string; orders: number; salesValue: number }>();
+    const spMap = new Map<string, { salespersonId: string; orders: number; salesValue: number; collectionsOutstanding: number }>();
+
+    for (const order of orders) {
+      for (const item of order.items) {
+        const p = productMap.get(item.productId) ?? { sku: item.product.sku, product: item.product.name, quantity: 0, salesValue: 0 };
+        p.quantity += Number(item.quantity); p.salesValue += Number(item.lineTotal);
+        productMap.set(item.productId, p);
+      }
+      const c = customerMap.get(order.customerId) ?? { code: order.customer.code, customer: order.customer.name, orders: 0, salesValue: 0, balanceDue: 0 };
+      c.orders += 1; c.salesValue += Number(order.totalAmount); c.balanceDue += Number(order.balanceDue);
+      customerMap.set(order.customerId, c);
+
+      const locKey = `${order.branchId}:${order.warehouseId}`;
+      const l = locationMap.get(locKey) ?? { branch: order.branch.name, warehouse: order.warehouse.name, orders: 0, salesValue: 0 };
+      l.orders += 1; l.salesValue += Number(order.totalAmount);
+      locationMap.set(locKey, l);
+
+      const spKey = order.salespersonId ?? "unassigned";
+      const s = spMap.get(spKey) ?? { salespersonId: spKey, orders: 0, salesValue: 0, collectionsOutstanding: 0 };
+      s.orders += 1; s.salesValue += Number(order.totalAmount); s.collectionsOutstanding += Number(order.balanceDue);
+      spMap.set(spKey, s);
+    }
+
+    return {
+      data: {
+        byProduct: [...productMap.values()].sort((a, b) => b.salesValue - a.salesValue),
+        byCustomer: [...customerMap.values()].sort((a, b) => b.salesValue - a.salesValue),
+        byLocation: [...locationMap.values()].sort((a, b) => b.salesValue - a.salesValue),
+        salesperson: [...spMap.values()].sort((a, b) => b.salesValue - a.salesValue),
+      }
+    };
   }
 
   async reportCsv(user: AuthenticatedUser, query: SalesQueryDto, context: RequestContext) {

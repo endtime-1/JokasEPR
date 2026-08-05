@@ -6,11 +6,17 @@ const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "/api/v1").trim();
 
 // Module-level in-memory cache for GET responses.
 // Survives React component mount/unmount so navigating away and back shows data instantly.
-const _getCache = new Map<string, unknown>();
+// Each entry stores { data, cachedAt } so stale entries (> 5 min old) are excluded from
+// getCachedFirst() — prevents serving morning data to end-of-day users after idle sessions.
+const CACHE_TTL_MS = 5 * 60 * 1000;
+const _getCache = new Map<string, { data: unknown; cachedAt: number }>();
 
-/** Return the last successful GET response for exactly `path`. */
+/** Return the last successful GET response for exactly `path`, or undefined if stale. */
 export function getCached<T>(path: string): T | undefined {
-  return _getCache.get(path) as T | undefined;
+  const entry = _getCache.get(path);
+  if (!entry) return undefined;
+  if (Date.now() - entry.cachedAt > CACHE_TTL_MS) { _getCache.delete(path); return undefined; }
+  return entry.data as T;
 }
 
 /**
@@ -18,23 +24,33 @@ export function getCached<T>(path: string): T | undefined {
  * with `pathPrefix + "?"` / `pathPrefix + "/"`.
  * Use this in useState initializers instead of getCached when the page fetches
  * with query params (filters, dates) so the cache always hits on re-navigation.
+ * Returns undefined for entries older than CACHE_TTL_MS.
  */
 export function getCachedFirst<T>(pathPrefix: string): T | undefined {
-  if (_getCache.has(pathPrefix)) return _getCache.get(pathPrefix) as T;
+  const direct = _getCache.get(pathPrefix);
+  if (direct) {
+    if (Date.now() - direct.cachedAt <= CACHE_TTL_MS) return direct.data as T;
+    _getCache.delete(pathPrefix);
+  }
+  const now = Date.now();
   for (const [k, v] of _getCache.entries()) {
     // Only match query-param variants (e.g. /finance/expenses?startDate=...).
     // Deliberately do NOT match sub-paths (e.g. /poultry/batches/uuid) — those are
     // individual item responses and would corrupt a list page's rows state.
-    if (k.startsWith(pathPrefix + "?")) return v as T;
+    if (k.startsWith(pathPrefix + "?")) {
+      if (now - v.cachedAt <= CACHE_TTL_MS) return v.data as T;
+      _getCache.delete(k);
+    }
   }
   return undefined;
 }
 
-/** True if any cached key equals or starts with `pathPrefix` (query-param variants only). */
+/** True if any non-stale cached key equals or starts with `pathPrefix` (query-param variants only). */
 export function hasCached(pathPrefix: string): boolean {
-  if (_getCache.has(pathPrefix)) return true;
-  for (const k of _getCache.keys()) {
-    if (k.startsWith(pathPrefix + "?")) return true;
+  const direct = _getCache.get(pathPrefix);
+  if (direct && Date.now() - direct.cachedAt <= CACHE_TTL_MS) return true;
+  for (const [k, v] of _getCache.entries()) {
+    if (k.startsWith(pathPrefix + "?") && Date.now() - v.cachedAt <= CACHE_TTL_MS) return true;
   }
   return false;
 }
@@ -283,7 +299,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit & { quiet?: b
   const parsed = JSON.parse(text) as T;
   // Cache GET responses so pages show data immediately on re-mount (navigation back).
   if ((init?.method ?? "GET").toUpperCase() === "GET") {
-    _getCache.set(path, parsed);
+    _getCache.set(path, { data: parsed, cachedAt: Date.now() });
   }
   return parsed;
 }

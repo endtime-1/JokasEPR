@@ -37,8 +37,8 @@ export class InventoryService {
     const sevenDaysAgo = new Date(Date.now() - 7 * 86400000);
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
-    const [items, itemCount, totalQty, movements, lowStock, expiryAlerts, valuation, pendingApprovals, weekMovements, adjustmentStats, movementsToday] = await Promise.all([
-      this.prisma.inventoryItem.findMany({ where: this.itemWhere(user, {}), include: { product: true, warehouse: true }, orderBy: { updatedAt: "desc" }, take: 200 }),
+    const [skuGroups, itemCount, totalQty, movements, lowStock, expiryAlerts, valuation, pendingApprovals, weekMovements, adjustmentStats, movementsToday] = await Promise.all([
+      this.prisma.inventoryItem.groupBy({ by: ["productId"], where: this.itemWhere(user, {}) }),
       this.prisma.inventoryItem.count({ where: this.itemWhere(user, {}) }),
       this.prisma.inventoryItem.aggregate({ where: this.itemWhere(user, {}), _sum: { quantityOnHand: true } }),
       this.prisma.stockMovement.findMany({ where: this.movementWhere(user, {}), orderBy: { movementDate: "desc" }, take: 10, include: { product: { select: { sku: true, name: true } }, warehouse: { select: { name: true } } } }),
@@ -52,7 +52,7 @@ export class InventoryService {
     ]);
     return {
       data: {
-        skuCount: new Set(items.map((item) => item.productId)).size,
+        skuCount: skuGroups.length,
         itemCount,
         totalQuantity: Number(totalQty._sum.quantityOnHand ?? 0),
         inventoryValue: valuation.reduce((sum, row) => sum + row.totalValue, 0),
@@ -111,7 +111,7 @@ export class InventoryService {
   }
 
   async listItems(user: AuthenticatedUser, query: InventoryQueryDto) {
-    const data = await this.prisma.inventoryItem.findMany({ where: this.itemWhere(user, query), include: { product: true, warehouse: true, farm: true, productionSite: true, stockBatches: { where: { deletedAt: null }, orderBy: { expiryDate: "asc" }, take: 30 } }, orderBy: { createdAt: "desc" }, take: 500 });
+    const data = await this.prisma.inventoryItem.findMany({ where: this.itemWhere(user, query), include: { product: true, warehouse: true, farm: true, productionSite: true, stockBatches: { where: { deletedAt: null }, orderBy: { expiryDate: "asc" }, take: 10 } }, orderBy: { createdAt: "desc" }, take: 200 });
     return { data };
   }
 

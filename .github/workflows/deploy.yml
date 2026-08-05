@@ -173,7 +173,7 @@ jobs:
         with:
           name: deploy-pkg
           path: /tmp/deploy.tar.gz
-          retention-days: 1
+          retention-days: 7
 
   # ── Job 2: deploy on self-hosted runner (runs directly on Hostinger) ──────────
   deploy:
@@ -385,6 +385,11 @@ jobs:
 
           rm -f /tmp/deploy-my.cnf
           echo "Migrations: $APPLIED applied, $FAILED failed."
+          if [ "$FAILED" -gt 0 ]; then
+            echo "ERROR: $FAILED migration(s) failed — aborting deploy to prevent schema mismatch."
+            echo "  Check the migration SQL files and re-run the deploy after fixing them."
+            exit 1
+          fi
 
       - name: Restart application
         run: |
@@ -416,6 +421,30 @@ jobs:
             tail -20 "$HOME/domains/jokasfarms.com/nodejs/log/passenger.log" 2>/dev/null || true
             echo "  Check jokasfarms.com manually — Passenger may still be starting."
           fi
+
+      - name: Setup database backup cron
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then echo "WARNING: DATABASE_URL not set — skipping backup setup"; exit 0; fi
+          _u="${DATABASE_URL#mysql://}"
+          DB_USER="${_u%%:*}"
+          _ap="${_u#*:}"
+          DB_PASS="${_ap%@*}"
+          _hp="${_ap##*@}"
+          DB_HOST="${_hp%%[:/*]*}"
+          _ah="${_hp#"$DB_HOST"}"
+          case "$_ah" in :*) DB_PORT="${_ah#:}"; DB_PORT="${DB_PORT%%/*}" ;; *) DB_PORT="3306" ;; esac
+          DB_NAME="${_hp#*/}"; DB_NAME="${DB_NAME%%[?#]*}"
+          # Write a persistent credentials file for the backup cron
+          printf '[client]\nhost=%s\nport=%s\nuser=%s\npassword=%s\ndatabase=%s\n' \
+            "$DB_HOST" "$DB_PORT" "$DB_USER" "$DB_PASS" "$DB_NAME" > "$HOME/.jokas-backup.cnf"
+          chmod 600 "$HOME/.jokas-backup.cnf"
+          mkdir -p "$HOME/jokas-db-backups"
+          # Daily backup at 2:00 AM, keep last 7 dumps (~30 MB each gzipped)
+          BACKUP_CMD="mysqldump --defaults-file=\$HOME/.jokas-backup.cnf --single-transaction --routines 2>/dev/null | gzip > \$HOME/jokas-db-backups/db-\$(date +\\%Y\\%m\\%d).sql.gz && find \$HOME/jokas-db-backups -name 'db-*.sql.gz' -mtime +7 -delete"
+          (crontab -l 2>/dev/null | grep -v 'jokas-db-backups'; echo "0 2 * * * $BACKUP_CMD") | crontab -
+          echo "Database backup cron installed (daily 02:00, 7-day retention → ~/jokas-db-backups/)."
 
       - name: Ensure runner keepalive watcher
         run: |

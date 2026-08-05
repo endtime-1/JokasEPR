@@ -155,6 +155,7 @@ export class IdentityService {
       userAgent: context.userAgent
     });
 
+    this.authService.clearProfileCache(userId);
     return { data: user };
   }
 
