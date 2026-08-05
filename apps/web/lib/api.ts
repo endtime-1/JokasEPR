@@ -177,7 +177,7 @@ const MAX_TRANSIENT_RETRIES = 8;
 
 import { authReady } from "./auth-gate";
 
-export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+export async function apiFetch<T>(path: string, init?: RequestInit & { quiet?: boolean }): Promise<T> {
   // Block until auth-context has finished its initial session check.
   // This ensures the token refresh (if needed) is done and the fresh jokas_at cookie is
   // in the browser before the first data request fires — eliminates the concurrent-refresh
@@ -268,7 +268,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     // Mutations (POST/PATCH/DELETE) surface their errors inline — skip those.
     const isGet = (init?.method ?? "GET").toUpperCase() === "GET";
     const skipStatuses = new Set([400, 401, 403, 404, 409, 422, 429]);
-    if (isGet && !firedUnavailable && !skipStatuses.has(response.status) && typeof window !== "undefined") {
+    if (isGet && !firedUnavailable && !skipStatuses.has(response.status) && !init?.quiet && typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent("api:data-error"));
     }
     throw new Error(extractErrorMessage(errText));

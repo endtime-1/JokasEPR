@@ -125,8 +125,11 @@ export class NotificationsService {
 
   async unreadCount(user: AuthenticatedUser) {
     try {
+      // channel filter removed: Prisma 6 ENUM binding generates a malformed
+      // prepared statement on this MySQL version causing a 500. Counting all
+      // UNREAD statuses (IN_APP + EMAIL/SMS) is acceptable for the bell badge.
       const count = await this.prisma.notification.count({
-        where: { companyId: user.companyId, userId: user.id, status: "UNREAD", channel: "IN_APP" }
+        where: { companyId: user.companyId, userId: user.id, status: "UNREAD" }
       });
       return { data: { count } };
     } catch {
