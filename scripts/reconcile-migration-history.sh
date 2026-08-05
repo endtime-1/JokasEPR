@@ -1,21 +1,35 @@
 #!/bin/bash
 # ONE-TIME, MANUAL migration-history reconciliation.
 #
-# Background: deploy.yml used to hand-roll migration tracking — it ran each
-# migration.sql directly via the mysql CLI and inserted a row into
-# `_prisma_migrations` with checksum='' instead of using `prisma migrate deploy`.
-# That means every row currently in `_prisma_migrations` on production has a
-# checksum that does NOT match what Prisma's own migrate engine computes from
-# the migration.sql files. If deploy.yml is switched to run real
-# `prisma migrate deploy` without fixing this first, EVERY historical migration
-# will look "modified since it was applied" and the deploy will fail hard.
+# STATUS AS OF 2026-08-05: this script already did its job — production's
+# `_prisma_migrations` table has real checksums now (confirmed via
+# `prisma migrate status` reporting "Database schema is up to date!").
+# BUT deploy.yml's migration step was reverted back to the hand-rolled SQL
+# runner after `prisma migrate deploy` turned out to hang indefinitely on this
+# host (see deploy.yml's "Run database migrations" step comment, or project
+# memory, for the full story — looks like a stdio-pipe deadlock between the
+# CLI and its schema-engine subprocess on a large migration-history payload).
+# So this script is currently NOT load-bearing for the live deploy pipeline.
+# It's kept because the reconciled checksums are harmless to have, and this
+# will be needed again if/when `prisma migrate deploy` is revisited and the
+# hang is root-caused.
+#
+# Background: deploy.yml used to (and, as of the revert above, does again)
+# hand-roll migration tracking — it runs each migration.sql directly via the
+# mysql CLI and inserts a row into `_prisma_migrations` with checksum=''
+# instead of using `prisma migrate deploy`. That means every row in
+# `_prisma_migrations` normally has a checksum that does NOT match what
+# Prisma's own migrate engine computes from the migration.sql files. If
+# deploy.yml is ever switched to run real `prisma migrate deploy` again
+# without this having been run first, every historical migration will look
+# "modified since it was applied" and the deploy will fail hard.
 #
 # This script fixes that, once, by re-recording each already-applied migration
 # through Prisma's own `migrate resolve` command (which computes the correct
 # checksum itself — this script never guesses or reimplements that algorithm).
 #
-# Run this ONCE, by hand, via SSH, BEFORE the first deploy that uses the new
-# `prisma migrate deploy` step in deploy.yml:
+# Run this ONCE, by hand, via SSH, BEFORE any future attempt to switch
+# deploy.yml back to `prisma migrate deploy`:
 #
 #   ssh -p 65002 u136486538@<host> 'bash -s' < scripts/reconcile-migration-history.sh
 #

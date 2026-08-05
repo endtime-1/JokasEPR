@@ -295,24 +295,22 @@ jobs:
           fi
 
       - name: Run database migrations
-        # Uses the real `prisma migrate deploy` via the CLI bundled into the tarball
-        # (see the "Bundle API for deployment" step) instead of hand-rolling SQL
-        # execution + raw _prisma_migrations inserts. This gets real checksum/drift
-        # detection back: a migration.sql edited after being applied, or a
-        # migrations-dir/DB mismatch, now fails loudly instead of going unnoticed.
-        #
-        # ONE-TIME PREREQUISITE: production's _prisma_migrations table was populated
-        # by the old hand-rolled script with placeholder checksums (''). Those must
-        # be reconciled via scripts/reconcile-migration-history.sh (run once, by hand,
-        # over SSH) BEFORE this step runs for the first time — otherwise every
-        # historical migration will look "modified since applied" and this will fail.
-        # See that script's header comment for the exact command.
+        # REVERTED 2026-08-05 back to the hand-rolled runner. `prisma migrate deploy`
+        # was tried instead (see git history / project memory for the full story) but
+        # hangs indefinitely on this host: its `diagnoseMigrationHistory` RPC call
+        # ships the full SQL text of every migration (29 files, several large) to the
+        # schema-engine subprocess over a stdio pipe, and that appears to deadlock —
+        # both processes sit at ~0% CPU with zero open network connections, and it
+        # never resolves even after 20+ minutes. Confirmed reproducible with a
+        # completely clean reinstall of prisma@6.19.3, so it's not a corrupted-install
+        # issue. The auto-rollback below correctly recovered production when this was
+        # hit live. Reverting to the proven-reliable mechanism until the hang is
+        # root-caused separately (not blocking regular deploys on it).
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           APP_DIR="$HOME/domains/jokasfarms.com/nodejs"
-          PRISMA_BIN="$APP_DIR/node_modules/.bin/prisma"
-          SCHEMA="$APP_DIR/prisma/schema.prisma"
+          MIGRATIONS_DIR="$APP_DIR/prisma/migrations"
 
           # Prefer the GitHub secret; fall back to the on-disk .env for local runner runs.
           # Read as plain text, NOT `source`/`.` — DATABASE_URL's query string contains
@@ -326,26 +324,111 @@ jobs:
           if [ -z "$DATABASE_URL" ]; then
             echo "WARNING: DATABASE_URL not set — skipping migrations"; exit 0
           fi
-          export DATABASE_URL
 
-          if [ ! -x "$PRISMA_BIN" ]; then
-            echo "ERROR: bundled prisma CLI not found at $PRISMA_BIN — aborting deploy."
-            echo "  (see 'Bundle API for deployment' step — the CLI/engines copy must have failed)"
-            exit 1
+          # Parse mysql://user:pass@host:port/dbname in pure bash (no heredocs, no Python).
+          # %@* removes shortest suffix starting with @, so passwords containing @ work.
+          _u="${DATABASE_URL#mysql://}"
+          DB_USER="${_u%%:*}"
+          _ap="${_u#*:}"
+          DB_PASS="${_ap%@*}"
+          _hp="${_ap##*@}"
+          DB_HOST="${_hp%%[:/*]*}"
+          _ah="${_hp#"$DB_HOST"}"
+          case "$_ah" in :*) DB_PORT="${_ah#:}"; DB_PORT="${DB_PORT%%/*}" ;; *) DB_PORT="3306" ;; esac
+          DB_NAME="${_hp#*/}"; DB_NAME="${DB_NAME%%[?#]*}"
+
+          # Write options file — keeps credentials out of process args and logs
+          printf '[client]\nhost=%s\nport=%s\nuser=%s\npassword=%s\ndatabase=%s\n' \
+            "$DB_HOST" "$DB_PORT" "$DB_USER" "$DB_PASS" "$DB_NAME" > /tmp/deploy-my.cnf
+          chmod 600 /tmp/deploy-my.cnf
+          MYSQL="mysql --defaults-file=/tmp/deploy-my.cnf --batch --silent"
+          echo "DB: $DB_USER@$DB_HOST:$DB_PORT/$DB_NAME"
+
+          if ! $MYSQL -e "SELECT 1" > /dev/null 2>&1; then
+            echo "WARNING: cannot connect to database — skipping migrations"
+            rm -f /tmp/deploy-my.cnf; exit 0
           fi
+          echo "Database connection OK"
 
-          echo "--- Running prisma migrate deploy ---"
-          if (cd "$APP_DIR" && "$PRISMA_BIN" migrate deploy --schema="$SCHEMA"); then
-            echo "Migrations applied successfully."
-          else
-            echo ""
-            echo "ERROR: prisma migrate deploy failed — aborting deploy to prevent schema mismatch."
-            echo "  If this is the first run after switching from the old hand-rolled migration"
-            echo "  runner, this almost certainly means scripts/reconcile-migration-history.sh"
-            echo "  has not been run yet. See that script's header for instructions."
-            echo ""
-            echo "--- prisma migrate status (diagnostic) ---"
-            (cd "$APP_DIR" && "$PRISMA_BIN" migrate status --schema="$SCHEMA") || true
+          # Create Prisma migration-tracking table if it does not yet exist.
+          # Written as a single -e string to avoid YAML-breaking heredocs.
+          $MYSQL -e "CREATE TABLE IF NOT EXISTS \`_prisma_migrations\` (\`id\` varchar(36) NOT NULL,\`checksum\` varchar(64) NOT NULL DEFAULT '',\`finished_at\` datetime(3) DEFAULT NULL,\`migration_name\` varchar(255) NOT NULL,\`logs\` text DEFAULT NULL,\`rolled_back_at\` datetime(3) DEFAULT NULL,\`started_at\` datetime(3) NOT NULL DEFAULT current_timestamp(3),\`applied_steps_count\` int NOT NULL DEFAULT 0,PRIMARY KEY (\`id\`),UNIQUE KEY \`_prisma_migrations_migration_name_key\` (\`migration_name\`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;"
+
+          # NOTE: as of 2026-08-05 every migration through 20260804000000 already has
+          # a REAL checksum recorded (via scripts/reconcile-migration-history.sh, run
+          # once by hand) instead of the historical placeholder ''. This seed block is
+          # kept only as a safety net for a from-scratch database; ON DUPLICATE KEY
+          # UPDATE never touches the checksum column, so it will not clobber the real
+          # checksums already in place.
+          $MYSQL -e "
+            INSERT INTO \`_prisma_migrations\` (id,checksum,migration_name,started_at,finished_at,applied_steps_count) VALUES
+              (UUID(),'','20260615143000_initial_erp_foundation',NOW(3),NOW(3),1),
+              (UUID(),'','20260615224000_sales_customer_management',NOW(3),NOW(3),1),
+              (UUID(),'','20260616120000_maintenance_management',NOW(3),NOW(3),1),
+              (UUID(),'','20260616210000_mobile_sync',NOW(3),NOW(3),1),
+              (UUID(),'','20260616230000_user_account_lockout',NOW(3),NOW(3),1),
+              (UUID(),'','20260629000000_storefront_fields',NOW(3),NOW(3),1),
+              (UUID(),'','20260629000001_feed_raw_materials',NOW(3),NOW(3),1),
+              (UUID(),'','20260701000000_leave_request_system',NOW(3),NOW(3),1),
+              (UUID(),'','20260713000000_employee_photo',NOW(3),NOW(3),1),
+              (UUID(),'','20260616200000_notification_system',NOW(3),NOW(3),1),
+              (UUID(),'','20260722000000_employee_user_fk',NOW(3),NOW(3),1),
+              (UUID(),'','20260729000000_ai_alert_forecast_tables',NOW(3),NOW(3),1),
+              (UUID(),'','20260730000000_prospect_visit_table',NOW(3),NOW(3),1),
+              (UUID(),'','20260730000001_leave_request_mysql_fix',NOW(3),NOW(3),1)
+            ON DUPLICATE KEY UPDATE
+              finished_at=COALESCE(finished_at,NOW(3)),
+              applied_steps_count=GREATEST(applied_steps_count,1);
+          " 2>&1 || true
+          # 20260801030000_hr_d_disciplinary_grievance ran against the wrong DB state
+          # (Notification table didn't exist yet). Superseded by 20260801085000_hr_d_tables_recovery.
+          # Mark as rolled-back so the runner skips it permanently.
+          $MYSQL -e "
+            INSERT INTO \`_prisma_migrations\` (id,checksum,migration_name,started_at,rolled_back_at,applied_steps_count)
+              VALUES (UUID(),'','20260801030000_hr_d_disciplinary_grievance',NOW(3),NOW(3),0)
+            ON DUPLICATE KEY UPDATE
+              rolled_back_at=COALESCE(rolled_back_at,NOW(3)),
+              applied_steps_count=0,
+              finished_at=NULL;
+          " 2>&1 || true
+
+          # Pre-fetch ALL migration statuses in ONE query — eliminates per-migration
+          # DB connections that trigger Hostinger's connection rate limit (ERROR 2002).
+          sleep 2
+          MIGS_APPLIED=$($MYSQL -N -e "SELECT COALESCE(GROUP_CONCAT(migration_name SEPARATOR '|'),'') FROM \`_prisma_migrations\` WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL AND applied_steps_count>0;" 2>/dev/null || echo "")
+          sleep 1
+          MIGS_ROLLEDBACK=$($MYSQL -N -e "SELECT COALESCE(GROUP_CONCAT(migration_name SEPARATOR '|'),'') FROM \`_prisma_migrations\` WHERE rolled_back_at IS NOT NULL;" 2>/dev/null || echo "")
+
+          echo "--- Applying pending migrations ---"
+          APPLIED=0; FAILED=0
+
+          for SQL_FILE in $(find "$MIGRATIONS_DIR" -name "migration.sql" 2>/dev/null | sort); do
+            MIG_NAME=$(basename "$(dirname "$SQL_FILE")")
+            echo "$MIG_NAME" | grep -qE '^[0-9]{14}_' || continue
+
+            # Pure shell match against pre-fetched pipe-separated lists — no DB connection
+            case "|${MIGS_APPLIED}|"    in *"|${MIG_NAME}|"*) echo "  [ok]   $MIG_NAME"; continue ;; esac
+            case "|${MIGS_ROLLEDBACK}|" in *"|${MIG_NAME}|"*) echo "  [skip] $MIG_NAME (rolled-back)"; continue ;; esac
+
+            echo "  [run]  $MIG_NAME"
+            sleep 1
+            if $MYSQL < "$SQL_FILE" 2>&1; then
+              sleep 1
+              $MYSQL -e "INSERT INTO \`_prisma_migrations\` (id,checksum,migration_name,started_at,finished_at,applied_steps_count) VALUES (UUID(),'','$MIG_NAME',NOW(3),NOW(3),1) ON DUPLICATE KEY UPDATE finished_at=NOW(3),applied_steps_count=1,rolled_back_at=NULL;" 2>&1 || true
+              echo "  [done] $MIG_NAME"
+              APPLIED=$((APPLIED + 1))
+            else
+              echo "  [FAIL] $MIG_NAME"
+              FAILED=$((FAILED + 1))
+              sleep 1
+            fi
+          done
+
+          rm -f /tmp/deploy-my.cnf
+          echo "Migrations: $APPLIED applied, $FAILED failed."
+          if [ "$FAILED" -gt 0 ]; then
+            echo "ERROR: $FAILED migration(s) failed — aborting deploy to prevent schema mismatch."
+            echo "  Check the migration SQL files and re-run the deploy after fixing them."
             exit 1
           fi
 
