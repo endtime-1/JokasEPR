@@ -91,12 +91,12 @@ export class SoyaProcessingService {
 
     const [productionSites, warehouses, products, intakes, batches] = await Promise.all([
       this.prisma.productionSite.findMany({
-        where: { companyId: user.companyId, deletedAt: null, type: { in: ["SOYA_PROCESSING", "MIXED"] }, ...(user.hasGlobalAccess ? {} : { id: { in: user.productionSiteIds } }) },
+        where: { companyId: user.companyId, deletedAt: null, type: { in: ["SOYA_PROCESSING", "MIXED"] }, ...(user.hasGlobalAccess || user.productionSiteIds.length === 0 ? {} : { id: { in: user.productionSiteIds } }) },
         select: { id: true, branchId: true, code: true, name: true, type: true },
         orderBy: { name: "asc" }
       }),
       this.prisma.warehouse.findMany({
-        where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess ? {} : { id: { in: user.warehouseIds } }) },
+        where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess || user.warehouseIds.length === 0 ? {} : { id: { in: user.warehouseIds } }) },
         select: { id: true, branchId: true, productionSiteId: true, code: true, name: true, type: true },
         orderBy: { name: "asc" }
       }),
@@ -357,23 +357,28 @@ export class SoyaProcessingService {
   }
 
   private intakeWhere(user: AuthenticatedUser, query: SoyaQueryDto) {
-    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId, productionSiteId: query.productionSiteId, warehouseId: query.warehouseId, ...(this.dateRange(query, "receivedAt")), ...(user.hasGlobalAccess ? {} : { productionSiteId: { in: user.productionSiteIds } }) };
+    const siteScope = !user.hasGlobalAccess && user.productionSiteIds.length > 0 ? { productionSiteId: { in: user.productionSiteIds } } : {};
+    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId || undefined, productionSiteId: query.productionSiteId || undefined, warehouseId: query.warehouseId || undefined, ...(this.dateRange(query, "receivedAt")), ...siteScope };
   }
 
   private batchWhere(user: AuthenticatedUser, query: SoyaQueryDto) {
-    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId, productionSiteId: query.productionSiteId, id: query.productionBatchId, ...(this.dateRange(query, "processingDate")), ...(user.hasGlobalAccess ? {} : { productionSiteId: { in: user.productionSiteIds } }) };
+    const siteScope = !user.hasGlobalAccess && user.productionSiteIds.length > 0 ? { productionSiteId: { in: user.productionSiteIds } } : {};
+    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId || undefined, productionSiteId: query.productionSiteId || undefined, id: query.productionBatchId || undefined, ...(this.dateRange(query, "processingDate")), ...siteScope };
   }
 
   private outputWhere(user: AuthenticatedUser, query: SoyaQueryDto) {
-    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId, productionSiteId: query.productionSiteId, productionBatchId: query.productionBatchId, warehouseId: query.warehouseId, ...(user.hasGlobalAccess ? {} : { productionSiteId: { in: user.productionSiteIds } }) };
+    const siteScope = !user.hasGlobalAccess && user.productionSiteIds.length > 0 ? { productionSiteId: { in: user.productionSiteIds } } : {};
+    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId || undefined, productionSiteId: query.productionSiteId || undefined, productionBatchId: query.productionBatchId || undefined, warehouseId: query.warehouseId || undefined, ...siteScope };
   }
 
   private salesWhere(user: AuthenticatedUser, query: SoyaQueryDto) {
-    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId, productionSiteId: query.productionSiteId, productionBatchId: query.productionBatchId, warehouseId: query.warehouseId, ...(user.hasGlobalAccess ? {} : { productionSiteId: { in: user.productionSiteIds } }) };
+    const siteScope = !user.hasGlobalAccess && user.productionSiteIds.length > 0 ? { productionSiteId: { in: user.productionSiteIds } } : {};
+    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId || undefined, productionSiteId: query.productionSiteId || undefined, productionBatchId: query.productionBatchId || undefined, warehouseId: query.warehouseId || undefined, ...siteScope };
   }
 
   private transferWhere(user: AuthenticatedUser, query: SoyaQueryDto) {
-    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId, productionSiteId: query.productionSiteId, productionBatchId: query.productionBatchId, fromWarehouseId: query.warehouseId, ...(this.dateRange(query, "transferDate")), ...(user.hasGlobalAccess ? {} : { fromWarehouseId: { in: user.warehouseIds } }) };
+    const warehouseScope = !user.hasGlobalAccess && user.warehouseIds.length > 0 ? { fromWarehouseId: { in: user.warehouseIds } } : {};
+    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId || undefined, productionSiteId: query.productionSiteId || undefined, productionBatchId: query.productionBatchId || undefined, fromWarehouseId: query.warehouseId || undefined, ...(this.dateRange(query, "transferDate")), ...warehouseScope };
   }
 
   private dateRange(query: SoyaQueryDto, field: string) {

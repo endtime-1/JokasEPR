@@ -201,15 +201,14 @@ export class ReportsService {
   }
 
   async options(user: AuthenticatedUser) {
-    const scope = user.hasGlobalAccess ? {} : { id: { in: user.branchIds } };
     const [companies, branches, farms, warehouses, productionSites, products, customers, suppliers] = await Promise.all([
       this.prisma.company.findMany({ where: { id: user.companyId, deletedAt: null }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
-      this.prisma.branch.findMany({ where: { companyId: user.companyId, deletedAt: null, ...scope }, select: { id: true, code: true, name: true }, orderBy: { name: "asc" } }),
-      this.prisma.farm.findMany({ where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess ? {} : { id: { in: user.farmIds } }) }, select: { id: true, code: true, name: true, branchId: true }, orderBy: { name: "asc" } }),
-      this.prisma.warehouse.findMany({ where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess ? {} : { id: { in: user.warehouseIds } }) }, select: { id: true, code: true, name: true, branchId: true }, orderBy: { name: "asc" } }),
-      this.prisma.productionSite.findMany({ where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess ? {} : { id: { in: user.productionSiteIds } }) }, select: { id: true, code: true, name: true, branchId: true }, orderBy: { name: "asc" } }),
+      this.prisma.branch.findMany({ where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess || user.branchIds.length === 0 ? {} : { id: { in: user.branchIds } }) }, select: { id: true, code: true, name: true }, orderBy: { name: "asc" } }),
+      this.prisma.farm.findMany({ where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess || user.farmIds.length === 0 ? {} : { id: { in: user.farmIds } }) }, select: { id: true, code: true, name: true, branchId: true }, orderBy: { name: "asc" } }),
+      this.prisma.warehouse.findMany({ where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess || user.warehouseIds.length === 0 ? {} : { id: { in: user.warehouseIds } }) }, select: { id: true, code: true, name: true, branchId: true }, orderBy: { name: "asc" } }),
+      this.prisma.productionSite.findMany({ where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess || user.productionSiteIds.length === 0 ? {} : { id: { in: user.productionSiteIds } }) }, select: { id: true, code: true, name: true, branchId: true }, orderBy: { name: "asc" } }),
       this.prisma.product.findMany({ where: { companyId: user.companyId, deletedAt: null }, select: { id: true, sku: true, name: true }, orderBy: { name: "asc" }, take: 250 }),
-      this.prisma.customer.findMany({ where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess ? {} : { branchId: { in: user.branchIds } }) }, select: { id: true, code: true, name: true }, orderBy: { name: "asc" }, take: 250 }),
+      this.prisma.customer.findMany({ where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess || user.branchIds.length === 0 ? {} : { branchId: { in: user.branchIds } }) }, select: { id: true, code: true, name: true }, orderBy: { name: "asc" }, take: 250 }),
       this.prisma.supplier.findMany({ where: { companyId: user.companyId, deletedAt: null }, select: { id: true, code: true, name: true }, orderBy: { name: "asc" }, take: 250 })
     ]);
     return { data: { companies, branches, farms, warehouses, productionSites, products, customers, suppliers } };

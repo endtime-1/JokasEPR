@@ -61,7 +61,7 @@ export class MarketPlanningService {
           deletedAt: null,
           product: { type: "FINISHED_GOOD" },
           ...(query.warehouseId ? { warehouseId: query.warehouseId } : {}),
-          ...(user.hasGlobalAccess ? {} : { warehouseId: { in: user.warehouseIds } })
+          ...(user.hasGlobalAccess || user.warehouseIds.length === 0 ? {} : { warehouseId: { in: user.warehouseIds } })
         },
         select: { quantityOnHand: true }
       }),
@@ -124,17 +124,17 @@ export class MarketPlanningService {
   async options(user: AuthenticatedUser) {
     const [branches, productionSites, warehouses, finishedFeeds, formulas, rawMaterials] = await Promise.all([
       this.prisma.branch.findMany({
-        where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess ? {} : { id: { in: user.branchIds } }) },
+        where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess || user.branchIds.length === 0 ? {} : { id: { in: user.branchIds } }) },
         select: { id: true, code: true, name: true },
         orderBy: { name: "asc" }
       }),
       this.prisma.productionSite.findMany({
-        where: { companyId: user.companyId, deletedAt: null, type: { in: ["FEED_PRODUCTION", "MIXED"] }, ...(user.hasGlobalAccess ? {} : { id: { in: user.productionSiteIds } }) },
+        where: { companyId: user.companyId, deletedAt: null, type: { in: ["FEED_PRODUCTION", "MIXED"] }, ...(user.hasGlobalAccess || user.productionSiteIds.length === 0 ? {} : { id: { in: user.productionSiteIds } }) },
         select: { id: true, branchId: true, code: true, name: true, type: true },
         orderBy: { name: "asc" }
       }),
       this.prisma.warehouse.findMany({
-        where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess ? {} : { id: { in: user.warehouseIds } }) },
+        where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess || user.warehouseIds.length === 0 ? {} : { id: { in: user.warehouseIds } }) },
         select: { id: true, branchId: true, productionSiteId: true, code: true, name: true, type: true },
         orderBy: { name: "asc" }
       }),
@@ -995,7 +995,7 @@ export class MarketPlanningService {
       ...(query.branchId ? { branchId: query.branchId } : {}),
       ...(query.productionSiteId ? { productionSiteId: query.productionSiteId } : {}),
       ...(query.startDate || query.endDate ? { periodStart: { ...(query.startDate ? { gte: new Date(query.startDate) } : {}), ...(query.endDate ? { lte: new Date(query.endDate) } : {}) } } : {}),
-      ...(user.hasGlobalAccess ? {} : { OR: [{ branchId: null }, { branchId: { in: user.branchIds } }, { productionSiteId: { in: user.productionSiteIds } }] })
+      ...(user.hasGlobalAccess || (user.branchIds.length === 0 && user.productionSiteIds.length === 0) ? {} : { OR: [{ branchId: null }, ...(user.branchIds.length ? [{ branchId: { in: user.branchIds } }] : []), ...(user.productionSiteIds.length ? [{ productionSiteId: { in: user.productionSiteIds } }] : [])] })
     };
   }
 

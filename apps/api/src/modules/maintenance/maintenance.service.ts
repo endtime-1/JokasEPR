@@ -89,10 +89,10 @@ export class MaintenanceService {
     if (cached) return cached;
 
     const [branches, farms, warehouses, productionSites, machines, equipment, spareParts, technicians] = await Promise.all([
-      this.prisma.branch.findMany({ where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess ? {} : { id: { in: user.branchIds } }) }, select: { id: true, code: true, name: true }, orderBy: { name: "asc" } }),
-      this.prisma.farm.findMany({ where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess ? {} : { id: { in: user.farmIds } }) }, select: { id: true, code: true, name: true, branchId: true }, orderBy: { name: "asc" } }),
-      this.prisma.warehouse.findMany({ where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess ? {} : { id: { in: user.warehouseIds } }) }, select: { id: true, code: true, name: true, branchId: true }, orderBy: { name: "asc" } }),
-      this.prisma.productionSite.findMany({ where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess ? {} : { id: { in: user.productionSiteIds } }) }, select: { id: true, code: true, name: true, branchId: true }, orderBy: { name: "asc" } }),
+      this.prisma.branch.findMany({ where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess || user.branchIds.length === 0 ? {} : { id: { in: user.branchIds } }) }, select: { id: true, code: true, name: true }, orderBy: { name: "asc" } }),
+      this.prisma.farm.findMany({ where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess || user.farmIds.length === 0 ? {} : { id: { in: user.farmIds } }) }, select: { id: true, code: true, name: true, branchId: true }, orderBy: { name: "asc" } }),
+      this.prisma.warehouse.findMany({ where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess || user.warehouseIds.length === 0 ? {} : { id: { in: user.warehouseIds } }) }, select: { id: true, code: true, name: true, branchId: true }, orderBy: { name: "asc" } }),
+      this.prisma.productionSite.findMany({ where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess || user.productionSiteIds.length === 0 ? {} : { id: { in: user.productionSiteIds } }) }, select: { id: true, code: true, name: true, branchId: true }, orderBy: { name: "asc" } }),
       this.prisma.machine.findMany({ where: this.machineWhere(user, {}), select: { id: true, code: true, name: true, branchId: true }, orderBy: { name: "asc" } }),
       this.prisma.equipment.findMany({ where: this.equipmentWhere(user, {}), select: { id: true, code: true, name: true, branchId: true, machineId: true }, orderBy: { name: "asc" } }),
       this.prisma.product.findMany({ where: { companyId: user.companyId, deletedAt: null, status: "ACTIVE", OR: [{ sku: { contains: "SPARE" } }, { name: { contains: "belt" } }, { name: { contains: "part" } }] }, select: { id: true, sku: true, name: true, uomId: true }, orderBy: { name: "asc" } }),
@@ -349,40 +349,55 @@ export class MaintenanceService {
     await tx.inventoryItem.update({ where: { id: item.id }, data: { quantityOnHand: { decrement: quantity }, updatedById: user.id } });
   }
 
+  // Returns an OR-scope that restricts results to the user's assigned locations.
+  // If the user has no specific assignments (all arrays empty), returns {} so queries
+  // fall through to company-level visibility rather than an impossible IN () clause.
+  private locationScope(user: AuthenticatedUser): object {
+    if (user.hasGlobalAccess) return {};
+    const orConditions: object[] = [];
+    if (user.branchIds.length > 0) orConditions.push({ branchId: { in: user.branchIds } });
+    if (user.farmIds.length > 0) orConditions.push({ farmId: { in: user.farmIds } });
+    if (user.warehouseIds.length > 0) orConditions.push({ warehouseId: { in: user.warehouseIds } });
+    if (user.productionSiteIds.length > 0) orConditions.push({ productionSiteId: { in: user.productionSiteIds } });
+    return orConditions.length ? { OR: orConditions } : {};
+  }
+
   private machineWhere(user: AuthenticatedUser, query: MaintenanceQueryDto) {
-    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId, farmId: query.farmId, warehouseId: query.warehouseId, productionSiteId: query.productionSiteId, id: query.machineId, ...(user.hasGlobalAccess ? {} : { OR: [{ branchId: { in: user.branchIds } }, { farmId: { in: user.farmIds } }, { warehouseId: { in: user.warehouseIds } }, { productionSiteId: { in: user.productionSiteIds } }] }) };
+    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId || undefined, farmId: query.farmId || undefined, warehouseId: query.warehouseId || undefined, productionSiteId: query.productionSiteId || undefined, id: query.machineId || undefined, ...this.locationScope(user) };
   }
 
   private equipmentWhere(user: AuthenticatedUser, query: MaintenanceQueryDto) {
-    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId, farmId: query.farmId, warehouseId: query.warehouseId, productionSiteId: query.productionSiteId, machineId: query.machineId, id: query.equipmentId, ...(user.hasGlobalAccess ? {} : { OR: [{ branchId: { in: user.branchIds } }, { farmId: { in: user.farmIds } }, { warehouseId: { in: user.warehouseIds } }, { productionSiteId: { in: user.productionSiteIds } }] }) };
+    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId || undefined, farmId: query.farmId || undefined, warehouseId: query.warehouseId || undefined, productionSiteId: query.productionSiteId || undefined, machineId: query.machineId || undefined, id: query.equipmentId || undefined, ...this.locationScope(user) };
   }
 
   private scheduleWhere(user: AuthenticatedUser, query: MaintenanceQueryDto) {
-    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId, farmId: query.farmId, warehouseId: query.warehouseId, productionSiteId: query.productionSiteId, machineId: query.machineId, equipmentId: query.equipmentId, ...(this.dateRange(query, "nextDueDate")), ...(user.hasGlobalAccess ? {} : { OR: [{ branchId: { in: user.branchIds } }, { farmId: { in: user.farmIds } }, { warehouseId: { in: user.warehouseIds } }, { productionSiteId: { in: user.productionSiteIds } }] }) };
+    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId || undefined, farmId: query.farmId || undefined, warehouseId: query.warehouseId || undefined, productionSiteId: query.productionSiteId || undefined, machineId: query.machineId || undefined, equipmentId: query.equipmentId || undefined, ...(this.dateRange(query, "nextDueDate")), ...this.locationScope(user) };
   }
 
   private recordWhere(user: AuthenticatedUser, query: MaintenanceQueryDto) {
-    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId, farmId: query.farmId, warehouseId: query.warehouseId, productionSiteId: query.productionSiteId, machineId: query.machineId, equipmentId: query.equipmentId, ...(this.dateRange(query, "maintenanceDate")), ...(user.hasGlobalAccess ? {} : { OR: [{ branchId: { in: user.branchIds } }, { farmId: { in: user.farmIds } }, { warehouseId: { in: user.warehouseIds } }, { productionSiteId: { in: user.productionSiteIds } }] }) };
+    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId || undefined, farmId: query.farmId || undefined, warehouseId: query.warehouseId || undefined, productionSiteId: query.productionSiteId || undefined, machineId: query.machineId || undefined, equipmentId: query.equipmentId || undefined, ...(this.dateRange(query, "maintenanceDate")), ...this.locationScope(user) };
   }
 
   private breakdownWhere(user: AuthenticatedUser, query: MaintenanceQueryDto) {
-    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId, farmId: query.farmId, warehouseId: query.warehouseId, productionSiteId: query.productionSiteId, machineId: query.machineId, equipmentId: query.equipmentId, ...(this.dateRange(query, "reportedAt")), ...(user.hasGlobalAccess ? {} : { OR: [{ branchId: { in: user.branchIds } }, { farmId: { in: user.farmIds } }, { warehouseId: { in: user.warehouseIds } }, { productionSiteId: { in: user.productionSiteIds } }] }) };
+    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId || undefined, farmId: query.farmId || undefined, warehouseId: query.warehouseId || undefined, productionSiteId: query.productionSiteId || undefined, machineId: query.machineId || undefined, equipmentId: query.equipmentId || undefined, ...(this.dateRange(query, "reportedAt")), ...this.locationScope(user) };
   }
 
   private spareWhere(user: AuthenticatedUser, query: MaintenanceQueryDto) {
-    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId, warehouseId: query.warehouseId, machineId: query.machineId, equipmentId: query.equipmentId, ...(this.dateRange(query, "usedAt")), ...(user.hasGlobalAccess ? {} : { warehouseId: { in: user.warehouseIds } }) };
+    const warehouseScope = !user.hasGlobalAccess && user.warehouseIds.length > 0 ? { warehouseId: { in: user.warehouseIds } } : {};
+    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId || undefined, warehouseId: query.warehouseId || undefined, machineId: query.machineId || undefined, equipmentId: query.equipmentId || undefined, ...(this.dateRange(query, "usedAt")), ...warehouseScope };
   }
 
   private assignmentWhere(user: AuthenticatedUser, query: MaintenanceQueryDto) {
-    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId, machineId: query.machineId, equipmentId: query.equipmentId, ...(user.hasGlobalAccess ? {} : { branchId: { in: user.branchIds } }) };
+    const branchScope = !user.hasGlobalAccess && user.branchIds.length > 0 ? { branchId: { in: user.branchIds } } : {};
+    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId || undefined, machineId: query.machineId || undefined, equipmentId: query.equipmentId || undefined, ...branchScope };
   }
 
   private downtimeWhere(user: AuthenticatedUser, query: MaintenanceQueryDto) {
-    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId, farmId: query.farmId, warehouseId: query.warehouseId, productionSiteId: query.productionSiteId, machineId: query.machineId, equipmentId: query.equipmentId, ...(this.dateRange(query, "startAt")), ...(user.hasGlobalAccess ? {} : { OR: [{ branchId: { in: user.branchIds } }, { farmId: { in: user.farmIds } }, { warehouseId: { in: user.warehouseIds } }, { productionSiteId: { in: user.productionSiteIds } }] }) };
+    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId || undefined, farmId: query.farmId || undefined, warehouseId: query.warehouseId || undefined, productionSiteId: query.productionSiteId || undefined, machineId: query.machineId || undefined, equipmentId: query.equipmentId || undefined, ...(this.dateRange(query, "startAt")), ...this.locationScope(user) };
   }
 
   private costWhere(user: AuthenticatedUser, query: MaintenanceQueryDto) {
-    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId, farmId: query.farmId, warehouseId: query.warehouseId, productionSiteId: query.productionSiteId, machineId: query.machineId, equipmentId: query.equipmentId, ...(this.dateRange(query, "costDate")), ...(user.hasGlobalAccess ? {} : { OR: [{ branchId: { in: user.branchIds } }, { farmId: { in: user.farmIds } }, { warehouseId: { in: user.warehouseIds } }, { productionSiteId: { in: user.productionSiteIds } }] }) };
+    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId || undefined, farmId: query.farmId || undefined, warehouseId: query.warehouseId || undefined, productionSiteId: query.productionSiteId || undefined, machineId: query.machineId || undefined, equipmentId: query.equipmentId || undefined, ...(this.dateRange(query, "costDate")), ...this.locationScope(user) };
   }
 
   private dateRange(query: MaintenanceQueryDto, field: string) {

@@ -300,7 +300,21 @@ export async function apiFetch<T>(path: string, init?: RequestInit & { quiet?: b
   const parsed = JSON.parse(text) as T;
   // Cache GET responses so pages show data immediately on re-mount (navigation back).
   if ((init?.method ?? "GET").toUpperCase() === "GET") {
-    _getCache.set(path, { data: parsed, cachedAt: Date.now() });
+    // Don't poison a valid cache with a spuriously empty response. If the server returns
+    // { data: [] } but we already have non-empty cached data within TTL, keep the good cache
+    // and let the next successful non-empty response refresh it.
+    const freshData = (parsed as Record<string, unknown>)?.data;
+    const isEmptyEnvelope = Array.isArray(freshData) && freshData.length === 0;
+    if (isEmptyEnvelope) {
+      const existing = _getCache.get(path);
+      const existingData = (existing?.data as Record<string, unknown>)?.data;
+      const hasValidCache = Array.isArray(existingData) && existingData.length > 0 && Date.now() - (existing?.cachedAt ?? 0) <= CACHE_TTL_MS;
+      if (!hasValidCache) {
+        _getCache.set(path, { data: parsed, cachedAt: Date.now() });
+      }
+    } else {
+      _getCache.set(path, { data: parsed, cachedAt: Date.now() });
+    }
   }
   return parsed;
 }

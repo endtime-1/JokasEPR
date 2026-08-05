@@ -132,23 +132,23 @@ export class FeedProductionService {
           companyId: user.companyId,
           deletedAt: null,
           type: { in: ["FEED_PRODUCTION", "MIXED"] },
-          ...(user.hasGlobalAccess ? {} : { id: { in: user.productionSiteIds } })
+          ...(user.hasGlobalAccess || user.productionSiteIds.length === 0 ? {} : { id: { in: user.productionSiteIds } })
         },
         select: { id: true, branchId: true, code: true, name: true, type: true },
         orderBy: { name: "asc" }
       }),
       this.prisma.warehouse.findMany({
-        where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess ? {} : { id: { in: user.warehouseIds } }) },
+        where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess || user.warehouseIds.length === 0 ? {} : { id: { in: user.warehouseIds } }) },
         select: { id: true, branchId: true, farmId: true, productionSiteId: true, code: true, name: true, type: true },
         orderBy: { name: "asc" }
       }),
       this.prisma.farm.findMany({
-        where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess ? {} : { id: { in: user.farmIds } }) },
+        where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess || user.farmIds.length === 0 ? {} : { id: { in: user.farmIds } }) },
         select: { id: true, branchId: true, code: true, name: true },
         orderBy: { name: "asc" }
       }),
       this.prisma.poultryHouse.findMany({
-        where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess ? {} : { farmId: { in: user.farmIds } }) },
+        where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess || user.farmIds.length === 0 ? {} : { farmId: { in: user.farmIds } }) },
         select: { id: true, farmId: true, code: true, name: true },
         orderBy: { name: "asc" }
       }),
@@ -963,7 +963,7 @@ export class FeedProductionService {
     const ingredientIds = [...new Set(formulas.flatMap((f) => f.ingredients.map((i) => i.ingredientId)))];
 
     const inventoryItems = await this.prisma.inventoryItem.findMany({
-      where: { companyId: user.companyId, productId: { in: ingredientIds }, deletedAt: null, ...(warehouseId ? { warehouseId } : user.hasGlobalAccess ? {} : { warehouseId: { in: user.warehouseIds } }) },
+      where: { companyId: user.companyId, productId: { in: ingredientIds }, deletedAt: null, ...(warehouseId ? { warehouseId } : user.hasGlobalAccess || user.warehouseIds.length === 0 ? {} : { warehouseId: { in: user.warehouseIds } }) },
       select: { productId: true, quantityOnHand: true }
     });
 

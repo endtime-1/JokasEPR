@@ -74,7 +74,7 @@ export class SalesService {
 
   async options(user: AuthenticatedUser) {
     const [branches, warehouses, products, customerGroups, customers, priceLists, invoices] = await Promise.all([
-      this.prisma.branch.findMany({ where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess ? {} : { id: { in: user.branchIds } }) }, select: { id: true, code: true, name: true }, orderBy: { name: "asc" } }),
+      this.prisma.branch.findMany({ where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess || user.branchIds.length === 0 ? {} : { id: { in: user.branchIds } }) }, select: { id: true, code: true, name: true }, orderBy: { name: "asc" } }),
       this.prisma.warehouse.findMany({ where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess || user.warehouseIds.length === 0 ? {} : { id: { in: user.warehouseIds } }) }, select: { id: true, branchId: true, code: true, name: true }, orderBy: { name: "asc" } }),
       this.prisma.product.findMany({ where: { companyId: user.companyId, deletedAt: null, status: "ACTIVE" }, select: { id: true, sku: true, name: true, uomId: true }, orderBy: { name: "asc" } }),
       this.prisma.customerGroup.findMany({ where: this.customerGroupWhere(user, {}), select: { id: true, code: true, name: true }, orderBy: { name: "asc" } }),
@@ -440,7 +440,7 @@ export class SalesService {
 
   async debtors(user: AuthenticatedUser, query: SalesQueryDto) {
     const data = await this.prisma.customerCreditLimit.findMany({
-      where: { companyId: user.companyId, deletedAt: null, currentBalance: { gt: 0 }, customerId: query.customerId, ...(user.hasGlobalAccess ? (query.branchId ? { branchId: query.branchId } : {}) : { branchId: { in: user.branchIds } }) },
+      where: { companyId: user.companyId, deletedAt: null, currentBalance: { gt: 0 }, customerId: query.customerId || undefined, ...(user.hasGlobalAccess ? (query.branchId ? { branchId: query.branchId } : {}) : user.branchIds.length > 0 ? { branchId: { in: user.branchIds } } : {}) },
       include: { customer: true, branch: true },
       orderBy: { currentBalance: "desc" },
       take: 200
@@ -734,15 +734,19 @@ export class SalesService {
   }
 
   private customerGroupWhere(user: AuthenticatedUser, query: SalesQueryDto) {
-    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId, ...(user.hasGlobalAccess ? {} : { OR: [{ branchId: null }, { branchId: { in: user.branchIds } }] }) };
+    const branchScope = !user.hasGlobalAccess && user.branchIds.length > 0
+      ? { OR: [{ branchId: null }, { branchId: { in: user.branchIds } }] }
+      : {};
+    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId || undefined, ...branchScope };
   }
 
   // Combines a caller-supplied branchId filter with the user's branch restriction.
   // Plain spread would overwrite one with the other; AND applies both simultaneously.
+  // Empty branchIds means "no assigned branches" → fall through to company-level visibility.
   private branchScope(user: AuthenticatedUser, query: SalesQueryDto) {
     const conditions: object[] = [];
     if (query.branchId) conditions.push({ branchId: query.branchId });
-    if (!user.hasGlobalAccess) conditions.push({ branchId: { in: user.branchIds } });
+    if (!user.hasGlobalAccess && user.branchIds.length > 0) conditions.push({ branchId: { in: user.branchIds } });
     return conditions.length ? { AND: conditions } : {};
   }
 
@@ -753,8 +757,8 @@ export class SalesService {
   private priceListWhere(user: AuthenticatedUser, query: SalesQueryDto) {
     const andConditions: object[] = [];
     if (query.branchId) andConditions.push({ branchId: query.branchId });
-    if (!user.hasGlobalAccess) andConditions.push({ OR: [{ branchId: null }, { branchId: { in: user.branchIds } }] });
-    return { companyId: user.companyId, deletedAt: null, productId: query.productId, ...(andConditions.length ? { AND: andConditions } : {}) };
+    if (!user.hasGlobalAccess && user.branchIds.length > 0) andConditions.push({ OR: [{ branchId: null }, { branchId: { in: user.branchIds } }] });
+    return { companyId: user.companyId, deletedAt: null, productId: query.productId || undefined, ...(andConditions.length ? { AND: andConditions } : {}) };
   }
 
   private orderWhere(user: AuthenticatedUser, query: SalesQueryDto) {

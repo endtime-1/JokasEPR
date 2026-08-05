@@ -275,7 +275,7 @@ export class InventoryService {
     const days = dto.expiryDays ?? 45;
     const until = new Date();
     until.setDate(until.getDate() + days);
-    const batches = await this.prisma.stockBatch.findMany({ where: { companyId: user.companyId, deletedAt: null, expiryDate: { lte: until, gte: new Date() }, quantityRemaining: { gt: 0 }, ...(user.hasGlobalAccess ? {} : { warehouseId: { in: user.warehouseIds } }) } });
+    const batches = await this.prisma.stockBatch.findMany({ where: { companyId: user.companyId, deletedAt: null, expiryDate: { lte: until, gte: new Date() }, quantityRemaining: { gt: 0 }, ...(user.hasGlobalAccess || user.warehouseIds.length === 0 ? {} : { warehouseId: { in: user.warehouseIds } }) } });
     for (const batch of batches) {
       const daysToExpiry = Math.ceil(((batch.expiryDate as Date).getTime() - Date.now()) / 86400000);
       await this.prisma.stockExpiryAlert.upsert({ where: { companyId_stockBatchId: { companyId: user.companyId, stockBatchId: batch.id } }, update: { daysToExpiry, expiryDate: batch.expiryDate as Date, status: "ACTIVE" }, create: { companyId: user.companyId, branchId: batch.branchId, warehouseId: batch.warehouseId, productionSiteId: batch.productionSiteId, inventoryItemId: batch.inventoryItemId, stockBatchId: batch.id, productId: batch.productId, expiryDate: batch.expiryDate as Date, daysToExpiry } });
@@ -414,27 +414,47 @@ export class InventoryService {
   private itemWhere(user: AuthenticatedUser, query: InventoryQueryDto) {
     const andConditions: object[] = [];
     if (query.warehouseId) andConditions.push({ warehouseId: query.warehouseId });
-    if (!user.hasGlobalAccess) andConditions.push({ warehouseId: { in: user.warehouseIds } });
+    // Only apply warehouse scope when the user has explicit assignments.
+    // An empty warehouseIds array means "no warehouse access configured" → fall through
+    // to company-level visibility rather than an impossible IN () clause.
+    if (!user.hasGlobalAccess && user.warehouseIds.length > 0) {
+      andConditions.push({ warehouseId: { in: user.warehouseIds } });
+    }
     return {
       companyId: user.companyId,
       deletedAt: null,
-      branchId: query.branchId,
-      farmId: query.farmId,
-      productionSiteId: query.productionSiteId,
-      productId: query.productId,
+      branchId: query.branchId || undefined,
+      farmId: query.farmId || undefined,
+      productionSiteId: query.productionSiteId || undefined,
+      productId: query.productId || undefined,
       ...(andConditions.length ? { AND: andConditions } : {})
     };
   }
 
   private movementWhere(user: AuthenticatedUser, query: InventoryQueryDto) {
-    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId, warehouseId: query.warehouseId, farmId: query.farmId, productionSiteId: query.productionSiteId, productId: query.productId, ...(query.startDate || query.endDate ? { movementDate: { gte: query.startDate ? new Date(query.startDate) : undefined, lte: query.endDate ? new Date(query.endDate) : undefined } } : {}), ...(user.hasGlobalAccess ? {} : { OR: [{ warehouseId: { in: user.warehouseIds } }, { fromWarehouseId: { in: user.warehouseIds } }, { toWarehouseId: { in: user.warehouseIds } }] }) };
+    const warehouseScope = !user.hasGlobalAccess && user.warehouseIds.length > 0
+      ? { OR: [{ warehouseId: { in: user.warehouseIds } }, { fromWarehouseId: { in: user.warehouseIds } }, { toWarehouseId: { in: user.warehouseIds } }] }
+      : {};
+    return {
+      companyId: user.companyId,
+      deletedAt: null,
+      branchId: query.branchId || undefined,
+      warehouseId: query.warehouseId || undefined,
+      farmId: query.farmId || undefined,
+      productionSiteId: query.productionSiteId || undefined,
+      productId: query.productId || undefined,
+      ...(query.startDate || query.endDate ? { movementDate: { gte: query.startDate ? new Date(query.startDate) : undefined, lte: query.endDate ? new Date(query.endDate) : undefined } } : {}),
+      ...warehouseScope,
+    };
   }
 
   private expiryWhere(user: AuthenticatedUser, query: InventoryQueryDto) {
     const andConditions: object[] = [];
     if (query.warehouseId) andConditions.push({ warehouseId: query.warehouseId });
-    if (!user.hasGlobalAccess) andConditions.push({ warehouseId: { in: user.warehouseIds } });
-    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId, productionSiteId: query.productionSiteId, productId: query.productId, ...(andConditions.length ? { AND: andConditions } : {}) };
+    if (!user.hasGlobalAccess && user.warehouseIds.length > 0) {
+      andConditions.push({ warehouseId: { in: user.warehouseIds } });
+    }
+    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId || undefined, productionSiteId: query.productionSiteId || undefined, productId: query.productId || undefined, ...(andConditions.length ? { AND: andConditions } : {}) };
   }
 
   private async requireItem(companyId: string, warehouseId: string, productId: string) {
