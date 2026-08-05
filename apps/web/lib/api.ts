@@ -6,9 +6,10 @@ const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "/api/v1").trim();
 
 // Module-level in-memory cache for GET responses.
 // Survives React component mount/unmount so navigating away and back shows data instantly.
-// Each entry stores { data, cachedAt } so stale entries (> 5 min old) are excluded from
-// getCachedFirst() — prevents serving morning data to end-of-day users after idle sessions.
-const CACHE_TTL_MS = 5 * 60 * 1000;
+// Each entry stores { data, cachedAt } so stale entries (> 15 min old) are excluded from
+// getCachedFirst() — 15 min covers Hostinger's ~10 min hibernation window so returning
+// users always see cached data while the server cold-starts, rather than a blank page.
+const CACHE_TTL_MS = 15 * 60 * 1000;
 const _getCache = new Map<string, { data: unknown; cachedAt: number }>();
 
 /** Return the last successful GET response for exactly `path`, or undefined if stale. */
@@ -187,9 +188,9 @@ function signalSessionExpired() {
 
 // 502/503/504 = API temporarily unavailable (startup, crash, Hostinger proxy timeout).
 // Retry up to MAX_TRANSIENT_RETRIES times with 3s gaps to ride out Hostinger cold starts.
-// NestJS cold-start on Hostinger typically takes 15-30s, so 8 retries (24s) covers most cases.
+// Hostinger cold-start observed at 15-40s; 12 retries (36s) covers the upper end.
 const TRANSIENT_STATUSES = new Set([502, 503, 504]);
-const MAX_TRANSIENT_RETRIES = 8;
+const MAX_TRANSIENT_RETRIES = 12;
 
 import { authReady } from "./auth-gate";
 
