@@ -315,8 +315,12 @@ jobs:
           SCHEMA="$APP_DIR/prisma/schema.prisma"
 
           # Prefer the GitHub secret; fall back to the on-disk .env for local runner runs.
+          # Read as plain text, NOT `source`/`.` — DATABASE_URL's query string contains
+          # unescaped `&` (connect_timeout=30&connection_limit=5&...), and sourcing an
+          # unquoted `VAR=value&` line makes bash treat `&` as a background-job operator,
+          # silently truncating/backgrounding the assignment instead of setting it.
           if [ -z "$DATABASE_URL" ] && [ -f "$APP_DIR/.env" ]; then
-            set -a; . "$APP_DIR/.env"; set +a
+            DATABASE_URL=$(grep '^DATABASE_URL=' "$APP_DIR/.env" | head -1 | cut -d= -f2-)
           fi
 
           if [ -z "$DATABASE_URL" ]; then

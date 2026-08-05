@@ -35,7 +35,11 @@ if [ ! -f "$APP_DIR/.env" ]; then
   echo "ERROR: $APP_DIR/.env not found — cannot read DATABASE_URL."
   exit 1
 fi
-set -a; . "$APP_DIR/.env"; set +a
+# Read as plain text, NOT `source`/`.` — DATABASE_URL's query string contains
+# unescaped `&` (connect_timeout=30&connection_limit=5&...), and sourcing an
+# unquoted `VAR=value&` line makes bash treat `&` as a background-job operator,
+# silently truncating/backgrounding the assignment instead of setting it.
+DATABASE_URL=$(grep '^DATABASE_URL=' "$APP_DIR/.env" | head -1 | cut -d= -f2-)
 if [ -z "$DATABASE_URL" ]; then
   echo "ERROR: DATABASE_URL not set in $APP_DIR/.env"
   exit 1
@@ -87,6 +91,7 @@ else
         FAILED=$((FAILED + 1))
         break
       fi
+      sleep 2
     done <<< "$APPLIED"
   fi
 
@@ -100,6 +105,7 @@ else
         FAILED=$((FAILED + 1))
         break
       fi
+      sleep 2
     done <<< "$ROLLED_BACK"
   fi
 
