@@ -85,10 +85,10 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
               if (!args?.where?.companyId) {
                 logger.warn(`[TENANT] ${modelKey}.${prop} — missing companyId, possible cross-tenant data leak`);
               }
-              return (val as Function).apply(target, [args]);
+              return (val as (...fnArgs: unknown[]) => unknown).apply(target, [args]);
             };
           }
-          return typeof val === "function" ? (val as Function).bind(target) : val;
+          return typeof val === "function" ? (val as (...fnArgs: unknown[]) => unknown).bind(target) : val;
         },
       });
     }

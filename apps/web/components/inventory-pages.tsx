@@ -118,6 +118,11 @@ export function InventoryItemsPage({ create = false }: { create?: boolean }) {
           <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white md:col-span-4"><Plus aria-hidden className="h-4 w-4" /> Save item</button>
         </form>
       ) : <Link className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" href="/inventory/items/create"><Plus aria-hidden className="h-4 w-4" /> Create item</Link>}
+      {!create && rows.length >= 200 && (
+        <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+          Showing the first 200 inventory items. Use the table&apos;s search box to find an item outside this list.
+        </div>
+      )}
       <InventoryItemsTable rows={rows} loading={loading} />
     </InventoryShell>
   );

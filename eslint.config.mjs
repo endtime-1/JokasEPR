@@ -16,6 +16,17 @@ export default [
   },
   js.configs.recommended,
   {
+    // Node-run config/tooling files (next.config.mjs, scripts, etc.) — these
+    // execute under Node, not the browser+TS setup below, so they need Node
+    // globals (process, __dirname) declared or `process` reads as undefined.
+    files: ["**/*.{js,mjs,cjs}"],
+    languageOptions: {
+      sourceType: "module",
+      ecmaVersion: "latest",
+      globals: { ...globals.node }
+    }
+  },
+  {
     files: ["**/*.{ts,tsx}"],
     languageOptions: {
       parser: tsParser,

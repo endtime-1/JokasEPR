@@ -1,4 +1,5 @@
 import { Controller, Get, Headers, Ip, Param, Query, Res, UseGuards } from "@nestjs/common";
+import { Throttle } from "@nestjs/throttler";
 import { Response } from "express";
 import { AuthenticatedUser, PERMISSIONS } from "@jokas/shared";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
@@ -25,14 +26,20 @@ export class ReportsController {
     return this.reportsService.options(user);
   }
 
+  // Reports run heavy aggregation queries against a pool capped at 5-10
+  // connections (see DATABASE_URL patching in start.js/deploy.yml) — a burst of
+  // requests here can starve every other endpoint of a connection. The global
+  // guard allows 300/60s per IP, far too loose for this specific cost profile.
   @Get(":id")
   @RequirePermissions(PERMISSIONS.PLATFORM_READ)
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   run(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Query() query: ReportQueryDto) {
     return this.reportsService.run(id, user, query);
   }
 
   @Get(":id/export.csv")
   @RequirePermissions(PERMISSIONS.REPORTS_EXPORT)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   async csv(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Query() query: ReportExportQueryDto, @Res() response: Response, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     const body = await this.reportsService.export(id, "csv", user, query, { ipAddress, userAgent });
     this.send(response, "text/csv", `${id}.csv`, body);
@@ -40,6 +47,7 @@ export class ReportsController {
 
   @Get(":id/export.xls")
   @RequirePermissions(PERMISSIONS.REPORTS_EXPORT)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   async excel(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Query() query: ReportExportQueryDto, @Res() response: Response, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     const body = await this.reportsService.export(id, "xls", user, query, { ipAddress, userAgent });
     this.send(response, "application/vnd.ms-excel", `${id}.xls`, body);
@@ -47,6 +55,7 @@ export class ReportsController {
 
   @Get(":id/export.pdf")
   @RequirePermissions(PERMISSIONS.REPORTS_EXPORT)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   async pdf(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Query() query: ReportExportQueryDto, @Res() response: Response, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     const body = await this.reportsService.export(id, "pdf", user, query, { ipAddress, userAgent });
     this.send(response, "application/pdf", `${id}.pdf`, body);
@@ -54,6 +63,7 @@ export class ReportsController {
 
   @Get(":id/print")
   @RequirePermissions(PERMISSIONS.PLATFORM_READ)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   async print(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Query() query: ReportExportQueryDto, @Res() response: Response, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     const body = await this.reportsService.export(id, "html", user, query, { ipAddress, userAgent });
     response.setHeader("content-type", "text/html; charset=utf-8");

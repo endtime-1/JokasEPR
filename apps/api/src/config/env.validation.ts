@@ -49,7 +49,6 @@ const defaults: Partial<AppEnvironment> = {
   API_PORT: "4001",
   API_PREFIX: "api",
   API_VERSION: "1",
-  WEB_ORIGIN: "http://localhost:3000",
   UPLOAD_MAX_MB: "10",
   AI_MODEL: "deepseek/deepseek-chat"
 };
@@ -57,6 +56,16 @@ const defaults: Partial<AppEnvironment> = {
 export function validateEnvironment(config: Record<string, unknown>): AppEnvironment {
   const env = { ...defaults, ...config } as AppEnvironment;
   const missing = ["DATABASE_URL", "JWT_ACCESS_SECRET", "JWT_REFRESH_SECRET"].filter((key) => !env[key as keyof AppEnvironment]);
+
+  // WEB_ORIGIN drives both CORS and cookie-scoping. A silent localhost default
+  // in production would pass startup but reject every real browser request with
+  // an opaque CORS error — fail fast instead so a missing env var is caught at
+  // deploy time, not discovered by a user hitting a broken login.
+  if (env.NODE_ENV === "production" && !env.WEB_ORIGIN) {
+    missing.push("WEB_ORIGIN");
+  } else if (!env.WEB_ORIGIN) {
+    env.WEB_ORIGIN = "http://localhost:3000";
+  }
 
   if (missing.length > 0) {
     throw new Error(`Missing required environment variable(s): ${missing.join(", ")}`);

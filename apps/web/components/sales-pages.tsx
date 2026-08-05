@@ -602,6 +602,12 @@ export function CustomersPage({ create = false }: { create?: boolean }) {
         <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search customers…" className="w-72 rounded-xl border border-line bg-white px-3 py-2 text-sm text-ink outline-none focus:border-brand focus:ring-4 focus:ring-brand/10" />
       </div>
 
+      {!search && rows.length >= 200 && (
+        <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+          Showing the first 200 customers. Use search above to find a specific customer outside this list.
+        </div>
+      )}
+
       <div className="overflow-hidden rounded-2xl border border-line bg-white shadow-card">
         <DataTable
           columns={[

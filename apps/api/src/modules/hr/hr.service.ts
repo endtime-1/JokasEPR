@@ -1646,7 +1646,11 @@ export class HRService {
     });
     if (!row) throw new NotFoundException("Payroll record not found");
 
-    const PDFDocument = require("pdfkit") as typeof import("pdfkit");
+    // Lazy dynamic import (not a static import) so pdfkit — and its font assets —
+    // only load into memory when a payslip is actually being generated, not on
+    // every API boot. This also satisfies the no-require-imports lint rule that
+    // a plain require() would trip.
+    const { default: PDFDocument } = await import("pdfkit");
     const doc = new PDFDocument({ margin: 50, size: "A4" });
     const chunks: Buffer[] = [];
     doc.on("data", (c: Buffer) => chunks.push(c));
@@ -1754,7 +1758,7 @@ export class HRService {
         const { pdf, filename } = await this.buildPayslipPdf(row.id, user.companyId);
         const html = `<p>Dear ${row.employeeName},</p><p>Please find your payslip for ${row.period} attached.</p>`;
         const ok = await this.email.sendWithAttachment(empEmail, `Payslip — ${row.period}`, html, { filename, content: pdf });
-        ok ? sent++ : failed++;
+        if (ok) sent++; else failed++;
       } catch { failed++; }
     }));
 

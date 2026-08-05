@@ -1,6 +1,13 @@
 generator client {
   provider      = "prisma-client-js"
-  binaryTargets = ["native", "debian-openssl-1.1.x", "debian-openssl-3.0.x"]
+  // debian-* covers the GitHub Actions ubuntu-latest build runner ("native").
+  // rhel-* is added defensively for the Hostinger production host: shared/VPS
+  // hosting commonly runs CloudLinux, which is RHEL-based with a different
+  // OpenSSL ABI than Debian — start.js already has a fallback path that greps
+  // for "rhel-openssl" binaries, implying this was hit or anticipated before.
+  // Extra targets only add a few MB to the bundle; they don't change behavior
+  // if unused.
+  binaryTargets = ["native", "debian-openssl-1.1.x", "debian-openssl-3.0.x", "rhel-openssl-1.1.x", "rhel-openssl-3.0.x"]
 }
 
 datasource db {

@@ -2,6 +2,8 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { HRService } from "./hr.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
+import { EmailService } from "../notifications/email.service";
+import { NotificationsService } from "../notifications/notifications.service";
 
 describe("HRService", () => {
   let service: HRService;
@@ -12,6 +14,8 @@ describe("HRService", () => {
         HRService,
         { provide: PrismaService, useValue: {} },
         { provide: AuditService, useValue: { write: jest.fn() } },
+        { provide: EmailService, useValue: { sendWithAttachment: jest.fn() } },
+        { provide: NotificationsService, useValue: {} },
       ],
     }).compile();
 

@@ -1,5 +1,5 @@
 import { INestApplication } from "@nestjs/common";
-import * as request from "supertest";
+import request from "supertest";
 import bcrypt from "bcryptjs";
 import { createTestApp } from "../setup/app.setup";
 import { PrismaMock } from "../setup/prisma.mock";
@@ -61,7 +61,8 @@ describe("Auth (e2e)", () => {
       expect(res.body.data.tokenType).toBe("Bearer");
       // Cookies should be set
       expect(res.headers["set-cookie"]).toBeDefined();
-      const cookies: string[] = (res.headers["set-cookie"] as string[]);
+      const rawCookies = res.headers["set-cookie"];
+      const cookies: string[] = Array.isArray(rawCookies) ? rawCookies : rawCookies ? [rawCookies] : [];
       expect(cookies.some((c) => c.startsWith("jokas_at="))).toBe(true);
       expect(cookies.some((c) => c.startsWith("jokas_rt="))).toBe(true);
     });
@@ -167,7 +168,8 @@ describe("Auth (e2e)", () => {
 
       expect(res.body.data.success).toBe(true);
       // Cookies should be cleared
-      const cookies: string[] = (res.headers["set-cookie"] as string[] | undefined) ?? [];
+      const rawCookies = res.headers["set-cookie"];
+      const cookies: string[] = Array.isArray(rawCookies) ? rawCookies : rawCookies ? [rawCookies] : [];
       expect(cookies.some((c) => c.includes("jokas_at=;") || c.includes("jokas_at="))).toBe(true);
     });
 

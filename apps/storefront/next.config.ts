@@ -10,7 +10,9 @@ const securityHeaders = [
     key: "Content-Security-Policy",
     value: [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+      // No dependency in this app calls eval()/new Function() (checked against
+      // package.json + a repo-wide grep) — 'unsafe-eval' was broader than needed.
+      "script-src 'self' 'unsafe-inline'",
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https://images.unsplash.com https://plus.unsplash.com https://www.akokosolutions.com",
       "connect-src 'self'",

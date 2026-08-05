@@ -67,6 +67,10 @@ export class HttpExceptionFilter implements ExceptionFilter {
       if (exception.code === "P2024") {
         // Connection pool exhausted — Hostinger shared MySQL limits simultaneous connections.
         // Return 503 so the client retry logic (transient status) kicks in automatically.
+        // Logged at warn (not silently swallowed like the other Prisma branches) because
+        // this is the exact failure mode the pool-size/retry tuning in start.js targets —
+        // without a log line, a resurgence of this error would be invisible in production.
+        this.logger.warn(`[requestId=${request.id}] Connection pool exhausted on ${request.method} ${request.originalUrl}`);
         const body: ErrorResponse = {
           success: false,
           statusCode: 503,
@@ -89,7 +93,13 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const message = status >= 500 ? "Internal server error" : rawMessage;
 
     if (status >= 500) {
-      this.logger.error(`${request.method} ${request.originalUrl} failed`, exception instanceof Error ? exception.stack : undefined);
+      // Prefix with requestId so a user-reported ID (returned in the response body below)
+      // can be grepped straight out of passenger.log / dump-logs.yml output to find the
+      // matching server-side stack trace — the two were previously uncorrelated.
+      this.logger.error(
+        `[requestId=${request.id}] ${request.method} ${request.originalUrl} failed`,
+        exception instanceof Error ? exception.stack : undefined
+      );
     }
 
     const body: ErrorResponse = {

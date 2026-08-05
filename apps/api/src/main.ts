@@ -118,6 +118,34 @@ async function bootstrap() {
     Logger.log(`Swagger docs at http://localhost:${port}/${prefix}/docs`, "Bootstrap");
   }
 
+  // Graceful shutdown: deploy.yml sends SIGTERM (via `pkill`) to restart the API
+  // on every deploy. Without a handler, Node's default SIGTERM action kills the
+  // process immediately, cutting off in-flight requests and any open Prisma
+  // transaction mid-write. app.close() stops accepting new connections, lets
+  // in-flight ones finish, and closes the Prisma pool cleanly (PrismaService's
+  // onModuleDestroy) before the process exits.
+  app.enableShutdownHooks();
+  let shuttingDown = false;
+  for (const sig of ["SIGTERM", "SIGINT"] as const) {
+    process.on(sig, () => {
+      if (shuttingDown) return;
+      shuttingDown = true;
+      Logger.log(`${sig} received — draining in-flight requests and shutting down`, "Bootstrap");
+      const forceExit = setTimeout(() => {
+        Logger.warn("Graceful shutdown timed out after 10s — forcing exit", "Bootstrap");
+        process.exit(1);
+      }, 10_000);
+      forceExit.unref();
+      app
+        .close()
+        .then(() => process.exit(0))
+        .catch((err) => {
+          Logger.error(`Error during shutdown: ${err?.message || err}`, "Bootstrap");
+          process.exit(1);
+        });
+    });
+  }
+
   await app.listen(port);
   Logger.log(`API listening on http://localhost:${port}/${prefix}/v${version}`, "Bootstrap");
 }

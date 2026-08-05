@@ -11,3 +11,5 @@ uploads
 !apps/api/src/modules/uploads/
 tmp
 *.stackdump
+*.tsbuildinfo
+google-play-service-account.json

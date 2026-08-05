@@ -1,5 +1,6 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import nodemailer from "nodemailer";
 
 @Injectable()
 export class EmailService {
@@ -10,7 +11,6 @@ export class EmailService {
     const host = config.get<string>("SMTP_HOST");
     if (host) {
       try {
-        const nodemailer = require("nodemailer");
         this.transporter = nodemailer.createTransport({
           host,
           port: parseInt(config.get<string>("SMTP_PORT", "587"), 10),
@@ -20,8 +20,8 @@ export class EmailService {
             pass: config.get<string>("SMTP_PASS")
           }
         });
-      } catch {
-        this.logger.warn("Nodemailer is not installed; email notifications are disabled.");
+      } catch (err) {
+        this.logger.warn(`Failed to initialize SMTP transport; email notifications are disabled: ${err instanceof Error ? err.message : err}`);
       }
     }
   }

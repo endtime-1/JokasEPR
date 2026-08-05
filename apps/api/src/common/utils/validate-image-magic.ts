@@ -43,7 +43,9 @@ export function detectImageType(filePath: string): ImageType | null {
 export function validateAndCleanImageUpload(filePath: string): boolean {
   const type = detectImageType(filePath);
   if (!type) {
-    try { unlinkSync(filePath); } catch {}
+    try { unlinkSync(filePath); } catch {
+      // Best-effort cleanup of a rejected upload — nothing to act on if it fails.
+    }
     return false;
   }
   return true;
