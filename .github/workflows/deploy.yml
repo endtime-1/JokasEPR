@@ -443,8 +443,16 @@ jobs:
           mkdir -p "$HOME/jokas-db-backups"
           # Daily backup at 2:00 AM, keep last 7 dumps (~30 MB each gzipped)
           BACKUP_CMD="mysqldump --defaults-file=\$HOME/.jokas-backup.cnf --single-transaction --routines 2>/dev/null | gzip > \$HOME/jokas-db-backups/db-\$(date +\\%Y\\%m\\%d).sql.gz && find \$HOME/jokas-db-backups -name 'db-*.sql.gz' -mtime +7 -delete"
-          (crontab -l 2>/dev/null | grep -v 'jokas-db-backups'; echo "0 2 * * * $BACKUP_CMD") | crontab -
-          echo "Database backup cron installed (daily 02:00, 7-day retention → ~/jokas-db-backups/)."
+          CRONTAB_BIN="$(command -v crontab 2>/dev/null || echo /usr/bin/crontab)"
+          if [ ! -x "$CRONTAB_BIN" ]; then
+            echo "WARNING: crontab not found — writing backup script to run manually instead."
+            printf '#!/bin/bash\n%s\n' "$BACKUP_CMD" > "$HOME/jokas-db-backup.sh"
+            chmod +x "$HOME/jokas-db-backup.sh"
+            echo "Backup script written to ~/jokas-db-backup.sh — add it to crontab manually."
+          else
+            ("$CRONTAB_BIN" -l 2>/dev/null | grep -v 'jokas-db-backups'; echo "0 2 * * * $BACKUP_CMD") | "$CRONTAB_BIN" -
+            echo "Database backup cron installed (daily 02:00, 7-day retention → ~/jokas-db-backups/)."
+          fi
 
       - name: Ensure runner keepalive watcher
         run: |
