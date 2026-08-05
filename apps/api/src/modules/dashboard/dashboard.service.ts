@@ -104,10 +104,16 @@ export class DashboardService {
     const range = this.resolveRange(query);
     const prior = this.priorRange(range);
 
+    const emptyCharts = {
+      eggProductionTrend: [], mortalityTrend: [], feedProductionTrend: [],
+      soyaProductionTrend: [], salesTrend: [], inventoryValueByCategory: [],
+      profitabilityByProduct: [], farmPerformanceComparison: [], branchPerformanceComparison: []
+    };
+
     const [currentValues, priorValues, charts, alerts] = await Promise.all([
       this.computeMetricValues(user, query, range),
       this.computeMetricValues(user, query, prior),
-      this.liveCharts(user, query, range),
+      this.liveCharts(user, query, range).catch(() => emptyCharts),
       this.alerts(user, query, range)
     ]);
 

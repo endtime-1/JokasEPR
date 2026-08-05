@@ -452,6 +452,15 @@ export class MarketPlanningService {
     return { data: mrp };
   }
 
+  async listMrpRuns(user: AuthenticatedUser, query: MarketPlanningQueryDto) {
+    const data = await this.prisma.materialRequirementPlan.findMany({
+      where: this.mrpWhere(user, query),
+      orderBy: { createdAt: "desc" },
+      take: 50
+    });
+    return { data };
+  }
+
   async getMrp(user: AuthenticatedUser, id: string) {
     const mrp = await this.prisma.materialRequirementPlan.findFirst({ where: { ...this.mrpWhere(user, {}), id } });
     if (!mrp) throw new NotFoundException("Material requirement plan was not found.");

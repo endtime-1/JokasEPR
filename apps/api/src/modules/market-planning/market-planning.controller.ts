@@ -87,6 +87,12 @@ export class MarketPlanningController {
     return this.marketPlanningService.calculateMrp(user, id, dto, { ipAddress, userAgent });
   }
 
+  @Get("mrp")
+  @RequirePermissions(PERMISSIONS.MARKET_PLANNING_READ)
+  listMrpRuns(@CurrentUser() user: AuthenticatedUser, @Query() query: MarketPlanningQueryDto) {
+    return this.marketPlanningService.listMrpRuns(user, query);
+  }
+
   @Get("mrp/:id")
   @RequirePermissions(PERMISSIONS.MARKET_PLANNING_READ)
   mrp(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {

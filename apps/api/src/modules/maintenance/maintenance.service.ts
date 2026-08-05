@@ -46,31 +46,41 @@ export class MaintenanceService {
 
   async dashboard(user: AuthenticatedUser, query: MaintenanceQueryDto) {
     const today = new Date();
-    const [machineCount, activeMachines, maintenanceAlerts, openBreakdowns, schedules, breakdowns, downtime, costs, assignments] = await Promise.all([
-      this.prisma.machine.count({ where: this.machineWhere(user, query) }),
-      this.prisma.machine.count({ where: { ...this.machineWhere(user, query), status: "ACTIVE" } }),
-      this.prisma.maintenanceSchedule.count({ where: { ...this.scheduleWhere(user, query), status: { not: "COMPLETED" }, nextDueDate: { lte: today } } }),
-      this.prisma.breakdownRecord.count({ where: { ...this.breakdownWhere(user, query), status: { notIn: ["RESOLVED", "CLOSED", "CANCELLED"] } } }),
-      this.prisma.maintenanceSchedule.findMany({ where: this.scheduleWhere(user, query), include: { machine: true, equipment: true }, orderBy: { nextDueDate: "asc" }, take: 12 }),
-      this.prisma.breakdownRecord.findMany({ where: this.breakdownWhere(user, query), include: { machine: true, equipment: true }, orderBy: { reportedAt: "desc" }, take: 12 }),
-      this.prisma.machineDowntimeRecord.aggregate({ where: this.downtimeWhere(user, query), _sum: { durationHours: true } }),
-      this.prisma.maintenanceCost.aggregate({ where: this.costWhere(user, query), _sum: { amount: true } }),
-      this.prisma.technicianAssignment.findMany({ where: this.assignmentWhere(user, query), include: { technician: { select: { fullName: true, email: true } }, machine: true, equipment: true }, orderBy: { assignedAt: "desc" }, take: 12 })
-    ]);
+    try {
+      const [machineCount, activeMachines, maintenanceAlerts, openBreakdowns, schedules, breakdowns, downtime, costs, assignments] = await Promise.all([
+        this.prisma.machine.count({ where: this.machineWhere(user, query) }),
+        this.prisma.machine.count({ where: { ...this.machineWhere(user, query), status: "ACTIVE" } }),
+        this.prisma.maintenanceSchedule.count({ where: { ...this.scheduleWhere(user, query), status: { not: "COMPLETED" }, nextDueDate: { lte: today } } }),
+        this.prisma.breakdownRecord.count({ where: { ...this.breakdownWhere(user, query), status: { notIn: ["RESOLVED", "CLOSED", "CANCELLED"] } } }),
+        this.prisma.maintenanceSchedule.findMany({ where: this.scheduleWhere(user, query), include: { machine: true, equipment: true }, orderBy: { nextDueDate: "asc" }, take: 12 }),
+        this.prisma.breakdownRecord.findMany({ where: this.breakdownWhere(user, query), include: { machine: true, equipment: true }, orderBy: { reportedAt: "desc" }, take: 12 }),
+        this.prisma.machineDowntimeRecord.aggregate({ where: this.downtimeWhere(user, query), _sum: { durationHours: true } }),
+        this.prisma.maintenanceCost.aggregate({ where: this.costWhere(user, query), _sum: { amount: true } }),
+        this.prisma.technicianAssignment.findMany({ where: this.assignmentWhere(user, query), include: { technician: { select: { fullName: true, email: true } }, machine: true, equipment: true }, orderBy: { assignedAt: "desc" }, take: 12 })
+      ]);
 
-    return {
-      data: {
-        machineCount,
-        activeMachines,
-        maintenanceAlerts,
-        openBreakdowns,
-        downtimeHours: Number(downtime._sum.durationHours ?? 0),
-        maintenanceCost: Number(costs._sum.amount ?? 0),
-        schedules,
-        breakdowns,
-        assignments
-      }
-    };
+      return {
+        data: {
+          machineCount,
+          activeMachines,
+          maintenanceAlerts,
+          openBreakdowns,
+          downtimeHours: Number(downtime._sum.durationHours ?? 0),
+          maintenanceCost: Number(costs._sum.amount ?? 0),
+          schedules,
+          breakdowns,
+          assignments
+        }
+      };
+    } catch (e: any) {
+      return {
+        data: {
+          machineCount: 0, activeMachines: 0, maintenanceAlerts: 0, openBreakdowns: 0,
+          downtimeHours: 0, maintenanceCost: 0, schedules: [], breakdowns: [], assignments: []
+        },
+        error: e?.message
+      };
+    }
   }
 
   async options(user: AuthenticatedUser) {
