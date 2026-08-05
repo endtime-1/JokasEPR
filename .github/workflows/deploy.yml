@@ -249,13 +249,15 @@ jobs:
             DB_URL=$(grep '^DATABASE_URL=' "$ENV_FILE" | head -1 | cut -d= -f2-)
           fi
           if [ -n "$DB_URL" ]; then
-            # Append connection_limit=5 unless it's already present
-            if echo "$DB_URL" | grep -q "connection_limit"; then
-              echo "connection_limit already set — skipping"
-            elif echo "$DB_URL" | grep -q "?"; then
-              DB_URL="${DB_URL}&connection_limit=5"
+            # Strip any existing pool params so we always write the correct values
+            DB_URL=$(echo "$DB_URL" | sed 's/[&?]connection_limit=[^&]*//g; s/[&?]pool_timeout=[^&]*//g')
+            # Append connection_limit=10 and pool_timeout=30
+            # 10 connections: enough for concurrent page loads (typically 3-5 simultaneous calls)
+            # pool_timeout=30s: prevents premature "pool exhausted" errors under burst traffic
+            if echo "$DB_URL" | grep -q "?"; then
+              DB_URL="${DB_URL}&connection_limit=10&pool_timeout=30"
             else
-              DB_URL="${DB_URL}?connection_limit=5"
+              DB_URL="${DB_URL}?connection_limit=10&pool_timeout=30"
             fi
             # Write/update the DATABASE_URL line in .env
             if [ -f "$ENV_FILE" ] && grep -q '^DATABASE_URL=' "$ENV_FILE"; then
@@ -264,7 +266,7 @@ jobs:
               mkdir -p "$APP_DIR"
               echo "DATABASE_URL=${DB_URL}" >> "$ENV_FILE"
             fi
-            echo "DATABASE_URL patched with connection_limit=5"
+            echo "DATABASE_URL patched: connection_limit=10, pool_timeout=30"
           else
             echo "WARNING: no DATABASE_URL found — skipping connection pool patch"
           fi
