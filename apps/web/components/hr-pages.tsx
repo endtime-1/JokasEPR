@@ -421,7 +421,7 @@ export function EmployeeListPage() {
     const params = new URLSearchParams();
     if (search) params.set("search", search);
     if (status) params.set("status", status);
-    apiFetch<ApiEnvelope<Employee[]>>(`/hr/employees?${params}`).then((r) => { setRows(r.data ?? []); }).catch((err: any) => setLoadError(err?.message ?? "Failed to load employees. Please retry.")).finally(() => setLoading(false));
+    apiFetch<ApiEnvelope<Employee[]>>(`/hr/employees?${params}`).then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); }).catch((err: any) => setLoadError(err?.message ?? "Failed to load employees. Please retry.")).finally(() => setLoading(false));
   }
 
   // pathname in deps: re-fires load() on every client-side navigation to this page
