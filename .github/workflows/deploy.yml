@@ -521,8 +521,20 @@ jobs:
             "$DB_HOST" "$DB_PORT" "$DB_USER" "$DB_PASS" "$DB_NAME" > "$HOME/.jokas-backup.cnf"
           chmod 600 "$HOME/.jokas-backup.cnf"
           mkdir -p "$HOME/jokas-db-backups"
-          # Daily backup at 2:00 AM, keep last 7 dumps (~30 MB each gzipped)
-          BACKUP_CMD="mysqldump --defaults-file=\$HOME/.jokas-backup.cnf --single-transaction --routines 2>/dev/null | gzip > \$HOME/jokas-db-backups/db-\$(date +\\%Y\\%m\\%d).sql.gz && find \$HOME/jokas-db-backups -name 'db-*.sql.gz' -mtime +7 -delete"
+          # Daily backup at 2:00 AM, keep last 7 dumps (~30 MB each gzipped).
+          # IMPORTANT: mysqldump does NOT read `database=` from a [client]
+          # option-file the way the `mysql` CLI does — it treats the option
+          # name as an ambiguous prefix of `--databases` and ignores it with
+          # just a warning. Confirmed live 2026-08-06: without the db name
+          # passed as a plain argument, mysqldump silently dumped nothing, and
+          # because the old version piped straight into gzip with `2>/dev/null`
+          # and no pipefail, the pipeline still reported success — a ~20-byte
+          # (empty) gzip file was silently treated as a valid daily backup for
+          # who knows how long. Fixed by (1) passing $DB_NAME explicitly, and
+          # (2) dumping to a temp file first so mysqldump's own exit code and
+          # a non-empty-file check gate whether gzip/rotation run at all —
+          # failures now land in backup-error.log instead of vanishing.
+          BACKUP_CMD="mysqldump --defaults-file=\$HOME/.jokas-backup.cnf --single-transaction --routines $DB_NAME > \$HOME/jokas-db-backups/.tmp-dump.sql 2>\$HOME/jokas-db-backups/backup-error.log; if [ \$? -eq 0 ] && [ -s \$HOME/jokas-db-backups/.tmp-dump.sql ]; then gzip -c \$HOME/jokas-db-backups/.tmp-dump.sql > \$HOME/jokas-db-backups/db-\$(date +\\%Y\\%m\\%d).sql.gz && rm -f \$HOME/jokas-db-backups/.tmp-dump.sql \$HOME/jokas-db-backups/backup-error.log && find \$HOME/jokas-db-backups -name 'db-*.sql.gz' -mtime +7 -delete; else echo \"\$(date): mysqldump failed or produced empty output\" >> \$HOME/jokas-db-backups/backup-error.log; fi"
           # NOTE: this Hostinger plan has no Cron Jobs feature, and `crontab`
           # itself is aliased in interactive shells to a read-only stub (`cat
           # /var/spool/cron/$USER`, ignores -l/-e/stdin) — confirmed live
