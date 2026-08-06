@@ -282,9 +282,16 @@ jobs:
             else
               DB_URL="${DB_URL}?connection_limit=10&pool_timeout=30"
             fi
-            # Write/update the DATABASE_URL line in .env
-            if [ -f "$ENV_FILE" ] && grep -q '^DATABASE_URL=' "$ENV_FILE"; then
-              sed -i "s|^DATABASE_URL=.*|DATABASE_URL=${DB_URL}|" "$ENV_FILE"
+            # Write/update the DATABASE_URL line in .env. NOT via `sed -i s|...|...|` —
+            # DB_URL always contains literal `&` (connection_limit=10&pool_timeout=30),
+            # and `&` in a sed replacement means "insert the matched text", not a literal
+            # ampersand. That silently corrupted this file with repeated fragments of the
+            # old line on every past deploy. grep -v + append has no replacement-text
+            # special characters to worry about.
+            if [ -f "$ENV_FILE" ]; then
+              grep -v '^DATABASE_URL=' "$ENV_FILE" > "$ENV_FILE.tmp" || true
+              echo "DATABASE_URL=${DB_URL}" >> "$ENV_FILE.tmp"
+              mv "$ENV_FILE.tmp" "$ENV_FILE"
             else
               mkdir -p "$APP_DIR"
               echo "DATABASE_URL=${DB_URL}" >> "$ENV_FILE"
