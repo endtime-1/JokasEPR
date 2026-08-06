@@ -536,21 +536,31 @@ jobs:
 
       - name: Ensure runner keepalive watcher
         if: always()
-        # `nohup ... &` alone only blocks SIGHUP — it does NOT detach the process
-        # from this job's process group. GitHub Actions self-hosted runners clean
-        # up descendant processes of a finished job unless they're fully detached,
-        # which is almost certainly why this watcher (and the runner it restarts)
-        # kept dying silently and needing manual SSH restarts. `setsid` starts a
-        # new session (new process group, no controlling terminal tied to the
-        # job) and `disown` removes it from this shell's job table so it survives
-        # the job's own cleanup.
+        # First attempt (setsid+disown on a perpetually-running nohup'd loop)
+        # did NOT survive: verified live on 2026-08-06 that both run.sh and the
+        # watcher loop were gone minutes after a job finished, despite full
+        # detachment from the job's process group. That points to Hostinger's
+        # shared-hosting environment killing everything tied to a user's SSH
+        # login session when that session ends — enforced at the session/cgroup
+        # level, not via SIGHUP, so no amount of nohup/setsid/disown protects
+        # against it (this is a common anti-abuse safeguard against users
+        # running persistent background daemons on shared hosting).
+        # Fix: stop trying to keep a process alive across session boundaries at
+        # all. Use cron instead — cron jobs run via crond, outside of any login
+        # session, so they're unaffected by session-end cleanup. A small script
+        # checked every 5 minutes restarts the runner if it's down; on a true
+        # cold start (server reboot, or the runner already dead with no cron
+        # entry installed yet) a manual SSH restart is still needed once, same
+        # as installing any new cron job for the first time.
         run: |
-          if pgrep -f 'keep-runner.sh' > /dev/null; then
-            echo "Runner watcher already running — skipping."
+          printf '#!/bin/bash\nif ! pgrep -f "actions-runner/run.sh" > /dev/null; then\n  cd "$HOME/actions-runner" || exit 1\n  setsid nohup ./run.sh >> "$HOME/jokas-build/runner.log" 2>&1 &\n  disown || true\nfi\n' > "$HOME/check-runner.sh"
+          chmod +x "$HOME/check-runner.sh"
+          CRONTAB_BIN="$(command -v crontab 2>/dev/null || echo /usr/bin/crontab)"
+          if [ ! -x "$CRONTAB_BIN" ]; then
+            echo "WARNING: crontab not found — runner watchdog script written to ~/check-runner.sh but not scheduled. Add it to cron manually."
           else
-            printf '#!/bin/bash\nwhile true; do\n  if ! pgrep -f "actions-runner/run.sh" > /dev/null; then\n    cd $HOME/actions-runner\n    setsid nohup ./run.sh >> $HOME/jokas-build/runner.log 2>&1 &\n    disown || true\n  fi\n  sleep 600\ndone\n' > "$HOME/keep-runner.sh"
-            chmod +x "$HOME/keep-runner.sh"
-            setsid nohup bash "$HOME/keep-runner.sh" >> "$HOME/jokas-build/keep-runner.log" 2>&1 &
-            disown || true
-            echo "Runner watcher started (PID $!)."
+            ("$CRONTAB_BIN" -l 2>/dev/null | grep -v 'check-runner.sh'; echo "*/5 * * * * $HOME/check-runner.sh >> $HOME/jokas-build/runner-watchdog.log 2>&1") | "$CRONTAB_BIN" -
+            echo "Runner watchdog cron installed (every 5 min, restarts run.sh if it's down)."
           fi
+          # Retire the old in-process watcher loop from the previous (insufficient) fix.
+          pkill -f 'keep-runner.sh' 2>/dev/null || true
