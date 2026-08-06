@@ -1,18 +1,31 @@
 function modelMock() {
   return {
-    findFirst: jest.fn(),
-    findMany: jest.fn(),
-    findUnique: jest.fn(),
+    // Read methods default to a resolved "found nothing" value, not a bare
+    // `jest.fn()` (which returns `undefined` synchronously, not a Promise).
+    // App code across the codebase routinely does
+    // `this.prisma.x.count(...).catch(() => 0)` or `.findMany(...).map(...)`
+    // defensively — calling `.catch()`/`.then()` on a non-Promise throws, and
+    // `.map()` on `undefined` throws too. Every test file in this suite hit
+    // some version of this until each one explicitly stubbed the exact
+    // methods its code path touched; defaulting here fixes the whole class
+    // of bug at once for methods any test forgets to configure. Write
+    // methods (create/update/upsert/delete/...) deliberately stay bare —
+    // tests almost always need to assert on their specific mocked return
+    // value, so a wrong default there would mask a genuinely missing setup
+    // rather than help.
+    findFirst: jest.fn().mockResolvedValue(null),
+    findMany: jest.fn().mockResolvedValue([]),
+    findUnique: jest.fn().mockResolvedValue(null),
     create: jest.fn(),
     createMany: jest.fn(),
     update: jest.fn(),
     updateMany: jest.fn(),
     delete: jest.fn(),
-    deleteMany: jest.fn(),
-    count: jest.fn(),
-    aggregate: jest.fn(),
+    deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+    count: jest.fn().mockResolvedValue(0),
+    aggregate: jest.fn().mockResolvedValue({}),
     upsert: jest.fn(),
-    groupBy: jest.fn(),
+    groupBy: jest.fn().mockResolvedValue([]),
   };
 }
 
@@ -20,6 +33,7 @@ export function createPrismaMock() {
   const mock = {
     user: modelMock(),
     refreshToken: modelMock(),
+    loginRateLimit: modelMock(),
     company: modelMock(),
     role: modelMock(),
     userRole: modelMock(),
@@ -37,6 +51,7 @@ export function createPrismaMock() {
     inventoryItem: modelMock(),
     stockMovement: modelMock(),
     stockTransfer: modelMock(),
+    stockAdjustment: modelMock(),
     stockBatch: modelMock(),
     stockExpiryAlert: modelMock(),
     stockApproval: modelMock(),
@@ -56,6 +71,8 @@ export function createPrismaMock() {
     customer: modelMock(),
     expense: modelMock(),
     revenue: modelMock(),
+    supplierPayment: modelMock(),
+    customerPayment: modelMock(),
     bankAccount: modelMock(),
     payroll: modelMock(),
     budgetLine: modelMock(),
@@ -71,6 +88,9 @@ export function createPrismaMock() {
     feedProductionBatch: modelMock(),
     soyaProcessingBatch: modelMock(),
     reorderRule: modelMock(),
+    poultryHealthObservation: modelMock(),
+    systemSetting: modelMock(),
+    pen: modelMock(),
     $transaction: jest.fn().mockImplementation((arg: unknown) => {
       if (Array.isArray(arg)) {
         return Promise.all(arg);

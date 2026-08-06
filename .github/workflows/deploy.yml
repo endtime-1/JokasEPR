@@ -49,13 +49,8 @@ jobs:
       - name: API unit tests
         run: pnpm --filter @jokas/api test
 
-      # NOTE: test:e2e (apps/api/test/e2e/*) is deliberately NOT in this gate yet.
-      # It was broken at the TS-compile level (supertest namespace-import bug, now
-      # fixed) but underneath that, 59 of 71 tests fail for real — mostly 401s where
-      # 200s are expected across finance/sales/inventory/poultry modules — meaning
-      # the suite has drifted from the app for a while. Wiring a 59-failure suite
-      # into this gate would just block every deploy until someone does a dedicated
-      # pass to find out whether the tests or the app are wrong. Re-add once green.
+      - name: API e2e tests
+        run: pnpm --filter @jokas/api test:e2e
 
       - name: Build API
         run: pnpm --filter @jokas/api build
@@ -541,12 +536,21 @@ jobs:
 
       - name: Ensure runner keepalive watcher
         if: always()
+        # `nohup ... &` alone only blocks SIGHUP — it does NOT detach the process
+        # from this job's process group. GitHub Actions self-hosted runners clean
+        # up descendant processes of a finished job unless they're fully detached,
+        # which is almost certainly why this watcher (and the runner it restarts)
+        # kept dying silently and needing manual SSH restarts. `setsid` starts a
+        # new session (new process group, no controlling terminal tied to the
+        # job) and `disown` removes it from this shell's job table so it survives
+        # the job's own cleanup.
         run: |
           if pgrep -f 'keep-runner.sh' > /dev/null; then
             echo "Runner watcher already running — skipping."
           else
-            printf '#!/bin/bash\nwhile true; do\n  if ! pgrep -f "actions-runner/run.sh" > /dev/null; then\n    cd $HOME/actions-runner\n    nohup ./run.sh >> $HOME/jokas-build/runner.log 2>&1 &\n  fi\n  sleep 600\ndone\n' > "$HOME/keep-runner.sh"
+            printf '#!/bin/bash\nwhile true; do\n  if ! pgrep -f "actions-runner/run.sh" > /dev/null; then\n    cd $HOME/actions-runner\n    setsid nohup ./run.sh >> $HOME/jokas-build/runner.log 2>&1 &\n    disown || true\n  fi\n  sleep 600\ndone\n' > "$HOME/keep-runner.sh"
             chmod +x "$HOME/keep-runner.sh"
-            nohup bash "$HOME/keep-runner.sh" >> "$HOME/jokas-build/keep-runner.log" 2>&1 &
+            setsid nohup bash "$HOME/keep-runner.sh" >> "$HOME/jokas-build/keep-runner.log" 2>&1 &
+            disown || true
             echo "Runner watcher started (PID $!)."
           fi

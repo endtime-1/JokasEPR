@@ -8,6 +8,7 @@ import request from "supertest";
 import { createTestApp } from "../setup/app.setup";
 import { PrismaMock } from "../setup/prisma.mock";
 import { makeAccessToken } from "../setup/auth.helper";
+import { AuthService } from "../../src/modules/auth/auth.service";
 import { PERMISSIONS } from "@jokas/shared";
 import {
   TEST_USER_ID,
@@ -16,34 +17,18 @@ import {
   TEST_WAREHOUSE_ID,
   TEST_BRANCH_ID,
   TEST_FLOCK_BATCH_ID,
+  makeDbUser,
   makeDbMobileSyncRecord,
 } from "../factories";
-
-function syncToken() {
-  return makeAccessToken({
-    id: TEST_USER_ID,
-    companyId: TEST_COMPANY_ID,
-    permissions: [
-      PERMISSIONS.POULTRY_RECORD,
-      PERMISSIONS.POULTRY_READ,
-      PERMISSIONS.INVENTORY_MANAGE,
-      PERMISSIONS.INVENTORY_READ,
-    ],
-    roles: ["Farm Worker"],
-    farmIds: [TEST_FARM_ID],
-    warehouseIds: [TEST_WAREHOUSE_ID],
-    branchIds: [TEST_BRANCH_ID],
-    productionSiteIds: [],
-    hasGlobalAccess: false,
-  } as Parameters<typeof makeAccessToken>[0]);
-}
 
 describe("Mobile Sync Module (e2e)", () => {
   let app: INestApplication;
   let prisma: PrismaMock;
+  let authService: AuthService;
 
   beforeAll(async () => {
     ({ app, prisma } = await createTestApp());
+    authService = app.get(AuthService);
   });
 
   afterAll(async () => {
@@ -52,8 +37,36 @@ describe("Mobile Sync Module (e2e)", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // See finance.e2e-spec.ts for why this is required.
+    authService.clearProfileCache(TEST_USER_ID);
+    authService.clearProfileCache("user-1-id"); // used by the idempotency test below
     prisma.auditLog.create.mockResolvedValue({});
   });
+
+  // Combined token+mock helper — see finance.e2e-spec.ts for why these must
+  // travel together rather than relying on a single shared default profile.
+  function syncToken() {
+    const permissions = [
+      PERMISSIONS.POULTRY_RECORD,
+      PERMISSIONS.POULTRY_READ,
+      PERMISSIONS.INVENTORY_MANAGE,
+      PERMISSIONS.INVENTORY_READ,
+    ];
+    prisma.user.findFirst.mockResolvedValue(
+      makeDbUser({ roles: [{ role: { permissions: permissions.map((key) => ({ key })) } }] })
+    );
+    return makeAccessToken({
+      id: TEST_USER_ID,
+      companyId: TEST_COMPANY_ID,
+      permissions,
+      roles: ["Farm Worker"],
+      farmIds: [TEST_FARM_ID],
+      warehouseIds: [TEST_WAREHOUSE_ID],
+      branchIds: [TEST_BRANCH_ID],
+      productionSiteIds: [],
+      hasGlobalAccess: false,
+    } as Parameters<typeof makeAccessToken>[0]);
+  }
 
   describe("POST /api/v1/sync/batch", () => {
     it("401 — requires authentication", async () => {
@@ -93,9 +106,9 @@ describe("Mobile Sync Module (e2e)", () => {
               localId,
               endpoint: "/poultry/daily-records",
               method: "POST",
-              body: {
-                batchId: TEST_FLOCK_BATCH_ID,
-                farmId: TEST_FARM_ID,
+              module: "poultry",
+              payload: {
+                flockBatchId: TEST_FLOCK_BATCH_ID,
                 recordDate: "2026-01-15",
                 mortalityCount: 0,
                 feedConsumedKg: 500,
@@ -103,7 +116,7 @@ describe("Mobile Sync Module (e2e)", () => {
             },
           ],
         })
-        .expect(200);
+        .expect(201);
 
       expect(res.body.data.results).toBeDefined();
       expect(Array.isArray(res.body.data.results)).toBe(true);
@@ -128,9 +141,9 @@ describe("Mobile Sync Module (e2e)", () => {
               localId,
               endpoint: "/poultry/daily-records",
               method: "POST",
-              body: {
-                batchId: TEST_FLOCK_BATCH_ID,
-                farmId: TEST_FARM_ID,
+              module: "poultry",
+              payload: {
+                flockBatchId: TEST_FLOCK_BATCH_ID,
                 recordDate: "2026-01-16",
                 mortalityCount: 2,
                 feedConsumedKg: 480,
@@ -138,7 +151,7 @@ describe("Mobile Sync Module (e2e)", () => {
             },
           ],
         })
-        .expect(200);
+        .expect(201);
 
       const result = res.body.data.results[0];
       expect(result.status).toBe("duplicate");
@@ -175,9 +188,9 @@ describe("Mobile Sync Module (e2e)", () => {
               localId: freshId,
               endpoint: "/poultry/daily-records",
               method: "POST",
-              body: {
-                batchId: TEST_FLOCK_BATCH_ID,
-                farmId: TEST_FARM_ID,
+              module: "poultry",
+              payload: {
+                flockBatchId: TEST_FLOCK_BATCH_ID,
                 recordDate: "2026-01-17",
                 mortalityCount: 1,
                 feedConsumedKg: 490,
@@ -187,9 +200,9 @@ describe("Mobile Sync Module (e2e)", () => {
               localId: dupId,
               endpoint: "/poultry/daily-records",
               method: "POST",
-              body: {
-                batchId: TEST_FLOCK_BATCH_ID,
-                farmId: TEST_FARM_ID,
+              module: "poultry",
+              payload: {
+                flockBatchId: TEST_FLOCK_BATCH_ID,
                 recordDate: "2026-01-16",
                 mortalityCount: 2,
                 feedConsumedKg: 480,
@@ -199,11 +212,12 @@ describe("Mobile Sync Module (e2e)", () => {
               localId: unsupportedId,
               endpoint: "/nonexistent/endpoint",
               method: "POST",
-              body: {},
+              module: "poultry",
+              payload: {},
             },
           ],
         })
-        .expect(200);
+        .expect(201);
 
       const { results, synced, duplicates, failed } = res.body.data;
       expect(results).toHaveLength(3);
@@ -234,6 +248,12 @@ describe("Mobile Sync Module (e2e)", () => {
 
     it("200 — idempotency: same localId from different users is tracked separately", async () => {
       const sharedLocalId = "shared-local-id";
+      prisma.user.findFirst.mockResolvedValue(
+        makeDbUser({
+          id: "user-1-id",
+          roles: [{ role: { permissions: [{ key: PERMISSIONS.POULTRY_RECORD }, { key: PERMISSIONS.POULTRY_READ }] } }],
+        })
+      );
       const user1Token = makeAccessToken({
         id: "user-1-id",
         companyId: TEST_COMPANY_ID,
@@ -267,9 +287,9 @@ describe("Mobile Sync Module (e2e)", () => {
               localId: sharedLocalId,
               endpoint: "/poultry/daily-records",
               method: "POST",
-              body: {
-                batchId: TEST_FLOCK_BATCH_ID,
-                farmId: TEST_FARM_ID,
+              module: "poultry",
+              payload: {
+                flockBatchId: TEST_FLOCK_BATCH_ID,
                 recordDate: "2026-01-18",
                 mortalityCount: 0,
                 feedConsumedKg: 510,
@@ -277,7 +297,7 @@ describe("Mobile Sync Module (e2e)", () => {
             },
           ],
         })
-        .expect(200);
+        .expect(201);
 
       expect(res.body.data.results).toHaveLength(1);
     });
@@ -285,15 +305,35 @@ describe("Mobile Sync Module (e2e)", () => {
 
   describe("GET /api/v1/sync/records", () => {
     it("200 — returns sync history for the authenticated user's company", async () => {
+      // This is an admin listing endpoint gated on PLATFORM_MANAGE
+      // (sync.controller.ts:34), unlike POST /sync/batch above which any
+      // authenticated mobile worker can call — syncToken() deliberately
+      // doesn't grant platform-admin permissions, so this needs its own.
+      prisma.user.findFirst.mockResolvedValue(
+        makeDbUser({ roles: [{ role: { permissions: [{ key: PERMISSIONS.PLATFORM_MANAGE }] } }] })
+      );
+      const adminToken = makeAccessToken({
+        id: TEST_USER_ID,
+        companyId: TEST_COMPANY_ID,
+        permissions: [PERMISSIONS.PLATFORM_MANAGE],
+        roles: ["Super Admin"],
+        farmIds: [],
+        warehouseIds: [],
+        branchIds: [],
+        productionSiteIds: [],
+        hasGlobalAccess: false,
+      } as Parameters<typeof makeAccessToken>[0]);
       prisma.mobileSyncRecord.findMany.mockResolvedValue([makeDbMobileSyncRecord()]);
       prisma.mobileSyncRecord.count.mockResolvedValue(1);
 
       const res = await request(app.getHttpServer())
         .get("/api/v1/sync/records")
-        .set("Authorization", `Bearer ${syncToken()}`)
+        .set("Authorization", `Bearer ${adminToken}`)
         .expect(200);
 
-      expect(Array.isArray(res.body.data)).toBe(true);
+      // listSyncRecords() returns { data: { data: records, total } } — a
+      // nested `data.data`, not `data` directly (sync.service.ts:164).
+      expect(Array.isArray(res.body.data.data)).toBe(true);
     });
 
     it("401 — requires authentication", async () => {

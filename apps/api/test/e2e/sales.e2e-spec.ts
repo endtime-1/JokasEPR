@@ -7,36 +7,24 @@ import request from "supertest";
 import { createTestApp } from "../setup/app.setup";
 import { PrismaMock } from "../setup/prisma.mock";
 import { makeAccessToken } from "../setup/auth.helper";
+import { AuthService } from "../../src/modules/auth/auth.service";
 import { PERMISSIONS } from "@jokas/shared";
 import {
   TEST_USER_ID,
   TEST_COMPANY_ID,
   TEST_BRANCH_ID,
+  makeDbUser,
   makeDbSalesOrder,
 } from "../factories";
-
-function salesToken(writeAccess = true) {
-  return makeAccessToken({
-    id: TEST_USER_ID,
-    companyId: TEST_COMPANY_ID,
-    permissions: writeAccess
-      ? [PERMISSIONS.SALES_READ, PERMISSIONS.SALES_MANAGE]
-      : [PERMISSIONS.SALES_READ],
-    roles: ["Sales Manager"],
-    farmIds: [],
-    warehouseIds: [],
-    branchIds: [TEST_BRANCH_ID],
-    productionSiteIds: [],
-    hasGlobalAccess: false,
-  } as Parameters<typeof makeAccessToken>[0]);
-}
 
 describe("Sales Module (e2e)", () => {
   let app: INestApplication;
   let prisma: PrismaMock;
+  let authService: AuthService;
 
   beforeAll(async () => {
     ({ app, prisma } = await createTestApp());
+    authService = app.get(AuthService);
   });
 
   afterAll(async () => {
@@ -45,16 +33,68 @@ describe("Sales Module (e2e)", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // See finance.e2e-spec.ts for why this is required: buildProfile() caches
+    // per-user profiles across the whole file (same AuthService instance from
+    // one beforeAll), so a stale cached profile from an earlier test silently
+    // overrides whatever prisma.user.findFirst is mocked to for this test.
+    authService.clearProfileCache(TEST_USER_ID);
     prisma.auditLog.create.mockResolvedValue({});
   });
 
+  // Combined token+mock helper — see finance.e2e-spec.ts for why these must
+  // travel together rather than relying on a single shared default profile.
+  function salesToken(writeAccess = true) {
+    const permissions = writeAccess
+      ? [PERMISSIONS.SALES_READ, PERMISSIONS.SALES_MANAGE]
+      : [PERMISSIONS.SALES_READ];
+    prisma.user.findFirst.mockResolvedValue(
+      makeDbUser({ roles: [{ role: { permissions: permissions.map((key) => ({ key })) } }] })
+    );
+    return makeAccessToken({
+      id: TEST_USER_ID,
+      companyId: TEST_COMPANY_ID,
+      permissions,
+      roles: ["Sales Manager"],
+      farmIds: [],
+      warehouseIds: [],
+      branchIds: [TEST_BRANCH_ID],
+      productionSiteIds: [],
+      hasGlobalAccess: false,
+    } as Parameters<typeof makeAccessToken>[0]);
+  }
+
+  // POST /sales/payments is gated on FINANCE_MANAGE, not SALES_MANAGE
+  // (sales.controller.ts:102) — recording a payment is treated as a finance
+  // action even though it lives under the sales module.
+  function salesPaymentToken() {
+    const permissions = [PERMISSIONS.SALES_READ, PERMISSIONS.FINANCE_MANAGE];
+    prisma.user.findFirst.mockResolvedValue(
+      makeDbUser({ roles: [{ role: { permissions: permissions.map((key) => ({ key })) } }] })
+    );
+    return makeAccessToken({
+      id: TEST_USER_ID,
+      companyId: TEST_COMPANY_ID,
+      permissions,
+      roles: ["Sales Manager"],
+      farmIds: [],
+      warehouseIds: [],
+      branchIds: [TEST_BRANCH_ID],
+      productionSiteIds: [],
+      hasGlobalAccess: false,
+    } as Parameters<typeof makeAccessToken>[0]);
+  }
+
   describe("GET /api/v1/sales/dashboard", () => {
     it("200 — returns sales summary", async () => {
-      prisma.salesOrder.findMany.mockResolvedValue([makeDbSalesOrder()]);
-      prisma.salesOrder.count.mockResolvedValue(1);
-      prisma.invoice.findMany.mockResolvedValue([]);
-      prisma.payment.findMany.mockResolvedValue([]);
-      prisma.salesOrder.aggregate.mockResolvedValue({ _sum: { totalAmount: 5750 } });
+      // dashboard() calls salesOrder.findMany 3x internally (once directly,
+      // once each via the private salesByProduct/salesByCustomer helpers,
+      // each with different `include` shapes) — all through this one mock.
+      // Returning [] avoids every shape mismatch (order.items, row.customer,
+      // etc.) since this test only asserts the endpoint succeeds, not content.
+      prisma.salesOrder.findMany.mockResolvedValue([]);
+      prisma.invoice.aggregate.mockResolvedValue({ _sum: { totalAmount: 5750, balanceDue: 0 } });
+      prisma.payment.aggregate.mockResolvedValue({ _sum: { amount: 5750 } });
+      prisma.salesReturn.aggregate.mockResolvedValue({ _sum: { totalAmount: 0 } });
 
       await request(app.getHttpServer())
         .get("/api/v1/sales/dashboard")
@@ -63,6 +103,9 @@ describe("Sales Module (e2e)", () => {
     });
 
     it("403 — rejects user without sales.read", async () => {
+      prisma.user.findFirst.mockResolvedValue(
+        makeDbUser({ roles: [{ role: { permissions: [{ key: PERMISSIONS.POULTRY_READ }] } }] })
+      );
       const token = makeAccessToken({
         id: TEST_USER_ID,
         companyId: TEST_COMPANY_ID,
@@ -174,7 +217,7 @@ describe("Sales Module (e2e)", () => {
 
       const res = await request(app.getHttpServer())
         .post("/api/v1/sales/payments")
-        .set("Authorization", `Bearer ${salesToken()}`)
+        .set("Authorization", `Bearer ${salesPaymentToken()}`)
         .send({
           invoiceId: "invoice-1",
           amount: 5750,
@@ -188,7 +231,7 @@ describe("Sales Module (e2e)", () => {
     it("400 — rejects payment with zero amount", async () => {
       await request(app.getHttpServer())
         .post("/api/v1/sales/payments")
-        .set("Authorization", `Bearer ${salesToken()}`)
+        .set("Authorization", `Bearer ${salesPaymentToken()}`)
         .send({
           invoiceId: "invoice-1",
           amount: 0,

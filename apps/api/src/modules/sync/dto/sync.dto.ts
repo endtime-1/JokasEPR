@@ -1,4 +1,4 @@
-import { ArrayMaxSize, IsArray, IsIn, IsNotEmpty, IsObject, IsOptional, IsString, IsUUID, Max, Min, ValidateNested } from "class-validator";
+import { ArrayMaxSize, ArrayNotEmpty, IsArray, IsIn, IsNotEmpty, IsObject, IsOptional, IsString, IsUUID, Max, Min, ValidateNested } from "class-validator";
 import { Type } from "class-transformer";
 
 export class SyncItemDto {
@@ -24,6 +24,7 @@ export class SyncItemDto {
 
 export class BatchSyncDto {
   @IsArray()
+  @ArrayNotEmpty()
   @ArrayMaxSize(200)
   @ValidateNested({ each: true })
   @Type(() => SyncItemDto)

@@ -3,15 +3,18 @@ import request from "supertest";
 import { createTestApp } from "../setup/app.setup";
 import { PrismaMock } from "../setup/prisma.mock";
 import { makeAccessToken } from "../setup/auth.helper";
+import { AuthService } from "../../src/modules/auth/auth.service";
 import { PERMISSIONS } from "@jokas/shared";
 import { TEST_USER_ID, TEST_COMPANY_ID, makeDbUser } from "../factories";
 
 describe("Permission System (e2e)", () => {
   let app: INestApplication;
   let prisma: PrismaMock;
+  let authService: AuthService;
 
   beforeAll(async () => {
     ({ app, prisma } = await createTestApp());
+    authService = app.get(AuthService);
   });
 
   afterAll(async () => {
@@ -20,26 +23,26 @@ describe("Permission System (e2e)", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // buildProfile() caches per-user profiles across the whole file (see
+    // finance.e2e-spec.ts for the full explanation) — must clear before each
+    // test or a stale cached profile silently overrides the fresh mock below.
+    authService.clearProfileCache(TEST_USER_ID);
     prisma.auditLog.create.mockResolvedValue({});
   });
 
+  // Combined token+mock helper — buildProfile() hydrates the real
+  // AuthenticatedUser from prisma.user.findFirst, ignoring the JWT's own
+  // `permissions` claim for authorization, so the two must travel together.
   function tokenWithPermissions(permissions: string[]) {
+    prisma.user.findFirst.mockResolvedValue(
+      makeDbUser({ roles: [{ role: { permissions: permissions.map((key) => ({ key })) } }] })
+    );
     return makeAccessToken({
       id: TEST_USER_ID,
       companyId: TEST_COMPANY_ID,
       permissions,
       roles: ["Worker"],
     });
-  }
-
-  function superAdminToken() {
-    return makeAccessToken({
-      id: TEST_USER_ID,
-      companyId: TEST_COMPANY_ID,
-      permissions: Object.values(PERMISSIONS),
-      roles: ["Super Admin"],
-      hasGlobalAccess: true,
-    } as Parameters<typeof makeAccessToken>[0]);
   }
 
   describe("Audit log access", () => {

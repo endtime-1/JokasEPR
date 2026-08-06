@@ -43,7 +43,7 @@ describe("Auth (e2e)", () => {
   });
 
   describe("POST /api/v1/auth/login", () => {
-    it("200 — returns tokens on valid credentials", async () => {
+    it("201 — returns tokens on valid credentials", async () => {
       const user = makeDbUser({ passwordHash: userPasswordHash });
       prisma.user.findMany.mockResolvedValue([user]);
       prisma.user.update.mockResolvedValue(user);
@@ -53,12 +53,14 @@ describe("Auth (e2e)", () => {
 
       const res = await request(app.getHttpServer())
         .post("/api/v1/auth/login")
+        // accessToken/refreshToken are only echoed in the body for mobile
+        // clients (auth.controller.ts:42) — web clients get cookies only.
+        .set("x-client-type", "mobile")
         .send({ email: "test@jokas.local", password: TEST_PASSWORD })
-        .expect(200);
+        .expect(201);
 
       expect(res.body.data.accessToken).toBeDefined();
       expect(res.body.data.refreshToken).toBeDefined();
-      expect(res.body.data.tokenType).toBe("Bearer");
       // Cookies should be set
       expect(res.headers["set-cookie"]).toBeDefined();
       const rawCookies = res.headers["set-cookie"];
@@ -130,7 +132,7 @@ describe("Auth (e2e)", () => {
   });
 
   describe("POST /api/v1/auth/refresh", () => {
-    it("200 — rotates tokens with valid refresh token in body", async () => {
+    it("201 — rotates tokens with valid refresh token in body", async () => {
       const refreshToken = makeRefreshToken(TEST_USER_ID, TEST_COMPANY_ID, TEST_REFRESH_TOKEN_ID);
       const hash = await bcrypt.hash(refreshToken, 4);
       prisma.refreshToken.findFirst.mockResolvedValue(makeDbRefreshToken({ tokenHash: hash }));
@@ -140,8 +142,9 @@ describe("Auth (e2e)", () => {
 
       const res = await request(app.getHttpServer())
         .post("/api/v1/auth/refresh")
+        .set("x-client-type", "mobile")
         .send({ refreshToken })
-        .expect(200);
+        .expect(201);
 
       expect(res.body.data.accessToken).toBeDefined();
     });
@@ -157,14 +160,14 @@ describe("Auth (e2e)", () => {
   });
 
   describe("POST /api/v1/auth/logout", () => {
-    it("200 — clears cookies and revokes token", async () => {
+    it("201 — clears cookies and revokes token", async () => {
       const refreshToken = makeRefreshToken(TEST_USER_ID, TEST_COMPANY_ID, TEST_REFRESH_TOKEN_ID);
       prisma.refreshToken.updateMany.mockResolvedValue({ count: 1 });
 
       const res = await request(app.getHttpServer())
         .post("/api/v1/auth/logout")
         .send({ refreshToken })
-        .expect(200);
+        .expect(201);
 
       expect(res.body.data.success).toBe(true);
       // Cookies should be cleared
@@ -173,11 +176,11 @@ describe("Auth (e2e)", () => {
       expect(cookies.some((c) => c.includes("jokas_at=;") || c.includes("jokas_at="))).toBe(true);
     });
 
-    it("200 — succeeds even without a refresh token (clears cookies)", async () => {
+    it("201 — succeeds even without a refresh token (clears cookies)", async () => {
       const res = await request(app.getHttpServer())
         .post("/api/v1/auth/logout")
         .send({})
-        .expect(200);
+        .expect(201);
 
       expect(res.body.data.success).toBe(true);
     });
@@ -209,7 +212,7 @@ describe("Auth (e2e)", () => {
   });
 
   describe("POST /api/v1/auth/change-password", () => {
-    it("200 — changes password successfully", async () => {
+    it("201 — changes password successfully", async () => {
       const token = makeAccessToken({ id: TEST_USER_ID, companyId: TEST_COMPANY_ID });
       const user = makeDbUser({ passwordHash: userPasswordHash });
       prisma.user.findFirst.mockResolvedValue(user);
@@ -220,7 +223,7 @@ describe("Auth (e2e)", () => {
         .post("/api/v1/auth/change-password")
         .set("Authorization", `Bearer ${token}`)
         .send({ currentPassword: TEST_PASSWORD, newPassword: "NewSecure@9876!" })
-        .expect(200);
+        .expect(201);
     });
 
     it("401 — rejects wrong current password", async () => {

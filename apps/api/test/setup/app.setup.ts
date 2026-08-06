@@ -1,6 +1,7 @@
 import { INestApplication, ValidationPipe, VersioningType } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import cookieParser from "cookie-parser";
+import helmet from "helmet";
 import { AppModule } from "../../src/app.module";
 import { PrismaService } from "../../src/modules/prisma/prisma.service";
 import { HttpExceptionFilter } from "../../src/common/filters/http-exception.filter";
@@ -22,6 +23,10 @@ export async function createTestApp(): Promise<TestApp> {
 
   const app = moduleRef.createNestApplication();
 
+  // Mirrors main.ts's non-production helmet config (CSP/HSTS off, but
+  // nosniff/frameguard/etc. still apply) so security-header tests exercise
+  // the same middleware production actually runs, not an empty test harness.
+  app.use(helmet({ contentSecurityPolicy: false, hsts: false, crossOriginEmbedderPolicy: false }));
   app.use(cookieParser());
   app.setGlobalPrefix("api");
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: "1" });
