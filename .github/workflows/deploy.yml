@@ -523,12 +523,18 @@ jobs:
           mkdir -p "$HOME/jokas-db-backups"
           # Daily backup at 2:00 AM, keep last 7 dumps (~30 MB each gzipped)
           BACKUP_CMD="mysqldump --defaults-file=\$HOME/.jokas-backup.cnf --single-transaction --routines 2>/dev/null | gzip > \$HOME/jokas-db-backups/db-\$(date +\\%Y\\%m\\%d).sql.gz && find \$HOME/jokas-db-backups -name 'db-*.sql.gz' -mtime +7 -delete"
+          # NOTE: on this host `crontab` is aliased in interactive shells to a
+          # read-only stub (`cat /var/spool/cron/$USER`, ignores -l/-e/stdin) —
+          # confirmed live 2026-08-06 that piping into it silently does nothing.
+          # Non-interactive job shells don't even see the alias, so this always
+          # falls through to the script-only branch on this host. Kept generic
+          # (real crontab may exist on other hosts) rather than hardcoded off.
           CRONTAB_BIN="$(command -v crontab 2>/dev/null || echo /usr/bin/crontab)"
           if [ ! -x "$CRONTAB_BIN" ]; then
-            echo "WARNING: crontab not found — writing backup script to run manually instead."
+            echo "WARNING: crontab not usable here — writing backup script to run manually instead."
             printf '#!/bin/bash\n%s\n' "$BACKUP_CMD" > "$HOME/jokas-db-backup.sh"
             chmod +x "$HOME/jokas-db-backup.sh"
-            echo "Backup script written to ~/jokas-db-backup.sh — add it to crontab manually."
+            echo "Backup script written to ~/jokas-db-backup.sh — schedule it via Hostinger hPanel > Cron Jobs (daily 02:00), not raw crontab."
           else
             ("$CRONTAB_BIN" -l 2>/dev/null | grep -v 'jokas-db-backups'; echo "0 2 * * * $BACKUP_CMD") | "$CRONTAB_BIN" -
             echo "Database backup cron installed (daily 02:00, 7-day retention → ~/jokas-db-backups/)."
@@ -555,9 +561,11 @@ jobs:
         run: |
           printf '#!/bin/bash\nif ! pgrep -f "actions-runner/run.sh" > /dev/null; then\n  cd "$HOME/actions-runner" || exit 1\n  setsid nohup ./run.sh >> "$HOME/jokas-build/runner.log" 2>&1 &\n  disown || true\nfi\n' > "$HOME/check-runner.sh"
           chmod +x "$HOME/check-runner.sh"
+          # See the backup-cron step above — crontab is not usable non-interactively
+          # on this host, confirmed live 2026-08-06.
           CRONTAB_BIN="$(command -v crontab 2>/dev/null || echo /usr/bin/crontab)"
           if [ ! -x "$CRONTAB_BIN" ]; then
-            echo "WARNING: crontab not found — runner watchdog script written to ~/check-runner.sh but not scheduled. Add it to cron manually."
+            echo "WARNING: crontab not usable here — runner watchdog script written to ~/check-runner.sh but not scheduled. Schedule it via Hostinger hPanel > Cron Jobs (every 5 min: \$HOME/check-runner.sh >> \$HOME/jokas-build/runner-watchdog.log 2>&1)."
           else
             ("$CRONTAB_BIN" -l 2>/dev/null | grep -v 'check-runner.sh'; echo "*/5 * * * * $HOME/check-runner.sh >> $HOME/jokas-build/runner-watchdog.log 2>&1") | "$CRONTAB_BIN" -
             echo "Runner watchdog cron installed (every 5 min, restarts run.sh if it's down)."
