@@ -804,6 +804,64 @@ startProxy(0);
     http.get(`http://127.0.0.1:${WEB_INTERNAL_PORT}/api/v1/health`, (r) => r.resume()).on("error", () => {});
   }, 5 * 1000);
 
+  // ── CI runner + DB backup watchdogs ──────────────────────────────────────
+  // This Hostinger plan has no Cron Jobs feature and `crontab` is aliased to
+  // a read-only stub (confirmed live 2026-08-06 — piping into it does
+  // nothing), so neither the GitHub Actions self-hosted runner nor the DB
+  // backup can be scheduled the normal way. Piggybacking on start.js instead:
+  // Passenger already keeps this process running indefinitely and restarts
+  // it on crash, and — unlike a process backgrounded from an SSH shell — it
+  // isn't tied to any login session, so it isn't subject to the session-end
+  // process cleanup that killed the earlier nohup/setsid-based watcher.
+  const HOME_DIR = process.env.HOME || "";
+
+  function checkCiRunner() {
+    if (!HOME_DIR) return;
+    const runnerDir = path.join(HOME_DIR, "actions-runner");
+    try {
+      execSync('pgrep -f "actions-runner/run.sh"', { timeout: 3000 });
+      return; // already running
+    } catch {
+      // pgrep exits non-zero (throws) when no match is found — fall through to restart.
+    }
+    if (!fs.existsSync(path.join(runnerDir, "run.sh"))) return;
+    try {
+      const child = spawn("bash", ["run.sh"], {
+        cwd: runnerDir,
+        detached: true,
+        stdio: "ignore",
+      });
+      child.unref();
+      console.log(`[start] CI runner was down — restarted, PID=${child.pid}`);
+    } catch (e) {
+      console.error("[start] failed to restart CI runner:", e.message);
+    }
+  }
+  setInterval(checkCiRunner, 5 * 60 * 1000);
+  checkCiRunner();
+
+  function checkDailyBackup() {
+    if (!HOME_DIR) return;
+    const backupScript = path.join(HOME_DIR, "jokas-db-backup.sh");
+    if (!fs.existsSync(backupScript)) return; // not written yet by a deploy
+    const now = new Date();
+    if (now.getHours() !== 2) return; // only fire during the 02:00 hour
+    const dateStr = now.toISOString().slice(0, 10).replace(/-/g, "");
+    const expected = path.join(HOME_DIR, "jokas-db-backups", `db-${dateStr}.sql.gz`);
+    if (fs.existsSync(expected)) return; // already ran today
+    try {
+      const child = spawn("bash", [backupScript], { detached: true, stdio: "ignore" });
+      child.unref();
+      console.log(`[start] running daily DB backup, PID=${child.pid}`);
+    } catch (e) {
+      console.error("[start] failed to run daily DB backup:", e.message);
+    }
+  }
+  // Checked every 15 min so the 02:00-04:00 UTC-ish window is never missed
+  // even if start.js restarted right before 2am; cheap no-op the rest of the day.
+  setInterval(checkDailyBackup, 15 * 60 * 1000);
+  checkDailyBackup();
+
   // ── External self-ping to prevent Hostinger from hibernating ────────────
   // Passenger/OpenLiteSpeed tracks idle time from the LAST REQUEST it forwarded
   // to this process. Loopback connections bypass Passenger entirely, so they
