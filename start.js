@@ -825,18 +825,33 @@ startProxy(0);
   if (!HOME_DIR) HOME_DIR = process.env.HOME || "";
   console.log(`[start] HOME_DIR resolved to: ${HOME_DIR || "(empty — CI runner + backup watchdogs disabled)"}`);
 
+  // Pure-Node process scan — avoids depending on `pgrep` being resolvable via
+  // PATH, which (like HOME above) may not be set up the way an interactive
+  // SSH shell's is inside Passenger's environment.
+  function isProcessRunning(needle) {
+    try {
+      for (const pid of fs.readdirSync("/proc")) {
+        if (!/^\d+$/.test(pid)) continue;
+        try {
+          const cmdline = fs.readFileSync(`/proc/${pid}/cmdline`, "utf8");
+          if (cmdline.includes(needle)) return true;
+        } catch {}
+      }
+    } catch {}
+    return false;
+  }
+
   function checkCiRunner() {
     if (!HOME_DIR) return;
+    if (isProcessRunning("actions-runner/run.sh")) return; // already running
     const runnerDir = path.join(HOME_DIR, "actions-runner");
+    const runScript = path.join(runnerDir, "run.sh");
+    if (!fs.existsSync(runScript)) return;
     try {
-      execSync('pgrep -f "actions-runner/run.sh"', { timeout: 3000 });
-      return; // already running
-    } catch {
-      // pgrep exits non-zero (throws) when no match is found — fall through to restart.
-    }
-    if (!fs.existsSync(path.join(runnerDir, "run.sh"))) return;
-    try {
-      const child = spawn("bash", ["run.sh"], {
+      // Exec the script directly by absolute path (relies on its own shebang
+      // + execute bit, same as running `./run.sh` manually) instead of
+      // spawning "bash" by name — PATH may not resolve that name here either.
+      const child = spawn(runScript, [], {
         cwd: runnerDir,
         detached: true,
         stdio: "ignore",
@@ -860,7 +875,8 @@ startProxy(0);
     const expected = path.join(HOME_DIR, "jokas-db-backups", `db-${dateStr}.sql.gz`);
     if (fs.existsSync(expected)) return; // already ran today
     try {
-      const child = spawn("bash", [backupScript], { detached: true, stdio: "ignore" });
+      // Same reasoning as checkCiRunner() — exec by absolute path, not via "bash".
+      const child = spawn(backupScript, [], { detached: true, stdio: "ignore" });
       child.unref();
       console.log(`[start] running daily DB backup, PID=${child.pid}`);
     } catch (e) {
