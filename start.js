@@ -814,16 +814,19 @@ startProxy(0);
   // it on crash, and — unlike a process backgrounded from an SSH shell — it
   // isn't tied to any login session, so it isn't subject to the session-end
   // process cleanup that killed the earlier nohup/setsid-based watcher.
-  // Confirmed live 2026-08-07: Passenger runs this process with `HOME`
-  // stripped from the environment entirely (checked /proc/<pid>/environ —
-  // no HOME= line at all), which silently made both watchdogs below no-op
-  // forever via their `if (!HOME_DIR) return` guards. os.homedir() doesn't
-  // depend on the env var — it falls back to a getpwuid lookup in the OS
-  // user database, which works regardless of what Passenger strips.
-  let HOME_DIR = "";
-  try { HOME_DIR = os.homedir() || ""; } catch {}
-  if (!HOME_DIR) HOME_DIR = process.env.HOME || "";
-  console.log(`[start] HOME_DIR resolved to: ${HOME_DIR || "(empty — CI runner + backup watchdogs disabled)"}`);
+  // Confirmed live 2026-08-07, twice: (1) Passenger runs this process with
+  // `HOME` stripped from the environment (no HOME= in /proc/<pid>/environ),
+  // silently no-opping both watchdogs below. (2) Switching to os.homedir()
+  // "fixed" that but returned /home/u136486538/domains/jokasfarms.com — NOT
+  // the real Unix home (/home/u136486538). Passenger scopes HOME to the
+  // app's own domain directory for sandboxing, and os.homedir() picked that
+  // up too. Neither the env var nor the OS user-database lookup can be
+  // trusted here. Deriving it structurally instead: `root` (__dirname) is
+  // always $HOME/domains/jokasfarms.com/nodejs by deploy.yml's own directory
+  // convention, so walking up 3 levels gets the real home deterministically,
+  // independent of whatever Passenger does to the environment.
+  const HOME_DIR = path.dirname(path.dirname(path.dirname(root)));
+  console.log(`[start] HOME_DIR resolved to: ${HOME_DIR}`);
 
   // Pure-Node process scan — avoids depending on `pgrep` being resolvable via
   // PATH, which (like HOME above) may not be set up the way an interactive
@@ -842,11 +845,13 @@ startProxy(0);
   }
 
   function checkCiRunner() {
-    if (!HOME_DIR) return;
     if (isProcessRunning("actions-runner/run.sh")) return; // already running
     const runnerDir = path.join(HOME_DIR, "actions-runner");
     const runScript = path.join(runnerDir, "run.sh");
-    if (!fs.existsSync(runScript)) return;
+    if (!fs.existsSync(runScript)) {
+      console.warn(`[start] CI runner is down but run.sh not found at ${runScript} — skipping restart`);
+      return;
+    }
     try {
       // Exec the script directly by absolute path (relies on its own shebang
       // + execute bit, same as running `./run.sh` manually) instead of
@@ -866,7 +871,6 @@ startProxy(0);
   checkCiRunner();
 
   function checkDailyBackup() {
-    if (!HOME_DIR) return;
     const backupScript = path.join(HOME_DIR, "jokas-db-backup.sh");
     if (!fs.existsSync(backupScript)) return; // not written yet by a deploy
     const now = new Date();
