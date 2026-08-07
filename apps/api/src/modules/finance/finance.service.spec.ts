@@ -1,8 +1,140 @@
+import { BadRequestException, ForbiddenException } from "@nestjs/common";
+import { AuthenticatedUser } from "@jokas/shared";
 import { FinanceService } from "./finance.service";
+
+jest.mock("../../common/next-ref", () => ({ nextRef: jest.fn().mockResolvedValue("REF-001") }));
+
+const mockPrisma = {
+  expense: { findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn(), create: jest.fn(), update: jest.fn() },
+  revenue: { findMany: jest.fn(), count: jest.fn(), create: jest.fn() },
+  payrollRecord: { findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn(), create: jest.fn(), update: jest.fn() },
+  pettyCashTransaction: { findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn(), create: jest.fn() },
+  $transaction: jest.fn().mockImplementation((cb: (tx: typeof mockPrisma) => Promise<unknown>) => cb(mockPrisma))
+};
+const mockAudit = { write: jest.fn().mockResolvedValue(undefined) };
+
+function makeService() {
+  return new FinanceService(mockPrisma as never, mockAudit as never, { get: jest.fn().mockReturnValue(null), set: jest.fn() } as never);
+}
+
+function makeUser(overrides: Partial<AuthenticatedUser> = {}): AuthenticatedUser {
+  return {
+    id: "user-1", companyId: "company-1", email: "u@x.com", fullName: "U",
+    roles: [], permissions: [], branchIds: ["branch-1"], farmIds: [], warehouseIds: [], productionSiteIds: [],
+    hasGlobalAccess: false,
+    ...overrides
+  };
+}
 
 describe("FinanceService", () => {
   it("is defined with injected dependencies", () => {
-    const service = new FinanceService({} as never, {} as never, {} as never);
-    expect(service).toBeDefined();
+    expect(makeService()).toBeDefined();
+  });
+});
+
+describe("FinanceService — branch scoping (H5)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("listExpenses applies an OR-null-or-allowed branch filter for a restricted user", async () => {
+    mockPrisma.expense.findMany.mockResolvedValue([]);
+    mockPrisma.expense.count.mockResolvedValue(0);
+
+    const service = makeService();
+    await service.listExpenses(makeUser({ branchIds: ["branch-1"] }), {} as never);
+
+    const where = mockPrisma.expense.findMany.mock.calls[0][0].where;
+    expect(where.OR).toEqual([{ branchId: null }, { branchId: { in: ["branch-1"] } }]);
+  });
+
+  it("listExpenses applies no branch filter for a global-access user", async () => {
+    mockPrisma.expense.findMany.mockResolvedValue([]);
+    mockPrisma.expense.count.mockResolvedValue(0);
+
+    const service = makeService();
+    await service.listExpenses(makeUser({ hasGlobalAccess: true }), {} as never);
+
+    const where = mockPrisma.expense.findMany.mock.calls[0][0].where;
+    expect(where.OR).toBeUndefined();
+  });
+
+  it("getExpense returns not-found (via scoped where, not a thrown Forbidden) for an out-of-scope branch's expense", async () => {
+    mockPrisma.expense.findFirst.mockResolvedValue(null); // scoped query wouldn't match it
+    const service = makeService();
+    await expect(service.getExpense(makeUser({ branchIds: ["branch-1"] }), "exp-1")).rejects.toThrow("Expense not found");
+    const where = mockPrisma.expense.findFirst.mock.calls[0][0].where;
+    expect(where.OR).toEqual([{ branchId: null }, { branchId: { in: ["branch-1"] } }]);
+  });
+
+  it("createExpense rejects a branchId outside the actor's own scope", async () => {
+    const service = makeService();
+    await expect(
+      service.createExpense(makeUser({ branchIds: ["branch-1"] }), { branchId: "branch-OTHER", amount: 100 } as never, {})
+    ).rejects.toThrow(ForbiddenException);
+    expect(mockPrisma.expense.create).not.toHaveBeenCalled();
+  });
+
+  it("createRevenue rejects a branchId outside the actor's own scope", async () => {
+    const service = makeService();
+    await expect(
+      service.createRevenue(makeUser({ branchIds: ["branch-1"] }), { branchId: "branch-OTHER", amount: 100 } as never, {})
+    ).rejects.toThrow(ForbiddenException);
+    expect(mockPrisma.revenue.create).not.toHaveBeenCalled();
+  });
+
+  it("createPayrollRecord rejects a branchId outside the actor's own scope", async () => {
+    const service = makeService();
+    await expect(
+      service.createPayrollRecord(makeUser({ branchIds: ["branch-1"] }), { branchId: "branch-OTHER" } as never, {})
+    ).rejects.toThrow(ForbiddenException);
+    expect(mockPrisma.payrollRecord.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("FinanceService — self-approval guard (H11, finance half)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("blocks approveExpense when the actor submitted the expense themselves", async () => {
+    mockPrisma.expense.findFirst.mockResolvedValue({ id: "exp-1", status: "PENDING_APPROVAL", submittedById: "user-1" });
+    const service = makeService();
+    await expect(service.approveExpense(makeUser({ id: "user-1" }), "exp-1", {} as never, {})).rejects.toThrow(ForbiddenException);
+    expect(mockPrisma.expense.update).not.toHaveBeenCalled();
+  });
+
+  it("blocks approvePayroll when the actor created the record themselves", async () => {
+    mockPrisma.payrollRecord.findFirst.mockResolvedValue({ id: "pay-1", status: "DRAFT", createdById: "user-1" });
+    const service = makeService();
+    await expect(service.approvePayroll(makeUser({ id: "user-1" }), "pay-1", {} as never, {})).rejects.toThrow(ForbiddenException);
+    expect(mockPrisma.payrollRecord.update).not.toHaveBeenCalled();
+  });
+
+  it("allows approveExpense when a different user approves", async () => {
+    mockPrisma.expense.findFirst.mockResolvedValue({ id: "exp-1", status: "PENDING_APPROVAL", submittedById: "creator-1", notes: null });
+    mockPrisma.expense.update.mockResolvedValue({ id: "exp-1", status: "APPROVED" });
+    const service = makeService();
+    await expect(service.approveExpense(makeUser({ id: "approver-1" }), "exp-1", {} as never, {})).resolves.toBeDefined();
+  });
+});
+
+describe("FinanceService.createPettyCashTransaction — serializable balance guard (H10)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("runs the balance read + insert inside a Serializable transaction", async () => {
+    mockPrisma.pettyCashTransaction.findFirst.mockResolvedValue({ balance: 500 });
+    mockPrisma.pettyCashTransaction.create.mockResolvedValue({ id: "pct-1", balance: 100 });
+
+    const service = makeService();
+    await service.createPettyCashTransaction(makeUser(), { type: "DISBURSEMENT", amount: 400, transactionDate: "2026-01-01" } as never, {});
+
+    expect(mockPrisma.$transaction).toHaveBeenCalledWith(expect.any(Function), { isolationLevel: "Serializable" });
+  });
+
+  it("still rejects when the computed balance would go negative", async () => {
+    mockPrisma.pettyCashTransaction.findFirst.mockResolvedValue({ balance: 100 });
+
+    const service = makeService();
+    await expect(
+      service.createPettyCashTransaction(makeUser(), { type: "DISBURSEMENT", amount: 400, transactionDate: "2026-01-01" } as never, {})
+    ).rejects.toThrow(BadRequestException);
+    expect(mockPrisma.pettyCashTransaction.create).not.toHaveBeenCalled();
   });
 });

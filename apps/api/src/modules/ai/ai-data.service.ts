@@ -6,6 +6,22 @@ import { PrismaService } from "../prisma/prisma.service";
 export class AiDataService {
   constructor(private readonly prisma: PrismaService) {}
 
+  // Every query in buildContext() previously filtered only by companyId —
+  // a farm/branch-restricted user with the right *permissions* (e.g.
+  // poultry.read) got cross-farm/branch data fed into their AI chat,
+  // anomaly checks, and report summaries, bypassing the location scoping
+  // every direct list/dashboard endpoint enforces. Same "empty array =
+  // unrestricted" convention used elsewhere in the codebase.
+  private locationScope(user: AuthenticatedUser, dims: { branch?: boolean; farm?: boolean; warehouse?: boolean; site?: boolean }): Record<string, unknown> {
+    if (user.hasGlobalAccess) return {};
+    const where: Record<string, unknown> = {};
+    if (dims.branch && user.branchIds.length > 0) where.branchId = { in: user.branchIds };
+    if (dims.farm && user.farmIds.length > 0) where.farmId = { in: user.farmIds };
+    if (dims.warehouse && user.warehouseIds.length > 0) where.warehouseId = { in: user.warehouseIds };
+    if (dims.site && user.productionSiteIds.length > 0) where.productionSiteId = { in: user.productionSiteIds };
+    return where;
+  }
+
   async buildContext(user: AuthenticatedUser): Promise<string> {
     const sections: string[] = [];
     const companyId = user.companyId;
@@ -17,7 +33,7 @@ export class AiDataService {
     // ── Poultry ──────────────────────────────────────────────
     if (has("poultry.read")) {
       const flocks = await this.prisma.flockBatch.findMany({
-        where: { companyId, deletedAt: null, status: { in: ["ACTIVE", "PLANNED"] } },
+        where: { companyId, deletedAt: null, status: { in: ["ACTIVE", "PLANNED"] }, ...this.locationScope(user, { branch: true, farm: true }) },
         select: {
           id: true, code: true, name: true, birdType: true, openingBirdCount: true, status: true,
           farm: { select: { name: true } },
@@ -58,7 +74,7 @@ export class AiDataService {
       });
 
       const healthObs = await this.prisma.poultryHealthObservation.findMany({
-        where: { companyId, observationDate: { gte: since7 } },
+        where: { companyId, observationDate: { gte: since7 }, ...this.locationScope(user, { branch: true, farm: true }) },
         select: { severity: true, observation: true, recommendation: true, flockBatch: { select: { name: true } } },
         take: 5,
         orderBy: { observationDate: "desc" }
@@ -70,7 +86,7 @@ export class AiDataService {
     // ── Feed Production ───────────────────────────────────────
     if (has("feed.read")) {
       const batches = await this.prisma.feedProductionBatch.findMany({
-        where: { companyId, createdAt: { gte: since30 } },
+        where: { companyId, createdAt: { gte: since30 }, ...this.locationScope(user, { branch: true, site: true }) },
         select: {
           batchNumber: true, status: true, producedQuantityKg: true,
           productionOrder: { select: { formula: { select: { name: true, feedType: true } } } }
@@ -102,7 +118,7 @@ export class AiDataService {
     // ── Soya Processing ───────────────────────────────────────
     if (has("soya.read")) {
       const soyaBatches = await this.prisma.soyaProcessingBatch.findMany({
-        where: { companyId, createdAt: { gte: since30 } },
+        where: { companyId, createdAt: { gte: since30 }, ...this.locationScope(user, { branch: true, site: true }) },
         select: {
           batchNumber: true, status: true, beansUsedKg: true,
           oilOutputs: { select: { quantityLitres: true } },
@@ -130,7 +146,8 @@ export class AiDataService {
           companyId,
           status: "ACTIVE",
           reorderLevel: { gt: 0 },
-          quantityOnHand: { gt: 0 }
+          quantityOnHand: { gt: 0 },
+          ...this.locationScope(user, { branch: true, farm: true, warehouse: true, site: true })
         },
         select: {
           quantityOnHand: true, reorderLevel: true,
@@ -146,7 +163,7 @@ export class AiDataService {
         .map((i) => `  - ${i.product.name} (${i.warehouse.name}): ${Number(i.quantityOnHand).toFixed(2)} on hand, reorder at ${Number(i.reorderLevel).toFixed(2)}`);
 
       const totalValue = await this.prisma.inventoryValuation.aggregate({
-        where: { companyId },
+        where: { companyId, ...this.locationScope(user, { branch: true, warehouse: true, site: true }) },
         _sum: { totalValue: true }
       });
 
@@ -156,13 +173,13 @@ export class AiDataService {
     // ── Sales ─────────────────────────────────────────────────
     if (has("sales.read")) {
       const salesStats = await this.prisma.salesOrder.aggregate({
-        where: { companyId, createdAt: { gte: since30 }, status: { not: "CANCELLED" } },
+        where: { companyId, createdAt: { gte: since30 }, status: { not: "CANCELLED" }, ...this.locationScope(user, { branch: true, warehouse: true }) },
         _sum: { totalAmount: true, paidAmount: true, balanceDue: true },
         _count: { id: true }
       });
 
       const topDebtors = await this.prisma.customer.findMany({
-        where: { companyId, status: "ACTIVE" },
+        where: { companyId, status: "ACTIVE", ...this.locationScope(user, { branch: true }) },
         select: {
           name: true, code: true,
           creditLimits: { select: { currentBalance: true }, take: 1, orderBy: { createdAt: "desc" } }
@@ -180,7 +197,8 @@ export class AiDataService {
       const stoppedBuying = await this.prisma.customer.findMany({
         where: {
           companyId, status: "ACTIVE",
-          salesOrders: { none: { createdAt: { gte: inactiveThreshold } } }
+          salesOrders: { none: { createdAt: { gte: inactiveThreshold } } },
+          ...this.locationScope(user, { branch: true })
         },
         select: { name: true },
         take: 5
@@ -194,11 +212,11 @@ export class AiDataService {
     // ── Finance ───────────────────────────────────────────────
     if (has("finance.read")) {
       const revenue = await this.prisma.revenue.aggregate({
-        where: { companyId, revenueDate: { gte: since30 } },
+        where: { companyId, revenueDate: { gte: since30 }, ...this.locationScope(user, { branch: true }) },
         _sum: { amount: true }
       });
       const expenses = await this.prisma.expense.aggregate({
-        where: { companyId, expenseDate: { gte: since30 } },
+        where: { companyId, expenseDate: { gte: since30 }, ...this.locationScope(user, { branch: true }) },
         _sum: { amount: true }
       });
 
@@ -220,7 +238,8 @@ export class AiDataService {
         where: {
           companyId,
           status: "ACTIVE",
-          product: { type: "RAW_MATERIAL" }
+          product: { type: "RAW_MATERIAL" },
+          ...this.locationScope(user, { branch: true, farm: true, warehouse: true, site: true })
         },
         select: {
           quantityOnHand: true, reorderLevel: true,
@@ -240,13 +259,13 @@ export class AiDataService {
     // ── Maintenance ───────────────────────────────────────────
     if (has("maintenance.read")) {
       const breakdowns = await this.prisma.breakdownRecord.findMany({
-        where: { companyId, status: { in: ["REPORTED", "ASSIGNED", "IN_REPAIR"] } },
+        where: { companyId, status: { in: ["REPORTED", "ASSIGNED", "IN_REPAIR"] }, ...this.locationScope(user, { branch: true, farm: true, warehouse: true, site: true }) },
         select: { severity: true, machine: { select: { name: true } } },
         take: 5
       });
 
       const overdue = await this.prisma.maintenanceSchedule.findMany({
-        where: { companyId, nextDueDate: { lt: new Date() }, status: { not: "CANCELLED" } },
+        where: { companyId, nextDueDate: { lt: new Date() }, status: { not: "CANCELLED" }, ...this.locationScope(user, { branch: true, farm: true, warehouse: true, site: true }) },
         select: { machine: { select: { name: true } }, nextDueDate: true },
         take: 5
       });

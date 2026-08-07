@@ -197,9 +197,21 @@ export class MaintenanceService {
 
   async createRecord(user: AuthenticatedUser, dto: CreateMaintenanceRecordDto, context: RequestContext) {
     const scope = await this.resolveAssetScope(user, dto.machineId, dto.equipmentId);
+    // Previously dto.scheduleId was stored on the record — and, if
+    // nextDueDate was also given, used to update the schedule — with no
+    // company-scope check at all. A known/guessed scheduleId from another
+    // tenant could be silently referenced or written to.
+    // updateSchedule()/deleteSchedule() already scope via scheduleWhere();
+    // this path didn't.
+    if (dto.scheduleId) {
+      const schedule = await this.prisma.maintenanceSchedule.findFirst({ where: { ...this.scheduleWhere(user, {}), id: dto.scheduleId } });
+      if (!schedule) throw new NotFoundException("Maintenance schedule was not found.");
+    }
     const recordNumber = await this.nextDocumentNumber(user.companyId, "MR", this.prisma.maintenanceRecord);
     const data = await this.prisma.maintenanceRecord.create({ data: { companyId: user.companyId, ...scope, scheduleId: dto.scheduleId, recordNumber, maintenanceDate: dto.maintenanceDate ? new Date(dto.maintenanceDate) : new Date(), maintenanceType: dto.maintenanceType, status: "COMPLETED", completedById: user.id, description: dto.description, findings: dto.findings, nextDueDate: dto.nextDueDate ? new Date(dto.nextDueDate) : undefined, createdById: user.id } });
-    if (dto.scheduleId && dto.nextDueDate) await this.prisma.maintenanceSchedule.update({ where: { id: dto.scheduleId }, data: { lastCompletedAt: data.maintenanceDate, nextDueDate: new Date(dto.nextDueDate), status: "SCHEDULED", updatedById: user.id } });
+    if (dto.scheduleId && dto.nextDueDate) {
+      await this.prisma.maintenanceSchedule.update({ where: { id: dto.scheduleId }, data: { lastCompletedAt: data.maintenanceDate, nextDueDate: new Date(dto.nextDueDate), status: "SCHEDULED", updatedById: user.id } });
+    }
     await this.writeAudit(user, "CREATE", "MaintenanceRecord", data.id, `Recorded maintenance ${recordNumber}`, context, data);
     return { data };
   }

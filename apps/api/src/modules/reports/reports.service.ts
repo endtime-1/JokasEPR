@@ -281,11 +281,18 @@ export class ReportsService {
     this.scope(where, fields, "warehouseId", query.warehouseId, user.warehouseIds, user);
     this.scope(where, fields, "productionSiteId", query.productionSiteId, user.productionSiteIds, user);
     if (!user.hasGlobalAccess) {
+      // d8570ec fixed this pattern in options() but missed where() — the
+      // method that actually filters report data. Every dimension was
+      // pushed into the OR unconditionally regardless of whether the user's
+      // own array for it was empty, so a company-unrestricted user (empty
+      // arrays, just not hasGlobalAccess) got `{ in: [] }` on every
+      // dimension and every report came back blank. Only restrict on a
+      // dimension the user actually has entries for.
       const or = [
-        fields.includes("branchId") ? { branchId: { in: user.branchIds } } : undefined,
-        fields.includes("farmId") ? { farmId: { in: user.farmIds } } : undefined,
-        fields.includes("warehouseId") ? { warehouseId: { in: user.warehouseIds } } : undefined,
-        fields.includes("productionSiteId") ? { productionSiteId: { in: user.productionSiteIds } } : undefined
+        fields.includes("branchId") && user.branchIds.length > 0 ? { branchId: { in: user.branchIds } } : undefined,
+        fields.includes("farmId") && user.farmIds.length > 0 ? { farmId: { in: user.farmIds } } : undefined,
+        fields.includes("warehouseId") && user.warehouseIds.length > 0 ? { warehouseId: { in: user.warehouseIds } } : undefined,
+        fields.includes("productionSiteId") && user.productionSiteIds.length > 0 ? { productionSiteId: { in: user.productionSiteIds } } : undefined
       ].filter(Boolean);
       if (or.length > 0) where.OR = or;
     }

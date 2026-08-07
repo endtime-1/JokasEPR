@@ -295,19 +295,42 @@ export class InventoryService {
     const item = await this.prisma.inventoryItem.findUniqueOrThrow({ where: { id: adjustment.inventoryItemId } });
     if (Number(adjustment.quantity) < 0) await this.assertAvailable(user, item, Math.abs(Number(adjustment.quantity)), false);
     if (Number(adjustment.quantity) >= 0) {
-      await this.prisma.inventoryItem.update({ where: { id: item.id }, data: { quantityOnHand: { increment: Number(adjustment.quantity) }, updatedById: user.id } });
-      await this.prisma.stockMovement.create({ data: { companyId: user.companyId, branchId: item.branchId, productId: item.productId, inventoryItemId: item.id, toWarehouseId: item.warehouseId, warehouseId: item.warehouseId, productionSiteId: item.productionSiteId, uomId: item.uomId, movementType: "ADJUSTMENT_IN", quantity: Number(adjustment.quantity), unitCost: adjustment.unitCost, referenceType: "StockAdjustment", referenceId: adjustment.id, notes: adjustment.reason, createdById: user.id } });
+      // Previously incremented quantityOnHand with no StockBatch created —
+      // same desync as the mobile stock-movement "in" path, and left the
+      // added quantity with no cost basis for FIFO consumption or valuation.
+      const qty = Number(adjustment.quantity);
+      await this.prisma.$transaction(async (tx) => {
+        const batch = await tx.stockBatch.create({
+          data: {
+            companyId: user.companyId,
+            branchId: item.branchId,
+            farmId: item.farmId,
+            warehouseId: item.warehouseId,
+            productionSiteId: item.productionSiteId,
+            productId: item.productId,
+            inventoryItemId: item.id,
+            uomId: item.uomId,
+            batchNumber: `ADJ-${adjustment.id.slice(0, 8).toUpperCase()}`,
+            quantityReceived: qty,
+            quantityRemaining: qty,
+            unitCost: adjustment.unitCost,
+            createdById: user.id
+          }
+        });
+        await tx.inventoryItem.update({ where: { id: item.id }, data: { quantityOnHand: { increment: qty }, updatedById: user.id } });
+        await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: item.branchId, productId: item.productId, inventoryItemId: item.id, stockBatchId: batch.id, toWarehouseId: item.warehouseId, warehouseId: item.warehouseId, productionSiteId: item.productionSiteId, uomId: item.uomId, movementType: "ADJUSTMENT_IN", quantity: qty, unitCost: adjustment.unitCost, referenceType: "StockAdjustment", referenceId: adjustment.id, notes: adjustment.reason, createdById: user.id } });
+      });
     } else {
       const movementType = ["DAMAGE", "EXPIRY", "WASTE", "WRITE_OFF"].includes(adjustment.adjustmentType) ? "WASTE" : "ADJUSTMENT_OUT";
       await this.consumeFifo(user, item, Math.abs(Number(adjustment.quantity)), movementType, "StockAdjustment", adjustment.id, adjustment.reason);
     }
   }
 
-  private async consumeFifo(user: AuthenticatedUser, item: { id: string; companyId: string; branchId: string; warehouseId: string; productionSiteId: string | null; productId: string; uomId: string }, quantity: number, movementType: "ADJUSTMENT_OUT" | "SALE_DISPATCH" | "TRANSFER" | "WASTE" | "PRODUCTION_INPUT", referenceType: string, referenceId?: string, notes?: string) {
+  private async consumeFifo(user: AuthenticatedUser, item: { id: string; companyId: string; branchId: string; warehouseId: string; productionSiteId: string | null; productId: string; uomId: string }, quantity: number, movementType: "ADJUSTMENT_OUT" | "SALE_DISPATCH" | "TRANSFER" | "WASTE" | "PRODUCTION_INPUT" | "RETURN_OUT", referenceType: string, referenceId?: string, notes?: string) {
     return this.prisma.$transaction((tx) => this.consumeFifoTx(tx, user, item, quantity, movementType, referenceType, referenceId, notes));
   }
 
-  private async consumeFifoTx(tx: Prisma.TransactionClient, user: AuthenticatedUser, item: { id: string; companyId: string; branchId: string; warehouseId: string; productionSiteId: string | null; productId: string; uomId: string }, quantity: number, movementType: "ADJUSTMENT_OUT" | "SALE_DISPATCH" | "TRANSFER" | "WASTE" | "PRODUCTION_INPUT", referenceType: string, referenceId?: string, notes?: string) {
+  private async consumeFifoTx(tx: Prisma.TransactionClient, user: AuthenticatedUser, item: { id: string; companyId: string; branchId: string; warehouseId: string; productionSiteId: string | null; productId: string; uomId: string }, quantity: number, movementType: "ADJUSTMENT_OUT" | "SALE_DISPATCH" | "TRANSFER" | "WASTE" | "PRODUCTION_INPUT" | "RETURN_OUT", referenceType: string, referenceId?: string, notes?: string) {
     let remaining = quantity;
     let value = 0;
     const issued: Array<{ batchId: string; quantity: number; unitCost: number }> = [];
@@ -361,17 +384,48 @@ export class InventoryService {
 
     if (isOut) {
       await this.assertAvailable(user, item, dto.quantity, false);
+      // Previously a plain, unguarded decrement with no StockBatch consumed —
+      // desyncing quantityOnHand from sum(StockBatch.quantityRemaining) and
+      // allowing negative stock under concurrency. consumeFifoTx (used by
+      // stockOut elsewhere in this file) does the guarded FIFO consumption
+      // and creates its own per-batch movement rows.
+      const issued = await this.prisma.$transaction((tx) =>
+        this.consumeFifoTx(tx, user, item, dto.quantity, dto.movementType as "PRODUCTION_INPUT" | "SALE_DISPATCH" | "TRANSFER" | "ADJUSTMENT_OUT" | "WASTE" | "RETURN_OUT", "MobileStockMovement", undefined, dto.notes)
+      );
+      await this.writeAudit(user, "CREATE", "StockMovement", item.id, `Mobile ${dto.movementType} ${item.product.sku}`, context, { branchId: item.branchId, warehouseId: item.warehouseId });
+      return { data: { itemId: item.id, issued } };
     }
 
-    const movement = await this.prisma.$transaction(async (tx) => {
+    // "In" movements previously incremented quantityOnHand with no StockBatch
+    // created at all — same desync, plus no cost-basis/lot tracking for
+    // stock that entered this way. Mirrors stockIn()'s pattern elsewhere.
+    const result = await this.prisma.$transaction(async (tx) => {
+      const batch = await tx.stockBatch.create({
+        data: {
+          companyId: user.companyId,
+          branchId: item.branchId,
+          farmId: item.farmId,
+          warehouseId: item.warehouseId,
+          productionSiteId: item.productionSiteId,
+          productId: item.productId,
+          inventoryItemId: item.id,
+          uomId: item.uomId,
+          batchNumber: `MOB-${Date.now().toString(36).toUpperCase()}`,
+          quantityReceived: dto.quantity,
+          quantityRemaining: dto.quantity,
+          unitCost: dto.unitCost,
+          createdById: user.id
+        }
+      });
       const mov = await tx.stockMovement.create({
         data: {
           companyId: user.companyId,
           branchId: item.branchId,
           productId: item.productId,
           inventoryItemId: item.id,
+          stockBatchId: batch.id,
           warehouseId: item.warehouseId,
-          toWarehouseId: isIn ? item.warehouseId : undefined,
+          toWarehouseId: item.warehouseId,
           farmId: item.farmId,
           productionSiteId: item.productionSiteId,
           uomId: item.uomId,
@@ -385,16 +439,13 @@ export class InventoryService {
       });
       await tx.inventoryItem.update({
         where: { id: item.id },
-        data: {
-          quantityOnHand: isIn ? { increment: dto.quantity } : { decrement: dto.quantity },
-          updatedById: user.id
-        }
+        data: { quantityOnHand: { increment: dto.quantity }, updatedById: user.id }
       });
-      return mov;
+      return { batch, movement: mov };
     });
 
-    await this.writeAudit(user, "CREATE", "StockMovement", movement.id, `Mobile ${dto.movementType} ${item.product.sku}`, context, { branchId: item.branchId, warehouseId: item.warehouseId });
-    return { data: movement };
+    await this.writeAudit(user, "CREATE", "StockMovement", result.movement.id, `Mobile ${dto.movementType} ${item.product.sku}`, context, { branchId: item.branchId, warehouseId: item.warehouseId });
+    return { data: result.movement };
   }
 
   private async lowStockRows(user: AuthenticatedUser) {

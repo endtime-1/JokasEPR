@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { AuthenticatedUser } from "@jokas/shared";
 import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -244,6 +244,7 @@ export class FinanceService {
     const where = {
       companyId: user.companyId,
       deletedAt: null,
+      ...this.branchScope(user),
       ...(query.branchId ? { branchId: query.branchId } : {}),
       ...(query.status ? { status: query.status as never } : {}),
       ...this.dateBetween(query, "expenseDate")
@@ -263,12 +264,13 @@ export class FinanceService {
   }
 
   async getExpense(user: AuthenticatedUser, id: string) {
-    const expense = await this.prisma.expense.findFirst({ where: { id, companyId: user.companyId, deletedAt: null }, include: { category: true, submittedBy: { select: { fullName: true, email: true } }, approvedBy: { select: { fullName: true } }, rejectedBy: { select: { fullName: true } }, bankAccount: { select: { accountName: true, bankName: true } } } });
+    const expense = await this.prisma.expense.findFirst({ where: { id, companyId: user.companyId, deletedAt: null, ...this.branchScope(user) }, include: { category: true, submittedBy: { select: { fullName: true, email: true } }, approvedBy: { select: { fullName: true } }, rejectedBy: { select: { fullName: true } }, bankAccount: { select: { accountName: true, bankName: true } } } });
     if (!expense) throw new NotFoundException("Expense not found");
     return { data: expense };
   }
 
   async createExpense(user: AuthenticatedUser, dto: CreateExpenseDto, ctx: RequestContext) {
+    this.assertBranchAccess(user, dto.branchId);
     const reference = await nextRef(this.prisma, user.companyId, "EXP");
     const requiresApproval = dto.amount >= LARGE_EXPENSE_THRESHOLD;
     const status = requiresApproval ? "PENDING_APPROVAL" : "PENDING";
@@ -298,9 +300,10 @@ export class FinanceService {
   }
 
   async approveExpense(user: AuthenticatedUser, id: string, dto: ApproveExpenseDto, ctx: RequestContext) {
-    const expense = await this.prisma.expense.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    const expense = await this.prisma.expense.findFirst({ where: { id, companyId: user.companyId, deletedAt: null, ...this.branchScope(user) } });
     if (!expense) throw new NotFoundException("Expense not found");
     if (expense.status !== "PENDING_APPROVAL") throw new BadRequestException("Expense is not pending approval");
+    if (expense.submittedById === user.id) throw new ForbiddenException("You cannot approve an expense you submitted yourself.");
 
     const updated = await this.prisma.expense.update({
       where: { id },
@@ -311,7 +314,7 @@ export class FinanceService {
   }
 
   async rejectExpense(user: AuthenticatedUser, id: string, dto: RejectExpenseDto, ctx: RequestContext) {
-    const expense = await this.prisma.expense.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    const expense = await this.prisma.expense.findFirst({ where: { id, companyId: user.companyId, deletedAt: null, ...this.branchScope(user) } });
     if (!expense) throw new NotFoundException("Expense not found");
     if (expense.status !== "PENDING_APPROVAL") throw new BadRequestException("Expense is not pending approval");
 
@@ -329,6 +332,7 @@ export class FinanceService {
     const where = {
       companyId: user.companyId,
       deletedAt: null,
+      ...this.branchScope(user),
       ...(query.branchId ? { branchId: query.branchId } : {}),
       ...this.dateBetween(query, "revenueDate")
     };
@@ -341,6 +345,7 @@ export class FinanceService {
   }
 
   async createRevenue(user: AuthenticatedUser, dto: CreateRevenueDto, ctx: RequestContext) {
+    this.assertBranchAccess(user, dto.branchId);
     const reference = await nextRef(this.prisma, user.companyId, "REV");
     const revenue = await this.prisma.revenue.create({
       data: {
@@ -432,7 +437,7 @@ export class FinanceService {
   // ─── Payroll ───────────────────────────────────────────────────────────────
 
   async listPayroll(user: AuthenticatedUser, query: FinanceQueryDto) {
-    const where = { companyId: user.companyId, deletedAt: null, ...(query.status ? { status: query.status as never } : {}) };
+    const where = { companyId: user.companyId, deletedAt: null, ...this.branchScope(user), ...(query.status ? { status: query.status as never } : {}) };
     const { take, skip, page, pageSize } = this.pageArgs(query, 100);
     const [records, total] = await Promise.all([
       this.prisma.payrollRecord.findMany({ where, include: { branch: { select: { name: true } } }, orderBy: [{ period: "desc" }, { employeeName: "asc" }], take, skip }),
@@ -442,6 +447,7 @@ export class FinanceService {
   }
 
   async createPayrollRecord(user: AuthenticatedUser, dto: CreatePayrollRecordDto, ctx: RequestContext) {
+    this.assertBranchAccess(user, dto.branchId);
     const reference = await nextRef(this.prisma, user.companyId, "PAY");
     const gross = (dto.basicSalary ?? 0) + (dto.allowances ?? 0) - (dto.deductions ?? 0);
     const net = gross - (dto.taxDeduction ?? 0) - (dto.ssnit ?? 0);
@@ -473,9 +479,10 @@ export class FinanceService {
   }
 
   async approvePayroll(user: AuthenticatedUser, id: string, dto: ApprovePayrollDto, ctx: RequestContext) {
-    const record = await this.prisma.payrollRecord.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    const record = await this.prisma.payrollRecord.findFirst({ where: { id, companyId: user.companyId, deletedAt: null, ...this.branchScope(user) } });
     if (!record) throw new NotFoundException("Payroll record not found");
     if (record.status !== "DRAFT") throw new BadRequestException("Only DRAFT records can be approved");
+    if (record.createdById === user.id) throw new ForbiddenException("You cannot approve a payroll record you created yourself.");
 
     const updated = await this.prisma.payrollRecord.update({
       where: { id },
@@ -486,7 +493,7 @@ export class FinanceService {
   }
 
   async markPayrollPaid(user: AuthenticatedUser, id: string, ctx: RequestContext) {
-    const record = await this.prisma.payrollRecord.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    const record = await this.prisma.payrollRecord.findFirst({ where: { id, companyId: user.companyId, deletedAt: null, ...this.branchScope(user) } });
     if (!record) throw new NotFoundException("Payroll record not found");
     if (record.status !== "APPROVED") throw new BadRequestException("Only APPROVED records can be marked as paid");
 
@@ -501,6 +508,7 @@ export class FinanceService {
     const where = {
       companyId: user.companyId,
       deletedAt: null,
+      ...this.branchScope(user),
       ...(query.branchId ? { branchId: query.branchId } : {}),
       ...this.dateBetween(query, "transactionDate")
     };
@@ -513,35 +521,49 @@ export class FinanceService {
   }
 
   async createPettyCashTransaction(user: AuthenticatedUser, dto: CreatePettyCashTransactionDto, ctx: RequestContext) {
+    this.assertBranchAccess(user, dto.branchId);
     const reference = await nextRef(this.prisma, user.companyId, "PCT");
 
-    const last = await this.prisma.pettyCashTransaction.findFirst({
-      where: { companyId: user.companyId, deletedAt: null, ...(dto.branchId ? { branchId: dto.branchId } : {}) },
-      orderBy: { createdAt: "desc" }
-    });
+    // The running balance is derived from the *previous* transaction's
+    // balance, read outside any lock — two concurrent requests could both
+    // read the same stale balance and both commit, corrupting the running
+    // total and allowing more cash to be disbursed than actually exists.
+    // There's no single row to lock here (it's "read the latest, then
+    // insert"), so Serializable isolation is the right tool: MySQL will
+    // abort one of two conflicting concurrent transactions with a
+    // serialization failure instead of letting both silently succeed.
+    const tx = await this.prisma.$transaction(
+      async (trx) => {
+        const last = await trx.pettyCashTransaction.findFirst({
+          where: { companyId: user.companyId, deletedAt: null, ...(dto.branchId ? { branchId: dto.branchId } : {}) },
+          orderBy: { createdAt: "desc" }
+        });
 
-    const lastBalance = last ? Number(last.balance) : 0;
-    const balance = dto.type === "FUNDING" || dto.type === "REPLENISHMENT" ? lastBalance + dto.amount : lastBalance - dto.amount;
+        const lastBalance = last ? Number(last.balance) : 0;
+        const balance = dto.type === "FUNDING" || dto.type === "REPLENISHMENT" ? lastBalance + dto.amount : lastBalance - dto.amount;
 
-    if (balance < 0) throw new BadRequestException("Insufficient petty cash balance");
+        if (balance < 0) throw new BadRequestException("Insufficient petty cash balance");
 
-    const tx = await this.prisma.pettyCashTransaction.create({
-      data: {
-        companyId: user.companyId,
-        reference,
-        type: dto.type,
-        amount: dto.amount,
-        description: dto.description,
-        transactionDate: new Date(dto.transactionDate),
-        categoryId: dto.categoryId,
-        branchId: dto.branchId,
-        receiptRef: dto.receiptRef,
-        balance,
-        notes: dto.notes,
-        requestedById: user.id,
-        createdById: user.id
-      }
-    });
+        return trx.pettyCashTransaction.create({
+          data: {
+            companyId: user.companyId,
+            reference,
+            type: dto.type,
+            amount: dto.amount,
+            description: dto.description,
+            transactionDate: new Date(dto.transactionDate),
+            categoryId: dto.categoryId,
+            branchId: dto.branchId,
+            receiptRef: dto.receiptRef,
+            balance,
+            notes: dto.notes,
+            requestedById: user.id,
+            createdById: user.id
+          }
+        });
+      },
+      { isolationLevel: "Serializable" }
+    );
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "CREATE", entityType: "PettyCashTransaction", entityId: tx.id, ...ctx });
     return { data: tx };
   }
@@ -819,6 +841,23 @@ export class FinanceService {
   }
 
   // ─── Helpers ───────────────────────────────────────────────────────────────
+
+  // This module had NO branch scoping at all — every method filtered only by
+  // companyId, so a branch-restricted finance user could read/approve/reject
+  // any other branch's expenses, payroll, or revenue by ID. Only
+  // Expense/Revenue/PayrollRecord/PettyCashTransaction actually have a
+  // (nullable) branchId field; unassigned records stay visible to everyone
+  // in scope, matching the OR-null-or-allowed convention used elsewhere
+  // (e.g. quality.service.ts, alerts.service.ts).
+  private branchScope(user: AuthenticatedUser): Record<string, unknown> {
+    if (user.hasGlobalAccess || user.branchIds.length === 0) return {};
+    return { OR: [{ branchId: null }, { branchId: { in: user.branchIds } }] };
+  }
+
+  private assertBranchAccess(user: AuthenticatedUser, branchId?: string | null) {
+    if (!branchId || user.hasGlobalAccess) return;
+    if (!user.branchIds.includes(branchId)) throw new ForbiddenException("You do not have access to this branch.");
+  }
 
   private dateWhere(user: AuthenticatedUser, query: FinanceQueryDto) {
     return {

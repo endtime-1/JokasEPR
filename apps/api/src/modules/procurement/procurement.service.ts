@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { AuthenticatedUser } from "@jokas/shared";
 import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -291,6 +291,7 @@ export class ProcurementService {
     const row = await this.prisma.purchaseRequest.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
     if (!row) throw new NotFoundException("Purchase Request not found");
     if (row.status !== "SUBMITTED") throw new BadRequestException("Only SUBMITTED requests can be approved");
+    if (row.createdById === user.id) throw new ForbiddenException("You cannot approve a purchase request you created yourself.");
 
     const updated = await this.prisma.purchaseRequest.update({
       where: { id },
@@ -423,6 +424,7 @@ export class ProcurementService {
     const row = await this.prisma.purchaseOrder.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
     if (!row) throw new NotFoundException("Purchase Order not found");
     if (row.status !== "PENDING_APPROVAL") throw new BadRequestException("Only PENDING_APPROVAL orders can be approved");
+    if (row.createdById === user.id) throw new ForbiddenException("You cannot approve a purchase order you created yourself.");
 
     const updated = await this.prisma.purchaseOrder.update({
       where: { id },
@@ -513,6 +515,12 @@ export class ProcurementService {
     if (!["APPROVED", "SENT_TO_SUPPLIER", "PARTIALLY_RECEIVED"].includes(po.status)) {
       throw new BadRequestException("Purchase Order must be APPROVED or SENT_TO_SUPPLIER to receive goods");
     }
+    // Previously dto.warehouseId was trusted with no lookup at all — a
+    // foreign or nonexistent warehouse would only surface as an error much
+    // later, at postGRN time.
+    const warehouse = await this.prisma.warehouse.findFirst({ where: { id: dto.warehouseId, companyId: user.companyId } });
+    if (!warehouse) throw new NotFoundException("Warehouse not found");
+    this.assertWarehouseAccess(user, dto.warehouseId);
 
     const reference = await nextRef(this.prisma, user.companyId, "GRN");
 
@@ -591,6 +599,7 @@ export class ProcurementService {
     });
     if (!grn) throw new NotFoundException("GRN not found");
     if (grn.status !== "QUALITY_PASSED") throw new BadRequestException("GRN must be QUALITY_PASSED before posting");
+    this.assertWarehouseAccess(user, grn.warehouseId);
 
     const warehouse = await this.prisma.warehouse.findFirst({
       where: { id: grn.warehouseId, companyId: user.companyId },
@@ -868,6 +877,16 @@ export class ProcurementService {
     else if (receivedQty > 0) newStatus = "PARTIALLY_RECEIVED";
 
     await this.prisma.purchaseOrder.update({ where: { id: purchaseOrderId }, data: { status: newStatus as never } });
+  }
+
+  // createGRN/postGRN previously only checked the warehouse belonged to the
+  // company, never that the *user* had access to it — a PROCUREMENT_MANAGE
+  // holder not assigned to a warehouse could still receive goods into and
+  // post real stock for it.
+  private assertWarehouseAccess(user: AuthenticatedUser, warehouseId: string) {
+    if (!user.hasGlobalAccess && !user.warehouseIds.includes(warehouseId)) {
+      throw new ForbiddenException("You do not have access to this warehouse.");
+    }
   }
 }
 

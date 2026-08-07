@@ -259,6 +259,9 @@ export class PoultryService {
 
   async listPens(user: AuthenticatedUser, houseId: string) {
     const house = await this.getHouse(user.companyId, houseId);
+    // Previously missing — a user restricted to Farm A could read Farm B's
+    // pens and active batch allocations via any houseId in the company.
+    this.assertFarmAccess(user, house.farmId);
     const data = await this.prisma.pen.findMany({
       where: { companyId: user.companyId, poultryHouseId: houseId, deletedAt: null },
       orderBy: { penNumber: "asc" },
@@ -639,6 +642,10 @@ export class PoultryService {
     if (!["LAYERS", "BREEDERS"].includes(batch.birdType)) {
       throw new BadRequestException(`Egg production cannot be recorded for a ${batch.birdType} batch. Only LAYERS and BREEDERS batches produce eggs.`);
     }
+    // Previously missing — unlike createFeed/createMedication/createVaccination,
+    // this credited inventory to dto.warehouseId with no access check, letting
+    // a user credit egg output to a warehouse outside their assignment.
+    if (dto.warehouseId) this.assertWarehouseAccess(user, dto.warehouseId);
     const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
     const data = await this.prisma.$transaction(async (tx) => {
       const record = await tx.eggProductionRecord.create({
@@ -816,6 +823,10 @@ export class PoultryService {
     if (pen.poultryHouseId !== transfer.toPoultryHouseId) throw new BadRequestException("Pen does not belong to the transfer's destination house.");
 
     const house = await this.prisma.poultryHouse.findFirst({ where: { id: transfer.toPoultryHouseId!, companyId: user.companyId } });
+    // Previously missing entirely — a user scoped to Farm A could allocate a
+    // pen (and increment live bird counts) for a transfer whose destination
+    // farm is Farm B, which they have no access to.
+    if (house) this.assertFarmAccess(user, house.farmId);
 
     const data = await this.prisma.$transaction(async (tx) => {
       await tx.pen.update({ where: { id: dto.penId }, data: { isActive: true } });

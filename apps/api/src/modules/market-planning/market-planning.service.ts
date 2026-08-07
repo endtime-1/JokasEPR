@@ -648,8 +648,7 @@ export class MarketPlanningService {
       });
 
       for (const ingredient of ingredientPlan) {
-        const inventory = await this.requireInventory(tx, user.companyId, dto.rawMaterialWarehouseId, ingredient.ingredientId);
-        await tx.inventoryItem.update({ where: { id: inventory.id }, data: { quantityOnHand: { decrement: ingredient.quantityKg }, updatedById: user.id } });
+        const inventory = await this.consumeInventoryTx(tx, user.companyId, dto.rawMaterialWarehouseId, ingredient.ingredientId, ingredient.quantityKg, user.id);
         await tx.feedRawMaterialUsage.create({
           data: {
             companyId: user.companyId,
@@ -902,10 +901,29 @@ export class MarketPlanningService {
     return new Map(rows.map((row) => [row.productId, { quantityOnHand: num(row.quantityOnHand) }]));
   }
 
-  private async requireInventory(tx: Tx, companyId: string, warehouseId: string, productId: string) {
-    const inventory = await tx.inventoryItem.findUnique({ where: { companyId_warehouseId_productId: { companyId, warehouseId, productId } } });
-    if (!inventory || num(inventory.quantityOnHand) <= 0) throw new BadRequestException("Inventory item is missing or has no stock.");
-    return inventory;
+  // Previously this only checked quantityOnHand > 0 (present at all), not
+  // sufficient for the amount actually needed — and the caller's separate,
+  // unguarded `update` decrement ran outside any floor check. Two concurrent
+  // executions against the same warehouse/ingredient could each pass the
+  // pre-flight shortage check individually and both decrement, driving stock
+  // negative. Now does a single atomic guarded decrement (matching
+  // consumeFifoTx's pattern elsewhere) so insufficient-or-since-consumed
+  // stock is caught at the exact moment of the write, not before it.
+  private async consumeInventoryTx(tx: Tx, companyId: string, warehouseId: string, productId: string, quantity: number, updatedById: string) {
+    const result = await tx.inventoryItem.updateMany({
+      where: { companyId, warehouseId, productId, quantityOnHand: { gte: quantity } },
+      data: { quantityOnHand: { decrement: quantity }, updatedById }
+    });
+    if (result.count === 0) {
+      throw new BadRequestException("Inventory item is missing or does not have enough stock for this production execution.");
+    }
+    // Safe to read separately now — the guarded decrement above already
+    // succeeded atomically; this just fetches identifying fields (id/uomId
+    // don't change) for the stock-movement record.
+    return tx.inventoryItem.findFirstOrThrow({
+      where: { companyId, warehouseId, productId },
+      select: { id: true, uomId: true }
+    });
   }
 
   private async requireTarget(user: AuthenticatedUser, id: string) {

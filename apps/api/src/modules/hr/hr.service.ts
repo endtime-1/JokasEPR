@@ -79,6 +79,38 @@ export class HRService {
     private readonly notifications: NotificationsService,
   ) {}
 
+  // This module had NO branch/farm/warehouse/site scoping anywhere — every
+  // method filtered only by companyId, so any HR_READ/HR_MANAGE holder, even
+  // one meant to be restricted to a single branch, could read and edit every
+  // employee, payslip, disciplinary record, and grievance company-wide.
+  // Applied to the most sensitive surfaces (employee records, payroll,
+  // disciplinary, grievances) following the same OR-null-or-allowed
+  // convention used elsewhere (quality.service.ts, finance.service.ts).
+  private employeeScope(user: AuthenticatedUser): Record<string, unknown> {
+    if (user.hasGlobalAccess) return {};
+    const and: Record<string, unknown>[] = [];
+    if (user.branchIds.length) and.push({ OR: [{ branchId: null }, { branchId: { in: user.branchIds } }] });
+    if (user.farmIds.length) and.push({ OR: [{ farmId: null }, { farmId: { in: user.farmIds } }] });
+    if (user.warehouseIds.length) and.push({ OR: [{ warehouseId: null }, { warehouseId: { in: user.warehouseIds } }] });
+    if (user.productionSiteIds.length) and.push({ OR: [{ productionSiteId: null }, { productionSiteId: { in: user.productionSiteIds } }] });
+    return and.length ? { AND: and } : {};
+  }
+
+  private assertEmployeeInScope(user: AuthenticatedUser, employee: { branchId?: string | null; farmId?: string | null; warehouseId?: string | null; productionSiteId?: string | null }) {
+    if (user.hasGlobalAccess) return;
+    const checks: Array<[string | null | undefined, string[]]> = [
+      [employee.branchId, user.branchIds],
+      [employee.farmId, user.farmIds],
+      [employee.warehouseId, user.warehouseIds],
+      [employee.productionSiteId, user.productionSiteIds]
+    ];
+    for (const [id, allowed] of checks) {
+      if (id && allowed.length && !allowed.includes(id)) {
+        throw new ForbiddenException("You do not have access to this employee's assigned location.");
+      }
+    }
+  }
+
   // â"€â"€â"€ Dashboard â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
   async dashboard(user: AuthenticatedUser) {
@@ -186,6 +218,7 @@ export class HRService {
       where: {
         companyId: user.companyId,
         deletedAt: null,
+        ...this.employeeScope(user),
         ...(query.status ? { status: query.status as never } : {}),
         ...(query.branchId ? { branchId: query.branchId } : {}),
         ...(query.search ? { OR: [{ fullName: { contains: query.search } }, { code: { contains: query.search } }, { phone: { contains: query.search } }] } : {}),
@@ -251,7 +284,7 @@ export class HRService {
 
   async getEmployee(user: AuthenticatedUser, id: string) {
     const row = await this.prisma.employee.findFirst({
-      where: { id, companyId: user.companyId, deletedAt: null },
+      where: { id, companyId: user.companyId, deletedAt: null, ...this.employeeScope(user) },
       select: {
         id: true, companyId: true, userId: true, code: true,
         firstName: true, lastName: true, fullName: true,
@@ -321,8 +354,9 @@ export class HRService {
   }
 
   async updateEmployee(user: AuthenticatedUser, id: string, dto: UpdateEmployeeDto, ctx: RequestContext) {
-    const row = await this.prisma.employee.findFirst({ where: { id, companyId: user.companyId, deletedAt: null }, select: { id: true, firstName: true, lastName: true } });
+    const row = await this.prisma.employee.findFirst({ where: { id, companyId: user.companyId, deletedAt: null }, select: { id: true, firstName: true, lastName: true, branchId: true, farmId: true, warehouseId: true, productionSiteId: true } });
     if (!row) throw new NotFoundException("Employee not found");
+    this.assertEmployeeInScope(user, row);
 
     const fullName = dto.firstName || dto.lastName
       ? `${dto.firstName ?? row.firstName} ${dto.lastName ?? row.lastName}`
@@ -349,7 +383,8 @@ export class HRService {
   // â"€â"€â"€ Attendance â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
   async listAttendance(user: AuthenticatedUser, query: HRQueryDto) {
-    const where: Record<string, unknown> = { companyId: user.companyId };
+    // AttendanceRecord has no location fields of its own — scoped via its employee relation.
+    const where: Record<string, unknown> = { companyId: user.companyId, employee: this.employeeScope(user) };
     if (query.employeeId) where.employeeId = query.employeeId;
     if (query.status) where.status = query.status;
     if (query.dateFrom || query.dateTo) {
@@ -679,6 +714,11 @@ export class HRService {
         companyId: user.companyId,
         deletedAt: null,
         employeeId: { not: null },
+        // PayrollRecord only has its own branchId (no farm/warehouse/site
+        // fields) — scope via the linked employee's full location instead,
+        // which is also more correct since payroll scope should follow the
+        // employee's actual assignment.
+        employee: this.employeeScope(user),
         ...(query.status ? { status: query.status as never } : {}),
         ...(query.period ? { period: query.period } : {}),
       },
@@ -1818,7 +1858,7 @@ export class HRService {
 
   async listDisciplinary(user: AuthenticatedUser, query: HRQueryDto) {
     const rows = await this.prisma.disciplinaryRecord.findMany({
-      where: { companyId: user.companyId, deletedAt: null, ...(query.employeeId ? { employeeId: query.employeeId } : {}), ...(query.search ? { category: { contains: query.search } } : {}) },
+      where: { companyId: user.companyId, deletedAt: null, employee: this.employeeScope(user), ...(query.employeeId ? { employeeId: query.employeeId } : {}), ...(query.search ? { category: { contains: query.search } } : {}) },
       include: { employee: { select: { fullName: true, code: true } } },
       orderBy: { incidentDate: "desc" },
       take: 100,
@@ -1873,7 +1913,7 @@ export class HRService {
 
   async listGrievances(user: AuthenticatedUser, query: HRQueryDto) {
     const rows = await this.prisma.grievanceRecord.findMany({
-      where: { companyId: user.companyId, deletedAt: null, ...(query.status ? { status: query.status } : {}), ...(query.employeeId ? { employeeId: query.employeeId } : {}) },
+      where: { companyId: user.companyId, deletedAt: null, employee: this.employeeScope(user), ...(query.status ? { status: query.status } : {}), ...(query.employeeId ? { employeeId: query.employeeId } : {}) },
       include: { employee: { select: { fullName: true, code: true } } },
       orderBy: { submittedDate: "desc" },
       take: 100,

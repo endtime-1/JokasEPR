@@ -72,6 +72,11 @@ export class PlatformService {
       where: { id: branchId, companyId: user.companyId, deletedAt: null }
     });
     if (!existing) throw new NotFoundException("Branch not found.");
+    // create* endpoints already scope-check via @RequireScopeAccess — update/delete
+    // didn't, letting any PLATFORM_MANAGE holder (e.g. a branch-scoped General
+    // Manager) modify or remove branches/farms/sites/warehouses outside their
+    // own assignment. Mirrors the same assertAssigned() check createFarm etc. use.
+    this.assertAssigned(user, existing.id, user.branchIds, "branch");
     const branch = await this.prisma.branch.update({
       where: { id: branchId },
       data: {
@@ -91,6 +96,7 @@ export class PlatformService {
       where: { id: branchId, companyId: user.companyId, deletedAt: null }
     });
     if (!existing) throw new NotFoundException("Branch not found.");
+    this.assertAssigned(user, existing.id, user.branchIds, "branch");
     await this.prisma.branch.update({ where: { id: branchId }, data: { deletedAt: new Date() } });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "DELETE", entityType: "Branch", entityId: branchId, summary: `Deleted branch ${existing.code}`, ipAddress: context.ipAddress, userAgent: context.userAgent });
     return { data: { id: branchId } };
@@ -136,6 +142,7 @@ export class PlatformService {
       where: { id: farmId, companyId: user.companyId, deletedAt: null }
     });
     if (!existing) throw new NotFoundException("Farm not found.");
+    this.assertAssigned(user, existing.branchId, user.branchIds, "branch");
     const farm = await this.prisma.farm.update({
       where: { id: farmId },
       data: {
@@ -154,6 +161,7 @@ export class PlatformService {
       where: { id: farmId, companyId: user.companyId, deletedAt: null }
     });
     if (!existing) throw new NotFoundException("Farm not found.");
+    this.assertAssigned(user, existing.branchId, user.branchIds, "branch");
     await this.prisma.farm.update({ where: { id: farmId }, data: { deletedAt: new Date() } });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "DELETE", entityType: "Farm", entityId: farmId, summary: `Deleted farm ${existing.code}`, ipAddress: context.ipAddress, userAgent: context.userAgent });
     return { data: { id: farmId } };
@@ -199,6 +207,10 @@ export class PlatformService {
       where: { id: siteId, companyId: user.companyId, deletedAt: null }
     });
     if (!existing) throw new NotFoundException("Production site not found.");
+    this.assertAssigned(user, existing.branchId, user.branchIds, "branch");
+    // Also check the *new* branch if this update re-parents the site — otherwise
+    // a user could move a site they can edit into a branch they can't touch.
+    if (dto.branchId !== undefined) this.assertAssigned(user, dto.branchId, user.branchIds, "branch");
     const site = await this.prisma.productionSite.update({
       where: { id: siteId },
       data: {
@@ -218,6 +230,7 @@ export class PlatformService {
       where: { id: siteId, companyId: user.companyId, deletedAt: null }
     });
     if (!existing) throw new NotFoundException("Production site not found.");
+    this.assertAssigned(user, existing.branchId, user.branchIds, "branch");
     await this.prisma.productionSite.update({ where: { id: siteId }, data: { deletedAt: new Date() } });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "DELETE", entityType: "ProductionSite", entityId: siteId, summary: `Deleted production site ${existing.code}`, ipAddress: context.ipAddress, userAgent: context.userAgent });
     return { data: { id: siteId } };
@@ -267,6 +280,12 @@ export class PlatformService {
       where: { id: warehouseId, companyId: user.companyId, deletedAt: null }
     });
     if (!existing) throw new NotFoundException("Warehouse not found.");
+    this.assertAssigned(user, existing.branchId, user.branchIds, "branch");
+    this.assertAssigned(user, existing.farmId ?? undefined, user.farmIds, "farm");
+    this.assertAssigned(user, existing.productionSiteId ?? undefined, user.productionSiteIds, "production site");
+    if (dto.branchId !== undefined) this.assertAssigned(user, dto.branchId, user.branchIds, "branch");
+    if (dto.farmId !== undefined) this.assertAssigned(user, dto.farmId, user.farmIds, "farm");
+    if (dto.productionSiteId !== undefined) this.assertAssigned(user, dto.productionSiteId, user.productionSiteIds, "production site");
     const warehouse = await this.prisma.warehouse.update({
       where: { id: warehouseId },
       data: {
@@ -288,6 +307,9 @@ export class PlatformService {
       where: { id: warehouseId, companyId: user.companyId, deletedAt: null }
     });
     if (!existing) throw new NotFoundException("Warehouse not found.");
+    this.assertAssigned(user, existing.branchId, user.branchIds, "branch");
+    this.assertAssigned(user, existing.farmId ?? undefined, user.farmIds, "farm");
+    this.assertAssigned(user, existing.productionSiteId ?? undefined, user.productionSiteIds, "production site");
     await this.prisma.warehouse.update({ where: { id: warehouseId }, data: { deletedAt: new Date() } });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "DELETE", entityType: "Warehouse", entityId: warehouseId, summary: `Deleted warehouse ${existing.code}`, ipAddress: context.ipAddress, userAgent: context.userAgent });
     return { data: { id: warehouseId } };

@@ -1440,14 +1440,14 @@ export class FeedProductionService {
   }
 
   private formulaWhere(user: AuthenticatedUser, query: FeedProductionQueryDto) {
-    const branchId = user.hasGlobalAccess
+    const branchId = user.hasGlobalAccess || user.branchIds.length === 0
       ? query.branchId
       : (query.branchId && user.branchIds.includes(query.branchId) ? query.branchId : { in: user.branchIds });
     return { companyId: user.companyId, deletedAt: null, branchId };
   }
 
   private orderWhere(user: AuthenticatedUser, query: FeedProductionQueryDto) {
-    const productionSiteId = user.hasGlobalAccess
+    const productionSiteId = user.hasGlobalAccess || user.productionSiteIds.length === 0
       ? query.productionSiteId
       : (query.productionSiteId && user.productionSiteIds.includes(query.productionSiteId) ? query.productionSiteId : { in: user.productionSiteIds });
     return {
@@ -1462,7 +1462,7 @@ export class FeedProductionService {
   }
 
   private batchWhere(user: AuthenticatedUser, query: FeedProductionQueryDto) {
-    const productionSiteId = user.hasGlobalAccess
+    const productionSiteId = user.hasGlobalAccess || user.productionSiteIds.length === 0
       ? query.productionSiteId
       : (query.productionSiteId && user.productionSiteIds.includes(query.productionSiteId) ? query.productionSiteId : { in: user.productionSiteIds });
     return {
@@ -1476,42 +1476,42 @@ export class FeedProductionService {
   }
 
   private usageWhere(user: AuthenticatedUser, query: FeedProductionQueryDto) {
-    const productionSiteId = user.hasGlobalAccess
+    const productionSiteId = user.hasGlobalAccess || user.productionSiteIds.length === 0
       ? query.productionSiteId
       : (query.productionSiteId && user.productionSiteIds.includes(query.productionSiteId) ? query.productionSiteId : { in: user.productionSiteIds });
     return { companyId: user.companyId, deletedAt: null, ...(query.branchId ? { branchId: query.branchId } : {}), productionSiteId, productionBatchId: query.productionBatchId };
   }
 
   private qualityWhere(user: AuthenticatedUser, query: FeedProductionQueryDto) {
-    const productionSiteId = user.hasGlobalAccess
+    const productionSiteId = user.hasGlobalAccess || user.productionSiteIds.length === 0
       ? query.productionSiteId
       : (query.productionSiteId && user.productionSiteIds.includes(query.productionSiteId) ? query.productionSiteId : { in: user.productionSiteIds });
     return { companyId: user.companyId, deletedAt: null, ...(query.branchId ? { branchId: query.branchId } : {}), productionSiteId, productionBatchId: query.productionBatchId };
   }
 
   private finishedStockWhere(user: AuthenticatedUser, query: FeedProductionQueryDto) {
-    const warehouseId = user.hasGlobalAccess
+    const warehouseId = user.hasGlobalAccess || user.warehouseIds.length === 0
       ? query.warehouseId
       : (query.warehouseId && user.warehouseIds.includes(query.warehouseId) ? query.warehouseId : { in: user.warehouseIds });
     return { companyId: user.companyId, deletedAt: null, ...(query.branchId ? { branchId: query.branchId } : {}), productionSiteId: query.productionSiteId, warehouseId, productionBatchId: query.productionBatchId };
   }
 
   private packagingWhere(user: AuthenticatedUser, query: FeedProductionQueryDto) {
-    const productionSiteId = user.hasGlobalAccess
+    const productionSiteId = user.hasGlobalAccess || user.productionSiteIds.length === 0
       ? query.productionSiteId
       : (query.productionSiteId && user.productionSiteIds.includes(query.productionSiteId) ? query.productionSiteId : { in: user.productionSiteIds });
     return { companyId: user.companyId, deletedAt: null, ...(query.branchId ? { branchId: query.branchId } : {}), productionSiteId, productionBatchId: query.productionBatchId, ...(this.dateRange(query, "packagedAt")) };
   }
 
   private costWhere(user: AuthenticatedUser, query: FeedProductionQueryDto) {
-    const productionSiteId = user.hasGlobalAccess
+    const productionSiteId = user.hasGlobalAccess || user.productionSiteIds.length === 0
       ? query.productionSiteId
       : (query.productionSiteId && user.productionSiteIds.includes(query.productionSiteId) ? query.productionSiteId : { in: user.productionSiteIds });
     return { companyId: user.companyId, deletedAt: null, ...(query.branchId ? { branchId: query.branchId } : {}), productionSiteId, productionBatchId: query.productionBatchId };
   }
 
   private transferWhere(user: AuthenticatedUser, query: FeedProductionQueryDto) {
-    const fromWarehouseId = user.hasGlobalAccess
+    const fromWarehouseId = user.hasGlobalAccess || user.warehouseIds.length === 0
       ? query.warehouseId
       : (query.warehouseId && user.warehouseIds.includes(query.warehouseId) ? query.warehouseId : { in: user.warehouseIds });
     return { companyId: user.companyId, deletedAt: null, ...(query.branchId ? { branchId: query.branchId } : {}), productionBatchId: query.productionBatchId, fromWarehouseId, ...(this.dateRange(query, "transferDate")) };

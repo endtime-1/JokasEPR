@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { AuthenticatedUser } from "@jokas/shared";
 import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -55,12 +55,55 @@ export class QualityService {
     private readonly lookupCache: LookupCacheService
   ) {}
 
+  // This module had NO location scoping at all — every list/read method
+  // filtered only by companyId, so any QUALITY_READ holder saw every
+  // branch/farm/warehouse/site's checks regardless of their own assignment.
+  // Follows the same "empty access array = unrestricted" convention as the
+  // rest of the app (poultry/inventory/dashboard.executive etc.), but since
+  // QualityCheck's location fields are all optional, a scope-restricted user
+  // still sees checks with no location assigned at all (OR branchId: null),
+  // not just their own — matches alerts.service.ts's locationScope() pattern.
+  private scopeWhere(user: AuthenticatedUser): Record<string, unknown> {
+    if (user.hasGlobalAccess) return {};
+    const and: Record<string, unknown>[] = [];
+    if (user.branchIds.length) and.push({ OR: [{ branchId: null }, { branchId: { in: user.branchIds } }] });
+    if (user.farmIds.length) and.push({ OR: [{ farmId: null }, { farmId: { in: user.farmIds } }] });
+    if (user.warehouseIds.length) and.push({ OR: [{ warehouseId: null }, { warehouseId: { in: user.warehouseIds } }] });
+    if (user.productionSiteIds.length) and.push({ OR: [{ productionSiteId: null }, { productionSiteId: { in: user.productionSiteIds } }] });
+    return and.length ? { AND: and } : {};
+  }
+
+  private assertLocationAssigned(user: AuthenticatedUser, dto: { branchId?: string; farmId?: string; warehouseId?: string; productionSiteId?: string }) {
+    if (user.hasGlobalAccess) return;
+    const checks: Array<[string | undefined, string[], string]> = [
+      [dto.branchId, user.branchIds, "branch"],
+      [dto.farmId, user.farmIds, "farm"],
+      [dto.warehouseId, user.warehouseIds, "warehouse"],
+      [dto.productionSiteId, user.productionSiteIds, "production site"]
+    ];
+    for (const [id, allowed, label] of checks) {
+      if (id && !allowed.includes(id)) throw new BadRequestException(`You do not have access to this ${label}.`);
+    }
+  }
+
+  // passCheck/failCheck/conditionalPass/approveBatch/rejectBatch all finalize
+  // a check's outcome — without this, the same user who performed the
+  // inspection (or created the check) could also approve/fail their own work.
+  private assertNotSelfReview(user: AuthenticatedUser, check: { inspectorId: string | null; createdById: string | null }) {
+    if (check.inspectorId === user.id || check.createdById === user.id) {
+      throw new ForbiddenException("You cannot finalize a quality check you inspected or created yourself.");
+    }
+  }
+
   // â”€â”€â”€ Dashboard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   async dashboard(user: AuthenticatedUser) {
     const cid = user.companyId;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const scope = this.scopeWhere(user);
+    const checkWhere = { companyId: cid, deletedAt: null, ...scope };
+    const batchWhere = { companyId: cid, deletedAt: null, check: scope };
     const [
       totalChecks,
       pendingChecks,
@@ -72,16 +115,17 @@ export class QualityService {
       overdueActions,
       recentChecks,
     ] = await Promise.all([
-      this.prisma.qualityCheck.count({ where: { companyId: cid, deletedAt: null } }),
-      this.prisma.qualityCheck.count({ where: { companyId: cid, deletedAt: null, status: { in: ["PENDING", "IN_PROGRESS"] } } }),
-      this.prisma.qualityCheck.count({ where: { companyId: cid, deletedAt: null, status: "PASSED" } }),
-      this.prisma.qualityCheck.count({ where: { companyId: cid, deletedAt: null, status: "FAILED" } }),
-      this.prisma.rejectedBatch.count({ where: { companyId: cid, deletedAt: null } }),
-      this.prisma.approvedBatch.count({ where: { companyId: cid, deletedAt: null } }),
-      this.prisma.correctiveAction.count({ where: { companyId: cid, deletedAt: null, status: { in: ["OPEN", "IN_PROGRESS"] } } }),
-      this.prisma.correctiveAction.count({ where: { companyId: cid, deletedAt: null, status: { in: ["OPEN", "IN_PROGRESS"] }, dueDate: { lt: today } } }),
+      this.prisma.qualityCheck.count({ where: checkWhere }),
+      this.prisma.qualityCheck.count({ where: { ...checkWhere, status: { in: ["PENDING", "IN_PROGRESS"] } } }),
+      this.prisma.qualityCheck.count({ where: { ...checkWhere, status: "PASSED" } }),
+      this.prisma.qualityCheck.count({ where: { ...checkWhere, status: "FAILED" } }),
+      this.prisma.rejectedBatch.count({ where: batchWhere }),
+      this.prisma.approvedBatch.count({ where: batchWhere }),
+      // CorrectiveAction has no location fields of its own — scoped via its check relation.
+      this.prisma.correctiveAction.count({ where: { companyId: cid, deletedAt: null, status: { in: ["OPEN", "IN_PROGRESS"] }, check: scope } }),
+      this.prisma.correctiveAction.count({ where: { companyId: cid, deletedAt: null, status: { in: ["OPEN", "IN_PROGRESS"] }, dueDate: { lt: today }, check: scope } }),
       this.prisma.qualityCheck.findMany({
-        where: { companyId: cid, deletedAt: null },
+        where: checkWhere,
         orderBy: { createdAt: "desc" },
         take: 8,
         include: { template: { select: { name: true } }, inspector: { select: { fullName: true } } },
@@ -206,7 +250,7 @@ export class QualityService {
 
   async listChecks(user: AuthenticatedUser, q: QualityQueryDto) {
     const cid = user.companyId;
-    const where: Record<string, unknown> = { companyId: cid, deletedAt: null };
+    const where: Record<string, unknown> = { companyId: cid, deletedAt: null, ...this.scopeWhere(user) };
     if (q.checkType) where.checkType = q.checkType;
     if (q.status) where.status = q.status;
     if (q.decision) where.decision = q.decision;
@@ -238,7 +282,7 @@ export class QualityService {
 
   async getCheck(user: AuthenticatedUser, id: string) {
     const check = await this.prisma.qualityCheck.findFirst({
-      where: { id, companyId: user.companyId, deletedAt: null },
+      where: { id, companyId: user.companyId, deletedAt: null, ...this.scopeWhere(user) },
       include: checkIncludes,
     });
     if (!check) throw new NotFoundException("Quality check not found");
@@ -247,11 +291,15 @@ export class QualityService {
 
   async createCheck(user: AuthenticatedUser, dto: CreateQualityCheckDto, ctx: RequestContext) {
     const cid = user.companyId;
+    this.assertLocationAssigned(user, dto);
     const reference = await nextRef(this.prisma, cid, "QC");
 
     let totalParameters = 0;
     if (dto.templateId) {
-      totalParameters = await this.prisma.qualityCheckParameter.count({ where: { templateId: dto.templateId } });
+      // Scope the parameter count by companyId too — templateId alone was an
+      // un-scoped count, though templates are already company-scoped at
+      // creation so this only matters if a foreign templateId is passed.
+      totalParameters = await this.prisma.qualityCheckParameter.count({ where: { templateId: dto.templateId, companyId: cid } });
     }
 
     const check = await this.prisma.qualityCheck.create({
@@ -325,6 +373,7 @@ export class QualityService {
     const check = await this.prisma.qualityCheck.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
     if (!check) throw new NotFoundException("Quality check not found");
     if (check.status === "PASSED" || check.status === "FAILED") throw new BadRequestException("Check already finalised");
+    this.assertNotSelfReview(user, check);
 
     const updated = await this.prisma.qualityCheck.update({
       where: { id },
@@ -346,6 +395,7 @@ export class QualityService {
     const check = await this.prisma.qualityCheck.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
     if (!check) throw new NotFoundException("Quality check not found");
     if (check.status === "PASSED" || check.status === "FAILED") throw new BadRequestException("Check already finalised");
+    this.assertNotSelfReview(user, check);
 
     const updated = await this.prisma.qualityCheck.update({
       where: { id },
@@ -366,6 +416,7 @@ export class QualityService {
   async conditionalPass(user: AuthenticatedUser, id: string, dto: ConditionalPassDto, ctx: RequestContext) {
     const check = await this.prisma.qualityCheck.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
     if (!check) throw new NotFoundException("Quality check not found");
+    this.assertNotSelfReview(user, check);
     const updated = await this.prisma.qualityCheck.update({
       where: { id },
       data: { status: "CONDITIONALLY_PASSED", decision: "CONDITIONALLY_APPROVED", notes: `Conditions: ${dto.conditions}. ${dto.notes ?? ""}`.trim(), overallScore: dto.overallScore, approvedById: user.id, approvedAt: new Date(), updatedById: user.id },
@@ -379,6 +430,7 @@ export class QualityService {
   async approveBatch(user: AuthenticatedUser, checkId: string, dto: ApproveBatchDto, ctx: RequestContext) {
     const check = await this.prisma.qualityCheck.findFirst({ where: { id: checkId, companyId: user.companyId, deletedAt: null } });
     if (!check) throw new NotFoundException("Quality check not found");
+    this.assertNotSelfReview(user, check);
 
     const existing = await this.prisma.approvedBatch.findFirst({ where: { checkId } });
     if (existing) throw new BadRequestException("Batch already approved");
@@ -414,6 +466,7 @@ export class QualityService {
   async rejectBatch(user: AuthenticatedUser, checkId: string, dto: RejectBatchDto, ctx: RequestContext) {
     const check = await this.prisma.qualityCheck.findFirst({ where: { id: checkId, companyId: user.companyId, deletedAt: null } });
     if (!check) throw new NotFoundException("Quality check not found");
+    this.assertNotSelfReview(user, check);
 
     const existing = await this.prisma.rejectedBatch.findFirst({ where: { checkId } });
     if (existing) throw new BadRequestException("Batch already rejected");
@@ -463,7 +516,8 @@ export class QualityService {
 
   async listRejectedBatches(user: AuthenticatedUser, q: QualityQueryDto) {
     const cid = user.companyId;
-    const where: Record<string, unknown> = { companyId: cid, deletedAt: null };
+    // RejectedBatch has no location fields of its own — scoped via its check relation.
+    const where: Record<string, unknown> = { companyId: cid, deletedAt: null, check: this.scopeWhere(user) };
     if (q.dateFrom || q.dateTo) {
       where.createdAt = {};
       if (q.dateFrom) (where.createdAt as Record<string, unknown>).gte = new Date(q.dateFrom);
@@ -484,7 +538,8 @@ export class QualityService {
 
   async listApprovedBatches(user: AuthenticatedUser, q: QualityQueryDto) {
     const cid = user.companyId;
-    const where: Record<string, unknown> = { companyId: cid, deletedAt: null };
+    // ApprovedBatch has no location fields of its own — scoped via its check relation.
+    const where: Record<string, unknown> = { companyId: cid, deletedAt: null, check: this.scopeWhere(user) };
     if (q.dateFrom || q.dateTo) {
       where.createdAt = {};
       if (q.dateFrom) (where.createdAt as Record<string, unknown>).gte = new Date(q.dateFrom);
@@ -648,7 +703,7 @@ export class QualityService {
     const dateFilter: Record<string, unknown> = {};
     if (q.dateFrom) dateFilter.gte = new Date(q.dateFrom);
     if (q.dateTo) dateFilter.lte = new Date(q.dateTo + "T23:59:59");
-    const where: Record<string, unknown> = { companyId: cid, deletedAt: null };
+    const where: Record<string, unknown> = { companyId: cid, deletedAt: null, ...this.scopeWhere(user) };
     if (Object.keys(dateFilter).length) where.createdAt = dateFilter;
 
     const [byType, byDecision, failureReasons, corrActStats] = await Promise.all([

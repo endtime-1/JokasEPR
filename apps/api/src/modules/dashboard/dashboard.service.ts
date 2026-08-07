@@ -77,11 +77,22 @@ export class DashboardService {
     monthStart.setDate(1);
     monthStart.setHours(0, 0, 0, 0);
 
+    // Previously filtered only by companyId — a user restricted to a single
+    // farm/branch saw company-wide revenue, order counts, and bird totals
+    // through this endpoint, unlike executive() which correctly scopes.
+    // gated only on the base PLATFORM_READ permission, not SALES_READ/
+    // FINANCE_READ, this also meant financial totals leaked to anyone with
+    // basic dashboard access.
+    const branchF = this.liveBranchFilter(user, {} as DashboardQueryDto);
+    const warehouseF = this.liveWarehouseFilter(user, {} as DashboardQueryDto);
+    const farmF = this.liveFarmFilter(user, {} as DashboardQueryDto);
+    const siteF = this.liveSiteFilter(user, {} as DashboardQueryDto);
+
     const [salesAgg, openOrders, totalBirds, pendingAlerts] = await Promise.all([
-      this.prisma.salesOrder.aggregate({ where: { companyId, status: { not: "CANCELLED" }, createdAt: { gte: monthStart } }, _sum: { totalAmount: true } }),
-      this.prisma.salesOrder.count({ where: { companyId, status: { in: ["DRAFT", "PENDING_STOCK_APPROVAL", "APPROVED"] } } }),
-      this.prisma.flockBatch.aggregate({ where: { companyId, status: "ACTIVE", deletedAt: null }, _sum: { openingBirdCount: true } }),
-      this.prisma.stockExpiryAlert.count({ where: { companyId, deletedAt: null, daysToExpiry: { lte: 30 } } }),
+      this.prisma.salesOrder.aggregate({ where: { companyId, status: { not: "CANCELLED" }, createdAt: { gte: monthStart }, ...branchF, ...warehouseF }, _sum: { totalAmount: true } }),
+      this.prisma.salesOrder.count({ where: { companyId, status: { in: ["DRAFT", "PENDING_STOCK_APPROVAL", "APPROVED"] }, ...branchF, ...warehouseF } }),
+      this.prisma.flockBatch.aggregate({ where: { companyId, status: "ACTIVE", deletedAt: null, ...branchF, ...farmF }, _sum: { openingBirdCount: true } }),
+      this.prisma.stockExpiryAlert.count({ where: { companyId, deletedAt: null, daysToExpiry: { lte: 30 }, ...branchF, ...warehouseF, ...siteF } }),
     ]);
 
     return {
@@ -142,14 +153,21 @@ export class DashboardService {
     const dateRange = { gte: todayStart, lt: todayEnd };
     const base = { companyId: user.companyId };
 
-    const hasFarms = user.hasGlobalAccess || user.farmIds.length > 0;
-    const hasSites = user.hasGlobalAccess || user.productionSiteIds.length > 0;
+    // Previously an empty farmIds/productionSiteIds array (a non-hasGlobalAccess
+    // user simply not assigned to any specific farm) meant "show nothing" here
+    // — the opposite of liveFarmFilter/liveSiteFilter's convention used
+    // elsewhere in this same file, where an empty array means "unrestricted".
+    // Standardized on that same convention for consistency: these queries
+    // always run now, scoped to the user's farms/sites when they have any,
+    // company-wide otherwise.
+    const hasFarms = true;
+    const hasSites = true;
     const canSales = user.hasGlobalAccess || user.permissions.includes("sales.manage");
     const canStock = user.hasGlobalAccess || user.permissions.includes("inventory.manage");
     const canSoya  = user.hasGlobalAccess || user.permissions.includes("soya.manage");
 
-    const farmFilter = user.hasGlobalAccess ? {} : { farmId: { in: user.farmIds } };
-    const siteFilter = user.hasGlobalAccess ? {} : { productionSiteId: { in: user.productionSiteIds } };
+    const farmFilter = user.hasGlobalAccess || user.farmIds.length === 0 ? {} : { farmId: { in: user.farmIds } };
+    const siteFilter = user.hasGlobalAccess || user.productionSiteIds.length === 0 ? {} : { productionSiteId: { in: user.productionSiteIds } };
 
     // Resolve employee record for attendance duty (email-matched, same pattern as myTasks)
     const selfEmployee = await this.prisma.employee.findFirst({
@@ -270,14 +288,17 @@ export class DashboardService {
 
     const dateRange = { gte: todayStart, lt: todayEnd };
     const base = { companyId: user.companyId };
-    const farmFilter = user.hasGlobalAccess ? {} : user.farmIds.length ? { farmId: { in: user.farmIds } } : { farmId: '__' };
-    const siteFilter = user.hasGlobalAccess ? {} : user.productionSiteIds.length ? { productionSiteId: { in: user.productionSiteIds } } : { productionSiteId: '__' };
+    // Same convention fix as myDuties() above — an empty farmIds/
+    // productionSiteIds array means unrestricted, not "match nothing" via
+    // the '__' sentinel this used to fall back to.
+    const farmFilter = user.hasGlobalAccess || user.farmIds.length === 0 ? {} : { farmId: { in: user.farmIds } };
+    const siteFilter = user.hasGlobalAccess || user.productionSiteIds.length === 0 ? {} : { productionSiteId: { in: user.productionSiteIds } };
 
     const [totalFarms, totalSites, eggFarms, feedFarms, mortalityFarms, dailyFarms, prodSites] = await Promise.all([
-      user.hasGlobalAccess
+      user.hasGlobalAccess || user.farmIds.length === 0
         ? this.prisma.farm.count({ where: { companyId: user.companyId, deletedAt: null } })
         : Promise.resolve(user.farmIds.length),
-      user.hasGlobalAccess
+      user.hasGlobalAccess || user.productionSiteIds.length === 0
         ? this.prisma.productionSite.count({ where: { companyId: user.companyId, deletedAt: null } })
         : Promise.resolve(user.productionSiteIds.length),
       this.prisma.eggProductionRecord.findMany({ where: { ...base, ...farmFilter, recordDate: dateRange }, distinct: ["farmId"], select: { farmId: true } }),
@@ -613,6 +634,12 @@ export class DashboardService {
   private liveBranchFilter(user: AuthenticatedUser, query: DashboardQueryDto) {
     if (query.branchId) return { branchId: query.branchId };
     if (!user.hasGlobalAccess && user.branchIds.length > 0) return { branchId: { in: user.branchIds } };
+    return {};
+  }
+
+  private liveWarehouseFilter(user: AuthenticatedUser, query: DashboardQueryDto) {
+    if (query.warehouseId) return { warehouseId: query.warehouseId };
+    if (!user.hasGlobalAccess && user.warehouseIds.length > 0) return { warehouseId: { in: user.warehouseIds } };
     return {};
   }
 
