@@ -198,14 +198,33 @@ export class SoyaProcessingService {
     if (!beanInventory || Number(beanInventory.quantityOnHand) < dto.beansUsedKg) {
       throw new BadRequestException("Soya bean stock is not sufficient for this processing batch.");
     }
+    // M10: intakeId previously had no ownership check at all — a cross-tenant
+    // or nonexistent id would be stored on the batch with no error.
+    if (dto.intakeId) {
+      const intake = await this.prisma.soyaBeanIntake.findFirst({ where: { id: dto.intakeId, companyId: user.companyId, deletedAt: null } });
+      if (!intake) throw new NotFoundException("Soya bean intake was not found.");
+    }
     const batchNumber = dto.batchNumber?.toUpperCase() ?? (await nextRef(this.prisma, user.companyId, "SPB"));
-    const rawBeanCost = await this.rawBeanCost(user.companyId, dto.rawWarehouseId, dto.beanProductId, dto.beansUsedKg);
+    // M10: previously always costed from the most-recently-received intake
+    // regardless of dto.intakeId, so a batch linked to an older/cheaper (or
+    // pricier) intake got the wrong COGS whenever multiple intakes existed
+    // at different prices.
+    const rawBeanCost = await this.rawBeanCost(user.companyId, dto.rawWarehouseId, dto.beanProductId, dto.beansUsedKg, dto.intakeId);
     const totalCost = rawBeanCost + (dto.laborCost ?? 0) + (dto.packagingCost ?? 0) + (dto.overheadCost ?? 0);
     const oilCost = totalCost * 0.42;
     const cakeCost = totalCost * 0.58;
 
     const data = await this.prisma.$transaction(async (tx) => {
-      await tx.inventoryItem.update({ where: { id: beanInventory.id }, data: { quantityOnHand: { decrement: dto.beansUsedKg }, updatedById: user.id } });
+      // M10: floor-guarded updateMany prevents concurrent overdraw at the DB
+      // level — the pre-check above is a plain read, so a race between two
+      // concurrent requests could otherwise both pass it and both decrement.
+      const invUpdate = await tx.inventoryItem.updateMany({
+        where: { id: beanInventory.id, quantityOnHand: { gte: dto.beansUsedKg } },
+        data: { quantityOnHand: { decrement: dto.beansUsedKg }, updatedById: user.id }
+      });
+      if (invUpdate.count === 0) {
+        throw new BadRequestException("Soya bean stock was modified concurrently — please retry.");
+      }
       const batch = await tx.soyaProcessingBatch.create({ data: { companyId: user.companyId, branchId: site.branchId, productionSiteId: site.id, intakeId: dto.intakeId, beanProductId: dto.beanProductId, batchNumber, beansUsedKg: dto.beansUsedKg, processingDate: dto.processingDate ? new Date(dto.processingDate) : new Date(), status: dto.status ?? "POSTED", createdById: user.id } });
       await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: site.branchId, productId: dto.beanProductId, inventoryItemId: beanInventory.id, fromWarehouseId: dto.rawWarehouseId, productionSiteId: site.id, uomId: beanProduct.uomId, movementType: "PRODUCTION_INPUT", quantity: dto.beansUsedKg, unitCost: rawBeanCost / dto.beansUsedKg, referenceType: "SoyaProcessingBatch", referenceId: batch.id, notes: `Soya beans issued for ${batch.batchNumber}`, createdById: user.id } });
 
@@ -351,8 +370,13 @@ export class SoyaProcessingService {
     return Number((((expectedSalesValue - totalCost) / expectedSalesValue) * 100).toFixed(2));
   }
 
-  private async rawBeanCost(companyId: string, warehouseId: string, productId: string, quantityKg: number) {
-    const intake = await this.prisma.soyaBeanIntake.findFirst({ where: { companyId, warehouseId, productId, deletedAt: null }, orderBy: { receivedAt: "desc" } });
+  private async rawBeanCost(companyId: string, warehouseId: string, productId: string, quantityKg: number, intakeId?: string) {
+    // M10: cost from the specific intake the batch is actually linked to
+    // when one is given; only fall back to "most recent intake" when the
+    // caller didn't specify one.
+    const intake = intakeId
+      ? await this.prisma.soyaBeanIntake.findFirst({ where: { id: intakeId, companyId, deletedAt: null } })
+      : await this.prisma.soyaBeanIntake.findFirst({ where: { companyId, warehouseId, productId, deletedAt: null }, orderBy: { receivedAt: "desc" } });
     return quantityKg * Number(intake?.unitCost ?? 0);
   }
 

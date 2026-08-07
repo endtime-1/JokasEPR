@@ -1,5 +1,5 @@
-import { IsBoolean, IsEnum, IsOptional, IsUUID } from "class-validator";
-import { Transform } from "class-transformer";
+import { IsArray, IsBoolean, IsEnum, IsOptional, IsUUID, ValidateNested } from "class-validator";
+import { Transform, Type } from "class-transformer";
 
 export enum NotificationType {
   LOW_STOCK_ALERT = "LOW_STOCK_ALERT",
@@ -35,14 +35,33 @@ export class NotificationQueryDto {
   offset?: number;
 }
 
+// M5: this class previously declared `preferences` with no validation
+// decorators at all. Under the global pipe's forbidNonWhitelisted:true,
+// class-validator treats an undecorated property as unknown and rejects
+// the whole request with a 400 — so no real client could ever successfully
+// update preferences.
+export class NotificationPreferenceItemDto {
+  @IsEnum(NotificationType)
+  notificationType!: NotificationType;
+
+  @IsBoolean()
+  inApp!: boolean;
+
+  @IsBoolean()
+  email!: boolean;
+
+  @IsBoolean()
+  sms!: boolean;
+
+  @IsBoolean()
+  whatsapp!: boolean;
+}
+
 export class UpdatePreferencesDto {
-  preferences!: {
-    notificationType: NotificationType;
-    inApp: boolean;
-    email: boolean;
-    sms: boolean;
-    whatsapp: boolean;
-  }[];
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => NotificationPreferenceItemDto)
+  preferences!: NotificationPreferenceItemDto[];
 }
 
 export class UpdateNotificationConfigDto {

@@ -403,7 +403,7 @@ export class ReportsService {
   private csv(reportResult: ReportResult) {
     const header = reportResult.definition.columns.map((column) => column.label);
     const rows = reportResult.rows.map((row) => reportResult.definition.columns.map((column) => row[column.key] ?? ""));
-    return [header, ...rows].map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(",")).join("\n");
+    return [header, ...rows].map((row) => row.map((value) => `"${sanitizeFormulaCell(String(value)).replace(/"/g, '""')}"`).join(",")).join("\n");
   }
 
   private excel(reportResult: ReportResult) {
@@ -415,7 +415,7 @@ export class ReportsService {
 <?mso-application progid="Excel.Sheet"?>
 <Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
 <Worksheet ss:Name="${xml(reportResult.definition.title).slice(0, 31)}"><Table>
-${rows.map((row) => `<Row>${row.map((value) => `<Cell><Data ss:Type="${typeof value === "number" ? "Number" : "String"}">${xml(String(value))}</Data></Cell>`).join("")}</Row>`).join("\n")}
+${rows.map((row) => `<Row>${row.map((value) => `<Cell><Data ss:Type="${typeof value === "number" ? "Number" : "String"}">${xml(typeof value === "number" ? String(value) : sanitizeFormulaCell(String(value)))}</Data></Cell>`).join("")}</Row>`).join("\n")}
 </Table></Worksheet></Workbook>`;
   }
 
@@ -469,4 +469,15 @@ function html(value: string) {
 
 function pdfEscape(value: string) {
   return value.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+}
+
+// M12: CSV/XLS exports previously wrote user-entered business data (customer
+// and vendor names, notes, etc.) straight into cells with no neutralization.
+// Excel and most spreadsheet apps treat a leading =, +, -, or @ as the start
+// of a formula regardless of surrounding quotes, so a value like
+// "=cmd|'/c calc'!A1" or "=HYPERLINK(...)" opened by staff is executed —
+// the classic CSV/formula-injection pattern. Prefixing a single quote forces
+// the cell to be read as text instead of evaluated.
+function sanitizeFormulaCell(value: string): string {
+  return /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
 }

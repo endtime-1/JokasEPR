@@ -364,17 +364,28 @@ export class AlertGenerationService {
       where: { companyId, status: "ACTIVE", deletedAt: null },
       select: { id: true, name: true, openingBirdCount: true, farmId: true, farm: { select: { name: true, branchId: true } } }
     });
+    if (!flocks.length) return;
+
+    // M4: was one query per active flock inside the loop. Fetch every
+    // flock's recent records in a single round trip and group in memory —
+    // same 60-day window is generous enough to always contain each flock's
+    // last 14 records without re-introducing per-flock queries.
+    const since = new Date(Date.now() - 60 * 86400000);
+    const allRecords = await this.prisma.mortalityRecord.findMany({
+      where: { companyId, flockBatchId: { in: flocks.map((f) => f.id) }, isCulling: false, recordDate: { gte: since } },
+      orderBy: { recordDate: "desc" },
+      select: { flockBatchId: true, birdCount: true }
+    });
+    const recordsByFlock = new Map<string, number[]>();
+    for (const r of allRecords) {
+      const list = recordsByFlock.get(r.flockBatchId);
+      if (list) list.push(r.birdCount); else recordsByFlock.set(r.flockBatchId, [r.birdCount]);
+    }
 
     for (const flock of flocks) {
-      const records = await this.prisma.mortalityRecord.findMany({
-        where: { companyId, flockBatchId: flock.id, isCulling: false },
-        orderBy: { recordDate: "desc" },
-        take: 14,
-        select: { birdCount: true }
-      });
-      if (records.length < 7) continue;
+      const daily = (recordsByFlock.get(flock.id) ?? []).slice(0, 14);
+      if (daily.length < 7) continue;
 
-      const daily = records.map((r) => r.birdCount);
       const recent3 = avg(daily.slice(0, 3));
       const baseline = avg(daily.slice(3));
       const sd = stdDev(daily.slice(3));
@@ -405,18 +416,27 @@ export class AlertGenerationService {
       where: { companyId, status: "ACTIVE", deletedAt: null },
       select: { id: true, name: true, farmId: true, farm: { select: { name: true, branchId: true } } }
     });
+    if (!flocks.length) return;
+
+    // M4: batched in one round trip instead of one query per flock — see mortalityAnomaly above.
+    const since = new Date(Date.now() - 60 * 86400000);
+    const allRecords = await this.prisma.eggProductionRecord.findMany({
+      where: { companyId, flockBatchId: { in: flocks.map((f) => f.id) }, recordDate: { gte: since } },
+      orderBy: { recordDate: "desc" },
+      select: { flockBatchId: true, goodEggs: true }
+    });
+    const recordsByFlock = new Map<string, number[]>();
+    for (const r of allRecords) {
+      const list = recordsByFlock.get(r.flockBatchId);
+      if (list) list.push(r.goodEggs); else recordsByFlock.set(r.flockBatchId, [r.goodEggs]);
+    }
 
     for (const flock of flocks) {
-      const records = await this.prisma.eggProductionRecord.findMany({
-        where: { companyId, flockBatchId: flock.id },
-        orderBy: { recordDate: "desc" },
-        take: 14,
-        select: { goodEggs: true }
-      });
+      const records = (recordsByFlock.get(flock.id) ?? []).slice(0, 14);
       if (records.length < 7) continue;
 
-      const recent3 = avg(records.slice(0, 3).map((r) => r.goodEggs));
-      const baseline = avg(records.slice(3).map((r) => r.goodEggs));
+      const recent3 = avg(records.slice(0, 3));
+      const baseline = avg(records.slice(3));
       if (baseline < 5) continue;
 
       const dropPct = ((baseline - recent3) / baseline) * 100;
@@ -444,17 +464,25 @@ export class AlertGenerationService {
       where: { companyId, status: "ACTIVE", deletedAt: null },
       select: { id: true, name: true, farmId: true, farm: { select: { name: true, branchId: true } } }
     });
+    if (!flocks.length) return;
+
+    // M4: batched in one round trip instead of one query per flock — see mortalityAnomaly above.
+    const since = new Date(Date.now() - 60 * 86400000);
+    const allRecords = await this.prisma.feedConsumptionRecord.findMany({
+      where: { companyId, flockBatchId: { in: flocks.map((f) => f.id) }, recordDate: { gte: since } },
+      orderBy: { recordDate: "desc" },
+      select: { flockBatchId: true, quantityKg: true }
+    });
+    const recordsByFlock = new Map<string, number[]>();
+    for (const r of allRecords) {
+      const list = recordsByFlock.get(r.flockBatchId);
+      if (list) list.push(Number(r.quantityKg)); else recordsByFlock.set(r.flockBatchId, [Number(r.quantityKg)]);
+    }
 
     for (const flock of flocks) {
-      const records = await this.prisma.feedConsumptionRecord.findMany({
-        where: { companyId, flockBatchId: flock.id },
-        orderBy: { recordDate: "desc" },
-        take: 14,
-        select: { quantityKg: true }
-      });
-      if (records.length < 7) continue;
+      const daily = (recordsByFlock.get(flock.id) ?? []).slice(0, 14);
+      if (daily.length < 7) continue;
 
-      const daily = records.map((r) => Number(r.quantityKg));
       const recent3 = avg(daily.slice(0, 3));
       const baseline = avg(daily.slice(3));
       const sd = stdDev(daily.slice(3));

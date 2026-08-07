@@ -1,6 +1,7 @@
 ﻿import { BadRequestException, ForbiddenException, Injectable, InternalServerErrorException, Logger, NotFoundException } from "@nestjs/common";
 import { Response } from "express";
 import { AuthenticatedUser } from "@jokas/shared";
+import { Prisma } from "@prisma/client";
 import { AuditService } from "../audit/audit.service";
 import { EmailService } from "../notifications/email.service";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -111,6 +112,36 @@ export class HRService {
     }
   }
 
+  // M13: self-service previously resolved "which employee am I" via
+  // companyId + email — Employee.email has no unique constraint, so two
+  // employees sharing or mistyping an email could bind a login to the wrong
+  // person's attendance, leave balance, and payslips, on every single call.
+  // userId is the correct binding (unique FK built for exactly this) but
+  // nothing in the app populates it yet, so a hard cutover to userId-only
+  // would break self-service for every employee. This tries userId first,
+  // falls back to the email match only for employees not yet linked, and
+  // self-heals the link on first successful match so future lookups for
+  // that user become unambiguous.
+  private async findMyEmployee<T extends Prisma.EmployeeSelect>(
+    user: AuthenticatedUser,
+    select: T
+  ): Promise<Prisma.EmployeeGetPayload<{ select: T }> | null> {
+    const byUserId = await this.prisma.employee.findFirst({
+      where: { companyId: user.companyId, userId: user.id, deletedAt: null },
+      select
+    });
+    if (byUserId) return byUserId;
+
+    const unlinked = await this.prisma.employee.findFirst({
+      where: { companyId: user.companyId, email: user.email, userId: null, deletedAt: null },
+      select: { id: true }
+    });
+    if (!unlinked) return null;
+
+    await this.prisma.employee.update({ where: { id: unlinked.id }, data: { userId: user.id } }).catch(() => {});
+    return this.prisma.employee.findFirst({ where: { id: unlinked.id }, select });
+  }
+
   // â"€â"€â"€ Dashboard â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
   async dashboard(user: AuthenticatedUser) {
@@ -122,26 +153,32 @@ export class HRService {
     // Split 14 original queries into 3 sequential batches of ≤5 to stay within
     // Hostinger's 5-connection pool. Running all 14 in one Promise.all exhausted
     // the pool and caused the dashboard to time out.
+    //
+    // Deliberately no per-query .catch() here (M1): swallowing individual query
+    // failures into 0/[] made a genuine DB error indistinguishable from "no
+    // data" and rendered a dashboard that silently looked empty/wrong instead
+    // of erroring. Let failures propagate to the outer catch below, which
+    // surfaces a real 500 instead of fabricated zeros.
     const [totalEmployees, activeEmployees, onLeave, todayPresent, todayAbsent] = await Promise.all([
-      this.prisma.employee.count({ where: { companyId: cid, deletedAt: null } }).catch((e) => { console.error("[HR dash:totalEmployees]", e?.message); return 0; }),
-      this.prisma.employee.count({ where: { companyId: cid, deletedAt: null, status: "ACTIVE" } }).catch((e) => { console.error("[HR dash:activeEmployees]", e?.message); return 0; }),
-      this.prisma.employee.count({ where: { companyId: cid, deletedAt: null, status: "ON_LEAVE" } }).catch((e) => { console.error("[HR dash:onLeave]", e?.message); return 0; }),
-      this.prisma.attendanceRecord.count({ where: { companyId: cid, date: { gte: today }, status: "PRESENT" } }).catch((e) => { console.error("[HR dash:todayPresent]", e?.message); return 0; }),
-      this.prisma.attendanceRecord.count({ where: { companyId: cid, date: { gte: today }, status: "ABSENT" } }).catch((e) => { console.error("[HR dash:todayAbsent]", e?.message); return 0; }),
+      this.prisma.employee.count({ where: { companyId: cid, deletedAt: null } }),
+      this.prisma.employee.count({ where: { companyId: cid, deletedAt: null, status: "ACTIVE" } }),
+      this.prisma.employee.count({ where: { companyId: cid, deletedAt: null, status: "ON_LEAVE" } }),
+      this.prisma.attendanceRecord.count({ where: { companyId: cid, date: { gte: today }, status: "PRESENT" } }),
+      this.prisma.attendanceRecord.count({ where: { companyId: cid, date: { gte: today }, status: "ABSENT" } }),
     ]);
 
     const [todayTotalAttendance, openTasks, urgentTasks, pendingPayroll, openLeaveRequests] = await Promise.all([
-      this.prisma.attendanceRecord.count({ where: { companyId: cid, date: { gte: today } } }).catch((e) => { console.error("[HR dash:totalAttendance]", e?.message); return 0; }),
-      this.prisma.task.count({ where: { companyId: cid, deletedAt: null, status: { in: ["OPEN", "IN_PROGRESS"] } } }).catch((e) => { console.error("[HR dash:openTasks]", e?.message); return 0; }),
-      this.prisma.task.count({ where: { companyId: cid, deletedAt: null, status: "OPEN", priority: "URGENT" } }).catch((e) => { console.error("[HR dash:urgentTasks]", e?.message); return 0; }),
-      this.prisma.payrollRecord.count({ where: { companyId: cid, deletedAt: null, status: "DRAFT" } }).catch((e) => { console.error("[HR dash:pendingPayroll]", e?.message); return 0; }),
-      this.prisma.leaveRequest.count({ where: { companyId: cid, deletedAt: null, status: "PENDING" } }).catch((e) => { console.error("[HR dash:openLeaveRequests]", e?.message); return 0; }),
+      this.prisma.attendanceRecord.count({ where: { companyId: cid, date: { gte: today } } }),
+      this.prisma.task.count({ where: { companyId: cid, deletedAt: null, status: { in: ["OPEN", "IN_PROGRESS"] } } }),
+      this.prisma.task.count({ where: { companyId: cid, deletedAt: null, status: "OPEN", priority: "URGENT" } }),
+      this.prisma.payrollRecord.count({ where: { companyId: cid, deletedAt: null, status: "DRAFT" } }),
+      this.prisma.leaveRequest.count({ where: { companyId: cid, deletedAt: null, status: "PENDING" } }),
     ]);
 
     const [recentLeaveRequests, recentEmployees, recentTasks] = await Promise.all([
-      this.prisma.leaveRequest.findMany({ where: { companyId: cid, deletedAt: null }, orderBy: { createdAt: "desc" }, take: 5, select: { id: true, reference: true, employeeName: true, leaveType: true, startDate: true, endDate: true, daysRequested: true, status: true, createdAt: true } }).catch((e) => { console.error("[HR dash:recentLeaveRequests]", e?.message); return []; }),
-      this.prisma.employee.findMany({ where: { companyId: cid, deletedAt: null }, orderBy: { createdAt: "desc" }, take: 8, select: { id: true, code: true, fullName: true, status: true, photoUrl: true, employeeRole: { select: { name: true } }, branch: { select: { name: true } } } }).catch((e) => { console.error("[HR dash:recentEmployees]", e?.message); return []; }),
-      this.prisma.task.findMany({ where: { companyId: cid, deletedAt: null }, orderBy: { createdAt: "desc" }, take: 8, select: { id: true, title: true, priority: true, status: true, dueDate: true, assignments: { select: { id: true, employeeId: true, employee: { select: { fullName: true } } } } } }).catch((e) => { console.error("[HR dash:recentTasks]", e?.message); return []; }),
+      this.prisma.leaveRequest.findMany({ where: { companyId: cid, deletedAt: null }, orderBy: { createdAt: "desc" }, take: 5, select: { id: true, reference: true, employeeName: true, leaveType: true, startDate: true, endDate: true, daysRequested: true, status: true, createdAt: true } }),
+      this.prisma.employee.findMany({ where: { companyId: cid, deletedAt: null }, orderBy: { createdAt: "desc" }, take: 8, select: { id: true, code: true, fullName: true, status: true, photoUrl: true, employeeRole: { select: { name: true } }, branch: { select: { name: true } } } }),
+      this.prisma.task.findMany({ where: { companyId: cid, deletedAt: null }, orderBy: { createdAt: "desc" }, take: 8, select: { id: true, title: true, priority: true, status: true, dueDate: true, assignments: { select: { id: true, employeeId: true, employee: { select: { fullName: true } } } } } }),
     ]);
 
     const attendanceRate = todayTotalAttendance > 0 ? (todayPresent / todayTotalAttendance * 100) : 0;
@@ -214,47 +251,55 @@ export class HRService {
   // â"€â"€â"€ Employees â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
   async listEmployees(user: AuthenticatedUser, query: HRQueryDto) {
-    const rows = await this.prisma.employee.findMany({
-      where: {
-        companyId: user.companyId,
-        deletedAt: null,
-        ...this.employeeScope(user),
-        ...(query.status ? { status: query.status as never } : {}),
-        ...(query.branchId ? { branchId: query.branchId } : {}),
-        ...(query.search ? { OR: [{ fullName: { contains: query.search } }, { code: { contains: query.search } }, { phone: { contains: query.search } }] } : {}),
-      },
-      select: {
-        id: true,
-        code: true,
-        fullName: true,
-        status: true,
-        phone: true,
-        startDate: true,
-        photoUrl: true,
-        email: true,
-        employeeRoleId: true,
-        branchId: true,
-        farmId: true,
-        employeeRole: { select: { name: true, code: true } },
-        branch: { select: { name: true } },
-        farm: { select: { name: true } },
-      },
-      orderBy: { fullName: "asc" },
-      take: 500,
-    });
-    this.logger.log(`[listEmployees] companyId=${user.companyId} found=${rows.length}`);
-    return { data: rows };
+    const where = {
+      companyId: user.companyId,
+      deletedAt: null,
+      ...this.employeeScope(user),
+      ...(query.status ? { status: query.status as never } : {}),
+      ...(query.branchId ? { branchId: query.branchId } : {}),
+      ...(query.search ? { OR: [{ fullName: { contains: query.search } }, { code: { contains: query.search } }, { phone: { contains: query.search } }] } : {}),
+    };
+    // M14: page/take are now actually honored instead of declared-and-ignored.
+    // take keeps defaulting to 500 (the old hard cap) when the caller doesn't
+    // ask for pagination, so the un-paginated admin UI is unaffected; a
+    // caller that does pass page/take can now reach employees past 500.
+    const take = query.take ?? 500;
+    const page = query.page ?? 1;
+    const [rows, total] = await Promise.all([
+      this.prisma.employee.findMany({
+        where,
+        select: {
+          id: true,
+          code: true,
+          fullName: true,
+          status: true,
+          phone: true,
+          startDate: true,
+          photoUrl: true,
+          email: true,
+          employeeRoleId: true,
+          branchId: true,
+          farmId: true,
+          employeeRole: { select: { name: true, code: true } },
+          branch: { select: { name: true } },
+          farm: { select: { name: true } },
+        },
+        orderBy: { fullName: "asc" },
+        skip: (page - 1) * take,
+        take,
+      }),
+      this.prisma.employee.count({ where })
+    ]);
+    this.logger.log(`[listEmployees] companyId=${user.companyId} found=${rows.length} total=${total}`);
+    return { data: rows, meta: { total, page, take, totalPages: Math.max(1, Math.ceil(total / take)) } };
   }
 
   async getMyEmployee(user: AuthenticatedUser) {
-    const emp = await this.prisma.employee.findFirst({
-      where: { companyId: user.companyId, email: user.email, deletedAt: null },
-      select: {
-        id: true, code: true, fullName: true, email: true, phone: true, photoUrl: true,
-        employeeRole: { select: { name: true, code: true } },
-        branch: { select: { id: true, name: true, code: true } },
-        farm: { select: { id: true, name: true, code: true } },
-      },
+    const emp = await this.findMyEmployee(user, {
+      id: true, code: true, fullName: true, email: true, phone: true, photoUrl: true,
+      employeeRole: { select: { name: true, code: true } },
+      branch: { select: { id: true, name: true, code: true } },
+      farm: { select: { id: true, name: true, code: true } },
     });
     return {
       data: {
@@ -272,10 +317,7 @@ export class HRService {
   }
 
   async updateMyEmployee(user: AuthenticatedUser, dto: { phone?: string }, ctx: RequestContext) {
-    const emp = await this.prisma.employee.findFirst({
-      where: { companyId: user.companyId, email: user.email, deletedAt: null },
-      select: { id: true },
-    });
+    const emp = await this.findMyEmployee(user, { id: true });
     if (!emp) throw new NotFoundException("No employee record linked to your account");
     await this.prisma.employee.update({ where: { id: emp.id }, data: { phone: dto.phone, updatedById: user.id }, select: { id: true } });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "Employee", entityId: emp.id, action: "UPDATE", ...ctx });
@@ -410,10 +452,7 @@ export class HRService {
   }
 
   async checkInSelf(user: AuthenticatedUser, dto: CheckInSelfDto, ctx: RequestContext) {
-    const employee = await this.prisma.employee.findFirst({
-      where: { companyId: user.companyId, email: user.email, deletedAt: null },
-      select: { id: true },
-    });
+    const employee = await this.findMyEmployee(user, { id: true });
     if (!employee) throw new NotFoundException("No employee record found for your account. Contact HR to register your email.");
 
     const date = new Date(dto.date);
@@ -536,10 +575,7 @@ export class HRService {
   // â"€â"€â"€ Tasks â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
   async myTasks(user: AuthenticatedUser) {
-    const employee = await this.prisma.employee.findFirst({
-      where: { companyId: user.companyId, email: user.email, deletedAt: null },
-      select: { id: true },
-    });
+    const employee = await this.findMyEmployee(user, { id: true });
 
     if (!employee) return { data: [] };
 
@@ -694,10 +730,7 @@ export class HRService {
   // â"€â"€â"€ Payroll â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
   async getMyPayslips(user: AuthenticatedUser) {
-    const emp = await this.prisma.employee.findFirst({
-      where: { companyId: user.companyId, email: user.email, deletedAt: null },
-      select: { id: true },
-    });
+    const emp = await this.findMyEmployee(user, { id: true });
     if (!emp) return { data: [] };
 
     const rows = await this.prisma.payrollRecord.findMany({
@@ -732,6 +765,10 @@ export class HRService {
   async createPayrollRecord(user: AuthenticatedUser, dto: CreatePayrollRecordDto, ctx: RequestContext) {
     const employee = await this.prisma.employee.findFirst({ where: { id: dto.employeeId, companyId: user.companyId, deletedAt: null }, select: { id: true, fullName: true, code: true, basicSalary: true, branchId: true } });
     if (!employee) throw new NotFoundException("Employee not found");
+    // M15: nothing previously stopped periodEnd from being on/before periodStart.
+    if (new Date(dto.periodEnd) <= new Date(dto.periodStart)) {
+      throw new BadRequestException("periodEnd must be after periodStart.");
+    }
 
     const allowances = dto.allowances ?? 0;
     const deductions = dto.deductions ?? 0;
@@ -984,10 +1021,20 @@ export class HRService {
   // ─── Leave Requests ──────────────────────────────────────────────────────────
 
   async submitLeaveRequest(user: AuthenticatedUser, dto: CreateLeaveRequestDto, ctx: RequestContext) {
-    const emp = await this.prisma.employee.findFirst({
-      where: { companyId: user.companyId, email: user.email, deletedAt: null },
-      select: { id: true, fullName: true, code: true },
-    });
+    // M15: nothing previously checked daysRequested against the actual
+    // startDate/endDate span — a request could claim any number of days
+    // regardless of the dates selected, corrupting the leave balance it
+    // deducts against. Allows daysRequested to be less than the calendar
+    // span (weekends/holidays excluded from a working-day count) but not more.
+    const spanDays = Math.floor((new Date(dto.endDate).getTime() - new Date(dto.startDate).getTime()) / 86400000) + 1;
+    if (spanDays <= 0) {
+      throw new BadRequestException("endDate must be on or after startDate.");
+    }
+    if (dto.daysRequested > spanDays) {
+      throw new BadRequestException(`daysRequested (${dto.daysRequested}) cannot exceed the selected date range (${spanDays} day(s)).`);
+    }
+
+    const emp = await this.findMyEmployee(user, { id: true, fullName: true, code: true });
 
     const reference = nextRef("LVR");
 
@@ -1018,10 +1065,7 @@ export class HRService {
   }
 
   async myLeaveRequests(user: AuthenticatedUser) {
-    const emp = await this.prisma.employee.findFirst({
-      where: { companyId: user.companyId, email: user.email, deletedAt: null },
-      select: { id: true },
-    });
+    const emp = await this.findMyEmployee(user, { id: true });
 
     if (!emp) return { data: [] };
 
@@ -1094,7 +1138,7 @@ export class HRService {
   }
 
   async cancelLeaveRequest(user: AuthenticatedUser, id: string, ctx: RequestContext) {
-    const emp = await this.prisma.employee.findFirst({ where: { companyId: user.companyId, email: user.email, deletedAt: null }, select: { id: true } });
+    const emp = await this.findMyEmployee(user, { id: true });
     if (!emp) throw new ForbiddenException("Cannot cancel leave — no employee record linked to your account");
     const row = await this.prisma.leaveRequest.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
     if (!row) throw new NotFoundException("Leave request not found");
@@ -1198,7 +1242,7 @@ export class HRService {
   // ─── Self check-out ───────────────────────────────────────────────────────────
 
   async checkoutSelf(user: AuthenticatedUser, dto: CheckOutSelfDto, ctx: RequestContext) {
-    const emp = await this.prisma.employee.findFirst({ where: { companyId: user.companyId, email: user.email, deletedAt: null }, select: { id: true } });
+    const emp = await this.findMyEmployee(user, { id: true });
     if (!emp) throw new ForbiddenException("No employee record linked to your account");
 
     const date = new Date(dto.date);
@@ -1503,7 +1547,7 @@ export class HRService {
   }
 
   async myLeaveBalance(user: AuthenticatedUser) {
-    const emp = await this.prisma.employee.findFirst({ where: { companyId: user.companyId, email: user.email, deletedAt: null }, select: { id: true } });
+    const emp = await this.findMyEmployee(user, { id: true });
     if (!emp) return { data: [] };
     const year = new Date().getFullYear();
     const rows = await this.prisma.leaveBalance.findMany({
@@ -1946,6 +1990,11 @@ export class HRService {
   async resolveGrievance(user: AuthenticatedUser, id: string, dto: ResolveGrievanceDto, ctx: RequestContext) {
     const row = await this.prisma.grievanceRecord.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
     if (!row) throw new NotFoundException("Grievance not found");
+    // M15: grievance status transitions had no state-machine guard at all —
+    // a closed (or already-resolved) grievance could be "resolved" again.
+    if (row.status !== "OPEN") {
+      throw new BadRequestException(`Grievance is already ${row.status.toLowerCase()} and cannot be resolved again.`);
+    }
     const updated = await this.prisma.grievanceRecord.update({ where: { id }, data: { status: "RESOLVED", resolution: dto.resolution, resolvedById: user.id, resolvedAt: new Date(), updatedById: user.id } });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "GrievanceRecord", entityId: id, action: "UPDATE", ...ctx });
     return { data: updated };
@@ -1954,6 +2003,9 @@ export class HRService {
   async closeGrievance(user: AuthenticatedUser, id: string, ctx: RequestContext) {
     const row = await this.prisma.grievanceRecord.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
     if (!row) throw new NotFoundException("Grievance not found");
+    if (row.status === "CLOSED") {
+      throw new BadRequestException("Grievance is already closed.");
+    }
     const updated = await this.prisma.grievanceRecord.update({ where: { id }, data: { status: "CLOSED", updatedById: user.id } });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "GrievanceRecord", entityId: id, action: "UPDATE", ...ctx });
     return { data: updated };

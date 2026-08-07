@@ -8,11 +8,12 @@
   IsOptional,
   IsString,
   IsUUID,
+  Max,
   MaxLength,
   Min,
   ValidateNested,
 } from "class-validator";
-import { Type } from "class-transformer";
+import { Transform, Type } from "class-transformer";
 
 enum EmployeeStatus {
   ACTIVE = "ACTIVE",
@@ -75,6 +76,13 @@ enum HRRating {
   UNSATISFACTORY = "UNSATISFACTORY",
 }
 
+// M14: page/limit existed here but were never read by listEmployees, which
+// hard-capped at take: 500 — a company past 500 employees silently lost the
+// rest off the end of the list with no way to reach them. page/take are now
+// properly validated and wired up (see listEmployees); left with no default
+// value here (the service defaults an unset take to 500) so a caller that
+// doesn't send them yet keeps getting today's behavior — pagination is
+// opt-in, not a breaking change to the un-paginated admin UI.
 export class HRQueryDto {
   @IsOptional() @IsString() search?: string;
   @IsOptional() @IsString() status?: string;
@@ -84,8 +92,8 @@ export class HRQueryDto {
   @IsOptional() @IsString() period?: string;
   @IsOptional() @IsDateString() dateFrom?: string;
   @IsOptional() @IsDateString() dateTo?: string;
-  @IsOptional() @IsString() page?: string;
-  @IsOptional() @IsString() limit?: string;
+  @IsOptional() @Transform(({ value }) => parseInt(value, 10)) @IsInt() @Min(1) page?: number;
+  @IsOptional() @Transform(({ value }) => parseInt(value, 10)) @IsInt() @Min(1) @Max(1000) take?: number;
 }
 
 export class CreateEmployeeRoleDto {

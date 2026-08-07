@@ -11,7 +11,7 @@ const mockPrisma = {
   inventoryItem: { findFirst: jest.fn(), findUniqueOrThrow: jest.fn() },
   stockAdjustment: { findFirst: jest.fn(), update: jest.fn().mockResolvedValue({}) },
   stockApproval: { updateMany: jest.fn().mockResolvedValue({}) },
-  stockReservation: { findMany: jest.fn().mockResolvedValue([]) },
+  stockReservation: { findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn(), update: jest.fn() },
   $transaction: jest.fn().mockImplementation((cb: (tx: typeof mockTx) => Promise<unknown>) => cb(mockTx))
 };
 const mockAudit = { write: jest.fn().mockResolvedValue(undefined) };
@@ -114,5 +114,68 @@ describe("InventoryService.approveAdjustment → applyAdjustment — StockBatch 
     expect(mockTx.stockBatch.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ quantityReceived: 15, quantityRemaining: 15, unitCost: 8 }) })
     );
+  });
+});
+
+describe("InventoryService.releaseReservation — gives reservations an actual exit path (M3)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("marks an active reservation FULFILLED by default", async () => {
+    mockPrisma.stockReservation.findFirst.mockResolvedValue({
+      id: "rsv-1", companyId: "company-1", branchId: "branch-1", warehouseId: "wh-1", status: "ACTIVE"
+    });
+    mockPrisma.stockReservation.update.mockResolvedValue({ id: "rsv-1", status: "FULFILLED" });
+
+    const service = makeService();
+    await service.releaseReservation(makeUser(), "rsv-1", {} as never, {});
+
+    expect(mockPrisma.stockReservation.update).toHaveBeenCalledWith({
+      where: { id: "rsv-1" },
+      data: { status: "FULFILLED", updatedById: "user-1" }
+    });
+  });
+
+  it("marks it CANCELLED when explicitly requested", async () => {
+    mockPrisma.stockReservation.findFirst.mockResolvedValue({
+      id: "rsv-1", companyId: "company-1", branchId: "branch-1", warehouseId: "wh-1", status: "ACTIVE"
+    });
+    mockPrisma.stockReservation.update.mockResolvedValue({ id: "rsv-1", status: "CANCELLED" });
+
+    const service = makeService();
+    await service.releaseReservation(makeUser(), "rsv-1", { status: "CANCELLED" } as never, {});
+
+    expect(mockPrisma.stockReservation.update).toHaveBeenCalledWith({
+      where: { id: "rsv-1" },
+      data: { status: "CANCELLED", updatedById: "user-1" }
+    });
+  });
+
+  it("rejects releasing a reservation that is already resolved", async () => {
+    mockPrisma.stockReservation.findFirst.mockResolvedValue({
+      id: "rsv-1", companyId: "company-1", branchId: "branch-1", warehouseId: "wh-1", status: "FULFILLED"
+    });
+
+    const service = makeService();
+    await expect(service.releaseReservation(makeUser(), "rsv-1", {} as never, {})).rejects.toThrow();
+    expect(mockPrisma.stockReservation.update).not.toHaveBeenCalled();
+  });
+
+  it("404s for a reservation outside the actor's company", async () => {
+    mockPrisma.stockReservation.findFirst.mockResolvedValue(null);
+
+    const service = makeService();
+    await expect(service.releaseReservation(makeUser(), "rsv-other-co", {} as never, {})).rejects.toThrow();
+  });
+
+  it("rejects releasing a reservation in a warehouse the actor cannot access", async () => {
+    mockPrisma.stockReservation.findFirst.mockResolvedValue({
+      id: "rsv-1", companyId: "company-1", branchId: "branch-1", warehouseId: "wh-OTHER", status: "ACTIVE"
+    });
+
+    const service = makeService();
+    await expect(
+      service.releaseReservation(makeUser({ warehouseIds: ["wh-1"] }), "rsv-1", {} as never, {})
+    ).rejects.toThrow();
+    expect(mockPrisma.stockReservation.update).not.toHaveBeenCalled();
   });
 });

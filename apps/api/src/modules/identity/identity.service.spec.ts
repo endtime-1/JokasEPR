@@ -9,7 +9,8 @@ const mockPrisma = {
   farm: { count: jest.fn().mockResolvedValue(0) },
   warehouse: { count: jest.fn().mockResolvedValue(0) },
   productionSite: { count: jest.fn().mockResolvedValue(0) },
-  user: { findFirst: jest.fn(), findFirstOrThrow: jest.fn() },
+  user: { findFirst: jest.fn(), findFirstOrThrow: jest.fn(), update: jest.fn(), findMany: jest.fn(), count: jest.fn() },
+  refreshToken: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
   userRole: { deleteMany: jest.fn(), createMany: jest.fn() },
   userBranchAccess: { deleteMany: jest.fn(), createMany: jest.fn() },
   userFarmAccess: { deleteMany: jest.fn(), createMany: jest.fn() },
@@ -141,6 +142,62 @@ describe("IdentityService — privilege escalation guards", () => {
       await expect(
         service.createRole(actor, { name: "Sneaky Role", permissionIds: ["perm-1"] }, {})
       ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe("updateUser — revokes sessions on an admin-initiated password change (M9)", () => {
+    beforeEach(() => {
+      mockPrisma.user.findFirst.mockResolvedValue({ id: "target-1", status: "ACTIVE" });
+      mockPrisma.user.update.mockResolvedValue({ id: "target-1", email: "t@x.com", fullName: "Target", status: "ACTIVE" });
+    });
+
+    it("sets passwordChangedAt and revokes active refresh tokens when an admin changes the password", async () => {
+      const actor = makeUser();
+
+      await service.updateUser(actor, "target-1", { password: "NewStr0ng!Pass" } as never, {});
+
+      expect(mockPrisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ passwordChangedAt: expect.any(Date) }) })
+      );
+      expect(mockPrisma.refreshToken.updateMany).toHaveBeenCalledWith({
+        where: { userId: "target-1", revokedAt: null },
+        data: { revokedAt: expect.any(Date) }
+      });
+    });
+
+    it("does not touch refresh tokens when the update has nothing to do with the password", async () => {
+      const actor = makeUser();
+
+      await service.updateUser(actor, "target-1", { fullName: "New Name" } as never, {});
+
+      expect(mockPrisma.refreshToken.updateMany).not.toHaveBeenCalled();
+      expect(mockPrisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.not.objectContaining({ passwordChangedAt: expect.anything() }) })
+      );
+    });
+  });
+
+  describe("listUsers — real pagination, not a silent 500-row cap (M14)", () => {
+    beforeEach(() => {
+      mockPrisma.user.findMany.mockResolvedValue([]);
+      mockPrisma.user.count.mockResolvedValue(0);
+    });
+
+    it("defaults to take=500 (today's cap) when the caller sends no pagination params", async () => {
+      await service.listUsers("company-1");
+
+      expect(mockPrisma.user.findMany.mock.calls[0][0].take).toBe(500);
+      expect(mockPrisma.user.findMany.mock.calls[0][0].skip).toBe(0);
+    });
+
+    it("honors an explicit page/take and computes the correct skip", async () => {
+      mockPrisma.user.count.mockResolvedValue(150);
+
+      const result = await service.listUsers("company-1", { page: 2, take: 50 });
+
+      expect(mockPrisma.user.findMany.mock.calls[0][0].skip).toBe(50);
+      expect(mockPrisma.user.findMany.mock.calls[0][0].take).toBe(50);
+      expect(result.meta).toEqual({ total: 150, page: 2, take: 50, totalPages: 3 });
     });
   });
 });

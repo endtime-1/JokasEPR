@@ -1,5 +1,5 @@
-import { StockAdjustmentType, StockMovementType, StockWorkflowStatus } from "@prisma/client";
-import { IsBoolean, IsDateString, IsEnum, IsInt, IsNumber, IsOptional, IsString, IsUUID, MaxLength, Min } from "class-validator";
+import { StockAdjustmentType, StockMovementType, StockReservationStatus, StockWorkflowStatus } from "@prisma/client";
+import { IsBoolean, IsDateString, IsEnum, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, MaxLength, Min } from "class-validator";
 
 export class InventoryQueryDto {
   @IsOptional()
@@ -187,6 +187,12 @@ export class StockReservationDto {
   @IsOptional()
   @IsString()
   purpose?: string;
+}
+
+export class ReleaseReservationDto {
+  @IsOptional()
+  @IsIn(["FULFILLED", "CANCELLED"] satisfies StockReservationStatus[])
+  status?: "FULFILLED" | "CANCELLED";
 }
 
 export class CreateWarehouseLocationDto {

@@ -1,6 +1,7 @@
 import { ForbiddenException, Injectable } from "@nestjs/common";
 import { RoleLevel } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { timingSafeEqual } from "crypto";
 import { PrismaService } from "../prisma/prisma.service";
 import { SetupDto } from "./dto/setup.dto";
 
@@ -67,7 +68,11 @@ export class SetupService {
     if (!envToken) {
       throw new ForbiddenException("Setup is locked — SETUP_SECRET_TOKEN is not configured.");
     }
-    if (setupToken !== envToken) {
+    // M8: was a plain !== comparison — timing-safe to prevent a byte-by-byte
+    // timing oracle against the token that unlocks first-run company creation.
+    const providedBuf = Buffer.from(setupToken ?? "");
+    const envBuf = Buffer.from(envToken);
+    if (providedBuf.length !== envBuf.length || !timingSafeEqual(providedBuf, envBuf)) {
       throw new ForbiddenException("Invalid setup token.");
     }
 

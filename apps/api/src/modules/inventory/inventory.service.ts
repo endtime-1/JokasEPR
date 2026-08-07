@@ -12,6 +12,7 @@ import {
   InventoryQueryDto,
   MobileStockMovementDto,
   RefreshAlertsDto,
+  ReleaseReservationDto,
   SetReorderLevelDto,
   StockAdjustmentDto,
   StockInDto,
@@ -221,6 +222,22 @@ export class InventoryService {
     const reservation = await this.prisma.stockReservation.create({ data: { companyId: user.companyId, branchId: item.branchId, warehouseId: item.warehouseId, farmId: dto.farmId, productionSiteId: dto.productionSiteId ?? item.productionSiteId, inventoryItemId: item.id, productId: item.productId, reservationNumber: await nextRef(this.prisma, user.companyId, "RSV"), quantity: dto.quantity, requestedById: user.id, purpose: dto.purpose, expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : undefined, createdById: user.id } });
     await this.writeAudit(user, "CREATE", "StockReservation", reservation.id, "Reserved stock", context, { branchId: item.branchId, warehouseId: item.warehouseId });
     return { data: reservation };
+  }
+
+  // M3: previously nothing ever transitioned a reservation out of ACTIVE
+  // except the expiry cron (duty-reminders.service.ts) — a reservation with
+  // no expiresAt stayed ACTIVE forever, permanently subtracting from
+  // availability even after the reserved stock actually shipped. This gives
+  // callers (sales fulfillment, manual cleanup) an explicit way to close one out.
+  async releaseReservation(user: AuthenticatedUser, id: string, dto: ReleaseReservationDto, context: RequestContext) {
+    const reservation = await this.prisma.stockReservation.findFirst({ where: { companyId: user.companyId, id, deletedAt: null } });
+    if (!reservation) throw new NotFoundException("Stock reservation was not found.");
+    this.assertWarehouseAccess(user, reservation.warehouseId);
+    if (reservation.status !== "ACTIVE") throw new BadRequestException(`Reservation is already ${reservation.status.toLowerCase()}.`);
+    const status = dto.status ?? "FULFILLED";
+    const data = await this.prisma.stockReservation.update({ where: { id }, data: { status, updatedById: user.id } });
+    await this.writeAudit(user, status === "CANCELLED" ? "REJECT" : "APPROVE", "StockReservation", id, `Marked reservation ${status.toLowerCase()}`, context, { branchId: reservation.branchId, warehouseId: reservation.warehouseId });
+    return { data };
   }
 
   async createLocation(user: AuthenticatedUser, dto: CreateWarehouseLocationDto, context: RequestContext) {

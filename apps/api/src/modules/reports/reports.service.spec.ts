@@ -69,3 +69,43 @@ describe("ReportsService.run — where() empty-array convention (H12)", () => {
     expect(where.OR).toBeUndefined();
   });
 });
+
+describe("ReportsService — CSV/XLS formula-injection neutralization (M12)", () => {
+  function makeReportResult(cellValue: unknown) {
+    return {
+      definition: { id: "test", title: "Test Report", category: "Sales and Finance", columns: [{ key: "name", label: "Name" }] },
+      rows: [{ name: cellValue }],
+      totals: {}
+    } as never;
+  }
+
+  it("prefixes a formula-injection payload in CSV output with a single quote", () => {
+    const service = new ReportsService({} as never, {} as never);
+    const csv = (service as unknown as { csv: (r: unknown) => string }).csv(makeReportResult('=cmd|"/c calc"!A1'));
+
+    expect(csv).toContain(`"'=cmd`);
+  });
+
+  it("prefixes +, -, and @ leading characters too, not just =", () => {
+    const service = new ReportsService({} as never, {} as never);
+    const plus = (service as unknown as { csv: (r: unknown) => string }).csv(makeReportResult("+1+1"));
+    const at = (service as unknown as { csv: (r: unknown) => string }).csv(makeReportResult("@SUM(1,1)"));
+
+    expect(plus).toContain(`"'+1+1"`);
+    expect(at).toContain(`"'@SUM`);
+  });
+
+  it("leaves an ordinary business name untouched", () => {
+    const service = new ReportsService({} as never, {} as never);
+    const csv = (service as unknown as { csv: (r: unknown) => string }).csv(makeReportResult("Acme Farms Ltd"));
+
+    expect(csv).toContain(`"Acme Farms Ltd"`);
+  });
+
+  it("prefixes a formula-injection payload in the XLS/XML output too", () => {
+    const service = new ReportsService({} as never, {} as never);
+    const xls = (service as unknown as { excel: (r: unknown) => string }).excel(makeReportResult("=HYPERLINK(\"http://evil\")"));
+
+    expect(xls).toContain("'=HYPERLINK");
+  });
+});

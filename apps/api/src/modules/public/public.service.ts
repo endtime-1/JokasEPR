@@ -135,6 +135,21 @@ export class PublicService {
       return { product, line, unitPrice, total: unitPrice * line.quantity };
     });
 
+    // M7: minOrderQty was fetched for display on the browse endpoints but
+    // never actually enforced here, and a product with no active price-list
+    // row silently resolved to unitPrice = 0 with no guard — either gap let
+    // an anonymous storefront visitor place a $0 order.
+    const belowMinQty = orderItems.filter((i) => i.line.quantity < (i.product.minOrderQty ? Number(i.product.minOrderQty) : 1));
+    if (belowMinQty.length) {
+      const names = belowMinQty.map((i) => `${i.product.name} (min ${Number(i.product.minOrderQty ?? 1)})`).join(", ");
+      throw new BadRequestException(`Quantity below minimum order for: ${names}.`);
+    }
+    const unpriced = orderItems.filter((i) => i.unitPrice <= 0);
+    if (unpriced.length) {
+      const names = unpriced.map((i) => i.product.name).join(", ");
+      throw new BadRequestException(`These products are currently unavailable for online ordering: ${names}.`);
+    }
+
     const subtotal      = orderItems.reduce((sum, i) => sum + i.total, 0);
     // Both references are fully random — sequential numbers allow order enumeration
     // and count + 1 has a race condition under concurrent requests.

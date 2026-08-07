@@ -82,6 +82,23 @@ export class HttpExceptionFilter implements ExceptionFilter {
       }
     }
 
+    // M11: a request that fails Prisma's own runtime validation (e.g. an
+    // invalid enum value reaching a query through an `as any` cast that
+    // bypassed compile-time checking) previously fell through every branch
+    // above and every instanceof HttpException check below, landing on the
+    // generic 500 path — a client-caused bad-input error reported as a
+    // server failure.
+    if (exception instanceof Prisma.PrismaClientValidationError) {
+      const body: ErrorResponse = {
+        success: false,
+        statusCode: 400,
+        message: "Invalid request data.",
+        timestamp: new Date().toISOString(),
+        path: request.originalUrl
+      };
+      return response.status(400).json(body);
+    }
+
     const status = exception instanceof HttpException ? exception.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
     const exceptionResponse = exception instanceof HttpException ? exception.getResponse() : undefined;
     const rawMessage =

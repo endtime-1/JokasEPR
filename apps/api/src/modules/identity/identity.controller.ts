@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Headers, Ip, Param, Patch, Post, Put, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Headers, Ip, Param, Patch, Post, Put, Query, UseGuards } from "@nestjs/common";
 import { AuthenticatedUser, PERMISSIONS } from "@jokas/shared";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { RequirePermissions } from "../../common/decorators/permissions.decorator";
@@ -8,6 +8,7 @@ import { AssignUserAccessDto } from "./dto/assign-user-access.dto";
 import { AssignUserRolesDto } from "./dto/assign-user-roles.dto";
 import { CreateRoleDto } from "./dto/create-role.dto";
 import { CreateUserDto } from "./dto/create-user.dto";
+import { ListUsersQueryDto } from "./dto/list-users-query.dto";
 import { ResetUserPasswordDto } from "./dto/reset-user-password.dto";
 import { UpdateUserDto } from "./dto/update-user.dto";
 import { UpdateUserStatusDto } from "./dto/update-user-status.dto";
@@ -20,8 +21,8 @@ export class IdentityController {
   constructor(private readonly identityService: IdentityService) {}
 
   @Get("users")
-  users(@CurrentUser() user: AuthenticatedUser) {
-    return this.identityService.listUsers(user.companyId);
+  users(@CurrentUser() user: AuthenticatedUser, @Query() query: ListUsersQueryDto) {
+    return this.identityService.listUsers(user.companyId, query);
   }
 
   @Post("users")

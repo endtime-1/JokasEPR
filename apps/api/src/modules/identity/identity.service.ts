@@ -9,6 +9,7 @@ import { AssignUserAccessDto } from "./dto/assign-user-access.dto";
 import { AssignUserRolesDto } from "./dto/assign-user-roles.dto";
 import { CreateRoleDto } from "./dto/create-role.dto";
 import { CreateUserDto } from "./dto/create-user.dto";
+import { ListUsersQueryDto } from "./dto/list-users-query.dto";
 import { ResetUserPasswordDto } from "./dto/reset-user-password.dto";
 import { UpdateUserDto } from "./dto/update-user.dto";
 import { UpdateUserStatusDto } from "./dto/update-user-status.dto";
@@ -43,31 +44,42 @@ export class IdentityService {
     private readonly authService: AuthService
   ) {}
 
-  async listUsers(companyId: string) {
-    const data = await this.prisma.user.findMany({
-      where: { companyId, deletedAt: null },
-      select: {
-        id: true,
-        email: true,
-        fullName: true,
-        phone: true,
-        status: true,
-        lastLoginAt: true,
-        createdAt: true,
-        branch: { select: { id: true, name: true, code: true } },
-        farm: { select: { id: true, name: true, code: true } },
-        warehouse: { select: { id: true, name: true, code: true } },
-        productionSite: { select: { id: true, name: true, code: true } },
-        roles: { select: { role: { select: { id: true, name: true } } } },
-        branchAccesses: { select: { branch: { select: { id: true, name: true, code: true } } } },
-        farmAccesses: { select: { farm: { select: { id: true, name: true, code: true } } } },
-        warehouseAccesses: { select: { warehouse: { select: { id: true, name: true, code: true } } } },
-        productionSiteAccess: { select: { productionSite: { select: { id: true, name: true, code: true } } } }
-      },
-      orderBy: { fullName: "asc" },
-      take: 500,
-    });
-    return { data };
+  async listUsers(companyId: string, query: ListUsersQueryDto = {}) {
+    const where = { companyId, deletedAt: null };
+    // M14: take now defaults to 500 (the old hard cap) when the caller
+    // doesn't ask for pagination, so the un-paginated admin UI is
+    // unaffected; a caller that does pass page/take can now reach users
+    // past 500 instead of them silently falling off the end of the list.
+    const take = query.take ?? 500;
+    const page = query.page ?? 1;
+    const [data, total] = await Promise.all([
+      this.prisma.user.findMany({
+        where,
+        select: {
+          id: true,
+          email: true,
+          fullName: true,
+          phone: true,
+          status: true,
+          lastLoginAt: true,
+          createdAt: true,
+          branch: { select: { id: true, name: true, code: true } },
+          farm: { select: { id: true, name: true, code: true } },
+          warehouse: { select: { id: true, name: true, code: true } },
+          productionSite: { select: { id: true, name: true, code: true } },
+          roles: { select: { role: { select: { id: true, name: true } } } },
+          branchAccesses: { select: { branch: { select: { id: true, name: true, code: true } } } },
+          farmAccesses: { select: { farm: { select: { id: true, name: true, code: true } } } },
+          warehouseAccesses: { select: { warehouse: { select: { id: true, name: true, code: true } } } },
+          productionSiteAccess: { select: { productionSite: { select: { id: true, name: true, code: true } } } }
+        },
+        orderBy: { fullName: "asc" },
+        skip: (page - 1) * take,
+        take,
+      }),
+      this.prisma.user.count({ where })
+    ]);
+    return { data, meta: { total, page, take, totalPages: Math.max(1, Math.ceil(total / take)) } };
   }
 
   async createUser(actor: AuthenticatedUser, dto: CreateUserDto, context: RequestContext) {
@@ -147,13 +159,27 @@ export class IdentityService {
     if (dto.fullName) data.fullName = dto.fullName;
     if (dto.email) data.email = dto.email.toLowerCase();
     if (dto.phone !== undefined) data.phone = dto.phone;
-    if (dto.password) data.passwordHash = await bcrypt.hash(dto.password, 12);
+    // M9: unlike changePassword/resetUserPassword, this path previously left
+    // passwordChangedAt untouched and never revoked existing sessions — an
+    // admin "fixing" a compromised account's password didn't actually log
+    // the attacker out; their refresh token kept working for up to 30 days.
+    if (dto.password) {
+      data.passwordHash = await bcrypt.hash(dto.password, 12);
+      data.passwordChangedAt = new Date();
+    }
 
     const user = await this.prisma.user.update({
       where: { id: existing.id },
       data,
       select: { id: true, email: true, fullName: true, status: true }
     });
+
+    if (dto.password) {
+      await this.prisma.refreshToken.updateMany({
+        where: { userId: existing.id, revokedAt: null },
+        data: { revokedAt: new Date() }
+      });
+    }
 
     await this.audit.write({
       companyId: actor.companyId,

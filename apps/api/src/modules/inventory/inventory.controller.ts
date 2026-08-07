@@ -12,6 +12,7 @@ import {
   InventoryQueryDto,
   MobileStockMovementDto,
   RefreshAlertsDto,
+  ReleaseReservationDto,
   SetReorderLevelDto,
   StockAdjustmentDto,
   StockInDto,
@@ -93,9 +94,15 @@ export class InventoryController {
   }
 
   @Post("reservations")
-  @RequirePermissions(PERMISSIONS.INVENTORY_READ)
+  @RequirePermissions(PERMISSIONS.INVENTORY_MANAGE)
   reserve(@CurrentUser() user: AuthenticatedUser, @Body() dto: StockReservationDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.inventoryService.reserve(user, dto, { ipAddress, userAgent });
+  }
+
+  @Patch("reservations/:id/release")
+  @RequirePermissions(PERMISSIONS.INVENTORY_MANAGE)
+  releaseReservation(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: ReleaseReservationDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.inventoryService.releaseReservation(user, id, dto, { ipAddress, userAgent });
   }
 
   @Post("locations")
