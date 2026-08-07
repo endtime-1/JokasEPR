@@ -5,6 +5,7 @@ const fs = require("fs");
 const http = require("http");
 const https = require("https");
 const net = require("net");
+const os = require("os");
 const path = require("path");
 const { Worker } = require("worker_threads");
 
@@ -813,7 +814,16 @@ startProxy(0);
   // it on crash, and — unlike a process backgrounded from an SSH shell — it
   // isn't tied to any login session, so it isn't subject to the session-end
   // process cleanup that killed the earlier nohup/setsid-based watcher.
-  const HOME_DIR = process.env.HOME || "";
+  // Confirmed live 2026-08-07: Passenger runs this process with `HOME`
+  // stripped from the environment entirely (checked /proc/<pid>/environ —
+  // no HOME= line at all), which silently made both watchdogs below no-op
+  // forever via their `if (!HOME_DIR) return` guards. os.homedir() doesn't
+  // depend on the env var — it falls back to a getpwuid lookup in the OS
+  // user database, which works regardless of what Passenger strips.
+  let HOME_DIR = "";
+  try { HOME_DIR = os.homedir() || ""; } catch {}
+  if (!HOME_DIR) HOME_DIR = process.env.HOME || "";
+  console.log(`[start] HOME_DIR resolved to: ${HOME_DIR || "(empty — CI runner + backup watchdogs disabled)"}`);
 
   function checkCiRunner() {
     if (!HOME_DIR) return;
