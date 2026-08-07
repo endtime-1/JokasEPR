@@ -160,6 +160,57 @@ describe("Mobile Sync Module (e2e)", () => {
       expect(res.body.data.synced).toBe(0);
     });
 
+    it("200 (per-item failed) — a user without POULTRY_RECORD cannot create a mortality record via sync", async () => {
+      // Regression test for C2: routeToService() calls straight into
+      // poultryService.createMortality, bypassing PermissionsGuard entirely —
+      // this token deliberately holds no poultry/health/inventory/hr
+      // permissions at all, only an unrelated one, to prove the sync-level
+      // permission check (not the controller guard) is what blocks it.
+      const localId = "no-permission-attempt-001";
+      prisma.user.findFirst.mockResolvedValue(
+        makeDbUser({ roles: [{ role: { permissions: [{ key: PERMISSIONS.SALES_READ }] } }] })
+      );
+      const noPermToken = makeAccessToken({
+        id: TEST_USER_ID,
+        companyId: TEST_COMPANY_ID,
+        permissions: [PERMISSIONS.SALES_READ],
+        roles: ["Sales Rep"],
+        farmIds: [TEST_FARM_ID],
+        warehouseIds: [],
+        branchIds: [],
+        productionSiteIds: [],
+        hasGlobalAccess: false,
+      } as Parameters<typeof makeAccessToken>[0]);
+
+      prisma.mobileSyncRecord.findUnique.mockResolvedValue(null);
+      prisma.mobileSyncRecord.upsert.mockResolvedValue({});
+
+      const res = await request(app.getHttpServer())
+        .post("/api/v1/sync/batch")
+        .set("Authorization", `Bearer ${noPermToken}`)
+        .send({
+          records: [
+            {
+              localId,
+              endpoint: "/poultry/mortality-records",
+              method: "POST",
+              module: "poultry",
+              payload: {
+                flockBatchId: TEST_FLOCK_BATCH_ID,
+                recordDate: "2026-01-15",
+                birdCount: 5,
+              },
+            },
+          ],
+        })
+        .expect(201);
+
+      const result = res.body.data.results[0];
+      expect(result.status).toBe("failed");
+      expect(result.error).toContain("poultry.record");
+      expect(prisma.mortalityRecord.create).not.toHaveBeenCalled();
+    });
+
     it("200 — handles mixed batch (synced + duplicate + failed)", async () => {
       const freshId = "fresh-local-id-001";
       const dupId = "duplicate-local-id-001";

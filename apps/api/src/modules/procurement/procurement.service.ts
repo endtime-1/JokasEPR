@@ -361,6 +361,19 @@ export class ProcurementService {
   }
 
   async createPurchaseOrder(user: AuthenticatedUser, dto: CreatePurchaseOrderDto, ctx: RequestContext) {
+    // Every other lookup in this file scopes by companyId — this write
+    // previously didn't, letting any PROCUREMENT_MANAGE user flip another
+    // company's (or another branch's) purchase request status by ID alone.
+    if (dto.purchaseRequestId) {
+      const purchaseRequest = await this.prisma.purchaseRequest.findFirst({
+        where: { id: dto.purchaseRequestId, companyId: user.companyId }
+      });
+      if (!purchaseRequest) throw new NotFoundException("Purchase Request not found");
+      if (purchaseRequest.status === "CONVERTED_TO_PO") {
+        throw new BadRequestException("This purchase request has already been converted to a purchase order.");
+      }
+    }
+
     const reference = await nextRef(this.prisma, user.companyId, "PO");
 
     const subtotal = dto.items.reduce((s, i) => s + i.quantity * i.unitCost, 0);

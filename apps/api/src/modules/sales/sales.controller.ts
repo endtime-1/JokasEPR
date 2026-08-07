@@ -122,6 +122,18 @@ export class SalesController {
     return this.salesService.createReturn(user, dto, { ipAddress, userAgent });
   }
 
+  @Patch("returns/:id/approve")
+  @RequirePermissions(PERMISSIONS.SALES_MANAGE)
+  approveReturn(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.salesService.approveReturn(user, id, { ipAddress, userAgent });
+  }
+
+  @Patch("returns/:id/reject")
+  @RequirePermissions(PERMISSIONS.SALES_MANAGE)
+  rejectReturn(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.salesService.rejectReturn(user, id, { ipAddress, userAgent });
+  }
+
   @Get("debtors")
   @RequirePermissions(PERMISSIONS.SALES_READ)
   debtors(@CurrentUser() user: AuthenticatedUser, @Query() query: SalesQueryDto) {

@@ -1,4 +1,4 @@
-import { CustomerStatus, PaymentMethod, ProspectVisitOutcome, ProspectVisitType, SalesReturnStatus } from "@prisma/client";
+import { CustomerStatus, PaymentMethod, ProspectVisitOutcome, ProspectVisitType } from "@prisma/client";
 import { Type } from "class-transformer";
 import { IsArray, IsDateString, IsEmail, IsEnum, IsNumber, IsOptional, IsString, IsUUID, MaxLength, Min, ValidateNested } from "class-validator";
 
@@ -220,10 +220,6 @@ export class CreateSalesReturnDto {
   @IsString()
   @MaxLength(240)
   reason!: string;
-
-  @IsOptional()
-  @IsEnum(SalesReturnStatus)
-  status?: SalesReturnStatus;
 }
 
 export class CreateProspectVisitDto {

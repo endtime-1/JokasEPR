@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { AuthenticatedUser } from "@jokas/shared";
-import { Prisma, SalesReturnStatus } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { nextRef } from "../../common/next-ref";
@@ -336,9 +336,25 @@ export class SalesService {
         }
       });
       if (invoice) {
-        const paidAmount = Number(invoice.paidAmount) + dto.amount;
-        const balanceDue = Number(invoice.balanceDue) - dto.amount;
-        await tx.invoice.update({ where: { id: invoice.id }, data: { paidAmount, balanceDue, status: balanceDue <= 0 ? "PAID" : "PARTIALLY_PAID", updatedById: user.id } });
+        // Guarded, atomic decrement instead of computing from the
+        // pre-transaction snapshot above — two concurrent payments against
+        // the same invoice could otherwise both pass the earlier check and
+        // both commit, silently double-collecting money (the invoice would
+        // show as merely fully paid instead of overpaid). The `gte` guard
+        // makes this race-safe: only one concurrent request can succeed once
+        // the remaining balance is less than its own amount.
+        const decremented = await tx.invoice.updateMany({
+          where: { id: invoice.id, balanceDue: { gte: dto.amount } },
+          data: { paidAmount: { increment: dto.amount }, balanceDue: { decrement: dto.amount }, updatedById: user.id }
+        });
+        if (decremented.count === 0) {
+          throw new BadRequestException("Payment amount cannot exceed invoice balance.");
+        }
+        const refreshed = await tx.invoice.findUniqueOrThrow({ where: { id: invoice.id }, select: { balanceDue: true } });
+        await tx.invoice.update({
+          where: { id: invoice.id },
+          data: { status: Number(refreshed.balanceDue) <= 0 ? "PAID" : "PARTIALLY_PAID" }
+        });
         if (invoice.salesOrderId) {
           await tx.salesOrder.update({ where: { id: invoice.salesOrderId }, data: { paidAmount: { increment: dto.amount }, balanceDue: { decrement: dto.amount }, updatedById: user.id } });
         }
@@ -384,43 +400,109 @@ export class SalesService {
     if (!customer) throw new NotFoundException("Customer was not found.");
     if (!warehouse) throw new NotFoundException("Warehouse was not found.");
     if (!product) throw new NotFoundException("Product was not found.");
-    const totalAmount = dto.quantity * dto.unitPrice;
-    const targetStatus: SalesReturnStatus = dto.status ?? "POSTED";
-    const data = await this.prisma.$transaction(async (tx) => {
-      const salesReturn = await tx.salesReturn.create({
-        data: {
-          companyId: user.companyId,
-          branchId: customer.branchId,
-          customerId: customer.id,
-          salesOrderId: dto.salesOrderId,
-          productId: product.id,
-          warehouseId: warehouse.id,
-          quantity: dto.quantity,
-          unitPrice: dto.unitPrice,
-          totalAmount,
-          reason: dto.reason,
-          status: targetStatus,
-          approvedById: targetStatus === "POSTED" || targetStatus === "APPROVED" ? user.id : undefined,
-          approvedAt: targetStatus === "POSTED" || targetStatus === "APPROVED" ? new Date() : undefined,
-          createdById: user.id
-        }
+
+    let quantity = dto.quantity;
+    let unitPrice = dto.unitPrice;
+
+    if (dto.salesOrderId) {
+      const orderItem = await this.prisma.salesOrderItem.findFirst({
+        where: { salesOrderId: dto.salesOrderId, productId: dto.productId, companyId: user.companyId }
       });
-      if (targetStatus === "POSTED") {
-        const item = await tx.inventoryItem.upsert({
-          where: { companyId_warehouseId_productId: { companyId: user.companyId, warehouseId: warehouse.id, productId: product.id } },
-          update: { quantityOnHand: { increment: dto.quantity }, updatedById: user.id },
-          create: { companyId: user.companyId, branchId: warehouse.branchId, warehouseId: warehouse.id, farmId: warehouse.farmId, productionSiteId: warehouse.productionSiteId, productId: product.id, uomId: product.uomId, quantityOnHand: dto.quantity, createdById: user.id }
-        });
-        await tx.stockBatch.create({
-          data: { companyId: user.companyId, branchId: warehouse.branchId, farmId: warehouse.farmId, warehouseId: warehouse.id, productionSiteId: warehouse.productionSiteId, productId: product.id, inventoryItemId: item.id, uomId: product.uomId, batchNumber: `RET-${salesReturn.id.slice(0, 8).toUpperCase()}`, quantityReceived: dto.quantity, quantityRemaining: dto.quantity, unitCost: dto.unitPrice, createdById: user.id }
-        });
-        await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: warehouse.branchId, productId: product.id, inventoryItemId: item.id, toWarehouseId: warehouse.id, warehouseId: warehouse.id, farmId: warehouse.farmId, productionSiteId: warehouse.productionSiteId, uomId: product.uomId, movementType: "RETURN_IN", quantity: dto.quantity, unitCost: dto.unitPrice, referenceType: "SalesReturn", referenceId: salesReturn.id, notes: dto.reason, createdById: user.id } });
-        await this.addCustomerCreditTx(tx, customer.id, customer.branchId, salesReturn.id, totalAmount, `Sales return ${product.sku}`, true);
+      if (!orderItem) throw new BadRequestException("This product was not part of the referenced sales order.");
+
+      const alreadyReturned = await this.prisma.salesReturn.aggregate({
+        where: { salesOrderId: dto.salesOrderId, productId: dto.productId, status: "POSTED", deletedAt: null },
+        _sum: { quantity: true }
+      });
+      const remaining = Number(orderItem.quantity) - Number(alreadyReturned._sum.quantity ?? 0);
+      if (dto.quantity > remaining) {
+        throw new BadRequestException(`Cannot return more than the remaining ${remaining} unit(s) sold on this order.`);
       }
-      return salesReturn;
+      // Price is derived from the original sale, never trusted from the
+      // client — otherwise a return could overcredit the customer at an
+      // inflated price it never actually sold for.
+      unitPrice = Number(orderItem.unitPrice);
+      quantity = dto.quantity;
+    }
+
+    const totalAmount = quantity * unitPrice;
+
+    // A return can no longer request immediate POSTED/APPROVED status at
+    // creation — it always starts REQUESTED and must go through
+    // approveReturn()/rejectReturn() by a *different* user. Previously
+    // status was client-settable and self-approving, meaning any
+    // SALES_MANAGE user could fabricate inventory and overcredit a customer
+    // with a single unaudited call. See approveReturn() for the actual
+    // inventory/credit effects, now gated behind that second-approver step.
+    const data = await this.prisma.salesReturn.create({
+      data: {
+        companyId: user.companyId,
+        branchId: customer.branchId,
+        customerId: customer.id,
+        salesOrderId: dto.salesOrderId,
+        productId: product.id,
+        warehouseId: warehouse.id,
+        quantity,
+        unitPrice,
+        totalAmount,
+        reason: dto.reason,
+        status: "REQUESTED",
+        createdById: user.id
+      }
     });
-    await this.writeAudit(user, "CREATE", "SalesReturn", data.id, `Recorded sales return for ${product.sku}`, context, { branchId: customer.branchId, warehouseId: warehouse.id });
+    await this.writeAudit(user, "CREATE", "SalesReturn", data.id, `Requested sales return for ${product.sku}`, context, { branchId: customer.branchId, warehouseId: warehouse.id });
     return { data };
+  }
+
+  async approveReturn(user: AuthenticatedUser, id: string, context: RequestContext) {
+    const salesReturn = await this.loadPendingReturn(user, id);
+
+    const quantity = Number(salesReturn.quantity);
+    const unitPrice = Number(salesReturn.unitPrice);
+    const totalAmount = Number(salesReturn.totalAmount);
+    const warehouse = salesReturn.warehouse;
+    const product = salesReturn.product;
+
+    const data = await this.prisma.$transaction(async (tx) => {
+      const item = await tx.inventoryItem.upsert({
+        where: { companyId_warehouseId_productId: { companyId: user.companyId, warehouseId: warehouse.id, productId: product.id } },
+        update: { quantityOnHand: { increment: quantity }, updatedById: user.id },
+        create: { companyId: user.companyId, branchId: warehouse.branchId, warehouseId: warehouse.id, farmId: warehouse.farmId, productionSiteId: warehouse.productionSiteId, productId: product.id, uomId: product.uomId, quantityOnHand: quantity, createdById: user.id }
+      });
+      await tx.stockBatch.create({
+        data: { companyId: user.companyId, branchId: warehouse.branchId, farmId: warehouse.farmId, warehouseId: warehouse.id, productionSiteId: warehouse.productionSiteId, productId: product.id, inventoryItemId: item.id, uomId: product.uomId, batchNumber: `RET-${salesReturn.id.slice(0, 8).toUpperCase()}`, quantityReceived: quantity, quantityRemaining: quantity, unitCost: unitPrice, createdById: user.id }
+      });
+      await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: warehouse.branchId, productId: product.id, inventoryItemId: item.id, toWarehouseId: warehouse.id, warehouseId: warehouse.id, farmId: warehouse.farmId, productionSiteId: warehouse.productionSiteId, uomId: product.uomId, movementType: "RETURN_IN", quantity, unitCost: unitPrice, referenceType: "SalesReturn", referenceId: salesReturn.id, notes: salesReturn.reason, createdById: user.id } });
+      await this.addCustomerCreditTx(tx, salesReturn.customerId, salesReturn.branchId, salesReturn.id, totalAmount, `Sales return ${product.sku}`, true);
+
+      return tx.salesReturn.update({ where: { id }, data: { status: "POSTED", approvedById: user.id, approvedAt: new Date() } });
+    });
+
+    await this.writeAudit(user, "APPROVE", "SalesReturn", id, `Approved sales return for ${product.sku}`, context, { branchId: salesReturn.branchId, warehouseId: warehouse.id });
+    return { data };
+  }
+
+  async rejectReturn(user: AuthenticatedUser, id: string, context: RequestContext) {
+    const salesReturn = await this.loadPendingReturn(user, id);
+
+    const data = await this.prisma.salesReturn.update({
+      where: { id },
+      data: { status: "REJECTED", approvedById: user.id, approvedAt: new Date() }
+    });
+    await this.writeAudit(user, "REJECT", "SalesReturn", id, `Rejected sales return for ${salesReturn.product.sku}`, context, { branchId: salesReturn.branchId, warehouseId: salesReturn.warehouseId });
+    return { data };
+  }
+
+  private async loadPendingReturn(user: AuthenticatedUser, id: string) {
+    const salesReturn = await this.prisma.salesReturn.findFirst({
+      where: { id, companyId: user.companyId, deletedAt: null },
+      include: { product: true, warehouse: true }
+    });
+    if (!salesReturn) throw new NotFoundException("Sales return was not found.");
+    if (salesReturn.status !== "REQUESTED") throw new BadRequestException("Only pending returns can be approved or rejected.");
+    if (salesReturn.createdById === user.id) throw new ForbiddenException("You cannot approve or reject your own return request.");
+    this.assertWarehouseAccess(user, salesReturn.warehouseId);
+    return salesReturn;
   }
 
   async listReturns(user: AuthenticatedUser, query: SalesQueryDto) {
@@ -803,7 +885,7 @@ export class SalesService {
     return date;
   }
 
-  private async writeAudit(user: AuthenticatedUser, action: "CREATE" | "APPROVE", entityType: string, entityId: string, summary: string, context: RequestContext, scope: Scope) {
+  private async writeAudit(user: AuthenticatedUser, action: "CREATE" | "APPROVE" | "REJECT", entityType: string, entityId: string, summary: string, context: RequestContext, scope: Scope) {
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action, entityType, entityId, summary, branchId: scope.branchId, warehouseId: scope.warehouseId, ipAddress: context.ipAddress, userAgent: context.userAgent });
   }
 

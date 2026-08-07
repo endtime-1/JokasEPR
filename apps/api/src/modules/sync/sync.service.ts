@@ -1,6 +1,6 @@
-import { BadRequestException, Injectable, Logger } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, Logger } from "@nestjs/common";
 import { UserStatus } from "@prisma/client";
-import { AuthenticatedUser } from "@jokas/shared";
+import { AuthenticatedUser, PERMISSIONS, PermissionKey } from "@jokas/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { PoultryService } from "../poultry/poultry.service";
 import { InventoryService } from "../inventory/inventory.service";
@@ -19,6 +19,23 @@ const SUPPORTED_ENDPOINTS = [
   "/inventory/stock-movements",
   "/hr/tasks/"
 ] as const;
+
+// Mirrors the @RequirePermissions on each endpoint's direct REST route
+// (poultry.controller.ts, inventory.controller.ts, hr.controller.ts).
+// routeToService() below calls straight into service methods, bypassing
+// PermissionsGuard entirely — without this map, any authenticated user
+// could create poultry/health/inventory records or alter HR tasks via
+// /sync/batch regardless of their actual permissions.
+const ENDPOINT_PERMISSIONS: Array<{ match: (endpoint: string) => boolean; permission: PermissionKey }> = [
+  { match: (ep) => ep.includes("/poultry/daily-records"), permission: PERMISSIONS.POULTRY_RECORD },
+  { match: (ep) => ep.includes("/poultry/mortality-records"), permission: PERMISSIONS.POULTRY_RECORD },
+  { match: (ep) => ep.includes("/poultry/egg-production-records"), permission: PERMISSIONS.POULTRY_RECORD },
+  { match: (ep) => ep.includes("/poultry/feed-consumption-records"), permission: PERMISSIONS.POULTRY_RECORD },
+  { match: (ep) => ep.includes("/poultry/medication-records"), permission: PERMISSIONS.HEALTH_MANAGE },
+  { match: (ep) => ep.includes("/poultry/vaccination-records"), permission: PERMISSIONS.HEALTH_MANAGE },
+  { match: (ep) => ep.includes("/inventory/stock-movements"), permission: PERMISSIONS.INVENTORY_MANAGE },
+  { match: (ep) => /\/hr\/tasks\/[a-f0-9-]{36}\/status/i.test(ep), permission: PERMISSIONS.HR_MANAGE }
+];
 
 @Injectable()
 export class SyncService {
@@ -110,6 +127,11 @@ export class SyncService {
   private async routeToService(user: AuthenticatedUser, item: SyncItemDto, ctx: RequestContext) {
     const ep = item.endpoint;
     const payload = item.payload as any;
+
+    const rule = ENDPOINT_PERMISSIONS.find((r) => r.match(ep));
+    if (rule && !user.hasGlobalAccess && !user.permissions.includes(rule.permission)) {
+      throw new ForbiddenException(`Missing permission ${rule.permission} for ${ep}.`);
+    }
 
     if (ep.includes("/poultry/daily-records")) {
       return this.poultryService.createDailyRecord(user, payload, ctx);

@@ -18,6 +18,23 @@ type RequestContext = {
   userAgent?: string;
 };
 
+// Lower rank = more privileged. Mirrors the declaration order of the
+// RoleLevel enum in schema.prisma, which is intentional (SUPER_ADMIN highest).
+const ROLE_LEVEL_RANK: Record<string, number> = {
+  SUPER_ADMIN: 0,
+  CEO: 1,
+  MANAGER: 2,
+  OFFICER: 3,
+  WORKER: 4,
+  AUDITOR: 5
+};
+const LEAST_PRIVILEGED_RANK = Object.keys(ROLE_LEVEL_RANK).length;
+
+function actorHighestRank(actor: AuthenticatedUser): number {
+  if (actor.roles.length === 0) return LEAST_PRIVILEGED_RANK;
+  return Math.min(...actor.roles.map((level) => ROLE_LEVEL_RANK[level] ?? LEAST_PRIVILEGED_RANK));
+}
+
 @Injectable()
 export class IdentityService {
   constructor(
@@ -54,21 +71,16 @@ export class IdentityService {
   }
 
   async createUser(actor: AuthenticatedUser, dto: CreateUserDto, context: RequestContext) {
-    await this.assertRoleIdsBelongToCompany(actor.companyId, dto.roleIds);
-    await this.assertScopeIdsBelongToCompany(actor.companyId, {
-      branchIds: this.normalizeIds(dto.branchIds, dto.branchId),
-      farmIds: this.normalizeIds(dto.farmIds, dto.farmId),
-      warehouseIds: this.normalizeIds(dto.warehouseIds, dto.warehouseId),
-      productionSiteIds: this.normalizeIds(dto.productionSiteIds, dto.productionSiteId)
-    });
-    const passwordHash = await bcrypt.hash(dto.password, 12);
-
     const access = {
       branchIds: this.normalizeIds(dto.branchIds, dto.branchId),
       farmIds: this.normalizeIds(dto.farmIds, dto.farmId),
       warehouseIds: this.normalizeIds(dto.warehouseIds, dto.warehouseId),
       productionSiteIds: this.normalizeIds(dto.productionSiteIds, dto.productionSiteId)
     };
+    await this.assertActorCanAssignRoles(actor, dto.roleIds);
+    await this.assertScopeIdsBelongToCompany(actor.companyId, access);
+    this.assertActorHasScopeAccess(actor, access);
+    const passwordHash = await bcrypt.hash(dto.password, 12);
 
     const user = await this.prisma.$transaction(async (tx) => {
       const created = await tx.user.create({
@@ -209,7 +221,7 @@ export class IdentityService {
 
   async assignUserRoles(actor: AuthenticatedUser, userId: string, dto: AssignUserRolesDto, context: RequestContext) {
     await this.getCompanyUser(actor.companyId, userId);
-    await this.assertRoleIdsBelongToCompany(actor.companyId, dto.roleIds);
+    await this.assertActorCanAssignRoles(actor, dto.roleIds);
 
     await this.prisma.$transaction([
       this.prisma.userRole.deleteMany({ where: { userId, companyId: actor.companyId } }),
@@ -276,6 +288,7 @@ export class IdentityService {
       productionSiteIds: dto.productionSiteIds ?? []
     };
     await this.assertScopeIdsBelongToCompany(actor.companyId, access);
+    this.assertActorHasScopeAccess(actor, access);
 
     await this.prisma.$transaction([
       this.prisma.userBranchAccess.deleteMany({ where: { userId, companyId: actor.companyId } }),
@@ -333,7 +346,7 @@ export class IdentityService {
   }
 
   async createRole(actor: AuthenticatedUser, dto: CreateRoleDto, context: RequestContext) {
-    await this.assertPermissionIdsBelongToCompany(actor.companyId, dto.permissionIds);
+    await this.assertActorCanGrantPermissions(actor, dto.permissionIds);
     const role = await this.prisma.role.create({
       data: {
         companyId: actor.companyId,
@@ -369,21 +382,67 @@ export class IdentityService {
     return { data };
   }
 
-  private async assertRoleIdsBelongToCompany(companyId: string, roleIds: string[]) {
-    const count = await this.prisma.role.count({
-      where: { companyId, id: { in: roleIds }, deletedAt: null }
+  // Verifies the roles exist in this company AND that the actor isn't
+  // granting a role more privileged than their own highest role — without
+  // this, any identity.manage holder (a normal, non-Super-Admin permission)
+  // could look up the Super Admin role's id via GET /identity/roles and
+  // assign it to themselves or anyone else.
+  private async assertActorCanAssignRoles(actor: AuthenticatedUser, roleIds: string[]) {
+    const roles = await this.prisma.role.findMany({
+      where: { companyId: actor.companyId, id: { in: roleIds }, deletedAt: null },
+      select: { id: true, level: true }
     });
-    if (count !== roleIds.length) {
+    if (roles.length !== roleIds.length) {
       throw new BadRequestException("One or more roles are invalid for this Company.");
+    }
+    if (actor.hasGlobalAccess) return;
+
+    const actorRank = actorHighestRank(actor);
+    const tooPrivileged = roles.some((role) => (ROLE_LEVEL_RANK[role.level] ?? LEAST_PRIVILEGED_RANK) < actorRank);
+    if (tooPrivileged) {
+      throw new ForbiddenException("You cannot assign a role more privileged than your own.");
     }
   }
 
-  private async assertPermissionIdsBelongToCompany(companyId: string, permissionIds: string[]) {
-    const count = await this.prisma.permission.count({
-      where: { companyId, id: { in: permissionIds } }
+  // Same idea as assertActorCanAssignRoles: identity.manage alone shouldn't
+  // let someone bundle permissions they don't personally hold into a new
+  // role (which would otherwise sidestep the role-level check entirely,
+  // since a freshly created role always defaults to OFFICER level).
+  private async assertActorCanGrantPermissions(actor: AuthenticatedUser, permissionIds: string[]) {
+    const permissions = await this.prisma.permission.findMany({
+      where: { companyId: actor.companyId, id: { in: permissionIds } },
+      select: { id: true, key: true }
     });
-    if (count !== permissionIds.length) {
+    if (permissions.length !== permissionIds.length) {
       throw new BadRequestException("One or more permissions are invalid for this Company.");
+    }
+    if (actor.hasGlobalAccess) return;
+
+    const actorPermissions = new Set(actor.permissions);
+    const ungranted = permissions.filter((permission) => !actorPermissions.has(permission.key));
+    if (ungranted.length > 0) {
+      throw new ForbiddenException(
+        `You cannot grant permissions you don't hold yourself: ${ungranted.map((p) => p.key).join(", ")}`
+      );
+    }
+  }
+
+  // Prevents an identity.manage holder from granting another user access to
+  // branches/farms/warehouses/sites beyond their own assigned scope.
+  private assertActorHasScopeAccess(
+    actor: AuthenticatedUser,
+    access: { branchIds: string[]; farmIds: string[]; warehouseIds: string[]; productionSiteIds: string[] }
+  ) {
+    if (actor.hasGlobalAccess) return;
+
+    const outOfScope = [
+      ...access.branchIds.filter((id) => !actor.branchIds.includes(id)),
+      ...access.farmIds.filter((id) => !actor.farmIds.includes(id)),
+      ...access.warehouseIds.filter((id) => !actor.warehouseIds.includes(id)),
+      ...access.productionSiteIds.filter((id) => !actor.productionSiteIds.includes(id))
+    ];
+    if (outOfScope.length > 0) {
+      throw new ForbiddenException("You cannot grant access to a scope you don't have access to yourself.");
     }
   }
 
