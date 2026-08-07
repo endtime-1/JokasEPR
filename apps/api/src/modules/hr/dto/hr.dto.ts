@@ -2,6 +2,7 @@
   IsArray,
   IsBoolean,
   IsDateString,
+  IsEmail,
   IsEnum,
   IsInt,
   IsNumber,
@@ -110,7 +111,7 @@ export class CreateEmployeeDto {
   @IsOptional() @IsDateString() dateOfBirth?: string;
   @IsOptional() @IsEnum(Gender) gender?: Gender;
   @IsOptional() @IsString() @MaxLength(40) phone?: string;
-  @IsOptional() @IsString() @MaxLength(160) email?: string;
+  @IsOptional() @IsEmail() @MaxLength(160) email?: string;
   @IsOptional() @IsString() @MaxLength(300) address?: string;
   @IsOptional() @IsString() @MaxLength(40) nationalId?: string;
   @IsDateString() startDate!: string;
@@ -137,7 +138,7 @@ export class UpdateEmployeeDto {
   @IsOptional() @IsDateString() dateOfBirth?: string;
   @IsOptional() @IsEnum(Gender) gender?: Gender;
   @IsOptional() @IsString() @MaxLength(40) phone?: string;
-  @IsOptional() @IsString() @MaxLength(160) email?: string;
+  @IsOptional() @IsEmail() @MaxLength(160) email?: string;
   @IsOptional() @IsString() @MaxLength(300) address?: string;
   @IsOptional() @IsEnum(EmployeeStatus) status?: EmployeeStatus;
   @IsOptional() @IsUUID() employeeRoleId?: string;

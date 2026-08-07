@@ -3,6 +3,7 @@ import { QBSyncOperation, QBSyncStatus } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { QuickBooksClientService } from "./quickbooks-client.service";
 import { QuickBooksLoggerService } from "./quickbooks-logger.service";
+import { escapeQboString } from "./quickbooks-query-escape";
 
 interface QBCustomer {
   Id?: string;
@@ -115,7 +116,7 @@ export class QuickBooksCustomerService {
 
   private async findQBCustomerByDisplayName(companyId: string, name: string): Promise<(QBCustomer & { Id: string }) | null> {
     try {
-      const escaped = name.replace(/'/g, "\\'");
+      const escaped = escapeQboString(name);
       const resp = await this.client.query<{ QueryResponse: { Customer?: Array<QBCustomer & { Id: string }> } }>(companyId, `SELECT Id, DisplayName FROM Customer WHERE DisplayName = '${escaped}'`);
       return resp.QueryResponse.Customer?.[0] ?? null;
     } catch {

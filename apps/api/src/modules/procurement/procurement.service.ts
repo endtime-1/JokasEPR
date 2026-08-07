@@ -598,7 +598,16 @@ export class ProcurementService {
       include: { items: true },
     });
     if (!grn) throw new NotFoundException("GRN not found");
-    if (grn.status !== "QUALITY_PASSED") throw new BadRequestException("GRN must be QUALITY_PASSED before posting");
+    // L3: qualityCheckRequired was stored on the GRN but had no effect on
+    // the workflow — every GRN was forced through an explicit
+    // qualityPassGRN step regardless of its value. A GRN that was
+    // explicitly marked as not needing a quality check can now post
+    // directly from RECEIVED; one that does need it still requires the
+    // explicit pass.
+    const canPostDirectly = grn.status === "RECEIVED" && !grn.qualityCheckRequired;
+    if (grn.status !== "QUALITY_PASSED" && !canPostDirectly) {
+      throw new BadRequestException("GRN must be QUALITY_PASSED before posting");
+    }
     this.assertWarehouseAccess(user, grn.warehouseId);
 
     const warehouse = await this.prisma.warehouse.findFirst({
@@ -757,6 +766,20 @@ export class ProcurementService {
   }
 
   async createPayment(user: AuthenticatedUser, dto: CreateProcurementPaymentDto, ctx: RequestContext) {
+    // L4: a payment larger than the outstanding balance was previously
+    // clamped to a 0 balanceDue instead of rejected — the excess amount
+    // was recorded on the payment itself but silently vanished from the
+    // invoice's own numbers, with no trace of the overpayment anywhere.
+    let invoice: { id: string; paidAmount: unknown; totalAmount: unknown } | null = null;
+    if (dto.invoiceId) {
+      invoice = await this.prisma.supplierInvoice.findFirst({ where: { id: dto.invoiceId, companyId: user.companyId, deletedAt: null } });
+      if (!invoice) throw new NotFoundException("Supplier invoice was not found.");
+      const outstanding = num(invoice.totalAmount) - num(invoice.paidAmount);
+      if (dto.amount > outstanding) {
+        throw new BadRequestException(`Payment of ${dto.amount} exceeds the outstanding balance of ${outstanding.toFixed(2)} on this invoice.`);
+      }
+    }
+
     const reference = await nextRef(this.prisma, user.companyId, "PAY");
 
     const row = await this.prisma.procurementPayment.create({
@@ -776,20 +799,17 @@ export class ProcurementService {
     });
 
     // Update invoice paidAmount and balanceDue if linked
-    if (dto.invoiceId) {
-      const inv = await this.prisma.supplierInvoice.findUnique({ where: { id: dto.invoiceId } });
-      if (inv) {
-        const newPaid = num(inv.paidAmount) + dto.amount;
-        const newBalance = num(inv.totalAmount) - newPaid;
-        await this.prisma.supplierInvoice.update({
-          where: { id: dto.invoiceId },
-          data: {
-            paidAmount: newPaid,
-            balanceDue: Math.max(0, newBalance),
-            status: newBalance <= 0 ? "PAID" : "MATCHED",
-          },
-        });
-      }
+    if (invoice) {
+      const newPaid = num(invoice.paidAmount) + dto.amount;
+      const newBalance = num(invoice.totalAmount) - newPaid;
+      await this.prisma.supplierInvoice.update({
+        where: { id: invoice.id },
+        data: {
+          paidAmount: newPaid,
+          balanceDue: Math.max(0, newBalance),
+          status: newBalance <= 0 ? "PAID" : "MATCHED",
+        },
+      });
     }
 
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "ProcurementPayment", entityId: row.id, action: "CREATE", ...ctx });
@@ -869,8 +889,24 @@ export class ProcurementService {
     });
     if (!po) return;
 
+    const allGrnItems = po.grnRecords.flatMap((g) => g.items);
     const totalQty = po.items.reduce((s, i) => s + num(i.quantity), 0);
-    const receivedQty = po.grnRecords.flatMap((g) => g.items).reduce((s, i) => s + num(i.receivedQty), 0);
+    const receivedQty = allGrnItems.reduce((s, i) => s + num(i.receivedQty), 0);
+
+    // L3: PurchaseOrderItem.receivedQty was declared but never written back
+    // to — it sat at its default 0 forever with no per-line fulfillment
+    // tracking, even though the PO-level status above already depends on
+    // this exact same GRN item data.
+    const receivedByLine = new Map<string, number>();
+    for (const item of allGrnItems) {
+      if (!item.purchaseOrderItemId) continue;
+      receivedByLine.set(item.purchaseOrderItemId, (receivedByLine.get(item.purchaseOrderItemId) ?? 0) + num(item.receivedQty));
+    }
+    await Promise.all(
+      po.items.map((line) =>
+        this.prisma.purchaseOrderItem.update({ where: { id: line.id }, data: { receivedQty: receivedByLine.get(line.id) ?? 0 } })
+      )
+    );
 
     let newStatus = po.status;
     if (receivedQty >= totalQty) newStatus = "FULLY_RECEIVED";

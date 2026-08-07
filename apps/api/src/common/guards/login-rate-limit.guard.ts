@@ -16,9 +16,15 @@ export class LoginRateLimitGuard implements CanActivate {
   constructor(private readonly prisma: PrismaService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest<Request>();
-    const email = typeof request.body?.email === "string" ? request.body.email.toLowerCase() : "unknown";
-    const key = `${request.ip}:${email}`;
+    const request = context.switchToHttp().getRequest<Request & { user?: { id?: string } }>();
+    // L6: on routes guarded after JwtAuthGuard (e.g. change-password), the
+    // request has no `email` body field at all — every authenticated user
+    // behind the same IP previously collapsed into one "unknown" bucket
+    // instead of getting their own. Prefer the authenticated user's id when
+    // present; only fall back to the login-form email for the unauthenticated
+    // login route, where no user identity exists yet.
+    const identity = request.user?.id ?? (typeof request.body?.email === "string" ? request.body.email.toLowerCase() : "unknown");
+    const key = `${request.ip}:${identity}`;
     const now = new Date();
     const windowEnd = new Date(now.getTime() + WINDOW_MS);
 

@@ -374,9 +374,35 @@ export class HRService {
     return { data: row };
   }
 
+  // L5: dateOfBirth/startDate were only checked for well-formed date-string
+  // format (@IsDateString), with no sanity range — a dateOfBirth of 1800 or
+  // 2200, or a startDate decades in the past/future, passed validation
+  // untouched.
+  private assertSaneEmployeeDates(dateOfBirth?: string, startDate?: string) {
+    const now = new Date();
+    if (dateOfBirth) {
+      const dob = new Date(dateOfBirth);
+      const hundredYearsAgo = new Date(now.getFullYear() - 100, now.getMonth(), now.getDate());
+      if (dob > now) throw new BadRequestException("dateOfBirth cannot be in the future.");
+      if (dob < hundredYearsAgo) throw new BadRequestException("dateOfBirth is more than 100 years ago — please check the value.");
+    }
+    if (startDate) {
+      const start = new Date(startDate);
+      // Generous on the past end — companies onboarding historical records
+      // may have employees who started decades ago — but a real hire date
+      // can't reasonably predate the company itself by a century, and
+      // shouldn't be more than a year out.
+      const sixtyYearsAgo = new Date(now.getFullYear() - 60, now.getMonth(), now.getDate());
+      const oneYearFromNow = new Date(now.getFullYear() + 1, now.getMonth(), now.getDate());
+      if (start < sixtyYearsAgo) throw new BadRequestException("startDate is more than 60 years in the past — please check the value.");
+      if (start > oneYearFromNow) throw new BadRequestException("startDate is more than a year in the future — please check the value.");
+    }
+  }
+
   async createEmployee(user: AuthenticatedUser, dto: CreateEmployeeDto, ctx: RequestContext) {
     const exists = await this.prisma.employee.findUnique({ where: { companyId_code: { companyId: user.companyId, code: dto.code } }, select: { id: true } });
     if (exists) throw new BadRequestException(`Employee code "${dto.code}" already exists`);
+    this.assertSaneEmployeeDates(dto.dateOfBirth, dto.startDate);
 
     const fullName = `${dto.firstName} ${dto.lastName}`;
     const row = await this.prisma.employee.create({
@@ -399,6 +425,7 @@ export class HRService {
     const row = await this.prisma.employee.findFirst({ where: { id, companyId: user.companyId, deletedAt: null }, select: { id: true, firstName: true, lastName: true, branchId: true, farmId: true, warehouseId: true, productionSiteId: true } });
     if (!row) throw new NotFoundException("Employee not found");
     this.assertEmployeeInScope(user, row);
+    this.assertSaneEmployeeDates(dto.dateOfBirth, undefined);
 
     const fullName = dto.firstName || dto.lastName
       ? `${dto.firstName ?? row.firstName} ${dto.lastName ?? row.lastName}`

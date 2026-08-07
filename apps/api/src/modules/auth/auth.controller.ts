@@ -91,7 +91,10 @@ export class AuthController {
     return { data: user };
   }
 
-  @UseGuards(LoginRateLimitGuard, JwtAuthGuard)
+  // L6: JwtAuthGuard must run first so LoginRateLimitGuard can key its
+  // bucket off the authenticated user's id (request.user) instead of
+  // collapsing every user behind the same IP into one shared "unknown" bucket.
+  @UseGuards(JwtAuthGuard, LoginRateLimitGuard)
   @Post("change-password")
   changePassword(
     @CurrentUser() user: AuthenticatedUser,

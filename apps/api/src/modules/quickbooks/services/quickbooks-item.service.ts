@@ -3,6 +3,7 @@ import { QBSyncOperation, QBSyncStatus } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { QuickBooksClientService } from "./quickbooks-client.service";
 import { QuickBooksLoggerService } from "./quickbooks-logger.service";
+import { escapeQboString } from "./quickbooks-query-escape";
 
 type QBItemType = "Inventory" | "NonInventory" | "Service";
 
@@ -127,7 +128,7 @@ export class QuickBooksItemService {
 
   private async findQBItemByName(companyId: string, name: string): Promise<(QBItem & { Id: string }) | null> {
     try {
-      const escaped = name.replace(/'/g, "\\'");
+      const escaped = escapeQboString(name);
       const resp = await this.client.query<{ QueryResponse: { Item?: Array<QBItem & { Id: string }> } }>(companyId, `SELECT Id, Name FROM Item WHERE Name = '${escaped}'`);
       return resp.QueryResponse.Item?.[0] ?? null;
     } catch {

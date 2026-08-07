@@ -13,6 +13,30 @@ export class DutyRemindersService {
     private readonly notifications: NotificationsService,
   ) {}
 
+  // L2: every job below runs on a single PM2 instance today, so this is
+  // currently harmless — but nothing stopped two instances from both firing
+  // the same job and double-sending reminder/vaccination/withdrawal
+  // notifications if this app is ever scaled horizontally. Piggybacks on
+  // the existing unique-keyed LoginRateLimit table as a lightweight
+  // distributed lock (same atomic-create-wins pattern as the rate limit
+  // guards) rather than adding a new table/migration for a defense-in-depth
+  // fix. A stale lock (crashed instance) self-heals after ttlMs since every
+  // job here runs at most once a day.
+  private async acquireCronLock(name: string, ttlMs = 15 * 60_000): Promise<boolean> {
+    const key = `cron-lock:${name}`;
+    const now = new Date();
+    const windowEnd = new Date(now.getTime() + ttlMs);
+    try {
+      await this.prisma.loginRateLimit.create({ data: { key, attempts: 1, windowEnd } });
+      return true;
+    } catch {
+      const reclaimed = await this.prisma.loginRateLimit
+        .updateMany({ where: { key, windowEnd: { lte: now } }, data: { windowEnd } })
+        .catch(() => ({ count: 0 }));
+      return reclaimed.count > 0;
+    }
+  }
+
   // ── 10 AM: morning duty reminder ─────────────────────────────────────────
   // Fires every day at 10:00. Checks egg collection, feed record, and
   // mortality record. If a farm hasn't submitted any of these, notify users
@@ -20,6 +44,7 @@ export class DutyRemindersService {
 
   @Cron("0 10 * * *", { timeZone: "Africa/Accra" })
   async morningReminder() {
+    if (!(await this.acquireCronLock("morningReminder"))) return;
     this.logger.log("Running morning duty reminder check");
     await this.remindForDuties("MORNING", [
       "Egg Collection",
@@ -33,6 +58,7 @@ export class DutyRemindersService {
 
   @Cron("0 18 * * *", { timeZone: "Africa/Accra" })
   async eveningReminder() {
+    if (!(await this.acquireCronLock("eveningReminder"))) return;
     this.logger.log("Running evening duty reminder check");
     await this.remindForDuties("EVENING", ["Daily Poultry Summary"]);
   }
@@ -145,6 +171,7 @@ export class DutyRemindersService {
   // ── 3 AM: purge expired login rate-limit windows ─────────────────────────
   @Cron("0 3 * * *", { timeZone: "Africa/Accra" })
   async purgeExpiredRateLimitWindows() {
+    if (!(await this.acquireCronLock("purgeExpiredRateLimitWindows"))) return;
     try {
       const { count } = await this.prisma.loginRateLimit.deleteMany({
         where: { windowEnd: { lt: new Date() } },
@@ -158,6 +185,7 @@ export class DutyRemindersService {
   // ── 3:30 AM: transition expired stock reservations to EXPIRED status ──────
   @Cron("30 3 * * *", { timeZone: "Africa/Accra" })
   async expireStockReservations() {
+    if (!(await this.acquireCronLock("expireStockReservations"))) return;
     try {
       const { count } = await this.prisma.stockReservation.updateMany({
         where: { status: "ACTIVE", expiresAt: { lt: new Date() }, deletedAt: null },
@@ -172,6 +200,7 @@ export class DutyRemindersService {
   // ── 8 AM on 1st of month: alert HR managers about certificates expiring within 30 days ─
   @Cron("0 8 1 * *", { timeZone: "Africa/Accra" })
   async certificateExpiryAlert() {
+    if (!(await this.acquireCronLock("certificateExpiryAlert"))) return;
     try {
       const now = new Date();
       const in30 = new Date(now.getTime() + 30 * 24 * 3_600_000);
@@ -247,6 +276,7 @@ export class DutyRemindersService {
   // POULTRY_MANAGE users per company.
   @Cron("0 7 * * *", { timeZone: "Africa/Accra" })
   async vaccinationDueDateReminder() {
+    if (!(await this.acquireCronLock("vaccinationDueDateReminder"))) return;
     try {
       const now = new Date();
       const in7 = new Date(now.getTime() + 7 * 24 * 3_600_000);
@@ -287,6 +317,7 @@ export class DutyRemindersService {
   // POULTRY_MANAGE users per company.
   @Cron("0 7 * * *", { timeZone: "Africa/Accra" })
   async withdrawalPeriodAlert() {
+    if (!(await this.acquireCronLock("withdrawalPeriodAlert"))) return;
     try {
       const now = new Date();
       const in3 = new Date(now.getTime() + 3 * 24 * 3_600_000);

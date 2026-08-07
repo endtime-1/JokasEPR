@@ -12,8 +12,11 @@ const mockPrisma = {
   purchaseRequest: { findFirst: jest.fn(), update: jest.fn().mockResolvedValue({}) },
   purchaseOrder: { create: jest.fn(), findFirst: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
   warehouse: { findFirst: jest.fn() },
-  goodsReceivedNote: { create: jest.fn(), findFirst: jest.fn() },
+  goodsReceivedNote: { create: jest.fn(), findFirst: jest.fn(), update: jest.fn().mockResolvedValue({}) },
   product: { findMany: jest.fn() },
+  purchaseOrderItem: { update: jest.fn().mockResolvedValue({}) },
+  supplierInvoice: { findFirst: jest.fn(), update: jest.fn().mockResolvedValue({}) },
+  procurementPayment: { create: jest.fn() },
   purchaseApproval: { create: jest.fn().mockResolvedValue({}) },
   $transaction: jest.fn().mockImplementation((cb: (tx: unknown) => Promise<unknown>) => cb(mockPrisma))
 };
@@ -137,6 +140,125 @@ describe("ProcurementService", () => {
         service.postGRN(makeUser({ warehouseIds: ["wh-1"] }), "grn-1", {})
       ).rejects.toThrow(ForbiddenException);
       expect(mockPrisma.warehouse.findFirst).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("updatePOReceivedQty — writes per-line receivedQty, not just PO status (L3)", () => {
+    it("writes the summed GRN-item receivedQty back onto each PurchaseOrderItem", async () => {
+      mockPrisma.purchaseOrder.findFirst.mockResolvedValue({ id: "po-1", companyId: "company-1", status: "APPROVED", supplierId: "sup-1" });
+      mockPrisma.warehouse.findFirst.mockResolvedValue({ id: "wh-1", companyId: "company-1" });
+      mockPrisma.goodsReceivedNote.create.mockResolvedValue({ id: "grn-1" });
+      mockPrisma.purchaseOrder.findUnique.mockResolvedValue({
+        id: "po-1", status: "APPROVED",
+        items: [{ id: "poi-1", quantity: 10 }, { id: "poi-2", quantity: 5 }],
+        grnRecords: [
+          { items: [{ purchaseOrderItemId: "poi-1", receivedQty: 4 }, { purchaseOrderItemId: "poi-2", receivedQty: 5 }] },
+          { items: [{ purchaseOrderItemId: "poi-1", receivedQty: 3 }] },
+        ],
+      });
+
+      await service.createGRN(
+        makeUser({ warehouseIds: ["wh-1"] }),
+        { purchaseOrderId: "po-1", warehouseId: "wh-1", items: [{ productId: "prod-1", productName: "Widget", orderedQty: 5, receivedQty: 5, unitCost: 10, uomCode: "EA" }] } as never,
+        {}
+      );
+
+      expect(mockPrisma.purchaseOrderItem.update).toHaveBeenCalledWith({ where: { id: "poi-1" }, data: { receivedQty: 7 } });
+      expect(mockPrisma.purchaseOrderItem.update).toHaveBeenCalledWith({ where: { id: "poi-2" }, data: { receivedQty: 5 } });
+      // 7 + 5 = 12 >= totalQty 15? no — 12 < 15, so PARTIALLY_RECEIVED
+      expect(mockPrisma.purchaseOrder.update).toHaveBeenCalledWith({ where: { id: "po-1" }, data: { status: "PARTIALLY_RECEIVED" } });
+    });
+
+    it("writes 0 for a PO line with no matching GRN items at all", async () => {
+      mockPrisma.purchaseOrder.findFirst.mockResolvedValue({ id: "po-1", companyId: "company-1", status: "APPROVED", supplierId: "sup-1" });
+      mockPrisma.warehouse.findFirst.mockResolvedValue({ id: "wh-1", companyId: "company-1" });
+      mockPrisma.goodsReceivedNote.create.mockResolvedValue({ id: "grn-1" });
+      mockPrisma.purchaseOrder.findUnique.mockResolvedValue({
+        id: "po-1", status: "APPROVED",
+        items: [{ id: "poi-1", quantity: 10 }],
+        grnRecords: [],
+      });
+
+      await service.createGRN(
+        makeUser({ warehouseIds: ["wh-1"] }),
+        { purchaseOrderId: "po-1", warehouseId: "wh-1", items: [{ productId: "prod-1", productName: "Widget", orderedQty: 5, receivedQty: 5, unitCost: 10, uomCode: "EA" }] } as never,
+        {}
+      );
+
+      expect(mockPrisma.purchaseOrderItem.update).toHaveBeenCalledWith({ where: { id: "poi-1" }, data: { receivedQty: 0 } });
+    });
+  });
+
+  describe("postGRN — qualityCheckRequired actually gates the workflow (L3)", () => {
+    it("rejects posting a RECEIVED GRN that still requires a quality check", async () => {
+      mockPrisma.goodsReceivedNote.findFirst.mockResolvedValue({ id: "grn-1", companyId: "company-1", status: "RECEIVED", qualityCheckRequired: true, warehouseId: "wh-1", items: [] });
+
+      await expect(service.postGRN(makeUser({ warehouseIds: ["wh-1"] }), "grn-1", {})).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.warehouse.findFirst).not.toHaveBeenCalled();
+    });
+
+    it("allows posting a RECEIVED GRN directly when it was marked as not needing a quality check", async () => {
+      mockPrisma.goodsReceivedNote.findFirst.mockResolvedValue({ id: "grn-1", companyId: "company-1", status: "RECEIVED", qualityCheckRequired: false, warehouseId: "wh-1", items: [] });
+      mockPrisma.warehouse.findFirst.mockResolvedValue({ id: "wh-1", branchId: "branch-1", farmId: null, productionSiteId: null });
+      mockPrisma.product.findMany.mockResolvedValue([]);
+
+      await service.postGRN(makeUser({ warehouseIds: ["wh-1"] }), "grn-1", {});
+
+      expect(mockPrisma.goodsReceivedNote.update).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: "grn-1" }, data: expect.objectContaining({ status: "POSTED" }) })
+      );
+    });
+
+    it("still allows posting a QUALITY_PASSED GRN as before, regardless of qualityCheckRequired", async () => {
+      mockPrisma.goodsReceivedNote.findFirst.mockResolvedValue({ id: "grn-1", companyId: "company-1", status: "QUALITY_PASSED", qualityCheckRequired: true, warehouseId: "wh-1", items: [] });
+      mockPrisma.warehouse.findFirst.mockResolvedValue({ id: "wh-1", branchId: "branch-1", farmId: null, productionSiteId: null });
+      mockPrisma.product.findMany.mockResolvedValue([]);
+
+      await service.postGRN(makeUser({ warehouseIds: ["wh-1"] }), "grn-1", {});
+
+      expect(mockPrisma.goodsReceivedNote.update).toHaveBeenCalled();
+    });
+  });
+
+  describe("createPayment — rejects overpayments instead of silently clamping (L4)", () => {
+    it("rejects a payment larger than the invoice's outstanding balance", async () => {
+      mockPrisma.supplierInvoice.findFirst.mockResolvedValue({ id: "inv-1", totalAmount: 100, paidAmount: 80 });
+
+      await expect(
+        service.createPayment(makeUser(), { supplierId: "sup-1", invoiceId: "inv-1", amount: 50, paymentDate: "2026-08-01", paymentMethod: "BANK_TRANSFER" } as never, {})
+      ).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.procurementPayment.create).not.toHaveBeenCalled();
+      expect(mockPrisma.supplierInvoice.update).not.toHaveBeenCalled();
+    });
+
+    it("allows a payment that exactly matches the outstanding balance", async () => {
+      mockPrisma.supplierInvoice.findFirst.mockResolvedValue({ id: "inv-1", totalAmount: 100, paidAmount: 80 });
+      mockPrisma.procurementPayment.create.mockResolvedValue({ id: "pay-1" });
+
+      await service.createPayment(makeUser(), { supplierId: "sup-1", invoiceId: "inv-1", amount: 20, paymentDate: "2026-08-01", paymentMethod: "BANK_TRANSFER" } as never, {});
+
+      expect(mockPrisma.procurementPayment.create).toHaveBeenCalled();
+      expect(mockPrisma.supplierInvoice.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ balanceDue: 0, status: "PAID" }) })
+      );
+    });
+
+    it("404s for an invoiceId that doesn't belong to the actor's company", async () => {
+      mockPrisma.supplierInvoice.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.createPayment(makeUser(), { supplierId: "sup-1", invoiceId: "inv-other-co", amount: 10, paymentDate: "2026-08-01", paymentMethod: "BANK_TRANSFER" } as never, {})
+      ).rejects.toThrow(NotFoundException);
+      expect(mockPrisma.procurementPayment.create).not.toHaveBeenCalled();
+    });
+
+    it("skips the balance check entirely for a payment with no linked invoice", async () => {
+      mockPrisma.procurementPayment.create.mockResolvedValue({ id: "pay-1" });
+
+      await service.createPayment(makeUser(), { supplierId: "sup-1", amount: 999999, paymentDate: "2026-08-01", paymentMethod: "BANK_TRANSFER" } as never, {});
+
+      expect(mockPrisma.supplierInvoice.findFirst).not.toHaveBeenCalled();
+      expect(mockPrisma.procurementPayment.create).toHaveBeenCalled();
     });
   });
 

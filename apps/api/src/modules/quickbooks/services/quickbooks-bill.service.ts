@@ -3,6 +3,7 @@ import { QBSyncOperation, QBSyncStatus, SupplierInvoiceStatus } from "@prisma/cl
 import { PrismaService } from "../../prisma/prisma.service";
 import { QuickBooksClientService } from "./quickbooks-client.service";
 import { QuickBooksLoggerService } from "./quickbooks-logger.service";
+import { escapeQboString } from "./quickbooks-query-escape";
 
 const SYNCABLE_STATUSES: SupplierInvoiceStatus[] = ["APPROVED", "PAID"];
 
@@ -102,7 +103,7 @@ export class QuickBooksBillService {
 
   private async findQBBillByDocNumber(companyId: string, docNumber: string): Promise<{ Id: string } | null> {
     try {
-      const escaped = docNumber.replace(/'/g, "\\'");
+      const escaped = escapeQboString(docNumber);
       const resp = await this.client.query<{ QueryResponse: { Bill?: Array<{ Id: string }> } }>(companyId, `SELECT Id FROM Bill WHERE DocNumber = '${escaped}'`);
       return resp.QueryResponse.Bill?.[0] ?? null;
     } catch {

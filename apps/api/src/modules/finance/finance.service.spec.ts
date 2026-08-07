@@ -9,6 +9,9 @@ const mockPrisma = {
   revenue: { findMany: jest.fn(), count: jest.fn(), create: jest.fn() },
   payrollRecord: { findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn(), create: jest.fn(), update: jest.fn() },
   pettyCashTransaction: { findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn(), create: jest.fn() },
+  invoice: { findMany: jest.fn() },
+  poultryCostRecord: { groupBy: jest.fn() },
+  productProfitability: { create: jest.fn() },
   $transaction: jest.fn().mockImplementation((cb: (tx: typeof mockPrisma) => Promise<unknown>) => cb(mockPrisma))
 };
 const mockAudit = { write: jest.fn().mockResolvedValue(undefined) };
@@ -136,5 +139,46 @@ describe("FinanceService.createPettyCashTransaction — serializable balance gua
       service.createPettyCashTransaction(makeUser(), { type: "DISBURSEMENT", amount: 400, transactionDate: "2026-01-01" } as never, {})
     ).rejects.toThrow(BadRequestException);
     expect(mockPrisma.pettyCashTransaction.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("FinanceService.generateProductProfitability — revenue-weighted cost allocation (L8)", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPrisma.productProfitability.create.mockImplementation((args: { data: unknown }) => Promise.resolve(args.data));
+  });
+
+  const dto = { startDate: "2026-01-01", endDate: "2026-01-31" } as never;
+
+  it("allocates cost proportionally to each product's revenue share instead of splitting evenly", async () => {
+    // Product A: 900 revenue (90% of total); Product B: 100 revenue (10%). Total cost: 500.
+    mockPrisma.invoice.findMany.mockResolvedValue([
+      { items: [{ product: { sku: "A", name: "Broiler" }, lineTotal: 900, quantity: 90 }] },
+      { items: [{ product: { sku: "B", name: "Layer" }, lineTotal: 100, quantity: 10 }] },
+    ]);
+    mockPrisma.poultryCostRecord.groupBy.mockResolvedValue([{ _sum: { totalCost: 500 } }]);
+
+    const service = makeService();
+    const result = await service.generateProductProfitability(makeUser(), dto, {});
+
+    const bySku = Object.fromEntries((result.data as unknown as Array<{ productCode: string; totalCost: number }>).map((r) => [r.productCode, r.totalCost]));
+    // Previously both would get 500/2=250 regardless of revenue share.
+    expect(bySku.A).toBeCloseTo(450); // 90% of 500
+    expect(bySku.B).toBeCloseTo(50);  // 10% of 500
+  });
+
+  it("falls back to an even split only when there is no revenue at all to weight by", async () => {
+    mockPrisma.invoice.findMany.mockResolvedValue([
+      { items: [{ product: { sku: "A", name: "Broiler" }, lineTotal: 0, quantity: 0 }] },
+      { items: [{ product: { sku: "B", name: "Layer" }, lineTotal: 0, quantity: 0 }] },
+    ]);
+    mockPrisma.poultryCostRecord.groupBy.mockResolvedValue([{ _sum: { totalCost: 200 } }]);
+
+    const service = makeService();
+    const result = await service.generateProductProfitability(makeUser(), dto, {});
+
+    const bySku = Object.fromEntries((result.data as unknown as Array<{ productCode: string; totalCost: number }>).map((r) => [r.productCode, r.totalCost]));
+    expect(bySku.A).toBe(100);
+    expect(bySku.B).toBe(100);
   });
 });

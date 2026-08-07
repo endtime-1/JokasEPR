@@ -8,7 +8,7 @@ import { EmailService } from "../notifications/email.service";
 import { NotificationsService } from "../notifications/notifications.service";
 
 const mockPrisma = {
-  employee: { findFirst: jest.fn(), findMany: jest.fn(), update: jest.fn(), count: jest.fn() },
+  employee: { findFirst: jest.fn(), findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn(), create: jest.fn(), count: jest.fn() },
   attendanceRecord: { findMany: jest.fn(), count: jest.fn() },
   payrollRecord: { findMany: jest.fn(), count: jest.fn(), create: jest.fn() },
   disciplinaryRecord: { findMany: jest.fn() },
@@ -308,5 +308,53 @@ describe("HRService — leave/payroll/grievance cross-field and state-machine ch
       await expect(service.closeGrievance(makeUser(), "grv-1", {})).rejects.toThrow(BadRequestException);
       expect(mockPrisma.grievanceRecord.update).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("HRService — sanity bounds on employee dates (L5)", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPrisma.employee.findUnique.mockResolvedValue(null);
+    mockPrisma.employee.create.mockResolvedValue({ id: "emp-1" });
+  });
+
+  it("createEmployee rejects a dateOfBirth in the future", async () => {
+    const service = makeService();
+    const dto = { code: "E1", firstName: "A", lastName: "B", startDate: "2026-01-01", dateOfBirth: "2099-01-01" } as never;
+
+    await expect(service.createEmployee(makeUser(), dto, {})).rejects.toThrow(BadRequestException);
+    expect(mockPrisma.employee.create).not.toHaveBeenCalled();
+  });
+
+  it("createEmployee rejects a dateOfBirth more than 100 years ago", async () => {
+    const service = makeService();
+    const dto = { code: "E1", firstName: "A", lastName: "B", startDate: "2026-01-01", dateOfBirth: "1850-01-01" } as never;
+
+    await expect(service.createEmployee(makeUser(), dto, {})).rejects.toThrow(BadRequestException);
+  });
+
+  it("createEmployee rejects a startDate far in the future", async () => {
+    const service = makeService();
+    const dto = { code: "E1", firstName: "A", lastName: "B", startDate: "2099-01-01" } as never;
+
+    await expect(service.createEmployee(makeUser(), dto, {})).rejects.toThrow(BadRequestException);
+  });
+
+  it("createEmployee accepts a reasonable dateOfBirth and startDate", async () => {
+    const service = makeService();
+    const dto = { code: "E1", firstName: "A", lastName: "B", startDate: "2026-01-01", dateOfBirth: "1990-05-15" } as never;
+
+    await expect(service.createEmployee(makeUser(), dto, {})).resolves.toBeDefined();
+    expect(mockPrisma.employee.create).toHaveBeenCalled();
+  });
+
+  it("updateEmployee rejects a dateOfBirth in the future", async () => {
+    mockPrisma.employee.findFirst.mockResolvedValue({ id: "emp-1", firstName: "A", lastName: "B", branchId: null, farmId: null, warehouseId: null, productionSiteId: null });
+    const service = makeService();
+
+    await expect(
+      service.updateEmployee(makeUser(), "emp-1", { dateOfBirth: "2099-01-01" } as never, {})
+    ).rejects.toThrow(BadRequestException);
+    expect(mockPrisma.employee.update).not.toHaveBeenCalled();
   });
 });

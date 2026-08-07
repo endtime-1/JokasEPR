@@ -753,10 +753,20 @@ export class FinanceService {
 
     const totalCostFromPoultry = costData.reduce((s, c) => s + money((c._sum as { totalCost?: unknown }).totalCost), 0);
     const productCount = Object.keys(productMap).length || 1;
+    // L8: previously split the whole period's cost evenly across every
+    // product regardless of its actual revenue or volume share, so a
+    // low-volume product looked exactly as costly as the flagship one —
+    // the resulting margins were close to meaningless for real decisions.
+    // Allocate proportionally to each product's share of total revenue
+    // instead, falling back to an even split only when there's no revenue
+    // at all to weight by.
+    const totalRevenue = Object.values(productMap).reduce((s, p) => s + p.revenue, 0);
 
     const results = await Promise.all(
       Object.entries(productMap).map(async ([sku, data]) => {
-        const cost = totalCostFromPoultry / productCount;
+        const cost = totalRevenue > 0
+          ? totalCostFromPoultry * (data.revenue / totalRevenue)
+          : totalCostFromPoultry / productCount;
         const profit = data.revenue - cost;
         const margin = data.revenue > 0 ? (profit / data.revenue) * 100 : 0;
         const rec = await this.prisma.productProfitability.create({
