@@ -76,19 +76,19 @@ export class PoultryService {
       }),
       this.prisma.eggProductionRecord.groupBy({
         by: ["recordDate"],
-        where: { companyId: user.companyId, recordDate: { gte: since7 }, deletedAt: null, ...(user.hasGlobalAccess || user.farmIds.length === 0 ? {} : { farmId: { in: user.farmIds } }) },
+        where: { companyId: user.companyId, recordDate: { gte: since7 }, deletedAt: null, ...(user.hasGlobalAccess ? {} : { farmId: { in: user.farmIds } }) },
         _sum: { goodEggs: true, crackedEggs: true, dirtyEggs: true, brokenEggs: true, rejectedEggs: true },
         orderBy: { recordDate: "asc" }
       }),
       this.prisma.mortalityRecord.groupBy({
         by: ["recordDate"],
-        where: { companyId: user.companyId, recordDate: { gte: since7 }, deletedAt: null, isCulling: false, ...(user.hasGlobalAccess || user.farmIds.length === 0 ? {} : { farmId: { in: user.farmIds } }) },
+        where: { companyId: user.companyId, recordDate: { gte: since7 }, deletedAt: null, isCulling: false, ...(user.hasGlobalAccess ? {} : { farmId: { in: user.farmIds } }) },
         _sum: { birdCount: true },
         orderBy: { recordDate: "asc" }
       }),
       this.prisma.feedConsumptionRecord.groupBy({
         by: ["recordDate"],
-        where: { companyId: user.companyId, recordDate: { gte: since7 }, deletedAt: null, ...(user.hasGlobalAccess || user.farmIds.length === 0 ? {} : { farmId: { in: user.farmIds } }) },
+        where: { companyId: user.companyId, recordDate: { gte: since7 }, deletedAt: null, ...(user.hasGlobalAccess ? {} : { farmId: { in: user.farmIds } }) },
         _sum: { quantityKg: true },
         orderBy: { recordDate: "asc" }
       }),
@@ -1120,19 +1120,19 @@ export class PoultryService {
   }
 
   private farmWhere(user: AuthenticatedUser) {
-    return { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess || user.farmIds.length === 0 ? {} : { id: { in: user.farmIds } }) };
+    return { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess ? {} : { id: { in: user.farmIds } }) };
   }
 
   private houseWhere(user: AuthenticatedUser) {
-    return { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess || user.farmIds.length === 0 ? {} : { farmId: { in: user.farmIds } }) };
+    return { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess ? {} : { farmId: { in: user.farmIds } }) };
   }
 
   private batchWhere(user: AuthenticatedUser) {
-    return { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess || user.farmIds.length === 0 ? {} : { farmId: { in: user.farmIds } }) };
+    return { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess ? {} : { farmId: { in: user.farmIds } }) };
   }
 
   private recordWhere(user: AuthenticatedUser, query: PoultryQueryDto, type?: string) {
-    const farmFilter: Record<string, unknown> = user.hasGlobalAccess || user.farmIds.length === 0
+    const farmFilter: Record<string, unknown> = user.hasGlobalAccess
       ? (query.farmId ? { farmId: query.farmId } : {})
       : {
           farmId:

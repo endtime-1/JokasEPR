@@ -78,3 +78,42 @@ describe("PoultryService — farm/warehouse access checks (H7)", () => {
     });
   });
 });
+
+describe("PoultryService — a zero-farm user sees nothing by default, not every farm (L7, reversed per product decision)", () => {
+  type WhereHelper = (user: AuthenticatedUser, ...rest: unknown[]) => Record<string, unknown>;
+
+  function helper(service: PoultryService, name: "farmWhere" | "houseWhere" | "batchWhere"): WhereHelper {
+    return (service as unknown as Record<string, WhereHelper>)[name].bind(service);
+  }
+
+  it("farmWhere restricts a zero-farm, non-global user to an empty IN() — matches nothing", () => {
+    const service = makeService();
+    const where = helper(service, "farmWhere")(makeUser({ farmIds: [] }));
+    expect(where.id).toEqual({ in: [] });
+  });
+
+  it("houseWhere and batchWhere restrict a zero-farm, non-global user to an empty IN() too", () => {
+    const service = makeService();
+    expect(helper(service, "houseWhere")(makeUser({ farmIds: [] })).farmId).toEqual({ in: [] });
+    expect(helper(service, "batchWhere")(makeUser({ farmIds: [] })).farmId).toEqual({ in: [] });
+  });
+
+  it("still scopes to the actor's own farms when they do have assignments", () => {
+    const service = makeService();
+    const where = helper(service, "farmWhere")(makeUser({ farmIds: ["farm-1", "farm-2"] }));
+    expect(where.id).toEqual({ in: ["farm-1", "farm-2"] });
+  });
+
+  it("applies no restriction at all for a genuinely global-access user (Super Admin), even with zero farms assigned", () => {
+    const service = makeService();
+    const where = helper(service, "farmWhere")(makeUser({ farmIds: [], hasGlobalAccess: true }));
+    expect(where.id).toBeUndefined();
+  });
+
+  it("recordWhere restricts a zero-farm user to an empty IN() for daily/mortality/egg/etc. records", () => {
+    const service = makeService();
+    const recordWhere = (service as unknown as { recordWhere: (u: AuthenticatedUser, q: Record<string, unknown>, t?: string) => Record<string, unknown> }).recordWhere.bind(service);
+    const where = recordWhere(makeUser({ farmIds: [] }), {}, "daily");
+    expect(where.farmId).toEqual({ in: [] });
+  });
+});
