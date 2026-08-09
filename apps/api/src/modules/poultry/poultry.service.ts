@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { AuthenticatedUser } from "@jokas/shared";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
@@ -46,6 +46,8 @@ type BatchContext = {
 
 @Injectable()
 export class PoultryService {
+  private readonly logger = new Logger(PoultryService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
@@ -609,12 +611,19 @@ export class PoultryService {
 
   async createMortality(user: AuthenticatedUser, dto: CreateMortalityRecordDto, context: RequestContext) {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
-    const { _sum } = await this.prisma.mortalityRecord.aggregate({ where: { flockBatchId: batch.id, deletedAt: null }, _sum: { birdCount: true } });
-    const liveBirds = Math.max(0, batch.openingBirdCount - (_sum.birdCount ?? 0));
-    if (dto.birdCount > liveBirds) throw new BadRequestException(`Cannot record ${dto.birdCount} bird${dto.birdCount !== 1 ? "s" : ""}. Only ${liveBirds} live bird${liveBirds !== 1 ? "s" : ""} remain in this batch.`);
     const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
-    const data = await this.prisma.mortalityRecord.create({
-      data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), recordDate: new Date(dto.recordDate), birdCount: dto.birdCount, isCulling: dto.isCulling ?? false, reason: dto.reason, notes: dto.notes, status: dto.status ?? "SUBMITTED" }
+    const data = await this.prisma.$transaction(async (tx) => {
+      // H5: lock the FlockBatch row for the transaction's lifetime so two
+      // concurrent mortality entries for the same batch can't both read the
+      // same live-bird snapshot and both pass the check — the second waits
+      // for the first to commit, then its own aggregate includes it.
+      await tx.$queryRaw`SELECT id FROM FlockBatch WHERE id = ${batch.id} FOR UPDATE`;
+      const { _sum } = await tx.mortalityRecord.aggregate({ where: { flockBatchId: batch.id, deletedAt: null }, _sum: { birdCount: true } });
+      const liveBirds = Math.max(0, batch.openingBirdCount - (_sum.birdCount ?? 0));
+      if (dto.birdCount > liveBirds) throw new BadRequestException(`Cannot record ${dto.birdCount} bird${dto.birdCount !== 1 ? "s" : ""}. Only ${liveBirds} live bird${liveBirds !== 1 ? "s" : ""} remain in this batch.`);
+      return tx.mortalityRecord.create({
+        data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), recordDate: new Date(dto.recordDate), birdCount: dto.birdCount, isCulling: dto.isCulling ?? false, reason: dto.reason, notes: dto.notes, status: dto.status ?? "SUBMITTED" }
+      });
     });
     await this.writeAudit(user, "CREATE", "MortalityRecord", data.id, dto.isCulling ? "Recorded poultry culling" : "Recorded poultry mortality", context, batch.farmId);
     return { data };
@@ -725,27 +734,35 @@ export class PoultryService {
     const fromHouseId = fromPen?.poultryHouseId ?? dto.fromPoultryHouseId ?? batch.poultryHouseId;
     if (!fromHouseId) throw new BadRequestException("Cannot determine source house. Specify a fromPenId or fromPoultryHouseId.");
 
-    if (dto.fromPenId) {
-      const fromAlloc = await this.prisma.batchPenAllocation.findFirst({ where: { flockBatchId: batch.id, penId: dto.fromPenId } });
-      if (!fromAlloc) throw new BadRequestException("Source pen is not allocated to this batch.");
-      const [outgoing, penMortality] = await Promise.all([
-        this.prisma.poultryTransferRecord.aggregate({ where: { flockBatchId: batch.id, fromPenId: dto.fromPenId, deletedAt: null }, _sum: { birdCount: true } }),
-        this.prisma.mortalityRecord.aggregate({ where: { flockBatchId: batch.id, penId: dto.fromPenId, deletedAt: null }, _sum: { birdCount: true } })
-      ]);
-      const available = fromAlloc.birdCount - (outgoing._sum.birdCount ?? 0) - (penMortality._sum.birdCount ?? 0);
-      if (dto.birdCount > available) {
-        throw new BadRequestException(`Source pen only has ${available} birds available. Cannot transfer ${dto.birdCount}.`);
-      }
-    } else {
-      const [mortalityAgg, outgoingAgg] = await Promise.all([
-        this.prisma.mortalityRecord.aggregate({ where: { flockBatchId: batch.id, deletedAt: null }, _sum: { birdCount: true } }),
-        this.prisma.poultryTransferRecord.aggregate({ where: { flockBatchId: batch.id, deletedAt: null }, _sum: { birdCount: true } })
-      ]);
-      const liveBirds = Math.max(0, batch.openingBirdCount - (mortalityAgg._sum.birdCount ?? 0) - (outgoingAgg._sum.birdCount ?? 0));
-      if (dto.birdCount > liveBirds) throw new BadRequestException(`Cannot transfer ${dto.birdCount} birds. Only ${liveBirds} live birds remain in this batch.`);
-    }
-
     const data = await this.prisma.$transaction(async (tx) => {
+      // H5: lock the FlockBatch row for the transaction's lifetime — the
+      // availability checks below used to run as plain reads before this
+      // transaction opened, so two concurrent transfers (or a transfer
+      // racing a mortality entry) for the same batch/pen could both read
+      // the same available-bird snapshot and both pass. The second call now
+      // waits for the first to commit, then its own aggregate includes it.
+      await tx.$queryRaw`SELECT id FROM FlockBatch WHERE id = ${batch.id} FOR UPDATE`;
+
+      if (dto.fromPenId) {
+        const fromAlloc = await tx.batchPenAllocation.findFirst({ where: { flockBatchId: batch.id, penId: dto.fromPenId } });
+        if (!fromAlloc) throw new BadRequestException("Source pen is not allocated to this batch.");
+        const [outgoing, penMortality] = await Promise.all([
+          tx.poultryTransferRecord.aggregate({ where: { flockBatchId: batch.id, fromPenId: dto.fromPenId, deletedAt: null }, _sum: { birdCount: true } }),
+          tx.mortalityRecord.aggregate({ where: { flockBatchId: batch.id, penId: dto.fromPenId, deletedAt: null }, _sum: { birdCount: true } })
+        ]);
+        const available = fromAlloc.birdCount - (outgoing._sum.birdCount ?? 0) - (penMortality._sum.birdCount ?? 0);
+        if (dto.birdCount > available) {
+          throw new BadRequestException(`Source pen only has ${available} birds available. Cannot transfer ${dto.birdCount}.`);
+        }
+      } else {
+        const [mortalityAgg, outgoingAgg] = await Promise.all([
+          tx.mortalityRecord.aggregate({ where: { flockBatchId: batch.id, deletedAt: null }, _sum: { birdCount: true } }),
+          tx.poultryTransferRecord.aggregate({ where: { flockBatchId: batch.id, deletedAt: null }, _sum: { birdCount: true } })
+        ]);
+        const liveBirds = Math.max(0, batch.openingBirdCount - (mortalityAgg._sum.birdCount ?? 0) - (outgoingAgg._sum.birdCount ?? 0));
+        if (dto.birdCount > liveBirds) throw new BadRequestException(`Cannot transfer ${dto.birdCount} birds. Only ${liveBirds} live birds remain in this batch.`);
+      }
+
       const transfer = await tx.poultryTransferRecord.create({
         data: {
           companyId: user.companyId,
@@ -1210,9 +1227,27 @@ export class PoultryService {
     notes: string
   ) {
     const item = await tx.inventoryItem.findFirst({ where: { companyId: user.companyId, warehouseId, productId, deletedAt: null } });
-    if (!item) return; // no inventory item set up for this product/warehouse — skip deduction, record still saves
+    if (!item) {
+      // H4: this used to return silently — the production record saved as
+      // if stock was consumed, with no stock movement and nothing logged,
+      // which could mask a warehouse/product misconfiguration indefinitely.
+      // Still don't block the record (a missing inventory setup shouldn't
+      // stop a vet from logging medication given), but make it visible.
+      this.logger.warn(`consumeInventoryTx: no InventoryItem for product ${productId} in warehouse ${warehouseId} (companyId ${user.companyId}) — ${referenceType} ${referenceId} saved with no stock deducted.`);
+      return;
+    }
     const product = await tx.product.findFirst({ where: { id: productId } });
-    await tx.inventoryItem.update({ where: { id: item.id }, data: { quantityOnHand: { decrement: quantity }, updatedById: user.id } });
+    // H4: floor-guarded updateMany — same reasoning as the other guarded
+    // decrements in this codebase; a plain update() let two concurrent
+    // consumption entries for the same product/warehouse both succeed and
+    // jointly overdraw stock.
+    const invUpdate = await tx.inventoryItem.updateMany({
+      where: { id: item.id, quantityOnHand: { gte: quantity } },
+      data: { quantityOnHand: { decrement: quantity }, updatedById: user.id }
+    });
+    if (invUpdate.count === 0) {
+      throw new BadRequestException(`Stock for this product was modified concurrently. Please retry.`);
+    }
     await tx.stockMovement.create({
       data: { companyId: user.companyId, branchId: batch.branchId, productId, inventoryItemId: item.id, fromWarehouseId: warehouseId, warehouseId, farmId: batch.farmId, uomId: product!.uomId, movementType, quantity, referenceType, referenceId, notes, createdById: user.id }
     });

@@ -3,6 +3,17 @@ name: Build & Deploy to Hostinger
 on:
   push:
     branches: [main]
+  # H18: no trigger here ran quality checks before code merged to main — lint/
+  # typecheck/unit/e2e only gated the deploy step, after the fact. A broken
+  # push left main red until someone noticed. This runs the same `build` job
+  # (lint/typecheck/unit/e2e/build) on every PR into main, without touching
+  # the self-hosted deploy job (see its `if: github.event_name == 'push'`
+  # below) — PRs get full validation but never reach production or the
+  # self-hosted runner. Branch protection in the repo's GitHub settings
+  # should also require this "build" check to pass before merging, but that
+  # setting lives outside this file.
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -196,6 +207,11 @@ jobs:
   # ── Job 2: deploy on self-hosted runner (runs directly on Hostinger) ──────────
   deploy:
     needs: build
+    # H18: only ever run for a real push to main — a pull_request event
+    # (added above) must never reach the self-hosted runner or touch
+    # production, even though it now shares the same `build` job for
+    # quality-gate validation.
+    if: github.event_name == 'push'
     runs-on: self-hosted
     permissions:
       actions: read

@@ -1,10 +1,14 @@
 import { AuthenticatedUser } from "@jokas/shared";
 import { InventoryService } from "./inventory.service";
 
+jest.mock("../../common/next-ref", () => ({ nextRef: jest.fn().mockResolvedValue("RSV-2026-0001") }));
+
 const mockTx = {
   stockBatch: { create: jest.fn(), findMany: jest.fn(), updateMany: jest.fn() },
   stockMovement: { create: jest.fn() },
-  inventoryItem: { update: jest.fn() }
+  inventoryItem: { update: jest.fn() },
+  stockReservation: { create: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
+  $queryRaw: jest.fn().mockResolvedValue([])
 };
 
 const mockPrisma = {
@@ -177,5 +181,36 @@ describe("InventoryService.releaseReservation — gives reservations an actual e
       service.releaseReservation(makeUser({ warehouseIds: ["wh-1"] }), "rsv-1", {} as never, {})
     ).rejects.toThrow();
     expect(mockPrisma.stockReservation.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("InventoryService.reserve — locks the item row so concurrent reservations can't jointly over-book (H1)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("locks the item row inside the transaction before checking availability", async () => {
+    mockPrisma.inventoryItem.findFirst.mockResolvedValue({ id: "item-1", branchId: "branch-1", warehouseId: "wh-1", productionSiteId: null, productId: "prod-1", quantityOnHand: 100 });
+    mockTx.stockReservation.findMany.mockResolvedValue([]);
+    mockTx.stockReservation.create.mockResolvedValue({ id: "rsv-1", quantity: 60 });
+
+    const service = makeService();
+    await service.reserve(makeUser(), { warehouseId: "wh-1", productId: "prod-1", quantity: 60, purpose: "hold" } as never, {});
+
+    expect(mockTx.$queryRaw).toHaveBeenCalled();
+    expect(mockTx.stockReservation.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ quantity: 60, inventoryItemId: "item-1" }) })
+    );
+  });
+
+  it("rejects a reservation that would exceed stock net of already-active reservations", async () => {
+    mockPrisma.inventoryItem.findFirst.mockResolvedValue({ id: "item-1", branchId: "branch-1", warehouseId: "wh-1", productionSiteId: null, productId: "prod-1", quantityOnHand: 100 });
+    // Another 60 units are already reserved (read inside the same locked
+    // transaction) — 50 more would jointly reserve 110 against 100 on hand.
+    mockTx.stockReservation.findMany.mockResolvedValue([{ quantity: 60 }]);
+
+    const service = makeService();
+    await expect(
+      service.reserve(makeUser(), { warehouseId: "wh-1", productId: "prod-1", quantity: 50, purpose: "hold" } as never, {})
+    ).rejects.toThrow(/Insufficient available stock/);
+    expect(mockTx.stockReservation.create).not.toHaveBeenCalled();
   });
 });

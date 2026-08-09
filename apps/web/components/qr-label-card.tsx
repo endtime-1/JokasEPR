@@ -54,6 +54,21 @@ function svgDataUrl(svg: string) {
   }
 }
 
+// H24: printLabel() interpolates label.label (free-text — product/batch/item
+// name, user-entered) straight into an HTML string passed to
+// document.write(). The print window is same-origin for scripting purposes,
+// so an unescaped name containing e.g. "</title><script>..." would execute
+// with the ambient session cookie. Escaped for the HTML text-node context
+// it's used in below.
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 export function QrLabelCard({ entityType, entityId }: { entityType: QrEntityType; entityId: string }) {
   const [label, setLabel] = useState<QrLabel | null>(null);
   const [loading, setLoading] = useState(false);
@@ -86,7 +101,7 @@ export function QrLabelCard({ entityType, entityId }: { entityType: QrEntityType
     const safeDataUrl = svgDataUrl(svgText);
     const printWindow = window.open("", "_blank", "width=760,height=520");
     if (!printWindow) return;
-    printWindow.document.write(`<html><head><title>QR Label ${label.label}</title></head><body style="margin:24px"><img src="${safeDataUrl}" alt="QR label" /><script>window.onload=()=>window.print()</script></body></html>`);
+    printWindow.document.write(`<html><head><title>QR Label ${escapeHtml(label.label)}</title></head><body style="margin:24px"><img src="${safeDataUrl}" alt="QR label" /><script>window.onload=()=>window.print()</script></body></html>`);
     printWindow.document.close();
   }
 

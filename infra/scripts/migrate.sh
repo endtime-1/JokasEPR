@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# H19: NOT USED IN PRODUCTION — targets Docker/PostgreSQL, which production
+# does not run (bare-metal Hostinger, MySQL). The real migration step lives
+# inline in .github/workflows/deploy.yml. See infra/README.md.
 # ──────────────────────────────────────────────────────────────────────────────
 # migrate.sh — Run Prisma database migrations in production
 #

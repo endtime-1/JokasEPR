@@ -170,8 +170,19 @@ export class QrService {
           : null;
 
     if (!inventoryItem) throw new BadRequestException("No inventory item is linked to this QR code.");
-    if (dto.movementType !== "ADJUSTMENT_IN" && decimal(inventoryItem.quantityOnHand) < dto.quantity) {
-      throw new BadRequestException("Insufficient stock for QR stock movement.");
+    if (dto.movementType !== "ADJUSTMENT_IN") {
+      if (decimal(inventoryItem.quantityOnHand) < dto.quantity) {
+        throw new BadRequestException("Insufficient stock for QR stock movement.");
+      }
+      // H11: for a batch-scoped QR code, the write below decrements the
+      // specific batch's quantityRemaining, not the item's aggregate
+      // quantityOnHand — a different number. Checking only the aggregate
+      // let a nearly-depleted batch with healthy aggregate stock from other
+      // batches pass this check and go negative on a single ordinary scan,
+      // no concurrency required.
+      if (stockBatch && decimal(stockBatch.quantityRemaining) < dto.quantity) {
+        throw new BadRequestException("Insufficient stock in this specific batch for QR stock movement.");
+      }
     }
 
     if (dto.movementType === "TRANSFER" && !dto.toWarehouseId) {
@@ -223,22 +234,60 @@ export class QrService {
             }
           });
         }
-        await tx.inventoryItem.update({ where: { id: inventoryItem.id }, data: { quantityOnHand: { decrement: dto.quantity } } });
+        // H11: floor-guarded updateMany instead of a plain update — the
+        // pre-transaction reads above are a stale snapshot by the time this
+        // runs, so two staff scanning the same code concurrently could
+        // otherwise both pass the check and both decrement, driving stock
+        // negative.
+        const itemUpdate = await tx.inventoryItem.updateMany({
+          where: { id: inventoryItem.id, quantityOnHand: { gte: dto.quantity } },
+          data: { quantityOnHand: { decrement: dto.quantity } }
+        });
+        if (itemUpdate.count === 0) {
+          throw new BadRequestException("Stock was modified concurrently — please retry.");
+        }
         await tx.inventoryItem.update({ where: { id: destinationItem.id }, data: { quantityOnHand: { increment: dto.quantity } } });
         if (stockBatch) {
-          await tx.stockBatch.update({ where: { id: stockBatch.id }, data: { quantityRemaining: { decrement: dto.quantity } } });
+          const batchUpdate = await tx.stockBatch.updateMany({
+            where: { id: stockBatch.id, quantityRemaining: { gte: dto.quantity } },
+            data: { quantityRemaining: { decrement: dto.quantity } }
+          });
+          if (batchUpdate.count === 0) {
+            throw new BadRequestException("This batch's stock was modified concurrently — please retry.");
+          }
         }
       } else {
         const signedQty = dto.movementType === "ADJUSTMENT_IN" ? dto.quantity : -dto.quantity;
-        await tx.inventoryItem.update({
-          where: { id: inventoryItem.id },
-          data: { quantityOnHand: { increment: signedQty } }
-        });
-        if (stockBatch) {
-          await tx.stockBatch.update({
-            where: { id: stockBatch.id },
-            data: { quantityRemaining: { increment: signedQty } }
+        if (signedQty < 0) {
+          // H11: same floor guard as the transfer branch above — this path
+          // covers every non-transfer, stock-reducing movement type.
+          const itemUpdate = await tx.inventoryItem.updateMany({
+            where: { id: inventoryItem.id, quantityOnHand: { gte: -signedQty } },
+            data: { quantityOnHand: { increment: signedQty } }
           });
+          if (itemUpdate.count === 0) {
+            throw new BadRequestException("Stock was modified concurrently — please retry.");
+          }
+          if (stockBatch) {
+            const batchUpdate = await tx.stockBatch.updateMany({
+              where: { id: stockBatch.id, quantityRemaining: { gte: -signedQty } },
+              data: { quantityRemaining: { increment: signedQty } }
+            });
+            if (batchUpdate.count === 0) {
+              throw new BadRequestException("This batch's stock was modified concurrently — please retry.");
+            }
+          }
+        } else {
+          await tx.inventoryItem.update({
+            where: { id: inventoryItem.id },
+            data: { quantityOnHand: { increment: signedQty } }
+          });
+          if (stockBatch) {
+            await tx.stockBatch.update({
+              where: { id: stockBatch.id },
+              data: { quantityRemaining: { increment: signedQty } }
+            });
+          }
         }
       }
       return tx.stockMovement.create({

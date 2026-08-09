@@ -17,54 +17,58 @@ describe("DashboardService", () => {
   let prisma: {
     stockBatch: { findMany: jest.Mock };
     productProfitability: { findMany: jest.Mock };
-    salesOrder: { aggregate: jest.Mock; count: jest.Mock };
+    salesOrder: { aggregate: jest.Mock; count: jest.Mock; findMany: jest.Mock };
     flockBatch: { aggregate: jest.Mock; count: jest.Mock };
     stockExpiryAlert: { count: jest.Mock };
     employee: { findFirst: jest.Mock };
-    farm: { count: jest.Mock };
+    farm: { count: jest.Mock; findMany: jest.Mock };
+    branch: { findMany: jest.Mock };
     productionSite: { count: jest.Mock };
     eggProductionRecord: { count: jest.Mock; findMany: jest.Mock; aggregate: jest.Mock };
     feedConsumptionRecord: { count: jest.Mock; findMany: jest.Mock; aggregate: jest.Mock };
     mortalityRecord: { count: jest.Mock; findMany: jest.Mock; aggregate: jest.Mock };
     dailyPoultryRecord: { count: jest.Mock; findMany: jest.Mock };
     stockMovement: { count: jest.Mock };
-    soyaBeanIntake: { count: jest.Mock; aggregate: jest.Mock };
-    soyaOilOutput: { aggregate: jest.Mock };
-    soyaCakeOutput: { aggregate: jest.Mock };
+    soyaBeanIntake: { count: jest.Mock; aggregate: jest.Mock; findMany: jest.Mock };
+    soyaOilOutput: { aggregate: jest.Mock; findMany: jest.Mock };
+    soyaCakeOutput: { aggregate: jest.Mock; findMany: jest.Mock };
     attendanceRecord: { count: jest.Mock };
     prospectVisit: { count: jest.Mock };
     feedProductionBatch: { count: jest.Mock; findMany: jest.Mock; aggregate: jest.Mock };
     feedProductionOrder: { count: jest.Mock };
     purchaseOrder: { count: jest.Mock };
     maintenanceRecord: { count: jest.Mock };
-    aiAlert: { count: jest.Mock };
+    aiAlert: { count: jest.Mock; findMany: jest.Mock };
+    supplierInvoice: { aggregate: jest.Mock };
   };
 
   beforeEach(async () => {
     prisma = {
       stockBatch: { findMany: jest.fn() },
       productProfitability: { findMany: jest.fn() },
-      salesOrder: { aggregate: jest.fn().mockResolvedValue({ _sum: { totalAmount: 0, balanceDue: 0 } }), count: jest.fn().mockResolvedValue(0) },
+      salesOrder: { aggregate: jest.fn().mockResolvedValue({ _sum: { totalAmount: 0, balanceDue: 0 } }), count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue([]) },
       flockBatch: { aggregate: jest.fn().mockResolvedValue({ _sum: { openingBirdCount: 0 } }), count: jest.fn().mockResolvedValue(0) },
       stockExpiryAlert: { count: jest.fn().mockResolvedValue(0) },
       employee: { findFirst: jest.fn().mockResolvedValue(null) },
-      farm: { count: jest.fn().mockResolvedValue(0) },
+      farm: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue([]) },
+      branch: { findMany: jest.fn().mockResolvedValue([]) },
       productionSite: { count: jest.fn().mockResolvedValue(0) },
       eggProductionRecord: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue([]), aggregate: jest.fn().mockResolvedValue({ _sum: { goodEggs: 0, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0 } }) },
       feedConsumptionRecord: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue([]), aggregate: jest.fn().mockResolvedValue({ _sum: { quantityKg: 0 } }) },
       mortalityRecord: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue([]), aggregate: jest.fn().mockResolvedValue({ _sum: { birdCount: 0 } }) },
       dailyPoultryRecord: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue([]) },
       stockMovement: { count: jest.fn().mockResolvedValue(0) },
-      soyaBeanIntake: { count: jest.fn().mockResolvedValue(0), aggregate: jest.fn().mockResolvedValue({ _sum: { quantityKg: 0 } }) },
-      soyaOilOutput: { aggregate: jest.fn().mockResolvedValue({ _sum: { quantityLitres: 0 } }) },
-      soyaCakeOutput: { aggregate: jest.fn().mockResolvedValue({ _sum: { quantityKg: 0 } }) },
+      soyaBeanIntake: { count: jest.fn().mockResolvedValue(0), aggregate: jest.fn().mockResolvedValue({ _sum: { quantityKg: 0 } }), findMany: jest.fn().mockResolvedValue([]) },
+      soyaOilOutput: { aggregate: jest.fn().mockResolvedValue({ _sum: { quantityLitres: 0 } }), findMany: jest.fn().mockResolvedValue([]) },
+      soyaCakeOutput: { aggregate: jest.fn().mockResolvedValue({ _sum: { quantityKg: 0 } }), findMany: jest.fn().mockResolvedValue([]) },
       attendanceRecord: { count: jest.fn().mockResolvedValue(0) },
       prospectVisit: { count: jest.fn().mockResolvedValue(0) },
       feedProductionBatch: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue([]), aggregate: jest.fn().mockResolvedValue({ _sum: { producedQuantityKg: 0 } }) },
       feedProductionOrder: { count: jest.fn().mockResolvedValue(0) },
       purchaseOrder: { count: jest.fn().mockResolvedValue(0) },
       maintenanceRecord: { count: jest.fn().mockResolvedValue(0) },
-      aiAlert: { count: jest.fn().mockResolvedValue(0) },
+      aiAlert: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue([]) },
+      supplierInvoice: { aggregate: jest.fn().mockResolvedValue({ _sum: { balanceDue: 0 } }) },
     };
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -106,12 +110,13 @@ describe("DashboardService", () => {
       expect(result[0].data[0].value).toBe(10);
     });
 
-    it("returns empty data on prisma error", async () => {
+    it("propagates a prisma error instead of silently returning empty data (H23)", async () => {
+      // A silent empty-data fallback here is indistinguishable from
+      // "genuinely no inventory this period" — it must fail loudly instead
+      // (executive() converts this into a proper 500 for the caller).
       prisma.stockBatch.findMany.mockRejectedValue(new Error("db error"));
 
-      const result = await (service as any).liveInventoryValueByCategory(makeUser(), {});
-
-      expect(result).toEqual([{ name: "inventory_value", data: [] }]);
+      await expect((service as any).liveInventoryValueByCategory(makeUser(), {})).rejects.toThrow("db error");
     });
   });
 
@@ -147,12 +152,10 @@ describe("DashboardService", () => {
       expect(result[0].data[0].value).toBe(301);
     });
 
-    it("returns empty data on prisma error", async () => {
+    it("propagates a prisma error instead of silently returning empty data (H23)", async () => {
       prisma.productProfitability.findMany.mockRejectedValue(new Error("db error"));
 
-      const result = await (service as any).liveProfitabilityByProduct("company-1", range);
-
-      expect(result).toEqual([{ name: "gross_profit", data: [] }]);
+      await expect((service as any).liveProfitabilityByProduct("company-1", range)).rejects.toThrow("db error");
     });
   });
 
@@ -318,6 +321,36 @@ describe("DashboardService", () => {
       await callComputeMetricValues(makeUser({ branchIds: ["branch-1"] }));
       const where = prisma.purchaseOrder.count.mock.calls[0][0].where;
       expect(where.branchId).toBeUndefined();
+    });
+
+    it("propagates a single sub-query's failure instead of silently substituting a fake 0 (H23)", async () => {
+      // Previously every sub-query here ended in .catch(() => 0) — a single
+      // transient failure silently became a fake 0 instead of failing the
+      // whole computeMetricValues() call.
+      prisma.aiAlert.count.mockRejectedValue(new Error("db blip"));
+      await expect(callComputeMetricValues(makeUser())).rejects.toThrow("db blip");
+    });
+  });
+
+  describe("executive — a failure anywhere surfaces as a real error, not a corrupted period-over-period comparison (H23)", () => {
+    beforeEach(() => {
+      prisma.stockBatch.findMany.mockResolvedValue([]);
+      prisma.productProfitability.findMany.mockResolvedValue([]);
+    });
+
+    it("resolves normally on the happy path", async () => {
+      await expect(service.executive(makeUser({ hasGlobalAccess: true }), {} as never)).resolves.toBeDefined();
+    });
+
+    it("converts a failure in the current-period metrics into a real 500, not a fake 'down 100%' delta", async () => {
+      // Would previously have rendered as a fake 0 for just the current
+      // period, diffed against a real prior-period value, showing
+      // management a fabricated "down 100%" swing instead of an error.
+      prisma.aiAlert.count.mockRejectedValueOnce(new Error("db blip"));
+
+      await expect(service.executive(makeUser({ hasGlobalAccess: true }), {} as never)).rejects.toThrow(
+        "Executive dashboard failed to load"
+      );
     });
   });
 });

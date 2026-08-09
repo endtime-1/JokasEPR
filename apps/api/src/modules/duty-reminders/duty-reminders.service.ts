@@ -43,29 +43,34 @@ export class DutyRemindersService {
   // who have access to that farm.
 
   @Cron("0 10 * * *", { timeZone: "Africa/Accra" })
-  async morningReminder() {
-    if (!(await this.acquireCronLock("morningReminder"))) return;
-    this.logger.log("Running morning duty reminder check");
+  async morningReminder(companyId?: string) {
+    // H16: companyId is only ever passed by the manual /duty-reminders/trigger
+    // endpoint (see below) — the scheduled cron always calls this with no
+    // argument, which still means "every company," as before. A distinct
+    // lock key for the scoped case keeps a manual single-tenant trigger from
+    // contending with (or blocking) the global scheduled run's lock.
+    if (!(await this.acquireCronLock(companyId ? `morningReminder:${companyId}` : "morningReminder"))) return;
+    this.logger.log(`Running morning duty reminder check${companyId ? ` for company ${companyId}` : ""}`);
     await this.remindForDuties("MORNING", [
       "Egg Collection",
       "Feed Record",
       "Mortality Record",
-    ]);
+    ], companyId);
   }
 
   // ── 6 PM: evening duty reminder ──────────────────────────────────────────
   // Fires every day at 18:00. Checks daily poultry summary.
 
   @Cron("0 18 * * *", { timeZone: "Africa/Accra" })
-  async eveningReminder() {
-    if (!(await this.acquireCronLock("eveningReminder"))) return;
-    this.logger.log("Running evening duty reminder check");
-    await this.remindForDuties("EVENING", ["Daily Poultry Summary"]);
+  async eveningReminder(companyId?: string) {
+    if (!(await this.acquireCronLock(companyId ? `eveningReminder:${companyId}` : "eveningReminder"))) return;
+    this.logger.log(`Running evening duty reminder check${companyId ? ` for company ${companyId}` : ""}`);
+    await this.remindForDuties("EVENING", ["Daily Poultry Summary"], companyId);
   }
 
   // ── Core logic ────────────────────────────────────────────────────────────
 
-  private async remindForDuties(slot: "MORNING" | "EVENING", dutyNames: string[]) {
+  private async remindForDuties(slot: "MORNING" | "EVENING", dutyNames: string[], companyId?: string) {
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     const todayEnd = new Date(todayStart);
@@ -73,10 +78,17 @@ export class DutyRemindersService {
 
     const dateRange = { gte: todayStart, lt: todayEnd };
 
+    // H16: /duty-reminders/trigger only ever required PLATFORM_MANAGE — a
+    // normal per-company admin permission — but this used to always query
+    // every company in the deployment regardless of who called it, letting
+    // any tenant's admin trigger notification spam and processing load
+    // against every OTHER tenant too. companyId (passed only by the manual
+    // trigger path) scopes this to the caller's own company; the scheduled
+    // cron omits it and still processes every company, as intended.
     let companies: { id: string; name: string }[];
     try {
       companies = await this.prisma.company.findMany({
-        where: { deletedAt: null },
+        where: { deletedAt: null, ...(companyId ? { id: companyId } : {}) },
         select: { id: true, name: true },
       });
     } catch (err) {
@@ -218,16 +230,28 @@ export class DutyRemindersService {
         byCompany.set(cid, list);
       }
 
+      // H26: this loop used to share the outer try/catch with the query
+      // above — one company's broadcast throwing (a transient DB deadlock,
+      // a user deleted mid-loop) silently killed every remaining company's
+      // alert for that run, with only one warning log line and no way to
+      // tell "sent" from "skipped." Isolated per-company now, matching how
+      // remindForDuties()/processCompany() already isolate failures above.
+      let notified = 0;
       for (const [companyId, names] of byCompany) {
         const body = `${names.length} certificate(s) expiring within 30 days:\n${names.slice(0, 10).join("\n")}${names.length > 10 ? `\n…and ${names.length - 10} more` : ""}`;
-        await this.notifications.broadcast(companyId, "HR_MANAGE", {
-          type: "DOCUMENT_EXPIRY_ALERT" as never,
-          title: "Certificate Expiry Alert",
-          body,
-          entityType: "TrainingRecord",
-        });
+        try {
+          await this.notifications.broadcast(companyId, "HR_MANAGE", {
+            type: "DOCUMENT_EXPIRY_ALERT" as never,
+            title: "Certificate Expiry Alert",
+            body,
+            entityType: "TrainingRecord",
+          });
+          notified++;
+        } catch (err) {
+          this.logger.error(`certificateExpiryAlert: failed to notify company ${companyId}: ${err instanceof Error ? err.message : String(err)}`);
+        }
       }
-      if (expiring.length > 0) this.logger.log(`certificateExpiryAlert: notified ${byCompany.size} company/ies for ${expiring.length} certificate(s)`);
+      if (expiring.length > 0) this.logger.log(`certificateExpiryAlert: notified ${notified}/${byCompany.size} company/ies for ${expiring.length} certificate(s)`);
     } catch (err) {
       this.logger.warn("certificateExpiryAlert: skipped — " + (err instanceof Error ? err.message : String(err)));
     }
@@ -294,18 +318,25 @@ export class DutyRemindersService {
         byCompany.set(cid, list);
       }
 
+      // H26: isolated per-company — see certificateExpiryAlert above for why.
+      let notified = 0;
       for (const [companyId, items] of byCompany) {
         const body = `${items.length} vaccination(s) due within 7 days:\n` +
           items.slice(0, 10).map((i) => `${i.batchCode} — ${i.vaccineName} (due ${i.dueDate.toISOString().slice(0, 10)})`).join("\n") +
           (items.length > 10 ? `\n…and ${items.length - 10} more` : "");
-        await this.notifications.broadcast(companyId, "POULTRY_MANAGE", {
-          type: NotificationType.VACCINATION_REMINDER,
-          title: "Vaccination Due Soon",
-          body,
-          entityType: "VaccinationRecord",
-        });
+        try {
+          await this.notifications.broadcast(companyId, "POULTRY_MANAGE", {
+            type: NotificationType.VACCINATION_REMINDER,
+            title: "Vaccination Due Soon",
+            body,
+            entityType: "VaccinationRecord",
+          });
+          notified++;
+        } catch (err) {
+          this.logger.error(`vaccinationDueDateReminder: failed to notify company ${companyId}: ${err instanceof Error ? err.message : String(err)}`);
+        }
       }
-      if (due.length > 0) this.logger.log(`vaccinationDueDateReminder: ${due.length} record(s) in ${byCompany.size} company/ies`);
+      if (due.length > 0) this.logger.log(`vaccinationDueDateReminder: notified ${notified}/${byCompany.size} company/ies for ${due.length} record(s)`);
     } catch (err) {
       this.logger.warn("vaccinationDueDateReminder: skipped — " + (err instanceof Error ? err.message : String(err)));
     }
@@ -336,18 +367,25 @@ export class DutyRemindersService {
         byCompany.set(cid, list);
       }
 
+      // H26: isolated per-company — see certificateExpiryAlert above for why.
+      let notified = 0;
       for (const [companyId, items] of byCompany) {
         const body = `${items.length} batch(es) still under medication withdrawal (do not sell/slaughter):\n` +
           items.slice(0, 10).map((i) => `${i.batchCode} — ${i.medicationName} (withdrawal ends ${i.until.toISOString().slice(0, 10)})`).join("\n") +
           (items.length > 10 ? `\n…and ${items.length - 10} more` : "");
-        await this.notifications.broadcast(companyId, "POULTRY_MANAGE", {
-          type: NotificationType.MEDICATION_REMINDER,
-          title: "⚠️ Withdrawal Period Active",
-          body,
-          entityType: "MedicationRecord",
-        });
+        try {
+          await this.notifications.broadcast(companyId, "POULTRY_MANAGE", {
+            type: NotificationType.MEDICATION_REMINDER,
+            title: "⚠️ Withdrawal Period Active",
+            body,
+            entityType: "MedicationRecord",
+          });
+          notified++;
+        } catch (err) {
+          this.logger.error(`withdrawalPeriodAlert: failed to notify company ${companyId}: ${err instanceof Error ? err.message : String(err)}`);
+        }
       }
-      if (active.length > 0) this.logger.log(`withdrawalPeriodAlert: ${active.length} record(s) in ${byCompany.size} company/ies`);
+      if (active.length > 0) this.logger.log(`withdrawalPeriodAlert: notified ${notified}/${byCompany.size} company/ies for ${active.length} record(s)`);
     } catch (err) {
       this.logger.warn("withdrawalPeriodAlert: skipped — " + (err instanceof Error ? err.message : String(err)));
     }

@@ -1,0 +1,15 @@
+-- H10: processSyncItem's idempotency guard was check -> do the work -> write
+-- a marker row, as three separate steps, not atomic. Two requests for the
+-- same offline action (a client retry after a timeout while the first is
+-- still in flight) could both pass the check and both execute — two real
+-- stock movements for one physical transaction. Worse, the second request's
+-- marker-row write hit this table's unique (companyId, localId) index,
+-- landed in the catch block, and overwrote the first request's successful
+-- SYNCED marker with FAILED, permanently hiding that the duplicate happened.
+--
+-- The fix flips the order: atomically claim the localId with a PROCESSING
+-- row *before* doing any work (the create()'s unique-index conflict is now
+-- the race-safe checkpoint), do the work, then update that same
+-- already-owned row to SYNCED or FAILED — which can no longer conflict with
+-- anything, since this request is the only owner of that row.
+ALTER TABLE `MobileSyncRecord` MODIFY COLUMN `status` ENUM('PROCESSING','SYNCED','DUPLICATE','FAILED') NOT NULL DEFAULT 'SYNCED';

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# H19: NOT USED IN PRODUCTION — targets Docker/PostgreSQL, which production
+# does not run (bare-metal Hostinger, MySQL). For a real emergency restore
+# use scripts/backup/restore-db.sh instead. See infra/README.md.
 # ──────────────────────────────────────────────────────────────────────────────
 # restore.sh — Restore a PostgreSQL backup to the production database.
 #

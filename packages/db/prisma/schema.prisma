@@ -2310,9 +2310,10 @@ model Payment {
   method        PaymentMethod
   status        PaymentStatus @default(POSTED)
   reference     String?
-  receivedById  String?      
-  createdById   String?      
-  updatedById   String?      
+  idempotencyKey String?      @db.VarChar(100)
+  receivedById  String?
+  createdById   String?
+  updatedById   String?
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
   deletedAt     DateTime?
@@ -2330,6 +2331,7 @@ model Payment {
   statements CustomerStatement[]
 
   @@unique([companyId, paymentNumber])
+  @@unique([companyId, idempotencyKey])
   @@index([companyId])
   @@index([branchId])
   @@index([customerId])
@@ -5585,11 +5587,12 @@ model ProcurementPayment {
   amount        Decimal       @db.Decimal(15, 2)
   paymentDate   DateTime
   paymentMethod PaymentMethod
-  bankAccountId String?      
+  bankAccountId String?
   description   String        @db.VarChar(240)
   notes         String?       @db.VarChar(500)
-  createdById   String?      
-  updatedById   String?      
+  idempotencyKey String?      @db.VarChar(100)
+  createdById   String?
+  updatedById   String?
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
   deletedAt     DateTime?
@@ -5599,6 +5602,7 @@ model ProcurementPayment {
   invoice  SupplierInvoice? @relation(fields: [invoiceId], references: [id])
 
   @@unique([companyId, reference])
+  @@unique([companyId, idempotencyKey])
   @@index([companyId])
   @@index([supplierId])
   @@index([companyId, paymentDate])
@@ -6781,6 +6785,7 @@ model NotificationConfig {
 // ─── Mobile Offline Sync ──────────────────────────────────────────────────────
 
 enum MobileSyncStatus {
+  PROCESSING
   SYNCED
   DUPLICATE
   FAILED

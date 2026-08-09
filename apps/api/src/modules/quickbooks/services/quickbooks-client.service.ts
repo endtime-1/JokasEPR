@@ -7,6 +7,20 @@ import { QuickBooksOAuthService } from "./quickbooks-oauth.service";
 const MINOR_VERSION = "65";
 const MAX_RETRIES = 3;
 
+// H20: request() used to wrap every non-retried failure into a bare
+// ServiceUnavailableException with only a message string, losing the
+// original HTTP status code entirely. That made it impossible for a caller
+// (e.g. quickbooks-invoice.service.ts) to tell "QuickBooks says this record
+// genuinely doesn't exist (404)" apart from a network timeout, a 5xx that
+// survived the retry budget, or malformed JSON — all of which used to be
+// treated identically as "recreate the record," creating duplicates in
+// QuickBooks from an entirely ordinary transient failure.
+export class QuickBooksApiError extends ServiceUnavailableException {
+  constructor(message: string, public readonly qbStatus?: number) {
+    super(message);
+  }
+}
+
 @Injectable()
 export class QuickBooksClientService {
   private readonly logger = new Logger(QuickBooksClientService.name);
@@ -90,7 +104,7 @@ export class QuickBooksClientService {
           return this.request<T>(accessToken, config, attempt + 1);
         }
         const detail = (err.response?.data as { Fault?: { Error?: { Message?: string }[] } })?.Fault?.Error?.[0]?.Message ?? err.message;
-        throw new ServiceUnavailableException(`QuickBooks API error: ${detail}`);
+        throw new QuickBooksApiError(`QuickBooks API error: ${detail}`, status);
       }
       throw err;
     }

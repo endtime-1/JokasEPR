@@ -211,6 +211,10 @@ export class CreateProcurementPaymentDto {
   @IsOptional() @IsUUID() bankAccountId?: string;
   @IsString() @MaxLength(240) description!: string;
   @IsOptional() @IsString() @MaxLength(500) notes?: string;
+  // H9: lets a client-side retry (after a timeout, before the client knows
+  // whether the first attempt landed) safely resend the same payment
+  // without double-recording it — see createPayment's idempotencyKey handling.
+  @IsOptional() @IsString() @MaxLength(100) idempotencyKey?: string;
 }
 
 export class CreatePerformanceRecordDto {

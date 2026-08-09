@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# H19: NOT USED IN PRODUCTION — targets Docker containers, which production
+# does not run (bare-metal Hostinger under Passenger). For real production
+# diagnostics use .github/workflows/dump-logs.yml. See infra/README.md.
 # ──────────────────────────────────────────────────────────────────────────────
 # logs.sh — Tail logs from one or all production services
 #

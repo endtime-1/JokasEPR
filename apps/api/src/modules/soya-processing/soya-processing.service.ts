@@ -162,6 +162,12 @@ export class SoyaProcessingService {
           createdById: user.id
         }
       });
+      // H3: soya never wrote StockBatch rows at all — valuation and
+      // expiry-alert logic both derive entirely from summing StockBatch, so
+      // every soya SKU reported $0 valuation and could never trigger an
+      // expiry alert regardless of real stock level or age. Recording one
+      // here (and on the oil/cake outputs in createBatch below) closes that.
+      await tx.stockBatch.create({ data: { companyId: user.companyId, branchId: site.branchId, farmId: null, warehouseId: dto.warehouseId, productionSiteId: dto.productionSiteId, productId: dto.productId, inventoryItemId: inventory.id, uomId: product.uomId, batchNumber: dto.receiptNumber.toUpperCase(), quantityReceived: dto.quantityKg, quantityRemaining: dto.quantityKg, unitCost: dto.unitCost, createdById: user.id } });
       await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: site.branchId, productId: dto.productId, inventoryItemId: inventory.id, toWarehouseId: dto.warehouseId, warehouseId: dto.warehouseId, productionSiteId: dto.productionSiteId, uomId: product.uomId, movementType: "PURCHASE_RECEIPT", quantity: dto.quantityKg, unitCost: dto.unitCost, referenceType: "SoyaBeanIntake", referenceId: intake.id, notes: `Soya beans received from ${dto.supplierName}`, createdById: user.id } });
       return intake;
     });
@@ -225,6 +231,9 @@ export class SoyaProcessingService {
       if (invUpdate.count === 0) {
         throw new BadRequestException("Soya bean stock was modified concurrently — please retry.");
       }
+      // H3: best-effort FIFO consumption of bean StockBatch lots — see
+      // consumeStockBatchesFifo for why this doesn't hard-block on shortfall.
+      await this.consumeStockBatchesFifo(tx, user.companyId, dto.rawWarehouseId, dto.beanProductId, dto.beansUsedKg);
       const batch = await tx.soyaProcessingBatch.create({ data: { companyId: user.companyId, branchId: site.branchId, productionSiteId: site.id, intakeId: dto.intakeId, beanProductId: dto.beanProductId, batchNumber, beansUsedKg: dto.beansUsedKg, processingDate: dto.processingDate ? new Date(dto.processingDate) : new Date(), status: dto.status ?? "POSTED", createdById: user.id } });
       await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: site.branchId, productId: dto.beanProductId, inventoryItemId: beanInventory.id, fromWarehouseId: dto.rawWarehouseId, productionSiteId: site.id, uomId: beanProduct.uomId, movementType: "PRODUCTION_INPUT", quantity: dto.beansUsedKg, unitCost: rawBeanCost / dto.beansUsedKg, referenceType: "SoyaProcessingBatch", referenceId: batch.id, notes: `Soya beans issued for ${batch.batchNumber}`, createdById: user.id } });
 
@@ -232,6 +241,12 @@ export class SoyaProcessingService {
       const cakeInventory = await tx.inventoryItem.upsert({ where: { companyId_warehouseId_productId: { companyId: user.companyId, warehouseId: dto.cakeWarehouseId, productId: dto.cakeProductId } }, update: { quantityOnHand: { increment: dto.cakeProducedKg }, updatedById: user.id }, create: { companyId: user.companyId, branchId: site.branchId, warehouseId: dto.cakeWarehouseId, productionSiteId: site.id, productId: dto.cakeProductId, uomId: cakeProduct.uomId, quantityOnHand: dto.cakeProducedKg, createdById: user.id } });
       await tx.soyaOilOutput.create({ data: { companyId: user.companyId, branchId: site.branchId, productionSiteId: site.id, productionBatchId: batch.id, warehouseId: dto.oilWarehouseId, productId: dto.oilProductId, quantityLitres: dto.oilProducedLitres, unitCost: oilCost / Math.max(dto.oilProducedLitres, 1), createdById: user.id } });
       await tx.soyaCakeOutput.create({ data: { companyId: user.companyId, branchId: site.branchId, productionSiteId: site.id, productionBatchId: batch.id, warehouseId: dto.cakeWarehouseId, productId: dto.cakeProductId, quantityKg: dto.cakeProducedKg, unitCost: cakeCost / Math.max(dto.cakeProducedKg, 1), createdById: user.id } });
+      // H3: soya never wrote StockBatch rows for its outputs — valuation and
+      // expiry-alert logic both derive entirely from summing StockBatch, so
+      // every soya oil/cake SKU reported $0 valuation and could never
+      // trigger an expiry alert regardless of real stock level or age.
+      await tx.stockBatch.create({ data: { companyId: user.companyId, branchId: site.branchId, warehouseId: dto.oilWarehouseId, productionSiteId: site.id, productId: dto.oilProductId, inventoryItemId: oilInventory.id, uomId: oilProduct.uomId, batchNumber: `${batchNumber}-OIL`, quantityReceived: dto.oilProducedLitres, quantityRemaining: dto.oilProducedLitres, unitCost: oilCost / Math.max(dto.oilProducedLitres, 1), createdById: user.id } });
+      await tx.stockBatch.create({ data: { companyId: user.companyId, branchId: site.branchId, warehouseId: dto.cakeWarehouseId, productionSiteId: site.id, productId: dto.cakeProductId, inventoryItemId: cakeInventory.id, uomId: cakeProduct.uomId, batchNumber: `${batchNumber}-CAKE`, quantityReceived: dto.cakeProducedKg, quantityRemaining: dto.cakeProducedKg, unitCost: cakeCost / Math.max(dto.cakeProducedKg, 1), createdById: user.id } });
       await tx.soyaWasteRecord.create({ data: { companyId: user.companyId, branchId: site.branchId, productionSiteId: site.id, productionBatchId: batch.id, quantityKg: dto.wasteKg ?? Math.max(0, dto.beansUsedKg - dto.cakeProducedKg), reason: "Processing loss", createdById: user.id } });
       await tx.soyaProductionCost.create({ data: { companyId: user.companyId, branchId: site.branchId, productionSiteId: site.id, productionBatchId: batch.id, rawBeanCost, laborCost: dto.laborCost ?? 0, packagingCost: dto.packagingCost ?? 0, overheadCost: dto.overheadCost ?? 0, expectedOilSalesValue: dto.expectedOilSalesValue ?? 0, expectedCakeSalesValue: dto.expectedCakeSalesValue ?? 0, createdById: user.id } });
       await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: site.branchId, productId: dto.oilProductId, inventoryItemId: oilInventory.id, toWarehouseId: dto.oilWarehouseId, warehouseId: dto.oilWarehouseId, productionSiteId: site.id, uomId: oilProduct.uomId, movementType: "PRODUCTION_OUTPUT", quantity: dto.oilProducedLitres, unitCost: oilCost / Math.max(dto.oilProducedLitres, 1), referenceType: "SoyaProcessingBatch", referenceId: batch.id, notes: `Soya oil output from ${batch.batchNumber}`, createdById: user.id } });
@@ -288,8 +303,14 @@ export class SoyaProcessingService {
       if (invUpdate.count === 0) {
         throw new BadRequestException("Soya stock was modified concurrently — please retry.");
       }
+      // H3: best-effort FIFO consumption at the source, and a fresh
+      // StockBatch at the destination carrying the consumed lots' weighted
+      // cost forward — see consumeStockBatchesFifo for why source
+      // consumption doesn't hard-block on shortfall.
+      const consumedSource = await this.consumeStockBatchesFifo(tx, user.companyId, dto.fromWarehouseId, dto.productId, dto.quantity);
       const destination = await tx.inventoryItem.upsert({ where: { companyId_warehouseId_productId: { companyId: user.companyId, warehouseId: dto.toWarehouseId, productId: dto.productId } }, update: { quantityOnHand: { increment: dto.quantity }, updatedById: user.id }, create: { companyId: user.companyId, branchId: batch.branchId, warehouseId: dto.toWarehouseId, productionSiteId: dto.toProductionSiteId, productId: dto.productId, uomId: product.uomId, quantityOnHand: dto.quantity, createdById: user.id } });
       const transfer = await tx.soyaInternalTransfer.create({ data: { companyId: user.companyId, branchId: batch.branchId, productionSiteId: batch.productionSiteId, productionBatchId: batch.id, productId: dto.productId, outputType: dto.outputType, fromWarehouseId: dto.fromWarehouseId, toWarehouseId: dto.toWarehouseId, toProductionSiteId: dto.toProductionSiteId, quantity: dto.quantity, status: "COMPLETED", notes: dto.notes, createdById: user.id } });
+      await tx.stockBatch.create({ data: { companyId: user.companyId, branchId: batch.branchId, warehouseId: dto.toWarehouseId, productionSiteId: dto.toProductionSiteId, productId: dto.productId, inventoryItemId: destination.id, uomId: product.uomId, batchNumber: `${transfer.id}-TRF`, quantityReceived: dto.quantity, quantityRemaining: dto.quantity, unitCost: consumedSource.unitCost, createdById: user.id } });
       await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: batch.branchId, productId: dto.productId, inventoryItemId: source.id, fromWarehouseId: dto.fromWarehouseId, toWarehouseId: dto.toWarehouseId, toProductionSiteId: dto.toProductionSiteId, uomId: product.uomId, movementType: "TRANSFER", quantity: dto.quantity, referenceType: "SoyaInternalTransfer", referenceId: transfer.id, notes: "Soya internal transfer dispatched", createdById: user.id } });
       await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: batch.branchId, productId: dto.productId, inventoryItemId: destination.id, toWarehouseId: dto.toWarehouseId, warehouseId: dto.toWarehouseId, toProductionSiteId: dto.toProductionSiteId, uomId: product.uomId, movementType: "TRANSFER", quantity: dto.quantity, referenceType: "SoyaInternalTransfer", referenceId: transfer.id, notes: "Soya internal transfer received", createdById: user.id } });
       return transfer;
@@ -338,6 +359,9 @@ export class SoyaProcessingService {
       if (invUpdate.count === 0) {
         throw new BadRequestException("Soya stock was modified concurrently — please retry.");
       }
+      // H3: best-effort FIFO consumption of the sold lots — see
+      // consumeStockBatchesFifo for why this doesn't hard-block on shortfall.
+      await this.consumeStockBatchesFifo(tx, user.companyId, dto.warehouseId, dto.productId, dto.quantity);
       const sale = await tx.soyaSalesLink.create({ data: { companyId: user.companyId, branchId: batch.branchId, productionSiteId: batch.productionSiteId, productionBatchId: batch.id, productId: dto.productId, warehouseId: dto.warehouseId, outputType: dto.outputType, customerName: dto.customerName, quantity: dto.quantity, unitPrice: dto.unitPrice, totalAmount, status: "POSTED", createdById: user.id } });
       await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: batch.branchId, productId: dto.productId, inventoryItemId: source.id, fromWarehouseId: dto.warehouseId, warehouseId: dto.warehouseId, productionSiteId: batch.productionSiteId, uomId: product.uomId, movementType: "SALE_DISPATCH", quantity: dto.quantity, unitCost: dto.unitPrice, referenceType: "SoyaSalesLink", referenceId: sale.id, notes: `Soya ${dto.outputType.toLowerCase()} sale to ${dto.customerName}`, createdById: user.id } });
       return sale;
@@ -448,6 +472,39 @@ export class SoyaProcessingService {
     const inventory = await this.getInventory(companyId, warehouseId, productId);
     if (!inventory || Number(inventory.quantityOnHand) < quantity) throw new BadRequestException("Stock is not sufficient for this operation.");
     return inventory;
+  }
+
+  // H3: soya only started writing StockBatch rows in this fix (intake,
+  // createBatch's oil/cake outputs) — every SKU's stock predating it has no
+  // lot data, so unlike inventory/feed-production's FIFO consumption this is
+  // deliberately best-effort: it consumes whatever batch data actually
+  // exists and does not block a transfer/sale if it falls short. The
+  // authoritative "is there enough to sell" check remains the floor-guarded
+  // inventoryItem.quantityOnHand decrement each caller already performs in
+  // the same transaction; this only keeps batch-level valuation/expiry data
+  // as accurate as the lot history it has, which improves automatically as
+  // older un-batched stock sells through and is replaced by batched stock.
+  private async consumeStockBatchesFifo(tx: Prisma.TransactionClient, companyId: string, warehouseId: string, productId: string, quantity: number) {
+    let remaining = quantity;
+    let costTotal = 0;
+    let costedQty = 0;
+    const batches = await tx.stockBatch.findMany({
+      where: { companyId, warehouseId, productId, quantityRemaining: { gt: 0 }, deletedAt: null },
+      orderBy: { createdAt: "asc" }
+    });
+    for (const sb of batches) {
+      if (remaining <= 0) break;
+      const consumed = Math.min(remaining, Number(sb.quantityRemaining));
+      const batchUpdate = await tx.stockBatch.updateMany({
+        where: { id: sb.id, quantityRemaining: { gte: consumed } },
+        data: { quantityRemaining: { decrement: consumed } }
+      });
+      if (batchUpdate.count === 0) continue; // raced with another consumer of this lot — move on, best-effort
+      costTotal += consumed * Number(sb.unitCost);
+      costedQty += consumed;
+      remaining -= consumed;
+    }
+    return { unitCost: costedQty > 0 ? costTotal / costedQty : 0 };
   }
 
   private async requireBatch(user: AuthenticatedUser, id: string) {

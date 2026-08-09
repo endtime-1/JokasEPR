@@ -1,5 +1,6 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { AuthenticatedUser } from "@jokas/shared";
+import { Prisma } from "@prisma/client";
 import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { nextRef } from "../../common/next-ref";
@@ -32,6 +33,8 @@ function num(v: unknown) {
 
 @Injectable()
 export class ProcurementService {
+  private readonly logger = new Logger(ProcurementService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
@@ -380,41 +383,48 @@ export class ProcurementService {
     const subtotal = dto.items.reduce((s, i) => s + i.quantity * i.unitCost, 0);
     const totalAmount = subtotal;
 
-    const row = await this.prisma.purchaseOrder.create({
-      data: {
-        companyId: user.companyId,
-        reference,
-        supplierId: dto.supplierId,
-        purchaseRequestId: dto.purchaseRequestId,
-        orderDate: new Date(),
-        expectedDelivery: dto.expectedDelivery ? new Date(dto.expectedDelivery) : undefined,
-        deliveryAddress: dto.deliveryAddress,
-        status: "PENDING_APPROVAL",
-        subtotal,
-        totalAmount,
-        currency: dto.currency ?? "GHS",
-        paymentTermsDays: dto.paymentTermsDays,
-        notes: dto.notes,
-        createdById: user.id,
-        items: {
-          create: dto.items.map((item, idx) => ({
-            productId: item.productId,
-            productName: item.productName,
-            quantity: item.quantity,
-            unitCost: item.unitCost,
-            lineTotal: item.quantity * item.unitCost,
-            uomCode: item.uomCode,
-            description: item.description,
-            sequence: item.sequence ?? idx + 1,
-          })),
+    // H8: the PO create and the purchase request's CONVERTED_TO_PO status
+    // flip used to be two separate, un-transacted writes — a crash between
+    // them left a PO that looked freshly created while its source request
+    // still showed as convertible, inviting a duplicate PO on retry.
+    const row = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.purchaseOrder.create({
+        data: {
+          companyId: user.companyId,
+          reference,
+          supplierId: dto.supplierId,
+          purchaseRequestId: dto.purchaseRequestId,
+          orderDate: new Date(),
+          expectedDelivery: dto.expectedDelivery ? new Date(dto.expectedDelivery) : undefined,
+          deliveryAddress: dto.deliveryAddress,
+          status: "PENDING_APPROVAL",
+          subtotal,
+          totalAmount,
+          currency: dto.currency ?? "GHS",
+          paymentTermsDays: dto.paymentTermsDays,
+          notes: dto.notes,
+          createdById: user.id,
+          items: {
+            create: dto.items.map((item, idx) => ({
+              productId: item.productId,
+              productName: item.productName,
+              quantity: item.quantity,
+              unitCost: item.unitCost,
+              lineTotal: item.quantity * item.unitCost,
+              uomCode: item.uomCode,
+              description: item.description,
+              sequence: item.sequence ?? idx + 1,
+            })),
+          },
         },
-      },
-      include: { items: true, supplier: { select: { name: true } } },
-    });
+        include: { items: true, supplier: { select: { name: true } } },
+      });
 
-    if (dto.purchaseRequestId) {
-      await this.prisma.purchaseRequest.update({ where: { id: dto.purchaseRequestId }, data: { status: "CONVERTED_TO_PO" } });
-    }
+      if (dto.purchaseRequestId) {
+        await tx.purchaseRequest.update({ where: { id: dto.purchaseRequestId }, data: { status: "CONVERTED_TO_PO" } });
+      }
+      return created;
+    });
 
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "PurchaseOrder", entityId: row.id, action: "CREATE", ...ctx });
     return { data: row };
@@ -524,43 +534,50 @@ export class ProcurementService {
 
     const reference = await nextRef(this.prisma, user.companyId, "GRN");
 
-    const row = await this.prisma.goodsReceivedNote.create({
-      data: {
-        companyId: user.companyId,
-        reference,
-        purchaseOrderId: dto.purchaseOrderId,
-        supplierId: po.supplierId,
-        warehouseId: dto.warehouseId,
-        branchId: dto.branchId,
-        receivedDate: dto.receivedDate ? new Date(dto.receivedDate) : new Date(),
-        deliveryNoteRef: dto.deliveryNoteRef,
-        status: "RECEIVED",
-        qualityCheckRequired: dto.qualityCheckRequired ?? true,
-        notes: dto.notes,
-        createdById: user.id,
-        items: {
-          create: dto.items.map((item, idx) => ({
-            purchaseOrderItemId: item.purchaseOrderItemId,
-            productId: item.productId,
-            productName: item.productName,
-            orderedQty: item.orderedQty,
-            receivedQty: item.receivedQty,
-            rejectedQty: item.rejectedQty ?? 0,
-            unitCost: item.unitCost,
-            uomCode: item.uomCode,
-            batchNumber: item.batchNumber,
-            expiryDate: item.expiryDate ? new Date(item.expiryDate) : undefined,
-            qualityStatus: item.qualityStatus,
-            notes: item.notes,
-            sequence: item.sequence ?? idx + 1,
-          })),
+    // H8: the GRN create and the PO's receivedQty/status advancement used
+    // to be two separate, un-transacted writes — a crash between them left
+    // a GRN that looked freshly received while its PO still showed the old
+    // status, inviting a duplicate GRN on retry.
+    const row = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.goodsReceivedNote.create({
+        data: {
+          companyId: user.companyId,
+          reference,
+          purchaseOrderId: dto.purchaseOrderId,
+          supplierId: po.supplierId,
+          warehouseId: dto.warehouseId,
+          branchId: dto.branchId,
+          receivedDate: dto.receivedDate ? new Date(dto.receivedDate) : new Date(),
+          deliveryNoteRef: dto.deliveryNoteRef,
+          status: "RECEIVED",
+          qualityCheckRequired: dto.qualityCheckRequired ?? true,
+          notes: dto.notes,
+          createdById: user.id,
+          items: {
+            create: dto.items.map((item, idx) => ({
+              purchaseOrderItemId: item.purchaseOrderItemId,
+              productId: item.productId,
+              productName: item.productName,
+              orderedQty: item.orderedQty,
+              receivedQty: item.receivedQty,
+              rejectedQty: item.rejectedQty ?? 0,
+              unitCost: item.unitCost,
+              uomCode: item.uomCode,
+              batchNumber: item.batchNumber,
+              expiryDate: item.expiryDate ? new Date(item.expiryDate) : undefined,
+              qualityStatus: item.qualityStatus,
+              notes: item.notes,
+              sequence: item.sequence ?? idx + 1,
+            })),
+          },
         },
-      },
-      include: { items: true },
-    });
+        include: { items: true },
+      });
 
-    // Move PO items' receivedQty forward and update PO status
-    await this.updatePOReceivedQty(dto.purchaseOrderId, po.companyId);
+      // Move PO items' receivedQty forward and update PO status, in the same transaction
+      await this.updatePOReceivedQty(dto.purchaseOrderId, po.companyId, tx);
+      return created;
+    });
 
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "GoodsReceivedNote", entityId: row.id, action: "CREATE", ...ctx });
     return { data: row };
@@ -770,6 +787,16 @@ export class ProcurementService {
     // clamped to a 0 balanceDue instead of rejected. This pre-transaction
     // lookup is now just an early 404/tenant check — the real overpayment
     // guard is the atomic updateMany inside the transaction below.
+    // H9: a client retry after a timeout (it never learned whether the
+    // first attempt landed) used to pass the overpayment guard a second
+    // time independently and record a second real payment. A given
+    // idempotencyKey has already been recorded once — replay the original
+    // result instead of creating a duplicate.
+    if (dto.idempotencyKey) {
+      const existing = await this.prisma.procurementPayment.findFirst({ where: { companyId: user.companyId, idempotencyKey: dto.idempotencyKey, deletedAt: null } });
+      if (existing) return { data: existing };
+    }
+
     const invoice = dto.invoiceId
       ? await this.prisma.supplierInvoice.findFirst({ where: { id: dto.invoiceId, companyId: user.companyId, deletedAt: null } })
       : null;
@@ -785,43 +812,100 @@ export class ProcurementService {
     // recorded (a real overpayment with no trace of how it happened). Now
     // transaction-wrapped with a guarded atomic decrement, matching the
     // pattern already used by sales.service.ts's createPayment.
-    const data = await this.prisma.$transaction(async (tx) => {
-      const row = await tx.procurementPayment.create({
-        data: {
-          companyId: user.companyId,
-          reference: await nextRef(tx, user.companyId, "PAY"),
-          supplierId: dto.supplierId,
-          invoiceId: dto.invoiceId,
-          amount: dto.amount,
-          paymentDate: new Date(dto.paymentDate),
-          paymentMethod: dto.paymentMethod as never,
-          bankAccountId: dto.bankAccountId,
-          description: dto.description,
-          notes: dto.notes,
-          createdById: user.id,
-        },
-      });
-
-      if (invoice) {
-        const decremented = await tx.supplierInvoice.updateMany({
-          where: { id: invoice.id, balanceDue: { gte: dto.amount } },
-          data: { paidAmount: { increment: dto.amount }, balanceDue: { decrement: dto.amount }, updatedById: user.id }
+    let data;
+    try {
+      data = await this.prisma.$transaction(async (tx) => {
+        const row = await tx.procurementPayment.create({
+          data: {
+            companyId: user.companyId,
+            reference: await nextRef(tx, user.companyId, "PAY"),
+            supplierId: dto.supplierId,
+            invoiceId: dto.invoiceId,
+            amount: dto.amount,
+            paymentDate: new Date(dto.paymentDate),
+            paymentMethod: dto.paymentMethod as never,
+            bankAccountId: dto.bankAccountId,
+            description: dto.description,
+            notes: dto.notes,
+            idempotencyKey: dto.idempotencyKey,
+            createdById: user.id,
+          },
         });
-        if (decremented.count === 0) {
-          throw new BadRequestException(`Payment of ${dto.amount} exceeds the outstanding balance on this invoice.`);
+
+        if (invoice) {
+          const decremented = await tx.supplierInvoice.updateMany({
+            where: { id: invoice.id, balanceDue: { gte: dto.amount } },
+            data: { paidAmount: { increment: dto.amount }, balanceDue: { decrement: dto.amount }, updatedById: user.id }
+          });
+          if (decremented.count === 0) {
+            throw new BadRequestException(`Payment of ${dto.amount} exceeds the outstanding balance on this invoice.`);
+          }
+          const refreshed = await tx.supplierInvoice.findUniqueOrThrow({ where: { id: invoice.id }, select: { balanceDue: true } });
+          await tx.supplierInvoice.update({
+            where: { id: invoice.id },
+            data: { status: Number(refreshed.balanceDue) <= 0 ? "PAID" : "MATCHED" }
+          });
         }
-        const refreshed = await tx.supplierInvoice.findUniqueOrThrow({ where: { id: invoice.id }, select: { balanceDue: true } });
-        await tx.supplierInvoice.update({
-          where: { id: invoice.id },
-          data: { status: Number(refreshed.balanceDue) <= 0 ? "PAID" : "MATCHED" }
-        });
-      }
 
-      return row;
-    });
+        return row;
+      });
+    } catch (err: unknown) {
+      // H9: the pre-check above has a race window — two requests carrying
+      // the same idempotencyKey can both pass it and both start a
+      // transaction. The unique (companyId, idempotencyKey) index makes the
+      // DB itself the final arbiter: the loser's insert fails with P2002,
+      // and instead of surfacing that as an error, it replays the winner's
+      // result — a genuine retry gets the same success response either way.
+      if (dto.idempotencyKey && (err as { code?: string })?.code === "P2002") {
+        const existing = await this.prisma.procurementPayment.findFirst({ where: { companyId: user.companyId, idempotencyKey: dto.idempotencyKey, deletedAt: null } });
+        if (existing) return { data: existing };
+      }
+      throw err;
+    }
 
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "ProcurementPayment", entityId: data.id, action: "CREATE", ...ctx });
+    // H21: P&L/Cash Flow reports are built entirely from finance's own
+    // Revenue/Expense (and CustomerPayment/SupplierPayment) tables, which
+    // only finance's own manual-entry endpoints ever wrote to — real
+    // procurement spend lived in ProcurementPayment/SupplierInvoice and was
+    // never mirrored in. Contrast with payroll, which does auto-create an
+    // Expense row when paid (createPayrollExpense in hr.service.ts) —
+    // that's the exact pattern this mirrors: awaited + logged, non-fatal to
+    // the payment itself, run after the payment transaction has committed.
+    try {
+      await this.createProcurementExpense(user, dto.supplierId, data);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      this.logger.warn(`Failed to create Finance expense entry for procurement payment ${data.id} (company ${user.companyId}): ${message}`);
+    }
     return { data };
+  }
+
+  private async createProcurementExpense(user: AuthenticatedUser, supplierId: string, payment: { id: string; amount: Prisma.Decimal | number; paymentDate: Date; paymentMethod: string; reference: string }) {
+    const supplier = await this.prisma.supplier.findFirst({ where: { id: supplierId, companyId: user.companyId }, select: { name: true } });
+    let category = await this.prisma.expenseCategory.findFirst({ where: { companyId: user.companyId, name: "Procurement", deletedAt: null } });
+    if (!category) {
+      category = await this.prisma.expenseCategory.create({
+        data: { companyId: user.companyId, name: "Procurement", code: "PROCUREMENT", description: "Supplier/vendor payments", createdById: user.id },
+      });
+    }
+    await this.prisma.expense.create({
+      data: {
+        companyId: user.companyId,
+        categoryId: category.id,
+        reference: `PRC-${payment.reference}`.slice(0, 30),
+        amount: payment.amount,
+        description: `Procurement payment ${payment.reference}${supplier ? ` — ${supplier.name}` : ""}`.slice(0, 240),
+        expenseDate: payment.paymentDate,
+        paymentMethod: payment.paymentMethod as never,
+        vendorName: supplier?.name,
+        status: "APPROVED" as never,
+        submittedById: user.id,
+        approvedById: user.id,
+        approvedAt: new Date(),
+        createdById: user.id,
+      },
+    });
   }
 
   // â”€â”€â”€ Performance Records â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -890,8 +974,8 @@ export class ProcurementService {
 
   // â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-  private async updatePOReceivedQty(purchaseOrderId: string, companyId: string) {
-    const po = await this.prisma.purchaseOrder.findUnique({
+  private async updatePOReceivedQty(purchaseOrderId: string, companyId: string, client: PrismaService | Prisma.TransactionClient = this.prisma) {
+    const po = await client.purchaseOrder.findUnique({
       where: { id: purchaseOrderId },
       include: { items: true, grnRecords: { where: { deletedAt: null, status: { in: ["RECEIVED", "QUALITY_PASSED", "POSTED"] } }, include: { items: true } } },
     });
@@ -912,7 +996,7 @@ export class ProcurementService {
     }
     await Promise.all(
       po.items.map((line) =>
-        this.prisma.purchaseOrderItem.update({ where: { id: line.id }, data: { receivedQty: receivedByLine.get(line.id) ?? 0 } })
+        client.purchaseOrderItem.update({ where: { id: line.id }, data: { receivedQty: receivedByLine.get(line.id) ?? 0 } })
       )
     );
 
@@ -920,7 +1004,7 @@ export class ProcurementService {
     if (receivedQty >= totalQty) newStatus = "FULLY_RECEIVED";
     else if (receivedQty > 0) newStatus = "PARTIALLY_RECEIVED";
 
-    await this.prisma.purchaseOrder.update({ where: { id: purchaseOrderId }, data: { status: newStatus as never } });
+    await client.purchaseOrder.update({ where: { id: purchaseOrderId }, data: { status: newStatus as never } });
   }
 
   // createGRN/postGRN previously only checked the warehouse belonged to the

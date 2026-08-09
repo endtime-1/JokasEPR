@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# H19: NOT USED IN PRODUCTION — targets Docker/PostgreSQL, which production
+# does not run (bare-metal Hostinger, MySQL). See infra/README.md.
 # ──────────────────────────────────────────────────────────────────────────────
 # seed-admin.sh — Seed the database with permissions, roles, and the first
 #                 Super Admin user, then optionally load demo data.

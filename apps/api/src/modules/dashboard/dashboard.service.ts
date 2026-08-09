@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable } from "@nestjs/common";
+import { ForbiddenException, Injectable, InternalServerErrorException, Logger } from "@nestjs/common";
 import { BusinessUnit, DashboardMetricKey, Prisma } from "@prisma/client";
 import { AuthenticatedUser, PERMISSIONS } from "@jokas/shared";
 import { PrismaService } from "../prisma/prisma.service";
@@ -49,6 +49,8 @@ const CARD_CONFIG: Array<{ key: string; label: string; metricKey: DashboardMetri
 
 @Injectable()
 export class DashboardService {
+  private readonly logger = new Logger(DashboardService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   async options(user: AuthenticatedUser) {
@@ -128,31 +130,41 @@ export class DashboardService {
     const range = this.resolveRange(query);
     const prior = this.priorRange(range);
 
-    const emptyCharts = {
-      eggProductionTrend: [], mortalityTrend: [], feedProductionTrend: [],
-      soyaProductionTrend: [], salesTrend: [], inventoryValueByCategory: [],
-      profitabilityByProduct: [], farmPerformanceComparison: [], branchPerformanceComparison: []
-    };
+    // H23: computeMetricValues()/liveCharts()/alerts() used to swallow
+    // every failure into a fake 0 or empty default internally, so a single
+    // transient failure (DB blip, deadlock) silently corrupted this
+    // period-over-period comparison instead of failing the request — a
+    // fake 0 on just the current period rendered as "down 100%" to
+    // management, or a fake 0 on just the prior period masked a real drop
+    // as flat. All the internal per-query catches were removed; this outer
+    // try/catch is now the single place a failure surfaces, as a real
+    // error instead of a wrong number, matching HRService.dashboard's
+    // identical fix for the same pattern.
+    try {
+      const [currentValues, priorValues, charts, alerts] = await Promise.all([
+        this.computeMetricValues(user, query, range),
+        this.computeMetricValues(user, query, prior),
+        this.liveCharts(user, query, range),
+        this.alerts(user, query, range)
+      ]);
 
-    const [currentValues, priorValues, charts, alerts] = await Promise.all([
-      this.computeMetricValues(user, query, range),
-      this.computeMetricValues(user, query, prior),
-      this.liveCharts(user, query, range).catch(() => emptyCharts),
-      this.alerts(user, query, range)
-    ]);
-
-    const summary: Card[] = CARD_CONFIG.map((card) => {
-      const value = currentValues[card.key] ?? 0;
-      const priorValue = priorValues[card.key] ?? 0;
-      const delta: number | null = POINT_IN_TIME_KEYS.has(card.key)
-        ? null
-        : priorValue === 0
+      const summary: Card[] = CARD_CONFIG.map((card) => {
+        const value = currentValues[card.key] ?? 0;
+        const priorValue = priorValues[card.key] ?? 0;
+        const delta: number | null = POINT_IN_TIME_KEYS.has(card.key)
           ? null
-          : Math.round(((value - priorValue) / priorValue) * 1000) / 10;
-      return { key: card.key, label: card.label, value, unit: card.unit, tone: card.tone, delta };
-    });
+          : priorValue === 0
+            ? null
+            : Math.round(((value - priorValue) / priorValue) * 1000) / 10;
+        return { key: card.key, label: card.label, value, unit: card.unit, tone: card.tone, delta };
+      });
 
-    return { data: { filters: { ...query, startDate: range.start.toISOString(), endDate: range.end.toISOString() }, summary, charts, alerts } };
+      return { data: { filters: { ...query, startDate: range.start.toISOString(), endDate: range.end.toISOString() }, summary, charts, alerts } };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      this.logger.error(`executive dashboard failed to load for company ${user.companyId}: ${message}`);
+      throw new InternalServerErrorException("Executive dashboard failed to load");
+    }
   }
 
   // ── My Daily Duties ──────────────────────────────────────────────────────
@@ -377,15 +389,25 @@ export class DashboardService {
       totalBirds, activeFlockBatches,
       eggAgg, mortalityAgg, feedAgg,
       feedProdAgg, soyaBeanAgg, soyaOilAgg, soyaCakeAgg,
-      salesAgg, debtAgg,
+      salesAgg, debtAgg, supplierDebtAgg,
       lowStockAlerts, pendingProdOrders, pendingPurchaseApprovals,
       maintenanceAlerts, aiAlerts, invValue
     ] = await Promise.all([
+      // H23: every query below used to end in .catch(() => 0) — a single
+      // transient failure (DB blip, deadlock) on just one query silently
+      // became a fake 0 instead of failing the request. Because executive()
+      // computes this same method for the current period and the prior
+      // period independently and diffs them for a percentage change, a
+      // fake 0 on just the current period rendered as "down 100%" to
+      // management, or a fake 0 on just the prior period masked a real
+      // drop as flat — wrong in either direction, silently. Letting these
+      // reject now and propagate up through executive()'s own try/catch
+      // (see below) turns a wrong number into a visible 500, which is the
+      // correct failure mode for a financial/operational KPI.
       this.prisma.flockBatch.aggregate({ where: { companyId: cid, status: "ACTIVE", deletedAt: null, ...farmF }, _sum: { openingBirdCount: true } })
-        .then(r => Number(r._sum.openingBirdCount ?? 0)).catch(() => 0),
+        .then(r => Number(r._sum.openingBirdCount ?? 0)),
 
-      this.prisma.flockBatch.count({ where: { companyId: cid, status: "ACTIVE", deletedAt: null, ...farmF } })
-        .catch(() => 0),
+      this.prisma.flockBatch.count({ where: { companyId: cid, status: "ACTIVE", deletedAt: null, ...farmF } }),
 
       this.prisma.eggProductionRecord.aggregate({
         where: { companyId: cid, ...farmF, recordDate: dateRange },
@@ -393,76 +415,82 @@ export class DashboardService {
       }).then(r => {
         const s = r._sum;
         return [s.goodEggs, s.crackedEggs, s.dirtyEggs, s.brokenEggs, s.rejectedEggs].reduce((acc: number, v) => acc + Number(v ?? 0), 0);
-      }).catch(() => 0),
+      }),
 
       this.prisma.mortalityRecord.aggregate({
         where: { companyId: cid, ...farmF, recordDate: dateRange },
         _sum: { birdCount: true }
-      }).then(r => Number(r._sum.birdCount ?? 0)).catch(() => 0),
+      }).then(r => Number(r._sum.birdCount ?? 0)),
 
       this.prisma.feedConsumptionRecord.aggregate({
         where: { companyId: cid, ...farmF, recordDate: dateRange },
         _sum: { quantityKg: true }
-      }).then(r => Number(r._sum.quantityKg ?? 0)).catch(() => 0),
+      }).then(r => Number(r._sum.quantityKg ?? 0)),
 
       this.prisma.feedProductionBatch.aggregate({
         where: { companyId: cid, ...siteF, createdAt: dateRange },
         _sum: { producedQuantityKg: true }
-      }).then(r => Number(r._sum.producedQuantityKg ?? 0)).catch(() => 0),
+      }).then(r => Number(r._sum.producedQuantityKg ?? 0)),
 
       this.prisma.soyaBeanIntake.aggregate({
         where: { companyId: cid, ...siteF, receivedAt: dateRange },
         _sum: { quantityKg: true }
-      }).then(r => Number(r._sum.quantityKg ?? 0)).catch(() => 0),
+      }).then(r => Number(r._sum.quantityKg ?? 0)),
 
       this.prisma.soyaOilOutput.aggregate({
         where: { companyId: cid, ...siteF, deletedAt: null, createdAt: dateRange },
         _sum: { quantityLitres: true }
-      }).then(r => Number(r._sum.quantityLitres ?? 0)).catch(() => 0),
+      }).then(r => Number(r._sum.quantityLitres ?? 0)),
 
       this.prisma.soyaCakeOutput.aggregate({
         where: { companyId: cid, ...siteF, deletedAt: null, createdAt: dateRange },
         _sum: { quantityKg: true }
-      }).then(r => Number(r._sum.quantityKg ?? 0)).catch(() => 0),
+      }).then(r => Number(r._sum.quantityKg ?? 0)),
 
       this.prisma.salesOrder.aggregate({
         where: { companyId: cid, ...branchF, status: { not: "CANCELLED" }, orderDate: dateRange },
         _sum: { totalAmount: true }
-      }).then(r => Number(r._sum.totalAmount ?? 0)).catch(() => 0),
+      }).then(r => Number(r._sum.totalAmount ?? 0)),
 
       this.prisma.salesOrder.aggregate({
         where: { companyId: cid, ...branchF, status: { not: "CANCELLED" } },
         _sum: { balanceDue: true }
-      }).then(r => Number(r._sum.balanceDue ?? 0)).catch(() => 0),
+      }).then(r => Number(r._sum.balanceDue ?? 0)),
+
+      // H22: supplierDebt was hardcoded to 0 while this card's customer-side
+      // equivalent (debtAgg, immediately above) was already correctly
+      // aggregated — every viewer saw "Supplier debt: GHS 0" regardless of
+      // what was actually owed. SupplierInvoice has no branch/farm/
+      // warehouse/site columns in the schema (unlike SalesOrder), so
+      // there's no location filter to apply here — not a bug, matches the
+      // purchaseOrder.count query below for the same reason.
+      this.prisma.supplierInvoice.aggregate({
+        where: { companyId: cid, deletedAt: null },
+        _sum: { balanceDue: true }
+      }).then(r => Number(r._sum.balanceDue ?? 0)),
 
       // C4: these four queries previously carried no location filter at all,
       // unlike every sibling query in this same Promise.all — a
       // location-restricted user (branch/farm/warehouse/site) saw
       // company-wide inventory valuation and alert counts through the
       // executive dashboard regardless of their actual assignment.
-      this.prisma.stockExpiryAlert.count({ where: { companyId: cid, deletedAt: null, daysToExpiry: { lte: 30 }, ...branchF, ...warehouseF, ...siteF } })
-        .catch(() => 0),
+      this.prisma.stockExpiryAlert.count({ where: { companyId: cid, deletedAt: null, daysToExpiry: { lte: 30 }, ...branchF, ...warehouseF, ...siteF } }),
 
-      this.prisma.feedProductionOrder.count({ where: { companyId: cid, status: { in: ["DRAFT", "APPROVED"] as any[] }, ...branchF, ...siteF } })
-        .catch(() => 0),
+      this.prisma.feedProductionOrder.count({ where: { companyId: cid, status: { in: ["DRAFT", "APPROVED"] as any[] }, ...branchF, ...siteF } }),
 
       // PurchaseOrder has no branch/farm/warehouse/site columns in the
       // schema — nothing to scope by, not a bug (mirrors the equivalent
       // query already verified clean in ai-data.service.ts).
-      this.prisma.purchaseOrder.count({ where: { companyId: cid, status: "PENDING_APPROVAL" as any, deletedAt: null } })
-        .catch(() => 0),
+      this.prisma.purchaseOrder.count({ where: { companyId: cid, status: "PENDING_APPROVAL" as any, deletedAt: null } }),
 
-      this.prisma.maintenanceRecord.count({ where: { companyId: cid, status: { in: ["OPEN", "OVERDUE", "PENDING"] as any[] }, ...branchF, ...farmF, ...warehouseF, ...siteF } } as any)
-        .catch(() => 0),
+      this.prisma.maintenanceRecord.count({ where: { companyId: cid, status: { in: ["OPEN", "OVERDUE", "PENDING"] as any[] }, ...branchF, ...farmF, ...warehouseF, ...siteF } } as any),
 
-      this.prisma.aiAlert.count({ where: { companyId: cid, status: "UNREAD" } })
-        .catch(() => 0),
+      this.prisma.aiAlert.count({ where: { companyId: cid, status: "UNREAD" } }),
 
       this.prisma.stockBatch.findMany({
         where: { companyId: cid, deletedAt: null, status: "AVAILABLE" as any, quantityRemaining: { gt: 0 }, unitCost: { not: null }, ...branchF, ...farmF, ...warehouseF, ...siteF },
         select: { quantityRemaining: true, unitCost: true }
-      }).then(rows => rows.reduce((sum, b) => sum + Number(b.quantityRemaining) * Number(b.unitCost), 0))
-        .catch(() => 0),
+      }).then(rows => rows.reduce((sum, b) => sum + Number(b.quantityRemaining) * Number(b.unitCost), 0)),
     ]);
 
     return {
@@ -478,7 +506,7 @@ export class DashboardService {
       currentInventoryValue: invValue,
       salesThisMonth: salesAgg,
       outstandingCustomerDebt: debtAgg,
-      supplierDebt: 0,
+      supplierDebt: supplierDebtAgg,
       lowStockAlerts,
       pendingProductionOrders: pendingProdOrders,
       pendingPurchaseApprovals,
@@ -494,51 +522,57 @@ export class DashboardService {
     const branchF = this.liveBranchFilter(user, query);
     const dateRange = { gte: range.start, lte: range.end };
 
+    // H23: each of these used to end in .catch(() => [] as any[]) — a
+    // failed query silently rendered as an empty chart (indistinguishable
+    // from "genuinely no data this period") instead of surfacing the
+    // failure. Left to reject now; the outer .catch(() => emptyCharts) at
+    // this method's only call site (executive(), below) was also removed
+    // for the same reason — see executive()'s own try/catch.
     const [eggRows, mortalityRows, feedProdRows, soyaBeanRows, soyaOilRows, soyaCakeRows, salesRows, eggFarmRows, salesBranchRows] = await Promise.all([
       this.prisma.eggProductionRecord.findMany({
         where: { companyId: cid, ...farmF, recordDate: dateRange },
         select: { recordDate: true, farmId: true, goodEggs: true, crackedEggs: true, dirtyEggs: true, brokenEggs: true, rejectedEggs: true }
-      }).catch(() => [] as any[]),
+      }),
 
       this.prisma.mortalityRecord.findMany({
         where: { companyId: cid, ...farmF, recordDate: dateRange },
         select: { recordDate: true, birdCount: true }
-      }).catch(() => [] as any[]),
+      }),
 
       this.prisma.feedProductionBatch.findMany({
         where: { companyId: cid, ...siteF, createdAt: dateRange },
         select: { createdAt: true, producedQuantityKg: true }
-      }).catch(() => [] as any[]),
+      }),
 
       this.prisma.soyaBeanIntake.findMany({
         where: { companyId: cid, ...siteF, receivedAt: dateRange },
         select: { receivedAt: true, quantityKg: true }
-      }).catch(() => [] as any[]),
+      }),
 
       this.prisma.soyaOilOutput.findMany({
         where: { companyId: cid, ...siteF, deletedAt: null, createdAt: dateRange },
         select: { createdAt: true, quantityLitres: true }
-      }).catch(() => [] as any[]),
+      }),
 
       this.prisma.soyaCakeOutput.findMany({
         where: { companyId: cid, ...siteF, deletedAt: null, createdAt: dateRange },
         select: { createdAt: true, quantityKg: true }
-      }).catch(() => [] as any[]),
+      }),
 
       this.prisma.salesOrder.findMany({
         where: { companyId: cid, ...branchF, status: { not: "CANCELLED" }, orderDate: dateRange },
         select: { orderDate: true, branchId: true, totalAmount: true }
-      }).catch(() => [] as any[]),
+      }),
 
       this.prisma.eggProductionRecord.findMany({
         where: { companyId: cid, ...farmF, recordDate: dateRange },
         select: { farmId: true, goodEggs: true, crackedEggs: true, dirtyEggs: true, brokenEggs: true, rejectedEggs: true }
-      }).catch(() => [] as any[]),
+      }),
 
       this.prisma.salesOrder.findMany({
         where: { companyId: cid, ...branchF, status: { not: "CANCELLED" }, orderDate: dateRange },
         select: { branchId: true, totalAmount: true }
-      }).catch(() => [] as any[]),
+      }),
     ]);
 
     const sumToMap = (rows: any[], dateKey: string, valueKey: string) => {
@@ -574,7 +608,7 @@ export class DashboardService {
     }
     const farmIds = [...eggByFarmId.keys()];
     const farmNames = farmIds.length > 0
-      ? await this.prisma.farm.findMany({ where: { id: { in: farmIds } }, select: { id: true, name: true } }).catch(() => [] as any[])
+      ? await this.prisma.farm.findMany({ where: { id: { in: farmIds } }, select: { id: true, name: true } })
       : [];
     const farmNameMap = new Map(farmNames.map((f: any) => [f.id, f.name]));
     const farmPerfData = [...eggByFarmId.entries()].map(([id, value]) => ({ label: farmNameMap.get(id) ?? id, value }));
@@ -586,7 +620,7 @@ export class DashboardService {
     }
     const branchIds = [...salesByBranchId.keys()].filter(id => id !== "unknown");
     const branchNames = branchIds.length > 0
-      ? await this.prisma.branch.findMany({ where: { id: { in: branchIds } }, select: { id: true, name: true } }).catch(() => [] as any[])
+      ? await this.prisma.branch.findMany({ where: { id: { in: branchIds } }, select: { id: true, name: true } })
       : [];
     const branchNameMap = new Map(branchNames.map((b: any) => [b.id, b.name]));
     const branchPerfData = [...salesByBranchId.entries()].map(([id, value]) => ({ label: branchNameMap.get(id) ?? id, value }));
@@ -605,46 +639,43 @@ export class DashboardService {
   }
 
   private async liveInventoryValueByCategory(user: AuthenticatedUser, query: DashboardQueryDto): Promise<Series[]> {
-    try {
-      // C4: previously took only companyId — no way to scope by location at
-      // all, so a location-restricted user always saw the full company's
-      // inventory valuation broken down by category through this chart.
-      const batches = await this.prisma.stockBatch.findMany({
-        where: {
-          companyId: user.companyId, deletedAt: null, status: "AVAILABLE" as any, quantityRemaining: { gt: 0 }, unitCost: { not: null },
-          ...this.liveBranchFilter(user, query), ...this.liveFarmFilter(user, query), ...this.liveWarehouseFilter(user, query), ...this.liveSiteFilter(user, query)
-        },
-        select: { quantityRemaining: true, unitCost: true, product: { select: { category: { select: { name: true } } } } }
-      });
-      const grouped = new Map<string, number>();
-      for (const b of batches) {
-        const cat = (b.product as any)?.category?.name ?? "Uncategorised";
-        grouped.set(cat, (grouped.get(cat) ?? 0) + Number(b.quantityRemaining) * Number(b.unitCost));
-      }
-      const data = Array.from(grouped, ([label, value]) => ({ label, value: Math.round(value * 100) / 100 }))
-        .sort((a, b) => b.value - a.value);
-      return [{ name: "inventory_value", data }];
-    } catch {
-      return [{ name: "inventory_value", data: [] }];
+    // C4: previously took only companyId — no way to scope by location at
+    // all, so a location-restricted user always saw the full company's
+    // inventory valuation broken down by category through this chart.
+    // H23: the try/catch here used to swallow any failure into an empty
+    // series, indistinguishable from "genuinely no inventory this period."
+    // Left to propagate now — see executive()'s own try/catch.
+    const batches = await this.prisma.stockBatch.findMany({
+      where: {
+        companyId: user.companyId, deletedAt: null, status: "AVAILABLE" as any, quantityRemaining: { gt: 0 }, unitCost: { not: null },
+        ...this.liveBranchFilter(user, query), ...this.liveFarmFilter(user, query), ...this.liveWarehouseFilter(user, query), ...this.liveSiteFilter(user, query)
+      },
+      select: { quantityRemaining: true, unitCost: true, product: { select: { category: { select: { name: true } } } } }
+    });
+    const grouped = new Map<string, number>();
+    for (const b of batches) {
+      const cat = (b.product as any)?.category?.name ?? "Uncategorised";
+      grouped.set(cat, (grouped.get(cat) ?? 0) + Number(b.quantityRemaining) * Number(b.unitCost));
     }
+    const data = Array.from(grouped, ([label, value]) => ({ label, value: Math.round(value * 100) / 100 }))
+      .sort((a, b) => b.value - a.value);
+    return [{ name: "inventory_value", data }];
   }
 
   private async liveProfitabilityByProduct(companyId: string, range: { start: Date; end: Date }): Promise<Series[]> {
-    try {
-      const rows = await this.prisma.productProfitability.findMany({
-        where: { companyId, deletedAt: null, periodStart: { lte: range.end }, periodEnd: { gte: range.start } },
-        select: { productName: true, grossProfit: true }
-      });
-      const grouped = new Map<string, number>();
-      for (const r of rows) {
-        grouped.set(r.productName, (grouped.get(r.productName) ?? 0) + Number(r.grossProfit));
-      }
-      const data = Array.from(grouped, ([label, value]) => ({ label, value: Math.round(value * 100) / 100 }))
-        .sort((a, b) => b.value - a.value);
-      return [{ name: "gross_profit", data }];
-    } catch {
-      return [{ name: "gross_profit", data: [] }];
+    // H23: see liveInventoryValueByCategory above for why this no longer
+    // swallows failures into an empty series.
+    const rows = await this.prisma.productProfitability.findMany({
+      where: { companyId, deletedAt: null, periodStart: { lte: range.end }, periodEnd: { gte: range.start } },
+      select: { productName: true, grossProfit: true }
+    });
+    const grouped = new Map<string, number>();
+    for (const r of rows) {
+      grouped.set(r.productName, (grouped.get(r.productName) ?? 0) + Number(r.grossProfit));
     }
+    const data = Array.from(grouped, ([label, value]) => ({ label, value: Math.round(value * 100) / 100 }))
+      .sort((a, b) => b.value - a.value);
+    return [{ name: "gross_profit", data }];
   }
 
   private liveFarmFilter(user: AuthenticatedUser, query: DashboardQueryDto) {
@@ -772,12 +803,14 @@ export class DashboardService {
   }
 
   private async alerts(user: AuthenticatedUser, query: DashboardQueryDto, _range: { start: Date; end: Date }) {
+    // H23: see liveInventoryValueByCategory above for why this no longer
+    // swallows a query failure into a fake empty alert list.
     const rows = await this.prisma.aiAlert.findMany({
       where: this.aiAlertWhere(user, query),
       select: { id: true, title: true, message: true, severity: true, status: true, category: true, createdAt: true },
       orderBy: [{ severity: "desc" }, { createdAt: "desc" }],
       take: 8
-    }).catch(() => [] as any[]);
+    });
     return rows.map((a) => ({
       id: a.id,
       title: a.title,

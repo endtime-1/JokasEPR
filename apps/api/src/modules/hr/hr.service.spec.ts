@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Logger } from "@nestjs/common";
 import { Test, TestingModule } from "@nestjs/testing";
 import { AuthenticatedUser } from "@jokas/shared";
 import { HRService } from "./hr.service";
@@ -9,12 +9,17 @@ import { NotificationsService } from "../notifications/notifications.service";
 
 const mockPrisma = {
   employee: { findFirst: jest.fn(), findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn(), create: jest.fn(), count: jest.fn() },
-  attendanceRecord: { findMany: jest.fn(), count: jest.fn() },
-  payrollRecord: { findMany: jest.fn(), count: jest.fn(), create: jest.fn() },
-  disciplinaryRecord: { findMany: jest.fn() },
+  attendanceRecord: { findMany: jest.fn(), count: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), upsert: jest.fn() },
+  payrollRecord: { findMany: jest.fn(), count: jest.fn(), create: jest.fn(), findFirst: jest.fn(), updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
+  disciplinaryRecord: { findMany: jest.fn(), create: jest.fn() },
   grievanceRecord: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
   task: { findMany: jest.fn(), count: jest.fn() },
-  leaveRequest: { findMany: jest.fn(), count: jest.fn(), create: jest.fn() }
+  leaveRequest: { findMany: jest.fn(), count: jest.fn(), create: jest.fn(), findFirst: jest.fn(), updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
+  leaveBalance: { findUnique: jest.fn(), update: jest.fn(), create: jest.fn() },
+  leavePolicy: { findFirst: jest.fn() },
+  expenseCategory: { findFirst: jest.fn(), create: jest.fn() },
+  expense: { create: jest.fn() },
+  user: { findFirst: jest.fn() }
 };
 const mockAudit = { write: jest.fn().mockResolvedValue(undefined) };
 const mockNotifications = { broadcast: jest.fn().mockResolvedValue(undefined), send: jest.fn().mockResolvedValue(undefined) };
@@ -110,6 +115,63 @@ describe("HRService — branch/farm/warehouse/site scoping (H6)", () => {
 
     expect(mockPrisma.disciplinaryRecord.findMany.mock.calls[0][0].where.employee.AND).toBeDefined();
     expect(mockPrisma.grievanceRecord.findMany.mock.calls[0][0].where.employee.AND).toBeDefined();
+  });
+});
+
+describe("HRService — write methods now enforce the same employee scope their read siblings already did (H14)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const outOfScopeEmployee = { id: "emp-1", fullName: "A", code: "E1", basicSalary: 1000, branchId: "branch-OTHER", farmId: null, warehouseId: null, productionSiteId: null };
+  const inScopeEmployee = { id: "emp-1", fullName: "A", code: "E1", basicSalary: 1000, branchId: "branch-1", farmId: null, warehouseId: null, productionSiteId: null };
+
+  it("recordAttendance blocks recording attendance for an employee outside the actor's branch scope", async () => {
+    mockPrisma.employee.findFirst.mockResolvedValue(outOfScopeEmployee);
+    const service = makeService();
+    await expect(
+      service.recordAttendance(makeUser({ branchIds: ["branch-1"] }), { employeeId: "emp-1", date: "2026-09-01", status: "PRESENT" } as never, {})
+    ).rejects.toThrow(ForbiddenException);
+    expect(mockPrisma.attendanceRecord.create).not.toHaveBeenCalled();
+  });
+
+  it("bulkPayrollRun's employee query is intersected with the actor's own scope", async () => {
+    mockPrisma.employee.findMany.mockResolvedValue([]);
+    const service = makeService();
+    await service.bulkPayrollRun(makeUser({ branchIds: ["branch-1"] }), { period: "2026-09", periodStart: "2026-09-01", periodEnd: "2026-09-30" } as never, {});
+
+    const where = mockPrisma.employee.findMany.mock.calls[0][0].where;
+    expect(where.AND).toEqual([{ OR: [{ branchId: null }, { branchId: { in: ["branch-1"] } }] }]);
+  });
+
+  it("deleteEmployee blocks terminating an employee outside the actor's branch scope", async () => {
+    mockPrisma.employee.findFirst.mockResolvedValue(outOfScopeEmployee);
+    const service = makeService();
+    await expect(service.deleteEmployee(makeUser({ branchIds: ["branch-1"] }), "emp-1", {})).rejects.toThrow(ForbiddenException);
+    expect(mockPrisma.employee.update).not.toHaveBeenCalled();
+  });
+
+  it("deleteEmployee allows terminating an employee within the actor's branch scope", async () => {
+    mockPrisma.employee.findFirst.mockResolvedValue(inScopeEmployee);
+    mockPrisma.employee.update.mockResolvedValue({ id: "emp-1" });
+    const service = makeService();
+    await expect(service.deleteEmployee(makeUser({ branchIds: ["branch-1"] }), "emp-1", {})).resolves.toBeDefined();
+  });
+
+  it("resolveGrievance blocks acting on a grievance whose employee is outside the actor's branch scope", async () => {
+    mockPrisma.grievanceRecord.findFirst.mockResolvedValue({ id: "grv-1", status: "OPEN", employee: { branchId: "branch-OTHER", farmId: null, warehouseId: null, productionSiteId: null } });
+    const service = makeService();
+    await expect(
+      service.resolveGrievance(makeUser({ branchIds: ["branch-1"] }), "grv-1", { resolution: "done" } as never, {})
+    ).rejects.toThrow(ForbiddenException);
+    expect(mockPrisma.grievanceRecord.update).not.toHaveBeenCalled();
+  });
+
+  it("createDisciplinaryRecord blocks issuing a record against an employee outside the actor's branch scope", async () => {
+    mockPrisma.employee.findFirst.mockResolvedValue(outOfScopeEmployee);
+    const service = makeService();
+    await expect(
+      service.createDisciplinaryRecord(makeUser({ branchIds: ["branch-1"] }), { employeeId: "emp-1", incidentDate: "2026-09-01", category: "Late", description: "x", actionTaken: "Warning" } as never, {})
+    ).rejects.toThrow(ForbiddenException);
+    expect(mockPrisma.disciplinaryRecord.create).not.toHaveBeenCalled();
   });
 });
 
@@ -308,6 +370,87 @@ describe("HRService — leave/payroll/grievance cross-field and state-machine ch
       await expect(service.closeGrievance(makeUser(), "grv-1", {})).rejects.toThrow(BadRequestException);
       expect(mockPrisma.grievanceRecord.update).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("HRService.reviewLeaveRequest — status-guarded, no double-debit under concurrency (H12)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("issues the status transition as a guarded updateMany, not a plain unguarded update", async () => {
+    mockPrisma.leaveRequest.findFirst.mockResolvedValue({ id: "lvr-1", status: "PENDING", employeeId: null, daysRequested: 3, startDate: new Date("2026-09-01"), leaveType: "ANNUAL" });
+    mockPrisma.leaveRequest.updateMany.mockResolvedValue({ count: 1 });
+    mockPrisma.leaveRequest.findUniqueOrThrow.mockResolvedValue({ id: "lvr-1", status: "APPROVED" });
+
+    const service = makeService();
+    await service.reviewLeaveRequest(makeUser(), "lvr-1", { decision: "APPROVED" } as never, {});
+
+    expect(mockPrisma.leaveRequest.updateMany).toHaveBeenCalledWith({
+      where: { id: "lvr-1", status: "PENDING" },
+      data: expect.objectContaining({ status: "APPROVED" })
+    });
+  });
+
+  it("rejects a second concurrent review once the first has already advanced the request out of PENDING", async () => {
+    mockPrisma.leaveRequest.findFirst.mockResolvedValue({ id: "lvr-1", status: "PENDING", employeeId: "emp-1", daysRequested: 3, startDate: new Date("2026-09-01"), leaveType: "ANNUAL" });
+    // Simulates the exact race: both requests read status: PENDING before
+    // either write landed — the second's guarded updateMany now sees 0 rows
+    // affected because the first already flipped the status.
+    mockPrisma.leaveRequest.updateMany.mockResolvedValue({ count: 0 });
+
+    const service = makeService();
+    await expect(
+      service.reviewLeaveRequest(makeUser(), "lvr-1", { decision: "APPROVED" } as never, {})
+    ).rejects.toThrow(BadRequestException);
+    // The leave balance must not be touched by the loser of the race.
+    expect(mockPrisma.leaveBalance.update).not.toHaveBeenCalled();
+    expect(mockPrisma.leaveBalance.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("HRService.markPayrollPaid — status-guarded, awaited+logged Finance sync (H13)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const payroll = { id: "pay-1", status: "APPROVED", paymentDate: null, netPay: 1000, reference: "PR-001", employeeName: "Jane", period: "2026-09", employee: { email: "jane@x.com" } };
+
+  it("issues the status transition as a guarded updateMany, not a plain unguarded update", async () => {
+    mockPrisma.payrollRecord.findFirst.mockResolvedValue(payroll);
+    mockPrisma.payrollRecord.updateMany.mockResolvedValue({ count: 1 });
+    mockPrisma.payrollRecord.findUniqueOrThrow.mockResolvedValue({ ...payroll, status: "PAID" });
+    mockPrisma.expenseCategory.findFirst.mockResolvedValue({ id: "cat-1" });
+    mockPrisma.expense.create.mockResolvedValue({ id: "exp-1" });
+    mockPrisma.user.findFirst.mockResolvedValue(null);
+
+    const service = makeService();
+    await service.markPayrollPaid(makeUser(), "pay-1", {});
+
+    expect(mockPrisma.payrollRecord.updateMany).toHaveBeenCalledWith({
+      where: { id: "pay-1", status: "APPROVED" },
+      data: expect.objectContaining({ status: "PAID" })
+    });
+  });
+
+  it("rejects a second concurrent mark-paid once the first has already advanced the record out of APPROVED", async () => {
+    mockPrisma.payrollRecord.findFirst.mockResolvedValue(payroll);
+    mockPrisma.payrollRecord.updateMany.mockResolvedValue({ count: 0 });
+
+    const service = makeService();
+    await expect(service.markPayrollPaid(makeUser(), "pay-1", {})).rejects.toThrow(BadRequestException);
+    expect(mockPrisma.expense.create).not.toHaveBeenCalled();
+  });
+
+  it("awaits the Finance expense sync and logs a warning on failure, without failing the mark-paid call itself", async () => {
+    mockPrisma.payrollRecord.findFirst.mockResolvedValue(payroll);
+    mockPrisma.payrollRecord.updateMany.mockResolvedValue({ count: 1 });
+    mockPrisma.payrollRecord.findUniqueOrThrow.mockResolvedValue({ ...payroll, status: "PAID" });
+    mockPrisma.expenseCategory.findFirst.mockRejectedValue(new Error("DB unavailable"));
+    mockPrisma.user.findFirst.mockResolvedValue(null);
+    const warnSpy = jest.spyOn(Logger.prototype, "warn").mockImplementation(() => undefined as never);
+
+    const service = makeService();
+    await expect(service.markPayrollPaid(makeUser(), "pay-1", {})).resolves.toBeDefined();
+
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("pay-1"));
+    warnSpy.mockRestore();
   });
 });
 

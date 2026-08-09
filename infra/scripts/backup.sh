@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# H19: NOT USED IN PRODUCTION — targets Docker/PostgreSQL, which production
+# does not run (bare-metal Hostinger, MySQL). The real DB backup cron is
+# written by .github/workflows/deploy.yml's "Setup database backup cron"
+# step and run by start.js's checkDailyBackup(). See infra/README.md.
 # ──────────────────────────────────────────────────────────────────────────────
 # backup.sh — Dump the PostgreSQL database and optionally archive uploads.
 #

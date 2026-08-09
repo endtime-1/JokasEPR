@@ -26,9 +26,12 @@ export class DutyRemindersController {
 
   @Post("trigger")
   @RequirePermissions(PERMISSIONS.PLATFORM_MANAGE)
-  async trigger(@Body() body: TriggerReminderDto) {
-    if (body.slot === "MORNING") await this.svc.morningReminder();
-    else await this.svc.eveningReminder();
+  async trigger(@CurrentUser() user: AuthenticatedUser, @Body() body: TriggerReminderDto) {
+    // H16: PLATFORM_MANAGE is a normal per-company admin permission, but this
+    // used to trigger reminders for every company on the platform regardless
+    // of who called it. Scoped to the caller's own company now.
+    if (body.slot === "MORNING") await this.svc.morningReminder(user.companyId);
+    else await this.svc.eveningReminder(user.companyId);
     return { data: { triggered: body.slot } };
   }
 }

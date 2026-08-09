@@ -1,7 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { InvoiceStatus, QBSyncOperation, QBSyncStatus } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
-import { QuickBooksClientService } from "./quickbooks-client.service";
+import { QuickBooksApiError, QuickBooksClientService } from "./quickbooks-client.service";
 import { QuickBooksLoggerService } from "./quickbooks-logger.service";
 import { escapeQboString } from "./quickbooks-query-escape";
 
@@ -88,8 +88,18 @@ export class QuickBooksInvoiceService {
         try {
           const existing = await this.client.get<{ Invoice: { Id: string; SyncToken: string } }>(companyId, `invoice/${qbId}`);
           await this.client.post(companyId, "invoice", { ...payload, Id: qbId, SyncToken: existing.Invoice.SyncToken, sparse: true });
-        } catch {
-          qbId = await this.createQBInvoice(companyId, payload);
+        } catch (err) {
+          // H20: only a genuine 404 (QuickBooks itself says this invoice no
+          // longer exists) means "recreate it." Everything else — a network
+          // timeout, a 5xx that survived the client's own retry budget,
+          // malformed JSON — used to fall into this same catch and create a
+          // brand-new QuickBooks invoice for one that still exists, from an
+          // entirely ordinary transient failure with no concurrency needed.
+          if (err instanceof QuickBooksApiError && err.qbStatus === 404) {
+            qbId = await this.createQBInvoice(companyId, payload);
+          } else {
+            throw err;
+          }
         }
       } else {
         const existing = await this.findQBInvoiceByDocNumber(companyId, invoice.invoiceNumber);

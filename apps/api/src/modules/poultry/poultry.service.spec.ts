@@ -1,17 +1,30 @@
-import { ForbiddenException } from "@nestjs/common";
+import { ForbiddenException, Logger } from "@nestjs/common";
 import { AuthenticatedUser } from "@jokas/shared";
 import { PoultryService } from "./poultry.service";
+
+const mockTx = {
+  feedConsumptionRecord: { create: jest.fn() },
+  inventoryItem: { findFirst: jest.fn(), updateMany: jest.fn() },
+  product: { findFirst: jest.fn().mockResolvedValue({ id: "prod-feed", uomId: "uom-1" }) },
+  stockMovement: { create: jest.fn() },
+  mortalityRecord: { aggregate: jest.fn(), create: jest.fn() },
+  poultryTransferRecord: { aggregate: jest.fn(), create: jest.fn() },
+  batchPenAllocation: { findFirst: jest.fn(), upsert: jest.fn() },
+  pen: { update: jest.fn() },
+  $queryRaw: jest.fn().mockResolvedValue([])
+};
 
 const mockPrisma = {
   poultryHouse: { findFirst: jest.fn() },
   pen: { findFirst: jest.fn(), findMany: jest.fn() },
   flockBatch: { findFirst: jest.fn() },
-  poultryTransferRecord: { findFirst: jest.fn() }
+  poultryTransferRecord: { findFirst: jest.fn() },
+  $transaction: jest.fn().mockImplementation((cb: (tx: typeof mockTx) => Promise<unknown>) => cb(mockTx))
 };
 const mockAudit = { write: jest.fn().mockResolvedValue(undefined) };
 
 function makeService() {
-  return new PoultryService(mockPrisma as never, mockAudit as never, { get: jest.fn().mockReturnValue(null), set: jest.fn() } as never);
+  return new PoultryService(mockPrisma as never, mockAudit as never, { get: jest.fn().mockReturnValue(null), set: jest.fn(), invalidate: jest.fn() } as never);
 }
 
 function makeUser(overrides: Partial<AuthenticatedUser> = {}): AuthenticatedUser {
@@ -115,5 +128,146 @@ describe("PoultryService — a zero-farm user sees nothing by default, not every
     const recordWhere = (service as unknown as { recordWhere: (u: AuthenticatedUser, q: Record<string, unknown>, t?: string) => Record<string, unknown> }).recordWhere.bind(service);
     const where = recordWhere(makeUser({ farmIds: [] }), {}, "daily");
     expect(where.farmId).toEqual({ in: [] });
+  });
+});
+
+describe("PoultryService.createFeed / consumeInventoryTx — floor-guarded decrement, visible skip (H4)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const flockBatch = { id: "batch-1", farmId: "farm-1", branchId: "branch-1", poultryHouseId: "house-1", status: "ACTIVE", code: "FB-1", birdType: "BROILERS" };
+  const dto = { flockBatchId: "batch-1", recordDate: "2026-08-09", feedProductId: "prod-feed", warehouseId: "wh-1", quantityKg: 50 };
+
+  it("issues the decrement as a floor-guarded updateMany, not a plain unguarded update", async () => {
+    mockPrisma.flockBatch.findFirst.mockResolvedValue(flockBatch);
+    mockTx.feedConsumptionRecord.create.mockResolvedValue({ id: "fc-1" });
+    mockTx.inventoryItem.findFirst.mockResolvedValue({ id: "inv-1" });
+    mockTx.inventoryItem.updateMany.mockResolvedValue({ count: 1 });
+
+    const service = makeService();
+    await service.createFeed(makeUser(), dto as never, {});
+
+    expect(mockTx.inventoryItem.updateMany).toHaveBeenCalledWith({
+      where: { id: "inv-1", quantityOnHand: { gte: 50 } },
+      data: { quantityOnHand: { decrement: 50 }, updatedById: "user-1" }
+    });
+  });
+
+  it("rejects when the floor-guarded decrement loses a concurrent race, instead of overdrawing stock", async () => {
+    mockPrisma.flockBatch.findFirst.mockResolvedValue(flockBatch);
+    mockTx.feedConsumptionRecord.create.mockResolvedValue({ id: "fc-1" });
+    mockTx.inventoryItem.findFirst.mockResolvedValue({ id: "inv-1" });
+    mockTx.inventoryItem.updateMany.mockResolvedValue({ count: 0 });
+
+    const service = makeService();
+    await expect(service.createFeed(makeUser(), dto as never, {})).rejects.toThrow();
+  });
+
+  it("logs a warning instead of silently no-op'ing when no inventory item is configured for the product/warehouse", async () => {
+    mockPrisma.flockBatch.findFirst.mockResolvedValue(flockBatch);
+    mockTx.feedConsumptionRecord.create.mockResolvedValue({ id: "fc-1" });
+    mockTx.inventoryItem.findFirst.mockResolvedValue(null);
+    const warnSpy = jest.spyOn(Logger.prototype, "warn").mockImplementation(() => undefined as never);
+
+    const service = makeService();
+    const result = await service.createFeed(makeUser(), dto as never, {});
+
+    expect(result.data.id).toBe("fc-1"); // the record still saves
+    expect(mockTx.inventoryItem.updateMany).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("no InventoryItem"));
+    warnSpy.mockRestore();
+  });
+});
+
+describe("PoultryService.createMortality / createTransfer — lock the batch row so concurrent bird-count checks can't both pass (H5)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const flockBatch = { id: "batch-1", farmId: "farm-1", branchId: "branch-1", poultryHouseId: "house-1", status: "ACTIVE", code: "FB-1", openingBirdCount: 1000 };
+
+  describe("createMortality", () => {
+    it("locks the FlockBatch row inside the transaction before checking live-bird count", async () => {
+      mockPrisma.flockBatch.findFirst.mockResolvedValue(flockBatch);
+      mockTx.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+      mockTx.mortalityRecord.create.mockResolvedValue({ id: "mort-1" });
+
+      const service = makeService();
+      await service.createMortality(makeUser(), { flockBatchId: "batch-1", recordDate: "2026-08-09", birdCount: 700 } as never, {});
+
+      expect(mockTx.$queryRaw).toHaveBeenCalled();
+      expect(mockTx.mortalityRecord.create).toHaveBeenCalled();
+    });
+
+    it("rejects two concurrent mortality entries that would jointly exceed the batch's live-bird count", async () => {
+      mockPrisma.flockBatch.findFirst.mockResolvedValue(flockBatch);
+      // Inside the (now locked) transaction, 700 birds are already recorded dead —
+      // a second concurrent request for 400 more must see this, not the stale 0.
+      mockTx.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 700 } });
+
+      const service = makeService();
+      await expect(
+        service.createMortality(makeUser(), { flockBatchId: "batch-1", recordDate: "2026-08-09", birdCount: 400 } as never, {})
+      ).rejects.toThrow(/Only 300 live bird/);
+      expect(mockTx.mortalityRecord.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("createTransfer", () => {
+    const toHouse = { id: "house-2", farmId: "farm-2", branchId: "branch-2" };
+
+    it("locks the FlockBatch row before checking available birds for a batch-level transfer", async () => {
+      mockPrisma.flockBatch.findFirst.mockResolvedValue(flockBatch);
+      mockPrisma.poultryHouse.findFirst.mockResolvedValue(toHouse);
+      mockTx.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+      mockTx.poultryTransferRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+      mockTx.poultryTransferRecord.create.mockResolvedValue({ id: "trf-1" });
+
+      const service = makeService();
+      await service.createTransfer(
+        makeUser({ hasGlobalAccess: true }),
+        { flockBatchId: "batch-1", toFarmId: "farm-2", toPoultryHouseId: "house-2", birdCount: 500, transferDate: "2026-08-09" } as never,
+        {}
+      );
+
+      expect(mockTx.$queryRaw).toHaveBeenCalled();
+      expect(mockTx.poultryTransferRecord.create).toHaveBeenCalled();
+    });
+
+    it("rejects a transfer that would jointly exceed live birds alongside a concurrent mortality entry", async () => {
+      mockPrisma.flockBatch.findFirst.mockResolvedValue(flockBatch);
+      mockPrisma.poultryHouse.findFirst.mockResolvedValue(toHouse);
+      // A concurrent mortality entry already committed 800 deaths inside the
+      // same locked window — only 200 birds are actually left to transfer.
+      mockTx.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 800 } });
+      mockTx.poultryTransferRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+
+      const service = makeService();
+      await expect(
+        service.createTransfer(
+          makeUser({ hasGlobalAccess: true }),
+          { flockBatchId: "batch-1", toFarmId: "farm-2", toPoultryHouseId: "house-2", birdCount: 500, transferDate: "2026-08-09" } as never,
+          {}
+        )
+      ).rejects.toThrow(/Only 200 live birds/);
+      expect(mockTx.poultryTransferRecord.create).not.toHaveBeenCalled();
+    });
+
+    it("checks pen-scoped availability (allocation minus outgoing minus pen mortality) atomically when fromPenId is given", async () => {
+      mockPrisma.flockBatch.findFirst.mockResolvedValue(flockBatch);
+      mockPrisma.poultryHouse.findFirst.mockResolvedValue(toHouse);
+      mockPrisma.pen.findFirst.mockResolvedValue({ id: "pen-1", poultryHouseId: "house-1" });
+      mockTx.batchPenAllocation.findFirst.mockResolvedValue({ birdCount: 100 });
+      mockTx.poultryTransferRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 20 } });
+      mockTx.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 10 } });
+
+      const service = makeService();
+      // Available = 100 - 20 - 10 = 70; requesting 80 must be rejected.
+      await expect(
+        service.createTransfer(
+          makeUser({ hasGlobalAccess: true }),
+          { flockBatchId: "batch-1", fromPenId: "pen-1", toFarmId: "farm-2", toPoultryHouseId: "house-2", birdCount: 80, transferDate: "2026-08-09" } as never,
+          {}
+        )
+      ).rejects.toThrow(/only has 70 birds available/);
+      expect(mockTx.poultryTransferRecord.create).not.toHaveBeenCalled();
+    });
   });
 });

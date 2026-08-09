@@ -512,8 +512,15 @@ export class HRService {
   }
 
   async recordAttendance(user: AuthenticatedUser, dto: RecordAttendanceDto, ctx: RequestContext) {
-    const employee = await this.prisma.employee.findFirst({ where: { id: dto.employeeId, companyId: user.companyId, deletedAt: null }, select: { id: true, fullName: true, code: true, basicSalary: true } });
+    const employee = await this.prisma.employee.findFirst({ where: { id: dto.employeeId, companyId: user.companyId, deletedAt: null }, select: { id: true, fullName: true, code: true, basicSalary: true, branchId: true, farmId: true, warehouseId: true, productionSiteId: true } });
     if (!employee) throw new NotFoundException("Employee not found");
+    // H14: employeeScope()/assertEmployeeInScope() were used consistently
+    // on every list/read method, but this — and roughly fifteen sibling
+    // write methods — looked the target employee up by id+companyId only.
+    // A branch-scoped HR manager who obtained an out-of-scope employeeId
+    // (trivially, via the org chart) could record attendance for employees
+    // outside their assignment.
+    this.assertEmployeeInScope(user, employee);
 
     const date = new Date(dto.date);
     date.setHours(0, 0, 0, 0);
@@ -557,6 +564,17 @@ export class HRService {
     const date = new Date(dto.date);
     date.setHours(0, 0, 0, 0);
     const results: unknown[] = [];
+
+    // H14: this had no scope check on any employeeId in the batch at all —
+    // see recordAttendance's single-record sibling for why that matters.
+    const employeeIds = [...new Set(dto.records.map((r) => r.employeeId))];
+    const employees = await this.prisma.employee.findMany({ where: { id: { in: employeeIds }, companyId: user.companyId, deletedAt: null }, select: { id: true, branchId: true, farmId: true, warehouseId: true, productionSiteId: true } });
+    const employeeMap = new Map(employees.map((e) => [e.id, e]));
+    for (const id of employeeIds) {
+      const emp = employeeMap.get(id);
+      if (!emp) throw new NotFoundException(`Employee ${id} not found`);
+      this.assertEmployeeInScope(user, emp);
+    }
 
     for (const rec of dto.records) {
       let hoursWorked: number | undefined;
@@ -790,8 +808,9 @@ export class HRService {
   }
 
   async createPayrollRecord(user: AuthenticatedUser, dto: CreatePayrollRecordDto, ctx: RequestContext) {
-    const employee = await this.prisma.employee.findFirst({ where: { id: dto.employeeId, companyId: user.companyId, deletedAt: null }, select: { id: true, fullName: true, code: true, basicSalary: true, branchId: true } });
+    const employee = await this.prisma.employee.findFirst({ where: { id: dto.employeeId, companyId: user.companyId, deletedAt: null }, select: { id: true, fullName: true, code: true, basicSalary: true, branchId: true, farmId: true, warehouseId: true, productionSiteId: true } });
     if (!employee) throw new NotFoundException("Employee not found");
+    this.assertEmployeeInScope(user, employee); // H14
     // M15: nothing previously stopped periodEnd from being on/before periodStart.
     if (new Date(dto.periodEnd) <= new Date(dto.periodStart)) {
       throw new BadRequestException("periodEnd must be after periodStart.");
@@ -860,12 +879,33 @@ export class HRService {
   async markPayrollPaid(user: AuthenticatedUser, id: string, ctx: RequestContext) {
     const row = await this.prisma.payrollRecord.findFirst({ where: { id, companyId: user.companyId, deletedAt: null }, include: { employee: { select: { email: true } } } });
     if (!row) throw new NotFoundException("Payroll record not found");
-    if (row.status !== "APPROVED") throw new BadRequestException("Only APPROVED records can be marked as paid");
 
-    const updated = await this.prisma.payrollRecord.update({ where: { id }, data: { status: "PAID", paymentDate: row.paymentDate ?? new Date(), updatedById: user.id } });
+    // H13: status-guarded updateMany instead of a separate check + update —
+    // a concurrent double-call used to both pass the "status !== APPROVED"
+    // check before either write landed, each going on to create its own
+    // Finance expense row for the same single payment.
+    const advanced = await this.prisma.payrollRecord.updateMany({
+      where: { id, status: "APPROVED" },
+      data: { status: "PAID", paymentDate: row.paymentDate ?? new Date(), updatedById: user.id },
+    });
+    if (advanced.count === 0) {
+      throw new BadRequestException("Only APPROVED records can be marked as paid");
+    }
+    const updated = await this.prisma.payrollRecord.findUniqueOrThrow({ where: { id } });
 
-    // Create expense in Finance
-    void this.createPayrollExpense(user, row, ctx).catch(() => {/* non-fatal */});
+    // H13: previously fire-and-forget (`void ... .catch(() => {})`), so a
+    // sync failure was silently swallowed with no log at all — a payroll
+    // could be marked PAID with no corresponding Finance expense ever
+    // created, breaking reconciliation with zero trace. Awaited now so a
+    // failure is at least visible; still non-fatal to the payroll-paid
+    // transition itself, since that money has genuinely been paid
+    // regardless of whether the Finance-side mirror succeeded.
+    try {
+      await this.createPayrollExpense(user, row, ctx);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      this.logger.warn(`Failed to create Finance expense for payroll record ${id} (company ${user.companyId}): ${message}`);
+    }
 
     // Notify employee
     const empEmail = (row as any).employee?.email;
@@ -903,8 +943,9 @@ export class HRService {
   }
 
   async createTrainingRecord(user: AuthenticatedUser, dto: CreateTrainingRecordDto, ctx: RequestContext) {
-    const employee = await this.prisma.employee.findFirst({ where: { id: dto.employeeId, companyId: user.companyId, deletedAt: null }, select: { id: true, fullName: true, code: true, basicSalary: true } });
+    const employee = await this.prisma.employee.findFirst({ where: { id: dto.employeeId, companyId: user.companyId, deletedAt: null }, select: { id: true, fullName: true, code: true, basicSalary: true, branchId: true, farmId: true, warehouseId: true, productionSiteId: true } });
     if (!employee) throw new NotFoundException("Employee not found");
+    this.assertEmployeeInScope(user, employee); // H14
 
     const row = await this.prisma.trainingRecord.create({
       data: {
@@ -942,8 +983,9 @@ export class HRService {
   }
 
   async createPerformanceRecord(user: AuthenticatedUser, dto: CreatePerformanceRecordDto, ctx: RequestContext) {
-    const employee = await this.prisma.employee.findFirst({ where: { id: dto.employeeId, companyId: user.companyId, deletedAt: null }, select: { id: true, fullName: true, code: true, basicSalary: true } });
+    const employee = await this.prisma.employee.findFirst({ where: { id: dto.employeeId, companyId: user.companyId, deletedAt: null }, select: { id: true, fullName: true, code: true, basicSalary: true, branchId: true, farmId: true, warehouseId: true, productionSiteId: true } });
     if (!employee) throw new NotFoundException("Employee not found");
+    this.assertEmployeeInScope(user, employee); // H14
 
     const exists = await this.prisma.hRPerformanceRecord.findUnique({
       where: { companyId_employeeId_period: { companyId: user.companyId, employeeId: dto.employeeId, period: dto.period } },
@@ -984,8 +1026,9 @@ export class HRService {
   }
 
   async createDepartmentAssignment(user: AuthenticatedUser, dto: CreateDepartmentAssignmentDto, ctx: RequestContext) {
-    const employee = await this.prisma.employee.findFirst({ where: { id: dto.employeeId, companyId: user.companyId, deletedAt: null }, select: { id: true, fullName: true, code: true, basicSalary: true } });
+    const employee = await this.prisma.employee.findFirst({ where: { id: dto.employeeId, companyId: user.companyId, deletedAt: null }, select: { id: true, fullName: true, code: true, basicSalary: true, branchId: true, farmId: true, warehouseId: true, productionSiteId: true } });
     if (!employee) throw new NotFoundException("Employee not found");
+    this.assertEmployeeInScope(user, employee); // H14
 
     if (dto.isPrimary !== false) {
       await this.prisma.departmentAssignment.updateMany({
@@ -1122,10 +1165,14 @@ export class HRService {
   async reviewLeaveRequest(user: AuthenticatedUser, id: string, dto: ReviewLeaveRequestDto, ctx: RequestContext) {
     const row = await this.prisma.leaveRequest.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
     if (!row) throw new NotFoundException("Leave request not found");
-    if (row.status !== "PENDING") throw new BadRequestException("Only PENDING requests can be reviewed");
 
-    const updated = await this.prisma.leaveRequest.update({
-      where: { id },
+    // H12: status-guarded updateMany instead of a separate check + update —
+    // two concurrent approve/reject calls for the same request used to both
+    // pass the "status !== PENDING" check before either write landed, so
+    // the leave balance below got debited (or restored) twice for one
+    // request.
+    const advanced = await this.prisma.leaveRequest.updateMany({
+      where: { id, status: "PENDING" },
       data: {
         status: dto.decision as never,
         reviewedById: user.id,
@@ -1134,6 +1181,10 @@ export class HRService {
         updatedById: user.id,
       },
     });
+    if (advanced.count === 0) {
+      throw new BadRequestException("Only PENDING requests can be reviewed");
+    }
+    const updated = await this.prisma.leaveRequest.findUniqueOrThrow({ where: { id } });
 
     // Adjust leave balance on approval/rejection
     if (row.employeeId) {
@@ -1232,8 +1283,9 @@ export class HRService {
   }
 
   async deleteEmployee(user: AuthenticatedUser, id: string, ctx: RequestContext) {
-    const row = await this.prisma.employee.findFirst({ where: { id, companyId: user.companyId, deletedAt: null }, select: { id: true } });
+    const row = await this.prisma.employee.findFirst({ where: { id, companyId: user.companyId, deletedAt: null }, select: { id: true, branchId: true, farmId: true, warehouseId: true, productionSiteId: true } });
     if (!row) throw new NotFoundException("Employee not found");
+    this.assertEmployeeInScope(user, row); // H14
     await this.prisma.employee.update({
       where: { id },
       data: { deletedAt: new Date(), status: "TERMINATED" as never, updatedById: user.id },
@@ -1378,7 +1430,12 @@ export class HRService {
   }
 
   async bulkPayrollRun(user: AuthenticatedUser, dto: BulkPayrollRunDto, ctx: RequestContext) {
-    const where: any = { companyId: user.companyId, status: "ACTIVE", deletedAt: null };
+    // H14: this queried by companyId + status + optional caller-supplied
+    // branchId/employeeIds with no scope restriction at all — a
+    // branch-scoped HR manager could pass employeeIds outside their own
+    // assignment (or omit filters entirely) and run payroll for the whole
+    // company.
+    const where: any = { companyId: user.companyId, status: "ACTIVE", deletedAt: null, ...this.employeeScope(user) };
     if (dto.branchId) where.branchId = dto.branchId;
     if (dto.employeeIds?.length) where.id = { in: dto.employeeIds };
 
@@ -1938,8 +1995,9 @@ export class HRService {
   }
 
   async createDisciplinaryRecord(user: AuthenticatedUser, dto: CreateDisciplinaryDto, ctx: RequestContext) {
-    const employee = await this.prisma.employee.findFirst({ where: { id: dto.employeeId, companyId: user.companyId, deletedAt: null }, select: { id: true, fullName: true, code: true, basicSalary: true, email: true } });
+    const employee = await this.prisma.employee.findFirst({ where: { id: dto.employeeId, companyId: user.companyId, deletedAt: null }, select: { id: true, fullName: true, code: true, basicSalary: true, email: true, branchId: true, farmId: true, warehouseId: true, productionSiteId: true } });
     if (!employee) throw new NotFoundException("Employee not found");
+    this.assertEmployeeInScope(user, employee); // H14
 
     const row = await this.prisma.disciplinaryRecord.create({
       data: {
@@ -1965,16 +2023,18 @@ export class HRService {
   }
 
   async acknowledgeDisciplinary(user: AuthenticatedUser, id: string, ctx: RequestContext) {
-    const row = await this.prisma.disciplinaryRecord.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    const row = await this.prisma.disciplinaryRecord.findFirst({ where: { id, companyId: user.companyId, deletedAt: null }, include: { employee: { select: { branchId: true, farmId: true, warehouseId: true, productionSiteId: true } } } });
     if (!row) throw new NotFoundException("Disciplinary record not found");
+    if (row.employee) this.assertEmployeeInScope(user, row.employee); // H14
     const updated = await this.prisma.disciplinaryRecord.update({ where: { id }, data: { acknowledgedAt: new Date(), updatedById: user.id } });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "DisciplinaryRecord", entityId: id, action: "UPDATE", ...ctx });
     return { data: updated };
   }
 
   async deleteDisciplinaryRecord(user: AuthenticatedUser, id: string, ctx: RequestContext) {
-    const row = await this.prisma.disciplinaryRecord.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    const row = await this.prisma.disciplinaryRecord.findFirst({ where: { id, companyId: user.companyId, deletedAt: null }, include: { employee: { select: { branchId: true, farmId: true, warehouseId: true, productionSiteId: true } } } });
     if (!row) throw new NotFoundException("Disciplinary record not found");
+    if (row.employee) this.assertEmployeeInScope(user, row.employee); // H14
     await this.prisma.disciplinaryRecord.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "DisciplinaryRecord", entityId: id, action: "DELETE", ...ctx });
     return { success: true };
@@ -1993,8 +2053,9 @@ export class HRService {
   }
 
   async submitGrievance(user: AuthenticatedUser, dto: CreateGrievanceDto, ctx: RequestContext) {
-    const employee = await this.prisma.employee.findFirst({ where: { id: dto.employeeId, companyId: user.companyId, deletedAt: null }, select: { id: true, fullName: true, code: true, basicSalary: true } });
+    const employee = await this.prisma.employee.findFirst({ where: { id: dto.employeeId, companyId: user.companyId, deletedAt: null }, select: { id: true, fullName: true, code: true, basicSalary: true, branchId: true, farmId: true, warehouseId: true, productionSiteId: true } });
     if (!employee) throw new NotFoundException("Employee not found");
+    this.assertEmployeeInScope(user, employee); // H14
 
     const row = await this.prisma.grievanceRecord.create({
       data: {
@@ -2015,8 +2076,9 @@ export class HRService {
   }
 
   async resolveGrievance(user: AuthenticatedUser, id: string, dto: ResolveGrievanceDto, ctx: RequestContext) {
-    const row = await this.prisma.grievanceRecord.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    const row = await this.prisma.grievanceRecord.findFirst({ where: { id, companyId: user.companyId, deletedAt: null }, include: { employee: { select: { branchId: true, farmId: true, warehouseId: true, productionSiteId: true } } } });
     if (!row) throw new NotFoundException("Grievance not found");
+    if (row.employee) this.assertEmployeeInScope(user, row.employee); // H14
     // M15: grievance status transitions had no state-machine guard at all —
     // a closed (or already-resolved) grievance could be "resolved" again.
     if (row.status !== "OPEN") {
@@ -2028,8 +2090,9 @@ export class HRService {
   }
 
   async closeGrievance(user: AuthenticatedUser, id: string, ctx: RequestContext) {
-    const row = await this.prisma.grievanceRecord.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    const row = await this.prisma.grievanceRecord.findFirst({ where: { id, companyId: user.companyId, deletedAt: null }, include: { employee: { select: { branchId: true, farmId: true, warehouseId: true, productionSiteId: true } } } });
     if (!row) throw new NotFoundException("Grievance not found");
+    if (row.employee) this.assertEmployeeInScope(user, row.employee); // H14
     if (row.status === "CLOSED") {
       throw new BadRequestException("Grievance is already closed.");
     }
@@ -2039,8 +2102,9 @@ export class HRService {
   }
 
   async deleteGrievance(user: AuthenticatedUser, id: string, ctx: RequestContext) {
-    const row = await this.prisma.grievanceRecord.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    const row = await this.prisma.grievanceRecord.findFirst({ where: { id, companyId: user.companyId, deletedAt: null }, include: { employee: { select: { branchId: true, farmId: true, warehouseId: true, productionSiteId: true } } } });
     if (!row) throw new NotFoundException("Grievance not found");
+    if (row.employee) this.assertEmployeeInScope(user, row.employee); // H14
     await this.prisma.grievanceRecord.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "GrievanceRecord", entityId: id, action: "DELETE", ...ctx });
     return { success: true };
@@ -2260,8 +2324,9 @@ export class HRService {
   }
 
   async createOnboardingItem(user: AuthenticatedUser, employeeId: string, dto: CreateOnboardingItemDto, ctx: RequestContext) {
-    const emp = await this.prisma.employee.findFirst({ where: { id: employeeId, companyId: user.companyId, deletedAt: null }, select: { id: true } });
+    const emp = await this.prisma.employee.findFirst({ where: { id: employeeId, companyId: user.companyId, deletedAt: null }, select: { id: true, branchId: true, farmId: true, warehouseId: true, productionSiteId: true } });
     if (!emp) throw new NotFoundException("Employee not found");
+    this.assertEmployeeInScope(user, emp); // H14
     const row = await this.prisma.onboardingChecklist.create({
       data: { companyId: user.companyId, employeeId, createdById: user.id, ...dto, dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined },
     });
@@ -2270,8 +2335,9 @@ export class HRService {
   }
 
   async applyOnboardingTemplate(user: AuthenticatedUser, employeeId: string, ctx: RequestContext) {
-    const emp = await this.prisma.employee.findFirst({ where: { id: employeeId, companyId: user.companyId, deletedAt: null }, select: { id: true } });
+    const emp = await this.prisma.employee.findFirst({ where: { id: employeeId, companyId: user.companyId, deletedAt: null }, select: { id: true, branchId: true, farmId: true, warehouseId: true, productionSiteId: true } });
     if (!emp) throw new NotFoundException("Employee not found");
+    this.assertEmployeeInScope(user, emp); // H14
     const items = this.ONBOARDING_TEMPLATE.map((title, i) => ({
       id: undefined as any,
       companyId: user.companyId, employeeId, title, sortOrder: i, createdById: user.id,

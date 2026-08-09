@@ -343,7 +343,13 @@ export class QualityService {
   }
 
   async submitResults(user: AuthenticatedUser, id: string, dto: SubmitResultsDto, ctx: RequestContext) {
-    const check = await this.prisma.qualityCheck.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    // H15: scopeWhere() was used consistently on every read/list method but
+    // not on any of the finalize/approve/reject actions below — a
+    // branch-scoped user who obtained a checkId (trivially, via any list
+    // endpoint elsewhere) could act on a quality check for a location
+    // outside their assignment. This is a food-safety/compliance issue, not
+    // just a read leak.
+    const check = await this.prisma.qualityCheck.findFirst({ where: { id, companyId: user.companyId, deletedAt: null, ...this.scopeWhere(user) } });
     if (!check) throw new NotFoundException("Quality check not found");
     if (check.status === "PASSED" || check.status === "FAILED") throw new BadRequestException("Check already finalised");
 
@@ -370,7 +376,7 @@ export class QualityService {
   }
 
   async passCheck(user: AuthenticatedUser, id: string, dto: PassCheckDto, ctx: RequestContext) {
-    const check = await this.prisma.qualityCheck.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    const check = await this.prisma.qualityCheck.findFirst({ where: { id, companyId: user.companyId, deletedAt: null, ...this.scopeWhere(user) } }); // H15
     if (!check) throw new NotFoundException("Quality check not found");
     if (check.status === "PASSED" || check.status === "FAILED") throw new BadRequestException("Check already finalised");
     this.assertNotSelfReview(user, check);
@@ -392,7 +398,7 @@ export class QualityService {
   }
 
   async failCheck(user: AuthenticatedUser, id: string, dto: FailCheckDto, ctx: RequestContext) {
-    const check = await this.prisma.qualityCheck.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    const check = await this.prisma.qualityCheck.findFirst({ where: { id, companyId: user.companyId, deletedAt: null, ...this.scopeWhere(user) } }); // H15
     if (!check) throw new NotFoundException("Quality check not found");
     if (check.status === "PASSED" || check.status === "FAILED") throw new BadRequestException("Check already finalised");
     this.assertNotSelfReview(user, check);
@@ -414,7 +420,7 @@ export class QualityService {
   }
 
   async conditionalPass(user: AuthenticatedUser, id: string, dto: ConditionalPassDto, ctx: RequestContext) {
-    const check = await this.prisma.qualityCheck.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    const check = await this.prisma.qualityCheck.findFirst({ where: { id, companyId: user.companyId, deletedAt: null, ...this.scopeWhere(user) } }); // H15
     if (!check) throw new NotFoundException("Quality check not found");
     this.assertNotSelfReview(user, check);
     const updated = await this.prisma.qualityCheck.update({
@@ -428,7 +434,7 @@ export class QualityService {
   // â”€â”€â”€ Batch Approve / Reject / Quarantine â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   async approveBatch(user: AuthenticatedUser, checkId: string, dto: ApproveBatchDto, ctx: RequestContext) {
-    const check = await this.prisma.qualityCheck.findFirst({ where: { id: checkId, companyId: user.companyId, deletedAt: null } });
+    const check = await this.prisma.qualityCheck.findFirst({ where: { id: checkId, companyId: user.companyId, deletedAt: null, ...this.scopeWhere(user) } }); // H15
     if (!check) throw new NotFoundException("Quality check not found");
     this.assertNotSelfReview(user, check);
 
@@ -464,7 +470,7 @@ export class QualityService {
   }
 
   async rejectBatch(user: AuthenticatedUser, checkId: string, dto: RejectBatchDto, ctx: RequestContext) {
-    const check = await this.prisma.qualityCheck.findFirst({ where: { id: checkId, companyId: user.companyId, deletedAt: null } });
+    const check = await this.prisma.qualityCheck.findFirst({ where: { id: checkId, companyId: user.companyId, deletedAt: null, ...this.scopeWhere(user) } }); // H15
     if (!check) throw new NotFoundException("Quality check not found");
     this.assertNotSelfReview(user, check);
 
@@ -502,7 +508,7 @@ export class QualityService {
   }
 
   async quarantineBatch(user: AuthenticatedUser, checkId: string, dto: QuarantineBatchDto, ctx: RequestContext) {
-    const check = await this.prisma.qualityCheck.findFirst({ where: { id: checkId, companyId: user.companyId, deletedAt: null } });
+    const check = await this.prisma.qualityCheck.findFirst({ where: { id: checkId, companyId: user.companyId, deletedAt: null, ...this.scopeWhere(user) } }); // H15
     if (!check) throw new NotFoundException("Quality check not found");
     const updated = await this.prisma.qualityCheck.update({
       where: { id: checkId },
@@ -625,6 +631,11 @@ export class QualityService {
 
   async createCorrectiveAction(user: AuthenticatedUser, dto: CreateCorrectiveActionDto, ctx: RequestContext) {
     const cid = user.companyId;
+    // H15: CorrectiveAction has no location fields of its own — scoped via
+    // its check relation, same as the read endpoints. Previously this
+    // trusted dto.checkId with no existence or scope check at all.
+    const check = await this.prisma.qualityCheck.findFirst({ where: { id: dto.checkId, companyId: cid, deletedAt: null, ...this.scopeWhere(user) } });
+    if (!check) throw new NotFoundException("Quality check not found");
     const reference = await nextRef(this.prisma, cid, "CA");
 
     const ca = await this.prisma.correctiveAction.create({
@@ -649,7 +660,8 @@ export class QualityService {
   }
 
   async updateCorrectiveAction(user: AuthenticatedUser, id: string, dto: UpdateCorrectiveActionDto, ctx: RequestContext) {
-    const ca = await this.prisma.correctiveAction.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    // H15: scoped via the check relation, same as the finalize actions above.
+    const ca = await this.prisma.correctiveAction.findFirst({ where: { id, companyId: user.companyId, deletedAt: null, check: this.scopeWhere(user) } });
     if (!ca) throw new NotFoundException("Corrective action not found");
     const updated = await this.prisma.correctiveAction.update({
       where: { id },
@@ -668,7 +680,7 @@ export class QualityService {
   }
 
   async resolveCorrectiveAction(user: AuthenticatedUser, id: string, dto: ResolveCorrectiveActionDto, ctx: RequestContext) {
-    const ca = await this.prisma.correctiveAction.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    const ca = await this.prisma.correctiveAction.findFirst({ where: { id, companyId: user.companyId, deletedAt: null, check: this.scopeWhere(user) } }); // H15
     if (!ca) throw new NotFoundException("Corrective action not found");
     if (ca.status === "RESOLVED" || ca.status === "CLOSED") throw new BadRequestException("Already resolved");
     const updated = await this.prisma.correctiveAction.update({
@@ -680,7 +692,7 @@ export class QualityService {
   }
 
   async verifyCorrectiveAction(user: AuthenticatedUser, id: string, dto: VerifyCorrectiveActionDto, ctx: RequestContext) {
-    const ca = await this.prisma.correctiveAction.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    const ca = await this.prisma.correctiveAction.findFirst({ where: { id, companyId: user.companyId, deletedAt: null, check: this.scopeWhere(user) } }); // H15
     if (!ca) throw new NotFoundException("Corrective action not found");
     const updated = await this.prisma.correctiveAction.update({
       where: { id },

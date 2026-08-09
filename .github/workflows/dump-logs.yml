@@ -12,12 +12,19 @@ jobs:
           OUT="$HOME/jokas-build/diagnostic.txt"
           echo "===== DIAGNOSTICS $(date) =====" > "$OUT"
 
+          # H17: production runs under Passenger via start.js — PM2 is a
+          # local-dev-only fallback (see ecosystem.config.js), so the two
+          # sections below almost always come back empty/"not found" here.
+          # Kept for the rare host where PM2 happens to be running, but the
+          # /__status section further down (start.js's own diagnostic
+          # endpoint — the thing actually managing the app's child
+          # processes in production) is the section that matters.
           echo "" >> "$OUT"
-          echo "--- PM2 Status ---" >> "$OUT"
-          pm2 status 2>&1 >> "$OUT" || echo "PM2 not found" >> "$OUT"
+          echo "--- PM2 Status (dev-only fallback — expect \"not found\" in production) ---" >> "$OUT"
+          pm2 status 2>&1 >> "$OUT" || echo "PM2 not found (expected in production — see /__status below instead)" >> "$OUT"
 
           echo "" >> "$OUT"
-          echo "--- PM2 Logs (last 100 lines) ---" >> "$OUT"
+          echo "--- PM2 Logs (dev-only fallback, last 100 lines) ---" >> "$OUT"
           PM2_LOGS="$HOME/.pm2/logs"
           if [ -d "$PM2_LOGS" ]; then
             for f in "$PM2_LOGS"/*.log; do
@@ -25,8 +32,23 @@ jobs:
               tail -50 "$f" >> "$OUT" 2>/dev/null
             done
           else
-            echo "No PM2 log directory found" >> "$OUT"
+            echo "No PM2 log directory found (expected in production)" >> "$OUT"
           fi
+
+          echo "" >> "$OUT"
+          echo "--- start.js /__status (the real production diagnostic endpoint) ---" >> "$OUT"
+          # start.js manages the web/API child processes directly (worker
+          # threads + spawned processes, not PM2 units) and exposes its own
+          # startup state, recent stdout/stderr ring buffers, and memory
+          # stats here. This is available even while the app is still
+          # starting up or partially degraded, which the process-manager
+          # checks above cannot see at all.
+          if command -v curl >/dev/null 2>&1; then
+            curl -sS -m 10 "http://127.0.0.1:${PORT:-3000}/__status" >> "$OUT" 2>&1 || echo "(failed to reach /__status — is start.js running?)" >> "$OUT"
+          else
+            echo "(curl not available on this runner)" >> "$OUT"
+          fi
+          echo "" >> "$OUT"
 
           echo "" >> "$OUT"
           echo "--- Passenger Error Log (last 100 lines) ---" >> "$OUT"

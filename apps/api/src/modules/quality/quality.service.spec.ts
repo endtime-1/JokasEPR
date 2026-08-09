@@ -10,7 +10,7 @@ const mockPrisma = {
   qualityCheck: { findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn(), update: jest.fn(), groupBy: jest.fn() },
   rejectedBatch: { findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn() },
   approvedBatch: { findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn() },
-  correctiveAction: { count: jest.fn(), groupBy: jest.fn() },
+  correctiveAction: { count: jest.fn(), groupBy: jest.fn(), findFirst: jest.fn(), create: jest.fn(), update: jest.fn() },
   qualityCheckParameter: { count: jest.fn() }
 };
 const mockAudit = { write: jest.fn().mockResolvedValue(undefined) };
@@ -122,5 +122,53 @@ describe("QualityService — location scope + self-review guard (H2)", () => {
         service.createCheck(makeUser({ branchIds: ["branch-1"] }), { branchId: "branch-OTHER", checkType: "INCOMING" } as never, {})
       ).rejects.toThrow(BadRequestException);
     });
+  });
+});
+
+describe("QualityService — finalize/approve/reject actions are scoped, not just reads (H15)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const finalizers: Array<[string, (service: QualityService, user: AuthenticatedUser) => Promise<unknown>]> = [
+    ["submitResults", (s, u) => s.submitResults(u, "chk-1", { results: [] } as never, {})],
+    ["passCheck", (s, u) => s.passCheck(u, "chk-1", {} as never, {})],
+    ["failCheck", (s, u) => s.failCheck(u, "chk-1", {} as never, {})],
+    ["conditionalPass", (s, u) => s.conditionalPass(u, "chk-1", { conditions: "x" } as never, {})],
+    ["approveBatch", (s, u) => s.approveBatch(u, "chk-1", {} as never, {})],
+    ["rejectBatch", (s, u) => s.rejectBatch(u, "chk-1", {} as never, {})],
+    ["quarantineBatch", (s, u) => s.quarantineBatch(u, "chk-1", { reason: "x" } as never, {})]
+  ];
+
+  it.each(finalizers)("%s includes the actor's location scope in the qualityCheck lookup, not just companyId", async (_name, run) => {
+    mockPrisma.qualityCheck.findFirst.mockResolvedValue(null); // out of scope in the real DB — mock just needs to return null
+
+    const service = makeService();
+    await expect(run(service, makeUser({ branchIds: ["branch-1"] }))).rejects.toThrow(/not found/i);
+
+    const where = mockPrisma.qualityCheck.findFirst.mock.calls[0][0].where;
+    expect(where.AND).toEqual([{ OR: [{ branchId: null }, { branchId: { in: ["branch-1"] } }] }]);
+  });
+
+  it("createCorrectiveAction validates the referenced check exists within the actor's scope before creating anything", async () => {
+    mockPrisma.qualityCheck.findFirst.mockResolvedValue(null);
+
+    const service = makeService();
+    await expect(
+      service.createCorrectiveAction(makeUser({ branchIds: ["branch-1"] }), { checkId: "chk-other-branch", title: "x", description: "x" } as never, {})
+    ).rejects.toThrow(/not found/i);
+    expect(mockPrisma.correctiveAction.create).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["updateCorrectiveAction", (s: QualityService, u: AuthenticatedUser) => s.updateCorrectiveAction(u, "ca-1", {} as never, {})],
+    ["resolveCorrectiveAction", (s: QualityService, u: AuthenticatedUser) => s.resolveCorrectiveAction(u, "ca-1", { resolution: "x" } as never, {})],
+    ["verifyCorrectiveAction", (s: QualityService, u: AuthenticatedUser) => s.verifyCorrectiveAction(u, "ca-1", {} as never, {})]
+  ])("%s scopes the corrective-action lookup via its check relation", async (_name, run) => {
+    mockPrisma.correctiveAction.findFirst.mockResolvedValue(null);
+
+    const service = makeService();
+    await expect(run(service, makeUser({ branchIds: ["branch-1"] }))).rejects.toThrow(/not found/i);
+
+    const where = mockPrisma.correctiveAction.findFirst.mock.calls[0][0].where;
+    expect(where.check.AND).toEqual([{ OR: [{ branchId: null }, { branchId: { in: ["branch-1"] } }] }]);
   });
 });

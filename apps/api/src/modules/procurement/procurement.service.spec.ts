@@ -16,8 +16,11 @@ const mockPrisma = {
   product: { findMany: jest.fn() },
   purchaseOrderItem: { update: jest.fn().mockResolvedValue({}) },
   supplierInvoice: { findFirst: jest.fn(), update: jest.fn().mockResolvedValue({}), updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
-  procurementPayment: { create: jest.fn() },
+  procurementPayment: { create: jest.fn(), findFirst: jest.fn() },
   purchaseApproval: { create: jest.fn().mockResolvedValue({}) },
+  supplier: { findFirst: jest.fn().mockResolvedValue({ name: "Acme Supplies" }) },
+  expenseCategory: { findFirst: jest.fn().mockResolvedValue({ id: "cat-procurement" }), create: jest.fn() },
+  expense: { create: jest.fn().mockResolvedValue({}) },
   $transaction: jest.fn().mockImplementation((cb: (tx: unknown) => Promise<unknown>) => cb(mockPrisma))
 };
 
@@ -86,6 +89,16 @@ describe("ProcurementService", () => {
       expect(mockPrisma.purchaseOrder.create).toHaveBeenCalled();
     });
 
+    it("creates the PO and flips the purchase request's status inside the same transaction (H8)", async () => {
+      mockPrisma.purchaseRequest.findFirst.mockResolvedValue({ id: "pr-1", companyId: "company-1", status: "APPROVED" });
+      mockPrisma.purchaseOrder.create.mockResolvedValue({ id: "po-1", items: [] });
+
+      await service.createPurchaseOrder(makeUser(), dto as never, {});
+
+      expect(mockPrisma.$transaction).toHaveBeenCalled();
+      expect(mockPrisma.purchaseRequest.update).toHaveBeenCalledWith({ where: { id: "pr-1" }, data: { status: "CONVERTED_TO_PO" } });
+    });
+
     it("skips the purchase-request check entirely when no purchaseRequestId is given", async () => {
       mockPrisma.purchaseOrder.create.mockResolvedValue({ id: "po-1", items: [] });
 
@@ -131,6 +144,22 @@ describe("ProcurementService", () => {
       await service.createGRN(makeUser({ warehouseIds: ["wh-1"] }), grnDto as never, {});
 
       expect(mockPrisma.goodsReceivedNote.create).toHaveBeenCalled();
+    });
+
+    it("creates the GRN and advances the PO's receivedQty/status inside the same transaction (H8)", async () => {
+      mockPrisma.purchaseOrder.findFirst.mockResolvedValue({ id: "po-1", companyId: "company-1", status: "APPROVED", supplierId: "sup-1" });
+      mockPrisma.warehouse.findFirst.mockResolvedValue({ id: "wh-1", companyId: "company-1" });
+      mockPrisma.goodsReceivedNote.create.mockResolvedValue({ id: "grn-1" });
+      mockPrisma.purchaseOrder.findUnique.mockResolvedValue({
+        id: "po-1", companyId: "company-1", status: "APPROVED",
+        items: [{ id: "poi-1", quantity: 5 }],
+        grnRecords: [{ items: [{ purchaseOrderItemId: "poi-1", receivedQty: 5 }] }]
+      });
+
+      await service.createGRN(makeUser({ warehouseIds: ["wh-1"] }), grnDto as never, {});
+
+      expect(mockPrisma.$transaction).toHaveBeenCalled();
+      expect(mockPrisma.purchaseOrder.update).toHaveBeenCalledWith({ where: { id: "po-1" }, data: { status: "FULLY_RECEIVED" } });
     });
 
     it("rejects posting a GRN for a warehouse the actor doesn't have access to", async () => {
@@ -223,6 +252,7 @@ describe("ProcurementService", () => {
   describe("createPayment — transaction-wrapped, race-safe overpayment guard (C2, L4)", () => {
     beforeEach(() => {
       mockPrisma.procurementPayment.create.mockResolvedValue({ id: "pay-1" });
+      mockPrisma.procurementPayment.findFirst.mockResolvedValue(null);
     });
 
     it("rejects up front when the invoice already has no outstanding balance", async () => {
@@ -288,6 +318,79 @@ describe("ProcurementService", () => {
 
       expect(mockPrisma.supplierInvoice.findFirst).not.toHaveBeenCalled();
       expect(mockPrisma.procurementPayment.create).toHaveBeenCalled();
+    });
+
+    it("replays the original payment instead of recording a duplicate when the idempotencyKey was already used (H9)", async () => {
+      mockPrisma.procurementPayment.findFirst.mockResolvedValue({ id: "pay-existing" });
+
+      const result = await service.createPayment(
+        makeUser(),
+        { supplierId: "sup-1", amount: 100, paymentDate: "2026-08-01", paymentMethod: "BANK_TRANSFER", idempotencyKey: "idem-1" } as never,
+        {}
+      );
+
+      expect(result.data.id).toBe("pay-existing");
+      expect(mockPrisma.procurementPayment.create).not.toHaveBeenCalled();
+    });
+
+    it("passes the idempotencyKey through to the payment row on a genuinely new payment", async () => {
+      await service.createPayment(
+        makeUser(),
+        { supplierId: "sup-1", amount: 100, paymentDate: "2026-08-01", paymentMethod: "BANK_TRANSFER", idempotencyKey: "idem-2" } as never,
+        {}
+      );
+
+      expect(mockPrisma.procurementPayment.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ idempotencyKey: "idem-2" }) })
+      );
+    });
+
+    it("replays the original payment when a concurrent duplicate loses the unique-constraint race (P2002)", async () => {
+      mockPrisma.$transaction.mockImplementationOnce(() => {
+        const err = Object.assign(new Error("Unique constraint failed"), { code: "P2002" });
+        return Promise.reject(err);
+      });
+      mockPrisma.procurementPayment.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "pay-winner" });
+
+      const result = await service.createPayment(
+        makeUser(),
+        { supplierId: "sup-1", amount: 100, paymentDate: "2026-08-01", paymentMethod: "BANK_TRANSFER", idempotencyKey: "idem-3" } as never,
+        {}
+      );
+
+      expect(result.data.id).toBe("pay-winner");
+    });
+
+    it("mirrors the payment into Finance's Expense ledger so P&L/Cash Flow reports see real procurement spend (H21)", async () => {
+      mockPrisma.procurementPayment.create.mockResolvedValue({ id: "pay-1", reference: "PAY-2026-0001", amount: 250, paymentDate: new Date("2026-08-01"), paymentMethod: "BANK_TRANSFER" });
+
+      await service.createPayment(
+        makeUser(),
+        { supplierId: "sup-1", amount: 250, paymentDate: "2026-08-01", paymentMethod: "BANK_TRANSFER" } as never,
+        {}
+      );
+
+      expect(mockPrisma.expenseCategory.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ name: "Procurement" }) })
+      );
+      expect(mockPrisma.expense.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ categoryId: "cat-procurement", amount: 250, vendorName: "Acme Supplies", status: "APPROVED" })
+        })
+      );
+    });
+
+    it("does not fail the payment itself when the Expense mirror fails", async () => {
+      mockPrisma.procurementPayment.create.mockResolvedValue({ id: "pay-1", reference: "PAY-2026-0001", amount: 250, paymentDate: new Date("2026-08-01"), paymentMethod: "BANK_TRANSFER" });
+      mockPrisma.expense.create.mockRejectedValueOnce(new Error("DB unavailable"));
+
+      await expect(
+        service.createPayment(
+          makeUser(),
+          { supplierId: "sup-1", amount: 250, paymentDate: "2026-08-01", paymentMethod: "BANK_TRANSFER" } as never,
+          {}
+        )
+      ).resolves.toBeDefined();
     });
   });
 

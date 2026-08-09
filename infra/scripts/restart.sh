@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# H19: NOT USED IN PRODUCTION — targets Docker containers, which production
+# does not run (bare-metal Hostinger under Passenger). To restart production,
+# touch the Passenger restart.txt (see .github/workflows/deploy.yml) or
+# redeploy. See infra/README.md.
 # ──────────────────────────────────────────────────────────────────────────────
 # restart.sh — Restart one or all production services
 #

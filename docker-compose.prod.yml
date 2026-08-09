@@ -1,3 +1,22 @@
+# ══════════════════════════════════════════════════════════════════════════
+# H19 / NOT USED IN PRODUCTION — this entire file is dead, disconnected from
+# the real deployment. Production runs bare-metal on Hostinger under
+# Passenger (via start.js), with MySQL — not Docker, and not PostgreSQL.
+# There is no docker-compose anywhere in the real deploy path.
+#
+# If you're here during an incident trying to figure out how to back up or
+# restore this app, STOP — this file will not help you and following it will
+# waste time. The real mechanism is:
+#   - Deploy pipeline: .github/workflows/deploy.yml
+#   - Process management / startup: start.js
+#   - DB backup/restore: scripts/backup/restore-db.sh,
+#     scripts/verify-backup-restore.sh (see .github/workflows/deploy.yml's
+#     "Setup database backup cron" step for how the daily dump is produced)
+#
+# Kept in the repo only as historical reference for a possible future
+# Docker migration — see infra/README.md for the full picture of what in
+# infra/ is (and isn't) actually used.
+# ══════════════════════════════════════════════════════════════════════════
 services:
 
   # ── PostgreSQL ──────────────────────────────────────────────────────────────

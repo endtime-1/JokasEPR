@@ -19,6 +19,43 @@ export interface PublicProduct {
   currency: string;
 }
 
+// H25: public.service.ts's listProducts()/getProduct() actually return
+// { slug, description, category, unitPrice } — and never return `currency`
+// at all — while this file's PublicProduct interface (and every component
+// built against it) expected { publicSlug, publicDescription,
+// storefrontCategory, price, currency }. With no transform layer between
+// them, every product link resolved to /shop/products/undefined (404), the
+// sitemap submitted the same broken links to search engines, and every
+// product showed "Price on request" everywhere — the storefront was not
+// actually functional for any visitor. This is the real shape the API
+// returns; toPublicProduct() below is the transform layer that was missing.
+interface RawPublicProduct {
+  id: string;
+  name: string;
+  sku: string;
+  slug: string;
+  description: string | null;
+  imageUrl: string | null;
+  category: string | null;
+  minOrderQty: number;
+  unitLabel: string | null;
+  unitPrice: number | null;
+}
+
+function toPublicProduct(raw: RawPublicProduct): PublicProduct {
+  return {
+    id: raw.id,
+    name: raw.name,
+    publicSlug: raw.slug,
+    publicDescription: raw.description,
+    storefrontCategory: raw.category,
+    minOrderQty: raw.minOrderQty,
+    unitLabel: raw.unitLabel,
+    price: raw.unitPrice,
+    currency: "GHS"
+  };
+}
+
 export interface OrderLine {
   productId: string;
   quantity: number;
@@ -65,12 +102,16 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 
 export const api = {
   products: {
-    list: (category?: string): Promise<PublicProduct[]> =>
-      get<PublicProduct[]>(
+    list: async (category?: string): Promise<PublicProduct[]> => {
+      const raw = await get<RawPublicProduct[]>(
         category ? `/products?category=${encodeURIComponent(category)}` : "/products"
-      ),
-    get: (slug: string): Promise<PublicProduct> =>
-      get<PublicProduct>(`/products/${slug}`),
+      );
+      return raw.map(toPublicProduct);
+    },
+    get: async (slug: string): Promise<PublicProduct> => {
+      const raw = await get<RawPublicProduct>(`/products/${slug}`);
+      return toPublicProduct(raw);
+    },
   },
   orders: {
     place: (payload: PlaceOrderPayload): Promise<{ storefrontRef: string }> =>

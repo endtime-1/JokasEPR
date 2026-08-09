@@ -67,11 +67,14 @@ export class SyncService {
   }
 
   private async processSyncItem(user: AuthenticatedUser, item: SyncItemDto, ctx: RequestContext): Promise<SyncItemResult> {
-    // Idempotency check — if we've seen this localId before, return the cached result
+    // Fast-path read — cheap, but NOT the actual guard (see the create()
+    // below). A record already SYNCED/FAILED is a resolved outcome, safe to
+    // just replay. PROCESSING means another request for this exact localId
+    // is genuinely in flight right now (or crashed mid-flight) — either
+    // way, this request must not also run the underlying work.
     const existing = await this.prisma.mobileSyncRecord.findUnique({
       where: { companyId_localId: { companyId: user.companyId, localId: item.localId } }
     });
-
     if (existing) {
       return {
         localId: item.localId,
@@ -81,11 +84,28 @@ export class SyncService {
       };
     }
 
+    // H10: this used to be check -> do the work -> write a marker row, as
+    // three separate steps, not atomic. Two requests for the same offline
+    // action (a client retry after a timeout while the first is still in
+    // flight) could both pass the read above and both execute
+    // routeToService — two real stock movements for one physical
+    // transaction. Worse, the second request's marker write then hit the
+    // unique (companyId, localId) index, landed in the catch block, and
+    // *overwrote* the first request's successful SYNCED marker with
+    // FAILED — permanently hiding that the duplicate happened, and inviting
+    // a third write if someone later retried what now looked like a
+    // genuine failure.
+    //
+    // The fix claims the localId with a PROCESSING row *before* doing any
+    // work — create()'s unique-index conflict is the real race-safe
+    // checkpoint, not the read above. Exactly one concurrent caller can win
+    // this create(); the other gets P2002 and backs off immediately,
+    // without ever calling routeToService. The winner then updates its own,
+    // already-owned row to SYNCED or FAILED — a plain update by unique key,
+    // which can no longer conflict with anything.
+    let claim;
     try {
-      const serviceResult = await this.routeToService(user, item, ctx);
-      const recordId = (serviceResult as any)?.data?.id ?? undefined;
-
-      await this.prisma.mobileSyncRecord.create({
+      claim = await this.prisma.mobileSyncRecord.create({
         data: {
           companyId: user.companyId,
           userId: user.id,
@@ -93,10 +113,24 @@ export class SyncService {
           module: item.module,
           endpoint: item.endpoint,
           method: item.method,
-          recordId: recordId ? String(recordId) : undefined,
-          status: "SYNCED",
+          status: "PROCESSING",
           payload: item.payload as any
         }
+      });
+    } catch (err) {
+      if ((err as { code?: string })?.code === "P2002") {
+        return { localId: item.localId, status: "duplicate" };
+      }
+      throw err;
+    }
+
+    try {
+      const serviceResult = await this.routeToService(user, item, ctx);
+      const recordId = (serviceResult as any)?.data?.id ?? undefined;
+
+      await this.prisma.mobileSyncRecord.update({
+        where: { id: claim.id },
+        data: { status: "SYNCED", recordId: recordId ? String(recordId) : undefined }
       });
 
       return { localId: item.localId, status: "synced", recordId };
@@ -104,20 +138,9 @@ export class SyncService {
       const errorMsg = err instanceof Error ? err.message : "Unknown error";
       this.logger.warn(`Sync failed for localId=${item.localId} user=${user.id}: ${errorMsg}`);
 
-      await this.prisma.mobileSyncRecord.upsert({
-        where: { companyId_localId: { companyId: user.companyId, localId: item.localId } },
-        create: {
-          companyId: user.companyId,
-          userId: user.id,
-          localId: item.localId,
-          module: item.module,
-          endpoint: item.endpoint,
-          method: item.method,
-          status: "FAILED",
-          errorMsg,
-          payload: item.payload as any
-        },
-        update: { status: "FAILED", errorMsg }
+      await this.prisma.mobileSyncRecord.update({
+        where: { id: claim.id },
+        data: { status: "FAILED", errorMsg }
       });
 
       return { localId: item.localId, status: "failed", error: errorMsg };

@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { AuthenticatedUser } from "@jokas/shared";
 import { Prisma } from "@prisma/client";
 import { AuditService } from "../audit/audit.service";
@@ -41,6 +41,8 @@ type InventoryItemContext = {
 
 @Injectable()
 export class SalesService {
+  private readonly logger = new Logger(SalesService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService
@@ -314,12 +316,23 @@ export class SalesService {
     const customer = await this.prisma.customer.findFirst({ where: { companyId: user.companyId, id: dto.customerId, deletedAt: null } });
     if (!customer) throw new NotFoundException("Customer was not found.");
     this.assertBranchAccess(user, customer.branchId);
+    // H9: a client retry after a timeout (it never learned whether the
+    // first attempt landed) used to pass the overpayment guard a second
+    // time independently and record a second real payment. A given
+    // idempotencyKey has already been recorded once — replay the original
+    // result instead of creating a duplicate.
+    if (dto.idempotencyKey) {
+      const existing = await this.findPaymentByIdempotencyKey(user.companyId, dto.idempotencyKey);
+      if (existing) return { data: existing };
+    }
     const invoice = dto.invoiceId ? await this.prisma.invoice.findFirst({ where: { companyId: user.companyId, id: dto.invoiceId, customerId: customer.id, deletedAt: null } }) : null;
     if (dto.invoiceId && !invoice) throw new NotFoundException("Invoice was not found.");
     if (invoice && Number(invoice.balanceDue) <= 0) throw new BadRequestException("Invoice has no outstanding balance.");
     if (invoice && dto.amount > Number(invoice.balanceDue)) throw new BadRequestException("Payment amount cannot exceed invoice balance.");
 
-    const data = await this.prisma.$transaction(async (tx) => {
+    let data;
+    try {
+      data = await this.prisma.$transaction(async (tx) => {
       const payment = await tx.payment.create({
         data: {
           companyId: user.companyId,
@@ -331,6 +344,7 @@ export class SalesService {
           amount: dto.amount,
           method: dto.method,
           reference: dto.reference,
+          idempotencyKey: dto.idempotencyKey,
           receivedById: user.id,
           createdById: user.id
         }
@@ -375,9 +389,66 @@ export class SalesService {
         }
       });
       return { payment, receipt };
-    });
+      });
+    } catch (err: unknown) {
+      // H9: the pre-check above has a race window — two requests carrying
+      // the same idempotencyKey can both pass it and both start a
+      // transaction. The unique (companyId, idempotencyKey) index makes the
+      // DB itself the final arbiter: the loser's insert fails with P2002,
+      // and instead of surfacing that as an error, it replays the winner's
+      // result — a genuine retry gets the same success response either way.
+      if (dto.idempotencyKey && (err as { code?: string })?.code === "P2002") {
+        const existing = await this.findPaymentByIdempotencyKey(user.companyId, dto.idempotencyKey);
+        if (existing) return { data: existing };
+      }
+      throw err;
+    }
     await this.writeAudit(user, "CREATE", "Payment", data.payment.id, `Recorded payment ${data.payment.paymentNumber}`, context, { branchId: customer.branchId });
+    // H21: P&L/Cash Flow reports are built entirely from finance's own
+    // Revenue/Expense (and CustomerPayment/SupplierPayment) tables, which
+    // only finance's own manual-entry endpoints ever wrote to — real sales
+    // revenue lived in Payment/Invoice and was never mirrored in, so those
+    // reports materially understated real revenue unless someone re-keyed
+    // every sale a second time as a finance entry. Mirrors payroll's own
+    // proven pattern (createPayrollExpense, awaited + logged, non-fatal to
+    // the payment itself) on the cash-received side, after the payment
+    // transaction has actually committed.
+    try {
+      await this.createSalesRevenue(user, customer, data.payment);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      this.logger.warn(`Failed to create Finance revenue entry for payment ${data.payment.id} (company ${user.companyId}): ${message}`);
+    }
     return { data };
+  }
+
+  private async createSalesRevenue(user: AuthenticatedUser, customer: { name: string }, payment: { id: string; amount: Prisma.Decimal | number; paymentDate: Date; method: string; paymentNumber: string; invoiceId: string | null }) {
+    let invoiceRef: string | undefined;
+    if (payment.invoiceId) {
+      const invoice = await this.prisma.invoice.findUnique({ where: { id: payment.invoiceId }, select: { invoiceNumber: true } });
+      invoiceRef = invoice?.invoiceNumber;
+    }
+    await this.prisma.revenue.create({
+      data: {
+        companyId: user.companyId,
+        reference: await nextRef(this.prisma, user.companyId, "REV"),
+        source: "PRODUCT_SALES",
+        description: `Sales payment ${payment.paymentNumber}`.slice(0, 240),
+        amount: payment.amount,
+        revenueDate: payment.paymentDate,
+        paymentMethod: payment.method as never,
+        customerName: customer.name,
+        invoiceRef,
+        createdById: user.id
+      }
+    });
+  }
+
+  private async findPaymentByIdempotencyKey(companyId: string, idempotencyKey: string) {
+    const payment = await this.prisma.payment.findFirst({ where: { companyId, idempotencyKey, deletedAt: null } });
+    if (!payment) return null;
+    const receipt = await this.prisma.receipt.findFirst({ where: { paymentId: payment.id, deletedAt: null } });
+    return { payment, receipt };
   }
 
   async listPayments(user: AuthenticatedUser, query: SalesQueryDto) {
@@ -782,15 +853,36 @@ export class SalesService {
 
   private async addCustomerDebitTx(tx: Prisma.TransactionClient, customerId: string, branchId: string, invoiceId: string, amount: number, description: string) {
     const credit = await this.ensureCreditLimitTx(tx, customerId, branchId);
-    const balance = Number(credit.currentBalance) + amount;
-    await tx.customerCreditLimit.update({ where: { id: credit.id }, data: { currentBalance: balance } });
+    // H6: atomic increment instead of a read-then-write in JS — two
+    // concurrent debits for the same customer (e.g. two orders approved for
+    // release within the same second) could otherwise both read the same
+    // currentBalance and each silently overwrite the other's effect on it.
+    const updated = await tx.customerCreditLimit.update({ where: { id: credit.id }, data: { currentBalance: { increment: amount } } });
+    // H7: credit-limit enforcement previously only ran once, at order
+    // creation (assertCreditLimit) — a snapshot check long before any money
+    // was actually owed. A rep could create many orders in parallel that
+    // each individually passed the check against a still-unchanged balance,
+    // then blow past the limit once several got approved for release. This
+    // re-check runs at the point the debt is actually incurred, inside the
+    // same transaction as the atomic increment above (so it can't be raced
+    // the same way), and rolls back the whole fulfillment if it fails.
+    if (Number(credit.creditLimit) > 0 && Number(updated.currentBalance) > Number(credit.creditLimit)) {
+      throw new BadRequestException(`Releasing this order would put the customer's balance at ${Number(updated.currentBalance).toFixed(2)}, over their credit limit of ${Number(credit.creditLimit).toFixed(2)}.`);
+    }
+    const balance = Number(updated.currentBalance);
     await tx.customerStatement.create({ data: { companyId: credit.companyId, branchId, customerId, invoiceId, entryType: "INVOICE", debit: amount, credit: 0, balance, description } });
   }
 
   private async addCustomerCreditTx(tx: Prisma.TransactionClient, customerId: string, branchId: string, referenceId: string, amount: number, description: string, isReturn = false) {
     const credit = await this.ensureCreditLimitTx(tx, customerId, branchId);
-    const balance = Math.max(0, Number(credit.currentBalance) - amount);
-    await tx.customerCreditLimit.update({ where: { id: credit.id }, data: { currentBalance: balance } });
+    // H6: atomic, clamped-at-zero decrement via raw SQL. Prisma's
+    // `decrement` has no floor, and a plain read-then-write in JS let two
+    // concurrent credits for the same customer (e.g. a payment and a return
+    // recorded together) both read the same currentBalance and each
+    // silently overwrite the other's effect on it.
+    await tx.$executeRaw`UPDATE CustomerCreditLimit SET currentBalance = GREATEST(0, currentBalance - ${amount}) WHERE id = ${credit.id}`;
+    const updated = await tx.customerCreditLimit.findUniqueOrThrow({ where: { id: credit.id } });
+    const balance = Number(updated.currentBalance);
     await tx.customerStatement.create({ data: { companyId: credit.companyId, branchId, customerId, paymentId: isReturn ? undefined : referenceId, salesReturnId: isReturn ? referenceId : undefined, entryType: isReturn ? "RETURN" : "PAYMENT", debit: 0, credit: amount, balance, description } });
   }
 

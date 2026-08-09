@@ -552,7 +552,16 @@ export class FeedProductionService {
           throw new BadRequestException(`Insufficient stock for "${ingredient.productName}" — possibly consumed concurrently. Please retry.`);
         }
 
-        // H6: FIFO — consume from oldest StockBatch records first to maintain lot traceability
+        // H6/H2 (High-tier): FIFO — consume from oldest StockBatch records first
+        // to maintain lot traceability. Each per-lot decrement is floor-guarded
+        // the same way the inventoryItem decrement above it is — a plain update
+        // here let a concurrent consumer of the same lot drive quantityRemaining
+        // negative even though quantityOnHand was correctly protected. And if
+        // the lots on hand sum to less than what's needed (data already out of
+        // sync with quantityOnHand, or a lot expired/was voided mid-loop), the
+        // loop used to just stop with `remaining > 0` and no error — silently
+        // letting inventory and its batch-level lot records drift apart with
+        // nothing logged. Both now fail loudly and roll back the whole batch.
         let remaining = ingredient.quantityKg;
         const stockBatches = await tx.stockBatch.findMany({
           where: { companyId: user.companyId, warehouseId: dto.rawMaterialWarehouseId, productId: ingredient.ingredientId, quantityRemaining: { gt: 0 }, deletedAt: null },
@@ -561,8 +570,17 @@ export class FeedProductionService {
         for (const sb of stockBatches) {
           if (remaining <= 0) break;
           const consumed = Math.min(remaining, Number(sb.quantityRemaining));
-          await tx.stockBatch.update({ where: { id: sb.id }, data: { quantityRemaining: { decrement: consumed } } });
+          const batchUpdate = await tx.stockBatch.updateMany({
+            where: { id: sb.id, quantityRemaining: { gte: consumed } },
+            data: { quantityRemaining: { decrement: consumed } }
+          });
+          if (batchUpdate.count === 0) {
+            throw new BadRequestException(`Stock batch for "${ingredient.productName}" was consumed concurrently. Please retry.`);
+          }
           remaining -= consumed;
+        }
+        if (remaining > 0) {
+          throw new BadRequestException(`Stock batches on hand for "${ingredient.productName}" cover only ${(ingredient.quantityKg - remaining).toFixed(2)}kg of the required ${ingredient.quantityKg}kg — inventory and lot records are out of sync. Please investigate before retrying.`);
         }
 
         await tx.feedRawMaterialUsage.create({

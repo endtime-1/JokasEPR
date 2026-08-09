@@ -218,8 +218,20 @@ export class InventoryService {
   async reserve(user: AuthenticatedUser, dto: StockReservationDto, context: RequestContext) {
     this.assertWarehouseAccess(user, dto.warehouseId);
     const item = await this.requireItem(user.companyId, dto.warehouseId, dto.productId);
-    await this.assertAvailable(user, item, dto.quantity, false);
-    const reservation = await this.prisma.stockReservation.create({ data: { companyId: user.companyId, branchId: item.branchId, warehouseId: item.warehouseId, farmId: dto.farmId, productionSiteId: dto.productionSiteId ?? item.productionSiteId, inventoryItemId: item.id, productId: item.productId, reservationNumber: await nextRef(this.prisma, user.companyId, "RSV"), quantity: dto.quantity, requestedById: user.id, purpose: dto.purpose, expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : undefined, createdById: user.id } });
+    const reservationNumber = await nextRef(this.prisma, user.companyId, "RSV");
+    const reservation = await this.prisma.$transaction(async (tx) => {
+      // H1: assertAvailable's "sum active reservations, compare to quantityOnHand"
+      // check and the reservation insert used to be two unguarded steps — two
+      // concurrent reserve() calls for the same item could both read the same
+      // available snapshot and both insert, jointly over-reserving beyond real
+      // stock. Locking the InventoryItem row for the transaction's lifetime
+      // serializes concurrent reserve() calls on the same item: the second
+      // waits for the first to commit, then its own sum-of-reservations read
+      // includes the first reservation.
+      await tx.$queryRaw`SELECT id FROM InventoryItem WHERE id = ${item.id} FOR UPDATE`;
+      await this.assertAvailable(user, item, dto.quantity, false, tx);
+      return tx.stockReservation.create({ data: { companyId: user.companyId, branchId: item.branchId, warehouseId: item.warehouseId, farmId: dto.farmId, productionSiteId: dto.productionSiteId ?? item.productionSiteId, inventoryItemId: item.id, productId: item.productId, reservationNumber, quantity: dto.quantity, requestedById: user.id, purpose: dto.purpose, expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : undefined, createdById: user.id } });
+    });
     await this.writeAudit(user, "CREATE", "StockReservation", reservation.id, "Reserved stock", context, { branchId: item.branchId, warehouseId: item.warehouseId });
     return { data: reservation };
   }
@@ -370,9 +382,9 @@ export class InventoryService {
     return { issued, unitCost: value / Math.max(quantity, 1) };
   }
 
-  private async assertAvailable(user: AuthenticatedUser, item: { id: string; quantityOnHand: Prisma.Decimal | number }, quantity: number, allowNegative?: boolean) {
+  private async assertAvailable(user: AuthenticatedUser, item: { id: string; quantityOnHand: Prisma.Decimal | number }, quantity: number, allowNegative?: boolean, client: PrismaService | Prisma.TransactionClient = this.prisma) {
     if (allowNegative && user.hasGlobalAccess) return;
-    const reservations = await this.prisma.stockReservation.findMany({ where: { inventoryItemId: item.id, status: "ACTIVE", deletedAt: null, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] }, select: { quantity: true } });
+    const reservations = await client.stockReservation.findMany({ where: { inventoryItemId: item.id, status: "ACTIVE", deletedAt: null, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] }, select: { quantity: true } });
     const available = Number(item.quantityOnHand) - this.sum(reservations, "quantity");
     if (available < quantity) throw new BadRequestException(`Insufficient available stock. Available: ${available}, requested: ${quantity}.`);
   }
