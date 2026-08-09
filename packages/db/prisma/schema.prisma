@@ -6977,6 +6977,11 @@ model QuickBooksWebhookEvent {
 
   connection QuickBooksConnection? @relation(fields: [connectionId], references: [id])
 
+  // M2: QuickBooks documents at-least-once (occasionally duplicate) webhook
+  // delivery, and nothing previously deduped before recording a new event.
+  // A redelivery of the same change carries the same lastUpdated
+  // (eventDate); a genuinely new change to the same entity does not.
+  @@unique([realmId, entityType, entityId, eventDate], map: "qb_webhook_event_dedup_key")
   @@index([connectionId])
   @@index([realmId])
   @@index([status])

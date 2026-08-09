@@ -450,9 +450,30 @@ export class SettingsService {
   private async setSetting(user: AuthenticatedUser, key: string, value: unknown, ctx: RequestContext, summary: string) {
     this.requireSettings(user);
     const existing = await this.prisma.systemSetting.findFirst({ where: { companyId: user.companyId, key, deletedAt: null } });
-    const data = existing
-      ? await this.prisma.systemSetting.update({ where: { id: existing.id }, data: { value: value as any, updatedById: user.id } })
-      : await this.prisma.systemSetting.create({ data: { companyId: user.companyId, key, value: value as any, description: summary, createdById: user.id } });
+    let data;
+    if (existing) {
+      data = await this.prisma.systemSetting.update({ where: { id: existing.id }, data: { value: value as any, updatedById: user.id } });
+    } else {
+      try {
+        data = await this.prisma.systemSetting.create({ data: { companyId: user.companyId, key, value: value as any, description: summary, createdById: user.id } });
+      } catch (err: any) {
+        // (M18) TOCTOU fallback: a concurrent save (double-click, two admin
+        // tabs) created the row between our findFirst above and this create().
+        // Re-fetch and update instead of failing the save outright. Note:
+        // SystemSetting's unique index includes branchId/farmId/warehouseId/
+        // productionSiteId, which company-wide settings always leave null —
+        // MySQL treats multiple NULLs in a unique index as distinct, so this
+        // constraint won't actually fire for today's all-null call sites. This
+        // fallback is still the correct shape (and takes effect the moment any
+        // caller passes real scope values), but closing the gap completely
+        // would need a schema change (e.g. non-null sentinel scope columns),
+        // which is out of scope for this fix.
+        if (err?.code !== "P2002") throw err;
+        const nowExisting = await this.prisma.systemSetting.findFirst({ where: { companyId: user.companyId, key, deletedAt: null } });
+        if (!nowExisting) throw err;
+        data = await this.prisma.systemSetting.update({ where: { id: nowExisting.id }, data: { value: value as any, updatedById: user.id } });
+      }
+    }
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "UPDATE", entityType: "SystemSetting", entityId: data.id, summary, metadata: { key } as any, ...ctx });
     return { data };
   }

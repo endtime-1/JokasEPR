@@ -1,4 +1,5 @@
 ﻿import {
+  ArrayMaxSize,
   IsArray,
   IsBoolean,
   IsDateString,
@@ -190,7 +191,11 @@ export class BulkAttendanceItemDto {
 
 export class BulkAttendanceDto {
   @IsDateString() date!: string;
-  @IsArray() @ValidateNested({ each: true }) @Type(() => BulkAttendanceItemDto) records!: BulkAttendanceItemDto[];
+  // (M16) records is processed with a sequential per-record DB write loop —
+  // unbounded meant an arbitrarily large payload could tie up the request
+  // (and the DB) for a proportionally long time. 1000 comfortably covers a
+  // single day's attendance for even a large company.
+  @IsArray() @ArrayMaxSize(1000) @ValidateNested({ each: true }) @Type(() => BulkAttendanceItemDto) records!: BulkAttendanceItemDto[];
 }
 
 export class CreateShiftDto {

@@ -66,14 +66,24 @@ export class AuthService {
 
     const passwordValid = await bcrypt.compare(dto.password, user.passwordHash);
     if (!passwordValid) {
-      const newAttempts = (user.failedLoginAttempts ?? 0) + 1;
-      const shouldLock = newAttempts >= MAX_FAILED_ATTEMPTS;
-      const lockedUntil = shouldLock ? new Date(Date.now() + LOCKOUT_MINUTES * 60 * 1000) : null;
-
-      await this.prisma.user.update({
+      // (M18) Was a read-then-write (this.failedLoginAttempts + 1) — under
+      // concurrent failed attempts (exactly what a brute-force burst looks
+      // like), multiple requests could read the same stale count before any
+      // committed, losing increments and letting the attacker outrun the
+      // lockout threshold. increment is a single atomic UPDATE, so every
+      // attempt is counted regardless of concurrency.
+      const { failedLoginAttempts: newAttempts } = await this.prisma.user.update({
         where: { id: user.id },
-        data: { failedLoginAttempts: newAttempts, ...(shouldLock ? { lockedUntil } : {}) }
+        data: { failedLoginAttempts: { increment: 1 } },
+        select: { failedLoginAttempts: true }
       });
+      const shouldLock = newAttempts >= MAX_FAILED_ATTEMPTS;
+      if (shouldLock) {
+        await this.prisma.user.update({
+          where: { id: user.id },
+          data: { lockedUntil: new Date(Date.now() + LOCKOUT_MINUTES * 60 * 1000) }
+        });
+      }
 
       await this.auditFailedLogin(user.email, user.companyId, user.id, context, shouldLock ? `Account locked after ${newAttempts} failed attempts` : "Invalid password");
       throw new UnauthorizedException("Invalid credentials.");

@@ -1,9 +1,11 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { AuthenticatedUser } from "@jokas/shared";
-import { Prisma } from "@prisma/client";
+import { BreakdownStatus, Prisma } from "@prisma/client";
 import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { LookupCacheService } from "../../common/services/lookup-cache.service";
+import { nextRef } from "../../common/next-ref";
+import { sanitizeFormulaCell } from "../../common/utils/csv";
 import {
   CreateBreakdownDto,
   CreateDowntimeDto,
@@ -164,7 +166,7 @@ export class MaintenanceService {
 
   async createSchedule(user: AuthenticatedUser, dto: CreateMaintenanceScheduleDto, context: RequestContext) {
     const scope = await this.resolveAssetScope(user, dto.machineId, dto.equipmentId, { branchId: dto.branchId, farmId: dto.farmId, warehouseId: dto.warehouseId, productionSiteId: dto.productionSiteId });
-    const scheduleNumber = await this.nextDocumentNumber(user.companyId, "MS", this.prisma.maintenanceSchedule);
+    const scheduleNumber = await nextRef(this.prisma, user.companyId, "MS");
     const data = await this.prisma.maintenanceSchedule.create({ data: { companyId: user.companyId, ...scope, scheduleNumber, title: dto.title, maintenanceType: dto.maintenanceType, priority: dto.priority ?? "MEDIUM", frequencyDays: dto.frequencyDays, nextDueDate: new Date(dto.nextDueDate), instructions: dto.instructions, createdById: user.id } });
     await this.writeAudit(user, "CREATE", "MaintenanceSchedule", data.id, `Created maintenance schedule ${scheduleNumber}`, context, data);
     return { data };
@@ -202,7 +204,7 @@ export class MaintenanceService {
       const schedule = await this.prisma.maintenanceSchedule.findFirst({ where: { ...this.scheduleWhere(user, {}), id: dto.scheduleId } });
       if (!schedule) throw new NotFoundException("Maintenance schedule was not found.");
     }
-    const recordNumber = await this.nextDocumentNumber(user.companyId, "MR", this.prisma.maintenanceRecord);
+    const recordNumber = await nextRef(this.prisma, user.companyId, "MR");
     const data = await this.prisma.maintenanceRecord.create({ data: { companyId: user.companyId, ...scope, scheduleId: dto.scheduleId, recordNumber, maintenanceDate: dto.maintenanceDate ? new Date(dto.maintenanceDate) : new Date(), maintenanceType: dto.maintenanceType, status: "COMPLETED", completedById: user.id, description: dto.description, findings: dto.findings, nextDueDate: dto.nextDueDate ? new Date(dto.nextDueDate) : undefined, createdById: user.id } });
     if (dto.scheduleId && dto.nextDueDate) {
       await this.prisma.maintenanceSchedule.update({ where: { id: dto.scheduleId }, data: { lastCompletedAt: data.maintenanceDate, nextDueDate: new Date(dto.nextDueDate), status: "SCHEDULED", updatedById: user.id } });
@@ -233,7 +235,7 @@ export class MaintenanceService {
 
   async createBreakdown(user: AuthenticatedUser, dto: CreateBreakdownDto, context: RequestContext) {
     const scope = await this.resolveAssetScope(user, dto.machineId, dto.equipmentId);
-    const breakdownNumber = await this.nextDocumentNumber(user.companyId, "BD", this.prisma.breakdownRecord);
+    const breakdownNumber = await nextRef(this.prisma, user.companyId, "BD");
     const data = await this.prisma.breakdownRecord.create({ data: { companyId: user.companyId, ...scope, breakdownNumber, reportedAt: dto.reportedAt ? new Date(dto.reportedAt) : new Date(), severity: dto.severity ?? "MEDIUM", description: dto.description, rootCause: dto.rootCause, reportedById: user.id, createdById: user.id } });
     if (scope.machineId) await this.prisma.machine.update({ where: { id: scope.machineId }, data: { status: "BROKEN_DOWN", updatedById: user.id } });
     if (scope.equipmentId) await this.prisma.equipment.update({ where: { id: scope.equipmentId }, data: { status: "BROKEN_DOWN", updatedById: user.id } });
@@ -244,7 +246,27 @@ export class MaintenanceService {
   async updateBreakdown(user: AuthenticatedUser, id: string, dto: UpdateBreakdownStatusDto, context: RequestContext) {
     const existing = await this.prisma.breakdownRecord.findFirst({ where: { ...this.breakdownWhere(user, {}), id } });
     if (!existing) throw new NotFoundException("Breakdown record was not found.");
-    const data = await this.prisma.breakdownRecord.update({ where: { id }, data: { status: dto.status, resolution: dto.resolution, resolvedById: ["RESOLVED", "CLOSED"].includes(dto.status) ? user.id : existing.resolvedById, resolvedAt: ["RESOLVED", "CLOSED"].includes(dto.status) ? new Date() : existing.resolvedAt, updatedById: user.id } });
+    const isResolved = ["RESOLVED", "CLOSED"].includes(dto.status);
+    const data = await this.prisma.breakdownRecord.update({ where: { id }, data: { status: dto.status, resolution: dto.resolution, resolvedById: isResolved ? user.id : existing.resolvedById, resolvedAt: isResolved ? new Date() : existing.resolvedAt, updatedById: user.id } });
+
+    // (M13) createBreakdown marks the machine/equipment BROKEN_DOWN, but nothing
+    // ever set it back — an asset stayed BROKEN_DOWN forever even after every
+    // breakdown against it was resolved, corrupting fleet status everywhere it's
+    // read. Only restore ACTIVE once no OTHER open breakdown remains against the
+    // same asset, so resolving one of two concurrent breakdowns can't falsely
+    // clear a machine/equipment that's still actually broken.
+    const openStatuses: BreakdownStatus[] = ["REPORTED", "ASSIGNED", "IN_REPAIR"];
+    if (isResolved) {
+      if (existing.machineId) {
+        const stillOpen = await this.prisma.breakdownRecord.count({ where: { id: { not: id }, machineId: existing.machineId, status: { in: openStatuses }, deletedAt: null } });
+        if (stillOpen === 0) await this.prisma.machine.update({ where: { id: existing.machineId }, data: { status: "ACTIVE", updatedById: user.id } });
+      }
+      if (existing.equipmentId) {
+        const stillOpen = await this.prisma.breakdownRecord.count({ where: { id: { not: id }, equipmentId: existing.equipmentId, status: { in: openStatuses }, deletedAt: null } });
+        if (stillOpen === 0) await this.prisma.equipment.update({ where: { id: existing.equipmentId }, data: { status: "ACTIVE", updatedById: user.id } });
+      }
+    }
+
     await this.writeAudit(user, dto.status === "CANCELLED" ? "REJECT" : "UPDATE", "BreakdownRecord", id, `Updated breakdown to ${dto.status}`, context, data);
     return { data };
   }
@@ -315,7 +337,9 @@ export class MaintenanceService {
   async reportCsv(user: AuthenticatedUser, query: MaintenanceQueryDto, context: RequestContext) {
     const rows = await this.prisma.maintenanceCost.findMany({ where: this.costWhere(user, query), include: { machine: true, equipment: true }, orderBy: { costDate: "desc" } });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "EXPORT", entityType: "Report", entityId: "maintenance.cost", summary: "Exported maintenance cost report", ipAddress: context.ipAddress, userAgent: context.userAgent });
-    return [["date", "asset", "cost_type", "amount", "description"], ...rows.map((row) => [row.costDate.toISOString().slice(0, 10), row.machine?.name ?? row.equipment?.name ?? "Unassigned", row.costType, String(row.amount), row.description ?? ""])].map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(",")).join("\n");
+    // (M15) asset name / description are user-entered — sanitize before CSV so
+    // a value starting with =/+/-/@ can't execute as a formula in Excel.
+    return [["date", "asset", "cost_type", "amount", "description"], ...rows.map((row) => [row.costDate.toISOString().slice(0, 10), sanitizeFormulaCell(row.machine?.name ?? row.equipment?.name ?? "Unassigned"), row.costType, String(row.amount), sanitizeFormulaCell(row.description ?? "")])].map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(",")).join("\n");
   }
 
   private async resolveAssetScope(user: AuthenticatedUser, machineId?: string, equipmentId?: string, fallback?: Partial<AssetScope>): Promise<AssetScope> {
@@ -421,11 +445,6 @@ export class MaintenanceService {
 
   private assertWarehouseAccess(user: AuthenticatedUser, warehouseId: string) {
     if (!user.hasGlobalAccess && !user.warehouseIds.includes(warehouseId)) throw new ForbiddenException("You do not have access to this warehouse.");
-  }
-
-  private async nextDocumentNumber(companyId: string, prefix: string, model: { count: (args: { where: { companyId: string } }) => Promise<number> }) {
-    const count = await model.count({ where: { companyId } });
-    return `${prefix}-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}`;
   }
 
   private sum<T extends Record<string, unknown>>(rows: T[], key: keyof T) {

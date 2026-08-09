@@ -102,21 +102,6 @@ export class PublicService {
     const branch    = company.branches[0];
     const warehouse = company.warehouses[0];
 
-    // Always create a new anonymous customer record per storefront order — reusing
-    // an existing customer by phone alone allows phone spoofing to access another
-    // customer's account history and credit terms.
-    const customer = await this.prisma.customer.create({
-      data: {
-        companyId:  company.id,
-        branchId:   branch.id,
-        code:       `WEB-${randomBytes(4).toString("hex").toUpperCase()}`,
-        name:       dto.customerName,
-        phone:      dto.customerPhone,
-        email:      dto.customerEmail,
-        address:    dto.deliveryAddress,
-      },
-    });
-
     const productIds = dto.lines.map((l) => l.productId);
     const products   = await this.prisma.product.findMany({
       where: { id: { in: productIds }, isPublic: true, companyId: company.id },
@@ -149,6 +134,24 @@ export class PublicService {
       const names = unpriced.map((i) => i.product.name).join(", ");
       throw new BadRequestException(`These products are currently unavailable for online ordering: ${names}.`);
     }
+
+    // (M19) Was created before any of the validation above — every rejected
+    // attempt (unavailable product, below minOrderQty, unpriced product) still
+    // left a permanent, orphaned Customer row behind with no order attached.
+    // Always create a new anonymous customer record per storefront order —
+    // reusing an existing customer by phone alone allows phone spoofing to
+    // access another customer's account history and credit terms.
+    const customer = await this.prisma.customer.create({
+      data: {
+        companyId:  company.id,
+        branchId:   branch.id,
+        code:       `WEB-${randomBytes(4).toString("hex").toUpperCase()}`,
+        name:       dto.customerName,
+        phone:      dto.customerPhone,
+        email:      dto.customerEmail,
+        address:    dto.deliveryAddress,
+      },
+    });
 
     const subtotal      = orderItems.reduce((sum, i) => sum + i.total, 0);
     // Both references are fully random — sequential numbers allow order enumeration

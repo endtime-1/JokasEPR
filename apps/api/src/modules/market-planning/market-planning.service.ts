@@ -795,7 +795,10 @@ export class MarketPlanningService {
   }
 
   async targetVsActualReport(user: AuthenticatedUser, query: MarketPlanningQueryDto) {
-    const targets = await this.prisma.marketTarget.findMany({ where: this.targetWhere(user, query), orderBy: { periodStart: "desc" } });
+    // M16: was unbounded — each target below also fans out into several more
+    // queries in buildTargetVsActual, so an uncapped target list here was the
+    // most expensive place for this endpoint to go unbounded.
+    const targets = await this.prisma.marketTarget.findMany({ where: this.targetWhere(user, query), orderBy: { periodStart: "desc" }, take: 200 });
     const rows = [];
     for (const target of targets) {
       rows.push(await this.buildTargetVsActual(user, target.id));

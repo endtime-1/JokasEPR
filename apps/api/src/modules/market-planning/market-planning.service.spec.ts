@@ -135,3 +135,33 @@ describe("MarketPlanningService.submitTarget / approveTarget — status-guarded,
     });
   });
 });
+
+describe("MarketPlanningService.targetVsActualReport — target list is capped, not unbounded (M16)", () => {
+  const mockPrisma = {
+    marketTarget: { findMany: jest.fn() }
+  };
+
+  function makeService() {
+    return new MarketPlanningService(mockPrisma as never, {} as never);
+  }
+
+  function makeUser(overrides: Partial<AuthenticatedUser> = {}): AuthenticatedUser {
+    return {
+      id: "user-1", companyId: "company-1", email: "u@x.com", fullName: "U",
+      roles: [], permissions: [], branchIds: [], farmIds: [], warehouseIds: [], productionSiteIds: [],
+      hasGlobalAccess: false,
+      ...overrides
+    };
+  }
+
+  beforeEach(() => jest.clearAllMocks());
+
+  it("caps the underlying target query at take: 200", async () => {
+    mockPrisma.marketTarget.findMany.mockResolvedValue([]);
+    const service = makeService();
+
+    await service.targetVsActualReport(makeUser(), {} as never);
+
+    expect(mockPrisma.marketTarget.findMany.mock.calls[0][0].take).toBe(200);
+  });
+});

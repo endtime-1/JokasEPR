@@ -3,6 +3,7 @@ import { AuthenticatedUser, PERMISSIONS, PermissionKey } from "@jokas/shared";
 import { Prisma } from "@prisma/client";
 import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { sanitizeFormulaCell } from "../../common/utils/csv";
 import { ReportQueryDto } from "./dto/report-query.dto";
 
 type RequestContext = {
@@ -40,6 +41,10 @@ type ReportResult = {
   rows: Record<string, unknown>[];
   totals: Record<string, number>;
   chart?: { title: string; labels: string[]; values: number[] };
+  // M6: the row-cap below used to be silent — a report matching more rows
+  // than the cap had its "total" computed only over the truncated slice,
+  // with no indication to the viewer that more data existed.
+  truncated: boolean;
 };
 
 const REPORTS: ReportDefinition[] = [
@@ -214,19 +219,27 @@ export class ReportsService {
     return { data: { companies, branches, farms, warehouses, productionSites, products, customers, suppliers } };
   }
 
+  private static readonly ROW_CAP = 1000;
+
   async run(id: string, user: AuthenticatedUser, query: ReportQueryDto): Promise<{ data: ReportResult }> {
     const definition = this.getDefinition(id, user);
     const delegate = this.delegate(definition.model);
+    // M6: fetch one row past the cap purely to detect truncation — if a
+    // report matches more rows than the cap, the totals below are computed
+    // only over the truncated slice, and the viewer used to have no way to
+    // tell.
     const rows = await delegate.findMany({
       where: this.where(definition, user, query),
       orderBy: definition.dateField ? { [definition.dateField]: "desc" } : { createdAt: "desc" },
-      take: 1000
+      take: ReportsService.ROW_CAP + 1
     });
+    const truncated = rows.length > ReportsService.ROW_CAP;
+    if (truncated) rows.length = ReportsService.ROW_CAP;
     const mappedRows = rows.map((row: Record<string, unknown>) => this.normalize(definition.map(row))).filter((row: Record<string, unknown>) => definition.filter?.(row) ?? true);
     const resolvedRows = await this.resolveIds(definition.columns, mappedRows);
     const totals = this.totals(definition.columns, resolvedRows);
     const chart = this.chart(definition, resolvedRows);
-    return { data: { definition: this.publicDefinition(definition), rows: resolvedRows, totals, chart } };
+    return { data: { definition: this.publicDefinition(definition), rows: resolvedRows, totals, chart, truncated } };
   }
 
   async export(id: string, format: "csv" | "xls" | "pdf" | "html", user: AuthenticatedUser, query: ReportQueryDto, context: RequestContext) {
@@ -382,8 +395,14 @@ export class ReportsService {
   private totals(columns: Column[], rows: Record<string, unknown>[]) {
     const totals: Record<string, number> = {};
     for (const column of columns) {
-      if (column.type === "number" || column.type === "money" || column.type === "percent") {
+      if (column.type === "number" || column.type === "money") {
         totals[column.key] = rows.reduce((sum, row) => sum + n(row[column.key]), 0);
+      } else if (column.type === "percent") {
+        // M6: percentage-typed columns (margin, moisture %, protein %) were
+        // summed across rows like a money/number total — a five-product
+        // margin report could show "Total margin: 340%." A percent column's
+        // "total" is its average across the rows, not a sum.
+        totals[column.key] = rows.length > 0 ? rows.reduce((sum, row) => sum + n(row[column.key]), 0) / rows.length : 0;
       }
     }
     return totals;
@@ -473,11 +492,5 @@ function pdfEscape(value: string) {
 
 // M12: CSV/XLS exports previously wrote user-entered business data (customer
 // and vendor names, notes, etc.) straight into cells with no neutralization.
-// Excel and most spreadsheet apps treat a leading =, +, -, or @ as the start
-// of a formula regardless of surrounding quotes, so a value like
-// "=cmd|'/c calc'!A1" or "=HYPERLINK(...)" opened by staff is executed —
-// the classic CSV/formula-injection pattern. Prefixing a single quote forces
-// the cell to be read as text instead of evaluated.
-function sanitizeFormulaCell(value: string): string {
-  return /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
-}
+// sanitizeFormulaCell now lives in common/utils/csv.ts (M15) so the other
+// exporters in the app can reuse it instead of re-solving the same bug.

@@ -31,6 +31,7 @@ import {
   Search,
   Settings,
   ShieldCheck,
+  ShieldOff,
   ShoppingCart,
   Smartphone,
   Sprout,
@@ -120,6 +121,20 @@ function hasAccess(
   if (!permission) return true;
   if (globalAccess) return true;
   return userPermissions.includes(permission);
+}
+
+// (M9) navGroups already declares the permission each page needs — it was only ever
+// used to hide/show the sidebar link, so a user without the permission could still
+// open the page directly by URL. Reuse the same map to gate the page content itself.
+function permissionForPath(pathname: string): string | undefined {
+  const allItems = navGroups.flatMap((group) => group.items);
+  const matches = allItems.filter(
+    (item) => pathname === item.href || pathname.startsWith(`${item.href}/`)
+  );
+  if (matches.length === 0) return undefined;
+  // Longest href wins — e.g. "/settings/catalog" over "/settings" for that page.
+  matches.sort((a, b) => b.href.length - a.href.length);
+  return matches[0].permission;
 }
 
 function NavLink({
@@ -420,6 +435,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const userPermissions = profile?.permissions ?? [];
   const globalAccess = profile?.hasGlobalAccess;
 
+  // Only enforce once the profile has actually loaded — during an API outage
+  // (profile still null after ready) we fall back to letting pages through,
+  // matching the existing lenient behavior of the nav filtering below.
+  const pageAuthorized = !profile || hasAccess(permissionForPath(pathname), userPermissions, globalAccess);
+
   const visibleGroups = navGroups
     .map((group) => ({
       ...group,
@@ -625,7 +645,28 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </header>
 
         <main className="px-5 py-7 lg:px-8">
-          <Fragment key={recoveryKey}>{children}</Fragment>
+          {pageAuthorized ? (
+            <Fragment key={recoveryKey}>{children}</Fragment>
+          ) : (
+            <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 rounded-2xl border border-line bg-white p-10 text-center">
+              <div className="grid h-14 w-14 place-items-center rounded-2xl bg-red-50 text-red-500">
+                <ShieldOff aria-hidden className="h-7 w-7" />
+              </div>
+              <div className="space-y-1.5">
+                <h1 className="text-lg font-bold text-ink">You don&apos;t have access to this page</h1>
+                <p className="max-w-sm text-sm text-ink/55">
+                  Your account doesn&apos;t have the permission required to view this section.
+                  If you believe this is a mistake, contact an administrator.
+                </p>
+              </div>
+              <Link
+                href="/profile"
+                className="mt-2 rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-brand/25 transition hover:bg-brand/90"
+              >
+                Back to your profile
+              </Link>
+            </div>
+          )}
         </main>
       </div>
 

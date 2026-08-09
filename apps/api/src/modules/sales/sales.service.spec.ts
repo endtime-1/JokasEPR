@@ -21,15 +21,16 @@ const mockTx = {
 };
 
 const mockPrisma = {
-  customer: { findFirst: jest.fn() },
+  customer: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
   invoice: { findFirst: jest.fn(), findUnique: jest.fn().mockResolvedValue(null) },
   payment: { findFirst: jest.fn() },
   receipt: { findFirst: jest.fn() },
   revenue: { create: jest.fn().mockResolvedValue({}) },
-  warehouse: { findFirst: jest.fn() },
-  product: { findFirst: jest.fn() },
-  salesOrderItem: { findFirst: jest.fn() },
-  salesOrder: { findFirst: jest.fn() },
+  warehouse: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
+  branch: { findMany: jest.fn().mockResolvedValue([]) },
+  product: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
+  salesOrderItem: { findFirst: jest.fn(), groupBy: jest.fn().mockResolvedValue([]) },
+  salesOrder: { findFirst: jest.fn(), groupBy: jest.fn().mockResolvedValue([]) },
   salesReturn: { aggregate: jest.fn(), create: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
   $transaction: jest.fn().mockImplementation((cb: (tx: typeof mockTx) => Promise<unknown>) => cb(mockTx))
 };
@@ -397,5 +398,45 @@ describe("SalesService.approveStockRelease — atomic credit balance + re-checke
 
     const service = makeService();
     await expect(service.approveStockRelease(user(), "so-1", {})).resolves.toBeDefined();
+  });
+});
+
+describe("SalesService.reports — top-lists aggregate over every matching order, not just the 200 most recent (M7)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("does not pass a take/limit to the DB-side aggregation, so older orders are never silently dropped", async () => {
+    mockPrisma.salesOrderItem.groupBy.mockResolvedValue([]);
+    mockPrisma.salesOrder.groupBy.mockResolvedValue([]);
+
+    const service = makeService();
+    await service.reports(makeUser(), {} as never);
+
+    for (const call of mockPrisma.salesOrderItem.groupBy.mock.calls) expect(call[0].take).toBeUndefined();
+    for (const call of mockPrisma.salesOrder.groupBy.mock.calls) expect(call[0].take).toBeUndefined();
+  });
+
+  it("aggregates a product's quantity/value across every order returned by the DB, however many there are", async () => {
+    // Previously this scenario (a product spread across 250 orders) would have
+    // silently reflected only the 200 most-recent orders' worth of quantity/value.
+    mockPrisma.salesOrderItem.groupBy.mockResolvedValue([{ productId: "prod-1", _sum: { quantity: 2500, lineTotal: 125000 } }]);
+    mockPrisma.product.findMany.mockResolvedValue([{ id: "prod-1", sku: "SKU-1", name: "Layer Feed" }]);
+
+    const service = makeService();
+    const result = await service.reports(makeUser(), {} as never);
+
+    expect(result.data.byProduct).toEqual([{ sku: "SKU-1", product: "Layer Feed", quantity: 2500, salesValue: 125000 }]);
+  });
+
+  it("aggregates customer orders/value/balance across every matching order via DB-side groupBy", async () => {
+    mockPrisma.salesOrder.groupBy.mockImplementation(({ by }: { by: string[] }) => {
+      if (by[0] === "customerId") return Promise.resolve([{ customerId: "cust-1", _count: { _all: 250 }, _sum: { totalAmount: 500000, balanceDue: 12000 } }]);
+      return Promise.resolve([]);
+    });
+    mockPrisma.customer.findMany.mockResolvedValue([{ id: "cust-1", code: "C-001", name: "Acme Ltd" }]);
+
+    const service = makeService();
+    const result = await service.reports(makeUser(), {} as never);
+
+    expect(result.data.byCustomer).toEqual([{ code: "C-001", customer: "Acme Ltd", orders: 250, salesValue: 500000, balanceDue: 12000 }]);
   });
 });

@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
-import { countPending } from "../db/sync";
+import { countFailed, countPending } from "../db/sync";
 import { runSync, type SyncResult } from "../db/sync";
 import { useNetwork } from "./useNetwork";
 
 export type SyncState = {
   pending: number;
+  // M5: distinct from `pending` — records that hit the 5-attempt retry
+  // ceiling. Previously invisible outside the Sync Status screen; exposed
+  // here so SyncBanner can surface it instead of silently going quiet.
+  failed: number;
   syncing: boolean;
   lastSyncAt: Date | null;
   lastResult: SyncResult | null;
@@ -16,13 +20,15 @@ export type SyncState = {
 export function useSync(): SyncState {
   const { online } = useNetwork();
   const [pending, setPending] = useState(0);
+  const [failed, setFailed] = useState(0);
   const [syncing, setSyncing] = useState(false);
   const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null);
   const [lastResult, setLastResult] = useState<SyncResult | null>(null);
 
   const refreshCount = useCallback(async () => {
-    const count = await countPending();
+    const [count, failedCount] = await Promise.all([countPending(), countFailed()]);
     setPending(count);
+    setFailed(failedCount);
   }, []);
 
   const sync = useCallback(async () => {
@@ -52,5 +58,5 @@ export function useSync(): SyncState {
     return () => clearInterval(interval);
   }, [online, sync]);
 
-  return { pending, syncing, lastSyncAt, lastResult, sync, online, refreshCount };
+  return { pending, failed, syncing, lastSyncAt, lastResult, sync, online, refreshCount };
 }

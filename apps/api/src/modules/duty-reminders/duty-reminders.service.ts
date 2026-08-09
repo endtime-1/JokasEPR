@@ -3,6 +3,7 @@ import { Cron, CronExpression } from "@nestjs/schedule";
 import { PrismaService } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { NotificationType } from "../notifications/dto/notifications.dto";
+import { startOfTodayAccra } from "../../common/utils/timezone";
 
 @Injectable()
 export class DutyRemindersService {
@@ -71,8 +72,7 @@ export class DutyRemindersService {
   // ── Core logic ────────────────────────────────────────────────────────────
 
   private async remindForDuties(slot: "MORNING" | "EVENING", dutyNames: string[], companyId?: string) {
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
+    const todayStart = startOfTodayAccra(); // (M20) was server-local midnight — this cron is about "today" for Ghana staff, not wherever the host's TZ happens to be
     const todayEnd = new Date(todayStart);
     todayEnd.setDate(todayEnd.getDate() + 1);
 
@@ -259,8 +259,7 @@ export class DutyRemindersService {
 
   // ── Public: today's duty status per farm ─────────────────────────────────
   async getTodayStatus(companyId: string) {
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
+    const todayStart = startOfTodayAccra(); // (M20) was server-local midnight
     const dateRange = { gte: todayStart, lt: new Date(todayStart.getTime() + 86_400_000) };
 
     const [farms, eggs, feed, mortality, daily] = await Promise.all([

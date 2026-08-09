@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable } from "@nestjs/common";
+import { ForbiddenException, Injectable, InternalServerErrorException, Logger } from "@nestjs/common";
 import { AuthenticatedUser } from "@jokas/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { EmailService } from "./email.service";
@@ -8,6 +8,8 @@ import { NotificationQueryDto, NotificationType, SendNotificationPayload, Update
 
 @Injectable()
 export class NotificationsService {
+  private readonly logger = new Logger(NotificationsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly email: EmailService,
@@ -112,18 +114,26 @@ export class NotificationsService {
     const limit = Math.min(query.limit ?? 30, 100);
     const offset = query.offset ?? 0;
 
+    // (M12) Was try/catch-to-empty — a genuine DB failure silently rendered as
+    // "you have no notifications" instead of an error, matching the pattern
+    // already fixed in DashboardService.executive (H23).
     try {
       const [data, total] = await Promise.all([
         this.prisma.notification.findMany({ where, orderBy: { createdAt: "desc" }, take: limit, skip: offset }),
         this.prisma.notification.count({ where })
       ]);
       return { data: { data, total } };
-    } catch {
-      return { data: { data: [], total: 0 } };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      this.logger.error(`notifications list failed to load for user ${user.id}: ${message}`);
+      throw new InternalServerErrorException("Notifications failed to load");
     }
   }
 
   async unreadCount(user: AuthenticatedUser) {
+    // (M12) Was try/catch-to-0 — a genuine DB failure silently showed the bell
+    // badge as "0 unread" instead of surfacing the error, hiding real outages
+    // behind a falsely reassuring "all caught up" state.
     try {
       // channel filter removed: Prisma 6 ENUM binding generates a malformed
       // prepared statement on this MySQL version causing a 500. Counting all
@@ -132,8 +142,10 @@ export class NotificationsService {
         where: { companyId: user.companyId, userId: user.id, status: "UNREAD" }
       });
       return { data: { count } };
-    } catch {
-      return { data: { count: 0 } };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      this.logger.error(`unread notification count failed to load for user ${user.id}: ${message}`);
+      throw new InternalServerErrorException("Unread notification count failed to load");
     }
   }
 

@@ -55,22 +55,11 @@ const nextConfig = {
         key: "Permissions-Policy",
         value: "camera=(), microphone=(), geolocation=()",
       },
-      {
-        key: "Content-Security-Policy",
-        value: [
-          "default-src 'self'",
-          // TODO (M-02): Replace 'unsafe-inline' with a nonce-based CSP.
-          // Requires middleware.ts to generate a nonce per request and <Script nonce={nonce}> in _document.
-          // Removing unsafe-inline without nonces breaks Next.js hydration.
-          "script-src 'self' 'unsafe-inline'",
-          "style-src 'self' 'unsafe-inline'",
-          "img-src 'self' data: blob:",
-          "font-src 'self'",
-          "connect-src 'self'",
-          "object-src 'none'",
-          "frame-ancestors 'none'",
-        ].join("; "),
-      },
+      // (M11) Content-Security-Policy is set in middleware.ts instead of here —
+      // it needs a fresh nonce per request for script-src, which a static header
+      // here can't provide. Setting it in both places would emit two CSP headers,
+      // and browsers intersect multiple CSP headers rather than letting the
+      // later one win, which would silently reintroduce conflicts.
     ];
 
     return [

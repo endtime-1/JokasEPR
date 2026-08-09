@@ -1531,7 +1531,7 @@ export function CreateTaskPage() {
 
 type PayrollRow = { id: string; reference: string; period: string; grossPay: number; netPay: number; status: string; employee?: { fullName: string; code: string }; paymentDate?: string };
 
-type PayrollEstimate = { grossMonthly: number; ssnit: number; paye: number; netPay: number; employerSsnit: number; pensionTier2: number };
+type PayrollEstimate = { grossMonthly: number; ssnit: number; paye: number; netPay: number; employerSsnit: number; pensionTier2: number; payeBandsStale?: boolean; payeBandsTaxYear?: number };
 type PrefillResult = { basicSalary: number; overtimePay: number; taxDeduction: number; ssnit: number; employerSsnit: number; pensionTier2: number; netPay: number; attendanceSummary: { daysPresent: number; daysAbsent: number; totalHours: number; overtimeHours: number } };
 
 export function PayrollPage() {
@@ -1685,6 +1685,11 @@ export function PayrollPage() {
                 </button>
                 {payeEst && <span className="text-xs text-ink/60">SSNIT {money(payeEst.ssnit)} · PAYE {money(payeEst.paye)} · Net {money(payeEst.netPay)}</span>}
               </div>
+              {payeEst?.payeBandsStale && (
+                <div className="col-span-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  PAYE bands last confirmed for tax year {payeEst.payeBandsTaxYear} — verify against the current GRA schedule before relying on this estimate.
+                </div>
+              )}
               <div><label className="mb-1 block text-xs font-medium">Basic Salary *</label><input required type="number" min={0} step={0.01} value={form.basicSalary} onChange={f("basicSalary")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
               <div><label className="mb-1 block text-xs font-medium">Overtime Pay</label><input type="number" min={0} step={0.01} value={form.overtimePay} onChange={f("overtimePay")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
               <div><label className="mb-1 block text-xs font-medium">Allowances</label><input type="number" min={0} step={0.01} value={form.allowances} onChange={f("allowances")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>

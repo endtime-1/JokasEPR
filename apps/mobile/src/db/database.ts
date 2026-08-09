@@ -81,6 +81,14 @@ export async function decryptPayload(data: string): Promise<string> {
   }
 }
 
+// M3: submission payloads went through encryptPayload's XOR obscuring, but
+// the lookup cache (customer lists, employee directory, product/pricing
+// data) was stored as plain JSON.stringify with no protection at all — a
+// lost/stolen device or an Android backup extraction exposed it in a
+// trivially browsable file. Uses the same, already-accepted XOR mechanism
+// (see encryptPayload's own doc comment for why it's a deterrent, not
+// AES-grade encryption) rather than introducing a second, inconsistent
+// standard for this data.
 export async function getCachedLookup<T>(key: string): Promise<{ data: T; stale: boolean } | null> {
   const database = await getDb();
   const row = await database.getFirstAsync<{ data: string; cached_at: string }>(
@@ -90,7 +98,8 @@ export async function getCachedLookup<T>(key: string): Promise<{ data: T; stale:
   if (!row) return null;
   try {
     const age = Date.now() - new Date(row.cached_at).getTime();
-    return { data: JSON.parse(row.data) as T, stale: age > CACHE_TTL_MS };
+    const decrypted = await decryptPayload(row.data);
+    return { data: JSON.parse(decrypted) as T, stale: age > CACHE_TTL_MS };
   } catch {
     // Corrupted cache entry — evict it and return null so a fresh fetch runs
     await database.runAsync("DELETE FROM lookup_cache WHERE key = ?", key);
@@ -100,10 +109,11 @@ export async function getCachedLookup<T>(key: string): Promise<{ data: T; stale:
 
 export async function setCachedLookup(key: string, data: unknown): Promise<void> {
   const database = await getDb();
+  const encrypted = await encryptPayload(JSON.stringify(data));
   await database.runAsync(
     "INSERT OR REPLACE INTO lookup_cache (key, data, cached_at) VALUES (?, ?, ?)",
     key,
-    JSON.stringify(data),
+    encrypted,
     new Date().toISOString()
   );
 }
@@ -179,6 +189,20 @@ export async function countPending(): Promise<number> {
   const database = await getDb();
   const row = await database.getFirstAsync<{ count: number }>(
     "SELECT COUNT(*) as count FROM pending_submissions WHERE synced = 0 AND attempts < 5"
+  );
+  return row?.count ?? 0;
+}
+
+// M5: countPending() excludes records that hit the retry ceiling, so once a
+// record fails 5 sync attempts it dropped out of the pending badge/banner
+// entirely with no push or alert — the app looked fully synced while a
+// record sat permanently stuck, discoverable only by proactively opening
+// Sync Status. This is the count SyncBanner needs alongside pending so it
+// can surface "X failed" instead of silently going quiet.
+export async function countFailed(): Promise<number> {
+  const database = await getDb();
+  const row = await database.getFirstAsync<{ count: number }>(
+    "SELECT COUNT(*) as count FROM pending_submissions WHERE synced = 0 AND attempts >= 5"
   );
   return row?.count ?? 0;
 }

@@ -2,6 +2,7 @@ import { ForbiddenException, Injectable, InternalServerErrorException, Logger } 
 import { BusinessUnit, DashboardMetricKey, Prisma } from "@prisma/client";
 import { AuthenticatedUser, PERMISSIONS } from "@jokas/shared";
 import { PrismaService } from "../prisma/prisma.service";
+import { endOfDayAccra, startOfDayAccra, startOfMonthAccra, startOfTodayAccra } from "../../common/utils/timezone";
 import { DashboardQueryDto } from "./dto/dashboard-query.dto";
 
 type Card = {
@@ -75,9 +76,7 @@ export class DashboardService {
 
   async summary(user: AuthenticatedUser) {
     const companyId = user.companyId;
-    const monthStart = new Date();
-    monthStart.setDate(1);
-    monthStart.setHours(0, 0, 0, 0);
+    const monthStart = startOfMonthAccra(); // (M20) was server-local midnight
 
     // Previously filtered only by companyId — a user restricted to a single
     // farm/branch saw company-wide revenue, order counts, and bird totals
@@ -170,8 +169,7 @@ export class DashboardService {
   // ── My Daily Duties ──────────────────────────────────────────────────────
 
   async myDuties(user: AuthenticatedUser) {
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
+    const todayStart = startOfTodayAccra(); // (M20) was server-local midnight
     const todayEnd = new Date(todayStart);
     todayEnd.setDate(todayEnd.getDate() + 1);
 
@@ -306,8 +304,7 @@ export class DashboardService {
   // ── Farm Operations Today (manager overview) ─────────────────────────────
 
   async farmOperationsToday(user: AuthenticatedUser) {
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
+    const todayStart = startOfTodayAccra(); // (M20) was server-local midnight
     const todayEnd = new Date(todayStart);
     todayEnd.setDate(todayEnd.getDate() + 1);
 
@@ -915,13 +912,16 @@ export class DashboardService {
   }
 
   private resolveRange(query: DashboardQueryDto) {
-    const end = query.endDate ? new Date(query.endDate) : new Date();
-    end.setHours(23, 59, 59, 999);
-    const start = query.startDate ? new Date(query.startDate) : new Date(end);
+    // (M20) Was local-timezone setHours(0/23, ...) — pinned to Accra/UTC so
+    // "today"/"the last 30 days" means the same calendar days regardless of
+    // the host's local TZ.
+    const endBase = query.endDate ? new Date(query.endDate) : new Date();
+    const end = endOfDayAccra(endBase);
+    const startBase = query.startDate ? new Date(query.startDate) : new Date(endBase);
     if (!query.startDate) {
-      start.setDate(start.getDate() - 29);
+      startBase.setUTCDate(startBase.getUTCDate() - 29);
     }
-    start.setHours(0, 0, 0, 0);
+    const start = startOfDayAccra(startBase);
     return { start, end };
   }
 

@@ -78,3 +78,45 @@ describe("PublicService.placeOrder — closes $0-order and minOrderQty gaps (M7)
     expect(result.status).toBe("PENDING");
   });
 });
+
+describe("PublicService.placeOrder — validates the order before creating a permanent Customer row (M19)", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPrisma.company.findFirst.mockResolvedValue(makeCompany());
+    mockPrisma.customer.create.mockResolvedValue({ id: "cust-1" });
+    mockPrisma.salesOrder.create.mockResolvedValue({});
+  });
+
+  it("does not create a customer row when a product is unavailable", async () => {
+    mockPrisma.product.findMany.mockResolvedValue([]); // requested product not found/not public
+    const service = makeService();
+
+    await expect(service.placeOrder(makeDto([{ productId: "prod-1", quantity: 2 }]))).rejects.toThrow(BadRequestException);
+    expect(mockPrisma.customer.create).not.toHaveBeenCalled();
+  });
+
+  it("does not create a customer row when the order is below minOrderQty", async () => {
+    mockPrisma.product.findMany.mockResolvedValue([makeProduct({ minOrderQty: 10 })]);
+    const service = makeService();
+
+    await expect(service.placeOrder(makeDto([{ productId: "prod-1", quantity: 3 }]))).rejects.toThrow(BadRequestException);
+    expect(mockPrisma.customer.create).not.toHaveBeenCalled();
+  });
+
+  it("does not create a customer row when the product has no active price", async () => {
+    mockPrisma.product.findMany.mockResolvedValue([makeProduct({ priceLists: [] })]);
+    const service = makeService();
+
+    await expect(service.placeOrder(makeDto([{ productId: "prod-1", quantity: 5 }]))).rejects.toThrow(BadRequestException);
+    expect(mockPrisma.customer.create).not.toHaveBeenCalled();
+  });
+
+  it("only creates the customer row once every validation check has passed", async () => {
+    mockPrisma.product.findMany.mockResolvedValue([makeProduct()]);
+    const service = makeService();
+
+    await service.placeOrder(makeDto([{ productId: "prod-1", quantity: 2 }]));
+
+    expect(mockPrisma.customer.create).toHaveBeenCalled();
+  });
+});

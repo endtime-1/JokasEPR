@@ -1,5 +1,5 @@
 import { apiFetch } from "../api/client";
-import { countPending, decryptPayload, getPendingSubmissions, markSyncError, markSynced, type PendingSubmission } from "./database";
+import { countFailed, countPending, decryptPayload, getPendingSubmissions, markSyncError, markSynced, type PendingSubmission } from "./database";
 
 export type SyncResult = { synced: number; failed: number; duplicates: number };
 
@@ -116,4 +116,4 @@ export async function runSync(): Promise<SyncResult> {
   };
 }
 
-export { countPending };
+export { countPending, countFailed };

@@ -6,6 +6,7 @@ import { AuditService } from "../audit/audit.service";
 import { EmailService } from "../notifications/email.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { sanitizeFormulaCell } from "../../common/utils/csv";
 import {
   AssignTaskDto,
   BulkAttendanceDto,
@@ -68,6 +69,15 @@ function nextRef(prefix: string) {
 function num(v: unknown) {
   return Number(v ?? 0);
 }
+
+// (M17) The bands below are hardcoded to Ghana's 2024 fiscal-year budget —
+// Ghana's PAYE bands are revised in most annual budgets, so this table
+// silently drifts out of date with no error, no crash, nothing to notice.
+// Rather than guess at unverified updated figures, computePaye flags when
+// the current year has moved past the year this table was last confirmed
+// current, so Finance/HR know to verify against the current GRA schedule
+// before trusting the numbers.
+const PAYE_BANDS_TAX_YEAR = 2024;
 
 @Injectable()
 export class HRService {
@@ -815,6 +825,13 @@ export class HRService {
     if (new Date(dto.periodEnd) <= new Date(dto.periodStart)) {
       throw new BadRequestException("periodEnd must be after periodStart.");
     }
+    // (M17) Nothing previously stopped payroll being run twice for the same
+    // employee/period — a duplicate record meant a real double payment risk
+    // once approved and paid. A soft-deleted record (a corrected mistake)
+    // doesn't count, so re-running payroll after a legitimate correction
+    // still works.
+    const duplicate = await this.prisma.payrollRecord.findFirst({ where: { companyId: user.companyId, employeeId: dto.employeeId, period: dto.period, deletedAt: null } });
+    if (duplicate) throw new BadRequestException(`A payroll record already exists for ${employee.fullName} for period ${dto.period}.`);
 
     const allowances = dto.allowances ?? 0;
     const deductions = dto.deductions ?? 0;
@@ -1346,7 +1363,7 @@ export class HRService {
 
   // ─── Payroll estimate ────────────────────────────────────────────────────────
 
-  private computePaye(grossMonthly: number): { paye: number; ssnit: number; employerSsnit: number; pensionTier2: number } {
+  private computePaye(grossMonthly: number): { paye: number; ssnit: number; employerSsnit: number; pensionTier2: number; payeBandsStale: boolean; payeBandsTaxYear: number } {
     const ssnit = Math.round(grossMonthly * 0.055 * 100) / 100;
     // Employer SSNIT 13%: 8% SSNIT + 5% Tier 2 (NPRA)
     const employerSsnit = Math.round(grossMonthly * 0.08 * 100) / 100;
@@ -1373,16 +1390,21 @@ export class HRService {
       remaining -= taxable;
     }
 
-    return { paye: Math.round((annualPaye / 12) * 100) / 100, ssnit, employerSsnit, pensionTier2 };
+    const payeBandsStale = new Date().getFullYear() > PAYE_BANDS_TAX_YEAR;
+    if (payeBandsStale) {
+      this.logger.warn(`PAYE bands are for tax year ${PAYE_BANDS_TAX_YEAR} but the current year is ${new Date().getFullYear()} — verify against the current GRA schedule.`);
+    }
+
+    return { paye: Math.round((annualPaye / 12) * 100) / 100, ssnit, employerSsnit, pensionTier2, payeBandsStale, payeBandsTaxYear: PAYE_BANDS_TAX_YEAR };
   }
 
   async computePayrollEstimate(user: AuthenticatedUser, dto: ComputePayrollDto) {
     const allowances = dto.allowances ?? 0;
     const deductions = dto.deductions ?? 0;
     const grossMonthly = num(dto.basicSalary) + allowances - deductions;
-    const { paye, ssnit, employerSsnit, pensionTier2 } = this.computePaye(grossMonthly);
+    const { paye, ssnit, employerSsnit, pensionTier2, payeBandsStale, payeBandsTaxYear } = this.computePaye(grossMonthly);
     const netPay = Math.round((grossMonthly - paye - ssnit) * 100) / 100;
-    return { data: { grossMonthly, ssnit, paye, netPay, totalDeductions: paye + ssnit, employerSsnit, pensionTier2 } };
+    return { data: { grossMonthly, ssnit, paye, netPay, totalDeductions: paye + ssnit, employerSsnit, pensionTier2, payeBandsStale, payeBandsTaxYear } };
   }
 
   async prefillPayroll(user: AuthenticatedUser, employeeId: string, period: string) {
@@ -1520,14 +1542,22 @@ export class HRService {
     const dateFrom = query.dateFrom ? new Date(query.dateFrom) : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
     const dateTo = query.dateTo ? new Date(query.dateTo) : new Date();
 
-    const byType = await this.prisma.leaveRequest.groupBy({
-      by: ["leaveType", "status"],
-      where: { companyId: cid, deletedAt: null, startDate: { gte: dateFrom, lte: dateTo } },
-      _count: { id: true },
-      _sum: { daysRequested: true },
-    }).catch(() => [] as any[]);
-
-    return { data: { period: { from: dateFrom, to: dateTo }, breakdown: byType } };
+    // (M12) Was .catch(() => []) — a genuine DB failure silently rendered as
+    // "no leave activity this period" instead of an error, matching the
+    // pattern already fixed in DashboardService.executive (H23).
+    try {
+      const byType = await this.prisma.leaveRequest.groupBy({
+        by: ["leaveType", "status"],
+        where: { companyId: cid, deletedAt: null, startDate: { gte: dateFrom, lte: dateTo } },
+        _count: { id: true },
+        _sum: { daysRequested: true },
+      });
+      return { data: { period: { from: dateFrom, to: dateTo }, breakdown: byType } };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      this.logger.error(`leave summary report failed to load for company ${cid}: ${message}`);
+      throw new InternalServerErrorException("Leave summary report failed to load");
+    }
   }
 
   // ─── HR-A: Leave Policy ───────────────────────────────────────────────────────
@@ -1610,8 +1640,13 @@ export class HRService {
           data: { companyId, employeeId, leaveType: leaveType as never, year, entitled, taken, pending, remaining, carryOver: 0 },
         });
       }
-    } catch {
-      // non-fatal — balance update failure should not block leave request
+    } catch (err) {
+      // Non-fatal by design — a balance-bookkeeping failure shouldn't roll back
+      // an otherwise-valid leave request. (M12) But it used to be a bare `catch {}`,
+      // so a real DB failure here left the employee's balance silently out of sync
+      // forever with zero trace. Logging at least makes the drift discoverable.
+      const message = err instanceof Error ? err.message : "Unknown error";
+      this.logger.error(`leave balance update failed for employee ${employeeId} (${leaveType} ${year}): ${message}`);
     }
   }
 
@@ -1944,9 +1979,13 @@ export class HRService {
     });
 
     const header = "Employee Code,Employee Name,Bank Name,Account Number,Net Pay (GHS),Period\n";
+    // (M15) Employee code/name/bank name/account are user-entered — sanitize
+    // before writing to CSV so a value starting with =/+/-/@ can't execute as
+    // a formula when this file is opened in Excel. Mirrors reports.service.ts.
     const lines = rows.map((r) => {
       const e = (r as any).employee ?? {};
-      return `"${e.code ?? ""}","${e.fullName ?? r.employeeName}","${e.bankName ?? ""}","${e.bankAccount ?? ""}","${Number(r.netPay).toFixed(2)}","${r.period}"`;
+      const cell = (v: unknown) => sanitizeFormulaCell(String(v ?? ""));
+      return `"${cell(e.code)}","${cell(e.fullName ?? r.employeeName)}","${cell(e.bankName)}","${cell(e.bankAccount)}","${Number(r.netPay).toFixed(2)}","${cell(r.period)}"`;
     });
     const csv = header + lines.join("\n");
 
@@ -2113,8 +2152,13 @@ export class HRService {
   // ─── HR-F: Org Chart ─────────────────────────────────────────────────────────
 
   async getOrgChart(user: AuthenticatedUser) {
+    // M1: unlike every other employee-listing method, this returned the
+    // full company roster (names, manager IDs, photos, branch) to any
+    // HR_READ holder regardless of scope — and was the practical way a
+    // branch-scoped user could obtain out-of-scope employeeIds for the
+    // write-path gaps fixed in H14.
     const employees = await this.prisma.employee.findMany({
-      where: { companyId: user.companyId, status: "ACTIVE" as never, deletedAt: null },
+      where: { companyId: user.companyId, status: "ACTIVE" as never, deletedAt: null, ...this.employeeScope(user) },
       select: {
         id: true, fullName: true, managerId: true, photoUrl: true,
         employeeRole: { select: { name: true } },

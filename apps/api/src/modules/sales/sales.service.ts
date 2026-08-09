@@ -602,49 +602,14 @@ export class SalesService {
   }
 
   async reports(user: AuthenticatedUser, query: SalesQueryDto) {
-    // Single query with all needed includes — avoids 4 independent DB round-trips
-    // each fetching up to 200 orders against the same filter (same rows, different includes).
-    const orders = await this.prisma.salesOrder.findMany({
-      where: this.orderWhere(user, query),
-      include: { items: { include: { product: true } }, customer: true, branch: true, warehouse: true },
-      orderBy: { orderDate: "desc" },
-      take: 200
-    });
+    const [byProduct, byCustomer, byLocation, salesperson] = await Promise.all([
+      this.salesByProduct(user, query),
+      this.salesByCustomer(user, query),
+      this.salesByLocation(user, query),
+      this.salespersonPerformance(user, query)
+    ]);
 
-    const productMap = new Map<string, { sku: string; product: string; quantity: number; salesValue: number }>();
-    const customerMap = new Map<string, { code: string; customer: string; orders: number; salesValue: number; balanceDue: number }>();
-    const locationMap = new Map<string, { branch: string; warehouse: string; orders: number; salesValue: number }>();
-    const spMap = new Map<string, { salespersonId: string; orders: number; salesValue: number; collectionsOutstanding: number }>();
-
-    for (const order of orders) {
-      for (const item of order.items) {
-        const p = productMap.get(item.productId) ?? { sku: item.product.sku, product: item.product.name, quantity: 0, salesValue: 0 };
-        p.quantity += Number(item.quantity); p.salesValue += Number(item.lineTotal);
-        productMap.set(item.productId, p);
-      }
-      const c = customerMap.get(order.customerId) ?? { code: order.customer.code, customer: order.customer.name, orders: 0, salesValue: 0, balanceDue: 0 };
-      c.orders += 1; c.salesValue += Number(order.totalAmount); c.balanceDue += Number(order.balanceDue);
-      customerMap.set(order.customerId, c);
-
-      const locKey = `${order.branchId}:${order.warehouseId}`;
-      const l = locationMap.get(locKey) ?? { branch: order.branch.name, warehouse: order.warehouse.name, orders: 0, salesValue: 0 };
-      l.orders += 1; l.salesValue += Number(order.totalAmount);
-      locationMap.set(locKey, l);
-
-      const spKey = order.salespersonId ?? "unassigned";
-      const s = spMap.get(spKey) ?? { salespersonId: spKey, orders: 0, salesValue: 0, collectionsOutstanding: 0 };
-      s.orders += 1; s.salesValue += Number(order.totalAmount); s.collectionsOutstanding += Number(order.balanceDue);
-      spMap.set(spKey, s);
-    }
-
-    return {
-      data: {
-        byProduct: [...productMap.values()].sort((a, b) => b.salesValue - a.salesValue),
-        byCustomer: [...customerMap.values()].sort((a, b) => b.salesValue - a.salesValue),
-        byLocation: [...locationMap.values()].sort((a, b) => b.salesValue - a.salesValue),
-        salesperson: [...spMap.values()].sort((a, b) => b.salesValue - a.salesValue),
-      }
-    };
+    return { data: { byProduct, byCustomer, byLocation, salesperson } };
   }
 
   async reportCsv(user: AuthenticatedUser, query: SalesQueryDto, context: RequestContext) {
@@ -653,58 +618,85 @@ export class SalesService {
     return [["sku", "product", "quantity", "sales_value"], ...rows.map((row) => [row.sku, row.product, String(row.quantity), String(row.salesValue)])].map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(",")).join("\n");
   }
 
+  // (M7) These four report breakdowns previously fetched only the 200 most-recent
+  // matching orders and aggregated in JS — over that threshold, older orders (and
+  // any product/customer/location/salesperson whose activity lived only in them)
+  // silently vanished from "top" rankings with no indication to the user. Grouping
+  // in the DB removes the cap entirely: it aggregates over every matching row.
   private async salesByProduct(user: AuthenticatedUser, query: SalesQueryDto) {
-    const orders = await this.prisma.salesOrder.findMany({ where: this.orderWhere(user, query), include: { items: { include: { product: true } } }, orderBy: { orderDate: "desc" }, take: 200 });
-    const map = new Map<string, { sku: string; product: string; quantity: number; salesValue: number }>();
-    for (const order of orders) {
-      for (const item of order.items) {
-        const current = map.get(item.productId) ?? { sku: item.product.sku, product: item.product.name, quantity: 0, salesValue: 0 };
-        current.quantity += Number(item.quantity);
-        current.salesValue += Number(item.lineTotal);
-        map.set(item.productId, current);
-      }
-    }
-    return [...map.values()].sort((a, b) => b.salesValue - a.salesValue);
+    const groups = await this.prisma.salesOrderItem.groupBy({
+      by: ["productId"],
+      where: { companyId: user.companyId, salesOrder: this.orderWhere(user, query) },
+      _sum: { quantity: true, lineTotal: true }
+    });
+    if (groups.length === 0) return [];
+    const products = await this.prisma.product.findMany({ where: { id: { in: groups.map((g) => g.productId) } }, select: { id: true, sku: true, name: true } });
+    const productById = new Map(products.map((p) => [p.id, p]));
+    return groups
+      .map((g) => {
+        const product = productById.get(g.productId);
+        return { sku: product?.sku ?? "—", product: product?.name ?? "Unknown product", quantity: Number(g._sum.quantity ?? 0), salesValue: Number(g._sum.lineTotal ?? 0) };
+      })
+      .sort((a, b) => b.salesValue - a.salesValue);
   }
 
   private async salesByCustomer(user: AuthenticatedUser, query: SalesQueryDto) {
-    const rows = await this.prisma.salesOrder.findMany({ where: this.orderWhere(user, query), include: { customer: true }, orderBy: { orderDate: "desc" }, take: 200 });
-    const map = new Map<string, { code: string; customer: string; orders: number; salesValue: number; balanceDue: number }>();
-    for (const row of rows) {
-      const current = map.get(row.customerId) ?? { code: row.customer.code, customer: row.customer.name, orders: 0, salesValue: 0, balanceDue: 0 };
-      current.orders += 1;
-      current.salesValue += Number(row.totalAmount);
-      current.balanceDue += Number(row.balanceDue);
-      map.set(row.customerId, current);
-    }
-    return [...map.values()].sort((a, b) => b.salesValue - a.salesValue);
+    const groups = await this.prisma.salesOrder.groupBy({
+      by: ["customerId"],
+      where: this.orderWhere(user, query),
+      _count: { _all: true },
+      _sum: { totalAmount: true, balanceDue: true }
+    });
+    if (groups.length === 0) return [];
+    const customers = await this.prisma.customer.findMany({ where: { id: { in: groups.map((g) => g.customerId) } }, select: { id: true, code: true, name: true } });
+    const customerById = new Map(customers.map((c) => [c.id, c]));
+    return groups
+      .map((g) => {
+        const customer = customerById.get(g.customerId);
+        return { code: customer?.code ?? "—", customer: customer?.name ?? "Unknown customer", orders: g._count._all, salesValue: Number(g._sum.totalAmount ?? 0), balanceDue: Number(g._sum.balanceDue ?? 0) };
+      })
+      .sort((a, b) => b.salesValue - a.salesValue);
   }
 
   private async salesByLocation(user: AuthenticatedUser, query: SalesQueryDto) {
-    const rows = await this.prisma.salesOrder.findMany({ where: this.orderWhere(user, query), include: { branch: true, warehouse: true }, orderBy: { orderDate: "desc" }, take: 200 });
-    const map = new Map<string, { branch: string; warehouse: string; orders: number; salesValue: number }>();
-    for (const row of rows) {
-      const key = `${row.branchId}:${row.warehouseId}`;
-      const current = map.get(key) ?? { branch: row.branch.name, warehouse: row.warehouse.name, orders: 0, salesValue: 0 };
-      current.orders += 1;
-      current.salesValue += Number(row.totalAmount);
-      map.set(key, current);
-    }
-    return [...map.values()].sort((a, b) => b.salesValue - a.salesValue);
+    const groups = await this.prisma.salesOrder.groupBy({
+      by: ["branchId", "warehouseId"],
+      where: this.orderWhere(user, query),
+      _count: { _all: true },
+      _sum: { totalAmount: true }
+    });
+    if (groups.length === 0) return [];
+    const [branches, warehouses] = await Promise.all([
+      this.prisma.branch.findMany({ where: { id: { in: [...new Set(groups.map((g) => g.branchId))] } }, select: { id: true, name: true } }),
+      this.prisma.warehouse.findMany({ where: { id: { in: [...new Set(groups.map((g) => g.warehouseId))] } }, select: { id: true, name: true } })
+    ]);
+    const branchById = new Map(branches.map((b) => [b.id, b]));
+    const warehouseById = new Map(warehouses.map((w) => [w.id, w]));
+    return groups
+      .map((g) => ({
+        branch: branchById.get(g.branchId)?.name ?? "Unknown branch",
+        warehouse: warehouseById.get(g.warehouseId)?.name ?? "Unknown warehouse",
+        orders: g._count._all,
+        salesValue: Number(g._sum.totalAmount ?? 0)
+      }))
+      .sort((a, b) => b.salesValue - a.salesValue);
   }
 
   private async salespersonPerformance(user: AuthenticatedUser, query: SalesQueryDto) {
-    const rows = await this.prisma.salesOrder.findMany({ where: this.orderWhere(user, query), select: { salespersonId: true, totalAmount: true, balanceDue: true }, orderBy: { orderDate: "desc" }, take: 200 });
-    const map = new Map<string, { salespersonId: string; orders: number; salesValue: number; collectionsOutstanding: number }>();
-    for (const row of rows) {
-      const key = row.salespersonId ?? "unassigned";
-      const current = map.get(key) ?? { salespersonId: key, orders: 0, salesValue: 0, collectionsOutstanding: 0 };
-      current.orders += 1;
-      current.salesValue += Number(row.totalAmount);
-      current.collectionsOutstanding += Number(row.balanceDue);
-      map.set(key, current);
-    }
-    return [...map.values()].sort((a, b) => b.salesValue - a.salesValue);
+    const groups = await this.prisma.salesOrder.groupBy({
+      by: ["salespersonId"],
+      where: this.orderWhere(user, query),
+      _count: { _all: true },
+      _sum: { totalAmount: true, balanceDue: true }
+    });
+    return groups
+      .map((g) => ({
+        salespersonId: g.salespersonId ?? "unassigned",
+        orders: g._count._all,
+        salesValue: Number(g._sum.totalAmount ?? 0),
+        collectionsOutstanding: Number(g._sum.balanceDue ?? 0)
+      }))
+      .sort((a, b) => b.salesValue - a.salesValue);
   }
 
   private async autoGenerateProductionOrders(

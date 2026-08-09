@@ -10,8 +10,9 @@ const mockPrisma = {
   qualityCheck: { findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn(), update: jest.fn(), groupBy: jest.fn() },
   rejectedBatch: { findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn() },
   approvedBatch: { findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn() },
-  correctiveAction: { count: jest.fn(), groupBy: jest.fn(), findFirst: jest.fn(), create: jest.fn(), update: jest.fn() },
-  qualityCheckParameter: { count: jest.fn() }
+  correctiveAction: { count: jest.fn(), groupBy: jest.fn(), findFirst: jest.fn(), create: jest.fn(), update: jest.fn(), findMany: jest.fn() },
+  qualityCheckParameter: { count: jest.fn() },
+  labReportUpload: { findMany: jest.fn() }
 };
 const mockAudit = { write: jest.fn().mockResolvedValue(undefined) };
 
@@ -115,6 +116,28 @@ describe("QualityService — location scope + self-review guard (H2)", () => {
     });
   });
 
+  describe("approveBatch/rejectBatch cannot contradict an already-finalised check (M14)", () => {
+    it("rejects approveBatch on a check that was already FAILED (e.g. via failCheck or rejectBatch)", async () => {
+      // Previously only approvedBatch was checked for a prior decision — a
+      // FAILED check could still be routed through approveBatch, creating an
+      // ApprovedBatch row (letting a failed batch into inventory) while
+      // flipping the check back to PASSED.
+      mockPrisma.qualityCheck.findFirst.mockResolvedValue({ id: "chk-1", status: "FAILED", inspectorId: "inspector-1", createdById: "creator-1" });
+      const service = makeService();
+
+      await expect(service.approveBatch(makeUser({ id: "approver-1" }), "chk-1", {} as never, {})).rejects.toThrow("Check already finalised");
+      expect(mockPrisma.approvedBatch.findFirst).not.toHaveBeenCalled();
+    });
+
+    it("rejects rejectBatch on a check that was already PASSED (e.g. via passCheck or approveBatch)", async () => {
+      mockPrisma.qualityCheck.findFirst.mockResolvedValue({ id: "chk-1", status: "PASSED", inspectorId: "inspector-1", createdById: "creator-1" });
+      const service = makeService();
+
+      await expect(service.rejectBatch(makeUser({ id: "approver-1" }), "chk-1", {} as never, {})).rejects.toThrow("Check already finalised");
+      expect(mockPrisma.rejectedBatch.findFirst).not.toHaveBeenCalled();
+    });
+  });
+
   describe("createCheck location guard", () => {
     it("rejects a check created for a branch the actor doesn't have access to", async () => {
       const service = makeService();
@@ -170,5 +193,55 @@ describe("QualityService — finalize/approve/reject actions are scoped, not jus
 
     const where = mockPrisma.correctiveAction.findFirst.mock.calls[0][0].where;
     expect(where.check.AND).toEqual([{ OR: [{ branchId: null }, { branchId: { in: ["branch-1"] } }] }]);
+  });
+
+  it("listLabReports scopes via its check relation instead of leaking company-wide (M1)", async () => {
+    mockPrisma.labReportUpload.findMany.mockResolvedValue([]);
+    const service = makeService();
+    await service.listLabReports(makeUser({ branchIds: ["branch-1"] }), {} as never);
+
+    const where = mockPrisma.labReportUpload.findMany.mock.calls[0][0].where;
+    expect(where.check.AND).toEqual([{ OR: [{ branchId: null }, { branchId: { in: ["branch-1"] } }] }]);
+  });
+
+  it("listCorrectiveActions scopes via its check relation instead of leaking company-wide (M1)", async () => {
+    mockPrisma.correctiveAction.findMany.mockResolvedValue([]);
+    const service = makeService();
+    await service.listCorrectiveActions(makeUser({ branchIds: ["branch-1"] }), {} as never);
+
+    const where = mockPrisma.correctiveAction.findMany.mock.calls[0][0].where;
+    expect(where.check.AND).toEqual([{ OR: [{ branchId: null }, { branchId: { in: ["branch-1"] } }] }]);
+  });
+});
+
+describe("QualityService — batch/lab/corrective-action lists are capped, not unbounded (M16)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("listRejectedBatches caps the query at take: 200", async () => {
+    mockPrisma.rejectedBatch.findMany.mockResolvedValue([]);
+    const service = makeService();
+    await service.listRejectedBatches(makeUser(), {} as never);
+    expect(mockPrisma.rejectedBatch.findMany.mock.calls[0][0].take).toBe(200);
+  });
+
+  it("listApprovedBatches caps the query at take: 200", async () => {
+    mockPrisma.approvedBatch.findMany.mockResolvedValue([]);
+    const service = makeService();
+    await service.listApprovedBatches(makeUser(), {} as never);
+    expect(mockPrisma.approvedBatch.findMany.mock.calls[0][0].take).toBe(200);
+  });
+
+  it("listLabReports caps the query at take: 200", async () => {
+    mockPrisma.labReportUpload.findMany.mockResolvedValue([]);
+    const service = makeService();
+    await service.listLabReports(makeUser(), {} as never);
+    expect(mockPrisma.labReportUpload.findMany.mock.calls[0][0].take).toBe(200);
+  });
+
+  it("listCorrectiveActions caps the query at take: 200", async () => {
+    mockPrisma.correctiveAction.findMany.mockResolvedValue([]);
+    const service = makeService();
+    await service.listCorrectiveActions(makeUser(), {} as never);
+    expect(mockPrisma.correctiveAction.findMany.mock.calls[0][0].take).toBe(200);
   });
 });

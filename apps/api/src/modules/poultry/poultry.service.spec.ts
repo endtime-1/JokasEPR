@@ -10,14 +10,15 @@ const mockTx = {
   mortalityRecord: { aggregate: jest.fn(), create: jest.fn() },
   poultryTransferRecord: { aggregate: jest.fn(), create: jest.fn() },
   batchPenAllocation: { findFirst: jest.fn(), upsert: jest.fn() },
-  pen: { update: jest.fn() },
+  pen: { update: jest.fn(), findFirst: jest.fn() },
   $queryRaw: jest.fn().mockResolvedValue([])
 };
 
 const mockPrisma = {
   poultryHouse: { findFirst: jest.fn() },
   pen: { findFirst: jest.fn(), findMany: jest.fn() },
-  flockBatch: { findFirst: jest.fn() },
+  flockBatch: { findFirst: jest.fn(), create: jest.fn() },
+  batchPenAllocation: { findFirst: jest.fn() },
   poultryTransferRecord: { findFirst: jest.fn() },
   $transaction: jest.fn().mockImplementation((cb: (tx: typeof mockTx) => Promise<unknown>) => cb(mockTx))
 };
@@ -268,6 +269,107 @@ describe("PoultryService.createMortality / createTransfer — lock the batch row
         )
       ).rejects.toThrow(/only has 70 birds available/);
       expect(mockTx.poultryTransferRecord.create).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe("PoultryService — pen physical capacity is enforced, not bypassable (M18)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  describe("createBatch", () => {
+    const dto = {
+      code: "FB-1", name: "Batch 1", birdType: "BROILER", startDate: "2026-08-09",
+      openingBirdCount: 800,
+      penAllocations: [{ penId: "pen-1", birdCount: 800 }]
+    } as never;
+
+    it("rejects an allocation that exceeds the pen's recorded capacity", async () => {
+      mockPrisma.pen.findMany.mockResolvedValue([{ id: "pen-1", branchId: "branch-1", farmId: "farm-1", poultryHouseId: "house-1", code: "P1", capacity: 500 }]);
+      mockPrisma.flockBatch.findFirst.mockResolvedValue(null);
+      mockPrisma.batchPenAllocation.findFirst.mockResolvedValue(null);
+      const service = makeService();
+
+      await expect(service.createBatch(makeUser({ farmIds: ["farm-1"] }), dto, {})).rejects.toThrow(/exceeds pen capacity/);
+      expect(mockPrisma.flockBatch.create).not.toHaveBeenCalled();
+    });
+
+    it("allows an allocation within the pen's capacity", async () => {
+      mockPrisma.pen.findMany.mockResolvedValue([{ id: "pen-1", branchId: "branch-1", farmId: "farm-1", poultryHouseId: "house-1", code: "P1", capacity: 1000 }]);
+      mockPrisma.flockBatch.findFirst.mockResolvedValue(null);
+      mockPrisma.batchPenAllocation.findFirst.mockResolvedValue(null);
+      mockPrisma.flockBatch.create.mockResolvedValue({ id: "batch-1", code: "FB-1", farmId: "farm-1" });
+      const service = makeService();
+
+      await expect(service.createBatch(makeUser({ farmIds: ["farm-1"] }), dto, {})).resolves.toBeDefined();
+      expect(mockPrisma.flockBatch.create).toHaveBeenCalled();
+    });
+
+    it("does not enforce a cap when the pen has no capacity recorded (null)", async () => {
+      mockPrisma.pen.findMany.mockResolvedValue([{ id: "pen-1", branchId: "branch-1", farmId: "farm-1", poultryHouseId: "house-1", code: "P1", capacity: null }]);
+      mockPrisma.flockBatch.findFirst.mockResolvedValue(null);
+      mockPrisma.batchPenAllocation.findFirst.mockResolvedValue(null);
+      mockPrisma.flockBatch.create.mockResolvedValue({ id: "batch-1", code: "FB-1", farmId: "farm-1" });
+      const service = makeService();
+
+      await expect(service.createBatch(makeUser({ farmIds: ["farm-1"] }), dto, {})).resolves.toBeDefined();
+    });
+  });
+
+  describe("createTransfer — destination pen capacity", () => {
+    const flockBatch = { id: "batch-1", farmId: "farm-1", branchId: "branch-1", poultryHouseId: "house-1", status: "ACTIVE", code: "FB-1", openingBirdCount: 1000 };
+    const toHouse = { id: "house-2", farmId: "farm-2", branchId: "branch-2" };
+
+    beforeEach(() => {
+      mockPrisma.flockBatch.findFirst.mockResolvedValue(flockBatch);
+      mockPrisma.poultryHouse.findFirst.mockResolvedValue(toHouse);
+      mockTx.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+      mockTx.poultryTransferRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+      mockTx.poultryTransferRecord.create.mockResolvedValue({ id: "trf-1" });
+    });
+
+    it("rejects a transfer that would push the destination pen over its recorded capacity", async () => {
+      mockTx.pen.findFirst.mockResolvedValue({ id: "pen-2", code: "P2", capacity: 100 });
+      mockTx.batchPenAllocation.findFirst.mockResolvedValue({ birdCount: 60 }); // already 60 in destination pen
+
+      const service = makeService();
+      await expect(
+        service.createTransfer(
+          makeUser({ hasGlobalAccess: true }),
+          { flockBatchId: "batch-1", toFarmId: "farm-2", toPoultryHouseId: "house-2", toPenId: "pen-2", birdCount: 50, transferDate: "2026-08-09" } as never,
+          {}
+        )
+      ).rejects.toThrow(/capacity is 100.*bring it to 110/);
+      expect(mockTx.batchPenAllocation.upsert).not.toHaveBeenCalled();
+    });
+
+    it("allows a transfer that stays within the destination pen's capacity", async () => {
+      mockTx.pen.findFirst.mockResolvedValue({ id: "pen-2", code: "P2", capacity: 100 });
+      mockTx.batchPenAllocation.findFirst.mockResolvedValue({ birdCount: 60 });
+      mockTx.batchPenAllocation.upsert.mockResolvedValue({});
+
+      const service = makeService();
+      await service.createTransfer(
+        makeUser({ hasGlobalAccess: true }),
+        { flockBatchId: "batch-1", toFarmId: "farm-2", toPoultryHouseId: "house-2", toPenId: "pen-2", birdCount: 30, transferDate: "2026-08-09" } as never,
+        {}
+      );
+
+      expect(mockTx.batchPenAllocation.upsert).toHaveBeenCalled();
+    });
+
+    it("does not enforce a cap when the destination pen has no capacity recorded (null)", async () => {
+      mockTx.pen.findFirst.mockResolvedValue({ id: "pen-2", code: "P2", capacity: null });
+      mockTx.batchPenAllocation.findFirst.mockResolvedValue({ birdCount: 10000 });
+      mockTx.batchPenAllocation.upsert.mockResolvedValue({});
+
+      const service = makeService();
+      await service.createTransfer(
+        makeUser({ hasGlobalAccess: true }),
+        { flockBatchId: "batch-1", toFarmId: "farm-2", toPoultryHouseId: "house-2", toPenId: "pen-2", birdCount: 500, transferDate: "2026-08-09" } as never,
+        {}
+      );
+
+      expect(mockTx.batchPenAllocation.upsert).toHaveBeenCalled();
     });
   });
 });

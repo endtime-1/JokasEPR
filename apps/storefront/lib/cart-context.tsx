@@ -18,6 +18,11 @@ type Action =
   | { type: "REMOVE"; productId: string }
   | { type: "CLEAR" };
 
+// Mirrors PublicOrderLineDto's server-side cap (public-order.dto.ts) — clamping here
+// gives an immediate, friendly limit in the UI instead of a confusing rejection at
+// checkout after the customer has already filled in delivery details.
+const MAX_LINE_QTY = 10000;
+
 function reducer(state: CartState, action: Action): CartState {
   switch (action.type) {
     case "ADD": {
@@ -25,16 +30,18 @@ function reducer(state: CartState, action: Action): CartState {
       if (existing) {
         return {
           items: state.items.map((i) =>
-            i.product.id === action.product.id ? { ...i, qty: i.qty + action.qty } : i
+            i.product.id === action.product.id
+              ? { ...i, qty: Math.min(i.qty + action.qty, MAX_LINE_QTY) }
+              : i
           ),
         };
       }
-      return { items: [...state.items, { product: action.product, qty: action.qty }] };
+      return { items: [...state.items, { product: action.product, qty: Math.min(action.qty, MAX_LINE_QTY) }] };
     }
     case "UPDATE":
       return {
         items: state.items.map((i) =>
-          i.product.id === action.productId ? { ...i, qty: action.qty } : i
+          i.product.id === action.productId ? { ...i, qty: Math.min(action.qty, MAX_LINE_QTY) } : i
         ),
       };
     case "REMOVE":

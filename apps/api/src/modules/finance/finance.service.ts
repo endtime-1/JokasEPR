@@ -44,7 +44,10 @@ export class FinanceService {
 
   async dashboard(user: AuthenticatedUser, query: FinanceQueryDto) {
     const where = this.dateWhere(user, query);
-    const expWhere = { ...where, deletedAt: null };
+    // (M8) Rejected/cancelled expenses never became real spend and shouldn't
+    // drag down net profit — matches the status filter already used by the
+    // P&L report generator (generateReport, below) so the two never disagree.
+    const expWhere = { ...where, deletedAt: null, status: { notIn: ["REJECTED", "CANCELLED"] as ("REJECTED" | "CANCELLED")[] } };
     const revWhere = { companyId: user.companyId, deletedAt: null, ...this.dateBetween(query, "revenueDate") };
     const supWhere = { companyId: user.companyId, deletedAt: null, ...this.dateBetween(query, "paymentDate") };
     const cusWhere = { companyId: user.companyId, deletedAt: null, ...this.dateBetween(query, "paymentDate") };
@@ -92,12 +95,12 @@ export class FinanceService {
         select: { revenueDate: true, amount: true }
       }),
       this.prisma.expense.findMany({
-        where: { companyId: user.companyId, deletedAt: null, expenseDate: { gte: start }, status: { not: "REJECTED" } },
+        where: { companyId: user.companyId, deletedAt: null, expenseDate: { gte: start }, status: { notIn: ["REJECTED", "CANCELLED"] } },
         select: { expenseDate: true, amount: true }
       }),
       this.prisma.expense.groupBy({
         by: ["categoryId"],
-        where: { companyId: user.companyId, deletedAt: null, expenseDate: { gte: start }, status: { not: "REJECTED" } },
+        where: { companyId: user.companyId, deletedAt: null, expenseDate: { gte: start }, status: { notIn: ["REJECTED", "CANCELLED"] } },
         _sum: { amount: true }
       })
     ]);

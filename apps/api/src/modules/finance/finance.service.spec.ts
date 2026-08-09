@@ -5,8 +5,11 @@ import { FinanceService } from "./finance.service";
 jest.mock("../../common/next-ref", () => ({ nextRef: jest.fn().mockResolvedValue("REF-001") }));
 
 const mockPrisma = {
-  expense: { findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn(), create: jest.fn(), update: jest.fn() },
-  revenue: { findMany: jest.fn(), count: jest.fn(), create: jest.fn() },
+  expense: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0), create: jest.fn(), update: jest.fn(), aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 }, _count: 0 }) },
+  revenue: { findMany: jest.fn().mockResolvedValue([]), count: jest.fn(), create: jest.fn(), aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 }, _count: 0 }) },
+  supplierPayment: { aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 }, _count: 0 }) },
+  customerPayment: { aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 }, _count: 0 }) },
+  bankAccount: { findMany: jest.fn().mockResolvedValue([]) },
   payrollRecord: { findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn(), create: jest.fn(), update: jest.fn() },
   pettyCashTransaction: { findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn(), create: jest.fn() },
   invoice: { findMany: jest.fn() },
@@ -180,5 +183,33 @@ describe("FinanceService.generateProductProfitability — revenue-weighted cost 
     const bySku = Object.fromEntries((result.data as unknown as Array<{ productCode: string; totalCost: number }>).map((r) => [r.productCode, r.totalCost]));
     expect(bySku.A).toBe(100);
     expect(bySku.B).toBe(100);
+  });
+});
+
+describe("FinanceService.dashboard — net profit excludes rejected/cancelled expenses (M8)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("filters the expense aggregate by the same notIn(REJECTED, CANCELLED) status used by the official P&L report", async () => {
+    mockPrisma.revenue.aggregate.mockResolvedValue({ _sum: { amount: 1000 }, _count: 1 });
+    mockPrisma.expense.aggregate.mockResolvedValue({ _sum: { amount: 300 }, _count: 1 });
+
+    const service = makeService();
+    await service.dashboard(makeUser(), {} as never);
+
+    const expenseWhere = mockPrisma.expense.aggregate.mock.calls[0][0].where;
+    expect(expenseWhere.status).toEqual({ notIn: ["REJECTED", "CANCELLED"] });
+  });
+
+  it("computes netProfit only from the filtered expense total, not raw spend including rejected entries", async () => {
+    // Previously totalExpenses had no status filter at all, so a REJECTED expense
+    // that never became real spend would still drag netProfit down.
+    mockPrisma.revenue.aggregate.mockResolvedValue({ _sum: { amount: 1000 }, _count: 1 });
+    mockPrisma.expense.aggregate.mockResolvedValue({ _sum: { amount: 300 }, _count: 1 });
+
+    const service = makeService();
+    const result = await service.dashboard(makeUser(), {} as never);
+
+    expect(result.data.totalExpenses).toBe(300);
+    expect(result.data.netProfit).toBe(700);
   });
 });

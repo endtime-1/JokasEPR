@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
 import { LookupCacheService } from "../../common/services/lookup-cache.service";
+import { startOfTodayAccra } from "../../common/utils/timezone";
 import {
   AddPenDto,
   CreateBirdWeightRecordDto,
@@ -55,8 +56,7 @@ export class PoultryService {
   ) {}
 
   async dashboard(user: AuthenticatedUser) {
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
+    const todayStart = startOfTodayAccra(); // (M20) was server-local midnight
     const since7 = new Date(todayStart.getTime() - 6 * 86400000);
 
     const [batches, weekEggs, weekMortality, weekFeed, recentHealth, houses, prices] = await Promise.all([
@@ -486,6 +486,19 @@ export class PoultryService {
     }
     farmIds.forEach((fid) => this.assertFarmAccess(user, fid));
 
+    // (M18) Pens have a defined physical capacity, but nothing ever checked
+    // an allocation against it — a pen with a 500-bird capacity could be
+    // allocated 5,000 birds with no error, silently corrupting density/
+    // welfare-capacity reporting downstream. capacity is nullable (not every
+    // pen has one recorded), so a null capacity means no cap to enforce.
+    const overCapacity = dto.penAllocations
+      .map((alloc) => ({ alloc, pen: pens.find((p) => p.id === alloc.penId)! }))
+      .filter(({ alloc, pen }) => pen.capacity != null && alloc.birdCount > pen.capacity);
+    if (overCapacity.length) {
+      const details = overCapacity.map(({ alloc, pen }) => `${pen.code} (capacity ${pen.capacity}, allocated ${alloc.birdCount})`).join(", ");
+      throw new BadRequestException(`Allocation exceeds pen capacity: ${details}.`);
+    }
+
     const codeUpper = dto.code.toUpperCase();
     const codeConflict = await this.prisma.flockBatch.findFirst({ where: { companyId: user.companyId, code: codeUpper, deletedAt: null } });
     if (codeConflict) {
@@ -782,6 +795,22 @@ export class PoultryService {
       });
 
       if (dto.toPenId) {
+        // (M18) Nothing previously checked the destination pen's physical
+        // capacity — a transfer of any size into any pen was accepted, which
+        // could silently push a pen's bird count past what it can actually
+        // hold. capacity is nullable, so a pen with none recorded has no cap.
+        const [toPen, toAlloc] = await Promise.all([
+          tx.pen.findFirst({ where: { id: dto.toPenId, companyId: user.companyId } }),
+          tx.batchPenAllocation.findFirst({ where: { flockBatchId: batch.id, penId: dto.toPenId } })
+        ]);
+        if (!toPen) throw new BadRequestException("Destination pen was not found.");
+        if (toPen.capacity != null) {
+          const newTotal = (toAlloc?.birdCount ?? 0) + dto.birdCount;
+          if (newTotal > toPen.capacity) {
+            throw new BadRequestException(`Destination pen ${toPen.code} capacity is ${toPen.capacity}; this transfer would bring it to ${newTotal}.`);
+          }
+        }
+
         // Activate the destination pen so it appears in dropdowns and can receive records.
         await tx.pen.update({ where: { id: dto.toPenId }, data: { isActive: true } });
 

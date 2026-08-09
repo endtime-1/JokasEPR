@@ -5,6 +5,7 @@ import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { LookupCacheService } from "../../common/services/lookup-cache.service";
 import { nextRef } from "../../common/next-ref";
+import { startOfTodayAccra } from "../../common/utils/timezone";
 import {
   ApproveStockDto,
   CreateInventoryItemDto,
@@ -36,8 +37,7 @@ export class InventoryService {
 
   async dashboard(user: AuthenticatedUser) {
     const sevenDaysAgo = new Date(Date.now() - 7 * 86400000);
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
+    const todayStart = startOfTodayAccra(); // (M20) was server-local midnight
     const [skuGroups, itemCount, totalQty, movements, lowStock, expiryAlerts, valuation, pendingApprovals, weekMovements, adjustmentStats, movementsToday] = await Promise.all([
       this.prisma.inventoryItem.groupBy({ by: ["productId"], where: this.itemWhere(user, {}) }),
       this.prisma.inventoryItem.count({ where: this.itemWhere(user, {}) }),

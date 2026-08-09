@@ -2,6 +2,7 @@ import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/commo
 import { AuthenticatedUser } from "@jokas/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
+import { sanitizeFormulaCell } from "../../common/utils/csv";
 import { AlertGenerationService } from "./alert-generation.service";
 import { AlertQueryDto, ForecastQueryDto } from "./dto/alerts.dto";
 
@@ -188,15 +189,18 @@ export class AlertsService {
     });
     const rows = result.data;
     const header = ["Created", "Severity", "Status", "Category", "Title", "Location", "Entity", "Message"];
+    // (M15) title/location/entity/message can contain free text (AI-generated
+    // summaries, entity/location names) — sanitize before CSV so a value
+    // starting with =/+/-/@ can't execute as a formula in Excel.
     const body = rows.map((alert: any) => [
       alert.createdAt instanceof Date ? alert.createdAt.toISOString() : String(alert.createdAt ?? ""),
       alert.severity,
       alert.status,
       alert.category,
-      alert.title,
-      alert.farm?.name ?? alert.warehouse?.name ?? alert.productionSite?.name ?? alert.branch?.name ?? "",
-      alert.entityName ?? "",
-      alert.message
+      sanitizeFormulaCell(String(alert.title ?? "")),
+      sanitizeFormulaCell(String(alert.farm?.name ?? alert.warehouse?.name ?? alert.productionSite?.name ?? alert.branch?.name ?? "")),
+      sanitizeFormulaCell(String(alert.entityName ?? "")),
+      sanitizeFormulaCell(String(alert.message ?? ""))
     ]);
     return [header, ...body].map((row) => row.map((value) => `"${String(value ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
   }

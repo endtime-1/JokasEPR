@@ -54,18 +54,32 @@ export class QuickBooksWebhookService {
       const connection = await this.prisma.quickBooksConnection.findFirst({ where: { realmId, isActive: true } });
 
       for (const entity of dataChangeEvent?.entities ?? []) {
-        await this.prisma.quickBooksWebhookEvent.create({
-          data: {
-            connectionId: connection?.id,
-            realmId,
-            entityType: entity.name,
-            entityId: entity.id,
-            operation: entity.operation,
-            eventDate: new Date(entity.lastUpdated),
-            rawPayload: { entity, realmId } as object,
-            status: QBWebhookStatus.PENDING
+        // M2: QuickBooks documents at-least-once delivery — a redelivery of
+        // the same change carries the same lastUpdated (eventDate) for the
+        // same entity, which the unique index below catches. Currently
+        // low-impact since processPendingEvents only logs for visibility
+        // rather than mutating ERP state, but this is the checkpoint that
+        // matters once that changes.
+        try {
+          await this.prisma.quickBooksWebhookEvent.create({
+            data: {
+              connectionId: connection?.id,
+              realmId,
+              entityType: entity.name,
+              entityId: entity.id,
+              operation: entity.operation,
+              eventDate: new Date(entity.lastUpdated),
+              rawPayload: { entity, realmId } as object,
+              status: QBWebhookStatus.PENDING
+            }
+          });
+        } catch (err) {
+          if ((err as { code?: string })?.code === "P2002") {
+            this.logger.debug(`Skipped duplicate webhook redelivery for ${entity.name} ${entity.id} at ${entity.lastUpdated}`);
+            continue;
           }
-        });
+          throw err;
+        }
       }
     }
 

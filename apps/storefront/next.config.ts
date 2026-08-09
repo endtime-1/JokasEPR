@@ -10,8 +10,17 @@ const securityHeaders = [
     key: "Content-Security-Policy",
     value: [
       "default-src 'self'",
-      // No dependency in this app calls eval()/new Function() (checked against
-      // package.json + a repo-wide grep) — 'unsafe-eval' was broader than needed.
+      // (M11) Tried a nonce-based script-src here, matching apps/web's fix —
+      // verified (both `next dev` and a real `next build`) that with
+      // `basePath: "/shop"` set, this Next.js setup (15.5.19) never detects
+      // middleware.ts at all: no "Compiling /middleware" in dev, no
+      // "Middleware" entry in the build's route table, and no CSP/x-nonce
+      // header ever reaches the response. Shipping the nonce version here
+      // would have silently dropped ALL security headers in production
+      // (this array wouldn't run either, since it'd move into middleware.ts
+      // too) — reverted to keep this app's headers actually working.
+      // Revisit if this app's basePath is ever replaced by a reverse-proxy
+      // prefix, or on a future Next.js upgrade that may fix the detection.
       "script-src 'self' 'unsafe-inline'",
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https://images.unsplash.com https://plus.unsplash.com https://www.akokosolutions.com",

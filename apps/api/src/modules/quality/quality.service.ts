@@ -436,6 +436,12 @@ export class QualityService {
   async approveBatch(user: AuthenticatedUser, checkId: string, dto: ApproveBatchDto, ctx: RequestContext) {
     const check = await this.prisma.qualityCheck.findFirst({ where: { id: checkId, companyId: user.companyId, deletedAt: null, ...this.scopeWhere(user) } }); // H15
     if (!check) throw new NotFoundException("Quality check not found");
+    // (M14) Only the approvedBatch table was checked for a prior decision on
+    // this check — a check already FAILED via failCheck/rejectBatch could
+    // still be routed through approveBatch, creating an ApprovedBatch row
+    // (letting a failed batch into inventory) while flipping the check back
+    // to PASSED, directly contradicting the earlier failed decision.
+    if (check.status === "PASSED" || check.status === "FAILED") throw new BadRequestException("Check already finalised");
     this.assertNotSelfReview(user, check);
 
     const existing = await this.prisma.approvedBatch.findFirst({ where: { checkId } });
@@ -472,6 +478,13 @@ export class QualityService {
   async rejectBatch(user: AuthenticatedUser, checkId: string, dto: RejectBatchDto, ctx: RequestContext) {
     const check = await this.prisma.qualityCheck.findFirst({ where: { id: checkId, companyId: user.companyId, deletedAt: null, ...this.scopeWhere(user) } }); // H15
     if (!check) throw new NotFoundException("Quality check not found");
+    // (M14) Only the rejectedBatch table was checked for a prior decision on
+    // this check — a check already PASSED via passCheck/approveBatch could
+    // still be routed through rejectBatch, creating a RejectedBatch row while
+    // flipping the check back to FAILED, directly contradicting the earlier
+    // approved decision (and leaving both an ApprovedBatch and a
+    // RejectedBatch row on the books for the same check).
+    if (check.status === "PASSED" || check.status === "FAILED") throw new BadRequestException("Check already finalised");
     this.assertNotSelfReview(user, check);
 
     const existing = await this.prisma.rejectedBatch.findFirst({ where: { checkId } });
@@ -532,6 +545,7 @@ export class QualityService {
     return this.prisma.rejectedBatch.findMany({
       where,
       orderBy: { createdAt: "desc" },
+      take: 200, // M16: was unbounded
       include: {
         check: { select: { reference: true, checkType: true } },
         supplier: { select: { id: true, name: true, code: true } },
@@ -554,6 +568,7 @@ export class QualityService {
     return this.prisma.approvedBatch.findMany({
       where,
       orderBy: { createdAt: "desc" },
+      take: 200, // M16: was unbounded
       include: {
         check: { select: { reference: true, checkType: true } },
         stockBatch: { select: { id: true, batchNumber: true } },
@@ -566,11 +581,16 @@ export class QualityService {
 
   async listLabReports(user: AuthenticatedUser, q: QualityQueryDto) {
     const cid = user.companyId;
-    const where: Record<string, unknown> = { companyId: cid, deletedAt: null };
+    // M1: unscoped — leaked lab reports (and the checkIds they reference)
+    // company-wide to any scope-restricted user, handing over exactly the
+    // checkIds the H15 finalize-action gap needed. LabReportUpload has no
+    // location columns of its own — scoped via its check relation.
+    const where: Record<string, unknown> = { companyId: cid, deletedAt: null, check: this.scopeWhere(user) };
     if (q.search) where.reportNumber = { contains: q.search };
     return this.prisma.labReportUpload.findMany({
       where,
       orderBy: { reportDate: "desc" },
+      take: 200, // M16: was unbounded
       include: {
         check: { select: { reference: true, checkType: true, batchNumber: true } },
         uploadedBy: { select: { id: true, fullName: true } },
@@ -610,7 +630,8 @@ export class QualityService {
 
   async listCorrectiveActions(user: AuthenticatedUser, q: QualityQueryDto) {
     const cid = user.companyId;
-    const where: Record<string, unknown> = { companyId: cid, deletedAt: null };
+    // M1: unscoped — same gap as listLabReports above.
+    const where: Record<string, unknown> = { companyId: cid, deletedAt: null, check: this.scopeWhere(user) };
     if (q.status) where.status = q.status;
     if (q.dateFrom || q.dateTo) {
       where.createdAt = {};
@@ -620,6 +641,7 @@ export class QualityService {
     return this.prisma.correctiveAction.findMany({
       where,
       orderBy: { createdAt: "desc" },
+      take: 200, // M16: was unbounded
       include: {
         check: { select: { reference: true, checkType: true } },
         assignedTo: { select: { id: true, fullName: true } },

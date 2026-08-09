@@ -28,6 +28,10 @@ type ReportResult = {
   rows: Record<string, unknown>[];
   totals: Record<string, number>;
   chart?: { title: string; labels: string[]; values: number[] };
+  // M6: the backend caps report rows at 1000 — this flag is true when a
+  // report actually matched more than that, so the totals below reflect
+  // only a truncated slice, not the full dataset.
+  truncated: boolean;
 };
 
 type Option = {
@@ -373,6 +377,13 @@ export default function ReportsPage() {
 
                   {result ? (
                     <>
+                      {result.truncated && (
+                        <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                          Showing the first {result.rows.length.toLocaleString()} matching rows — more rows match this
+                          filter than can be displayed, so the totals below reflect only what&apos;s shown. Narrow the
+                          date range or filters to see a complete total.
+                        </div>
+                      )}
                       <DataTable
                         rows={result.rows}
                         empty="No report rows found"

@@ -14,13 +14,17 @@ const mockPrisma = {
   disciplinaryRecord: { findMany: jest.fn(), create: jest.fn() },
   grievanceRecord: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
   task: { findMany: jest.fn(), count: jest.fn() },
-  leaveRequest: { findMany: jest.fn(), count: jest.fn(), create: jest.fn(), findFirst: jest.fn(), updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
+  leaveRequest: { findMany: jest.fn(), count: jest.fn(), create: jest.fn(), findFirst: jest.fn(), updateMany: jest.fn(), findUniqueOrThrow: jest.fn(), groupBy: jest.fn() },
   leaveBalance: { findUnique: jest.fn(), update: jest.fn(), create: jest.fn() },
   leavePolicy: { findFirst: jest.fn() },
   expenseCategory: { findFirst: jest.fn(), create: jest.fn() },
   expense: { create: jest.fn() },
   user: { findFirst: jest.fn() }
 };
+
+function makeRes() {
+  return { setHeader: jest.fn(), send: jest.fn() };
+}
 const mockAudit = { write: jest.fn().mockResolvedValue(undefined) };
 const mockNotifications = { broadcast: jest.fn().mockResolvedValue(undefined), send: jest.fn().mockResolvedValue(undefined) };
 
@@ -115,6 +119,17 @@ describe("HRService — branch/farm/warehouse/site scoping (H6)", () => {
 
     expect(mockPrisma.disciplinaryRecord.findMany.mock.calls[0][0].where.employee.AND).toBeDefined();
     expect(mockPrisma.grievanceRecord.findMany.mock.calls[0][0].where.employee.AND).toBeDefined();
+  });
+
+  it("getOrgChart scopes the roster to the actor's own branch/farm/warehouse/site (M1)", async () => {
+    // Previously unscoped — the practical way a branch-scoped user could
+    // obtain out-of-scope employeeIds for the H14 write-path gaps.
+    mockPrisma.employee.findMany.mockResolvedValue([]);
+    const service = makeService();
+    await service.getOrgChart(makeUser({ branchIds: ["branch-1"] }));
+
+    const where = mockPrisma.employee.findMany.mock.calls[0][0].where;
+    expect(where.AND).toEqual([{ OR: [{ branchId: null }, { branchId: { in: ["branch-1"] } }] }]);
   });
 });
 
@@ -337,6 +352,46 @@ describe("HRService — leave/payroll/grievance cross-field and state-machine ch
 
       await expect(service.createPayrollRecord(makeUser(), dto, {})).resolves.toBeDefined();
     });
+
+    it("rejects running payroll twice for the same employee/period (M17)", async () => {
+      mockPrisma.employee.findFirst.mockResolvedValue({ id: "emp-1", fullName: "Jane", code: "E1", basicSalary: 1000, branchId: "branch-1" });
+      mockPrisma.payrollRecord.findFirst.mockResolvedValue({ id: "pay-existing", period: "2026-09" });
+      const service = makeService();
+      const dto = { employeeId: "emp-1", period: "2026-09", periodStart: "2026-09-01", periodEnd: "2026-09-30", basicSalary: 1000 } as never;
+
+      await expect(service.createPayrollRecord(makeUser(), dto, {})).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.payrollRecord.create).not.toHaveBeenCalled();
+    });
+
+    it("allows re-running payroll for the period once the prior record was soft-deleted", async () => {
+      // The duplicate check filters deletedAt: null — this proves it doesn't
+      // block a legitimate redo after a correction.
+      mockPrisma.employee.findFirst.mockResolvedValue({ id: "emp-1", fullName: "Jane", code: "E1", basicSalary: 1000, branchId: "branch-1" });
+      mockPrisma.payrollRecord.findFirst.mockResolvedValue(null);
+      mockPrisma.payrollRecord.create.mockResolvedValue({ id: "pay-2" });
+      const service = makeService();
+      const dto = { employeeId: "emp-1", period: "2026-09", periodStart: "2026-09-01", periodEnd: "2026-09-30", basicSalary: 1000 } as never;
+
+      await service.createPayrollRecord(makeUser(), dto, {});
+
+      const where = mockPrisma.payrollRecord.findFirst.mock.calls[0][0].where;
+      expect(where.deletedAt).toBeNull();
+      expect(mockPrisma.payrollRecord.create).toHaveBeenCalled();
+    });
+  });
+
+  describe("computePayrollEstimate — flags stale PAYE bands instead of trusting them forever (M17)", () => {
+    it("flags the bands as stale once the calendar year has moved past the bands' tax year", async () => {
+      // The bands are hardcoded to Ghana's 2024 fiscal year; this test's
+      // "current" year is controlled by the real system clock, which by now
+      // (2026+) is already past that year — proving the flag actually fires
+      // rather than asserting a fixed year that will itself go stale.
+      const service = makeService();
+      const result = await service.computePayrollEstimate(makeUser(), { basicSalary: 5000 } as never);
+
+      expect(result.data.payeBandsTaxYear).toBe(2024);
+      expect(result.data.payeBandsStale).toBe(new Date().getFullYear() > 2024);
+    });
   });
 
   describe("resolveGrievance / closeGrievance state machine", () => {
@@ -499,5 +554,94 @@ describe("HRService — sanity bounds on employee dates (L5)", () => {
       service.updateEmployee(makeUser(), "emp-1", { dateOfBirth: "2099-01-01" } as never, {})
     ).rejects.toThrow(BadRequestException);
     expect(mockPrisma.employee.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("HRService — leave summary / leave balance no longer fail silently (M12)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  describe("reportLeaveSummary", () => {
+    it("returns the real breakdown on success", async () => {
+      mockPrisma.leaveRequest.groupBy.mockResolvedValue([{ leaveType: "ANNUAL", status: "APPROVED", _count: { id: 3 }, _sum: { daysRequested: 9 } }]);
+      const service = makeService();
+
+      const result = await service.reportLeaveSummary(makeUser(), {} as never);
+
+      expect(result.data.breakdown).toHaveLength(1);
+    });
+
+    it("throws instead of silently returning an empty breakdown when the query fails", async () => {
+      // Previously .catch(() => []) — a real DB failure rendered identically to
+      // "no leave activity this period" with no way to tell the two apart.
+      mockPrisma.leaveRequest.groupBy.mockRejectedValue(new Error("db unavailable"));
+      const service = makeService();
+
+      await expect(service.reportLeaveSummary(makeUser(), {} as never)).rejects.toThrow("Leave summary report failed to load");
+    });
+  });
+
+  describe("submitLeaveRequest — leave balance bookkeeping", () => {
+    const dto = { leaveType: "ANNUAL", startDate: "2026-09-01", endDate: "2026-09-05", daysRequested: 3 } as never;
+
+    beforeEach(() => {
+      mockPrisma.employee.findFirst.mockResolvedValue({ id: "emp-1", fullName: "Jane", code: "E1" });
+      mockPrisma.leaveRequest.create.mockResolvedValue({ id: "lvr-1", employeeName: "Jane", leaveType: "ANNUAL", daysRequested: 3 });
+    });
+
+    it("still creates the leave request when the balance bookkeeping update throws", async () => {
+      // Best-effort by design (a bookkeeping failure shouldn't block a valid
+      // leave request) — this is NOT a regression to fix, just verifying the
+      // request still succeeds now that the catch also logs.
+      mockPrisma.leaveBalance.findUnique.mockRejectedValue(new Error("db unavailable"));
+      const service = makeService();
+
+      await expect(service.submitLeaveRequest(makeUser(), dto, {})).resolves.toBeDefined();
+    });
+
+    it("logs the failure instead of swallowing it completely", async () => {
+      mockPrisma.leaveBalance.findUnique.mockRejectedValue(new Error("db unavailable"));
+      const service = makeService();
+      const errorSpy = jest.spyOn(Logger.prototype, "error").mockImplementation(() => undefined);
+
+      await service.submitLeaveRequest(makeUser(), dto, {});
+
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("leave balance update failed for employee emp-1"));
+      errorSpy.mockRestore();
+    });
+  });
+});
+
+describe("HRService.bankExportCsv — neutralizes formula-injection payloads (M15)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("prefixes a formula-injection payload in the employee/bank fields with a single quote", async () => {
+    mockPrisma.payrollRecord.findMany.mockResolvedValue([{
+      employeeName: "Fallback Name", period: "2026-08", netPay: 1000,
+      employee: { code: "=cmd|'/c calc'!A1", fullName: "Jane Doe", bankName: "+1+1 Bank", bankAccount: "@SUM(1,1)" }
+    }]);
+    const service = makeService();
+    const res = makeRes();
+
+    await service.bankExportCsv(makeUser(), "2026-08", res as never);
+
+    const csv = res.send.mock.calls[0][0] as string;
+    expect(csv).toContain(`"'=cmd`);
+    expect(csv).toContain(`"'+1+1 Bank"`);
+    expect(csv).toContain(`"'@SUM(1,1)"`);
+  });
+
+  it("leaves ordinary bank details untouched", async () => {
+    mockPrisma.payrollRecord.findMany.mockResolvedValue([{
+      employeeName: "Fallback Name", period: "2026-08", netPay: 1000,
+      employee: { code: "E001", fullName: "Jane Doe", bankName: "GCB Bank", bankAccount: "1234567890" }
+    }]);
+    const service = makeService();
+    const res = makeRes();
+
+    await service.bankExportCsv(makeUser(), "2026-08", res as never);
+
+    const csv = res.send.mock.calls[0][0] as string;
+    expect(csv).toContain(`"GCB Bank"`);
+    expect(csv).toContain(`"1234567890"`);
   });
 });

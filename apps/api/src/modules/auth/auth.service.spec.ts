@@ -157,10 +157,15 @@ describe("AuthService", () => {
       );
     });
 
-    it("increments failedLoginAttempts on wrong password", async () => {
+    it("increments failedLoginAttempts atomically instead of a stale read-then-write (M18)", async () => {
+      // Previously: newAttempts = user.failedLoginAttempts + 1, computed in
+      // app code from a value read before this request even started —
+      // concurrent failed attempts could read the same stale count and lose
+      // increments, letting a brute-force burst outrun the lockout threshold.
       mockPrisma.user.findMany.mockResolvedValue([
         makeDbUser({ failedLoginAttempts: 2 }),
       ]);
+      mockPrisma.user.update.mockResolvedValue({ failedLoginAttempts: 3 });
       (bcrypt.compare as jest.Mock).mockResolvedValue(false);
 
       await expect(
@@ -169,25 +174,30 @@ describe("AuthService", () => {
 
       expect(mockPrisma.user.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ failedLoginAttempts: 3 }),
+          data: { failedLoginAttempts: { increment: 1 } },
         })
       );
+      // Below the lockout threshold — only the atomic increment call, no lockedUntil update.
+      expect(mockPrisma.user.update).toHaveBeenCalledTimes(1);
     });
 
-    it("locks the account after 5 failed attempts", async () => {
+    it("locks the account after 5 failed attempts, using the DB's post-increment count", async () => {
       mockPrisma.user.findMany.mockResolvedValue([
         makeDbUser({ failedLoginAttempts: 4 }),
       ]);
+      mockPrisma.user.update.mockResolvedValueOnce({ failedLoginAttempts: 5 });
       (bcrypt.compare as jest.Mock).mockResolvedValue(false);
 
       await expect(
         service.login({ email: "test@jokas.local", password: "WrongPass!" }, CTX)
       ).rejects.toThrow(UnauthorizedException);
 
-      const updateCall = mockPrisma.user.update.mock.calls[0][0];
-      expect(updateCall.data.failedLoginAttempts).toBe(5);
-      expect(updateCall.data.lockedUntil).toBeDefined();
-      expect(updateCall.data.lockedUntil.getTime()).toBeGreaterThan(Date.now());
+      expect(mockPrisma.user.update).toHaveBeenNthCalledWith(1,
+        expect.objectContaining({ data: { failedLoginAttempts: { increment: 1 } } })
+      );
+      const lockCall = mockPrisma.user.update.mock.calls[1][0];
+      expect(lockCall.data.lockedUntil).toBeDefined();
+      expect(lockCall.data.lockedUntil.getTime()).toBeGreaterThan(Date.now());
     });
 
     it("throws when multiple companies found for the email (requires companyId)", async () => {
