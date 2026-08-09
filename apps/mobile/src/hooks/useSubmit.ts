@@ -42,7 +42,17 @@ export function useSubmit({ module, endpoint, method = "POST", onSuccess, onErro
       });
       onSuccess?.();
     } catch (err) {
-      if (err instanceof ApiError) {
+      // C6: apiFetch() wraps every failure mode — a real 4xx/5xx from the
+      // server, a request timeout, a mid-flight connection drop, a malformed
+      // response — in this same ApiError class, so `err instanceof ApiError`
+      // was always true and the "queue for offline sync" branch below could
+      // never run. A worker on weak signal whose request timed out saw a
+      // generic failure alert, and the record was never written to SQLite or
+      // synced — silently lost. ApiError.status === 0 is exactly how
+      // client.ts already marks "no real server response" (timeout, network
+      // drop, malformed body) as opposed to a genuine HTTP status code —
+      // branch on that instead of the error's type.
+      if (err instanceof ApiError && err.status !== 0) {
         // Real server rejection (4xx/5xx) — show the error, do NOT queue
         let msg = "Submission failed. Please check your input and try again.";
         try {
@@ -55,7 +65,7 @@ export function useSubmit({ module, endpoint, method = "POST", onSuccess, onErro
         Alert.alert("Error", msg);
         return;
       }
-      // Network / timeout error — queue for offline sync
+      // Network / timeout error (status 0, or a non-ApiError failure) — queue for offline sync
       await queueSubmission(localId, module, endpoint, payload, method);
       await refreshCount();
       onSuccess?.();

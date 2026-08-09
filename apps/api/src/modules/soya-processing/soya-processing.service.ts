@@ -278,7 +278,16 @@ export class SoyaProcessingService {
     const product = await this.getProduct(user.companyId, dto.productId);
     const source = await this.requireStock(user.companyId, dto.fromWarehouseId, dto.productId, dto.quantity);
     const data = await this.prisma.$transaction(async (tx) => {
-      await tx.inventoryItem.update({ where: { id: source.id }, data: { quantityOnHand: { decrement: dto.quantity }, updatedById: user.id } });
+      // C1: floor-guarded updateMany prevents concurrent overdraw at the DB
+      // level — requireStock above is a plain read, so a race between two
+      // concurrent transfers could otherwise both pass it and both decrement.
+      const invUpdate = await tx.inventoryItem.updateMany({
+        where: { id: source.id, quantityOnHand: { gte: dto.quantity } },
+        data: { quantityOnHand: { decrement: dto.quantity }, updatedById: user.id }
+      });
+      if (invUpdate.count === 0) {
+        throw new BadRequestException("Soya stock was modified concurrently — please retry.");
+      }
       const destination = await tx.inventoryItem.upsert({ where: { companyId_warehouseId_productId: { companyId: user.companyId, warehouseId: dto.toWarehouseId, productId: dto.productId } }, update: { quantityOnHand: { increment: dto.quantity }, updatedById: user.id }, create: { companyId: user.companyId, branchId: batch.branchId, warehouseId: dto.toWarehouseId, productionSiteId: dto.toProductionSiteId, productId: dto.productId, uomId: product.uomId, quantityOnHand: dto.quantity, createdById: user.id } });
       const transfer = await tx.soyaInternalTransfer.create({ data: { companyId: user.companyId, branchId: batch.branchId, productionSiteId: batch.productionSiteId, productionBatchId: batch.id, productId: dto.productId, outputType: dto.outputType, fromWarehouseId: dto.fromWarehouseId, toWarehouseId: dto.toWarehouseId, toProductionSiteId: dto.toProductionSiteId, quantity: dto.quantity, status: "COMPLETED", notes: dto.notes, createdById: user.id } });
       await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: batch.branchId, productId: dto.productId, inventoryItemId: source.id, fromWarehouseId: dto.fromWarehouseId, toWarehouseId: dto.toWarehouseId, toProductionSiteId: dto.toProductionSiteId, uomId: product.uomId, movementType: "TRANSFER", quantity: dto.quantity, referenceType: "SoyaInternalTransfer", referenceId: transfer.id, notes: "Soya internal transfer dispatched", createdById: user.id } });
@@ -318,7 +327,17 @@ export class SoyaProcessingService {
     const source = await this.requireStock(user.companyId, dto.warehouseId, dto.productId, dto.quantity);
     const totalAmount = dto.quantity * dto.unitPrice;
     const data = await this.prisma.$transaction(async (tx) => {
-      await tx.inventoryItem.update({ where: { id: source.id }, data: { quantityOnHand: { decrement: dto.quantity }, updatedById: user.id } });
+      // C1: floor-guarded updateMany prevents concurrent overdraw at the DB
+      // level — requireStock above is a plain read, so a race between two
+      // concurrent sales could otherwise both pass it and both decrement,
+      // overselling the last of a physical lot.
+      const invUpdate = await tx.inventoryItem.updateMany({
+        where: { id: source.id, quantityOnHand: { gte: dto.quantity } },
+        data: { quantityOnHand: { decrement: dto.quantity }, updatedById: user.id }
+      });
+      if (invUpdate.count === 0) {
+        throw new BadRequestException("Soya stock was modified concurrently — please retry.");
+      }
       const sale = await tx.soyaSalesLink.create({ data: { companyId: user.companyId, branchId: batch.branchId, productionSiteId: batch.productionSiteId, productionBatchId: batch.id, productId: dto.productId, warehouseId: dto.warehouseId, outputType: dto.outputType, customerName: dto.customerName, quantity: dto.quantity, unitPrice: dto.unitPrice, totalAmount, status: "POSTED", createdById: user.id } });
       await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: batch.branchId, productId: dto.productId, inventoryItemId: source.id, fromWarehouseId: dto.warehouseId, warehouseId: dto.warehouseId, productionSiteId: batch.productionSiteId, uomId: product.uomId, movementType: "SALE_DISPATCH", quantity: dto.quantity, unitCost: dto.unitPrice, referenceType: "SoyaSalesLink", referenceId: sale.id, notes: `Soya ${dto.outputType.toLowerCase()} sale to ${dto.customerName}`, createdById: user.id } });
       return sale;

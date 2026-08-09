@@ -18,41 +18,53 @@ describe("DashboardService", () => {
     stockBatch: { findMany: jest.Mock };
     productProfitability: { findMany: jest.Mock };
     salesOrder: { aggregate: jest.Mock; count: jest.Mock };
-    flockBatch: { aggregate: jest.Mock };
+    flockBatch: { aggregate: jest.Mock; count: jest.Mock };
     stockExpiryAlert: { count: jest.Mock };
     employee: { findFirst: jest.Mock };
     farm: { count: jest.Mock };
     productionSite: { count: jest.Mock };
-    eggProductionRecord: { count: jest.Mock; findMany: jest.Mock };
-    feedConsumptionRecord: { count: jest.Mock; findMany: jest.Mock };
-    mortalityRecord: { count: jest.Mock; findMany: jest.Mock };
+    eggProductionRecord: { count: jest.Mock; findMany: jest.Mock; aggregate: jest.Mock };
+    feedConsumptionRecord: { count: jest.Mock; findMany: jest.Mock; aggregate: jest.Mock };
+    mortalityRecord: { count: jest.Mock; findMany: jest.Mock; aggregate: jest.Mock };
     dailyPoultryRecord: { count: jest.Mock; findMany: jest.Mock };
     stockMovement: { count: jest.Mock };
-    soyaBeanIntake: { count: jest.Mock };
+    soyaBeanIntake: { count: jest.Mock; aggregate: jest.Mock };
+    soyaOilOutput: { aggregate: jest.Mock };
+    soyaCakeOutput: { aggregate: jest.Mock };
     attendanceRecord: { count: jest.Mock };
     prospectVisit: { count: jest.Mock };
-    feedProductionBatch: { count: jest.Mock; findMany: jest.Mock };
+    feedProductionBatch: { count: jest.Mock; findMany: jest.Mock; aggregate: jest.Mock };
+    feedProductionOrder: { count: jest.Mock };
+    purchaseOrder: { count: jest.Mock };
+    maintenanceRecord: { count: jest.Mock };
+    aiAlert: { count: jest.Mock };
   };
 
   beforeEach(async () => {
     prisma = {
       stockBatch: { findMany: jest.fn() },
       productProfitability: { findMany: jest.fn() },
-      salesOrder: { aggregate: jest.fn().mockResolvedValue({ _sum: { totalAmount: 0 } }), count: jest.fn().mockResolvedValue(0) },
-      flockBatch: { aggregate: jest.fn().mockResolvedValue({ _sum: { openingBirdCount: 0 } }) },
+      salesOrder: { aggregate: jest.fn().mockResolvedValue({ _sum: { totalAmount: 0, balanceDue: 0 } }), count: jest.fn().mockResolvedValue(0) },
+      flockBatch: { aggregate: jest.fn().mockResolvedValue({ _sum: { openingBirdCount: 0 } }), count: jest.fn().mockResolvedValue(0) },
       stockExpiryAlert: { count: jest.fn().mockResolvedValue(0) },
       employee: { findFirst: jest.fn().mockResolvedValue(null) },
       farm: { count: jest.fn().mockResolvedValue(0) },
       productionSite: { count: jest.fn().mockResolvedValue(0) },
-      eggProductionRecord: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue([]) },
-      feedConsumptionRecord: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue([]) },
-      mortalityRecord: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue([]) },
+      eggProductionRecord: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue([]), aggregate: jest.fn().mockResolvedValue({ _sum: { goodEggs: 0, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0 } }) },
+      feedConsumptionRecord: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue([]), aggregate: jest.fn().mockResolvedValue({ _sum: { quantityKg: 0 } }) },
+      mortalityRecord: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue([]), aggregate: jest.fn().mockResolvedValue({ _sum: { birdCount: 0 } }) },
       dailyPoultryRecord: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue([]) },
       stockMovement: { count: jest.fn().mockResolvedValue(0) },
-      soyaBeanIntake: { count: jest.fn().mockResolvedValue(0) },
+      soyaBeanIntake: { count: jest.fn().mockResolvedValue(0), aggregate: jest.fn().mockResolvedValue({ _sum: { quantityKg: 0 } }) },
+      soyaOilOutput: { aggregate: jest.fn().mockResolvedValue({ _sum: { quantityLitres: 0 } }) },
+      soyaCakeOutput: { aggregate: jest.fn().mockResolvedValue({ _sum: { quantityKg: 0 } }) },
       attendanceRecord: { count: jest.fn().mockResolvedValue(0) },
       prospectVisit: { count: jest.fn().mockResolvedValue(0) },
-      feedProductionBatch: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue([]) },
+      feedProductionBatch: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue([]), aggregate: jest.fn().mockResolvedValue({ _sum: { producedQuantityKg: 0 } }) },
+      feedProductionOrder: { count: jest.fn().mockResolvedValue(0) },
+      purchaseOrder: { count: jest.fn().mockResolvedValue(0) },
+      maintenanceRecord: { count: jest.fn().mockResolvedValue(0) },
+      aiAlert: { count: jest.fn().mockResolvedValue(0) },
     };
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -72,7 +84,7 @@ describe("DashboardService", () => {
         { quantityRemaining: 5, unitCost: 10, product: { category: { name: "Poultry" } } },
       ]);
 
-      const result = await (service as any).liveInventoryValueByCategory("company-1");
+      const result = await (service as any).liveInventoryValueByCategory(makeUser(), {});
 
       expect(result).toHaveLength(1);
       expect(result[0].name).toBe("inventory_value");
@@ -88,7 +100,7 @@ describe("DashboardService", () => {
         { quantityRemaining: 4, unitCost: 2.5, product: { category: null } },
       ]);
 
-      const result = await (service as any).liveInventoryValueByCategory("company-1");
+      const result = await (service as any).liveInventoryValueByCategory(makeUser(), {});
 
       expect(result[0].data[0].label).toBe("Uncategorised");
       expect(result[0].data[0].value).toBe(10);
@@ -97,7 +109,7 @@ describe("DashboardService", () => {
     it("returns empty data on prisma error", async () => {
       prisma.stockBatch.findMany.mockRejectedValue(new Error("db error"));
 
-      const result = await (service as any).liveInventoryValueByCategory("company-1");
+      const result = await (service as any).liveInventoryValueByCategory(makeUser(), {});
 
       expect(result).toEqual([{ name: "inventory_value", data: [] }]);
     });
@@ -196,6 +208,116 @@ describe("DashboardService", () => {
 
       const eggWhere = prisma.eggProductionRecord.findMany.mock.calls[0][0].where;
       expect(eggWhere.farmId).toBeUndefined();
+    });
+  });
+
+  describe("summary — sensitive fields are gated by domain permission, not just PLATFORM_READ (C4)", () => {
+    beforeEach(() => {
+      prisma.salesOrder.aggregate.mockResolvedValue({ _sum: { totalAmount: 5000, balanceDue: 0 } });
+      prisma.salesOrder.count.mockResolvedValue(7);
+      prisma.flockBatch.aggregate.mockResolvedValue({ _sum: { openingBirdCount: 1200 } });
+    });
+
+    it("omits revenue/orders and birds (undefined, not a fake zero) when the caller holds only the base permission", async () => {
+      const result = await service.summary(makeUser({ permissions: [] }));
+
+      expect(result.data.totalRevenue).toBeUndefined();
+      expect(result.data.openOrders).toBeUndefined();
+      expect(result.data.totalBirds).toBeUndefined();
+    });
+
+    it("returns real revenue/orders when the caller holds SALES_READ, but still hides bird count", async () => {
+      const result = await service.summary(makeUser({ permissions: ["sales.read"] }));
+
+      expect(result.data.totalRevenue).toBe(5000);
+      expect(result.data.openOrders).toBe(7);
+      expect(result.data.totalBirds).toBeUndefined();
+    });
+
+    it("returns real revenue via FINANCE_READ too, not only SALES_READ", async () => {
+      const result = await service.summary(makeUser({ permissions: ["finance.read"] }));
+      expect(result.data.totalRevenue).toBe(5000);
+    });
+
+    it("returns real bird count when the caller holds POULTRY_READ, but still hides revenue", async () => {
+      const result = await service.summary(makeUser({ permissions: ["poultry.read"] }));
+
+      expect(result.data.totalBirds).toBe(1200);
+      expect(result.data.totalRevenue).toBeUndefined();
+    });
+
+    it("returns everything for a global-access user regardless of their permissions list", async () => {
+      const result = await service.summary(makeUser({ permissions: [], hasGlobalAccess: true }));
+
+      expect(result.data.totalRevenue).toBe(5000);
+      expect(result.data.totalBirds).toBe(1200);
+    });
+  });
+
+  describe("liveInventoryValueByCategory — now scoped by location, not just companyId (C4)", () => {
+    it("applies the actor's branch/farm/warehouse/site scope to the underlying query", async () => {
+      prisma.stockBatch.findMany.mockResolvedValue([]);
+      await (service as any).liveInventoryValueByCategory(makeUser({ warehouseIds: ["wh-1"] }), {});
+
+      const where = prisma.stockBatch.findMany.mock.calls[0][0].where;
+      expect(where.warehouseId).toEqual({ in: ["wh-1"] });
+    });
+
+    it("applies no restriction for a global-access user", async () => {
+      prisma.stockBatch.findMany.mockResolvedValue([]);
+      await (service as any).liveInventoryValueByCategory(makeUser({ hasGlobalAccess: true }), {});
+
+      const where = prisma.stockBatch.findMany.mock.calls[0][0].where;
+      expect(where.warehouseId).toBeUndefined();
+    });
+  });
+
+  describe("computeMetricValues — the four previously-unscoped queries are now location-scoped (C4)", () => {
+    beforeEach(() => {
+      prisma.stockBatch.findMany.mockResolvedValue([]);
+    });
+
+    function callComputeMetricValues(user: AuthenticatedUser) {
+      const range = { start: new Date("2026-01-01"), end: new Date("2026-01-31") };
+      return (service as any).computeMetricValues(user, {}, range);
+    }
+
+    it("scopes stockExpiryAlert (lowStockAlerts) to the actor's branch/warehouse/site", async () => {
+      await callComputeMetricValues(makeUser({ warehouseIds: ["wh-1"] }));
+      const where = prisma.stockExpiryAlert.count.mock.calls[0][0].where;
+      expect(where.warehouseId).toEqual({ in: ["wh-1"] });
+    });
+
+    it("scopes feedProductionOrder (pendingProductionOrders) to the actor's branch/site", async () => {
+      await callComputeMetricValues(makeUser({ productionSiteIds: ["site-1"] }));
+      const where = prisma.feedProductionOrder.count.mock.calls[0][0].where;
+      expect(where.productionSiteId).toEqual({ in: ["site-1"] });
+    });
+
+    it("scopes maintenanceRecord (machineMaintenanceAlerts) to the actor's full location scope", async () => {
+      await callComputeMetricValues(makeUser({ farmIds: ["farm-1"] }));
+      const where = prisma.maintenanceRecord.count.mock.calls[0][0].where;
+      expect(where.farmId).toEqual({ in: ["farm-1"] });
+    });
+
+    it("scopes stockBatch (currentInventoryValue) to the actor's full location scope", async () => {
+      await callComputeMetricValues(makeUser({ branchIds: ["branch-1"] }));
+      const where = prisma.stockBatch.findMany.mock.calls[0][0].where;
+      expect(where.branchId).toEqual({ in: ["branch-1"] });
+    });
+
+    it("applies no restriction on any of the four for a global-access user", async () => {
+      await callComputeMetricValues(makeUser({ hasGlobalAccess: true }));
+      expect(prisma.stockExpiryAlert.count.mock.calls[0][0].where.warehouseId).toBeUndefined();
+      expect(prisma.feedProductionOrder.count.mock.calls[0][0].where.productionSiteId).toBeUndefined();
+      expect(prisma.maintenanceRecord.count.mock.calls[0][0].where.farmId).toBeUndefined();
+      expect(prisma.stockBatch.findMany.mock.calls[0][0].where.branchId).toBeUndefined();
+    });
+
+    it("leaves purchaseOrder (pendingPurchaseApprovals) unscoped — the model has no location columns", async () => {
+      await callComputeMetricValues(makeUser({ branchIds: ["branch-1"] }));
+      const where = prisma.purchaseOrder.count.mock.calls[0][0].where;
+      expect(where.branchId).toBeUndefined();
     });
   });
 });

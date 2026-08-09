@@ -15,7 +15,7 @@ const mockPrisma = {
   goodsReceivedNote: { create: jest.fn(), findFirst: jest.fn(), update: jest.fn().mockResolvedValue({}) },
   product: { findMany: jest.fn() },
   purchaseOrderItem: { update: jest.fn().mockResolvedValue({}) },
-  supplierInvoice: { findFirst: jest.fn(), update: jest.fn().mockResolvedValue({}) },
+  supplierInvoice: { findFirst: jest.fn(), update: jest.fn().mockResolvedValue({}), updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
   procurementPayment: { create: jest.fn() },
   purchaseApproval: { create: jest.fn().mockResolvedValue({}) },
   $transaction: jest.fn().mockImplementation((cb: (tx: unknown) => Promise<unknown>) => cb(mockPrisma))
@@ -220,27 +220,58 @@ describe("ProcurementService", () => {
     });
   });
 
-  describe("createPayment — rejects overpayments instead of silently clamping (L4)", () => {
-    it("rejects a payment larger than the invoice's outstanding balance", async () => {
-      mockPrisma.supplierInvoice.findFirst.mockResolvedValue({ id: "inv-1", totalAmount: 100, paidAmount: 80 });
+  describe("createPayment — transaction-wrapped, race-safe overpayment guard (C2, L4)", () => {
+    beforeEach(() => {
+      mockPrisma.procurementPayment.create.mockResolvedValue({ id: "pay-1" });
+    });
+
+    it("rejects up front when the invoice already has no outstanding balance", async () => {
+      mockPrisma.supplierInvoice.findFirst.mockResolvedValue({ id: "inv-1", balanceDue: 0, paidAmount: 100 });
 
       await expect(
         service.createPayment(makeUser(), { supplierId: "sup-1", invoiceId: "inv-1", amount: 50, paymentDate: "2026-08-01", paymentMethod: "BANK_TRANSFER" } as never, {})
       ).rejects.toThrow(BadRequestException);
       expect(mockPrisma.procurementPayment.create).not.toHaveBeenCalled();
+    });
+
+    it("rejects if the atomic guarded decrement finds insufficient balance (the race case)", async () => {
+      // Simulates the exact race the prior bug allowed: the invoice looked
+      // like it had enough balance when read before the transaction, but a
+      // concurrent payment already consumed it by the time this one's
+      // guarded update actually runs.
+      mockPrisma.supplierInvoice.findFirst.mockResolvedValue({ id: "inv-1", balanceDue: 20, paidAmount: 80 });
+      mockPrisma.supplierInvoice.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        service.createPayment(makeUser(), { supplierId: "sup-1", invoiceId: "inv-1", amount: 50, paymentDate: "2026-08-01", paymentMethod: "BANK_TRANSFER" } as never, {})
+      ).rejects.toThrow(BadRequestException);
+
+      expect(mockPrisma.supplierInvoice.updateMany).toHaveBeenCalledWith({
+        where: { id: "inv-1", balanceDue: { gte: 50 } },
+        data: expect.objectContaining({ paidAmount: { increment: 50 }, balanceDue: { decrement: 50 } })
+      });
       expect(mockPrisma.supplierInvoice.update).not.toHaveBeenCalled();
     });
 
-    it("allows a payment that exactly matches the outstanding balance", async () => {
-      mockPrisma.supplierInvoice.findFirst.mockResolvedValue({ id: "inv-1", totalAmount: 100, paidAmount: 80 });
-      mockPrisma.procurementPayment.create.mockResolvedValue({ id: "pay-1" });
+    it("marks the invoice PAID via a fresh post-decrement read when the guarded update succeeds", async () => {
+      mockPrisma.supplierInvoice.findFirst.mockResolvedValue({ id: "inv-1", balanceDue: 20, paidAmount: 80 });
+      mockPrisma.supplierInvoice.updateMany.mockResolvedValue({ count: 1 });
+      mockPrisma.supplierInvoice.findUniqueOrThrow.mockResolvedValue({ balanceDue: 0 });
 
       await service.createPayment(makeUser(), { supplierId: "sup-1", invoiceId: "inv-1", amount: 20, paymentDate: "2026-08-01", paymentMethod: "BANK_TRANSFER" } as never, {});
 
       expect(mockPrisma.procurementPayment.create).toHaveBeenCalled();
-      expect(mockPrisma.supplierInvoice.update).toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ balanceDue: 0, status: "PAID" }) })
-      );
+      expect(mockPrisma.supplierInvoice.update).toHaveBeenCalledWith({ where: { id: "inv-1" }, data: { status: "PAID" } });
+    });
+
+    it("marks the invoice MATCHED when balance remains after the guarded decrement", async () => {
+      mockPrisma.supplierInvoice.findFirst.mockResolvedValue({ id: "inv-1", balanceDue: 100, paidAmount: 0 });
+      mockPrisma.supplierInvoice.updateMany.mockResolvedValue({ count: 1 });
+      mockPrisma.supplierInvoice.findUniqueOrThrow.mockResolvedValue({ balanceDue: 40 });
+
+      await service.createPayment(makeUser(), { supplierId: "sup-1", invoiceId: "inv-1", amount: 60, paymentDate: "2026-08-01", paymentMethod: "BANK_TRANSFER" } as never, {});
+
+      expect(mockPrisma.supplierInvoice.update).toHaveBeenCalledWith({ where: { id: "inv-1" }, data: { status: "MATCHED" } });
     });
 
     it("404s for an invoiceId that doesn't belong to the actor's company", async () => {
@@ -253,8 +284,6 @@ describe("ProcurementService", () => {
     });
 
     it("skips the balance check entirely for a payment with no linked invoice", async () => {
-      mockPrisma.procurementPayment.create.mockResolvedValue({ id: "pay-1" });
-
       await service.createPayment(makeUser(), { supplierId: "sup-1", amount: 999999, paymentDate: "2026-08-01", paymentMethod: "BANK_TRANSFER" } as never, {});
 
       expect(mockPrisma.supplierInvoice.findFirst).not.toHaveBeenCalled();

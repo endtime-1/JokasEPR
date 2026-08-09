@@ -1,7 +1,7 @@
 import { renderHook, act } from "@testing-library/react-native";
 import { useSubmit } from "../useSubmit";
 import { useNetwork } from "../useNetwork";
-import { apiFetch } from "../../api/client";
+import { apiFetch, ApiError } from "../../api/client";
 import { queueSubmission } from "../../db/database";
 
 jest.mock("../useNetwork", () => ({
@@ -26,6 +26,11 @@ jest.mock("../../db/database", () => ({
 
 jest.mock("../../api/client", () => ({
   apiFetch: jest.fn(),
+  // Real class, not a mock — useSubmit's catch branch checks `instanceof
+  // ApiError` and reads `.status`, so tests need the genuine class to
+  // exercise that logic instead of always falling through the "not an
+  // ApiError" path regardless of what's being tested.
+  ApiError: jest.requireActual("../../api/client").ApiError,
 }));
 
 const mockApiFetch = apiFetch as jest.Mock;
@@ -82,8 +87,14 @@ describe("useSubmit", () => {
     expect(onSuccess).toHaveBeenCalled();
   });
 
-  it("falls back to the offline queue when the API call throws", async () => {
-    mockApiFetch.mockRejectedValueOnce(new Error("Network timeout"));
+  it("falls back to the offline queue on a network/timeout failure (ApiError status 0) — C6", async () => {
+    // This is what apiFetch() actually throws for a timeout or a dropped
+    // connection (client.ts always uses status 0 for "no real server
+    // response") — a plain Error here would pass regardless of whether the
+    // real bug (checking `instanceof ApiError` with no status check) was
+    // present, since a plain Error also isn't an ApiError. Using the real
+    // ApiError class with status 0 is what actually exercises the fix.
+    mockApiFetch.mockRejectedValueOnce(new ApiError(0, "Request timed out — check your connection and try again."));
     const onSuccess = jest.fn();
 
     const { result } = await renderHook(() =>
@@ -96,6 +107,29 @@ describe("useSubmit", () => {
 
     expect(mockQueueSubmission).toHaveBeenCalled();
     expect(onSuccess).toHaveBeenCalled();
+  });
+
+  it("does NOT queue a genuine server rejection (ApiError status 400) — shows the error instead — C6", async () => {
+    // The bug this guards against: apiFetch wraps every failure — real
+    // 4xx/5xx included — in ApiError, so `instanceof ApiError` alone can
+    // never distinguish "the server rejected this" from "the request never
+    // reached the server." A validation failure must not silently queue
+    // itself for endless retry against a server that will keep rejecting it.
+    mockApiFetch.mockRejectedValueOnce(new ApiError(400, JSON.stringify({ message: "Quantity must be at least 1" })));
+    const onSuccess = jest.fn();
+    const onError = jest.fn();
+
+    const { result } = await renderHook(() =>
+      useSubmit({ module: "livestock", endpoint: "/livestock/batches", onSuccess, onError })
+    );
+
+    await act(async () => {
+      await result.current.submit({ name: "Batch D" });
+    });
+
+    expect(mockQueueSubmission).not.toHaveBeenCalled();
+    expect(onSuccess).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledWith("Quantity must be at least 1");
   });
 
   it("loading is false before and after a successful submit", async () => {

@@ -892,6 +892,28 @@ startProxy(0);
   setInterval(checkDailyBackup, 15 * 60 * 1000);
   checkDailyBackup();
 
+  function checkDailyFilesBackup() {
+    // C8: same polling fallback as checkDailyBackup() above, for the sibling
+    // uploaded-files backup cron written by deploy.yml's "Setup uploaded-files
+    // backup cron" step — crontab itself is a read-only stub on this host.
+    const backupScript = path.join(HOME_DIR, "jokas-files-backup.sh");
+    if (!fs.existsSync(backupScript)) return; // not written yet by a deploy
+    const now = new Date();
+    if (now.getHours() !== 2) return; // only fire during the 02:00 hour
+    const dateStr = now.toISOString().slice(0, 10).replace(/-/g, "");
+    const expected = path.join(HOME_DIR, "jokas-files-backups", `files-${dateStr}.tar.gz`);
+    if (fs.existsSync(expected)) return; // already ran today
+    try {
+      const child = spawn(backupScript, [], { detached: true, stdio: "ignore" });
+      child.unref();
+      console.log(`[start] running daily uploaded-files backup, PID=${child.pid}`);
+    } catch (e) {
+      console.error("[start] failed to run daily uploaded-files backup:", e.message);
+    }
+  }
+  setInterval(checkDailyFilesBackup, 15 * 60 * 1000);
+  checkDailyFilesBackup();
+
   // ── External self-ping to prevent Hostinger from hibernating ────────────
   // Passenger/OpenLiteSpeed tracks idle time from the LAST REQUEST it forwarded
   // to this process. Loopback connections bypass Passenger entirely, so they

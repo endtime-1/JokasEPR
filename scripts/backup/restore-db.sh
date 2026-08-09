@@ -1,56 +1,65 @@
 #!/usr/bin/env bash
-# Jokas ERP — Database restore from pg_dump backup
+# Jokas ERP — Database restore from a real production backup (MySQL)
 #
-# Usage:
-#   ./restore-db.sh <backup-file.dump>
-#   ./restore-db.sh /opt/jokas/backups/daily/jokas_daily_20260616_020001/database.dump
+# C7: this script previously called pg_restore/psql against PostgreSQL —
+# production is MySQL on bare-metal Hostinger (Passenger + start.js, no
+# Docker). There was no restore tooling that even targeted the right
+# database engine. This is the emergency "restore right now" script; for a
+# periodic, non-destructive drill that doesn't touch the real database, use
+# scripts/verify-backup-restore.sh instead.
 #
-# WARNING: This will DROP and RECREATE the target database.
-#          All existing data will be permanently deleted.
-#          Run this only in a planned maintenance window.
+# Usage (run over SSH on the Hostinger host, as the app user):
+#   ./restore-db.sh ~/jokas-db-backups/db-20260809.sql.gz
+#
+# WARNING: This DROPS and RECREATES the target database. All existing data
+#          is permanently deleted. Take a fresh backup first if possible
+#          (mysqldump --defaults-file=$HOME/.jokas-backup.cnf --single-transaction --routines <db> | gzip > pre-restore-safety.sql.gz).
 set -euo pipefail
 
-BACKUP_FILE="${1:?Usage: restore-db.sh <backup-file.dump>}"
+BACKUP_FILE="${1:?Usage: restore-db.sh <backup-file.sql.gz>}"
 
 if [[ ! -f "$BACKUP_FILE" ]]; then
   echo "ERROR: Backup file not found: ${BACKUP_FILE}"
   exit 1
 fi
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENV_FILE="${SCRIPT_DIR}/backup.env"
-if [[ -f "$ENV_FILE" ]]; then
-  # shellcheck source=/dev/null
-  source "$ENV_FILE"
+# The same credentials file deploy.yml's "Setup database backup cron" step
+# writes on every deploy — a MySQL [client] option file with host/port/user/
+# password/database, chmod 600. Not a fictional backup.env; the real thing.
+CNF_FILE="${JOKAS_BACKUP_CNF:-$HOME/.jokas-backup.cnf}"
+if [[ ! -f "$CNF_FILE" ]]; then
+  echo "ERROR: $CNF_FILE not found. This script must run on the production host"
+  echo "       (or set JOKAS_BACKUP_CNF to point at an equivalent [client] file)."
+  exit 1
 fi
 
-DATABASE_URL="${DATABASE_URL:?DATABASE_URL environment variable is required}"
+DB_NAME="$(grep '^database=' "$CNF_FILE" | head -1 | cut -d= -f2-)"
+if [[ -z "$DB_NAME" ]]; then
+  echo "ERROR: Could not read database= from $CNF_FILE"
+  exit 1
+fi
 
-# Parse connection string
-strip_scheme() { echo "${1#postgresql://}"; }
-REMAINDER="$(strip_scheme "$DATABASE_URL")"
-USERINFO="${REMAINDER%%@*}"
-REMAINDER="${REMAINDER#*@}"
-DB_HOST="${REMAINDER%%:*}"
-REMAINDER="${REMAINDER#*:}"
-DB_PORT="${REMAINDER%%/*}"
-REMAINDER="${REMAINDER#*/}"
-DB_NAME="${REMAINDER%%\?*}"
-DB_USER="${USERINFO%%:*}"
-DB_PASS="${USERINFO#*:}"
+# gzip integrity check before we touch anything destructive.
+echo "Step 1/4: Verifying backup file integrity..."
+gzip -t "$BACKUP_FILE" || { echo "ERROR: Backup file is not valid gzip. Aborting."; exit 1; }
+SIZE_BYTES="$(wc -c < "$BACKUP_FILE")"
+if [[ "$SIZE_BYTES" -lt 1024 ]]; then
+  echo "ERROR: Backup file is suspiciously small (${SIZE_BYTES} bytes) — likely the empty-dump bug. Aborting."
+  exit 1
+fi
+echo "Backup integrity OK (${SIZE_BYTES} bytes gzipped)."
 
-# ─── confirmation ─────────────────────────────────────────────────────────────
+echo ""
 echo "======================================================================"
 echo " Jokas ERP — DATABASE RESTORE"
 echo "======================================================================"
 echo ""
 echo "  Source backup : ${BACKUP_FILE}"
-echo "  Target host   : ${DB_HOST}:${DB_PORT}"
+echo "  Credentials   : ${CNF_FILE}"
 echo "  Target db     : ${DB_NAME}"
-echo "  DB user       : ${DB_USER}"
 echo ""
-echo "  ⚠  WARNING: This will DROP and RECREATE '${DB_NAME}'."
-echo "              ALL EXISTING DATA WILL BE PERMANENTLY DELETED."
+echo "  WARNING: This will DROP and RECREATE '${DB_NAME}'."
+echo "           ALL EXISTING DATA WILL BE PERMANENTLY DELETED."
 echo ""
 echo -n "  Type 'yes-restore' to continue: "
 read -r CONFIRM
@@ -60,50 +69,30 @@ if [[ "$CONFIRM" != "yes-restore" ]]; then
   exit 0
 fi
 
-export PGPASSWORD="$DB_PASS"
-PSQL_OPTS="--host=${DB_HOST} --port=${DB_PORT} --username=${DB_USER} --no-password"
-
-# ─── verify backup integrity ──────────────────────────────────────────────────
 echo ""
-echo "Step 1/4: Verifying backup file integrity..."
-pg_restore --list "$BACKUP_FILE" > /dev/null \
-  || { echo "ERROR: Backup file appears corrupt. Aborting."; unset PGPASSWORD; exit 1; }
-echo "Backup integrity OK."
-
-# ─── terminate existing connections ───────────────────────────────────────────
-echo ""
-echo "Step 2/4: Terminating active connections to '${DB_NAME}'..."
-psql $PSQL_OPTS --dbname=postgres --command \
-  "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${DB_NAME}' AND pid <> pg_backend_pid();" \
-  > /dev/null 2>&1 || true
-
-# ─── drop and recreate ────────────────────────────────────────────────────────
-echo ""
-echo "Step 3/4: Dropping and recreating database '${DB_NAME}'..."
-psql $PSQL_OPTS --dbname=postgres --command "DROP DATABASE IF EXISTS \"${DB_NAME}\";"
-psql $PSQL_OPTS --dbname=postgres --command "CREATE DATABASE \"${DB_NAME}\" OWNER \"${DB_USER}\";"
+echo "Step 2/4: Dropping and recreating database '${DB_NAME}'..."
+mysql --defaults-file="$CNF_FILE" -e "DROP DATABASE IF EXISTS \`${DB_NAME}\`; CREATE DATABASE \`${DB_NAME}\`;"
 echo "Database recreated."
 
-# ─── restore ──────────────────────────────────────────────────────────────────
 echo ""
-echo "Step 4/4: Restoring from ${BACKUP_FILE}..."
-pg_restore \
-  --host="$DB_HOST" \
-  --port="$DB_PORT" \
-  --username="$DB_USER" \
-  --dbname="$DB_NAME" \
-  --no-password \
-  --verbose \
-  --exit-on-error \
-  "$BACKUP_FILE"
+echo "Step 3/4: Restoring from ${BACKUP_FILE}..."
+gunzip -c "$BACKUP_FILE" | mysql --defaults-file="$CNF_FILE" "$DB_NAME"
 
-unset PGPASSWORD
+echo ""
+echo "Step 4/4: Sanity-checking row counts on a few core tables..."
+mysql --defaults-file="$CNF_FILE" "$DB_NAME" -e "
+  SELECT 'User' AS \`table\`, COUNT(*) AS rows FROM User
+  UNION ALL SELECT 'Company', COUNT(*) FROM Company
+  UNION ALL SELECT 'Employee', COUNT(*) FROM Employee
+  UNION ALL SELECT 'InventoryItem', COUNT(*) FROM InventoryItem
+  UNION ALL SELECT 'SalesOrder', COUNT(*) FROM SalesOrder;
+" || echo "  (Sanity query failed — schema may differ from expected; restore itself may still be fine, investigate manually.)"
 
 echo ""
 echo "======================================================================"
 echo " Restore COMPLETE."
 echo " Verify the application by:"
-echo "   1. Running: pnpm --filter @jokas/api dev"
+echo "   1. Restarting the app (touch the Passenger restart.txt, or redeploy)"
 echo "   2. Logging into the web UI and checking key records"
-echo "   3. Confirming the most recent audit log entry"
+echo "   3. Confirming the most recent audit log entry looks right"
 echo "======================================================================"

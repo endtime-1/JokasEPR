@@ -1,6 +1,6 @@
 import { ForbiddenException, Injectable } from "@nestjs/common";
 import { BusinessUnit, DashboardMetricKey, Prisma } from "@prisma/client";
-import { AuthenticatedUser } from "@jokas/shared";
+import { AuthenticatedUser, PERMISSIONS } from "@jokas/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { DashboardQueryDto } from "./dto/dashboard-query.dto";
 
@@ -95,11 +95,24 @@ export class DashboardService {
       this.prisma.stockExpiryAlert.count({ where: { companyId, deletedAt: null, daysToExpiry: { lte: 30 }, ...branchF, ...warehouseF, ...siteF } }),
     ]);
 
+    // C4: this endpoint is gated only by the base PLATFORM_READ permission
+    // that every role holds (it's the app's home-screen dashboard, not a
+    // domain-specific one) — location scoping alone wasn't enough, since a
+    // user with zero interest in financial figures still had revenue/order
+    // totals returned. Fields are now gated by whether the caller actually
+    // holds a permission for that domain. Ungated fields are omitted
+    // (undefined, not null) so they drop out of the JSON response entirely —
+    // the mobile dashboard (features/dashboard/DashboardScreen.tsx) already
+    // checks `!== undefined` per field to decide whether to render a card,
+    // so this hides the card cleanly with no frontend change needed.
+    const canSeeSales = user.hasGlobalAccess || user.permissions.includes(PERMISSIONS.SALES_READ) || user.permissions.includes(PERMISSIONS.FINANCE_READ);
+    const canSeePoultry = user.hasGlobalAccess || user.permissions.includes(PERMISSIONS.POULTRY_READ);
+
     return {
       data: {
-        totalRevenue: Number(salesAgg._sum.totalAmount ?? 0),
-        openOrders,
-        totalBirds: totalBirds._sum.openingBirdCount ?? 0,
+        totalRevenue: canSeeSales ? Number(salesAgg._sum.totalAmount ?? 0) : undefined,
+        openOrders: canSeeSales ? openOrders : undefined,
+        totalBirds: canSeePoultry ? (totalBirds._sum.openingBirdCount ?? 0) : undefined,
         pendingAlerts,
       },
     };
@@ -357,6 +370,7 @@ export class DashboardService {
     const farmF = this.liveFarmFilter(user, query);
     const siteF = this.liveSiteFilter(user, query);
     const branchF = this.liveBranchFilter(user, query);
+    const warehouseF = this.liveWarehouseFilter(user, query);
     const dateRange = { gte: range.start, lte: range.end };
 
     const [
@@ -421,23 +435,31 @@ export class DashboardService {
         _sum: { balanceDue: true }
       }).then(r => Number(r._sum.balanceDue ?? 0)).catch(() => 0),
 
-      this.prisma.stockExpiryAlert.count({ where: { companyId: cid, deletedAt: null, daysToExpiry: { lte: 30 } } })
+      // C4: these four queries previously carried no location filter at all,
+      // unlike every sibling query in this same Promise.all — a
+      // location-restricted user (branch/farm/warehouse/site) saw
+      // company-wide inventory valuation and alert counts through the
+      // executive dashboard regardless of their actual assignment.
+      this.prisma.stockExpiryAlert.count({ where: { companyId: cid, deletedAt: null, daysToExpiry: { lte: 30 }, ...branchF, ...warehouseF, ...siteF } })
         .catch(() => 0),
 
-      this.prisma.feedProductionOrder.count({ where: { companyId: cid, status: { in: ["DRAFT", "APPROVED"] as any[] } } })
+      this.prisma.feedProductionOrder.count({ where: { companyId: cid, status: { in: ["DRAFT", "APPROVED"] as any[] }, ...branchF, ...siteF } })
         .catch(() => 0),
 
+      // PurchaseOrder has no branch/farm/warehouse/site columns in the
+      // schema — nothing to scope by, not a bug (mirrors the equivalent
+      // query already verified clean in ai-data.service.ts).
       this.prisma.purchaseOrder.count({ where: { companyId: cid, status: "PENDING_APPROVAL" as any, deletedAt: null } })
         .catch(() => 0),
 
-      this.prisma.maintenanceRecord.count({ where: { companyId: cid, status: { in: ["OPEN", "OVERDUE", "PENDING"] as any[] } } } as any)
+      this.prisma.maintenanceRecord.count({ where: { companyId: cid, status: { in: ["OPEN", "OVERDUE", "PENDING"] as any[] }, ...branchF, ...farmF, ...warehouseF, ...siteF } } as any)
         .catch(() => 0),
 
       this.prisma.aiAlert.count({ where: { companyId: cid, status: "UNREAD" } })
         .catch(() => 0),
 
       this.prisma.stockBatch.findMany({
-        where: { companyId: cid, deletedAt: null, status: "AVAILABLE" as any, quantityRemaining: { gt: 0 }, unitCost: { not: null } },
+        where: { companyId: cid, deletedAt: null, status: "AVAILABLE" as any, quantityRemaining: { gt: 0 }, unitCost: { not: null }, ...branchF, ...farmF, ...warehouseF, ...siteF },
         select: { quantityRemaining: true, unitCost: true }
       }).then(rows => rows.reduce((sum, b) => sum + Number(b.quantityRemaining) * Number(b.unitCost), 0))
         .catch(() => 0),
@@ -575,17 +597,23 @@ export class DashboardService {
       feedProductionTrend: [{ name: "Feed produced", data: sumToMap(feedProdRows, "createdAt", "producedQuantityKg") }] as Series[],
       soyaProductionTrend: [mapToSeries(soyaBeanByDate, "Beans processed"), mapToSeries(soyaOilByDate, "Oil produced"), mapToSeries(soyaCakeByDate, "Cake produced")] as Series[],
       salesTrend: [{ name: "Sales", data: sumToMap(salesRows, "orderDate", "totalAmount") }] as Series[],
-      inventoryValueByCategory: await this.liveInventoryValueByCategory(cid),
+      inventoryValueByCategory: await this.liveInventoryValueByCategory(user, query),
       profitabilityByProduct: await this.liveProfitabilityByProduct(cid, range),
       farmPerformanceComparison: [{ name: "farm_performance_index", data: farmPerfData }] as Series[],
       branchPerformanceComparison: [{ name: "branch_performance_index", data: branchPerfData }] as Series[],
     };
   }
 
-  private async liveInventoryValueByCategory(companyId: string): Promise<Series[]> {
+  private async liveInventoryValueByCategory(user: AuthenticatedUser, query: DashboardQueryDto): Promise<Series[]> {
     try {
+      // C4: previously took only companyId — no way to scope by location at
+      // all, so a location-restricted user always saw the full company's
+      // inventory valuation broken down by category through this chart.
       const batches = await this.prisma.stockBatch.findMany({
-        where: { companyId, deletedAt: null, status: "AVAILABLE" as any, quantityRemaining: { gt: 0 }, unitCost: { not: null } },
+        where: {
+          companyId: user.companyId, deletedAt: null, status: "AVAILABLE" as any, quantityRemaining: { gt: 0 }, unitCost: { not: null },
+          ...this.liveBranchFilter(user, query), ...this.liveFarmFilter(user, query), ...this.liveWarehouseFilter(user, query), ...this.liveSiteFilter(user, query)
+        },
         select: { quantityRemaining: true, unitCost: true, product: { select: { category: { select: { name: true } } } } }
       });
       const grouped = new Map<string, number>();

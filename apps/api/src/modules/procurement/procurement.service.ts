@@ -767,53 +767,61 @@ export class ProcurementService {
 
   async createPayment(user: AuthenticatedUser, dto: CreateProcurementPaymentDto, ctx: RequestContext) {
     // L4: a payment larger than the outstanding balance was previously
-    // clamped to a 0 balanceDue instead of rejected — the excess amount
-    // was recorded on the payment itself but silently vanished from the
-    // invoice's own numbers, with no trace of the overpayment anywhere.
-    let invoice: { id: string; paidAmount: unknown; totalAmount: unknown } | null = null;
-    if (dto.invoiceId) {
-      invoice = await this.prisma.supplierInvoice.findFirst({ where: { id: dto.invoiceId, companyId: user.companyId, deletedAt: null } });
-      if (!invoice) throw new NotFoundException("Supplier invoice was not found.");
-      const outstanding = num(invoice.totalAmount) - num(invoice.paidAmount);
-      if (dto.amount > outstanding) {
-        throw new BadRequestException(`Payment of ${dto.amount} exceeds the outstanding balance of ${outstanding.toFixed(2)} on this invoice.`);
-      }
-    }
+    // clamped to a 0 balanceDue instead of rejected. This pre-transaction
+    // lookup is now just an early 404/tenant check — the real overpayment
+    // guard is the atomic updateMany inside the transaction below.
+    const invoice = dto.invoiceId
+      ? await this.prisma.supplierInvoice.findFirst({ where: { id: dto.invoiceId, companyId: user.companyId, deletedAt: null } })
+      : null;
+    if (dto.invoiceId && !invoice) throw new NotFoundException("Supplier invoice was not found.");
+    if (invoice && Number(invoice.balanceDue) <= 0) throw new BadRequestException("Invoice has no outstanding balance.");
 
-    const reference = await nextRef(this.prisma, user.companyId, "PAY");
-
-    const row = await this.prisma.procurementPayment.create({
-      data: {
-        companyId: user.companyId,
-        reference,
-        supplierId: dto.supplierId,
-        invoiceId: dto.invoiceId,
-        amount: dto.amount,
-        paymentDate: new Date(dto.paymentDate),
-        paymentMethod: dto.paymentMethod as never,
-        bankAccountId: dto.bankAccountId,
-        description: dto.description,
-        notes: dto.notes,
-        createdById: user.id,
-      },
-    });
-
-    // Update invoice paidAmount and balanceDue if linked
-    if (invoice) {
-      const newPaid = num(invoice.paidAmount) + dto.amount;
-      const newBalance = num(invoice.totalAmount) - newPaid;
-      await this.prisma.supplierInvoice.update({
-        where: { id: invoice.id },
+    // C2: previously created the payment, then updated the invoice balance
+    // as a *separate*, un-transacted write computed from the stale
+    // pre-transaction read above. Two concurrent payments against the same
+    // invoice could both pass the check, both create a payment, and race on
+    // the invoice update — whichever committed last silently discarded the
+    // other's effect on paidAmount/balanceDue, while both payments stayed
+    // recorded (a real overpayment with no trace of how it happened). Now
+    // transaction-wrapped with a guarded atomic decrement, matching the
+    // pattern already used by sales.service.ts's createPayment.
+    const data = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.procurementPayment.create({
         data: {
-          paidAmount: newPaid,
-          balanceDue: Math.max(0, newBalance),
-          status: newBalance <= 0 ? "PAID" : "MATCHED",
+          companyId: user.companyId,
+          reference: await nextRef(tx, user.companyId, "PAY"),
+          supplierId: dto.supplierId,
+          invoiceId: dto.invoiceId,
+          amount: dto.amount,
+          paymentDate: new Date(dto.paymentDate),
+          paymentMethod: dto.paymentMethod as never,
+          bankAccountId: dto.bankAccountId,
+          description: dto.description,
+          notes: dto.notes,
+          createdById: user.id,
         },
       });
-    }
 
-    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "ProcurementPayment", entityId: row.id, action: "CREATE", ...ctx });
-    return { data: row };
+      if (invoice) {
+        const decremented = await tx.supplierInvoice.updateMany({
+          where: { id: invoice.id, balanceDue: { gte: dto.amount } },
+          data: { paidAmount: { increment: dto.amount }, balanceDue: { decrement: dto.amount }, updatedById: user.id }
+        });
+        if (decremented.count === 0) {
+          throw new BadRequestException(`Payment of ${dto.amount} exceeds the outstanding balance on this invoice.`);
+        }
+        const refreshed = await tx.supplierInvoice.findUniqueOrThrow({ where: { id: invoice.id }, select: { balanceDue: true } });
+        await tx.supplierInvoice.update({
+          where: { id: invoice.id },
+          data: { status: Number(refreshed.balanceDue) <= 0 ? "PAID" : "MATCHED" }
+        });
+      }
+
+      return row;
+    });
+
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "ProcurementPayment", entityId: data.id, action: "CREATE", ...ctx });
+    return { data };
   }
 
   // â”€â”€â”€ Performance Records â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

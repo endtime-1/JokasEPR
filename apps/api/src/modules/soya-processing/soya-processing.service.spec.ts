@@ -8,7 +8,9 @@ const mockTx = {
   soyaOilOutput: { create: jest.fn() },
   soyaCakeOutput: { create: jest.fn() },
   soyaWasteRecord: { create: jest.fn() },
-  soyaProductionCost: { create: jest.fn() }
+  soyaProductionCost: { create: jest.fn() },
+  soyaInternalTransfer: { create: jest.fn() },
+  soyaSalesLink: { create: jest.fn() }
 };
 
 const mockPrisma = {
@@ -16,6 +18,7 @@ const mockPrisma = {
   product: { findFirst: jest.fn() },
   inventoryItem: { findFirst: jest.fn() },
   soyaBeanIntake: { findFirst: jest.fn() },
+  soyaProcessingBatch: { findFirst: jest.fn() },
   $transaction: jest.fn().mockImplementation((cb: (tx: typeof mockTx) => Promise<unknown>) => cb(mockTx))
 };
 const mockAudit = { write: jest.fn().mockResolvedValue(undefined) };
@@ -113,5 +116,76 @@ describe("SoyaProcessingService.createBatch — costs from the linked intake and
       where: { id: "inv-1", quantityOnHand: { gte: 40 } },
       data: { quantityOnHand: { decrement: 40 }, updatedById: "user-1" }
     });
+  });
+});
+
+describe("SoyaProcessingService.createTransfer / createSale — floor-guarded decrement (C1)", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPrisma.soyaProcessingBatch.findFirst.mockResolvedValue({ id: "batch-1", branchId: "branch-1", productionSiteId: "site-1" });
+    mockPrisma.product.findFirst.mockResolvedValue({ id: "prod-x", uomId: "uom-1" });
+    mockPrisma.inventoryItem.findFirst.mockResolvedValue({ id: "inv-1", quantityOnHand: 100 });
+    mockTx.inventoryItem.updateMany.mockResolvedValue({ count: 1 });
+    mockTx.inventoryItem.upsert.mockResolvedValue({ id: "inv-dest" });
+    mockTx.soyaInternalTransfer.create.mockResolvedValue({ id: "trf-1" });
+    mockTx.soyaSalesLink.create.mockResolvedValue({ id: "sale-1" });
+  });
+
+  const user = () => makeUser({ warehouseIds: ["wh-raw", "wh-oil", "wh-cake"], hasGlobalAccess: true });
+
+  it("createTransfer issues the decrement as a floor-guarded updateMany, not a plain unguarded update", async () => {
+    const service = makeService();
+    await service.createTransfer(
+      user(),
+      { productionBatchId: "batch-1", productId: "prod-oil", outputType: "OIL", fromWarehouseId: "wh-oil", toWarehouseId: "wh-cake", quantity: 30 } as never,
+      {}
+    );
+
+    expect(mockTx.inventoryItem.updateMany).toHaveBeenCalledWith({
+      where: { id: "inv-1", quantityOnHand: { gte: 30 } },
+      data: { quantityOnHand: { decrement: 30 }, updatedById: "user-1" }
+    });
+  });
+
+  it("createTransfer rejects when the floor-guarded decrement loses a concurrent race, instead of overdrawing stock", async () => {
+    mockTx.inventoryItem.updateMany.mockResolvedValue({ count: 0 });
+    const service = makeService();
+
+    await expect(
+      service.createTransfer(
+        user(),
+        { productionBatchId: "batch-1", productId: "prod-oil", outputType: "OIL", fromWarehouseId: "wh-oil", toWarehouseId: "wh-cake", quantity: 30 } as never,
+        {}
+      )
+    ).rejects.toThrow();
+    expect(mockTx.soyaInternalTransfer.create).not.toHaveBeenCalled();
+  });
+
+  it("createSale issues the decrement as a floor-guarded updateMany, not a plain unguarded update", async () => {
+    const service = makeService();
+    await service.createSale(
+      user(),
+      { productionBatchId: "batch-1", productId: "prod-oil", outputType: "OIL", warehouseId: "wh-oil", customerName: "Acme", quantity: 20, unitPrice: 10 } as never,
+      {}
+    );
+
+    expect(mockTx.inventoryItem.updateMany).toHaveBeenCalledWith({
+      where: { id: "inv-1", quantityOnHand: { gte: 20 } },
+      data: { quantityOnHand: { decrement: 20 }, updatedById: "user-1" }
+    });
+  });
+
+  it("createSale rejects when the floor-guarded decrement loses a concurrent race, instead of overselling stock", async () => {
+    mockTx.inventoryItem.updateMany.mockResolvedValue({ count: 0 });
+    const service = makeService();
+
+    await expect(
+      service.createSale(
+        user(),
+        { productionBatchId: "batch-1", productId: "prod-oil", outputType: "OIL", warehouseId: "wh-oil", customerName: "Acme", quantity: 20, unitPrice: 10 } as never,
+        {}
+      )
+    ).rejects.toThrow();
+    expect(mockTx.soyaSalesLink.create).not.toHaveBeenCalled();
   });
 });

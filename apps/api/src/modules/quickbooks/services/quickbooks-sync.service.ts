@@ -28,9 +28,44 @@ export class QuickBooksSyncService {
     private readonly expenseSvc: QuickBooksExpenseService
   ) {}
 
+  // C5: none of the three trigger paths into this service (the 2am full-sync
+  // cron, the 4-hourly failed-retry cron, and the user-facing "Sync Now"
+  // button, which is literal fire-and-forget with nothing stopping repeated
+  // clicks) coordinated with each other at all, and no qbXxxId column is
+  // unique at the DB layer — two overlapping syncs for the same company
+  // could both see a record as "not yet synced" and both create it in
+  // QuickBooks, producing a real duplicate financial record. A per-company
+  // lock (same atomic-create-wins pattern used by the rate-limit guards and
+  // the duty-reminders cron lock) makes only one sync able to run for a
+  // given company at a time; a call that loses the race no-ops instead of
+  // proceeding.
+  private async acquireSyncLock(companyId: string, ttlMs = 10 * 60_000): Promise<boolean> {
+    const key = `qb-sync-lock:${companyId}`;
+    const now = new Date();
+    const windowEnd = new Date(now.getTime() + ttlMs);
+    try {
+      await this.prisma.loginRateLimit.create({ data: { key, attempts: 1, windowEnd } });
+      return true;
+    } catch {
+      const reclaimed = await this.prisma.loginRateLimit
+        .updateMany({ where: { key, windowEnd: { lte: now } }, data: { windowEnd } })
+        .catch(() => ({ count: 0 }));
+      return reclaimed.count > 0;
+    }
+  }
+
+  private async releaseSyncLock(companyId: string): Promise<void> {
+    await this.prisma.loginRateLimit.deleteMany({ where: { key: `qb-sync-lock:${companyId}` } }).catch(() => undefined);
+  }
+
   async syncAll(companyId: string, triggeredById?: string): Promise<void> {
     const conn = await this.qbLogger.getConnection(companyId);
     if (!conn?.isActive) return;
+
+    if (!(await this.acquireSyncLock(companyId))) {
+      this.logger.warn(`Skipped full sync for company ${companyId} — another sync is already in progress`);
+      return;
+    }
 
     const logId = await this.qbLogger.begin({ companyId, connectionId: conn.id, operation: QBSyncOperation.FULL_SYNC, triggeredById });
     this.logger.log(`Starting full sync for company ${companyId}`);
@@ -48,30 +83,48 @@ export class QuickBooksSyncService {
     } catch (err) {
       await this.qbLogger.fail(logId, (err as Error).message);
       this.logger.error(`Full sync failed for company ${companyId}: ${(err as Error).message}`);
+    } finally {
+      await this.releaseSyncLock(companyId);
     }
   }
 
   async syncEntity(companyId: string, entity: SyncEntity, triggeredById?: string): Promise<void> {
-    switch (entity) {
-      case "customers": return this.customerSvc.syncAll(companyId, triggeredById);
-      case "vendors": return this.vendorSvc.syncAll(companyId, triggeredById);
-      case "items": return this.itemSvc.syncAll(companyId, triggeredById);
-      case "invoices": return this.invoiceSvc.syncAll(companyId, triggeredById);
-      case "payments": return this.paymentSvc.syncAll(companyId, triggeredById);
-      case "bills": return this.billSvc.syncAll(companyId, triggeredById);
-      case "expenses": return this.expenseSvc.syncAll(companyId, triggeredById);
+    if (!(await this.acquireSyncLock(companyId))) {
+      this.logger.warn(`Skipped ${entity} sync for company ${companyId} — another sync is already in progress`);
+      return;
+    }
+    try {
+      switch (entity) {
+        case "customers": return await this.customerSvc.syncAll(companyId, triggeredById);
+        case "vendors": return await this.vendorSvc.syncAll(companyId, triggeredById);
+        case "items": return await this.itemSvc.syncAll(companyId, triggeredById);
+        case "invoices": return await this.invoiceSvc.syncAll(companyId, triggeredById);
+        case "payments": return await this.paymentSvc.syncAll(companyId, triggeredById);
+        case "bills": return await this.billSvc.syncAll(companyId, triggeredById);
+        case "expenses": return await this.expenseSvc.syncAll(companyId, triggeredById);
+      }
+    } finally {
+      await this.releaseSyncLock(companyId);
     }
   }
 
   async syncRecord(companyId: string, entity: SyncEntity, recordId: string): Promise<void> {
-    switch (entity) {
-      case "customers": return this.customerSvc.syncOne(companyId, recordId);
-      case "vendors": return this.vendorSvc.syncOne(companyId, recordId);
-      case "items": return this.itemSvc.syncOne(companyId, recordId);
-      case "invoices": return this.invoiceSvc.syncOne(companyId, recordId);
-      case "payments": return this.paymentSvc.syncOne(companyId, recordId);
-      case "bills": return this.billSvc.syncOne(companyId, recordId);
-      case "expenses": return this.expenseSvc.syncOne(companyId, recordId);
+    if (!(await this.acquireSyncLock(companyId))) {
+      this.logger.warn(`Skipped ${entity} record sync for company ${companyId} — another sync is already in progress`);
+      return;
+    }
+    try {
+      switch (entity) {
+        case "customers": return await this.customerSvc.syncOne(companyId, recordId);
+        case "vendors": return await this.vendorSvc.syncOne(companyId, recordId);
+        case "items": return await this.itemSvc.syncOne(companyId, recordId);
+        case "invoices": return await this.invoiceSvc.syncOne(companyId, recordId);
+        case "payments": return await this.paymentSvc.syncOne(companyId, recordId);
+        case "bills": return await this.billSvc.syncOne(companyId, recordId);
+        case "expenses": return await this.expenseSvc.syncOne(companyId, recordId);
+      }
+    } finally {
+      await this.releaseSyncLock(companyId);
     }
   }
 

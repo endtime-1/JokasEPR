@@ -247,6 +247,10 @@ export class MarketPlanningService {
 
   async submitTarget(user: AuthenticatedUser, id: string, context: RequestContext) {
     const target = await this.requireTarget(user, id);
+    // C3: submitTarget previously had no status guard at all.
+    if (target.status !== "DRAFT") {
+      throw new BadRequestException(`Market target is already ${target.status.toLowerCase()} and cannot be submitted again.`);
+    }
     const updated = await this.prisma.marketTarget.update({ where: { id }, data: { status: "SUBMITTED", updatedById: user.id } });
     await this.prisma.marketTargetItem.updateMany({ where: { companyId: user.companyId, marketTargetId: id, deletedAt: null }, data: { approvalStatus: "SUBMITTED", updatedById: user.id } });
     await this.writeAudit(user, "UPDATE", "MarketTarget", id, `Submitted market target ${target.targetNumber}`, context, { branchId: target.branchId ?? undefined, productionSiteId: target.productionSiteId ?? undefined });
@@ -307,10 +311,21 @@ export class MarketPlanningService {
     const totalPlannedKg = items.reduce((sum, item) => sum + num(item.targetQuantityKg), 0);
 
     const plan = await this.prisma.$transaction(async (tx) => {
-      await tx.marketTarget.update({
-        where: { id },
+      // C3: previously an unguarded update with no status check at all — a
+      // double-click or retry on approveTarget re-approved an already-
+      // approved target and ran every downstream step (MRP, procurement
+      // recommendations, production execution) a second time, physically
+      // double-consuming raw materials and creating a second batch of
+      // finished goods. The guarded updateMany makes only the first request
+      // to see status: SUBMITTED able to advance it — a concurrent second
+      // request now sees count: 0 and is rejected instead of proceeding.
+      const advanced = await tx.marketTarget.updateMany({
+        where: { id, status: "SUBMITTED" },
         data: { status: "APPROVED", branchId, productionSiteId: site.id, approvedById: user.id, approvedAt: new Date(), updatedById: user.id }
       });
+      if (advanced.count === 0) {
+        throw new BadRequestException(`Market target is not in SUBMITTED status and cannot be approved.`);
+      }
       await tx.marketTargetItem.updateMany({
         where: { companyId: user.companyId, marketTargetId: id, deletedAt: null },
         data: { approvalStatus: "APPROVED", approvedById: user.id, approvedAt: new Date(), updatedById: user.id }

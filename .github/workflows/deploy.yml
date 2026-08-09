@@ -553,3 +553,35 @@ jobs:
           else
             echo "crontab not usable on this host — ~/jokas-db-backup.sh written; start.js's checkDailyBackup() runs it automatically around 02:00 daily."
           fi
+
+      - name: Setup uploaded-files backup cron
+        if: always()
+        run: |
+          # C8: apps/api/main.ts creates its upload dir at
+          # process.cwd()/uploads — start.js spawns the API with cwd set to
+          # apps/api (see start.js's launch("jokas-api", ...) call), so the
+          # real, always-used path in production is
+          # $APP_DIR/apps/api/uploads (employee photos, HR documents, product
+          # images). It happens to survive normal deploys today only because
+          # "Extract files to APP_DIR" uses `tar -xzf ... -C "$APP_DIR"`
+          # (extraction never deletes files absent from the archive, unlike
+          # rsync --delete) — but there was zero backup of it, so disk
+          # corruption or an accidental delete would lose it permanently
+          # with no recovery path, unlike the database which has a daily
+          # dump. This mirrors the DB backup cron above: same 02:00 slot,
+          # same 7-day retention, same start.js polling fallback (crontab is
+          # a read-only stub on this Hostinger plan — confirmed 2026-08-06).
+          mkdir -p "$HOME/jokas-files-backups"
+          # $HOME/domains/... is written literally (not $APP_DIR) because this
+          # string becomes the body of a standalone script run later by cron /
+          # start.js's poller, in its own shell, long after this workflow step ends.
+          FILES_BACKUP_CMD="UPLOADS_DIR=\$HOME/domains/jokasfarms.com/nodejs/apps/api/uploads; if [ -d \"\$UPLOADS_DIR\" ] && [ -n \"\$(ls -A \"\$UPLOADS_DIR\" 2>/dev/null)\" ]; then tar -czf \$HOME/jokas-files-backups/.tmp-files.tar.gz -C \"\$UPLOADS_DIR\" . 2>\$HOME/jokas-files-backups/backup-error.log && mv \$HOME/jokas-files-backups/.tmp-files.tar.gz \$HOME/jokas-files-backups/files-\$(date +\\%Y\\%m\\%d).tar.gz && find \$HOME/jokas-files-backups -name 'files-*.tar.gz' -mtime +7 -delete; else echo \"\$(date): uploads dir missing or empty, nothing to back up\" >> \$HOME/jokas-files-backups/backup-error.log; fi"
+          printf '#!/bin/bash\n%s\n' "$FILES_BACKUP_CMD" > "$HOME/jokas-files-backup.sh"
+          chmod +x "$HOME/jokas-files-backup.sh"
+          CRONTAB_BIN="$(command -v crontab 2>/dev/null || echo /usr/bin/crontab)"
+          if [ -x "$CRONTAB_BIN" ]; then
+            ("$CRONTAB_BIN" -l 2>/dev/null | grep -v 'jokas-files-backups'; echo "0 2 * * * $FILES_BACKUP_CMD") | "$CRONTAB_BIN" -
+            echo "Uploaded-files backup cron installed (daily 02:00, 7-day retention → ~/jokas-files-backups/)."
+          else
+            echo "crontab not usable on this host — ~/jokas-files-backup.sh written; start.js's checkDailyFilesBackup() runs it automatically around 02:00 daily."
+          fi
