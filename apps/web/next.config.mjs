@@ -55,6 +55,16 @@ const nextConfig = {
         key: "Permissions-Policy",
         value: "camera=(), microphone=(), geolocation=()",
       },
+      {
+        // (L2) Forces HTTPS for a year on repeat visits, including subdomains.
+        // No `preload` — that's a one-way submission to browsers' built-in
+        // preload list and hard to reverse; not worth it unless every
+        // subdomain is verified HTTPS-only long-term. Safe to set here even
+        // if Hostinger's TLS layer also sets one — browsers just use
+        // whichever header actually arrives.
+        key: "Strict-Transport-Security",
+        value: "max-age=31536000; includeSubDomains",
+      },
       // (M11) Content-Security-Policy is set in middleware.ts instead of here —
       // it needs a fresh nonce per request for script-src, which a static header
       // here can't provide. Setting it in both places would emit two CSP headers,

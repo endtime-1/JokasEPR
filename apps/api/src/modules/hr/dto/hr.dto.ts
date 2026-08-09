@@ -224,6 +224,11 @@ export class CreateTaskDto {
 export class UpdateTaskStatusDto {
   @IsEnum(TaskStatus) status!: TaskStatus;
   @IsOptional() @IsString() @MaxLength(500) notes?: string;
+  // (L1) Optional conflict-detection token: the task's updatedAt as the
+  // caller last saw it. If provided and the task has since moved on, the
+  // update is rejected as a conflict instead of silently overwriting
+  // whichever edit (offline mobile vs. online web) happened to sync last.
+  @IsOptional() @IsDateString() expectedUpdatedAt?: string;
 }
 
 export class AssignTaskDto {

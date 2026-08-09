@@ -4,15 +4,31 @@ import { Phone, Mail, MessageCircle, MapPin, Send, ArrowRight, Clock } from "luc
 import { Logo } from "@/components/Logo";
 import { useState, FormEvent } from "react";
 import type { Metadata } from "next";
+import { api } from "@/lib/api";
 
 export default function ContactPage() {
   const [sent, setSent] = useState(false);
   const [form, setForm] = useState({ name: "", phone: "", subject: "", message: "" });
   const [focused, setFocused] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  const [submitError, setSubmitError] = useState("");
 
-  function handleSubmit(e: FormEvent) {
+  // (L5) Previously just set sent=true — nothing was ever transmitted
+  // anywhere, so "We'll Reply By Next Business Day" was a false promise.
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    setSent(true);
+    setSubmitError("");
+    setSending(true);
+    try {
+      await api.contact.submit(form);
+      setSent(true);
+    } catch (err) {
+      setSubmitError(
+        err instanceof Error ? err.message : "Could not send your message. Please call or WhatsApp us instead."
+      );
+    } finally {
+      setSending(false);
+    }
   }
 
   function field(key: keyof typeof form, value: string) {
@@ -194,6 +210,11 @@ export default function ContactPage() {
                   </div>
                 ) : (
                   <form onSubmit={handleSubmit} className="space-y-4">
+                    {submitError && (
+                      <div className="rounded-2xl border border-red-400/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                        {submitError}
+                      </div>
+                    )}
                     <div className="grid gap-4 sm:grid-cols-2">
                       <div>
                         <label className="mb-2 block text-xs font-semibold text-white/50">
@@ -254,11 +275,12 @@ export default function ContactPage() {
                     </div>
                     <button
                       type="submit"
-                      className="group flex w-full items-center justify-center gap-2 rounded-2xl bg-brand py-4 text-sm font-bold text-white shadow-brand transition-all hover:bg-brandDark hover:shadow-[0_8px_32px_rgba(245,130,32,0.5)] active:scale-[0.98]"
+                      disabled={sending}
+                      className="group flex w-full items-center justify-center gap-2 rounded-2xl bg-brand py-4 text-sm font-bold text-white shadow-brand transition-all hover:bg-brandDark hover:shadow-[0_8px_32px_rgba(245,130,32,0.5)] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       <Send size={15} />
-                      Send Message
-                      <ArrowRight size={14} className="transition-transform group-hover:translate-x-0.5" />
+                      {sending ? "Sending…" : "Send Message"}
+                      {!sending && <ArrowRight size={14} className="transition-transform group-hover:translate-x-0.5" />}
                     </button>
                   </form>
                 )}

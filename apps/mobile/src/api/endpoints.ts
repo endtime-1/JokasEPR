@@ -73,7 +73,7 @@ export const submitSalesOrder = (payload: SubmitSalesOrder) =>
 export const fetchMyTasks = () =>
   apiFetch<ApiEnvelope<Task[]>>("/hr/tasks/my?limit=50");
 
-export const updateTaskStatus = (id: string, payload: { status: string; notes?: string }) =>
+export const updateTaskStatus = (id: string, payload: { status: string; notes?: string; expectedUpdatedAt?: string }) =>
   apiFetch<ApiEnvelope<unknown>>(`/hr/tasks/${id}/status`, { method: "PATCH", body: JSON.stringify(payload) });
 
 // Hipro Predictive

@@ -102,12 +102,21 @@ export function TaskUpdateScreen() {
     setFormErr("");
     setSaving(true);
     try {
-      await updateTaskStatus(taskId, { status: newStatus, notes: newNotes || undefined });
+      // (L1) expectedUpdatedAt lets the server detect if this task was
+      // changed elsewhere (e.g. on the web) since we loaded it, instead of
+      // silently overwriting that other edit.
+      await updateTaskStatus(taskId, { status: newStatus, notes: newNotes || undefined, expectedUpdatedAt: task?.updatedAt });
       Alert.alert("Task Updated", "Status updated successfully.", [
         { text: "OK", onPress: () => navigation.goBack() },
       ]);
     } catch (e: any) {
-      Alert.alert("Error", e?.message ?? "Could not update task.");
+      if (e?.status === 409) {
+        Alert.alert("Task Changed", e?.message ?? "This task was updated elsewhere. Reloading the latest version.", [
+          { text: "OK", onPress: () => load() },
+        ]);
+      } else {
+        Alert.alert("Error", e?.message ?? "Could not update task.");
+      }
     } finally {
       setSaving(false);
     }
@@ -280,7 +289,7 @@ export function TaskUpdateScreen() {
                   { text: "Reopen", onPress: async () => {
                     setSaving(true);
                     try {
-                      await updateTaskStatus(taskId, { status: "OPEN", notes: "Reopened by manager." });
+                      await updateTaskStatus(taskId, { status: "OPEN", notes: "Reopened by manager.", expectedUpdatedAt: task?.updatedAt });
                       load();
                     } catch (e: any) {
                       Alert.alert("Error", e?.message ?? "Could not reopen task.");

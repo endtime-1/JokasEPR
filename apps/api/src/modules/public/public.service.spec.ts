@@ -8,9 +8,10 @@ const mockPrisma = {
   salesOrder: { create: jest.fn() }
 };
 const mockConfig = { get: jest.fn().mockReturnValue("company-1") };
+const mockEmail = { send: jest.fn().mockResolvedValue(true) };
 
 function makeService() {
-  return new PublicService(mockPrisma as never, mockConfig as never);
+  return new PublicService(mockPrisma as never, mockConfig as never, mockEmail as never);
 }
 
 function makeCompany() {
@@ -118,5 +119,46 @@ describe("PublicService.placeOrder — validates the order before creating a per
     await service.placeOrder(makeDto([{ productId: "prod-1", quantity: 2 }]));
 
     expect(mockPrisma.customer.create).toHaveBeenCalled();
+  });
+});
+
+describe("PublicService.submitContact — actually sends the message somewhere (L5)", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockConfig.get.mockImplementation((_key: string, fallback?: string) => fallback);
+  });
+
+  const dto = { name: "Jane Doe", phone: "0555555555", message: "Interested in bulk broiler feed." };
+
+  it("emails the submission to the configured contact address", async () => {
+    mockEmail.send.mockResolvedValue(true);
+    const service = makeService();
+
+    const result = await service.submitContact(dto as never);
+
+    expect(result.sent).toBe(true);
+    expect(mockEmail.send).toHaveBeenCalledWith(
+      "info@akokosolutionsgh.com",
+      expect.any(String),
+      expect.stringContaining("Jane Doe")
+    );
+  });
+
+  it("escapes HTML in the submitted fields before embedding them in the email body", async () => {
+    mockEmail.send.mockResolvedValue(true);
+    const service = makeService();
+
+    await service.submitContact({ ...dto, name: "<img src=x onerror=alert(1)>" } as never);
+
+    const html = mockEmail.send.mock.calls[0][2] as string;
+    expect(html).not.toContain("<img src=x onerror=alert(1)>");
+    expect(html).toContain("&lt;img");
+  });
+
+  it("throws instead of falsely claiming success when the email fails to send", async () => {
+    mockEmail.send.mockResolvedValue(false);
+    const service = makeService();
+
+    await expect(service.submitContact(dto as never)).rejects.toThrow(/call or WhatsApp/);
   });
 });

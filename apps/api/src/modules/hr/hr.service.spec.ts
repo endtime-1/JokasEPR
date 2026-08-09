@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Logger } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Logger } from "@nestjs/common";
 import { Test, TestingModule } from "@nestjs/testing";
 import { AuthenticatedUser } from "@jokas/shared";
 import { HRService } from "./hr.service";
@@ -13,7 +13,7 @@ const mockPrisma = {
   payrollRecord: { findMany: jest.fn(), count: jest.fn(), create: jest.fn(), findFirst: jest.fn(), updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
   disciplinaryRecord: { findMany: jest.fn(), create: jest.fn() },
   grievanceRecord: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
-  task: { findMany: jest.fn(), count: jest.fn() },
+  task: { findMany: jest.fn(), count: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
   leaveRequest: { findMany: jest.fn(), count: jest.fn(), create: jest.fn(), findFirst: jest.fn(), updateMany: jest.fn(), findUniqueOrThrow: jest.fn(), groupBy: jest.fn() },
   leaveBalance: { findUnique: jest.fn(), update: jest.fn(), create: jest.fn() },
   leavePolicy: { findFirst: jest.fn() },
@@ -643,5 +643,43 @@ describe("HRService.bankExportCsv — neutralizes formula-injection payloads (M1
     const csv = res.send.mock.calls[0][0] as string;
     expect(csv).toContain(`"GCB Bank"`);
     expect(csv).toContain(`"1234567890"`);
+  });
+});
+
+describe("HRService.updateTaskStatus — conflict detection on the one true edit-sync endpoint (L1)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const updatedAt = new Date("2026-08-01T10:00:00.000Z");
+
+  it("updates normally when no expectedUpdatedAt is supplied (backward compatible)", async () => {
+    mockPrisma.task.findFirst.mockResolvedValue({ id: "task-1", status: "OPEN", updatedAt });
+    mockPrisma.task.update.mockResolvedValue({ id: "task-1", status: "IN_PROGRESS" });
+    const service = makeService();
+
+    await expect(service.updateTaskStatus(makeUser(), "task-1", { status: "IN_PROGRESS" } as never, {})).resolves.toBeDefined();
+  });
+
+  it("updates normally when expectedUpdatedAt matches the task's current updatedAt", async () => {
+    mockPrisma.task.findFirst.mockResolvedValue({ id: "task-1", status: "OPEN", updatedAt });
+    mockPrisma.task.update.mockResolvedValue({ id: "task-1", status: "IN_PROGRESS" });
+    const service = makeService();
+
+    await expect(
+      service.updateTaskStatus(makeUser(), "task-1", { status: "IN_PROGRESS", expectedUpdatedAt: updatedAt.toISOString() } as never, {})
+    ).resolves.toBeDefined();
+    expect(mockPrisma.task.update).toHaveBeenCalled();
+  });
+
+  it("rejects as a conflict when the task changed since the caller last saw it", async () => {
+    // The exact bug this fixes: an offline mobile edit and a meanwhile online
+    // web edit both target this task — whichever syncs last must not
+    // silently overwrite the other without at least surfacing a conflict.
+    mockPrisma.task.findFirst.mockResolvedValue({ id: "task-1", status: "COMPLETED", updatedAt: new Date("2026-08-01T11:00:00.000Z") });
+    const service = makeService();
+
+    await expect(
+      service.updateTaskStatus(makeUser(), "task-1", { status: "IN_PROGRESS", expectedUpdatedAt: updatedAt.toISOString() } as never, {})
+    ).rejects.toThrow(ConflictException);
+    expect(mockPrisma.task.update).not.toHaveBeenCalled();
   });
 });

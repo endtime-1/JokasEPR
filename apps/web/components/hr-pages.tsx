@@ -1968,7 +1968,7 @@ export function PerformancePage() {
 // ─── Task Detail ─────────────────────────────────────────────────────────────
 
 type TaskDetail = {
-  id: string; title: string; description?: string; taskType?: string; priority: string; status: string; dueDate?: string; notes?: string;
+  id: string; title: string; description?: string; taskType?: string; priority: string; status: string; dueDate?: string; notes?: string; updatedAt?: string;
   branch?: { name: string }; farm?: { name: string }; productionSite?: { name: string };
   createdBy?: { fullName: string };
   assignments: Array<{ id: string; status: string; notes?: string; employee: { id: string; fullName: string; code: string } }>;
@@ -1997,11 +1997,12 @@ export function TaskDetailPage({ id }: { id: string }) {
     setSaving(true);
     setStatusError("");
     try {
-      await apiFetch(`/hr/tasks/${id}/status`, { method: "PATCH", body: JSON.stringify({ status: statusValue, notes: statusNotes || undefined }) });
+      await apiFetch(`/hr/tasks/${id}/status`, { method: "PATCH", body: JSON.stringify({ status: statusValue, notes: statusNotes || undefined, expectedUpdatedAt: data?.updatedAt }) });
       load();
       setStatusNotes("");
     } catch (err: unknown) {
       setStatusError(err instanceof Error ? err.message : "Failed to update status");
+      if (err instanceof Error && err.message.includes("changed by someone else")) load();
     } finally {
       setSaving(false);
     }

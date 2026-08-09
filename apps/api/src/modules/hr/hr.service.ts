@@ -1,4 +1,4 @@
-﻿import { BadRequestException, ForbiddenException, Injectable, InternalServerErrorException, Logger, NotFoundException } from "@nestjs/common";
+﻿import { BadRequestException, ConflictException, ForbiddenException, Injectable, InternalServerErrorException, Logger, NotFoundException } from "@nestjs/common";
 import { Response } from "express";
 import { AuthenticatedUser } from "@jokas/shared";
 import { Prisma } from "@prisma/client";
@@ -724,6 +724,15 @@ export class HRService {
   async updateTaskStatus(user: AuthenticatedUser, id: string, dto: UpdateTaskStatusDto, ctx: RequestContext) {
     const row = await this.prisma.task.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
     if (!row) throw new NotFoundException("Task not found");
+
+    // (L1) Task status is the one true edit-sync endpoint (every other sync
+    // endpoint is a create, where offline/online can't conflict by design).
+    // Without this, whichever edit — an offline mobile change or a
+    // meanwhile online web change — happens to sync last silently wins,
+    // discarding the other with no trace.
+    if (dto.expectedUpdatedAt && new Date(dto.expectedUpdatedAt).getTime() !== row.updatedAt.getTime()) {
+      throw new ConflictException(`This task was changed by someone else since you last viewed it (now "${row.status}"). Refresh and reapply your update.`);
+    }
 
     const updated = await this.prisma.task.update({
       where: { id },

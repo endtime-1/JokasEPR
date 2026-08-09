@@ -7,6 +7,12 @@ const securityHeaders = [
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
   {
+    // (L2) See apps/web/next.config.mjs for the same header — no `preload`,
+    // safe to set alongside whatever Hostinger's TLS layer may also set.
+    key: "Strict-Transport-Security",
+    value: "max-age=31536000; includeSubDomains",
+  },
+  {
     key: "Content-Security-Policy",
     value: [
       "default-src 'self'",

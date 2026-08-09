@@ -1,10 +1,22 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger } from "@nestjs/common";
+import { plainToInstance } from "class-transformer";
+import { validate } from "class-validator";
 import { UserStatus } from "@prisma/client";
 import { AuthenticatedUser, PERMISSIONS, PermissionKey } from "@jokas/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { PoultryService } from "../poultry/poultry.service";
 import { InventoryService } from "../inventory/inventory.service";
 import { HRService } from "../hr/hr.service";
+import {
+  CreateDailyPoultryRecordDto,
+  CreateEggProductionRecordDto,
+  CreateFeedConsumptionRecordDto,
+  CreateMedicationRecordDto,
+  CreateMortalityRecordDto,
+  CreateVaccinationRecordDto
+} from "../poultry/dto/poultry.dto";
+import { MobileStockMovementDto } from "../inventory/dto/inventory.dto";
+import { UpdateTaskStatusDto } from "../hr/dto/hr.dto";
 import { BatchSyncDto, SyncItemDto, SyncItemResult, SyncRecordsQueryDto } from "./dto/sync.dto";
 
 type RequestContext = { ipAddress?: string; userAgent?: string };
@@ -147,9 +159,27 @@ export class SyncService {
     }
   }
 
+  // (L9) payload arrives as SyncItemDto.payload: Record<string, unknown> —
+  // NestJS's ValidationPipe only runs automatically on @Body()-bound
+  // controller parameters, so a payload routed through here as `as any`
+  // reached every service method with NONE of its target DTO's validation
+  // (@MaxLength, @IsEnum, @Max, etc.) ever enforced — a full bypass of every
+  // rule protecting the equivalent direct REST route, for anyone using
+  // /sync/batch instead. Runs the exact same plainToInstance+validate step
+  // ValidationPipe performs, so both paths are validated identically.
+  private async validateDto<T extends object>(cls: new () => T, payload: Record<string, unknown>): Promise<T> {
+    const instance = plainToInstance(cls, payload);
+    const errors = await validate(instance as object, { whitelist: true });
+    if (errors.length) {
+      const messages = errors.flatMap((e) => Object.values(e.constraints ?? {}));
+      throw new BadRequestException(messages.length ? messages : "Invalid sync payload.");
+    }
+    return instance;
+  }
+
   private async routeToService(user: AuthenticatedUser, item: SyncItemDto, ctx: RequestContext) {
     const ep = item.endpoint;
-    const payload = item.payload as any;
+    const payload = item.payload;
 
     const rule = ENDPOINT_PERMISSIONS.find((r) => r.match(ep));
     if (rule && !user.hasGlobalAccess && !user.permissions.includes(rule.permission)) {
@@ -157,31 +187,31 @@ export class SyncService {
     }
 
     if (ep.includes("/poultry/daily-records")) {
-      return this.poultryService.createDailyRecord(user, payload, ctx);
+      return this.poultryService.createDailyRecord(user, await this.validateDto(CreateDailyPoultryRecordDto, payload), ctx);
     }
     if (ep.includes("/poultry/mortality-records")) {
-      return this.poultryService.createMortality(user, payload, ctx);
+      return this.poultryService.createMortality(user, await this.validateDto(CreateMortalityRecordDto, payload), ctx);
     }
     if (ep.includes("/poultry/egg-production-records")) {
-      return this.poultryService.createEggs(user, payload, ctx);
+      return this.poultryService.createEggs(user, await this.validateDto(CreateEggProductionRecordDto, payload), ctx);
     }
     if (ep.includes("/poultry/feed-consumption-records")) {
-      return this.poultryService.createFeed(user, payload, ctx);
+      return this.poultryService.createFeed(user, await this.validateDto(CreateFeedConsumptionRecordDto, payload), ctx);
     }
     if (ep.includes("/poultry/medication-records")) {
-      return this.poultryService.createMedication(user, payload, ctx);
+      return this.poultryService.createMedication(user, await this.validateDto(CreateMedicationRecordDto, payload), ctx);
     }
     if (ep.includes("/poultry/vaccination-records")) {
-      return this.poultryService.createVaccination(user, payload, ctx);
+      return this.poultryService.createVaccination(user, await this.validateDto(CreateVaccinationRecordDto, payload), ctx);
     }
     if (ep.includes("/inventory/stock-movements")) {
-      return this.inventoryService.createStockMovement(user, payload, ctx);
+      return this.inventoryService.createStockMovement(user, await this.validateDto(MobileStockMovementDto, payload), ctx);
     }
 
     // PATCH /hr/tasks/:id/status
     const taskMatch = ep.match(/\/hr\/tasks\/([a-f0-9-]{36})\/status/i);
     if (taskMatch) {
-      return this.hrService.updateTaskStatus(user, taskMatch[1], payload, ctx);
+      return this.hrService.updateTaskStatus(user, taskMatch[1], await this.validateDto(UpdateTaskStatusDto, payload), ctx);
     }
 
     throw new BadRequestException(`Unsupported sync endpoint: ${ep}`);

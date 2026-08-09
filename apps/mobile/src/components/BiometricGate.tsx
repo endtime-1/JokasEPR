@@ -13,9 +13,15 @@ export function BiometricGate({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     (async () => {
-      const hasHw = await LocalAuthentication.hasHardwareAsync();
-      const enrolled = hasHw && (await LocalAuthentication.isEnrolledAsync());
-      setHasBiometrics(enrolled);
+      // (L6) isEnrolledAsync() only reports biometric (fingerprint/face)
+      // enrollment — a user with a device PIN/pattern/password set but no
+      // fingerprint registered got hasBiometrics=false, which disabled the
+      // app-lock feature entirely rather than falling back to that PIN.
+      // getEnrolledLevelAsync() reports SECRET (PIN/pattern/password) or
+      // BIOMETRIC, so the lock now arms whenever the device has ANY form of
+      // authentication set up, not biometrics specifically.
+      const level = await LocalAuthentication.getEnrolledLevelAsync();
+      setHasBiometrics(level !== LocalAuthentication.SecurityLevel.NONE);
     })();
   }, []);
 

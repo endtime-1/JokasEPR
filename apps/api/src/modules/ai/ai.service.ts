@@ -102,20 +102,56 @@ export class AiService {
     return selected;
   }
 
-  private enforceRateLimit(userId: string): void {
-    const now = Date.now();
+  // (L7) rateLimitMap was purely in-process — if the API ever runs as
+  // multiple forks (PM2 cluster mode, multiple Passenger workers), each fork
+  // has its own separate Map, so a user's requests spread across forks
+  // effectively multiply their real limit by the fork count. Backed by the
+  // same LoginRateLimit table + upsert pattern already used by the
+  // storefront rate-limit guards, so the count is shared across every
+  // process; the in-memory Map is now only a fallback for when the DB is
+  // transiently unreachable.
+  private async enforceRateLimit(userId: string): Promise<void> {
+    const key = `ai:chat:${userId}`;
+    const now = new Date();
+    const windowEnd = new Date(now.getTime() + AI_RATE_WINDOW_MS);
 
+    try {
+      const existing = await this.prisma.loginRateLimit.findUnique({ where: { key } });
+
+      if (!existing || existing.windowEnd <= now) {
+        await this.prisma.loginRateLimit.upsert({
+          where: { key },
+          create: { key, attempts: 1, windowEnd },
+          update: { attempts: 1, windowEnd },
+        });
+        return;
+      }
+      if (existing.attempts >= AI_RATE_LIMIT) {
+        throw new ForbiddenException(`AI rate limit reached. Max ${AI_RATE_LIMIT} requests per minute.`);
+      }
+      await this.prisma.loginRateLimit.update({
+        where: { key },
+        data: { attempts: { increment: 1 } },
+      });
+    } catch (err) {
+      if (err instanceof ForbiddenException) throw err;
+      this.logger.error("AI rate limit DB error — using in-memory fallback", (err as Error).message);
+      this.memCheckRateLimit(userId, now.getTime(), windowEnd.getTime());
+    }
+  }
+
+  private memCheckRateLimit(userId: string, nowMs: number, windowEndMs: number): void {
     // Evict expired entries to prevent unbounded Map growth under long uptimes.
     // Only scan when map exceeds 500 entries to avoid doing this every call.
     if (this.rateLimitMap.size > 500) {
       for (const [key, val] of this.rateLimitMap) {
-        if (now > val.windowEnd) this.rateLimitMap.delete(key);
+        if (nowMs > val.windowEnd) this.rateLimitMap.delete(key);
       }
     }
 
     const entry = this.rateLimitMap.get(userId);
-    if (!entry || now > entry.windowEnd) {
-      this.rateLimitMap.set(userId, { count: 1, windowEnd: now + AI_RATE_WINDOW_MS });
+    if (!entry || nowMs > entry.windowEnd) {
+      this.rateLimitMap.set(userId, { count: 1, windowEnd: windowEndMs });
       return;
     }
     if (entry.count >= AI_RATE_LIMIT) {
@@ -130,7 +166,7 @@ export class AiService {
     model: string, systemPrompt: string, messages: AiMessageParam[], maxTokens = 1024,
     userId?: string
   ): Promise<{ reply: string; inputTokens: number; outputTokens: number }> {
-    if (userId) this.enforceRateLimit(userId);
+    if (userId) await this.enforceRateLimit(userId);
     const provider = this.detectProvider(model);
     const key = this.keyFor(provider);
     if (!key) {

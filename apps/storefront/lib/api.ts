@@ -78,6 +78,14 @@ export interface PublicOrder {
   total: number;
 }
 
+export interface ContactPayload {
+  name: string;
+  phone: string;
+  email?: string;
+  subject?: string;
+  message: string;
+}
+
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}/public${path}`, {
     cache: "no-store",
@@ -118,5 +126,9 @@ export const api = {
       post<{ storefrontRef: string }>("/orders", payload),
     status: (ref: string): Promise<PublicOrder> =>
       get<PublicOrder>(`/orders/${ref}`),
+  },
+  contact: {
+    submit: (payload: ContactPayload): Promise<{ sent: boolean }> =>
+      post<{ sent: boolean }>("/contact", payload),
   },
 };

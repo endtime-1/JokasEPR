@@ -14,6 +14,7 @@ import { PermissionsGuard } from "../../common/guards/permissions.guard";
 import { StorefrontBrowseRateLimitGuard, StorefrontOrderRateLimitGuard } from "../../common/guards/storefront-rate-limit.guard";
 import { validateAndCleanImageUpload } from "../../common/utils/validate-image-magic";
 import { PlacePublicOrderDto, UpdateOrderStatusDto } from "./dto/public-order.dto";
+import { PublicContactDto } from "./dto/public-contact.dto";
 import { UpdatePublicProductDto } from "./dto/update-public-product.dto";
 import { PublicService } from "./public.service";
 
@@ -52,6 +53,12 @@ export class PublicController {
   @Get("orders/:ref")
   orderStatus(@Param("ref") ref: string) {
     return this.service.getOrderStatus(ref).then((data) => ({ data }));
+  }
+
+  @UseGuards(StorefrontOrderRateLimitGuard)
+  @Post("contact")
+  submitContact(@Body() dto: PublicContactDto) {
+    return this.service.submitContact(dto).then((data) => ({ data }));
   }
 
   /* ── Storefront admin endpoints (JWT + SALES_MANAGE required) ─── */

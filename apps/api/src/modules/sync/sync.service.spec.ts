@@ -27,7 +27,9 @@ function stockMovementItem(overrides: Record<string, unknown> = {}) {
     endpoint: "/inventory/stock-movements",
     method: "POST",
     module: "inventory",
-    payload: { inventoryItemId: "inv-1", quantity: 5 },
+    // (L9) A real MobileStockMovementDto-shaped payload — the sync path now
+    // validates payload against the target DTO, same as the direct REST route.
+    payload: { inventoryItemId: "3fa85f64-5717-4562-b3fc-2c963f66afa6", movementType: "ADJUSTMENT_IN", quantity: 5 },
     ...overrides
   };
 }
@@ -139,5 +141,58 @@ describe("SyncService.batchSync / processSyncItem — claim-before-work idempote
     expect(mockPrisma.mobileSyncRecord.create).not.toHaveBeenCalled();
     expect(mockInventoryService.createStockMovement).not.toHaveBeenCalled();
     expect(result.data.results[0].status).toBe("duplicate");
+  });
+});
+
+describe("SyncService.routeToService — payload is validated against its target DTO, not passed through raw (L9)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("rejects a payload missing required fields instead of forwarding it unvalidated", async () => {
+    // Previously `item.payload as any` reached the service method with NONE
+    // of MobileStockMovementDto's rules enforced (@IsUUID, @IsEnum, @Min) —
+    // a full bypass of the same validation the direct REST route applies.
+    mockPrisma.mobileSyncRecord.findUnique.mockResolvedValue(null);
+    mockPrisma.mobileSyncRecord.create.mockResolvedValue({ id: "rec-1" });
+    const service = makeService();
+
+    const result = await service.batchSync(
+      makeUser(),
+      { records: [stockMovementItem({ payload: { inventoryItemId: "not-a-uuid" } })] } as never,
+      {}
+    );
+
+    expect(mockInventoryService.createStockMovement).not.toHaveBeenCalled();
+    expect(result.data.results[0].status).toBe("failed");
+    expect(mockPrisma.mobileSyncRecord.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "FAILED" }) })
+    );
+  });
+
+  it("still forwards a genuinely valid payload to the service unchanged", async () => {
+    mockPrisma.mobileSyncRecord.findUnique.mockResolvedValue(null);
+    mockPrisma.mobileSyncRecord.create.mockResolvedValue({ id: "rec-1" });
+    mockInventoryService.createStockMovement.mockResolvedValue({ data: { id: "mvmt-1" } });
+    const service = makeService();
+
+    const result = await service.batchSync(makeUser(), { records: [stockMovementItem()] } as never, {});
+
+    expect(mockInventoryService.createStockMovement).toHaveBeenCalled();
+    expect(result.data.results[0].status).toBe("synced");
+  });
+
+  it("strips unexpected extra fields from the payload before forwarding it (whitelist)", async () => {
+    mockPrisma.mobileSyncRecord.findUnique.mockResolvedValue(null);
+    mockPrisma.mobileSyncRecord.create.mockResolvedValue({ id: "rec-1" });
+    mockInventoryService.createStockMovement.mockResolvedValue({ data: { id: "mvmt-1" } });
+    const service = makeService();
+
+    await service.batchSync(
+      makeUser(),
+      { records: [stockMovementItem({ payload: { inventoryItemId: "3fa85f64-5717-4562-b3fc-2c963f66afa6", movementType: "ADJUSTMENT_IN", quantity: 5, notAFieldOnTheDto: "sneaky" } })] } as never,
+      {}
+    );
+
+    const forwarded = mockInventoryService.createStockMovement.mock.calls[0][1];
+    expect(forwarded).not.toHaveProperty("notAFieldOnTheDto");
   });
 });

@@ -2,7 +2,7 @@
 // can proxy the request to the internal NestJS process (via next.config rewrites).
 // If NEXT_PUBLIC_API_URL is explicitly set (e.g. in dev or a custom deploy) use it;
 // otherwise default to the relative path which works on any host.
-const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "/api/v1").trim();
+export const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "/api/v1").trim();
 
 // Module-level in-memory cache for GET responses.
 // Survives React component mount/unmount so navigating away and back shows data instantly.
@@ -76,12 +76,6 @@ export type ApiEnvelope<T> = {
   data: T;
   meta?: Record<string, unknown>;
 };
-
-// Tokens are now stored in HttpOnly cookies — these are stubs kept for call-site compatibility.
-export function getAccessToken(): string | null { return null; }
-export function getRefreshToken(): string | null { return null; }
-export function setSession(_accessToken: string, _refreshToken: string): void {}
-export function clearSession(): void {}
 
 // Three distinct refresh outcomes.
 // EXPORTED so auth-context shares this singleton — concurrent callers must not each fire

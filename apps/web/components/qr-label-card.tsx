@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Download, Printer, QrCode, ScanBarcode } from "lucide-react";
-import { ApiEnvelope, apiFetch, getAccessToken } from "../lib/api";
+import { API_URL, ApiEnvelope, apiFetch } from "../lib/api";
 
 export type QrEntityType =
   | "FEED_PRODUCTION_BATCH"
@@ -93,9 +93,13 @@ export function QrLabelCard({ entityType, entityId }: { entityType: QrEntityType
 
   async function printLabel() {
     if (!label) return;
-    const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "";
-    const response = await fetch(`${apiBase}/qr/${label.entityType}/${label.entityId}/label.svg`, {
-      headers: { authorization: `Bearer ${getAccessToken() ?? ""}` }
+    // (L3) Was building the URL from a bare, unprefixed env var (missing the
+    // /api/v1 rewrite prefix in the default same-origin deployment — a real
+    // 404) and authenticating via getAccessToken(), a stub that always
+    // returned null left over from before auth moved to HttpOnly cookies.
+    // Reuses the same API_URL + credentials pattern every other fetch here uses.
+    const response = await fetch(`${API_URL}/qr/${label.entityType}/${label.entityId}/label.svg`, {
+      credentials: "include"
     });
     const svgText = await response.text();
     const safeDataUrl = svgDataUrl(svgText);

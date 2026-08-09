@@ -1,16 +1,52 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, InternalServerErrorException, Logger, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { PrismaService } from "../prisma/prisma.service";
+import { EmailService } from "../notifications/email.service";
 import { PlacePublicOrderDto } from "./dto/public-order.dto";
+import { PublicContactDto } from "./dto/public-contact.dto";
 import { UpdatePublicProductDto } from "./dto/update-public-product.dto";
 import { randomBytes } from "crypto";
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 @Injectable()
 export class PublicService {
+  private readonly logger = new Logger(PublicService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly email: EmailService,
   ) {}
+
+  // (L5) The contact page's form previously only did setSent(true) on submit
+  // — nothing was ever transmitted anywhere. Emails the submission to the
+  // configured contact address (falls back to the address the page itself
+  // displays) so a real person actually receives it.
+  async submitContact(dto: PublicContactDto) {
+    const to = this.config.get<string>("CONTACT_EMAIL", "info@akokosolutionsgh.com");
+    const html = `
+      <p><b>New storefront contact message</b></p>
+      <p><b>Name:</b> ${escapeHtml(dto.name)}<br/>
+      <b>Phone:</b> ${escapeHtml(dto.phone)}<br/>
+      ${dto.email ? `<b>Email:</b> ${escapeHtml(dto.email)}<br/>` : ""}
+      ${dto.subject ? `<b>Subject:</b> ${escapeHtml(dto.subject)}<br/>` : ""}</p>
+      <p>${escapeHtml(dto.message).replace(/\n/g, "<br/>")}</p>
+    `;
+    const sent = await this.email.send(to, dto.subject ? `Contact form: ${dto.subject}` : "New storefront contact message", html);
+    if (!sent) {
+      this.logger.error(`Contact form email failed to send to ${to} (SMTP not configured or send failed)`);
+      throw new InternalServerErrorException("Could not send your message right now. Please call or WhatsApp us instead.");
+    }
+    return { sent: true };
+  }
 
   // Resolve the storefront company. Prefer STOREFRONT_COMPANY_ID env var (explicit).
   // Name-based fallback is kept for backwards compatibility but logs a warning because
