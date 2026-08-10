@@ -2198,6 +2198,7 @@ model SalesOrder {
   storefrontCustomerPhone   String?
   storefrontCustomerEmail   String?
   storefrontDeliveryAddress String?
+  idempotencyKey            String? @db.VarChar(100)
 
   createdById       String?         
   updatedById       String?         
@@ -2216,6 +2217,7 @@ model SalesOrder {
   deliveryNotes DeliveryNote[]
 
   @@unique([companyId, orderNumber])
+  @@unique([companyId, idempotencyKey])
   @@index([companyId])
   @@index([branchId])
   @@index([customerId])

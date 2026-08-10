@@ -70,6 +70,7 @@ export interface PlaceOrderPayload {
   deliveryAddress: string;
   notes?: string;
   lines: OrderLine[];
+  idempotencyKey?: string;
 }
 
 export interface PublicOrder {

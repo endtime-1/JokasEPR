@@ -123,6 +123,16 @@ export class PublicService {
   async placeOrder(dto: PlacePublicOrderDto) {
     const companyId = await this.getStorefrontCompanyId();
 
+    // A client retry after a dropped response (timeout, connection reset —
+    // it never learned whether the first attempt landed) previously had no
+    // way to avoid placing a second real order for the same checkout. A
+    // resend carrying the same idempotencyKey replays the original result
+    // instead of creating a duplicate.
+    if (dto.idempotencyKey) {
+      const existing = await this.findOrderByIdempotencyKey(companyId, dto.idempotencyKey);
+      if (existing) return existing;
+    }
+
     const company = await this.prisma.company.findFirst({
       where: { id: companyId, status: "ACTIVE" },
       include: {
@@ -171,64 +181,96 @@ export class PublicService {
       throw new BadRequestException(`These products are currently unavailable for online ordering: ${names}.`);
     }
 
-    // (M19) Was created before any of the validation above — every rejected
-    // attempt (unavailable product, below minOrderQty, unpriced product) still
-    // left a permanent, orphaned Customer row behind with no order attached.
-    // Always create a new anonymous customer record per storefront order —
-    // reusing an existing customer by phone alone allows phone spoofing to
-    // access another customer's account history and credit terms.
-    const customer = await this.prisma.customer.create({
-      data: {
-        companyId:  company.id,
-        branchId:   branch.id,
-        code:       `WEB-${randomBytes(4).toString("hex").toUpperCase()}`,
-        name:       dto.customerName,
-        phone:      dto.customerPhone,
-        email:      dto.customerEmail,
-        address:    dto.deliveryAddress,
-      },
-    });
-
     const subtotal      = orderItems.reduce((sum, i) => sum + i.total, 0);
     // Both references are fully random — sequential numbers allow order enumeration
     // and count + 1 has a race condition under concurrent requests.
     const storefrontRef = `AKO-${randomBytes(6).toString("hex").toUpperCase()}`;
     const orderNumber   = `SO-WEB-${randomBytes(5).toString("hex").toUpperCase()}`;
 
-    await this.prisma.salesOrder.create({
-      data: {
-        companyId:                  company.id,
-        branchId:                   branch.id,
-        customerId:                 customer.id,
-        warehouseId:                warehouse.id,
-        orderNumber,
-        orderDate:                  new Date(),
-        status:                     "PENDING_STOCK_APPROVAL",
-        subtotal,
-        totalAmount:                subtotal,
-        balanceDue:                 subtotal,
-        notes:                      dto.notes,
-        isStorefrontOrder:          true,
-        storefrontRef,
-        storefrontCustomerName:     dto.customerName,
-        storefrontCustomerPhone:    dto.customerPhone,
-        storefrontCustomerEmail:    dto.customerEmail,
-        storefrontDeliveryAddress:  dto.deliveryAddress,
-        items: {
-          create: orderItems.map((i) => ({
+    try {
+      // (M19) Customer + SalesOrder used to be created as two separate
+      // unguarded calls after all validation above — a failure between them
+      // (or a losing concurrent retry racing the idempotencyKey check above)
+      // could still leave a permanent, orphaned Customer row with no order
+      // attached. One transaction means either both land or neither does.
+      // Always create a new anonymous customer record per storefront order —
+      // reusing an existing customer by phone alone allows phone spoofing to
+      // access another customer's account history and credit terms.
+      await this.prisma.$transaction(async (tx) => {
+        const customer = await tx.customer.create({
+          data: {
             companyId:  company.id,
-            productId:  i.product.id,
-            quantity:   i.line.quantity,
-            unitPrice:  i.unitPrice,
-            lineTotal:  i.total,
-          })),
-        },
-      },
-    });
+            branchId:   branch.id,
+            code:       `WEB-${randomBytes(4).toString("hex").toUpperCase()}`,
+            name:       dto.customerName,
+            phone:      dto.customerPhone,
+            email:      dto.customerEmail,
+            address:    dto.deliveryAddress,
+          },
+        });
+
+        await tx.salesOrder.create({
+          data: {
+            companyId:                  company.id,
+            branchId:                   branch.id,
+            customerId:                 customer.id,
+            warehouseId:                warehouse.id,
+            orderNumber,
+            orderDate:                  new Date(),
+            status:                     "PENDING_STOCK_APPROVAL",
+            subtotal,
+            totalAmount:                subtotal,
+            balanceDue:                 subtotal,
+            notes:                      dto.notes,
+            isStorefrontOrder:          true,
+            storefrontRef,
+            storefrontCustomerName:     dto.customerName,
+            storefrontCustomerPhone:    dto.customerPhone,
+            storefrontCustomerEmail:    dto.customerEmail,
+            storefrontDeliveryAddress:  dto.deliveryAddress,
+            idempotencyKey:             dto.idempotencyKey,
+            items: {
+              create: orderItems.map((i) => ({
+                companyId:  company.id,
+                productId:  i.product.id,
+                quantity:   i.line.quantity,
+                unitPrice:  i.unitPrice,
+                lineTotal:  i.total,
+              })),
+            },
+          },
+        });
+      });
+    } catch (err: unknown) {
+      // The pre-check above has a race window — two requests carrying the
+      // same idempotencyKey can both pass it and both start a transaction.
+      // The unique (companyId, idempotencyKey) index makes the DB the final
+      // arbiter: the loser's insert fails with P2002, and instead of
+      // surfacing that as an error, it replays the winner's result.
+      if (dto.idempotencyKey && (err as { code?: string })?.code === "P2002") {
+        const existing = await this.findOrderByIdempotencyKey(companyId, dto.idempotencyKey);
+        if (existing) return existing;
+      }
+      throw err;
+    }
 
     return {
       storefrontRef,
       orderNumber,
+      status: "PENDING",
+      message: "Your order has been received. Our team will confirm and arrange delivery.",
+      estimatedResponse: "Within 2 business hours",
+    };
+  }
+
+  private async findOrderByIdempotencyKey(companyId: string, idempotencyKey: string) {
+    const order = await this.prisma.salesOrder.findFirst({
+      where: { companyId, idempotencyKey, deletedAt: null },
+    });
+    if (!order) return null;
+    return {
+      storefrontRef: order.storefrontRef!,
+      orderNumber: order.orderNumber,
       status: "PENDING",
       message: "Your order has been received. Our team will confirm and arrange delivery.",
       estimatedResponse: "Within 2 business hours",

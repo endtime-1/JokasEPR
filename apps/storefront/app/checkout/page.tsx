@@ -15,6 +15,20 @@ const FIELDS = [
   { id: "notes", label: "Notes", icon: <FileText size={14} />, type: "textarea", required: false, placeholder: "Delivery instructions, questions…" },
 ] as const;
 
+const IDEMPOTENCY_KEY_STORAGE = "checkout:idempotencyKey";
+
+// Stable per checkout attempt: a network error/timeout retry reuses the same
+// key so the backend can recognize a resend instead of placing a duplicate
+// order. Persisted in sessionStorage (not component state) so it survives a
+// page reload after a dropped response too, not just an in-place retry.
+function getIdempotencyKey(): string {
+  const existing = window.sessionStorage.getItem(IDEMPOTENCY_KEY_STORAGE);
+  if (existing) return existing;
+  const key = crypto.randomUUID();
+  window.sessionStorage.setItem(IDEMPOTENCY_KEY_STORAGE, key);
+  return key;
+}
+
 export default function CheckoutPage() {
   const { items, totalPrice, clear } = useCart();
   const router = useRouter();
@@ -48,7 +62,9 @@ export default function CheckoutPage() {
           productId: i.product.id,
           quantity: i.qty,
         })),
+        idempotencyKey: getIdempotencyKey(),
       });
+      window.sessionStorage.removeItem(IDEMPOTENCY_KEY_STORAGE);
       clear();
       router.push(`/order/${result.storefrontRef}`);
     } catch (err) {

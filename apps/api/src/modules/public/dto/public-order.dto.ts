@@ -31,4 +31,8 @@ export class PlacePublicOrderDto {
   @IsNotEmpty() @IsString() @MaxLength(500) deliveryAddress!: string;
   @IsOptional() @IsString() @MaxLength(1000) notes?: string;
   @IsArray() @ArrayMinSize(1) @ArrayMaxSize(50) @ValidateNested({ each: true }) @Type(() => PublicOrderLineDto) lines!: PublicOrderLineDto[];
+  // A client-generated key stable across retries of the same checkout attempt
+  // (network error, timeout) so a resubmit replays the original order instead
+  // of creating a second one.
+  @IsOptional() @IsString() @MaxLength(100) idempotencyKey?: string;
 }
