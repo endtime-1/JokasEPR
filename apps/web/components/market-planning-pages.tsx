@@ -280,7 +280,7 @@ export function CreateMarketTargetPage({ period }: { period: "WEEKLY" | "MONTHLY
 export function MarketTargetDetailsPage() {
   const params = useParams<{ id: string }>();
   const { options, optionsError } = useOptions();
-  const [target, setTarget] = useState<TargetDetail | null>(null);
+  const [target, setTarget] = useState<TargetDetail | null>(() => getCachedFirst<ApiEnvelope<TargetDetail>>(`/market-planning/targets/${params.id}`)?.data ?? null);
   const [approve, setApprove] = useState({ productionSiteId: "", centralWarehouseId: "", notes: "" });
   const [loadError, setLoadError] = useState("");
   async function load() {
@@ -319,7 +319,7 @@ export function MarketTargetDetailsPage() {
 
 export function TargetAdjustmentPage() {
   const params = useParams<{ id: string }>();
-  const [target, setTarget] = useState<TargetDetail | null>(null);
+  const [target, setTarget] = useState<TargetDetail | null>(() => getCachedFirst<ApiEnvelope<TargetDetail>>(`/market-planning/targets/${params.id}`)?.data ?? null);
   const [itemId, setItemId] = useState("");
   const [adjustmentPercent, setAdjustmentPercent] = useState("10");
   const [reason, setReason] = useState("Demand change");
@@ -349,8 +349,8 @@ export function TargetAdjustmentPage() {
 }
 
 export function ProductionPlanPage() {
-  const [plans, setPlans] = useState<PlanRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [plans, setPlans] = useState<PlanRow[]>(() => getCachedFirst<ApiEnvelope<PlanRow[]>>("/market-planning/production-plans")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/market-planning/production-plans"));
   const [planId, setPlanId] = useState("");
   const [message, setMessage] = useState("");
   const [loadError, setLoadError] = useState("");
@@ -374,7 +374,7 @@ export function ProductionPlanPage() {
 }
 
 export function MaterialRequirementPlanningPage() {
-  const [plans, setPlans] = useState<PlanRow[]>([]);
+  const [plans, setPlans] = useState<PlanRow[]>(() => getCachedFirst<ApiEnvelope<PlanRow[]>>("/market-planning/production-plans")?.data ?? []);
   const [mrps, setMrps] = useState<MrpRow[]>([]);
   const [planId, setPlanId] = useState("");
   const [loadError, setLoadError] = useState("");
@@ -399,9 +399,9 @@ export function MaterialRequirementPlanningPage() {
 }
 
 export function InventoryAvailabilityCheckPage() {
-  const [mrps, setMrps] = useState<MrpRow[]>([]);
-  const [selected, setSelected] = useState<MrpRow | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [mrps, setMrps] = useState<MrpRow[]>(() => getCachedFirst<ApiEnvelope<MrpRow[]>>("/market-planning/mrp")?.data ?? []);
+  const [selected, setSelected] = useState<MrpRow | null>(() => getCachedFirst<ApiEnvelope<MrpRow[]>>("/market-planning/mrp")?.data?.[0] ?? null);
+  const [loading, setLoading] = useState(!hasCached("/market-planning/mrp"));
   const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
@@ -526,7 +526,7 @@ export function ProcurementRecommendationPage({ convert = false }: { convert?: b
 
 export function ProductionExecutionPage() {
   const { options, optionsError } = useOptions();
-  const [plans, setPlans] = useState<PlanRow[]>([]);
+  const [plans, setPlans] = useState<PlanRow[]>(() => getCachedFirst<ApiEnvelope<PlanRow[]>>("/market-planning/production-plans")?.data ?? []);
   const [plan, setPlan] = useState<PlanRow | null>(null);
   const [form, setForm] = useState({ planId: "", productionPlanItemId: "", rawMaterialWarehouseId: "", finishedGoodsWarehouseId: "", producedQuantityKg: "1000", wastageKg: "0" });
   const [message, setMessage] = useState("");
@@ -560,7 +560,7 @@ export function ProductionExecutionPage() {
 }
 
 export function TargetVsActualReportPage({ demandOnly = false }: { demandOnly?: boolean }) {
-  const [rows, setRows] = useState<ReportRow[]>([]);
+  const [rows, setRows] = useState<ReportRow[]>(() => getCachedFirst<ApiEnvelope<ReportRow[]>>(demandOnly ? "/market-planning/reports/demand-vs-sales" : "/market-planning/reports/target-vs-actual")?.data ?? []);
   useEffect(() => {
     apiFetch<ApiEnvelope<ReportRow[]>>(demandOnly ? "/market-planning/reports/demand-vs-sales" : "/market-planning/reports/target-vs-actual")
       .then((res) => setRows(res.data ?? []))

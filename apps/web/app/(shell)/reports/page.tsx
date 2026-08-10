@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { DataTable } from "../../../components/data-table";
 import { FormField } from "../../../components/form-field";
-import { ApiEnvelope, apiFetch, downloadReport } from "../../../lib/api";
+import { ApiEnvelope, apiFetch, downloadReport, getCachedFirst } from "../../../lib/api";
 
 type ReportDefinition = {
   id: string;
@@ -65,10 +65,12 @@ const emptyOptions: ReportOptions = {
 const controlClass =
   "min-h-10 rounded-lg border border-line bg-white px-3 text-sm text-ink outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/15";
 
+const initialReportCatalog = () => getCachedFirst<ApiEnvelope<ReportDefinition[]>>("/reports")?.data ?? [];
+
 export default function ReportsPage() {
-  const [catalog, setCatalog] = useState<ReportDefinition[]>([]);
+  const [catalog, setCatalog] = useState<ReportDefinition[]>(initialReportCatalog);
   const [options, setOptions] = useState<ReportOptions>(emptyOptions);
-  const [activeId, setActiveId] = useState("");
+  const [activeId, setActiveId] = useState(() => initialReportCatalog()[0]?.id ?? "");
   const [filters, setFilters] = useState({
     startDate: "",
     endDate: "",
@@ -81,7 +83,11 @@ export default function ReportsPage() {
     customerId: "",
     supplierId: ""
   });
-  const [result, setResult] = useState<ReportResult | null>(null);
+  const [result, setResult] = useState<ReportResult | null>(() => {
+    const id = initialReportCatalog()[0]?.id ?? "";
+    if (!id) return null;
+    return getCachedFirst<ApiEnvelope<ReportResult>>(`/reports/${id}`)?.data ?? null;
+  });
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [catalogSearch, setCatalogSearch] = useState("");

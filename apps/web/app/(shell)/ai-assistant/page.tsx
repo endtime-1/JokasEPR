@@ -12,7 +12,7 @@ import {
   Send,
   Trash2
 } from "lucide-react";
-import { apiFetch, ApiEnvelope } from "../../../lib/api";
+import { apiFetch, ApiEnvelope, getCachedFirst } from "../../../lib/api";
 
 type Message = {
   id: string;
@@ -255,7 +255,7 @@ function SessionItem({
 }
 
 export default function AiAssistantPage() {
-  const [sessions, setSessions] = useState<Session[]>([]);
+  const [sessions, setSessions] = useState<Session[]>(() => getCachedFirst<ApiEnvelope<Session[]>>("/ai/sessions")?.data ?? []);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [models, setModels] = useState<AiModel[]>([]);

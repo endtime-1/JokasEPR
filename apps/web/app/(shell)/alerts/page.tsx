@@ -15,7 +15,7 @@ import {
   TrendingUp,
   Zap
 } from "lucide-react";
-import { apiFetch, ApiEnvelope, downloadReport } from "../../../lib/api";
+import { apiFetch, ApiEnvelope, downloadReport, getCachedFirst, hasCached } from "../../../lib/api";
 
 type AiAlert = {
   id: string;
@@ -250,10 +250,13 @@ function AlertCard({
 const PAGE_SIZE = 25;
 
 export default function AlertsPage() {
-  const [alerts, setAlerts] = useState<AiAlert[]>([]);
-  const [forecasts, setForecasts] = useState<AiForecast[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [alerts, setAlerts] = useState<AiAlert[]>(() => getCachedFirst<ApiEnvelope<AiAlert[]>>("/alerts")?.data ?? []);
+  const [forecasts, setForecasts] = useState<AiForecast[]>(() => getCachedFirst<ApiEnvelope<AiForecast[]>>("/alerts/forecasts")?.data ?? []);
+  const [total, setTotal] = useState(() => {
+    const cached = getCachedFirst<ApiEnvelope<AiAlert[]>>("/alerts");
+    return Number(cached?.meta?.total ?? cached?.data?.length ?? 0);
+  });
+  const [loading, setLoading] = useState(!hasCached("/alerts"));
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
   const [filterCategory, setFilterCategory] = useState("");

@@ -17,7 +17,7 @@ import {
   Truck,
   Zap
 } from "lucide-react";
-import { ApiEnvelope, apiFetch } from "../lib/api";
+import { ApiEnvelope, apiFetch, getCachedFirst, hasCached } from "../lib/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -306,8 +306,8 @@ function QuickActions() {
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 
 export function MarketPlanningDashboardPage() {
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<DashboardData | null>(() => getCachedFirst<ApiEnvelope<DashboardData>>("/market-planning/dashboard")?.data ?? null);
+  const [loading, setLoading] = useState(!hasCached("/market-planning/dashboard"));
   const [error, setError] = useState("");
   const [lastRefresh, setLastRefresh] = useState(new Date());
 

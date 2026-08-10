@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, CircleCheckBig, LoaderCircle, Mail, MessageCircle, Save, Smartphone } from "lucide-react";
-import { apiFetch, ApiEnvelope } from "../../../../lib/api";
+import { apiFetch, ApiEnvelope, getCachedFirst, hasCached } from "../../../../lib/api";
 
 type NotificationConfig = {
   emailEnabled: boolean;
@@ -14,14 +14,17 @@ type NotificationConfig = {
 };
 
 export default function NotificationConfigPage() {
-  const [config, setConfig] = useState<NotificationConfig>({
-    emailEnabled: false,
-    emailFromAddress: "",
-    emailFromName: "",
-    smsEnabled: false,
-    whatsappEnabled: false
+  const [config, setConfig] = useState<NotificationConfig>(() => {
+    const cached = getCachedFirst<ApiEnvelope<NotificationConfig>>("/notifications/config")?.data;
+    return {
+      emailEnabled: cached?.emailEnabled ?? false,
+      emailFromAddress: cached?.emailFromAddress ?? "",
+      emailFromName: cached?.emailFromName ?? "",
+      smsEnabled: cached?.smsEnabled ?? false,
+      whatsappEnabled: cached?.whatsappEnabled ?? false
+    };
   });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!hasCached("/notifications/config"));
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");

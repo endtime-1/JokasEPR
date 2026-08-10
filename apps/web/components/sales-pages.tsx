@@ -184,8 +184,13 @@ type DashData = {
 };
 
 export function SalesDashboardPage() {
-  const [data, setData] = useState<DashData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<DashData | null>(() => {
+    // Sales service double-wraps: controller { data: service { data: {...} } }
+    const raw = getCachedFirst<{ data: { data: DashData } | DashData }>("/sales/dashboard");
+    if (!raw) return null;
+    return (raw.data as { data?: DashData }).data ?? (raw.data as DashData);
+  });
+  const [loading, setLoading] = useState(!hasCached("/sales/dashboard"));
   const [error, setError] = useState("");
 
   async function load() {
@@ -610,7 +615,7 @@ type CustomerDetail = Customer & {
 };
 
 export function CustomerDetailsPage({ id }: { id: string }) {
-  const [cust, setCust] = useState<CustomerDetail | null>(null);
+  const [cust, setCust] = useState<CustomerDetail | null>(() => getCachedFirst<ApiEnvelope<CustomerDetail>>(`/sales/customers/${id}`)?.data ?? null);
   const [loadError, setLoadError] = useState("");
   const [tab, setTab] = useState("orders");
 
@@ -1349,7 +1354,7 @@ type ReportData = {
 };
 
 export function SalesReportsPage() {
-  const [data, setData] = useState<ReportData | null>(null);
+  const [data, setData] = useState<ReportData | null>(() => getCachedFirst<ApiEnvelope<ReportData>>("/sales/reports")?.data ?? null);
   const [dateFrom, setDateFrom] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10));
   const [dateTo, setDateTo] = useState(new Date().toISOString().slice(0, 10));
   const [loading, setLoading] = useState(false);

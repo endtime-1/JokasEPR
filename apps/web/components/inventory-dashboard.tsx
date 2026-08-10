@@ -19,7 +19,7 @@ import {
   Zap
 } from "lucide-react";
 import { InventoryShell } from "./inventory-shell";
-import { ApiEnvelope, apiFetch } from "../lib/api";
+import { ApiEnvelope, apiFetch, getCachedFirst, hasCached } from "../lib/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -498,8 +498,8 @@ function QuickActions() {
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 
 export function InventoryDashboardPage() {
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<DashboardData | null>(() => getCachedFirst<ApiEnvelope<DashboardData>>("/inventory/dashboard")?.data ?? null);
+  const [loading, setLoading] = useState(!hasCached("/inventory/dashboard"));
   const [error, setError] = useState("");
   const [lastRefresh, setLastRefresh] = useState(new Date());
 

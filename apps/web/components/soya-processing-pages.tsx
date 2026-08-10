@@ -248,8 +248,8 @@ export function SoyaQualityPage() {
 }
 
 export function SoyaStockPage({ type }: { type: "oil" | "cake" }) {
-  const [rows, setRows] = useState<Record<string, unknown>[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>(`/soya-processing/${type}-stock`)?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached(`/soya-processing/${type}-stock`));
   const [loadError, setLoadError] = useState("");
   useEffect(() => {
     setLoading(true);

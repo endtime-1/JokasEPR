@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { DataTable } from "../../../../components/data-table";
-import { ApiEnvelope, apiFetch } from "../../../../lib/api";
+import { ApiEnvelope, apiFetch, getCachedFirst } from "../../../../lib/api";
 
 type Role = {
   id: string;
@@ -12,7 +12,7 @@ type Role = {
 };
 
 export default function RolesPage() {
-  const [roles, setRoles] = useState<Role[]>([]);
+  const [roles, setRoles] = useState<Role[]>(() => getCachedFirst<ApiEnvelope<Role[]>>("/identity/roles")?.data ?? []);
 
   useEffect(() => {
     apiFetch<ApiEnvelope<Role[]>>("/identity/roles")

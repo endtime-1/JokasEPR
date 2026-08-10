@@ -182,11 +182,17 @@ function dashPeriodDates(p: string): { startDate: string; endDate: string } {
 
 export function FinanceDashboardPage() {
   useFinancePageHeader("Business Overview", "Financial performance at a glance");
-  const [dash, setDash] = useState<Record<string, unknown> | null>(null);
-  const [chart, setChart] = useState<{ months: ChartMonth[]; expensesByCategory: DonutSlice[] } | null>(null);
-  const [debtors, setDebtors] = useState<Record<string, unknown>[]>([]);
+  const [dash, setDash] = useState<Record<string, unknown> | null>(() => {
+    const { startDate, endDate } = dashPeriodDates("this_month");
+    return getCachedFirst<ApiEnvelope<Record<string, unknown>>>(`/finance/dashboard?startDate=${startDate}&endDate=${endDate}`)?.data ?? null;
+  });
+  const [chart, setChart] = useState<{ months: ChartMonth[]; expensesByCategory: DonutSlice[] } | null>(() => getCachedFirst<ApiEnvelope<{ months: ChartMonth[]; expensesByCategory: DonutSlice[] }>>("/finance/dashboard/chart?months=6")?.data ?? null);
+  const [debtors, setDebtors] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/finance/debtors")?.data ?? []);
   const [period, setPeriod] = useState("this_month");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => {
+    const { startDate, endDate } = dashPeriodDates("this_month");
+    return !hasCached(`/finance/dashboard?startDate=${startDate}&endDate=${endDate}`) || !hasCached("/finance/dashboard/chart?months=6") || !hasCached("/finance/debtors");
+  });
   const [loadError, setLoadError] = useState("");
   const [refresh, setRefresh] = useState(0);
   const [approving, setApproving] = useState<string | null>(null);
@@ -1517,7 +1523,7 @@ export function JournalEntriesPage() {
 
 export function ProfitLossReportPage() {
   useFinancePageHeader("Profit & Loss Report", "Revenue vs expenses for a selected period.");
-  const [reports, setReports] = useState<Record<string, unknown>[]>([]);
+  const [reports, setReports] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/finance/reports/profit-loss")?.data ?? []);
   const [startDate, setStartDate] = useState(() => { const d = new Date(); d.setDate(1); return d.toISOString().slice(0, 10); });
   const [endDate, setEndDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [current, setCurrent] = useState<Record<string, unknown> | null>(null);
@@ -1582,7 +1588,7 @@ export function ProfitLossReportPage() {
 
 export function CashFlowReportPage() {
   useFinancePageHeader("Cash Flow Report", "Cash inflows and outflows for a selected period.");
-  const [reports, setReports] = useState<Record<string, unknown>[]>([]);
+  const [reports, setReports] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/finance/reports/cash-flow")?.data ?? []);
   const [startDate, setStartDate] = useState(() => { const d = new Date(); d.setDate(1); return d.toISOString().slice(0, 10); });
   const [endDate, setEndDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [current, setCurrent] = useState<Record<string, unknown> | null>(null);
@@ -1721,7 +1727,7 @@ export function ProductProfitabilityPage() {
 
 export function BatchProfitabilityPage() {
   useFinancePageHeader("Batch Profitability", "Profitability of flock, feed, and soya processing batches.");
-  const [records, setRecords] = useState<Record<string, unknown>[]>([]);
+  const [records, setRecords] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/finance/reports/batch-profitability")?.data ?? []);
   const [showForm, setShowForm] = useState(false);
   const [batchTypeFilter, setBatchTypeFilter] = useState("");
   const [form, setForm] = useState({ batchType: "FLOCK", batchId: "", batchReference: "", batchName: "", periodStart: "", periodEnd: "", totalRevenue: "", totalCost: "" });
@@ -1820,8 +1826,8 @@ export function BatchProfitabilityPage() {
 
 export function DebtorsPage() {
   useFinancePageHeader("Debtors (A/R)", "Outstanding customer invoices — amounts customers owe you.");
-  const [rows, setRows] = useState<Record<string, unknown>[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/finance/debtors")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/finance/debtors"));
   const [loadError, setLoadError] = useState("");
   const [refresh, setRefresh] = useState(0);
 
@@ -1872,8 +1878,8 @@ export function DebtorsPage() {
 
 export function CreditorsPage() {
   useFinancePageHeader("Creditors (A/P)", "Supplier payment history — amounts paid to vendors.");
-  const [rows, setRows] = useState<Record<string, unknown>[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/finance/creditors")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/finance/creditors"));
 
   useEffect(() => {
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/finance/creditors")
@@ -1913,7 +1919,7 @@ export function CreditorsPage() {
 
 export function ExpenseCategoriesPage() {
   useFinancePageHeader("Expense Categories", "Organise expenses into categories for reporting and GL mapping.");
-  const [categories, setCategories] = useState<Record<string, unknown>[]>([]);
+  const [categories, setCategories] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/finance/expense-categories")?.data ?? []);
   const [accounts, setAccounts] = useState<{ id: string; code: string; name: string }[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: "", code: "", description: "", accountId: "" });
@@ -2023,7 +2029,7 @@ const ACCOUNT_TYPES = ["ASSET", "LIABILITY", "EQUITY", "REVENUE", "EXPENSE"] as 
 
 export function ChartOfAccountsPage() {
   useFinancePageHeader("Chart of Accounts", "Ledger structure — assets, liabilities, equity, revenue, and expenses.");
-  const [accounts, setAccounts] = useState<AccountRow[]>([]);
+  const [accounts, setAccounts] = useState<AccountRow[]>(() => getCached<ApiEnvelope<AccountRow[]>>("/finance/accounts")?.data ?? []);
   const [showForm, setShowForm] = useState(false);
   const [search, setSearch] = useState("");
   const [refresh, setRefresh] = useState(0);

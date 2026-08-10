@@ -15,7 +15,7 @@ import {
   X
 } from "lucide-react";
 import Link from "next/link";
-import { ApiEnvelope, apiFetch, getCachedFirst } from "../../../../lib/api";
+import { ApiEnvelope, apiFetch, getCachedFirst, hasCached } from "../../../../lib/api";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -131,10 +131,10 @@ function StatCard({
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function ProductCatalogPage() {
-  const [data, setData] = useState<CatalogData | null>(null);
+  const [data, setData] = useState<CatalogData | null>(() => getCachedFirst<ApiEnvelope<CatalogData>>("/settings/catalog/products")?.data ?? null);
   const [uoms, setUoms] = useState<Option[]>(() => getCachedFirst<ApiEnvelope<{ unitsOfMeasure: Option[]; productCategories: Option[] }>>("/settings/master-data")?.data?.unitsOfMeasure ?? []);
   const [categories, setCategories] = useState<Option[]>(() => getCachedFirst<ApiEnvelope<{ unitsOfMeasure: Option[]; productCategories: Option[] }>>("/settings/master-data")?.data?.productCategories ?? []);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!hasCached("/settings/catalog/products"));
   const [error, setError] = useState<string | null>(null);
 
   // Filters

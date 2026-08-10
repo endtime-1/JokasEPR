@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { RefreshCw, CircleAlert, CircleCheckBig, Copy, RotateCcw } from "lucide-react";
-import { ApiEnvelope, apiFetch } from "../../../../lib/api";
+import { ApiEnvelope, apiFetch, getCachedFirst, hasCached } from "../../../../lib/api";
 
 type MobileSyncRecord = {
   id: string;
@@ -67,9 +67,9 @@ function timeAgo(iso: string) {
 }
 
 export default function MobileSyncPage() {
-  const [records, setRecords] = useState<MobileSyncRecord[]>([]);
-  const [stats, setStats] = useState<SyncStats | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [records, setRecords] = useState<MobileSyncRecord[]>(() => getCachedFirst<ApiEnvelope<{ data: MobileSyncRecord[]; total: number }>>("/sync/records")?.data?.data ?? []);
+  const [stats, setStats] = useState<SyncStats | null>(() => getCachedFirst<ApiEnvelope<SyncStats>>("/sync/stats")?.data ?? null);
+  const [loading, setLoading] = useState(!(hasCached("/sync/records") && hasCached("/sync/stats")));
   const [filter, setFilter] = useState<"ALL" | "SYNCED" | "FAILED" | "DUPLICATE">("ALL");
   const [retrying, setRetrying] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(0);

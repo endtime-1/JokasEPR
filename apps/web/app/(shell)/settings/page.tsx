@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Bot, Building2, ChevronRight, Egg, HardDrive, Package, Pencil, Plus, Save, Settings, ShieldCheck, Trash2, X } from "lucide-react";
 import Link from "next/link";
-import { ApiEnvelope, apiFetch, getCachedFirst } from "../../../lib/api";
+import { ApiEnvelope, apiFetch, getCachedFirst, hasCached } from "../../../lib/api";
 import { ConfirmModal } from "../../../components/ui";
 
 type Row = Record<string, any> & { id: string; code?: string; name?: string };
@@ -97,12 +97,31 @@ function SettingCard({ title, icon: Icon, children }: { title: string; icon: any
 }
 
 export default function SettingsPage() {
-  const [company, setCompany] = useState<any>({});
+  const [company, setCompany] = useState<any>(() => getCachedFirst<ApiEnvelope<any>>("/settings/company")?.data ?? {});
   const [master, setMaster] = useState<MasterData>(() => getCachedFirst<ApiEnvelope<MasterData>>("/settings/master-data")?.data ?? {});
-  const [options, setOptions] = useState<Record<string, Option[]>>({});
-  const [settings, setSettings] = useState<SettingsMap>(DEFAULT_SETTINGS);
-  const [notification, setNotification] = useState<any>({});
-  const [loading, setLoading] = useState(true);
+  const [options, setOptions] = useState<Record<string, Option[]>>(() => getCachedFirst<ApiEnvelope<Record<string, Option[]>>>("/settings/options")?.data ?? {});
+  const [settings, setSettings] = useState<SettingsMap>(() => {
+    const cached = getCachedFirst<Partial<SettingsMap>>("/settings/system");
+    if (!cached) return DEFAULT_SETTINGS;
+    return {
+      "poultry.types": { ...DEFAULT_SETTINGS["poultry.types"], ...(cached["poultry.types"] ?? {}) },
+      "poultry.pricing": { ...DEFAULT_SETTINGS["poultry.pricing"], ...(cached["poultry.pricing"] ?? {}) },
+      "feed.types": { ...DEFAULT_SETTINGS["feed.types"], ...(cached["feed.types"] ?? {}) },
+      "tax.settings": { ...DEFAULT_SETTINGS["tax.settings"], ...(cached["tax.settings"] ?? {}) },
+      "numbering.settings": { ...DEFAULT_SETTINGS["numbering.settings"], ...(cached["numbering.settings"] ?? {}) },
+      "ai.settings": { ...DEFAULT_SETTINGS["ai.settings"], ...(cached["ai.settings"] ?? {}) },
+      "backup.settings": { ...DEFAULT_SETTINGS["backup.settings"], ...(cached["backup.settings"] ?? {}) },
+      "user-access.settings": { ...DEFAULT_SETTINGS["user-access.settings"], ...(cached["user-access.settings"] ?? {}) },
+    };
+  });
+  const [notification, setNotification] = useState<any>(() => getCachedFirst<ApiEnvelope<any>>("/settings/notifications")?.data ?? {});
+  const [loading, setLoading] = useState(!(
+    hasCached("/settings/company") &&
+    hasCached("/settings/master-data") &&
+    hasCached("/settings/options") &&
+    hasCached("/settings/system") &&
+    hasCached("/settings/notifications")
+  ));
   const [activeMaster, setActiveMaster] = useState<(typeof masterSections)[number][0]>("branches");
   const [form, setForm] = useState<Record<string, string>>({});
   const [editingRow, setEditingRow] = useState<Row | null>(null);

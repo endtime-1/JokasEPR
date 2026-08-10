@@ -200,7 +200,7 @@ type DashData = {
 };
 
 export function HRDashboardPage() {
-  const [data, setData] = useState<DashData | null>(null);
+  const [data, setData] = useState<DashData | null>(() => getCachedFirst<ApiEnvelope<DashData>>("/hr/dashboard")?.data ?? null);
   const [loadError, setLoadError] = useState("");
   const [refresh, setRefresh] = useState(0);
   useEffect(() => {
@@ -696,7 +696,7 @@ type EmployeeDetail = Employee & {
 };
 
 export function EmployeeDetailPage({ id }: { id: string }) {
-  const [data, setData] = useState<EmployeeDetail | null>(null);
+  const [data, setData] = useState<EmployeeDetail | null>(() => getCachedFirst<ApiEnvelope<EmployeeDetail>>(`/hr/employees/${id}`)?.data ?? null);
   const [loadError, setLoadError] = useState("");
   const { opts, optionsError } = useHROptions();
   // Read ?tab= from URL so external links (e.g. edit button in employee list) can deep-link
@@ -1958,7 +1958,7 @@ type TaskDetail = {
 };
 
 export function TaskDetailPage({ id }: { id: string }) {
-  const [data, setData] = useState<TaskDetail | null>(null);
+  const [data, setData] = useState<TaskDetail | null>(() => getCachedFirst<ApiEnvelope<TaskDetail>>(`/hr/tasks/${id}`)?.data ?? null);
   const [taskLoadError, setTaskLoadError] = useState("");
   const [statusValue, setStatusValue] = useState("");
   const [statusNotes, setStatusNotes] = useState("");
@@ -3078,7 +3078,7 @@ export function GrievancesPage() {
 }
 
 export function ProductivityReportPage() {
-  const [data, setData] = useState<ProductivityData | null>(null);
+  const [data, setData] = useState<ProductivityData | null>(() => getCachedFirst<ApiEnvelope<ProductivityData>>("/hr/reports/productivity")?.data ?? null);
   const [dateFrom, setDateFrom] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10));
   const [dateTo, setDateTo] = useState(new Date().toISOString().slice(0, 10));
   const [loading, setLoading] = useState(false);
@@ -3383,8 +3383,8 @@ type JobRow = { id: string; reference: string; title: string; status: string; de
 type AppRow = { id: string; reference: string; applicantName: string; status: string; jobPostingId: string; interviewDate?: string; jobPosting?: { title: string } };
 
 export function RecruitmentPage() {
-  const [jobs, setJobs] = useState<JobRow[]>([]);
-  const [apps, setApps] = useState<AppRow[]>([]);
+  const [jobs, setJobs] = useState<JobRow[]>(() => getCachedFirst<ApiEnvelope<JobRow[]>>("/hr/job-postings")?.data ?? []);
+  const [apps, setApps] = useState<AppRow[]>(() => getCachedFirst<ApiEnvelope<AppRow[]>>("/hr/applications")?.data ?? []);
   const [selectedJob, setSelectedJob] = useState<string>("");
   const [showJobForm, setShowJobForm] = useState(false);
   const [showAppForm, setShowAppForm] = useState(false);
@@ -3643,8 +3643,8 @@ export function OnboardingPage() {
 type ApprovalChainRow = { id: string; entityType: string; minAmount?: number; steps: any[]; isActive: boolean };
 
 export function ApprovalWorkflowPage() {
-  const [chains, setChains] = useState<ApprovalChainRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [chains, setChains] = useState<ApprovalChainRow[]>(() => getCachedFirst<ApiEnvelope<ApprovalChainRow[]>>("/hr/approval-chains")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/hr/approval-chains"));
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ entityType: "", minAmount: "", steps: "[{\"role\":\"HR_MANAGE\",\"label\":\"HR Manager\"}]" });
   const [saving, setSaving] = useState(false);
@@ -3723,8 +3723,8 @@ export function ApprovalWorkflowPage() {
 type ComplianceReportRow = { id: string; reportType: string; period: string; createdAt: string };
 
 export function ComplianceReportPage() {
-  const [reports, setReports] = useState<ComplianceReportRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [reports, setReports] = useState<ComplianceReportRow[]>(() => getCachedFirst<ApiEnvelope<ComplianceReportRow[]>>("/hr/compliance/reports")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/hr/compliance/reports"));
   const [period, setPeriod] = useState(new Date().toISOString().slice(0, 7));
   const [generating, setGenerating] = useState<string>("");
   const [result, setResult] = useState<any>(null);

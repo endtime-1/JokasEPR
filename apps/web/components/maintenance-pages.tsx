@@ -184,8 +184,8 @@ const QUICK_ACTIONS = [
 ];
 
 export function MaintenanceDashboardPage() {
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<DashboardData | null>(() => getCachedFirst<ApiEnvelope<DashboardData>>("/maintenance/dashboard")?.data ?? null);
+  const [loading, setLoading] = useState(!hasCached("/maintenance/dashboard"));
   const [error, setError] = useState("");
 
   async function load() {
@@ -513,7 +513,7 @@ export function MachinesPage({ create = false }: { create?: boolean }) {
 }
 
 export function MachineDetailsPage({ id }: { id: string }) {
-  const [machine, setMachine] = useState<Record<string, unknown> | null>(null);
+  const [machine, setMachine] = useState<Record<string, unknown> | null>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>>>(`/maintenance/machines/${id}`)?.data ?? null);
   useEffect(() => {
     apiFetch<ApiEnvelope<Record<string, unknown>>>(`/maintenance/machines/${id}`)
       .then((response) => setMachine(response.data))
@@ -692,8 +692,8 @@ export function SparePartsPage() {
 }
 
 export function MaintenanceListPage({ title, endpoint, subtitle }: { title: string; endpoint: string; subtitle: string }) {
-  const [rows, setRows] = useState<Record<string, unknown>[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>(endpoint)?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached(endpoint));
   useEffect(() => {
     setLoading(true);
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>(endpoint)
@@ -710,8 +710,8 @@ export function MaintenanceListPage({ title, endpoint, subtitle }: { title: stri
 }
 
 export function MaintenanceCostReportPage() {
-  const [rows, setRows] = useState<Record<string, unknown>[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/costs")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/maintenance/costs"));
   useEffect(() => {
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/costs")
       .then((response) => setRows(response.data ?? []))

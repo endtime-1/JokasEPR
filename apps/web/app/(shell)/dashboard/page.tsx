@@ -25,7 +25,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../../components/auth-context";
 import { Skeleton, SkeletonCard } from "../../../components/ui";
-import { ApiEnvelope, apiFetch } from "../../../lib/api";
+import { ApiEnvelope, apiFetch, getCachedFirst, hasCached } from "../../../lib/api";
 
 type Option = {
   id: string;
@@ -661,11 +661,11 @@ export default function DashboardPage() {
   const [filters, setFilters] = useState<Filters>(defaultFilters);
   const [activePreset, setActivePreset] = useState<DatePreset | null>("30d");
   const [options, setOptions] = useState<DashboardOptions | null>(null);
-  const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
-  const [dashboardLoading, setDashboardLoading] = useState(true);
+  const [dashboard, setDashboard] = useState<DashboardResponse | null>(() => getCachedFirst<ApiEnvelope<DashboardResponse>>("/dashboard/executive")?.data ?? null);
+  const [dashboardLoading, setDashboardLoading] = useState(!hasCached("/dashboard/executive"));
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [farmOps, setFarmOps] = useState<FarmOperationsResponse["data"] | null>(null);
-  const [farmOpsLoading, setFarmOpsLoading] = useState(true);
+  const [farmOps, setFarmOps] = useState<FarmOperationsResponse["data"] | null>(() => getCachedFirst<FarmOperationsResponse>("/dashboard/farm-operations-today")?.data ?? null);
+  const [farmOpsLoading, setFarmOpsLoading] = useState(!hasCached("/dashboard/farm-operations-today"));
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);

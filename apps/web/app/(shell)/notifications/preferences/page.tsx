@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, LoaderCircle, Save } from "lucide-react";
-import { apiFetch } from "../../../../lib/api";
+import { apiFetch, getCachedFirst, hasCached } from "../../../../lib/api";
 
 type Preference = {
   notificationType: string;
@@ -37,8 +37,8 @@ const CHANNEL_LABELS = [
 ] as const;
 
 export default function NotificationPreferencesPage() {
-  const [prefs, setPrefs] = useState<Preference[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [prefs, setPrefs] = useState<Preference[]>(() => getCachedFirst<{ data: Preference[] }>("/notifications/preferences")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/notifications/preferences"));
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 

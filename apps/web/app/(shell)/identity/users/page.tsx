@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { KeyRound, Pencil, Plus, ShieldCheck, Trash2, UserCheck, UserX } from "lucide-react";
 import { DataTable } from "../../../../components/data-table";
 import { FormField } from "../../../../components/form-field";
-import { ApiEnvelope, apiFetch } from "../../../../lib/api";
+import { ApiEnvelope, apiFetch, getCachedFirst } from "../../../../lib/api";
 
 type Role = {
   id: string;
@@ -60,7 +60,7 @@ function scopeNames<T extends Record<string, ScopeOption>>(items: T[] | undefine
 }
 
 export default function UsersPage() {
-  const [users, setUsers] = useState<UserRow[]>([]);
+  const [users, setUsers] = useState<UserRow[]>(() => getCachedFirst<ApiEnvelope<UserRow[]>>("/identity/users")?.data ?? []);
   const [roles, setRoles] = useState<Role[]>([]);
   const [branches, setBranches] = useState<ScopeOption[]>([]);
   const [farms, setFarms] = useState<ScopeOption[]>([]);

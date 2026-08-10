@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { apiFetch, type ApiEnvelope } from "../../../lib/api";
+import { apiFetch, type ApiEnvelope, getCachedFirst, hasCached } from "../../../lib/api";
 import { ConfirmModal } from "../../../components/ui";
 import {
   CircleCheckBig,
@@ -67,8 +67,8 @@ function fmtDate(iso: string | Date) {
 }
 
 export default function StorefrontDashboard() {
-  const [stats, setStats] = useState<DashStats | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState<DashStats | null>(() => getCachedFirst<ApiEnvelope<DashStats>>("/public/admin/stats")?.data ?? null);
+  const [loading, setLoading] = useState(!hasCached("/public/admin/stats"));
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [confirmCancelId, setConfirmCancelId] = useState<string | null>(null);
 

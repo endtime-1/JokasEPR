@@ -697,8 +697,8 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const { options, optionsError } = useFeedOptions();
-  const [formula, setFormula] = useState<FormulaRow | null>(null);
-  const [costing, setCosting] = useState<FormulaRow["costing"] | null>(null);
+  const [formula, setFormula] = useState<FormulaRow | null>(() => getCachedFirst<ApiEnvelope<FormulaRow>>(`/feed-production/formulas/${params.id}`)?.data ?? null);
+  const [costing, setCosting] = useState<FormulaRow["costing"] | null>(() => getCachedFirst<ApiEnvelope<FormulaRow["costing"]>>(`/feed-production/formulas/${params.id}/costing`)?.data ?? null);
 
   // Header edit state
   const [editingHeader, setEditingHeader] = useState(false);
@@ -1476,8 +1476,8 @@ function OrderTable({ rows, loading, onApprove, onEdit, onCancel }: { rows: Orde
 }
 
 export function FeedBatchListPage() {
-  const [rows, setRows] = useState<BatchRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState<BatchRow[]>(() => getCachedFirst<ApiEnvelope<BatchRow[]>>("/feed-production/batches")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/feed-production/batches"));
 
   useEffect(() => {
     apiFetch<ApiEnvelope<BatchRow[]>>("/feed-production/batches")
@@ -1536,7 +1536,7 @@ type ApprovedOrder = {
 export function FeedBatchCreatePage() {
   const { options, optionsError } = useFeedOptions();
   const router = useRouter();
-  const [approvedOrders, setApprovedOrders] = useState<ApprovedOrder[]>([]);
+  const [approvedOrders, setApprovedOrders] = useState<ApprovedOrder[]>(() => getCachedFirst<ApiEnvelope<ApprovedOrder[]>>("/feed-production/orders?status=APPROVED")?.data ?? []);
   const [form, setForm] = useState({
     productionOrderId: "",
     rawMaterialWarehouseId: "",
@@ -1765,7 +1765,7 @@ type BatchLabel = {
 export function FeedBatchDetailsPage() {
   const params = useParams<{ id: string }>();
   const { options, optionsError } = useFeedOptions();
-  const [batch, setBatch] = useState<BatchDetail | null>(null);
+  const [batch, setBatch] = useState<BatchDetail | null>(() => getCachedFirst<ApiEnvelope<BatchDetail>>(`/feed-production/batches/${params.id}`)?.data ?? null);
   const [label, setLabel] = useState<BatchLabel | null>(null);
   const [showLabel, setShowLabel] = useState(false);
   const [qcErr, setQcErr] = useState("");
@@ -2105,8 +2105,8 @@ type UsageRow = {
 };
 
 export function FeedRawMaterialUsagePage() {
-  const [rows, setRows] = useState<UsageRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState<UsageRow[]>(() => getCachedFirst<ApiEnvelope<UsageRow[]>>("/feed-production/raw-material-usage")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/feed-production/raw-material-usage"));
 
   useEffect(() => {
     apiFetch<ApiEnvelope<UsageRow[]>>("/feed-production/raw-material-usage")
@@ -2267,8 +2267,8 @@ type StockRow = {
 };
 
 export function FinishedFeedInventoryPage() {
-  const [rows, setRows] = useState<StockRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState<StockRow[]>(() => getCachedFirst<ApiEnvelope<StockRow[]>>("/feed-production/finished-feed-stock")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/feed-production/finished-feed-stock"));
   useEffect(() => {
     apiFetch<ApiEnvelope<StockRow[]>>("/feed-production/finished-feed-stock")
       .then((res) => setRows(res.data ?? []))
@@ -3031,8 +3031,8 @@ export function HiproPredictivePage() {
   const { options, optionsError } = useFeedOptions();
   const [mode, setMode] = useState<"global" | "individual">("global");
   const [warehouseId, setWarehouseId] = useState<string>("");
-  const [data, setData] = useState<HiproPredictiveData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<HiproPredictiveData | null>(() => getCachedFirst<ApiEnvelope<HiproPredictiveData>>("/feed-production/hipro-predictive")?.data ?? null);
+  const [loading, setLoading] = useState(!hasCached("/feed-production/hipro-predictive"));
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [activeIngId, setActiveIngId] = useState<string | null>(null);
 

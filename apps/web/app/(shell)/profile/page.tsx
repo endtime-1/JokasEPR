@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { KeyRound, ShieldCheck, UserCircle } from "lucide-react";
-import { ApiEnvelope, apiFetch } from "../../../lib/api";
+import { ApiEnvelope, apiFetch, getCachedFirst } from "../../../lib/api";
 
 type Profile = {
   email: string;
@@ -25,7 +25,7 @@ type PwForm = {
 const emptyPw: PwForm = { currentPassword: "", newPassword: "", confirmPassword: "" };
 
 export default function ProfilePage() {
-  const [profile, setProfile] = useState<Profile | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(() => getCachedFirst<ApiEnvelope<Profile>>("/auth/me")?.data ?? null);
   const [pw, setPw] = useState<PwForm>(emptyPw);
   const [pwLoading, setPwLoading] = useState(false);
   const [pwError, setPwError] = useState<string | null>(null);

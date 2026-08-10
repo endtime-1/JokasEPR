@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { DataTable } from "../../../components/data-table";
 import { FormField } from "../../../components/form-field";
-import { ApiEnvelope, apiFetch } from "../../../lib/api";
+import { ApiEnvelope, apiFetch, getCachedFirst } from "../../../lib/api";
 
 type BranchRow = { id: string; code: string; name: string; city?: string; country?: string; isHeadOffice?: boolean };
 type FarmRow = { id: string; code: string; name: string; location?: string; type?: string };
@@ -27,10 +27,10 @@ type EditTarget = { tab: Tab; id: string };
 
 export default function PlatformPage() {
   const [activeTab, setActiveTab] = useState<Tab>("branches");
-  const [branches, setBranches] = useState<BranchRow[]>([]);
-  const [farms, setFarms] = useState<FarmRow[]>([]);
-  const [warehouses, setWarehouses] = useState<WarehouseRow[]>([]);
-  const [productionSites, setProductionSites] = useState<ProductionSiteRow[]>([]);
+  const [branches, setBranches] = useState<BranchRow[]>(() => getCachedFirst<ApiEnvelope<BranchRow[]>>("/platform/branches")?.data ?? []);
+  const [farms, setFarms] = useState<FarmRow[]>(() => getCachedFirst<ApiEnvelope<FarmRow[]>>("/platform/farms")?.data ?? []);
+  const [warehouses, setWarehouses] = useState<WarehouseRow[]>(() => getCachedFirst<ApiEnvelope<WarehouseRow[]>>("/platform/warehouses")?.data ?? []);
+  const [productionSites, setProductionSites] = useState<ProductionSiteRow[]>(() => getCachedFirst<ApiEnvelope<ProductionSiteRow[]>>("/platform/production-sites")?.data ?? []);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");

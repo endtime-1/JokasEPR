@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { apiFetch, type ApiEnvelope } from "../../../../lib/api";
+import { apiFetch, type ApiEnvelope, getCachedFirst, hasCached } from "../../../../lib/api";
 import {
   Package,
   Search,
@@ -354,8 +354,8 @@ function ProductRow({ product, onSaved }: { product: AdminProduct; onSaved: (p: 
 }
 
 export default function StorefrontProductsPage() {
-  const [products, setProducts] = useState<AdminProduct[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [products, setProducts] = useState<AdminProduct[]>(() => getCachedFirst<ApiEnvelope<AdminProduct[]>>("/public/admin/products")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/public/admin/products"));
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"ALL" | "PUBLISHED" | "UNPUBLISHED">("ALL");
 

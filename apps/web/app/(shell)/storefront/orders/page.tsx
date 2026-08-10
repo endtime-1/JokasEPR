@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { apiFetch, type ApiEnvelope } from "../../../../lib/api";
+import { apiFetch, type ApiEnvelope, getCachedFirst, hasCached } from "../../../../lib/api";
 import {
   ShoppingBag,
   Search,
@@ -245,8 +245,8 @@ function OrderCard({ order, onUpdated }: { order: AdminOrder; onUpdated: (o: Adm
 
 function OrdersContent() {
   const searchParams = useSearchParams();
-  const [orders, setOrders] = useState<AdminOrder[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [orders, setOrders] = useState<AdminOrder[]>(() => getCachedFirst<ApiEnvelope<AdminOrder[]>>("/public/admin/orders")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/public/admin/orders"));
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState(searchParams.get("status") ?? "ALL");
 

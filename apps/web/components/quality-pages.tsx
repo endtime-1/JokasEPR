@@ -211,8 +211,8 @@ type DashData = {
 };
 
 export function QualityDashboardPage() {
-  const [data, setData] = useState<DashData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<DashData | null>(() => getCachedFirst<ApiEnvelope<DashData>>("/quality/dashboard")?.data ?? null);
+  const [loading, setLoading] = useState(!hasCached("/quality/dashboard"));
   const [error, setError] = useState("");
 
   async function load() {
@@ -802,7 +802,7 @@ const ACTION_BTNS = [
 ] as const;
 
 export function QualityCheckDetailPage({ id }: { id: string }) {
-  const [check, setCheck] = useState<CheckDetail | null>(null);
+  const [check, setCheck] = useState<CheckDetail | null>(() => getCachedFirst<ApiEnvelope<CheckDetail>>(`/quality/checks/${id}`)?.data ?? null);
   const [tab, setTab] = useState("overview");
   const [actionForm, setActionForm] = useState({ type: "", notes: "", reason: "", conditions: "", score: "" });
   const [saving, setSaving] = useState(false);
@@ -1162,8 +1162,8 @@ type RejectedBatch = {
 };
 
 export function RejectedBatchesPage() {
-  const [rows, setRows] = useState<RejectedBatch[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState<RejectedBatch[]>(() => getCachedFirst<ApiEnvelope<RejectedBatch[]>>("/quality/rejected-batches")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/quality/rejected-batches"));
   const [loadError, setLoadError] = useState("");
   useEffect(() => {
     apiFetch<ApiEnvelope<RejectedBatch[]>>("/quality/rejected-batches").then((r) => setRows(r.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
@@ -1204,8 +1204,8 @@ type ApprovedBatch = {
 };
 
 export function ApprovedBatchesPage() {
-  const [rows, setRows] = useState<ApprovedBatch[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState<ApprovedBatch[]>(() => getCachedFirst<ApiEnvelope<ApprovedBatch[]>>("/quality/approved-batches")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/quality/approved-batches"));
   const [loadError, setLoadError] = useState("");
   useEffect(() => {
     apiFetch<ApiEnvelope<ApprovedBatch[]>>("/quality/approved-batches").then((r) => setRows(r.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
@@ -1524,7 +1524,7 @@ type ReportData = {
 };
 
 export function QualityReportsPage() {
-  const [data, setData] = useState<ReportData | null>(null);
+  const [data, setData] = useState<ReportData | null>(() => getCachedFirst<ApiEnvelope<ReportData>>("/quality/reports")?.data ?? null);
   const [dateFrom, setDateFrom] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10));
   const [dateTo, setDateTo] = useState(new Date().toISOString().slice(0, 10));
   const [loading, setLoading] = useState(false);

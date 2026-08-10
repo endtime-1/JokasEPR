@@ -205,8 +205,8 @@ type DashData = {
 };
 
 export function ProcurementDashboardPage() {
-  const [data, setData] = useState<DashData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<DashData | null>(() => getCachedFirst<ApiEnvelope<DashData>>("/procurement/dashboard")?.data ?? null);
+  const [loading, setLoading] = useState(!hasCached("/procurement/dashboard"));
   const [loadError, setLoadError] = useState("");
   const [refresh, setRefresh] = useState(0);
   const today = new Date().toLocaleDateString("en-GH", {
@@ -462,9 +462,9 @@ type Supplier = {
 };
 
 export function SuppliersPage() {
-  const [rows, setRows] = useState<Supplier[]>([]);
+  const [rows, setRows] = useState<Supplier[]>(() => getCachedFirst<ApiEnvelope<Supplier[]>>("/procurement/suppliers")?.data ?? []);
   const [search, setSearch] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!hasCached("/procurement/suppliers"));
   const [loadError, setLoadError] = useState("");
 
   useEffect(() => {

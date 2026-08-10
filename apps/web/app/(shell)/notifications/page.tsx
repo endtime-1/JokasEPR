@@ -10,7 +10,7 @@ import {
   LoaderCircle,
   Settings
 } from "lucide-react";
-import { apiFetch, ApiEnvelope } from "../../../lib/api";
+import { apiFetch, ApiEnvelope, getCachedFirst, hasCached } from "../../../lib/api";
 
 type Notification = {
   id: string;
@@ -73,9 +73,9 @@ function timeAgo(iso: string) {
 }
 
 export default function NotificationsPage() {
-  const [items, setItems] = useState<Notification[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [items, setItems] = useState<Notification[]>(() => getCachedFirst<ApiEnvelope<{ data: Notification[]; total: number }>>("/notifications")?.data?.data ?? []);
+  const [total, setTotal] = useState(() => getCachedFirst<ApiEnvelope<{ data: Notification[]; total: number }>>("/notifications")?.data?.total ?? 0);
+  const [loading, setLoading] = useState(!hasCached("/notifications"));
   const [statusFilter, setStatusFilter] = useState<"" | "UNREAD" | "READ">("");
   const [page, setPage] = useState(0);
   const limit = 20;

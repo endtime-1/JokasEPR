@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { DataTable } from "../../../components/data-table";
-import { apiFetch } from "../../../lib/api";
+import { apiFetch, getCachedFirst } from "../../../lib/api";
 
 type AuditLog = {
   id: string;
@@ -20,8 +20,8 @@ type AuditResponse = { data: AuditLog[]; meta: AuditMeta };
 const PAGE_SIZE = 50;
 
 export default function AuditPage() {
-  const [logs, setLogs] = useState<AuditLog[]>([]);
-  const [meta, setMeta] = useState<AuditMeta>({ total: 0, page: 1, take: PAGE_SIZE, totalPages: 1 });
+  const [logs, setLogs] = useState<AuditLog[]>(() => getCachedFirst<AuditResponse>("/audit-logs")?.data ?? []);
+  const [meta, setMeta] = useState<AuditMeta>(() => getCachedFirst<AuditResponse>("/audit-logs")?.meta ?? { total: 0, page: 1, take: PAGE_SIZE, totalPages: 1 });
   const [page, setPage] = useState(1);
   const [entityType, setEntityType] = useState("");
   const [action, setAction] = useState("");

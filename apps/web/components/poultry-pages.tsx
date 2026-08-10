@@ -117,8 +117,10 @@ function PageHeader({ title, subtitle }: { title: string; subtitle: string }) {
 export function FarmPoultryOverviewPage() {
   const { options } = usePoultryOptions();
   const [farmId, setFarmId] = useState("");
-  const [overview, setOverview] = useState<Record<string, number> | null>(null);
   const selectedFarmId = farmId || options.farms[0]?.id || "";
+  const [overview, setOverview] = useState<Record<string, number> | null>(() =>
+    selectedFarmId ? getCachedFirst<ApiEnvelope<Record<string, number>>>(`/poultry/farms/${selectedFarmId}/overview`)?.data ?? null : null
+  );
 
   useEffect(() => {
     if (!selectedFarmId) return;
