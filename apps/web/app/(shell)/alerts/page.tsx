@@ -1,0 +1,731 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import {
+  CircleAlert,
+  AlertTriangle,
+  Bell,
+  BellOff,
+  CircleCheckBig,
+  ChevronDown,
+  Download,
+  Info,
+  LoaderCircle,
+  RefreshCw,
+  TrendingUp,
+  Zap
+} from "lucide-react";
+import { apiFetch, ApiEnvelope, downloadReport } from "../../../lib/api";
+
+type AiAlert = {
+  id: string;
+  category: string;
+  severity: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+  status: "UNREAD" | "ACKNOWLEDGED" | "RESOLVED";
+  title: string;
+  message: string;
+  entityName: string | null;
+  entityType: string | null;
+  createdAt: string;
+  acknowledgedAt: string | null;
+  resolvedAt: string | null;
+  farm: { name: string } | null;
+  branch: { name: string } | null;
+  warehouse: { name: string } | null;
+  productionSite: { name: string } | null;
+  acknowledgedBy: { fullName: string } | null;
+  resolvedBy: { fullName: string } | null;
+};
+
+type AiForecast = {
+  id: string;
+  category: string;
+  entityType: string;
+  entityName: string;
+  forecastDate: string;
+  forecastValue: number;
+  unit: string | null;
+  confidence: number;
+};
+
+const CATEGORY_LABELS: Record<string, string> = {
+  MORTALITY_ANOMALY: "Mortality",
+  EGG_PRODUCTION_DROP: "Egg Drop",
+  FEED_CONSUMPTION_ANOMALY: "Feed Anomaly",
+  LOW_STOCK_PREDICTION: "Low Stock",
+  FEED_DEMAND_FORECAST: "Feed Forecast",
+  SALES_FORECAST: "Sales Forecast",
+  CUSTOMER_REORDER_PREDICTION: "Reorder",
+  SMART_PRICING: "Pricing",
+  SOYA_YIELD_ANOMALY: "Soya Yield",
+  MACHINE_MAINTENANCE: "Maintenance",
+  CUSTOMER_DEBT_RISK: "Debt Risk",
+  SUPPLIER_DELAY_RISK: "Supplier Delay"
+};
+
+const SEVERITY_CONFIG = {
+  CRITICAL: {
+    label: "Critical",
+    border: "border-l-red-500",
+    badge: "bg-red-100 text-red-700",
+    icon: "bg-red-100 text-red-600",
+    Icon: CircleAlert
+  },
+  HIGH: {
+    label: "High",
+    border: "border-l-orange-500",
+    badge: "bg-orange-100 text-orange-700",
+    icon: "bg-orange-100 text-orange-600",
+    Icon: AlertTriangle
+  },
+  MEDIUM: {
+    label: "Medium",
+    border: "border-l-yellow-400",
+    badge: "bg-yellow-100 text-yellow-700",
+    icon: "bg-yellow-100 text-yellow-600",
+    Icon: AlertTriangle
+  },
+  LOW: {
+    label: "Low",
+    border: "border-l-blue-400",
+    badge: "bg-blue-100 text-blue-700",
+    icon: "bg-blue-100 text-blue-600",
+    Icon: Info
+  }
+};
+
+const STATUS_CONFIG = {
+  UNREAD: { label: "Unread", color: "bg-brand/10 text-brand" },
+  ACKNOWLEDGED: { label: "Acknowledged", color: "bg-amber-100 text-amber-700" },
+  RESOLVED: { label: "Resolved", color: "bg-emerald-100 text-emerald-700" }
+};
+
+function timeAgo(dateStr: string): string {
+  const secs = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
+  if (secs < 60) return "just now";
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 7) return `${days} days ago`;
+  return new Date(dateStr).toLocaleDateString();
+}
+
+function formatForecast(forecast: AiForecast) {
+  if (forecast.unit === "probability") return `${Math.round(forecast.forecastValue * 100)}%`;
+  if (forecast.unit === "GHS") return `GHS ${Number(forecast.forecastValue).toLocaleString()}`;
+  return `${Number(forecast.forecastValue).toLocaleString()}${forecast.unit ? ` ${forecast.unit}` : ""}`;
+}
+
+function AlertCard({
+  alert,
+  onAcknowledge,
+  onResolve,
+  canManage,
+  actioning,
+  selected,
+  onToggleSelect
+}: {
+  alert: AiAlert;
+  onAcknowledge: (id: string) => void;
+  onResolve: (id: string) => void;
+  canManage: boolean;
+  actioning: string | null;
+  selected: boolean;
+  onToggleSelect: (id: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const cfg = SEVERITY_CONFIG[alert.severity];
+  const StatusIcon = cfg.Icon;
+  const status = STATUS_CONFIG[alert.status];
+  const location =
+    alert.farm?.name ??
+    alert.warehouse?.name ??
+    alert.productionSite?.name ??
+    alert.branch?.name ??
+    "Company wide";
+
+  const isActioning = actioning === alert.id;
+
+  return (
+    <article
+      className={`overflow-hidden rounded-xl border border-line border-l-[3px] bg-white shadow-card ${cfg.border}`}
+    >
+      <div className="flex items-start gap-2 px-3 py-3.5">
+        {/* Checkbox */}
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={() => onToggleSelect(alert.id)}
+          onClick={(e) => e.stopPropagation()}
+          className="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-brand"
+          aria-label={`Select alert: ${alert.title}`}
+        />
+        <button className="flex-1 text-left" onClick={() => setExpanded((v) => !v)}>
+          <div className="flex items-start gap-3">
+            <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl ${cfg.icon}`}>
+              <StatusIcon aria-hidden className="h-4 w-4" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-start justify-between gap-3">
+                <span className="text-sm font-bold text-ink leading-snug">{alert.title}</span>
+                <span
+                  className={`shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${status.color}`}
+                >
+                  {status.label}
+                </span>
+              </div>
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${cfg.badge}`}>
+                  {cfg.label}
+                </span>
+                <span className="text-xs text-ink/45">
+                  {CATEGORY_LABELS[alert.category] ?? alert.category}
+                </span>
+                <span className="text-xs text-ink/45">{location}</span>
+                <span
+                  className="text-xs text-ink/35"
+                  title={new Date(alert.createdAt).toLocaleString()}
+                >
+                  {timeAgo(alert.createdAt)}
+                </span>
+              </div>
+            </div>
+            <ChevronDown
+              aria-hidden
+              className={`mt-2 h-4 w-4 shrink-0 text-ink/30 transition-transform ${expanded ? "rotate-180" : ""}`}
+            />
+          </div>
+        </button>
+      </div>
+
+      {expanded && (
+        <div className="border-t border-line bg-field/50 px-4 py-4 text-sm">
+          <p className="leading-6 text-ink/75">{alert.message}</p>
+          {alert.acknowledgedBy || alert.resolvedBy ? (
+            <div className="mt-3 space-y-1 text-xs text-ink/45">
+              {alert.acknowledgedBy ? (
+                <p>Acknowledged by {alert.acknowledgedBy.fullName}</p>
+              ) : null}
+              {alert.resolvedBy ? <p>Resolved by {alert.resolvedBy.fullName}</p> : null}
+            </div>
+          ) : null}
+          {canManage && alert.status !== "RESOLVED" ? (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {alert.status === "UNREAD" ? (
+                <button
+                  onClick={() => onAcknowledge(alert.id)}
+                  disabled={isActioning}
+                  className="app-button-secondary min-h-9 px-3 text-xs disabled:opacity-50"
+                >
+                  {isActioning ? (
+                    <LoaderCircle aria-hidden className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Bell aria-hidden className="h-3.5 w-3.5" />
+                  )}
+                  Acknowledge
+                </button>
+              ) : null}
+              <button
+                onClick={() => onResolve(alert.id)}
+                disabled={isActioning}
+                className="app-button-secondary min-h-9 px-3 text-xs disabled:opacity-50"
+              >
+                {isActioning ? (
+                  <LoaderCircle aria-hidden className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <CircleCheckBig aria-hidden className="h-3.5 w-3.5" />
+                )}
+                Resolve
+              </button>
+            </div>
+          ) : null}
+        </div>
+      )}
+    </article>
+  );
+}
+
+const PAGE_SIZE = 25;
+
+export default function AlertsPage() {
+  const [alerts, setAlerts] = useState<AiAlert[]>([]);
+  const [forecasts, setForecasts] = useState<AiForecast[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState("");
+  const [filterCategory, setFilterCategory] = useState("");
+  const [filterSeverity, setFilterSeverity] = useState("");
+  const [filterStatus, setFilterStatus] = useState("");
+  const [canManage, setCanManage] = useState(false);
+  const [actioning, setActioning] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [page, setPage] = useState(1);
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  const reportPath = useMemo(() => {
+    const params = new URLSearchParams();
+    if (filterCategory) params.set("category", filterCategory);
+    if (filterSeverity) params.set("severity", filterSeverity);
+    if (filterStatus) params.set("status", filterStatus);
+    const query = params.toString();
+    return `/alerts/report.csv${query ? `?${query}` : ""}`;
+  }, [filterCategory, filterSeverity, filterStatus]);
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const params = new URLSearchParams();
+      if (filterCategory) params.set("category", filterCategory);
+      if (filterSeverity) params.set("severity", filterSeverity);
+      if (filterStatus) params.set("status", filterStatus);
+      params.set("limit", PAGE_SIZE.toString());
+      params.set("offset", ((page - 1) * PAGE_SIZE).toString());
+
+      const [alertResponse, forecastResponse] = await Promise.all([
+        apiFetch<ApiEnvelope<AiAlert[]>>(`/alerts?${params}`),
+        apiFetch<ApiEnvelope<AiForecast[]>>("/alerts/forecasts?limit=100")
+      ]);
+
+      setAlerts(alertResponse.data ?? []);
+      setTotal(Number(alertResponse.meta?.total ?? alertResponse.data?.length ?? 0));
+      setForecasts(forecastResponse.data ?? []);
+      setSelected(new Set()); // clear selection on load
+    } catch {
+      setError("Failed to load AI alerts and forecasts.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    apiFetch<ApiEnvelope<{ permissions: string[] }>>("/auth/me")
+      .then((r) => setCanManage(r.data.permissions.includes("alerts.manage")))
+      .catch(() => undefined);
+  }, []);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setPage(1);
+  }, [filterCategory, filterSeverity, filterStatus]);
+
+  useEffect(() => {
+    void load();
+  }, [filterCategory, filterSeverity, filterStatus, page]);
+
+  useEffect(() => {
+    function onRecovered() { if (alerts.length === 0) void load(); }
+    window.addEventListener("api:recovered", onRecovered);
+    return () => window.removeEventListener("api:recovered", onRecovered);
+  }, [alerts.length]);
+
+  async function generate() {
+    setGenerating(true);
+    setError("");
+    try {
+      const response = await apiFetch<ApiEnvelope<{ generated: number }>>("/alerts/generate", {
+        method: "POST"
+      });
+      await load();
+      if (response.data.generated === 0) {
+        setError("No new alerts detected. All thresholds are within normal range.");
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Failed to generate alerts.");
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  async function acknowledge(id: string) {
+    setActioning(id);
+    try {
+      await apiFetch(`/alerts/${id}/acknowledge`, { method: "PATCH" });
+      await load();
+    } catch {
+      setError("Failed to acknowledge alert.");
+    } finally {
+      setActioning(null);
+    }
+  }
+
+  async function resolve(id: string) {
+    setActioning(id);
+    try {
+      await apiFetch(`/alerts/${id}/resolve`, { method: "PATCH" });
+      await load();
+    } catch {
+      setError("Failed to resolve alert.");
+    } finally {
+      setActioning(null);
+    }
+  }
+
+  async function bulkAcknowledge() {
+    const ids = alerts.filter((a) => selected.has(a.id) && a.status === "UNREAD").map((a) => a.id);
+    if (!ids.length) return;
+    setActioning("bulk");
+    try {
+      await Promise.all(ids.map((id) => apiFetch(`/alerts/${id}/acknowledge`, { method: "PATCH" })));
+      await load();
+    } catch {
+      setError("Failed to acknowledge some alerts.");
+    } finally {
+      setActioning(null);
+    }
+  }
+
+  async function bulkResolve() {
+    const ids = alerts.filter((a) => selected.has(a.id) && a.status !== "RESOLVED").map((a) => a.id);
+    if (!ids.length) return;
+    setActioning("bulk");
+    try {
+      await Promise.all(ids.map((id) => apiFetch(`/alerts/${id}/resolve`, { method: "PATCH" })));
+      await load();
+    } catch {
+      setError("Failed to resolve some alerts.");
+    } finally {
+      setActioning(null);
+    }
+  }
+
+  function toggleSelect(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    if (selected.size === alerts.length) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(alerts.map((a) => a.id)));
+    }
+  }
+
+  const unread = alerts.filter((a) => a.status === "UNREAD").length;
+  const critical = alerts.filter((a) => a.severity === "CRITICAL").length;
+  const allSelected = alerts.length > 0 && selected.size === alerts.length;
+
+  return (
+    <>
+      <div className="mx-auto max-w-6xl space-y-6">
+
+        {/* Page hero */}
+        <section className="overflow-hidden rounded-2xl border border-line bg-gradient-to-br from-white via-white to-field shadow-panel">
+          <div className="flex flex-wrap items-start justify-between gap-4 px-6 py-5">
+            <div className="max-w-2xl">
+              <p className="app-kicker flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-brand" />
+                AI decision support
+              </p>
+              <h1 className="mt-2 text-[28px] font-extrabold leading-tight tracking-tight text-ink">
+                Alerts & Forecasting
+              </h1>
+              <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-ink/55">
+                Anomaly detection, operational predictions, risk alerts, and forecast signals
+                for scoped business areas.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => void load()}
+                className="app-button-secondary"
+              >
+                <RefreshCw aria-hidden className="h-4 w-4" />
+                Refresh
+              </button>
+              <button
+                onClick={() =>
+                  downloadReport(reportPath, "ai-alert-report.csv").catch(() =>
+                    setError("Failed to export alert report.")
+                  )
+                }
+                className="app-button-secondary"
+              >
+                <Download aria-hidden className="h-4 w-4" />
+                Export
+              </button>
+              {canManage ? (
+                <button
+                  onClick={() => void generate()}
+                  disabled={generating}
+                  className="app-button-primary"
+                >
+                  {generating ? (
+                    <LoaderCircle aria-hidden className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Zap aria-hidden className="h-4 w-4" />
+                  )}
+                  Run Detection
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </section>
+
+        {/* Stats row */}
+        <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          {[
+            {
+              label: "Total alerts",
+              value: total,
+              Icon: Bell,
+              iconStyle: "bg-brand/10 text-brand",
+              valStyle: "text-ink"
+            },
+            {
+              label: "Unread",
+              value: unread,
+              Icon: BellOff,
+              iconStyle: "bg-brand/10 text-brand",
+              valStyle: "text-brand"
+            },
+            {
+              label: "Critical",
+              value: critical,
+              Icon: CircleAlert,
+              iconStyle: "bg-red-100 text-red-600",
+              valStyle: "text-red-600"
+            },
+            {
+              label: "Forecasts",
+              value: forecasts.length,
+              Icon: TrendingUp,
+              iconStyle: "bg-emerald-100 text-emerald-600",
+              valStyle: "text-ink"
+            }
+          ].map(({ label, value, Icon, iconStyle, valStyle }) => (
+            <article
+              key={label}
+              className="rounded-2xl border border-line bg-gradient-to-b from-white to-field/60 p-5 shadow-card transition hover:-translate-y-0.5 hover:shadow-soft"
+            >
+              <div className={`grid h-10 w-10 place-items-center rounded-xl shadow-sm ${iconStyle}`}>
+                <Icon aria-hidden className="h-5 w-5" />
+              </div>
+              <strong className={`mt-4 block text-[28px] font-extrabold leading-none ${valStyle}`}>
+                {value}
+              </strong>
+              <p className="mt-2 text-[11px] font-semibold uppercase tracking-wide text-ink/45">
+                {label}
+              </p>
+            </article>
+          ))}
+        </section>
+
+        {/* Filters */}
+        <section className="app-card flex flex-wrap items-center gap-2 px-4 py-3">
+          <span className="text-xs font-bold uppercase tracking-wide text-ink/40 mr-1">Filter</span>
+          <select
+            value={filterCategory}
+            onChange={(e) => setFilterCategory(e.target.value)}
+            className="app-control min-w-[160px] text-sm"
+          >
+            <option value="">All categories</option>
+            {Object.entries(CATEGORY_LABELS).map(([key, label]) => (
+              <option key={key} value={key}>
+                {label}
+              </option>
+            ))}
+          </select>
+          <select
+            value={filterSeverity}
+            onChange={(e) => setFilterSeverity(e.target.value)}
+            className="app-control min-w-[140px] text-sm"
+          >
+            <option value="">All severities</option>
+            <option value="CRITICAL">Critical</option>
+            <option value="HIGH">High</option>
+            <option value="MEDIUM">Medium</option>
+            <option value="LOW">Low</option>
+          </select>
+          <select
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+            className="app-control min-w-[140px] text-sm"
+          >
+            <option value="">All statuses</option>
+            <option value="UNREAD">Unread</option>
+            <option value="ACKNOWLEDGED">Acknowledged</option>
+            <option value="RESOLVED">Resolved</option>
+          </select>
+        </section>
+
+        {error ? (
+          <div className="app-alert-warning">{error}</div>
+        ) : null}
+
+        {/* Forecast signals */}
+        <section className="app-card overflow-hidden">
+          <div className="flex items-center justify-between border-b border-line px-5 py-4">
+            <div>
+              <h2 className="text-sm font-bold text-ink">Forecast Signals</h2>
+              <p className="mt-0.5 text-xs text-ink/45">AI-generated predictions with confidence scores</p>
+            </div>
+            <span className="grid h-7 w-7 place-items-center rounded-lg bg-emerald-100">
+              <TrendingUp aria-hidden className="h-3.5 w-3.5 text-emerald-600" />
+            </span>
+          </div>
+          <div className="p-5">
+            {forecasts.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-10 text-center">
+                <TrendingUp className="mb-2 h-8 w-8 text-ink/15" />
+                <p className="text-sm text-ink/40">No forecasts generated yet.</p>
+                {canManage && (
+                  <p className="mt-1 text-xs text-ink/30">Run detection to generate forecast signals.</p>
+                )}
+              </div>
+            ) : (
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {forecasts.slice(0, 12).map((forecast) => (
+                  <article
+                    key={forecast.id}
+                    className="rounded-xl border border-line bg-gradient-to-br from-white to-field/60 p-4 shadow-card"
+                  >
+                    <span className="inline-block rounded-md bg-brand/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-brand">
+                      {CATEGORY_LABELS[forecast.category] ?? forecast.category}
+                    </span>
+                    <h3 className="mt-2.5 text-sm font-bold text-ink">{forecast.entityName}</h3>
+                    <p className="mt-1 text-2xl font-extrabold text-brand">
+                      {formatForecast(forecast)}
+                    </p>
+                    <div className="mt-3">
+                      <div className="mb-1 flex items-center justify-between text-[10px] text-ink/40">
+                        <span>Confidence</span>
+                        <span className="font-bold">{Math.round(forecast.confidence * 100)}%</span>
+                      </div>
+                      <div className="h-1.5 overflow-hidden rounded-full bg-line">
+                        <div
+                          className="h-1.5 rounded-full bg-brand transition-all duration-700"
+                          style={{ width: `${Math.round(forecast.confidence * 100)}%` }}
+                        />
+                      </div>
+                    </div>
+                    <p className="mt-2 text-[10px] text-ink/35">
+                      {new Date(forecast.forecastDate).toLocaleDateString()}
+                    </p>
+                  </article>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* Alert list */}
+        <section>
+          {/* List header */}
+          <div className="mb-3 flex items-center gap-3">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              onChange={toggleSelectAll}
+              className="h-4 w-4 cursor-pointer accent-brand"
+              aria-label="Select all alerts"
+            />
+            <h2 className="text-base font-bold text-ink flex-1">
+              Active Alerts
+              {alerts.length > 0 && (
+                <span className="ml-2 rounded-full bg-brand/10 px-2 py-0.5 text-xs font-bold text-brand">
+                  {total}
+                </span>
+              )}
+            </h2>
+          </div>
+
+          {/* Bulk action bar */}
+          {selected.size > 0 && (
+            <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-line bg-brand/5 px-4 py-2.5">
+              <span className="text-sm font-semibold text-ink">{selected.size} selected</span>
+              {canManage && (
+                <>
+                  <button
+                    onClick={() => void bulkAcknowledge()}
+                    disabled={actioning === "bulk"}
+                    className="app-button-secondary min-h-8 px-3 text-xs disabled:opacity-50"
+                  >
+                    {actioning === "bulk" ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Bell className="h-3.5 w-3.5" />}
+                    Acknowledge all
+                  </button>
+                  <button
+                    onClick={() => void bulkResolve()}
+                    disabled={actioning === "bulk"}
+                    className="app-button-secondary min-h-8 px-3 text-xs disabled:opacity-50"
+                  >
+                    {actioning === "bulk" ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <CircleCheckBig className="h-3.5 w-3.5" />}
+                    Resolve all
+                  </button>
+                </>
+              )}
+              <button
+                onClick={() => setSelected(new Set())}
+                className="ml-auto text-xs text-ink/50 hover:text-ink transition"
+              >
+                Clear selection
+              </button>
+            </div>
+          )}
+
+          {loading ? (
+            <div className="flex justify-center py-16">
+              <LoaderCircle aria-hidden className="h-6 w-6 animate-spin text-brand" />
+            </div>
+          ) : alerts.length === 0 ? (
+            <div className="app-card flex flex-col items-center justify-center py-16 text-center">
+              <span className="mb-3 grid h-12 w-12 place-items-center rounded-2xl bg-field">
+                <Bell aria-hidden className="h-6 w-6 text-ink/20" />
+              </span>
+              <p className="text-sm font-semibold text-ink/50">No alerts found</p>
+              {canManage ? (
+                <p className="mt-1 text-xs text-ink/35">Run detection to scan for anomalies.</p>
+              ) : null}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {alerts.map((alert) => (
+                <AlertCard
+                  key={alert.id}
+                  alert={alert}
+                  onAcknowledge={acknowledge}
+                  onResolve={resolve}
+                  canManage={canManage}
+                  actioning={actioning}
+                  selected={selected.has(alert.id)}
+                  onToggleSelect={toggleSelect}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Pagination */}
+          {!loading && totalPages > 1 && (
+            <div className="mt-4 flex items-center justify-center gap-3">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="app-button-secondary min-h-9 px-3 text-xs disabled:opacity-40"
+              >
+                ← Prev
+              </button>
+              <span className="text-sm text-ink/60">
+                Page <strong className="text-ink">{page}</strong> of {totalPages}
+              </span>
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+                className="app-button-secondary min-h-9 px-3 text-xs disabled:opacity-40"
+              >
+                Next →
+              </button>
+            </div>
+          )}
+        </section>
+      </div>
+    </>
+  );
+}

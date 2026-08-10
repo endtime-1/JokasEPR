@@ -2,7 +2,6 @@
 
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { AppShell } from "./app-shell";
 
 const NAV_GROUPS = [
   {
@@ -44,7 +43,7 @@ export function FeedMillShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
   return (
-    <AppShell>
+    <>
       <div className="-mx-4 -mt-6 mb-6 border-b border-line bg-white px-4 lg:-mx-8 lg:px-8">
         <div className="flex items-end gap-0 overflow-x-auto scrollbar-none">
           {NAV_GROUPS.map((group, gi) => (
@@ -70,6 +69,6 @@ export function FeedMillShell({ children }: { children: React.ReactNode }) {
         </div>
       </div>
       {children}
-    </AppShell>
+    </>
   );
 }
