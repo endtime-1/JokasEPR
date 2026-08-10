@@ -15,7 +15,6 @@ import {
   TrendingUp,
   Zap
 } from "lucide-react";
-import { AppShell } from "../../components/app-shell";
 import { apiFetch, ApiEnvelope, downloadReport } from "../../lib/api";
 
 type AiAlert = {
@@ -415,7 +414,7 @@ export default function AlertsPage() {
   const allSelected = alerts.length > 0 && selected.size === alerts.length;
 
   return (
-    <AppShell>
+    <>
       <div className="mx-auto max-w-6xl space-y-6">
 
         {/* Page hero */}
@@ -727,6 +726,6 @@ export default function AlertsPage() {
           )}
         </section>
       </div>
-    </AppShell>
+    </>
   );
 }

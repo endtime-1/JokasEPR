@@ -4,7 +4,6 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { CircleCheckBig, ClipboardList, Factory, PackageCheck, Plus, RefreshCw, ShoppingCart, TrendingUp } from "lucide-react";
-import { MarketPlanningShell } from "./market-planning-shell";
 import { DataTable } from "./data-table";
 import { ApiEnvelope, apiFetch, getCached, getCachedFirst, hasCached } from "../lib/api";
 
@@ -202,14 +201,14 @@ export function MarketTargetListPage() {
       .finally(() => setLoading(false));
   }, []);
   return (
-    <MarketPlanningShell>
+    <>
       <Header title="Market Targets" subtitle="Weekly and monthly targets that become approved feed production plans." />
       <div className="mb-4 flex flex-wrap gap-2">
         <Link className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" href="/market-planning/targets/create-weekly"><Plus className="h-4 w-4" /> Weekly target</Link>
         <Link className="inline-flex min-h-11 items-center gap-2 rounded-md border border-line px-4 text-sm font-semibold hover:bg-field" href="/market-planning/targets/create-monthly"><Plus className="h-4 w-4" /> Monthly target</Link>
       </div>
       <TargetTable rows={rows} loading={loading} />
-    </MarketPlanningShell>
+    </>
   );
 }
 
@@ -258,7 +257,7 @@ export function CreateMarketTargetPage({ period }: { period: "WEEKLY" | "MONTHLY
   }
 
   return (
-    <MarketPlanningShell>
+    <>
       <Header title={period === "WEEKLY" ? "Create Weekly Market Target" : "Create Monthly Market Target"} subtitle="Enter demand estimates and percentage adjustments before management approval." />
       <form onSubmit={submit} className="app-card grid gap-4 p-5 md:grid-cols-2">
         <label className="grid gap-1 text-sm font-semibold md:col-span-2">Title<input className={inputClass} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></label>
@@ -274,7 +273,7 @@ export function CreateMarketTargetPage({ period }: { period: "WEEKLY" | "MONTHLY
         <label className="grid gap-1 text-sm font-semibold md:col-span-2">Adjustment reason<textarea className="min-h-24 rounded-md border border-line px-3 py-2" value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} /></label>
         <div className="flex items-center gap-3 md:col-span-2"><button className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" type="submit"><Plus className="h-4 w-4" /> Create target</button>{message && <span className="text-sm font-semibold text-emerald-700">{message}</span>}</div>
       </form>
-    </MarketPlanningShell>
+    </>
   );
 }
 
@@ -296,7 +295,7 @@ export function MarketTargetDetailsPage() {
     await load();
   }
   return (
-    <MarketPlanningShell>
+    <>
       <Header title={target?.targetNumber ?? "Market Target"} subtitle={target?.title ?? "Target details, production plan, MRP, recommendations, and approval trail."} />
       <section className="mb-6 grid gap-4 md:grid-cols-4">
         <Card label="Status" value={target?.status ?? "-"} icon={CircleCheckBig} />
@@ -314,7 +313,7 @@ export function MarketTargetDetailsPage() {
         <div><h3 className="mb-3 text-lg font-semibold">Target items</h3><DataTable<TargetItem> rows={target?.items ?? []} empty="No target items." columns={[{ key: "productId", label: "Product", render: (row) => row.product?.name ?? row.productId }, { key: "baseQuantity", label: "Base bags", render: (row) => number(row.baseQuantity) }, { key: "adjustmentPercent", label: "Adjustment %", render: (row) => number(row.adjustmentPercent) }, { key: "targetQuantityKg", label: "Target kg", render: (row) => number(row.targetQuantityKg) }, { key: "approvalStatus", label: "Status" }]} /></div>
         <div><h3 className="mb-3 text-lg font-semibold">Production plans</h3><PlanTable rows={target?.productionPlans ?? []} /></div>
       </section>
-    </MarketPlanningShell>
+    </>
   );
 }
 
@@ -337,7 +336,7 @@ export function TargetAdjustmentPage() {
     await load();
   }
   return (
-    <MarketPlanningShell>
+    <>
       <Header title="Target Adjustment" subtitle="Apply demand percentage changes and preserve the adjustment reason for approval and audit." />
       <form onSubmit={submit} className="app-card grid gap-4 p-5 md:grid-cols-3">
         <label className="grid gap-1 text-sm font-semibold">Target item<select required className={inputClass} value={itemId} onChange={(e) => setItemId(e.target.value)}><option value="">Select item</option>{target?.items?.map((x) => <option key={x.id} value={x.id}>{x.product?.name ?? x.productId}</option>)}</select></label>
@@ -345,7 +344,7 @@ export function TargetAdjustmentPage() {
         <label className="grid gap-1 text-sm font-semibold">Reason<input className={inputClass} value={reason} onChange={(e) => setReason(e.target.value)} /></label>
         <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white md:w-fit" type="submit"><RefreshCw className="h-4 w-4" /> Adjust target</button>
       </form>
-    </MarketPlanningShell>
+    </>
   );
 }
 
@@ -362,7 +361,7 @@ export function ProductionPlanPage() {
     setMessage(`Created ${res.data.mrpNumber}`);
   }
   return (
-    <MarketPlanningShell>
+    <>
       <Header title="Production Plans" subtitle="Approved market targets translated into feed mill production plans." />
       <form onSubmit={calculate} className="app-card mb-6 flex flex-wrap items-end gap-4 p-5">
         <label className="grid min-w-72 gap-1 text-sm font-semibold">Plan<select required className={inputClass} value={planId} onChange={(e) => setPlanId(e.target.value)}><option value="">Select plan</option>{plans.map((x) => <option key={x.id} value={x.id}>{x.planNumber}</option>)}</select></label>
@@ -370,7 +369,7 @@ export function ProductionPlanPage() {
         {message && <span className="text-sm font-semibold text-emerald-700">{message}</span>}
       </form>
       <PlanTable rows={plans} loading={loading} />
-    </MarketPlanningShell>
+    </>
   );
 }
 
@@ -388,14 +387,14 @@ export function MaterialRequirementPlanningPage() {
     setMrps([res.data, ...mrps]);
   }
   return (
-    <MarketPlanningShell>
+    <>
       <Header title="Material Requirement Planning" subtitle="Calculate raw material needs from active feed formulas and central inventory." />
       <form onSubmit={calculate} className="app-card mb-6 flex flex-wrap items-end gap-4 p-5">
         <label className="grid min-w-72 gap-1 text-sm font-semibold">Production plan<select required className={inputClass} value={planId} onChange={(e) => setPlanId(e.target.value)}><option value="">Select plan</option>{plans.map((x) => <option key={x.id} value={x.id}>{x.planNumber}</option>)}</select></label>
         <button className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" type="submit"><PackageCheck className="h-4 w-4" /> Run availability check</button>
       </form>
       <MrpTable rows={mrps.length ? mrps : plans.flatMap((p) => [])} />
-    </MarketPlanningShell>
+    </>
   );
 }
 
@@ -431,7 +430,7 @@ export function InventoryAvailabilityCheckPage() {
   };
 
   return (
-    <MarketPlanningShell>
+    <>
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-xl font-extrabold text-ink">Inventory Availability</h1>
@@ -476,7 +475,7 @@ export function InventoryAvailabilityCheckPage() {
         loading={loading}
         empty={selected ? "No material items in this MRP run." : "Select an MRP run above to view availability."}
       />
-    </MarketPlanningShell>
+    </>
   );
 }
 
@@ -506,7 +505,7 @@ export function ProcurementRecommendationPage({ convert = false }: { convert?: b
     await load();
   }
   return (
-    <MarketPlanningShell>
+    <>
       <Header title={convert ? "Convert Recommendation" : "Procurement Recommendations"} subtitle="Turn raw material shortages into purchase requests linked to the originating market target and MRP." />
       {convert ? (
         <form onSubmit={convertOne} className="app-card mb-6 flex flex-wrap items-end gap-4 p-5">
@@ -521,7 +520,7 @@ export function ProcurementRecommendationPage({ convert = false }: { convert?: b
         </form>
       )}
       <RecommendationTable rows={rows} loading={loading} />
-    </MarketPlanningShell>
+    </>
   );
 }
 
@@ -545,7 +544,7 @@ export function ProductionExecutionPage() {
     setMessage("Production execution posted to inventory");
   }
   return (
-    <MarketPlanningShell>
+    <>
       <Header title="Production Execution" subtitle="Consume raw materials from central inventory and post finished feed back into finished goods inventory." />
       <form onSubmit={submit} className="app-card grid gap-4 p-5 md:grid-cols-2">
         <label className="grid gap-1 text-sm font-semibold">Production plan<select required className={inputClass} value={form.planId} onChange={(e) => selectPlan(e.target.value)}><option value="">Select plan</option>{plans.map((x) => <option key={x.id} value={x.id}>{x.planNumber}</option>)}</select></label>
@@ -556,7 +555,7 @@ export function ProductionExecutionPage() {
         <label className="grid gap-1 text-sm font-semibold">Wastage kg<input className={inputClass} type="number" min="0" step="0.01" value={form.wastageKg} onChange={(e) => setForm({ ...form, wastageKg: e.target.value })} /></label>
         <div className="flex items-center gap-3 md:col-span-2"><button className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" type="submit"><Factory className="h-4 w-4" /> Post execution</button>{message && <span className="text-sm font-semibold text-emerald-700">{message}</span>}</div>
       </form>
-    </MarketPlanningShell>
+    </>
   );
 }
 
@@ -568,7 +567,7 @@ export function TargetVsActualReportPage({ demandOnly = false }: { demandOnly?: 
       .catch(() => undefined);
   }, [demandOnly]);
   return (
-    <MarketPlanningShell>
+    <>
       <Header title={demandOnly ? "Market Demand vs Sales" : "Target vs Actual Report"} subtitle="Compare market targets, production targets, required materials, procurement, actual production, finished goods, and sales." />
       <DataTable<ReportRow>
         rows={rows}
@@ -583,6 +582,6 @@ export function TargetVsActualReportPage({ demandOnly = false }: { demandOnly?: 
           { key: "salesAchievementPct", label: "Sales %", render: (row) => `${number(row.salesAchievementPct)}%` }
         ]}
       />
-    </MarketPlanningShell>
+    </>
   );
 }

@@ -127,7 +127,7 @@ const styles = StyleSheet.create({
 
   actionsRow: { flexDirection: "row", gap: spacing.sm },
   quickBtn:   { flex: 1, flexDirection: "column", alignItems: "center", gap: 5, backgroundColor: colors.bgCard, borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border, paddingVertical: spacing.md, ...shadow.sm },
-  quickBtnText: { fontSize: font.size.xs, fontFamily: font.family.bold, color: colors.brand },
+  quickBtnText: { fontSize: font.size.xs, fontFamily: font.family.bold, color: colors.brandDark },
 
   sectionCard:  { backgroundColor: colors.bgCard, borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border, overflow: "hidden", ...shadow.sm },
   sectionTitle: { fontSize: font.size.sm, fontFamily: font.family.extrabold, color: colors.inkLight, letterSpacing: 0.8, textTransform: "uppercase", padding: spacing.lg, paddingBottom: spacing.sm },

@@ -6,6 +6,7 @@ import { ScreenWrapper } from "../../components/ScreenWrapper";
 import { FormCard } from "../../components/FormCard";
 import { FormFooter } from "../../components/FormFooter";
 import { FormField } from "../../components/FormField";
+import { DateField } from "../../components/DateField";
 import { SelectField, SelectOption } from "../../components/SelectField";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
@@ -111,7 +112,14 @@ export function FeedConsumptionScreen() {
   const { submit, loading } = useSubmit({
     module: "poultry_feed",
     endpoint: "/poultry/feed-consumption-records",
-    onSuccess: () => Alert.alert("Saved", "Feed consumption recorded.", [{ text: "OK", onPress: () => navigation.goBack() }])
+    onSuccess: (queued) =>
+      Alert.alert(
+        queued ? "Saved Offline" : "Saved",
+        queued
+          ? "Your feed consumption record was saved on this device and will sync automatically once you're back online."
+          : "Feed consumption recorded.",
+        [{ text: "OK", onPress: () => navigation.goBack() }]
+      )
   });
 
   async function handleSubmit() {
@@ -170,7 +178,7 @@ export function FeedConsumptionScreen() {
             <Text style={styles.birdChipText}>{birdCount.toLocaleString()} birds in this batch</Text>
           </View>
         )}
-        <FormField label="Date" required value={date} onChangeText={setDate} error={errors.date} keyboardType="numeric" placeholder="YYYY-MM-DD" />
+        <DateField label="Date" required value={date} onChangeText={setDate} error={errors.date} />
       </FormCard>
 
       <FormCard label="FEED DATA">
@@ -245,7 +253,7 @@ export function FeedConsumptionScreen() {
                   <View style={styles.analysisRow}>
                     <MaterialCommunityIcons name="bird" size={14} color={colors.brand} />
                     <Text style={styles.analysisKey}>Cost per bird</Text>
-                    <Text style={[styles.analysisVal, { color: colors.brand }]}>GHS {(cost / birdCount).toFixed(2)}</Text>
+                    <Text style={[styles.analysisVal, { color: colors.brandDark }]}>GHS {(cost / birdCount).toFixed(2)}</Text>
                   </View>
                 )}
                 <View style={[styles.analysisRow, styles.analysisTotalRow]}>
@@ -302,7 +310,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 20,
   },
-  birdChipText: { fontSize: font.size.xs, color: colors.brand, fontFamily: font.family.bold },
+  birdChipText: { fontSize: font.size.xs, color: colors.brandDark, fontFamily: font.family.bold },
 
   rateWrap: {
     flexDirection: "row",
@@ -315,7 +323,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.brandMid,
   },
-  rateLabel: { fontSize: font.size.xs, color: colors.brand, fontFamily: font.family.medium, flex: 1 },
+  rateLabel: { fontSize: font.size.xs, color: colors.brandDark, fontFamily: font.family.medium, flex: 1 },
 
   row:   { flexDirection: "row", gap: spacing.md },
   half:  { flex: 1 },
@@ -339,5 +347,5 @@ const styles = StyleSheet.create({
     paddingTop: spacing.xs, marginTop: spacing.xs,
   },
   analysisTotalKey: { color: colors.ink, fontFamily: font.family.bold },
-  analysisTotalVal: { color: colors.brand, fontSize: font.size.md, fontFamily: font.family.extrabold },
+  analysisTotalVal: { color: colors.brandDark, fontSize: font.size.md, fontFamily: font.family.extrabold },
 });

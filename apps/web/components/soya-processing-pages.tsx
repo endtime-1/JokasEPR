@@ -3,7 +3,6 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Download, Plus, ShieldCheck } from "lucide-react";
-import { SoyaProcessingShell } from "./soya-processing-shell";
 import { DataTable } from "./data-table";
 import { FormField } from "./form-field";
 import { ApiEnvelope, apiFetch, downloadReport, getCached, getCachedFirst, hasCached } from "../lib/api";
@@ -114,7 +113,7 @@ export function SoyaIntakesPage({ create = false }: { create?: boolean }) {
   }
 
   return (
-    <SoyaProcessingShell>
+    <>
       <PageHeader title={create ? "Create Soya Bean Intake" : "Soya Bean Intakes"} subtitle="Record supplier, received quantity, cost, moisture, and intake quality status." />
       {create ? (
         <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-4">
@@ -130,7 +129,7 @@ export function SoyaIntakesPage({ create = false }: { create?: boolean }) {
         </form>
       ) : <Link className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" href="/soya-processing/intakes/create"><Plus aria-hidden className="h-4 w-4" /> Create intake</Link>}
       <SimpleRowsTable rows={rows} loading={loading} />
-    </SoyaProcessingShell>
+    </>
   );
 }
 
@@ -182,7 +181,7 @@ export function SoyaBatchesPage({ create = false }: { create?: boolean }) {
   }
 
   return (
-    <SoyaProcessingShell>
+    <>
       <PageHeader title={create ? "Create Processing Batch" : "Soya Processing Batches"} subtitle="Post soya processing batches and calculate oil yield, cake yield, loss, costs, and profitability." />
       {create ? (
         <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-4">
@@ -206,7 +205,7 @@ export function SoyaBatchesPage({ create = false }: { create?: boolean }) {
         </form>
       ) : <Link className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" href="/soya-processing/batches/create"><Plus aria-hidden className="h-4 w-4" /> Create batch</Link>}
       <SimpleRowsTable rows={rows} loading={loading} />
-    </SoyaProcessingShell>
+    </>
   );
 }
 
@@ -233,7 +232,7 @@ export function SoyaQualityPage() {
     await load();
   }
   return (
-    <SoyaProcessingShell>
+    <>
       <PageHeader title="Soya Quality Control" subtitle="Approve soya oil purity, cake protein, moisture, and batch quality status." />
       <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-5">
         <SelectField label="Batch" value={form.productionBatchId || options.batches[0]?.id || ""} options={options.batches.map((batch) => ({ ...batch, name: batch.batchNumber }))} onChange={(value) => setForm({ ...form, productionBatchId: value })} />
@@ -244,7 +243,7 @@ export function SoyaQualityPage() {
         <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white md:col-span-5"><ShieldCheck aria-hidden className="h-4 w-4" /> Save quality check</button>
       </form>
       <SimpleRowsTable rows={rows} loading={loading} />
-    </SoyaProcessingShell>
+    </>
   );
 }
 
@@ -261,7 +260,7 @@ export function SoyaStockPage({ type }: { type: "oil" | "cake" }) {
       .finally(() => setLoading(false));
   }, [type]);
   return (
-    <SoyaProcessingShell>
+    <>
       <PageHeader title={type === "oil" ? "Soya Oil Stock" : "Soya Cake Stock"} subtitle="Production output stock by warehouse, batch, unit cost, and quantity." />
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <Link className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white hover:bg-brand/90" href="/soya-processing/batches/create">
@@ -272,7 +271,7 @@ export function SoyaStockPage({ type }: { type: "oil" | "cake" }) {
         </p>
       </div>
       <SimpleRowsTable rows={rows} loading={loading} />
-    </SoyaProcessingShell>
+    </>
   );
 }
 
@@ -300,7 +299,7 @@ export function SoyaTransferPage() {
     await load();
   }
   return (
-    <SoyaProcessingShell>
+    <>
       <PageHeader title="Soya Internal Transfer" subtitle="Transfer soya cake to feed production inventory or move oil and cake between warehouses." />
       <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-5">
         <SelectField label="Batch" value={form.productionBatchId || options.batches[0]?.id || ""} options={options.batches.map((batch) => ({ ...batch, name: batch.batchNumber }))} onChange={(value) => setForm({ ...form, productionBatchId: value })} />
@@ -312,18 +311,18 @@ export function SoyaTransferPage() {
         <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white md:col-span-5">Create transfer</button>
       </form>
       <SimpleRowsTable rows={rows} loading={loading} />
-    </SoyaProcessingShell>
+    </>
   );
 }
 
 export function SoyaReportsPage() {
   return (
-    <SoyaProcessingShell>
+    <>
       <PageHeader title="Soya Production Reports" subtitle="Export soya profitability, yield, loss, cost, quality, stock, transfer, and sales reports." />
       <button className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" onClick={() => downloadReport("/soya-processing/reports/summary.csv", "soya-processing-summary.csv")}>
         <Download aria-hidden className="h-4 w-4" /> Download soya profitability CSV
       </button>
-    </SoyaProcessingShell>
+    </>
   );
 }
 

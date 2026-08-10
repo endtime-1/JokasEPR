@@ -72,11 +72,17 @@ export function ProspectVisitScreen() {
   const { submit, loading } = useSubmit({
     module:   "prospect_visit",
     endpoint: "/sales/prospect-visits",
-    onSuccess: () =>
-      Alert.alert("Visit Logged", "Prospect visit has been recorded.", [
-        { text: "Log Another", onPress: () => resetForm() },
-        { text: "Done", onPress: () => navigation.goBack() },
-      ]),
+    onSuccess: (queued) =>
+      Alert.alert(
+        queued ? "Saved Offline" : "Visit Logged",
+        queued
+          ? "Your prospect visit was saved on this device and will sync automatically once you're back online."
+          : "Prospect visit has been recorded.",
+        [
+          { text: "Log Another", onPress: () => resetForm() },
+          { text: "Done", onPress: () => navigation.goBack() },
+        ]
+      ),
   });
 
   function resetForm() {

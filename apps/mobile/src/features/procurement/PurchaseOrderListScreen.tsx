@@ -173,10 +173,10 @@ const styles = StyleSheet.create({
   metaItemRight: { alignItems: "flex-end" },
   metaLabel: { fontSize: 10, color: colors.inkLight, textTransform: "uppercase", letterSpacing: 0.5 },
   metaValue: { fontSize: font.size.sm, fontWeight: font.weight.semibold, color: colors.ink },
-  poTotal:   { fontSize: font.size.md, fontWeight: font.weight.extrabold, color: colors.brand },
+  poTotal:   { fontSize: font.size.md, fontWeight: font.weight.extrabold, color: colors.brandDark },
 
   receiveRow: { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm, marginTop: spacing.xs },
-  receiveLabel: { fontSize: font.size.sm, color: colors.brand, fontWeight: font.weight.semibold, textAlign: "center" },
+  receiveLabel: { fontSize: font.size.sm, color: colors.brandDark, fontWeight: font.weight.semibold, textAlign: "center" },
 
   sep: { height: spacing.sm },
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: spacing.xxl, gap: spacing.sm },

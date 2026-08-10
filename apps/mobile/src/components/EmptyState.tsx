@@ -34,5 +34,5 @@ const styles = StyleSheet.create({
   title:   { fontSize: font.size.lg, fontFamily: font.family.bold, color: colors.ink, textAlign: "center" },
   sub:     { fontSize: font.size.sm, color: colors.inkLight, fontFamily: font.family.regular, textAlign: "center", lineHeight: 20 },
   btn:     { marginTop: spacing.sm, paddingHorizontal: spacing.xl, paddingVertical: spacing.md, borderRadius: radius.lg, borderWidth: 1.5, borderColor: colors.brand },
-  btnText: { fontSize: font.size.sm, fontFamily: font.family.semibold, color: colors.brand },
+  btnText: { fontSize: font.size.sm, fontFamily: font.family.semibold, color: colors.brandDark },
 });

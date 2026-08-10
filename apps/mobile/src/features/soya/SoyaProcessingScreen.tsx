@@ -6,6 +6,7 @@ import { ScreenWrapper } from "../../components/ScreenWrapper";
 import { FormCard } from "../../components/FormCard";
 import { FormFooter } from "../../components/FormFooter";
 import { FormField } from "../../components/FormField";
+import { DateField } from "../../components/DateField";
 import { SelectField, SelectOption } from "../../components/SelectField";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
@@ -131,7 +132,14 @@ function IntakeForm({
   const { submit, loading } = useSubmit({
     module: "soya_intake",
     endpoint: "/soya-processing/intakes",
-    onSuccess: () => Alert.alert("Saved", "Bean intake recorded.", [{ text: "OK", onPress: onSuccess }]),
+    onSuccess: (queued) =>
+      Alert.alert(
+        queued ? "Saved Offline" : "Saved",
+        queued
+          ? "Your bean intake was saved on this device and will sync automatically once you're back online."
+          : "Bean intake recorded.",
+        [{ text: "OK", onPress: onSuccess }]
+      ),
   });
 
   async function handleSubmit() {
@@ -268,7 +276,14 @@ function BatchForm({
   const { submit, loading } = useSubmit({
     module: "soya_batch",
     endpoint: "/soya-processing/batches",
-    onSuccess: () => Alert.alert("Saved", "Processing batch recorded.", [{ text: "OK", onPress: onSuccess }]),
+    onSuccess: (queued) =>
+      Alert.alert(
+        queued ? "Saved Offline" : "Saved",
+        queued
+          ? "Your processing batch was saved on this device and will sync automatically once you're back online."
+          : "Processing batch recorded.",
+        [{ text: "OK", onPress: onSuccess }]
+      ),
   });
 
   const yieldPct = beansKg && oilLitres && cakeKg
@@ -316,8 +331,7 @@ function BatchForm({
 
         <View style={styles.row}>
           <View style={styles.half}>
-            <FormField label="Processing Date" value={processingDate} onChangeText={setProcessingDate}
-              placeholder="YYYY-MM-DD" />
+            <DateField label="Processing Date" value={processingDate} onChangeText={setProcessingDate} />
           </View>
           <View style={styles.half}>
             <FormField label="Batch Number" value={batchNumber} onChangeText={setBatchNumber}

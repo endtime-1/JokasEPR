@@ -265,7 +265,7 @@ const styles = StyleSheet.create({
   poCardText:  { flex: 1, gap: 2 },
   poRef:       { fontSize: font.size.md, fontWeight: font.weight.extrabold, color: colors.ink },
   poSupplier:  { fontSize: font.size.sm, color: colors.inkMid },
-  poTotal:     { fontSize: font.size.lg, fontWeight: font.weight.extrabold, color: colors.brand },
+  poTotal:     { fontSize: font.size.lg, fontWeight: font.weight.extrabold, color: colors.brandDark },
   poMeta:      { flexDirection: "row", justifyContent: "space-between" },
   poMetaText:  { fontSize: font.size.xs, color: colors.inkLight },
 
@@ -273,7 +273,7 @@ const styles = StyleSheet.create({
   sectionTitle:  { fontSize: font.size.xs, fontWeight: font.weight.bold, color: colors.inkLight, letterSpacing: 1 },
   sectionLine:   { flex: 1, height: 1, backgroundColor: colors.border },
   itemCountBadge: { minWidth: 22, height: 22, borderRadius: 11, backgroundColor: colors.brand + "20", alignItems: "center", justifyContent: "center", paddingHorizontal: 6 },
-  itemCountText:  { fontSize: font.size.xs, fontWeight: font.weight.bold, color: colors.brand },
+  itemCountText:  { fontSize: font.size.xs, fontWeight: font.weight.bold, color: colors.brandDark },
 
   lineErrorBanner: { backgroundColor: "#fef2f2", borderRadius: radius.md, padding: spacing.md, borderWidth: 1, borderColor: "#fca5a5" },
   lineErrorText:   { fontSize: font.size.sm, color: colors.error, fontWeight: font.weight.medium },
@@ -281,7 +281,7 @@ const styles = StyleSheet.create({
   lineCard: { backgroundColor: colors.bg, borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border, padding: spacing.lg, gap: spacing.sm },
   lineHeader: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   lineNum:    { backgroundColor: colors.brandLight, paddingHorizontal: spacing.sm, paddingVertical: 3, borderRadius: radius.full, borderWidth: 1, borderColor: colors.brandMid },
-  lineNumText: { fontSize: font.size.xs, fontWeight: font.weight.bold, color: colors.brand },
+  lineNumText: { fontSize: font.size.xs, fontWeight: font.weight.bold, color: colors.brandDark },
   lineProduct: { flex: 1, fontSize: font.size.sm, fontWeight: font.weight.semibold, color: colors.ink },
   lineUom:    { fontSize: font.size.xs, color: colors.inkLight, backgroundColor: colors.bg, paddingHorizontal: spacing.sm, paddingVertical: 2, borderRadius: radius.full },
 

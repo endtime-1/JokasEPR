@@ -22,7 +22,7 @@ export default function PremiumProductCard({ product, featured = false }: Props)
   const { addItem } = useCart();
   const [imgError, setImgError] = useState(false);
   const [added, setAdded] = useState(false);
-  const imgSrc = PRODUCT_IMAGES[product.publicSlug];
+  const imgSrc = product.imageUrl ?? PRODUCT_IMAGES[product.publicSlug];
   const gradient = CATEGORY_COLORS[product.storefrontCategory ?? ""] ?? "from-brand/80 to-brandDark/80";
 
   function handleAdd(e: React.MouseEvent) {

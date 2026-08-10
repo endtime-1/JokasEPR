@@ -460,7 +460,7 @@ const styles = StyleSheet.create({
   subToggleBtn: { flex: 1, paddingVertical: spacing.sm, borderRadius: radius.md, alignItems: "center" },
   subToggleBtnActive: { backgroundColor: colors.brandLight },
   subToggleText: { fontSize: font.size.xs, fontWeight: font.weight.semibold as any, color: colors.inkLight },
-  subToggleTextActive: { color: colors.brand },
+  subToggleTextActive: { color: colors.brandDark },
 
   sectionHeaderRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, marginTop: spacing.xs },
   sectionHeaderText: { fontSize: font.size.xs, fontWeight: font.weight.bold as any, color: colors.inkLight, letterSpacing: 1 },

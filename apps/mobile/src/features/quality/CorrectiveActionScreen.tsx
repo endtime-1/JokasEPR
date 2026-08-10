@@ -6,6 +6,7 @@ import { ScreenWrapper } from "../../components/ScreenWrapper";
 import { FormCard } from "../../components/FormCard";
 import { FormFooter } from "../../components/FormFooter";
 import { FormField } from "../../components/FormField";
+import { DateField } from "../../components/DateField";
 import { SelectField, SelectOption } from "../../components/SelectField";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
@@ -54,8 +55,14 @@ export function CorrectiveActionScreen() {
   const { submit, loading } = useSubmit({
     module: "corrective_action",
     endpoint: "/quality/corrective-actions",
-    onSuccess: () =>
-      Alert.alert("Action Created", "Corrective action has been logged.", [{ text: "OK", onPress: () => navigation.goBack() }]),
+    onSuccess: (queued) =>
+      Alert.alert(
+        queued ? "Saved Offline" : "Action Created",
+        queued
+          ? "Your corrective action was saved on this device and will sync automatically once you're back online."
+          : "Corrective action has been logged.",
+        [{ text: "OK", onPress: () => navigation.goBack() }]
+      ),
   });
 
   async function handleSubmit() {
@@ -133,9 +140,8 @@ export function CorrectiveActionScreen() {
         <SelectField label="Assign To (optional)" value={assignedToId} options={userOptions}
           onChange={setAssignedToId} placeholder="Select team member…" />
 
-        <FormField label="Due Date (optional)" value={dueDate}
-          onChangeText={setDueDate} placeholder="YYYY-MM-DD"
-          keyboardType="numbers-and-punctuation" />
+        <DateField label="Due Date (optional)" value={dueDate}
+          onChangeText={setDueDate} />
       </FormCard>
     </ScreenWrapper>
   );

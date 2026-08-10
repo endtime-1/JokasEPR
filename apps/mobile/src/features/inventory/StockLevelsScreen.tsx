@@ -168,7 +168,7 @@ const styles = StyleSheet.create({
   filterChip:         { paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: radius.full, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.bg },
   filterChipActive:   { borderColor: colors.brand, backgroundColor: colors.brandLight },
   filterChipText:     { fontSize: font.size.xs, fontFamily: font.family.semibold, color: colors.inkMid },
-  filterChipTextActive: { color: colors.brand, fontFamily: font.family.bold },
+  filterChipTextActive: { color: colors.brandDark, fontFamily: font.family.bold },
 
   sep: { height: 1, backgroundColor: colors.border },
   row: { flexDirection: "row", alignItems: "center", paddingVertical: spacing.md, paddingHorizontal: spacing.lg, gap: spacing.md, backgroundColor: colors.bgCard },

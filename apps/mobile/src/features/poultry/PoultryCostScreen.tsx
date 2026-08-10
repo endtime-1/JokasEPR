@@ -6,6 +6,7 @@ import { ScreenWrapper } from "../../components/ScreenWrapper";
 import { FormCard } from "../../components/FormCard";
 import { FormFooter } from "../../components/FormFooter";
 import { FormField } from "../../components/FormField";
+import { DateField } from "../../components/DateField";
 import { SelectField, SelectOption } from "../../components/SelectField";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
@@ -66,7 +67,14 @@ export function PoultryCostScreen() {
   const { submit, loading } = useSubmit({
     module: "poultry_cost",
     endpoint: "/poultry/costs",
-    onSuccess: () => Alert.alert("Saved", "Cost entry recorded.", [{ text: "OK", onPress: () => navigation.goBack() }])
+    onSuccess: (queued) =>
+      Alert.alert(
+        queued ? "Saved Offline" : "Saved",
+        queued
+          ? "Your cost entry was saved on this device and will sync automatically once you're back online."
+          : "Cost entry recorded.",
+        [{ text: "OK", onPress: () => navigation.goBack() }]
+      )
   });
 
   async function handleSubmit() {
@@ -95,7 +103,7 @@ export function PoultryCostScreen() {
       <FormCard label="FLOCK / BATCH">
         <SelectField label="Farm" value={farmId} options={farms} onChange={(v) => { setFarmId(v); setBatchId(""); setErrors((e) => ({ ...e, farmId: "" })); }} error={errors.farmId} required />
         <SelectField label="Flock Batch" value={batchId} options={batches} onChange={(v) => { setBatchId(v); setErrors((e) => ({ ...e, batchId: "" })); }} error={errors.batchId} required placeholder={farmId ? "Select batch…" : "Select farm first"} />
-        <FormField label="Cost Date" required value={costDate} onChangeText={(v) => { setCostDate(v); setErrors((e) => ({ ...e, costDate: "" })); }} error={errors.costDate} keyboardType="numeric" placeholder="YYYY-MM-DD" />
+        <DateField label="Cost Date" required value={costDate} onChangeText={(v) => { setCostDate(v); setErrors((e) => ({ ...e, costDate: "" })); }} error={errors.costDate} />
       </FormCard>
 
       <FormCard label="COST DETAILS">

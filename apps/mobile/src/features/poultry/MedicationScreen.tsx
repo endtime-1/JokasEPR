@@ -6,6 +6,7 @@ import { ScreenWrapper } from "../../components/ScreenWrapper";
 import { FormCard } from "../../components/FormCard";
 import { FormFooter } from "../../components/FormFooter";
 import { FormField } from "../../components/FormField";
+import { DateField } from "../../components/DateField";
 import { SelectField, SelectOption } from "../../components/SelectField";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
@@ -90,7 +91,14 @@ export function MedicationScreen() {
   const { submit, loading } = useSubmit({
     module: "poultry_medication",
     endpoint: "/poultry/medication-records",
-    onSuccess: () => Alert.alert("Saved", "Medication record saved.", [{ text: "OK", onPress: () => navigation.goBack() }])
+    onSuccess: (queued) =>
+      Alert.alert(
+        queued ? "Saved Offline" : "Saved",
+        queued
+          ? "Your medication record was saved on this device and will sync automatically once you're back online."
+          : "Medication record saved.",
+        [{ text: "OK", onPress: () => navigation.goBack() }]
+      )
   });
 
   async function handleSubmit() {
@@ -126,7 +134,7 @@ export function MedicationScreen() {
         <SelectField label="Farm" value={farmId} options={farms} onChange={(v) => { setFarmId(v); setBatchId(""); setPenId(""); }} error={errors.farmId} required />
         <SelectField label="Flock Batch" value={batchId} options={batches} onChange={(v) => { setBatchId(v); setPenId(""); }} error={errors.batchId} required placeholder={farmId ? "Select batch…" : "Select farm first"} />
         {pens.length > 0 && <SelectField label="Pen (optional)" value={penId} options={pens} onChange={setPenId} placeholder="All pens" />}
-        <FormField label="Start Date" required value={startDate} onChangeText={setStartDate} error={errors.startDate} keyboardType="numeric" placeholder="YYYY-MM-DD" />
+        <DateField label="Start Date" required value={startDate} onChangeText={setStartDate} error={errors.startDate} />
       </FormCard>
 
       <FormCard label="MEDICATION DATA">
@@ -141,7 +149,7 @@ export function MedicationScreen() {
           </View>
         </View>
 
-        <FormField label="End Date" value={endDate} onChangeText={setEndDate} keyboardType="numeric" placeholder="YYYY-MM-DD (optional)" />
+        <DateField label="End Date" value={endDate} onChangeText={setEndDate} />
       </FormCard>
 
       <FormCard label="NOTES">

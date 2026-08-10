@@ -67,10 +67,12 @@ export function BreakdownReportScreen() {
   const { submit, loading } = useSubmit({
     module: "breakdown",
     endpoint: "/maintenance/breakdowns",
-    onSuccess: () =>
+    onSuccess: (queued) =>
       Alert.alert(
-        "Breakdown Reported",
-        `${selectedAssetName} has been marked as broken down and a breakdown record has been created.`,
+        queued ? "Saved Offline" : "Breakdown Reported",
+        queued
+          ? `The breakdown report for ${selectedAssetName} was saved on this device and will sync automatically once you're back online.`
+          : `${selectedAssetName} has been marked as broken down and a breakdown record has been created.`,
         [{ text: "OK", onPress: () => navigation.goBack() }]
       ),
   });
@@ -214,7 +216,7 @@ const styles = StyleSheet.create({
   toggleBtn:           { flex: 1, paddingVertical: spacing.md, borderRadius: radius.lg, borderWidth: 1.5, borderColor: colors.border, alignItems: "center", backgroundColor: colors.bgCard },
   toggleBtnActive:     { borderColor: colors.brand, backgroundColor: colors.brandLight },
   toggleBtnText:       { fontSize: font.size.sm, fontWeight: font.weight.semibold, color: colors.inkLight },
-  toggleBtnTextActive: { color: colors.brand },
+  toggleBtnTextActive: { color: colors.brandDark },
 
   fieldLabel: { fontSize: font.size.sm, fontWeight: font.weight.semibold, color: colors.ink },
   required:   { color: colors.error },

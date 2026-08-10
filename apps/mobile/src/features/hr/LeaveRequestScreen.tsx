@@ -5,6 +5,7 @@ import { useNavigation } from "@react-navigation/native";
 import { Icon } from "../../components/Icon";
 import { PageHeader } from "../../components/PageHeader";
 import { useToast } from "../../components/Toast";
+import { DateField } from "../../components/DateField";
 import { submitLeaveRequest, type LeaveType } from "../../api/endpoints";
 import { colors, font, radius, shadow, spacing } from "../../constants/theme";
 
@@ -84,27 +85,13 @@ export function LeaveRequestScreen() {
           <Text style={styles.sectionTitle}>Dates *</Text>
           <View style={styles.dateRow}>
             <View style={styles.dateField}>
-              <Text style={styles.label}>Start Date</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="YYYY-MM-DD"
-                placeholderTextColor={colors.inkLight}
-                value={startDate}
-                onChangeText={setStartDate}
-              />
+              <DateField label="Start Date" required value={startDate} onChangeText={setStartDate} />
             </View>
             <View style={styles.dateSep}>
               <Icon name="arrow-right" size={18} color={colors.inkLight} />
             </View>
             <View style={styles.dateField}>
-              <Text style={styles.label}>End Date</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="YYYY-MM-DD"
-                placeholderTextColor={colors.inkLight}
-                value={endDate}
-                onChangeText={setEndDate}
-              />
+              <DateField label="End Date" required value={endDate} onChangeText={setEndDate} />
             </View>
           </View>
           {calcDays !== null && calcDays > 0 && (

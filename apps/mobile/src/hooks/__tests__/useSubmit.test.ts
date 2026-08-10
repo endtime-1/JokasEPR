@@ -60,7 +60,7 @@ describe("useSubmit", () => {
       expect.stringContaining("/livestock/batches?idempotencyKey="),
       expect.objectContaining({ method: "POST" })
     );
-    expect(onSuccess).toHaveBeenCalled();
+    expect(onSuccess).toHaveBeenCalledWith(false);
     expect(mockQueueSubmission).not.toHaveBeenCalled();
   });
 
@@ -84,7 +84,7 @@ describe("useSubmit", () => {
       { name: "Batch B" },
       "POST"
     );
-    expect(onSuccess).toHaveBeenCalled();
+    expect(onSuccess).toHaveBeenCalledWith(true);
   });
 
   it("falls back to the offline queue on a network/timeout failure (ApiError status 0) — C6", async () => {
@@ -106,7 +106,7 @@ describe("useSubmit", () => {
     });
 
     expect(mockQueueSubmission).toHaveBeenCalled();
-    expect(onSuccess).toHaveBeenCalled();
+    expect(onSuccess).toHaveBeenCalledWith(true);
   });
 
   it("does NOT queue a genuine server rejection (ApiError status 400) — shows the error instead — C6", async () => {

@@ -6,6 +6,7 @@ import { ScreenWrapper } from "../../components/ScreenWrapper";
 import { FormCard } from "../../components/FormCard";
 import { FormFooter } from "../../components/FormFooter";
 import { FormField } from "../../components/FormField";
+import { DateField } from "../../components/DateField";
 import { SelectField, SelectOption } from "../../components/SelectField";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
@@ -73,8 +74,12 @@ export function PaymentCollectScreen() {
   const { submit, loading } = useSubmit({
     module: "customer_payment",
     endpoint: "/finance/customer-payments",
-    onSuccess: () =>
-      Alert.alert("Payment Recorded", `GHS ${amountNum.toFixed(2)} payment from ${customerName} has been saved.`,
+    onSuccess: (queued) =>
+      Alert.alert(
+        queued ? "Saved Offline" : "Payment Recorded",
+        queued
+          ? `The GHS ${amountNum.toFixed(2)} payment from ${customerName} was saved on this device and will sync automatically once you're back online.`
+          : `GHS ${amountNum.toFixed(2)} payment from ${customerName} has been saved.`,
         [{ text: "OK", onPress: () => navigation.goBack() }]
       ),
   });
@@ -123,9 +128,9 @@ export function PaymentCollectScreen() {
           </View>
         )}
 
-        <FormField label="Payment Date" value={paymentDate}
+        <DateField label="Payment Date" value={paymentDate}
           onChangeText={(v) => { setPaymentDate(v); setErrors((e) => ({ ...e, paymentDate: "" })); }}
-          placeholder="YYYY-MM-DD" required error={errors.paymentDate} />
+          required error={errors.paymentDate} />
 
         <SelectField label="Payment Method" value={paymentMethod} options={PAYMENT_METHODS}
           onChange={(v) => { setPaymentMethod(v); setErrors((e) => ({ ...e, paymentMethod: "" })); }}
@@ -173,5 +178,5 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
   },
   amountLabel: { fontSize: font.size.md, fontWeight: font.weight.semibold, color: colors.brandDark },
-  amountValue: { fontSize: font.size.xxl, fontWeight: font.weight.extrabold, color: colors.brand },
+  amountValue: { fontSize: font.size.xxl, fontWeight: font.weight.extrabold, color: colors.brandDark },
 });

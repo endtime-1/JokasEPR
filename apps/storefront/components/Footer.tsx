@@ -18,6 +18,7 @@ const COMPANY_LINKS = [
   { href: "/products", label: "All Products" },
   { href: "/contact", label: "Contact Us" },
   { href: "/cart", label: "Your Cart" },
+  { href: "/track", label: "Track Your Order" },
 ];
 
 export default function Footer() {

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { apiFetch, type ApiEnvelope } from "../../lib/api";
+import { ConfirmModal } from "../../components/ui";
 import {
   CircleCheckBig,
   Clock,
@@ -69,6 +70,7 @@ export default function StorefrontDashboard() {
   const [stats, setStats] = useState<DashStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [confirmCancelId, setConfirmCancelId] = useState<string | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -111,8 +113,8 @@ export default function StorefrontDashboard() {
   }
 
   async function cancelOrder(id: string) {
-    if (!confirm("Cancel this order?")) return;
     await advanceOrder(id, "CANCELLED");
+    setConfirmCancelId(null);
   }
 
   const skel = (w = "w-16") => (
@@ -352,7 +354,7 @@ export default function StorefrontDashboard() {
                         </button>
                       )}
                       <button
-                        onClick={() => cancelOrder(order.id)}
+                        onClick={() => setConfirmCancelId(order.id)}
                         disabled={isUpdating}
                         className="rounded-xl border border-red-100 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 transition hover:bg-red-100 disabled:opacity-50"
                       >
@@ -396,6 +398,17 @@ export default function StorefrontDashboard() {
           <ArrowRight className="h-4 w-4 shrink-0 text-ink/20 transition group-hover:translate-x-0.5 group-hover:text-brand" />
         </Link>
       </div>
+
+      <ConfirmModal
+        open={confirmCancelId !== null}
+        onClose={() => setConfirmCancelId(null)}
+        onConfirm={() => confirmCancelId && cancelOrder(confirmCancelId)}
+        title="Cancel order?"
+        message="Cancel this order?"
+        confirmLabel="Cancel Order"
+        variant="danger"
+        loading={confirmCancelId !== null && updatingId === confirmCancelId}
+      />
 
     </div>
   );

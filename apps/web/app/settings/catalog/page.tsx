@@ -15,7 +15,6 @@ import {
   X
 } from "lucide-react";
 import Link from "next/link";
-import { AppShell } from "../../../components/app-shell";
 import { ApiEnvelope, apiFetch, getCachedFirst } from "../../../lib/api";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -303,7 +302,7 @@ export default function ProductCatalogPage() {
   ];
 
   return (
-    <AppShell>
+    <>
       <div className="space-y-6">
 
         {/* ── Page header ── */}
@@ -691,6 +690,6 @@ export default function ProductCatalogPage() {
           </div>
         </div>
       )}
-    </AppShell>
+    </>
   );
 }

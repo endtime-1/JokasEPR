@@ -5,6 +5,7 @@ import { useNavigation } from "@react-navigation/native";
 import { Icon } from "../../components/Icon";
 import { PageHeader } from "../../components/PageHeader";
 import { useToast } from "../../components/Toast";
+import { DateField } from "../../components/DateField";
 import { fetchProducts, submitMarketTarget } from "../../api/endpoints";
 import { useLookup } from "../../hooks/useLookup";
 import { colors, font, radius, shadow, spacing } from "../../constants/theme";
@@ -91,13 +92,11 @@ export function MarketTargetCreateScreen() {
           <Text style={styles.sectionTitle}>Target Period *</Text>
           <View style={styles.dateRow}>
             <View style={styles.dateField}>
-              <Text style={styles.label}>Start Date</Text>
-              <TextInput style={styles.input} placeholder="YYYY-MM-DD" placeholderTextColor={colors.inkLight} value={periodStart} onChangeText={setPeriodStart} />
+              <DateField label="Start Date" required value={periodStart} onChangeText={setPeriodStart} />
             </View>
             <Icon name="arrow-right" size={18} color={colors.inkLight} />
             <View style={styles.dateField}>
-              <Text style={styles.label}>End Date</Text>
-              <TextInput style={styles.input} placeholder="YYYY-MM-DD" placeholderTextColor={colors.inkLight} value={periodEnd} onChangeText={setPeriodEnd} />
+              <DateField label="End Date" required value={periodEnd} onChangeText={setPeriodEnd} />
             </View>
           </View>
         </View>
@@ -187,7 +186,7 @@ const styles = StyleSheet.create({
   textArea:  { minHeight: 80, textAlignVertical: "top" },
 
   addBtn:  { flexDirection: "row", alignItems: "center", gap: 4 },
-  addText: { fontSize: font.size.sm, fontFamily: font.family.semibold, color: colors.brand },
+  addText: { fontSize: font.size.sm, fontFamily: font.family.semibold, color: colors.brandDark },
 
   lineItem:   { gap: spacing.sm, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.border },
   lineHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
@@ -197,7 +196,7 @@ const styles = StyleSheet.create({
   productChip:        { paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: radius.full, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.bg, maxWidth: 160 },
   productChipActive:  { borderColor: colors.brand, backgroundColor: colors.brandLight },
   productChipText:    { fontSize: font.size.xs, fontFamily: font.family.medium, color: colors.inkMid },
-  productChipTextActive: { color: colors.brand, fontFamily: font.family.bold },
+  productChipTextActive: { color: colors.brandDark, fontFamily: font.family.bold },
 
   qtyRow:     { gap: spacing.xs },
 

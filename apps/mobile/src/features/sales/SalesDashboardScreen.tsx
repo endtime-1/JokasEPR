@@ -153,17 +153,17 @@ const styles = StyleSheet.create({
 
   actionsRow: { flexDirection: "row", gap: spacing.sm },
   quickBtn:   { flex: 1, flexDirection: "column", alignItems: "center", gap: 5, backgroundColor: colors.bgCard, borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border, paddingVertical: spacing.md, ...shadow.sm },
-  quickBtnText: { fontSize: font.size.xs, fontFamily: font.family.bold, color: colors.brand },
+  quickBtnText: { fontSize: font.size.xs, fontFamily: font.family.bold, color: colors.brandDark },
 
   sectionCard:   { backgroundColor: colors.bgCard, borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border, overflow: "hidden", ...shadow.sm },
   sectionHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: spacing.lg, paddingBottom: spacing.sm },
   sectionTitle:  { fontSize: font.size.sm, fontFamily: font.family.extrabold, color: colors.inkLight, textTransform: "uppercase", letterSpacing: 0.8 },
-  seeAll:        { fontSize: font.size.xs, fontFamily: font.family.semibold, color: colors.brand },
+  seeAll:        { fontSize: font.size.xs, fontFamily: font.family.semibold, color: colors.brandDark },
 
   customerRow:      { flexDirection: "row", alignItems: "center", gap: spacing.md, padding: spacing.lg, borderTopWidth: 1, borderTopColor: colors.border },
   customerRowFirst: { borderTopWidth: 0 },
   rankBadge:        { width: 24, height: 24, borderRadius: 12, backgroundColor: colors.brandLight, alignItems: "center", justifyContent: "center" },
-  rankText:         { fontSize: font.size.xs, fontFamily: font.family.extrabold, color: colors.brand },
+  rankText:         { fontSize: font.size.xs, fontFamily: font.family.extrabold, color: colors.brandDark },
   customerName:     { flex: 1, fontSize: font.size.sm, fontFamily: font.family.semibold, color: colors.ink },
   customerSpend:    { fontSize: font.size.sm, fontFamily: font.family.extrabold, color: colors.ink },
 

@@ -6,6 +6,7 @@ import { ScreenWrapper } from "../../components/ScreenWrapper";
 import { FormCard } from "../../components/FormCard";
 import { FormFooter } from "../../components/FormFooter";
 import { FormField } from "../../components/FormField";
+import { DateField } from "../../components/DateField";
 import { useSubmit } from "../../hooks/useSubmit";
 import { colors, font, radius, spacing } from "../../constants/theme";
 
@@ -34,8 +35,14 @@ export function LabReportScreen() {
   const { submit, loading } = useSubmit({
     module: "lab_report",
     endpoint: "/quality/lab-reports",
-    onSuccess: () =>
-      Alert.alert("Report Logged", "Lab report has been saved.", [{ text: "OK", onPress: () => navigation.goBack() }]),
+    onSuccess: (queued) =>
+      Alert.alert(
+        queued ? "Saved Offline" : "Report Logged",
+        queued
+          ? "Your lab report was saved on this device and will sync automatically once you're back online."
+          : "Lab report has been saved.",
+        [{ text: "OK", onPress: () => navigation.goBack() }]
+      ),
   });
 
   async function handleSubmit() {
@@ -77,10 +84,9 @@ export function LabReportScreen() {
               required error={errors.reportNumber} placeholder="e.g. LAB-2026-001" />
           </View>
           <View style={styles.half}>
-            <FormField label="Report Date" value={reportDate}
+            <DateField label="Report Date" value={reportDate}
               onChangeText={(v) => { setReportDate(v); setErrors((e) => ({ ...e, reportDate: "" })); }}
-              required error={errors.reportDate} placeholder="YYYY-MM-DD"
-              keyboardType="numbers-and-punctuation" />
+              required error={errors.reportDate} />
           </View>
         </View>
 
@@ -144,5 +150,5 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.brandMid, padding: spacing.md,
   },
   linkPreviewIcon: { fontSize: 16 },
-  linkPreviewText: { flex: 1, fontSize: font.size.xs, color: colors.brand },
+  linkPreviewText: { flex: 1, fontSize: font.size.xs, color: colors.brandDark },
 });

@@ -6,6 +6,7 @@ import { ScreenWrapper } from "../../components/ScreenWrapper";
 import { FormCard } from "../../components/FormCard";
 import { FormFooter } from "../../components/FormFooter";
 import { FormField } from "../../components/FormField";
+import { DateField } from "../../components/DateField";
 import { SelectField, SelectOption } from "../../components/SelectField";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
@@ -95,8 +96,14 @@ export function DailyPoultryScreen() {
   const { submit, loading } = useSubmit({
     module: "poultry_daily",
     endpoint: "/poultry/daily-records",
-    onSuccess: () => {
-      Alert.alert("Saved", "Daily record saved successfully.", [{ text: "OK", onPress: () => navigation.goBack() }]);
+    onSuccess: (queued) => {
+      Alert.alert(
+        queued ? "Saved Offline" : "Saved",
+        queued
+          ? "Your daily record was saved on this device and will sync automatically once you're back online."
+          : "Daily record saved successfully.",
+        [{ text: "OK", onPress: () => navigation.goBack() }]
+      );
     }
   });
 
@@ -131,7 +138,7 @@ export function DailyPoultryScreen() {
         <SelectField label="Farm" value={form.farmId} options={farms} onChange={set("farmId")} error={errors.farmId} required placeholder="Select farm…" />
         <SelectField label="Flock Batch" value={form.flockBatchId} options={batches} onChange={set("flockBatchId")} error={errors.flockBatchId} required placeholder={form.farmId ? "Select batch…" : "Select farm first"} />
         {pens.length > 0 && <SelectField label="Pen (optional)" value={form.penId} options={pens} onChange={set("penId")} placeholder="All pens" />}
-        <FormField label="Record Date" required value={form.recordDate} onChangeText={set("recordDate")} error={errors.recordDate} placeholder="YYYY-MM-DD" keyboardType="numeric" />
+        <DateField label="Record Date" required value={form.recordDate} onChangeText={set("recordDate")} error={errors.recordDate} />
       </FormCard>
 
       <FormCard label="RECORD DATA">

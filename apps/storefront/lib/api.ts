@@ -17,6 +17,7 @@ export interface PublicProduct {
   unitLabel: string | null;
   price: number | null;
   currency: string;
+  imageUrl: string | null;
 }
 
 // H25: public.service.ts's listProducts()/getProduct() actually return
@@ -52,7 +53,8 @@ function toPublicProduct(raw: RawPublicProduct): PublicProduct {
     minOrderQty: raw.minOrderQty,
     unitLabel: raw.unitLabel,
     price: raw.unitPrice,
-    currency: "GHS"
+    currency: "GHS",
+    imageUrl: raw.imageUrl
   };
 }
 

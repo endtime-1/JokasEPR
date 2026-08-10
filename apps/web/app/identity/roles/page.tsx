@@ -1,7 +1,6 @@
 ﻿"use client";
 
 import { useEffect, useState } from "react";
-import { AppShell } from "../../../components/app-shell";
 import { DataTable } from "../../../components/data-table";
 import { ApiEnvelope, apiFetch } from "../../../lib/api";
 
@@ -22,7 +21,7 @@ export default function RolesPage() {
   }, []);
 
   return (
-    <AppShell>
+    <>
       <div className="mb-6">
         <h2 className="text-2xl font-semibold">Roles</h2>
         <p className="text-sm text-ink/65">Permission bundles used by API guards and user access checks.</p>
@@ -42,7 +41,7 @@ export default function RolesPage() {
           }
         ]}
       />
-    </AppShell>
+    </>
   );
 }
 

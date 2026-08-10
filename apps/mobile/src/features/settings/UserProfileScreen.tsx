@@ -179,7 +179,7 @@ const styles = StyleSheet.create({
   avatarText:  { color: colors.white, fontSize: font.size.xxl, fontFamily: font.family.extrabold },
   heroName:    { fontSize: font.size.xl, fontFamily: font.family.extrabold, color: colors.ink },
   rolePill:    { paddingHorizontal: spacing.md, paddingVertical: 4, borderRadius: radius.full, backgroundColor: colors.brandLight, borderWidth: 1, borderColor: colors.brandMid },
-  rolePillText:{ fontSize: font.size.xs, color: colors.brand, fontFamily: font.family.bold },
+  rolePillText:{ fontSize: font.size.xs, color: colors.brandDark, fontFamily: font.family.bold },
   heroCode:    { fontSize: font.size.xs, color: colors.inkLight, fontFamily: font.family.medium },
 
   infoCard:     { backgroundColor: colors.bgCard, borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border, overflow: "hidden", ...shadow.sm },
@@ -197,7 +197,7 @@ const styles = StyleSheet.create({
   phoneInput:  { borderWidth: 1, borderColor: colors.brand, borderRadius: radius.lg, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, fontSize: font.size.sm, fontFamily: font.family.regular, color: colors.ink, marginTop: 4 },
 
   editPhoneBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: spacing.lg, paddingBottom: spacing.md },
-  editPhoneText:{ fontSize: font.size.xs, color: colors.brand, fontFamily: font.family.semibold },
+  editPhoneText:{ fontSize: font.size.xs, color: colors.brandDark, fontFamily: font.family.semibold },
 
   saveRow:    { flexDirection: "row", gap: spacing.md },
   cancelBtn:  { flex: 1, paddingVertical: spacing.md, borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border, alignItems: "center" },

@@ -9,8 +9,8 @@ import {
   ShieldX, TrendingUp, CircleX,
 } from "lucide-react";
 import { ApiEnvelope, apiFetch, getCached, getCachedFirst, hasCached } from "../lib/api";
-import { AppShell } from "./app-shell";
 import { DataTable } from "./data-table";
+import { StatusBadge } from "./ui";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -87,37 +87,19 @@ function KpiCard({ label, value, Icon, color, sub }: { label: string; value: str
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
+function CheckTypeBadge({ checkType }: { checkType: string }) {
   const colours: Record<string, string> = {
-    PENDING:               "bg-gray-100 text-gray-600 border-gray-200",
-    IN_PROGRESS:           "bg-blue-100 text-blue-700 border-blue-200",
-    PASSED:                "bg-emerald-100 text-emerald-700 border-emerald-200",
-    FAILED:                "bg-red-100 text-red-700 border-red-200",
-    CONDITIONALLY_PASSED:  "bg-amber-100 text-amber-800 border-amber-200",
-    CANCELLED:             "bg-gray-100 text-gray-500 border-gray-200",
-    APPROVED:              "bg-emerald-100 text-emerald-700 border-emerald-200",
-    REJECTED:              "bg-red-100 text-red-700 border-red-200",
-    QUARANTINE:            "bg-orange-100 text-orange-700 border-orange-200",
-    CONDITIONALLY_APPROVED:"bg-amber-100 text-amber-800 border-amber-200",
-    OPEN:                  "bg-red-100 text-red-700 border-red-200",
-    RESOLVED:              "bg-emerald-100 text-emerald-700 border-emerald-200",
-    CLOSED:                "bg-gray-100 text-gray-600 border-gray-200",
-    LOW:                   "bg-gray-100 text-gray-600 border-gray-200",
-    MEDIUM:                "bg-blue-100 text-blue-700 border-blue-200",
-    HIGH:                  "bg-orange-100 text-orange-700 border-orange-200",
-    URGENT:                "bg-red-100 text-red-700 border-red-200",
-    ACTIVE:                "bg-emerald-100 text-emerald-700 border-emerald-200",
-    RAW_MATERIAL:          "bg-amber-100 text-amber-700 border-amber-200",
-    FEED_PRODUCTION:       "bg-lime-100 text-lime-700 border-lime-200",
-    SOYA_PROCESSING:       "bg-teal-100 text-teal-700 border-teal-200",
-    FINISHED_GOODS:        "bg-indigo-100 text-indigo-700 border-indigo-200",
-    POULTRY_HEALTH:        "bg-pink-100 text-pink-700 border-pink-200",
-    GOODS_RECEIVED:        "bg-purple-100 text-purple-700 border-purple-200",
+    RAW_MATERIAL:    "bg-amber-100 text-amber-700 border-amber-200",
+    FEED_PRODUCTION: "bg-lime-100 text-lime-700 border-lime-200",
+    SOYA_PROCESSING: "bg-teal-100 text-teal-700 border-teal-200",
+    FINISHED_GOODS:  "bg-indigo-100 text-indigo-700 border-indigo-200",
+    POULTRY_HEALTH:  "bg-pink-100 text-pink-700 border-pink-200",
+    GOODS_RECEIVED:  "bg-purple-100 text-purple-700 border-purple-200",
   };
-  const c = colours[status] ?? "bg-gray-100 text-gray-600 border-gray-200";
+  const c = colours[checkType] ?? "bg-gray-100 text-gray-600 border-gray-200";
   return (
     <span className={`inline-flex rounded-md border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${c}`}>
-      {status.replace(/_/g, " ")}
+      {checkType.replace(/_/g, " ")}
     </span>
   );
 }
@@ -250,7 +232,7 @@ export function QualityDashboardPage() {
     : null;
 
   return (
-    <AppShell>
+    <>
       <PageHero
         kicker="Operations · Quality Control"
         title="Quality Dashboard"
@@ -358,7 +340,7 @@ export function QualityDashboardPage() {
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <Link href={`/quality/checks/${c.id}`} className="text-sm font-semibold text-ink hover:text-brand hover:underline">{c.reference}</Link>
-                  <StatusBadge status={c.checkType} />
+                  <CheckTypeBadge checkType={c.checkType} />
                   <StatusBadge status={c.status} />
                   {c.decision && c.decision !== "PENDING" && <StatusBadge status={c.decision} />}
                 </div>
@@ -373,7 +355,7 @@ export function QualityDashboardPage() {
           ))}
         </div>
       </section>
-    </AppShell>
+    </>
   );
 }
 
@@ -440,7 +422,7 @@ export function QualityTemplatesPage() {
   }
 
   return (
-    <AppShell>
+    <>
       <PageHero
         kicker="Operations · Quality Control"
         title="Quality Check Templates"
@@ -525,7 +507,7 @@ export function QualityTemplatesPage() {
           columns={[
             { key: "code", label: "Code" },
             { key: "name", label: "Name", render: (r) => <span className="font-medium text-ink">{r.name as string}</span> },
-            { key: "checkType", label: "Type", render: (r) => <StatusBadge status={r.checkType as string} /> },
+            { key: "checkType", label: "Type", render: (r) => <CheckTypeBadge checkType={r.checkType as string} /> },
             { key: "params", label: "Parameters", render: (r) => (r._count as { parameters: number })?.parameters ?? 0 },
             { key: "checks", label: "Checks Used", render: (r) => (r._count as { checks: number })?.checks ?? 0 },
             { key: "isActive", label: "Active", render: (r) => r.isActive ? <span className="font-semibold text-emerald-600">Yes</span> : <span className="text-ink/40">No</span> },
@@ -535,7 +517,7 @@ export function QualityTemplatesPage() {
           loading={loading}
         />
       </div>
-    </AppShell>
+    </>
   );
 }
 
@@ -572,7 +554,7 @@ export function QualityChecksPage({ filterType }: { filterType?: string }) {
   const selectCls = "rounded-xl border border-line bg-white px-3 py-2 text-sm text-ink outline-none focus:border-brand focus:ring-4 focus:ring-brand/10";
 
   return (
-    <AppShell>
+    <>
       <PageHero
         kicker="Operations · Quality Control"
         title={pageTitle}
@@ -601,7 +583,7 @@ export function QualityChecksPage({ filterType }: { filterType?: string }) {
         <DataTable
           columns={[
             { key: "reference", label: "Reference", render: (r) => <Link href={`/quality/checks/${r.id}`} className="font-medium text-brand hover:underline">{r.reference as string}</Link> },
-            { key: "checkType", label: "Type", render: (r) => <StatusBadge status={r.checkType as string} /> },
+            { key: "checkType", label: "Type", render: (r) => <CheckTypeBadge checkType={r.checkType as string} /> },
             { key: "template", label: "Template", render: (r) => (r.template as { name: string } | undefined)?.name ?? "—" },
             { key: "batchNumber", label: "Batch" },
             { key: "branch", label: "Branch", render: (r) => (r.branch as { name: string } | undefined)?.name ?? "—" },
@@ -615,7 +597,7 @@ export function QualityChecksPage({ filterType }: { filterType?: string }) {
           loading={loading}
         />
       </div>
-    </AppShell>
+    </>
   );
 }
 
@@ -675,7 +657,7 @@ export function CreateQualityCheckPage() {
   }
 
   return (
-    <AppShell>
+    <>
       <div className="mx-auto max-w-3xl">
         <PageHero
           kicker="Operations · Quality Control"
@@ -792,7 +774,7 @@ export function CreateQualityCheckPage() {
           </button>
         </form>
       </div>
-    </AppShell>
+    </>
   );
 }
 
@@ -899,7 +881,16 @@ export function QualityCheckDetailPage({ id }: { id: string }) {
     finally { setCarSaving(false); }
   }
 
-  if (!check) return <AppShell><div className="flex h-64 items-center justify-center text-sm text-ink/45">Loading check details…</div></AppShell>;
+  if (loadError) {
+    return (
+      <div className="flex h-64 flex-col items-center justify-center gap-3 text-center">
+        <p className="text-sm text-red-700">{loadError}</p>
+        <button type="button" className="app-button-secondary text-xs" onClick={load}>Retry</button>
+      </div>
+    );
+  }
+
+  if (!check) return <><div className="flex h-64 items-center justify-center text-sm text-ink/45">Loading check details…</div></>;
 
   const canDecide = check.status === "IN_PROGRESS" || check.status === "PENDING";
   const passedCount = check.results?.filter((r) => r.passed).length ?? 0;
@@ -914,7 +905,7 @@ export function QualityCheckDetailPage({ id }: { id: string }) {
   ];
 
   return (
-    <AppShell>
+    <>
       <div className="mb-6 overflow-hidden rounded-2xl border border-line bg-gradient-to-br from-white via-white to-field shadow-panel">
         <div className="px-6 py-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -925,7 +916,7 @@ export function QualityCheckDetailPage({ id }: { id: string }) {
               </p>
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <h1 className="text-[26px] font-extrabold leading-tight tracking-tight text-ink">{check.reference}</h1>
-                <StatusBadge status={check.checkType} />
+                <CheckTypeBadge checkType={check.checkType} />
                 <StatusBadge status={check.status} />
                 {check.decision && check.decision !== "PENDING" && <StatusBadge status={check.decision} />}
               </div>
@@ -1158,7 +1149,7 @@ export function QualityCheckDetailPage({ id }: { id: string }) {
           </div>
         </div>
       )}
-    </AppShell>
+    </>
   );
 }
 
@@ -1179,7 +1170,7 @@ export function RejectedBatchesPage() {
   }, []);
 
   return (
-    <AppShell>
+    <>
       <PageHero kicker="Operations · Quality Control" title="Rejected Batches" subtitle="Batches that failed quality inspection, with disposal status and linked corrective actions." />
       <QualityNav />
       <div className="overflow-hidden rounded-2xl border border-line bg-white shadow-card">
@@ -1200,7 +1191,7 @@ export function RejectedBatchesPage() {
           loading={loading}
         />
       </div>
-    </AppShell>
+    </>
   );
 }
 
@@ -1221,7 +1212,7 @@ export function ApprovedBatchesPage() {
   }, []);
 
   return (
-    <AppShell>
+    <>
       <PageHero kicker="Operations · Quality Control" title="Approved Batches" subtitle="Batches that passed quality inspection and have been released to stock." />
       <QualityNav />
       <div className="overflow-hidden rounded-2xl border border-line bg-white shadow-card">
@@ -1241,7 +1232,7 @@ export function ApprovedBatchesPage() {
           loading={loading}
         />
       </div>
-    </AppShell>
+    </>
   );
 }
 
@@ -1287,7 +1278,7 @@ export function LabReportsPage() {
   }
 
   return (
-    <AppShell>
+    <>
       <PageHero
         kicker="Operations · Quality Control"
         title="Lab Report Uploads"
@@ -1332,7 +1323,7 @@ export function LabReportsPage() {
             { key: "reportNumber", label: "Report No." },
             { key: "labName", label: "Laboratory" },
             { key: "check", label: "Check", render: (r) => { const c = r.check as { reference: string; batchNumber?: string } | undefined; return c ? `${c.reference}${c.batchNumber ? ` — ${c.batchNumber}` : ""}` : "—"; } },
-            { key: "checkType", label: "Type", render: (r) => { const c = r.check as { checkType: string } | undefined; return c ? <StatusBadge status={c.checkType} /> : null; } },
+            { key: "checkType", label: "Type", render: (r) => { const c = r.check as { checkType: string } | undefined; return c ? <CheckTypeBadge checkType={c.checkType} /> : null; } },
             { key: "reportDate", label: "Date", render: (r) => fmt(r.reportDate as string) },
             { key: "uploadedBy", label: "Uploaded By", render: (r) => (r.uploadedBy as { fullName: string } | undefined)?.fullName ?? "—" },
             { key: "summary", label: "Summary", render: (r) => <span className="block max-w-xs truncate">{String(r.summary ?? "—")}</span> },
@@ -1342,7 +1333,7 @@ export function LabReportsPage() {
           loading={loading}
         />
       </div>
-    </AppShell>
+    </>
   );
 }
 
@@ -1409,7 +1400,7 @@ export function CorrectiveActionsPage() {
   const overdueCount = rows.filter((r) => r.dueDate && new Date(r.dueDate) < today && !["RESOLVED", "CLOSED", "CANCELLED"].includes(r.status)).length;
 
   return (
-    <AppShell>
+    <>
       <PageHero
         kicker="Operations · Quality Control"
         title="Corrective Actions (CARs)"
@@ -1512,7 +1503,7 @@ export function CorrectiveActionsPage() {
           loading={loading}
         />
       </div>
-    </AppShell>
+    </>
   );
 }
 
@@ -1559,7 +1550,7 @@ export function QualityReportsPage() {
   const passRate = data?.passRate ?? 0;
 
   return (
-    <AppShell>
+    <>
       <PageHero
         kicker="Operations · Quality Control"
         title="Quality Reports"
@@ -1621,7 +1612,7 @@ export function QualityReportsPage() {
               <div className="space-y-3">
                 {Object.entries(byTypeMap).sort(([, a], [, b]) => b - a).map(([type, count]) => (
                   <div key={type} className="flex items-center gap-3">
-                    <div className="w-28 shrink-0"><StatusBadge status={type} /></div>
+                    <div className="w-28 shrink-0"><CheckTypeBadge checkType={type} /></div>
                     <div className="flex-1 overflow-hidden rounded-full bg-line" style={{ height: 8 }}>
                       <div className="h-full rounded-full bg-brand transition-all" style={{ width: `${(count / maxTypeCount) * 100}%` }} />
                     </div>
@@ -1658,7 +1649,7 @@ export function QualityReportsPage() {
               <DataTable
                 columns={[
                   { key: "reference", label: "Reference" },
-                  { key: "checkType", label: "Type", render: (r) => <StatusBadge status={r.checkType as string} /> },
+                  { key: "checkType", label: "Type", render: (r) => <CheckTypeBadge checkType={r.checkType as string} /> },
                   { key: "batchNumber", label: "Batch" },
                   { key: "branch", label: "Branch", render: (r) => (r.branch as { name: string } | undefined)?.name ?? "—" },
                   { key: "notes", label: "Notes", render: (r) => <span className="block max-w-xs truncate">{String(r.notes ?? "—")}</span> },
@@ -1671,6 +1662,6 @@ export function QualityReportsPage() {
           )}
         </div>
       )}
-    </AppShell>
+    </>
   );
 }

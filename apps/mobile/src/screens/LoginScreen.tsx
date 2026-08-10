@@ -223,7 +223,7 @@ export function LoginScreen() {
               {[
                 { icon: "shield-check-outline", text: "Secure JWT Authentication", color: "#10B981" },
                 { icon: "sync", text: "Offline-First with Automatic Sync", color: "#3B82F6" },
-                { icon: "map-marker-radius-outline", text: "Multi-Farm Field Operations", color: colors.brand },
+                { icon: "map-marker-radius-outline", text: "Multi-Farm Field Operations", color: colors.brandDark },
               ].map((f) => (
                 <View key={f.text} style={styles.featureItem}>
                   <View style={[styles.featureIconWrap, { backgroundColor: f.color + "12" }]}>
@@ -386,7 +386,7 @@ const styles = StyleSheet.create({
     fontFamily: font.family.semibold,
     color: colors.inkMid,
   },
-  required: { color: colors.brand },
+  required: { color: colors.brandDark },
 
   inputRow: {
     flexDirection: "row",
@@ -496,7 +496,7 @@ const styles = StyleSheet.create({
   footerText: { fontSize: font.size.xs, color: colors.inkLight, fontFamily: font.family.medium },
   footerVersion: {
     fontSize: font.size.xs,
-    color: colors.brand,
+    color: colors.brandDark,
     fontFamily: font.family.semibold,
   },
 });

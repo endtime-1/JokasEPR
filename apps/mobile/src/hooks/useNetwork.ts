@@ -1,23 +1,27 @@
-import * as Network from "expo-network";
+import NetInfo from "@react-native-community/netinfo";
 import { useCallback, useEffect, useState } from "react";
 
 export function useNetwork() {
   const [online, setOnline] = useState(true);
 
-  const check = useCallback(async () => {
+  useEffect(() => {
+    // Event-driven: fires immediately with the current state, then again on
+    // every real connectivity change (WiFi toggle, airplane mode, carrier
+    // handoff) — no fixed-interval polling burning battery in the background.
+    const unsubscribe = NetInfo.addEventListener((state) => {
+      setOnline(!!state.isConnected && !!state.isInternetReachable);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const recheck = useCallback(async () => {
     try {
-      const state = await Network.getNetworkStateAsync();
+      const state = await NetInfo.fetch();
       setOnline(!!state.isConnected && !!state.isInternetReachable);
     } catch {
       setOnline(false);
     }
   }, []);
 
-  useEffect(() => {
-    check();
-    const interval = setInterval(check, 10000);
-    return () => clearInterval(interval);
-  }, [check]);
-
-  return { online, recheck: check };
+  return { online, recheck };
 }

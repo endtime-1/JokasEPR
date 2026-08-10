@@ -5,6 +5,7 @@ import { useNavigation } from "@react-navigation/native";
 import { Icon } from "../../components/Icon";
 import { PageHeader } from "../../components/PageHeader";
 import { useToast } from "../../components/Toast";
+import { DateField } from "../../components/DateField";
 import { fetchFinanceOptions, submitIncomeEntry, type FinanceOptions } from "../../api/endpoints";
 import { colors, font, radius, shadow, spacing } from "../../constants/theme";
 
@@ -146,14 +147,7 @@ export function IncomeEntryScreen() {
               />
             </View>
             <View style={[styles.fieldGroup, { flex: 1 }]}>
-              <Text style={styles.label}>Date *</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="YYYY-MM-DD"
-                placeholderTextColor={colors.inkLight}
-                value={revenueDate}
-                onChangeText={setRevenueDate}
-              />
+              <DateField label="Date" required value={revenueDate} onChangeText={setRevenueDate} />
             </View>
           </View>
         </View>
@@ -282,7 +276,7 @@ const styles = StyleSheet.create({
   sourceChip:       { flexDirection: "row", alignItems: "center", gap: spacing.xs, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.full, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.bg },
   sourceChipActive: { borderColor: colors.brand, backgroundColor: colors.brandLight },
   sourceLabel:      { fontSize: font.size.xs, fontFamily: font.family.semibold, color: colors.inkMid },
-  sourceLabelActive:{ color: colors.brand, fontFamily: font.family.bold },
+  sourceLabelActive:{ color: colors.brandDark, fontFamily: font.family.bold },
 
   fieldGroup: { gap: spacing.xs },
   rowFields:  { flexDirection: "row", gap: spacing.sm },
@@ -294,13 +288,13 @@ const styles = StyleSheet.create({
   pill:           { paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.full, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.bg },
   pillActive:     { borderColor: colors.brand, backgroundColor: colors.brandLight },
   pillText:       { fontSize: font.size.xs, fontFamily: font.family.semibold, color: colors.inkMid },
-  pillTextActive: { color: colors.brand, fontFamily: font.family.bold },
+  pillTextActive: { color: colors.brandDark, fontFamily: font.family.bold },
 
   chipScroll:      { gap: spacing.sm, paddingVertical: 2 },
   accountChip:     { paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: radius.full, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.bg, maxWidth: 200 },
   accountChipActive: { borderColor: colors.brand, backgroundColor: colors.brandLight },
   accountChipText:   { fontSize: font.size.xs, fontFamily: font.family.medium, color: colors.inkMid },
-  accountChipTextActive: { color: colors.brand, fontFamily: font.family.bold },
+  accountChipTextActive: { color: colors.brandDark, fontFamily: font.family.bold },
 
   submitBtn:  { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, backgroundColor: "#16a34a", borderRadius: radius.xl, paddingVertical: spacing.lg },
   submitText: { fontSize: font.size.md, fontFamily: font.family.bold, color: colors.white },

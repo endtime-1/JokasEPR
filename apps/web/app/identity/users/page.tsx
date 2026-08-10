@@ -2,7 +2,6 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { KeyRound, Pencil, Plus, ShieldCheck, Trash2, UserCheck, UserX } from "lucide-react";
-import { AppShell } from "../../../components/app-shell";
 import { DataTable } from "../../../components/data-table";
 import { FormField } from "../../../components/form-field";
 import { ApiEnvelope, apiFetch } from "../../../lib/api";
@@ -256,7 +255,7 @@ export default function UsersPage() {
   }
 
   return (
-    <AppShell>
+    <>
       <div className="mb-6">
         <h2 className="text-2xl font-semibold">Users</h2>
         <p className="text-sm text-ink/65">Admin-created accounts, role assignments, and operating access scopes.</p>
@@ -482,7 +481,7 @@ export default function UsersPage() {
           }
         ]}
       />
-    </AppShell>
+    </>
   );
 }
 

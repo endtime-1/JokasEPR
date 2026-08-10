@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { KeyRound, ShieldCheck, UserCircle } from "lucide-react";
-import { AppShell } from "../../components/app-shell";
 import { ApiEnvelope, apiFetch } from "../../lib/api";
 
 type Profile = {
@@ -68,7 +67,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <AppShell>
+    <>
       <div className="mb-6 flex items-center gap-3">
         <div className="grid h-12 w-12 place-items-center rounded-md bg-brand text-white">
           <UserCircle aria-hidden className="h-6 w-6" />
@@ -192,6 +191,6 @@ export default function ProfilePage() {
           </form>
         </section>
       </div>
-    </AppShell>
+    </>
   );
 }

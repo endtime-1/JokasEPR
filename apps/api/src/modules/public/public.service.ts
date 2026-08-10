@@ -423,7 +423,7 @@ export class PublicService {
     // Verify ownership before writing — prevents cross-tenant writes
     const existing = await this.prisma.product.findFirst({ where: { id, companyId } });
     if (!existing) throw new NotFoundException("Product not found.");
-    const imageUrl = `/uploads/products/${filename}`;
+    const imageUrl = `/api/v1/uploads/products/${filename}`;
     await this.prisma.product.update({ where: { id }, data: { publicImageUrl: imageUrl } });
     return imageUrl;
   }

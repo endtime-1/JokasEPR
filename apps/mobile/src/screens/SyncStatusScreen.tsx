@@ -347,7 +347,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.brandLight, alignItems: "center", justifyContent: "center", paddingHorizontal: 6,
     borderWidth: 1, borderColor: colors.brandMid,
   },
-  sectionCountText: { fontSize: 10, fontFamily: font.family.bold, color: colors.brand },
+  sectionCountText: { fontSize: 10, fontFamily: font.family.bold, color: colors.brandDark },
 
   sectionCard: {
     backgroundColor: colors.bgCard,
@@ -372,7 +372,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.brandLight, borderRadius: radius.full,
     borderWidth: 1, borderColor: colors.brandMid,
   },
-  retryBtnText: { fontSize: font.size.xs - 1, fontFamily: font.family.bold, color: colors.brand },
+  retryBtnText: { fontSize: font.size.xs - 1, fontFamily: font.family.bold, color: colors.brandDark },
 
   emptyCard: {
     backgroundColor: colors.successBg,

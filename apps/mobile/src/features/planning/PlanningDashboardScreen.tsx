@@ -115,8 +115,8 @@ export function PlanningDashboardScreen() {
           <Text style={[styles.chipLabel, { color: "#475569" }]}>Draft</Text>
         </View>
         <View style={[styles.chip, { backgroundColor: colors.brandLight, borderColor: colors.brandMid }]}>
-          <Text style={[styles.chipNum, { color: colors.brand }]}>{targets.length}</Text>
-          <Text style={[styles.chipLabel, { color: colors.brand }]}>Total</Text>
+          <Text style={[styles.chipNum, { color: colors.brandDark }]}>{targets.length}</Text>
+          <Text style={[styles.chipLabel, { color: colors.brandDark }]}>Total</Text>
         </View>
       </View>
 

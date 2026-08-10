@@ -9,8 +9,8 @@ import {
   RefreshCw, ShoppingCart, TrendingUp, Users, Wallet,
 } from "lucide-react";
 import { ApiEnvelope, apiFetch, downloadReport, getCached, getCachedFirst, hasCached } from "../lib/api";
-import { AppShell } from "./app-shell";
 import { DataTable } from "./data-table";
+import { EmptyState, StatusBadge } from "./ui";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -70,36 +70,6 @@ function KpiCard({ label, value, Icon, color, sub }: { label: string; value: str
       <strong className="mt-1 block text-[26px] font-extrabold leading-none tracking-tight text-ink">{value}</strong>
       {sub && <p className="mt-1 text-xs text-ink/45">{sub}</p>}
     </article>
-  );
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const colours: Record<string, string> = {
-    PENDING_STOCK_APPROVAL: "bg-amber-100 text-amber-800 border-amber-200",
-    APPROVED:               "bg-blue-100 text-blue-700 border-blue-200",
-    FULFILLED:              "bg-emerald-100 text-emerald-700 border-emerald-200",
-    CANCELLED:              "bg-gray-100 text-gray-500 border-gray-200",
-    DRAFT:                  "bg-gray-100 text-gray-600 border-gray-200",
-    ISSUED:                 "bg-blue-100 text-blue-700 border-blue-200",
-    PARTIALLY_PAID:         "bg-amber-100 text-amber-800 border-amber-200",
-    PAID:                   "bg-emerald-100 text-emerald-700 border-emerald-200",
-    OVERDUE:                "bg-red-100 text-red-700 border-red-200",
-    RELEASED:               "bg-emerald-100 text-emerald-700 border-emerald-200",
-    POSTED:                 "bg-emerald-100 text-emerald-700 border-emerald-200",
-    ACTIVE:                 "bg-emerald-100 text-emerald-700 border-emerald-200",
-    INACTIVE:               "bg-gray-100 text-gray-500 border-gray-200",
-    ON_HOLD:                "bg-red-100 text-red-700 border-red-200",
-    CASH:                   "bg-blue-100 text-blue-700 border-blue-200",
-    BANK_TRANSFER:          "bg-indigo-100 text-indigo-700 border-indigo-200",
-    MOBILE_MONEY:           "bg-purple-100 text-purple-700 border-purple-200",
-    CHEQUE:                 "bg-amber-100 text-amber-800 border-amber-200",
-    CREDIT_NOTE:            "bg-teal-100 text-teal-700 border-teal-200",
-  };
-  const c = colours[status] ?? "bg-gray-100 text-gray-600 border-gray-200";
-  return (
-    <span className={`inline-flex rounded-md border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${c}`}>
-      {status.replace(/_/g, " ")}
-    </span>
   );
 }
 
@@ -253,7 +223,7 @@ export function SalesDashboardPage() {
   ];
 
   return (
-    <AppShell>
+    <>
       {/* ── Hero ── */}
       <div className="mb-6 overflow-hidden rounded-2xl border border-line bg-gradient-to-br from-white via-white to-field shadow-panel">
         <div className="flex flex-wrap items-start justify-between gap-4 px-6 py-5">
@@ -394,16 +364,16 @@ export function SalesDashboardPage() {
               ))}
             </div>
           ) : (data?.recentOrders ?? []).length === 0 ? (
-            <div className="flex flex-col items-center gap-3 px-6 py-12 text-center">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand/10">
-                <ShoppingCart className="h-7 w-7 text-brand" />
-              </div>
-              <p className="text-sm font-medium text-ink">No sales orders yet</p>
-              <p className="max-w-xs text-xs text-ink/45">Create your first sales order to start tracking revenue and stock releases.</p>
-              <Link href="/sales/orders/create" className="app-button-primary mt-1">
-                <Plus className="h-4 w-4" /> Create First Order
-              </Link>
-            </div>
+            <EmptyState
+              icon={ShoppingCart}
+              title="No sales orders yet"
+              description="Create your first sales order to start tracking revenue and stock releases."
+              action={
+                <Link href="/sales/orders/create" className="app-button-primary mt-1">
+                  <Plus className="h-4 w-4" /> Create First Order
+                </Link>
+              }
+            />
           ) : (
             <div className="divide-y divide-line">
               {(data?.recentOrders ?? []).map((o) => (
@@ -499,7 +469,7 @@ export function SalesDashboardPage() {
           </Link>
         ))}
       </section>
-    </AppShell>
+    </>
   );
 }
 
@@ -550,7 +520,7 @@ export function CustomersPage({ create = false }: { create?: boolean }) {
 
   if (create) {
     return (
-      <AppShell>
+      <>
         <div className="mx-auto max-w-2xl">
           <PageHero
             kicker="Commercial · Sales"
@@ -584,12 +554,12 @@ export function CustomersPage({ create = false }: { create?: boolean }) {
             </button>
           </form>
         </div>
-      </AppShell>
+      </>
     );
   }
 
   return (
-    <AppShell>
+    <>
       <PageHero
         kicker="Commercial · Sales"
         title="Customers"
@@ -625,7 +595,7 @@ export function CustomersPage({ create = false }: { create?: boolean }) {
           loading={loading}
         />
       </div>
-    </AppShell>
+    </>
   );
 }
 
@@ -641,14 +611,28 @@ type CustomerDetail = Customer & {
 
 export function CustomerDetailsPage({ id }: { id: string }) {
   const [cust, setCust] = useState<CustomerDetail | null>(null);
+  const [loadError, setLoadError] = useState("");
   const [tab, setTab] = useState("orders");
 
-  useEffect(() => {
+  function load() {
+    setLoadError("");
     apiFetch<ApiEnvelope<CustomerDetail>>(`/sales/customers/${id}`)
-      .then((r) => setCust(r.data)).catch(() => undefined);
-  }, [id]);
+      .then((r) => setCust(r.data))
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load customer."));
+  }
 
-  if (!cust) return <AppShell><div className="flex h-64 items-center justify-center text-sm text-ink/45">Loading customer…</div></AppShell>;
+  useEffect(() => { load(); }, [id]);
+
+  if (loadError) {
+    return (
+      <div className="flex h-64 flex-col items-center justify-center gap-3 text-center">
+        <p className="text-sm text-red-700">{loadError}</p>
+        <button type="button" className="app-button-secondary text-xs" onClick={load}>Retry</button>
+      </div>
+    );
+  }
+
+  if (!cust) return <><div className="flex h-64 items-center justify-center text-sm text-ink/45">Loading customer…</div></>;
 
   const creditLimit = cust.creditLimits?.[0];
   const utilization = creditLimit && Number(creditLimit.creditLimit) > 0
@@ -663,7 +647,7 @@ export function CustomerDetailsPage({ id }: { id: string }) {
   ];
 
   return (
-    <AppShell>
+    <>
       <div className="mb-6 overflow-hidden rounded-2xl border border-line bg-gradient-to-br from-white via-white to-field shadow-panel">
         <div className="flex flex-wrap items-start justify-between gap-3 px-6 py-5">
           <div>
@@ -772,7 +756,7 @@ export function CustomerDetailsPage({ id }: { id: string }) {
           />
         </div>
       )}
-    </AppShell>
+    </>
   );
 }
 
@@ -854,7 +838,7 @@ export function OrdersPage({ create = false }: { create?: boolean }) {
 
   if (create) {
     return (
-      <AppShell>
+      <>
         <div className="mx-auto max-w-3xl">
           <PageHero
             kicker="Commercial · Sales"
@@ -956,14 +940,14 @@ export function OrdersPage({ create = false }: { create?: boolean }) {
             </button>
           </form>
         </div>
-      </AppShell>
+      </>
     );
   }
 
   const selectCls = "rounded-xl border border-line bg-white px-3 py-2 text-sm text-ink outline-none focus:border-brand focus:ring-4 focus:ring-brand/10";
 
   return (
-    <AppShell>
+    <>
       <PageHero
         kicker="Commercial · Sales"
         title="Sales Orders"
@@ -1001,7 +985,7 @@ export function OrdersPage({ create = false }: { create?: boolean }) {
           loading={loading}
         />
       </div>
-    </AppShell>
+    </>
   );
 }
 
@@ -1049,7 +1033,7 @@ export function PaymentsPage() {
   }
 
   return (
-    <AppShell>
+    <>
       <PageHero
         kicker="Commercial · Sales"
         title="Customer Payments"
@@ -1115,7 +1099,7 @@ export function PaymentsPage() {
           loading={loading}
         />
       </div>
-    </AppShell>
+    </>
   );
 }
 
@@ -1163,7 +1147,7 @@ export function ReturnsPage() {
   }
 
   return (
-    <AppShell>
+    <>
       <PageHero
         kicker="Commercial · Sales"
         title="Sales Returns"
@@ -1233,7 +1217,7 @@ export function ReturnsPage() {
           loading={loading}
         />
       </div>
-    </AppShell>
+    </>
   );
 }
 
@@ -1314,7 +1298,7 @@ export function SalesListPage({ title, endpoint, subtitle }: { title: string; en
   const cols = colsForEndpoint(endpoint);
 
   return (
-    <AppShell>
+    <>
       <PageHero
         kicker="Commercial · Sales"
         title={title}
@@ -1349,7 +1333,7 @@ export function SalesListPage({ title, endpoint, subtitle }: { title: string; en
           : <DataTable columns={cols} rows={rows} empty={`No ${title.toLowerCase()}`} />
         }
       </div>
-    </AppShell>
+    </>
   );
 }
 
@@ -1406,7 +1390,7 @@ export function SalesReportsPage() {
   }
 
   return (
-    <AppShell>
+    <>
       <PageHero
         kicker="Commercial · Sales"
         title="Sales Reports"
@@ -1468,7 +1452,7 @@ export function SalesReportsPage() {
           </div>
         </div>
       )}
-    </AppShell>
+    </>
   );
 }
 
@@ -1511,7 +1495,7 @@ export function PriceListsPage() {
   const inputCls = "min-h-10 w-full rounded-md border border-line bg-white px-3 text-sm outline-none focus:border-brand";
 
   return (
-    <AppShell>
+    <>
       <PageHero
         kicker="Sales"
         title="Price Lists"
@@ -1579,6 +1563,6 @@ export function PriceListsPage() {
         loading={loading}
         empty="No price lists configured. Click 'New Price' to create one."
       />
-    </AppShell>
+    </>
   );
 }

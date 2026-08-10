@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, LoaderCircle, Save } from "lucide-react";
-import { AppShell } from "../../../components/app-shell";
 import { apiFetch } from "../../../lib/api";
 
 type Preference = {
@@ -71,7 +70,7 @@ export default function NotificationPreferencesPage() {
   }
 
   return (
-    <AppShell>
+    <>
       <div className="mx-auto max-w-3xl">
         <div className="mb-6 flex items-center gap-4">
           <Link href="/notifications" className="flex items-center gap-1 text-sm text-ink/55 hover:text-ink">
@@ -149,6 +148,6 @@ export default function NotificationPreferencesPage() {
           </>
         )}
       </div>
-    </AppShell>
+    </>
   );
 }

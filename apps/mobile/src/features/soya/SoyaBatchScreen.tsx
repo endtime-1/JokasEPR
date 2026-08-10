@@ -6,6 +6,7 @@ import { ScreenWrapper } from "../../components/ScreenWrapper";
 import { FormCard } from "../../components/FormCard";
 import { FormFooter } from "../../components/FormFooter";
 import { FormField } from "../../components/FormField";
+import { DateField } from "../../components/DateField";
 import { SelectField, SelectOption } from "../../components/SelectField";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
@@ -68,10 +69,12 @@ export function SoyaBatchScreen() {
   const { submit, loading } = useSubmit({
     module:   "soya_batch",
     endpoint: "/soya-processing/batches",
-    onSuccess: () =>
+    onSuccess: (queued) =>
       Alert.alert(
-        "Batch Saved",
-        "Soya processing batch has been recorded successfully.",
+        queued ? "Saved Offline" : "Batch Saved",
+        queued
+          ? "Your soya processing batch was saved on this device and will sync automatically once you're back online."
+          : "Soya processing batch has been recorded successfully.",
         [{ text: "OK", onPress: () => navigation.goBack() }]
       ),
   });
@@ -186,8 +189,7 @@ export function SoyaBatchScreen() {
               keyboardType="decimal-pad" placeholder="0.00" />
           </View>
           <View style={styles.col2}>
-            <FormField label="Processing Date" value={processingDate} onChangeText={setProcessingDate}
-              keyboardType="numbers-and-punctuation" placeholder="YYYY-MM-DD" />
+            <DateField label="Processing Date" value={processingDate} onChangeText={setProcessingDate} />
           </View>
         </View>
 

@@ -217,7 +217,7 @@ const styles = StyleSheet.create({
 
   suggestionGrid: { gap: spacing.sm, width: "100%" },
   suggestion:     { backgroundColor: colors.bgCard, borderRadius: radius.xl, borderWidth: 1, borderColor: colors.brandMid, padding: spacing.md, ...shadow.sm },
-  suggestionText: { fontSize: font.size.sm, fontFamily: font.family.medium, color: colors.brand },
+  suggestionText: { fontSize: font.size.sm, fontFamily: font.family.medium, color: colors.brandDark },
 
   bubbleWrap:     { flexDirection: "row", alignItems: "flex-end", gap: spacing.sm },
   bubbleWrapUser: { flexDirection: "row-reverse" },

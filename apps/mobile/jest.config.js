@@ -12,7 +12,7 @@ module.exports = {
   moduleNameMapper: {
     "^expo-secure-store$": "<rootDir>/__mocks__/expo-secure-store.ts",
     "^expo-sqlite$": "<rootDir>/__mocks__/expo-sqlite.ts",
-    "^expo-network$": "<rootDir>/__mocks__/expo-network.ts",
+    "^@react-native-community/netinfo$": "<rootDir>/__mocks__/@react-native-community/netinfo.ts",
     "^expo-crypto$": "<rootDir>/__mocks__/expo-crypto.ts",
     "^@react-native-async-storage/async-storage$": "<rootDir>/__mocks__/async-storage.ts",
   },

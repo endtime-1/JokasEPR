@@ -5,9 +5,9 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { CircleAlert, AlertTriangle, ArrowLeft, ChartBar, Brain, Calculator, CircleCheckBig, ChevronDown, ChevronUp, Download, Factory, GripVertical, Package, PackageCheck, Pencil, Plus, Printer, RotateCw, Trash2, TrendingUp, Zap } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { FeedMillShell } from "./feed-mill-shell";
 import { DataTable } from "./data-table";
 import { FormField } from "./form-field";
+import { EmptyState, StatusBadge } from "./ui";
 import { ApiEnvelope, apiFetch, downloadReport, getCached, getCachedFirst, hasCached } from "../lib/api";
 
 type Option = {
@@ -235,7 +235,7 @@ export function FeedFormulaListPage() {
   const inputCls = "min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm transition focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15";
 
   return (
-    <FeedMillShell>
+    <>
       <PageHeader title="Feed Formulas" subtitle="Manage feed formulas, ingredients, costing, and active formula versions." />
       <Link className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" href="/feed-production/formulas/create">
         <Plus aria-hidden className="h-4 w-4" /> Create formula
@@ -310,7 +310,7 @@ export function FeedFormulaListPage() {
           </div>
         </div>
       )}
-    </FeedMillShell>
+    </>
   );
 }
 
@@ -416,7 +416,7 @@ export function FormulaBuilderPage() {
   const inputCls = "min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm transition focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15";
 
   return (
-    <FeedMillShell>
+    <>
       <div className="space-y-6">
 
         {/* Page header */}
@@ -649,7 +649,7 @@ export function FormulaBuilderPage() {
 
         </form>
       </div>
-    </FeedMillShell>
+    </>
   );
 }
 
@@ -846,7 +846,7 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
   const title = mode === "costing" ? "Formula Costing" : mode === "versions" ? "Formula Version History" : formula?.name ?? "Formula Details";
 
   return (
-    <FeedMillShell>
+    <>
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
@@ -1179,7 +1179,7 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
           </div>
         </>
       )}
-    </FeedMillShell>
+    </>
   );
 }
 
@@ -1303,7 +1303,7 @@ export function FeedProductionOrdersPage({ create = false }: { create?: boolean 
   const inputCls = "min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm transition focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15";
 
   return (
-    <FeedMillShell>
+    <>
       <PageHeader title={create ? "Create Production Order" : "Feed Production Orders"} subtitle="Plan, approve, and monitor feed mill production orders." />
       {actionErr && (
         <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
@@ -1393,7 +1393,7 @@ export function FeedProductionOrdersPage({ create = false }: { create?: boolean 
           </div>
         </div>
       )}
-    </FeedMillShell>
+    </>
   );
 }
 
@@ -1490,7 +1490,7 @@ export function FeedBatchListPage() {
   const completedCount = rows.filter((r) => r.status === "COMPLETED").length;
 
   return (
-    <FeedMillShell>
+    <>
       <PageHeader title="Production Batches" subtitle="All feed production batches — produced quantities, costs, margins, and status." />
       <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
         {[
@@ -1520,7 +1520,7 @@ export function FeedBatchListPage() {
           { key: "status", label: "Status", render: (r) => <StatusBadge status={r.status} /> },
         ]}
       />
-    </FeedMillShell>
+    </>
   );
 }
 
@@ -1598,7 +1598,7 @@ export function FeedBatchCreatePage() {
   const selectedOrder = approvedOrders.find((o) => o.id === form.productionOrderId);
 
   return (
-    <FeedMillShell>
+    <>
       <div className="mb-6 flex items-center gap-3">
         <Link href="/feed-production/batches" className="inline-flex items-center gap-1 text-sm font-semibold text-ink/40 hover:text-brand">
           <ArrowLeft className="h-3.5 w-3.5" /> Batches
@@ -1745,7 +1745,7 @@ export function FeedBatchCreatePage() {
           </button>
         </div>
       </form>
-    </FeedMillShell>
+    </>
   );
 }
 
@@ -1857,7 +1857,7 @@ export function FeedBatchDetailsPage() {
   const b = batch;
 
   return (
-    <FeedMillShell>
+    <>
       {/* Header */}
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
@@ -2089,7 +2089,7 @@ export function FeedBatchDetailsPage() {
           </button>
         </form>
       </BatchSection>
-    </FeedMillShell>
+    </>
   );
 }
 
@@ -2120,7 +2120,7 @@ export function FeedRawMaterialUsagePage() {
   const totalWastage = rows.reduce((s, r) => s + Number(r.wastageKg), 0);
 
   return (
-    <FeedMillShell>
+    <>
       <PageHeader title="Raw Material Usage" subtitle="Raw material issue, cost, and wastage records by batch." />
       <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
         {[
@@ -2151,7 +2151,7 @@ export function FeedRawMaterialUsagePage() {
           { key: "date", label: "Date", render: (r) => new Date(r.createdAt).toLocaleDateString() },
         ]}
       />
-    </FeedMillShell>
+    </>
   );
 }
 
@@ -2210,7 +2210,7 @@ export function FeedQualityControlPage() {
   const pending = rows.filter((r) => r.status === "PENDING").length;
 
   return (
-    <FeedMillShell>
+    <>
       <PageHeader title="Feed Quality Control" subtitle="Record and approve feed quality checks for production batches." />
       {pending > 0 && (
         <div className="mb-4 flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
@@ -2252,7 +2252,7 @@ export function FeedQualityControlPage() {
           { key: "date", label: "Checked", render: (r) => r.checkedAt ? new Date(r.checkedAt).toLocaleDateString() : "-" },
         ]}
       />
-    </FeedMillShell>
+    </>
   );
 }
 
@@ -2281,7 +2281,7 @@ export function FinishedFeedInventoryPage() {
   const totalValue = rows.reduce((s, r) => s + Number(r.quantityKg) * Number(r.unitCost), 0);
 
   return (
-    <FeedMillShell>
+    <>
       <PageHeader title="Finished Feed Inventory" subtitle="Current finished feed stock by warehouse, batch, product, bag count, and unit cost." />
       <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
         {[
@@ -2310,7 +2310,7 @@ export function FinishedFeedInventoryPage() {
           { key: "lineValue", label: "Line value", render: (r) => money(Number(r.quantityKg) * Number(r.unitCost)) },
         ]}
       />
-    </FeedMillShell>
+    </>
   );
 }
 
@@ -2373,7 +2373,7 @@ export function InternalFeedTransferPage() {
   const totalTransferredKg = rows.reduce((s, r) => s + Number(r.quantityKg), 0);
 
   return (
-    <FeedMillShell>
+    <>
       <PageHeader title="Internal Feed Transfer" subtitle="Transfer finished feed from feed mill stores to assigned farms and poultry houses." />
       <div className="mb-6 rounded-2xl border border-line bg-white p-5 shadow-panel">
         <h3 className="mb-4 text-sm font-bold text-ink">New Transfer</h3>
@@ -2415,7 +2415,7 @@ export function InternalFeedTransferPage() {
           { key: "notes", label: "Notes", render: (r) => r.notes ?? "-" },
         ]}
       />
-    </FeedMillShell>
+    </>
   );
 }
 
@@ -2446,7 +2446,7 @@ export function FeedReportsPage() {
   ];
 
   return (
-    <FeedMillShell>
+    <>
       <PageHeader title="Feed Production Reports" subtitle="Export feed formula, production, cost, quality, stock, and transfer reports." />
       <div className="mb-6 rounded-2xl border border-line bg-white p-5 shadow-panel">
         <h3 className="mb-4 text-sm font-bold text-ink">Date Range Filter</h3>
@@ -2518,7 +2518,7 @@ export function FeedReportsPage() {
           );
         })}
       </div>
-    </FeedMillShell>
+    </>
   );
 }
 
@@ -2575,7 +2575,7 @@ export function FeedPackagingRecordPage() {
   }
 
   return (
-    <FeedMillShell>
+    <>
       <PageHeader title="Packaging Records" subtitle="Record and track feed packaging — bag counts, sizes, and dates." />
       <div className="mb-8 rounded-2xl border border-line bg-white p-5 shadow-panel">
         <h3 className="mb-4 text-sm font-bold text-ink">Record Packaging</h3>
@@ -2647,7 +2647,7 @@ export function FeedPackagingRecordPage() {
           { key: "date", label: "Packaged at", render: (row) => row.packagedAt ? new Date(row.packagedAt).toLocaleDateString() : "-" },
         ]}
       />
-    </FeedMillShell>
+    </>
   );
 }
 
@@ -2677,31 +2677,6 @@ function BatchTable({ rows }: { rows: BatchRow[] }) {
 function SimpleRowsTable({ rows }: { rows: Array<Record<string, unknown>> }) {
   const keys = Object.keys(rows[0] ?? {}).filter((key) => !["id", "companyId", "branchId", "deletedAt", "updatedAt"].includes(key)).slice(0, 8);
   return <DataTable rows={rows} empty="No records found" columns={keys.map((key) => ({ key, label: key.replace(/([A-Z])/g, " $1"), render: (row: Record<string, unknown>) => typeof row[key] === "object" && row[key] !== null ? JSON.stringify(row[key]).slice(0, 80) : String(row[key] ?? "-").slice(0, 80) }))} />;
-}
-
-const STATUS_COLORS: Record<string, string> = {
-  DRAFT: "bg-gray-100 text-gray-600",
-  APPROVED: "bg-emerald-50 text-emerald-700",
-  IN_PROGRESS: "bg-blue-50 text-blue-700",
-  COMPLETED: "bg-teal-50 text-teal-700",
-  REJECTED: "bg-red-50 text-red-600",
-  CANCELLED: "bg-gray-100 text-gray-500",
-  PENDING: "bg-amber-50 text-amber-700",
-  PENDING_STOCK_APPROVAL: "bg-amber-50 text-amber-700",
-  PASSED: "bg-emerald-50 text-emerald-700",
-  FAILED: "bg-red-50 text-red-600",
-  ACTIVE: "bg-brand/10 text-brand",
-  INACTIVE: "bg-gray-100 text-gray-500",
-  QUALITY_HOLD: "bg-orange-50 text-orange-700",
-};
-
-function StatusBadge({ status }: { status: string }) {
-  const cls = STATUS_COLORS[status] ?? "bg-gray-100 text-gray-600";
-  return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${cls}`}>
-      {status.replace(/_/g, " ")}
-    </span>
-  );
 }
 
 function BatchSection({ title, children }: { title: string; children: ReactNode }) {
@@ -3127,7 +3102,7 @@ export function HiproPredictivePage() {
   };
 
   return (
-    <FeedMillShell>
+    <>
       <div className="space-y-6">
         {/* HERO */}
         <div className="relative overflow-hidden rounded-2xl border border-line bg-gradient-to-br from-white via-white to-field px-7 py-6 shadow-panel">
@@ -3313,12 +3288,16 @@ export function HiproPredictivePage() {
           />
         )}
         {!loading && !activeIng && (data?.ingredientView.length ?? 0) === 0 && (
-          <div className="rounded-2xl border border-line bg-white px-6 py-10 text-center text-sm text-ink/40 shadow-sm">
-            No ingredients found. Add ingredients to your feed formulas first.
+          <div className="rounded-2xl border border-line bg-white shadow-sm">
+            <EmptyState
+              icon={Package}
+              title="No ingredients found"
+              description="Add ingredients to your feed formulas first."
+            />
           </div>
         )}
 
       </div>
-    </FeedMillShell>
+    </>
   );
 }

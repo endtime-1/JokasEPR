@@ -3,10 +3,11 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { CircleAlert, CircleArrowDown, CircleArrowUp, BadgeDollarSign, ChartBar, BookOpen, Building2, CircleCheck, ChevronRight, DollarSign, FileChartColumn, FileText, Landmark, PiggyBank, TrendingDown, TrendingUp, Users, Wallet, CircleX } from "lucide-react";
-import { FinanceShell } from "./finance-shell";
+import { useFinancePageHeader } from "./finance-shell";
 import { DataTable } from "./data-table";
 import { FormField } from "./form-field";
 import { ApiEnvelope, apiFetch, getCached, getCachedFirst, hasCached } from "../lib/api";
+import { Badge, EmptyState, StatusBadge } from "./ui";
 
 // ─── Shared Types ────────────────────────────────────────────────────────────
 
@@ -60,23 +61,11 @@ function fmt(d: unknown) {
   return new Date(d as string).toLocaleDateString("en-GB");
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, string> = {
-    PENDING: "bg-yellow-100 text-yellow-800",
-    PENDING_APPROVAL: "bg-orange-100 text-orange-800",
-    APPROVED: "bg-green-100 text-green-800",
-    REJECTED: "bg-red-100 text-red-800",
-    CANCELLED: "bg-gray-100 text-gray-600",
-    DRAFT: "bg-blue-100 text-blue-800",
-    POSTED: "bg-green-100 text-green-800",
-    REVERSED: "bg-purple-100 text-purple-800",
-    PAID: "bg-emerald-100 text-emerald-800",
-    FUNDING: "bg-green-100 text-green-800",
-    DISBURSEMENT: "bg-red-100 text-red-800",
-    REPLENISHMENT: "bg-blue-100 text-blue-800"
-  };
-  return <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${map[status] ?? "bg-gray-100 text-gray-600"}`}>{status.replace(/_/g, " ")}</span>;
-}
+const cashTxTypeVariant: Record<string, "success" | "danger" | "info"> = {
+  FUNDING: "success",
+  DISBURSEMENT: "danger",
+  REPLENISHMENT: "info"
+};
 
 function StatCard({ label, value, icon: Icon, sub }: { label: string; value: string; icon: React.ElementType; sub?: string }) {
   return (
@@ -192,6 +181,7 @@ function dashPeriodDates(p: string): { startDate: string; endDate: string } {
 }
 
 export function FinanceDashboardPage() {
+  useFinancePageHeader("Business Overview", "Financial performance at a glance");
   const [dash, setDash] = useState<Record<string, unknown> | null>(null);
   const [chart, setChart] = useState<{ months: ChartMonth[]; expensesByCategory: DonutSlice[] } | null>(null);
   const [debtors, setDebtors] = useState<Record<string, unknown>[]>([]);
@@ -258,7 +248,7 @@ export function FinanceDashboardPage() {
   const totalOwed = debtorList.reduce((s, d) => s + d.total, 0);
 
   return (
-    <FinanceShell title="Business Overview" subtitle="Financial performance at a glance">
+    <>
       {loadError && (
         <div className="mb-4 flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           <span>{loadError}</span>
@@ -639,7 +629,7 @@ export function FinanceDashboardPage() {
           }
         </div>
       </div>
-    </FinanceShell>
+    </>
   );
 }
 
@@ -648,6 +638,7 @@ export function FinanceDashboardPage() {
 const EXPENSE_PAGE_SIZE = 50;
 
 export function ExpenseListPage() {
+  useFinancePageHeader("Expenses", "All business expenses and approval queue.");
   const [expenses, setExpenses] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/finance/expenses")?.data ?? []);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -701,7 +692,7 @@ export function ExpenseListPage() {
   }
 
   return (
-    <FinanceShell title="Expenses" subtitle="All business expenses and approval queue.">
+    <>
       <div className="mb-4 flex justify-end">
         <Link href="/finance/expenses/create" className={btnPrimary}><BadgeDollarSign className="h-4 w-4" /> Record Expense</Link>
       </div>
@@ -752,13 +743,14 @@ export function ExpenseListPage() {
         serverPageSize={EXPENSE_PAGE_SIZE}
         onPageChange={setPage}
       />
-    </FinanceShell>
+    </>
   );
 }
 
 // ─── Create Expense ───────────────────────────────────────────────────────────
 
 export function CreateExpensePage() {
+  useFinancePageHeader("Record Expense", "Expenses above GHS 5,000 require manager approval.");
   const { options, optionsError } = useFinanceOptions();
   const [form, setForm] = useState({ categoryId: "", description: "", amount: "", expenseDate: new Date().toISOString().slice(0, 10), paymentMethod: "CASH", vendorName: "", receiptRef: "", branchId: "", bankAccountId: "", notes: "" });
   const [error, setError] = useState("");
@@ -786,7 +778,7 @@ export function CreateExpensePage() {
   }
 
   return (
-    <FinanceShell title="Record Expense" subtitle="Expenses above GHS 5,000 require manager approval.">
+    <>
       <form onSubmit={handleSubmit} className="mx-auto max-w-2xl space-y-4 rounded-md border border-line bg-white p-6 shadow-panel">
         {error && <p className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</p>}
         {success && <p className="rounded-md bg-green-50 p-3 text-sm text-green-700">{success}</p>}
@@ -846,13 +838,14 @@ export function CreateExpensePage() {
         )}
         <button type="submit" className={btnPrimary} disabled={loading}>{loading ? "Saving…" : "Record Expense"}</button>
       </form>
-    </FinanceShell>
+    </>
   );
 }
 
 // ─── Revenue Page ─────────────────────────────────────────────────────────────
 
 export function RevenuePage() {
+  useFinancePageHeader("Revenue Records", "Track all income and revenue sources.");
   const { options, optionsError } = useFinanceOptions();
   const [revenues, setRevenues] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/finance/revenue")?.data ?? []);
   const [showForm, setShowForm] = useState(false);
@@ -888,7 +881,7 @@ export function RevenuePage() {
   }
 
   return (
-    <FinanceShell title="Revenue Records" subtitle="Track all income and revenue sources.">
+    <>
       <div className="mb-4 flex justify-end">
         <button className={btnPrimary} onClick={() => setShowForm(!showForm)}><CircleArrowUp className="h-4 w-4" /> {showForm ? "Cancel" : "Record Revenue"}</button>
       </div>
@@ -943,13 +936,14 @@ export function RevenuePage() {
         rows={revenues}
         empty="No revenue records found."
       />
-    </FinanceShell>
+    </>
   );
 }
 
 // ─── Customer Payments ────────────────────────────────────────────────────────
 
 export function CustomerPaymentsPage() {
+  useFinancePageHeader("Customer Payments", "Payments received from customers.");
   const { options, optionsError } = useFinanceOptions();
   const [payments, setPayments] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/finance/customer-payments")?.data ?? []);
   const [showForm, setShowForm] = useState(false);
@@ -984,7 +978,7 @@ export function CustomerPaymentsPage() {
   }
 
   return (
-    <FinanceShell title="Customer Payments" subtitle="Payments received from customers.">
+    <>
       <div className="mb-4 flex justify-end">
         <button className={btnPrimary} onClick={() => setShowForm(!showForm)}><Users className="h-4 w-4" /> {showForm ? "Cancel" : "Record Payment"}</button>
       </div>
@@ -1017,13 +1011,14 @@ export function CustomerPaymentsPage() {
         rows={payments}
         empty="No customer payments recorded."
       />
-    </FinanceShell>
+    </>
   );
 }
 
 // ─── Supplier Payments ────────────────────────────────────────────────────────
 
 export function SupplierPaymentsPage() {
+  useFinancePageHeader("Supplier Payments", "Payments made to suppliers and vendors.");
   const { options, optionsError } = useFinanceOptions();
   const [payments, setPayments] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/finance/supplier-payments")?.data ?? []);
   const [showForm, setShowForm] = useState(false);
@@ -1058,7 +1053,7 @@ export function SupplierPaymentsPage() {
   }
 
   return (
-    <FinanceShell title="Supplier Payments" subtitle="Payments made to suppliers and vendors.">
+    <>
       <div className="mb-4 flex justify-end">
         <button className={btnPrimary} onClick={() => setShowForm(!showForm)}><Building2 className="h-4 w-4" /> {showForm ? "Cancel" : "Record Payment"}</button>
       </div>
@@ -1091,7 +1086,7 @@ export function SupplierPaymentsPage() {
         rows={payments}
         empty="No supplier payments recorded."
       />
-    </FinanceShell>
+    </>
   );
 }
 
@@ -1132,9 +1127,10 @@ export function PettyCashPage() {
   }
 
   const currentBalance = transactions.length > 0 ? Number(transactions[0].balance ?? 0) : 0;
+  useFinancePageHeader("Petty Cash", `Current balance: ${money(currentBalance)}`);
 
   return (
-    <FinanceShell title="Petty Cash" subtitle={`Current balance: ${money(currentBalance)}`}>
+    <>
       <div className="mb-4 flex justify-end">
         <button className={btnPrimary} onClick={() => setShowForm(!showForm)}><PiggyBank className="h-4 w-4" /> {showForm ? "Cancel" : "New Transaction"}</button>
       </div>
@@ -1174,7 +1170,7 @@ export function PettyCashPage() {
         columns={[
           { key: "reference", label: "Reference" },
           { key: "transactionDate", label: "Date", render: (r) => fmt(r.transactionDate) },
-          { key: "type", label: "Type", render: (r) => <StatusBadge status={r.type as string} /> },
+          { key: "type", label: "Type", render: (r) => <Badge variant={cashTxTypeVariant[r.type as string] ?? "neutral"}>{String(r.type ?? "").replace(/_/g, " ")}</Badge> },
           { key: "description", label: "Description" },
           { key: "category", label: "Category", render: (r) => (r.category as Record<string, unknown>)?.name as string },
           { key: "amount", label: "Amount", render: (r) => money(r.amount) },
@@ -1183,13 +1179,14 @@ export function PettyCashPage() {
         rows={transactions}
         empty="No petty cash transactions."
       />
-    </FinanceShell>
+    </>
   );
 }
 
 // ─── Payroll ──────────────────────────────────────────────────────────────────
 
 export function PayrollPage() {
+  useFinancePageHeader("Payroll Records", "Employee salaries, deductions, and payment tracking.");
   const { options, optionsError } = useFinanceOptions();
   const [records, setRecords] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/finance/payroll")?.data ?? []);
   const [showForm, setShowForm] = useState(false);
@@ -1248,7 +1245,7 @@ export function PayrollPage() {
   }
 
   return (
-    <FinanceShell title="Payroll Records" subtitle="Employee salaries, deductions, and payment tracking.">
+    <>
       <div className="mb-4 flex justify-end">
         <button className={btnPrimary} onClick={() => setShowForm(!showForm)}><Wallet className="h-4 w-4" /> {showForm ? "Cancel" : "Add Payroll Record"}</button>
       </div>
@@ -1297,13 +1294,14 @@ export function PayrollPage() {
         rows={records}
         empty="No payroll records found."
       />
-    </FinanceShell>
+    </>
   );
 }
 
 // ─── Bank Accounts ────────────────────────────────────────────────────────────
 
 export function BankAccountsPage() {
+  useFinancePageHeader("Bank Accounts", "Company bank accounts and balances.");
   const [accounts, setAccounts] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/finance/bank-accounts")?.data ?? []);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ accountName: "", accountNumber: "", bankName: "", branchName: "", accountType: "CURRENT", openingBalance: "0", notes: "" });
@@ -1337,7 +1335,7 @@ export function BankAccountsPage() {
   }
 
   return (
-    <FinanceShell title="Bank Accounts" subtitle="Company bank accounts and balances.">
+    <>
       <div className="mb-4 flex justify-end">
         <button className={btnPrimary} onClick={() => setShowForm(!showForm)}><Building2 className="h-4 w-4" /> {showForm ? "Cancel" : "Add Bank Account"}</button>
       </div>
@@ -1370,7 +1368,7 @@ export function BankAccountsPage() {
                 <p className="text-sm text-ink/60">{a.bankName as string} {a.branchName ? `— ${a.branchName}` : ""}</p>
                 <p className="mt-1 text-xs text-ink/50">{String(a.accountType).replace(/_/g, " ")} · {a.accountNumber as string}</p>
               </div>
-              <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${(a.isActive as boolean) ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-600"}`}>{(a.isActive as boolean) ? "Active" : "Inactive"}</span>
+              <StatusBadge status={(a.isActive as boolean) ? "ACTIVE" : "INACTIVE"} />
             </div>
             <div className="mt-4 border-t border-line pt-3">
               <p className="text-xs text-ink/60">Current Balance</p>
@@ -1380,13 +1378,14 @@ export function BankAccountsPage() {
         ))}
         {accounts.length === 0 && <p className="col-span-full py-8 text-center text-sm text-ink/50">No bank accounts configured.</p>}
       </div>
-    </FinanceShell>
+    </>
   );
 }
 
 // ─── Journal Entries ──────────────────────────────────────────────────────────
 
 export function JournalEntriesPage() {
+  useFinancePageHeader("Journal Entries", "Double-entry bookkeeping journal entries.");
   const { options, optionsError } = useFinanceOptions();
   const [entries, setEntries] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/finance/journal-entries")?.data ?? []);
   const [showForm, setShowForm] = useState(false);
@@ -1444,7 +1443,7 @@ export function JournalEntriesPage() {
   }
 
   return (
-    <FinanceShell title="Journal Entries" subtitle="Double-entry bookkeeping journal entries.">
+    <>
       <div className="mb-4 flex justify-end">
         <button className={btnPrimary} onClick={() => setShowForm(!showForm)}><BookOpen className="h-4 w-4" /> {showForm ? "Cancel" : "New Journal Entry"}</button>
       </div>
@@ -1510,13 +1509,14 @@ export function JournalEntriesPage() {
         rows={entries}
         empty="No journal entries."
       />
-    </FinanceShell>
+    </>
   );
 }
 
 // ─── Profit & Loss Report ─────────────────────────────────────────────────────
 
 export function ProfitLossReportPage() {
+  useFinancePageHeader("Profit & Loss Report", "Revenue vs expenses for a selected period.");
   const [reports, setReports] = useState<Record<string, unknown>[]>([]);
   const [startDate, setStartDate] = useState(() => { const d = new Date(); d.setDate(1); return d.toISOString().slice(0, 10); });
   const [endDate, setEndDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -1543,7 +1543,7 @@ export function ProfitLossReportPage() {
   }
 
   return (
-    <FinanceShell title="Profit & Loss Report" subtitle="Revenue vs expenses for a selected period.">
+    <>
       <div className="mb-4 flex flex-wrap items-center justify-end gap-2">
         <input type="date" className={inputClass} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
         <input type="date" className={inputClass} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
@@ -1574,13 +1574,14 @@ export function ProfitLossReportPage() {
         rows={reports}
         empty="No P&L reports generated yet."
       />
-    </FinanceShell>
+    </>
   );
 }
 
 // ─── Cash Flow Report ─────────────────────────────────────────────────────────
 
 export function CashFlowReportPage() {
+  useFinancePageHeader("Cash Flow Report", "Cash inflows and outflows for a selected period.");
   const [reports, setReports] = useState<Record<string, unknown>[]>([]);
   const [startDate, setStartDate] = useState(() => { const d = new Date(); d.setDate(1); return d.toISOString().slice(0, 10); });
   const [endDate, setEndDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -1609,7 +1610,7 @@ export function CashFlowReportPage() {
   const reportData = current?.reportData as Record<string, unknown> | undefined;
 
   return (
-    <FinanceShell title="Cash Flow Report" subtitle="Cash inflows and outflows for a selected period.">
+    <>
       <div className="mb-4 flex flex-wrap items-center justify-end gap-2">
         <input type="date" className={inputClass} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
         <input type="date" className={inputClass} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
@@ -1657,13 +1658,14 @@ export function CashFlowReportPage() {
         rows={reports}
         empty="No cash flow reports yet."
       />
-    </FinanceShell>
+    </>
   );
 }
 
 // ─── Product Profitability ────────────────────────────────────────────────────
 
 export function ProductProfitabilityPage() {
+  useFinancePageHeader("Product Profitability", "Revenue, cost, and margin by product.");
   const [records, setRecords] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/finance/reports/product-profitability")?.data ?? []);
   const [startDate, setStartDate] = useState(() => { const d = new Date(); d.setDate(1); return d.toISOString().slice(0, 10); });
   const [endDate, setEndDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -1690,7 +1692,7 @@ export function ProductProfitabilityPage() {
   }
 
   return (
-    <FinanceShell title="Product Profitability" subtitle="Revenue, cost, and margin by product.">
+    <>
       <div className="mb-4 flex flex-wrap items-center justify-end gap-2">
         <input type="date" className={inputClass} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
         <input type="date" className={inputClass} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
@@ -1711,13 +1713,14 @@ export function ProductProfitabilityPage() {
         rows={records}
         empty="No product profitability records. Click Analyse to generate."
       />
-    </FinanceShell>
+    </>
   );
 }
 
 // ─── Batch Profitability ──────────────────────────────────────────────────────
 
 export function BatchProfitabilityPage() {
+  useFinancePageHeader("Batch Profitability", "Profitability of flock, feed, and soya processing batches.");
   const [records, setRecords] = useState<Record<string, unknown>[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [batchTypeFilter, setBatchTypeFilter] = useState("");
@@ -1753,7 +1756,7 @@ export function BatchProfitabilityPage() {
   }
 
   return (
-    <FinanceShell title="Batch Profitability" subtitle="Profitability of flock, feed, and soya processing batches.">
+    <>
       <div className="mb-4 flex justify-end">
         <button className={btnPrimary} onClick={() => setShowForm(!showForm)}><FileChartColumn className="h-4 w-4" /> {showForm ? "Cancel" : "Record Batch P&L"}</button>
       </div>
@@ -1809,13 +1812,14 @@ export function BatchProfitabilityPage() {
         rows={records}
         empty="No batch profitability records."
       />
-    </FinanceShell>
+    </>
   );
 }
 
 // ─── Debtors (A/R) ───────────────────────────────────────────────────────────
 
 export function DebtorsPage() {
+  useFinancePageHeader("Debtors (A/R)", "Outstanding customer invoices — amounts customers owe you.");
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -1833,7 +1837,7 @@ export function DebtorsPage() {
   const overdueCount = rows.filter((r) => r.status === "OVERDUE").length;
 
   return (
-    <FinanceShell title="Debtors (A/R)" subtitle="Outstanding customer invoices — amounts customers owe you.">
+    <>
       {!loading && rows.length > 0 && (
         <div className="mb-5 grid gap-3 sm:grid-cols-3">
           <StatCard label="Total Outstanding" value={money(total)} icon={DollarSign} sub={`${rows.length} invoice${rows.length !== 1 ? "s" : ""}`} />
@@ -1860,13 +1864,14 @@ export function DebtorsPage() {
         rows={rows}
         empty={loading ? "Loading…" : "No outstanding receivables."}
       />
-    </FinanceShell>
+    </>
   );
 }
 
 // ─── Creditors (A/P) ──────────────────────────────────────────────────────────
 
 export function CreditorsPage() {
+  useFinancePageHeader("Creditors (A/P)", "Supplier payment history — amounts paid to vendors.");
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -1880,7 +1885,7 @@ export function CreditorsPage() {
   const total = rows.reduce((s, r) => s + Number(r.amount ?? 0), 0);
 
   return (
-    <FinanceShell title="Creditors (A/P)" subtitle="Supplier payment history — amounts paid to vendors.">
+    <>
       {!loading && rows.length > 0 && (
         <div className="mb-5 grid gap-3 sm:grid-cols-2">
           <StatCard label="Total Paid to Suppliers" value={money(total)} icon={DollarSign} sub={`${rows.length} payment${rows.length !== 1 ? "s" : ""}`} />
@@ -1900,13 +1905,14 @@ export function CreditorsPage() {
         rows={rows}
         empty={loading ? "Loading…" : "No supplier payments recorded."}
       />
-    </FinanceShell>
+    </>
   );
 }
 
 // ─── Expense Categories ───────────────────────────────────────────────────────
 
 export function ExpenseCategoriesPage() {
+  useFinancePageHeader("Expense Categories", "Organise expenses into categories for reporting and GL mapping.");
   const [categories, setCategories] = useState<Record<string, unknown>[]>([]);
   const [accounts, setAccounts] = useState<{ id: string; code: string; name: string }[]>([]);
   const [showForm, setShowForm] = useState(false);
@@ -1943,7 +1949,7 @@ export function ExpenseCategoriesPage() {
   }
 
   return (
-    <FinanceShell title="Expense Categories" subtitle="Organise expenses into categories for reporting and GL mapping.">
+    <>
       <div className="mb-4 flex justify-end">
         <button className={btnPrimary} onClick={() => setShowForm((v) => !v)}>
           <BadgeDollarSign className="h-4 w-4" /> {showForm ? "Cancel" : "New Category"}
@@ -1975,11 +1981,12 @@ export function ExpenseCategoriesPage() {
       )}
       <div className="overflow-hidden rounded-md border border-line bg-white shadow-panel">
         {categories.length === 0 ? (
-          <div className="flex flex-col items-center gap-3 py-14 text-center">
-            <BadgeDollarSign className="h-8 w-8 text-brand/40" />
-            <p className="text-sm text-ink/55">No expense categories yet. Add one to start recording expenses.</p>
-            <button className={btnPrimary} onClick={() => setShowForm(true)}>Add first category</button>
-          </div>
+          <EmptyState
+            icon={BadgeDollarSign}
+            title="No expense categories yet"
+            description="Add one to start recording expenses."
+            action={<button className={btnPrimary} onClick={() => setShowForm(true)}>Add first category</button>}
+          />
         ) : (
           <table className="w-full text-sm">
             <thead><tr className="border-b border-line text-left text-xs font-semibold uppercase tracking-wide text-ink/50">{["Code", "Name", "GL Account", "Description"].map((h) => <th key={h} className="px-4 py-3">{h}</th>)}</tr></thead>
@@ -1996,7 +2003,7 @@ export function ExpenseCategoriesPage() {
           </table>
         )}
       </div>
-    </FinanceShell>
+    </>
   );
 }
 
@@ -2015,6 +2022,7 @@ const ACCOUNT_TYPE_META: Record<string, { label: string; color: string; bg: stri
 const ACCOUNT_TYPES = ["ASSET", "LIABILITY", "EQUITY", "REVENUE", "EXPENSE"] as const;
 
 export function ChartOfAccountsPage() {
+  useFinancePageHeader("Chart of Accounts", "Ledger structure — assets, liabilities, equity, revenue, and expenses.");
   const [accounts, setAccounts] = useState<AccountRow[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [search, setSearch] = useState("");
@@ -2059,7 +2067,7 @@ export function ChartOfAccountsPage() {
   }, {});
 
   return (
-    <FinanceShell title="Chart of Accounts" subtitle="Ledger structure — assets, liabilities, equity, revenue, and expenses.">
+    <>
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <input
           className={inputClass + " flex-1 min-w-48 max-w-sm"}
@@ -2136,13 +2144,16 @@ export function ChartOfAccountsPage() {
           );
         })}
         {accounts.length === 0 && (
-          <div className="flex flex-col items-center gap-3 rounded-md border border-dashed border-line bg-white py-14 text-center">
-            <BookOpen className="h-8 w-8 text-brand/40" />
-            <p className="text-sm font-medium text-ink/55">No accounts yet. Create your first account above.</p>
-            <button className={btnPrimary} onClick={() => setShowForm(true)}>Add first account</button>
+          <div className="rounded-md border border-dashed border-line bg-white">
+            <EmptyState
+              icon={BookOpen}
+              title="No accounts yet"
+              description="Create your first account above."
+              action={<button className={btnPrimary} onClick={() => setShowForm(true)}>Add first account</button>}
+            />
           </div>
         )}
       </div>
-    </FinanceShell>
+    </>
   );
 }

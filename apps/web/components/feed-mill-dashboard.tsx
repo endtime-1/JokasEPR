@@ -20,7 +20,6 @@ import {
   Warehouse,
   Zap
 } from "lucide-react";
-import { FeedMillShell } from "./feed-mill-shell";
 import { ApiEnvelope, apiFetch } from "../lib/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -415,7 +414,7 @@ export function FeedMillDashboardPage() {
   const orderTotal = (data?.orderStats ?? []).reduce((s, r) => s + r.count, 0);
 
   return (
-    <FeedMillShell>
+    <>
       {/* Premium hero header */}
       <div className="mb-6 overflow-hidden rounded-2xl border border-line bg-gradient-to-br from-white via-white to-field shadow-panel">
         <div className="flex flex-wrap items-start justify-between gap-4 px-6 py-5">
@@ -551,6 +550,6 @@ export function FeedMillDashboardPage() {
           </Link>
         </div>
       )}
-    </FeedMillShell>
+    </>
   );
 }

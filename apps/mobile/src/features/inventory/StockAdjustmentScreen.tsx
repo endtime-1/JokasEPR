@@ -93,10 +93,12 @@ export function StockAdjustmentScreen() {
   const { submit, loading } = useSubmit({
     module: "stock_adjustment",
     endpoint: "/inventory/adjustments",
-    onSuccess: () =>
+    onSuccess: (queued) =>
       Alert.alert(
-        "Adjustment Submitted",
-        "Stock adjustment has been submitted for approval.",
+        queued ? "Saved Offline" : "Adjustment Submitted",
+        queued
+          ? "Your stock adjustment was saved on this device and will sync automatically once you're back online, then be submitted for approval."
+          : "Stock adjustment has been submitted for approval.",
         [{ text: "OK", onPress: () => navigation.goBack() }]
       ),
   });

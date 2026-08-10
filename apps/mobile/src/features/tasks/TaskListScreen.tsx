@@ -292,7 +292,7 @@ const styles = StyleSheet.create({
   },
   toggleTextActive: {
     fontFamily: font.family.semibold,
-    color: colors.brand,
+    color: colors.brandDark,
   },
 
   taskCard: {
@@ -338,7 +338,7 @@ const styles = StyleSheet.create({
   quickActionText: {
     fontSize: font.size.xs,
     fontFamily: font.family.semibold,
-    color: colors.brand,
+    color: colors.brandDark,
   },
 
   fab: {

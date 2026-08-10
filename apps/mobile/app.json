@@ -48,7 +48,8 @@
         {
           "locationWhenInUsePermission": "Allow AKOKO SOLUTIONS ERP to record your location when logging prospect visits."
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "extra": {
       "eas": {

@@ -2,7 +2,6 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
-import { AppShell } from "../../components/app-shell";
 import { DataTable } from "../../components/data-table";
 import { FormField } from "../../components/form-field";
 import { ApiEnvelope, apiFetch } from "../../lib/api";
@@ -224,7 +223,7 @@ export default function PlatformPage() {
   }
 
   return (
-    <AppShell>
+    <>
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="app-kicker">Platform</p>
@@ -558,6 +557,6 @@ export default function PlatformPage() {
           />
         </div>
       )}
-    </AppShell>
+    </>
   );
 }

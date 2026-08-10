@@ -28,7 +28,7 @@ const CATEGORY_STYLES: Record<string, { pill: string; fallbackBg: string; label:
 
 function ProductImage({ product }: { product: PublicProduct }) {
   const [imgError, setImgError] = useState(false);
-  const imgSrc = PRODUCT_IMAGES[product.publicSlug];
+  const imgSrc = product.imageUrl ?? PRODUCT_IMAGES[product.publicSlug];
   const cat = product.storefrontCategory ?? "Feed";
   const style = CATEGORY_STYLES[cat] ?? CATEGORY_STYLES["Feed"];
 
@@ -105,7 +105,7 @@ export default function ProductCard({ product }: { product: PublicProduct }) {
           <div>
             {product.price != null ? (
               <>
-                <div className="text-xl font-black text-brand">
+                <div className="text-xl font-black text-brandDark">
                   GHS {product.price % 1 === 0 ? product.price.toLocaleString() : product.price.toFixed(2)}
                 </div>
                 <div className="text-2xs text-muted">per {product.unitLabel ?? "unit"}</div>

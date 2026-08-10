@@ -9,7 +9,6 @@ import {
   Search,
   TrendingUp
 } from "lucide-react";
-import { AppShell } from "../../components/app-shell";
 import { DataTable } from "../../components/data-table";
 import { FormField } from "../../components/form-field";
 import { ApiEnvelope, apiFetch, downloadReport } from "../../lib/api";
@@ -144,7 +143,7 @@ export default function ReportsPage() {
   }
 
   return (
-    <AppShell>
+    <>
       {/* Page hero */}
       <div className="mb-6 overflow-hidden rounded-2xl border border-line bg-gradient-to-br from-white via-white to-field shadow-panel">
         <div className="flex flex-wrap items-start justify-between gap-4 px-6 py-5">
@@ -411,7 +410,7 @@ export default function ReportsPage() {
           </section>
         </main>
       </div>
-    </AppShell>
+    </>
   );
 }
 

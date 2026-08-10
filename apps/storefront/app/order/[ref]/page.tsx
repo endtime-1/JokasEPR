@@ -138,7 +138,7 @@ export default function OrderStatusPage() {
           {order.total > 0 && (
             <div className="flex items-center justify-between border-t border-dashed border-gray-200 pt-3 font-bold">
               <span className="text-sm text-ink">Total</span>
-              <span className="text-lg text-brand">GHS {order.total.toFixed(2)}</span>
+              <span className="text-lg text-brandDark">GHS {order.total.toFixed(2)}</span>
             </div>
           )}
         </div>

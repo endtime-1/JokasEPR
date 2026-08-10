@@ -150,7 +150,7 @@ const styles = StyleSheet.create({
   rowValue:   { fontSize: font.size.xs, fontFamily: font.family.semibold },
   netRow:     { flexDirection: "row", justifyContent: "space-between", borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm, marginTop: spacing.xs },
   netLabel:   { fontSize: font.size.sm, fontFamily: font.family.extrabold, color: colors.ink },
-  netValue:   { fontSize: font.size.lg - 1, fontFamily: font.family.extrabold, color: colors.brand },
+  netValue:   { fontSize: font.size.lg - 1, fontFamily: font.family.extrabold, color: colors.brandDark },
 
   footer:     { flexDirection: "row", gap: spacing.lg, flexWrap: "wrap", borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm },
   footerItem: { flexDirection: "row", alignItems: "center", gap: 4 },

@@ -5,8 +5,8 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { AlertTriangle, CalendarDays, Camera, CircleAlert, ClipboardList, DollarSign, FileText, Pencil, Trash2, Upload, UserCheck, UserPlus, Users } from "lucide-react";
 import { ApiEnvelope, apiFetch, getCached, getCachedFirst, hasCached } from "../lib/api";
-import { AppShell } from "./app-shell";
 import { DataTable } from "./data-table";
+import { StatusBadge, EmptyState, ConfirmModal } from "./ui";
 
 // â"€â"€â"€ Helpers â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
@@ -74,54 +74,6 @@ function money(v: unknown) {
 function fmt(d?: string | Date | null) {
   if (!d) return "—";
   return new Date(d).toLocaleDateString("en-GH", { day: "2-digit", month: "short", year: "numeric" });
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const colours: Record<string, string> = {
-    ACTIVE: "bg-green-100 text-green-700",
-    ON_LEAVE: "bg-yellow-100 text-yellow-800",
-    SUSPENDED: "bg-orange-100 text-orange-700",
-    TERMINATED: "bg-red-100 text-red-700",
-    RESIGNED: "bg-gray-200 text-gray-700",
-    PRESENT: "bg-green-100 text-green-700",
-    ABSENT: "bg-red-100 text-red-700",
-    LATE: "bg-yellow-100 text-yellow-800",
-    HALF_DAY: "bg-blue-100 text-blue-700",
-    PUBLIC_HOLIDAY: "bg-purple-100 text-purple-700",
-    OPEN: "bg-blue-100 text-blue-700",
-    IN_PROGRESS: "bg-indigo-100 text-indigo-700",
-    ON_HOLD: "bg-yellow-100 text-yellow-800",
-    COMPLETED: "bg-green-100 text-green-700",
-    CANCELLED: "bg-gray-200 text-gray-700",
-    LOW: "bg-gray-100 text-gray-600",
-    MEDIUM: "bg-blue-100 text-blue-700",
-    HIGH: "bg-orange-100 text-orange-700",
-    URGENT: "bg-red-100 text-red-700",
-    ASSIGNED: "bg-blue-100 text-blue-700",
-    ACCEPTED: "bg-indigo-100 text-indigo-700",
-    REJECTED: "bg-red-100 text-red-700",
-    PASSED: "bg-green-100 text-green-700",
-    FAILED: "bg-red-100 text-red-700",
-    ONGOING: "bg-blue-100 text-blue-700",
-    DRAFT: "bg-gray-100 text-gray-600",
-    APPROVED: "bg-green-100 text-green-700",
-    PAID: "bg-green-200 text-green-800",
-    REVIEWED: "bg-indigo-100 text-indigo-700",
-    ACKNOWLEDGED: "bg-green-100 text-green-700",
-    OUTSTANDING: "bg-purple-100 text-purple-700",
-    EXCEEDS_EXPECTATIONS: "bg-blue-100 text-blue-700",
-    MEETS_EXPECTATIONS: "bg-green-100 text-green-700",
-    NEEDS_IMPROVEMENT: "bg-yellow-100 text-yellow-800",
-    UNSATISFACTORY: "bg-red-100 text-red-700",
-    ANNUAL: "bg-blue-100 text-blue-700",
-    SICK: "bg-red-100 text-red-700",
-    MATERNITY: "bg-pink-100 text-pink-700",
-    PATERNITY: "bg-indigo-100 text-indigo-700",
-    COMPASSIONATE: "bg-purple-100 text-purple-700",
-    UNPAID: "bg-gray-100 text-gray-600",
-  };
-  const c = colours[status] ?? "bg-gray-100 text-gray-600";
-  return <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${c}`}>{status.replace(/_/g, " ")}</span>;
 }
 
 function StatCard({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
@@ -273,7 +225,7 @@ export function HRDashboardPage() {
   ];
 
   return (
-    <AppShell>
+    
       <div className="space-y-6">
         {loadError && (
           <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -393,7 +345,7 @@ export function HRDashboardPage() {
           </div>
         </div>
       </div>
-    </AppShell>
+    
   );
 }
 
@@ -412,6 +364,8 @@ export function EmployeeListPage() {
   const [loading, setLoading] = useState(!(_cached?.data?.length));
   const [deleteError, setDeleteError] = useState("");
   const [loadError, setLoadError] = useState("");
+  const [confirmTarget, setConfirmTarget] = useState<Employee | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   function load() {
     setLoadError("");
@@ -428,19 +382,23 @@ export function EmployeeListPage() {
   // even if Next.js keeps the component instance alive across soft navigations.
   useEffect(() => { load(); }, [search, status, pathname]);
 
-  async function deleteEmployee(emp: Employee) {
-    if (!confirm(`Delete employee "${emp.fullName}"? This cannot be undone.`)) return;
+  async function deleteEmployee() {
+    if (!confirmTarget) return;
     setDeleteError("");
+    setDeleting(true);
     try {
-      await apiFetch(`/hr/employees/${emp.id}`, { method: "DELETE" });
+      await apiFetch(`/hr/employees/${confirmTarget.id}`, { method: "DELETE" });
       load();
     } catch (err: unknown) {
       setDeleteError(err instanceof Error ? err.message : "Failed to delete employee.");
+    } finally {
+      setDeleting(false);
+      setConfirmTarget(null);
     }
   }
 
   return (
-    <AppShell>
+    
       <div className="space-y-5">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-bold">Employees</h1>
@@ -488,7 +446,7 @@ export function EmployeeListPage() {
                 <button
                   type="button"
                   title="Delete employee"
-                  onClick={() => deleteEmployee(r as Employee)}
+                  onClick={() => setConfirmTarget(r as Employee)}
                   className="rounded p-1 text-ink/40 hover:bg-red-50 hover:text-red-500"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
@@ -500,8 +458,18 @@ export function EmployeeListPage() {
           loading={loading}
           empty="No employees found"
         />
+        <ConfirmModal
+          open={!!confirmTarget}
+          onClose={() => setConfirmTarget(null)}
+          onConfirm={deleteEmployee}
+          title="Delete Employee"
+          message={`Delete employee "${confirmTarget?.fullName}"? This cannot be undone.`}
+          confirmLabel="Delete"
+          variant="danger"
+          loading={deleting}
+        />
       </div>
-    </AppShell>
+
   );
 }
 
@@ -554,7 +522,7 @@ export function CreateEmployeePage() {
   }
 
   return (
-    <AppShell>
+    
       <div className="mx-auto max-w-3xl space-y-5">
         <div className="flex items-center gap-3">
           <Link href="/hr/employees" className="text-sm text-ink/60 hover:text-ink">â† Employees</Link>
@@ -606,7 +574,7 @@ export function CreateEmployeePage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Employee Code <span className="text-red-500">*</span></label><input required value={form.code} onChange={f("code")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15" /></div>
               <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Role</label>
                 <select value={form.employeeRoleId} onChange={f("employeeRoleId")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none">
@@ -616,11 +584,11 @@ export function CreateEmployeePage() {
               </div>
               <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">National ID</label><input value={form.nationalId} onChange={f("nationalId")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15" /></div>
             </div>
-            <div className="mt-4 grid grid-cols-2 gap-4">
+            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">First Name <span className="text-red-500">*</span></label><input required value={form.firstName} onChange={f("firstName")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15" /></div>
               <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Last Name <span className="text-red-500">*</span></label><input required value={form.lastName} onChange={f("lastName")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15" /></div>
             </div>
-            <div className="mt-4 grid grid-cols-3 gap-4">
+            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
               <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Gender</label>
                 <select value={form.gender} onChange={f("gender")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none">
                   <option value="">—</option>
@@ -630,7 +598,7 @@ export function CreateEmployeePage() {
               <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Date of Birth</label><input type="date" value={form.dateOfBirth} onChange={f("dateOfBirth")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none" /></div>
               <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Phone</label><input value={form.phone} onChange={f("phone")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none" /></div>
             </div>
-            <div className="mt-4 grid grid-cols-2 gap-4">
+            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Email</label><input type="email" value={form.email} onChange={f("email")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none" /></div>
               <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Address</label><textarea value={form.address} onChange={f("address")} rows={3} className="w-full rounded-lg border border-line px-3 py-2 text-sm resize-none focus:border-brand focus:outline-none" /></div>
             </div>
@@ -642,7 +610,7 @@ export function CreateEmployeePage() {
               <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand/8 text-brand"><UserCheck className="h-4 w-4" /></div>
               <div><p className="font-semibold text-ink">Assignment</p><p className="text-xs text-ink/50">Where this employee is based</p></div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Start Date <span className="text-red-500">*</span></label><input required type="date" value={form.startDate} onChange={f("startDate")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none" /></div>
               <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Branch</label>
                 <select value={form.branchId} onChange={f("branchId")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none">
@@ -677,7 +645,7 @@ export function CreateEmployeePage() {
               <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand/8 text-brand"><DollarSign className="h-4 w-4" /></div>
               <div><p className="font-semibold text-ink">Payroll & Banking</p><p className="text-xs text-ink/50">Salary and bank account for payroll processing</p></div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Basic Salary (GHS)</label><input type="number" min={0} step={0.01} value={form.basicSalary} onChange={f("basicSalary")} placeholder="0.00" className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none" /></div>
               <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Bank Name</label><input value={form.bankName} onChange={f("bankName")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none" /></div>
               <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Bank Account Number</label><input value={form.bankAccount} onChange={f("bankAccount")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none" /></div>
@@ -692,7 +660,7 @@ export function CreateEmployeePage() {
               <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-amber-50 text-amber-600"><AlertTriangle className="h-4 w-4" /></div>
               <div><p className="font-semibold text-ink">Emergency Contact & Notes</p></div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Emergency Contact Name</label><input value={form.emergencyContactName} onChange={f("emergencyContactName")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none" /></div>
               <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Emergency Contact Phone</label><input value={form.emergencyContactPhone} onChange={f("emergencyContactPhone")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none" /></div>
               <div className="col-span-2"><label className="mb-1.5 block text-xs font-semibold text-ink/70">Notes</label><textarea value={form.notes} onChange={f("notes")} rows={3} className="w-full rounded-lg border border-line px-3 py-2 text-sm resize-none focus:border-brand focus:outline-none" /></div>
@@ -709,7 +677,7 @@ export function CreateEmployeePage() {
           </div>
         </form>
       </div>
-    </AppShell>
+    
   );
 }
 
@@ -783,16 +751,16 @@ export function EmployeeDetailPage({ id }: { id: string }) {
   useEffect(() => { load(); }, [id]);
 
   if (loadError) return (
-    <AppShell>
+    
       <div className="flex flex-col items-center justify-center gap-4 p-12 text-center">
         <p className="text-sm text-red-600">{loadError}</p>
         <button type="button" onClick={load} className="rounded-lg bg-brand px-5 py-2 text-sm font-semibold text-white hover:opacity-90">Retry</button>
         <Link href="/hr/employees" className="text-sm text-ink/50 hover:text-ink">← Back to Employees</Link>
       </div>
-    </AppShell>
+    
   );
 
-  if (!data) return <AppShell><div className="flex items-center justify-center p-12"><div className="h-6 w-6 animate-spin rounded-full border-2 border-brand border-t-transparent" /></div></AppShell>;
+  if (!data) return <div className="flex items-center justify-center p-12"><div className="h-6 w-6 animate-spin rounded-full border-2 border-brand border-t-transparent" /></div>;
 
   const ef = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setEditForm((p) => ({ ...p, [k]: e.target.value }));
 
@@ -864,7 +832,7 @@ export function EmployeeDetailPage({ id }: { id: string }) {
   const tabs = ["overview", "edit", "attendance", "tasks", "payroll", "training", "performance"];
 
   return (
-    <AppShell>
+    
       <div className="space-y-5">
         <div className="flex items-center gap-3">
           <Link href="/hr/employees" className="text-sm text-ink/60 hover:text-ink">â† Employees</Link>
@@ -961,11 +929,11 @@ export function EmployeeDetailPage({ id }: { id: string }) {
             <form onSubmit={saveEdit} className="space-y-5">
               <div className="rounded-lg border border-line bg-white p-5 space-y-4">
                 <h2 className="font-semibold">Personal Details</h2>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div><label className="mb-1 block text-xs font-medium">First Name</label><input value={editForm.firstName} onChange={ef("firstName")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
                   <div><label className="mb-1 block text-xs font-medium">Last Name</label><input value={editForm.lastName} onChange={ef("lastName")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
                 </div>
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                   <div><label className="mb-1 block text-xs font-medium">Gender</label>
                     <select value={editForm.gender} onChange={ef("gender")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
                       <option value="">—</option>
@@ -980,7 +948,7 @@ export function EmployeeDetailPage({ id }: { id: string }) {
                     </select>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div><label className="mb-1 block text-xs font-medium">Phone</label><input value={editForm.phone} onChange={ef("phone")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
                   <div><label className="mb-1 block text-xs font-medium">Email</label><input type="email" value={editForm.email} onChange={ef("email")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
                 </div>
@@ -989,7 +957,7 @@ export function EmployeeDetailPage({ id }: { id: string }) {
 
               <div className="rounded-lg border border-line bg-white p-5 space-y-4">
                 <h2 className="font-semibold">Assignment & Payroll</h2>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div><label className="mb-1 block text-xs font-medium">Role</label>
                     <select value={editForm.employeeRoleId} onChange={ef("employeeRoleId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
                       <option value="">— None —</option>
@@ -998,7 +966,7 @@ export function EmployeeDetailPage({ id }: { id: string }) {
                   </div>
                   <div><label className="mb-1 block text-xs font-medium">Basic Salary (GHS)</label><input type="number" min={0} step={0.01} value={editForm.basicSalary} onChange={ef("basicSalary")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div><label className="mb-1 block text-xs font-medium">Branch</label>
                     <select value={editForm.branchId} onChange={ef("branchId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
                       <option value="">— None —</option>
@@ -1012,7 +980,7 @@ export function EmployeeDetailPage({ id }: { id: string }) {
                     </select>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div><label className="mb-1 block text-xs font-medium">Warehouse</label>
                     <select value={editForm.warehouseId} onChange={ef("warehouseId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
                       <option value="">— None —</option>
@@ -1026,15 +994,15 @@ export function EmployeeDetailPage({ id }: { id: string }) {
                     </select>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div><label className="mb-1 block text-xs font-medium">Bank Name</label><input value={editForm.bankName} onChange={ef("bankName")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
                   <div><label className="mb-1 block text-xs font-medium">Bank Account</label><input value={editForm.bankAccount} onChange={ef("bankAccount")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div><label className="mb-1 block text-xs font-medium">SSNIT Number</label><input value={editForm.ssnitNumber} onChange={ef("ssnitNumber")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
                   <div><label className="mb-1 block text-xs font-medium">TIN Number</label><input value={editForm.tinNumber} onChange={ef("tinNumber")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div><label className="mb-1 block text-xs font-medium">Emergency Contact</label><input value={editForm.emergencyContactName} onChange={ef("emergencyContactName")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
                   <div><label className="mb-1 block text-xs font-medium">Emergency Phone</label><input value={editForm.emergencyContactPhone} onChange={ef("emergencyContactPhone")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
                 </div>
@@ -1109,7 +1077,7 @@ export function EmployeeDetailPage({ id }: { id: string }) {
           />
         )}
       </div>
-    </AppShell>
+    
   );
 }
 
@@ -1156,7 +1124,7 @@ export function AttendancePage() {
   }
 
   return (
-    <AppShell>
+    
       <div className="space-y-5">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-bold">Attendance</h1>
@@ -1174,7 +1142,7 @@ export function AttendancePage() {
           <div className="rounded-lg border border-line bg-white p-5">
             <h2 className="mb-4 font-semibold">Record Attendance</h2>
             {error && <div className="mb-3 rounded bg-red-50 p-2 text-sm text-red-700">{error}</div>}
-            <form onSubmit={submit} className="grid grid-cols-2 gap-4">
+            <form onSubmit={submit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className="mb-1 block text-xs font-medium">Employee *</label>
                 <select required value={form.employeeId} onChange={f("employeeId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
@@ -1234,7 +1202,7 @@ export function AttendancePage() {
           empty="No attendance records for this date"
         />
       </div>
-    </AppShell>
+    
   );
 }
 
@@ -1250,6 +1218,8 @@ export function ShiftSchedulePage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [loadError, setLoadError] = useState("");
+  const [confirmDeactivateId, setConfirmDeactivateId] = useState<string | null>(null);
+  const [deactivating, setDeactivating] = useState(false);
 
   function load() {
     setLoadError("");
@@ -1258,9 +1228,12 @@ export function ShiftSchedulePage() {
 
   useEffect(() => { load(); }, []);
 
-  async function deactivate(id: string) {
-    if (!confirm("Deactivate this shift?")) return;
-    await apiFetch(`/hr/shifts/${id}`, { method: "DELETE" }).then(() => load()).catch(() => undefined);
+  async function deactivate() {
+    if (!confirmDeactivateId) return;
+    setDeactivating(true);
+    await apiFetch(`/hr/shifts/${confirmDeactivateId}`, { method: "DELETE" }).then(() => load()).catch(() => undefined);
+    setDeactivating(false);
+    setConfirmDeactivateId(null);
   }
 
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm((p) => ({ ...p, [k]: e.target.value }));
@@ -1281,7 +1254,7 @@ export function ShiftSchedulePage() {
   }
 
   return (
-    <AppShell>
+    
       <div className="space-y-5">
         <h1 className="text-xl font-bold">Shift Schedule</h1>
         <HRNav />
@@ -1298,7 +1271,7 @@ export function ShiftSchedulePage() {
             <form onSubmit={submit} className="space-y-3">
               <div><label className="mb-1 block text-xs font-medium">Code *</label><input required value={form.code} onChange={f("code")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
               <div><label className="mb-1 block text-xs font-medium">Name *</label><input required value={form.name} onChange={f("name")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <div><label className="mb-1 block text-xs font-medium">Start</label><input required type="time" value={form.startTime} onChange={f("startTime")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
                 <div><label className="mb-1 block text-xs font-medium">End</label><input required type="time" value={form.endTime} onChange={f("endTime")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
               </div>
@@ -1321,7 +1294,7 @@ export function ShiftSchedulePage() {
                 { key: "branch", label: "Branch", render: (r) => r.branch?.name ?? "All" },
                 { key: "isActive", label: "Active", render: (r) => <span className={r.isActive ? "text-green-600 font-medium" : "text-ink/40"}>{r.isActive ? "Active" : "Inactive"}</span> },
                 { key: "actions", label: "", render: (r) => r.isActive ? (
-                  <button onClick={() => deactivate(r.id as string)} className="rounded bg-orange-100 px-2 py-0.5 text-xs text-orange-700 hover:bg-orange-200">Deactivate</button>
+                  <button onClick={() => setConfirmDeactivateId(r.id as string)} className="rounded bg-orange-100 px-2 py-0.5 text-xs text-orange-700 hover:bg-orange-200">Deactivate</button>
                 ) : null },
               ]}
               rows={rows as Record<string, any>[]}
@@ -1330,8 +1303,18 @@ export function ShiftSchedulePage() {
             />
           </div>
         </div>
+        <ConfirmModal
+          open={!!confirmDeactivateId}
+          onClose={() => setConfirmDeactivateId(null)}
+          onConfirm={deactivate}
+          title="Deactivate Shift"
+          message="Deactivate this shift?"
+          confirmLabel="Deactivate"
+          variant="danger"
+          loading={deactivating}
+        />
       </div>
-    </AppShell>
+
   );
 }
 
@@ -1377,7 +1360,7 @@ export function TaskBoardPage() {
   };
 
   return (
-    <AppShell>
+    
       <div className="space-y-5">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-bold">Task Board</h1>
@@ -1439,7 +1422,7 @@ export function TaskBoardPage() {
           ))}
         </div>
       </div>
-    </AppShell>
+    
   );
 }
 
@@ -1477,7 +1460,7 @@ export function CreateTaskPage() {
   }
 
   return (
-    <AppShell>
+    
       <div className="mx-auto max-w-2xl space-y-5">
         <div className="flex items-center gap-3">
           <Link href="/hr/tasks" className="text-sm text-ink/60 hover:text-ink">â† Tasks</Link>
@@ -1488,7 +1471,7 @@ export function CreateTaskPage() {
           <div className="rounded-lg border border-line bg-white p-5 space-y-4">
             <div><label className="mb-1 block text-xs font-medium">Title *</label><input required value={form.title} onChange={f("title")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
             <div><label className="mb-1 block text-xs font-medium">Description</label><textarea value={form.description} onChange={f("description")} rows={3} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div><label className="mb-1 block text-xs font-medium">Task Type</label><input value={form.taskType} onChange={f("taskType")} placeholder="e.g. Feeding, Cleaning..." className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
               <div><label className="mb-1 block text-xs font-medium">Priority</label>
                 <select value={form.priority} onChange={f("priority")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
@@ -1496,7 +1479,7 @@ export function CreateTaskPage() {
                 </select>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div><label className="mb-1 block text-xs font-medium">Due Date</label><input type="date" value={form.dueDate} onChange={f("dueDate")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
               <div><label className="mb-1 block text-xs font-medium">Branch</label>
                 <select value={form.branchId} onChange={f("branchId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
@@ -1523,7 +1506,7 @@ export function CreateTaskPage() {
           <button type="submit" disabled={saving} className="rounded-md bg-brand px-6 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Creating..." : "Create Task"}</button>
         </form>
       </div>
-    </AppShell>
+    
   );
 }
 
@@ -1612,7 +1595,7 @@ export function PayrollPage() {
   async function markPaid(id: string) { await apiFetch(`/hr/payroll/${id}/mark-paid`, { method: "PATCH" }).then(() => load()).catch(() => undefined); }
 
   return (
-    <AppShell>
+    
       <div className="space-y-5">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-bold">Payroll Records</h1>
@@ -1633,7 +1616,7 @@ export function PayrollPage() {
         {showBulk && (
           <form onSubmit={bulkRun} className="rounded-lg border border-amber-200 bg-amber-50 p-5 space-y-4">
             <p className="font-semibold text-amber-800">Bulk Payroll Run — creates DRAFT records from attendance</p>
-            <div className="grid grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div>
                 <label className="mb-1.5 block text-xs font-semibold text-ink/70">Period (YYYY-MM) *</label>
                 <input required value={bulkForm.period} onChange={fb("period")} placeholder="2026-01" className="w-full rounded-lg border border-line px-3 py-2 text-sm" />
@@ -1665,7 +1648,7 @@ export function PayrollPage() {
           <div className="rounded-lg border border-line bg-white p-5">
             <h2 className="mb-4 font-semibold">New Payroll Record</h2>
             {error && <div className="mb-3 rounded bg-red-50 p-2 text-sm text-red-700">{error}</div>}
-            <form onSubmit={submit} className="grid grid-cols-2 gap-4">
+            <form onSubmit={submit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className="mb-1 block text-xs font-medium">Employee *</label>
                 <select required value={form.employeeId} onChange={f("employeeId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
@@ -1701,7 +1684,7 @@ export function PayrollPage() {
                   {["CASH", "BANK_TRANSFER", "MOBILE_MONEY", "CHEQUE"].map((m) => <option key={m} value={m}>{m.replace(/_/g, " ")}</option>)}
                 </select>
               </div>
-              <div className="col-span-2 grid grid-cols-2 gap-3 rounded-md bg-field p-3 text-sm">
+              <div className="col-span-2 grid grid-cols-1 gap-3 sm:grid-cols-2 rounded-md bg-field p-3 text-sm">
                 <div>Gross Pay: <strong>{money(gross)}</strong> · Net Pay: <strong>{money(net)}</strong></div>
                 <div className="text-xs text-ink/60">
                   Employer contributions: SSNIT {money(Number(form.employerSsnit))} + Tier 2 {money(Number(form.pensionTier2))} = {money(Number(form.employerSsnit) + Number(form.pensionTier2))}
@@ -1742,7 +1725,7 @@ export function PayrollPage() {
           empty="No payroll records"
         />
       </div>
-    </AppShell>
+    
   );
 }
 
@@ -1785,7 +1768,7 @@ export function TrainingPage() {
   }
 
   return (
-    <AppShell>
+    
       <div className="space-y-5">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-bold">Training Records</h1>
@@ -1802,7 +1785,7 @@ export function TrainingPage() {
           <div className="rounded-lg border border-line bg-white p-5">
             <h2 className="mb-4 font-semibold">New Training Record</h2>
             {error && <div className="mb-3 rounded bg-red-50 p-2 text-sm text-red-700">{error}</div>}
-            <form onSubmit={submit} className="grid grid-cols-2 gap-4">
+            <form onSubmit={submit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div><label className="mb-1 block text-xs font-medium">Employee *</label>
                 <select required value={form.employeeId} onChange={f("employeeId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
                   <option value="">— Select —</option>
@@ -1840,7 +1823,7 @@ export function TrainingPage() {
           empty="No training records"
         />
       </div>
-    </AppShell>
+    
   );
 }
 
@@ -1894,7 +1877,7 @@ export function PerformancePage() {
   }
 
   return (
-    <AppShell>
+    
       <div className="space-y-5">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-bold">Employee Performance</h1>
@@ -1911,7 +1894,7 @@ export function PerformancePage() {
           <div className="rounded-lg border border-line bg-white p-5">
             <h2 className="mb-4 font-semibold">New Performance Review</h2>
             {error && <div className="mb-3 rounded bg-red-50 p-2 text-sm text-red-700">{error}</div>}
-            <form onSubmit={submit} className="grid grid-cols-2 gap-4">
+            <form onSubmit={submit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div><label className="mb-1 block text-xs font-medium">Employee *</label>
                 <select required value={form.employeeId} onChange={f("employeeId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
                   <option value="">— Select —</option>
@@ -1961,7 +1944,7 @@ export function PerformancePage() {
           empty="No performance records"
         />
       </div>
-    </AppShell>
+    
   );
 }
 
@@ -2009,19 +1992,19 @@ export function TaskDetailPage({ id }: { id: string }) {
   }
 
   if (taskLoadError) return (
-    <AppShell>
+    
       <div className="flex flex-col items-center justify-center gap-4 p-12 text-center">
         <p className="text-sm text-red-600">{taskLoadError}</p>
         <button type="button" onClick={load} className="rounded-lg bg-brand px-5 py-2 text-sm font-semibold text-white hover:opacity-90">Retry</button>
         <Link href="/hr/tasks" className="text-sm text-ink/50 hover:text-ink">← Back to Tasks</Link>
       </div>
-    </AppShell>
+    
   );
 
-  if (!data) return <AppShell><div className="flex items-center justify-center p-12"><div className="h-6 w-6 animate-spin rounded-full border-2 border-brand border-t-transparent" /></div></AppShell>;
+  if (!data) return <div className="flex items-center justify-center p-12"><div className="h-6 w-6 animate-spin rounded-full border-2 border-brand border-t-transparent" /></div>;
 
   return (
-    <AppShell>
+    
       <div className="space-y-5">
         <div className="flex items-center gap-3">
           <Link href="/hr/tasks" className="text-sm text-ink/60 hover:text-ink">&larr; Task Board</Link>
@@ -2035,7 +2018,7 @@ export function TaskDetailPage({ id }: { id: string }) {
             <div className="rounded-lg border border-line bg-white p-5 space-y-3">
               <h2 className="font-semibold">Task Details</h2>
               {data.description && <p className="text-sm text-ink/80">{data.description}</p>}
-              <dl className="grid grid-cols-2 gap-y-2 text-sm">
+              <dl className="grid grid-cols-1 gap-y-2 text-sm sm:grid-cols-2">
                 <dt className="text-ink/60">Type</dt><dd>{data.taskType ?? "—"}</dd>
                 <dt className="text-ink/60">Due Date</dt><dd>{fmt(data.dueDate)}</dd>
                 <dt className="text-ink/60">Branch</dt><dd>{data.branch?.name ?? "—"}</dd>
@@ -2084,7 +2067,7 @@ export function TaskDetailPage({ id }: { id: string }) {
           </div>
         </div>
       </div>
-    </AppShell>
+    
   );
 }
 
@@ -2108,6 +2091,8 @@ export function LeaveRequestsPage() {
   const [reviewingId, setReviewingId] = useState<string | null>(null);
   const [reviewNote, setReviewNote] = useState("");
   const [loadError, setLoadError] = useState("");
+  const [confirmCancelId, setConfirmCancelId] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState(false);
 
   function load() {
     setLoadError("");
@@ -2156,13 +2141,16 @@ export function LeaveRequestsPage() {
     }).then(() => { setReviewingId(null); setReviewNote(""); load(); }).catch(() => undefined);
   }
 
-  async function cancelRequest(id: string) {
-    if (!confirm("Cancel this leave request?")) return;
-    await apiFetch(`/hr/leave-requests/${id}`, { method: "DELETE" }).then(() => load()).catch(() => undefined);
+  async function cancelRequest() {
+    if (!confirmCancelId) return;
+    setCancelling(true);
+    await apiFetch(`/hr/leave-requests/${confirmCancelId}`, { method: "DELETE" }).then(() => load()).catch(() => undefined);
+    setCancelling(false);
+    setConfirmCancelId(null);
   }
 
   return (
-    <AppShell>
+    
       <div className="space-y-5">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-bold">Leave Requests</h1>
@@ -2182,7 +2170,7 @@ export function LeaveRequestsPage() {
           <div className="rounded-lg border border-line bg-white p-5">
             <h2 className="mb-4 font-semibold">New Leave Request</h2>
             {error && <div className="mb-3 rounded bg-red-50 p-2 text-sm text-red-700">{error}</div>}
-            <form onSubmit={submit} className="grid grid-cols-2 gap-4">
+            <form onSubmit={submit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div><label className="mb-1 block text-xs font-medium">Leave Type *</label>
                 <select required value={form.leaveType} onChange={f("leaveType")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
                   {["ANNUAL", "SICK", "MATERNITY", "PATERNITY", "COMPASSIONATE", "UNPAID"].map((t) => <option key={t} value={t}>{t.replace(/_/g, " ")}</option>)}
@@ -2242,7 +2230,7 @@ export function LeaveRequestsPage() {
                   {r.status === "PENDING" && (
                     <>
                       <button onClick={() => setReviewingId(r.id as string)} className="rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-700 hover:bg-blue-200">Review</button>
-                      <button onClick={() => cancelRequest(r.id as string)} className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-600 hover:bg-red-100 hover:text-red-700">Cancel</button>
+                      <button onClick={() => setConfirmCancelId(r.id as string)} className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-600 hover:bg-red-100 hover:text-red-700">Cancel</button>
                     </>
                   )}
                 </div>
@@ -2253,8 +2241,18 @@ export function LeaveRequestsPage() {
           loading={loading}
           empty="No leave requests"
         />
+        <ConfirmModal
+          open={!!confirmCancelId}
+          onClose={() => setConfirmCancelId(null)}
+          onConfirm={cancelRequest}
+          title="Cancel Leave Request"
+          message="Cancel this leave request?"
+          confirmLabel="Cancel Request"
+          variant="danger"
+          loading={cancelling}
+        />
       </div>
-    </AppShell>
+
   );
 }
 
@@ -2319,7 +2317,7 @@ export function EmployeeRolesPage() {
   }
 
   return (
-    <AppShell>
+    
       <div className="space-y-5">
         <h1 className="text-xl font-bold">Employee Roles</h1>
         <HRNav />
@@ -2346,7 +2344,7 @@ export function EmployeeRolesPage() {
             {editingId && (
               <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4">
                 <h3 className="mb-3 text-sm font-semibold text-amber-800">Editing Role</h3>
-                <form onSubmit={saveEdit} className="grid grid-cols-2 gap-3">
+                <form onSubmit={saveEdit} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div><label className="mb-1 block text-xs font-medium">Name *</label><input required value={editForm.name} onChange={ef("name")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
                   <div><label className="mb-1 block text-xs font-medium">Description</label><input value={editForm.description} onChange={ef("description")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
                   <div className="col-span-2 flex gap-2">
@@ -2373,7 +2371,7 @@ export function EmployeeRolesPage() {
           </div>
         </div>
       </div>
-    </AppShell>
+    
   );
 }
 
@@ -2402,6 +2400,8 @@ export function LeavePoliciesPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [form, setForm] = useState({ name: "", leaveType: "ANNUAL", daysPerYear: "21", carryOverDays: "0", employeeRoleId: "", isActive: "true" });
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm(p => ({ ...p, [k]: e.target.value }));
 
   function load() {
@@ -2429,14 +2429,17 @@ export function LeavePoliciesPage() {
     finally { setSaving(false); }
   }
 
-  async function remove(id: string) {
-    if (!confirm("Delete this leave policy?")) return;
-    await apiFetch(`/hr/leave-policies/${id}`, { method: "DELETE" }).catch(() => undefined);
+  async function remove() {
+    if (!confirmDeleteId) return;
+    setDeleting(true);
+    await apiFetch(`/hr/leave-policies/${confirmDeleteId}`, { method: "DELETE" }).catch(() => undefined);
+    setDeleting(false);
+    setConfirmDeleteId(null);
     load();
   }
 
   return (
-    <AppShell>
+    
       <div className="space-y-5">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-bold">Leave Policies</h1>
@@ -2453,7 +2456,7 @@ export function LeavePoliciesPage() {
           <form onSubmit={submit} className="rounded-lg border border-line bg-white p-5 space-y-4">
             <p className="font-semibold">{editing ? "Edit Policy" : "New Leave Policy"}</p>
             {error && <div className="rounded bg-red-50 p-2 text-sm text-red-700">{error}</div>}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className="mb-1.5 block text-xs font-semibold text-ink/70">Policy Name <span className="text-red-500">*</span></label>
                 <input required value={form.name} onChange={f("name")} placeholder="e.g. Annual Leave — All Staff" className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15" />
@@ -2510,7 +2513,7 @@ export function LeavePoliciesPage() {
             { key: "_actions", label: "", render: (r) => (
               <div className="flex gap-1">
                 <button onClick={() => openEdit(r as never)} className="rounded border border-line bg-white px-2 py-1 text-xs hover:bg-field"><Pencil size={12} /></button>
-                <button onClick={() => remove(r.id as string)} className="rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-600 hover:bg-red-100"><Trash2 size={12} /></button>
+                <button onClick={() => setConfirmDeleteId(r.id as string)} className="rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-600 hover:bg-red-100"><Trash2 size={12} /></button>
               </div>
             )},
           ]}
@@ -2518,8 +2521,18 @@ export function LeavePoliciesPage() {
           loading={loading}
           empty="No leave policies. Click '+ Add Policy' to create one."
         />
+        <ConfirmModal
+          open={!!confirmDeleteId}
+          onClose={() => setConfirmDeleteId(null)}
+          onConfirm={remove}
+          title="Delete Leave Policy"
+          message="Delete this leave policy?"
+          confirmLabel="Delete"
+          variant="danger"
+          loading={deleting}
+        />
       </div>
-    </AppShell>
+
   );
 }
 
@@ -2569,7 +2582,7 @@ export function LeaveBalancePage() {
   }
 
   return (
-    <AppShell>
+    
       <div className="space-y-5">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-bold">Leave Balance</h1>
@@ -2619,7 +2632,7 @@ export function LeaveBalancePage() {
           empty={`No leave balances for ${yearFilter}. Use "Initialize Balances" to set them up.`}
         />
       </div>
-    </AppShell>
+    
   );
 }
 
@@ -2639,6 +2652,8 @@ export function PublicHolidaysPage() {
   const [seedMsg, setSeedMsg] = useState("");
   const [error, setError] = useState("");
   const [form, setForm] = useState({ name: "", date: "", isRecurring: "true" });
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm(p => ({ ...p, [k]: e.target.value }));
 
   function load() {
@@ -2669,14 +2684,17 @@ export function PublicHolidaysPage() {
     finally { setSaving(false); }
   }
 
-  async function remove(id: string) {
-    if (!confirm("Remove this public holiday?")) return;
-    await apiFetch(`/hr/public-holidays/${id}`, { method: "DELETE" }).catch(() => undefined);
+  async function remove() {
+    if (!confirmDeleteId) return;
+    setDeleting(true);
+    await apiFetch(`/hr/public-holidays/${confirmDeleteId}`, { method: "DELETE" }).catch(() => undefined);
+    setDeleting(false);
+    setConfirmDeleteId(null);
     load();
   }
 
   return (
-    <AppShell>
+    
       <div className="space-y-5">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-bold">Public Holidays</h1>
@@ -2697,7 +2715,7 @@ export function PublicHolidaysPage() {
           <form onSubmit={submit} className="rounded-lg border border-line bg-white p-5 space-y-4">
             <p className="font-semibold">Add Public Holiday</p>
             {error && <div className="rounded bg-red-50 p-2 text-sm text-red-700">{error}</div>}
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <div>
                 <label className="mb-1.5 block text-xs font-semibold text-ink/70">Holiday Name <span className="text-red-500">*</span></label>
                 <input required value={form.name} onChange={f("name")} placeholder="e.g. Founders' Day" className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15" />
@@ -2731,15 +2749,25 @@ export function PublicHolidaysPage() {
             { key: "date", label: "Date", render: (r) => fmt(r.date as string) },
             { key: "isRecurring", label: "Recurring", render: (r) => r.isRecurring ? <span className="text-green-700 text-xs font-semibold">Annual</span> : <span className="text-ink/50 text-xs">One-off</span> },
             { key: "_actions", label: "", render: (r) => (
-              <button onClick={() => remove(r.id as string)} className="rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-600 hover:bg-red-100"><Trash2 size={12} /></button>
+              <button onClick={() => setConfirmDeleteId(r.id as string)} className="rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-600 hover:bg-red-100"><Trash2 size={12} /></button>
             )},
           ]}
           rows={rows as Record<string, any>[]}
           loading={loading}
           empty="No public holidays. Click 'Seed Ghana Holidays' to add Ghana's statutory holidays."
         />
+        <ConfirmModal
+          open={!!confirmDeleteId}
+          onClose={() => setConfirmDeleteId(null)}
+          onConfirm={remove}
+          title="Remove Holiday"
+          message="Remove this public holiday?"
+          confirmLabel="Remove"
+          variant="danger"
+          loading={deleting}
+        />
       </div>
-    </AppShell>
+
   );
 }
 
@@ -2758,6 +2786,8 @@ export function DisciplinaryPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [form, setForm] = useState({ employeeId: "", incidentDate: "", category: "Attendance", description: "", actionTaken: "", notes: "" });
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setForm(p => ({ ...p, [k]: e.target.value }));
 
   function load() {
@@ -2778,14 +2808,17 @@ export function DisciplinaryPage() {
     finally { setSaving(false); }
   }
 
-  async function remove(id: string) {
-    if (!confirm("Delete this disciplinary record?")) return;
-    await apiFetch(`/hr/disciplinary/${id}`, { method: "DELETE" }).catch(() => undefined);
+  async function remove() {
+    if (!confirmDeleteId) return;
+    setDeleting(true);
+    await apiFetch(`/hr/disciplinary/${confirmDeleteId}`, { method: "DELETE" }).catch(() => undefined);
+    setDeleting(false);
+    setConfirmDeleteId(null);
     load();
   }
 
   return (
-    <AppShell>
+    
       <div className="space-y-5">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-bold">Disciplinary Records</h1>
@@ -2802,7 +2835,7 @@ export function DisciplinaryPage() {
           <form onSubmit={submit} className="rounded-lg border border-line bg-white p-5 space-y-4">
             <p className="font-semibold">New Disciplinary Action</p>
             {error && <div className="rounded bg-red-50 p-2 text-sm text-red-700">{error}</div>}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className="mb-1.5 block text-xs font-semibold text-ink/70">Employee *</label>
                 <select required value={form.employeeId} onChange={f("employeeId")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm">
@@ -2844,15 +2877,25 @@ export function DisciplinaryPage() {
             { key: "actionTaken", label: "Action Taken", render: r => <span className="line-clamp-1 max-w-xs text-xs">{r.actionTaken as string}</span> },
             { key: "acknowledgedAt", label: "Acknowledged", render: r => r.acknowledgedAt ? <span className="text-green-700 text-xs">Yes</span> : <span className="text-ink/40 text-xs">No</span> },
             { key: "_actions", label: "", render: r => (
-              <button onClick={() => remove(r.id as string)} className="rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-600 hover:bg-red-100"><Trash2 size={12} /></button>
+              <button onClick={() => setConfirmDeleteId(r.id as string)} className="rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-600 hover:bg-red-100"><Trash2 size={12} /></button>
             )},
           ]}
           rows={rows as Record<string, any>[]}
           loading={loading}
           empty="No disciplinary records found."
         />
+        <ConfirmModal
+          open={!!confirmDeleteId}
+          onClose={() => setConfirmDeleteId(null)}
+          onConfirm={remove}
+          title="Delete Record"
+          message="Delete this disciplinary record?"
+          confirmLabel="Delete"
+          variant="danger"
+          loading={deleting}
+        />
       </div>
-    </AppShell>
+
   );
 }
 
@@ -2875,6 +2918,10 @@ export function GrievancesPage() {
   const [resolution, setResolution] = useState("");
   const [resolving, setResolving] = useState(false);
   const [form, setForm] = useState({ employeeId: "", submittedDate: new Date().toISOString().slice(0,10), category: "Harassment", description: "" });
+  const [confirmCloseId, setConfirmCloseId] = useState<string | null>(null);
+  const [closing, setClosing] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setForm(p => ({ ...p, [k]: e.target.value }));
 
   function load() {
@@ -2905,22 +2952,26 @@ export function GrievancesPage() {
     } catch { /* ignore */ } finally { setResolving(false); }
   }
 
-  async function close(id: string) {
-    if (!confirm("Close this grievance?")) return;
-    await apiFetch(`/hr/grievances/${id}/close`, { method: "PATCH" }).catch(() => undefined);
+  async function confirmClose() {
+    if (!confirmCloseId) return;
+    setClosing(true);
+    await apiFetch(`/hr/grievances/${confirmCloseId}/close`, { method: "PATCH" }).catch(() => undefined);
+    setClosing(false);
+    setConfirmCloseId(null);
     load();
   }
 
-  async function remove(id: string) {
-    if (!confirm("Delete this grievance record?")) return;
-    await apiFetch(`/hr/grievances/${id}`, { method: "DELETE" }).catch(() => undefined);
+  async function confirmDelete() {
+    if (!confirmDeleteId) return;
+    setDeleting(true);
+    await apiFetch(`/hr/grievances/${confirmDeleteId}`, { method: "DELETE" }).catch(() => undefined);
+    setDeleting(false);
+    setConfirmDeleteId(null);
     load();
   }
-
-  const STATUS_COLORS: Record<string, string> = { OPEN: "bg-amber-100 text-amber-700", RESOLVED: "bg-green-100 text-green-700", CLOSED: "bg-slate-100 text-slate-500" };
 
   return (
-    <AppShell>
+    
       <div className="space-y-5">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-bold">Grievances</h1>
@@ -2937,7 +2988,7 @@ export function GrievancesPage() {
           <form onSubmit={submit} className="rounded-lg border border-line bg-white p-5 space-y-4">
             <p className="font-semibold">New Grievance</p>
             {error && <div className="rounded bg-red-50 p-2 text-sm text-red-700">{error}</div>}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className="mb-1.5 block text-xs font-semibold text-ink/70">Employee *</label>
                 <select required value={form.employeeId} onChange={f("employeeId")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm">
@@ -2988,12 +3039,12 @@ export function GrievancesPage() {
             { key: "submittedDate", label: "Date", render: r => fmt(r.submittedDate as string) },
             { key: "category", label: "Category" },
             { key: "description", label: "Description", render: r => <span className="line-clamp-1 max-w-xs text-xs">{r.description as string}</span> },
-            { key: "status", label: "Status", render: r => <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_COLORS[r.status as string] ?? ""}`}>{r.status as string}</span> },
+            { key: "status", label: "Status", render: r => <StatusBadge status={r.status as string} /> },
             { key: "_actions", label: "", render: r => (
               <div className="flex gap-1">
                 {r.status === "OPEN" && <button onClick={() => { setResolveId(r.id as string); setResolution(""); }} className="rounded border border-green-200 bg-green-50 px-2 py-1 text-xs text-green-700 hover:bg-green-100">Resolve</button>}
-                {r.status === "RESOLVED" && <button onClick={() => close(r.id as string)} className="rounded border border-line px-2 py-1 text-xs hover:bg-field">Close</button>}
-                <button onClick={() => remove(r.id as string)} className="rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-600 hover:bg-red-100"><Trash2 size={12} /></button>
+                {r.status === "RESOLVED" && <button onClick={() => setConfirmCloseId(r.id as string)} className="rounded border border-line px-2 py-1 text-xs hover:bg-field">Close</button>}
+                <button onClick={() => setConfirmDeleteId(r.id as string)} className="rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-600 hover:bg-red-100"><Trash2 size={12} /></button>
               </div>
             )},
           ]}
@@ -3001,8 +3052,28 @@ export function GrievancesPage() {
           loading={loading}
           empty="No grievances found."
         />
+        <ConfirmModal
+          open={!!confirmCloseId}
+          onClose={() => setConfirmCloseId(null)}
+          onConfirm={confirmClose}
+          title="Close Grievance"
+          message="Close this grievance?"
+          confirmLabel="Close"
+          variant="danger"
+          loading={closing}
+        />
+        <ConfirmModal
+          open={!!confirmDeleteId}
+          onClose={() => setConfirmDeleteId(null)}
+          onConfirm={confirmDelete}
+          title="Delete Grievance"
+          message="Delete this grievance record?"
+          confirmLabel="Delete"
+          variant="danger"
+          loading={deleting}
+        />
       </div>
-    </AppShell>
+
   );
 }
 
@@ -3023,7 +3094,7 @@ export function ProductivityReportPage() {
   useEffect(() => { load(); }, []);
 
   return (
-    <AppShell>
+    
       <div className="space-y-5">
         <h1 className="text-xl font-bold">Worker Productivity Report</h1>
         <HRNav />
@@ -3056,7 +3127,7 @@ export function ProductivityReportPage() {
           </>
         )}
       </div>
-    </AppShell>
+    
   );
 }
 
@@ -3119,7 +3190,7 @@ export function OrgChartPage() {
   const tree = buildTree(nodes);
 
   return (
-    <AppShell>
+    
       <div className="space-y-5">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-bold">Organisation Chart</h1>
@@ -3127,7 +3198,7 @@ export function OrgChartPage() {
         </div>
         <HRNav />
         {loading && <p className="text-sm text-ink/50">Loading org chart…</p>}
-        {!loading && nodes.length === 0 && <p className="text-sm text-ink/50">No active employees found.</p>}
+        {!loading && nodes.length === 0 && <EmptyState icon={Users} title="No active employees found" />}
         {tree.children.length > 0 && (
           <div className="overflow-x-auto pb-4">
             <div className="flex gap-8 items-start min-w-max">
@@ -3138,7 +3209,7 @@ export function OrgChartPage() {
           </div>
         )}
       </div>
-    </AppShell>
+    
   );
 }
 
@@ -3184,7 +3255,7 @@ export function TrainingCatalogPage() {
   }
 
   return (
-    <AppShell>
+    
       <div className="space-y-5">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-bold">Training Catalog</h1>
@@ -3196,13 +3267,13 @@ export function TrainingCatalogPage() {
           <form onSubmit={handleSubmit} className="rounded-lg border border-line bg-surface p-5 space-y-4">
             <p className="font-semibold">New Training Course</p>
             {error && <p className="text-sm text-red-600">{error}</p>}
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <div><label className="mb-1 block text-xs font-medium">Code *</label><input required value={form.code} onChange={f("code")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div className="col-span-2"><label className="mb-1 block text-xs font-medium">Title *</label><input required value={form.title} onChange={f("title")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+              <div className="sm:col-span-2"><label className="mb-1 block text-xs font-medium">Title *</label><input required value={form.title} onChange={f("title")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
               <div><label className="mb-1 block text-xs font-medium">Category</label><input value={form.category} onChange={f("category")} placeholder="e.g. Safety" className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
               <div><label className="mb-1 block text-xs font-medium">Duration (hrs)</label><input type="number" step="0.5" min="0" value={form.durationHours} onChange={f("durationHours")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
               <div><label className="mb-1 block text-xs font-medium">Provider</label><input value={form.provider} onChange={f("provider")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div className="col-span-3"><label className="mb-1 block text-xs font-medium">Description</label><textarea value={form.description} onChange={f("description")} rows={2} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+              <div className="sm:col-span-3"><label className="mb-1 block text-xs font-medium">Description</label><textarea value={form.description} onChange={f("description")} rows={2} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
             </div>
             <button type="submit" disabled={saving} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Saving…" : "Save Course"}</button>
           </form>
@@ -3222,7 +3293,7 @@ export function TrainingCatalogPage() {
           empty={loading ? "Loading…" : "No training courses yet"}
         />
       </div>
-    </AppShell>
+    
   );
 }
 
@@ -3259,7 +3330,7 @@ export function SalaryBandsPage() {
   }
 
   return (
-    <AppShell>
+    
       <div className="space-y-5">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-bold">Salary Bands</h1>
@@ -3271,7 +3342,7 @@ export function SalaryBandsPage() {
           <form onSubmit={handleSubmit} className="rounded-lg border border-line bg-surface p-5 space-y-4">
             <p className="font-semibold">New Salary Band</p>
             {error && <p className="text-sm text-red-600">{error}</p>}
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <div><label className="mb-1 block text-xs font-medium">Grade *</label><input required value={form.grade} onChange={f("grade")} placeholder="e.g. L2" className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
               <div><label className="mb-1 block text-xs font-medium">Role</label>
                 <select value={form.employeeRoleId} onChange={f("employeeRoleId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
@@ -3301,7 +3372,7 @@ export function SalaryBandsPage() {
           empty={loading ? "Loading…" : "No salary bands yet"}
         />
       </div>
-    </AppShell>
+    
   );
 }
 
@@ -3321,6 +3392,8 @@ export function RecruitmentPage() {
   const [appForm, setAppForm] = useState({ applicantName: "", applicantEmail: "", applicantPhone: "" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [confirmHireId, setConfirmHireId] = useState<string | null>(null);
+  const [hiring, setHiring] = useState(false);
   const fj = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setJobForm((p) => ({ ...p, [k]: e.target.value }));
   const fa = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) => setAppForm((p) => ({ ...p, [k]: e.target.value }));
 
@@ -3358,15 +3431,17 @@ export function RecruitmentPage() {
     try { await apiFetch(`/hr/applications/${appId}/status`, { method: "PATCH", body: JSON.stringify({ status }) }); await load(); } catch { /* noop */ }
   }
 
-  async function hire(appId: string) {
-    if (!confirm("Create an Employee record from this applicant?")) return;
-    try { await apiFetch(`/hr/applications/${appId}/hire`, { method: "POST" }); await load(); } catch (err: any) { alert(err.message); }
+  async function hire() {
+    if (!confirmHireId) return;
+    setHiring(true);
+    try { await apiFetch(`/hr/applications/${confirmHireId}/hire`, { method: "POST" }); await load(); } catch (err: any) { alert(err.message); }
+    finally { setHiring(false); setConfirmHireId(null); }
   }
 
   const filteredApps = selectedJob ? apps.filter((a) => a.jobPostingId === selectedJob) : apps;
 
   return (
-    <AppShell>
+    
       <div className="space-y-5">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-bold">Recruitment</h1>
@@ -3381,7 +3456,7 @@ export function RecruitmentPage() {
         {showJobForm && (
           <form onSubmit={saveJob} className="rounded-lg border border-line bg-surface p-5 space-y-4">
             <p className="font-semibold">New Job Posting</p>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div><label className="mb-1 block text-xs font-medium">Job Title *</label><input required value={jobForm.title} onChange={fj("title")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
               <div><label className="mb-1 block text-xs font-medium">Department</label><input value={jobForm.department} onChange={fj("department")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
               <div><label className="mb-1 block text-xs font-medium">Closing Date</label><input type="date" value={jobForm.closingDate} onChange={fj("closingDate")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
@@ -3394,7 +3469,7 @@ export function RecruitmentPage() {
         {showAppForm && selectedJob && (
           <form onSubmit={saveApp} className="rounded-lg border border-line bg-surface p-5 space-y-4">
             <p className="font-semibold">New Application</p>
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <div><label className="mb-1 block text-xs font-medium">Name *</label><input required value={appForm.applicantName} onChange={fa("applicantName")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
               <div><label className="mb-1 block text-xs font-medium">Email</label><input type="email" value={appForm.applicantEmail} onChange={fa("applicantEmail")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
               <div><label className="mb-1 block text-xs font-medium">Phone</label><input value={appForm.applicantPhone} onChange={fa("applicantPhone")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
@@ -3403,7 +3478,7 @@ export function RecruitmentPage() {
           </form>
         )}
 
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           <div className="space-y-2">
             <p className="text-xs font-semibold text-ink/60 uppercase tracking-wide">Job Postings ({jobs.length})</p>
             {jobs.map((j) => (
@@ -3415,7 +3490,7 @@ export function RecruitmentPage() {
             {jobs.length === 0 && <p className="text-sm text-ink/50">No postings</p>}
           </div>
 
-          <div className="col-span-2">
+          <div className="lg:col-span-2">
             <div className="flex gap-3 overflow-x-auto pb-2">
               {APP_STATUSES.map((s) => {
                 const col = filteredApps.filter((a) => a.status === s);
@@ -3430,7 +3505,7 @@ export function RecruitmentPage() {
                           {APP_STATUSES.filter((st) => st !== a.status && st !== "HIRED").map((st) => (
                             <button key={st} onClick={() => moveStatus(a.id, st)} className="rounded px-2 py-0.5 text-[10px] font-medium border border-line hover:bg-field">{st}</button>
                           ))}
-                          {a.status !== "HIRED" && <button onClick={() => hire(a.id)} className="rounded px-2 py-0.5 text-[10px] font-semibold text-green-700 border border-green-300 hover:bg-green-50">Hire</button>}
+                          {a.status !== "HIRED" && <button onClick={() => setConfirmHireId(a.id)} className="rounded px-2 py-0.5 text-[10px] font-semibold text-green-700 border border-green-300 hover:bg-green-50">Hire</button>}
                         </div>
                       </div>
                     ))}
@@ -3440,8 +3515,18 @@ export function RecruitmentPage() {
             </div>
           </div>
         </div>
+        <ConfirmModal
+          open={!!confirmHireId}
+          onClose={() => setConfirmHireId(null)}
+          onConfirm={hire}
+          title="Hire Applicant"
+          message="Create an Employee record from this applicant?"
+          confirmLabel="Create"
+          variant="primary"
+          loading={hiring}
+        />
       </div>
-    </AppShell>
+
   );
 }
 
@@ -3456,6 +3541,8 @@ export function OnboardingPage() {
   const [loading, setLoading] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [saving, setSaving] = useState(false);
+  const [confirmTemplate, setConfirmTemplate] = useState(false);
+  const [applyingTemplate, setApplyingTemplate] = useState(false);
 
   async function loadItems(eid: string) {
     if (!eid) return;
@@ -3472,11 +3559,11 @@ export function OnboardingPage() {
   }
 
   async function applyTemplate() {
-    if (!employeeId || !confirm("Load 10 standard onboarding items?")) return;
-    setSaving(true);
+    if (!employeeId) return;
+    setApplyingTemplate(true);
     try { await apiFetch(`/hr/employees/${employeeId}/onboarding/template`, { method: "POST" }); await loadItems(employeeId); }
     catch { /* noop */ }
-    finally { setSaving(false); }
+    finally { setApplyingTemplate(false); setConfirmTemplate(false); }
   }
 
   async function addItem(e: React.FormEvent) {
@@ -3495,7 +3582,7 @@ export function OnboardingPage() {
   const done = items.filter((i) => i.completedAt).length;
 
   return (
-    <AppShell>
+    
       <div className="space-y-5">
         <h1 className="text-xl font-bold">Onboarding Checklists</h1>
         <HRNav />
@@ -3508,7 +3595,7 @@ export function OnboardingPage() {
               {opts.employees.map((e: any) => <option key={e.id} value={e.id}>{e.fullName} ({e.code})</option>)}
             </select>
           </div>
-          {employeeId && <button onClick={applyTemplate} disabled={saving} className="rounded-md border border-line px-4 py-2 text-sm font-medium hover:bg-field disabled:opacity-50">Load Template</button>}
+          {employeeId && <button onClick={() => setConfirmTemplate(true)} disabled={saving} className="rounded-md border border-line px-4 py-2 text-sm font-medium hover:bg-field disabled:opacity-50">Load Template</button>}
         </div>
 
         {employeeId && (
@@ -3530,12 +3617,24 @@ export function OnboardingPage() {
                   {item.dueDate && <span className="text-xs text-ink/50">Due {item.dueDate.slice(0, 10)}</span>}
                 </div>
               ))}
-              {!loading && items.length === 0 && <p className="text-sm text-ink/50">No checklist items yet. Click "Load Template" to start.</p>}
+              {!loading && items.length === 0 && (
+                <EmptyState icon={ClipboardList} title="No checklist items yet" description='Click "Load Template" to start.' />
+              )}
             </div>
           </>
         )}
+        <ConfirmModal
+          open={confirmTemplate}
+          onClose={() => setConfirmTemplate(false)}
+          onConfirm={applyTemplate}
+          title="Load Template"
+          message="Load 10 standard onboarding items?"
+          confirmLabel="Load"
+          variant="primary"
+          loading={applyingTemplate}
+        />
       </div>
-    </AppShell>
+
   );
 }
 
@@ -3572,7 +3671,7 @@ export function ApprovalWorkflowPage() {
   }
 
   return (
-    <AppShell>
+    
       <div className="space-y-5">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-bold">Approval Workflows</h1>
@@ -3584,7 +3683,7 @@ export function ApprovalWorkflowPage() {
           <form onSubmit={handleSubmit} className="rounded-lg border border-line bg-surface p-5 space-y-4">
             <p className="font-semibold">New Approval Chain</p>
             {error && <p className="text-sm text-red-600">{error}</p>}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div><label className="mb-1 block text-xs font-medium">Entity Type *</label><input required value={form.entityType} onChange={f("entityType")} placeholder="e.g. LEAVE, PAYROLL" className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
               <div><label className="mb-1 block text-xs font-medium">Min Amount (GHS)</label><input type="number" min="0" value={form.minAmount} onChange={f("minAmount")} placeholder="Optional threshold" className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
               <div className="col-span-2"><label className="mb-1 block text-xs font-medium">Steps (JSON array) *</label><textarea required value={form.steps} onChange={f("steps")} rows={3} className="w-full rounded-md border border-line px-3 py-2 text-sm font-mono text-xs" /></div>
@@ -3612,10 +3711,10 @@ export function ApprovalWorkflowPage() {
               </div>
             </div>
           ))}
-          {!loading && chains.length === 0 && <p className="text-sm text-ink/50">No approval chains configured yet.</p>}
+          {!loading && chains.length === 0 && <EmptyState icon={ClipboardList} title="No approval chains configured yet" />}
         </div>
       </div>
-    </AppShell>
+    
   );
 }
 
@@ -3649,7 +3748,7 @@ export function ComplianceReportPage() {
   }
 
   return (
-    <AppShell>
+    
       <div className="space-y-5">
         <h1 className="text-xl font-bold">Compliance Reports</h1>
         <HRNav />
@@ -3692,6 +3791,6 @@ export function ComplianceReportPage() {
           />
         </div>
       </div>
-    </AppShell>
+    
   );
 }

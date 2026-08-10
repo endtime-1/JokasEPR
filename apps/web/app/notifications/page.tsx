@@ -10,7 +10,6 @@ import {
   LoaderCircle,
   Settings
 } from "lucide-react";
-import { AppShell } from "../../components/app-shell";
 import { apiFetch, ApiEnvelope } from "../../lib/api";
 
 type Notification = {
@@ -109,7 +108,7 @@ export default function NotificationsPage() {
   const unread = items.filter((n) => n.status === "UNREAD").length;
 
   return (
-    <AppShell>
+    <>
       <div className="mx-auto max-w-3xl">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -232,6 +231,6 @@ export default function NotificationsPage() {
           </Link>
         </div>
       </div>
-    </AppShell>
+    </>
   );
 }

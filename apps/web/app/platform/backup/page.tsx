@@ -1,7 +1,6 @@
 ﻿"use client";
 
 import { AlertTriangle, Archive, CircleCheckBig, Clock, Cloud, Database, FileArchive, HardDrive, Info, RefreshCw, Shield, Terminal } from "lucide-react";
-import { AppShell } from "../../../components/app-shell";
 
 function SectionHeader({ icon: Icon, title, subtitle }: { icon: React.ElementType; title: string; subtitle?: string }) {
   return (
@@ -62,7 +61,7 @@ function CheckItem({ done = false, children }: { done?: boolean; children: React
 
 export default function BackupPage() {
   return (
-    <AppShell>
+    <>
       <div className="mx-auto max-w-4xl space-y-6">
 
         {/* Header */}
@@ -316,6 +315,6 @@ tar -xzf /path/to/backup/uploads.tar.gz -C /opt/jokas`}</CodeBlock>
         </div>
 
       </div>
-    </AppShell>
+    </>
   );
 }

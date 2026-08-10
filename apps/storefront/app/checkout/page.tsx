@@ -178,7 +178,7 @@ export default function CheckoutPage() {
               {totalPrice != null ? (
                 <div className="flex items-center justify-between font-bold">
                   <span className="text-sm text-ink">Total</span>
-                  <span className="text-lg text-brand">GHS {totalPrice.toFixed(2)}</span>
+                  <span className="text-lg text-brandDark">GHS {totalPrice.toFixed(2)}</span>
                 </div>
               ) : (
                 <p className="text-xs text-muted leading-relaxed">

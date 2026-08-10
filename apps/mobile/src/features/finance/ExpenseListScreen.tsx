@@ -170,7 +170,7 @@ const styles = StyleSheet.create({
   rowDate: { fontSize: font.size.xs, color: colors.inkLight },
 
   rowRight: { alignItems: "flex-end", gap: spacing.xs },
-  rowAmount: { fontSize: font.size.md, fontWeight: font.weight.extrabold, color: colors.brand },
+  rowAmount: { fontSize: font.size.md, fontWeight: font.weight.extrabold, color: colors.brandDark },
   badge: { paddingHorizontal: spacing.sm, paddingVertical: 2, borderRadius: radius.full },
   badgeText: { fontSize: 10, fontWeight: font.weight.bold },
 

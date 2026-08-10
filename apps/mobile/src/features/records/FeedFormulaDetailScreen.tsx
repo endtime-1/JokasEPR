@@ -239,5 +239,5 @@ const styles = StyleSheet.create({
   totalValue: { fontSize: font.size.sm, fontFamily: font.family.extrabold, color: colors.ink },
 
   orderBtn:     { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, borderWidth: 1.5, borderColor: colors.brand, borderRadius: radius.xl, paddingVertical: spacing.lg, backgroundColor: colors.brandLight },
-  orderBtnText: { fontSize: font.size.sm, fontFamily: font.family.bold, color: colors.brand },
+  orderBtnText: { fontSize: font.size.sm, fontFamily: font.family.bold, color: colors.brandDark },
 });

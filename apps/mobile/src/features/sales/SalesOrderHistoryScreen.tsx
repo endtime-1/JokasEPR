@@ -134,7 +134,7 @@ const styles = StyleSheet.create({
   newBtn: { width: 36, height: 36, borderRadius: radius.full, backgroundColor: colors.brand, alignItems: "center", justifyContent: "center" },
 
   summaryChip: { alignSelf: "flex-start", backgroundColor: colors.brandLight, borderRadius: radius.full, paddingHorizontal: spacing.md, paddingVertical: 4, borderWidth: 1, borderColor: colors.brandMid },
-  summaryText: { fontSize: font.size.xs, fontFamily: font.family.semibold, color: colors.brand },
+  summaryText: { fontSize: font.size.xs, fontFamily: font.family.semibold, color: colors.brandDark },
 
   card:     { backgroundColor: colors.bgCard, borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border, padding: spacing.lg, ...shadow.sm },
   cardTop:  { flexDirection: "row", alignItems: "flex-start", gap: spacing.md },

@@ -6,8 +6,8 @@ import {
   Activity, CircleAlert, ArrowRight, CircleCheck, Clock, Cloud, CloudOff, RefreshCw, Settings,
   Unlink, Webhook, CircleX, Zap
 } from "lucide-react";
-import { AppShell } from "./app-shell";
 import { apiFetch, getCachedFirst, hasCached } from "../lib/api";
+import { ConfirmModal, EmptyState, StatusBadge } from "./ui";
 
 // ─── Shared Styles ────────────────────────────────────────────────────────────
 
@@ -33,27 +33,6 @@ function QBNav() {
   );
 }
 
-function SyncBadge({ status }: { status: string }) {
-  const map: Record<string, string> = {
-    NOT_SYNCED: "bg-gray-100 text-gray-600",
-    PENDING: "bg-yellow-100 text-yellow-800",
-    SYNCED: "bg-green-100 text-green-800",
-    FAILED: "bg-red-100 text-red-800",
-    SKIPPED: "bg-blue-100 text-blue-800"
-  };
-  return <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${map[status] ?? "bg-gray-100 text-gray-600"}`}>{status.replace(/_/g, " ")}</span>;
-}
-
-function ResultBadge({ result }: { result: string }) {
-  const map: Record<string, string> = {
-    SUCCESS: "bg-green-100 text-green-800",
-    FAILED: "bg-red-100 text-red-800",
-    PARTIAL: "bg-orange-100 text-orange-800",
-    SKIPPED: "bg-gray-100 text-gray-600"
-  };
-  return <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${map[result] ?? "bg-gray-100 text-gray-600"}`}>{result}</span>;
-}
-
 function fmt(d: unknown) {
   if (!d) return "—";
   return new Date(d as string).toLocaleString("en-GB");
@@ -72,6 +51,8 @@ export function QuickBooksConnectionPage() {
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState("");
   const [msg, setMsg] = useState("");
+  const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
 
   const load = useCallback(() => {
     apiFetch<{ connection: QBStatus["connection"]; stats: QBStatus["stats"] }>("/quickbooks/status")
@@ -92,13 +73,16 @@ export function QuickBooksConnectionPage() {
   }
 
   async function disconnect() {
-    if (!confirm("Disconnect from QuickBooks? All sync status will be preserved but no new syncs will run.")) return;
+    setDisconnecting(true);
     try {
       await apiFetch("/quickbooks/disconnect", { method: "DELETE" });
       setMsg("Disconnected successfully");
       load();
     } catch {
       setError("Failed to disconnect");
+    } finally {
+      setDisconnecting(false);
+      setConfirmDisconnect(false);
     }
   }
 
@@ -119,7 +103,7 @@ export function QuickBooksConnectionPage() {
   const stats = status?.stats;
 
   return (
-    <AppShell>
+    <>
       <QBNav />
 
       {error && <div className="mb-4 flex items-center gap-2 rounded-md bg-red-50 p-3 text-sm text-red-700"><CircleAlert className="h-4 w-4" />{error}</div>}
@@ -145,7 +129,7 @@ export function QuickBooksConnectionPage() {
                   <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
                   {syncing ? "Starting…" : "Sync All"}
                 </button>
-                <button className={btnDanger} onClick={disconnect}><Unlink className="h-4 w-4" />Disconnect</button>
+                <button className={btnDanger} onClick={() => setConfirmDisconnect(true)}><Unlink className="h-4 w-4" />Disconnect</button>
               </div>
             </div>
           ) : (
@@ -218,7 +202,18 @@ export function QuickBooksConnectionPage() {
           </div>
         </div>
       )}
-    </AppShell>
+
+      <ConfirmModal
+        open={confirmDisconnect}
+        onClose={() => setConfirmDisconnect(false)}
+        onConfirm={disconnect}
+        title="Disconnect from QuickBooks?"
+        message="Disconnect from QuickBooks? All sync status will be preserved but no new syncs will run."
+        confirmLabel="Disconnect"
+        variant="danger"
+        loading={disconnecting}
+      />
+    </>
   );
 }
 
@@ -258,7 +253,7 @@ export function QuickBooksSyncLogsPage() {
   useEffect(() => { load(); }, [filter]);
 
   return (
-    <AppShell>
+    <>
       <QBNav />
       <div className="mb-4 flex flex-wrap gap-3">
         <select className={`${selectClass} w-48`} value={filter.operation} onChange={(e) => setFilter((f) => ({ ...f, operation: e.target.value }))}>
@@ -292,11 +287,11 @@ export function QuickBooksSyncLogsPage() {
             </thead>
             <tbody>
               {logs.length === 0 ? (
-                <tr><td colSpan={8} className="p-6 text-center text-ink/50">No sync logs yet</td></tr>
+                <tr><td colSpan={8}><EmptyState icon={Activity} title="No sync logs yet" /></td></tr>
               ) : logs.map((log) => (
                 <tr key={log.id} className="border-b border-line/50 hover:bg-field/50 last:border-0">
                   <td className="p-3 font-medium">{log.operation.replace(/_/g, " ")}</td>
-                  <td className="p-3"><ResultBadge result={log.result} /></td>
+                  <td className="p-3"><StatusBadge status={log.result} /></td>
                   <td className="p-3 text-ink/65">{log.entityType ?? "—"}</td>
                   <td className="p-3">{log.recordsSucceeded}<span className="text-ink/50">/{log.recordsProcessed}</span></td>
                   <td className="p-3 text-ink/65 whitespace-nowrap">{fmt(log.startedAt)}</td>
@@ -324,7 +319,7 @@ export function QuickBooksSyncLogsPage() {
           </div>
         </div>
       )}
-    </AppShell>
+    </>
   );
 }
 
@@ -360,7 +355,7 @@ export function QuickBooksWebhookEventsPage() {
   useEffect(() => { load(); }, [statusFilter]);
 
   return (
-    <AppShell>
+    <>
       <QBNav />
       <div className="mb-4 flex gap-3">
         <select className={`${selectClass} w-40`} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
@@ -388,13 +383,13 @@ export function QuickBooksWebhookEventsPage() {
             </thead>
             <tbody>
               {events.length === 0 ? (
-                <tr><td colSpan={7} className="p-6 text-center text-ink/50">No webhook events yet</td></tr>
+                <tr><td colSpan={7}><EmptyState icon={Webhook} title="No webhook events yet" /></td></tr>
               ) : events.map((ev) => (
                 <tr key={ev.id} className="border-b border-line/50 last:border-0">
                   <td className="p-3 font-medium">{ev.entityType}</td>
                   <td className="p-3 font-mono text-xs text-ink/65">{ev.entityId}</td>
                   <td className="p-3">{ev.operation}</td>
-                  <td className="p-3"><SyncBadge status={ev.status} /></td>
+                  <td className="p-3"><StatusBadge status={ev.status} /></td>
                   <td className="p-3 text-ink/65 whitespace-nowrap">{fmt(ev.eventDate)}</td>
                   <td className="p-3 text-ink/65 whitespace-nowrap">{fmt(ev.receivedAt)}</td>
                   <td className="p-3">{ev.retryCount > 0 ? <span className="text-orange-600">{ev.retryCount}</span> : "—"}</td>
@@ -404,7 +399,7 @@ export function QuickBooksWebhookEventsPage() {
           </table>
         </div>
       )}
-    </AppShell>
+    </>
   );
 }
 
@@ -421,6 +416,8 @@ export function QuickBooksMappingPage() {
   const [msg, setMsg] = useState("");
   const [form, setForm] = useState({ mappingType: "INCOME_ACCOUNT", erpEntityId: "", erpEntityName: "", qbEntityId: "", qbEntityName: "" });
   const [expenseCategories, setExpenseCategories] = useState<{ id: string; name: string }[]>(() => getCachedFirst<{ data: { id: string; name: string }[] }>("/finance/expense-categories")?.data ?? []);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -460,15 +457,20 @@ export function QuickBooksMappingPage() {
   }
 
   async function deleteMapping(id: string) {
-    if (!confirm("Delete this mapping?")) return;
-    await apiFetch(`/quickbooks/mappings/${id}`, { method: "DELETE" });
-    setMappings((m) => m.filter((x) => x.id !== id));
+    setDeleting(true);
+    try {
+      await apiFetch(`/quickbooks/mappings/${id}`, { method: "DELETE" });
+      setMappings((m) => m.filter((x) => x.id !== id));
+    } finally {
+      setDeleting(false);
+      setConfirmDeleteId(null);
+    }
   }
 
   const mappingTypes = ["INCOME_ACCOUNT", "EXPENSE_ACCOUNT", "ASSET_ACCOUNT", "BANK_ACCOUNT", "EXPENSE_CATEGORY"];
 
   return (
-    <AppShell>
+    <>
       <QBNav />
 
       {error && <div className="mb-4 flex items-center gap-2 rounded-md bg-red-50 p-3 text-sm text-red-700"><CircleAlert className="h-4 w-4" />{error}</div>}
@@ -520,7 +522,7 @@ export function QuickBooksMappingPage() {
           {loading ? (
             <p className="text-sm text-ink/50">Loading…</p>
           ) : mappings.length === 0 ? (
-            <p className="text-sm text-ink/50">No mappings configured yet</p>
+            <EmptyState icon={Settings} title="No mappings configured yet" />
           ) : (
             <div className="space-y-2">
               {mappings.map((m) => (
@@ -531,13 +533,24 @@ export function QuickBooksMappingPage() {
                     <span className="text-ink/65">{m.qbEntityName}</span>
                     <span className="ml-2 rounded-full bg-field px-2 py-0.5 text-xs text-ink/50">{m.mappingType.replace(/_/g, " ")}</span>
                   </div>
-                  <button className="text-red-500 hover:text-red-700 text-xs" onClick={() => deleteMapping(m.id)}>Remove</button>
+                  <button className="text-red-500 hover:text-red-700 text-xs" onClick={() => setConfirmDeleteId(m.id)}>Remove</button>
                 </div>
               ))}
             </div>
           )}
         </div>
       </div>
-    </AppShell>
+
+      <ConfirmModal
+        open={confirmDeleteId !== null}
+        onClose={() => setConfirmDeleteId(null)}
+        onConfirm={() => confirmDeleteId && deleteMapping(confirmDeleteId)}
+        title="Delete mapping?"
+        message="Delete this mapping?"
+        confirmLabel="Delete"
+        variant="danger"
+        loading={deleting}
+      />
+    </>
   );
 }

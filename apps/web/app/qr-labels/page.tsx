@@ -3,7 +3,6 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ChevronRight, QrCode, ScanLine } from "lucide-react";
-import { AppShell } from "../../components/app-shell";
 import { QrEntityType, QrLabelCard, QR_ENTITY_OPTIONS } from "../../components/qr-label-card";
 
 const RECORD_SOURCES: { type: QrEntityType; href: string; hint: string }[] = [
@@ -25,7 +24,7 @@ export default function QrLabelsPage() {
   const source = RECORD_SOURCES.find((s) => s.type === entityType);
 
   return (
-    <AppShell>
+    <>
       <div className="space-y-6">
         {/* Hero */}
         <div className="overflow-hidden rounded-2xl border border-line bg-gradient-to-br from-white via-white to-field shadow-panel">
@@ -111,6 +110,6 @@ export default function QrLabelsPage() {
 
         <QrLabelCard entityType={entityType} entityId={entityId} />
       </div>
-    </AppShell>
+    </>
   );
 }

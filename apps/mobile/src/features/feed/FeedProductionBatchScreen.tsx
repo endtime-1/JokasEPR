@@ -6,6 +6,7 @@ import { ScreenWrapper } from "../../components/ScreenWrapper";
 import { FormCard } from "../../components/FormCard";
 import { FormFooter } from "../../components/FormFooter";
 import { FormField } from "../../components/FormField";
+import { DateField } from "../../components/DateField";
 import { SelectField, SelectOption } from "../../components/SelectField";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
@@ -68,10 +69,12 @@ export function FeedProductionBatchScreen() {
   const { submit, loading } = useSubmit({
     module:   "feed_production_batch",
     endpoint: "/feed-production/batches",
-    onSuccess: () =>
+    onSuccess: (queued) =>
       Alert.alert(
-        "Batch Logged",
-        "Feed production batch has been recorded successfully.",
+        queued ? "Saved Offline" : "Batch Logged",
+        queued
+          ? "Your feed production batch was saved on this device and will sync automatically once you're back online."
+          : "Feed production batch has been recorded successfully.",
         [{ text: "OK", onPress: () => navigation.goBack() }]
       ),
   });
@@ -150,10 +153,10 @@ export function FeedProductionBatchScreen() {
 
         <View style={styles.row2}>
           <View style={styles.col2}>
-            <FormField
+            <DateField
               label="Production Date" value={productionDate}
               onChangeText={(v) => { setProductionDate(v); setErrors((e) => ({ ...e, productionDate: "" })); }}
-              required error={errors.productionDate} keyboardType="numbers-and-punctuation" placeholder="YYYY-MM-DD"
+              required error={errors.productionDate}
             />
           </View>
           <View style={styles.col2}>

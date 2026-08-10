@@ -13,6 +13,7 @@ const NAV = [
   { href: "/products?category=Eggs+%26+Poultry", label: "Eggs & Poultry" },
   { href: "/about",                              label: "About"       },
   { href: "/contact",                            label: "Contact"     },
+  { href: "/track",                              label: "Track Order" },
 ];
 
 const TICKERS = [

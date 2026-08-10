@@ -6,6 +6,7 @@ import { ScreenWrapper } from "../../components/ScreenWrapper";
 import { FormCard } from "../../components/FormCard";
 import { FormFooter } from "../../components/FormFooter";
 import { FormField } from "../../components/FormField";
+import { DateField } from "../../components/DateField";
 import { SelectField, SelectOption } from "../../components/SelectField";
 import { useLookup } from "../../hooks/useLookup";
 import { fetchPoultryOptions, createFlockBatch } from "../../api/endpoints";
@@ -115,23 +116,19 @@ export function BatchCreateScreen() {
         />
         <View style={styles.row}>
           <View style={styles.half}>
-            <FormField
+            <DateField
               label="Start Date"
               required
               value={startDate}
               onChangeText={(v) => { setStartDate(v); setErrors((e) => ({ ...e, startDate: "" })); }}
               error={errors.startDate}
-              keyboardType="numeric"
-              placeholder="YYYY-MM-DD"
             />
           </View>
           <View style={styles.half}>
-            <FormField
+            <DateField
               label="Expected Close Date"
               value={expectedCloseDate}
               onChangeText={setExpectedCloseDate}
-              keyboardType="numeric"
-              placeholder="YYYY-MM-DD"
             />
           </View>
         </View>

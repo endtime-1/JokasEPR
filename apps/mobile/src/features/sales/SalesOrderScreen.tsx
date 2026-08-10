@@ -75,7 +75,14 @@ export function SalesOrderScreen() {
   const { submit, loading } = useSubmit({
     module: "sales_order",
     endpoint: "/sales/orders",
-    onSuccess: () => Alert.alert("Order Created", "Sales order has been saved.", [{ text: "OK", onPress: () => navigation.goBack() }]),
+    onSuccess: (queued) =>
+      Alert.alert(
+        queued ? "Saved Offline" : "Order Created",
+        queued
+          ? "Your sales order was saved on this device and will sync automatically once you're back online."
+          : "Sales order has been saved.",
+        [{ text: "OK", onPress: () => navigation.goBack() }]
+      ),
   });
 
   async function handleSubmit() {
@@ -215,7 +222,7 @@ const styles = StyleSheet.create({
     minWidth: 22, height: 22, borderRadius: 11,
     backgroundColor: colors.brand + "20", alignItems: "center", justifyContent: "center", paddingHorizontal: 6,
   },
-  lineCountText: { fontSize: font.size.xs, fontWeight: font.weight.bold, color: colors.brand },
+  lineCountText: { fontSize: font.size.xs, fontWeight: font.weight.bold, color: colors.brandDark },
 
   lineErrorBanner: {
     backgroundColor: colors.errorBg,
@@ -243,7 +250,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.brandMid,
   },
-  lineNumText: { fontSize: font.size.xs, fontWeight: font.weight.bold, color: colors.brand },
+  lineNumText: { fontSize: font.size.xs, fontWeight: font.weight.bold, color: colors.brandDark },
   lineProductPreview: { flex: 1, fontSize: font.size.xs, color: colors.inkMid, fontStyle: "italic" },
   removeBtn: {
     paddingHorizontal: spacing.sm, paddingVertical: 3,
@@ -257,7 +264,7 @@ const styles = StyleSheet.create({
   lineSubtotal: {
     textAlign: "right",
     fontSize: font.size.sm,
-    color: colors.brand,
+    color: colors.brandDark,
     fontWeight: font.weight.semibold,
   },
 
@@ -269,7 +276,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     alignItems: "center",
   },
-  addLineBtnText: { color: colors.brand, fontWeight: font.weight.bold, fontSize: font.size.sm },
+  addLineBtnText: { color: colors.brandDark, fontWeight: font.weight.bold, fontSize: font.size.sm },
 
   totalCard: {
     flexDirection: "row",
@@ -284,6 +291,6 @@ const styles = StyleSheet.create({
   },
   totalLeft: { gap: 2 },
   totalLabel: { fontSize: font.size.md, fontWeight: font.weight.bold, color: colors.brandDark },
-  totalLineCount: { fontSize: font.size.xs, color: colors.brand },
-  totalValue: { fontSize: font.size.xxl, fontWeight: font.weight.extrabold, color: colors.brand },
+  totalLineCount: { fontSize: font.size.xs, color: colors.brandDark },
+  totalValue: { fontSize: font.size.xxl, fontWeight: font.weight.extrabold, color: colors.brandDark },
 });

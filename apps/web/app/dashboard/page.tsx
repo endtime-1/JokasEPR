@@ -23,7 +23,6 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AppShell } from "../../components/app-shell";
 import { useAuth } from "../../components/auth-context";
 import { Skeleton, SkeletonCard } from "../../components/ui";
 import { ApiEnvelope, apiFetch } from "../../lib/api";
@@ -785,7 +784,7 @@ export default function DashboardPage() {
   }, []);
 
   return (
-    <AppShell>
+    <>
       {/* Page hero */}
       <div className="mb-6 overflow-hidden rounded-2xl border border-line bg-gradient-to-br from-white via-white to-field shadow-panel">
         <div className="flex flex-wrap items-start justify-between gap-4 px-6 py-5">
@@ -1056,6 +1055,6 @@ export default function DashboardPage() {
           </div>
         )}
       </section>
-    </AppShell>
+    </>
   );
 }

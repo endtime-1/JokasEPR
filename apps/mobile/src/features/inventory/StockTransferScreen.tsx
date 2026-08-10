@@ -83,10 +83,12 @@ export function StockTransferScreen() {
   const { submit, loading } = useSubmit({
     module: "stock_transfer",
     endpoint: "/inventory/transfers",
-    onSuccess: () =>
+    onSuccess: (queued) =>
       Alert.alert(
-        "Transfer Complete",
-        `${qtyNum} units have been transferred successfully.`,
+        queued ? "Saved Offline" : "Transfer Complete",
+        queued
+          ? `The transfer of ${qtyNum} units was saved on this device and will sync automatically once you're back online.`
+          : `${qtyNum} units have been transferred successfully.`,
         [{ text: "OK", onPress: () => navigation.goBack() }]
       ),
   });
@@ -210,7 +212,7 @@ const styles = StyleSheet.create({
   routeWhRight: { alignItems: "flex-end" },
   routeLabel:   { fontSize: 10, fontWeight: font.weight.bold, color: colors.inkLight, letterSpacing: 1, textTransform: "uppercase" },
   routeWh_name: { fontSize: font.size.sm, fontWeight: font.weight.semibold, color: colors.ink },
-  routeArrow:   { fontSize: font.size.xxl, color: colors.brand, fontWeight: font.weight.extrabold },
+  routeArrow:   { fontSize: font.size.xxl, color: colors.brandDark, fontWeight: font.weight.extrabold },
 
   availableCard: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",

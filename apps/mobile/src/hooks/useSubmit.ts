@@ -10,7 +10,12 @@ type Options = {
   module: string;
   endpoint: string;
   method?: string;
-  onSuccess?: () => void;
+  // `queued` is true when the submission was written to the local offline
+  // queue instead of reaching the server — either because the device was
+  // offline, or a network/timeout failure fell back to queueing (see the C6
+  // note below). Callers use this to show "saved on this device, will sync
+  // later" instead of implying the record already reached the server.
+  onSuccess?: (queued: boolean) => void;
   onError?: (msg: string) => void;
 };
 
@@ -31,7 +36,7 @@ export function useSubmit({ module, endpoint, method = "POST", onSuccess, onErro
       await queueSubmission(localId, module, endpoint, payload, method);
       await refreshCount();
       setLoading(false);
-      onSuccess?.();
+      onSuccess?.(true);
       return;
     }
 
@@ -40,7 +45,7 @@ export function useSubmit({ module, endpoint, method = "POST", onSuccess, onErro
         method,
         body: JSON.stringify(payload)
       });
-      onSuccess?.();
+      onSuccess?.(false);
     } catch (err) {
       // C6: apiFetch() wraps every failure mode — a real 4xx/5xx from the
       // server, a request timeout, a mid-flight connection drop, a malformed
@@ -68,7 +73,7 @@ export function useSubmit({ module, endpoint, method = "POST", onSuccess, onErro
       // Network / timeout error (status 0, or a non-ApiError failure) — queue for offline sync
       await queueSubmission(localId, module, endpoint, payload, method);
       await refreshCount();
-      onSuccess?.();
+      onSuccess?.(true);
     } finally {
       setLoading(false);
     }

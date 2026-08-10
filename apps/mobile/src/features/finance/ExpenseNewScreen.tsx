@@ -6,6 +6,7 @@ import { ScreenWrapper } from "../../components/ScreenWrapper";
 import { FormCard } from "../../components/FormCard";
 import { FormFooter } from "../../components/FormFooter";
 import { FormField } from "../../components/FormField";
+import { DateField } from "../../components/DateField";
 import { SelectField, SelectOption } from "../../components/SelectField";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
@@ -69,10 +70,12 @@ export function ExpenseNewScreen() {
   const { submit, loading } = useSubmit({
     module: "expense",
     endpoint: "/finance/expenses",
-    onSuccess: () =>
+    onSuccess: (queued) =>
       Alert.alert(
-        "Expense Saved",
-        requiresApproval
+        queued ? "Saved Offline" : "Expense Saved",
+        queued
+          ? "Your expense was saved on this device and will sync automatically once you're back online."
+          : requiresApproval
           ? "Your expense has been submitted and is pending approval (≥ GHS 5,000)."
           : "Expense has been recorded.",
         [{ text: "OK", onPress: () => navigation.goBack() }]
@@ -122,9 +125,9 @@ export function ExpenseNewScreen() {
           onChangeText={(v) => { setAmount(v); setErrors((e) => ({ ...e, amount: "" })); }}
           keyboardType="decimal-pad" required error={errors.amount} placeholder="0.00" />
 
-        <FormField label="Expense Date" value={expenseDate}
+        <DateField label="Expense Date" value={expenseDate}
           onChangeText={(v) => { setExpenseDate(v); setErrors((e) => ({ ...e, expenseDate: "" })); }}
-          placeholder="YYYY-MM-DD" required error={errors.expenseDate} />
+          required error={errors.expenseDate} />
 
         <FormField label="Description" value={description}
           onChangeText={(v) => { setDescription(v); setErrors((e) => ({ ...e, description: "" })); }}

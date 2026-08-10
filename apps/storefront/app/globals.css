@@ -23,7 +23,11 @@ body {
 ::-webkit-scrollbar-thumb { background: #d4cdc7; border-radius: 99px; }
 
 /* ── Scroll-reveal ──────────────────────────────────────────────────── */
-.reveal {
+/* Only hides content when the "js" class (set by an inline script in
+   layout.tsx, before first paint) confirms JS actually ran — so content
+   under .reveal stays visible by default if JS fails to load or errors,
+   instead of being permanently invisible with nothing to un-hide it. */
+.js .reveal {
   opacity: 0;
   transform: translateY(28px);
   transition: opacity 0.7s cubic-bezier(0.16,1,0.3,1),
@@ -38,6 +42,14 @@ body {
 .reveal-delay-3 { transition-delay: 0.32s; }
 .reveal-delay-4 { transition-delay: 0.44s; }
 .reveal-delay-5 { transition-delay: 0.56s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .js .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
 
 /* ── Grain overlay ──────────────────────────────────────────────────── */
 .grain::after {

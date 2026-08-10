@@ -19,6 +19,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { ConfirmModal } from "../../../components/ui";
 
 interface OrderItem { name: string; qty: number; unitPrice: number; total: number; }
 interface AdminOrder {
@@ -58,6 +59,7 @@ function OrderCard({ order, onUpdated }: { order: AdminOrder; onUpdated: (o: Adm
   const [expanded, setExpanded] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [err, setErr] = useState("");
+  const [confirmCancel, setConfirmCancel] = useState(false);
   const meta = STATUS_META[order.status] ?? { label: order.statusLabel, color: "bg-ink/5 text-ink/50 ring-ink/10", icon: Clock };
   const Icon = meta.icon;
   const next = NEXT_STATUS[order.status];
@@ -80,7 +82,6 @@ function OrderCard({ order, onUpdated }: { order: AdminOrder; onUpdated: (o: Adm
   }
 
   async function cancel() {
-    if (!confirm("Cancel this order?")) return;
     setUpdating(true);
     try {
       await apiFetch<ApiEnvelope<unknown>>(`/public/admin/orders/${order.id}/status`, {
@@ -92,6 +93,7 @@ function OrderCard({ order, onUpdated }: { order: AdminOrder; onUpdated: (o: Adm
       setErr("Failed to cancel");
     } finally {
       setUpdating(false);
+      setConfirmCancel(false);
     }
   }
 
@@ -215,7 +217,7 @@ function OrderCard({ order, onUpdated }: { order: AdminOrder; onUpdated: (o: Adm
                 </button>
               )}
               <button
-                onClick={cancel}
+                onClick={() => setConfirmCancel(true)}
                 disabled={updating}
                 className="flex items-center gap-1.5 rounded-xl border border-red-100 bg-red-50 px-4 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-100 disabled:opacity-50"
               >
@@ -226,6 +228,17 @@ function OrderCard({ order, onUpdated }: { order: AdminOrder; onUpdated: (o: Adm
           )}
         </div>
       )}
+
+      <ConfirmModal
+        open={confirmCancel}
+        onClose={() => setConfirmCancel(false)}
+        onConfirm={cancel}
+        title="Cancel order?"
+        message="Cancel this order?"
+        confirmLabel="Cancel Order"
+        variant="danger"
+        loading={updating}
+      />
     </div>
   );
 }

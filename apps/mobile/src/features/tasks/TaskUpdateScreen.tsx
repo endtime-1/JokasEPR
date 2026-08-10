@@ -11,12 +11,16 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import * as Crypto from "expo-crypto";
 import { Icon } from "../../components/Icon";
 import { Badge } from "../../components/Badge";
 import { FormField } from "../../components/FormField";
 import { SelectField, type SelectOption } from "../../components/SelectField";
 import { Button } from "../../components/Button";
 import { fetchTask, updateTaskStatus, type Task } from "../../api/endpoints";
+import { ApiError } from "../../api/client";
+import { queueSubmission } from "../../db/database";
+import { useSync } from "../../hooks/useSync";
 import { useAuth } from "../../auth/AuthContext";
 import { colors, font, radius, semantic, shadow, spacing } from "../../constants/theme";
 
@@ -70,6 +74,7 @@ export function TaskUpdateScreen() {
   const route = useRoute<any>();
   const { taskId } = route.params as { taskId: string; taskTitle?: string };
   const { user } = useAuth();
+  const { online, refreshCount } = useSync();
 
   const isManager = user?.roles?.some((r) => MANAGER_ROLES.includes(r)) ?? false;
 
@@ -97,18 +102,50 @@ export function TaskUpdateScreen() {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
+  // Shared by the status-update form and the "Reopen Task" action: queues the
+  // change locally (via the same pending_submissions path useSubmit uses) when
+  // offline, or when an online attempt fails on a network/timeout error rather
+  // than a real server rejection (ApiError.status === 0, per client.ts) — so a
+  // dropped connection mid-tap loses nothing instead of silently discarding
+  // the update. Genuine rejections (validation, 409 conflict) are rethrown for
+  // the caller to handle with its own messaging.
+  async function submitStatusChange(payload: { status: string; notes?: string; expectedUpdatedAt?: string }) {
+    if (!online) {
+      const localId = await Crypto.randomUUID();
+      await queueSubmission(localId, "hr_task_status", `/hr/tasks/${taskId}/status`, payload, "PATCH");
+      await refreshCount();
+      return { queued: true } as const;
+    }
+    try {
+      // (L1) expectedUpdatedAt lets the server detect if this task was
+      // changed elsewhere (e.g. on the web) since we loaded it, instead of
+      // silently overwriting that other edit.
+      await updateTaskStatus(taskId, payload);
+      return { queued: false } as const;
+    } catch (e) {
+      if (e instanceof ApiError && e.status !== 0) throw e;
+      const localId = await Crypto.randomUUID();
+      await queueSubmission(localId, "hr_task_status", `/hr/tasks/${taskId}/status`, payload, "PATCH");
+      await refreshCount();
+      return { queued: true } as const;
+    }
+  }
+
   async function handleUpdate() {
     if (!newStatus) { setFormErr("Please select a new status."); return; }
     setFormErr("");
     setSaving(true);
     try {
-      // (L1) expectedUpdatedAt lets the server detect if this task was
-      // changed elsewhere (e.g. on the web) since we loaded it, instead of
-      // silently overwriting that other edit.
-      await updateTaskStatus(taskId, { status: newStatus, notes: newNotes || undefined, expectedUpdatedAt: task?.updatedAt });
-      Alert.alert("Task Updated", "Status updated successfully.", [
-        { text: "OK", onPress: () => navigation.goBack() },
-      ]);
+      const result = await submitStatusChange({ status: newStatus, notes: newNotes || undefined, expectedUpdatedAt: task?.updatedAt });
+      if (result.queued) {
+        Alert.alert("Saved Offline", "Your update was saved on this device and will sync automatically once you're back online.", [
+          { text: "OK", onPress: () => navigation.goBack() },
+        ]);
+      } else {
+        Alert.alert("Task Updated", "Status updated successfully.", [
+          { text: "OK", onPress: () => navigation.goBack() },
+        ]);
+      }
     } catch (e: any) {
       if (e?.status === 409) {
         Alert.alert("Task Changed", e?.message ?? "This task was updated elsewhere. Reloading the latest version.", [
@@ -289,8 +326,12 @@ export function TaskUpdateScreen() {
                   { text: "Reopen", onPress: async () => {
                     setSaving(true);
                     try {
-                      await updateTaskStatus(taskId, { status: "OPEN", notes: "Reopened by manager.", expectedUpdatedAt: task?.updatedAt });
-                      load();
+                      const result = await submitStatusChange({ status: "OPEN", notes: "Reopened by manager.", expectedUpdatedAt: task?.updatedAt });
+                      if (result.queued) {
+                        Alert.alert("Saved Offline", "The reopen was saved on this device and will sync automatically once you're back online.");
+                      } else {
+                        load();
+                      }
                     } catch (e: any) {
                       Alert.alert("Error", e?.message ?? "Could not reopen task.");
                     } finally { setSaving(false); }
@@ -322,7 +363,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.brandLight, borderRadius: radius.full,
     borderWidth: 1, borderColor: colors.brandMid,
   },
-  retryText: { fontSize: font.size.sm, color: colors.brand, fontFamily: font.family.semibold },
+  retryText: { fontSize: font.size.sm, color: colors.brandDark, fontFamily: font.family.semibold },
 
   header: {
     flexDirection: "row",
@@ -381,7 +422,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.brandLight, borderWidth: 1, borderColor: colors.brandMid,
     alignItems: "center", justifyContent: "center",
   },
-  assigneeInitial: { fontSize: font.size.md, fontFamily: font.family.bold, color: colors.brand },
+  assigneeInitial: { fontSize: font.size.md, fontFamily: font.family.bold, color: colors.brandDark },
   assigneeName: { fontSize: font.size.sm, fontFamily: font.family.semibold, color: colors.ink },
   assigneeCode: { fontSize: font.size.xs, fontFamily: font.family.regular, color: colors.inkLight },
 
@@ -398,5 +439,5 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.brand,
     backgroundColor: colors.brandLight,
   },
-  reopenText: { fontSize: font.size.md, fontFamily: font.family.semibold, color: colors.brand },
+  reopenText: { fontSize: font.size.md, fontFamily: font.family.semibold, color: colors.brandDark },
 });

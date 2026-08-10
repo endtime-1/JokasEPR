@@ -114,7 +114,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.brandMid,
   },
-  heroBadgeText: { fontSize: font.size.xs, fontWeight: font.weight.bold, color: colors.brand, textTransform: "uppercase", letterSpacing: 0.8 },
+  heroBadgeText: { fontSize: font.size.xs, fontWeight: font.weight.bold, color: colors.brandDark, textTransform: "uppercase", letterSpacing: 0.8 },
   heroLabel: { fontSize: font.size.xxl, fontWeight: font.weight.extrabold, color: colors.ink, textAlign: "center" },
   heroBarcode: { fontSize: font.size.sm, color: colors.inkLight, fontFamily: "monospace" },
   heroMeta: { flexDirection: "row", alignItems: "center", gap: spacing.md, marginTop: spacing.xs, flexWrap: "wrap", justifyContent: "center" },

@@ -3,13 +3,13 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { ChevronDown, ChevronUp, Download, Pencil, Plus, Trash2, X } from "lucide-react";
-import { PoultryShell } from "./poultry-shell";
+import { ChevronDown, ChevronUp, Download, Home, Pencil, Plus, Trash2, X } from "lucide-react";
 import { DataTable } from "./data-table";
 import { FormField } from "./form-field";
 import { ApiEnvelope, apiFetch, downloadReport, getCached, getCachedFirst, hasCached } from "../lib/api";
 import { formatCell } from "../lib/format";
 import { useAuth } from "./auth-context";
+import { ConfirmModal, EmptyState, StatusBadge } from "./ui";
 
 type Option = {
   id: string;
@@ -128,7 +128,7 @@ export function FarmPoultryOverviewPage() {
   }, [selectedFarmId]);
 
   return (
-    <PoultryShell>
+    <>
       <PageHeader title="Farm Poultry Overview" subtitle="Farm-level poultry operating totals for assigned farms." />
       <FormField label="Farm">
         <select className={inputClass} value={selectedFarmId} onChange={(event) => setFarmId(event.target.value)}>
@@ -147,7 +147,7 @@ export function FarmPoultryOverviewPage() {
           </article>
         ))}
       </section>
-    </PoultryShell>
+    </>
   );
 }
 
@@ -178,6 +178,10 @@ export function PoultryHousesPage({ create = false }: { create?: boolean }) {
   const [editPen, setEditPen] = useState<PenOption | null>(null);
   const [editPenForm, setEditPenForm] = useState({ name: "", capacity: "" });
   const [submitMsg, setSubmitMsg] = useState("");
+  const [confirmHouse, setConfirmHouse] = useState<HouseRow | null>(null);
+  const [confirmingHouse, setConfirmingHouse] = useState(false);
+  const [confirmPen, setConfirmPen] = useState<PenOption | null>(null);
+  const [confirmingPen, setConfirmingPen] = useState(false);
   const loadingRef = useRef(false);
 
   async function load() {
@@ -258,15 +262,19 @@ export function PoultryHousesPage({ create = false }: { create?: boolean }) {
     }
   }
 
-  async function deleteHouse(house: HouseRow) {
-    if (!confirm(`Delete house "${house.name}"? This cannot be undone.`)) return;
+  async function confirmDeleteHouse() {
+    if (!confirmHouse) return;
+    setConfirmingHouse(true);
     try {
-      await apiFetch(`/poultry/houses/${house.id}`, { method: "DELETE" });
-      setRows((prev) => prev.filter((h) => h.id !== house.id));
+      await apiFetch(`/poultry/houses/${confirmHouse.id}`, { method: "DELETE" });
+      setRows((prev) => prev.filter((h) => h.id !== confirmHouse.id));
       load().catch(() => undefined);
       refreshOptions();
+      setConfirmHouse(null);
     } catch (err: any) {
       setSubmitMsg(err?.message ?? "Failed to delete house.");
+    } finally {
+      setConfirmingHouse(false);
     }
   }
 
@@ -291,19 +299,23 @@ export function PoultryHousesPage({ create = false }: { create?: boolean }) {
     }
   }
 
-  async function deletePen(pen: PenOption) {
-    if (!confirm(`Delete pen "${pen.code}"?`)) return;
+  async function confirmDeletePen() {
+    if (!confirmPen) return;
+    setConfirmingPen(true);
     try {
-      await apiFetch(`/poultry/pens/${pen.id}`, { method: "DELETE" });
+      await apiFetch(`/poultry/pens/${confirmPen.id}`, { method: "DELETE" });
       await load();
       refreshOptions();
+      setConfirmPen(null);
     } catch (err: any) {
       setSubmitMsg(err?.message ?? "Failed to delete pen.");
+    } finally {
+      setConfirmingPen(false);
     }
   }
 
   return (
-    <PoultryShell>
+    <>
       <PageHeader title={create ? "Create Poultry House" : "Poultry Houses"} subtitle="Manage poultry houses by farm. Each house auto-creates 5 pens." />
       {optionsError && <p className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">{optionsError}</p>}
       {submitMsg && <p className="mb-4 rounded-md border border-green-200 bg-green-50 px-4 py-2 text-sm text-green-800">{submitMsg}</p>}
@@ -326,7 +338,15 @@ export function PoultryHousesPage({ create = false }: { create?: boolean }) {
               <button type="button" className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold hover:bg-red-50" onClick={loadHouses}>Retry</button>
             </div>
           )
-          : !loading && rows.length === 0 && <p className="rounded-md border border-line bg-white p-4 text-sm text-ink/65">No poultry houses found. <Link className="font-semibold text-brand hover:underline" href="/poultry/houses/create">Create one →</Link></p>
+          : !loading && rows.length === 0 && (
+            <div className="rounded-md border border-line bg-white">
+              <EmptyState
+                icon={Home}
+                title="No poultry houses found"
+                action={<Link className="font-semibold text-brand hover:underline" href="/poultry/houses/create">Create one →</Link>}
+              />
+            </div>
+          )
         }
         {rows.map((house) => {
           const housePens = house.pens && house.pens.length > 0 ? house.pens : options.pens.filter((p) => p.poultryHouseId === house.id);
@@ -349,7 +369,7 @@ export function PoultryHousesPage({ create = false }: { create?: boolean }) {
                   <button className="rounded border border-line p-1.5 text-ink/50 hover:border-brand hover:text-brand" title="Edit house" onClick={() => startEditHouse(house)}>
                     <Pencil className="h-3.5 w-3.5" />
                   </button>
-                  <button className="rounded border border-line p-1.5 text-ink/50 hover:border-red-400 hover:text-red-500" title="Delete house" onClick={() => deleteHouse(house)}>
+                  <button className="rounded border border-line p-1.5 text-ink/50 hover:border-red-400 hover:text-red-500" title="Delete house" onClick={() => setConfirmHouse(house)}>
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </div>
@@ -378,7 +398,7 @@ export function PoultryHousesPage({ create = false }: { create?: boolean }) {
                         {pen.capacity && <div className="text-xs text-ink/60">cap {pen.capacity}</div>}
                         <div className="mt-1 flex justify-center gap-1 opacity-0 group-hover:opacity-100">
                           <button type="button" title="Edit pen" onClick={() => startEditPen(pen)} className="rounded p-0.5 text-ink/40 hover:bg-brand/10 hover:text-brand"><Pencil className="h-3 w-3" /></button>
-                          <button type="button" title="Delete pen" onClick={() => deletePen(pen)} className="rounded p-0.5 text-ink/40 hover:bg-red-50 hover:text-red-500"><Trash2 className="h-3 w-3" /></button>
+                          <button type="button" title="Delete pen" onClick={() => setConfirmPen(pen)} className="rounded p-0.5 text-ink/40 hover:bg-red-50 hover:text-red-500"><Trash2 className="h-3 w-3" /></button>
                         </div>
                       </div>
                     ))}
@@ -401,7 +421,27 @@ export function PoultryHousesPage({ create = false }: { create?: boolean }) {
           );
         })}
       </div>
-    </PoultryShell>
+      <ConfirmModal
+        open={!!confirmHouse}
+        onClose={() => setConfirmHouse(null)}
+        onConfirm={confirmDeleteHouse}
+        title="Delete house?"
+        message={confirmHouse ? `Delete house "${confirmHouse.name}"? This cannot be undone.` : ""}
+        confirmLabel="Delete"
+        variant="danger"
+        loading={confirmingHouse}
+      />
+      <ConfirmModal
+        open={!!confirmPen}
+        onClose={() => setConfirmPen(null)}
+        onConfirm={confirmDeletePen}
+        title="Delete pen?"
+        message={confirmPen ? `Delete pen "${confirmPen.code}"?` : ""}
+        confirmLabel="Delete"
+        variant="danger"
+        loading={confirmingPen}
+      />
+    </>
   );
 }
 
@@ -472,6 +512,8 @@ export function FlockBatchesPage({ create = false }: { create?: boolean }) {
   const [editBatch, setEditBatch] = useState<BatchRow | null>(null);
   const [editForm, setEditForm] = useState({ code: "", name: "", birdType: "LAYERS", expectedCloseDate: "", notes: "" });
   const [editMsg, setEditMsg] = useState("");
+  const [confirmBatch, setConfirmBatch] = useState<BatchRow | null>(null);
+  const [confirmingBatch, setConfirmingBatch] = useState(false);
   const loadingRef = useRef(false);
 
   async function load() {
@@ -523,19 +565,23 @@ export function FlockBatchesPage({ create = false }: { create?: boolean }) {
     }
   }
 
-  async function deleteBatch(batch: BatchRow) {
-    if (!confirm(`Delete batch "${batch.name}"? This will remove the batch and all its records.`)) return;
+  async function confirmDeleteBatch() {
+    if (!confirmBatch) return;
+    setConfirmingBatch(true);
     try {
-      await apiFetch(`/poultry/batches/${batch.id}`, { method: "DELETE" });
-      setRows((prev) => prev.filter((b) => b.id !== batch.id));
+      await apiFetch(`/poultry/batches/${confirmBatch.id}`, { method: "DELETE" });
+      setRows((prev) => prev.filter((b) => b.id !== confirmBatch.id));
       load().catch(() => undefined);
+      setConfirmBatch(null);
     } catch (err: any) {
       setEditMsg(err?.message ?? "Failed to delete batch.");
+    } finally {
+      setConfirmingBatch(false);
     }
   }
 
   return (
-    <PoultryShell>
+    <>
       <PageHeader title={create ? "Create Flock Batch" : "Flock Batches"} subtitle="Register and monitor flock batches distributed across houses and pens." />
       {optionsError && (
         <div className="mb-4 flex items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
@@ -578,8 +624,18 @@ export function FlockBatchesPage({ create = false }: { create?: boolean }) {
           </div>
         </form>
       )}
-      <BatchTable rows={rows} loading={loading} onEdit={startEdit} onDelete={deleteBatch} />
-    </PoultryShell>
+      <BatchTable rows={rows} loading={loading} onEdit={startEdit} onDelete={setConfirmBatch} />
+      <ConfirmModal
+        open={!!confirmBatch}
+        onClose={() => setConfirmBatch(null)}
+        onConfirm={confirmDeleteBatch}
+        title="Delete batch?"
+        message={confirmBatch ? `Delete batch "${confirmBatch.name}"? This will remove the batch and all its records.` : ""}
+        confirmLabel="Delete"
+        variant="danger"
+        loading={confirmingBatch}
+      />
+    </>
   );
 }
 
@@ -766,17 +822,6 @@ function BatchTable({ rows, loading, onEdit, onDelete }: { rows: BatchRow[]; loa
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const colors: Record<string, string> = {
-    ACTIVE: "bg-green-100 text-green-800",
-    PLANNED: "bg-blue-100 text-blue-800",
-    CLOSED: "bg-gray-100 text-gray-600",
-    SOLD: "bg-purple-100 text-purple-800",
-    CULLED: "bg-red-100 text-red-800"
-  };
-  return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${colors[status] ?? "bg-gray-100 text-gray-600"}`}>{status}</span>;
-}
-
 // ─── Batch Detail ─────────────────────────────────────────────────────────────
 
 type BatchDetail = {
@@ -841,7 +886,7 @@ export function FlockBatchDetailsPage() {
   const metricKeys = ["currentLiveBirds", "mortalityRate", "eggProductionPercent", "feedConversionRatio", "costPerBird", "profitability"] as const;
 
   return (
-    <PoultryShell>
+    <>
       <PageHeader title={batch?.name ?? "Flock Batch"} subtitle={batch ? `${batch.code} · ${batch.birdType} · ${batch.farm?.name ?? ""}` : batchError ? "Failed to load" : "Loading…"} />
       {batchError && !batch && (
         <div className="mb-4 rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700">
@@ -966,7 +1011,7 @@ export function FlockBatchDetailsPage() {
           )}
         </>
       )}
-    </PoultryShell>
+    </>
   );
 }
 
@@ -998,6 +1043,8 @@ function BatchRecordSection({ batchId, type, label, cols, endpoint, options }: {
   const [editRow, setEditRow] = useState<Record<string, any> | null>(null);
   const [editForm, setEditForm] = useState<Record<string, string>>({});
   const [editMsg, setEditMsg] = useState("");
+  const [confirmRow, setConfirmRow] = useState<Record<string, any> | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -1079,14 +1126,18 @@ function BatchRecordSection({ batchId, type, label, cols, endpoint, options }: {
     }
   }
 
-  async function deleteRow(row: Record<string, any>) {
-    if (!confirm("Delete this record? This cannot be undone.")) return;
+  async function confirmDeleteRow() {
+    if (!confirmRow) return;
+    setConfirmingDelete(true);
     setEditMsg("");
     try {
-      await apiFetch(`/poultry/records/${type}/${row.id}`, { method: "DELETE" });
+      await apiFetch(`/poultry/records/${type}/${confirmRow.id}`, { method: "DELETE" });
       await load();
+      setConfirmRow(null);
     } catch (err: any) {
       setEditMsg(err?.message ?? "Failed to delete record.");
+    } finally {
+      setConfirmingDelete(false);
     }
   }
 
@@ -1176,7 +1227,7 @@ function BatchRecordSection({ batchId, type, label, cols, endpoint, options }: {
                             <Pencil className="h-3 w-3" />
                           </button>
                           {canManage && (
-                            <button type="button" title="Delete record" onClick={() => deleteRow(row)} className="rounded p-1 text-ink/40 hover:bg-red-50 hover:text-red-600">
+                            <button type="button" title="Delete record" onClick={() => setConfirmRow(row)} className="rounded p-1 text-ink/40 hover:bg-red-50 hover:text-red-600">
                               <Trash2 className="h-3 w-3" />
                             </button>
                           )}
@@ -1209,6 +1260,16 @@ function BatchRecordSection({ batchId, type, label, cols, endpoint, options }: {
           )}
         </div>
       )}
+      <ConfirmModal
+        open={!!confirmRow}
+        onClose={() => setConfirmRow(null)}
+        onConfirm={confirmDeleteRow}
+        title="Delete record?"
+        message="Delete this record? This cannot be undone."
+        confirmLabel="Delete"
+        variant="danger"
+        loading={confirmingDelete}
+      />
     </div>
   );
 }
@@ -1255,6 +1316,10 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
   const [form, setForm] = useState<Record<string, string>>(() => makeFormDefaults(type));
   const [editingId, setEditingId] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [recordsLoading, setRecordsLoading] = useState(rows.length === 0);
+  const [confirmRow, setConfirmRow] = useState<Record<string, any> | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const recordLoadingRef = useRef(false);
 
   async function load() {
@@ -1270,7 +1335,8 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
   function loadRecords() {
     if (recordLoadingRef.current) return;
     recordLoadingRef.current = true;
-    load().catch(() => undefined).finally(() => { recordLoadingRef.current = false; });
+    setRecordsLoading(true);
+    load().catch(() => undefined).finally(() => { recordLoadingRef.current = false; setRecordsLoading(false); });
   }
 
   useEffect(() => {
@@ -1324,21 +1390,27 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
     setSubmitError("");
   }
 
-  async function deleteRow(row: Record<string, any>) {
-    if (!confirm("Delete this record? This cannot be undone.")) return;
+  async function confirmDeleteRow() {
+    if (!confirmRow) return;
+    setConfirmingDelete(true);
     setSubmitError("");
     try {
-      await apiFetch(`/poultry/records/${type}/${row.id}`, { method: "DELETE" });
-      setRows((prev) => prev.filter((r) => r.id !== row.id));
+      await apiFetch(`/poultry/records/${type}/${confirmRow.id}`, { method: "DELETE" });
+      setRows((prev) => prev.filter((r) => r.id !== confirmRow.id));
       load().catch(() => undefined);
+      setConfirmRow(null);
     } catch (err: any) {
       setSubmitError(err?.message ?? "Failed to delete record.");
+    } finally {
+      setConfirmingDelete(false);
     }
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (saving) return;
     setSubmitError("");
+    setSaving(true);
     try {
       if (editingId) {
         const payload = buildRecordPayload(type, form, options);
@@ -1351,11 +1423,13 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
       await load();
     } catch (err: any) {
       setSubmitError(err?.message ?? "Failed to save record.");
+    } finally {
+      setSaving(false);
     }
   }
 
   return (
-    <PoultryShell>
+    <>
       <PageHeader title={title} subtitle={health ? "Veterinary and health workflow entries for assigned farms." : "Operational record entry and history for assigned flock batches."} />
       {optionsError && (
         <div className="mb-4 flex items-center justify-between rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
@@ -1376,13 +1450,23 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
         </div>
       )}
       {submitError && <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{submitError}</p>}
-      <GenericRecordForm options={options} optionsLoading={optionsLoading} form={form} setForm={setForm} submit={submit} type={type} isEditing={!!editingId} />
-      <SimpleRecordTable rows={rows} onEdit={startEdit} onDelete={canManage ? deleteRow : undefined} />
-    </PoultryShell>
+      <GenericRecordForm options={options} optionsLoading={optionsLoading} form={form} setForm={setForm} submit={submit} type={type} isEditing={!!editingId} saving={saving} />
+      <SimpleRecordTable rows={rows} loading={recordsLoading} onEdit={startEdit} onDelete={canManage ? setConfirmRow : undefined} />
+      <ConfirmModal
+        open={!!confirmRow}
+        onClose={() => setConfirmRow(null)}
+        onConfirm={confirmDeleteRow}
+        title="Delete record?"
+        message="Delete this record? This cannot be undone."
+        confirmLabel="Delete"
+        variant="danger"
+        loading={confirmingDelete}
+      />
+    </>
   );
 }
 
-function GenericRecordForm({ options, optionsLoading = false, form, setForm, submit, type, isEditing = false }: {
+function GenericRecordForm({ options, optionsLoading = false, form, setForm, submit, type, isEditing = false, saving = false }: {
   options: PoultryOptions;
   optionsLoading?: boolean;
   form: Record<string, string>;
@@ -1390,6 +1474,7 @@ function GenericRecordForm({ options, optionsLoading = false, form, setForm, sub
   submit: (event: FormEvent<HTMLFormElement>) => void;
   type: string;
   isEditing?: boolean;
+  saving?: boolean;
 }) {
   const fields = recordFields(type);
 
@@ -1479,8 +1564,12 @@ function GenericRecordForm({ options, optionsLoading = false, form, setForm, sub
         </FormField>
       ))}
 
-      <button className={`min-h-11 rounded-md px-4 text-sm font-semibold text-white md:col-span-4 ${isEditing ? "bg-amber-600" : "bg-brand"}`}>
-        {isEditing ? "Save correction" : "Submit record"}
+      <button
+        type="submit"
+        disabled={saving}
+        className={`min-h-11 rounded-md px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60 md:col-span-4 ${isEditing ? "bg-amber-600" : "bg-brand"}`}
+      >
+        {saving ? "Saving…" : isEditing ? "Save correction" : "Submit record"}
       </button>
     </form>
   );
@@ -1536,7 +1625,7 @@ function buildRecordPayload(type: string, form: Record<string, string>, options:
   return payload;
 }
 
-function SimpleRecordTable({ rows, onEdit, onDelete }: { rows: Record<string, any>[]; onEdit?: (row: Record<string, any>) => void; onDelete?: (row: Record<string, any>) => void }) {
+function SimpleRecordTable({ rows, loading, onEdit, onDelete }: { rows: Record<string, any>[]; loading?: boolean; onEdit?: (row: Record<string, any>) => void; onDelete?: (row: Record<string, any>) => void }) {
   const allowedKeys = new Set([
     "recordDate", "startDate", "costDate", "vaccinationDate", "observationDate", "transferDate",
     "mortalityCount", "culledCount", "feedConsumedKg", "totalEggs",
@@ -1564,7 +1653,7 @@ function SimpleRecordTable({ rows, onEdit, onDelete }: { rows: Record<string, an
       </div>
     ) }] : [])
   ];
-  return <DataTable rows={rows} empty="No records found" columns={columns} />;
+  return <DataTable rows={rows} loading={loading} empty="No records found" columns={columns} />;
 }
 
 // ─── Transfers ────────────────────────────────────────────────────────────────
@@ -1593,6 +1682,8 @@ export function PoultryTransferPage() {
   const [editRow, setEditRow] = useState<Record<string, any> | null>(null);
   const [editForm, setEditForm] = useState({ birdCount: "", reason: "", status: "" });
   const [editMsg, setEditMsg] = useState("");
+  const [confirmRow, setConfirmRow] = useState<Record<string, any> | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const fromHouses = useMemo(() => {
     const houseIds = new Set(options.pens.map((p) => p.poultryHouseId));
@@ -1699,21 +1790,25 @@ export function PoultryTransferPage() {
     }
   }
 
-  async function deleteRow(row: Record<string, any>) {
-    if (!confirm("Delete this transfer? This cannot be undone.")) return;
+  async function confirmDeleteRow() {
+    if (!confirmRow) return;
+    setConfirmingDelete(true);
     setEditMsg("");
     try {
-      await apiFetch(`/poultry/records/transfers/${row.id}`, { method: "DELETE" });
-      if (editRow?.id === row.id) setEditRow(null);
-      setRows((prev) => prev.filter((r) => r.id !== row.id));
+      await apiFetch(`/poultry/records/transfers/${confirmRow.id}`, { method: "DELETE" });
+      if (editRow?.id === confirmRow.id) setEditRow(null);
+      setRows((prev) => prev.filter((r) => r.id !== confirmRow.id));
       load().catch(() => undefined);
+      setConfirmRow(null);
     } catch (err: any) {
       setEditMsg(err?.message ?? "Failed to delete transfer.");
+    } finally {
+      setConfirmingDelete(false);
     }
   }
 
   return (
-    <PoultryShell>
+    <>
       <PageHeader title="Poultry Transfers" subtitle="Move birds between pens, houses, or farms with full transfer audit tracking." />
       <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-3">
         <FormField label="Batch">
@@ -1791,7 +1886,7 @@ export function PoultryTransferPage() {
       <SimpleRecordTable
         rows={rows}
         onEdit={canManage ? startEdit : undefined}
-        onDelete={canManage ? deleteRow : undefined}
+        onDelete={canManage ? setConfirmRow : undefined}
       />
       {editRow && (
         <form onSubmit={saveEdit} className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-4 shadow-panel">
@@ -1817,7 +1912,17 @@ export function PoultryTransferPage() {
           <button type="submit" className="mt-3 rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-white">Save changes</button>
         </form>
       )}
-    </PoultryShell>
+      <ConfirmModal
+        open={!!confirmRow}
+        onClose={() => setConfirmRow(null)}
+        onConfirm={confirmDeleteRow}
+        title="Delete transfer?"
+        message="Delete this transfer? This cannot be undone."
+        confirmLabel="Delete"
+        variant="danger"
+        loading={confirmingDelete}
+      />
+    </>
   );
 }
 
@@ -1825,11 +1930,11 @@ export function PoultryTransferPage() {
 
 export function PoultryReportsPage() {
   return (
-    <PoultryShell>
+    <>
       <PageHeader title="Poultry Reports" subtitle="Export poultry flock performance, health, production, and cost reports." />
       <button className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" onClick={() => downloadReport("/poultry/reports/summary.csv", "poultry-summary.csv")}>
         <Download aria-hidden className="h-4 w-4" /> Download poultry summary CSV
       </button>
-    </PoultryShell>
+    </>
   );
 }

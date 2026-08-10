@@ -249,5 +249,5 @@ const styles = StyleSheet.create({
   approveBtnText: { fontSize: font.size.md, fontFamily: font.family.bold, color: colors.white },
 
   recordBtn:     { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, borderWidth: 1.5, borderColor: colors.brand, borderRadius: radius.xl, paddingVertical: spacing.lg, backgroundColor: colors.brandLight },
-  recordBtnText: { fontSize: font.size.md, fontFamily: font.family.bold, color: colors.brand },
+  recordBtnText: { fontSize: font.size.md, fontFamily: font.family.bold, color: colors.brandDark },
 });

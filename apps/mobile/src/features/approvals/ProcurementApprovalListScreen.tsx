@@ -253,7 +253,7 @@ const styles = StyleSheet.create({
   amount:   { fontSize: font.size.sm, fontFamily: font.family.extrabold, color: colors.ink },
 
   viewBtn:     { flexDirection: "row", alignItems: "center", gap: 5, alignSelf: "flex-start", paddingVertical: 4, paddingHorizontal: spacing.sm },
-  viewBtnText: { fontSize: font.size.xs, fontFamily: font.family.semibold, color: colors.brand },
+  viewBtnText: { fontSize: font.size.xs, fontFamily: font.family.semibold, color: colors.brandDark },
 
   actions:     { flexDirection: "row", gap: spacing.sm },
   rejectBtn:   { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingVertical: spacing.md, borderRadius: radius.lg, borderWidth: 1, borderColor: "#fca5a5", backgroundColor: "#fef2f2" },

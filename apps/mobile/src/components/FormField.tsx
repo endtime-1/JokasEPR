@@ -44,7 +44,7 @@ const styles = StyleSheet.create({
     color: colors.inkMid,
     letterSpacing: 0.1
   },
-  required: { color: colors.brand },
+  required: { color: colors.brandDark },
   input: {
     minHeight: 48,
     borderWidth: 1.5,

@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AppShell } from "../../components/app-shell";
 import { DataTable } from "../../components/data-table";
 import { apiFetch } from "../../lib/api";
 
@@ -59,7 +58,7 @@ export default function AuditPage() {
   }
 
   return (
-    <AppShell>
+    <>
       <div className="space-y-5">
         <div>
           <h1 className="text-xl font-bold">Audit Logs</h1>
@@ -132,6 +131,6 @@ export default function AuditPage() {
           ]}
         />
       </div>
-    </AppShell>
+    </>
   );
 }

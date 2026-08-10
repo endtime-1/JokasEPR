@@ -5,6 +5,7 @@ import { useNavigation } from "@react-navigation/native";
 import { Icon } from "../../components/Icon";
 import { PageHeader } from "../../components/PageHeader";
 import { useToast } from "../../components/Toast";
+import { DateField } from "../../components/DateField";
 import { createFeedProductionOrder, fetchFeedProductionOptions, type FeedFormula, type FeedProductionOptions } from "../../api/endpoints";
 import { useAuth } from "../../auth/AuthContext";
 import { colors, font, radius, shadow, spacing } from "../../constants/theme";
@@ -124,14 +125,7 @@ export function FeedProductionOrderCreateScreen() {
               />
             </View>
             <View style={styles.field}>
-              <Text style={styles.label}>Scheduled Date *</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="YYYY-MM-DD"
-                placeholderTextColor={colors.inkLight}
-                value={scheduledDate}
-                onChangeText={setScheduledDate}
-              />
+              <DateField label="Scheduled Date" required value={scheduledDate} onChangeText={setScheduledDate} />
             </View>
           </View>
         </View>
@@ -224,9 +218,9 @@ const styles = StyleSheet.create({
   chip:         { paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.bg, minWidth: 100, alignItems: "center" },
   chipActive:   { borderColor: colors.brand, backgroundColor: colors.brandLight },
   chipText:     { fontSize: font.size.sm, fontFamily: font.family.semibold, color: colors.inkMid },
-  chipTextActive: { color: colors.brand, fontFamily: font.family.bold },
+  chipTextActive: { color: colors.brandDark, fontFamily: font.family.bold },
   chipSub:      { fontSize: font.size.xs, color: colors.inkLight, fontFamily: font.family.regular },
-  chipSubActive:{ color: colors.brand },
+  chipSubActive:{ color: colors.brandDark },
 
   selectedInfo: { flexDirection: "row", alignItems: "center", gap: 6, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border },
   selectedText: { fontSize: font.size.sm, fontFamily: font.family.semibold, color: "#16a34a" },

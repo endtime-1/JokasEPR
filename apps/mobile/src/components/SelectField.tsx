@@ -123,7 +123,7 @@ const styles = StyleSheet.create({
     color: colors.inkMid,
     letterSpacing: 0.1
   },
-  required: { color: colors.brand },
+  required: { color: colors.brandDark },
   trigger: {
     minHeight: 48,
     flexDirection: "row",
@@ -206,6 +206,6 @@ const styles = StyleSheet.create({
   },
   optionSelected: { backgroundColor: colors.brandLight },
   optionText: { flex: 1, fontSize: font.size.md, color: colors.ink },
-  optionTextSelected: { color: colors.brand, fontWeight: font.weight.semibold },
-  checkmark: { color: colors.brand, fontSize: 16, fontWeight: "bold" }
+  optionTextSelected: { color: colors.brandDark, fontWeight: font.weight.semibold },
+  checkmark: { color: colors.brandDark, fontSize: 16, fontWeight: "bold" }
 });

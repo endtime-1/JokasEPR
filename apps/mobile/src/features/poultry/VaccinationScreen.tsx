@@ -6,6 +6,7 @@ import { ScreenWrapper } from "../../components/ScreenWrapper";
 import { FormCard } from "../../components/FormCard";
 import { FormFooter } from "../../components/FormFooter";
 import { FormField } from "../../components/FormField";
+import { DateField } from "../../components/DateField";
 import { SelectField, SelectOption } from "../../components/SelectField";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
@@ -89,7 +90,14 @@ export function VaccinationScreen() {
   const { submit, loading } = useSubmit({
     module: "poultry_vaccination",
     endpoint: "/poultry/vaccination-records",
-    onSuccess: () => Alert.alert("Saved", "Vaccination recorded.", [{ text: "OK", onPress: () => navigation.goBack() }])
+    onSuccess: (queued) =>
+      Alert.alert(
+        queued ? "Saved Offline" : "Saved",
+        queued
+          ? "Your vaccination record was saved on this device and will sync automatically once you're back online."
+          : "Vaccination recorded.",
+        [{ text: "OK", onPress: () => navigation.goBack() }]
+      )
   });
 
   async function handleSubmit() {
@@ -124,7 +132,7 @@ export function VaccinationScreen() {
         <SelectField label="Farm" value={farmId} options={farms} onChange={(v) => { setFarmId(v); setBatchId(""); setPenId(""); }} error={errors.farmId} required />
         <SelectField label="Flock Batch" value={batchId} options={batches} onChange={(v) => { setBatchId(v); setPenId(""); }} error={errors.batchId} required placeholder={farmId ? "Select batch…" : "Select farm first"} />
         {pens.length > 0 && <SelectField label="Pen (optional)" value={penId} options={pens} onChange={setPenId} placeholder="All pens" />}
-        <FormField label="Vaccination Date" required value={date} onChangeText={setDate} error={errors.date} keyboardType="numeric" placeholder="YYYY-MM-DD" />
+        <DateField label="Vaccination Date" required value={date} onChangeText={setDate} error={errors.date} />
       </FormCard>
 
       <FormCard label="VACCINE DATA">
@@ -135,7 +143,7 @@ export function VaccinationScreen() {
             <FormField label="Dose" required value={dose} onChangeText={(v) => { setDose(v); setErrors((e) => ({ ...e, dose: "" })); }} error={errors.dose} placeholder="e.g. 1 drop/bird" />
           </View>
           <View style={styles.half}>
-            <FormField label="Next Due Date" value={nextDueDate} onChangeText={setNextDueDate} keyboardType="numeric" placeholder="YYYY-MM-DD" />
+            <DateField label="Next Due Date" value={nextDueDate} onChangeText={setNextDueDate} />
           </View>
         </View>
       </FormCard>

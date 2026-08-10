@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { RefreshCw, CircleAlert, CircleCheckBig, Copy, RotateCcw } from "lucide-react";
-import { AppShell } from "../../../components/app-shell";
 import { ApiEnvelope, apiFetch } from "../../../lib/api";
 
 type MobileSyncRecord = {
@@ -119,7 +118,7 @@ export default function MobileSyncPage() {
     : [];
 
   return (
-    <AppShell>
+    <>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
@@ -260,6 +259,6 @@ export default function MobileSyncPage() {
           </div>
         )}
       </div>
-    </AppShell>
+    </>
   );
 }

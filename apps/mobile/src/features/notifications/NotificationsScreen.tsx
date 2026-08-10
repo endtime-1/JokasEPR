@@ -201,7 +201,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.brandMid,
   },
-  markAllText: { fontSize: font.size.xs, color: colors.brand, fontWeight: font.weight.bold },
+  markAllText: { fontSize: font.size.xs, color: colors.brandDark, fontWeight: font.weight.bold },
 
   list: { padding: spacing.xl, paddingBottom: spacing.xxxl },
   listHeader: { marginBottom: spacing.md },

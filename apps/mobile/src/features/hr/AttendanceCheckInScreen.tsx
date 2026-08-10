@@ -37,10 +37,14 @@ export function AttendanceCheckInScreen() {
   const { submit, loading } = useSubmit({
     module:   "hr_attendance",
     endpoint: "/hr/attendance/me",
-    onSuccess: () =>
-      Alert.alert("Attendance Recorded", "Your check-in has been logged for today.", [
-        { text: "OK", onPress: () => navigation.goBack() },
-      ]),
+    onSuccess: (queued) =>
+      Alert.alert(
+        queued ? "Saved Offline" : "Attendance Recorded",
+        queued
+          ? "Your check-in was saved on this device and will sync automatically once you're back online."
+          : "Your check-in has been logged for today.",
+        [{ text: "OK", onPress: () => navigation.goBack() }]
+      ),
   });
 
   useEffect(() => {

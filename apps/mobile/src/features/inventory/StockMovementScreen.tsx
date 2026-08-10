@@ -80,7 +80,14 @@ export function StockMovementScreen() {
   const { submit, loading } = useSubmit({
     module: "stock_movement",
     endpoint: "/inventory/stock-movements",
-    onSuccess: () => Alert.alert("Recorded", "Stock movement has been saved.", [{ text: "OK", onPress: () => navigation.goBack() }]),
+    onSuccess: (queued) =>
+      Alert.alert(
+        queued ? "Saved Offline" : "Recorded",
+        queued
+          ? "Your stock movement was saved on this device and will sync automatically once you're back online."
+          : "Stock movement has been saved.",
+        [{ text: "OK", onPress: () => navigation.goBack() }]
+      ),
   });
 
   const movMeta = movementType ? MOVEMENT_META[movementType] : null;

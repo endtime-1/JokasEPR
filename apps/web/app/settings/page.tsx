@@ -3,8 +3,8 @@
 import { FormEvent, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Bot, Building2, ChevronRight, Egg, HardDrive, Package, Pencil, Plus, Save, Settings, ShieldCheck, Trash2, X } from "lucide-react";
 import Link from "next/link";
-import { AppShell } from "../../components/app-shell";
 import { ApiEnvelope, apiFetch, getCachedFirst } from "../../lib/api";
+import { ConfirmModal } from "../../components/ui";
 
 type Row = Record<string, any> & { id: string; code?: string; name?: string };
 type MasterData = Record<string, Row[]>;
@@ -111,6 +111,7 @@ export default function SettingsPage() {
   const [success, setSuccess] = useState("");
   const [masterMsg, setMasterMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
   const [masterLoadError, setMasterLoadError] = useState(false);
+  const [confirmDeleteRow, setConfirmDeleteRow] = useState<Row | null>(null);
 
   async function load() {
     const results = await Promise.allSettled([
@@ -229,7 +230,6 @@ export default function SettingsPage() {
   }
 
   async function deleteMaster(row: Row) {
-    if (!window.confirm(`Delete "${row.name}"? This cannot be undone.`)) return;
     setSaving(`delete-${row.id}`);
     setMasterMsg(null);
     try {
@@ -240,6 +240,7 @@ export default function SettingsPage() {
       setMasterMsg({ type: "err", text: err instanceof Error ? err.message : "Delete failed." });
     } finally {
       setSaving("");
+      setConfirmDeleteRow(null);
     }
   }
 
@@ -284,7 +285,7 @@ export default function SettingsPage() {
 
   if (loading) {
     return (
-      <AppShell>
+      <>
         {error ? (
           <div className="p-6">
             <p className="mb-3 text-sm font-semibold text-red-700">Failed to load settings</p>
@@ -296,12 +297,12 @@ export default function SettingsPage() {
         ) : (
           <p className="p-6 text-sm text-ink/60">Loading settings…</p>
         )}
-      </AppShell>
+      </>
     );
   }
 
   return (
-    <AppShell>
+    <>
       <div className="space-y-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -414,7 +415,7 @@ export default function SettingsPage() {
                     <td className="px-3 py-2">
                       <div className="flex items-center gap-1">
                         <button type="button" title="Edit" onClick={() => startEdit(row)} className="rounded p-1 text-ink/40 hover:bg-brand/10 hover:text-brand"><Pencil className="h-4 w-4" /></button>
-                        <button type="button" title="Delete" disabled={saving === `delete-${row.id}`} onClick={() => deleteMaster(row)} className="rounded p-1 text-ink/40 hover:bg-red-50 hover:text-red-600"><Trash2 className="h-4 w-4" /></button>
+                        <button type="button" title="Delete" disabled={saving === `delete-${row.id}`} onClick={() => setConfirmDeleteRow(row)} className="rounded p-1 text-ink/40 hover:bg-red-50 hover:text-red-600"><Trash2 className="h-4 w-4" /></button>
                       </div>
                     </td>
                   </tr>
@@ -490,7 +491,18 @@ export default function SettingsPage() {
           </SettingCard>
         </div>
       </div>
-    </AppShell>
+
+      <ConfirmModal
+        open={confirmDeleteRow !== null}
+        onClose={() => setConfirmDeleteRow(null)}
+        onConfirm={() => confirmDeleteRow && deleteMaster(confirmDeleteRow)}
+        title="Delete master data?"
+        message={`Delete "${confirmDeleteRow?.name}"? This cannot be undone.`}
+        confirmLabel="Delete"
+        variant="danger"
+        loading={confirmDeleteRow !== null && saving === `delete-${confirmDeleteRow.id}`}
+      />
+    </>
   );
 }
 

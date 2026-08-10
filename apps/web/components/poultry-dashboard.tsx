@@ -20,8 +20,8 @@ import {
   Wheat,
   Zap
 } from "lucide-react";
-import { PoultryShell } from "./poultry-shell";
 import { ApiEnvelope, apiFetch } from "../lib/api";
+import { StatusBadge } from "./ui";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -268,22 +268,6 @@ function TrendChart({ points, color, label, unit = "" }: {
   );
 }
 
-function BatchStatusBadge({ status }: { status: string }) {
-  const map: Record<string, string> = {
-    ACTIVE: "bg-emerald-100 text-emerald-700",
-    PLANNED: "bg-blue-100 text-blue-700",
-    CLOSED: "bg-line text-ink/55",
-    SOLD: "bg-purple-100 text-purple-700",
-    CULLED: "bg-red-100 text-red-700",
-    TRANSFERRED: "bg-amber-100 text-amber-700"
-  };
-  return (
-    <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${map[status] ?? "bg-line text-ink/55"}`}>
-      {status}
-    </span>
-  );
-}
-
 function MortalityIndicator({ rate }: { rate: number }) {
   if (rate > 10) return <span className="text-sm font-bold text-red-700">{rate}% ▲</span>;
   if (rate > 5) return <span className="text-sm font-bold text-amber-700">{rate}% ▲</span>;
@@ -302,7 +286,7 @@ function ActiveBatchCard({ batch }: { batch: BatchRow }) {
           <div>
             <div className="flex items-center gap-2">
               <h4 className="font-extrabold text-ink">{batch.code}</h4>
-              <BatchStatusBadge status={batch.status} />
+              <StatusBadge status={batch.status} />
               {!batch.hasTodayRecord && batch.status === "ACTIVE" && (
                 <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">No record today</span>
               )}
@@ -488,7 +472,7 @@ export function PoultryDashboardPage() {
   const otherBatches = (data?.batches ?? []).filter((b) => b.status !== "ACTIVE");
 
   return (
-    <PoultryShell>
+    <>
       {/* Premium hero header */}
       <div className="mb-6 overflow-hidden rounded-2xl border border-line bg-gradient-to-br from-white via-white to-field shadow-panel">
         <div className="flex flex-wrap items-start justify-between gap-4 px-6 py-5">
@@ -614,7 +598,7 @@ export function PoultryDashboardPage() {
                     </td>
                     <td className="px-4 py-2.5 text-ink/65">{b.farm?.name ?? "—"}</td>
                     <td className="px-4 py-2.5 text-ink/65">{b.birdType}</td>
-                    <td className="px-4 py-2.5"><BatchStatusBadge status={b.status} /></td>
+                    <td className="px-4 py-2.5"><StatusBadge status={b.status} /></td>
                     <td className="px-4 py-2.5 text-right font-semibold">{fmt(b.currentLiveBirds)}</td>
                     <td className="px-4 py-2.5 text-right"><MortalityIndicator rate={b.mortalityRate} /></td>
                     <td className="px-4 py-2.5 text-right text-ink/65">{fmt(b.totalEggs)}</td>
@@ -625,6 +609,6 @@ export function PoultryDashboardPage() {
           </div>
         </section>
       )}
-    </PoultryShell>
+    </>
   );
 }

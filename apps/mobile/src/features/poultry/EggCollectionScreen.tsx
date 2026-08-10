@@ -4,6 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { FormField } from "../../components/FormField";
+import { DateField } from "../../components/DateField";
 import { SelectField, SelectOption } from "../../components/SelectField";
 import { Button } from "../../components/Button";
 import { SyncBanner } from "../../components/SyncBanner";
@@ -103,7 +104,14 @@ export function EggCollectionScreen() {
   const { submit, loading } = useSubmit({
     module: "poultry_eggs",
     endpoint: "/poultry/egg-production-records",
-    onSuccess: () => Alert.alert("Saved", "Egg collection recorded.", [{ text: "OK", onPress: () => navigation.goBack() }])
+    onSuccess: (queued) =>
+      Alert.alert(
+        queued ? "Saved Offline" : "Saved",
+        queued
+          ? "Your egg collection record was saved on this device and will sync automatically once you're back online."
+          : "Egg collection recorded.",
+        [{ text: "OK", onPress: () => navigation.goBack() }]
+      )
   });
 
   async function handleSave() {
@@ -149,7 +157,7 @@ export function EggCollectionScreen() {
             <SelectField label="Farm" value={farmId} options={farms} onChange={(v) => { setFarmId(v); setBatchId(""); setPenId(""); }} error={errors.farmId} required />
             <SelectField label="Flock Batch" value={batchId} options={batches} onChange={(v) => { setBatchId(v); setPenId(""); }} error={errors.batchId} required placeholder={farmId ? "Select batch…" : "Select farm first"} />
             {pens.length > 0 && <SelectField label="Pen (optional)" value={penId} options={pens} onChange={setPenId} placeholder="All pens" />}
-            <FormField label="Collection Date" required value={date} onChangeText={setDate} error={errors.date} keyboardType="numeric" placeholder="YYYY-MM-DD" />
+            <DateField label="Collection Date" required value={date} onChangeText={setDate} error={errors.date} />
           </View>
 
           {/* ── Egg Count ── */}
@@ -307,7 +315,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   totalGrandKey: { color: colors.ink, fontFamily: font.family.bold },
-  totalGrandVal: { color: colors.brand, fontSize: font.size.md, fontFamily: font.family.extrabold },
+  totalGrandVal: { color: colors.brandDark, fontSize: font.size.md, fontFamily: font.family.extrabold },
 
   sectionHint: {
     fontSize: font.size.xs,

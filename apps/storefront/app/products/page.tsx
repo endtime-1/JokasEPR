@@ -1,5 +1,4 @@
-import { Suspense } from "react";
-import { api } from "@/lib/api";
+import { api, type PublicProduct } from "@/lib/api";
 import ProductCard from "@/components/ProductCard";
 import ProductsClient from "./ProductsClient";
 import { SlidersHorizontal } from "lucide-react";
@@ -7,15 +6,19 @@ import { SlidersHorizontal } from "lucide-react";
 export const revalidate = 60;
 export const metadata = { title: "Products — Akoko Solutions" };
 
-async function ProductGrid({ category }: { category?: string }) {
-  let products: Awaited<ReturnType<typeof api.products.list>> = [];
-  let apiError = false;
-  try {
-    products = await api.products.list(category);
-  } catch {
-    apiError = true;
-  }
+const CATEGORY_LIST = ["Feed", "Eggs & Poultry", "Soya Products"] as const;
 
+function ProductGrid({
+  products,
+  apiError,
+  category,
+  q,
+}: {
+  products: PublicProduct[];
+  apiError: boolean;
+  category?: string;
+  q?: string;
+}) {
   if (apiError)
     return (
       <div className="col-span-full py-24 text-center">
@@ -38,7 +41,11 @@ async function ProductGrid({ category }: { category?: string }) {
         </div>
         <p className="font-semibold text-ink">No products found</p>
         <p className="mt-1 text-sm text-muted">
-          {category ? `No products in "${category}" yet` : "Check back soon"}
+          {q
+            ? `No products matching "${q}"${category ? ` in "${category}"` : ""}`
+            : category
+            ? `No products in "${category}" yet`
+            : "Check back soon"}
         </p>
       </div>
     );
@@ -53,9 +60,32 @@ async function ProductGrid({ category }: { category?: string }) {
 }
 
 export default async function ProductsPage(props: {
-  searchParams: Promise<{ category?: string }>;
+  searchParams: Promise<{ category?: string; q?: string }>;
 }) {
-  const { category } = await props.searchParams;
+  const { category, q } = await props.searchParams;
+
+  let allProducts: PublicProduct[] = [];
+  let apiError = false;
+  try {
+    allProducts = await api.products.list();
+  } catch {
+    apiError = true;
+  }
+
+  const counts: Record<string, number> = { All: allProducts.length };
+  for (const cat of CATEGORY_LIST) {
+    counts[cat] = allProducts.filter((p) => p.storefrontCategory === cat).length;
+  }
+
+  const query = q?.trim().toLowerCase();
+  const filtered = allProducts.filter((p) => {
+    if (category && p.storefrontCategory !== category) return false;
+    if (query) {
+      const haystack = `${p.name} ${p.publicDescription ?? ""}`.toLowerCase();
+      if (!haystack.includes(query)) return false;
+    }
+    return true;
+  });
 
   return (
     <div className="bg-white">
@@ -75,18 +105,12 @@ export default async function ProductsPage(props: {
       </div>
 
       <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6">
-        {/* Category filter */}
-        <ProductsClient activeCategory={category} />
+        {/* Category filter + search */}
+        <ProductsClient activeCategory={category} activeQuery={q} counts={counts} />
 
         {/* Grid */}
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          <Suspense
-            fallback={Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="h-80 animate-pulse rounded-2xl bg-gray-100" />
-            ))}
-          >
-            <ProductGrid category={category} />
-          </Suspense>
+          <ProductGrid products={filtered} apiError={apiError} category={category} q={q} />
         </div>
 
         {/* Bottom CTA */}

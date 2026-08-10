@@ -231,7 +231,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.brandMid,
   },
-  rolePillText: { fontSize: 11, color: colors.brand, fontFamily: font.family.bold },
+  rolePillText: { fontSize: 11, color: colors.brandDark, fontFamily: font.family.bold },
 
   sectionLabel: {
     fontSize: font.size.xs,

@@ -45,7 +45,7 @@ export function DashboardScreen() {
   const plat = platform as Record<string, any>;
 
   const platformMetrics: Metric[] = [
-    { label: "Farms",      value: String(plat.farms      ?? "—"), icon: "home-city",       color: colors.brand },
+    { label: "Farms",      value: String(plat.farms      ?? "—"), icon: "home-city",       color: colors.brandDark },
     { label: "Warehouses", value: String(plat.warehouses ?? "—"), icon: "warehouse",        color: "#8b5cf6"    },
     { label: "Users",      value: String(plat.users      ?? "—"), icon: "account-multiple", color: "#0891b2"    },
     { label: "Branches",   value: String(plat.branches   ?? "—"), icon: "office-building",  color: "#d97706"    },
@@ -55,7 +55,7 @@ export function DashboardScreen() {
   if (dash.totalRevenue !== undefined)
     summaryMetrics.push({ label: "Revenue (GHS)", value: Number(dash.totalRevenue).toLocaleString("en-GH", { maximumFractionDigits: 0 }), icon: "cash",                color: "#16a34a"    });
   if (dash.openOrders !== undefined)
-    summaryMetrics.push({ label: "Open Orders",   value: String(dash.openOrders),                                                          icon: "receipt-text-outline", color: colors.brand });
+    summaryMetrics.push({ label: "Open Orders",   value: String(dash.openOrders),                                                          icon: "receipt-text-outline", color: colors.brandDark });
   if (dash.totalBirds !== undefined)
     summaryMetrics.push({ label: "Total Birds",   value: Number(dash.totalBirds).toLocaleString(),                                          icon: "bird",                color: "#16a34a"    });
   if (dash.pendingAlerts !== undefined)

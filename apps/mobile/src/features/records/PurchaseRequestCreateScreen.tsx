@@ -227,10 +227,10 @@ const styles = StyleSheet.create({
   chip:        { paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: radius.full, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.bg },
   chipActive:  { borderColor: colors.brand, backgroundColor: colors.brandLight },
   chipText:    { fontSize: font.size.sm, fontFamily: font.family.medium, color: colors.inkMid },
-  chipTextActive: { color: colors.brand, fontFamily: font.family.bold },
+  chipTextActive: { color: colors.brandDark, fontFamily: font.family.bold },
 
   addItemBtn:  { flexDirection: "row", alignItems: "center", gap: 4 },
-  addItemText: { fontSize: font.size.sm, fontFamily: font.family.semibold, color: colors.brand },
+  addItemText: { fontSize: font.size.sm, fontFamily: font.family.semibold, color: colors.brandDark },
 
   lineItem:       { gap: spacing.sm, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.border },
   lineItemHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },

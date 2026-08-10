@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { createContext, useContext, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -273,20 +273,34 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
+// ─── Page header context ───────────────────────────────────────────────────────
+// FinanceShell used to be instantiated fresh per page (with title/subtitle
+// passed as props), which meant the whole sidebar+header remounted on every
+// navigation within Finance. It's now instantiated once, at the route layout
+// level (apps/web/app/finance/layout.tsx), and stays mounted across
+// navigation. Individual pages register their own title/subtitle into this
+// context via useFinancePageHeader() instead of wrapping themselves in
+// FinanceShell directly.
+
+type FinanceHeader = { title?: string; subtitle?: string };
+const FinanceHeaderContext = createContext<(header: FinanceHeader) => void>(() => {});
+
+export function useFinancePageHeader(title?: string, subtitle?: string) {
+  const setHeader = useContext(FinanceHeaderContext);
+  useEffect(() => {
+    setHeader({ title, subtitle });
+    return () => setHeader({});
+  }, [setHeader, title, subtitle]);
+}
+
 // ─── Finance Shell ────────────────────────────────────────────────────────────
 
-export function FinanceShell({
-  children,
-  title,
-  subtitle
-}: {
-  children: React.ReactNode;
-  title?: string;
-  subtitle?: string;
-}) {
+export function FinanceShell({ children }: { children: React.ReactNode }) {
   const { ready, profile } = useAuth();
   const router = useRouter();
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [header, setHeader] = useState<FinanceHeader>({});
+  const { title, subtitle } = header;
 
   if (!ready) {
     return (
@@ -305,7 +319,9 @@ export function FinanceShell({
           <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-slate-200 bg-white/95 px-5 py-3.5 shadow-sm backdrop-blur-md lg:px-8">
             <div className="h-5 w-40 animate-pulse rounded-md bg-slate-200" />
           </header>
-          <main className="flex-1 px-5 py-6 lg:px-8">{children}</main>
+          <main className="flex-1 px-5 py-6 lg:px-8">
+            <FinanceHeaderContext.Provider value={setHeader}>{children}</FinanceHeaderContext.Provider>
+          </main>
         </div>
       </div>
     );
@@ -397,7 +413,7 @@ export function FinanceShell({
 
         {/* Page content */}
         <main className="flex-1 px-5 py-6 lg:px-8">
-          {children}
+          <FinanceHeaderContext.Provider value={setHeader}>{children}</FinanceHeaderContext.Provider>
         </main>
       </div>
     </div>

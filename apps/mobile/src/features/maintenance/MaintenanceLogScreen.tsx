@@ -6,6 +6,7 @@ import { ScreenWrapper } from "../../components/ScreenWrapper";
 import { FormCard } from "../../components/FormCard";
 import { FormFooter } from "../../components/FormFooter";
 import { FormField } from "../../components/FormField";
+import { DateField } from "../../components/DateField";
 import { SelectField, SelectOption } from "../../components/SelectField";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
@@ -68,10 +69,12 @@ export function MaintenanceLogScreen() {
   const { submit, loading } = useSubmit({
     module: "maintenance_record",
     endpoint: "/maintenance/records",
-    onSuccess: () =>
+    onSuccess: (queued) =>
       Alert.alert(
-        "Work Logged",
-        "Maintenance record has been saved successfully.",
+        queued ? "Saved Offline" : "Work Logged",
+        queued
+          ? "Your maintenance record was saved on this device and will sync automatically once you're back online."
+          : "Maintenance record has been saved successfully.",
         [{ text: "OK", onPress: () => navigation.goBack() }]
       ),
   });
@@ -129,12 +132,10 @@ export function MaintenanceLogScreen() {
           required error={errors.maintenanceType} placeholder="Select type…"
         />
 
-        <FormField
+        <DateField
           label="Date Work Was Done" value={maintenanceDate}
           onChangeText={(v) => { setMaintenanceDate(v); setErrors((e) => ({ ...e, maintenanceDate: "" })); }}
           required error={errors.maintenanceDate}
-          placeholder="YYYY-MM-DD"
-          keyboardType="numbers-and-punctuation"
         />
 
         <FormField
@@ -153,11 +154,10 @@ export function MaintenanceLogScreen() {
           placeholder="Any observations, wear, or issues found during the work…"
         />
 
-        <FormField
+        <DateField
           label="Next Due Date (optional)" value={nextDueDate}
           onChangeText={setNextDueDate}
-          placeholder="YYYY-MM-DD — leave blank to auto-calculate from frequency"
-          keyboardType="numbers-and-punctuation"
+          hint="Leave blank to auto-calculate from frequency"
         />
 
         {nextDueDate && scheduleId && (

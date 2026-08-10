@@ -150,13 +150,13 @@ const styles = StyleSheet.create({
   metaHeader: { padding: spacing.lg, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.bgCard, gap: 3 },
   metaTitle:  { fontSize: font.size.md, fontFamily: font.family.extrabold, color: colors.ink },
   metaDesc:   { fontSize: font.size.xs, color: colors.inkMid, fontFamily: font.family.regular },
-  metaCount:  { fontSize: font.size.xs, color: colors.brand, fontFamily: font.family.bold },
+  metaCount:  { fontSize: font.size.xs, color: colors.brandDark, fontFamily: font.family.bold },
 
   totalsBar:   { borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.bgCard, paddingVertical: spacing.sm },
   totalsLabel: { fontSize: 10, fontFamily: font.family.bold, color: colors.inkLight, textTransform: "uppercase", letterSpacing: 0.8, paddingHorizontal: spacing.lg, marginBottom: 4 },
   totalsRow:   { paddingHorizontal: spacing.lg, gap: spacing.sm },
   totalChip:   { backgroundColor: colors.brandLight, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.brandMid, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, minWidth: 100, ...shadow.sm },
-  totalChipLabel: { fontSize: 10, fontFamily: font.family.bold, color: colors.brand, textTransform: "uppercase" },
+  totalChipLabel: { fontSize: 10, fontFamily: font.family.bold, color: colors.brandDark, textTransform: "uppercase" },
   totalChipValue: { fontSize: font.size.md, fontFamily: font.family.extrabold, color: colors.ink },
 
   tableHeader: { flexDirection: "row", backgroundColor: "#f1f5f9", borderBottomWidth: 2, borderBottomColor: colors.brand + "33" },

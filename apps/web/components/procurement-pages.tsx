@@ -10,8 +10,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { ApiEnvelope, apiFetch, getCached, getCachedFirst, hasCached } from "../lib/api";
-import { AppShell } from "./app-shell";
 import { DataTable } from "./data-table";
+import { StatusBadge } from "./ui";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -90,46 +90,6 @@ function KpiCard({
       <p className="mt-1 text-[11px] font-bold uppercase tracking-wide text-ink/45">{label}</p>
       {sub && <p className="mt-1 text-xs text-ink/50">{sub}</p>}
     </div>
-  );
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, string> = {
-    DRAFT:              "border-gray-200 bg-gray-50 text-gray-600",
-    SUBMITTED:          "border-blue-200 bg-blue-50 text-blue-700",
-    APPROVED:           "border-emerald-200 bg-emerald-50 text-emerald-700",
-    REJECTED:           "border-red-200 bg-red-50 text-red-700",
-    CANCELLED:          "border-red-200 bg-red-50 text-red-700",
-    CONVERTED_TO_PO:    "border-purple-200 bg-purple-50 text-purple-700",
-    PENDING_APPROVAL:   "border-amber-200 bg-amber-50 text-amber-700",
-    SENT_TO_SUPPLIER:   "border-indigo-200 bg-indigo-50 text-indigo-700",
-    PARTIALLY_RECEIVED: "border-orange-200 bg-orange-50 text-orange-700",
-    FULLY_RECEIVED:     "border-emerald-200 bg-emerald-50 text-emerald-700",
-    RECEIVED:           "border-blue-200 bg-blue-50 text-blue-700",
-    QUALITY_HOLD:       "border-amber-200 bg-amber-50 text-amber-700",
-    QUALITY_PASSED:     "border-emerald-200 bg-emerald-50 text-emerald-700",
-    QUALITY_FAILED:     "border-red-200 bg-red-50 text-red-700",
-    POSTED:             "border-slate-600 bg-slate-700 text-white",
-    ACTIVE:             "border-emerald-200 bg-emerald-50 text-emerald-700",
-    INACTIVE:           "border-gray-200 bg-gray-50 text-gray-500",
-    BLACKLISTED:        "border-red-300 bg-red-100 text-red-800",
-    UNDER_REVIEW:       "border-amber-200 bg-amber-50 text-amber-700",
-    PENDING:            "border-amber-200 bg-amber-50 text-amber-700",
-    MATCHED:            "border-blue-200 bg-blue-50 text-blue-700",
-    PAID:               "border-emerald-200 bg-emerald-50 text-emerald-700",
-    DISPUTED:           "border-red-200 bg-red-50 text-red-700",
-    OVERDUE:            "border-red-300 bg-red-100 text-red-800",
-    EXCELLENT:          "border-emerald-200 bg-emerald-50 text-emerald-700",
-    GOOD:               "border-teal-200 bg-teal-50 text-teal-700",
-    SATISFACTORY:       "border-blue-200 bg-blue-50 text-blue-700",
-    POOR:               "border-orange-200 bg-orange-50 text-orange-700",
-    UNACCEPTABLE:       "border-red-200 bg-red-50 text-red-700",
-  };
-  const cls = map[status] ?? "border-gray-200 bg-gray-50 text-gray-600";
-  return (
-    <span className={`inline-flex rounded-md border px-2 py-0.5 text-xs font-semibold ${cls}`}>
-      {status.replace(/_/g, " ")}
-    </span>
   );
 }
 
@@ -275,7 +235,7 @@ export function ProcurementDashboardPage() {
   ];
 
   return (
-    <AppShell>
+    
       <div className="space-y-5">
         <PageHero
           kicker="Procurement"
@@ -483,7 +443,7 @@ export function ProcurementDashboardPage() {
           </div>
         </div>
       </div>
-    </AppShell>
+    
   );
 }
 
@@ -518,7 +478,7 @@ export function SuppliersPage() {
   }, [search]);
 
   return (
-    <AppShell>
+    
       <div className="space-y-5">
         <PageHero
           kicker="Procurement"
@@ -568,7 +528,7 @@ export function SuppliersPage() {
           />
         </div>
       </div>
-    </AppShell>
+    
   );
 }
 
@@ -606,7 +566,7 @@ export function CreateSupplierPage() {
   }
 
   return (
-    <AppShell>
+    
       <div className="space-y-5">
         <PageHero
           kicker="Procurement"
@@ -698,7 +658,7 @@ export function CreateSupplierPage() {
           </div>
         </form>
       </div>
-    </AppShell>
+    
   );
 }
 
@@ -745,7 +705,7 @@ export function SupplierCategoriesPage() {
   }
 
   return (
-    <AppShell>
+    
       <div className="space-y-5">
         <PageHero
           kicker="Procurement"
@@ -793,7 +753,7 @@ export function SupplierCategoriesPage() {
           </div>
         </div>
       </div>
-    </AppShell>
+    
   );
 }
 
@@ -844,7 +804,7 @@ export function PurchaseRequestsPage() {
   const statuses = ["", "DRAFT", "SUBMITTED", "APPROVED", "REJECTED", "CONVERTED_TO_PO"];
 
   return (
-    <AppShell>
+    
       <div className="space-y-5">
         <PageHero
           kicker="Procurement"
@@ -927,7 +887,7 @@ export function PurchaseRequestsPage() {
           />
         </div>
       </div>
-    </AppShell>
+    
   );
 }
 
@@ -982,7 +942,7 @@ export function CreatePurchaseRequestPage() {
   }
 
   return (
-    <AppShell>
+    
       <div className="space-y-5">
         <PageHero
           kicker="Procurement"
@@ -1069,7 +1029,7 @@ export function CreatePurchaseRequestPage() {
           </div>
         </form>
       </div>
-    </AppShell>
+    
   );
 }
 
@@ -1119,7 +1079,7 @@ export function PurchaseOrdersPage() {
   const statuses = ["", "DRAFT", "PENDING_APPROVAL", "APPROVED", "SENT_TO_SUPPLIER", "PARTIALLY_RECEIVED", "FULLY_RECEIVED", "REJECTED"];
 
   return (
-    <AppShell>
+    
       <div className="space-y-5">
         <PageHero
           kicker="Procurement"
@@ -1203,7 +1163,7 @@ export function PurchaseOrdersPage() {
           />
         </div>
       </div>
-    </AppShell>
+    
   );
 }
 
@@ -1266,7 +1226,7 @@ export function CreatePurchaseOrderPage() {
   }
 
   return (
-    <AppShell>
+    
       <div className="space-y-5">
         <PageHero
           kicker="Procurement"
@@ -1376,7 +1336,7 @@ export function CreatePurchaseOrderPage() {
           </div>
         </form>
       </div>
-    </AppShell>
+    
   );
 }
 
@@ -1425,7 +1385,7 @@ export function GRNsPage() {
   const statuses = ["", "RECEIVED", "QUALITY_HOLD", "QUALITY_PASSED", "QUALITY_FAILED", "POSTED"];
 
   return (
-    <AppShell>
+    
       <div className="space-y-5">
         <PageHero
           kicker="Procurement"
@@ -1508,7 +1468,7 @@ export function GRNsPage() {
           />
         </div>
       </div>
-    </AppShell>
+    
   );
 }
 
@@ -1575,7 +1535,7 @@ export function CreateGRNPage() {
   }
 
   return (
-    <AppShell>
+    
       <div className="space-y-5">
         <PageHero
           kicker="Procurement"
@@ -1674,7 +1634,7 @@ export function CreateGRNPage() {
           </div>
         </form>
       </div>
-    </AppShell>
+    
   );
 }
 
@@ -1747,7 +1707,7 @@ export function SupplierInvoicesPage() {
   const statuses = ["", "PENDING", "MATCHED", "APPROVED", "PAID", "DISPUTED", "OVERDUE"];
 
   return (
-    <AppShell>
+    
       <div className="space-y-5">
         <PageHero
           kicker="Procurement"
@@ -1831,7 +1791,7 @@ export function SupplierInvoicesPage() {
           />
         </div>
       </div>
-    </AppShell>
+    
   );
 }
 
@@ -1897,7 +1857,7 @@ export function ProcurementPaymentsPage() {
   }
 
   return (
-    <AppShell>
+    
       <div className="space-y-5">
         <PageHero
           kicker="Procurement"
@@ -1982,7 +1942,7 @@ export function ProcurementPaymentsPage() {
           />
         </div>
       </div>
-    </AppShell>
+    
   );
 }
 
@@ -2053,7 +2013,7 @@ export function SupplierPerformancePage() {
   }
 
   return (
-    <AppShell>
+    
       <div className="space-y-5">
         <PageHero
           kicker="Procurement"
@@ -2156,7 +2116,7 @@ export function SupplierPerformancePage() {
           />
         </div>
       </div>
-    </AppShell>
+    
   );
 }
 
@@ -2214,7 +2174,7 @@ export function PriceHistoryPage() {
   }
 
   return (
-    <AppShell>
+    
       <div className="space-y-5">
         <PageHero
           kicker="Procurement"
@@ -2285,6 +2245,6 @@ export function PriceHistoryPage() {
           />
         </div>
       </div>
-    </AppShell>
+    
   );
 }

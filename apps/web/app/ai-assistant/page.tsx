@@ -12,7 +12,6 @@ import {
   Send,
   Trash2
 } from "lucide-react";
-import { AppShell } from "../../components/app-shell";
 import { apiFetch, ApiEnvelope } from "../../lib/api";
 
 type Message = {
@@ -392,7 +391,7 @@ export default function AiAssistantPage() {
   const isEmpty = messages.length === 0 && !loadingSession;
 
   return (
-    <AppShell>
+    <>
       <div className="flex h-[calc(100vh-5.5rem)] gap-4 overflow-hidden">
 
         {/* Sidebar */}
@@ -568,6 +567,6 @@ export default function AiAssistantPage() {
           </form>
         </div>
       </div>
-    </AppShell>
+    </>
   );
 }

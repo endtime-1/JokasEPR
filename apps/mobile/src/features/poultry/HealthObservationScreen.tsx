@@ -6,6 +6,7 @@ import { ScreenWrapper } from "../../components/ScreenWrapper";
 import { FormCard } from "../../components/FormCard";
 import { FormFooter } from "../../components/FormFooter";
 import { FormField } from "../../components/FormField";
+import { DateField } from "../../components/DateField";
 import { SelectField, SelectOption } from "../../components/SelectField";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
@@ -71,8 +72,14 @@ export function HealthObservationScreen() {
   const { submit, loading } = useSubmit({
     module: "health_observation",
     endpoint: "/poultry/health-observations",
-    onSuccess: () =>
-      Alert.alert("Observation Saved", "Health observation has been recorded.", [{ text: "OK", onPress: () => navigation.goBack() }]),
+    onSuccess: (queued) =>
+      Alert.alert(
+        queued ? "Saved Offline" : "Observation Saved",
+        queued
+          ? "Your health observation was saved on this device and will sync automatically once you're back online."
+          : "Health observation has been recorded.",
+        [{ text: "OK", onPress: () => navigation.goBack() }]
+      ),
   });
 
   async function handleSubmit() {
@@ -111,10 +118,9 @@ export function HealthObservationScreen() {
           onChange={setPenId}
           placeholder={flockBatchId ? "Select pen (optional)…" : "Select batch first"} />
 
-        <FormField label="Observation Date" value={observationDate}
+        <DateField label="Observation Date" value={observationDate}
           onChangeText={(v) => { setObservationDate(v); setErrors((e) => ({ ...e, observationDate: "" })); }}
-          required error={errors.observationDate} placeholder="YYYY-MM-DD"
-          keyboardType="numbers-and-punctuation" />
+          required error={errors.observationDate} />
       </FormCard>
 
       <FormCard label="OBSERVATION DATA">
@@ -171,8 +177,7 @@ export function HealthObservationScreen() {
 
         {vetConsulted && (
           <>
-            <FormField label="Vet Visit Date" value={vetVisitDate} onChangeText={setVetVisitDate}
-              placeholder="YYYY-MM-DD" keyboardType="numbers-and-punctuation" />
+            <DateField label="Vet Visit Date" value={vetVisitDate} onChangeText={setVetVisitDate} />
             <FormField label="Veterinarian Name" value={veterinarianName} onChangeText={setVeterinarianName}
               placeholder="Dr. Name / Clinic" />
           </>
@@ -215,5 +220,5 @@ const styles = StyleSheet.create({
   vetCheckboxActive: { borderColor: colors.brand, backgroundColor: colors.brand },
   vetCheckmark: { color: colors.white, fontSize: 13, fontWeight: font.weight.bold },
   vetToggleText: { fontSize: font.size.sm, fontWeight: font.weight.semibold, color: colors.inkLight },
-  vetToggleTextActive: { color: colors.brand },
+  vetToggleTextActive: { color: colors.brandDark },
 });

@@ -16,7 +16,6 @@ import {
   Truck,
   Zap
 } from "lucide-react";
-import { SoyaProcessingShell } from "./soya-processing-shell";
 import { ApiEnvelope, apiFetch } from "../lib/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -466,7 +465,7 @@ export function SoyaDashboardPage() {
   const totalStockValue = (data?.oilStockValue ?? 0) + (data?.cakeStockValue ?? 0);
 
   return (
-    <SoyaProcessingShell>
+    <>
       {/* Premium hero header */}
       <div className="mb-6 overflow-hidden rounded-2xl border border-line bg-gradient-to-br from-white via-white to-field shadow-panel">
         <div className="flex flex-wrap items-start justify-between gap-4 px-6 py-5">
@@ -545,6 +544,6 @@ export function SoyaDashboardPage() {
       </section>
 
       <QuickActions />
-    </SoyaProcessingShell>
+    </>
   );
 }

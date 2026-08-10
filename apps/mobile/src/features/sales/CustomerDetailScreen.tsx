@@ -159,7 +159,7 @@ const styles = StyleSheet.create({
   statDiv:    { width: 1, height: 30, backgroundColor: colors.border },
 
   newOrderBtn:  { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, borderWidth: 1.5, borderColor: colors.brand, borderRadius: radius.xl, paddingVertical: spacing.md, backgroundColor: colors.brandLight },
-  newOrderText: { fontSize: font.size.sm, fontFamily: font.family.bold, color: colors.brand },
+  newOrderText: { fontSize: font.size.sm, fontFamily: font.family.bold, color: colors.brandDark },
 
   sectionCard:  { backgroundColor: colors.bgCard, borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border, overflow: "hidden", ...shadow.sm },
   sectionTitle: { fontSize: font.size.sm, fontFamily: font.family.extrabold, color: colors.inkLight, textTransform: "uppercase", letterSpacing: 0.8, padding: spacing.lg, paddingBottom: spacing.sm },

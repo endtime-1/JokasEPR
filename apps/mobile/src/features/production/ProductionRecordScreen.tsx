@@ -53,8 +53,14 @@ export function ProductionRecordScreen() {
   const { submit, loading } = useSubmit({
     module: "production_record",
     endpoint: "/feed-production/batches",
-    onSuccess: () =>
-      Alert.alert("Saved", "Production record has been saved.", [{ text: "OK", onPress: () => navigation.goBack() }]),
+    onSuccess: (queued) =>
+      Alert.alert(
+        queued ? "Saved Offline" : "Saved",
+        queued
+          ? "Your production record was saved on this device and will sync automatically once you're back online."
+          : "Production record has been saved.",
+        [{ text: "OK", onPress: () => navigation.goBack() }]
+      ),
   });
 
   const qcMeta = QC_META[qualityCheck];

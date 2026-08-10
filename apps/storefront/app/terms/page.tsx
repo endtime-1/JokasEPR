@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-export const metadata = { title: "Terms of Service — Jokas Farms" };
+export const metadata = { title: "Terms of Service — Akoko Solutions" };
 
 export default function TermsPage() {
   return (
@@ -21,7 +21,7 @@ export default function TermsPage() {
           <p className="mt-2">
             By placing an order on jokasfarms.com you agree to these terms. If you do not
             agree, please do not use this site. These terms govern the relationship between
-            you (the buyer) and Jokas Farms (the seller).
+            you (the buyer) and Akoko Solutions (the seller).
           </p>
         </section>
 
@@ -40,14 +40,16 @@ export default function TermsPage() {
         <section>
           <h2 className="text-lg font-bold text-ink">3. Orders and payment</h2>
           <p className="mt-2">
-            Placing an order constitutes an offer to buy. Your order is accepted when we
-            send a confirmation to your phone number or email address. We may decline
-            orders at our discretion (e.g., stock unavailability, payment failure).
+            Placing an order through this site is a request to buy, not a payment — no
+            card or Mobile Money details are collected at checkout. After you submit your
+            order, our team will call you on the phone number provided to confirm the
+            order, delivery details, and final total. We may decline orders at our
+            discretion (e.g., stock unavailability).
           </p>
           <p className="mt-2">
-            Payment is due at the time of ordering. We accept Mobile Money and card
-            payments via our payment partner. Orders are held for dispatch only after
-            payment is confirmed.
+            Payment (by Mobile Money, bank transfer, or cash) is arranged with our team
+            during that confirmation call. Orders are held for dispatch only after payment
+            is confirmed.
           </p>
         </section>
 
@@ -55,7 +57,7 @@ export default function TermsPage() {
           <h2 className="text-lg font-bold text-ink">4. Delivery</h2>
           <p className="mt-2">
             Delivery timelines are estimates and not guarantees. We will contact you with
-            an estimated delivery window after your order is confirmed. Jokas Farms is not
+            an estimated delivery window after your order is confirmed. Akoko Solutions is not
             liable for delays caused by third-party couriers, weather, or circumstances
             beyond our control.
           </p>
@@ -74,8 +76,8 @@ export default function TermsPage() {
               +233 50 545 5090
             </a>{" "}
             or{" "}
-            <a href="mailto:info@jokasfarms.com" className="text-brand hover:underline">
-              info@jokasfarms.com
+            <a href="mailto:info@akokosolutionsgh.com" className="text-brand hover:underline">
+              info@akokosolutionsgh.com
             </a>
             . We will arrange a replacement or refund at our discretion.
           </p>
@@ -88,7 +90,7 @@ export default function TermsPage() {
         <section>
           <h2 className="text-lg font-bold text-ink">6. Limitation of liability</h2>
           <p className="mt-2">
-            Jokas Farms&apos; total liability to you for any claim arising from an order is
+            Akoko Solutions&apos; total liability to you for any claim arising from an order is
             limited to the amount you paid for that order. We are not liable for
             consequential losses, including livestock losses, income loss, or business
             interruption.
@@ -106,13 +108,13 @@ export default function TermsPage() {
         <section>
           <h2 className="text-lg font-bold text-ink">8. Contact</h2>
           <p className="mt-2">
-            Jokas Farms, Kumasi, Ghana.{" "}
+            Akoko Solutions, Abrepo Road, Kumasi, Ghana.{" "}
             <a href="tel:+233505455090" className="text-brand hover:underline">
               +233 50 545 5090
             </a>
             {" · "}
-            <a href="mailto:info@jokasfarms.com" className="text-brand hover:underline">
-              info@jokasfarms.com
+            <a href="mailto:info@akokosolutionsgh.com" className="text-brand hover:underline">
+              info@akokosolutionsgh.com
             </a>
           </p>
         </section>

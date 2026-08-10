@@ -3,9 +3,9 @@
 import { ComponentType, FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Activity, AlertTriangle, Calendar, ChevronRight, Clock, Cpu, DollarSign, Download, Plus, RefreshCw, Save, User, Wrench } from "lucide-react";
-import { AppShell } from "./app-shell";
 import { DataTable } from "./data-table";
 import { FormField } from "./form-field";
+import { StatusBadge } from "./ui";
 import { ApiEnvelope, apiFetch, downloadReport, getCached, getCachedFirst, hasCached } from "../lib/api";
 
 type Option = {
@@ -174,21 +174,6 @@ function SeverityBadge({ severity }: { severity: string }) {
   return <span className={`rounded-md border px-2 py-0.5 text-[10px] font-bold uppercase ${c[severity] ?? c.LOW}`}>{severity}</span>;
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const c: Record<string, string> = {
-    OPEN:        "bg-red-100 text-red-700",
-    REPORTED:    "bg-red-100 text-red-700",
-    IN_PROGRESS: "bg-amber-100 text-amber-700",
-    ASSIGNED:    "bg-blue-100 text-blue-700",
-    RESOLVED:    "bg-emerald-100 text-emerald-700",
-    CLOSED:      "bg-emerald-100 text-emerald-700",
-    COMPLETED:   "bg-emerald-100 text-emerald-700",
-    CANCELLED:   "bg-gray-100 text-gray-600",
-    SCHEDULED:   "bg-blue-100 text-blue-700",
-  };
-  return <span className={`rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase ${c[status] ?? "bg-gray-100 text-gray-600"}`}>{status.replace(/_/g, " ")}</span>;
-}
-
 const QUICK_ACTIONS = [
   { href: "/maintenance/machines",           label: "Machines",        desc: "Register & view assets",     icon: Cpu,           color: "text-blue-700 bg-blue-50 border-blue-200 hover:bg-blue-100" },
   { href: "/maintenance/schedules",          label: "PM Schedules",    desc: "Preventive maintenance",     icon: Calendar,      color: "text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100" },
@@ -224,7 +209,7 @@ export function MaintenanceDashboardPage() {
   const utilPct = data && data.machineCount > 0 ? Math.round((data.activeMachines / data.machineCount) * 100) : 0;
 
   return (
-    <AppShell>
+    <>
       {/* ── Hero ───────────────────────────────────────────────────────────── */}
       <div className="mb-6 overflow-hidden rounded-2xl border border-line bg-gradient-to-br from-white via-white to-field shadow-panel">
         <div className="flex flex-wrap items-start justify-between gap-4 px-6 py-5">
@@ -465,7 +450,7 @@ export function MaintenanceDashboardPage() {
           </div>
         </section>
       )}
-    </AppShell>
+    </>
   );
 }
 
@@ -501,7 +486,7 @@ export function MachinesPage({ create = false }: { create?: boolean }) {
     }
   }
   return (
-    <AppShell>
+    <>
       <PageHeader title={create ? "Create Machine" : "Machine List"} subtitle="Register and scope machines across farms, warehouses, production sites, and delivery operations." />
       {create ? (
         <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-4">
@@ -523,7 +508,7 @@ export function MachinesPage({ create = false }: { create?: boolean }) {
         </form>
       ) : <Link className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" href="/maintenance/machines/create"><Plus aria-hidden className="h-4 w-4" /> Create machine</Link>}
       <SimpleRowsTable rows={rows} loading={loading} />
-    </AppShell>
+    </>
   );
 }
 
@@ -535,7 +520,7 @@ export function MachineDetailsPage({ id }: { id: string }) {
       .catch(() => undefined);
   }, [id]);
   return (
-    <AppShell>
+    <>
       <PageHeader title={String(machine?.name ?? "Machine Details")} subtitle="Maintenance schedules, repairs, breakdowns, downtime, equipment, and cost history." />
       <section className="grid gap-6 xl:grid-cols-2">
         <SimpleRowsTable rows={(machine?.schedules as Record<string, unknown>[]) ?? []} />
@@ -543,7 +528,7 @@ export function MachineDetailsPage({ id }: { id: string }) {
         <SimpleRowsTable rows={(machine?.maintenanceRecords as Record<string, unknown>[]) ?? []} />
         <SimpleRowsTable rows={(machine?.costs as Record<string, unknown>[]) ?? []} />
       </section>
-    </AppShell>
+    </>
   );
 }
 
@@ -581,7 +566,7 @@ export function SchedulePage() {
     }
   }
   return (
-    <AppShell>
+    <>
       <PageHeader title="Maintenance Schedule" subtitle="Preventive maintenance, inspection, calibration, and service due-date planning." />
       <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-4">
         <SelectField label="Branch" value={form.branchId || options.branches[0]?.id || ""} options={options.branches} onChange={(value) => setForm({ ...form, branchId: value })} />
@@ -598,7 +583,7 @@ export function SchedulePage() {
       {submitError && <p className="col-span-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>}
       </form>
       <SimpleRowsTable rows={rows} loading={loading} />
-    </AppShell>
+    </>
   );
 }
 
@@ -636,7 +621,7 @@ export function BreakdownPage() {
     }
   }
   return (
-    <AppShell>
+    <>
       <PageHeader title="Breakdown Records" subtitle="Production managers and maintenance teams can report, triage, and resolve machine failures." />
       <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-4">
         <SelectField label="Machine" value={form.machineId || options.machines[0]?.id || ""} options={options.machines} onChange={(value) => setForm({ ...form, machineId: value })} />
@@ -649,7 +634,7 @@ export function BreakdownPage() {
         {submitError && <p className="col-span-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>}
       </form>
       <SimpleRowsTable rows={rows} loading={loading} />
-    </AppShell>
+    </>
   );
 }
 
@@ -687,7 +672,7 @@ export function SparePartsPage() {
     }
   }
   return (
-    <AppShell>
+    <>
       <PageHeader title="Spare Parts Usage" subtitle="Storekeeper-controlled spare part issue with stock movement and cost capture." />
       <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-3">
         <SelectField label="Warehouse" value={form.warehouseId || options.warehouses[0]?.id || ""} options={options.warehouses} onChange={(value) => setForm({ ...form, warehouseId: value })} />
@@ -702,7 +687,7 @@ export function SparePartsPage() {
         {submitError && <p className="col-span-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>}
       </form>
       <SimpleRowsTable rows={rows} loading={loading} />
-    </AppShell>
+    </>
   );
 }
 
@@ -717,10 +702,10 @@ export function MaintenanceListPage({ title, endpoint, subtitle }: { title: stri
       .finally(() => setLoading(false));
   }, [endpoint]);
   return (
-    <AppShell>
+    <>
       <PageHeader title={title} subtitle={subtitle} />
       <SimpleRowsTable rows={rows} loading={loading} />
-    </AppShell>
+    </>
   );
 }
 
@@ -734,13 +719,13 @@ export function MaintenanceCostReportPage() {
       .finally(() => setLoading(false));
   }, []);
   return (
-    <AppShell>
+    <>
       <PageHeader title="Maintenance Cost Report" subtitle="Repair cost tracking by machine, equipment, spare parts, labor, and outsourced work." />
       <button className="mb-6 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" onClick={() => downloadReport("/maintenance/reports/costs.csv", "maintenance-costs.csv")}>
         <Download aria-hidden className="h-4 w-4" /> Download maintenance costs CSV
       </button>
       <SimpleRowsTable rows={rows} loading={loading} />
-    </AppShell>
+    </>
   );
 }
 

@@ -156,7 +156,7 @@ const styles = StyleSheet.create({
 
   summaryCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.brandLight, borderRadius: radius.xl, borderWidth: 1, borderColor: colors.brandMid, padding: spacing.lg },
   summaryText:  { flex: 1, gap: 2 },
-  summaryLabel: { fontSize: font.size.xs, fontFamily: font.family.semibold, color: colors.brand },
+  summaryLabel: { fontSize: font.size.xs, fontFamily: font.family.semibold, color: colors.brandDark },
   summaryValue: { fontSize: font.size.md, fontFamily: font.family.extrabold, color: colors.ink },
 
   sectionTitle: { fontSize: font.size.xs, fontFamily: font.family.bold, color: colors.inkLight, textTransform: "uppercase", letterSpacing: 1.2 },

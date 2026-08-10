@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-export const metadata = { title: "Privacy Policy — Jokas Farms" };
+export const metadata = { title: "Privacy Policy — Akoko Solutions" };
 
 export default function PrivacyPage() {
   return (
@@ -19,11 +19,11 @@ export default function PrivacyPage() {
         <section>
           <h2 className="text-lg font-bold text-ink">1. Who we are</h2>
           <p className="mt-2">
-            Jokas Farms operates this storefront at jokasfarms.com. We produce and sell
+            Akoko Solutions operates this storefront at jokasfarms.com. We produce and sell
             poultry feeds, farm inputs, and related products. Questions about this policy
             can be sent to{" "}
-            <a href="mailto:info@jokasfarms.com" className="text-brand hover:underline">
-              info@jokasfarms.com
+            <a href="mailto:info@akokosolutionsgh.com" className="text-brand hover:underline">
+              info@akokosolutionsgh.com
             </a>
             .
           </p>
@@ -35,11 +35,12 @@ export default function PrivacyPage() {
           <ul className="mt-2 list-disc pl-5 space-y-1">
             <li>Your full name and phone number</li>
             <li>Delivery address (region, town, street)</li>
-            <li>Order details and payment reference</li>
+            <li>Order details (products, quantities, notes)</li>
           </ul>
           <p className="mt-2">
-            We do not collect payment card details — all card processing is handled by our
-            payment provider under their own privacy terms.
+            We do not collect card or Mobile Money details through this site. Payment is
+            arranged directly with our team by phone after your order is confirmed, and no
+            payment information is ever entered or stored on jokasfarms.com.
           </p>
         </section>
 
@@ -70,8 +71,8 @@ export default function PrivacyPage() {
             Under the Ghana Data Protection Act 2012 you have the right to access,
             correct, or request deletion of personal data we hold about you. Contact us
             at{" "}
-            <a href="mailto:info@jokasfarms.com" className="text-brand hover:underline">
-              info@jokasfarms.com
+            <a href="mailto:info@akokosolutionsgh.com" className="text-brand hover:underline">
+              info@akokosolutionsgh.com
             </a>{" "}
             and we will respond within 14 days.
           </p>

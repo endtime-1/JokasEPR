@@ -1,8 +1,13 @@
-import { render } from "@testing-library/react-native";
+import { fireEvent, render } from "@testing-library/react-native";
 import { SyncBanner } from "../SyncBanner";
 
 jest.mock("../../hooks/useSync", () => ({
   useSync: jest.fn(),
+}));
+
+const mockNavigate = jest.fn();
+jest.mock("@react-navigation/native", () => ({
+  useNavigation: () => ({ navigate: mockNavigate }),
 }));
 
 import { useSync } from "../../hooks/useSync";
@@ -52,5 +57,19 @@ describe("SyncBanner — surfaces permanently-failed records instead of going si
     const { getByText, queryByText } = await render(<SyncBanner />);
     expect(getByText("4 records pending sync")).toBeTruthy();
     expect(queryByText(/failed/)).toBeNull();
+  });
+
+  it("navigates to Sync Status when tapped with failed-only records (no pending) — previously had no tap target at all", async () => {
+    mockUseSync.mockReturnValue(state({ pending: 0, failed: 2, online: true }));
+    const { getByText } = await render(<SyncBanner />);
+    fireEvent.press(getByText(/2 failed — needs attention/));
+    expect(mockNavigate).toHaveBeenCalledWith("SyncStatus");
+  });
+
+  it("navigates to Sync Status when tapped with failures while offline too", async () => {
+    mockUseSync.mockReturnValue(state({ pending: 1, failed: 1, online: false }));
+    const { getByText } = await render(<SyncBanner />);
+    fireEvent.press(getByText("Review"));
+    expect(mockNavigate).toHaveBeenCalledWith("SyncStatus");
   });
 });

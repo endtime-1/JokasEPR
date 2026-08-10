@@ -6,6 +6,7 @@ import { ScreenWrapper } from "../../components/ScreenWrapper";
 import { FormCard } from "../../components/FormCard";
 import { FormFooter } from "../../components/FormFooter";
 import { FormField } from "../../components/FormField";
+import { DateField } from "../../components/DateField";
 import { SelectField, SelectOption } from "../../components/SelectField";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
@@ -83,8 +84,14 @@ export function BirdWeightScreen() {
   const { submit, loading } = useSubmit({
     module: "bird_weight",
     endpoint: "/poultry/bird-weight-records",
-    onSuccess: () =>
-      Alert.alert("Weight Recorded", "Bird weight record has been saved.", [{ text: "OK", onPress: () => navigation.goBack() }]),
+    onSuccess: (queued) =>
+      Alert.alert(
+        queued ? "Saved Offline" : "Weight Recorded",
+        queued
+          ? "Your bird weight record was saved on this device and will sync automatically once you're back online."
+          : "Bird weight record has been saved.",
+        [{ text: "OK", onPress: () => navigation.goBack() }]
+      ),
   });
 
   async function handleSubmit() {
@@ -120,10 +127,9 @@ export function BirdWeightScreen() {
           onChange={setPenId}
           placeholder={flockBatchId ? "Select pen (optional)…" : "Select batch first"} />
 
-        <FormField label="Weighing Date" value={recordDate}
+        <DateField label="Weighing Date" value={recordDate}
           onChangeText={(v) => { setRecordDate(v); setErrors((e) => ({ ...e, recordDate: "" })); }}
-          required error={errors.recordDate} placeholder="YYYY-MM-DD"
-          keyboardType="numbers-and-punctuation" />
+          required error={errors.recordDate} />
       </FormCard>
 
       <FormCard label="WEIGHT DATA">

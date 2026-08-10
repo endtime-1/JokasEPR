@@ -61,7 +61,7 @@ export default function CartPage() {
                     <p className="truncate font-bold text-ink">{product.name}</p>
                     <p className="mt-0.5 text-xs text-muted">{product.unitLabel}</p>
                     {product.price != null && (
-                      <p className="mt-1 text-sm font-bold text-brand">
+                      <p className="mt-1 text-sm font-bold text-brandDark">
                         GHS {(product.price * qty).toFixed(2)}
                         <span className="ml-1 text-xs font-normal text-muted">
                           (GHS {product.price.toFixed(2)} each)
@@ -77,15 +77,28 @@ export default function CartPage() {
                         if (qty - 1 < min) removeItem(product.id);
                         else updateQty(product.id, qty - 1);
                       }}
+                      aria-label={`Decrease quantity of ${product.name}`}
                       className="flex h-8 w-8 items-center justify-center text-muted transition hover:bg-gray-50 hover:text-ink"
                     >
                       <Minus size={13} />
                     </button>
-                    <span className="flex h-8 w-9 items-center justify-center text-sm font-bold text-ink">
-                      {qty}
-                    </span>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={min}
+                      value={qty}
+                      onChange={(e) => {
+                        const next = parseInt(e.target.value, 10);
+                        if (Number.isNaN(next)) return;
+                        if (next < min) removeItem(product.id);
+                        else updateQty(product.id, next);
+                      }}
+                      aria-label={`Quantity of ${product.name}`}
+                      className="h-8 w-9 border-x border-gray-200 text-center text-sm font-bold text-ink outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                    />
                     <button
                       onClick={() => updateQty(product.id, qty + 1)}
+                      aria-label={`Increase quantity of ${product.name}`}
                       className="flex h-8 w-8 items-center justify-center text-muted transition hover:bg-gray-50 hover:text-ink"
                     >
                       <Plus size={13} />
@@ -131,7 +144,7 @@ export default function CartPage() {
               {totalPrice != null ? (
                 <div className="flex items-center justify-between">
                   <span className="font-semibold text-ink">Estimated Total</span>
-                  <span className="text-xl font-black text-brand">GHS {totalPrice.toFixed(2)}</span>
+                  <span className="text-xl font-black text-brandDark">GHS {totalPrice.toFixed(2)}</span>
                 </div>
               ) : (
                 <p className="text-xs text-muted leading-relaxed">
