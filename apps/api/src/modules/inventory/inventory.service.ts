@@ -190,15 +190,27 @@ export class InventoryService {
     return { data };
   }
 
+  // (C1 follow-up) previously created the StockAdjustment row and its
+  // StockApproval row — both already marked APPROVED when approveNow is set —
+  // as two unguarded calls, THEN called applyAdjustment() separately. If
+  // applyAdjustment threw (e.g. a negative adjustment exceeding available
+  // stock), both rows had already committed as "APPROVED" with no actual
+  // stock movement behind them — a phantom-approved audit trail permanently
+  // disagreeing with reality. Wrapping the whole thing in one transaction
+  // means a failed apply rolls back the creation too, so an adjustment only
+  // ever exists in the DB as APPROVED if the stock genuinely moved.
   async createAdjustment(user: AuthenticatedUser, dto: StockAdjustmentDto, context: RequestContext) {
     this.assertWarehouseAccess(user, dto.warehouseId);
     const item = await this.requireItem(user.companyId, dto.warehouseId, dto.productId);
-    const adjustmentNumber = await nextRef(this.prisma, user.companyId, "ADJ");
     const status = dto.approveNow && user.hasGlobalAccess ? "APPROVED" : "PENDING_APPROVAL";
-    const adjustment = await this.prisma.stockAdjustment.create({ data: { companyId: user.companyId, branchId: item.branchId, warehouseId: item.warehouseId, productionSiteId: item.productionSiteId, inventoryItemId: item.id, productId: item.productId, adjustmentNumber, adjustmentType: dto.adjustmentType, quantity: dto.quantity, reason: dto.reason, status, requestedById: user.id, approvedById: status === "APPROVED" ? user.id : undefined, approvedAt: status === "APPROVED" ? new Date() : undefined, createdById: user.id } });
-    await this.prisma.stockApproval.create({ data: { companyId: user.companyId, branchId: item.branchId, approvalNumber: await nextRef(this.prisma, user.companyId, "SAP"), entityType: "StockAdjustment", entityId: adjustment.id, status, requestedById: user.id, approvedById: status === "APPROVED" ? user.id : undefined, approvedAt: status === "APPROVED" ? new Date() : undefined } });
-    if (status === "APPROVED") await this.applyAdjustment(user, adjustment.id);
-    await this.writeAudit(user, "CREATE", "StockAdjustment", adjustment.id, `Created stock adjustment ${adjustmentNumber}`, context, { branchId: item.branchId, warehouseId: item.warehouseId });
+    const adjustment = await this.prisma.$transaction(async (tx) => {
+      const adjustmentNumber = await nextRef(tx, user.companyId, "ADJ");
+      const created = await tx.stockAdjustment.create({ data: { companyId: user.companyId, branchId: item.branchId, warehouseId: item.warehouseId, productionSiteId: item.productionSiteId, inventoryItemId: item.id, productId: item.productId, adjustmentNumber, adjustmentType: dto.adjustmentType, quantity: dto.quantity, reason: dto.reason, status, requestedById: user.id, approvedById: status === "APPROVED" ? user.id : undefined, approvedAt: status === "APPROVED" ? new Date() : undefined, createdById: user.id } });
+      await tx.stockApproval.create({ data: { companyId: user.companyId, branchId: item.branchId, approvalNumber: await nextRef(tx, user.companyId, "SAP"), entityType: "StockAdjustment", entityId: created.id, status, requestedById: user.id, approvedById: status === "APPROVED" ? user.id : undefined, approvedAt: status === "APPROVED" ? new Date() : undefined } });
+      if (status === "APPROVED") await this.applyAdjustmentTx(tx, user, created, item);
+      return created;
+    });
+    await this.writeAudit(user, "CREATE", "StockAdjustment", adjustment.id, `Created stock adjustment ${adjustment.adjustmentNumber}`, context, { branchId: item.branchId, warehouseId: item.warehouseId });
     return { data: adjustment };
   }
 
@@ -318,40 +330,54 @@ export class InventoryService {
     return [["warehouse", "sku", "product", "quantity", "unit_cost", "total_value"], ...rows.map((row) => [row.warehouse, row.sku, row.product, String(row.quantityOnHand), String(row.unitCost), String(row.totalValue)])].map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(",")).join("\n");
   }
 
+  // Called outside any existing transaction (from approveAdjustment) — fetches
+  // its own rows and opens its own transaction around the shared tx-based core.
   private async applyAdjustment(user: AuthenticatedUser, id: string) {
     const adjustment = await this.prisma.stockAdjustment.findFirst({ where: { companyId: user.companyId, id, deletedAt: null } });
     if (!adjustment) throw new NotFoundException("Stock adjustment was not found.");
     const item = await this.prisma.inventoryItem.findUniqueOrThrow({ where: { id: adjustment.inventoryItemId } });
-    if (Number(adjustment.quantity) < 0) await this.assertAvailable(user, item, Math.abs(Number(adjustment.quantity)), false);
+    await this.prisma.$transaction((tx) => this.applyAdjustmentTx(tx, user, adjustment, item));
+  }
+
+  // Shared core, callable either standalone (applyAdjustment above) or nested
+  // inside an already-open transaction (createAdjustment) so the adjustment
+  // row's own creation/approval and the actual stock movement either both
+  // commit or both roll back together — see the (C1 follow-up) note on
+  // createAdjustment for why that matters.
+  private async applyAdjustmentTx(
+    tx: Prisma.TransactionClient,
+    user: AuthenticatedUser,
+    adjustment: { id: string; quantity: Prisma.Decimal | number; unitCost: Prisma.Decimal | number | null; reason: string | null; adjustmentType: string },
+    item: { id: string; companyId: string; branchId: string; farmId: string | null; warehouseId: string; productionSiteId: string | null; productId: string; uomId: string; quantityOnHand: Prisma.Decimal | number }
+  ) {
+    if (Number(adjustment.quantity) < 0) await this.assertAvailable(user, item, Math.abs(Number(adjustment.quantity)), false, tx);
     if (Number(adjustment.quantity) >= 0) {
       // Previously incremented quantityOnHand with no StockBatch created —
       // same desync as the mobile stock-movement "in" path, and left the
       // added quantity with no cost basis for FIFO consumption or valuation.
       const qty = Number(adjustment.quantity);
-      await this.prisma.$transaction(async (tx) => {
-        const batch = await tx.stockBatch.create({
-          data: {
-            companyId: user.companyId,
-            branchId: item.branchId,
-            farmId: item.farmId,
-            warehouseId: item.warehouseId,
-            productionSiteId: item.productionSiteId,
-            productId: item.productId,
-            inventoryItemId: item.id,
-            uomId: item.uomId,
-            batchNumber: `ADJ-${adjustment.id.slice(0, 8).toUpperCase()}`,
-            quantityReceived: qty,
-            quantityRemaining: qty,
-            unitCost: adjustment.unitCost,
-            createdById: user.id
-          }
-        });
-        await tx.inventoryItem.update({ where: { id: item.id }, data: { quantityOnHand: { increment: qty }, updatedById: user.id } });
-        await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: item.branchId, productId: item.productId, inventoryItemId: item.id, stockBatchId: batch.id, toWarehouseId: item.warehouseId, warehouseId: item.warehouseId, productionSiteId: item.productionSiteId, uomId: item.uomId, movementType: "ADJUSTMENT_IN", quantity: qty, unitCost: adjustment.unitCost, referenceType: "StockAdjustment", referenceId: adjustment.id, notes: adjustment.reason, createdById: user.id } });
+      const batch = await tx.stockBatch.create({
+        data: {
+          companyId: user.companyId,
+          branchId: item.branchId,
+          farmId: item.farmId,
+          warehouseId: item.warehouseId,
+          productionSiteId: item.productionSiteId,
+          productId: item.productId,
+          inventoryItemId: item.id,
+          uomId: item.uomId,
+          batchNumber: `ADJ-${adjustment.id.slice(0, 8).toUpperCase()}`,
+          quantityReceived: qty,
+          quantityRemaining: qty,
+          unitCost: adjustment.unitCost,
+          createdById: user.id
+        }
       });
+      await tx.inventoryItem.update({ where: { id: item.id }, data: { quantityOnHand: { increment: qty }, updatedById: user.id } });
+      await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: item.branchId, productId: item.productId, inventoryItemId: item.id, stockBatchId: batch.id, toWarehouseId: item.warehouseId, warehouseId: item.warehouseId, productionSiteId: item.productionSiteId, uomId: item.uomId, movementType: "ADJUSTMENT_IN", quantity: qty, unitCost: adjustment.unitCost, referenceType: "StockAdjustment", referenceId: adjustment.id, notes: adjustment.reason, createdById: user.id } });
     } else {
       const movementType = ["DAMAGE", "EXPIRY", "WASTE", "WRITE_OFF"].includes(adjustment.adjustmentType) ? "WASTE" : "ADJUSTMENT_OUT";
-      await this.consumeFifo(user, item, Math.abs(Number(adjustment.quantity)), movementType, "StockAdjustment", adjustment.id, adjustment.reason);
+      await this.consumeFifoTx(tx, user, item, Math.abs(Number(adjustment.quantity)), movementType, "StockAdjustment", adjustment.id, adjustment.reason ?? undefined);
     }
   }
 
