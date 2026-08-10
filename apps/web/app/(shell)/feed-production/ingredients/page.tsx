@@ -3,7 +3,6 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, ChevronLeft, FlaskConical, Package, PackagePlus, Pencil, Search, Trash2, X } from "lucide-react";
 import Link from "next/link";
-import { AppShell } from "../../../../components/app-shell";
 import { ApiEnvelope, apiFetch } from "../../../../lib/api";
 
 type UOM = { id: string; name: string; symbol: string };
@@ -121,7 +120,7 @@ export default function IngredientsPage() {
   }
 
   return (
-    <AppShell>
+    <>
       <div className="space-y-6">
 
         {/* Header */}
@@ -393,6 +392,6 @@ export default function IngredientsPage() {
           </div>
         </div>
       )}
-    </AppShell>
+    </>
   );
 }
