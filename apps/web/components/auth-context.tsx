@@ -146,16 +146,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // the JWT_ACCESS_TTL (default 15m) and keeps the Hostinger NestJS process warm so
   // the server never hibernates long enough to cause a cold-start at the same moment
   // the token expires (which was the root cause of "everything vanished after 10 min").
+  //
+  // Backgrounded tabs get their setInterval throttled or suspended by the browser, so
+  // this can silently stop firing on schedule while the tab is unfocused — the same
+  // "only after leaving the tab idle" gap as AppShell's health ping. The visibility
+  // listener below runs the same check immediately on refocus (min 60s since the last
+  // run, so rapid tab-switching doesn't spam the refresh endpoint).
   useEffect(() => {
     const REFRESH_INTERVAL_MS = 8 * 60 * 1000; // 8 minutes
-    const id = setInterval(async () => {
+    let lastRun = Date.now();
+
+    async function runRefresh() {
+      lastRun = Date.now();
       const result = await refreshSession();
       if (result === "expired") {
         router.replace("/login");
       }
       // "unreachable" is fine — the reactive 401 handling in apiFetch will catch it
-    }, REFRESH_INTERVAL_MS);
-    return () => clearInterval(id);
+    }
+
+    const id = setInterval(runRefresh, REFRESH_INTERVAL_MS);
+    function onVisible() {
+      if (document.visibilityState === "visible" && Date.now() - lastRun > 60000) runRefresh();
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [router]);
 
   async function signOut() {

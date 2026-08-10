@@ -238,12 +238,27 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // Keep-alive ping every 3 minutes so Hostinger/Passenger doesn't hibernate the
   // Node.js process between user interactions. Without this, any ~10-min gap in
   // traffic causes a 20-30s cold start which shows the "server starting" banner.
+  //
+  // Browsers throttle (Chrome/Edge) or fully suspend (some Firefox/Safari cases)
+  // setInterval timers in backgrounded tabs to save battery/CPU — so this 3-minute
+  // timer can silently stop firing on schedule while the tab sits unfocused, letting
+  // the server hibernate anyway despite this effect being "on". The visibilitychange
+  // listener below fires one ping immediately the moment the tab regains focus,
+  // independent of whatever the throttled interval did while hidden — catching the
+  // gap this specific bug report described ("only after leaving the tab idle").
   useEffect(() => {
     const ping = () => {
       fetch("/api/v1/health", { credentials: "include", cache: "no-store" }).catch(() => undefined);
     };
     const id = setInterval(ping, 3 * 60 * 1000); // every 3 minutes
-    return () => clearInterval(id);
+    function onVisible() {
+      if (document.visibilityState === "visible") ping();
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, []);
 
   // When the API is still unreachable after all apiFetch retries (startup or crash),
