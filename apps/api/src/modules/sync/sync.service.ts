@@ -7,16 +7,31 @@ import { PrismaService } from "../prisma/prisma.service";
 import { PoultryService } from "../poultry/poultry.service";
 import { InventoryService } from "../inventory/inventory.service";
 import { HRService } from "../hr/hr.service";
+import { FinanceService } from "../finance/finance.service";
+import { MaintenanceService } from "../maintenance/maintenance.service";
+import { QualityService } from "../quality/quality.service";
+import { SalesService } from "../sales/sales.service";
+import { SoyaProcessingService } from "../soya-processing/soya-processing.service";
+import { FeedProductionService } from "../feed-production/feed-production.service";
 import {
   CreateDailyPoultryRecordDto,
   CreateEggProductionRecordDto,
   CreateFeedConsumptionRecordDto,
   CreateMedicationRecordDto,
   CreateMortalityRecordDto,
-  CreateVaccinationRecordDto
+  CreateVaccinationRecordDto,
+  CreateBirdWeightRecordDto,
+  CreateHealthObservationDto,
+  CreatePoultryCostRecordDto
 } from "../poultry/dto/poultry.dto";
-import { MobileStockMovementDto } from "../inventory/dto/inventory.dto";
-import { UpdateTaskStatusDto } from "../hr/dto/hr.dto";
+import { MobileStockMovementDto, StockAdjustmentDto, StockTransferDto } from "../inventory/dto/inventory.dto";
+import { UpdateTaskStatusDto, CheckInSelfDto } from "../hr/dto/hr.dto";
+import { CreateExpenseDto, CreateCustomerPaymentDto } from "../finance/dto/finance.dto";
+import { CreateMaintenanceRecordDto, CreateBreakdownDto } from "../maintenance/dto/maintenance.dto";
+import { CreateLabReportDto, CreateCorrectiveActionDto } from "../quality/dto/quality.dto";
+import { CreateSalesOrderDto, CreateProspectVisitDto } from "../sales/dto/sales.dto";
+import { CreateSoyaBeanIntakeDto, CreateSoyaProcessingBatchDto } from "../soya-processing/dto/soya-processing.dto";
+import { CreateFeedProductionBatchDto } from "../feed-production/dto/feed-production.dto";
 import { BatchSyncDto, SyncItemDto, SyncItemResult, SyncRecordsQueryDto } from "./dto/sync.dto";
 
 type RequestContext = { ipAddress?: string; userAgent?: string };
@@ -28,25 +43,60 @@ const SUPPORTED_ENDPOINTS = [
   "/poultry/feed-consumption-records",
   "/poultry/medication-records",
   "/poultry/vaccination-records",
+  "/poultry/bird-weight-records",
+  "/poultry/health-observations",
+  "/poultry/costs",
   "/inventory/stock-movements",
-  "/hr/tasks/"
+  "/inventory/adjustments",
+  "/inventory/transfers",
+  "/hr/tasks/",
+  "/hr/attendance/me",
+  "/finance/expenses",
+  "/finance/customer-payments",
+  "/maintenance/records",
+  "/maintenance/breakdowns",
+  "/quality/lab-reports",
+  "/quality/corrective-actions",
+  "/sales/orders",
+  "/sales/prospect-visits",
+  "/soya-processing/intakes",
+  "/soya-processing/batches",
+  "/feed-production/batches"
 ] as const;
 
-// Mirrors the @RequirePermissions on each endpoint's direct REST route
-// (poultry.controller.ts, inventory.controller.ts, hr.controller.ts).
+// Mirrors the @RequirePermissions on each endpoint's direct REST route.
 // routeToService() below calls straight into service methods, bypassing
 // PermissionsGuard entirely — without this map, any authenticated user
-// could create poultry/health/inventory records or alter HR tasks via
-// /sync/batch regardless of their actual permissions.
-const ENDPOINT_PERMISSIONS: Array<{ match: (endpoint: string) => boolean; permission: PermissionKey }> = [
-  { match: (ep) => ep.includes("/poultry/daily-records"), permission: PERMISSIONS.POULTRY_RECORD },
-  { match: (ep) => ep.includes("/poultry/mortality-records"), permission: PERMISSIONS.POULTRY_RECORD },
-  { match: (ep) => ep.includes("/poultry/egg-production-records"), permission: PERMISSIONS.POULTRY_RECORD },
-  { match: (ep) => ep.includes("/poultry/feed-consumption-records"), permission: PERMISSIONS.POULTRY_RECORD },
-  { match: (ep) => ep.includes("/poultry/medication-records"), permission: PERMISSIONS.HEALTH_MANAGE },
-  { match: (ep) => ep.includes("/poultry/vaccination-records"), permission: PERMISSIONS.HEALTH_MANAGE },
-  { match: (ep) => ep.includes("/inventory/stock-movements"), permission: PERMISSIONS.INVENTORY_MANAGE },
-  { match: (ep) => /\/hr\/tasks\/[a-f0-9-]{36}\/status/i.test(ep), permission: PERMISSIONS.HR_MANAGE }
+// could create records or alter data via /sync/batch regardless of their
+// actual permissions. `permissions` is checked with AND semantics (same as
+// @RequirePermissions(...multiple) — see common/guards/permissions.guard.ts's
+// `.every(...)`), since a couple of direct REST routes require more than one.
+const ENDPOINT_PERMISSIONS: Array<{ match: (endpoint: string) => boolean; permissions: PermissionKey[] }> = [
+  { match: (ep) => ep.includes("/poultry/daily-records"), permissions: [PERMISSIONS.POULTRY_RECORD] },
+  { match: (ep) => ep.includes("/poultry/mortality-records"), permissions: [PERMISSIONS.POULTRY_RECORD] },
+  { match: (ep) => ep.includes("/poultry/egg-production-records"), permissions: [PERMISSIONS.POULTRY_RECORD] },
+  { match: (ep) => ep.includes("/poultry/feed-consumption-records"), permissions: [PERMISSIONS.POULTRY_RECORD] },
+  { match: (ep) => ep.includes("/poultry/medication-records"), permissions: [PERMISSIONS.HEALTH_MANAGE] },
+  { match: (ep) => ep.includes("/poultry/vaccination-records"), permissions: [PERMISSIONS.HEALTH_MANAGE] },
+  { match: (ep) => ep.includes("/poultry/bird-weight-records"), permissions: [PERMISSIONS.POULTRY_RECORD] },
+  { match: (ep) => ep.includes("/poultry/health-observations"), permissions: [PERMISSIONS.HEALTH_MANAGE] },
+  { match: (ep) => ep.includes("/poultry/costs"), permissions: [PERMISSIONS.FINANCE_MANAGE] },
+  { match: (ep) => ep.includes("/inventory/stock-movements"), permissions: [PERMISSIONS.INVENTORY_MANAGE] },
+  { match: (ep) => ep.includes("/inventory/adjustments"), permissions: [PERMISSIONS.INVENTORY_MANAGE] },
+  { match: (ep) => ep.includes("/inventory/transfers"), permissions: [PERMISSIONS.INVENTORY_MANAGE] },
+  { match: (ep) => /\/hr\/tasks\/[a-f0-9-]{36}\/status/i.test(ep), permissions: [PERMISSIONS.HR_MANAGE] },
+  { match: (ep) => ep.includes("/hr/attendance/me"), permissions: [PERMISSIONS.PLATFORM_READ] },
+  { match: (ep) => ep.includes("/finance/expenses"), permissions: [PERMISSIONS.FINANCE_MANAGE] },
+  { match: (ep) => ep.includes("/finance/customer-payments"), permissions: [PERMISSIONS.FINANCE_MANAGE] },
+  { match: (ep) => ep.includes("/maintenance/records"), permissions: [PERMISSIONS.MAINTENANCE_MANAGE] },
+  { match: (ep) => ep.includes("/maintenance/breakdowns"), permissions: [PERMISSIONS.MAINTENANCE_MANAGE] },
+  { match: (ep) => ep.includes("/quality/lab-reports"), permissions: [PERMISSIONS.QUALITY_MANAGE] },
+  { match: (ep) => ep.includes("/quality/corrective-actions"), permissions: [PERMISSIONS.QUALITY_MANAGE] },
+  { match: (ep) => ep.includes("/sales/orders"), permissions: [PERMISSIONS.SALES_MANAGE] },
+  { match: (ep) => ep.includes("/sales/prospect-visits"), permissions: [PERMISSIONS.PLATFORM_READ] },
+  { match: (ep) => ep.includes("/soya-processing/intakes"), permissions: [PERMISSIONS.SOYA_MANAGE, PERMISSIONS.INVENTORY_MANAGE] },
+  { match: (ep) => ep.includes("/soya-processing/batches"), permissions: [PERMISSIONS.SOYA_MANAGE, PERMISSIONS.INVENTORY_MANAGE] },
+  { match: (ep) => ep.includes("/feed-production/batches"), permissions: [PERMISSIONS.FEED_MANAGE, PERMISSIONS.INVENTORY_MANAGE] }
 ];
 
 @Injectable()
@@ -57,7 +107,13 @@ export class SyncService {
     private readonly prisma: PrismaService,
     private readonly poultryService: PoultryService,
     private readonly inventoryService: InventoryService,
-    private readonly hrService: HRService
+    private readonly hrService: HRService,
+    private readonly financeService: FinanceService,
+    private readonly maintenanceService: MaintenanceService,
+    private readonly qualityService: QualityService,
+    private readonly salesService: SalesService,
+    private readonly soyaProcessingService: SoyaProcessingService,
+    private readonly feedProductionService: FeedProductionService
   ) {}
 
   async batchSync(user: AuthenticatedUser, dto: BatchSyncDto, ctx: RequestContext): Promise<{ data: { results: SyncItemResult[]; synced: number; duplicates: number; failed: number } }> {
@@ -182,8 +238,8 @@ export class SyncService {
     const payload = item.payload;
 
     const rule = ENDPOINT_PERMISSIONS.find((r) => r.match(ep));
-    if (rule && !user.hasGlobalAccess && !user.permissions.includes(rule.permission)) {
-      throw new ForbiddenException(`Missing permission ${rule.permission} for ${ep}.`);
+    if (rule && !user.hasGlobalAccess && !rule.permissions.every((p) => user.permissions.includes(p))) {
+      throw new ForbiddenException(`Missing permission ${rule.permissions.join(", ")} for ${ep}.`);
     }
 
     if (ep.includes("/poultry/daily-records")) {
@@ -204,8 +260,59 @@ export class SyncService {
     if (ep.includes("/poultry/vaccination-records")) {
       return this.poultryService.createVaccination(user, await this.validateDto(CreateVaccinationRecordDto, payload), ctx);
     }
+    if (ep.includes("/poultry/bird-weight-records")) {
+      return this.poultryService.createWeight(user, await this.validateDto(CreateBirdWeightRecordDto, payload), ctx);
+    }
+    if (ep.includes("/poultry/health-observations")) {
+      return this.poultryService.createHealthObservation(user, await this.validateDto(CreateHealthObservationDto, payload), ctx);
+    }
+    if (ep.includes("/poultry/costs")) {
+      return this.poultryService.createCost(user, await this.validateDto(CreatePoultryCostRecordDto, payload), ctx);
+    }
     if (ep.includes("/inventory/stock-movements")) {
       return this.inventoryService.createStockMovement(user, await this.validateDto(MobileStockMovementDto, payload), ctx);
+    }
+    if (ep.includes("/inventory/adjustments")) {
+      return this.inventoryService.createAdjustment(user, await this.validateDto(StockAdjustmentDto, payload), ctx);
+    }
+    if (ep.includes("/inventory/transfers")) {
+      return this.inventoryService.transfer(user, await this.validateDto(StockTransferDto, payload), ctx);
+    }
+    if (ep.includes("/hr/attendance/me")) {
+      return this.hrService.checkInSelf(user, await this.validateDto(CheckInSelfDto, payload), ctx);
+    }
+    if (ep.includes("/finance/expenses")) {
+      return this.financeService.createExpense(user, await this.validateDto(CreateExpenseDto, payload), ctx);
+    }
+    if (ep.includes("/finance/customer-payments")) {
+      return this.financeService.createCustomerPayment(user, await this.validateDto(CreateCustomerPaymentDto, payload), ctx);
+    }
+    if (ep.includes("/maintenance/records")) {
+      return this.maintenanceService.createRecord(user, await this.validateDto(CreateMaintenanceRecordDto, payload), ctx);
+    }
+    if (ep.includes("/maintenance/breakdowns")) {
+      return this.maintenanceService.createBreakdown(user, await this.validateDto(CreateBreakdownDto, payload), ctx);
+    }
+    if (ep.includes("/quality/lab-reports")) {
+      return this.qualityService.createLabReport(user, await this.validateDto(CreateLabReportDto, payload), ctx);
+    }
+    if (ep.includes("/quality/corrective-actions")) {
+      return this.qualityService.createCorrectiveAction(user, await this.validateDto(CreateCorrectiveActionDto, payload), ctx);
+    }
+    if (ep.includes("/sales/orders")) {
+      return this.salesService.createOrder(user, await this.validateDto(CreateSalesOrderDto, payload), ctx);
+    }
+    if (ep.includes("/sales/prospect-visits")) {
+      return this.salesService.logProspectVisit(user, await this.validateDto(CreateProspectVisitDto, payload), ctx);
+    }
+    if (ep.includes("/soya-processing/intakes")) {
+      return this.soyaProcessingService.createIntake(user, await this.validateDto(CreateSoyaBeanIntakeDto, payload), ctx);
+    }
+    if (ep.includes("/soya-processing/batches")) {
+      return this.soyaProcessingService.createBatch(user, await this.validateDto(CreateSoyaProcessingBatchDto, payload), ctx);
+    }
+    if (ep.includes("/feed-production/batches")) {
+      return this.feedProductionService.createBatch(user, await this.validateDto(CreateFeedProductionBatchDto, payload), ctx);
     }
 
     // PATCH /hr/tasks/:id/status

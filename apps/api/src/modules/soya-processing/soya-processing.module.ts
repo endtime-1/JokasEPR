@@ -6,6 +6,7 @@ import { SoyaProcessingService } from "./soya-processing.service";
 @Module({
   imports: [AuditModule],
   controllers: [SoyaProcessingController],
-  providers: [SoyaProcessingService]
+  providers: [SoyaProcessingService],
+  exports: [SoyaProcessingService]
 })
 export class SoyaProcessingModule {}

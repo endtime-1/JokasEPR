@@ -7,5 +7,6 @@ import { QualityService } from "./quality.service";
   imports: [AuditModule],
   controllers: [QualityController],
   providers: [QualityService],
+  exports: [QualityService],
 })
 export class QualityModule {}

@@ -6,7 +6,8 @@ import { SalesService } from "./sales.service";
 @Module({
   imports: [AuditModule],
   controllers: [SalesController],
-  providers: [SalesService]
+  providers: [SalesService],
+  exports: [SalesService]
 })
 export class SalesModule {}
 
