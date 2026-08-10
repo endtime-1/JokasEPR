@@ -1,17 +1,20 @@
 #!/usr/bin/env node
 "use strict";
-// Runs prisma generate (and migrate deploy in production) using the
-// correct schema for the target database provider.
-// Set DATABASE_PROVIDER=mysql on Hostinger; defaults to postgresql.
+// Runs prisma generate (and db push / migrate deploy in production).
+// Set DATABASE_PROVIDER=mysql on Hostinger to select the db push path below.
+// schema.prisma is the single source of truth for both dev and Hostinger
+// prod builds — a separate schema.mysql.prisma fork used to be built here
+// instead, and it silently drifted for a month (missing 16 tables, several
+// relations, and an enum value that production storefront orders write on
+// every checkout) before being retired in favor of this single file.
 const { execSync } = require("child_process");
 const path = require("path");
 
 const dbDir = path.join(__dirname, "../packages/db");
 const provider = process.env.DATABASE_PROVIDER || "postgresql";
-const schemaFile = provider === "mysql" ? "schema.mysql.prisma" : "schema.prisma";
-const schema = path.join(dbDir, "prisma", schemaFile);
+const schema = path.join(dbDir, "prisma", "schema.prisma");
 
-console.log(`[db-build] provider=${provider} schema=${schemaFile}`);
+console.log(`[db-build] provider=${provider} schema=schema.prisma`);
 
 // Delete the previously generated client so Hostinger's build cache cannot
 // serve a stale version with the wrong binary targets.
