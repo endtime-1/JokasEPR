@@ -499,37 +499,24 @@ jobs:
             # kept only as a safety net for a from-scratch database; ON DUPLICATE KEY
             # UPDATE never touches the checksum column, so it will not clobber the real
             # checksums already in place.
-            $MYSQL -e "
-              INSERT INTO \`_prisma_migrations\` (id,checksum,migration_name,started_at,finished_at,applied_steps_count) VALUES
-                (UUID(),'','20260615143000_initial_erp_foundation',NOW(3),NOW(3),1),
-                (UUID(),'','20260615224000_sales_customer_management',NOW(3),NOW(3),1),
-                (UUID(),'','20260616120000_maintenance_management',NOW(3),NOW(3),1),
-                (UUID(),'','20260616210000_mobile_sync',NOW(3),NOW(3),1),
-                (UUID(),'','20260616230000_user_account_lockout',NOW(3),NOW(3),1),
-                (UUID(),'','20260629000000_storefront_fields',NOW(3),NOW(3),1),
-                (UUID(),'','20260629000001_feed_raw_materials',NOW(3),NOW(3),1),
-                (UUID(),'','20260701000000_leave_request_system',NOW(3),NOW(3),1),
-                (UUID(),'','20260713000000_employee_photo',NOW(3),NOW(3),1),
-                (UUID(),'','20260616200000_notification_system',NOW(3),NOW(3),1),
-                (UUID(),'','20260722000000_employee_user_fk',NOW(3),NOW(3),1),
-                (UUID(),'','20260729000000_ai_alert_forecast_tables',NOW(3),NOW(3),1),
-                (UUID(),'','20260730000000_prospect_visit_table',NOW(3),NOW(3),1),
-                (UUID(),'','20260730000001_leave_request_mysql_fix',NOW(3),NOW(3),1)
-              ON DUPLICATE KEY UPDATE
-                finished_at=COALESCE(finished_at,NOW(3)),
-                applied_steps_count=GREATEST(applied_steps_count,1);
-            " 2>&1 || true
+            #
+            # H31 (2026-08-11): this and the rolled-back-marker INSERT just below used to
+            # be multi-line `mysql -e "...\n...\n"` calls (matching the CREATE TABLE line
+            # above in intent, but spanning several physical lines). drone-ssh's transport
+            # injects its own exit-code bookkeeping marker (`DRONE_SSH_PREV_COMMAND_EXIT_CODE=$?`)
+            # into the stream while a multi-line quoted argument is still open — the exact
+            # same quirk hit earlier with the backup-cron heredocs (see setup-backup-crons.sh's
+            # own header comment) — and that marker text got fed to mysql as if it were the
+            # next line of SQL, producing a 1064 syntax error on every deploy. It was silently
+            # swallowed by the trailing `|| true` and never broke a deploy, but it meant these
+            # two safety-net seeds were quietly never actually running. Collapsed to single-line
+            # `-e` strings, same technique as the CREATE TABLE line, which never had this problem.
+            $MYSQL -e "INSERT INTO \`_prisma_migrations\` (id,checksum,migration_name,started_at,finished_at,applied_steps_count) VALUES (UUID(),'','20260615143000_initial_erp_foundation',NOW(3),NOW(3),1),(UUID(),'','20260615224000_sales_customer_management',NOW(3),NOW(3),1),(UUID(),'','20260616120000_maintenance_management',NOW(3),NOW(3),1),(UUID(),'','20260616210000_mobile_sync',NOW(3),NOW(3),1),(UUID(),'','20260616230000_user_account_lockout',NOW(3),NOW(3),1),(UUID(),'','20260629000000_storefront_fields',NOW(3),NOW(3),1),(UUID(),'','20260629000001_feed_raw_materials',NOW(3),NOW(3),1),(UUID(),'','20260701000000_leave_request_system',NOW(3),NOW(3),1),(UUID(),'','20260713000000_employee_photo',NOW(3),NOW(3),1),(UUID(),'','20260616200000_notification_system',NOW(3),NOW(3),1),(UUID(),'','20260722000000_employee_user_fk',NOW(3),NOW(3),1),(UUID(),'','20260729000000_ai_alert_forecast_tables',NOW(3),NOW(3),1),(UUID(),'','20260730000000_prospect_visit_table',NOW(3),NOW(3),1),(UUID(),'','20260730000001_leave_request_mysql_fix',NOW(3),NOW(3),1) ON DUPLICATE KEY UPDATE finished_at=COALESCE(finished_at,NOW(3)),applied_steps_count=GREATEST(applied_steps_count,1);" 2>&1 || true
             # 20260801030000_hr_d_disciplinary_grievance ran against the wrong DB state
             # (Notification table didn't exist yet). Superseded by 20260801085000_hr_d_tables_recovery.
-            # Mark as rolled-back so the runner skips it permanently.
-            $MYSQL -e "
-              INSERT INTO \`_prisma_migrations\` (id,checksum,migration_name,started_at,rolled_back_at,applied_steps_count)
-                VALUES (UUID(),'','20260801030000_hr_d_disciplinary_grievance',NOW(3),NOW(3),0)
-              ON DUPLICATE KEY UPDATE
-                rolled_back_at=COALESCE(rolled_back_at,NOW(3)),
-                applied_steps_count=0,
-                finished_at=NULL;
-            " 2>&1 || true
+            # Mark as rolled-back so the runner skips it permanently. Single-line for the
+            # same drone-ssh-transport reason as the INSERT immediately above (H31).
+            $MYSQL -e "INSERT INTO \`_prisma_migrations\` (id,checksum,migration_name,started_at,rolled_back_at,applied_steps_count) VALUES (UUID(),'','20260801030000_hr_d_disciplinary_grievance',NOW(3),NOW(3),0) ON DUPLICATE KEY UPDATE rolled_back_at=COALESCE(rolled_back_at,NOW(3)),applied_steps_count=0,finished_at=NULL;" 2>&1 || true
 
             # Pre-fetch ALL migration statuses in ONE query — eliminates per-migration
             # DB connections that trigger Hostinger's connection rate limit (ERROR 2002).
