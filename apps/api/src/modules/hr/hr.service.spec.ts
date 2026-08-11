@@ -12,7 +12,7 @@ const mockPrisma = {
   attendanceRecord: { findMany: jest.fn(), count: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), upsert: jest.fn() },
   payrollRecord: { findMany: jest.fn(), count: jest.fn(), create: jest.fn(), findFirst: jest.fn(), updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
   disciplinaryRecord: { findMany: jest.fn(), create: jest.fn() },
-  grievanceRecord: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
+  grievanceRecord: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn(), create: jest.fn() },
   task: { findMany: jest.fn(), count: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
   leaveRequest: { findMany: jest.fn(), count: jest.fn(), create: jest.fn(), findFirst: jest.fn(), updateMany: jest.fn(), findUniqueOrThrow: jest.fn(), groupBy: jest.fn() },
   leaveBalance: { findUnique: jest.fn(), update: jest.fn(), create: jest.fn() },
@@ -681,5 +681,59 @@ describe("HRService.updateTaskStatus — conflict detection on the one true edit
       service.updateTaskStatus(makeUser(), "task-1", { status: "IN_PROGRESS", expectedUpdatedAt: updatedAt.toISOString() } as never, {})
     ).rejects.toThrow(ConflictException);
     expect(mockPrisma.task.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("HRService.submitGrievance — excludes the concerned person from the broadcast (H-BACK-4)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("broadcasts with no exclusions when the submitter didn't identify who it concerns", async () => {
+    mockPrisma.employee.findFirst.mockResolvedValueOnce({ id: "emp-1", fullName: "Ama", code: "E1", basicSalary: 1000 });
+    mockPrisma.grievanceRecord.create.mockResolvedValue({ id: "grv-1" });
+    const service = makeService();
+
+    await service.submitGrievance(makeUser({ hasGlobalAccess: true }), { employeeId: "emp-1", submittedDate: "2026-08-11", category: "Conduct", description: "..." } as never, {});
+
+    expect(mockNotifications.broadcast).toHaveBeenCalledWith(
+      "company-1", "HR_MANAGE", expect.objectContaining({ entityType: "GrievanceRecord" }), []
+    );
+  });
+
+  it("excludes the concerned employee's linked user account when one is identified and resolvable", async () => {
+    mockPrisma.employee.findFirst
+      .mockResolvedValueOnce({ id: "emp-1", fullName: "Ama", code: "E1", basicSalary: 1000 }) // submitting employee
+      .mockResolvedValueOnce({ email: "manager@jokas.local" }); // concerned employee lookup
+    mockPrisma.user.findFirst.mockResolvedValue({ id: "user-manager" });
+    mockPrisma.grievanceRecord.create.mockResolvedValue({ id: "grv-1" });
+    const service = makeService();
+
+    await service.submitGrievance(
+      makeUser({ hasGlobalAccess: true }),
+      { employeeId: "emp-1", submittedDate: "2026-08-11", category: "Conduct", description: "...", concernedEmployeeId: "emp-manager" } as never,
+      {}
+    );
+
+    expect(mockNotifications.broadcast).toHaveBeenCalledWith(
+      "company-1", "HR_MANAGE", expect.objectContaining({ entityType: "GrievanceRecord" }), ["user-manager"]
+    );
+  });
+
+  it("falls back to no exclusion when the concerned employee has no linked user account", async () => {
+    mockPrisma.employee.findFirst
+      .mockResolvedValueOnce({ id: "emp-1", fullName: "Ama", code: "E1", basicSalary: 1000 })
+      .mockResolvedValueOnce({ email: null });
+    mockPrisma.grievanceRecord.create.mockResolvedValue({ id: "grv-1" });
+    const service = makeService();
+
+    await service.submitGrievance(
+      makeUser({ hasGlobalAccess: true }),
+      { employeeId: "emp-1", submittedDate: "2026-08-11", category: "Conduct", description: "...", concernedEmployeeId: "emp-manager" } as never,
+      {}
+    );
+
+    expect(mockNotifications.broadcast).toHaveBeenCalledWith(
+      "company-1", "HR_MANAGE", expect.objectContaining({ entityType: "GrievanceRecord" }), []
+    );
+    expect(mockPrisma.user.findFirst).not.toHaveBeenCalled();
   });
 });

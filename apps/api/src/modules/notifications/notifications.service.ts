@@ -89,13 +89,18 @@ export class NotificationsService {
 
   // ── Broadcast to all users in a company with a given permission ─────────────
 
-  async broadcast(companyId: string, requiredPermission: string | null, payload: Omit<SendNotificationPayload, "companyId" | "userId">): Promise<void> {
+  // H-BACK-4: excludeUserIds lets a caller keep a specific person out of an
+  // otherwise permission-wide broadcast — e.g. a grievance naming a manager
+  // who happens to also hold the broadcast permission shouldn't notify that
+  // manager of the complaint against them.
+  async broadcast(companyId: string, requiredPermission: string | null, payload: Omit<SendNotificationPayload, "companyId" | "userId">, excludeUserIds: string[] = []): Promise<void> {
     const users = await this.prisma.user.findMany({
       where: { companyId, status: "ACTIVE", deletedAt: null },
       select: { id: true, roles: { select: { role: { select: { permissions: { select: { key: true } } } } } } }
     });
 
     for (const user of users) {
+      if (excludeUserIds.includes(user.id)) continue;
       if (requiredPermission) {
         const perms = user.roles.flatMap((r) => r.role.permissions.map((p) => p.key));
         if (!perms.includes(requiredPermission)) continue;

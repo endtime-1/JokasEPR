@@ -2118,7 +2118,21 @@ export class HRService {
       },
     });
 
-    void this.notifications.broadcast(user.companyId, "HR_MANAGE", { type: "GRIEVANCE_UPDATED" as never, title: "New Grievance Submitted", body: `${employee.fullName} has submitted a grievance. Category: ${dto.category}`, entityType: "GrievanceRecord", entityId: row.id });
+    // H-BACK-4: grievances used to broadcast company-wide to every HR_MANAGE
+    // holder with no way to exclude the person the complaint concerns — an
+    // employee filing a grievance about their own branch manager, who
+    // plausibly holds routine HR permissions, directly notified that
+    // manager of the complainant's name and complaint category. If the
+    // submitter identified who the grievance is about, resolve that
+    // person's linked user account (same email-lookup pattern
+    // createDisciplinaryRecord already uses) and exclude them.
+    let excludeUserIds: string[] = [];
+    if (dto.concernedEmployeeId) {
+      const concernedEmployee = await this.prisma.employee.findFirst({ where: { id: dto.concernedEmployeeId, companyId: user.companyId }, select: { email: true } });
+      const concernedUser = concernedEmployee?.email ? await this.prisma.user.findFirst({ where: { email: concernedEmployee.email, companyId: user.companyId }, select: { id: true } }) : null;
+      if (concernedUser) excludeUserIds = [concernedUser.id];
+    }
+    void this.notifications.broadcast(user.companyId, "HR_MANAGE", { type: "GRIEVANCE_UPDATED" as never, title: "New Grievance Submitted", body: `${employee.fullName} has submitted a grievance. Category: ${dto.category}`, entityType: "GrievanceRecord", entityId: row.id }, excludeUserIds);
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "GrievanceRecord", entityId: row.id, action: "CREATE", ...ctx });
     return { data: row };
   }

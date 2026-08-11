@@ -293,6 +293,11 @@ export class CreateGrievanceDto {
   @IsDateString() submittedDate!: string;
   @IsString() @MaxLength(60) category!: string;
   @IsString() @MaxLength(1000) description!: string;
+  // H-BACK-4: optional — lets the submission flow exclude this person's own
+  // notification recipient when the grievance concerns them specifically
+  // (e.g. their own manager). Not persisted on the record; used only to
+  // scope the new-grievance notification at submit time.
+  @IsOptional() @IsUUID() concernedEmployeeId?: string;
 }
 
 export class ResolveGrievanceDto {
