@@ -74,6 +74,7 @@ export function PaymentCollectScreen() {
   const { submit, loading } = useSubmit({
     module: "customer_payment",
     endpoint: "/finance/customer-payments",
+    sendIdempotencyKeyInBody: true,
     onSuccess: (queued) =>
       Alert.alert(
         queued ? "Saved Offline" : "Payment Recorded",

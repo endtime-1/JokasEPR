@@ -302,6 +302,14 @@ export class CreateCustomerPaymentDto {
   @IsString()
   @MaxLength(500)
   notes?: string;
+
+  // A client retry after a dropped response (mobile offline-queue resend,
+  // web request timeout) replays this key so the server can recognize a
+  // resend instead of recording a second real payment.
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  idempotencyKey?: string;
 }
 
 // ─── Payroll ──────────────────────────────────────────────────────────────────

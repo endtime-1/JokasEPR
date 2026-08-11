@@ -17,9 +17,17 @@ type Options = {
   // later" instead of implying the record already reached the server.
   onSuccess?: (queued: boolean) => void;
   onError?: (msg: string) => void;
+  // The idempotency key used to previously be sent as a query param, which
+  // no endpoint's DTO ever reads — every server-side dedup check reads it
+  // from the request body. Only opt in for an endpoint whose DTO actually
+  // declares an idempotencyKey field: the global ValidationPipe rejects any
+  // unrecognized body property outright (forbidNonWhitelisted), so sending
+  // it to a DTO without the field would break the submission entirely
+  // instead of silently no-op'ing like the query param did.
+  sendIdempotencyKeyInBody?: boolean;
 };
 
-export function useSubmit({ module, endpoint, method = "POST", onSuccess, onError }: Options) {
+export function useSubmit({ module, endpoint, method = "POST", onSuccess, onError, sendIdempotencyKeyInBody = false }: Options) {
   const { online } = useNetwork();
   const { refreshCount } = useSync();
   const [loading, setLoading] = useState(false);
@@ -41,9 +49,10 @@ export function useSubmit({ module, endpoint, method = "POST", onSuccess, onErro
     }
 
     try {
-      await apiFetch(`${endpoint}?idempotencyKey=${localId}`, {
+      const body = sendIdempotencyKeyInBody ? { ...payload, idempotencyKey: localId } : payload;
+      await apiFetch(endpoint, {
         method,
-        body: JSON.stringify(payload)
+        body: JSON.stringify(body)
       });
       onSuccess?.(false);
     } catch (err) {

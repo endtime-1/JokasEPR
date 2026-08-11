@@ -417,24 +417,46 @@ export class FinanceService {
   }
 
   async createCustomerPayment(user: AuthenticatedUser, dto: CreateCustomerPaymentDto, ctx: RequestContext) {
+    // Mirrors the sales-module payment idempotency pattern: a mobile
+    // offline-queue resend or a web retry after a dropped response carries
+    // the same idempotencyKey, so a resend replays the original record
+    // instead of recording a second real payment.
+    if (dto.idempotencyKey) {
+      const existing = await this.findCustomerPaymentByIdempotencyKey(user.companyId, dto.idempotencyKey);
+      if (existing) return { data: existing };
+    }
     const reference = await nextRef(this.prisma, user.companyId, "CP");
-    const payment = await this.prisma.customerPayment.create({
-      data: {
-        companyId: user.companyId,
-        reference,
-        customerName: dto.customerName,
-        amount: dto.amount,
-        paymentDate: new Date(dto.paymentDate),
-        paymentMethod: dto.paymentMethod,
-        description: dto.description,
-        invoiceRef: dto.invoiceRef,
-        bankAccountId: dto.bankAccountId,
-        notes: dto.notes,
-        createdById: user.id
+    let payment;
+    try {
+      payment = await this.prisma.customerPayment.create({
+        data: {
+          companyId: user.companyId,
+          reference,
+          customerName: dto.customerName,
+          amount: dto.amount,
+          paymentDate: new Date(dto.paymentDate),
+          paymentMethod: dto.paymentMethod,
+          description: dto.description,
+          invoiceRef: dto.invoiceRef,
+          bankAccountId: dto.bankAccountId,
+          notes: dto.notes,
+          idempotencyKey: dto.idempotencyKey,
+          createdById: user.id
+        }
+      });
+    } catch (err: unknown) {
+      if (dto.idempotencyKey && (err as { code?: string })?.code === "P2002") {
+        const existing = await this.findCustomerPaymentByIdempotencyKey(user.companyId, dto.idempotencyKey);
+        if (existing) return { data: existing };
       }
-    });
+      throw err;
+    }
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "CREATE", entityType: "CustomerPayment", entityId: payment.id, ...ctx });
     return { data: payment };
+  }
+
+  private async findCustomerPaymentByIdempotencyKey(companyId: string, idempotencyKey: string) {
+    return this.prisma.customerPayment.findFirst({ where: { companyId, idempotencyKey, deletedAt: null } });
   }
 
   // ─── Payroll ───────────────────────────────────────────────────────────────

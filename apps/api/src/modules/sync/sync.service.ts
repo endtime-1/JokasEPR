@@ -285,7 +285,15 @@ export class SyncService {
       return this.financeService.createExpense(user, await this.validateDto(CreateExpenseDto, payload), ctx);
     }
     if (ep.includes("/finance/customer-payments")) {
-      return this.financeService.createCustomerPayment(user, await this.validateDto(CreateCustomerPaymentDto, payload), ctx);
+      // MobileSyncRecord's (companyId, localId) dedup only protects retries
+      // that go through /sync/batch itself. If the original attempt was a
+      // direct online submit (useSubmit's non-queued path) that succeeded
+      // server-side but lost its response, the offline-queue fallback later
+      // replays it here as a "fresh" sync item MobileSyncRecord has never
+      // seen. Threading the same localId through as CreateCustomerPaymentDto's
+      // idempotencyKey lets CustomerPayment's own unique index catch that
+      // case too, not just same-path retries.
+      return this.financeService.createCustomerPayment(user, await this.validateDto(CreateCustomerPaymentDto, { ...payload, idempotencyKey: item.localId }), ctx);
     }
     if (ep.includes("/maintenance/records")) {
       return this.maintenanceService.createRecord(user, await this.validateDto(CreateMaintenanceRecordDto, payload), ctx);

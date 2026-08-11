@@ -4980,10 +4980,11 @@ model CustomerPayment {
   paymentMethod PaymentMethod
   description   String        @db.VarChar(240)
   invoiceRef    String?       @db.VarChar(60)
-  bankAccountId String?      
+  bankAccountId String?
   notes         String?       @db.VarChar(500)
-  createdById   String?      
-  updatedById   String?      
+  idempotencyKey String?      @db.VarChar(100)
+  createdById   String?
+  updatedById   String?
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
   deletedAt     DateTime?
@@ -4992,6 +4993,7 @@ model CustomerPayment {
   bankAccount BankAccount? @relation(fields: [bankAccountId], references: [id])
 
   @@unique([companyId, reference])
+  @@unique([companyId, idempotencyKey])
   @@index([companyId])
   @@index([companyId, paymentDate])
   @@index([deletedAt])
