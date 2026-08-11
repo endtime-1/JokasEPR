@@ -7,6 +7,7 @@ import { EmailService } from "../notifications/email.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { sanitizeFormulaCell } from "../../common/utils/csv";
+import { nextRef } from "../../common/next-ref";
 import {
   AssignTaskDto,
   BulkAttendanceDto,
@@ -58,13 +59,6 @@ import {
 } from "./dto/hr.dto";
 
 type RequestContext = { ipAddress?: string; userAgent?: string };
-
-function nextRef(prefix: string) {
-  const year = new Date().getFullYear();
-  const ts = Date.now().toString(36).toUpperCase().slice(-5);
-  const rand = Math.random().toString(36).slice(2, 5).toUpperCase();
-  return `${prefix}-${year}-${ts}${rand}`;
-}
 
 function num(v: unknown) {
   return Number(v ?? 0);
@@ -854,7 +848,7 @@ export class HRService {
     const pensionTier3 = dto.pensionTier3 ?? 0;
     const netPay = grossPay - taxDeduction - ssnit;
 
-    const reference = nextRef("PAY");
+    const reference = await nextRef(this.prisma, user.companyId, "PAY");
 
     const row = await this.prisma.payrollRecord.create({
       data: {
@@ -1132,7 +1126,7 @@ export class HRService {
 
     const emp = await this.findMyEmployee(user, { id: true, fullName: true, code: true });
 
-    const reference = nextRef("LVR");
+    const reference = await nextRef(this.prisma, user.companyId, "LVR");
 
     const row = await this.prisma.leaveRequest.create({
       data: {
@@ -1495,7 +1489,7 @@ export class HRService {
         await this.prisma.payrollRecord.create({
           data: {
             companyId: user.companyId,
-            reference: nextRef("PAY"),
+            reference: await nextRef(this.prisma, user.companyId, "PAY"),
             period: dto.period,
             periodStart: new Date(dto.periodStart),
             periodEnd: new Date(dto.periodEnd),
@@ -2051,7 +2045,7 @@ export class HRService {
       data: {
         companyId: user.companyId,
         employeeId: dto.employeeId,
-        reference: nextRef("DSC"),
+        reference: await nextRef(this.prisma, user.companyId, "DSC"),
         incidentDate: new Date(dto.incidentDate),
         category: dto.category,
         description: dto.description,
@@ -2109,7 +2103,7 @@ export class HRService {
       data: {
         companyId: user.companyId,
         employeeId: dto.employeeId,
-        reference: nextRef("GRV"),
+        reference: await nextRef(this.prisma, user.companyId, "GRV"),
         submittedDate: new Date(dto.submittedDate),
         category: dto.category,
         description: dto.description,
@@ -2284,7 +2278,7 @@ export class HRService {
   }
 
   async createJobPosting(user: AuthenticatedUser, dto: CreateJobPostingDto, ctx: RequestContext) {
-    const ref = nextRef("JOB");
+    const ref = await nextRef(this.prisma, user.companyId, "JOB");
     const row = await this.prisma.jobPosting.create({
       data: { companyId: user.companyId, reference: ref, createdById: user.id, ...dto, closingDate: dto.closingDate ? new Date(dto.closingDate) : undefined },
     });
@@ -2331,7 +2325,7 @@ export class HRService {
   async createApplication(user: AuthenticatedUser, jobPostingId: string, dto: CreateJobApplicationDto, ctx: RequestContext) {
     const posting = await this.prisma.jobPosting.findFirst({ where: { id: jobPostingId, companyId: user.companyId, deletedAt: null } });
     if (!posting) throw new NotFoundException("Job posting not found");
-    const ref = nextRef("APP");
+    const ref = await nextRef(this.prisma, user.companyId, "APP");
     const row = await this.prisma.jobApplication.create({ data: { companyId: user.companyId, jobPostingId, reference: ref, createdById: user.id, ...dto } });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "JobApplication", entityId: row.id, action: "CREATE", ...ctx });
     return { data: row };
@@ -2349,7 +2343,14 @@ export class HRService {
     const app = await this.prisma.jobApplication.findFirst({ where: { id, companyId: user.companyId, deletedAt: null }, include: { jobPosting: true } });
     if (!app) throw new NotFoundException("Application not found");
 
-    const code = nextRef("EMP");
+    // H-BACK-5: this and the other reference/code generators in this file used
+    // to be a local, timestamp-plus-random helper — the reference numbers it
+    // produced looked nothing like the sequential PREFIX-YEAR-0001 format the
+    // shared, DB-backed generator produces everywhere else (e.g. the Finance
+    // payroll path), which is confusing for whoever reconciles these
+    // references against real bank payment batches. Now uses the same shared
+    // generator as every other module.
+    const code = await nextRef(this.prisma, user.companyId, "EMP");
     const nameParts = app.applicantName.trim().split(/\s+/);
     const firstName = nameParts[0];
     const lastName = nameParts.slice(1).join(" ") || firstName;

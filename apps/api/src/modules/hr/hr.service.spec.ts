@@ -7,6 +7,8 @@ import { AuditService } from "../audit/audit.service";
 import { EmailService } from "../notifications/email.service";
 import { NotificationsService } from "../notifications/notifications.service";
 
+jest.mock("../../common/next-ref", () => ({ nextRef: jest.fn().mockResolvedValue("REF-2026-0001") }));
+
 const mockPrisma = {
   employee: { findFirst: jest.fn(), findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn(), create: jest.fn(), count: jest.fn() },
   attendanceRecord: { findMany: jest.fn(), count: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), upsert: jest.fn() },
