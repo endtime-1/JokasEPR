@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Linking, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useNavigation } from "@react-navigation/native";
@@ -31,6 +31,13 @@ export function ScannerScreen() {
 
   // Permission denied
   if (!permission.granted) {
+    // H-MOB-4: once a user taps "Don't ask again" (Android) or has already
+    // dismissed the iOS prompt once, canAskAgain goes false and
+    // requestPermission() silently no-ops forever — the button did nothing
+    // with no explanation, permanently disabling scanning on that device
+    // until someone happened to know to dig through the OS Settings app
+    // themselves. Route to Settings directly once that's the only way left.
+    const canAskAgain = permission.canAskAgain !== false;
     return (
       <SafeAreaView style={styles.safe}>
         <View style={styles.center}>
@@ -39,10 +46,16 @@ export function ScannerScreen() {
           </View>
           <Text style={styles.permTitle}>Camera Access Required</Text>
           <Text style={styles.permDesc}>
-            Allow camera access to scan QR codes and barcodes on farm assets, stock, and batches.
+            {canAskAgain
+              ? "Allow camera access to scan QR codes and barcodes on farm assets, stock, and batches."
+              : "Camera access was denied. Enable it for this app in your device Settings to scan QR codes and barcodes."}
           </Text>
-          <TouchableOpacity style={styles.permBtn} onPress={requestPermission} activeOpacity={0.85}>
-            <Text style={styles.permBtnText}>Grant Camera Access</Text>
+          <TouchableOpacity
+            style={styles.permBtn}
+            onPress={canAskAgain ? requestPermission : () => { void Linking.openSettings(); }}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.permBtnText}>{canAskAgain ? "Grant Camera Access" : "Open Settings"}</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
