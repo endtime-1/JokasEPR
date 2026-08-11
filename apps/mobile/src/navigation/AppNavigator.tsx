@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import { AppState, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSync } from "../hooks/useSync";
+import { ErrorBoundary } from "../components/ErrorBoundary";
 import { colors, font, radius, shadow } from "../constants/theme";
 import type { ComponentProps } from "react";
 import { HomeScreen } from "../screens/HomeScreen";
@@ -250,8 +251,20 @@ function TabIcon({ route, focused, color }: TabIconProps) {
   );
 }
 
+// H-MOB-3: previously the only ErrorBoundary in the app was the single one
+// wrapping AuthProvider + NavigationContainer in App.tsx — any crash in any
+// one of the ~90 screens registered below unmounted the ENTIRE app back to
+// that top-level boundary, and "Restart" re-rendered everything from
+// scratch (re-running login, refetching the dashboard), losing whatever
+// unsaved input or state the OTHER tabs had. Wrapping each tab's own
+// navigator in its own ErrorBoundary means a crash in, say, a Records-tab
+// screen unmounts only that tab's stack back to its own boundary — the tab
+// bar, and every other tab's screens and in-memory state, stay intact. The
+// outer App.tsx boundary remains as a last-resort catch-all for anything
+// outside the tab navigator (login, biometric gate).
 function RecordsNavigator() {
   return (
+    <ErrorBoundary>
     <RecordsStack.Navigator screenOptions={stackOpts}>
       <RecordsStack.Screen name="RecordsHome"     component={RecordsHomeScreen}     options={{ title: "Records"         }} />
       <RecordsStack.Screen name="DailyPoultry"    component={DailyPoultryScreen}    options={{ title: "Daily Record"    }} />
@@ -337,11 +350,13 @@ function RecordsNavigator() {
       <RecordsStack.Screen name="PoultryCost"       component={P.PoultryCost}       options={{ title: "Poultry Cost Entry" }} />
       <RecordsStack.Screen name="BatchStatusUpdate" component={P.BatchStatusUpdate} options={{ title: "Update Batch Status"}} />
     </RecordsStack.Navigator>
+    </ErrorBoundary>
   );
 }
 
 function ApprovalsNavigator() {
   return (
+    <ErrorBoundary>
     <ApprovalsStack.Navigator screenOptions={stackOpts}>
       <ApprovalsStack.Screen name="ApprovalsHome"          component={ApprovalsHomeScreen}           options={{ title: "Approvals"            }} />
       <ApprovalsStack.Screen name="ExpenseApprovalList"    component={ExpenseApprovalListScreen}     options={{ title: "Pending Expenses"     }} />
@@ -350,21 +365,25 @@ function ApprovalsNavigator() {
       <ApprovalsStack.Screen name="ProcurementApprovalList" component={ProcurementApprovalListScreen} options={{ title: "Procurement Approvals" }} />
       <ApprovalsStack.Screen name="PurchaseOrderDetail"    component={PurchaseOrderDetailScreen}     options={{ title: "Purchase Order"       }} />
     </ApprovalsStack.Navigator>
+    </ErrorBoundary>
   );
 }
 
 function TasksNavigator() {
   return (
+    <ErrorBoundary>
     <TasksStack.Navigator screenOptions={stackOpts}>
       <TasksStack.Screen name="TaskList"   component={TaskListScreen}   options={{ title: "Tasks"       }} />
       <TasksStack.Screen name="TaskUpdate" component={TaskUpdateScreen} options={{ title: "Update Task" }} />
       <TasksStack.Screen name="TaskAssign" component={TaskAssignScreen} options={{ title: "Assign Task" }} />
     </TasksStack.Navigator>
+    </ErrorBoundary>
   );
 }
 
 function MoreNavigator() {
   return (
+    <ErrorBoundary>
     <MoreStack.Navigator screenOptions={stackOpts}>
       <MoreStack.Screen name="MoreHome"        component={MoreScreen}           options={{ title: "More"            }} />
       <MoreStack.Screen name="Dashboard"       component={P.Dashboard}          options={{ title: "Dashboard"       }} />
@@ -380,6 +399,18 @@ function MoreNavigator() {
       <MoreStack.Screen name="ReportResult"    component={ReportResultScreen} options={({ route }) => ({ title: (route.params as { title: string }).title })} />
       <MoreStack.Screen name="MyPayslips"      component={MyPayslipsScreen}   options={{ title: "My Payslips"  }} />
     </MoreStack.Navigator>
+    </ErrorBoundary>
+  );
+}
+
+// H-MOB-3: HomeTab has no nested stack of its own (just the one screen), but
+// still gets its own boundary for consistency — a crash there previously
+// took down the whole app exactly like every other tab did.
+function HomeTabSafe() {
+  return (
+    <ErrorBoundary>
+      <HomeScreen />
+    </ErrorBoundary>
   );
 }
 
@@ -428,7 +459,7 @@ export function AppNavigator() {
         tabBarItemStyle: styles.tabItem,
       })}
     >
-      <Tab.Screen name="HomeTab"    component={HomeScreen}       options={{ title: "Home"    }} />
+      <Tab.Screen name="HomeTab"    component={HomeTabSafe}      options={{ title: "Home"    }} />
       <Tab.Screen
         name="RecordsTab"
         component={RecordsNavigator}
