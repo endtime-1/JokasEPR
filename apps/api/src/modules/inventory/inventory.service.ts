@@ -120,13 +120,22 @@ export class InventoryService {
     this.assertWarehouseAccess(user, dto.warehouseId);
     const [warehouse, product] = await Promise.all([this.getWarehouse(user.companyId, dto.warehouseId), this.getProduct(user.companyId, dto.productId)]);
     const existingItem = await this.prisma.inventoryItem.findUnique({ where: { companyId_warehouseId_productId: { companyId: user.companyId, warehouseId: warehouse.id, productId: product.id } } });
-    const item = existingItem
-      ? await this.prisma.inventoryItem.update({ where: { id: existingItem.id }, data: { reorderLevel: dto.reorderLevel, updatedById: user.id } })
-      : await this.prisma.inventoryItem.create({ data: { companyId: user.companyId, branchId: warehouse.branchId, warehouseId: warehouse.id, farmId: dto.farmId ?? warehouse.farmId, productionSiteId: dto.productionSiteId ?? warehouse.productionSiteId, productId: product.id, uomId: product.uomId, reorderLevel: dto.reorderLevel, quantityOnHand: dto.openingQuantity ?? 0, createdById: user.id } });
-    if (!existingItem && (dto.openingQuantity ?? 0) > 0) {
-      await this.prisma.stockMovement.create({ data: { companyId: user.companyId, branchId: warehouse.branchId, productId: product.id, inventoryItemId: item.id, toWarehouseId: warehouse.id, warehouseId: warehouse.id, farmId: item.farmId, productionSiteId: item.productionSiteId, uomId: product.uomId, movementType: "OPENING_BALANCE", quantity: dto.openingQuantity!, referenceType: "InventoryItem", referenceId: item.id, notes: "Opening balance", createdById: user.id } });
-      await this.prisma.stockBatch.create({ data: { companyId: user.companyId, branchId: warehouse.branchId, farmId: item.farmId ?? null, warehouseId: warehouse.id, productionSiteId: item.productionSiteId ?? null, productId: product.id, inventoryItemId: item.id, uomId: product.uomId, batchNumber: `OB-${item.id.substring(0, 8).toUpperCase()}`, quantityReceived: dto.openingQuantity!, quantityRemaining: dto.openingQuantity!, unitCost: 0, createdById: user.id } });
-    }
+    // The item row (carrying quantityOnHand directly) and its opening-balance
+    // StockMovement/StockBatch trail used to be three unguarded calls — a
+    // failure between them (e.g. a batchNumber collision) could leave an
+    // InventoryItem with a non-zero quantityOnHand and no batch/movement
+    // record to account for it. One transaction means either all three land
+    // or none do.
+    const item = await this.prisma.$transaction(async (tx) => {
+      const created = existingItem
+        ? await tx.inventoryItem.update({ where: { id: existingItem.id }, data: { reorderLevel: dto.reorderLevel, updatedById: user.id } })
+        : await tx.inventoryItem.create({ data: { companyId: user.companyId, branchId: warehouse.branchId, warehouseId: warehouse.id, farmId: dto.farmId ?? warehouse.farmId, productionSiteId: dto.productionSiteId ?? warehouse.productionSiteId, productId: product.id, uomId: product.uomId, reorderLevel: dto.reorderLevel, quantityOnHand: dto.openingQuantity ?? 0, createdById: user.id } });
+      if (!existingItem && (dto.openingQuantity ?? 0) > 0) {
+        await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: warehouse.branchId, productId: product.id, inventoryItemId: created.id, toWarehouseId: warehouse.id, warehouseId: warehouse.id, farmId: created.farmId, productionSiteId: created.productionSiteId, uomId: product.uomId, movementType: "OPENING_BALANCE", quantity: dto.openingQuantity!, referenceType: "InventoryItem", referenceId: created.id, notes: "Opening balance", createdById: user.id } });
+        await tx.stockBatch.create({ data: { companyId: user.companyId, branchId: warehouse.branchId, farmId: created.farmId ?? null, warehouseId: warehouse.id, productionSiteId: created.productionSiteId ?? null, productId: product.id, inventoryItemId: created.id, uomId: product.uomId, batchNumber: `OB-${created.id.substring(0, 8).toUpperCase()}`, quantityReceived: dto.openingQuantity!, quantityRemaining: dto.openingQuantity!, unitCost: 0, createdById: user.id } });
+      }
+      return created;
+    });
     await this.upsertReorder(item.id, dto.reorderLevel, undefined, undefined, user.id);
     await this.writeAudit(user, "CREATE", "InventoryItem", item.id, `Created inventory item for ${product.sku}`, context, { branchId: warehouse.branchId, warehouseId: warehouse.id });
     return { data: item };
