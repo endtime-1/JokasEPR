@@ -65,7 +65,7 @@ export function AttendanceCheckInScreen() {
     }
   }
 
-  function handleSubmit() {
+  function doSubmit() {
     const checkInTime = new Date().toISOString();
     const ot = parseFloat(overtimeHours);
     void submit({
@@ -77,6 +77,30 @@ export function AttendanceCheckInScreen() {
       geoLon,
       notes: notes.trim() || undefined,
     });
+  }
+
+  // H-MOB-5: this used to submit unconditionally regardless of geoState — a
+  // denied/unavailable location wasn't blocked or confirmed, it just quietly
+  // produced a record with no coordinates that's indistinguishable from a
+  // genuinely GPS-less submission for any other reason. For a feature whose
+  // whole purpose is location verification, require the person to
+  // consciously choose to proceed without it rather than let it happen
+  // silently — this is the record-level "flag" in the absence of a
+  // dedicated locationVerified column on the backend.
+  function handleSubmit() {
+    if (geoState === "unavailable") {
+      Alert.alert(
+        "Location Not Captured",
+        "This check-in won't include your location. Enable location access to verify your check-in, or continue without it.",
+        [
+          { text: "Try Location Again", onPress: () => void captureLocation() },
+          { text: "Submit Without Location", style: "destructive", onPress: doSubmit },
+          { text: "Cancel", style: "cancel" },
+        ]
+      );
+      return;
+    }
+    doSubmit();
   }
 
   const geoColor = geoState === "captured" ? "#16a34a" : geoState === "unavailable" ? colors.inkMid : colors.brand;

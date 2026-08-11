@@ -98,8 +98,7 @@ export function ProspectVisitScreen() {
     return Object.keys(e).length === 0;
   }
 
-  function handleSubmit() {
-    if (!validate()) return;
+  function doSubmit() {
     void submit({
       prospectName: prospectName.trim(),
       phone:        phone.trim() || undefined,
@@ -111,6 +110,27 @@ export function ProspectVisitScreen() {
       notes:        notes.trim() || undefined,
       visitedAt:    new Date().toISOString(),
     });
+  }
+
+  // H-MOB-5: same fix as AttendanceCheckInScreen — a denied/unavailable GPS
+  // permission used to submit unconditionally with no coordinates, silently
+  // producing a visit record indistinguishable from a verified one. Require
+  // the field rep to consciously confirm before submitting without location.
+  function handleSubmit() {
+    if (!validate()) return;
+    if (gpsStatus === "denied") {
+      Alert.alert(
+        "Location Not Captured",
+        "This visit won't include your location. Enable location access to verify the visit, or continue without it.",
+        [
+          { text: "Try Location Again", onPress: () => void captureLocation() },
+          { text: "Submit Without Location", style: "destructive", onPress: doSubmit },
+          { text: "Cancel", style: "cancel" },
+        ]
+      );
+      return;
+    }
+    doSubmit();
   }
 
   const outcomeStyle = OUTCOME_COLORS[outcome] ?? OUTCOME_COLORS.INTERESTED;
