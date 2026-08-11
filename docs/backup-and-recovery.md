@@ -1,483 +1,108 @@
-# Jokas ERP — Backup, Recovery & Data Protection
+# Jokas ERP — Backup & Recovery
 
-This document covers every aspect of protecting Jokas ERP data: how backups run,
-where they are stored, how to restore, how to test, and what to do when a
-production server fails.
+This describes the actual backup and disaster-recovery setup running in production on Hostinger. For the full deployment architecture (Worker-thread process supervision, the deploy pipeline, migrations), see [docs/deployment/README.md](deployment/README.md) — this document only covers backup/restore.
 
----
-
-## Table of Contents
-
-1. [Overview](#overview)
-2. [What Is Backed Up](#what-is-backed-up)
-3. [Backup Schedule](#backup-schedule)
-4. [Retention Policy](#retention-policy)
-5. [Secure Backup Storage](#secure-backup-storage)
-6. [First-Time Setup](#first-time-setup)
-7. [Running a Manual Backup](#running-a-manual-backup)
-8. [Automated Backups (Cron)](#automated-backups-cron)
-9. [File Upload Backup](#file-upload-backup)
-10. [How to Restore the Database](#how-to-restore-the-database)
-11. [How to Test a Backup](#how-to-test-a-backup)
-12. [Disaster Recovery](#disaster-recovery)
-13. [What to Do If the Production Server Fails](#what-to-do-if-the-production-server-fails)
+**There is no cron on this Hostinger plan.** Everything below that looks cron-like is a script written to disk by the deploy pipeline and triggered by polling inside `start.js`, not by the system crontab. If you're used to a `systemctl`/`crontab -l`/S3 world, none of that applies here — read this document as-is rather than assuming standard-VPS conventions.
 
 ---
 
-## Overview
+## What gets backed up, and how
 
-Jokas ERP stores all operational data in PostgreSQL and user-uploaded files on the
-local filesystem. Both must be backed up. The backup system is composed of shell
-scripts (`scripts/backup/`) that can be run manually or via cron on any Linux
-deployment server.
+### Database — daily, automatic
 
-**Key design decisions:**
+- **Script:** `~/jokas-db-backup.sh`, written on the server by `setup-backup-crons.sh` (run over SSH by the deploy pipeline's last step, `.github/workflows/deploy.yml`'s "Setup backup crons").
+- **Trigger:** `start.js`'s `checkDailyBackup()` polls every 15 minutes and fires the script once per day, during the 02:00 hour, if that day's output file doesn't already exist. This makes it idempotent against `start.js` itself restarting near 2am, and requires no cron.
+- **Method:** `mysqldump --single-transaction --routines <dbname>` to a temp file, then gzip **only if** the dump succeeded (`$?` checked) and the temp file is non-empty. This matters: an earlier version piped straight into gzip and reported success even when `mysqldump` silently produced nothing (hit live 2026-08-06 — the database name wasn't being read correctly from the credentials file, and the resulting empty gzip was treated as a valid backup with no error). Failures now land in `~/jokas-db-backups/backup-error.log` instead of vanishing.
+- **Location:** `~/jokas-db-backups/db-YYYYMMDD.sql.gz`
+- **Retention:** 7 days, pruned by the same script (`find ... -mtime +7 -delete`).
 
-- Backups use `pg_dump --format=custom` (compressed, object-level restore)
-- Local copies **plus** an encrypted S3 upload (recommended)
-- Three tiers: daily · weekly · monthly, each with independent retention
-- Every backup produces a `manifest.json` and a timestamped log
-- `verify-backup.sh` performs a full dry-run restore to a temporary database
+### Uploaded files — daily, automatic
 
----
+- **Script:** `~/jokas-files-backup.sh`, also written by `setup-backup-crons.sh`.
+- **Trigger:** `start.js`'s `checkDailyFilesBackup()`, same polling pattern as the DB backup.
+- **What:** `apps/api/uploads/` — employee photos, HR documents, product images. This is the only production data that lives outside MySQL; a normal deploy never deletes it (extraction uses `tar -xzf ... -C <staging>` plus an explicit copy-forward into the new directory before the atomic swap — see the deployment guide), but a bad manual change or disk-level fault would previously have had zero recovery path.
+- **Location:** `~/jokas-files-backups/files-YYYYMMDD.tar.gz`
+- **Retention:** 7 days.
 
-## What Is Backed Up
+### Pre-deploy snapshot — every deploy, in addition to the daily backup
 
-| Component | Tool | Output |
-|---|---|---|
-| PostgreSQL database | `pg_dump --format=custom` | `database.dump` (~compressed) |
-| Uploaded files | `tar --gzip` | `uploads.tar.gz` |
-| Backup manifest | shell | `manifest.json` |
+Independent of the two above: the "Run database migrations" step in the deploy pipeline takes its own `mysqldump` snapshot immediately before running any pending migration, and **aborts the deploy before touching the schema** if that snapshot itself fails. This is a short-lived, deploy-scoped safety net (5 most recent kept) distinct from the daily 7-day-retention backup — it exists specifically so that "the migration broke something" always has a snapshot taken *seconds* before the break, not up to 24 hours before it.
 
-**Not backed up by these scripts (manage separately):**
-- `.env` files (store in a password manager or secrets vault)
-- Source code (Git repository is the source of truth)
-- Prisma migration history (tracked in Git)
+- **Location:** `~/jokas-db-backups/pre-deploy-<timestamp>.sql.gz`
 
 ---
 
-## Backup Schedule
+## Verifying a backup actually restores
 
-| Tier | When | Cron expression |
-|---|---|---|
-| **Daily** | Every day at 02:00 AM | `0 2 * * *` |
-| **Weekly** | Every Sunday at 03:00 AM | `0 3 * * 0` |
-| **Monthly** | 1st of month at 04:00 AM | `0 4 1 * *` |
-
-**Recommendation:** The daily backup is the primary safety net.
-Weekly and monthly backups exist for long-range point-in-time recovery
-(e.g., discovering data corruption that went unnoticed for several days).
-
-For production systems processing more than 500 records per day, consider
-additionally enabling **PostgreSQL WAL archiving** (continuous archiving)
-for point-in-time recovery (PITR) with sub-minute granularity.
-
----
-
-## Retention Policy
-
-| Tier | Retain for | Rationale |
-|---|---|---|
-| Daily | **7 days** | Recover from yesterday's bad import |
-| Weekly | **30 days** | Recover from last month's corruption |
-| Monthly | **365 days** | Compliance, audit, long-range recovery |
-
-These are the defaults in `backup.env.example`. Adjust `RETAIN_DAILY`,
-`RETAIN_WEEKLY`, and `RETAIN_MONTHLY` for your business requirements.
-
-The `apply-retention.sh` script is called automatically at the end of every
-backup run to prune expired backups from the local filesystem.
-
-**Cloud retention:** Set S3 lifecycle rules independently to match (or extend)
-these periods. The scripts upload but do not delete from S3.
-
----
-
-## Secure Backup Storage
-
-### Minimum: Local + Off-site copy
-
-Store backups in two physically separate locations:
-
-1. **Local disk** — fast recovery, but lost if the server is destroyed
-2. **S3-compatible object storage** — off-site, survives server failure
-
-   Recommended providers:
-   - AWS S3 (enable versioning + MFA delete)
-   - Backblaze B2 (lower cost, S3-compatible)
-   - DigitalOcean Spaces
-   - Cloudflare R2
-
-### Hardening checklist
-
-- [ ] Enable **server-side encryption** (SSE-AES256) — the scripts pass `--sse AES256`
-- [ ] Restrict the S3 IAM role to `PutObject` only — backups should never be deletable by the app
-- [ ] Enable **S3 versioning** and **MFA delete** on the backup bucket
-- [ ] Store `backup.env` (with credentials) in a secrets manager, not on disk in plaintext
-- [ ] Rotate `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` quarterly
-- [ ] Test restores monthly (see [How to Test a Backup](#how-to-test-a-backup))
-
-### Backup directory layout
-
-```
-/opt/jokas/backups/
-  daily/
-    jokas_daily_20260616_020001/
-      database.dump
-      uploads.tar.gz
-      manifest.json
-  weekly/
-    jokas_weekly_20260614_030001/
-      ...
-  monthly/
-    jokas_monthly_20260601_040001/
-      ...
-  logs/
-    backup_20260616_020001.log
-    cron.log
-```
-
----
-
-## First-Time Setup
+A backup that's never been restored is a guess, not a backup. `scripts/verify-backup-restore.sh` runs the real restore path without touching production data:
 
 ```bash
-# 1. Copy config template
-cp scripts/backup/backup.env.example scripts/backup/backup.env
-
-# 2. Edit with your database URL and paths
-nano scripts/backup/backup.env
-
-# 3. Make scripts executable
-chmod +x scripts/backup/*.sh
-
-# 4. Create backup root directory
-mkdir -p /opt/jokas/backups
-
-# 5. Run a test backup
-scripts/backup/backup.sh daily
-
-# 6. Verify the backup
-scripts/backup/verify-backup.sh /opt/jokas/backups/daily/$(ls /opt/jokas/backups/daily | tail -1)
+ssh -p 65002 user@host
+cd ~/domains/jokasfarms.com/nodejs
+./scripts/verify-backup-restore.sh                      # uses the most recent db-*.sql.gz
+./scripts/verify-backup-restore.sh path/to/specific.sql.gz
 ```
+
+What it does:
+1. Verifies gzip integrity (`gzip -t`) and that the file isn't suspiciously small.
+2. Creates a disposable scratch database (`<dbname>_restoretest`) on the **same** MySQL instance — same credentials, no new grants needed.
+3. Restores the backup into the scratch database.
+4. Compares row counts on a few core tables (`User`, `Employee`, `InventoryItem`, `SalesOrder`) between the scratch database and the live one. Restored counts trailing live counts by however old the backup is is expected; **zero everywhere** is the actual failure signal.
+5. Drops the scratch database.
+6. As a bonus check, verifies the latest uploaded-files backup is a valid tar archive (integrity check only — it deliberately does not untar into place, since that would risk clobbering live uploads).
+
+Run this periodically (monthly is a reasonable cadence) — it is intentionally **not** wired into CI, since restoring a 30MB+ dump on every push isn't worth the CI time or host load.
+
+**Known constraint on this hosting plan:** some Hostinger MySQL users are confined to specific pre-provisioned databases and lack `CREATE DATABASE` privilege outright. If step 2 fails with an access-denied error, the script says so explicitly and gives two options: create the scratch database once via hPanel's database manager and grant the app's DB user access to it, or ask Hostinger support to grant `CREATE DATABASE`.
 
 ---
 
-## Running a Manual Backup
+## Restoring in a real incident
+
+**Restoring the database (from either the daily backup or a pre-deploy snapshot):**
 
 ```bash
-# Full backup (database + files)
-scripts/backup/backup.sh daily
-
-# Weekly backup
-scripts/backup/backup.sh weekly
-
-# Database only (useful for pre-deployment snapshots)
-source scripts/backup/backup.env
-scripts/backup/backup-db.sh /tmp/pre-deploy-$(date +%Y%m%d).dump
-
-# File uploads only
-scripts/backup/backup-files.sh /opt/jokas/uploads /tmp/uploads-$(date +%Y%m%d).tar.gz
+ssh -p 65002 user@host
+gunzip -c ~/jokas-db-backups/db-YYYYMMDD.sql.gz | mysql --defaults-file=~/.jokas-backup.cnf <dbname>
 ```
+
+`~/.jokas-backup.cnf` (written by `setup-backup-crons.sh`, `chmod 600`) already has the right host/user/password/database — the same file the backup and restore-drill scripts use, so there's no need to re-derive credentials from `DATABASE_URL` by hand.
+
+**Restoring uploaded files:**
+
+```bash
+tar -xzf ~/jokas-files-backups/files-YYYYMMDD.tar.gz -C ~/domains/jokasfarms.com/nodejs/apps/api/uploads/
+```
+
+**Restoring the application code** (if a bad deploy needs manual recovery beyond what the pipeline's own auto-rollback handled):
+
+```bash
+rsync -a --delete ~/domains/jokasfarms.com/nodejs_prev/ ~/domains/jokasfarms.com/nodejs/
+mkdir -p ~/domains/jokasfarms.com/nodejs/tmp
+touch ~/domains/jokasfarms.com/nodejs/tmp/restart.txt
+```
+
+`nodejs_prev` is a hardlinked snapshot of the previous deploy, refreshed by the pipeline's "Backup current deploy" step immediately before every extraction — this is exactly what the pipeline's own automatic rollback does on a failed smoke test, and is safe to run by hand if a problem surfaces after the smoke test already passed.
+
+**Important:** application-code rollback and database restore are two separate, independent operations. If a migration partially applied before failing (MySQL DDL auto-commits per statement, so this is possible), restoring old code against a schema that's moved forward can be just as broken as the original failure — check schema state before assuming a code-only rollback fixed things. The migration step's own failure output in the GitHub Actions log always names the exact pre-deploy snapshot to restore from if this happens.
 
 ---
 
-## Automated Backups (Cron)
-
-```bash
-# Install cron jobs (daily + weekly + monthly)
-scripts/backup/setup-cron.sh
-
-# Verify installation
-crontab -l
-
-# Remove cron jobs
-scripts/backup/setup-cron.sh --remove
-```
-
-Monitor the cron log:
-
-```bash
-tail -f /opt/jokas/backups/logs/cron.log
-```
-
-Set up `SLACK_WEBHOOK_URL` in `backup.env` to receive success/failure
-notifications in Slack.
-
----
-
-## File Upload Backup
-
-The API stores user-uploaded files at the path configured in `APP_UPLOAD_DIR`
-(default: `/opt/jokas/uploads`). This directory contains:
-
-- Documents attached to procurement orders
-- Quality control reports
-- Any other file uploads managed through the system
-
-The `backup.sh` script automatically backs up this directory if `APP_UPLOAD_DIR`
-is set and the directory exists. The output is a `.tar.gz` archive included in
-every backup.
-
-**To restore file uploads:**
-
-```bash
-# Extract uploads archive to restore path
-mkdir -p /opt/jokas/uploads-restored
-tar -xzf /path/to/backup/uploads.tar.gz -C /opt/jokas/uploads-restored
-
-# Or restore directly (overwrites current uploads)
-tar -xzf /path/to/backup/uploads.tar.gz -C /opt/jokas
-```
-
----
-
-## How to Restore the Database
-
-> **This operation is destructive.** It drops and recreates the database.
-> Ensure all users are logged out and the API is stopped first.
-
-### Step-by-step restore
-
-```bash
-# 1. Stop the API
-systemctl stop jokas-api    # or however your process manager runs it
-
-# 2. Choose which backup to restore
-ls /opt/jokas/backups/daily/
-
-# 3. Run restore script
-scripts/backup/restore-db.sh \
-  /opt/jokas/backups/daily/jokas_daily_20260616_020001/database.dump
-
-# 4. The script will:
-#    - Show you what it will do
-#    - Ask you to type 'yes-restore' to confirm
-#    - Verify the backup file
-#    - Terminate active connections
-#    - DROP the existing database
-#    - CREATE a fresh database
-#    - pg_restore the dump
-#    - Report completion
-
-# 5. Run Prisma migrations to ensure schema is current
-cd packages/db
-node_modules/.bin/prisma migrate deploy
-
-# 6. Restart the API
-systemctl start jokas-api
-
-# 7. Verify the application works
-curl http://localhost:4001/api/v1/auth/me
-```
-
-### Restore from S3
-
-```bash
-# Download from S3 first
-aws s3 cp s3://your-bucket/jokas-erp-backups/jokas_daily_20260616_020001/ \
-  /tmp/jokas-restore/ --recursive
-
-# Then restore as above
-scripts/backup/restore-db.sh /tmp/jokas-restore/database.dump
-```
-
----
-
-## How to Test a Backup
-
-Test backups **monthly** to confirm they are actually restorable before
-you need them in an emergency.
-
-```bash
-# Quick integrity check (no data written to production DB)
-scripts/backup/verify-backup.sh \
-  /opt/jokas/backups/daily/jokas_daily_20260616_020001
-
-# What verify-backup.sh checks:
-#  1. manifest.json is present and parseable
-#  2. pg_restore --list succeeds (dump is readable)
-#  3. uploads.tar.gz is readable (if present)
-#  4. Full dry-run restore to a temporary database
-#  5. Counts tables in the temp database
-#  6. Drops the temp database
-```
-
-A fully passing output looks like:
-
-```
-── Manifest ──
-  ✓ manifest.json present
-  ✓ Type: daily  Timestamp: 2026-06-16T02:00:01Z
-
-── Database Dump ──
-  ✓ database.dump present (142M)
-  ✓ pg_restore can read dump: 3847 objects listed
-
-── File Archive ──
-  ✓ uploads.tar.gz present (28M)
-  ✓ Archive is readable: 312 entries
-
-── Dry-Run Restore (temp database) ──
-  ✓ Dry-run restore succeeded: 87 tables in temp database
-
-======================================================================
- Verification complete: 6 passed, 0 failed
- ✓  Backup is valid and restorable.
-```
-
----
-
-## Disaster Recovery
-
-### Scenarios and actions
+## Recovery scenario checklist
 
 | Scenario | Action |
 |---|---|
-| Single record accidentally deleted | Restore to temp DB, export the row, insert into production |
-| Bad bulk import corrupted data | Stop API → restore last clean daily backup → restart |
-| Database server disk full | Free space or expand → resume API → verify integrity |
-| Database server crashed (hardware) | Provision new server → restore from S3 backup (see below) |
-| Production server completely destroyed | Full recovery procedure (see next section) |
-| S3 backup bucket accidentally deleted | Restore from local copies on server; enable S3 versioning to prevent this |
-
-### Surgical record recovery (no full restore)
-
-When only specific records are corrupted:
-
-```bash
-# Restore to a temp DB (verify-backup.sh does this, or run restore-db.sh
-# against a different DB name)
-DATABASE_URL="postgresql://jokas_user:pass@localhost:5432/jokas_temp" \
-  scripts/backup/restore-db.sh /path/to/database.dump
-
-# Connect and export specific rows
-psql "postgresql://jokas_user:pass@localhost:5432/jokas_temp" \
-  -c "COPY (SELECT * FROM \"FlockBatch\" WHERE id = 'abc...') TO STDOUT"
-
-# Insert into production (use Prisma Studio or psql directly)
-```
+| Bad deploy, smoke test failed | Pipeline auto-rolls-back code automatically (`nodejs_prev` → `nodejs`, 3 retries). No action needed unless the rollback itself failed — the job log says so explicitly if it did. |
+| Bad deploy, smoke test passed but something's still wrong | Manual code rollback (above), then check whether a migration ran — if so, verify/restore schema state too. |
+| Migration failed mid-deploy | Read the migration step's failure output for the exact pre-deploy snapshot filename. Restore it if the partially-applied schema is causing problems. |
+| Data corruption / accidental deletion, no bad deploy involved | Restore from the most recent `db-*.sql.gz` (up to 24h old) or `files-*.tar.gz`, following the restore commands above. |
+| Uploads directory lost/corrupted | Restore from the most recent `files-*.tar.gz`. |
+| Want to confirm backups actually work before you need them | Run `scripts/verify-backup-restore.sh`. Do this periodically, not just once. |
 
 ---
 
-## What to Do If the Production Server Fails
+## What this setup deliberately does not do
 
-Follow this checklist in order. Estimated recovery time: **2–4 hours**.
-
-### Phase 1 — Assess (0–15 min)
-
-- [ ] Confirm the server is unreachable (ping, SSH)
-- [ ] Check cloud provider dashboard for infrastructure incidents
-- [ ] Identify the most recent successful backup (check S3 or local snapshots)
-- [ ] Notify stakeholders of estimated downtime
-
-### Phase 2 — Provision new server (15–60 min)
-
-```bash
-# On a new Ubuntu 22.04 / Debian 12 server:
-
-# Install Node.js 20+
-curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-apt-get install -y nodejs
-
-# Install pnpm
-npm install -g pnpm
-
-# Install PostgreSQL 15+
-apt-get install -y postgresql-15 postgresql-client-15
-
-# Install AWS CLI (for S3 download)
-snap install aws-cli --classic
-```
-
-### Phase 3 — Restore database (30–60 min)
-
-```bash
-# Create the database user and empty database
-sudo -u postgres psql -c "CREATE USER jokas_user WITH PASSWORD 'your-password';"
-sudo -u postgres psql -c "CREATE DATABASE jokas_erp OWNER jokas_user;"
-
-# Download latest backup from S3
-aws s3 cp s3://your-bucket/jokas-erp-backups/ /opt/jokas-restore/ \
-  --recursive \
-  --exclude '*' \
-  --include 'jokas_daily_*/database.dump' \
-  --exclude '*/*/'   # only the most recent
-
-# Find and restore
-LATEST=$(ls -t /opt/jokas-restore/ | head -1)
-DATABASE_URL="postgresql://jokas_user:pass@localhost:5432/jokas_erp" \
-  scripts/backup/restore-db.sh "/opt/jokas-restore/${LATEST}/database.dump"
-```
-
-### Phase 4 — Deploy application (30–60 min)
-
-```bash
-# Clone repository
-git clone https://github.com/your-org/jokas.git /opt/jokas/app
-cd /opt/jokas/app
-
-# Install dependencies
-pnpm install
-
-# Copy environment files (from password manager / secrets vault)
-cp .env.production apps/api/.env
-cp .env.production apps/web/.env
-
-# Run pending migrations
-packages/db/node_modules/.bin/prisma migrate deploy
-
-# Build
-pnpm --filter @jokas/api build
-pnpm --filter @jokas/web build
-
-# Start (use PM2 or systemd)
-pm2 start ecosystem.config.js
-```
-
-### Phase 5 — Restore uploaded files (15–30 min)
-
-```bash
-aws s3 cp s3://your-bucket/jokas-erp-backups/${LATEST}/uploads.tar.gz /tmp/
-
-mkdir -p /opt/jokas/uploads
-tar -xzf /tmp/uploads.tar.gz -C /opt/jokas
-```
-
-### Phase 6 — Verify and go live (15–30 min)
-
-- [ ] `curl http://localhost:4001/api/v1/auth/me` → returns `401` (not 500)
-- [ ] Log in to the web UI
-- [ ] Check dashboard data matches expected figures
-- [ ] Review the most recent audit log entries
-- [ ] Check notifications are delivering
-- [ ] Run `scripts/backup/verify-backup.sh` against the restored backup
-- [ ] Update DNS / load balancer to point to new server
-- [ ] Confirm external access works
-- [ ] Enable automated backups: `scripts/backup/setup-cron.sh`
-- [ ] Send all-clear notification to stakeholders
-
----
-
-## Quick Reference
-
-```bash
-# Manual full backup
-scripts/backup/backup.sh daily
-
-# Manual DB-only backup (pre-deployment snapshot)
-source scripts/backup/backup.env
-scripts/backup/backup-db.sh /tmp/pre-deploy.dump
-
-# Restore database
-scripts/backup/restore-db.sh /path/to/database.dump
-
-# Verify a backup
-scripts/backup/verify-backup.sh /path/to/backup-directory
-
-# Install cron schedule
-scripts/backup/setup-cron.sh
-
-# View backup logs
-tail -100 /opt/jokas/backups/logs/cron.log
-```
+- **No off-site/S3 copy.** Backups live on the same Hostinger account as the data they're backing up — they protect against bad deploys, bad migrations, and accidental deletion, but not against total account loss. If that risk matters more than the setup cost, periodically `rsync`/`scp` `~/jokas-db-backups` and `~/jokas-files-backups` to somewhere off Hostinger.
+- **No point-in-time recovery.** Backups are daily snapshots (plus per-deploy snapshots), not continuous binlog-based replication — recovery granularity is "as of the last snapshot," not "as of any given second."
+- **No automated restore-drill in CI** — by design, see above.
