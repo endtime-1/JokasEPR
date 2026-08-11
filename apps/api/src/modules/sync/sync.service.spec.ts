@@ -7,9 +7,26 @@ const mockPrisma = {
 const mockInventoryService = { createStockMovement: jest.fn() };
 const mockPoultryService = {};
 const mockHrService = {};
+const mockFinanceService = {};
+const mockMaintenanceService = {};
+const mockQualityService = {};
+const mockSalesService = {};
+const mockSoyaProcessingService = {};
+const mockFeedProductionService = {};
 
 function makeService() {
-  return new SyncService(mockPrisma as never, mockPoultryService as never, mockInventoryService as never, mockHrService as never);
+  return new SyncService(
+    mockPrisma as never,
+    mockPoultryService as never,
+    mockInventoryService as never,
+    mockHrService as never,
+    mockFinanceService as never,
+    mockMaintenanceService as never,
+    mockQualityService as never,
+    mockSalesService as never,
+    mockSoyaProcessingService as never,
+    mockFeedProductionService as never
+  );
 }
 
 function makeUser(overrides: Partial<AuthenticatedUser> = {}): AuthenticatedUser {

@@ -5,8 +5,16 @@ const mockPrisma = {
   company: { findFirst: jest.fn() },
   customer: { create: jest.fn() },
   product: { findMany: jest.fn() },
-  salesOrder: { create: jest.fn() }
+  salesOrder: { create: jest.fn() },
+  $transaction: jest.fn()
 };
+// placeOrder() wraps customer+order creation in one $transaction (M19
+// follow-up) — the callback receives `tx`, which here just aliases the same
+// mocks so existing assertions against mockPrisma.customer.create /
+// mockPrisma.salesOrder.create keep working unchanged. Assigned after the
+// object literal (not inline) since referencing mockPrisma inside its own
+// initializer breaks TS's type inference for the object.
+mockPrisma.$transaction.mockImplementation((fn: (tx: unknown) => unknown) => fn(mockPrisma));
 const mockConfig = { get: jest.fn().mockReturnValue("company-1") };
 const mockEmail = { send: jest.fn().mockResolvedValue(true) };
 
