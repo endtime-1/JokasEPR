@@ -791,11 +791,23 @@ export class FeedProductionService {
     if (check.checkedById === user.id) {
       throw new ForbiddenException("You cannot approve a quality check you performed. A different user must review and sign off.");
     }
-    const data = await this.prisma.feedQualityCheck.update({
-      where: { id },
-      data: { status: dto.status, approvedById: ["APPROVED", "FAILED"].includes(dto.status) ? user.id : undefined, approvedAt: ["APPROVED", "FAILED"].includes(dto.status) ? new Date() : undefined }
+    // H-BACK-2: the quality-check status update and its corresponding
+    // production-batch status update used to be two separate, unguarded
+    // calls. If anything interrupted the process between them — a DB
+    // connection blip, realistic given this exact database's connection
+    // pool has needed tuning under load — the check could end up
+    // APPROVED/FAILED while the batch itself never moved off its pre-check
+    // status, silently blocking or wrongly permitting the batch's release.
+    // quality.service.ts's own approveBatch/rejectBatch already fixed this
+    // exact pattern with $transaction; applying the same fix here.
+    const data = await this.prisma.$transaction(async (tx) => {
+      const updatedCheck = await tx.feedQualityCheck.update({
+        where: { id },
+        data: { status: dto.status, approvedById: ["APPROVED", "FAILED"].includes(dto.status) ? user.id : undefined, approvedAt: ["APPROVED", "FAILED"].includes(dto.status) ? new Date() : undefined }
+      });
+      await tx.feedProductionBatch.update({ where: { id: check.productionBatchId }, data: { status: dto.status === "FAILED" ? "REJECTED" : dto.status === "APPROVED" || dto.status === "PASSED" ? "APPROVED" : "QUALITY_HOLD", updatedById: user.id } });
+      return updatedCheck;
     });
-    await this.prisma.feedProductionBatch.update({ where: { id: check.productionBatchId }, data: { status: dto.status === "FAILED" ? "REJECTED" : dto.status === "APPROVED" || dto.status === "PASSED" ? "APPROVED" : "QUALITY_HOLD", updatedById: user.id } });
     await this.writeAudit(user, dto.status === "FAILED" ? "REJECT" : "APPROVE", "FeedQualityCheck", id, `Updated feed quality check to ${dto.status}`, context, { branchId: check.branchId, productionSiteId: check.productionSiteId });
     return { data };
   }

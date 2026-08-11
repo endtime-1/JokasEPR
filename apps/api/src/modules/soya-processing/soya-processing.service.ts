@@ -280,8 +280,16 @@ export class SoyaProcessingService {
     const check = await this.prisma.soyaQualityCheck.findFirst({ where: { companyId: user.companyId, id, deletedAt: null } });
     if (!check) throw new NotFoundException("Soya quality check was not found.");
     this.assertProductionSiteAccess(user, check.productionSiteId);
-    const data = await this.prisma.soyaQualityCheck.update({ where: { id }, data: { status: dto.status, approvedById: ["APPROVED", "REJECTED"].includes(dto.status) ? user.id : undefined, approvedAt: ["APPROVED", "REJECTED"].includes(dto.status) ? new Date() : undefined } });
-    await this.prisma.soyaProcessingBatch.update({ where: { id: check.productionBatchId }, data: { status: dto.status === "REJECTED" ? "REJECTED" : dto.status === "APPROVED" || dto.status === "ACCEPTED" ? "APPROVED" : "QUALITY_HOLD", updatedById: user.id } });
+    // H-BACK-2: same fix as feed-production.service.ts's approveQualityCheck
+    // — the check-status update and the batch-status update were two
+    // separate, unguarded calls; wrapped in one transaction so a failure
+    // between them can't leave the check finalized while the batch it
+    // belongs to never moves off its pre-check status.
+    const data = await this.prisma.$transaction(async (tx) => {
+      const updatedCheck = await tx.soyaQualityCheck.update({ where: { id }, data: { status: dto.status, approvedById: ["APPROVED", "REJECTED"].includes(dto.status) ? user.id : undefined, approvedAt: ["APPROVED", "REJECTED"].includes(dto.status) ? new Date() : undefined } });
+      await tx.soyaProcessingBatch.update({ where: { id: check.productionBatchId }, data: { status: dto.status === "REJECTED" ? "REJECTED" : dto.status === "APPROVED" || dto.status === "ACCEPTED" ? "APPROVED" : "QUALITY_HOLD", updatedById: user.id } });
+      return updatedCheck;
+    });
     await this.writeAudit(user, dto.status === "REJECTED" ? "REJECT" : "APPROVE", "SoyaQualityCheck", id, `Updated soya quality check to ${dto.status}`, context, { branchId: check.branchId, productionSiteId: check.productionSiteId });
     return { data };
   }

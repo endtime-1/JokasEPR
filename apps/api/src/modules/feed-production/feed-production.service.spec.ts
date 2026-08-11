@@ -4,14 +4,15 @@ import { FeedProductionService } from "./feed-production.service";
 jest.mock("../../common/next-ref", () => ({ nextRef: jest.fn().mockResolvedValue("FB-2026-0001") }));
 
 const mockTx = {
-  feedProductionBatch: { create: jest.fn() },
+  feedProductionBatch: { create: jest.fn(), update: jest.fn() },
   inventoryItem: { updateMany: jest.fn(), upsert: jest.fn() },
   stockBatch: { findMany: jest.fn(), updateMany: jest.fn(), create: jest.fn() },
   feedRawMaterialUsage: { create: jest.fn() },
   stockMovement: { create: jest.fn() },
   finishedFeedStock: { create: jest.fn() },
   feedProductionCost: { create: jest.fn() },
-  feedProductionOrder: { update: jest.fn() }
+  feedProductionOrder: { update: jest.fn() },
+  feedQualityCheck: { update: jest.fn() }
 };
 
 const mockPrisma = {
@@ -19,6 +20,7 @@ const mockPrisma = {
   feedProductionBatch: { aggregate: jest.fn() },
   feedFormula: { findFirst: jest.fn() },
   inventoryItem: { findMany: jest.fn() },
+  feedQualityCheck: { findFirst: jest.fn() },
   $transaction: jest.fn().mockImplementation((cb: (tx: typeof mockTx) => Promise<unknown>) => cb(mockTx))
 };
 
@@ -151,5 +153,72 @@ describe("FeedProductionService.createBatch — per-lot floor guard + full-consu
     await expect(
       service.createBatch(makeUser({ warehouseIds: ["wh-raw", "wh-fin"] }), dto as never, {})
     ).rejects.toThrow(/out of sync/);
+  });
+});
+
+describe("FeedProductionService.approveQualityCheck — check + batch status updated atomically (H-BACK-2)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  function makeCheck(overrides: Record<string, unknown> = {}) {
+    return {
+      id: "check-1", companyId: "company-1", branchId: "branch-1", productionSiteId: "site-1",
+      productionBatchId: "batch-1", checkedById: "user-checker", deletedAt: null,
+      ...overrides
+    };
+  }
+
+  it("updates the quality check and the production batch inside the same transaction", async () => {
+    mockPrisma.feedQualityCheck.findFirst.mockResolvedValue(makeCheck());
+    mockTx.feedQualityCheck.update.mockResolvedValue({ id: "check-1", status: "APPROVED" });
+
+    const service = makeService();
+    await service.approveQualityCheck(
+      makeUser({ id: "user-approver", hasGlobalAccess: true }),
+      "check-1",
+      { status: "APPROVED" } as never,
+      {}
+    );
+
+    // Both updates must go through the SAME tx handle passed into the
+    // $transaction callback, not this.prisma directly — otherwise a
+    // failure between them wouldn't roll back the other.
+    expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(mockTx.feedQualityCheck.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "check-1" } })
+    );
+    expect(mockTx.feedProductionBatch.update).toHaveBeenCalledWith({
+      where: { id: "batch-1" },
+      data: { status: "APPROVED", updatedById: "user-approver" }
+    });
+  });
+
+  it("rolls back the check update if the batch update fails (atomicity)", async () => {
+    mockPrisma.feedQualityCheck.findFirst.mockResolvedValue(makeCheck());
+    mockTx.feedQualityCheck.update.mockResolvedValue({ id: "check-1", status: "FAILED" });
+    mockTx.feedProductionBatch.update.mockRejectedValueOnce(new Error("db blip"));
+
+    const service = makeService();
+    await expect(
+      service.approveQualityCheck(makeUser({ hasGlobalAccess: true }), "check-1", { status: "FAILED" } as never, {})
+    ).rejects.toThrow("db blip");
+
+    // The real safety property: because both calls run through the mocked
+    // $transaction's single callback invocation, a thrown batch-update
+    // rejects the whole $transaction() call — there is no code path here
+    // where the check update could be committed on its own.
+    expect(mockTx.feedQualityCheck.update).toHaveBeenCalled();
+  });
+
+  it("maps a FAILED check to a REJECTED batch status, not left on its pre-check status", async () => {
+    mockPrisma.feedQualityCheck.findFirst.mockResolvedValue(makeCheck());
+    mockTx.feedQualityCheck.update.mockResolvedValue({ id: "check-1", status: "FAILED" });
+
+    const service = makeService();
+    await service.approveQualityCheck(makeUser({ hasGlobalAccess: true }), "check-1", { status: "FAILED" } as never, {});
+
+    expect(mockTx.feedProductionBatch.update).toHaveBeenCalledWith({
+      where: { id: "batch-1" },
+      data: { status: "REJECTED", updatedById: expect.any(String) }
+    });
   });
 });

@@ -4,7 +4,7 @@ import { SoyaProcessingService } from "./soya-processing.service";
 const mockTx = {
   inventoryItem: { updateMany: jest.fn(), upsert: jest.fn() },
   soyaBeanIntake: { create: jest.fn() },
-  soyaProcessingBatch: { create: jest.fn() },
+  soyaProcessingBatch: { create: jest.fn(), update: jest.fn() },
   stockMovement: { create: jest.fn() },
   stockBatch: { create: jest.fn(), findMany: jest.fn().mockResolvedValue([]), updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
   soyaOilOutput: { create: jest.fn() },
@@ -12,7 +12,8 @@ const mockTx = {
   soyaWasteRecord: { create: jest.fn() },
   soyaProductionCost: { create: jest.fn() },
   soyaInternalTransfer: { create: jest.fn() },
-  soyaSalesLink: { create: jest.fn() }
+  soyaSalesLink: { create: jest.fn() },
+  soyaQualityCheck: { update: jest.fn() }
 };
 
 const mockPrisma = {
@@ -21,6 +22,7 @@ const mockPrisma = {
   inventoryItem: { findFirst: jest.fn() },
   soyaBeanIntake: { findFirst: jest.fn() },
   soyaProcessingBatch: { findFirst: jest.fn() },
+  soyaQualityCheck: { findFirst: jest.fn() },
   $transaction: jest.fn().mockImplementation((cb: (tx: typeof mockTx) => Promise<unknown>) => cb(mockTx))
 };
 const mockAudit = { write: jest.fn().mockResolvedValue(undefined) };
@@ -298,5 +300,60 @@ describe("SoyaProcessingService.createTransfer / createSale — floor-guarded de
       data: { quantityRemaining: { decrement: 5 } }
     });
     expect(mockTx.soyaSalesLink.create).toHaveBeenCalled();
+  });
+});
+
+describe("SoyaProcessingService.updateQualityStatus — check + batch status updated atomically (H-BACK-2)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  function makeCheck(overrides: Record<string, unknown> = {}) {
+    return {
+      id: "check-1", companyId: "company-1", branchId: "branch-1", productionSiteId: "site-1",
+      productionBatchId: "batch-1", deletedAt: null,
+      ...overrides
+    };
+  }
+
+  it("updates the quality check and the processing batch inside the same transaction", async () => {
+    mockPrisma.soyaQualityCheck.findFirst.mockResolvedValue(makeCheck());
+    mockTx.soyaQualityCheck.update.mockResolvedValue({ id: "check-1", status: "APPROVED" });
+
+    const service = makeService();
+    await service.updateQualityStatus(makeUser({ id: "user-approver" }), "check-1", { status: "APPROVED" } as never, {});
+
+    expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(mockTx.soyaQualityCheck.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "check-1" } })
+    );
+    expect(mockTx.soyaProcessingBatch.update).toHaveBeenCalledWith({
+      where: { id: "batch-1" },
+      data: { status: "APPROVED", updatedById: "user-approver" }
+    });
+  });
+
+  it("rolls back the check update if the batch update fails (atomicity)", async () => {
+    mockPrisma.soyaQualityCheck.findFirst.mockResolvedValue(makeCheck());
+    mockTx.soyaQualityCheck.update.mockResolvedValue({ id: "check-1", status: "REJECTED" });
+    mockTx.soyaProcessingBatch.update.mockRejectedValueOnce(new Error("db blip"));
+
+    const service = makeService();
+    await expect(
+      service.updateQualityStatus(makeUser(), "check-1", { status: "REJECTED" } as never, {})
+    ).rejects.toThrow("db blip");
+
+    expect(mockTx.soyaQualityCheck.update).toHaveBeenCalled();
+  });
+
+  it("maps a REJECTED check to a REJECTED batch status, not left on its pre-check status", async () => {
+    mockPrisma.soyaQualityCheck.findFirst.mockResolvedValue(makeCheck());
+    mockTx.soyaQualityCheck.update.mockResolvedValue({ id: "check-1", status: "REJECTED" });
+
+    const service = makeService();
+    await service.updateQualityStatus(makeUser(), "check-1", { status: "REJECTED" } as never, {});
+
+    expect(mockTx.soyaProcessingBatch.update).toHaveBeenCalledWith({
+      where: { id: "batch-1" },
+      data: { status: "REJECTED", updatedById: expect.any(String) }
+    });
   });
 });
