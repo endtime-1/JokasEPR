@@ -646,17 +646,29 @@ jobs:
               # (2) dumping to a temp file first so mysqldump's own exit code and
               # a non-empty-file check gate whether gzip/rotation run at all —
               # failures now land in backup-error.log instead of vanishing.
-              cat > "$HOME/jokas-db-backup.sh" <<'BACKUP_SCRIPT_EOF'
-              #!/bin/bash
+              #
+              # H29 (2026-08-11): H28's debug: true finally showed the real
+              # failure — the script ran fine up through this comment block,
+              # then died silently and immediately right at the heredoc,
+              # with zero further output. The earlier (successful) migrations
+              # step uses multi-line DOUBLE-quoted arguments for its own
+              # multi-line $MYSQL -e "..." calls, not heredocs — that's the
+              # actual dividing line: drone-ssh's script transport handles a
+              # multi-line quoted argument fine but not a heredoc's separate
+              # body-then-terminator lines. Switched to the same proven
+              # pattern: the whole file body as one multi-line SINGLE-quoted
+              # printf argument (bash allows single quotes to span lines) —
+              # no escaping needed since single quotes suppress all
+              # expansion, and it's one shell argument, not a heredoc.
+              printf '%s\n' '#!/bin/bash
               mysqldump --defaults-file=$HOME/.jokas-backup.cnf --single-transaction --routines __DB_NAME__ > $HOME/jokas-db-backups/.tmp-dump.sql 2>$HOME/jokas-db-backups/backup-error.log
               if [ $? -eq 0 ] && [ -s $HOME/jokas-db-backups/.tmp-dump.sql ]; then
                 gzip -c $HOME/jokas-db-backups/.tmp-dump.sql > $HOME/jokas-db-backups/db-$(date +%Y%m%d).sql.gz
                 rm -f $HOME/jokas-db-backups/.tmp-dump.sql $HOME/jokas-db-backups/backup-error.log
-                find $HOME/jokas-db-backups -name 'db-*.sql.gz' -mtime +7 -delete
+                find $HOME/jokas-db-backups -name "db-*.sql.gz" -mtime +7 -delete
               else
                 echo "$(date): mysqldump failed or produced empty output" >> $HOME/jokas-db-backups/backup-error.log
-              fi
-            BACKUP_SCRIPT_EOF
+              fi' > "$HOME/jokas-db-backup.sh"
               sed -i "s/__DB_NAME__/$DB_NAME/" "$HOME/jokas-db-backup.sh"
               chmod +x "$HOME/jokas-db-backup.sh"
               echo "Database backup script written (runs daily ~02:00 via start.js's checkDailyBackup() — see H27/H28 history; this host has no real cron, see feedback_no_cron_on_host memory)."
@@ -676,16 +688,16 @@ jobs:
             # corruption or an accidental delete would lose it permanently
             # with no recovery path, unlike the database which has a daily dump.
             mkdir -p "$HOME/jokas-files-backups"
-            cat > "$HOME/jokas-files-backup.sh" <<'FILES_SCRIPT_EOF'
-            #!/bin/bash
+            # H29 (2026-08-11): same heredoc-to-printf rewrite as the DB
+            # backup script above — see its comment for why.
+            printf '%s\n' '#!/bin/bash
             UPLOADS_DIR=$HOME/domains/jokasfarms.com/nodejs/apps/api/uploads
             if [ -d "$UPLOADS_DIR" ] && [ -n "$(ls -A "$UPLOADS_DIR" 2>/dev/null)" ]; then
               tar -czf $HOME/jokas-files-backups/.tmp-files.tar.gz -C "$UPLOADS_DIR" . 2>$HOME/jokas-files-backups/backup-error.log
               mv $HOME/jokas-files-backups/.tmp-files.tar.gz $HOME/jokas-files-backups/files-$(date +%Y%m%d).tar.gz
-              find $HOME/jokas-files-backups -name 'files-*.tar.gz' -mtime +7 -delete
+              find $HOME/jokas-files-backups -name "files-*.tar.gz" -mtime +7 -delete
             else
               echo "$(date): uploads dir missing or empty, nothing to back up" >> $HOME/jokas-files-backups/backup-error.log
-            fi
-            FILES_SCRIPT_EOF
+            fi' > "$HOME/jokas-files-backup.sh"
             chmod +x "$HOME/jokas-files-backup.sh"
             echo "Uploaded-files backup script written (runs daily ~02:00 via start.js's checkDailyFilesBackup())."
