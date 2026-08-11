@@ -480,7 +480,16 @@ export class DashboardService {
       // query already verified clean in ai-data.service.ts).
       this.prisma.purchaseOrder.count({ where: { companyId: cid, status: "PENDING_APPROVAL" as any, deletedAt: null } }),
 
-      this.prisma.maintenanceRecord.count({ where: { companyId: cid, status: { in: ["OPEN", "OVERDUE", "PENDING"] as any[] }, ...branchF, ...farmF, ...warehouseF, ...siteF } } as any),
+      // MaintenanceWorkflowStatus has no OPEN or PENDING value (only
+      // SCHEDULED/ASSIGNED/IN_PROGRESS/COMPLETED/CANCELLED/OVERDUE) — the
+      // `as any`/`as any[]` casts here suppressed the type error that would
+      // otherwise have caught this, and Prisma's own client-side validation
+      // rejected the query outright at runtime (500 on every executive
+      // dashboard load, live 2026-08-11). notIn the terminal statuses is
+      // both correct now and immune to a future new non-terminal status
+      // needing this list updated again, matching the notIn/not pattern
+      // already used for salesOrder/etc. elsewhere in this same method.
+      this.prisma.maintenanceRecord.count({ where: { companyId: cid, status: { notIn: ["COMPLETED", "CANCELLED"] }, ...branchF, ...farmF, ...warehouseF, ...siteF } }),
 
       this.prisma.aiAlert.count({ where: { companyId: cid, status: "UNREAD" } }),
 
