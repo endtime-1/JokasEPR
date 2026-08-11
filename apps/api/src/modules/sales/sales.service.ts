@@ -246,8 +246,13 @@ export class SalesService {
       void this.fireStockShortageAlerts(user.companyId, customer.branchId, orderNumber, shortItems).catch(() => undefined);
     }
 
-    // Auto-generate draft production orders for all items (non-blocking)
-    void this.autoGenerateProductionOrders(user.companyId, customer.branchId, orderNumber, data.id, dto.items, user.id).catch(() => undefined);
+    // Auto-generate draft production orders for all items (non-blocking —
+    // a failure here shouldn't fail the sales order that already succeeded,
+    // but silently swallowing it meant a real failure, e.g. an orderNumber
+    // collision, left production planning silently short with no trace).
+    void this.autoGenerateProductionOrders(user.companyId, customer.branchId, orderNumber, data.id, dto.items, user.id).catch((err) =>
+      this.logger.error(`Auto production-order generation failed for sales order ${orderNumber}: ${err instanceof Error ? err.message : err}`)
+    );
 
     return { data };
   }
@@ -732,9 +737,12 @@ export class SalesService {
       const kgFactor = uomName.includes("50") || uomSymbol.includes("bag") ? 50 : 1;
       const plannedQuantityKg = item.quantity * kgFactor;
 
-      // Generate order number
-      const count = await this.prisma.feedProductionOrder.count({ where: { companyId } });
-      const orderNumber = `FPO-${String(count + 1).padStart(5, "0")}`;
+      // count+1 raced under concurrent sales orders (two requests reading the
+      // same count before either insert lands) and produced a different
+      // orderNumber format than feed-production.service.ts's own manual
+      // creation path besides. nextRef is the same atomic-allocation helper
+      // that path already uses.
+      const orderNumber = await nextRef(this.prisma, companyId, "FPO");
 
       await this.prisma.feedProductionOrder.create({
         data: {
