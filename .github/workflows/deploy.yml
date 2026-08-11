@@ -283,6 +283,20 @@ jobs:
             fi
 
       - name: Extract files to APP_DIR
+        # H-INFRA-3 (2026-08-11): previously extracted straight into the
+        # live, currently-serving APP_DIR (tar -xzf ... -C "$APP_DIR") — a
+        # truncated transfer or a disk-full condition mid-extraction left a
+        # mix of old and new files under a still-running process, with the
+        # multi-second extraction window fully exposed. Now extracts into a
+        # staging directory first and swaps it into place with two `mv`s,
+        # which on the same filesystem are near-instant metadata operations
+        # — the live-corruption window shrinks from "the whole extraction"
+        # to "two renames." uploads/ and .env don't come from the deploy
+        # tarball at all (uploads/ accumulates on the live server between
+        # deploys — see the uploaded-files backup step's own comment; .env
+        # gets read by the next step before being rewritten) — both are
+        # explicitly carried over into the staging dir before the swap, or
+        # the swap would silently delete them.
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.HOSTINGER_HOST }}
@@ -292,12 +306,35 @@ jobs:
           script_stop: true
           script: |
             APP_DIR="$HOME/domains/jokasfarms.com/nodejs"
-            mkdir -p "$APP_DIR"
-            tar -xzf /tmp/deploy.tar.gz -C "$APP_DIR"
+            STAGE_DIR="$APP_DIR.new"
+            rm -rf "$STAGE_DIR"
+            mkdir -p "$STAGE_DIR"
+            tar -xzf /tmp/deploy.tar.gz -C "$STAGE_DIR"
             rm -f /tmp/deploy.tar.gz
-            echo "Extraction complete."
+
+            if [ ! -f "$STAGE_DIR/start.js" ]; then
+              echo "ERROR: extraction produced no start.js — aborting before touching the live app."
+              rm -rf "$STAGE_DIR"
+              exit 1
+            fi
+
+            if [ -d "$APP_DIR/apps/api/uploads" ]; then
+              mkdir -p "$STAGE_DIR/apps/api"
+              cp -a "$APP_DIR/apps/api/uploads" "$STAGE_DIR/apps/api/uploads"
+            fi
+            if [ -f "$APP_DIR/.env" ]; then
+              cp -a "$APP_DIR/.env" "$STAGE_DIR/.env"
+            fi
+
+            rm -rf "$APP_DIR.old"
+            if [ -d "$APP_DIR" ]; then mv "$APP_DIR" "$APP_DIR.old"; fi
+            mv "$STAGE_DIR" "$APP_DIR"
+            rm -rf "$APP_DIR.old"
+
+            echo "Extraction complete (atomic swap)."
             echo "  api dist: $([ -f "$APP_DIR/apps/api/dist/main.js" ] || [ -f "$APP_DIR/apps/api/dist/bundle.js" ] && echo EXISTS || echo MISSING)"
             echo "  start.js: $([ -f "$APP_DIR/start.js" ] && echo EXISTS || echo MISSING)"
+            echo "  uploads preserved: $([ -d "$APP_DIR/apps/api/uploads" ] && echo YES || echo "none existed")"
 
       - name: Patch DATABASE_URL with connection pool limit
         uses: appleboy/ssh-action@v1.2.0
@@ -361,6 +398,24 @@ jobs:
         # issue. The auto-rollback below correctly recovered production when this was
         # hit live. Reverting to the proven-reliable mechanism until the hang is
         # root-caused separately (not blocking regular deploys on it).
+        #
+        # H-INFRA-1/CRITICAL (2026-08-11): two gaps fixed together. (1) A
+        # failing migration.sql file used to just be counted while the loop
+        # moved on to try later migrations that may depend on the failed
+        # one's schema change — cascading failures instead of stopping
+        # cleanly. Now stops at the first failure. (2) The auto-rollback
+        # further down in this job only ever restores application CODE via
+        # rsync — it has never touched the database. If a migration fails
+        # partway through (MySQL DDL auto-commits per statement, so a
+        # multi-statement file can leave some of its statements already
+        # applied), the "rolled back" previous app version would then be
+        # running against a schema it was never written for, with nothing
+        # about the rollback indicating that risk. This step now takes a
+        # fresh mysqldump snapshot immediately before running any migration
+        # — and aborts loudly, before touching the schema, if that snapshot
+        # itself fails — so a verified-just-now backup always exists to
+        # manually restore from if something goes wrong. The failure
+        # message below points straight at it.
         uses: appleboy/ssh-action@v1.2.0
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -413,6 +468,26 @@ jobs:
               rm -f /tmp/deploy-my.cnf; exit 0
             fi
             echo "Database connection OK"
+
+            # Pre-migration safety snapshot — see the H-INFRA-1 comment above
+            # the `uses:` line. Aborts before touching the schema if the
+            # snapshot itself fails, rather than proceeding with no safety net.
+            echo "--- Taking pre-migration snapshot ---"
+            mkdir -p "$HOME/jokas-db-backups"
+            SNAPSHOT_FILE="$HOME/jokas-db-backups/pre-deploy-$(date +%Y%m%d-%H%M%S).sql.gz"
+            if mysqldump --defaults-file=/tmp/deploy-my.cnf --single-transaction --routines "$DB_NAME" 2>/tmp/deploy-snapshot-err.log | gzip > "$SNAPSHOT_FILE" && [ -s "$SNAPSHOT_FILE" ]; then
+              echo "Pre-migration snapshot OK: $SNAPSHOT_FILE ($(du -h "$SNAPSHOT_FILE" 2>/dev/null | cut -f1))"
+              # Keep the 5 most recent pre-deploy snapshots only — these are a
+              # short-lived safety net for THIS deploy, not the daily backup
+              # (which has its own 7-day retention via setup-backup-crons.sh).
+              ls -1t "$HOME/jokas-db-backups"/pre-deploy-*.sql.gz 2>/dev/null | tail -n +6 | xargs -r rm -f
+            else
+              echo "ERROR: pre-migration snapshot failed — aborting before touching the schema."
+              cat /tmp/deploy-snapshot-err.log 2>/dev/null || true
+              rm -f /tmp/deploy-my.cnf /tmp/deploy-snapshot-err.log "$SNAPSHOT_FILE"
+              exit 1
+            fi
+            rm -f /tmp/deploy-snapshot-err.log
 
             # Create Prisma migration-tracking table if it does not yet exist.
             # Written as a single -e string to avoid YAML-breaking heredocs.
@@ -483,16 +558,27 @@ jobs:
                 APPLIED=$((APPLIED + 1))
               else
                 echo "  [FAIL] $MIG_NAME"
-                FAILED=$((FAILED + 1))
-                sleep 1
+                FAILED=1
+                # Stop here rather than trying later files — they may depend
+                # on this one's schema change, and MySQL DDL auto-commits
+                # per statement, so this file itself may be partially applied.
+                echo "  Stopping — later migrations may depend on this one; not attempting them."
+                break
               fi
             done
 
             rm -f /tmp/deploy-my.cnf
             echo "Migrations: $APPLIED applied, $FAILED failed."
             if [ "$FAILED" -gt 0 ]; then
-              echo "ERROR: $FAILED migration(s) failed — aborting deploy to prevent schema mismatch."
-              echo "  Check the migration SQL files and re-run the deploy after fixing them."
+              echo "ERROR: migration '$MIG_NAME' failed — aborting deploy to prevent schema mismatch."
+              echo "  A pre-migration snapshot was saved to: $SNAPSHOT_FILE"
+              echo "  IMPORTANT: the automatic rollback that follows this failure only restores"
+              echo "  application CODE (via rsync), never the database. If '$MIG_NAME' applied any"
+              echo "  of its statements before failing, the schema is now AHEAD of what the"
+              echo "  restored (previous) app version expects. Do not assume the app is fully"
+              echo "  healthy just because the rollback step reports success — verify the schema"
+              echo "  state manually, and restore from the snapshot above if needed."
+              echo "  Check the migration SQL file and re-run the deploy after fixing it."
               exit 1
             fi
 
@@ -540,27 +626,43 @@ jobs:
           fi
 
       - name: Roll back to previous deploy on Hostinger
+        # H-INFRA-2 (2026-08-11): previously a single appleboy/ssh-action
+        # attempt with no retry — if THIS SSH connection also failed
+        # (transient network blip, or the box under load right after a bad
+        # deploy), the rollback silently never happened, the next step was
+        # skipped entirely (it only runs if this one reports success), and
+        # nothing beyond a red GitHub Actions run signaled it. Converted to
+        # a raw ssh call (reusing the key already staged by "Setup SSH
+        # key") wrapped in the same 3-attempt retry pattern already proven
+        # reliable for the tarball upload earlier in this job, and the
+        # final failure message is now explicit that production may still
+        # be down and needs immediate manual attention — not just a
+        # generic red X for someone to eventually notice.
         if: failure()
         id: rollback_restore
-        uses: appleboy/ssh-action@v1.2.0
-        with:
-          host: ${{ secrets.HOSTINGER_HOST }}
-          username: ${{ secrets.HOSTINGER_USER }}
-          key: ${{ secrets.HOSTINGER_SSH_KEY }}
-          port: 65002
-          script_stop: true
-          script: |
+        run: |
+          ROLLBACK_CMD='
             APP_DIR="$HOME/domains/jokasfarms.com/nodejs"
             PREV_DIR="$APP_DIR/../nodejs_prev"
             if [ ! -d "$PREV_DIR" ]; then
-              echo "::error::Smoke test failed and no nodejs_prev backup exists — cannot auto-rollback. Manual intervention required via SSH."
+              echo "::error::Smoke test failed and no nodejs_prev backup exists -- cannot auto-rollback. Manual intervention required via SSH."
               exit 1
             fi
-
-            echo "==> Smoke test failed — rolling back to the previous deploy..."
+            echo "==> Smoke test failed -- rolling back to the previous deploy..."
             rsync -a --delete "$PREV_DIR/" "$APP_DIR/"
             mkdir -p "$APP_DIR/tmp"
             touch "$APP_DIR/tmp/restart.txt"
+          '
+          for attempt in 1 2 3; do
+            if ssh -p 65002 -i ~/.ssh/id_rsa "${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}" "$ROLLBACK_CMD"; then
+              echo "Rollback succeeded on attempt $attempt"
+              exit 0
+            fi
+            echo "::warning::Rollback attempt $attempt failed"
+            [ "$attempt" -lt 3 ] && sleep 15
+          done
+          echo "::error::Rollback failed after 3 attempts -- PRODUCTION MAY STILL BE RUNNING THE BROKEN DEPLOY. Immediate manual intervention required via SSH: rsync the nodejs_prev backup back into place and touch tmp/restart.txt."
+          exit 1
 
       # Split from the rollback step above: the ssh-action step can only run
       # bash it uploads to the box, and polling a public https:// URL doesn't
