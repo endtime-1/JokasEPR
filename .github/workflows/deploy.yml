@@ -627,7 +627,6 @@ jobs:
             # (2) dumping to a temp file first so mysqldump's own exit code and
             # a non-empty-file check gate whether gzip/rotation run at all —
             # failures now land in backup-error.log instead of vanishing.
-            BACKUP_CMD="mysqldump --defaults-file=\$HOME/.jokas-backup.cnf --single-transaction --routines $DB_NAME > \$HOME/jokas-db-backups/.tmp-dump.sql 2>\$HOME/jokas-db-backups/backup-error.log; if [ \$? -eq 0 ] && [ -s \$HOME/jokas-db-backups/.tmp-dump.sql ]; then gzip -c \$HOME/jokas-db-backups/.tmp-dump.sql > \$HOME/jokas-db-backups/db-\$(date +\\%Y\\%m\\%d).sql.gz && rm -f \$HOME/jokas-db-backups/.tmp-dump.sql \$HOME/jokas-db-backups/backup-error.log && find \$HOME/jokas-db-backups -name 'db-*.sql.gz' -mtime +7 -delete; else echo \"\$(date): mysqldump failed or produced empty output\" >> \$HOME/jokas-db-backups/backup-error.log; fi"
             # NOTE: this Hostinger plan has no Cron Jobs feature, and `crontab`
             # itself is aliased in interactive shells to a read-only stub (`cat
             # /var/spool/cron/$USER`, ignores -l/-e/stdin) — confirmed live
@@ -637,11 +636,33 @@ jobs:
             # The script actually gets run by start.js's checkDailyBackup(),
             # which polls for the 02:00 hour and today's dump file every 15 min
             # — see start.js for why piggybacking on it (not cron) works here.
-            printf '#!/bin/bash\n%s\n' "$BACKUP_CMD" > "$HOME/jokas-db-backup.sh"
+            #
+            # H27 (2026-08-11): previously built as a single semicolon-chained
+            # string via escaped-\"-inside-a-double-quoted-bash-string, then
+            # printf'd to a file. That's the one pattern in this whole workflow
+            # not used anywhere else — and the SSH-based deploy's first live run
+            # failed both backup-cron steps with zero script output (not even
+            # the exit-code markers other multi-line ssh-action steps produced),
+            # consistent with drone-ssh's script transport choking on it. A
+            # fully single-quoted heredoc needs no escaping at all — the whole
+            # body is written byte-for-byte, and $DB_NAME (the one CI-time value
+            # needed inside it) is substituted afterward via sed.
+            cat > "$HOME/jokas-db-backup.sh" <<'BACKUP_SCRIPT_EOF'
+            #!/bin/bash
+            mysqldump --defaults-file=$HOME/.jokas-backup.cnf --single-transaction --routines __DB_NAME__ > $HOME/jokas-db-backups/.tmp-dump.sql 2>$HOME/jokas-db-backups/backup-error.log
+            if [ $? -eq 0 ] && [ -s $HOME/jokas-db-backups/.tmp-dump.sql ]; then
+              gzip -c $HOME/jokas-db-backups/.tmp-dump.sql > $HOME/jokas-db-backups/db-$(date +%Y%m%d).sql.gz
+              rm -f $HOME/jokas-db-backups/.tmp-dump.sql $HOME/jokas-db-backups/backup-error.log
+              find $HOME/jokas-db-backups -name 'db-*.sql.gz' -mtime +7 -delete
+            else
+              echo "$(date): mysqldump failed or produced empty output" >> $HOME/jokas-db-backups/backup-error.log
+            fi
+            BACKUP_SCRIPT_EOF
+            sed -i "s/__DB_NAME__/$DB_NAME/" "$HOME/jokas-db-backup.sh"
             chmod +x "$HOME/jokas-db-backup.sh"
             CRONTAB_BIN="$(command -v crontab 2>/dev/null || echo /usr/bin/crontab)"
             if [ -x "$CRONTAB_BIN" ]; then
-              ("$CRONTAB_BIN" -l 2>/dev/null | grep -v 'jokas-db-backups'; echo "0 2 * * * $BACKUP_CMD") | "$CRONTAB_BIN" -
+              ("$CRONTAB_BIN" -l 2>/dev/null | grep -v 'jokas-db-backups'; echo "0 2 * * * $HOME/jokas-db-backup.sh") | "$CRONTAB_BIN" -
               echo "Database backup cron installed (daily 02:00, 7-day retention → ~/jokas-db-backups/)."
             else
               echo "crontab not usable on this host — ~/jokas-db-backup.sh written; start.js's checkDailyBackup() runs it automatically around 02:00 daily."
@@ -673,15 +694,24 @@ jobs:
             # same 7-day retention, same start.js polling fallback (crontab is
             # a read-only stub on this Hostinger plan — confirmed 2026-08-06).
             mkdir -p "$HOME/jokas-files-backups"
-            # $HOME/domains/... is written literally (not $APP_DIR) because this
-            # string becomes the body of a standalone script run later by cron /
-            # start.js's poller, in its own shell, long after this workflow step ends.
-            FILES_BACKUP_CMD="UPLOADS_DIR=\$HOME/domains/jokasfarms.com/nodejs/apps/api/uploads; if [ -d \"\$UPLOADS_DIR\" ] && [ -n \"\$(ls -A \"\$UPLOADS_DIR\" 2>/dev/null)\" ]; then tar -czf \$HOME/jokas-files-backups/.tmp-files.tar.gz -C \"\$UPLOADS_DIR\" . 2>\$HOME/jokas-files-backups/backup-error.log && mv \$HOME/jokas-files-backups/.tmp-files.tar.gz \$HOME/jokas-files-backups/files-\$(date +\\%Y\\%m\\%d).tar.gz && find \$HOME/jokas-files-backups -name 'files-*.tar.gz' -mtime +7 -delete; else echo \"\$(date): uploads dir missing or empty, nothing to back up\" >> \$HOME/jokas-files-backups/backup-error.log; fi"
-            printf '#!/bin/bash\n%s\n' "$FILES_BACKUP_CMD" > "$HOME/jokas-files-backup.sh"
+            # H27 (2026-08-11): rewritten as a single-quoted heredoc for the
+            # same reason as the DB backup script above — no CI-time variable
+            # is even needed here, so this one needs no substitution step at all.
+            cat > "$HOME/jokas-files-backup.sh" <<'FILES_SCRIPT_EOF'
+            #!/bin/bash
+            UPLOADS_DIR=$HOME/domains/jokasfarms.com/nodejs/apps/api/uploads
+            if [ -d "$UPLOADS_DIR" ] && [ -n "$(ls -A "$UPLOADS_DIR" 2>/dev/null)" ]; then
+              tar -czf $HOME/jokas-files-backups/.tmp-files.tar.gz -C "$UPLOADS_DIR" . 2>$HOME/jokas-files-backups/backup-error.log
+              mv $HOME/jokas-files-backups/.tmp-files.tar.gz $HOME/jokas-files-backups/files-$(date +%Y%m%d).tar.gz
+              find $HOME/jokas-files-backups -name 'files-*.tar.gz' -mtime +7 -delete
+            else
+              echo "$(date): uploads dir missing or empty, nothing to back up" >> $HOME/jokas-files-backups/backup-error.log
+            fi
+            FILES_SCRIPT_EOF
             chmod +x "$HOME/jokas-files-backup.sh"
             CRONTAB_BIN="$(command -v crontab 2>/dev/null || echo /usr/bin/crontab)"
             if [ -x "$CRONTAB_BIN" ]; then
-              ("$CRONTAB_BIN" -l 2>/dev/null | grep -v 'jokas-files-backups'; echo "0 2 * * * $FILES_BACKUP_CMD") | "$CRONTAB_BIN" -
+              ("$CRONTAB_BIN" -l 2>/dev/null | grep -v 'jokas-files-backups'; echo "0 2 * * * $HOME/jokas-files-backup.sh") | "$CRONTAB_BIN" -
               echo "Uploaded-files backup cron installed (daily 02:00, 7-day retention → ~/jokas-files-backups/)."
             else
               echo "crontab not usable on this host — ~/jokas-files-backup.sh written; start.js's checkDailyFilesBackup() runs it automatically around 02:00 daily."
