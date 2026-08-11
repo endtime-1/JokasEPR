@@ -7,11 +7,10 @@ on:
   # typecheck/unit/e2e only gated the deploy step, after the fact. A broken
   # push left main red until someone noticed. This runs the same `build` job
   # (lint/typecheck/unit/e2e/build) on every PR into main, without touching
-  # the self-hosted deploy job (see its `if: github.event_name == 'push'`
-  # below) — PRs get full validation but never reach production or the
-  # self-hosted runner. Branch protection in the repo's GitHub settings
-  # should also require this "build" check to pass before merging, but that
-  # setting lives outside this file.
+  # the `deploy` job (see its `if: github.event_name == 'push'` below) — PRs
+  # get full validation but never touch production. Branch protection in the
+  # repo's GitHub settings should also require this "build" check to pass
+  # before merging, but that setting lives outside this file.
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -205,113 +204,149 @@ jobs:
           path: /tmp/deploy.tar.gz
           retention-days: 7
 
-  # ── Job 2: deploy on self-hosted runner (runs directly on Hostinger) ──────────
+  # ── Job 2: deploy over SSH from a GitHub-hosted runner ────────────────────────
+  # H26 (2026-08-11): this job used to run ON Hostinger via a self-hosted runner.
+  # Hostinger applies a ~30-second PID-based lifetime limit to processes it
+  # doesn't recognize as "the" Passenger-managed app (see start.js and
+  # api-worker-wrapper.js for the same limit crash-looping the API) — the
+  # runner's own process, or its per-step worker process, was very likely
+  # getting killed mid-job, surfacing to GitHub as "lost communication with
+  # the runner" / "The operation was canceled" on almost any step that ran
+  # longer than ~30s (which is most of them: an 835MB artifact download alone
+  # took ~39s). Moved back to the SSH-based deploy model this repo used before
+  # the self-hosted runner was adopted (see git history pre commit-that-added-
+  # runs-on:-self-hosted) — a GitHub-hosted runner orchestrates over SSH
+  # instead of running natively on the box, so nothing here is subject to that
+  # limit anymore. HOSTINGER_SSH_KEY / HOSTINGER_SSH_KNOWN_HOST / HOSTINGER_USER
+  # / HOSTINGER_HOST are pre-existing repo secrets, reused as-is.
   deploy:
     needs: build
     # H18: only ever run for a real push to main — a pull_request event
-    # (added above) must never reach the self-hosted runner or touch
-    # production, even though it now shares the same `build` job for
-    # quality-gate validation.
+    # (added above) must never reach this job or touch production, even
+    # though it now shares the same `build` job for quality-gate validation.
     if: github.event_name == 'push'
-    runs-on: self-hosted
-    permissions:
-      actions: read
+    runs-on: ubuntu-latest
 
     steps:
       - name: Download deployment artifact
-        # Use curl + Python instead of actions/download-artifact so the "Set up job"
-        # phase downloads zero Node.js actions — avoids OOM on memory-limited hosts.
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
-          GH_RUN_ID: ${{ github.run_id }}
+        uses: actions/download-artifact@v4
+        with:
+          name: deploy-pkg
+          path: /tmp
+
+      - name: Setup SSH key
         run: |
-          set -e
-          # Fetch artifact list; capture response for error reporting
-          API_RESPONSE=$(curl -sf \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/$GH_REPO/actions/runs/$GH_RUN_ID/artifacts") \
-            || { echo "ERROR: artifacts API call failed"; exit 1; }
-          # GitHub API uses "id": 123 (space after colon) — pattern must allow for it
-          ARTIFACT_ID=$(echo "$API_RESPONSE" \
-            | grep -o '"id":[[:space:]]*[0-9]*' | head -1 | grep -o '[0-9]*')
-          echo "Artifact ID: $ARTIFACT_ID"
-          if [ -z "$ARTIFACT_ID" ]; then
-            echo "ERROR: could not parse artifact ID. API response:"
-            echo "$API_RESPONSE" | head -60
-            exit 1
-          fi
-          curl -fL \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/$GH_REPO/actions/artifacts/$ARTIFACT_ID/zip" \
-            -o /tmp/deploy.zip
-          unzip -o /tmp/deploy.zip -d /tmp/
-          echo "Downloaded: $(ls -lh /tmp/deploy.tar.gz)"
+          mkdir -p ~/.ssh
+          echo "${{ secrets.HOSTINGER_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          echo "${{ secrets.HOSTINGER_SSH_KNOWN_HOST }}" >> ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+          # Connection-keeping options so rsync/ssh don't time out mid-transfer
+          # or mid-migration on a slow shared-hosting link.
+          cat > ~/.ssh/config << 'EOF'
+          Host *
+            ConnectTimeout 60
+            ServerAliveInterval 30
+            ServerAliveCountMax 10
+            TCPKeepAlive yes
+          EOF
+
+      - name: Upload deployment tarball to Hostinger
+        run: |
+          for attempt in 1 2 3; do
+            rsync -avz --partial --timeout=300 \
+              -e "ssh -p 65002 -i ~/.ssh/id_rsa" \
+              /tmp/deploy.tar.gz \
+              ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:/tmp/deploy.tar.gz \
+              && { echo "Upload succeeded on attempt $attempt"; break; } \
+              || { echo "Attempt $attempt failed; retrying in 15s..."; sleep 15; }
+          done
 
       - name: Backup current deploy
-        run: |
-          APP_DIR="$HOME/domains/jokasfarms.com/nodejs"
-          if [ -d "$APP_DIR/apps/api/dist" ]; then
-            rm -rf "$APP_DIR/../nodejs_prev"
-            cp -al "$APP_DIR" "$APP_DIR/../nodejs_prev" \
-              && echo "Backup complete (hardlinks)." \
-              || echo "WARNING: backup failed, continuing."
-          else
-            echo "No existing deploy to back up."
-          fi
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.HOSTINGER_HOST }}
+          username: ${{ secrets.HOSTINGER_USER }}
+          key: ${{ secrets.HOSTINGER_SSH_KEY }}
+          port: 65002
+          script_stop: true
+          script: |
+            APP_DIR="$HOME/domains/jokasfarms.com/nodejs"
+            if [ -d "$APP_DIR/apps/api/dist" ]; then
+              rm -rf "$APP_DIR/../nodejs_prev"
+              cp -al "$APP_DIR" "$APP_DIR/../nodejs_prev" \
+                && echo "Backup complete (hardlinks)." \
+                || echo "WARNING: backup failed, continuing."
+            else
+              echo "No existing deploy to back up."
+            fi
 
       - name: Extract files to APP_DIR
-        run: |
-          APP_DIR="$HOME/domains/jokasfarms.com/nodejs"
-          mkdir -p "$APP_DIR"
-          tar -xzf /tmp/deploy.tar.gz -C "$APP_DIR"
-          echo "Extraction complete."
-          echo "  api dist: $([ -f "$APP_DIR/apps/api/dist/bundle.js" ] && echo EXISTS || echo MISSING)"
-          echo "  start.js: $([ -f "$APP_DIR/start.js" ] && echo EXISTS || echo MISSING)"
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.HOSTINGER_HOST }}
+          username: ${{ secrets.HOSTINGER_USER }}
+          key: ${{ secrets.HOSTINGER_SSH_KEY }}
+          port: 65002
+          script_stop: true
+          script: |
+            APP_DIR="$HOME/domains/jokasfarms.com/nodejs"
+            mkdir -p "$APP_DIR"
+            tar -xzf /tmp/deploy.tar.gz -C "$APP_DIR"
+            rm -f /tmp/deploy.tar.gz
+            echo "Extraction complete."
+            echo "  api dist: $([ -f "$APP_DIR/apps/api/dist/main.js" ] || [ -f "$APP_DIR/apps/api/dist/bundle.js" ] && echo EXISTS || echo MISSING)"
+            echo "  start.js: $([ -f "$APP_DIR/start.js" ] && echo EXISTS || echo MISSING)"
 
       - name: Patch DATABASE_URL with connection pool limit
+        uses: appleboy/ssh-action@v1.2.0
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: |
-          APP_DIR="$HOME/domains/jokasfarms.com/nodejs"
-          ENV_FILE="$APP_DIR/.env"
-          # Determine the URL to write — prefer the secret, fall back to existing .env
-          if [ -n "$DATABASE_URL" ]; then
-            DB_URL="$DATABASE_URL"
-          elif [ -f "$ENV_FILE" ]; then
-            DB_URL=$(grep '^DATABASE_URL=' "$ENV_FILE" | head -1 | cut -d= -f2-)
-          fi
-          if [ -n "$DB_URL" ]; then
-            # Strip any existing pool params so we always write the correct values
-            DB_URL=$(echo "$DB_URL" | sed 's/[&?]connection_limit=[^&]*//g; s/[&?]pool_timeout=[^&]*//g')
-            # Append connection_limit=10 and pool_timeout=30
-            # 10 connections: enough for concurrent page loads (typically 3-5 simultaneous calls)
-            # pool_timeout=30s: prevents premature "pool exhausted" errors under burst traffic
-            if echo "$DB_URL" | grep -q "?"; then
-              DB_URL="${DB_URL}&connection_limit=10&pool_timeout=30"
-            else
-              DB_URL="${DB_URL}?connection_limit=10&pool_timeout=30"
+        with:
+          host: ${{ secrets.HOSTINGER_HOST }}
+          username: ${{ secrets.HOSTINGER_USER }}
+          key: ${{ secrets.HOSTINGER_SSH_KEY }}
+          port: 65002
+          envs: DATABASE_URL
+          script_stop: true
+          script: |
+            APP_DIR="$HOME/domains/jokasfarms.com/nodejs"
+            ENV_FILE="$APP_DIR/.env"
+            # Determine the URL to write — prefer the secret, fall back to existing .env
+            if [ -n "$DATABASE_URL" ]; then
+              DB_URL="$DATABASE_URL"
+            elif [ -f "$ENV_FILE" ]; then
+              DB_URL=$(grep '^DATABASE_URL=' "$ENV_FILE" | head -1 | cut -d= -f2-)
             fi
-            # Write/update the DATABASE_URL line in .env. NOT via `sed -i s|...|...|` —
-            # DB_URL always contains literal `&` (connection_limit=10&pool_timeout=30),
-            # and `&` in a sed replacement means "insert the matched text", not a literal
-            # ampersand. That silently corrupted this file with repeated fragments of the
-            # old line on every past deploy. grep -v + append has no replacement-text
-            # special characters to worry about.
-            if [ -f "$ENV_FILE" ]; then
-              grep -v '^DATABASE_URL=' "$ENV_FILE" > "$ENV_FILE.tmp" || true
-              echo "DATABASE_URL=${DB_URL}" >> "$ENV_FILE.tmp"
-              mv "$ENV_FILE.tmp" "$ENV_FILE"
+            if [ -n "$DB_URL" ]; then
+              # Strip any existing pool params so we always write the correct values
+              DB_URL=$(echo "$DB_URL" | sed 's/[&?]connection_limit=[^&]*//g; s/[&?]pool_timeout=[^&]*//g')
+              # Append connection_limit=10 and pool_timeout=30
+              # 10 connections: enough for concurrent page loads (typically 3-5 simultaneous calls)
+              # pool_timeout=30s: prevents premature "pool exhausted" errors under burst traffic
+              if echo "$DB_URL" | grep -q "?"; then
+                DB_URL="${DB_URL}&connection_limit=10&pool_timeout=30"
+              else
+                DB_URL="${DB_URL}?connection_limit=10&pool_timeout=30"
+              fi
+              # Write/update the DATABASE_URL line in .env. NOT via `sed -i s|...|...|` —
+              # DB_URL always contains literal `&` (connection_limit=10&pool_timeout=30),
+              # and `&` in a sed replacement means "insert the matched text", not a literal
+              # ampersand. That silently corrupted this file with repeated fragments of the
+              # old line on every past deploy. grep -v + append has no replacement-text
+              # special characters to worry about.
+              if [ -f "$ENV_FILE" ]; then
+                grep -v '^DATABASE_URL=' "$ENV_FILE" > "$ENV_FILE.tmp" || true
+                echo "DATABASE_URL=${DB_URL}" >> "$ENV_FILE.tmp"
+                mv "$ENV_FILE.tmp" "$ENV_FILE"
+              else
+                mkdir -p "$APP_DIR"
+                echo "DATABASE_URL=${DB_URL}" >> "$ENV_FILE"
+              fi
+              echo "DATABASE_URL patched: connection_limit=10, pool_timeout=30"
             else
-              mkdir -p "$APP_DIR"
-              echo "DATABASE_URL=${DB_URL}" >> "$ENV_FILE"
+              echo "WARNING: no DATABASE_URL found — skipping connection pool patch"
             fi
-            echo "DATABASE_URL patched: connection_limit=10, pool_timeout=30"
-          else
-            echo "WARNING: no DATABASE_URL found — skipping connection pool patch"
-          fi
 
       - name: Run database migrations
         # REVERTED 2026-08-05 back to the hand-rolled runner. `prisma migrate deploy`
@@ -325,144 +360,160 @@ jobs:
         # issue. The auto-rollback below correctly recovered production when this was
         # hit live. Reverting to the proven-reliable mechanism until the hang is
         # root-caused separately (not blocking regular deploys on it).
+        uses: appleboy/ssh-action@v1.2.0
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: |
-          APP_DIR="$HOME/domains/jokasfarms.com/nodejs"
-          MIGRATIONS_DIR="$APP_DIR/prisma/migrations"
+        with:
+          host: ${{ secrets.HOSTINGER_HOST }}
+          username: ${{ secrets.HOSTINGER_USER }}
+          key: ${{ secrets.HOSTINGER_SSH_KEY }}
+          port: 65002
+          envs: DATABASE_URL
+          command_timeout: 15m
+          script_stop: true
+          script: |
+            APP_DIR="$HOME/domains/jokasfarms.com/nodejs"
+            MIGRATIONS_DIR="$APP_DIR/prisma/migrations"
 
-          # Prefer the GitHub secret; fall back to the on-disk .env for local runner runs.
-          # Read as plain text, NOT `source`/`.` — DATABASE_URL's query string contains
-          # unescaped `&` (connect_timeout=30&connection_limit=5&...), and sourcing an
-          # unquoted `VAR=value&` line makes bash treat `&` as a background-job operator,
-          # silently truncating/backgrounding the assignment instead of setting it.
-          if [ -z "$DATABASE_URL" ] && [ -f "$APP_DIR/.env" ]; then
-            DATABASE_URL=$(grep '^DATABASE_URL=' "$APP_DIR/.env" | head -1 | cut -d= -f2-)
-          fi
-
-          if [ -z "$DATABASE_URL" ]; then
-            echo "WARNING: DATABASE_URL not set — skipping migrations"; exit 0
-          fi
-
-          # Parse mysql://user:pass@host:port/dbname in pure bash (no heredocs, no Python).
-          # %@* removes shortest suffix starting with @, so passwords containing @ work.
-          _u="${DATABASE_URL#mysql://}"
-          DB_USER="${_u%%:*}"
-          _ap="${_u#*:}"
-          DB_PASS="${_ap%@*}"
-          _hp="${_ap##*@}"
-          DB_HOST="${_hp%%[:/*]*}"
-          _ah="${_hp#"$DB_HOST"}"
-          case "$_ah" in :*) DB_PORT="${_ah#:}"; DB_PORT="${DB_PORT%%/*}" ;; *) DB_PORT="3306" ;; esac
-          DB_NAME="${_hp#*/}"; DB_NAME="${DB_NAME%%[?#]*}"
-
-          # Write options file — keeps credentials out of process args and logs
-          printf '[client]\nhost=%s\nport=%s\nuser=%s\npassword=%s\ndatabase=%s\n' \
-            "$DB_HOST" "$DB_PORT" "$DB_USER" "$DB_PASS" "$DB_NAME" > /tmp/deploy-my.cnf
-          chmod 600 /tmp/deploy-my.cnf
-          MYSQL="mysql --defaults-file=/tmp/deploy-my.cnf --batch --silent"
-          echo "DB: $DB_USER@$DB_HOST:$DB_PORT/$DB_NAME"
-
-          if ! $MYSQL -e "SELECT 1" > /dev/null 2>&1; then
-            echo "WARNING: cannot connect to database — skipping migrations"
-            rm -f /tmp/deploy-my.cnf; exit 0
-          fi
-          echo "Database connection OK"
-
-          # Create Prisma migration-tracking table if it does not yet exist.
-          # Written as a single -e string to avoid YAML-breaking heredocs.
-          $MYSQL -e "CREATE TABLE IF NOT EXISTS \`_prisma_migrations\` (\`id\` varchar(36) NOT NULL,\`checksum\` varchar(64) NOT NULL DEFAULT '',\`finished_at\` datetime(3) DEFAULT NULL,\`migration_name\` varchar(255) NOT NULL,\`logs\` text DEFAULT NULL,\`rolled_back_at\` datetime(3) DEFAULT NULL,\`started_at\` datetime(3) NOT NULL DEFAULT current_timestamp(3),\`applied_steps_count\` int NOT NULL DEFAULT 0,PRIMARY KEY (\`id\`),UNIQUE KEY \`_prisma_migrations_migration_name_key\` (\`migration_name\`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;"
-
-          # NOTE: as of 2026-08-05 every migration through 20260804000000 already has
-          # a REAL checksum recorded (via scripts/reconcile-migration-history.sh, run
-          # once by hand) instead of the historical placeholder ''. This seed block is
-          # kept only as a safety net for a from-scratch database; ON DUPLICATE KEY
-          # UPDATE never touches the checksum column, so it will not clobber the real
-          # checksums already in place.
-          $MYSQL -e "
-            INSERT INTO \`_prisma_migrations\` (id,checksum,migration_name,started_at,finished_at,applied_steps_count) VALUES
-              (UUID(),'','20260615143000_initial_erp_foundation',NOW(3),NOW(3),1),
-              (UUID(),'','20260615224000_sales_customer_management',NOW(3),NOW(3),1),
-              (UUID(),'','20260616120000_maintenance_management',NOW(3),NOW(3),1),
-              (UUID(),'','20260616210000_mobile_sync',NOW(3),NOW(3),1),
-              (UUID(),'','20260616230000_user_account_lockout',NOW(3),NOW(3),1),
-              (UUID(),'','20260629000000_storefront_fields',NOW(3),NOW(3),1),
-              (UUID(),'','20260629000001_feed_raw_materials',NOW(3),NOW(3),1),
-              (UUID(),'','20260701000000_leave_request_system',NOW(3),NOW(3),1),
-              (UUID(),'','20260713000000_employee_photo',NOW(3),NOW(3),1),
-              (UUID(),'','20260616200000_notification_system',NOW(3),NOW(3),1),
-              (UUID(),'','20260722000000_employee_user_fk',NOW(3),NOW(3),1),
-              (UUID(),'','20260729000000_ai_alert_forecast_tables',NOW(3),NOW(3),1),
-              (UUID(),'','20260730000000_prospect_visit_table',NOW(3),NOW(3),1),
-              (UUID(),'','20260730000001_leave_request_mysql_fix',NOW(3),NOW(3),1)
-            ON DUPLICATE KEY UPDATE
-              finished_at=COALESCE(finished_at,NOW(3)),
-              applied_steps_count=GREATEST(applied_steps_count,1);
-          " 2>&1 || true
-          # 20260801030000_hr_d_disciplinary_grievance ran against the wrong DB state
-          # (Notification table didn't exist yet). Superseded by 20260801085000_hr_d_tables_recovery.
-          # Mark as rolled-back so the runner skips it permanently.
-          $MYSQL -e "
-            INSERT INTO \`_prisma_migrations\` (id,checksum,migration_name,started_at,rolled_back_at,applied_steps_count)
-              VALUES (UUID(),'','20260801030000_hr_d_disciplinary_grievance',NOW(3),NOW(3),0)
-            ON DUPLICATE KEY UPDATE
-              rolled_back_at=COALESCE(rolled_back_at,NOW(3)),
-              applied_steps_count=0,
-              finished_at=NULL;
-          " 2>&1 || true
-
-          # Pre-fetch ALL migration statuses in ONE query — eliminates per-migration
-          # DB connections that trigger Hostinger's connection rate limit (ERROR 2002).
-          sleep 2
-          MIGS_APPLIED=$($MYSQL -N -e "SELECT COALESCE(GROUP_CONCAT(migration_name SEPARATOR '|'),'') FROM \`_prisma_migrations\` WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL AND applied_steps_count>0;" 2>/dev/null || echo "")
-          sleep 1
-          MIGS_ROLLEDBACK=$($MYSQL -N -e "SELECT COALESCE(GROUP_CONCAT(migration_name SEPARATOR '|'),'') FROM \`_prisma_migrations\` WHERE rolled_back_at IS NOT NULL;" 2>/dev/null || echo "")
-
-          echo "--- Applying pending migrations ---"
-          APPLIED=0; FAILED=0
-
-          for SQL_FILE in $(find "$MIGRATIONS_DIR" -name "migration.sql" 2>/dev/null | sort); do
-            MIG_NAME=$(basename "$(dirname "$SQL_FILE")")
-            echo "$MIG_NAME" | grep -qE '^[0-9]{14}_' || continue
-
-            # Pure shell match against pre-fetched pipe-separated lists — no DB connection
-            case "|${MIGS_APPLIED}|"    in *"|${MIG_NAME}|"*) echo "  [ok]   $MIG_NAME"; continue ;; esac
-            case "|${MIGS_ROLLEDBACK}|" in *"|${MIG_NAME}|"*) echo "  [skip] $MIG_NAME (rolled-back)"; continue ;; esac
-
-            echo "  [run]  $MIG_NAME"
-            sleep 1
-            if $MYSQL < "$SQL_FILE" 2>&1; then
-              sleep 1
-              $MYSQL -e "INSERT INTO \`_prisma_migrations\` (id,checksum,migration_name,started_at,finished_at,applied_steps_count) VALUES (UUID(),'','$MIG_NAME',NOW(3),NOW(3),1) ON DUPLICATE KEY UPDATE finished_at=NOW(3),applied_steps_count=1,rolled_back_at=NULL;" 2>&1 || true
-              echo "  [done] $MIG_NAME"
-              APPLIED=$((APPLIED + 1))
-            else
-              echo "  [FAIL] $MIG_NAME"
-              FAILED=$((FAILED + 1))
-              sleep 1
+            # Prefer the GitHub secret; fall back to the on-disk .env for local runner runs.
+            # Read as plain text, NOT `source`/`.` — DATABASE_URL's query string contains
+            # unescaped `&` (connect_timeout=30&connection_limit=5&...), and sourcing an
+            # unquoted `VAR=value&` line makes bash treat `&` as a background-job operator,
+            # silently truncating/backgrounding the assignment instead of setting it.
+            if [ -z "$DATABASE_URL" ] && [ -f "$APP_DIR/.env" ]; then
+              DATABASE_URL=$(grep '^DATABASE_URL=' "$APP_DIR/.env" | head -1 | cut -d= -f2-)
             fi
-          done
 
-          rm -f /tmp/deploy-my.cnf
-          echo "Migrations: $APPLIED applied, $FAILED failed."
-          if [ "$FAILED" -gt 0 ]; then
-            echo "ERROR: $FAILED migration(s) failed — aborting deploy to prevent schema mismatch."
-            echo "  Check the migration SQL files and re-run the deploy after fixing them."
-            exit 1
-          fi
+            if [ -z "$DATABASE_URL" ]; then
+              echo "WARNING: DATABASE_URL not set — skipping migrations"; exit 0
+            fi
+
+            # Parse mysql://user:pass@host:port/dbname in pure bash (no heredocs, no Python).
+            # %@* removes shortest suffix starting with @, so passwords containing @ work.
+            _u="${DATABASE_URL#mysql://}"
+            DB_USER="${_u%%:*}"
+            _ap="${_u#*:}"
+            DB_PASS="${_ap%@*}"
+            _hp="${_ap##*@}"
+            DB_HOST="${_hp%%[:/*]*}"
+            _ah="${_hp#"$DB_HOST"}"
+            case "$_ah" in :*) DB_PORT="${_ah#:}"; DB_PORT="${DB_PORT%%/*}" ;; *) DB_PORT="3306" ;; esac
+            DB_NAME="${_hp#*/}"; DB_NAME="${DB_NAME%%[?#]*}"
+
+            # Write options file — keeps credentials out of process args and logs
+            printf '[client]\nhost=%s\nport=%s\nuser=%s\npassword=%s\ndatabase=%s\n' \
+              "$DB_HOST" "$DB_PORT" "$DB_USER" "$DB_PASS" "$DB_NAME" > /tmp/deploy-my.cnf
+            chmod 600 /tmp/deploy-my.cnf
+            MYSQL="mysql --defaults-file=/tmp/deploy-my.cnf --batch --silent"
+            echo "DB: $DB_USER@$DB_HOST:$DB_PORT/$DB_NAME"
+
+            if ! $MYSQL -e "SELECT 1" > /dev/null 2>&1; then
+              echo "WARNING: cannot connect to database — skipping migrations"
+              rm -f /tmp/deploy-my.cnf; exit 0
+            fi
+            echo "Database connection OK"
+
+            # Create Prisma migration-tracking table if it does not yet exist.
+            # Written as a single -e string to avoid YAML-breaking heredocs.
+            $MYSQL -e "CREATE TABLE IF NOT EXISTS \`_prisma_migrations\` (\`id\` varchar(36) NOT NULL,\`checksum\` varchar(64) NOT NULL DEFAULT '',\`finished_at\` datetime(3) DEFAULT NULL,\`migration_name\` varchar(255) NOT NULL,\`logs\` text DEFAULT NULL,\`rolled_back_at\` datetime(3) DEFAULT NULL,\`started_at\` datetime(3) NOT NULL DEFAULT current_timestamp(3),\`applied_steps_count\` int NOT NULL DEFAULT 0,PRIMARY KEY (\`id\`),UNIQUE KEY \`_prisma_migrations_migration_name_key\` (\`migration_name\`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;"
+
+            # NOTE: as of 2026-08-05 every migration through 20260804000000 already has
+            # a REAL checksum recorded (via scripts/reconcile-migration-history.sh, run
+            # once by hand) instead of the historical placeholder ''. This seed block is
+            # kept only as a safety net for a from-scratch database; ON DUPLICATE KEY
+            # UPDATE never touches the checksum column, so it will not clobber the real
+            # checksums already in place.
+            $MYSQL -e "
+              INSERT INTO \`_prisma_migrations\` (id,checksum,migration_name,started_at,finished_at,applied_steps_count) VALUES
+                (UUID(),'','20260615143000_initial_erp_foundation',NOW(3),NOW(3),1),
+                (UUID(),'','20260615224000_sales_customer_management',NOW(3),NOW(3),1),
+                (UUID(),'','20260616120000_maintenance_management',NOW(3),NOW(3),1),
+                (UUID(),'','20260616210000_mobile_sync',NOW(3),NOW(3),1),
+                (UUID(),'','20260616230000_user_account_lockout',NOW(3),NOW(3),1),
+                (UUID(),'','20260629000000_storefront_fields',NOW(3),NOW(3),1),
+                (UUID(),'','20260629000001_feed_raw_materials',NOW(3),NOW(3),1),
+                (UUID(),'','20260701000000_leave_request_system',NOW(3),NOW(3),1),
+                (UUID(),'','20260713000000_employee_photo',NOW(3),NOW(3),1),
+                (UUID(),'','20260616200000_notification_system',NOW(3),NOW(3),1),
+                (UUID(),'','20260722000000_employee_user_fk',NOW(3),NOW(3),1),
+                (UUID(),'','20260729000000_ai_alert_forecast_tables',NOW(3),NOW(3),1),
+                (UUID(),'','20260730000000_prospect_visit_table',NOW(3),NOW(3),1),
+                (UUID(),'','20260730000001_leave_request_mysql_fix',NOW(3),NOW(3),1)
+              ON DUPLICATE KEY UPDATE
+                finished_at=COALESCE(finished_at,NOW(3)),
+                applied_steps_count=GREATEST(applied_steps_count,1);
+            " 2>&1 || true
+            # 20260801030000_hr_d_disciplinary_grievance ran against the wrong DB state
+            # (Notification table didn't exist yet). Superseded by 20260801085000_hr_d_tables_recovery.
+            # Mark as rolled-back so the runner skips it permanently.
+            $MYSQL -e "
+              INSERT INTO \`_prisma_migrations\` (id,checksum,migration_name,started_at,rolled_back_at,applied_steps_count)
+                VALUES (UUID(),'','20260801030000_hr_d_disciplinary_grievance',NOW(3),NOW(3),0)
+              ON DUPLICATE KEY UPDATE
+                rolled_back_at=COALESCE(rolled_back_at,NOW(3)),
+                applied_steps_count=0,
+                finished_at=NULL;
+            " 2>&1 || true
+
+            # Pre-fetch ALL migration statuses in ONE query — eliminates per-migration
+            # DB connections that trigger Hostinger's connection rate limit (ERROR 2002).
+            sleep 2
+            MIGS_APPLIED=$($MYSQL -N -e "SELECT COALESCE(GROUP_CONCAT(migration_name SEPARATOR '|'),'') FROM \`_prisma_migrations\` WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL AND applied_steps_count>0;" 2>/dev/null || echo "")
+            sleep 1
+            MIGS_ROLLEDBACK=$($MYSQL -N -e "SELECT COALESCE(GROUP_CONCAT(migration_name SEPARATOR '|'),'') FROM \`_prisma_migrations\` WHERE rolled_back_at IS NOT NULL;" 2>/dev/null || echo "")
+
+            echo "--- Applying pending migrations ---"
+            APPLIED=0; FAILED=0
+
+            for SQL_FILE in $(find "$MIGRATIONS_DIR" -name "migration.sql" 2>/dev/null | sort); do
+              MIG_NAME=$(basename "$(dirname "$SQL_FILE")")
+              echo "$MIG_NAME" | grep -qE '^[0-9]{14}_' || continue
+
+              # Pure shell match against pre-fetched pipe-separated lists — no DB connection
+              case "|${MIGS_APPLIED}|"    in *"|${MIG_NAME}|"*) echo "  [ok]   $MIG_NAME"; continue ;; esac
+              case "|${MIGS_ROLLEDBACK}|" in *"|${MIG_NAME}|"*) echo "  [skip] $MIG_NAME (rolled-back)"; continue ;; esac
+
+              echo "  [run]  $MIG_NAME"
+              sleep 1
+              if $MYSQL < "$SQL_FILE" 2>&1; then
+                sleep 1
+                $MYSQL -e "INSERT INTO \`_prisma_migrations\` (id,checksum,migration_name,started_at,finished_at,applied_steps_count) VALUES (UUID(),'','$MIG_NAME',NOW(3),NOW(3),1) ON DUPLICATE KEY UPDATE finished_at=NOW(3),applied_steps_count=1,rolled_back_at=NULL;" 2>&1 || true
+                echo "  [done] $MIG_NAME"
+                APPLIED=$((APPLIED + 1))
+              else
+                echo "  [FAIL] $MIG_NAME"
+                FAILED=$((FAILED + 1))
+                sleep 1
+              fi
+            done
+
+            rm -f /tmp/deploy-my.cnf
+            echo "Migrations: $APPLIED applied, $FAILED failed."
+            if [ "$FAILED" -gt 0 ]; then
+              echo "ERROR: $FAILED migration(s) failed — aborting deploy to prevent schema mismatch."
+              echo "  Check the migration SQL files and re-run the deploy after fixing them."
+              exit 1
+            fi
 
       - name: Restart application
-        run: |
-          APP_DIR="$HOME/domains/jokasfarms.com/nodejs"
-          # The API runs as a Worker thread inside start.js (like web and
-          # storefront), not its own spawned process — there is no separate
-          # "apps/api/dist/main.js" cmdline for pkill to match anymore.
-          # touch restart.txt is what actually recycles it: Passenger tears
-          # down and relaunches the whole start.js process, taking every
-          # worker thread with it.
-          mkdir -p "$APP_DIR/tmp"
-          touch "$APP_DIR/tmp/restart.txt"
-          echo "Passenger restart signalled."
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.HOSTINGER_HOST }}
+          username: ${{ secrets.HOSTINGER_USER }}
+          key: ${{ secrets.HOSTINGER_SSH_KEY }}
+          port: 65002
+          script_stop: true
+          script: |
+            APP_DIR="$HOME/domains/jokasfarms.com/nodejs"
+            # The API runs as a Worker thread inside start.js (like web and
+            # storefront), not its own spawned process — there is no separate
+            # "apps/api/dist/main.js" cmdline for pkill to match anymore.
+            # touch restart.txt is what actually recycles it: Passenger tears
+            # down and relaunches the whole start.js process, taking every
+            # worker thread with it.
+            mkdir -p "$APP_DIR/tmp"
+            touch "$APP_DIR/tmp/restart.txt"
+            echo "Passenger restart signalled."
 
       - name: Smoke test
         run: |
@@ -479,26 +530,46 @@ jobs:
             echo "Smoke test PASSED — app is live."
           else
             echo "Passenger log:"
-            tail -20 "$HOME/domains/jokasfarms.com/nodejs/log/passenger.log" 2>/dev/null || true
+            # \$HOME must expand on the REMOTE box, not here — escaped so this
+            # shell (running on the GitHub-hosted runner) doesn't expand it first.
+            ssh -p 65002 -i ~/.ssh/id_rsa "${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}" \
+              "tail -20 '\$HOME/domains/jokasfarms.com/nodejs/log/passenger.log'" 2>/dev/null || true
             echo "ERROR: app not responding after 180s (HTTP $STATUS)."
             exit 1
           fi
 
-      - name: Auto-rollback on smoke-test failure
+      - name: Roll back to previous deploy on Hostinger
         if: failure()
+        id: rollback_restore
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.HOSTINGER_HOST }}
+          username: ${{ secrets.HOSTINGER_USER }}
+          key: ${{ secrets.HOSTINGER_SSH_KEY }}
+          port: 65002
+          script_stop: true
+          script: |
+            APP_DIR="$HOME/domains/jokasfarms.com/nodejs"
+            PREV_DIR="$APP_DIR/../nodejs_prev"
+            if [ ! -d "$PREV_DIR" ]; then
+              echo "::error::Smoke test failed and no nodejs_prev backup exists — cannot auto-rollback. Manual intervention required via SSH."
+              exit 1
+            fi
+
+            echo "==> Smoke test failed — rolling back to the previous deploy..."
+            rsync -a --delete "$PREV_DIR/" "$APP_DIR/"
+            mkdir -p "$APP_DIR/tmp"
+            touch "$APP_DIR/tmp/restart.txt"
+
+      # Split from the rollback step above: the ssh-action step can only run
+      # bash it uploads to the box, and polling a public https:// URL doesn't
+      # need to run there — kept local, same as the original Smoke test step.
+      # Only runs if the restore itself actually happened (not e.g. skipped
+      # because nodejs_prev didn't exist) — matches the original single-step
+      # behavior, which never reached its polling loop in that case either.
+      - name: Verify rollback came back online
+        if: failure() && steps.rollback_restore.outcome == 'success'
         run: |
-          APP_DIR="$HOME/domains/jokasfarms.com/nodejs"
-          PREV_DIR="$APP_DIR/../nodejs_prev"
-          if [ ! -d "$PREV_DIR" ]; then
-            echo "::error::Smoke test failed and no nodejs_prev backup exists — cannot auto-rollback. Manual intervention required via SSH."
-            exit 1
-          fi
-
-          echo "==> Smoke test failed — rolling back to the previous deploy..."
-          rsync -a --delete "$PREV_DIR/" "$APP_DIR/"
-          mkdir -p "$APP_DIR/tmp"
-          touch "$APP_DIR/tmp/restart.txt"
-
           echo "==> Waiting for the previous version to come back online (up to 120s)..."
           STATUS="000"
           for i in $(seq 1 24); do
@@ -517,86 +588,101 @@ jobs:
 
       - name: Setup database backup cron
         if: always()
+        uses: appleboy/ssh-action@v1.2.0
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: |
-          if [ -z "$DATABASE_URL" ]; then echo "WARNING: DATABASE_URL not set — skipping backup setup"; exit 0; fi
-          _u="${DATABASE_URL#mysql://}"
-          DB_USER="${_u%%:*}"
-          _ap="${_u#*:}"
-          DB_PASS="${_ap%@*}"
-          _hp="${_ap##*@}"
-          DB_HOST="${_hp%%[:/*]*}"
-          _ah="${_hp#"$DB_HOST"}"
-          case "$_ah" in :*) DB_PORT="${_ah#:}"; DB_PORT="${DB_PORT%%/*}" ;; *) DB_PORT="3306" ;; esac
-          DB_NAME="${_hp#*/}"; DB_NAME="${DB_NAME%%[?#]*}"
-          # Write a persistent credentials file for the backup cron
-          printf '[client]\nhost=%s\nport=%s\nuser=%s\npassword=%s\ndatabase=%s\n' \
-            "$DB_HOST" "$DB_PORT" "$DB_USER" "$DB_PASS" "$DB_NAME" > "$HOME/.jokas-backup.cnf"
-          chmod 600 "$HOME/.jokas-backup.cnf"
-          mkdir -p "$HOME/jokas-db-backups"
-          # Daily backup at 2:00 AM, keep last 7 dumps (~30 MB each gzipped).
-          # IMPORTANT: mysqldump does NOT read `database=` from a [client]
-          # option-file the way the `mysql` CLI does — it treats the option
-          # name as an ambiguous prefix of `--databases` and ignores it with
-          # just a warning. Confirmed live 2026-08-06: without the db name
-          # passed as a plain argument, mysqldump silently dumped nothing, and
-          # because the old version piped straight into gzip with `2>/dev/null`
-          # and no pipefail, the pipeline still reported success — a ~20-byte
-          # (empty) gzip file was silently treated as a valid daily backup for
-          # who knows how long. Fixed by (1) passing $DB_NAME explicitly, and
-          # (2) dumping to a temp file first so mysqldump's own exit code and
-          # a non-empty-file check gate whether gzip/rotation run at all —
-          # failures now land in backup-error.log instead of vanishing.
-          BACKUP_CMD="mysqldump --defaults-file=\$HOME/.jokas-backup.cnf --single-transaction --routines $DB_NAME > \$HOME/jokas-db-backups/.tmp-dump.sql 2>\$HOME/jokas-db-backups/backup-error.log; if [ \$? -eq 0 ] && [ -s \$HOME/jokas-db-backups/.tmp-dump.sql ]; then gzip -c \$HOME/jokas-db-backups/.tmp-dump.sql > \$HOME/jokas-db-backups/db-\$(date +\\%Y\\%m\\%d).sql.gz && rm -f \$HOME/jokas-db-backups/.tmp-dump.sql \$HOME/jokas-db-backups/backup-error.log && find \$HOME/jokas-db-backups -name 'db-*.sql.gz' -mtime +7 -delete; else echo \"\$(date): mysqldump failed or produced empty output\" >> \$HOME/jokas-db-backups/backup-error.log; fi"
-          # NOTE: this Hostinger plan has no Cron Jobs feature, and `crontab`
-          # itself is aliased in interactive shells to a read-only stub (`cat
-          # /var/spool/cron/$USER`, ignores -l/-e/stdin) — confirmed live
-          # 2026-08-06 that piping into it silently does nothing. So this
-          # script is written unconditionally; the crontab branch below is
-          # kept only for portability to a future host that has real cron.
-          # The script actually gets run by start.js's checkDailyBackup(),
-          # which polls for the 02:00 hour and today's dump file every 15 min
-          # — see start.js for why piggybacking on it (not cron) works here.
-          printf '#!/bin/bash\n%s\n' "$BACKUP_CMD" > "$HOME/jokas-db-backup.sh"
-          chmod +x "$HOME/jokas-db-backup.sh"
-          CRONTAB_BIN="$(command -v crontab 2>/dev/null || echo /usr/bin/crontab)"
-          if [ -x "$CRONTAB_BIN" ]; then
-            ("$CRONTAB_BIN" -l 2>/dev/null | grep -v 'jokas-db-backups'; echo "0 2 * * * $BACKUP_CMD") | "$CRONTAB_BIN" -
-            echo "Database backup cron installed (daily 02:00, 7-day retention → ~/jokas-db-backups/)."
-          else
-            echo "crontab not usable on this host — ~/jokas-db-backup.sh written; start.js's checkDailyBackup() runs it automatically around 02:00 daily."
-          fi
+        with:
+          host: ${{ secrets.HOSTINGER_HOST }}
+          username: ${{ secrets.HOSTINGER_USER }}
+          key: ${{ secrets.HOSTINGER_SSH_KEY }}
+          port: 65002
+          envs: DATABASE_URL
+          script_stop: true
+          script: |
+            if [ -z "$DATABASE_URL" ]; then echo "WARNING: DATABASE_URL not set — skipping backup setup"; exit 0; fi
+            _u="${DATABASE_URL#mysql://}"
+            DB_USER="${_u%%:*}"
+            _ap="${_u#*:}"
+            DB_PASS="${_ap%@*}"
+            _hp="${_ap##*@}"
+            DB_HOST="${_hp%%[:/*]*}"
+            _ah="${_hp#"$DB_HOST"}"
+            case "$_ah" in :*) DB_PORT="${_ah#:}"; DB_PORT="${DB_PORT%%/*}" ;; *) DB_PORT="3306" ;; esac
+            DB_NAME="${_hp#*/}"; DB_NAME="${DB_NAME%%[?#]*}"
+            # Write a persistent credentials file for the backup cron
+            printf '[client]\nhost=%s\nport=%s\nuser=%s\npassword=%s\ndatabase=%s\n' \
+              "$DB_HOST" "$DB_PORT" "$DB_USER" "$DB_PASS" "$DB_NAME" > "$HOME/.jokas-backup.cnf"
+            chmod 600 "$HOME/.jokas-backup.cnf"
+            mkdir -p "$HOME/jokas-db-backups"
+            # Daily backup at 2:00 AM, keep last 7 dumps (~30 MB each gzipped).
+            # IMPORTANT: mysqldump does NOT read `database=` from a [client]
+            # option-file the way the `mysql` CLI does — it treats the option
+            # name as an ambiguous prefix of `--databases` and ignores it with
+            # just a warning. Confirmed live 2026-08-06: without the db name
+            # passed as a plain argument, mysqldump silently dumped nothing, and
+            # because the old version piped straight into gzip with `2>/dev/null`
+            # and no pipefail, the pipeline still reported success — a ~20-byte
+            # (empty) gzip file was silently treated as a valid daily backup for
+            # who knows how long. Fixed by (1) passing $DB_NAME explicitly, and
+            # (2) dumping to a temp file first so mysqldump's own exit code and
+            # a non-empty-file check gate whether gzip/rotation run at all —
+            # failures now land in backup-error.log instead of vanishing.
+            BACKUP_CMD="mysqldump --defaults-file=\$HOME/.jokas-backup.cnf --single-transaction --routines $DB_NAME > \$HOME/jokas-db-backups/.tmp-dump.sql 2>\$HOME/jokas-db-backups/backup-error.log; if [ \$? -eq 0 ] && [ -s \$HOME/jokas-db-backups/.tmp-dump.sql ]; then gzip -c \$HOME/jokas-db-backups/.tmp-dump.sql > \$HOME/jokas-db-backups/db-\$(date +\\%Y\\%m\\%d).sql.gz && rm -f \$HOME/jokas-db-backups/.tmp-dump.sql \$HOME/jokas-db-backups/backup-error.log && find \$HOME/jokas-db-backups -name 'db-*.sql.gz' -mtime +7 -delete; else echo \"\$(date): mysqldump failed or produced empty output\" >> \$HOME/jokas-db-backups/backup-error.log; fi"
+            # NOTE: this Hostinger plan has no Cron Jobs feature, and `crontab`
+            # itself is aliased in interactive shells to a read-only stub (`cat
+            # /var/spool/cron/$USER`, ignores -l/-e/stdin) — confirmed live
+            # 2026-08-06 that piping into it silently does nothing. So this
+            # script is written unconditionally; the crontab branch below is
+            # kept only for portability to a future host that has real cron.
+            # The script actually gets run by start.js's checkDailyBackup(),
+            # which polls for the 02:00 hour and today's dump file every 15 min
+            # — see start.js for why piggybacking on it (not cron) works here.
+            printf '#!/bin/bash\n%s\n' "$BACKUP_CMD" > "$HOME/jokas-db-backup.sh"
+            chmod +x "$HOME/jokas-db-backup.sh"
+            CRONTAB_BIN="$(command -v crontab 2>/dev/null || echo /usr/bin/crontab)"
+            if [ -x "$CRONTAB_BIN" ]; then
+              ("$CRONTAB_BIN" -l 2>/dev/null | grep -v 'jokas-db-backups'; echo "0 2 * * * $BACKUP_CMD") | "$CRONTAB_BIN" -
+              echo "Database backup cron installed (daily 02:00, 7-day retention → ~/jokas-db-backups/)."
+            else
+              echo "crontab not usable on this host — ~/jokas-db-backup.sh written; start.js's checkDailyBackup() runs it automatically around 02:00 daily."
+            fi
 
       - name: Setup uploaded-files backup cron
         if: always()
-        run: |
-          # C8: apps/api/main.ts creates its upload dir at
-          # process.cwd()/uploads — the API runs as a Worker thread inside
-          # start.js (api-worker-wrapper.js overrides process.cwd() to
-          # apps/api, since Worker threads have no spawn-style cwd option),
-          # so the real, always-used path in production is
-          # $APP_DIR/apps/api/uploads (employee photos, HR documents, product
-          # images). It happens to survive normal deploys today only because
-          # "Extract files to APP_DIR" uses `tar -xzf ... -C "$APP_DIR"`
-          # (extraction never deletes files absent from the archive, unlike
-          # rsync --delete) — but there was zero backup of it, so disk
-          # corruption or an accidental delete would lose it permanently
-          # with no recovery path, unlike the database which has a daily
-          # dump. This mirrors the DB backup cron above: same 02:00 slot,
-          # same 7-day retention, same start.js polling fallback (crontab is
-          # a read-only stub on this Hostinger plan — confirmed 2026-08-06).
-          mkdir -p "$HOME/jokas-files-backups"
-          # $HOME/domains/... is written literally (not $APP_DIR) because this
-          # string becomes the body of a standalone script run later by cron /
-          # start.js's poller, in its own shell, long after this workflow step ends.
-          FILES_BACKUP_CMD="UPLOADS_DIR=\$HOME/domains/jokasfarms.com/nodejs/apps/api/uploads; if [ -d \"\$UPLOADS_DIR\" ] && [ -n \"\$(ls -A \"\$UPLOADS_DIR\" 2>/dev/null)\" ]; then tar -czf \$HOME/jokas-files-backups/.tmp-files.tar.gz -C \"\$UPLOADS_DIR\" . 2>\$HOME/jokas-files-backups/backup-error.log && mv \$HOME/jokas-files-backups/.tmp-files.tar.gz \$HOME/jokas-files-backups/files-\$(date +\\%Y\\%m\\%d).tar.gz && find \$HOME/jokas-files-backups -name 'files-*.tar.gz' -mtime +7 -delete; else echo \"\$(date): uploads dir missing or empty, nothing to back up\" >> \$HOME/jokas-files-backups/backup-error.log; fi"
-          printf '#!/bin/bash\n%s\n' "$FILES_BACKUP_CMD" > "$HOME/jokas-files-backup.sh"
-          chmod +x "$HOME/jokas-files-backup.sh"
-          CRONTAB_BIN="$(command -v crontab 2>/dev/null || echo /usr/bin/crontab)"
-          if [ -x "$CRONTAB_BIN" ]; then
-            ("$CRONTAB_BIN" -l 2>/dev/null | grep -v 'jokas-files-backups'; echo "0 2 * * * $FILES_BACKUP_CMD") | "$CRONTAB_BIN" -
-            echo "Uploaded-files backup cron installed (daily 02:00, 7-day retention → ~/jokas-files-backups/)."
-          else
-            echo "crontab not usable on this host — ~/jokas-files-backup.sh written; start.js's checkDailyFilesBackup() runs it automatically around 02:00 daily."
-          fi
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.HOSTINGER_HOST }}
+          username: ${{ secrets.HOSTINGER_USER }}
+          key: ${{ secrets.HOSTINGER_SSH_KEY }}
+          port: 65002
+          script_stop: true
+          script: |
+            # C8: apps/api/main.ts creates its upload dir at
+            # process.cwd()/uploads — the API runs as a Worker thread inside
+            # start.js (api-worker-wrapper.js overrides process.cwd() to
+            # apps/api, since Worker threads have no spawn-style cwd option),
+            # so the real, always-used path in production is
+            # $APP_DIR/apps/api/uploads (employee photos, HR documents, product
+            # images). It happens to survive normal deploys today only because
+            # "Extract files to APP_DIR" uses `tar -xzf ... -C "$APP_DIR"`
+            # (extraction never deletes files absent from the archive, unlike
+            # rsync --delete) — but there was zero backup of it, so disk
+            # corruption or an accidental delete would lose it permanently
+            # with no recovery path, unlike the database which has a daily
+            # dump. This mirrors the DB backup cron above: same 02:00 slot,
+            # same 7-day retention, same start.js polling fallback (crontab is
+            # a read-only stub on this Hostinger plan — confirmed 2026-08-06).
+            mkdir -p "$HOME/jokas-files-backups"
+            # $HOME/domains/... is written literally (not $APP_DIR) because this
+            # string becomes the body of a standalone script run later by cron /
+            # start.js's poller, in its own shell, long after this workflow step ends.
+            FILES_BACKUP_CMD="UPLOADS_DIR=\$HOME/domains/jokasfarms.com/nodejs/apps/api/uploads; if [ -d \"\$UPLOADS_DIR\" ] && [ -n \"\$(ls -A \"\$UPLOADS_DIR\" 2>/dev/null)\" ]; then tar -czf \$HOME/jokas-files-backups/.tmp-files.tar.gz -C \"\$UPLOADS_DIR\" . 2>\$HOME/jokas-files-backups/backup-error.log && mv \$HOME/jokas-files-backups/.tmp-files.tar.gz \$HOME/jokas-files-backups/files-\$(date +\\%Y\\%m\\%d).tar.gz && find \$HOME/jokas-files-backups -name 'files-*.tar.gz' -mtime +7 -delete; else echo \"\$(date): uploads dir missing or empty, nothing to back up\" >> \$HOME/jokas-files-backups/backup-error.log; fi"
+            printf '#!/bin/bash\n%s\n' "$FILES_BACKUP_CMD" > "$HOME/jokas-files-backup.sh"
+            chmod +x "$HOME/jokas-files-backup.sh"
+            CRONTAB_BIN="$(command -v crontab 2>/dev/null || echo /usr/bin/crontab)"
+            if [ -x "$CRONTAB_BIN" ]; then
+              ("$CRONTAB_BIN" -l 2>/dev/null | grep -v 'jokas-files-backups'; echo "0 2 * * * $FILES_BACKUP_CMD") | "$CRONTAB_BIN" -
+              echo "Uploaded-files backup cron installed (daily 02:00, 7-day retention → ~/jokas-files-backups/)."
+            else
+              echo "crontab not usable on this host — ~/jokas-files-backup.sh written; start.js's checkDailyFilesBackup() runs it automatically around 02:00 daily."
+            fi
