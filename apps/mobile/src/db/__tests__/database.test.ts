@@ -1,4 +1,4 @@
-import { setCachedLookup, getCachedLookup, countFailed, countPending } from "../database";
+import { setCachedLookup, getCachedLookup, countFailed, countPending, discardSubmission } from "../database";
 import { __getMockDb, __reset as resetSqlite } from "../../../__mocks__/expo-sqlite";
 import { __reset as resetSecureStore } from "../../../__mocks__/expo-secure-store";
 
@@ -75,5 +75,23 @@ describe("countFailed — surfaces records that hit the retry ceiling (M5)", () 
     const failedSql = db.getFirstAsync.mock.calls[1][0];
     expect(pendingSql).toContain("attempts < 5");
     expect(failedSql).toContain("attempts >= 5");
+  });
+});
+
+describe("discardSubmission — clears a permanently-stuck queued edit (H-MOB-1)", () => {
+  beforeEach(() => {
+    resetSqlite();
+    resetSecureStore();
+  });
+
+  it("deletes the row by id rather than just clearing its error/attempts", async () => {
+    const db = __getMockDb();
+
+    await discardSubmission("sub-123");
+
+    const [sql, id] = db.runAsync.mock.calls[0];
+    expect(sql).toContain("DELETE FROM pending_submissions");
+    expect(sql).toContain("WHERE id = ?");
+    expect(id).toBe("sub-123");
   });
 });

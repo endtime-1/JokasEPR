@@ -185,6 +185,17 @@ export async function markRetry(id: string): Promise<void> {
   );
 }
 
+// H-MOB-1: a queued edit that's stuck because the server rejected it (most
+// notably a task-status update whose expectedUpdatedAt has gone stale — see
+// SyncStatusScreen's handling of hr_task_status rows) has no way to be
+// cleared short of this. Retrying resends the exact same stored payload,
+// which is guaranteed to fail identically forever if the failure reason is
+// the payload itself being wrong/stale, not a transient network issue.
+export async function discardSubmission(id: string): Promise<void> {
+  const database = await getDb();
+  await database.runAsync("DELETE FROM pending_submissions WHERE id = ?", id);
+}
+
 export async function countPending(): Promise<number> {
   const database = await getDb();
   const row = await database.getFirstAsync<{ count: number }>(

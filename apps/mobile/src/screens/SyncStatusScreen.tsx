@@ -1,12 +1,28 @@
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useNavigation } from "@react-navigation/native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { colors, font, radius, shadow, spacing } from "../constants/theme";
-import { getAllSubmissions, markRetry, type PendingSubmission } from "../db/database";
+import { discardSubmission, getAllSubmissions, markRetry, type PendingSubmission } from "../db/database";
 import { retrySyncRecord } from "../api/endpoints";
 import { useSync } from "../hooks/useSync";
 import { useNetwork } from "../hooks/useNetwork";
+
+// H-MOB-1: a task-status update queued offline (see TaskUpdateScreen) is the
+// one place in the app where the same record can genuinely be edited both
+// online and offline — the server's optimistic-concurrency check
+// (expectedUpdatedAt) can reject a sync with a real conflict. Every other
+// queued-submission type is a create, so blindly retrying the stored
+// payload is safe for those (idempotent by localId). For this one, "Retry"
+// resending the exact same stale expectedUpdatedAt is guaranteed to fail
+// identically forever — routed to a real resolution instead, below.
+const TASK_STATUS_MODULE = "hr_task_status";
+const TASK_ID_PATTERN = /\/hr\/tasks\/([^/]+)\/status$/;
+
+function extractTaskId(endpoint: string): string | null {
+  return endpoint.match(TASK_ID_PATTERN)?.[1] ?? null;
+}
 
 function timeAgo(iso: string) {
   const diff = Date.now() - new Date(iso).getTime();
@@ -54,6 +70,7 @@ const STATUS_META: Record<RowStatus, { color: string; bg: string; label: string;
 };
 
 export function SyncStatusScreen() {
+  const navigation = useNavigation<any>();
   const [rows, setRows] = useState<PendingSubmission[]>([]);
   const [loading, setLoading] = useState(true);
   const [retrying, setRetrying] = useState<Set<string>>(new Set());
@@ -77,7 +94,40 @@ export function SyncStatusScreen() {
     await load();
   }
 
-  async function handleRetry(row: PendingSubmission) {
+  // A stuck task-status row gets a real choice instead of a doomed blind
+  // retry: view the task (which re-fetches its current state, same as
+  // TaskUpdateScreen's own online-conflict handling already does) and
+  // reapply there with a fresh expectedUpdatedAt, or discard the stale
+  // queued edit outright. Every other submission type keeps the original
+  // one-tap retry — those are all creates, safe to resend as-is.
+  function handleRetry(row: PendingSubmission) {
+    const taskId = row.module === TASK_STATUS_MODULE ? extractTaskId(row.endpoint) : null;
+    if (taskId) {
+      Alert.alert(
+        "Update Couldn't Sync",
+        `${row.sync_error ?? "This task may have changed since you made this update."} Retrying will send the same outdated info again and fail the same way.`,
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Discard This Update",
+            style: "destructive",
+            onPress: async () => {
+              await discardSubmission(row.id);
+              await load();
+            },
+          },
+          {
+            text: "View Task",
+            onPress: () => navigation.navigate("TasksTab", { screen: "TaskUpdate", params: { taskId } }),
+          },
+        ]
+      );
+      return;
+    }
+    void blindRetry(row);
+  }
+
+  async function blindRetry(row: PendingSubmission) {
     setRetrying((s) => new Set(s).add(row.id));
     try {
       await markRetry(row.id);
