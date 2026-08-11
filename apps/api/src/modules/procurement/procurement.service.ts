@@ -290,19 +290,32 @@ export class ProcurementService {
     return { data: updated };
   }
 
+  // H-BACK-3 (2026-08-11): approve/reject used to be a plain findFirst-then-update
+  // plus a separate, un-transacted purchaseApproval.create — two concurrent
+  // approve/reject calls on the same request could both pass the initial status
+  // check before either write landed (one approves, one rejects, both "succeed"),
+  // and a crash between the status update and the approval-record insert left an
+  // approved/rejected request with no corresponding audit-trail row. Matches the
+  // status-guarded updateMany pattern already proven for leave-request review
+  // (hr.service.ts's reviewLeaveRequest) combined with a transaction so the
+  // status flip and its approval record can't land independently of each other.
   async approvePurchaseRequest(user: AuthenticatedUser, id: string, dto: ApprovePurchaseRequestDto, ctx: RequestContext) {
     const row = await this.prisma.purchaseRequest.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
     if (!row) throw new NotFoundException("Purchase Request not found");
     if (row.status !== "SUBMITTED") throw new BadRequestException("Only SUBMITTED requests can be approved");
     if (row.createdById === user.id) throw new ForbiddenException("You cannot approve a purchase request you created yourself.");
 
-    const updated = await this.prisma.purchaseRequest.update({
-      where: { id },
-      data: { status: "APPROVED", approvedById: user.id, approvedAt: new Date(), updatedById: user.id },
-    });
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const advanced = await tx.purchaseRequest.updateMany({
+        where: { id, status: "SUBMITTED" },
+        data: { status: "APPROVED", approvedById: user.id, approvedAt: new Date(), updatedById: user.id },
+      });
+      if (advanced.count === 0) throw new BadRequestException("Only SUBMITTED requests can be approved");
 
-    await this.prisma.purchaseApproval.create({
-      data: { companyId: user.companyId, purchaseRequestId: id, approverId: user.id, status: "APPROVED", approvedAt: new Date(), comments: dto.comments, createdById: user.id },
+      await tx.purchaseApproval.create({
+        data: { companyId: user.companyId, purchaseRequestId: id, approverId: user.id, status: "APPROVED", approvedAt: new Date(), comments: dto.comments, createdById: user.id },
+      });
+      return tx.purchaseRequest.findUniqueOrThrow({ where: { id } });
     });
 
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "PurchaseRequest", entityId: id, action: "APPROVE", ...ctx });
@@ -314,13 +327,17 @@ export class ProcurementService {
     if (!row) throw new NotFoundException("Purchase Request not found");
     if (!["SUBMITTED", "APPROVED"].includes(row.status)) throw new BadRequestException("Cannot reject this request in its current status");
 
-    const updated = await this.prisma.purchaseRequest.update({
-      where: { id },
-      data: { status: "REJECTED", rejectedById: user.id, rejectionReason: dto.reason, updatedById: user.id },
-    });
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const advanced = await tx.purchaseRequest.updateMany({
+        where: { id, status: { in: ["SUBMITTED", "APPROVED"] } },
+        data: { status: "REJECTED", rejectedById: user.id, rejectionReason: dto.reason, updatedById: user.id },
+      });
+      if (advanced.count === 0) throw new BadRequestException("Cannot reject this request in its current status");
 
-    await this.prisma.purchaseApproval.create({
-      data: { companyId: user.companyId, purchaseRequestId: id, approverId: user.id, status: "REJECTED", approvedAt: new Date(), comments: dto.reason, createdById: user.id },
+      await tx.purchaseApproval.create({
+        data: { companyId: user.companyId, purchaseRequestId: id, approverId: user.id, status: "REJECTED", approvedAt: new Date(), comments: dto.reason, createdById: user.id },
+      });
+      return tx.purchaseRequest.findUniqueOrThrow({ where: { id } });
     });
 
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "PurchaseRequest", entityId: id, action: "REJECT", ...ctx });
@@ -430,19 +447,25 @@ export class ProcurementService {
     return { data: row };
   }
 
+  // H-BACK-3: same status-guarded-updateMany-inside-a-transaction fix as
+  // approvePurchaseRequest/rejectPurchaseRequest above, for the same reason.
   async approvePurchaseOrder(user: AuthenticatedUser, id: string, dto: ApprovePurchaseOrderDto, ctx: RequestContext) {
     const row = await this.prisma.purchaseOrder.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
     if (!row) throw new NotFoundException("Purchase Order not found");
     if (row.status !== "PENDING_APPROVAL") throw new BadRequestException("Only PENDING_APPROVAL orders can be approved");
     if (row.createdById === user.id) throw new ForbiddenException("You cannot approve a purchase order you created yourself.");
 
-    const updated = await this.prisma.purchaseOrder.update({
-      where: { id },
-      data: { status: "APPROVED", approvedById: user.id, approvedAt: new Date(), updatedById: user.id },
-    });
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const advanced = await tx.purchaseOrder.updateMany({
+        where: { id, status: "PENDING_APPROVAL" },
+        data: { status: "APPROVED", approvedById: user.id, approvedAt: new Date(), updatedById: user.id },
+      });
+      if (advanced.count === 0) throw new BadRequestException("Only PENDING_APPROVAL orders can be approved");
 
-    await this.prisma.purchaseApproval.create({
-      data: { companyId: user.companyId, purchaseOrderId: id, approverId: user.id, status: "APPROVED", approvedAt: new Date(), comments: dto.comments, createdById: user.id },
+      await tx.purchaseApproval.create({
+        data: { companyId: user.companyId, purchaseOrderId: id, approverId: user.id, status: "APPROVED", approvedAt: new Date(), comments: dto.comments, createdById: user.id },
+      });
+      return tx.purchaseOrder.findUniqueOrThrow({ where: { id } });
     });
 
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "PurchaseOrder", entityId: id, action: "APPROVE", ...ctx });
@@ -454,13 +477,17 @@ export class ProcurementService {
     if (!row) throw new NotFoundException("Purchase Order not found");
     if (row.status !== "PENDING_APPROVAL") throw new BadRequestException("Only PENDING_APPROVAL orders can be rejected");
 
-    const updated = await this.prisma.purchaseOrder.update({
-      where: { id },
-      data: { status: "CANCELLED", rejectedById: user.id, rejectionReason: dto.reason, updatedById: user.id },
-    });
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const advanced = await tx.purchaseOrder.updateMany({
+        where: { id, status: "PENDING_APPROVAL" },
+        data: { status: "CANCELLED", rejectedById: user.id, rejectionReason: dto.reason, updatedById: user.id },
+      });
+      if (advanced.count === 0) throw new BadRequestException("Only PENDING_APPROVAL orders can be rejected");
 
-    await this.prisma.purchaseApproval.create({
-      data: { companyId: user.companyId, purchaseOrderId: id, approverId: user.id, status: "REJECTED", approvedAt: new Date(), comments: dto.reason, createdById: user.id },
+      await tx.purchaseApproval.create({
+        data: { companyId: user.companyId, purchaseOrderId: id, approverId: user.id, status: "REJECTED", approvedAt: new Date(), comments: dto.reason, createdById: user.id },
+      });
+      return tx.purchaseOrder.findUniqueOrThrow({ where: { id } });
     });
 
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "PurchaseOrder", entityId: id, action: "REJECT", ...ctx });

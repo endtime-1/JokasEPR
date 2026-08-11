@@ -9,8 +9,8 @@ import { LookupCacheService } from "../../common/services/lookup-cache.service";
 jest.mock("../../common/next-ref", () => ({ nextRef: jest.fn().mockResolvedValue("PO-REF-001") }));
 
 const mockPrisma = {
-  purchaseRequest: { findFirst: jest.fn(), update: jest.fn().mockResolvedValue({}) },
-  purchaseOrder: { create: jest.fn(), findFirst: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
+  purchaseRequest: { findFirst: jest.fn(), update: jest.fn().mockResolvedValue({}), updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
+  purchaseOrder: { create: jest.fn(), findFirst: jest.fn(), findUnique: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
   warehouse: { findFirst: jest.fn() },
   goodsReceivedNote: { create: jest.fn(), findFirst: jest.fn(), update: jest.fn().mockResolvedValue({}) },
   product: { findMany: jest.fn() },
@@ -400,15 +400,17 @@ describe("ProcurementService", () => {
       await expect(
         service.approvePurchaseOrder(makeUser({ id: "user-1" }), "po-1", {} as never, {})
       ).rejects.toThrow(ForbiddenException);
-      expect(mockPrisma.purchaseOrder.update).not.toHaveBeenCalled();
+      expect(mockPrisma.purchaseOrder.updateMany).not.toHaveBeenCalled();
     });
 
     it("allows approving a purchase order created by a different user", async () => {
       mockPrisma.purchaseOrder.findFirst.mockResolvedValue({ id: "po-1", companyId: "company-1", status: "PENDING_APPROVAL", createdById: "creator-1" });
-      mockPrisma.purchaseOrder.update.mockResolvedValue({ id: "po-1", status: "APPROVED" });
+      mockPrisma.purchaseOrder.updateMany.mockResolvedValue({ count: 1 });
+      mockPrisma.purchaseOrder.findUniqueOrThrow.mockResolvedValue({ id: "po-1", status: "APPROVED" });
       await expect(
         service.approvePurchaseOrder(makeUser({ id: "approver-1" }), "po-1", {} as never, {})
       ).resolves.toBeDefined();
+      expect(mockPrisma.purchaseApproval.create).toHaveBeenCalled();
     });
 
     it("blocks approving a purchase request the actor created themselves", async () => {
@@ -416,7 +418,52 @@ describe("ProcurementService", () => {
       await expect(
         service.approvePurchaseRequest(makeUser({ id: "user-1" }), "pr-1", {} as never, {})
       ).rejects.toThrow(ForbiddenException);
-      expect(mockPrisma.purchaseRequest.update).not.toHaveBeenCalled();
+      expect(mockPrisma.purchaseRequest.updateMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("approve/reject PO & PR — concurrent-action guard (H-BACK-3)", () => {
+    // The initial findFirst-based status check can pass for two concurrent
+    // requests before either write lands; the real safety property is the
+    // status-guarded updateMany inside the transaction, which only one of
+    // two racing calls can win (count: 0 for the loser).
+    it("rejects approvePurchaseOrder with a clean error when another request already changed its status (count: 0)", async () => {
+      mockPrisma.purchaseOrder.findFirst.mockResolvedValue({ id: "po-1", companyId: "company-1", status: "PENDING_APPROVAL", createdById: "creator-1" });
+      mockPrisma.purchaseOrder.updateMany.mockResolvedValue({ count: 0 });
+      await expect(
+        service.approvePurchaseOrder(makeUser({ id: "approver-1" }), "po-1", {} as never, {})
+      ).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.purchaseApproval.create).not.toHaveBeenCalled();
+    });
+
+    it("rejects rejectPurchaseOrder with a clean error when another request already changed its status (count: 0)", async () => {
+      mockPrisma.purchaseOrder.findFirst.mockResolvedValue({ id: "po-1", companyId: "company-1", status: "PENDING_APPROVAL" });
+      mockPrisma.purchaseOrder.updateMany.mockResolvedValue({ count: 0 });
+      await expect(
+        service.rejectPurchaseOrder(makeUser({ id: "approver-1" }), "po-1", { reason: "bad price" } as never, {})
+      ).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.purchaseApproval.create).not.toHaveBeenCalled();
+    });
+
+    it("approves a purchase request and writes its approval record inside the same transaction", async () => {
+      mockPrisma.purchaseRequest.findFirst.mockResolvedValue({ id: "pr-1", companyId: "company-1", status: "SUBMITTED", createdById: "creator-1" });
+      mockPrisma.purchaseRequest.updateMany.mockResolvedValue({ count: 1 });
+      mockPrisma.purchaseRequest.findUniqueOrThrow.mockResolvedValue({ id: "pr-1", status: "APPROVED" });
+      await expect(
+        service.approvePurchaseRequest(makeUser({ id: "approver-1" }), "pr-1", {} as never, {})
+      ).resolves.toBeDefined();
+      expect(mockPrisma.$transaction).toHaveBeenCalled();
+      expect(mockPrisma.purchaseApproval.create).toHaveBeenCalled();
+    });
+
+    it("rejects a purchase request and writes its approval record inside the same transaction", async () => {
+      mockPrisma.purchaseRequest.findFirst.mockResolvedValue({ id: "pr-1", companyId: "company-1", status: "SUBMITTED" });
+      mockPrisma.purchaseRequest.updateMany.mockResolvedValue({ count: 1 });
+      mockPrisma.purchaseRequest.findUniqueOrThrow.mockResolvedValue({ id: "pr-1", status: "REJECTED" });
+      await expect(
+        service.rejectPurchaseRequest(makeUser({ id: "approver-1" }), "pr-1", { reason: "duplicate" } as never, {})
+      ).resolves.toBeDefined();
+      expect(mockPrisma.purchaseApproval.create).toHaveBeenCalled();
     });
   });
 });
