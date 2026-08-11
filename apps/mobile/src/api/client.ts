@@ -33,7 +33,11 @@ export async function clearSession() {
 const REQUEST_TIMEOUT_MS = 15_000;
 const TRANSIENT_STATUSES = new Set([502, 503, 504]);
 const TRANSIENT_RETRY_DELAY_MS = 3_000;
-const TRANSIENT_MAX_RETRIES = 3;
+// Hostinger cold-start observed at 15-40s (apps/web/lib/api.ts uses the same
+// 12x/3s = 36s budget for the same reason). This used to be 3 retries (9s) —
+// well short of the observed window, so a cold start routinely outlasted
+// mobile's entire retry budget while web's covered it.
+const TRANSIENT_MAX_RETRIES = 12;
 
 // ── Auth-ready gate ───────────────────────────────────────────────────────────
 // Blocks all apiFetch() calls until AuthContext finishes reading SecureStore on
@@ -163,6 +167,31 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     } catch {
       break;
     }
+  }
+
+  // Hostinger hibernates the API process after ~10 min idle — the same
+  // window as the access-token TTL. When both coincide: the initial request
+  // times out (502/503/504, not 401) so the 401-refresh block above is never
+  // taken; the transient-retry loop above runs and the server comes back,
+  // but the access token has now also expired, so the first real response
+  // is 401. Without this check that 401 falls straight through to the
+  // "!response.ok" branch below with no refresh attempt — the mobile
+  // equivalent of apps/web/lib/api.ts's "everything vanished" bug it already
+  // guards against at lines 248-268.
+  if (response.status === 401 && (await refreshSession())) {
+    const postRetryController = new AbortController();
+    const postRetryTid = setTimeout(() => postRetryController.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      response = await request(path, { ...init, signal: postRetryController.signal });
+    } catch (e) {
+      clearTimeout(tid);
+      clearTimeout(postRetryTid);
+      if (e instanceof Error && e.name === "AbortError") {
+        throw new ApiError(0, "Request timed out — check your connection and try again.");
+      }
+      throw new ApiError(0, "Network error — check your connection and try again.");
+    }
+    clearTimeout(postRetryTid);
   }
 
   clearTimeout(tid);
