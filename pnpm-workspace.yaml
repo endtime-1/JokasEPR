@@ -42,6 +42,12 @@ onlyBuiltDependencies:
 overrides:
   '@types/react': '^19.0.0'
   '@types/react-dom': '^19.0.0'
+  # @nestjs/platform-express@10.4.22 pins multer@2.0.2 (3 open HIGH DoS
+  # advisories) as its own transitive dependency, independent of apps/api's
+  # direct multer@^2.2.0 — pnpm's isolated node_modules means Nest's
+  # FileInterceptor (used on 2 authenticated + 1 unauthenticated public
+  # upload endpoint) resolved the vulnerable version regardless. Force it.
+  multer: '^2.2.0'
 
 patchedDependencies:
   esbuild@0.28.1: patches/esbuild@0.28.1.patch

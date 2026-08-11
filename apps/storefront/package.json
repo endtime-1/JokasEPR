@@ -9,7 +9,7 @@
     "lint": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "next": "^15.5.19",
+    "next": "^15.5.23",
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "lucide-react": "^0.469.0"
