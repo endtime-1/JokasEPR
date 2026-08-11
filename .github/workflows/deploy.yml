@@ -15,6 +15,17 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# H-INFRA-6 (2026-08-11): neither job previously declared its own permissions,
+# so both inherited the repository's default GITHUB_TOKEN scope rather than
+# the minimum each actually needs. `build` runs `pnpm install`, which executes
+# arbitrary third-party postinstall scripts — pinning the token to read-only
+# here means a compromised dependency gets a read-only token, not whatever the
+# repo's default happens to be. Neither job needs to write anything back to
+# GitHub (no PR comments, no releases, no packages), so contents: read is
+# sufficient everywhere.
+permissions:
+  contents: read
+
 jobs:
   # ── Job 1: build on GitHub-hosted runner (plenty of RAM, fast disk) ──────────
   build:
@@ -227,6 +238,12 @@ jobs:
     # though it now shares the same `build` job for quality-gate validation.
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
+    # H-INFRA-6: actions: read is needed to download the artifact `build`
+    # uploaded; nothing else in this job (SSH/rsync to Hostinger) touches the
+    # GitHub API at all.
+    permissions:
+      contents: read
+      actions: read
 
     steps:
       - name: Download deployment artifact
@@ -704,5 +721,10 @@ jobs:
           port: 65002
           envs: DATABASE_URL
           script_stop: true
-          debug: true
+          # H-INFRA-4 (2026-08-11): debug:true was only ever needed to diagnose the
+          # since-fixed drone-ssh transport quirk referenced above. It prints every
+          # forwarded env var as a literal `export VAR=value` line, including
+          # DATABASE_URL — GitHub's secret-masking catches it today, but that's one
+          # avoidable layer of exposure for a flag that's no longer doing anything
+          # useful now that this step is stable. Removed.
           script: bash "$HOME/domains/jokasfarms.com/nodejs/setup-backup-crons.sh"

@@ -65,9 +65,24 @@ if [ $? -eq 0 ] && [ -s $HOME/jokas-db-backups/.tmp-dump.sql ]; then
 else
   echo "$(date): mysqldump failed or produced empty output" >> $HOME/jokas-db-backups/backup-error.log
 fi' > "$HOME/jokas-db-backup.sh"
-  sed -i "s/__DB_NAME__/$DB_NAME/" "$HOME/jokas-db-backup.sh"
-  chmod +x "$HOME/jokas-db-backup.sh"
-  echo "Database backup script written (runs daily ~02:00 via start.js's checkDailyBackup())."
+  # H-INFRA-5 (2026-08-11): a DB name containing "/" breaks this sed command's
+  # own delimiter outright (non-zero exit, caught below); one containing "&"
+  # is silently treated as "insert the matched text" in sed's replacement
+  # syntax, producing a corrupted-but-successful (exit 0) substitution — sed's
+  # own exit code alone can't catch that case. Explicitly verify the
+  # placeholder is actually gone afterward. On either failure, remove the
+  # broken script rather than leaving it in place: start.js's
+  # checkDailyBackup() only fires if the file exists, so deleting it means
+  # tonight's backup silently no-ops instead of running a corrupted dump
+  # command — and this error is visible right here in the deploy log instead
+  # of only discoverable at 2am in a backup-error.log nobody is watching.
+  if ! sed -i "s/__DB_NAME__/$DB_NAME/" "$HOME/jokas-db-backup.sh" || grep -q "__DB_NAME__" "$HOME/jokas-db-backup.sh"; then
+    echo "ERROR: failed to substitute DB name into jokas-db-backup.sh (DB_NAME='$DB_NAME') — removing the broken script so it doesn't run tonight. Investigate the database name for unusual characters and re-run this step."
+    rm -f "$HOME/jokas-db-backup.sh"
+  else
+    chmod +x "$HOME/jokas-db-backup.sh"
+    echo "Database backup script written (runs daily ~02:00 via start.js's checkDailyBackup())."
+  fi
 fi
 
 echo "=== Uploaded-files backup cron ==="
