@@ -372,6 +372,17 @@ export class AiService {
       include: { farm: { select: { name: true } } },
     });
     if (!batch) throw new BadRequestException("Flock batch not found.");
+    // H-BACK-6: every other piece of this AI assistant's data access is
+    // scoped to the requesting user's assigned branches/farms/warehouses —
+    // this lookup only checked company membership, so a user with ai.read
+    // but no broader poultry permission could pull another farm's exact
+    // feed quantity and cost figures for any batch ID they happened to have
+    // (a shared report, a colleague, browser history), sidestepping the
+    // farm-level restriction enforced everywhere else. Same check
+    // poultry.service.ts's assertFarmAccess uses.
+    if (!user.hasGlobalAccess && !user.farmIds.includes(batch.farmId)) {
+      throw new ForbiddenException("You do not have access to this farm.");
+    }
 
     const feedRecords = await this.prisma.feedConsumptionRecord.findMany({
       where: { flockBatchId: batchId, companyId: user.companyId, recordDate: { gte: since7 } },

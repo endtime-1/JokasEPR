@@ -2,7 +2,9 @@ import { ForbiddenException } from "@nestjs/common";
 import { AiService } from "./ai.service";
 
 const mockPrisma = {
-  loginRateLimit: { findUnique: jest.fn(), upsert: jest.fn(), update: jest.fn() }
+  loginRateLimit: { findUnique: jest.fn(), upsert: jest.fn(), update: jest.fn() },
+  flockBatch: { findFirst: jest.fn() },
+  feedConsumptionRecord: { findMany: jest.fn() }
 };
 const mockConfig = { get: jest.fn() };
 const mockAudit = { write: jest.fn().mockResolvedValue(undefined) };
@@ -58,5 +60,53 @@ describe("AiService.enforceRateLimit — shared across processes via the DB, not
     mockPrisma.loginRateLimit.findUnique.mockRejectedValue(new Error("connection pool exhausted"));
 
     await expect(service().enforceRateLimit("user-2")).resolves.toBeUndefined();
+  });
+});
+
+function makeUser(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "user-1", companyId: "company-1", email: "u@x.com", fullName: "U",
+    roles: [], permissions: ["ai.read"], branchIds: [], farmIds: [], warehouseIds: [], productionSiteIds: [],
+    hasGlobalAccess: false,
+    ...overrides
+  } as never;
+}
+
+describe("AiService.feedAnalysis — scoped to the user's assigned farm (H-BACK-6)", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockConfig.get.mockReturnValue("claude-sonnet-4-6");
+  });
+
+  it("blocks a non-global-access user from analyzing a batch on a farm they aren't assigned to", async () => {
+    mockPrisma.flockBatch.findFirst.mockResolvedValue({ id: "batch-1", farmId: "farm-other", farm: { name: "Other Farm" } });
+    const service = makeService();
+
+    await expect(
+      service.feedAnalysis(makeUser({ farmIds: ["farm-1"] }), "batch-1")
+    ).rejects.toThrow(ForbiddenException);
+    expect(mockPrisma.feedConsumptionRecord.findMany).not.toHaveBeenCalled();
+  });
+
+  it("allows a user whose farmIds include the batch's farm", async () => {
+    mockPrisma.flockBatch.findFirst.mockResolvedValue({ id: "batch-1", farmId: "farm-1", farm: { name: "Farm One" } });
+    mockPrisma.feedConsumptionRecord.findMany.mockResolvedValue([]);
+    const service = makeService();
+    jest.spyOn(service as never as { callAi: (...args: unknown[]) => Promise<{ reply: string }> }, "callAi").mockResolvedValue({ reply: "analysis" });
+
+    await expect(
+      service.feedAnalysis(makeUser({ farmIds: ["farm-1"] }), "batch-1")
+    ).resolves.toBeDefined();
+  });
+
+  it("allows a global-access user regardless of farmIds", async () => {
+    mockPrisma.flockBatch.findFirst.mockResolvedValue({ id: "batch-1", farmId: "farm-other", farm: { name: "Other Farm" } });
+    mockPrisma.feedConsumptionRecord.findMany.mockResolvedValue([]);
+    const service = makeService();
+    jest.spyOn(service as never as { callAi: (...args: unknown[]) => Promise<{ reply: string }> }, "callAi").mockResolvedValue({ reply: "analysis" });
+
+    await expect(
+      service.feedAnalysis(makeUser({ hasGlobalAccess: true, farmIds: [] }), "batch-1")
+    ).resolves.toBeDefined();
   });
 });
