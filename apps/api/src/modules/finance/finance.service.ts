@@ -473,6 +473,26 @@ export class FinanceService {
 
   async createPayrollRecord(user: AuthenticatedUser, dto: CreatePayrollRecordDto, ctx: RequestContext) {
     this.assertBranchAccess(user, dto.branchId);
+    const employeeName = dto.employeeName.trim();
+
+    // H-BACK-1: this endpoint and HR's own POST /hr/payroll both create
+    // PayrollRecord rows with no awareness of each other — a Finance-
+    // permission user (who may not hold HR_MANAGE at all) could create a
+    // second payroll entry for a person/period HR already processed, with
+    // nothing stopping it, and both could independently be approved and
+    // paid. Mirrors the duplicate-period guard hr.service.ts's own
+    // createPayrollRecord already has (M17) — matched on employeeName
+    // rather than employeeId since this path takes free-text name entry
+    // and has no real Employee link, but the underlying risk (two payroll
+    // rows for the same person/period) is identical either way this table
+    // gets written to.
+    const duplicate = await this.prisma.payrollRecord.findFirst({
+      where: { companyId: user.companyId, period: dto.period, employeeName, deletedAt: null }
+    });
+    if (duplicate) {
+      throw new BadRequestException(`A payroll record already exists for ${employeeName} for period ${dto.period}.`);
+    }
+
     const reference = await nextRef(this.prisma, user.companyId, "PAY");
     const gross = (dto.basicSalary ?? 0) + (dto.allowances ?? 0) - (dto.deductions ?? 0);
     const net = gross - (dto.taxDeduction ?? 0) - (dto.ssnit ?? 0);
@@ -484,7 +504,7 @@ export class FinanceService {
         period: dto.period,
         periodStart: new Date(dto.periodStart),
         periodEnd: new Date(dto.periodEnd),
-        employeeName: dto.employeeName,
+        employeeName,
         employeeCode: dto.employeeCode,
         basicSalary: dto.basicSalary,
         allowances: dto.allowances ?? 0,
