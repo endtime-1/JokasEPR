@@ -26,6 +26,7 @@ const apiScript = fs.existsSync(apiBundle)
   ? apiBundle
   : path.join(root, "apps/api/dist/main.js");
 const workerWrapper = path.join(root, "web-worker-wrapper.js");
+const apiWorkerWrapper = path.join(root, "api-worker-wrapper.js");
 
 // ---------------------------------------------------------------------------
 // Kill any process listening on a given port.
@@ -142,12 +143,14 @@ process.on("exit", (code) => {
 let webProc = null;
 let webWorker = null; // the Worker thread running Next.js (shares start.js's PID)
 let apiProc = null;
+let apiWorker = null; // the Worker thread running jokas-api (shares start.js's PID)
 let proxy;
 let webReady = false;   // proxy switch — true only when BOTH next.js and api are up
 let _nextjsUp = false;  // next.js has bound its port
 let _apiUp = false;     // nestjs has bound its port
 let webRestarts = 0;
 let lastWebLines = [];  // last 20 lines of web stdout/stderr for diagnostics
+let lastApiLines = [];  // last 20 lines of API stdout/stderr for diagnostics
 let lastStartLines = []; // last 30 lines of start.js own log for diagnostics
 let storefrontWorker = null;
 let _storefrontUp = false;
@@ -225,45 +228,6 @@ function waitForPortFree(port, maxWaitMs = 4000) {
 }
 
 // ---------------------------------------------------------------------------
-// Child launcher
-// ---------------------------------------------------------------------------
-function launch(name, script, cwd, env) {
-  if (!fs.existsSync(script)) {
-    console.error(`[start] MISSING script for ${name}: ${script}`);
-    return null;
-  }
-  console.log(`[start] launching ${name} — ${script}`);
-  const proc = spawn(process.execPath, [script], {
-    cwd,
-    stdio: ["inherit", "pipe", "pipe"],
-    env: { ...process.env, ...env, NODE_ENV: "production" },
-  });
-  proc.on("spawn", () => console.log(`[start] ${name} spawned PID=${proc.pid}`));
-  proc.stdout.on("data", (d) => {
-    const s = d.toString();
-    process.stdout.write(`[${name}] ` + s);
-    if (name === "jokas-web") {
-      lastWebLines.push(...s.split("\n").filter(Boolean));
-      if (lastWebLines.length > 20) lastWebLines = lastWebLines.slice(-20);
-      if (!_nextjsUp && /\bready\b/i.test(s)) {
-        _nextjsUp = true;
-        console.log("[start] Next.js ready (stdout)");
-        checkBothReady();
-      }
-    }
-  });
-  proc.stderr.on("data", (d) => {
-    process.stdout.write(`[${name}-ERR] ` + d);
-    if (name === "jokas-web") {
-      lastWebLines.push(...("[ERR] " + d.toString()).split("\n").filter(Boolean));
-      if (lastWebLines.length > 20) lastWebLines = lastWebLines.slice(-20);
-    }
-  });
-  proc.on("error", (err) => console.error(`[start] ${name} spawn error:`, err.message));
-  return proc;
-}
-
-// ---------------------------------------------------------------------------
 // HTTP proxy (starts immediately — Hostinger requires listen() within 3s)
 // ---------------------------------------------------------------------------
 function readProcRssMB(pid) {
@@ -336,6 +300,7 @@ function handleRequest(req, res) {
       serverScript,
       apiScriptExists: fs.existsSync(apiScript),
       lastWebLines,
+      lastApiLines,
       lastStartLines,
       memoryMB: {
         rss: Math.round(mem.rss / 1024 / 1024),
@@ -601,7 +566,10 @@ startProxy(0);
   // Poll API_PORT via TCP until NestJS accepts connections.
   function pollApiPort(proc) {
     let stopped = false;
-    proc.once("close", () => { stopped = true; });
+    const _stop = () => { stopped = true; };
+    // ChildProcess fires "close"; Worker threads fire "exit" — handle both.
+    try { proc.once("close", _stop); } catch {}
+    try { proc.once("exit", _stop); } catch {}
     function probe() {
       if (stopped || _apiUp) return;
       const sock = net.createConnection(API_PORT, "127.0.0.1");
@@ -706,20 +674,69 @@ startProxy(0);
 
   let apiRestarts = 0;
   function startApi() {
-    apiProc = launch("jokas-api", apiScript, path.join(root, "apps/api"), {
-      PORT: String(API_PORT),
-      DATABASE_URL: dbUrl,
-    });
-    if (!apiProc) { console.error("[start] API script missing — not starting API"); return; }
-    savePids();
-    pollApiPort(apiProc);
-    apiProc.on("close", (code, signal) => {
-      apiProc = null;
-      _apiUp = false;
-      apiRestarts++;
-      const delay = Math.min(3000 * apiRestarts, 30000);
-      console.log(`[start] API exited code=${code} signal=${signal} — restart #${apiRestarts} in ${delay}ms`);
-      setTimeout(startApi, delay);
+    // Terminate any in-flight worker from a prior call before starting fresh.
+    if (apiWorker) {
+      try { apiWorker.terminate(); } catch {}
+      apiWorker = null;
+    }
+    if (!fs.existsSync(apiScript)) {
+      console.error(`[start] API script missing at ${apiScript} — will retry in 30s`);
+      setTimeout(startApi, 30000);
+      return;
+    }
+    // For Worker threads, port 4001 is held by THIS process's PID (start.js).
+    // The outer async block already called killPortOwner(API_PORT) once at
+    // boot to clear orphans from a previous run — restarts only need to wait
+    // for the port, not actively kill anything (that would SIGKILL ourselves).
+    waitForPortFree(API_PORT, 10000).then(() => {
+      console.log(`[start] launching jokas-api as worker thread — ${apiScript}`);
+      const worker = new Worker(apiWorkerWrapper, {
+        workerData: { apiScript, apiDir: path.join(root, "apps/api") },
+        // Isolated env copy: PORT changes here won't bleed into start.js's own
+        // process.env (which holds PORT=3000 for the proxy).
+        env: {
+          ...process.env,
+          PORT: String(API_PORT),
+          DATABASE_URL: dbUrl,
+          NODE_ENV: "production",
+        },
+      });
+      apiWorker = worker;
+
+      // Facade so killAll() and savePids() keep working without changes.
+      // Worker threads share start.js's PID — no separate PID to track.
+      apiProc = {
+        pid: null,
+        kill: () => { try { worker.terminate(); } catch {} },
+      };
+      savePids();
+
+      worker.on("message", (msg) => {
+        if (msg.type === "log") {
+          lastApiLines.push(...String(msg.data).split("\n").filter(Boolean));
+          if (lastApiLines.length > 20) lastApiLines = lastApiLines.slice(-20);
+        } else if (msg.type === "exit") {
+          worker.terminate();
+        }
+      });
+
+      worker.on("error", (err) => {
+        console.error("[start] API worker error:", err.message);
+        lastApiLines.push("[ERR] " + err.message);
+        if (lastApiLines.length > 20) lastApiLines = lastApiLines.slice(-20);
+      });
+
+      pollApiPort(worker);
+
+      worker.on("exit", (code) => {
+        if (apiWorker === worker) apiWorker = null;
+        apiProc = null;
+        _apiUp = false;
+        apiRestarts++;
+        const delay = Math.min(3000 * apiRestarts, 30000);
+        console.log(`[start] API exited code=${code} — restart #${apiRestarts} in ${delay}ms`);
+        setTimeout(startApi, delay);
+      });
     });
   }
 

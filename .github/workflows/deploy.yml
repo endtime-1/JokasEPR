@@ -194,6 +194,7 @@ jobs:
           cp packages/db/scripts/sync-permissions.mjs /tmp/deploy-pkg/apps/api/sync-permissions.mjs 2>/dev/null || true
           cp ecosystem.config.js start.js package.json /tmp/deploy-pkg/
           cp web-worker-wrapper.js /tmp/deploy-pkg/ 2>/dev/null || true
+          cp api-worker-wrapper.js /tmp/deploy-pkg/ 2>/dev/null || true
           tar -czf /tmp/deploy.tar.gz -C /tmp/deploy-pkg .
           echo "Tarball size: $(du -sh /tmp/deploy.tar.gz | cut -f1)"
 
@@ -453,12 +454,12 @@ jobs:
       - name: Restart application
         run: |
           APP_DIR="$HOME/domains/jokasfarms.com/nodejs"
-          # apiScript in start.js prefers dist/bundle.js and only falls back to
-          # dist/main.js if the bundle is missing — kill both patterns so this
-          # actually finds the running process either way.
-          pkill -f "apps/api/dist/main.js" 2>/dev/null && echo "Killed main.js API process." || true
-          pkill -f "apps/api/dist/bundle.js" 2>/dev/null && echo "Killed bundle.js API process." || true
-          sleep 3
+          # The API runs as a Worker thread inside start.js (like web and
+          # storefront), not its own spawned process — there is no separate
+          # "apps/api/dist/main.js" cmdline for pkill to match anymore.
+          # touch restart.txt is what actually recycles it: Passenger tears
+          # down and relaunches the whole start.js process, taking every
+          # worker thread with it.
           mkdir -p "$APP_DIR/tmp"
           touch "$APP_DIR/tmp/restart.txt"
           echo "Passenger restart signalled."
@@ -494,9 +495,6 @@ jobs:
           fi
 
           echo "==> Smoke test failed — rolling back to the previous deploy..."
-          pkill -f "apps/api/dist/main.js" 2>/dev/null || true
-          pkill -f "apps/api/dist/bundle.js" 2>/dev/null || true
-          sleep 3
           rsync -a --delete "$PREV_DIR/" "$APP_DIR/"
           mkdir -p "$APP_DIR/tmp"
           touch "$APP_DIR/tmp/restart.txt"
@@ -574,9 +572,10 @@ jobs:
         if: always()
         run: |
           # C8: apps/api/main.ts creates its upload dir at
-          # process.cwd()/uploads — start.js spawns the API with cwd set to
-          # apps/api (see start.js's launch("jokas-api", ...) call), so the
-          # real, always-used path in production is
+          # process.cwd()/uploads — the API runs as a Worker thread inside
+          # start.js (api-worker-wrapper.js overrides process.cwd() to
+          # apps/api, since Worker threads have no spawn-style cwd option),
+          # so the real, always-used path in production is
           # $APP_DIR/apps/api/uploads (employee photos, HR documents, product
           # images). It happens to survive normal deploys today only because
           # "Extract files to APP_DIR" uses `tar -xzf ... -C "$APP_DIR"`
