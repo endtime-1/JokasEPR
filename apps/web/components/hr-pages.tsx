@@ -509,9 +509,22 @@ export function CreateEmployeePage() {
         const compressed = await compressImage(passportFile);
         const fd = new FormData();
         fd.append("photo", compressed, "photo.jpg");
-        await fetch(`/api/v1/hr/employees/${res.data.id}/photo`, {
-          method: "POST", body: fd, credentials: "include",
-        }).catch(() => undefined);
+        try {
+          // H-WEB-1/WEB-2: this used to be a raw fetch with `.catch(() =>
+          // undefined)` — a failed upload (including a cold-start timeout,
+          // the one time it's most likely to happen) was silently discarded
+          // and the page still navigated away as if the photo had saved.
+          // apiFetch now supports FormData bodies (see api.ts) so this gets
+          // the same cold-start retry every other request already has, and a
+          // genuine failure here surfaces instead of vanishing.
+          await apiFetch(`/hr/employees/${res.data.id}/photo`, { method: "POST", body: fd });
+        } catch (photoErr: unknown) {
+          setError(
+            `Employee created, but the photo failed to upload: ${photoErr instanceof Error ? photoErr.message : "unknown error"}. ` +
+            `You can add it later from the employee's profile.`
+          );
+          return;
+        }
       }
       router.push("/hr/employees");
     } catch (err: unknown) {
@@ -812,15 +825,10 @@ export function EmployeeDetailPage({ id }: { id: string }) {
       const compressed = await compressImage(file);
       const body = new FormData();
       body.append("photo", compressed, "photo.jpg");
-      const res = await fetch(`/api/v1/hr/employees/${id}/photo`, {
-        method: "POST",
-        body,
-        credentials: "include",
-      });
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}));
-        throw new Error(json?.message ?? "Upload failed");
-      }
+      // H-WEB-2: was a raw fetch with no cold-start retry — every other
+      // request on this page rides out a Hostinger cold start transparently
+      // via apiFetch; this one used to fail immediately instead.
+      await apiFetch(`/hr/employees/${id}/photo`, { method: "POST", body });
       load();
     } catch (err: unknown) {
       setPhotoError(err instanceof Error ? err.message : "Upload failed");

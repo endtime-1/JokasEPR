@@ -17,8 +17,6 @@ import {
   LoaderCircle,
 } from "lucide-react";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "/api/v1";
-
 interface AdminProduct {
   id: string;
   name: string;
@@ -120,13 +118,13 @@ function ProductRow({ product, onSaved }: { product: AdminProduct; onSaved: (p: 
     try {
       const form = new FormData();
       form.append("file", file);
-      const res = await fetch(`${API_BASE}/public/admin/products/${product.id}/image`, {
+      // H-WEB-2: was a raw fetch with no cold-start retry — apiFetch now
+      // supports FormData bodies (see lib/api.ts), so this gets the same
+      // retry/timeout handling every other request on this page already has.
+      const json = await apiFetch<ApiEnvelope<{ imageUrl: string }>>(`/public/admin/products/${product.id}/image`, {
         method: "POST",
         body: form,
-        credentials: "include",
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.message ?? "Upload failed");
       const apiRoot = (process.env.NEXT_PUBLIC_API_URL ?? "").replace("/api/v1", "");
       setImageUrl(`${apiRoot}${json.data.imageUrl}`);
     } catch (err: unknown) {

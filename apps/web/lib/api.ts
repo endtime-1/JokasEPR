@@ -117,6 +117,12 @@ export async function refreshSession(): Promise<RefreshResult> {
 async function request(path: string, init?: RequestInit): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 12000);
+  // H-WEB-2: a FormData body needs the browser to set its own multipart
+  // Content-Type (with the correct boundary) — forcing application/json here
+  // the way every other call needs would silently break every file upload
+  // that went through this wrapper, so callers uploading files never used it
+  // at all and got none of the cold-start retry/timeout handling below.
+  const isFormData = typeof FormData !== "undefined" && init?.body instanceof FormData;
   try {
     const res = await fetch(`${API_URL}${path}`, {
       ...init,
@@ -124,7 +130,7 @@ async function request(path: string, init?: RequestInit): Promise<Response> {
       cache: "no-store",
       signal: controller.signal,
       headers: {
-        "content-type": "application/json",
+        ...(isFormData ? {} : { "content-type": "application/json" }),
         ...init?.headers
       }
     });
@@ -188,7 +194,11 @@ const MAX_TRANSIENT_RETRIES = 12;
 
 import { authReady } from "./auth-gate";
 
-export async function apiFetch<T>(path: string, init?: RequestInit & { quiet?: boolean }): Promise<T> {
+// Shared by apiFetch (JSON) and apiFetchResponse (raw Response, e.g. SVG/blob):
+// auth-gate wait, 401-refresh-and-retry, cold-start transient retry loop, and
+// the post-cold-start-401 recovery. Everything below this point is specific
+// to how the caller wants to consume the body.
+async function resolveResponse(path: string, init?: RequestInit & { quiet?: boolean }): Promise<{ response: Response; firedUnavailable: boolean }> {
   // Block until auth-context has finished its initial session check.
   // This ensures the token refresh (if needed) is done and the fresh jokas_at cookie is
   // in the browser before the first data request fires — eliminates the concurrent-refresh
@@ -267,6 +277,12 @@ export async function apiFetch<T>(path: string, init?: RequestInit & { quiet?: b
     }
   }
 
+  return { response, firedUnavailable };
+}
+
+export async function apiFetch<T>(path: string, init?: RequestInit & { quiet?: boolean }): Promise<T> {
+  const { response, firedUnavailable } = await resolveResponse(path, init);
+
   // ── Final response handling ───────────────────────────────────────────────
   if (!response.ok) {
     if (response.status === 401) {
@@ -311,6 +327,19 @@ export async function apiFetch<T>(path: string, init?: RequestInit & { quiet?: b
     }
   }
   return parsed;
+}
+
+// H-WEB-2: for endpoints that don't return JSON (e.g. the QR label SVG),
+// apiFetch's JSON.parse would break. This gives the same auth-gate wait +
+// cold-start retry + 401-refresh handling as apiFetch, but hands back the raw
+// Response so the caller can .text()/.blob() it themselves.
+export async function apiFetchResponse(path: string, init?: RequestInit & { quiet?: boolean }): Promise<Response> {
+  const { response } = await resolveResponse(path, init);
+  if (!response.ok) {
+    if (response.status === 401) signalSessionExpired();
+    throw new Error(extractErrorMessage(await response.text()));
+  }
+  return response;
 }
 
 export async function downloadReport(path: string, filename: string): Promise<void> {

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Download, Printer, QrCode, ScanBarcode } from "lucide-react";
-import { API_URL, ApiEnvelope, apiFetch } from "../lib/api";
+import { ApiEnvelope, apiFetch, apiFetchResponse } from "../lib/api";
 
 export type QrEntityType =
   | "FEED_PRODUCTION_BATCH"
@@ -72,6 +72,7 @@ function escapeHtml(value: string): string {
 export function QrLabelCard({ entityType, entityId }: { entityType: QrEntityType; entityId: string }) {
   const [label, setLabel] = useState<QrLabel | null>(null);
   const [loading, setLoading] = useState(false);
+  const [printing, setPrinting] = useState(false);
   const [error, setError] = useState("");
 
   async function generate() {
@@ -93,20 +94,34 @@ export function QrLabelCard({ entityType, entityId }: { entityType: QrEntityType
 
   async function printLabel() {
     if (!label) return;
-    // (L3) Was building the URL from a bare, unprefixed env var (missing the
-    // /api/v1 rewrite prefix in the default same-origin deployment — a real
-    // 404) and authenticating via getAccessToken(), a stub that always
-    // returned null left over from before auth moved to HttpOnly cookies.
-    // Reuses the same API_URL + credentials pattern every other fetch here uses.
-    const response = await fetch(`${API_URL}/qr/${label.entityType}/${label.entityId}/label.svg`, {
-      credentials: "include"
-    });
-    const svgText = await response.text();
-    const safeDataUrl = svgDataUrl(svgText);
-    const printWindow = window.open("", "_blank", "width=760,height=520");
-    if (!printWindow) return;
-    printWindow.document.write(`<html><head><title>QR Label ${escapeHtml(label.label)}</title></head><body style="margin:24px"><img src="${safeDataUrl}" alt="QR label" /><script>window.onload=()=>window.print()</script></body></html>`);
-    printWindow.document.close();
+    // H-WEB-2: this had no error handling at all — a failure during a
+    // Hostinger cold start (the one time it's most likely) was a silent
+    // no-op with nothing telling the user anything happened. Now goes
+    // through apiFetchResponse for the same cold-start retry every other
+    // request on this card already gets via apiFetch, with the failure
+    // surfaced in the same error banner `generate()` already uses.
+    setPrinting(true);
+    setError("");
+    try {
+      // (L3) Was building the URL from a bare, unprefixed env var (missing the
+      // /api/v1 rewrite prefix in the default same-origin deployment — a real
+      // 404) and authenticating via getAccessToken(), a stub that always
+      // returned null left over from before auth moved to HttpOnly cookies.
+      const response = await apiFetchResponse(`/qr/${label.entityType}/${label.entityId}/label.svg`);
+      const svgText = await response.text();
+      const safeDataUrl = svgDataUrl(svgText);
+      const printWindow = window.open("", "_blank", "width=760,height=520");
+      if (!printWindow) {
+        setError("Could not open the print window — check your browser's pop-up blocker.");
+        return;
+      }
+      printWindow.document.write(`<html><head><title>QR Label ${escapeHtml(label.label)}</title></head><body style="margin:24px"><img src="${safeDataUrl}" alt="QR label" /><script>window.onload=()=>window.print()</script></body></html>`);
+      printWindow.document.close();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to print QR label.");
+    } finally {
+      setPrinting(false);
+    }
   }
 
   function downloadSvg() {
@@ -159,9 +174,9 @@ export function QrLabelCard({ entityType, entityId }: { entityType: QrEntityType
                 <p className="break-all text-xs text-ink/45">{label.payload}</p>
               </div>
               <div className="flex gap-2">
-                <button onClick={printLabel} className="app-button-secondary">
+                <button onClick={printLabel} disabled={printing} className="app-button-secondary">
                   <Printer className="h-4 w-4" />
-                  Print
+                  {printing ? "Preparing..." : "Print"}
                 </button>
                 <button onClick={downloadSvg} className="app-button-secondary">
                   <Download className="h-4 w-4" />
