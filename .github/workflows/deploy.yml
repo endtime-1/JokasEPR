@@ -586,8 +586,20 @@ jobs:
           fi
           exit 1
 
-      - name: Setup database backup cron
+      - name: Setup backup crons
         if: always()
+        # H28 (2026-08-11): previously two separate ssh-action steps. Both
+        # failed identically on the two most recent live runs — 2s duration,
+        # zero script output, bare "Process exited with status 1" — even
+        # after H27 removed all the escaping the first failure was blamed on.
+        # A 2s failure with nothing printed (not even this script's first
+        # line) means the connection itself is failing, not the script.
+        # These are the LAST 2 of 7 appleboy/ssh-action connections in this
+        # job, back to back, from the same runner IP — consistent with
+        # Hostinger's SSH layer (fail2ban or similar) throttling repeated
+        # connections in a short window. Merging into one connection cuts
+        # the tail-end count from 2 to 1; debug: true surfaces drone-ssh's
+        # real error if this still fails, instead of nothing.
         uses: appleboy/ssh-action@v1.2.0
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -598,86 +610,59 @@ jobs:
           port: 65002
           envs: DATABASE_URL
           script_stop: true
+          debug: true
           script: |
-            if [ -z "$DATABASE_URL" ]; then echo "WARNING: DATABASE_URL not set — skipping backup setup"; exit 0; fi
-            _u="${DATABASE_URL#mysql://}"
-            DB_USER="${_u%%:*}"
-            _ap="${_u#*:}"
-            DB_PASS="${_ap%@*}"
-            _hp="${_ap##*@}"
-            DB_HOST="${_hp%%[:/*]*}"
-            _ah="${_hp#"$DB_HOST"}"
-            case "$_ah" in :*) DB_PORT="${_ah#:}"; DB_PORT="${DB_PORT%%/*}" ;; *) DB_PORT="3306" ;; esac
-            DB_NAME="${_hp#*/}"; DB_NAME="${DB_NAME%%[?#]*}"
-            # Write a persistent credentials file for the backup cron
-            printf '[client]\nhost=%s\nport=%s\nuser=%s\npassword=%s\ndatabase=%s\n' \
-              "$DB_HOST" "$DB_PORT" "$DB_USER" "$DB_PASS" "$DB_NAME" > "$HOME/.jokas-backup.cnf"
-            chmod 600 "$HOME/.jokas-backup.cnf"
-            mkdir -p "$HOME/jokas-db-backups"
-            # Daily backup at 2:00 AM, keep last 7 dumps (~30 MB each gzipped).
-            # IMPORTANT: mysqldump does NOT read `database=` from a [client]
-            # option-file the way the `mysql` CLI does — it treats the option
-            # name as an ambiguous prefix of `--databases` and ignores it with
-            # just a warning. Confirmed live 2026-08-06: without the db name
-            # passed as a plain argument, mysqldump silently dumped nothing, and
-            # because the old version piped straight into gzip with `2>/dev/null`
-            # and no pipefail, the pipeline still reported success — a ~20-byte
-            # (empty) gzip file was silently treated as a valid daily backup for
-            # who knows how long. Fixed by (1) passing $DB_NAME explicitly, and
-            # (2) dumping to a temp file first so mysqldump's own exit code and
-            # a non-empty-file check gate whether gzip/rotation run at all —
-            # failures now land in backup-error.log instead of vanishing.
-            # NOTE: this Hostinger plan has no Cron Jobs feature, and `crontab`
-            # itself is aliased in interactive shells to a read-only stub (`cat
-            # /var/spool/cron/$USER`, ignores -l/-e/stdin) — confirmed live
-            # 2026-08-06 that piping into it silently does nothing. So this
-            # script is written unconditionally; the crontab branch below is
-            # kept only for portability to a future host that has real cron.
-            # The script actually gets run by start.js's checkDailyBackup(),
-            # which polls for the 02:00 hour and today's dump file every 15 min
-            # — see start.js for why piggybacking on it (not cron) works here.
-            #
-            # H27 (2026-08-11): previously built as a single semicolon-chained
-            # string via escaped-\"-inside-a-double-quoted-bash-string, then
-            # printf'd to a file. That's the one pattern in this whole workflow
-            # not used anywhere else — and the SSH-based deploy's first live run
-            # failed both backup-cron steps with zero script output (not even
-            # the exit-code markers other multi-line ssh-action steps produced),
-            # consistent with drone-ssh's script transport choking on it. A
-            # fully single-quoted heredoc needs no escaping at all — the whole
-            # body is written byte-for-byte, and $DB_NAME (the one CI-time value
-            # needed inside it) is substituted afterward via sed.
-            cat > "$HOME/jokas-db-backup.sh" <<'BACKUP_SCRIPT_EOF'
-            #!/bin/bash
-            mysqldump --defaults-file=$HOME/.jokas-backup.cnf --single-transaction --routines __DB_NAME__ > $HOME/jokas-db-backups/.tmp-dump.sql 2>$HOME/jokas-db-backups/backup-error.log
-            if [ $? -eq 0 ] && [ -s $HOME/jokas-db-backups/.tmp-dump.sql ]; then
-              gzip -c $HOME/jokas-db-backups/.tmp-dump.sql > $HOME/jokas-db-backups/db-$(date +%Y%m%d).sql.gz
-              rm -f $HOME/jokas-db-backups/.tmp-dump.sql $HOME/jokas-db-backups/backup-error.log
-              find $HOME/jokas-db-backups -name 'db-*.sql.gz' -mtime +7 -delete
+            echo "=== DB backup cron ==="
+            # Wrapped as an if-block (not a script-wide early exit) — an
+            # empty DATABASE_URL must only skip the DB portion below, not
+            # the independent uploaded-files portion further down.
+            if [ -z "$DATABASE_URL" ]; then
+              echo "WARNING: DATABASE_URL not set — skipping DB backup setup"
             else
-              echo "$(date): mysqldump failed or produced empty output" >> $HOME/jokas-db-backups/backup-error.log
-            fi
+              _u="${DATABASE_URL#mysql://}"
+              DB_USER="${_u%%:*}"
+              _ap="${_u#*:}"
+              DB_PASS="${_ap%@*}"
+              _hp="${_ap##*@}"
+              DB_HOST="${_hp%%[:/*]*}"
+              _ah="${_hp#"$DB_HOST"}"
+              case "$_ah" in :*) DB_PORT="${_ah#:}"; DB_PORT="${DB_PORT%%/*}" ;; *) DB_PORT="3306" ;; esac
+              DB_NAME="${_hp#*/}"; DB_NAME="${DB_NAME%%[?#]*}"
+              # Write a persistent credentials file for the backup cron
+              printf '[client]\nhost=%s\nport=%s\nuser=%s\npassword=%s\ndatabase=%s\n' \
+                "$DB_HOST" "$DB_PORT" "$DB_USER" "$DB_PASS" "$DB_NAME" > "$HOME/.jokas-backup.cnf"
+              chmod 600 "$HOME/.jokas-backup.cnf"
+              mkdir -p "$HOME/jokas-db-backups"
+              # Daily backup at 2:00 AM, keep last 7 dumps (~30 MB each gzipped).
+              # IMPORTANT: mysqldump does NOT read `database=` from a [client]
+              # option-file the way the `mysql` CLI does — it treats the option
+              # name as an ambiguous prefix of `--databases` and ignores it with
+              # just a warning. Confirmed live 2026-08-06: without the db name
+              # passed as a plain argument, mysqldump silently dumped nothing, and
+              # because the old version piped straight into gzip with `2>/dev/null`
+              # and no pipefail, the pipeline still reported success — a ~20-byte
+              # (empty) gzip file was silently treated as a valid daily backup for
+              # who knows how long. Fixed by (1) passing $DB_NAME explicitly, and
+              # (2) dumping to a temp file first so mysqldump's own exit code and
+              # a non-empty-file check gate whether gzip/rotation run at all —
+              # failures now land in backup-error.log instead of vanishing.
+              cat > "$HOME/jokas-db-backup.sh" <<'BACKUP_SCRIPT_EOF'
+              #!/bin/bash
+              mysqldump --defaults-file=$HOME/.jokas-backup.cnf --single-transaction --routines __DB_NAME__ > $HOME/jokas-db-backups/.tmp-dump.sql 2>$HOME/jokas-db-backups/backup-error.log
+              if [ $? -eq 0 ] && [ -s $HOME/jokas-db-backups/.tmp-dump.sql ]; then
+                gzip -c $HOME/jokas-db-backups/.tmp-dump.sql > $HOME/jokas-db-backups/db-$(date +%Y%m%d).sql.gz
+                rm -f $HOME/jokas-db-backups/.tmp-dump.sql $HOME/jokas-db-backups/backup-error.log
+                find $HOME/jokas-db-backups -name 'db-*.sql.gz' -mtime +7 -delete
+              else
+                echo "$(date): mysqldump failed or produced empty output" >> $HOME/jokas-db-backups/backup-error.log
+              fi
             BACKUP_SCRIPT_EOF
-            sed -i "s/__DB_NAME__/$DB_NAME/" "$HOME/jokas-db-backup.sh"
-            chmod +x "$HOME/jokas-db-backup.sh"
-            CRONTAB_BIN="$(command -v crontab 2>/dev/null || echo /usr/bin/crontab)"
-            if [ -x "$CRONTAB_BIN" ]; then
-              ("$CRONTAB_BIN" -l 2>/dev/null | grep -v 'jokas-db-backups'; echo "0 2 * * * $HOME/jokas-db-backup.sh") | "$CRONTAB_BIN" -
-              echo "Database backup cron installed (daily 02:00, 7-day retention → ~/jokas-db-backups/)."
-            else
-              echo "crontab not usable on this host — ~/jokas-db-backup.sh written; start.js's checkDailyBackup() runs it automatically around 02:00 daily."
+              sed -i "s/__DB_NAME__/$DB_NAME/" "$HOME/jokas-db-backup.sh"
+              chmod +x "$HOME/jokas-db-backup.sh"
+              echo "Database backup script written (runs daily ~02:00 via start.js's checkDailyBackup() — see H27/H28 history; this host has no real cron, see feedback_no_cron_on_host memory)."
             fi
 
-      - name: Setup uploaded-files backup cron
-        if: always()
-        uses: appleboy/ssh-action@v1.2.0
-        with:
-          host: ${{ secrets.HOSTINGER_HOST }}
-          username: ${{ secrets.HOSTINGER_USER }}
-          key: ${{ secrets.HOSTINGER_SSH_KEY }}
-          port: 65002
-          script_stop: true
-          script: |
+            echo "=== Uploaded-files backup cron ==="
             # C8: apps/api/main.ts creates its upload dir at
             # process.cwd()/uploads — the API runs as a Worker thread inside
             # start.js (api-worker-wrapper.js overrides process.cwd() to
@@ -689,14 +674,8 @@ jobs:
             # (extraction never deletes files absent from the archive, unlike
             # rsync --delete) — but there was zero backup of it, so disk
             # corruption or an accidental delete would lose it permanently
-            # with no recovery path, unlike the database which has a daily
-            # dump. This mirrors the DB backup cron above: same 02:00 slot,
-            # same 7-day retention, same start.js polling fallback (crontab is
-            # a read-only stub on this Hostinger plan — confirmed 2026-08-06).
+            # with no recovery path, unlike the database which has a daily dump.
             mkdir -p "$HOME/jokas-files-backups"
-            # H27 (2026-08-11): rewritten as a single-quoted heredoc for the
-            # same reason as the DB backup script above — no CI-time variable
-            # is even needed here, so this one needs no substitution step at all.
             cat > "$HOME/jokas-files-backup.sh" <<'FILES_SCRIPT_EOF'
             #!/bin/bash
             UPLOADS_DIR=$HOME/domains/jokasfarms.com/nodejs/apps/api/uploads
@@ -709,10 +688,4 @@ jobs:
             fi
             FILES_SCRIPT_EOF
             chmod +x "$HOME/jokas-files-backup.sh"
-            CRONTAB_BIN="$(command -v crontab 2>/dev/null || echo /usr/bin/crontab)"
-            if [ -x "$CRONTAB_BIN" ]; then
-              ("$CRONTAB_BIN" -l 2>/dev/null | grep -v 'jokas-files-backups'; echo "0 2 * * * $HOME/jokas-files-backup.sh") | "$CRONTAB_BIN" -
-              echo "Uploaded-files backup cron installed (daily 02:00, 7-day retention → ~/jokas-files-backups/)."
-            else
-              echo "crontab not usable on this host — ~/jokas-files-backup.sh written; start.js's checkDailyFilesBackup() runs it automatically around 02:00 daily."
-            fi
+            echo "Uploaded-files backup script written (runs daily ~02:00 via start.js's checkDailyFilesBackup())."
