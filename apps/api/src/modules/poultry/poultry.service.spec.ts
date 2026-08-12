@@ -3,8 +3,8 @@ import { AuthenticatedUser } from "@jokas/shared";
 import { PoultryService } from "./poultry.service";
 
 const mockTx = {
-  feedConsumptionRecord: { create: jest.fn() },
-  inventoryItem: { findFirst: jest.fn(), updateMany: jest.fn() },
+  feedConsumptionRecord: { create: jest.fn(), update: jest.fn() },
+  inventoryItem: { findFirst: jest.fn(), updateMany: jest.fn(), update: jest.fn() },
   product: { findFirst: jest.fn().mockResolvedValue({ id: "prod-feed", uomId: "uom-1" }) },
   stockMovement: { create: jest.fn() },
   mortalityRecord: { aggregate: jest.fn(), create: jest.fn() },
@@ -20,6 +20,7 @@ const mockPrisma = {
   flockBatch: { findFirst: jest.fn(), create: jest.fn() },
   batchPenAllocation: { findFirst: jest.fn() },
   poultryTransferRecord: { findFirst: jest.fn() },
+  feedConsumptionRecord: { findFirst: jest.fn() },
   $transaction: jest.fn().mockImplementation((cb: (tx: typeof mockTx) => Promise<unknown>) => cb(mockTx))
 };
 const mockAudit = { write: jest.fn().mockResolvedValue(undefined) };
@@ -371,5 +372,69 @@ describe("PoultryService — pen physical capacity is enforced, not bypassable (
 
       expect(mockTx.batchPenAllocation.upsert).toHaveBeenCalled();
     });
+  });
+});
+
+describe("PoultryService.updateRecord — feed correction is transactional and floor-guarded (H-BUG-3)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const existingFeedRecord = { id: "fc-1", companyId: "company-1", farmId: "farm-1", feedProductId: "prod-feed", warehouseId: "wh-1", quantityKg: 100 };
+
+  it("floor-guards the inventory decrement when a correction increases the recorded quantity", async () => {
+    // delta = 150 - 100 = +50 → more was actually consumed than first
+    // logged, so inventory needs to be decremented further.
+    mockPrisma.feedConsumptionRecord.findFirst.mockResolvedValue(existingFeedRecord);
+    mockTx.feedConsumptionRecord.update.mockResolvedValue({ id: "fc-1", quantityKg: 150 });
+    mockTx.inventoryItem.findFirst.mockResolvedValue({ id: "inv-1", branchId: "branch-1", uomId: "uom-1" });
+    mockTx.inventoryItem.updateMany.mockResolvedValue({ count: 1 });
+
+    const service = makeService();
+    await service.updateRecord(makeUser({ farmIds: ["farm-1"] }), "feed", "fc-1", { quantityKg: 150 }, {});
+
+    expect(mockTx.inventoryItem.updateMany).toHaveBeenCalledWith({
+      where: { id: "inv-1", quantityOnHand: { gte: 50 } },
+      data: { quantityOnHand: { decrement: 50 }, updatedById: "user-1" }
+    });
+    expect(mockTx.stockMovement.create).toHaveBeenCalled();
+  });
+
+  it("rejects the whole correction when there isn't enough stock left to cover the increase", async () => {
+    mockPrisma.feedConsumptionRecord.findFirst.mockResolvedValue(existingFeedRecord);
+    mockTx.feedConsumptionRecord.update.mockResolvedValue({ id: "fc-1", quantityKg: 150 });
+    mockTx.inventoryItem.findFirst.mockResolvedValue({ id: "inv-1", branchId: "branch-1", uomId: "uom-1" });
+    mockTx.inventoryItem.updateMany.mockResolvedValue({ count: 0 });
+
+    const service = makeService();
+    await expect(
+      service.updateRecord(makeUser({ farmIds: ["farm-1"] }), "feed", "fc-1", { quantityKg: 150 }, {})
+    ).rejects.toThrow(/insufficient stock/i);
+    expect(mockTx.stockMovement.create).not.toHaveBeenCalled();
+  });
+
+  it("gives stock back (no floor guard needed) when a correction decreases the recorded quantity", async () => {
+    // delta = 60 - 100 = -40 → less was actually consumed than first
+    // logged, so the over-decremented amount is returned to inventory.
+    mockPrisma.feedConsumptionRecord.findFirst.mockResolvedValue(existingFeedRecord);
+    mockTx.feedConsumptionRecord.update.mockResolvedValue({ id: "fc-1", quantityKg: 60 });
+    mockTx.inventoryItem.findFirst.mockResolvedValue({ id: "inv-1", branchId: "branch-1", uomId: "uom-1" });
+
+    const service = makeService();
+    await service.updateRecord(makeUser({ farmIds: ["farm-1"] }), "feed", "fc-1", { quantityKg: 60 }, {});
+
+    expect(mockTx.inventoryItem.update).toHaveBeenCalledWith({
+      where: { id: "inv-1" },
+      data: { quantityOnHand: { increment: 40 }, updatedById: "user-1" }
+    });
+    expect(mockTx.inventoryItem.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("does not touch inventory at all when quantityKg isn't part of the correction", async () => {
+    mockPrisma.feedConsumptionRecord.findFirst.mockResolvedValue(existingFeedRecord);
+    mockTx.feedConsumptionRecord.update.mockResolvedValue({ id: "fc-1", notes: "corrected note" });
+
+    const service = makeService();
+    await service.updateRecord(makeUser({ farmIds: ["farm-1"] }), "feed", "fc-1", { notes: "corrected note" }, {});
+
+    expect(mockTx.inventoryItem.findFirst).not.toHaveBeenCalled();
   });
 });

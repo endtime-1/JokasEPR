@@ -989,21 +989,55 @@ export class PoultryService {
     for (const field of correctable) {
       if (dto[field] !== undefined) updateData[field] = dto[field];
     }
-    const data = await model.update({ where: { id }, data: updateData });
 
-    if (type === "feed" && updateData.quantityKg !== undefined) {
-      const feed = existing as { feedProductId?: string | null; warehouseId?: string | null; quantityKg: number };
-      if (feed.feedProductId && feed.warehouseId) {
-        const delta = Number(updateData.quantityKg) - Number(feed.quantityKg);
-        if (delta !== 0) {
-          const invItem = await this.prisma.inventoryItem.findFirst({ where: { companyId: user.companyId, warehouseId: feed.warehouseId, productId: feed.feedProductId, deletedAt: null } });
-          if (invItem) {
-            await this.prisma.inventoryItem.update({ where: { id: invItem.id }, data: { quantityOnHand: delta > 0 ? { decrement: delta } : { increment: -delta }, updatedById: user.id } });
-            await this.prisma.stockMovement.create({ data: { companyId: user.companyId, branchId: invItem.branchId, productId: feed.feedProductId, inventoryItemId: invItem.id, fromWarehouseId: feed.warehouseId, warehouseId: feed.warehouseId, uomId: invItem.uomId, movementType: delta > 0 ? "PRODUCTION_INPUT" : "ADJUSTMENT_IN", quantity: Math.abs(delta), referenceType: "FeedConsumptionRecord", referenceId: id, notes: "Feed quantity correction", createdById: user.id } });
+    // H-BUG-3 (2026-08-12, from the inventory-integration logic audit): the
+    // record update and its inventory adjustment used to be two separate,
+    // un-transacted writes, and the inventory side used a plain `update`
+    // with no floor guard — unlike every other place in the codebase that
+    // decrements InventoryItem.quantityOnHand. A correction that increases
+    // a feed record's recorded quantityKg (delta > 0, meaning more was
+    // actually consumed than first logged) decrements inventory further;
+    // under concurrent consumption of the same item that could drive
+    // quantityOnHand negative with nothing to catch it, and a crash between
+    // the two writes could leave the record corrected but inventory
+    // unadjusted (or vice versa).
+    const data = await this.prisma.$transaction(async (tx) => {
+      // Same type→model mapping as recordModel(), just resolved against `tx`
+      // instead of `this.prisma` so the record update lands in the same
+      // transaction as the inventory adjustment below.
+      const modelKey = ({
+        daily: "dailyPoultryRecord", mortality: "mortalityRecord", feed: "feedConsumptionRecord",
+        eggs: "eggProductionRecord", weights: "birdWeightRecord", medications: "medicationRecord",
+        vaccinations: "vaccinationRecord", health: "poultryHealthObservation",
+        transfers: "poultryTransferRecord", costs: "poultryCostRecord"
+      } as Record<string, string>)[type];
+      const updated = await (tx[modelKey as keyof typeof tx] as { update: (args: unknown) => Promise<unknown> }).update({ where: { id }, data: updateData });
+
+      if (type === "feed" && updateData.quantityKg !== undefined) {
+        const feed = existing as { feedProductId?: string | null; warehouseId?: string | null; quantityKg: number };
+        if (feed.feedProductId && feed.warehouseId) {
+          const delta = Number(updateData.quantityKg) - Number(feed.quantityKg);
+          if (delta !== 0) {
+            const invItem = await tx.inventoryItem.findFirst({ where: { companyId: user.companyId, warehouseId: feed.warehouseId, productId: feed.feedProductId, deletedAt: null } });
+            if (invItem) {
+              if (delta > 0) {
+                const guarded = await tx.inventoryItem.updateMany({
+                  where: { id: invItem.id, quantityOnHand: { gte: delta } },
+                  data: { quantityOnHand: { decrement: delta }, updatedById: user.id }
+                });
+                if (guarded.count === 0) {
+                  throw new BadRequestException("Cannot apply this correction — insufficient stock remains to cover the increased quantity. Please investigate before retrying.");
+                }
+              } else {
+                await tx.inventoryItem.update({ where: { id: invItem.id }, data: { quantityOnHand: { increment: -delta }, updatedById: user.id } });
+              }
+              await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: invItem.branchId, productId: feed.feedProductId, inventoryItemId: invItem.id, fromWarehouseId: feed.warehouseId, warehouseId: feed.warehouseId, uomId: invItem.uomId, movementType: delta > 0 ? "PRODUCTION_INPUT" : "ADJUSTMENT_IN", quantity: Math.abs(delta), referenceType: "FeedConsumptionRecord", referenceId: id, notes: "Feed quantity correction", createdById: user.id } });
+            }
           }
         }
       }
-    }
+      return updated;
+    });
 
     await this.writeAudit(user, "UPDATE", type, id, `Corrected poultry ${type} record`, context, farmId);
     return { data };
