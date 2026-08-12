@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Alert } from "react-native";
 import * as Crypto from "expo-crypto";
 import { queueSubmission } from "../db/database";
@@ -32,8 +32,21 @@ export function useSubmit({ module, endpoint, method = "POST", onSuccess, onErro
   const { refreshCount } = useSync();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  // H-MOB-6: every screen using this hook correctly disables its submit
+  // button the instant `loading` becomes true, which is the actual
+  // protection today — but `loading` is React state, so it only takes
+  // effect on the NEXT render, leaving a real (if narrow) window where a
+  // double-tap invokes submit() twice before the button visually disables.
+  // A fresh idempotencyKey was generated on every call, so the data layer's
+  // own dedup couldn't catch that case either. A ref updates synchronously,
+  // so this blocks a second concurrent call outright regardless of whether
+  // the render has caught up yet — a self-contained guard that doesn't rely
+  // on every current and future caller wiring the disabled state correctly.
+  const submittingRef = useRef(false);
 
   const submit = useCallback(async (payload: Record<string, unknown>) => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setLoading(true);
     setError("");
 
@@ -44,6 +57,7 @@ export function useSubmit({ module, endpoint, method = "POST", onSuccess, onErro
       await queueSubmission(localId, module, endpoint, payload, method);
       await refreshCount();
       setLoading(false);
+      submittingRef.current = false;
       onSuccess?.(true);
       return;
     }
@@ -85,6 +99,7 @@ export function useSubmit({ module, endpoint, method = "POST", onSuccess, onErro
       onSuccess?.(true);
     } finally {
       setLoading(false);
+      submittingRef.current = false;
     }
   }, [online, module, endpoint, method, onSuccess, onError, refreshCount]);
 

@@ -132,6 +132,48 @@ describe("useSubmit", () => {
     expect(onError).toHaveBeenCalledWith("Quantity must be at least 1");
   });
 
+  it("ignores a second concurrent submit() call instead of sending two requests (H-MOB-6)", async () => {
+    // The real bug: `loading` is React state, so the button doesn't visually
+    // disable until the NEXT render — a double-tap firing both calls before
+    // that render leaves a window where two submissions would previously
+    // both go through with two different fresh idempotency keys, meaning the
+    // server's own dedup couldn't catch it either. The guard check happens
+    // synchronously at the very top of submit() (before its first await), so
+    // firing both calls back-to-back in the same tick — exactly what a
+    // double-tap does — is enough to exercise it; no manual timing control
+    // over when apiFetch itself resolves is needed.
+    mockApiFetch.mockResolvedValue({ ok: true });
+    const onSuccess = jest.fn();
+
+    const { result } = await renderHook(() =>
+      useSubmit({ module: "livestock", endpoint: "/livestock/batches", onSuccess })
+    );
+
+    await act(async () => {
+      const firstCall = result.current.submit({ name: "Batch A" });
+      const secondCall = result.current.submit({ name: "Batch A" });
+      await Promise.all([firstCall, secondCall]);
+    });
+
+    expect(mockApiFetch).toHaveBeenCalledTimes(1);
+    expect(onSuccess).toHaveBeenCalledTimes(1);
+  });
+
+  it("allows a genuinely new submit() after the previous one finished", async () => {
+    mockApiFetch.mockResolvedValue({ ok: true });
+    const onSuccess = jest.fn();
+
+    const { result } = await renderHook(() =>
+      useSubmit({ module: "livestock", endpoint: "/livestock/batches", onSuccess })
+    );
+
+    await act(async () => { await result.current.submit({ name: "Batch A" }); });
+    await act(async () => { await result.current.submit({ name: "Batch B" }); });
+
+    expect(mockApiFetch).toHaveBeenCalledTimes(2);
+    expect(onSuccess).toHaveBeenCalledTimes(2);
+  });
+
   it("loading is false before and after a successful submit", async () => {
     mockApiFetch.mockResolvedValueOnce({ ok: true });
 
