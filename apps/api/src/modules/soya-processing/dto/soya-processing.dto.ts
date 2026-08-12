@@ -240,3 +240,105 @@ export class CreateSoyaSaleDto {
   @Min(0)
   unitPrice!: number;
 }
+
+// Deliberately metadata-only. quantityKg/unitCost/totalCost are excluded:
+// they already drove a posted InventoryItem increment + StockBatch +
+// StockMovement at create time, and a batch may already have been costed
+// off this intake's unitCost (see rawBeanCost in the service). Editing them
+// here would desync those posted effects; use delete (which reverses the
+// posted effect) + re-create instead if a quantity/cost correction is needed.
+export class UpdateSoyaBeanIntakeDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  receiptNumber?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  supplierName?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  moisturePercent?: number;
+
+  @IsOptional()
+  @IsEnum(SoyaQualityStatus)
+  qualityStatus?: SoyaQualityStatus;
+
+  @IsOptional()
+  @IsDateString()
+  receivedAt?: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+}
+
+// Deliberately metadata-only — see UpdateSoyaBeanIntakeDto. beansUsedKg /
+// oilProducedLitres / cakeProducedKg / wasteKg and the cost fields already
+// drove posted InventoryItem/StockBatch/StockMovement effects on both the
+// input and output sides; status is intentionally excluded too since it is
+// driven by the quality-check approve/reject workflow (updateQualityStatus)
+// and editing it out of band here could desync it from the batch's actual
+// quality-check history.
+export class UpdateSoyaProcessingBatchDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  batchNumber?: string;
+
+  @IsOptional()
+  @IsDateString()
+  processingDate?: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+}
+
+// Deliberately metadata-only — quantity/warehouse fields already drove a
+// posted inventory move on both ends; see UpdateSoyaBeanIntakeDto for why.
+export class UpdateSoyaInternalTransferDto {
+  @IsOptional()
+  @IsString()
+  notes?: string;
+}
+
+// Deliberately metadata-only — quantity/unitPrice/totalAmount already drove
+// a posted inventory decrement; see UpdateSoyaBeanIntakeDto for why.
+export class UpdateSoyaSaleDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  customerName?: string;
+
+  @IsOptional()
+  @IsDateString()
+  saleDate?: string;
+}
+
+// No inventory effect to protect (quality checks never touch stock), but
+// still metadata-only for a check that has already been finalized — see the
+// finalized guard in updateQualityCheck/deleteQualityCheck.
+export class UpdateSoyaQualityCheckDto {
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  moisturePercent?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  oilPurityPercent?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  cakeProteinPercent?: number;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+}

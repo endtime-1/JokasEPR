@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Ip, Param, Patch, Post, Query, Res, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Headers, Ip, Param, Patch, Post, Query, Res, UseGuards } from "@nestjs/common";
 import { Response } from "express";
 import { AuthenticatedUser, PERMISSIONS } from "@jokas/shared";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
@@ -12,7 +12,12 @@ import {
   CreateSoyaQualityCheckDto,
   CreateSoyaSaleDto,
   SoyaQueryDto,
-  UpdateSoyaQualityStatusDto
+  UpdateSoyaBeanIntakeDto,
+  UpdateSoyaInternalTransferDto,
+  UpdateSoyaProcessingBatchDto,
+  UpdateSoyaQualityCheckDto,
+  UpdateSoyaQualityStatusDto,
+  UpdateSoyaSaleDto
 } from "./dto/soya-processing.dto";
 import { SoyaProcessingService } from "./soya-processing.service";
 
@@ -51,6 +56,18 @@ export class SoyaProcessingController {
     return this.soyaService.createIntake(user, dto, { ipAddress, userAgent });
   }
 
+  @Patch("intakes/:id")
+  @RequirePermissions(PERMISSIONS.SOYA_MANAGE, PERMISSIONS.INVENTORY_MANAGE)
+  updateIntake(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateSoyaBeanIntakeDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.soyaService.updateIntake(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Delete("intakes/:id")
+  @RequirePermissions(PERMISSIONS.SOYA_MANAGE, PERMISSIONS.INVENTORY_MANAGE)
+  deleteIntake(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.soyaService.deleteIntake(user, id, { ipAddress, userAgent });
+  }
+
   @Get("batches")
   @RequirePermissions(PERMISSIONS.SOYA_READ)
   batches(@CurrentUser() user: AuthenticatedUser, @Query() query: SoyaQueryDto) {
@@ -67,6 +84,18 @@ export class SoyaProcessingController {
   @RequirePermissions(PERMISSIONS.SOYA_MANAGE, PERMISSIONS.INVENTORY_MANAGE)
   createBatch(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateSoyaProcessingBatchDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.soyaService.createBatch(user, dto, { ipAddress, userAgent });
+  }
+
+  @Patch("batches/:id")
+  @RequirePermissions(PERMISSIONS.SOYA_MANAGE, PERMISSIONS.INVENTORY_MANAGE)
+  updateBatch(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateSoyaProcessingBatchDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.soyaService.updateBatch(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Delete("batches/:id")
+  @RequirePermissions(PERMISSIONS.SOYA_MANAGE, PERMISSIONS.INVENTORY_MANAGE)
+  deleteBatch(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.soyaService.deleteBatch(user, id, { ipAddress, userAgent });
   }
 
   @Get("oil-stock")
@@ -99,6 +128,18 @@ export class SoyaProcessingController {
     return this.soyaService.updateQualityStatus(user, id, dto, { ipAddress, userAgent });
   }
 
+  @Patch("quality-checks/:id")
+  @RequirePermissions(PERMISSIONS.QUALITY_MANAGE)
+  updateQualityCheck(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateSoyaQualityCheckDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.soyaService.updateQualityCheck(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Delete("quality-checks/:id")
+  @RequirePermissions(PERMISSIONS.QUALITY_MANAGE)
+  deleteQualityCheck(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.soyaService.deleteQualityCheck(user, id, { ipAddress, userAgent });
+  }
+
   @Get("transfers")
   @RequirePermissions(PERMISSIONS.SOYA_READ)
   transfers(@CurrentUser() user: AuthenticatedUser, @Query() query: SoyaQueryDto) {
@@ -109,6 +150,18 @@ export class SoyaProcessingController {
   @RequirePermissions(PERMISSIONS.INVENTORY_MANAGE)
   createTransfer(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateSoyaInternalTransferDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.soyaService.createTransfer(user, dto, { ipAddress, userAgent });
+  }
+
+  @Patch("transfers/:id")
+  @RequirePermissions(PERMISSIONS.INVENTORY_MANAGE)
+  updateTransfer(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateSoyaInternalTransferDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.soyaService.updateTransfer(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Delete("transfers/:id")
+  @RequirePermissions(PERMISSIONS.INVENTORY_MANAGE)
+  deleteTransfer(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.soyaService.deleteTransfer(user, id, { ipAddress, userAgent });
   }
 
   @Get("sales")
@@ -127,6 +180,18 @@ export class SoyaProcessingController {
   @RequirePermissions(PERMISSIONS.INVENTORY_MANAGE)
   createSale(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateSoyaSaleDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.soyaService.createSale(user, dto, { ipAddress, userAgent });
+  }
+
+  @Patch("sales/:id")
+  @RequirePermissions(PERMISSIONS.INVENTORY_MANAGE)
+  updateSale(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateSoyaSaleDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.soyaService.updateSale(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Delete("sales/:id")
+  @RequirePermissions(PERMISSIONS.INVENTORY_MANAGE)
+  deleteSale(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.soyaService.deleteSale(user, id, { ipAddress, userAgent });
   }
 
   @Get("reports/summary.csv")

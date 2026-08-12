@@ -12,7 +12,12 @@ import {
   CreateSoyaQualityCheckDto,
   CreateSoyaSaleDto,
   SoyaQueryDto,
-  UpdateSoyaQualityStatusDto
+  UpdateSoyaBeanIntakeDto,
+  UpdateSoyaInternalTransferDto,
+  UpdateSoyaProcessingBatchDto,
+  UpdateSoyaQualityCheckDto,
+  UpdateSoyaQualityStatusDto,
+  UpdateSoyaSaleDto
 } from "./dto/soya-processing.dto";
 
 type RequestContext = {
@@ -175,6 +180,60 @@ export class SoyaProcessingService {
     return { data };
   }
 
+  // Metadata-only — see UpdateSoyaBeanIntakeDto for why quantityKg/unitCost/
+  // totalCost are excluded.
+  async updateIntake(user: AuthenticatedUser, id: string, dto: UpdateSoyaBeanIntakeDto, context: RequestContext) {
+    const intake = await this.prisma.soyaBeanIntake.findFirst({ where: { ...this.intakeWhere(user, {}), id } });
+    if (!intake) throw new NotFoundException("Soya bean intake was not found.");
+    this.assertProductionSiteAccess(user, intake.productionSiteId);
+    this.assertWarehouseAccess(user, intake.warehouseId);
+    const data = await this.prisma.soyaBeanIntake.update({
+      where: { id },
+      data: {
+        receiptNumber: dto.receiptNumber ? dto.receiptNumber.toUpperCase() : undefined,
+        supplierName: dto.supplierName,
+        moisturePercent: dto.moisturePercent,
+        qualityStatus: dto.qualityStatus,
+        receivedAt: dto.receivedAt ? new Date(dto.receivedAt) : undefined,
+        notes: dto.notes,
+        updatedById: user.id
+      }
+    });
+    await this.writeAudit(user, "UPDATE", "SoyaBeanIntake", id, `Updated soya bean intake ${data.receiptNumber}`, context, { branchId: intake.branchId, warehouseId: intake.warehouseId, productionSiteId: intake.productionSiteId });
+    return { data };
+  }
+
+  async deleteIntake(user: AuthenticatedUser, id: string, context: RequestContext) {
+    const intake = await this.prisma.soyaBeanIntake.findFirst({ where: { ...this.intakeWhere(user, {}), id } });
+    if (!intake) throw new NotFoundException("Soya bean intake was not found.");
+    this.assertProductionSiteAccess(user, intake.productionSiteId);
+    this.assertWarehouseAccess(user, intake.warehouseId);
+    const quantityKg = Number(intake.quantityKg);
+    await this.prisma.$transaction(async (tx) => {
+      const inventory = await tx.inventoryItem.findFirst({ where: { companyId: user.companyId, warehouseId: intake.warehouseId, productId: intake.productId, deletedAt: null } });
+      if (inventory) {
+        // Guarded like every decrement in this file: if the beans this intake
+        // added have already moved on (processed into a batch, transferred,
+        // sold) there may not be enough left to give back — block the delete
+        // rather than drive quantityOnHand negative.
+        const guarded = await tx.inventoryItem.updateMany({ where: { id: inventory.id, quantityOnHand: { gte: quantityKg } }, data: { quantityOnHand: { decrement: quantityKg }, updatedById: user.id } });
+        if (guarded.count === 0) {
+          throw new BadRequestException("Cannot delete this intake — its stock has already been used downstream (processed, transferred, or sold), so reversing it would drive inventory negative.");
+        }
+        await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: intake.branchId, productId: intake.productId, inventoryItemId: inventory.id, fromWarehouseId: intake.warehouseId, warehouseId: intake.warehouseId, productionSiteId: intake.productionSiteId, uomId: inventory.uomId, movementType: "ADJUSTMENT_OUT", quantity: quantityKg, unitCost: Number(intake.unitCost), referenceType: "SoyaBeanIntake", referenceId: intake.id, notes: `Reversal — soya bean intake ${intake.receiptNumber} deleted`, createdById: user.id } });
+        // Best-effort retirement of the StockBatch lot this intake created
+        // (H3) — floor-guarded on quantityRemaining but not a hard blocker on
+        // the delete itself; StockBatch tracking is deliberately best-effort
+        // in this file (see consumeStockBatchesFifo), so if the lot was
+        // already partially consumed we just leave it as-is.
+        await tx.stockBatch.updateMany({ where: { companyId: user.companyId, warehouseId: intake.warehouseId, productId: intake.productId, batchNumber: intake.receiptNumber.toUpperCase(), quantityRemaining: { gte: quantityKg } }, data: { deletedAt: new Date(), quantityRemaining: { decrement: quantityKg } } });
+      }
+      await tx.soyaBeanIntake.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    });
+    await this.writeAudit(user, "DELETE", "SoyaBeanIntake", id, `Deleted soya bean intake ${intake.receiptNumber}`, context, { branchId: intake.branchId, warehouseId: intake.warehouseId, productionSiteId: intake.productionSiteId });
+    return { data: { id } };
+  }
+
   async getBatch(user: AuthenticatedUser, id: string) {
     const data = await this.prisma.soyaProcessingBatch.findFirst({
       where: { ...this.batchWhere(user, {}), id },
@@ -257,6 +316,85 @@ export class SoyaProcessingService {
     return { data };
   }
 
+  // Metadata-only — see UpdateSoyaProcessingBatchDto for why beansUsedKg /
+  // oilProducedLitres / cakeProducedKg / wasteKg / costs / status are excluded.
+  async updateBatch(user: AuthenticatedUser, id: string, dto: UpdateSoyaProcessingBatchDto, context: RequestContext) {
+    const batch = await this.requireBatch(user, id);
+    this.assertProductionSiteAccess(user, batch.productionSiteId);
+    const data = await this.prisma.soyaProcessingBatch.update({
+      where: { id },
+      data: {
+        batchNumber: dto.batchNumber ? dto.batchNumber.toUpperCase() : undefined,
+        processingDate: dto.processingDate ? new Date(dto.processingDate) : undefined,
+        notes: dto.notes,
+        updatedById: user.id
+      }
+    });
+    await this.writeAudit(user, "UPDATE", "SoyaProcessingBatch", id, `Updated soya processing batch ${data.batchNumber}`, context, { branchId: batch.branchId, productionSiteId: batch.productionSiteId });
+    return { data };
+  }
+
+  // Reverses every inventory effect createBatch posted: gives the consumed
+  // beans back (always a safe increment) and takes back each oil/cake output
+  // (floor-guarded — an output may already have moved on via transfer/sale by
+  // the time the batch is deleted, in which case the delete is blocked rather
+  // than driving inventory negative). SoyaProcessingBatch itself doesn't
+  // persist the raw-bean warehouse, so it's recovered from the PRODUCTION_INPUT
+  // StockMovement this same batch posted at create time. Quantity-editing this
+  // batch was deliberately not implemented (see UpdateSoyaProcessingBatchDto) —
+  // deletion is tractable here specifically because it reverses the exact
+  // posted effect rather than needing to recompute a new one.
+  async deleteBatch(user: AuthenticatedUser, id: string, context: RequestContext) {
+    const batch = await this.prisma.soyaProcessingBatch.findFirst({
+      where: { ...this.batchWhere(user, {}), id },
+      include: { oilOutputs: { where: { deletedAt: null } }, cakeOutputs: { where: { deletedAt: null } }, wasteRecords: { where: { deletedAt: null } }, costs: { where: { deletedAt: null } } }
+    });
+    if (!batch) throw new NotFoundException("Soya processing batch was not found.");
+    this.assertProductionSiteAccess(user, batch.productionSiteId);
+    const beanMovement = await this.prisma.stockMovement.findFirst({ where: { companyId: user.companyId, referenceType: "SoyaProcessingBatch", referenceId: batch.id, movementType: "PRODUCTION_INPUT" } });
+    const beansUsedKg = Number(batch.beansUsedKg);
+
+    await this.prisma.$transaction(async (tx) => {
+      if (beanMovement?.fromWarehouseId) {
+        const beanInventory = await tx.inventoryItem.findFirst({ where: { companyId: user.companyId, warehouseId: beanMovement.fromWarehouseId, productId: batch.beanProductId, deletedAt: null } });
+        if (beanInventory) {
+          await tx.inventoryItem.update({ where: { id: beanInventory.id }, data: { quantityOnHand: { increment: beansUsedKg }, updatedById: user.id } });
+          await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: batch.branchId, productId: batch.beanProductId, inventoryItemId: beanInventory.id, toWarehouseId: beanMovement.fromWarehouseId, warehouseId: beanMovement.fromWarehouseId, productionSiteId: batch.productionSiteId, uomId: beanInventory.uomId, movementType: "ADJUSTMENT_IN", quantity: beansUsedKg, referenceType: "SoyaProcessingBatch", referenceId: batch.id, notes: `Reversal — soya processing batch ${batch.batchNumber} deleted`, createdById: user.id } });
+        }
+      }
+
+      for (const output of batch.oilOutputs) {
+        const qty = Number(output.quantityLitres);
+        const inv = await tx.inventoryItem.findFirst({ where: { companyId: user.companyId, warehouseId: output.warehouseId, productId: output.productId, deletedAt: null } });
+        const guarded = inv ? await tx.inventoryItem.updateMany({ where: { id: inv.id, quantityOnHand: { gte: qty } }, data: { quantityOnHand: { decrement: qty }, updatedById: user.id } }) : { count: 0 };
+        if (guarded.count === 0) throw new BadRequestException("Cannot delete this batch — its oil output has already moved on (transferred or sold), so reversing it would drive inventory negative.");
+        await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: batch.branchId, productId: output.productId, inventoryItemId: inv!.id, fromWarehouseId: output.warehouseId, warehouseId: output.warehouseId, productionSiteId: batch.productionSiteId, uomId: inv!.uomId, movementType: "ADJUSTMENT_OUT", quantity: qty, referenceType: "SoyaProcessingBatch", referenceId: batch.id, notes: `Reversal — soya processing batch ${batch.batchNumber} deleted`, createdById: user.id } });
+        await tx.stockBatch.updateMany({ where: { companyId: user.companyId, warehouseId: output.warehouseId, productId: output.productId, batchNumber: `${batch.batchNumber}-OIL`, quantityRemaining: { gte: qty } }, data: { deletedAt: new Date(), quantityRemaining: { decrement: qty } } });
+        await tx.soyaOilOutput.update({ where: { id: output.id }, data: { deletedAt: new Date() } });
+      }
+
+      for (const output of batch.cakeOutputs) {
+        const qty = Number(output.quantityKg);
+        const inv = await tx.inventoryItem.findFirst({ where: { companyId: user.companyId, warehouseId: output.warehouseId, productId: output.productId, deletedAt: null } });
+        const guarded = inv ? await tx.inventoryItem.updateMany({ where: { id: inv.id, quantityOnHand: { gte: qty } }, data: { quantityOnHand: { decrement: qty }, updatedById: user.id } }) : { count: 0 };
+        if (guarded.count === 0) throw new BadRequestException("Cannot delete this batch — its cake output has already moved on (transferred or sold), so reversing it would drive inventory negative.");
+        await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: batch.branchId, productId: output.productId, inventoryItemId: inv!.id, fromWarehouseId: output.warehouseId, warehouseId: output.warehouseId, productionSiteId: batch.productionSiteId, uomId: inv!.uomId, movementType: "ADJUSTMENT_OUT", quantity: qty, referenceType: "SoyaProcessingBatch", referenceId: batch.id, notes: `Reversal — soya processing batch ${batch.batchNumber} deleted`, createdById: user.id } });
+        await tx.stockBatch.updateMany({ where: { companyId: user.companyId, warehouseId: output.warehouseId, productId: output.productId, batchNumber: `${batch.batchNumber}-CAKE`, quantityRemaining: { gte: qty } }, data: { deletedAt: new Date(), quantityRemaining: { decrement: qty } } });
+        await tx.soyaCakeOutput.update({ where: { id: output.id }, data: { deletedAt: new Date() } });
+      }
+
+      // Waste records and cost estimates carry no inventory effect of their
+      // own — soft-delete them alongside the batch so they stop appearing as
+      // active records for a batch that no longer exists.
+      for (const waste of batch.wasteRecords) await tx.soyaWasteRecord.update({ where: { id: waste.id }, data: { deletedAt: new Date() } });
+      for (const cost of batch.costs) await tx.soyaProductionCost.update({ where: { id: cost.id }, data: { deletedAt: new Date() } });
+
+      await tx.soyaProcessingBatch.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    });
+    await this.writeAudit(user, "DELETE", "SoyaProcessingBatch", id, `Deleted soya processing batch ${batch.batchNumber}`, context, { branchId: batch.branchId, productionSiteId: batch.productionSiteId });
+    return { data: { id } };
+  }
+
   async listOilStock(user: AuthenticatedUser, query: SoyaQueryDto) {
     return { data: await this.prisma.soyaOilOutput.findMany({ where: this.outputWhere(user, query), include: { product: true, warehouse: true, productionBatch: { select: { batchNumber: true } } }, orderBy: { createdAt: "desc" } }) };
   }
@@ -294,6 +432,32 @@ export class SoyaProcessingService {
     return { data };
   }
 
+  // Metadata-only, and only while the check is still open. No inventory
+  // effect to protect (quality checks never touch stock) — the thing worth
+  // protecting here is the finalized decision itself.
+  async updateQualityCheck(user: AuthenticatedUser, id: string, dto: UpdateSoyaQualityCheckDto, context: RequestContext) {
+    const check = await this.prisma.soyaQualityCheck.findFirst({ where: { companyId: user.companyId, id, deletedAt: null } });
+    if (!check) throw new NotFoundException("Soya quality check was not found.");
+    this.assertProductionSiteAccess(user, check.productionSiteId);
+    // approvedAt is only ever set by updateQualityStatus's APPROVED/REJECTED
+    // branch — treat it as the "finalized" signal so an audited decision
+    // can't be silently rewritten through the metadata-edit route.
+    if (check.approvedAt) throw new BadRequestException("This quality check has already been finalized and cannot be edited.");
+    const data = await this.prisma.soyaQualityCheck.update({ where: { id }, data: { moisturePercent: dto.moisturePercent, oilPurityPercent: dto.oilPurityPercent, cakeProteinPercent: dto.cakeProteinPercent, notes: dto.notes } });
+    await this.writeAudit(user, "UPDATE", "SoyaQualityCheck", id, "Updated soya quality check", context, { branchId: check.branchId, productionSiteId: check.productionSiteId });
+    return { data };
+  }
+
+  async deleteQualityCheck(user: AuthenticatedUser, id: string, context: RequestContext) {
+    const check = await this.prisma.soyaQualityCheck.findFirst({ where: { companyId: user.companyId, id, deletedAt: null } });
+    if (!check) throw new NotFoundException("Soya quality check was not found.");
+    this.assertProductionSiteAccess(user, check.productionSiteId);
+    if (check.approvedAt) throw new BadRequestException("This quality check has already been finalized (approved/rejected) and cannot be deleted.");
+    await this.prisma.soyaQualityCheck.update({ where: { id }, data: { deletedAt: new Date() } });
+    await this.writeAudit(user, "DELETE", "SoyaQualityCheck", id, "Deleted soya quality check", context, { branchId: check.branchId, productionSiteId: check.productionSiteId });
+    return { data: { id } };
+  }
+
   async createTransfer(user: AuthenticatedUser, dto: CreateSoyaInternalTransferDto, context: RequestContext) {
     this.assertWarehouseAccess(user, dto.fromWarehouseId);
     this.assertWarehouseAccess(user, dto.toWarehouseId);
@@ -325,6 +489,51 @@ export class SoyaProcessingService {
     });
     await this.writeAudit(user, "TRANSFER", "SoyaInternalTransfer", data.id, "Transferred soya output internally", context, { branchId: batch.branchId, warehouseId: dto.fromWarehouseId, productionSiteId: batch.productionSiteId });
     return { data };
+  }
+
+  // Metadata-only — see UpdateSoyaInternalTransferDto for why quantity/
+  // warehouse fields are excluded.
+  async updateTransfer(user: AuthenticatedUser, id: string, dto: UpdateSoyaInternalTransferDto, context: RequestContext) {
+    const transfer = await this.prisma.soyaInternalTransfer.findFirst({ where: { ...this.transferWhere(user, {}), id } });
+    if (!transfer) throw new NotFoundException("Soya internal transfer was not found.");
+    this.assertWarehouseAccess(user, transfer.fromWarehouseId);
+    const data = await this.prisma.soyaInternalTransfer.update({ where: { id }, data: { notes: dto.notes, updatedById: user.id } });
+    await this.writeAudit(user, "UPDATE", "SoyaInternalTransfer", id, "Updated soya internal transfer", context, { branchId: transfer.branchId, warehouseId: transfer.fromWarehouseId, productionSiteId: transfer.productionSiteId });
+    return { data };
+  }
+
+  // Reverses both legs createTransfer posted: gives the source warehouse its
+  // stock back (always a safe increment) and takes the stock back out of the
+  // destination warehouse (floor-guarded — it may already have moved on via a
+  // further transfer/sale, in which case the delete is blocked rather than
+  // driving inventory negative).
+  async deleteTransfer(user: AuthenticatedUser, id: string, context: RequestContext) {
+    const transfer = await this.prisma.soyaInternalTransfer.findFirst({ where: { ...this.transferWhere(user, {}), id } });
+    if (!transfer) throw new NotFoundException("Soya internal transfer was not found.");
+    this.assertWarehouseAccess(user, transfer.fromWarehouseId);
+    this.assertWarehouseAccess(user, transfer.toWarehouseId);
+    const quantity = Number(transfer.quantity);
+    await this.prisma.$transaction(async (tx) => {
+      const destination = await tx.inventoryItem.findFirst({ where: { companyId: user.companyId, warehouseId: transfer.toWarehouseId, productId: transfer.productId, deletedAt: null } });
+      const guarded = destination ? await tx.inventoryItem.updateMany({ where: { id: destination.id, quantityOnHand: { gte: quantity } }, data: { quantityOnHand: { decrement: quantity }, updatedById: user.id } }) : { count: 0 };
+      if (guarded.count === 0) {
+        throw new BadRequestException("Cannot delete this transfer — the destination stock has already moved on, so reversing it would drive inventory negative.");
+      }
+      await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: transfer.branchId, productId: transfer.productId, inventoryItemId: destination!.id, fromWarehouseId: transfer.toWarehouseId, warehouseId: transfer.toWarehouseId, productionSiteId: transfer.toProductionSiteId ?? transfer.productionSiteId, uomId: destination!.uomId, movementType: "ADJUSTMENT_OUT", quantity, referenceType: "SoyaInternalTransfer", referenceId: transfer.id, notes: "Reversal — soya internal transfer deleted", createdById: user.id } });
+
+      const source = await tx.inventoryItem.findFirst({ where: { companyId: user.companyId, warehouseId: transfer.fromWarehouseId, productId: transfer.productId, deletedAt: null } });
+      if (source) {
+        await tx.inventoryItem.update({ where: { id: source.id }, data: { quantityOnHand: { increment: quantity }, updatedById: user.id } });
+        await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: transfer.branchId, productId: transfer.productId, inventoryItemId: source.id, toWarehouseId: transfer.fromWarehouseId, warehouseId: transfer.fromWarehouseId, productionSiteId: transfer.productionSiteId, uomId: source.uomId, movementType: "ADJUSTMENT_IN", quantity, referenceType: "SoyaInternalTransfer", referenceId: transfer.id, notes: "Reversal — soya internal transfer deleted", createdById: user.id } });
+      }
+
+      // Best-effort retirement of the destination StockBatch lot this
+      // transfer created (H3) — see the equivalent note in deleteIntake.
+      await tx.stockBatch.updateMany({ where: { companyId: user.companyId, warehouseId: transfer.toWarehouseId, productId: transfer.productId, batchNumber: `${transfer.id}-TRF`, quantityRemaining: { gte: quantity } }, data: { deletedAt: new Date(), quantityRemaining: { decrement: quantity } } });
+      await tx.soyaInternalTransfer.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id, status: "CANCELLED" } });
+    });
+    await this.writeAudit(user, "DELETE", "SoyaInternalTransfer", id, "Deleted soya internal transfer", context, { branchId: transfer.branchId, warehouseId: transfer.fromWarehouseId, productionSiteId: transfer.productionSiteId });
+    return { data: { id } };
   }
 
   async listTransfers(user: AuthenticatedUser, query: SoyaQueryDto) {
@@ -376,6 +585,37 @@ export class SoyaProcessingService {
     });
     await this.writeAudit(user, "CREATE", "SoyaSalesLink", data.id, "Recorded external soya sale", context, { branchId: batch.branchId, warehouseId: dto.warehouseId, productionSiteId: batch.productionSiteId });
     return { data };
+  }
+
+  // Metadata-only — see UpdateSoyaSaleDto for why quantity/unitPrice/
+  // totalAmount are excluded.
+  async updateSale(user: AuthenticatedUser, id: string, dto: UpdateSoyaSaleDto, context: RequestContext) {
+    const sale = await this.prisma.soyaSalesLink.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!sale) throw new NotFoundException("Soya sale was not found.");
+    this.assertWarehouseAccess(user, sale.warehouseId);
+    const data = await this.prisma.soyaSalesLink.update({ where: { id }, data: { customerName: dto.customerName, saleDate: dto.saleDate ? new Date(dto.saleDate) : undefined, updatedById: user.id } });
+    await this.writeAudit(user, "UPDATE", "SoyaSalesLink", id, "Updated soya sale", context, { branchId: sale.branchId, warehouseId: sale.warehouseId, productionSiteId: sale.productionSiteId });
+    return { data };
+  }
+
+  // A sale only ever decremented one inventory item — reversing it is always
+  // a safe increment (no floor guard needed; there's no "downstream" a sale's
+  // stock could have moved on to — it left on the sale itself).
+  async deleteSale(user: AuthenticatedUser, id: string, context: RequestContext) {
+    const sale = await this.prisma.soyaSalesLink.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!sale) throw new NotFoundException("Soya sale was not found.");
+    this.assertWarehouseAccess(user, sale.warehouseId);
+    const quantity = Number(sale.quantity);
+    await this.prisma.$transaction(async (tx) => {
+      const inventory = await tx.inventoryItem.findFirst({ where: { companyId: user.companyId, warehouseId: sale.warehouseId, productId: sale.productId, deletedAt: null } });
+      if (inventory) {
+        await tx.inventoryItem.update({ where: { id: inventory.id }, data: { quantityOnHand: { increment: quantity }, updatedById: user.id } });
+        await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: sale.branchId, productId: sale.productId, inventoryItemId: inventory.id, toWarehouseId: sale.warehouseId, warehouseId: sale.warehouseId, productionSiteId: sale.productionSiteId, uomId: inventory.uomId, movementType: "ADJUSTMENT_IN", quantity, referenceType: "SoyaSalesLink", referenceId: sale.id, notes: `Reversal — soya sale to ${sale.customerName} deleted`, createdById: user.id } });
+      }
+      await tx.soyaSalesLink.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id, status: "CANCELLED" } });
+    });
+    await this.writeAudit(user, "DELETE", "SoyaSalesLink", id, `Deleted soya sale to ${sale.customerName}`, context, { branchId: sale.branchId, warehouseId: sale.warehouseId, productionSiteId: sale.productionSiteId });
+    return { data: { id } };
   }
 
   async reportCsv(user: AuthenticatedUser, query: SoyaQueryDto, context: RequestContext) {
@@ -531,7 +771,7 @@ export class SoyaProcessingService {
     if (!user.hasGlobalAccess && !user.warehouseIds.includes(warehouseId)) throw new ForbiddenException("You do not have access to this warehouse.");
   }
 
-  private async writeAudit(user: AuthenticatedUser, action: "CREATE" | "TRANSFER" | "APPROVE" | "REJECT", entityType: string, entityId: string, summary: string, context: RequestContext, scope: { branchId?: string; warehouseId?: string; productionSiteId?: string }) {
+  private async writeAudit(user: AuthenticatedUser, action: "CREATE" | "UPDATE" | "DELETE" | "TRANSFER" | "APPROVE" | "REJECT", entityType: string, entityId: string, summary: string, context: RequestContext, scope: { branchId?: string; warehouseId?: string; productionSiteId?: string }) {
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action, entityType, entityId, summary, branchId: scope.branchId, warehouseId: scope.warehouseId, productionSiteId: scope.productionSiteId, ipAddress: context.ipAddress, userAgent: context.userAgent });
   }
 }

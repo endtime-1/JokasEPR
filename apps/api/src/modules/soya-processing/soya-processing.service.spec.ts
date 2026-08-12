@@ -2,17 +2,17 @@ import { AuthenticatedUser } from "@jokas/shared";
 import { SoyaProcessingService } from "./soya-processing.service";
 
 const mockTx = {
-  inventoryItem: { updateMany: jest.fn(), upsert: jest.fn() },
-  soyaBeanIntake: { create: jest.fn() },
+  inventoryItem: { updateMany: jest.fn(), upsert: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
+  soyaBeanIntake: { create: jest.fn(), update: jest.fn() },
   soyaProcessingBatch: { create: jest.fn(), update: jest.fn() },
   stockMovement: { create: jest.fn() },
   stockBatch: { create: jest.fn(), findMany: jest.fn().mockResolvedValue([]), updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
-  soyaOilOutput: { create: jest.fn() },
-  soyaCakeOutput: { create: jest.fn() },
-  soyaWasteRecord: { create: jest.fn() },
-  soyaProductionCost: { create: jest.fn() },
-  soyaInternalTransfer: { create: jest.fn() },
-  soyaSalesLink: { create: jest.fn() },
+  soyaOilOutput: { create: jest.fn(), update: jest.fn() },
+  soyaCakeOutput: { create: jest.fn(), update: jest.fn() },
+  soyaWasteRecord: { create: jest.fn(), update: jest.fn() },
+  soyaProductionCost: { create: jest.fn(), update: jest.fn() },
+  soyaInternalTransfer: { create: jest.fn(), update: jest.fn() },
+  soyaSalesLink: { create: jest.fn(), update: jest.fn() },
   soyaQualityCheck: { update: jest.fn() }
 };
 
@@ -20,9 +20,12 @@ const mockPrisma = {
   productionSite: { findFirst: jest.fn() },
   product: { findFirst: jest.fn() },
   inventoryItem: { findFirst: jest.fn() },
-  soyaBeanIntake: { findFirst: jest.fn() },
-  soyaProcessingBatch: { findFirst: jest.fn() },
-  soyaQualityCheck: { findFirst: jest.fn() },
+  soyaBeanIntake: { findFirst: jest.fn(), update: jest.fn() },
+  soyaProcessingBatch: { findFirst: jest.fn(), update: jest.fn() },
+  soyaQualityCheck: { findFirst: jest.fn(), update: jest.fn() },
+  soyaInternalTransfer: { findFirst: jest.fn(), update: jest.fn() },
+  soyaSalesLink: { findFirst: jest.fn(), update: jest.fn() },
+  stockMovement: { findFirst: jest.fn() },
   $transaction: jest.fn().mockImplementation((cb: (tx: typeof mockTx) => Promise<unknown>) => cb(mockTx))
 };
 const mockAudit = { write: jest.fn().mockResolvedValue(undefined) };
@@ -355,5 +358,262 @@ describe("SoyaProcessingService.updateQualityStatus — check + batch status upd
       where: { id: "batch-1" },
       data: { status: "REJECTED", updatedById: expect.any(String) }
     });
+  });
+});
+
+describe("SoyaProcessingService.updateIntake / deleteIntake", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPrisma.soyaBeanIntake.findFirst.mockResolvedValue({
+      id: "intake-1", companyId: "company-1", branchId: "branch-1", productionSiteId: "site-1",
+      warehouseId: "wh-raw", productId: "prod-bean", receiptNumber: "RCPT-001", supplierName: "Farm Co",
+      quantityKg: 200, unitCost: 4, deletedAt: null
+    });
+    mockPrisma.soyaBeanIntake.update.mockResolvedValue({ id: "intake-1", receiptNumber: "RCPT-001" });
+    mockTx.inventoryItem.findFirst.mockResolvedValue({ id: "inv-1", uomId: "uom-1", quantityOnHand: 200 });
+    mockTx.inventoryItem.updateMany.mockResolvedValue({ count: 1 });
+    mockTx.stockBatch.updateMany.mockResolvedValue({ count: 1 });
+  });
+
+  it("updateIntake patches metadata fields only and writes an UPDATE audit entry", async () => {
+    const service = makeService();
+    await service.updateIntake(makeUser(), "intake-1", { supplierName: "New Farm", notes: "corrected" } as never, {});
+
+    expect(mockPrisma.soyaBeanIntake.update).toHaveBeenCalledWith({
+      where: { id: "intake-1" },
+      data: expect.objectContaining({ supplierName: "New Farm", notes: "corrected", updatedById: "user-1" })
+    });
+    expect(mockAudit.write).toHaveBeenCalledWith(expect.objectContaining({ action: "UPDATE", entityType: "SoyaBeanIntake" }));
+  });
+
+  it("deleteIntake reverses the posted inventory increment with a floor-guarded decrement, then soft-deletes the intake", async () => {
+    const service = makeService();
+    await service.deleteIntake(makeUser(), "intake-1", {});
+
+    expect(mockTx.inventoryItem.updateMany).toHaveBeenCalledWith({
+      where: { id: "inv-1", quantityOnHand: { gte: 200 } },
+      data: { quantityOnHand: { decrement: 200 }, updatedById: "user-1" }
+    });
+    expect(mockTx.soyaBeanIntake.update).toHaveBeenCalledWith({
+      where: { id: "intake-1" },
+      data: { deletedAt: expect.any(Date), updatedById: "user-1" }
+    });
+    expect(mockAudit.write).toHaveBeenCalledWith(expect.objectContaining({ action: "DELETE", entityType: "SoyaBeanIntake" }));
+  });
+
+  it("deleteIntake blocks when the beans have already moved on downstream, instead of driving inventory negative", async () => {
+    mockTx.inventoryItem.updateMany.mockResolvedValue({ count: 0 });
+
+    const service = makeService();
+    await expect(service.deleteIntake(makeUser(), "intake-1", {})).rejects.toThrow();
+    expect(mockTx.soyaBeanIntake.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("SoyaProcessingService.updateBatch / deleteBatch", () => {
+  const batchRecord = {
+    id: "batch-1", companyId: "company-1", branchId: "branch-1", productionSiteId: "site-1",
+    beanProductId: "prod-bean", batchNumber: "SPB-001", beansUsedKg: 100,
+    oilOutputs: [{ id: "oil-1", warehouseId: "wh-oil", productId: "prod-oil", quantityLitres: 15 }],
+    cakeOutputs: [{ id: "cake-1", warehouseId: "wh-cake", productId: "prod-cake", quantityKg: 75 }],
+    wasteRecords: [{ id: "waste-1" }],
+    costs: [{ id: "cost-1" }],
+    deletedAt: null
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPrisma.soyaProcessingBatch.findFirst.mockResolvedValue(batchRecord);
+    mockPrisma.soyaProcessingBatch.update.mockResolvedValue({ id: "batch-1", batchNumber: "SPB-001" });
+    mockPrisma.stockMovement.findFirst.mockResolvedValue({ fromWarehouseId: "wh-raw" });
+    mockTx.inventoryItem.findFirst.mockImplementation(({ where }: { where: { warehouseId: string } }) => {
+      if (where.warehouseId === "wh-raw") return Promise.resolve({ id: "inv-bean", uomId: "uom-bean" });
+      if (where.warehouseId === "wh-oil") return Promise.resolve({ id: "inv-oil", uomId: "uom-oil" });
+      if (where.warehouseId === "wh-cake") return Promise.resolve({ id: "inv-cake", uomId: "uom-cake" });
+      return Promise.resolve(null);
+    });
+    mockTx.inventoryItem.updateMany.mockResolvedValue({ count: 1 });
+    mockTx.stockBatch.updateMany.mockResolvedValue({ count: 1 });
+  });
+
+  it("updateBatch patches metadata fields only and writes an UPDATE audit entry", async () => {
+    const service = makeService();
+    await service.updateBatch(makeUser(), "batch-1", { notes: "corrected" } as never, {});
+
+    expect(mockPrisma.soyaProcessingBatch.update).toHaveBeenCalledWith({
+      where: { id: "batch-1" },
+      data: expect.objectContaining({ notes: "corrected", updatedById: "user-1" })
+    });
+    expect(mockAudit.write).toHaveBeenCalledWith(expect.objectContaining({ action: "UPDATE", entityType: "SoyaProcessingBatch" }));
+  });
+
+  it("deleteBatch reverses the bean consumption (increment) and both outputs (floor-guarded decrement), then soft-deletes everything the batch created", async () => {
+    const service = makeService();
+    await service.deleteBatch(makeUser(), "batch-1", {});
+
+    expect(mockTx.inventoryItem.update).toHaveBeenCalledWith({
+      where: { id: "inv-bean" },
+      data: { quantityOnHand: { increment: 100 }, updatedById: "user-1" }
+    });
+    expect(mockTx.inventoryItem.updateMany).toHaveBeenCalledWith({
+      where: { id: "inv-oil", quantityOnHand: { gte: 15 } },
+      data: { quantityOnHand: { decrement: 15 }, updatedById: "user-1" }
+    });
+    expect(mockTx.inventoryItem.updateMany).toHaveBeenCalledWith({
+      where: { id: "inv-cake", quantityOnHand: { gte: 75 } },
+      data: { quantityOnHand: { decrement: 75 }, updatedById: "user-1" }
+    });
+    expect(mockTx.soyaOilOutput.update).toHaveBeenCalledWith({ where: { id: "oil-1" }, data: { deletedAt: expect.any(Date) } });
+    expect(mockTx.soyaCakeOutput.update).toHaveBeenCalledWith({ where: { id: "cake-1" }, data: { deletedAt: expect.any(Date) } });
+    expect(mockTx.soyaWasteRecord.update).toHaveBeenCalledWith({ where: { id: "waste-1" }, data: { deletedAt: expect.any(Date) } });
+    expect(mockTx.soyaProductionCost.update).toHaveBeenCalledWith({ where: { id: "cost-1" }, data: { deletedAt: expect.any(Date) } });
+    expect(mockTx.soyaProcessingBatch.update).toHaveBeenCalledWith({
+      where: { id: "batch-1" },
+      data: { deletedAt: expect.any(Date), updatedById: "user-1" }
+    });
+  });
+
+  it("deleteBatch blocks when an output has already moved on downstream, instead of driving inventory negative", async () => {
+    mockTx.inventoryItem.updateMany.mockResolvedValue({ count: 0 });
+
+    const service = makeService();
+    await expect(service.deleteBatch(makeUser(), "batch-1", {})).rejects.toThrow();
+    expect(mockTx.soyaProcessingBatch.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("SoyaProcessingService.updateQualityCheck / deleteQualityCheck", () => {
+  function makeCheck(overrides: Record<string, unknown> = {}) {
+    return { id: "check-1", companyId: "company-1", branchId: "branch-1", productionSiteId: "site-1", approvedAt: null, deletedAt: null, ...overrides };
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPrisma.soyaQualityCheck.update.mockResolvedValue({ id: "check-1" });
+  });
+
+  it("updateQualityCheck patches metadata fields when the check is still open", async () => {
+    mockPrisma.soyaQualityCheck.findFirst.mockResolvedValue(makeCheck());
+    const service = makeService();
+    await service.updateQualityCheck(makeUser(), "check-1", { notes: "recheck" } as never, {});
+
+    expect(mockPrisma.soyaQualityCheck.update).toHaveBeenCalledWith({ where: { id: "check-1" }, data: expect.objectContaining({ notes: "recheck" }) });
+  });
+
+  it("updateQualityCheck blocks editing a finalized (approved/rejected) check", async () => {
+    mockPrisma.soyaQualityCheck.findFirst.mockResolvedValue(makeCheck({ approvedAt: new Date() }));
+    const service = makeService();
+    await expect(service.updateQualityCheck(makeUser(), "check-1", { notes: "x" } as never, {})).rejects.toThrow();
+    expect(mockPrisma.soyaQualityCheck.update).not.toHaveBeenCalled();
+  });
+
+  it("deleteQualityCheck soft-deletes an open check", async () => {
+    mockPrisma.soyaQualityCheck.findFirst.mockResolvedValue(makeCheck());
+    const service = makeService();
+    await service.deleteQualityCheck(makeUser(), "check-1", {});
+
+    expect(mockPrisma.soyaQualityCheck.update).toHaveBeenCalledWith({ where: { id: "check-1" }, data: { deletedAt: expect.any(Date) } });
+  });
+
+  it("deleteQualityCheck blocks deleting a finalized (approved/rejected) check", async () => {
+    mockPrisma.soyaQualityCheck.findFirst.mockResolvedValue(makeCheck({ approvedAt: new Date() }));
+    const service = makeService();
+    await expect(service.deleteQualityCheck(makeUser(), "check-1", {})).rejects.toThrow();
+    expect(mockPrisma.soyaQualityCheck.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("SoyaProcessingService.updateTransfer / deleteTransfer", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPrisma.soyaInternalTransfer.findFirst.mockResolvedValue({
+      id: "trf-1", companyId: "company-1", branchId: "branch-1", productionSiteId: "site-1",
+      fromWarehouseId: "wh-a", toWarehouseId: "wh-b", toProductionSiteId: null, productId: "prod-x", quantity: 30, deletedAt: null
+    });
+    mockPrisma.soyaInternalTransfer.update.mockResolvedValue({ id: "trf-1" });
+    mockTx.inventoryItem.findFirst.mockImplementation(({ where }: { where: { warehouseId: string } }) => {
+      if (where.warehouseId === "wh-b") return Promise.resolve({ id: "inv-dest", uomId: "uom-1" });
+      if (where.warehouseId === "wh-a") return Promise.resolve({ id: "inv-src", uomId: "uom-1" });
+      return Promise.resolve(null);
+    });
+    mockTx.inventoryItem.updateMany.mockResolvedValue({ count: 1 });
+    mockTx.stockBatch.updateMany.mockResolvedValue({ count: 1 });
+  });
+
+  const user = () => makeUser({ warehouseIds: ["wh-a", "wh-b"], hasGlobalAccess: true });
+
+  it("updateTransfer patches notes only and writes an UPDATE audit entry", async () => {
+    const service = makeService();
+    await service.updateTransfer(user(), "trf-1", { notes: "corrected" } as never, {});
+
+    expect(mockPrisma.soyaInternalTransfer.update).toHaveBeenCalledWith({ where: { id: "trf-1" }, data: { notes: "corrected", updatedById: "user-1" } });
+    expect(mockAudit.write).toHaveBeenCalledWith(expect.objectContaining({ action: "UPDATE", entityType: "SoyaInternalTransfer" }));
+  });
+
+  it("deleteTransfer reverses both legs — floor-guarded decrement at the destination, safe increment back at the source", async () => {
+    const service = makeService();
+    await service.deleteTransfer(user(), "trf-1", {});
+
+    expect(mockTx.inventoryItem.updateMany).toHaveBeenCalledWith({
+      where: { id: "inv-dest", quantityOnHand: { gte: 30 } },
+      data: { quantityOnHand: { decrement: 30 }, updatedById: "user-1" }
+    });
+    expect(mockTx.inventoryItem.update).toHaveBeenCalledWith({
+      where: { id: "inv-src" },
+      data: { quantityOnHand: { increment: 30 }, updatedById: "user-1" }
+    });
+    expect(mockTx.soyaInternalTransfer.update).toHaveBeenCalledWith({
+      where: { id: "trf-1" },
+      data: { deletedAt: expect.any(Date), updatedById: "user-1", status: "CANCELLED" }
+    });
+  });
+
+  it("deleteTransfer blocks when the destination stock has already moved on, instead of driving inventory negative", async () => {
+    mockTx.inventoryItem.updateMany.mockResolvedValue({ count: 0 });
+
+    const service = makeService();
+    await expect(service.deleteTransfer(user(), "trf-1", {})).rejects.toThrow();
+    expect(mockTx.soyaInternalTransfer.update).not.toHaveBeenCalled();
+    expect(mockTx.inventoryItem.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("SoyaProcessingService.updateSale / deleteSale", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPrisma.soyaSalesLink.findFirst.mockResolvedValue({
+      id: "sale-1", companyId: "company-1", branchId: "branch-1", productionSiteId: "site-1",
+      warehouseId: "wh-oil", productId: "prod-oil", quantity: 20, customerName: "Acme", deletedAt: null
+    });
+    mockPrisma.soyaSalesLink.update.mockResolvedValue({ id: "sale-1" });
+    mockTx.inventoryItem.findFirst.mockResolvedValue({ id: "inv-1", uomId: "uom-1" });
+  });
+
+  const user = () => makeUser({ warehouseIds: ["wh-oil"], hasGlobalAccess: true });
+
+  it("updateSale patches metadata fields only and writes an UPDATE audit entry", async () => {
+    const service = makeService();
+    await service.updateSale(user(), "sale-1", { customerName: "New Customer" } as never, {});
+
+    expect(mockPrisma.soyaSalesLink.update).toHaveBeenCalledWith({
+      where: { id: "sale-1" },
+      data: expect.objectContaining({ customerName: "New Customer", updatedById: "user-1" })
+    });
+    expect(mockAudit.write).toHaveBeenCalledWith(expect.objectContaining({ action: "UPDATE", entityType: "SoyaSalesLink" }));
+  });
+
+  it("deleteSale reverses the posted decrement with a safe increment (nothing downstream a sale's stock could have moved on to), then soft-deletes the sale", async () => {
+    const service = makeService();
+    await service.deleteSale(user(), "sale-1", {});
+
+    expect(mockTx.inventoryItem.update).toHaveBeenCalledWith({
+      where: { id: "inv-1" },
+      data: { quantityOnHand: { increment: 20 }, updatedById: "user-1" }
+    });
+    expect(mockTx.soyaSalesLink.update).toHaveBeenCalledWith({
+      where: { id: "sale-1" },
+      data: { deletedAt: expect.any(Date), updatedById: "user-1", status: "CANCELLED" }
+    });
+    expect(mockAudit.write).toHaveBeenCalledWith(expect.objectContaining({ action: "DELETE", entityType: "SoyaSalesLink" }));
   });
 });
