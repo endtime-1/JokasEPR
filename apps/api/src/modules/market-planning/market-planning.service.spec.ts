@@ -8,11 +8,15 @@ jest.mock("../../common/next-ref", () => ({ nextRef: jest.fn().mockResolvedValue
 // (plan/formula/product/etc.) that would need extensive mocking to exercise
 // end-to-end. consumeInventoryTx is the actual fix for H8 (negative stock
 // under concurrency) — tested directly here as it's the unit that matters.
-describe("MarketPlanningService.consumeInventoryTx — atomic guarded decrement (H8)", () => {
+describe("MarketPlanningService.consumeInventoryTx — atomic guarded decrement + lot-level quality gating (H8, H-BUG-2)", () => {
   const mockTx = {
     inventoryItem: {
       updateMany: jest.fn(),
       findFirstOrThrow: jest.fn()
+    },
+    stockBatch: {
+      findMany: jest.fn(),
+      updateMany: jest.fn()
     }
   };
 
@@ -35,16 +39,55 @@ describe("MarketPlanningService.consumeInventoryTx — atomic guarded decrement 
       data: { quantityOnHand: { decrement: 10 }, updatedById: "user-1" }
     });
     expect(mockTx.inventoryItem.findFirstOrThrow).not.toHaveBeenCalled();
+    // Never even looked at lots — the aggregate check already failed.
+    expect(mockTx.stockBatch.findMany).not.toHaveBeenCalled();
   });
 
-  it("succeeds and returns identifying fields when enough stock exists", async () => {
+  it("succeeds, consumes from AVAILABLE lots FIFO, and returns identifying fields when enough stock exists", async () => {
     mockTx.inventoryItem.updateMany.mockResolvedValue({ count: 1 });
+    mockTx.stockBatch.findMany.mockResolvedValue([{ id: "batch-1", quantityRemaining: 10 }]);
+    mockTx.stockBatch.updateMany.mockResolvedValue({ count: 1 });
     mockTx.inventoryItem.findFirstOrThrow.mockResolvedValue({ id: "inv-1", uomId: "uom-1" });
     const service = makeService() as unknown as { consumeInventoryTx: (...args: unknown[]) => Promise<{ id: string; uomId: string }> };
 
     const result = await service.consumeInventoryTx(mockTx, "company-1", "wh-1", "prod-1", 10, "user-1");
 
+    expect(mockTx.stockBatch.findMany).toHaveBeenCalledWith({
+      where: { companyId: "company-1", warehouseId: "wh-1", productId: "prod-1", quantityRemaining: { gt: 0 }, status: "AVAILABLE", deletedAt: null },
+      orderBy: { createdAt: "asc" }
+    });
+    expect(mockTx.stockBatch.updateMany).toHaveBeenCalledWith({
+      where: { id: "batch-1", quantityRemaining: { gte: 10 } },
+      data: { quantityRemaining: { decrement: 10 } }
+    });
     expect(result).toEqual({ id: "inv-1", uomId: "uom-1" });
+  });
+
+  it("H-BUG-2: a quarantined lot is invisible to this query and can't be consumed even though quantityOnHand looks sufficient", async () => {
+    // The aggregate decrement passes (quantityOnHand includes the quarantined lot's stock),
+    // but the lot query below only returns AVAILABLE lots — so a fully-quarantined product
+    // has quantityOnHand > 0 yet zero consumable lots, and must fail loudly, not silently
+    // consume the held stock.
+    mockTx.inventoryItem.updateMany.mockResolvedValue({ count: 1 });
+    mockTx.stockBatch.findMany.mockResolvedValue([]); // the only lot is QUARANTINED, excluded by the status filter
+    const service = makeService() as unknown as { consumeInventoryTx: (...args: unknown[]) => Promise<unknown> };
+
+    await expect(
+      service.consumeInventoryTx(mockTx, "company-1", "wh-1", "prod-1", 10, "user-1", "Maize")
+    ).rejects.toThrow(/quarantined/);
+
+    expect(mockTx.stockBatch.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("rolls back when a lot was consumed concurrently (per-lot floor guard)", async () => {
+    mockTx.inventoryItem.updateMany.mockResolvedValue({ count: 1 });
+    mockTx.stockBatch.findMany.mockResolvedValue([{ id: "batch-1", quantityRemaining: 10 }]);
+    mockTx.stockBatch.updateMany.mockResolvedValue({ count: 0 });
+    const service = makeService() as unknown as { consumeInventoryTx: (...args: unknown[]) => Promise<unknown> };
+
+    await expect(
+      service.consumeInventoryTx(mockTx, "company-1", "wh-1", "prod-1", 10, "user-1", "Maize")
+    ).rejects.toThrow(/consumed concurrently/);
   });
 });
 

@@ -773,7 +773,7 @@ export class MarketPlanningService {
       });
 
       for (const ingredient of ingredientPlan) {
-        const inventory = await this.consumeInventoryTx(tx, user.companyId, dto.rawMaterialWarehouseId, ingredient.ingredientId, ingredient.quantityKg, user.id);
+        const inventory = await this.consumeInventoryTx(tx, user.companyId, dto.rawMaterialWarehouseId, ingredient.ingredientId, ingredient.quantityKg, user.id, ingredient.productName);
         await tx.feedRawMaterialUsage.create({
           data: {
             companyId: user.companyId,
@@ -1037,7 +1037,18 @@ export class MarketPlanningService {
   // negative. Now does a single atomic guarded decrement (matching
   // consumeFifoTx's pattern elsewhere) so insufficient-or-since-consumed
   // stock is caught at the exact moment of the write, not before it.
-  private async consumeInventoryTx(tx: Tx, companyId: string, warehouseId: string, productId: string, quantity: number, updatedById: string) {
+  //
+  // H-BUG-2 (2026-08-12): the aggregate decrement above only protects
+  // against overselling — it says nothing about WHICH physical lot the
+  // stock came from. This is a second, independent production-execution
+  // path from feed-production.service.ts's own createBatch (that one
+  // already does per-lot FIFO consumption correctly); this one didn't, so
+  // a raw-material lot Quality had quarantined could still be consumed
+  // here as if it were clean, and the lot's own quantityRemaining was
+  // never touched — permanently drifting from quantityOnHand. Mirrors
+  // feed-production.service.ts's createBatch FIFO loop exactly.
+  private async consumeInventoryTx(tx: Tx, companyId: string, warehouseId: string, productId: string, quantity: number, updatedById: string, productName?: string) {
+    const label = productName ?? productId;
     const result = await tx.inventoryItem.updateMany({
       where: { companyId, warehouseId, productId, quantityOnHand: { gte: quantity } },
       data: { quantityOnHand: { decrement: quantity }, updatedById }
@@ -1045,6 +1056,28 @@ export class MarketPlanningService {
     if (result.count === 0) {
       throw new BadRequestException("Inventory item is missing or does not have enough stock for this production execution.");
     }
+
+    let remaining = quantity;
+    const stockBatches = await tx.stockBatch.findMany({
+      where: { companyId, warehouseId, productId, quantityRemaining: { gt: 0 }, status: "AVAILABLE", deletedAt: null },
+      orderBy: { createdAt: "asc" }
+    });
+    for (const sb of stockBatches) {
+      if (remaining <= 0) break;
+      const consumed = Math.min(remaining, Number(sb.quantityRemaining));
+      const batchUpdate = await tx.stockBatch.updateMany({
+        where: { id: sb.id, quantityRemaining: { gte: consumed } },
+        data: { quantityRemaining: { decrement: consumed } }
+      });
+      if (batchUpdate.count === 0) {
+        throw new BadRequestException(`Stock batch for "${label}" was consumed concurrently. Please retry.`);
+      }
+      remaining -= consumed;
+    }
+    if (remaining > 0) {
+      throw new BadRequestException(`Stock batches on hand for "${label}" cover only ${(quantity - remaining).toFixed(2)}kg of the required ${quantity}kg — inventory and lot records are out of sync, or the remaining stock is quarantined. Please investigate before retrying.`);
+    }
+
     // Safe to read separately now — the guarded decrement above already
     // succeeded atomically; this just fetches identifying fields (id/uomId
     // don't change) for the stock-movement record.
