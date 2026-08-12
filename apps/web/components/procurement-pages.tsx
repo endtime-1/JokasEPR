@@ -11,7 +11,41 @@ import {
 } from "lucide-react";
 import { ApiEnvelope, apiFetch, getCached, getCachedFirst, hasCached } from "../lib/api";
 import { DataTable } from "./data-table";
-import { StatusBadge } from "./ui";
+import { Modal, StatusBadge } from "./ui";
+
+// RejectPurchaseRequestDto/RejectPurchaseOrderDto/QualityFailGRNDto all
+// require a non-empty reason/qualityNotes string server-side — used by the
+// PR, PO, and GRN list pages below for their respective reject/fail actions.
+function RejectReasonModal({
+  open, onClose, onConfirm, loading,
+  title = "Reject", label = "Reason *", placeholder = "Why is this being rejected?", confirmLabel = "Reject", busyLabel = "Rejecting…",
+}: {
+  open: boolean; onClose: () => void; onConfirm: (reason: string) => void; loading: boolean;
+  title?: string; label?: string; placeholder?: string; confirmLabel?: string; busyLabel?: string;
+}) {
+  const [reason, setReason] = useState("");
+  return (
+    <Modal open={open} onClose={onClose} title={title} size="sm">
+      <div className="space-y-3">
+        <div>
+          <FormLabel>{label}</FormLabel>
+          <textarea required value={reason} onChange={(e) => setReason(e.target.value)} rows={3} className={inputCls} placeholder={placeholder} />
+        </div>
+        <div className="flex justify-end gap-2">
+          <button type="button" onClick={onClose} disabled={loading} className="app-button-secondary">Cancel</button>
+          <button
+            type="button"
+            onClick={() => reason.trim() && onConfirm(reason.trim())}
+            disabled={loading || !reason.trim()}
+            className="rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 hover:opacity-90"
+          >
+            {loading ? busyLabel : confirmLabel}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -539,8 +573,8 @@ export function CreateSupplierPage() {
   const { opts, optionsError } = useProcurementOptions();
   const [form, setForm] = useState({
     code: "", name: "", contactPerson: "", phone: "", email: "",
-    address: "", categoryId: "", paymentTerms: "", currency: "GHS",
-    taxNumber: "", status: "ACTIVE", notes: "",
+    address: "", categoryId: "", paymentTermsDays: "", currency: "GHS",
+    taxId: "", status: "ACTIVE", notes: "",
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -555,7 +589,12 @@ export function CreateSupplierPage() {
     try {
       await apiFetch("/procurement/suppliers", {
         method: "POST",
-        body: JSON.stringify({ ...form, categoryId: form.categoryId || undefined }),
+        body: JSON.stringify({
+          ...form,
+          categoryId: form.categoryId || undefined,
+          taxId: form.taxId || undefined,
+          paymentTermsDays: form.paymentTermsDays ? Number(form.paymentTermsDays) : undefined,
+        }),
       });
       router.push("/procurement/suppliers");
     } catch (err: unknown) {
@@ -635,11 +674,11 @@ export function CreateSupplierPage() {
               </div>
               <div>
                 <FormLabel>Tax Number</FormLabel>
-                <input value={form.taxNumber} onChange={f("taxNumber")} className={inputCls} />
+                <input value={form.taxId} onChange={f("taxId")} className={inputCls} />
               </div>
               <div>
-                <FormLabel>Payment Terms</FormLabel>
-                <input value={form.paymentTerms} onChange={f("paymentTerms")} className={inputCls} placeholder="e.g. Net 30" />
+                <FormLabel>Payment Terms (days)</FormLabel>
+                <input type="number" min={0} value={form.paymentTermsDays} onChange={f("paymentTermsDays")} className={inputCls} placeholder="e.g. 30" />
               </div>
               <div className="sm:col-span-2 lg:col-span-3">
                 <FormLabel>Address</FormLabel>
@@ -777,6 +816,8 @@ export function PurchaseRequestsPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [actionErr, setActionErr] = useState("");
   const [loadError, setLoadError] = useState("");
+  const [rejectId, setRejectId] = useState<string | null>(null);
+  const [rejecting, setRejecting] = useState(false);
 
   function load() {
     setLoadError("");
@@ -787,6 +828,21 @@ export function PurchaseRequestsPage() {
       .finally(() => setLoading(false));
   }
   useEffect(() => { load(); }, [statusFilter]);
+
+  async function confirmReject(reason: string) {
+    if (!rejectId) return;
+    setRejecting(true);
+    setActionErr("");
+    try {
+      await apiFetch(`/procurement/purchase-requests/${rejectId}/reject`, { method: "PATCH", body: JSON.stringify({ reason }) });
+      setRejectId(null);
+      load();
+    } catch (err: unknown) {
+      setActionErr(err instanceof Error ? err.message : "Action failed");
+    } finally {
+      setRejecting(false);
+    }
+  }
 
   async function act(id: string, path: string) {
     setBusy(id);
@@ -869,7 +925,7 @@ export function PurchaseRequestsPage() {
                           {busy === r.id ? "…" : "Approve"}
                         </button>
                         <button
-                          onClick={() => act(r.id as string, `/procurement/purchase-requests/${r.id}/reject`)}
+                          onClick={() => setRejectId(r.id as string)}
                           disabled={busy === r.id}
                           className="rounded-md bg-red-600 px-2.5 py-1 text-xs font-semibold text-white disabled:opacity-50 hover:opacity-90"
                         >
@@ -887,19 +943,19 @@ export function PurchaseRequestsPage() {
           />
         </div>
       </div>
-    
+      <RejectReasonModal open={!!rejectId} onClose={() => setRejectId(null)} onConfirm={confirmReject} loading={rejecting} />
   );
 }
 
 // ─── Create Purchase Request ──────────────────────────────────────────────────
 
-type PRItem = { description: string; quantity: string; unit: string; estimatedUnitPrice: string };
+type PRItem = { productName: string; quantity: string; uomCode: string; estimatedUnitCost: string };
 
 export function CreatePurchaseRequestPage() {
   const router = useRouter();
   const { opts, optionsError } = useProcurementOptions();
-  const [form, setForm] = useState({ branchId: "", requiredDate: "", notes: "" });
-  const [items, setItems] = useState<PRItem[]>([{ description: "", quantity: "1", unit: "PCS", estimatedUnitPrice: "" }]);
+  const [form, setForm] = useState({ title: "", branchId: "", requiredDate: "", notes: "" });
+  const [items, setItems] = useState<PRItem[]>([{ productName: "", quantity: "1", uomCode: "PCS", estimatedUnitCost: "" }]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -909,10 +965,10 @@ export function CreatePurchaseRequestPage() {
   function setItem(i: number, k: keyof PRItem, v: string) {
     setItems((prev) => prev.map((it, idx) => (idx === i ? { ...it, [k]: v } : it)));
   }
-  function addItem() { setItems((p) => [...p, { description: "", quantity: "1", unit: "PCS", estimatedUnitPrice: "" }]); }
+  function addItem() { setItems((p) => [...p, { productName: "", quantity: "1", uomCode: "PCS", estimatedUnitCost: "" }]); }
   function removeItem(i: number) { setItems((p) => p.filter((_, idx) => idx !== i)); }
 
-  const subtotal = items.reduce((s, it) => s + Number(it.quantity || 0) * Number(it.estimatedUnitPrice || 0), 0);
+  const subtotal = items.reduce((s, it) => s + Number(it.quantity || 0) * Number(it.estimatedUnitCost || 0), 0);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -922,14 +978,15 @@ export function CreatePurchaseRequestPage() {
       await apiFetch("/procurement/purchase-requests", {
         method: "POST",
         body: JSON.stringify({
-          ...form,
+          title: form.title,
           branchId: form.branchId || undefined,
           requiredDate: form.requiredDate || undefined,
+          notes: form.notes || undefined,
           items: items.map((it) => ({
-            description: it.description,
+            productName: it.productName,
             quantity: Number(it.quantity),
-            unit: it.unit,
-            estimatedUnitPrice: it.estimatedUnitPrice ? Number(it.estimatedUnitPrice) : undefined,
+            uomCode: it.uomCode || undefined,
+            estimatedUnitCost: it.estimatedUnitCost ? Number(it.estimatedUnitCost) : undefined,
           })),
         }),
       });
@@ -960,6 +1017,10 @@ export function CreatePurchaseRequestPage() {
           <div className="rounded-2xl border border-line bg-white p-6 shadow-panel">
             <h2 className="mb-5 text-sm font-bold uppercase tracking-wide text-ink/45">Request Details</h2>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <div className="sm:col-span-3">
+                <FormLabel>Title *</FormLabel>
+                <input required value={form.title} onChange={f("title")} className={inputCls} placeholder="e.g. Feed mill Q3 raw materials" maxLength={200} />
+              </div>
               <div>
                 <FormLabel>Branch</FormLabel>
                 <select value={form.branchId} onChange={f("branchId")} className={inputCls}>
@@ -989,8 +1050,8 @@ export function CreatePurchaseRequestPage() {
               {items.map((it, i) => (
                 <div key={i} className="grid grid-cols-12 gap-3 px-6 py-4">
                   <div className="col-span-12 sm:col-span-5">
-                    <FormLabel>Description *</FormLabel>
-                    <input required value={it.description} onChange={(e) => setItem(i, "description", e.target.value)} className={inputCls} />
+                    <FormLabel>Product Name *</FormLabel>
+                    <input required value={it.productName} onChange={(e) => setItem(i, "productName", e.target.value)} className={inputCls} />
                   </div>
                   <div className="col-span-4 sm:col-span-2">
                     <FormLabel>Qty *</FormLabel>
@@ -998,11 +1059,11 @@ export function CreatePurchaseRequestPage() {
                   </div>
                   <div className="col-span-4 sm:col-span-2">
                     <FormLabel>Unit</FormLabel>
-                    <input value={it.unit} onChange={(e) => setItem(i, "unit", e.target.value)} className={inputCls} />
+                    <input value={it.uomCode} onChange={(e) => setItem(i, "uomCode", e.target.value)} className={inputCls} />
                   </div>
                   <div className="col-span-4 sm:col-span-2">
-                    <FormLabel>Est. Price</FormLabel>
-                    <input type="number" min={0} step={0.01} value={it.estimatedUnitPrice} onChange={(e) => setItem(i, "estimatedUnitPrice", e.target.value)} className={inputCls} />
+                    <FormLabel>Est. Cost</FormLabel>
+                    <input type="number" min={0} step={0.01} value={it.estimatedUnitCost} onChange={(e) => setItem(i, "estimatedUnitCost", e.target.value)} className={inputCls} />
                   </div>
                   <div className="col-span-12 flex items-end sm:col-span-1">
                     {items.length > 1 && (
@@ -1052,6 +1113,8 @@ export function PurchaseOrdersPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [actionErr, setActionErr] = useState("");
   const [loadError, setLoadError] = useState("");
+  const [rejectId, setRejectId] = useState<string | null>(null);
+  const [rejecting, setRejecting] = useState(false);
 
   function load() {
     setLoadError("");
@@ -1062,6 +1125,21 @@ export function PurchaseOrdersPage() {
       .finally(() => setLoading(false));
   }
   useEffect(() => { load(); }, [statusFilter]);
+
+  async function confirmReject(reason: string) {
+    if (!rejectId) return;
+    setRejecting(true);
+    setActionErr("");
+    try {
+      await apiFetch(`/procurement/purchase-orders/${rejectId}/reject`, { method: "PATCH", body: JSON.stringify({ reason }) });
+      setRejectId(null);
+      load();
+    } catch (err: unknown) {
+      setActionErr(err instanceof Error ? err.message : "Action failed");
+    } finally {
+      setRejecting(false);
+    }
+  }
 
   async function act(id: string, path: string) {
     setBusy(id);
@@ -1136,7 +1214,7 @@ export function PurchaseOrdersPage() {
                           {busy === r.id ? "…" : "Approve"}
                         </button>
                         <button
-                          onClick={() => act(r.id as string, `/procurement/purchase-orders/${r.id}/reject`)}
+                          onClick={() => setRejectId(r.id as string)}
                           disabled={busy === r.id}
                           className="rounded-md bg-red-600 px-2.5 py-1 text-xs font-semibold text-white disabled:opacity-50 hover:opacity-90"
                         >
@@ -1163,22 +1241,22 @@ export function PurchaseOrdersPage() {
           />
         </div>
       </div>
-    
+      <RejectReasonModal open={!!rejectId} onClose={() => setRejectId(null)} onConfirm={confirmReject} loading={rejecting} />
   );
 }
 
 // ─── Create Purchase Order ────────────────────────────────────────────────────
 
-type POItem = { description: string; quantity: string; unit: string; unitPrice: string; discountAmount: string };
+type POItem = { productName: string; quantity: string; uomCode: string; unitCost: string };
 
 export function CreatePurchaseOrderPage() {
   const router = useRouter();
   const { opts, optionsError } = useProcurementOptions();
   const [form, setForm] = useState({
-    supplierId: "", branchId: "", orderDate: "", expectedDeliveryDate: "",
-    paymentTerms: "", notes: "",
+    supplierId: "", expectedDelivery: "",
+    paymentTermsDays: "", notes: "",
   });
-  const [items, setItems] = useState<POItem[]>([{ description: "", quantity: "1", unit: "PCS", unitPrice: "", discountAmount: "" }]);
+  const [items, setItems] = useState<POItem[]>([{ productName: "", quantity: "1", uomCode: "PCS", unitCost: "" }]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -1188,11 +1266,10 @@ export function CreatePurchaseOrderPage() {
   function setItem(i: number, k: keyof POItem, v: string) {
     setItems((prev) => prev.map((it, idx) => (idx === i ? { ...it, [k]: v } : it)));
   }
-  function addItem() { setItems((p) => [...p, { description: "", quantity: "1", unit: "PCS", unitPrice: "", discountAmount: "" }]); }
+  function addItem() { setItems((p) => [...p, { productName: "", quantity: "1", uomCode: "PCS", unitCost: "" }]); }
   function removeItem(i: number) { setItems((p) => p.filter((_, idx) => idx !== i)); }
 
-  const lineTotal = (it: POItem) =>
-    Number(it.quantity || 0) * Number(it.unitPrice || 0) - Number(it.discountAmount || 0);
+  const lineTotal = (it: POItem) => Number(it.quantity || 0) * Number(it.unitCost || 0);
   const subtotal = items.reduce((s, it) => s + lineTotal(it), 0);
 
   async function submit(e: React.FormEvent) {
@@ -1203,17 +1280,15 @@ export function CreatePurchaseOrderPage() {
       await apiFetch("/procurement/purchase-orders", {
         method: "POST",
         body: JSON.stringify({
-          ...form,
-          supplierId: form.supplierId || undefined,
-          branchId: form.branchId || undefined,
-          orderDate: form.orderDate || undefined,
-          expectedDeliveryDate: form.expectedDeliveryDate || undefined,
+          supplierId: form.supplierId,
+          expectedDelivery: form.expectedDelivery || undefined,
+          paymentTermsDays: form.paymentTermsDays ? Number(form.paymentTermsDays) : undefined,
+          notes: form.notes || undefined,
           items: items.map((it) => ({
-            description: it.description,
+            productName: it.productName,
             quantity: Number(it.quantity),
-            unit: it.unit,
-            unitPrice: Number(it.unitPrice),
-            discountAmount: it.discountAmount ? Number(it.discountAmount) : 0,
+            uomCode: it.uomCode || undefined,
+            unitCost: Number(it.unitCost),
           })),
         }),
       });
@@ -1252,23 +1327,12 @@ export function CreatePurchaseOrderPage() {
                 </select>
               </div>
               <div>
-                <FormLabel>Branch</FormLabel>
-                <select value={form.branchId} onChange={f("branchId")} className={inputCls}>
-                  <option value="">— Select —</option>
-                  {opts.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-                </select>
-              </div>
-              <div>
-                <FormLabel>Order Date</FormLabel>
-                <input type="date" value={form.orderDate} onChange={f("orderDate")} className={inputCls} />
-              </div>
-              <div>
                 <FormLabel>Expected Delivery</FormLabel>
-                <input type="date" value={form.expectedDeliveryDate} onChange={f("expectedDeliveryDate")} className={inputCls} />
+                <input type="date" value={form.expectedDelivery} onChange={f("expectedDelivery")} className={inputCls} />
               </div>
               <div>
-                <FormLabel>Payment Terms</FormLabel>
-                <input value={form.paymentTerms} onChange={f("paymentTerms")} placeholder="e.g. Net 30" className={inputCls} />
+                <FormLabel>Payment Terms (days)</FormLabel>
+                <input type="number" min={0} value={form.paymentTermsDays} onChange={f("paymentTermsDays")} placeholder="e.g. 30" className={inputCls} />
               </div>
               <div className="sm:col-span-2 lg:col-span-3">
                 <FormLabel>Notes</FormLabel>
@@ -1287,9 +1351,9 @@ export function CreatePurchaseOrderPage() {
             <div className="divide-y divide-line">
               {items.map((it, i) => (
                 <div key={i} className="grid grid-cols-12 gap-3 px-6 py-4">
-                  <div className="col-span-12 sm:col-span-4">
-                    <FormLabel>Description *</FormLabel>
-                    <input required value={it.description} onChange={(e) => setItem(i, "description", e.target.value)} className={inputCls} />
+                  <div className="col-span-12 sm:col-span-5">
+                    <FormLabel>Product Name *</FormLabel>
+                    <input required value={it.productName} onChange={(e) => setItem(i, "productName", e.target.value)} className={inputCls} />
                   </div>
                   <div className="col-span-4 sm:col-span-2">
                     <FormLabel>Qty *</FormLabel>
@@ -1297,17 +1361,13 @@ export function CreatePurchaseOrderPage() {
                   </div>
                   <div className="col-span-4 sm:col-span-1">
                     <FormLabel>Unit</FormLabel>
-                    <input value={it.unit} onChange={(e) => setItem(i, "unit", e.target.value)} className={inputCls} />
+                    <input value={it.uomCode} onChange={(e) => setItem(i, "uomCode", e.target.value)} className={inputCls} />
                   </div>
                   <div className="col-span-4 sm:col-span-2">
-                    <FormLabel>Unit Price *</FormLabel>
-                    <input required type="number" min={0} step={0.01} value={it.unitPrice} onChange={(e) => setItem(i, "unitPrice", e.target.value)} className={inputCls} />
+                    <FormLabel>Unit Cost *</FormLabel>
+                    <input required type="number" min={0} step={0.01} value={it.unitCost} onChange={(e) => setItem(i, "unitCost", e.target.value)} className={inputCls} />
                   </div>
-                  <div className="col-span-6 sm:col-span-2">
-                    <FormLabel>Discount</FormLabel>
-                    <input type="number" min={0} step={0.01} value={it.discountAmount} onChange={(e) => setItem(i, "discountAmount", e.target.value)} className={inputCls} />
-                  </div>
-                  <div className="col-span-6 flex items-end justify-between sm:col-span-1">
+                  <div className="col-span-6 flex items-end justify-between sm:col-span-2">
                     <div className="text-right">
                       <p className="text-[10px] uppercase text-ink/40 font-bold">Line</p>
                       <p className="text-sm font-bold text-ink">{money(lineTotal(it))}</p>
@@ -1358,6 +1418,8 @@ export function GRNsPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [actionErr, setActionErr] = useState("");
   const [loadError, setLoadError] = useState("");
+  const [failId, setFailId] = useState<string | null>(null);
+  const [failing, setFailing] = useState(false);
 
   function load() {
     setLoadError("");
@@ -1368,6 +1430,21 @@ export function GRNsPage() {
       .finally(() => setLoading(false));
   }
   useEffect(() => { load(); }, [statusFilter]);
+
+  async function confirmFail(qualityNotes: string) {
+    if (!failId) return;
+    setFailing(true);
+    setActionErr("");
+    try {
+      await apiFetch(`/procurement/grns/${failId}/quality-fail`, { method: "PATCH", body: JSON.stringify({ qualityNotes }) });
+      setFailId(null);
+      load();
+    } catch (err: unknown) {
+      setActionErr(err instanceof Error ? err.message : "Action failed");
+    } finally {
+      setFailing(false);
+    }
+  }
 
   async function act(id: string, path: string) {
     setBusy(id);
@@ -1441,7 +1518,7 @@ export function GRNsPage() {
                           Pass
                         </button>
                         <button
-                          onClick={() => act(r.id as string, `/procurement/grns/${r.id}/quality-fail`)}
+                          onClick={() => setFailId(r.id as string)}
                           disabled={busy === r.id}
                           className="rounded-md bg-red-600 px-2.5 py-1 text-xs font-semibold text-white disabled:opacity-50 hover:opacity-90"
                         >
@@ -1468,13 +1545,23 @@ export function GRNsPage() {
           />
         </div>
       </div>
-    
+      <RejectReasonModal
+        open={!!failId}
+        onClose={() => setFailId(null)}
+        onConfirm={confirmFail}
+        loading={failing}
+        title="Fail Quality Check"
+        label="Quality Notes *"
+        placeholder="What failed inspection and why?"
+        confirmLabel="Fail"
+        busyLabel="Failing…"
+      />
   );
 }
 
 // ─── Create GRN ───────────────────────────────────────────────────────────────
 
-type GRNItem = { description: string; orderedQuantity: string; receivedQuantity: string; unit: string; unitCost: string };
+type GRNItem = { productName: string; orderedQty: string; receivedQty: string; uomCode: string; unitCost: string };
 type POOption = { id: string; reference: string };
 
 export function CreateGRNPage() {
@@ -1485,7 +1572,7 @@ export function CreateGRNPage() {
     supplierId: "", warehouseId: "", purchaseOrderId: "",
     receivedDate: "", notes: "",
   });
-  const [items, setItems] = useState<GRNItem[]>([{ description: "", orderedQuantity: "", receivedQuantity: "1", unit: "PCS", unitCost: "" }]);
+  const [items, setItems] = useState<GRNItem[]>([{ productName: "", orderedQty: "", receivedQty: "1", uomCode: "PCS", unitCost: "" }]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -1501,7 +1588,7 @@ export function CreateGRNPage() {
   function setItem(i: number, k: keyof GRNItem, v: string) {
     setItems((prev) => prev.map((it, idx) => (idx === i ? { ...it, [k]: v } : it)));
   }
-  function addItem() { setItems((p) => [...p, { description: "", orderedQuantity: "", receivedQuantity: "1", unit: "PCS", unitCost: "" }]); }
+  function addItem() { setItems((p) => [...p, { productName: "", orderedQty: "", receivedQty: "1", uomCode: "PCS", unitCost: "" }]); }
   function removeItem(i: number) { setItems((p) => p.filter((_, idx) => idx !== i)); }
 
   async function submit(e: React.FormEvent) {
@@ -1509,20 +1596,21 @@ export function CreateGRNPage() {
     setSaving(true);
     setError("");
     try {
+      // supplierId is UI-only (not part of CreateGRNDto) — purchaseOrderId is
+      // required by the backend, a GRN can't be logged without one.
       await apiFetch("/procurement/grns", {
         method: "POST",
         body: JSON.stringify({
-          ...form,
-          supplierId: form.supplierId || undefined,
-          warehouseId: form.warehouseId || undefined,
-          purchaseOrderId: form.purchaseOrderId || undefined,
+          purchaseOrderId: form.purchaseOrderId,
+          warehouseId: form.warehouseId,
           receivedDate: form.receivedDate || undefined,
+          notes: form.notes || undefined,
           items: items.map((it) => ({
-            description: it.description,
-            orderedQuantity: it.orderedQuantity ? Number(it.orderedQuantity) : undefined,
-            receivedQuantity: Number(it.receivedQuantity),
-            unit: it.unit,
-            unitCost: it.unitCost ? Number(it.unitCost) : undefined,
+            productName: it.productName,
+            orderedQty: Number(it.orderedQty),
+            receivedQty: Number(it.receivedQty),
+            uomCode: it.uomCode || undefined,
+            unitCost: Number(it.unitCost),
           })),
         }),
       });
@@ -1568,9 +1656,9 @@ export function CreateGRNPage() {
                 </select>
               </div>
               <div>
-                <FormLabel>Purchase Order</FormLabel>
-                <select value={form.purchaseOrderId} onChange={f("purchaseOrderId")} className={inputCls}>
-                  <option value="">— None / Manual —</option>
+                <FormLabel>Purchase Order *</FormLabel>
+                <select required value={form.purchaseOrderId} onChange={f("purchaseOrderId")} className={inputCls}>
+                  <option value="">— Select —</option>
                   {poOptions.map((po) => <option key={po.id} value={po.id}>{po.reference}</option>)}
                 </select>
               </div>
@@ -1596,24 +1684,24 @@ export function CreateGRNPage() {
               {items.map((it, i) => (
                 <div key={i} className="grid grid-cols-12 gap-3 px-6 py-4">
                   <div className="col-span-12 sm:col-span-4">
-                    <FormLabel>Description *</FormLabel>
-                    <input required value={it.description} onChange={(e) => setItem(i, "description", e.target.value)} className={inputCls} />
+                    <FormLabel>Product Name *</FormLabel>
+                    <input required value={it.productName} onChange={(e) => setItem(i, "productName", e.target.value)} className={inputCls} />
                   </div>
                   <div className="col-span-4 sm:col-span-2">
-                    <FormLabel>Ordered Qty</FormLabel>
-                    <input type="number" min={0} step={0.01} value={it.orderedQuantity} onChange={(e) => setItem(i, "orderedQuantity", e.target.value)} className={inputCls} />
+                    <FormLabel>Ordered Qty *</FormLabel>
+                    <input required type="number" min={0} step={0.01} value={it.orderedQty} onChange={(e) => setItem(i, "orderedQty", e.target.value)} className={inputCls} />
                   </div>
                   <div className="col-span-4 sm:col-span-2">
                     <FormLabel>Received Qty *</FormLabel>
-                    <input required type="number" min={0.01} step={0.01} value={it.receivedQuantity} onChange={(e) => setItem(i, "receivedQuantity", e.target.value)} className={inputCls} />
+                    <input required type="number" min={0.01} step={0.01} value={it.receivedQty} onChange={(e) => setItem(i, "receivedQty", e.target.value)} className={inputCls} />
                   </div>
                   <div className="col-span-4 sm:col-span-1">
                     <FormLabel>Unit</FormLabel>
-                    <input value={it.unit} onChange={(e) => setItem(i, "unit", e.target.value)} className={inputCls} />
+                    <input value={it.uomCode} onChange={(e) => setItem(i, "uomCode", e.target.value)} className={inputCls} />
                   </div>
                   <div className="col-span-6 sm:col-span-2">
-                    <FormLabel>Unit Cost</FormLabel>
-                    <input type="number" min={0} step={0.01} value={it.unitCost} onChange={(e) => setItem(i, "unitCost", e.target.value)} className={inputCls} />
+                    <FormLabel>Unit Cost *</FormLabel>
+                    <input required type="number" min={0} step={0.01} value={it.unitCost} onChange={(e) => setItem(i, "unitCost", e.target.value)} className={inputCls} />
                   </div>
                   <div className="col-span-6 flex items-end sm:col-span-1">
                     {items.length > 1 && (
@@ -1659,7 +1747,7 @@ export function SupplierInvoicesPage() {
   const { opts, optionsError } = useProcurementOptions();
   const [form, setForm] = useState({
     supplierId: "", invoiceNumber: "", invoiceDate: "", dueDate: "",
-    totalAmount: "", notes: "",
+    subtotal: "", taxAmount: "", notes: "",
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -1687,15 +1775,17 @@ export function SupplierInvoicesPage() {
       await apiFetch("/procurement/invoices", {
         method: "POST",
         body: JSON.stringify({
-          ...form,
-          supplierId: form.supplierId || undefined,
-          totalAmount: Number(form.totalAmount),
-          invoiceDate: form.invoiceDate || undefined,
+          supplierId: form.supplierId,
+          invoiceNumber: form.invoiceNumber,
+          invoiceDate: form.invoiceDate,
           dueDate: form.dueDate || undefined,
+          subtotal: Number(form.subtotal),
+          taxAmount: form.taxAmount ? Number(form.taxAmount) : undefined,
+          notes: form.notes || undefined,
         }),
       });
       setShowForm(false);
-      setForm({ supplierId: "", invoiceNumber: "", invoiceDate: "", dueDate: "", totalAmount: "", notes: "" });
+      setForm({ supplierId: "", invoiceNumber: "", invoiceDate: "", dueDate: "", subtotal: "", taxAmount: "", notes: "" });
       load();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to save");
@@ -1730,8 +1820,8 @@ export function SupplierInvoicesPage() {
             )}
             <form onSubmit={submit} className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <div>
-                <FormLabel>Supplier</FormLabel>
-                <select value={form.supplierId} onChange={f("supplierId")} className={inputCls}>
+                <FormLabel>Supplier *</FormLabel>
+                <select required value={form.supplierId} onChange={f("supplierId")} className={inputCls}>
                   <option value="">— Select —</option>
                   {opts.suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
@@ -1741,12 +1831,16 @@ export function SupplierInvoicesPage() {
                 <input required value={form.invoiceNumber} onChange={f("invoiceNumber")} className={inputCls} />
               </div>
               <div>
-                <FormLabel>Total Amount *</FormLabel>
-                <input required type="number" min={0} step={0.01} value={form.totalAmount} onChange={f("totalAmount")} className={inputCls} />
+                <FormLabel>Subtotal *</FormLabel>
+                <input required type="number" min={0} step={0.01} value={form.subtotal} onChange={f("subtotal")} className={inputCls} />
               </div>
               <div>
-                <FormLabel>Invoice Date</FormLabel>
-                <input type="date" value={form.invoiceDate} onChange={f("invoiceDate")} className={inputCls} />
+                <FormLabel>Tax Amount</FormLabel>
+                <input type="number" min={0} step={0.01} value={form.taxAmount} onChange={f("taxAmount")} className={inputCls} placeholder="Optional" />
+              </div>
+              <div>
+                <FormLabel>Invoice Date *</FormLabel>
+                <input required type="date" value={form.invoiceDate} onChange={f("invoiceDate")} className={inputCls} />
               </div>
               <div>
                 <FormLabel>Due Date</FormLabel>
@@ -1813,11 +1907,15 @@ export function ProcurementPaymentsPage() {
   const { opts, optionsError } = useProcurementOptions();
   const [form, setForm] = useState({
     supplierId: "", amount: "", paymentDate: "",
-    paymentMethod: "BANK_TRANSFER", bankAccountId: "", reference: "", notes: "",
+    paymentMethod: "BANK_TRANSFER", bankAccountId: "", description: "", notes: "",
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [loadError, setLoadError] = useState("");
+  // H9: lets a client-side retry (after a timeout, before we know whether the
+  // first attempt landed) safely resend the same payment without double-
+  // recording it. Regenerated after each successful submit for the next one.
+  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
 
   function load() {
     setLoadError("");
@@ -1839,15 +1937,19 @@ export function ProcurementPaymentsPage() {
       await apiFetch("/procurement/payments", {
         method: "POST",
         body: JSON.stringify({
-          ...form,
+          supplierId: form.supplierId,
           amount: Number(form.amount),
-          supplierId: form.supplierId || undefined,
+          paymentDate: form.paymentDate,
+          paymentMethod: form.paymentMethod,
           bankAccountId: form.bankAccountId || undefined,
-          paymentDate: form.paymentDate || undefined,
+          description: form.description,
+          notes: form.notes || undefined,
+          idempotencyKey,
         }),
       });
       setShowForm(false);
-      setForm({ supplierId: "", amount: "", paymentDate: "", paymentMethod: "BANK_TRANSFER", bankAccountId: "", reference: "", notes: "" });
+      setForm({ supplierId: "", amount: "", paymentDate: "", paymentMethod: "BANK_TRANSFER", bankAccountId: "", description: "", notes: "" });
+      setIdempotencyKey(crypto.randomUUID());
       load();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to save");
@@ -1911,9 +2013,9 @@ export function ProcurementPaymentsPage() {
                   ))}
                 </select>
               </div>
-              <div>
-                <FormLabel>Reference</FormLabel>
-                <input value={form.reference} onChange={f("reference")} className={inputCls} />
+              <div className="sm:col-span-2 lg:col-span-3">
+                <FormLabel>Description *</FormLabel>
+                <input required value={form.description} onChange={f("description")} className={inputCls} placeholder="e.g. Payment against invoice INV-2026-0042" maxLength={240} />
               </div>
               <div className="sm:col-span-2 lg:col-span-3">
                 <FormLabel>Notes</FormLabel>
