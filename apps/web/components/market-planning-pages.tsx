@@ -2,10 +2,11 @@
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { CircleCheckBig, ClipboardList, Factory, PackageCheck, Plus, RefreshCw, ShoppingCart, TrendingUp } from "lucide-react";
+import { useParams, useRouter } from "next/navigation";
+import { CircleCheckBig, ClipboardList, Factory, PackageCheck, Pencil, Plus, RefreshCw, ShoppingCart, Trash2, TrendingUp } from "lucide-react";
 import { DataTable } from "./data-table";
-import { ApiEnvelope, apiFetch, getCached, getCachedFirst, hasCached } from "../lib/api";
+import { ConfirmModal } from "./ui";
+import { ApiEnvelope, apiFetch, getCached, getCachedFirst, hasCached, invalidateCache } from "../lib/api";
 
 type Option = { id: string; branchId?: string; productionSiteId?: string; code?: string; sku?: string; name: string; finishedProductId?: string };
 type PlanningOptions = { branches: Option[]; productionSites: Option[]; warehouses: Option[]; finishedFeeds: Option[]; formulas: Option[]; rawMaterials: Option[] };
@@ -121,7 +122,12 @@ function Card({ label, value, icon: Icon }: { label: string; value: React.ReactN
   );
 }
 
-function TargetTable({ rows, loading }: { rows: TargetRow[]; loading?: boolean }) {
+// Delete is only offered for DRAFT/SUBMITTED targets — matches the backend
+// guard exactly (deleteTarget rejects anything APPROVED+, since production
+// plans/MRP/recommendations already depend on it by then).
+const TARGET_DELETABLE_STATUSES = ["DRAFT", "SUBMITTED"];
+
+function TargetTable({ rows, loading, onDelete }: { rows: TargetRow[]; loading?: boolean; onDelete?: (row: TargetRow) => void }) {
   return (
     <DataTable<TargetRow>
       rows={rows}
@@ -133,7 +139,23 @@ function TargetTable({ rows, loading }: { rows: TargetRow[]; loading?: boolean }
         { key: "period", label: "Period" },
         { key: "status", label: "Status" },
         { key: "targetKg", label: "Target kg", render: (row) => number(row.targetKg) },
-        { key: "itemCount", label: "Items", render: (row) => number(row.itemCount) }
+        { key: "itemCount", label: "Items", render: (row) => number(row.itemCount) },
+        ...(onDelete ? [{
+          key: "actions", label: "", render: (row: TargetRow) => (
+            TARGET_DELETABLE_STATUSES.includes(row.status) ? (
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50"
+                onClick={(e) => { e.stopPropagation(); onDelete(row); }}
+                title="Delete target"
+              >
+                <Trash2 className="h-3.5 w-3.5" /> Delete
+              </button>
+            ) : (
+              <span className="text-xs text-ink/35" title="Only DRAFT or SUBMITTED targets can be deleted">—</span>
+            )
+          )
+        }] : [])
       ]}
     />
   );
@@ -193,13 +215,35 @@ export function MarketTargetListPage() {
   const [rows, setRows] = useState<TargetRow[]>(() => getCachedFirst<ApiEnvelope<TargetRow[]>>("/market-planning/targets")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/market-planning/targets"));
   const [loadError, setLoadError] = useState("");
-  useEffect(() => {
+  const [deleteTarget, setDeleteTarget] = useState<TargetRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+
+  function load() {
     setLoadError("");
     apiFetch<ApiEnvelope<TargetRow[]>>("/market-planning/targets")
       .then((res) => { const fresh = res.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
       .finally(() => setLoading(false));
-  }, []);
+  }
+  useEffect(load, []);
+
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await apiFetch(`/market-planning/targets/${deleteTarget.id}`, { method: "DELETE" });
+      invalidateCache("/market-planning/targets", true);
+      setDeleteTarget(null);
+      load();
+    } catch (err: any) {
+      setDeleteError(err?.message ?? "Failed to delete target.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <>
       <Header title="Market Targets" subtitle="Weekly and monthly targets that become approved feed production plans." />
@@ -207,7 +251,17 @@ export function MarketTargetListPage() {
         <Link className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" href="/market-planning/targets/create-weekly"><Plus className="h-4 w-4" /> Weekly target</Link>
         <Link className="inline-flex min-h-11 items-center gap-2 rounded-md border border-line px-4 text-sm font-semibold hover:bg-field" href="/market-planning/targets/create-monthly"><Plus className="h-4 w-4" /> Monthly target</Link>
       </div>
-      <TargetTable rows={rows} loading={loading} />
+      {deleteError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{deleteError}</p>}
+      <TargetTable rows={rows} loading={loading} onDelete={(row) => { setDeleteError(""); setDeleteTarget(row); }} />
+      <ConfirmModal
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={confirmDelete}
+        loading={deleting}
+        title="Delete market target?"
+        message={`This will permanently remove "${deleteTarget?.title}" (${deleteTarget?.targetNumber}). This can't be undone.`}
+        confirmLabel="Delete target"
+      />
     </>
   );
 }
@@ -277,26 +331,126 @@ export function CreateMarketTargetPage({ period }: { period: "WEEKLY" | "MONTHLY
   );
 }
 
+// Mirrors the backend guard exactly (market-planning.service.ts's
+// updateTarget/deleteTarget): editing is DRAFT-only, delete allowed for
+// DRAFT and SUBMITTED — once APPROVED, production plans/MRP/recommendations
+// already depend on the target's values.
+const TARGET_EDITABLE_STATUSES = ["DRAFT"];
+const TARGET_DELETABLE_STATUSES_DETAIL = ["DRAFT", "SUBMITTED"];
+
 export function MarketTargetDetailsPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const { options, optionsError } = useOptions();
   const [target, setTarget] = useState<TargetDetail | null>(() => getCachedFirst<ApiEnvelope<TargetDetail>>(`/market-planning/targets/${params.id}`)?.data ?? null);
   const [approve, setApprove] = useState({ productionSiteId: "", centralWarehouseId: "", notes: "" });
   const [loadError, setLoadError] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [editForm, setEditForm] = useState({ title: "", periodStart: "", periodEnd: "", notes: "" });
+  const [editError, setEditError] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+
   async function load() {
     setLoadError("");
     const res = await apiFetch<ApiEnvelope<TargetDetail>>(`/market-planning/targets/${params.id}`);
     setTarget(res.data);
   }
   useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, [params.id]);
+
   async function approveTarget(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     await apiFetch(`/market-planning/targets/${params.id}/approve`, { method: "PATCH", body: JSON.stringify(approve) });
     await load();
   }
+
+  function startEdit() {
+    if (!target) return;
+    setEditForm({
+      title: target.title,
+      periodStart: target.periodStart?.slice(0, 10) ?? "",
+      periodEnd: target.periodEnd?.slice(0, 10) ?? "",
+      notes: (target as unknown as { notes?: string }).notes ?? ""
+    });
+    setEditError("");
+    setEditing(true);
+  }
+
+  async function saveEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSavingEdit(true);
+    setEditError("");
+    try {
+      await apiFetch(`/market-planning/targets/${params.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ title: editForm.title, periodStart: editForm.periodStart, periodEnd: editForm.periodEnd, notes: editForm.notes || undefined })
+      });
+      invalidateCache("/market-planning/targets", true);
+      setEditing(false);
+      await load();
+    } catch (err: any) {
+      setEditError(err?.message ?? "Failed to save changes.");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function doDelete() {
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await apiFetch(`/market-planning/targets/${params.id}`, { method: "DELETE" });
+      invalidateCache("/market-planning/targets", true);
+      router.push("/market-planning/targets");
+    } catch (err: any) {
+      setDeleteError(err?.message ?? "Failed to delete target.");
+      setDeleting(false);
+      setConfirmDelete(false);
+    }
+  }
+
+  const canEdit = !!target && TARGET_EDITABLE_STATUSES.includes(target.status);
+  const canDelete = !!target && TARGET_DELETABLE_STATUSES_DETAIL.includes(target.status);
+
   return (
     <>
-      <Header title={target?.targetNumber ?? "Market Target"} subtitle={target?.title ?? "Target details, production plan, MRP, recommendations, and approval trail."} />
+      <div className="mb-1 flex flex-wrap items-start justify-between gap-3">
+        <Header title={target?.targetNumber ?? "Market Target"} subtitle={target?.title ?? "Target details, production plan, MRP, recommendations, and approval trail."} />
+        <div className="flex gap-2">
+          {canEdit && (
+            <button type="button" onClick={startEdit} className="inline-flex min-h-10 items-center gap-2 rounded-md border border-line px-3 text-sm font-semibold hover:bg-field">
+              <Pencil className="h-4 w-4" /> Edit
+            </button>
+          )}
+          {canDelete && (
+            <button type="button" onClick={() => { setDeleteError(""); setConfirmDelete(true); }} className="inline-flex min-h-10 items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 text-sm font-semibold text-red-600 hover:bg-red-100">
+              <Trash2 className="h-4 w-4" /> Delete
+            </button>
+          )}
+        </div>
+      </div>
+      {!canEdit && !canDelete && target && (
+        <p className="mb-4 text-xs text-ink/45">This target is {target.status.toLowerCase()} — editing and deleting are only available for DRAFT (or SUBMITTED, for delete) targets.</p>
+      )}
+      {deleteError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{deleteError}</p>}
+
+      {editing && (
+        <form onSubmit={saveEdit} className="app-card mb-6 grid gap-4 p-5 md:grid-cols-2">
+          <h3 className="text-sm font-bold text-ink md:col-span-2">Edit target</h3>
+          {editError && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 md:col-span-2">{editError}</p>}
+          <label className="grid gap-1 text-sm font-semibold md:col-span-2">Title<input required className={inputClass} value={editForm.title} onChange={(e) => setEditForm({ ...editForm, title: e.target.value })} /></label>
+          <label className="grid gap-1 text-sm font-semibold">Start date<input required className={inputClass} type="date" value={editForm.periodStart} onChange={(e) => setEditForm({ ...editForm, periodStart: e.target.value })} /></label>
+          <label className="grid gap-1 text-sm font-semibold">End date<input required className={inputClass} type="date" value={editForm.periodEnd} onChange={(e) => setEditForm({ ...editForm, periodEnd: e.target.value })} /></label>
+          <label className="grid gap-1 text-sm font-semibold md:col-span-2">Notes<textarea className="min-h-20 rounded-md border border-line px-3 py-2" value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} /></label>
+          <div className="flex gap-3 md:col-span-2">
+            <button className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" type="submit" disabled={savingEdit}>{savingEdit ? "Saving…" : "Save changes"}</button>
+            <button type="button" className="app-button-secondary" onClick={() => setEditing(false)} disabled={savingEdit}>Cancel</button>
+          </div>
+        </form>
+      )}
+
       <section className="mb-6 grid gap-4 md:grid-cols-4">
         <Card label="Status" value={target?.status ?? "-"} icon={CircleCheckBig} />
         <Card label="Target kg" value={number(target?.items?.reduce((s, i) => s + Number(i.targetQuantityKg ?? 0), 0))} icon={TrendingUp} />
@@ -313,6 +467,15 @@ export function MarketTargetDetailsPage() {
         <div><h3 className="mb-3 text-lg font-semibold">Target items</h3><DataTable<TargetItem> rows={target?.items ?? []} empty="No target items." columns={[{ key: "productId", label: "Product", render: (row) => row.product?.name ?? row.productId }, { key: "baseQuantity", label: "Base bags", render: (row) => number(row.baseQuantity) }, { key: "adjustmentPercent", label: "Adjustment %", render: (row) => number(row.adjustmentPercent) }, { key: "targetQuantityKg", label: "Target kg", render: (row) => number(row.targetQuantityKg) }, { key: "approvalStatus", label: "Status" }]} /></div>
         <div><h3 className="mb-3 text-lg font-semibold">Production plans</h3><PlanTable rows={target?.productionPlans ?? []} /></div>
       </section>
+      <ConfirmModal
+        open={confirmDelete}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={doDelete}
+        loading={deleting}
+        title="Delete market target?"
+        message={`This will permanently remove "${target?.title}" (${target?.targetNumber}). This can't be undone.`}
+        confirmLabel="Delete target"
+      />
     </>
   );
 }
