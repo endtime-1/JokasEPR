@@ -2,12 +2,12 @@
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { CircleAlert, CircleArrowDown, CircleArrowUp, BadgeDollarSign, ChartBar, BookOpen, Building2, CircleCheck, ChevronRight, DollarSign, FileChartColumn, FileText, Landmark, PiggyBank, TrendingDown, TrendingUp, Users, Wallet, CircleX } from "lucide-react";
+import { CircleAlert, CircleArrowDown, CircleArrowUp, BadgeDollarSign, ChartBar, BookOpen, Building2, CircleCheck, ChevronRight, DollarSign, FileChartColumn, FileText, Landmark, PiggyBank, Pencil, Trash2, TrendingDown, TrendingUp, Users, Wallet, CircleX } from "lucide-react";
 import { useFinancePageHeader } from "./finance-shell";
 import { DataTable } from "./data-table";
 import { FormField } from "./form-field";
-import { ApiEnvelope, apiFetch, getCached, getCachedFirst, hasCached } from "../lib/api";
-import { Badge, EmptyState, StatusBadge } from "./ui";
+import { ApiEnvelope, apiFetch, getCached, getCachedFirst, hasCached, invalidateCache } from "../lib/api";
+import { Badge, ConfirmModal, EmptyState, Modal, StatusBadge } from "./ui";
 import { useAuth } from "./auth-context";
 
 // ─── Shared Types ────────────────────────────────────────────────────────────
@@ -1322,6 +1322,13 @@ export function BankAccountsPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState("");
+  const [editAccount, setEditAccount] = useState<Record<string, unknown> | null>(null);
+  const [editForm, setEditForm] = useState({ accountName: "", bankName: "", branchName: "", notes: "", isActive: true });
+  const [editError, setEditError] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deleteAccount, setDeleteAccount] = useState<Record<string, unknown> | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   function load() {
     setLoadError("");
@@ -1348,11 +1355,57 @@ export function BankAccountsPage() {
     }
   }
 
+  function startEdit(a: Record<string, unknown>) {
+    setEditAccount(a);
+    setEditForm({
+      accountName: (a.accountName as string) ?? "",
+      bankName: (a.bankName as string) ?? "",
+      branchName: (a.branchName as string) ?? "",
+      notes: (a.notes as string) ?? "",
+      isActive: (a.isActive as boolean) ?? true
+    });
+    setEditError("");
+  }
+
+  async function submitEdit(e: FormEvent) {
+    e.preventDefault();
+    if (!editAccount) return;
+    setSavingEdit(true);
+    setEditError("");
+    try {
+      await apiFetch(`/finance/bank-accounts/${editAccount.id}`, { method: "PATCH", body: JSON.stringify(editForm) });
+      invalidateCache("/finance/bank-accounts", true);
+      setEditAccount(null);
+      load();
+    } catch (err: unknown) {
+      setEditError(err instanceof Error ? err.message : "Failed to update bank account");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!deleteAccount) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await apiFetch(`/finance/bank-accounts/${deleteAccount.id}`, { method: "DELETE" });
+      invalidateCache("/finance/bank-accounts", true);
+      setDeleteAccount(null);
+      load();
+    } catch (err: unknown) {
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete bank account");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <>
       <div className="mb-4 flex justify-end">
         <button className={btnPrimary} onClick={() => setShowForm(!showForm)}><Building2 className="h-4 w-4" /> {showForm ? "Cancel" : "Add Bank Account"}</button>
       </div>
+      {deleteError && <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{deleteError}</p>}
       {showForm && (
         <form onSubmit={handleSubmit} className="mb-6 rounded-md border border-line bg-white p-6 shadow-panel">
           <h3 className="mb-4 text-lg font-semibold">New Bank Account</h3>
@@ -1384,14 +1437,50 @@ export function BankAccountsPage() {
               </div>
               <StatusBadge status={(a.isActive as boolean) ? "ACTIVE" : "INACTIVE"} />
             </div>
-            <div className="mt-4 border-t border-line pt-3">
-              <p className="text-xs text-ink/60">Current Balance</p>
-              <strong className="text-2xl font-semibold text-brand">{money(a.currentBalance)}</strong>
+            <div className="mt-4 flex items-end justify-between border-t border-line pt-3">
+              <div>
+                <p className="text-xs text-ink/60">Current Balance</p>
+                <strong className="text-2xl font-semibold text-brand">{money(a.currentBalance)}</strong>
+              </div>
+              <div className="flex items-center gap-1">
+                <button type="button" onClick={() => startEdit(a)} className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-brand hover:bg-field" title="Edit bank account">
+                  <Pencil className="h-3.5 w-3.5" /> Edit
+                </button>
+                <button type="button" onClick={() => { setDeleteError(""); setDeleteAccount(a); }} className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50" title="Delete bank account">
+                  <Trash2 className="h-3.5 w-3.5" /> Delete
+                </button>
+              </div>
             </div>
           </div>
         ))}
         {accounts.length === 0 && <p className="col-span-full py-8 text-center text-sm text-ink/50">No bank accounts configured.</p>}
       </div>
+      <Modal open={!!editAccount} onClose={() => setEditAccount(null)} title="Edit Bank Account" size="sm">
+        <form onSubmit={submitEdit} className="space-y-4">
+          {editError && <p className="rounded-md bg-red-50 p-3 text-sm text-red-700">{editError}</p>}
+          <FormField label="Account Name *"><input className={inputClass} value={editForm.accountName} onChange={(e) => setEditForm({ ...editForm, accountName: e.target.value })} required /></FormField>
+          <FormField label="Bank Name *"><input className={inputClass} value={editForm.bankName} onChange={(e) => setEditForm({ ...editForm, bankName: e.target.value })} required /></FormField>
+          <FormField label="Branch Name"><input className={inputClass} value={editForm.branchName} onChange={(e) => setEditForm({ ...editForm, branchName: e.target.value })} /></FormField>
+          <FormField label="Notes"><textarea className={inputClass + " min-h-16"} value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} /></FormField>
+          <label className="flex items-center gap-2 text-sm font-medium">
+            <input type="checkbox" checked={editForm.isActive} onChange={(e) => setEditForm({ ...editForm, isActive: e.target.checked })} />
+            Active
+          </label>
+          <div className="flex justify-end gap-3">
+            <button type="button" className="app-button-secondary" onClick={() => setEditAccount(null)} disabled={savingEdit}>Cancel</button>
+            <button type="submit" className={btnPrimary} disabled={savingEdit}>{savingEdit ? "Saving…" : "Save changes"}</button>
+          </div>
+        </form>
+      </Modal>
+      <ConfirmModal
+        open={!!deleteAccount}
+        onClose={() => setDeleteAccount(null)}
+        onConfirm={confirmDelete}
+        loading={deleting}
+        title="Delete bank account?"
+        message={`This will permanently remove "${deleteAccount?.accountName}". This can't be undone.`}
+        confirmLabel="Delete account"
+      />
     </>
   );
 }
@@ -1934,6 +2023,13 @@ export function ExpenseCategoriesPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState("");
+  const [editCategory, setEditCategory] = useState<Record<string, unknown> | null>(null);
+  const [editForm, setEditForm] = useState({ name: "", description: "", accountId: "", isActive: true });
+  const [editError, setEditError] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deleteCategory, setDeleteCategory] = useState<Record<string, unknown> | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   function load() {
     setLoadError("");
@@ -1962,6 +2058,53 @@ export function ExpenseCategoriesPage() {
     } finally { setLoading(false); }
   }
 
+  function startEdit(c: Record<string, unknown>) {
+    setEditCategory(c);
+    setEditForm({
+      name: (c.name as string) ?? "",
+      description: (c.description as string) ?? "",
+      accountId: (c.accountId as string) ?? ((c.account as Record<string, unknown>)?.id as string) ?? "",
+      isActive: (c.isActive as boolean) ?? true
+    });
+    setEditError("");
+  }
+
+  async function submitEdit(e: FormEvent) {
+    e.preventDefault();
+    if (!editCategory) return;
+    setSavingEdit(true);
+    setEditError("");
+    try {
+      await apiFetch(`/finance/expense-categories/${editCategory.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ ...editForm, accountId: editForm.accountId || undefined })
+      });
+      invalidateCache("/finance/expense-categories", true);
+      setEditCategory(null);
+      load();
+    } catch (err: unknown) {
+      setEditError(err instanceof Error ? err.message : "Failed to update category");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!deleteCategory) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await apiFetch(`/finance/expense-categories/${deleteCategory.id}`, { method: "DELETE" });
+      invalidateCache("/finance/expense-categories", true);
+      setDeleteCategory(null);
+      load();
+    } catch (err: unknown) {
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete category");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <>
       <div className="mb-4 flex justify-end">
@@ -1969,6 +2112,7 @@ export function ExpenseCategoriesPage() {
           <BadgeDollarSign className="h-4 w-4" /> {showForm ? "Cancel" : "New Category"}
         </button>
       </div>
+      {deleteError && <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{deleteError}</p>}
       {showForm && (
         <form onSubmit={handleSubmit} className="mb-6 rounded-md border border-line bg-white p-6 shadow-panel">
           <h3 className="mb-4 text-base font-semibold">New Expense Category</h3>
@@ -2003,7 +2147,7 @@ export function ExpenseCategoriesPage() {
           />
         ) : (
           <table className="w-full text-sm">
-            <thead><tr className="border-b border-line text-left text-xs font-semibold uppercase tracking-wide text-ink/50">{["Code", "Name", "GL Account", "Description"].map((h) => <th key={h} className="px-4 py-3">{h}</th>)}</tr></thead>
+            <thead><tr className="border-b border-line text-left text-xs font-semibold uppercase tracking-wide text-ink/50">{["Code", "Name", "GL Account", "Description", "Actions"].map((h) => <th key={h} className="px-4 py-3">{h}</th>)}</tr></thead>
             <tbody className="divide-y divide-line/50">
               {categories.map((c) => (
                 <tr key={c.id as string} className="hover:bg-field/60">
@@ -2011,19 +2155,55 @@ export function ExpenseCategoriesPage() {
                   <td className="px-4 py-3 font-medium">{c.name as string}</td>
                   <td className="px-4 py-3 text-ink/60">{((c.account as Record<string, unknown>)?.name as string) ?? "—"}</td>
                   <td className="px-4 py-3 text-ink/55">{(c.description as string) ?? "—"}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex gap-3">
+                      <button type="button" onClick={() => startEdit(c)} className="text-xs font-semibold text-brand hover:underline">Edit</button>
+                      <button type="button" onClick={() => { setDeleteError(""); setDeleteCategory(c); }} className="text-xs font-semibold text-red-600 hover:underline">Delete</button>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
       </div>
+      <Modal open={!!editCategory} onClose={() => setEditCategory(null)} title="Edit Expense Category" size="sm">
+        <form onSubmit={submitEdit} className="space-y-4">
+          {editError && <p className="rounded-md bg-red-50 p-3 text-sm text-red-700">{editError}</p>}
+          <FormField label="Name *"><input className={inputClass} value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} required maxLength={120} /></FormField>
+          <FormField label="GL Account">
+            <select className={selectClass} value={editForm.accountId} onChange={(e) => setEditForm({ ...editForm, accountId: e.target.value })}>
+              <option value="">— None —</option>
+              {accounts.map((a) => <option key={a.id} value={a.id}>{a.code} — {a.name}</option>)}
+            </select>
+          </FormField>
+          <FormField label="Description"><input className={inputClass} value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} maxLength={240} /></FormField>
+          <label className="flex items-center gap-2 text-sm font-medium">
+            <input type="checkbox" checked={editForm.isActive} onChange={(e) => setEditForm({ ...editForm, isActive: e.target.checked })} />
+            Active
+          </label>
+          <div className="flex justify-end gap-3">
+            <button type="button" className="app-button-secondary" onClick={() => setEditCategory(null)} disabled={savingEdit}>Cancel</button>
+            <button type="submit" className={btnPrimary} disabled={savingEdit}>{savingEdit ? "Saving…" : "Save changes"}</button>
+          </div>
+        </form>
+      </Modal>
+      <ConfirmModal
+        open={!!deleteCategory}
+        onClose={() => setDeleteCategory(null)}
+        onConfirm={confirmDelete}
+        loading={deleting}
+        title="Delete expense category?"
+        message={`This will permanently remove "${deleteCategory?.name}". This can't be undone.`}
+        confirmLabel="Delete category"
+      />
     </>
   );
 }
 
 // ─── Chart of Accounts ────────────────────────────────────────────────────────
 
-type AccountRow = { id: string; code: string; name: string; type: string; description?: string | null };
+type AccountRow = { id: string; code: string; name: string; type: string; description?: string | null; isActive?: boolean };
 
 const ACCOUNT_TYPE_META: Record<string, { label: string; color: string; bg: string }> = {
   ASSET:     { label: "Assets",      color: "text-blue-700",   bg: "bg-blue-50"   },
@@ -2045,6 +2225,13 @@ export function ChartOfAccountsPage() {
   const [formErr, setFormErr] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [loadError, setLoadError] = useState("");
+  const [editAccount, setEditAccount] = useState<AccountRow | null>(null);
+  const [editForm, setEditForm] = useState({ name: "", description: "", isActive: true });
+  const [editError, setEditError] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deleteAccount, setDeleteAccount] = useState<AccountRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   useEffect(() => {
     setLoadError("");
@@ -2075,6 +2262,45 @@ export function ChartOfAccountsPage() {
     }
   }
 
+  function startEdit(a: AccountRow) {
+    setEditAccount(a);
+    setEditForm({ name: a.name ?? "", description: a.description ?? "", isActive: a.isActive ?? true });
+    setEditError("");
+  }
+
+  async function submitEdit(e: FormEvent) {
+    e.preventDefault();
+    if (!editAccount) return;
+    setSavingEdit(true);
+    setEditError("");
+    try {
+      await apiFetch(`/finance/accounts/${editAccount.id}`, { method: "PATCH", body: JSON.stringify(editForm) });
+      invalidateCache("/finance/accounts", true);
+      setEditAccount(null);
+      setRefresh((r) => r + 1);
+    } catch (err: unknown) {
+      setEditError(err instanceof Error ? err.message : "Failed to update account");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!deleteAccount) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await apiFetch(`/finance/accounts/${deleteAccount.id}`, { method: "DELETE" });
+      invalidateCache("/finance/accounts", true);
+      setDeleteAccount(null);
+      setRefresh((r) => r + 1);
+    } catch (err: unknown) {
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete account");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   const grouped = (ACCOUNT_TYPES as readonly string[]).reduce<Record<string, AccountRow[]>>((acc, t) => {
     acc[t] = accounts.filter((a) => a.type === t);
     return acc;
@@ -2094,6 +2320,8 @@ export function ChartOfAccountsPage() {
           <BookOpen className="h-4 w-4" /> {showForm ? "Cancel" : "New Account"}
         </button>
       </div>
+
+      {deleteError && <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{deleteError}</p>}
 
       {showForm && (
         <form onSubmit={handleSubmit} className="mb-6 rounded-md border border-line bg-white p-6 shadow-panel">
@@ -2139,6 +2367,7 @@ export function ChartOfAccountsPage() {
                       <th className="w-28 px-4 py-2.5">Code</th>
                       <th className="px-4 py-2.5">Name</th>
                       <th className="hidden px-4 py-2.5 md:table-cell">Description</th>
+                      <th className="px-4 py-2.5">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-line/50">
@@ -2149,6 +2378,12 @@ export function ChartOfAccountsPage() {
                         </td>
                         <td className="px-4 py-2.5 font-medium">{a.name}</td>
                         <td className="hidden px-4 py-2.5 text-ink/55 md:table-cell">{a.description ?? "—"}</td>
+                        <td className="px-4 py-2.5">
+                          <div className="flex gap-3">
+                            <button type="button" onClick={() => startEdit(a)} className="text-xs font-semibold text-brand hover:underline">Edit</button>
+                            <button type="button" onClick={() => { setDeleteError(""); setDeleteAccount(a); }} className="text-xs font-semibold text-red-600 hover:underline">Delete</button>
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -2168,6 +2403,30 @@ export function ChartOfAccountsPage() {
           </div>
         )}
       </div>
+      <Modal open={!!editAccount} onClose={() => setEditAccount(null)} title="Edit Account" size="sm">
+        <form onSubmit={submitEdit} className="space-y-4">
+          {editError && <p className="rounded-md bg-red-50 p-3 text-sm text-red-700">{editError}</p>}
+          <FormField label="Name *"><input className={inputClass} value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} required maxLength={120} /></FormField>
+          <FormField label="Description"><input className={inputClass} value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} maxLength={240} /></FormField>
+          <label className="flex items-center gap-2 text-sm font-medium">
+            <input type="checkbox" checked={editForm.isActive} onChange={(e) => setEditForm({ ...editForm, isActive: e.target.checked })} />
+            Active
+          </label>
+          <div className="flex justify-end gap-3">
+            <button type="button" className="app-button-secondary" onClick={() => setEditAccount(null)} disabled={savingEdit}>Cancel</button>
+            <button type="submit" className={btnPrimary} disabled={savingEdit}>{savingEdit ? "Saving…" : "Save changes"}</button>
+          </div>
+        </form>
+      </Modal>
+      <ConfirmModal
+        open={!!deleteAccount}
+        onClose={() => setDeleteAccount(null)}
+        onConfirm={confirmDelete}
+        loading={deleting}
+        title="Delete account?"
+        message={`This will permanently remove "${deleteAccount?.name}" (${deleteAccount?.code}). This can't be undone.`}
+        confirmLabel="Delete account"
+      />
     </>
   );
 }

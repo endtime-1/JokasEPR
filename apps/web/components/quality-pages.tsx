@@ -8,9 +8,9 @@ import {
   FileText, FlaskConical, Plus, RefreshCw, ShieldCheck,
   ShieldX, TrendingUp, CircleX,
 } from "lucide-react";
-import { ApiEnvelope, apiFetch, getCached, getCachedFirst, hasCached } from "../lib/api";
+import { ApiEnvelope, apiFetch, getCached, getCachedFirst, hasCached, invalidateCache } from "../lib/api";
 import { DataTable } from "./data-table";
-import { StatusBadge } from "./ui";
+import { ConfirmModal, Modal, StatusBadge } from "./ui";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -376,6 +376,13 @@ export function QualityTemplatesPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(!hasCached("/quality/templates"));
   const [loadError, setLoadError] = useState("");
+  const [editTemplate, setEditTemplate] = useState<Template | null>(null);
+  const [editForm, setEditForm] = useState({ name: "", description: "", isActive: true });
+  const [editError, setEditError] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deleteTemplate, setDeleteTemplate] = useState<Template | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   function load() {
     setLoadError("");
@@ -388,6 +395,43 @@ export function QualityTemplatesPage() {
 
   const f = (k: string) => (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm((p) => ({ ...p, [k]: e.target.value }));
+
+  function startEdit(t: Template) {
+    setEditTemplate(t);
+    setEditForm({ name: t.name, description: t.description ?? "", isActive: t.isActive });
+    setEditError("");
+  }
+
+  async function submitEdit(e: FormEvent) {
+    e.preventDefault();
+    if (!editTemplate) return;
+    setSavingEdit(true); setEditError("");
+    try {
+      await apiFetch(`/quality/templates/${editTemplate.id}`, { method: "PATCH", body: JSON.stringify(editForm) });
+      invalidateCache("/quality/templates", true);
+      setEditTemplate(null);
+      load();
+    } catch (err: unknown) {
+      setEditError(err instanceof Error ? err.message : "Failed to update template");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!deleteTemplate) return;
+    setDeleting(true); setDeleteError("");
+    try {
+      await apiFetch(`/quality/templates/${deleteTemplate.id}`, { method: "DELETE" });
+      invalidateCache("/quality/templates", true);
+      setDeleteTemplate(null);
+      load();
+    } catch (err: unknown) {
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete template");
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   function addParam() {
     setParams((p) => [...p, { paramCode: "", name: "", paramType: "NUMERIC", unit: "", minValue: "", maxValue: "", isRequired: true }]);
@@ -434,6 +478,8 @@ export function QualityTemplatesPage() {
         }
       />
       <QualityNav />
+
+      {deleteError && <div className="mb-4 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{deleteError}</div>}
 
       {showCreate && (
         <div className="mb-6 rounded-2xl border border-line bg-white p-6 shadow-panel">
@@ -511,12 +557,42 @@ export function QualityTemplatesPage() {
             { key: "params", label: "Parameters", render: (r) => (r._count as { parameters: number })?.parameters ?? 0 },
             { key: "checks", label: "Checks Used", render: (r) => (r._count as { checks: number })?.checks ?? 0 },
             { key: "isActive", label: "Active", render: (r) => r.isActive ? <span className="font-semibold text-emerald-600">Yes</span> : <span className="text-ink/40">No</span> },
+            { key: "actions", label: "", render: (r) => (
+              <div className="flex gap-3">
+                <button type="button" onClick={() => startEdit(r as unknown as Template)} className="text-xs font-medium text-brand hover:underline">Edit</button>
+                <button type="button" onClick={() => { setDeleteError(""); setDeleteTemplate(r as unknown as Template); }} className="text-xs font-medium text-red-600 hover:underline">Delete</button>
+              </div>
+            ) },
           ]}
           rows={rows as Record<string, unknown>[]}
           empty="No templates yet"
           loading={loading}
         />
       </div>
+      <Modal open={!!editTemplate} onClose={() => setEditTemplate(null)} title="Edit Template" size="sm">
+        <form onSubmit={submitEdit} className="space-y-4">
+          {editError && <div className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{editError}</div>}
+          <div><FormLabel>Name *</FormLabel><input required value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} className={inputCls} /></div>
+          <div><FormLabel>Description</FormLabel><textarea value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} rows={2} className={inputCls} /></div>
+          <label className="flex cursor-pointer items-center gap-1.5 text-xs font-medium text-ink">
+            <input type="checkbox" checked={editForm.isActive} onChange={(e) => setEditForm({ ...editForm, isActive: e.target.checked })} className="accent-brand" />
+            Active
+          </label>
+          <div className="flex justify-end gap-3">
+            <button type="button" className="app-button-secondary" onClick={() => setEditTemplate(null)} disabled={savingEdit}>Cancel</button>
+            <button type="submit" disabled={savingEdit} className="app-button-primary disabled:opacity-50">{savingEdit ? "Saving..." : "Save changes"}</button>
+          </div>
+        </form>
+      </Modal>
+      <ConfirmModal
+        open={!!deleteTemplate}
+        onClose={() => setDeleteTemplate(null)}
+        onConfirm={confirmDelete}
+        loading={deleting}
+        title="Delete template?"
+        message={`This will permanently remove "${deleteTemplate?.name}" (${deleteTemplate?.code}). This can't be undone.`}
+        confirmLabel="Delete template"
+      />
     </>
   );
 }
@@ -1253,10 +1329,28 @@ export function LabReportsPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(!hasCached("/quality/lab-reports"));
   const [loadError, setLoadError] = useState("");
+  const [deleteReport, setDeleteReport] = useState<LabReport | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   function load() {
     setLoadError("");
     apiFetch<ApiEnvelope<LabReport[]>>("/quality/lab-reports").then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); }).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
+  }
+
+  async function confirmDelete() {
+    if (!deleteReport) return;
+    setDeleting(true); setDeleteError("");
+    try {
+      await apiFetch(`/quality/lab-reports/${deleteReport.id}`, { method: "DELETE" });
+      invalidateCache("/quality/lab-reports", true);
+      setDeleteReport(null);
+      load();
+    } catch (err: unknown) {
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete lab report");
+    } finally {
+      setDeleting(false);
+    }
   }
 
   useEffect(() => {
@@ -1290,6 +1384,8 @@ export function LabReportsPage() {
         }
       />
       <QualityNav />
+
+      {deleteError && <div className="mb-4 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{deleteError}</div>}
 
       {showForm && (
         <div className="mb-6 rounded-2xl border border-line bg-white p-6 shadow-panel">
@@ -1327,12 +1423,24 @@ export function LabReportsPage() {
             { key: "reportDate", label: "Date", render: (r) => fmt(r.reportDate as string) },
             { key: "uploadedBy", label: "Uploaded By", render: (r) => (r.uploadedBy as { fullName: string } | undefined)?.fullName ?? "—" },
             { key: "summary", label: "Summary", render: (r) => <span className="block max-w-xs truncate">{String(r.summary ?? "—")}</span> },
+            { key: "actions", label: "", render: (r) => (
+              <button type="button" onClick={() => { setDeleteError(""); setDeleteReport(r as unknown as LabReport); }} className="text-xs font-medium text-red-600 hover:underline">Delete</button>
+            ) },
           ]}
           rows={rows as Record<string, unknown>[]}
           empty="No lab reports uploaded"
           loading={loading}
         />
       </div>
+      <ConfirmModal
+        open={!!deleteReport}
+        onClose={() => setDeleteReport(null)}
+        onConfirm={confirmDelete}
+        loading={deleting}
+        title="Delete lab report?"
+        message={`This will permanently remove report "${deleteReport?.reportNumber}" from "${deleteReport?.labName}". This can't be undone.`}
+        confirmLabel="Delete report"
+      />
     </>
   );
 }
@@ -1359,6 +1467,13 @@ export function CorrectiveActionsPage() {
   const [verificationNotes, setVerificationNotes] = useState("");
   const [loading, setLoading] = useState(!hasCached("/quality/corrective-actions"));
   const [loadError, setLoadError] = useState("");
+  const [editAction, setEditAction] = useState<(CorrectiveAction & { description?: string; rootCause?: string; preventiveMeasure?: string; assignedToId?: string }) | null>(null);
+  const [editForm, setEditForm] = useState({ status: "", description: "", rootCause: "", preventiveMeasure: "", assignedToId: "", dueDate: "" });
+  const [editError, setEditError] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deleteAction, setDeleteAction] = useState<CorrectiveAction | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   function load() {
     setLoadError("");
@@ -1396,6 +1511,60 @@ export function CorrectiveActionsPage() {
       .then(() => { setVerifyId(""); setVerificationNotes(""); load(); }).catch(() => undefined);
   }
 
+  function startEdit(r: CorrectiveAction & { description?: string; rootCause?: string; preventiveMeasure?: string; assignedToId?: string }) {
+    setEditAction(r);
+    setEditForm({
+      status: r.status,
+      description: r.description ?? "",
+      rootCause: r.rootCause ?? "",
+      preventiveMeasure: r.preventiveMeasure ?? "",
+      assignedToId: r.assignedToId ?? "",
+      dueDate: r.dueDate ? r.dueDate.slice(0, 10) : "",
+    });
+    setEditError("");
+  }
+
+  async function submitEdit(e: FormEvent) {
+    e.preventDefault();
+    if (!editAction) return;
+    setSavingEdit(true); setEditError("");
+    try {
+      await apiFetch(`/quality/corrective-actions/${editAction.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          status: editForm.status,
+          description: editForm.description,
+          rootCause: editForm.rootCause || undefined,
+          preventiveMeasure: editForm.preventiveMeasure || undefined,
+          assignedToId: editForm.assignedToId || undefined,
+          dueDate: editForm.dueDate || undefined,
+        }),
+      });
+      invalidateCache("/quality/corrective-actions", true);
+      setEditAction(null);
+      load();
+    } catch (err: unknown) {
+      setEditError(err instanceof Error ? err.message : "Failed to update corrective action");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!deleteAction) return;
+    setDeleting(true); setDeleteError("");
+    try {
+      await apiFetch(`/quality/corrective-actions/${deleteAction.id}`, { method: "DELETE" });
+      invalidateCache("/quality/corrective-actions", true);
+      setDeleteAction(null);
+      load();
+    } catch (err: unknown) {
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete corrective action");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   const today = new Date();
   const overdueCount = rows.filter((r) => r.dueDate && new Date(r.dueDate) < today && !["RESOLVED", "CLOSED", "CANCELLED"].includes(r.status)).length;
 
@@ -1412,6 +1581,8 @@ export function CorrectiveActionsPage() {
         }
       />
       <QualityNav />
+
+      {deleteError && <div className="mb-4 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{deleteError}</div>}
 
       {overdueCount > 0 && (
         <div className="mb-5 rounded-2xl border border-red-200 border-l-[3px] border-l-red-500 bg-white p-4 shadow-card">
@@ -1492,17 +1663,53 @@ export function CorrectiveActionsPage() {
             { key: "assignedTo", label: "Assigned To", render: (r) => (r.assignedTo as { fullName: string } | undefined)?.fullName ?? "—" },
             { key: "dueDate", label: "Due", render: (r) => fmt(r.dueDate as string) },
             { key: "status", label: "Status", render: (r) => <StatusBadge status={r.status as string} /> },
-            { key: "actions", label: "", render: (r) => {
-              if (r.status === "OPEN" || r.status === "IN_PROGRESS") return <button onClick={() => setResolveId(r.id as string)} className="text-xs font-medium text-brand hover:underline">Resolve</button>;
-              if (r.status === "RESOLVED") return <button onClick={() => setVerifyId(r.id as string)} className="text-xs font-medium text-emerald-600 hover:underline">Verify</button>;
-              return null;
-            } },
+            { key: "actions", label: "", render: (r) => (
+              <div className="flex flex-wrap gap-3">
+                {(r.status === "OPEN" || r.status === "IN_PROGRESS") && <button onClick={() => setResolveId(r.id as string)} className="text-xs font-medium text-brand hover:underline">Resolve</button>}
+                {r.status === "RESOLVED" && <button onClick={() => setVerifyId(r.id as string)} className="text-xs font-medium text-emerald-600 hover:underline">Verify</button>}
+                <button type="button" onClick={() => startEdit(r as unknown as CorrectiveAction & { description?: string; rootCause?: string; preventiveMeasure?: string; assignedToId?: string })} className="text-xs font-medium text-ink/60 hover:underline">Edit</button>
+                {r.status !== "CLOSED" && <button type="button" onClick={() => { setDeleteError(""); setDeleteAction(r as unknown as CorrectiveAction); }} className="text-xs font-medium text-red-600 hover:underline">Delete</button>}
+              </div>
+            ) },
           ]}
           rows={rows as Record<string, unknown>[]}
           empty="No corrective actions"
           loading={loading}
         />
       </div>
+      <Modal open={!!editAction} onClose={() => setEditAction(null)} title="Edit Corrective Action" size="md">
+        <form onSubmit={submitEdit} className="grid gap-4 sm:grid-cols-2">
+          {editError && <div className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700 sm:col-span-2">{editError}</div>}
+          <div className="sm:col-span-2"><FormLabel>Description *</FormLabel><textarea required value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} rows={3} className={inputCls} /></div>
+          <div><FormLabel>Status</FormLabel>
+            <select value={editForm.status} onChange={(e) => setEditForm({ ...editForm, status: e.target.value })} className={inputCls}>
+              {["OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED", "CANCELLED"].map((s) => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
+            </select>
+          </div>
+          <div><FormLabel>Assign To</FormLabel>
+            <select value={editForm.assignedToId} onChange={(e) => setEditForm({ ...editForm, assignedToId: e.target.value })} className={inputCls}>
+              <option value="">— Unassigned —</option>
+              {opts.users.map((u) => <option key={u.id} value={u.id}>{u.fullName}</option>)}
+            </select>
+          </div>
+          <div><FormLabel>Due Date</FormLabel><input type="date" value={editForm.dueDate} onChange={(e) => setEditForm({ ...editForm, dueDate: e.target.value })} className={inputCls} /></div>
+          <div><FormLabel>Root Cause</FormLabel><input value={editForm.rootCause} onChange={(e) => setEditForm({ ...editForm, rootCause: e.target.value })} className={inputCls} /></div>
+          <div className="sm:col-span-2"><FormLabel>Preventive Measure</FormLabel><textarea value={editForm.preventiveMeasure} onChange={(e) => setEditForm({ ...editForm, preventiveMeasure: e.target.value })} rows={2} className={inputCls} /></div>
+          <div className="flex justify-end gap-3 sm:col-span-2">
+            <button type="button" className="app-button-secondary" onClick={() => setEditAction(null)} disabled={savingEdit}>Cancel</button>
+            <button type="submit" disabled={savingEdit} className="app-button-primary disabled:opacity-50">{savingEdit ? "Saving..." : "Save changes"}</button>
+          </div>
+        </form>
+      </Modal>
+      <ConfirmModal
+        open={!!deleteAction}
+        onClose={() => setDeleteAction(null)}
+        onConfirm={confirmDelete}
+        loading={deleting}
+        title="Delete corrective action?"
+        message={`This will permanently remove "${deleteAction?.title}" (${deleteAction?.reference}). This can't be undone.`}
+        confirmLabel="Delete action"
+      />
     </>
   );
 }
