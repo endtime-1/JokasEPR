@@ -486,7 +486,8 @@ export class InventoryService {
       remaining -= take;
     }
     if (remaining > 0) throw new BadRequestException("FIFO batches do not contain enough available stock.");
-    await tx.inventoryItem.update({ where: { id: item.id }, data: { quantityOnHand: { decrement: quantity }, updatedById: user.id } });
+    const itemUpdate = await tx.inventoryItem.updateMany({ where: { id: item.id, quantityOnHand: { gte: quantity } }, data: { quantityOnHand: { decrement: quantity }, updatedById: user.id } });
+    if (itemUpdate.count === 0) throw new BadRequestException("Insufficient stock — possibly consumed concurrently. Please retry.");
     return { issued, unitCost: value / Math.max(quantity, 1) };
   }
 

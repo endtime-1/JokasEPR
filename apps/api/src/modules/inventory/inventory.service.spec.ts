@@ -6,7 +6,7 @@ jest.mock("../../common/next-ref", () => ({ nextRef: jest.fn().mockResolvedValue
 const mockTx = {
   stockBatch: { create: jest.fn(), findMany: jest.fn(), updateMany: jest.fn() },
   stockMovement: { create: jest.fn() },
-  inventoryItem: { update: jest.fn() },
+  inventoryItem: { update: jest.fn(), updateMany: jest.fn() },
   stockReservation: { create: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
   $queryRaw: jest.fn().mockResolvedValue([])
 };
@@ -81,7 +81,7 @@ describe("InventoryService.createStockMovement — StockBatch tracking (H9)", ()
     ]);
     mockTx.stockBatch.updateMany.mockResolvedValue({ count: 1 });
     mockTx.stockMovement.create.mockResolvedValue({ id: "mov-1" });
-    mockTx.inventoryItem.update.mockResolvedValue({});
+    mockTx.inventoryItem.updateMany.mockResolvedValue({ count: 1 });
 
     const service = makeService();
     const res = await service.createStockMovement(
@@ -96,6 +96,35 @@ describe("InventoryService.createStockMovement — StockBatch tracking (H9)", ()
       data: { quantityRemaining: { decrement: 10 } }
     });
     expect((res.data as { itemId: string; issued: unknown }).issued).toBeDefined();
+  });
+
+  it("floor-guards the final aggregate item decrement against concurrent overdraw (7th-consumer gap)", async () => {
+    mockPrisma.inventoryItem.findFirst.mockResolvedValue({
+      id: "item-1", companyId: "company-1", branchId: "branch-1", farmId: null, warehouseId: "wh-1",
+      productionSiteId: null, productId: "prod-1", uomId: "uom-1", quantityOnHand: 50,
+      product: { id: "prod-1", sku: "SKU-1", uomId: "uom-1" }
+    });
+    mockTx.stockBatch.findMany.mockResolvedValue([
+      { id: "batch-1", quantityRemaining: 30, unitCost: 5, expiryDate: null, createdAt: new Date() }
+    ]);
+    mockTx.stockBatch.updateMany.mockResolvedValue({ count: 1 });
+    mockTx.stockMovement.create.mockResolvedValue({ id: "mov-1" });
+    // Simulate a concurrent transaction having already drained quantityOnHand below the requested amount.
+    mockTx.inventoryItem.updateMany.mockResolvedValue({ count: 0 });
+
+    const service = makeService();
+    await expect(
+      service.createStockMovement(
+        makeUser(),
+        { inventoryItemId: "item-1", movementType: "ADJUSTMENT_OUT", quantity: 10 } as never,
+        {}
+      )
+    ).rejects.toThrow("Insufficient stock — possibly consumed concurrently. Please retry.");
+
+    expect(mockTx.inventoryItem.updateMany).toHaveBeenCalledWith({
+      where: { id: "item-1", quantityOnHand: { gte: 10 } },
+      data: { quantityOnHand: { decrement: 10 }, updatedById: "user-1" }
+    });
   });
 });
 
