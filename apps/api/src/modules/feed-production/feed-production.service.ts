@@ -785,7 +785,10 @@ export class FeedProductionService {
   }
 
   async approveQualityCheck(user: AuthenticatedUser, id: string, dto: UpdateFeedQualityCheckStatusDto, context: RequestContext) {
-    const check = await this.prisma.feedQualityCheck.findFirst({ where: { companyId: user.companyId, id, deletedAt: null } });
+    const check = await this.prisma.feedQualityCheck.findFirst({
+      where: { companyId: user.companyId, id, deletedAt: null },
+      include: { productionBatch: { select: { batchNumber: true, finishedProductId: true } } }
+    });
     if (!check) {
       throw new NotFoundException("Quality check was not found.");
     }
@@ -809,6 +812,18 @@ export class FeedProductionService {
         data: { status: dto.status, approvedById: ["APPROVED", "FAILED"].includes(dto.status) ? user.id : undefined, approvedAt: ["APPROVED", "FAILED"].includes(dto.status) ? new Date() : undefined }
       });
       await tx.feedProductionBatch.update({ where: { id: check.productionBatchId }, data: { status: dto.status === "FAILED" ? "REJECTED" : dto.status === "APPROVED" || dto.status === "PASSED" ? "APPROVED" : "QUALITY_HOLD", updatedById: user.id } });
+      // H-BUG-2 pattern (see quality.service.ts's approve/reject/quarantineBatch):
+      // this quality decision must also gate the actual sellable stock lot, or
+      // Sales' consumeFifoTx (which filters status: "AVAILABLE") will happily
+      // sell a batch this check just failed. The finished-goods StockBatch has
+      // no direct FK back to FeedProductionBatch, but createBatch stamps both
+      // records with the exact same batchNumber, so that + product is how the
+      // right lot(s) are found.
+      const stockStatus = dto.status === "APPROVED" || dto.status === "PASSED" ? "AVAILABLE" : "QUARANTINED";
+      await tx.stockBatch.updateMany({
+        where: { companyId: user.companyId, productId: check.productionBatch.finishedProductId, batchNumber: check.productionBatch.batchNumber, deletedAt: null },
+        data: { status: stockStatus, updatedById: user.id }
+      });
       return updatedCheck;
     });
     await this.writeAudit(user, dto.status === "FAILED" ? "REJECT" : "APPROVE", "FeedQualityCheck", id, `Updated feed quality check to ${dto.status}`, context, { branchId: check.branchId, productionSiteId: check.productionSiteId });

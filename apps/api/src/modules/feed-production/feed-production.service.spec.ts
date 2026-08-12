@@ -163,6 +163,7 @@ describe("FeedProductionService.approveQualityCheck — check + batch status upd
     return {
       id: "check-1", companyId: "company-1", branchId: "branch-1", productionSiteId: "site-1",
       productionBatchId: "batch-1", checkedById: "user-checker", deletedAt: null,
+      productionBatch: { batchNumber: "FB-2026-0001", finishedProductId: "product-1" },
       ...overrides
     };
   }
@@ -219,6 +220,35 @@ describe("FeedProductionService.approveQualityCheck — check + batch status upd
     expect(mockTx.feedProductionBatch.update).toHaveBeenCalledWith({
       where: { id: "batch-1" },
       data: { status: "REJECTED", updatedById: expect.any(String) }
+    });
+  });
+
+  it("H-BUG-2: a FAILED check quarantines the finished-goods StockBatch, not just the production batch record", async () => {
+    mockPrisma.feedQualityCheck.findFirst.mockResolvedValue(makeCheck());
+    mockTx.feedQualityCheck.update.mockResolvedValue({ id: "check-1", status: "FAILED" });
+
+    const service = makeService();
+    await service.approveQualityCheck(makeUser({ id: "user-approver", hasGlobalAccess: true }), "check-1", { status: "FAILED" } as never, {});
+
+    // The finished StockBatch has no FK back to FeedProductionBatch, so it's
+    // matched by companyId + product + the shared batchNumber both records
+    // are stamped with at creation time.
+    expect(mockTx.stockBatch.updateMany).toHaveBeenCalledWith({
+      where: { companyId: "company-1", productId: "product-1", batchNumber: "FB-2026-0001", deletedAt: null },
+      data: { status: "QUARANTINED", updatedById: "user-approver" }
+    });
+  });
+
+  it("H-BUG-2: an APPROVED check clears the StockBatch back to AVAILABLE", async () => {
+    mockPrisma.feedQualityCheck.findFirst.mockResolvedValue(makeCheck());
+    mockTx.feedQualityCheck.update.mockResolvedValue({ id: "check-1", status: "APPROVED" });
+
+    const service = makeService();
+    await service.approveQualityCheck(makeUser({ id: "user-approver", hasGlobalAccess: true }), "check-1", { status: "APPROVED" } as never, {});
+
+    expect(mockTx.stockBatch.updateMany).toHaveBeenCalledWith({
+      where: { companyId: "company-1", productId: "product-1", batchNumber: "FB-2026-0001", deletedAt: null },
+      data: { status: "AVAILABLE", updatedById: "user-approver" }
     });
   });
 });
