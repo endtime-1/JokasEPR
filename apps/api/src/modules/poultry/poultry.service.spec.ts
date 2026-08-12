@@ -7,6 +7,7 @@ jest.mock("../../common/next-ref", () => ({ nextRef: jest.fn().mockResolvedValue
 const mockTx = {
   feedConsumptionRecord: { create: jest.fn(), update: jest.fn() },
   eggProductionRecord: { create: jest.fn() },
+  dailyPoultryRecord: { create: jest.fn(), update: jest.fn() },
   inventoryItem: { findFirst: jest.fn(), updateMany: jest.fn(), update: jest.fn(), upsert: jest.fn() },
   product: { findFirst: jest.fn().mockResolvedValue({ id: "prod-feed", uomId: "uom-1" }) },
   warehouse: { findFirst: jest.fn() },
@@ -26,6 +27,7 @@ const mockPrisma = {
   batchPenAllocation: { findFirst: jest.fn() },
   poultryTransferRecord: { findFirst: jest.fn() },
   feedConsumptionRecord: { findFirst: jest.fn() },
+  dailyPoultryRecord: { findFirst: jest.fn() },
   $transaction: jest.fn().mockImplementation((cb: (tx: typeof mockTx) => Promise<unknown>) => cb(mockTx))
 };
 const mockAudit = { write: jest.fn().mockResolvedValue(undefined) };
@@ -125,6 +127,118 @@ describe("PoultryService — farm/warehouse access checks (H7)", () => {
           quantityRemaining: 10
         })
       });
+    });
+  });
+});
+
+describe("PoultryService.createDailyRecord — mortality/culled/feed/egg deltas actually move real records (H-BUG-2)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  function makeBatch(overrides: Record<string, unknown> = {}) {
+    return { id: "batch-1", companyId: "company-1", farmId: "farm-1", branchId: "branch-1", poultryHouseId: "house-1", birdType: "LAYERS", status: "ACTIVE", code: "FLK-1", openingBirdCount: 1000, ...overrides };
+  }
+
+  it("first-time submission applies the full mortalityCount as a real MortalityRecord", async () => {
+    mockPrisma.flockBatch.findFirst.mockResolvedValue(makeBatch());
+    mockPrisma.dailyPoultryRecord.findFirst.mockResolvedValue(null); // no existing row for this batch+pen+date
+    mockTx.dailyPoultryRecord.create.mockResolvedValue({ id: "daily-1" });
+    mockTx.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+
+    const service = makeService();
+    await service.createDailyRecord(
+      makeUser({ farmIds: ["farm-1"] }),
+      { flockBatchId: "batch-1", recordDate: "2026-01-01", mortalityCount: 5, culledCount: 0, feedConsumedKg: 0, totalEggs: 0 } as never,
+      {}
+    );
+
+    expect(mockTx.mortalityRecord.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ birdCount: 5, isCulling: false }) })
+    );
+  });
+
+  it("a later submission for the same day only applies the DELTA, not the full new number again", async () => {
+    mockPrisma.flockBatch.findFirst.mockResolvedValue(makeBatch());
+    // Already recorded 3 dead this morning — resubmitting with 5 should only add 2 more, not 5.
+    mockPrisma.dailyPoultryRecord.findFirst.mockResolvedValue({ id: "daily-1", mortalityCount: 3, culledCount: 0, feedConsumedKg: 0, totalEggs: 0 });
+    mockTx.dailyPoultryRecord.update.mockResolvedValue({ id: "daily-1" });
+    mockTx.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 3 } });
+
+    const service = makeService();
+    await service.createDailyRecord(
+      makeUser({ farmIds: ["farm-1"] }),
+      { flockBatchId: "batch-1", recordDate: "2026-01-01", mortalityCount: 5, culledCount: 0, feedConsumedKg: 0, totalEggs: 0 } as never,
+      {}
+    );
+
+    expect(mockTx.mortalityRecord.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ birdCount: 2, isCulling: false }) })
+    );
+  });
+
+  it("rejects reducing a previously-recorded number instead of silently 'un-recording' it", async () => {
+    mockPrisma.flockBatch.findFirst.mockResolvedValue(makeBatch());
+    mockPrisma.dailyPoultryRecord.findFirst.mockResolvedValue({ id: "daily-1", mortalityCount: 5, culledCount: 0, feedConsumedKg: 0, totalEggs: 0 });
+
+    const service = makeService();
+    await expect(
+      service.createDailyRecord(
+        makeUser({ farmIds: ["farm-1"] }),
+        { flockBatchId: "batch-1", recordDate: "2026-01-01", mortalityCount: 3, culledCount: 0, feedConsumedKg: 0, totalEggs: 0 } as never,
+        {}
+      )
+    ).rejects.toThrow(/can't be reduced/);
+
+    expect(mockTx.mortalityRecord.create).not.toHaveBeenCalled();
+  });
+
+  it("blocks a mortality delta that would exceed the batch's live-bird count", async () => {
+    mockPrisma.flockBatch.findFirst.mockResolvedValue(makeBatch({ openingBirdCount: 10 }));
+    mockPrisma.dailyPoultryRecord.findFirst.mockResolvedValue(null);
+    mockTx.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 8 } }); // only 2 live birds left
+
+    const service = makeService();
+    await expect(
+      service.createDailyRecord(
+        makeUser({ farmIds: ["farm-1"] }),
+        { flockBatchId: "batch-1", recordDate: "2026-01-01", mortalityCount: 5, culledCount: 0, feedConsumedKg: 0, totalEggs: 0 } as never,
+        {}
+      )
+    ).rejects.toThrow(/live bird/);
+  });
+
+  it("records a feed quantity with no stock effect when no product/warehouse is given (optional, matches createFeed's own convention)", async () => {
+    mockPrisma.flockBatch.findFirst.mockResolvedValue(makeBatch());
+    mockPrisma.dailyPoultryRecord.findFirst.mockResolvedValue(null);
+    mockTx.dailyPoultryRecord.create.mockResolvedValue({ id: "daily-1" });
+
+    const service = makeService();
+    await service.createDailyRecord(
+      makeUser({ farmIds: ["farm-1"] }),
+      { flockBatchId: "batch-1", recordDate: "2026-01-01", mortalityCount: 0, culledCount: 0, feedConsumedKg: 250, totalEggs: 0 } as never,
+      {}
+    );
+
+    expect(mockTx.inventoryItem.findFirst).not.toHaveBeenCalled();
+    expect(mockTx.inventoryItem.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("deducts real feed stock when a product/warehouse IS given", async () => {
+    mockPrisma.flockBatch.findFirst.mockResolvedValue(makeBatch());
+    mockPrisma.dailyPoultryRecord.findFirst.mockResolvedValue(null);
+    mockTx.dailyPoultryRecord.create.mockResolvedValue({ id: "daily-1" });
+    mockTx.inventoryItem.findFirst.mockResolvedValue({ id: "inv-1" });
+    mockTx.inventoryItem.updateMany.mockResolvedValue({ count: 1 });
+
+    const service = makeService();
+    await service.createDailyRecord(
+      makeUser({ farmIds: ["farm-1"], warehouseIds: ["wh-1"] }),
+      { flockBatchId: "batch-1", recordDate: "2026-01-01", mortalityCount: 0, culledCount: 0, feedConsumedKg: 250, totalEggs: 0, feedProductId: "feed-1", feedWarehouseId: "wh-1" } as never,
+      {}
+    );
+
+    expect(mockTx.inventoryItem.updateMany).toHaveBeenCalledWith({
+      where: { id: "inv-1", quantityOnHand: { gte: 250 } },
+      data: { quantityOnHand: { decrement: 250 }, updatedById: "user-1" }
     });
   });
 });

@@ -236,6 +236,28 @@ export class CreateDailyPoultryRecordDto extends FlockRecordDto {
   @IsInt()
   @Min(0)
   totalEggs?: number;
+
+  // H-BUG-2 (2026-08-12): feedConsumedKg/totalEggs can't move real stock
+  // without knowing which product and warehouse. Optional, matching
+  // createFeed/createEggs's own optional product+warehouse fields — the
+  // count is still recorded either way; giving these just also triggers the
+  // real stock movement, same as the dedicated Feed/Egg screens' own
+  // "deduct from stock (optional)" section.
+  @IsOptional()
+  @IsUUID()
+  feedProductId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  feedWarehouseId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  eggProductId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  eggWarehouseId?: string;
 }
 
 export class CreateMortalityRecordDto extends FlockRecordDto {

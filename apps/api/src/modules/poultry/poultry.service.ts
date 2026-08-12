@@ -608,17 +608,85 @@ export class PoultryService {
     return { data: { openingBirdCount: fallback, source: "batch_total" } };
   }
 
+  // H-BUG-2 (2026-08-12): this used to only ever write the DailyPoultryRecord
+  // row itself — the mortality/culled/feed/egg numbers it collects (the
+  // mobile app's "Daily Poultry Record" screen presents this as THE way to
+  // log a day's mortality, culling, feed, and eggs) never touched the real
+  // MortalityRecord/FeedConsumptionRecord/EggProductionRecord tables, so the
+  // flock's live-bird count, feed stock, and egg stock never moved even
+  // though the screen reported success. Now applies the real effects.
+  //
+  // Because this record is upserted (same batch+pen+date resubmits update
+  // the same row rather than creating a new one — see the existing-lookup
+  // below), a naive "create a MortalityRecord for dto.mortalityCount every
+  // submit" would double-count every time someone re-opens today's record
+  // to add a later entry. Instead, effects are applied for the DELTA versus
+  // what was already saved for this row (0 the first time). An increase is
+  // real news ("3 more died since this morning") and gets its own linked
+  // record; a decrease has no honest real-world meaning here (birds can't
+  // un-die, and feed/eggs already recorded can't un-happen) — that's a
+  // correction, and corrections belong in the dedicated Mortality/Feed/Egg
+  // screens (which already have safe, audited update flows), not here.
   async createDailyRecord(user: AuthenticatedUser, dto: CreateDailyPoultryRecordDto, context: RequestContext) {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
+    if (dto.feedWarehouseId) this.assertWarehouseAccess(user, dto.feedWarehouseId);
+    if (dto.eggWarehouseId) this.assertWarehouseAccess(user, dto.eggWarehouseId);
     const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
     const recordDate = new Date(dto.recordDate);
     const payload = { openingBirdCount: dto.openingBirdCount, mortalityCount: dto.mortalityCount, culledCount: dto.culledCount, feedConsumedKg: dto.feedConsumedKg, totalEggs: dto.totalEggs, notes: dto.notes, status: dto.status ?? "SUBMITTED" };
     const existing = await this.prisma.dailyPoultryRecord.findFirst({
       where: { companyId: user.companyId, flockBatchId: batch.id, penId: dto.penId ?? null, recordDate }
     });
-    const record = existing
-      ? await this.prisma.dailyPoultryRecord.update({ where: { id: existing.id }, data: { ...payload, updatedById: user.id } })
-      : await this.prisma.dailyPoultryRecord.create({ data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), recordDate, ...payload } });
+
+    const mortalityDelta = (dto.mortalityCount ?? 0) - (existing?.mortalityCount ?? 0);
+    const culledDelta = (dto.culledCount ?? 0) - (existing?.culledCount ?? 0);
+    const feedDelta = (dto.feedConsumedKg ?? 0) - Number(existing?.feedConsumedKg ?? 0);
+    const eggsDelta = (dto.totalEggs ?? 0) - (existing?.totalEggs ?? 0);
+    if (mortalityDelta < 0 || culledDelta < 0 || feedDelta < 0 || eggsDelta < 0) {
+      throw new BadRequestException("Today's mortality, culled, feed, or egg numbers can't be reduced from this screen — use the Mortality, Feed, or Egg Production screens to correct an entry already recorded.");
+    }
+    // Deducting/crediting real stock from the feed/egg numbers is optional,
+    // same convention as the dedicated createFeed/createEggs endpoints
+    // (their own product+warehouse fields are optional too, matching the
+    // mobile Feed Consumption screen's "Deduct from stock (optional)"
+    // section) — the count is still recorded either way, just without a
+    // stock-movement side effect if no product/warehouse was given.
+
+    const record = await this.prisma.$transaction(async (tx) => {
+      const row = existing
+        ? await tx.dailyPoultryRecord.update({ where: { id: existing.id }, data: { ...payload, updatedById: user.id } })
+        : await tx.dailyPoultryRecord.create({ data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), recordDate, ...payload } });
+
+      // Same row-lock + live-bird-floor pattern as createMortality — held for
+      // the rest of this transaction so the culled check below sees the
+      // mortality insert above it.
+      if (mortalityDelta > 0 || culledDelta > 0) {
+        await tx.$queryRaw`SELECT id FROM FlockBatch WHERE id = ${batch.id} FOR UPDATE`;
+      }
+      if (mortalityDelta > 0) {
+        const { _sum } = await tx.mortalityRecord.aggregate({ where: { flockBatchId: batch.id, deletedAt: null }, _sum: { birdCount: true } });
+        const liveBirds = Math.max(0, batch.openingBirdCount - (_sum.birdCount ?? 0));
+        if (mortalityDelta > liveBirds) throw new BadRequestException(`Cannot record ${mortalityDelta} more mortalit${mortalityDelta !== 1 ? "ies" : "y"}. Only ${liveBirds} live bird${liveBirds !== 1 ? "s" : ""} remain in this batch.`);
+        await tx.mortalityRecord.create({
+          data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), recordDate, birdCount: mortalityDelta, isCulling: false, reason: "Daily record", status: "SUBMITTED" }
+        });
+      }
+      if (culledDelta > 0) {
+        const { _sum } = await tx.mortalityRecord.aggregate({ where: { flockBatchId: batch.id, deletedAt: null }, _sum: { birdCount: true } });
+        const liveBirds = Math.max(0, batch.openingBirdCount - (_sum.birdCount ?? 0));
+        if (culledDelta > liveBirds) throw new BadRequestException(`Cannot record ${culledDelta} more culled. Only ${liveBirds} live bird${liveBirds !== 1 ? "s" : ""} remain in this batch.`);
+        await tx.mortalityRecord.create({
+          data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), recordDate, birdCount: culledDelta, isCulling: true, reason: "Daily record", status: "SUBMITTED" }
+        });
+      }
+      if (feedDelta > 0 && dto.feedProductId && dto.feedWarehouseId) {
+        await this.consumeInventoryTx(tx, user, batch, dto.feedWarehouseId, dto.feedProductId, feedDelta, "PRODUCTION_INPUT", "DailyPoultryRecord", row.id, `Feed consumption from daily record for flock ${batch.code}`);
+      }
+      if (eggsDelta > 0 && dto.eggProductId && dto.eggWarehouseId) {
+        await this.addToInventoryTx(tx, user, batch, dto.eggWarehouseId, dto.eggProductId, eggsDelta, "DailyPoultryRecord", row.id, `Egg production from daily record for flock ${batch.code}`);
+      }
+      return row;
+    });
     await this.writeAudit(user, "CREATE", "DailyPoultryRecord", record.id, "Submitted daily poultry record", context, batch.farmId);
     return { data: record };
   }

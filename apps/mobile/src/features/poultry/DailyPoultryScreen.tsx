@@ -10,7 +10,7 @@ import { DateField } from "../../components/DateField";
 import { SelectField, SelectOption } from "../../components/SelectField";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
-import { fetchFlockBatches, fetchFarms, fetchPoultryOptions } from "../../api/endpoints";
+import { fetchFlockBatches, fetchFarms, fetchPoultryOptions, fetchWarehouses, fetchFeedProducts, fetchProducts } from "../../api/endpoints";
 import { apiFetch } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
 import { colors, font, spacing } from "../../constants/theme";
@@ -26,11 +26,16 @@ type Form = {
   totalEggs: string;
   notes: string;
   penId: string;
+  feedWarehouseId: string;
+  feedProductId: string;
+  eggWarehouseId: string;
+  eggProductId: string;
 };
 
 const EMPTY: Form = {
   farmId: "", flockBatchId: "", recordDate: new Date().toISOString().split("T")[0],
-  openingBirdCount: "", mortalityCount: "0", culledCount: "0", feedConsumedKg: "0", totalEggs: "0", notes: "", penId: ""
+  openingBirdCount: "", mortalityCount: "0", culledCount: "0", feedConsumedKg: "0", totalEggs: "0", notes: "", penId: "",
+  feedWarehouseId: "", feedProductId: "", eggWarehouseId: "", eggProductId: ""
 };
 
 type Err = Partial<Record<keyof Form, string>>;
@@ -64,6 +69,16 @@ export function DailyPoultryScreen() {
     () => (opts?.data.pens ?? []).filter((p) => p.farmId === (selectedBatch as any)?.farmId).map((p) => ({ label: `Pen ${p.penNumber} — ${p.name}`, value: p.id })),
     [opts, selectedBatch]
   );
+
+  // Optional — matching the dedicated Feed Consumption / Egg Collection
+  // screens' own "deduct from stock (optional)" convention: the count is
+  // recorded either way, these just also move real stock when given.
+  const { data: rawWarehouses } = useLookup("warehouses", async () => { const r = await fetchWarehouses(); return (r.data as any[]) ?? []; });
+  const warehouses: SelectOption[] = useMemo(() => (rawWarehouses ?? []).map((w: any) => ({ label: w.name, value: w.id })), [rawWarehouses]);
+  const { data: rawFeedProducts } = useLookup("feedProducts", async () => { const r = await fetchFeedProducts(); return (r.data as any[]) ?? []; });
+  const feedProducts: SelectOption[] = useMemo(() => (rawFeedProducts ?? []).map((p: any) => ({ label: `${p.sku} — ${p.name}`, value: p.id })), [rawFeedProducts]);
+  const { data: rawEggProducts } = useLookup("products", async () => { const r = await fetchProducts(); return (r.data as any[]) ?? []; });
+  const eggProducts: SelectOption[] = useMemo(() => (rawEggProducts ?? []).map((p: any) => ({ label: `${p.sku} — ${p.name}`, value: p.id })), [rawEggProducts]);
 
   const set = (k: keyof Form) => (v: string) => {
     setForm((f) => ({ ...f, [k]: v }));
@@ -118,7 +133,11 @@ export function DailyPoultryScreen() {
       feedConsumedKg: Number(form.feedConsumedKg) || 0,
       totalEggs: Number(form.totalEggs) || 0,
       notes: form.notes || undefined,
-      penId: form.penId || undefined
+      penId: form.penId || undefined,
+      feedWarehouseId: form.feedWarehouseId || undefined,
+      feedProductId: form.feedProductId || undefined,
+      eggWarehouseId: form.eggWarehouseId || undefined,
+      eggProductId: form.eggProductId || undefined
     });
   }
 
@@ -162,6 +181,20 @@ export function DailyPoultryScreen() {
 
         <FormField label="Feed Consumed (kg)" value={form.feedConsumedKg} onChangeText={set("feedConsumedKg")} keyboardType="decimal-pad" placeholder="0" />
       </FormCard>
+
+      {Number(form.feedConsumedKg) > 0 && (
+        <FormCard label="DEDUCT FEED FROM STOCK (OPTIONAL)">
+          <SelectField label="Warehouse" value={form.feedWarehouseId} options={warehouses} onChange={set("feedWarehouseId")} placeholder="No warehouse selected" />
+          <SelectField label="Feed Product" value={form.feedProductId} options={feedProducts} onChange={set("feedProductId")} placeholder="No product selected" />
+        </FormCard>
+      )}
+
+      {Number(form.totalEggs) > 0 && (
+        <FormCard label="ADD EGGS TO STOCK (OPTIONAL)">
+          <SelectField label="Warehouse" value={form.eggWarehouseId} options={warehouses} onChange={set("eggWarehouseId")} placeholder="No warehouse selected" />
+          <SelectField label="Egg Product" value={form.eggProductId} options={eggProducts} onChange={set("eggProductId")} placeholder="No inventory item selected" />
+        </FormCard>
+      )}
 
       <FormCard label="NOTES">
         <FormField label="Notes" value={form.notes} onChangeText={set("notes")} placeholder="Optional notes…" multiline numberOfLines={3} style={{ minHeight: 80, textAlignVertical: "top" } as any} />
