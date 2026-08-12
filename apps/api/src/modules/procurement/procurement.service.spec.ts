@@ -18,7 +18,7 @@ const mockPrisma = {
   supplierInvoice: { findFirst: jest.fn(), update: jest.fn().mockResolvedValue({}), updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
   procurementPayment: { create: jest.fn(), findFirst: jest.fn() },
   purchaseApproval: { create: jest.fn().mockResolvedValue({}) },
-  supplier: { findFirst: jest.fn().mockResolvedValue({ name: "Acme Supplies" }) },
+  supplier: { findFirst: jest.fn().mockResolvedValue({ id: "sup-1", companyId: "company-1", name: "Acme Supplies", status: "ACTIVE" }) },
   expenseCategory: { findFirst: jest.fn().mockResolvedValue({ id: "cat-procurement" }), create: jest.fn() },
   expense: { create: jest.fn().mockResolvedValue({}) },
   $transaction: jest.fn().mockImplementation((cb: (tx: unknown) => Promise<unknown>) => cb(mockPrisma))
@@ -109,6 +109,47 @@ describe("ProcurementService", () => {
     });
   });
 
+  describe("createPurchaseOrder — supplier is actually validated, not just cosmetically filtered in the UI (H-HIGH)", () => {
+    const dto = {
+      supplierId: "sup-1",
+      items: [{ productId: "prod-1", productName: "Widget", quantity: 2, unitCost: 10, uomCode: "EA" }]
+    };
+
+    it("rejects a supplier that doesn't exist (or belongs to a different company)", async () => {
+      mockPrisma.supplier.findFirst.mockResolvedValue(null);
+
+      await expect(service.createPurchaseOrder(makeUser(), dto as never, {})).rejects.toThrow(NotFoundException);
+
+      expect(mockPrisma.supplier.findFirst).toHaveBeenCalledWith({
+        where: { id: "sup-1", companyId: "company-1", deletedAt: null }
+      });
+      expect(mockPrisma.purchaseOrder.create).not.toHaveBeenCalled();
+    });
+
+    it("rejects a blacklisted supplier", async () => {
+      mockPrisma.supplier.findFirst.mockResolvedValue({ id: "sup-1", companyId: "company-1", name: "Bad Actor Ltd", status: "BLACKLISTED" });
+
+      await expect(service.createPurchaseOrder(makeUser(), dto as never, {})).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.purchaseOrder.create).not.toHaveBeenCalled();
+    });
+
+    it("rejects an inactive supplier", async () => {
+      mockPrisma.supplier.findFirst.mockResolvedValue({ id: "sup-1", companyId: "company-1", name: "Dormant Co", status: "INACTIVE" });
+
+      await expect(service.createPurchaseOrder(makeUser(), dto as never, {})).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.purchaseOrder.create).not.toHaveBeenCalled();
+    });
+
+    it("allows an active supplier through", async () => {
+      mockPrisma.supplier.findFirst.mockResolvedValue({ id: "sup-1", companyId: "company-1", name: "Acme Supplies", status: "ACTIVE" });
+      mockPrisma.purchaseOrder.create.mockResolvedValue({ id: "po-1", items: [] });
+
+      await service.createPurchaseOrder(makeUser(), dto as never, {});
+
+      expect(mockPrisma.purchaseOrder.create).toHaveBeenCalled();
+    });
+  });
+
   describe("createGRN / postGRN — warehouse access guard (H3)", () => {
     const grnDto = {
       purchaseOrderId: "po-1",
@@ -117,7 +158,7 @@ describe("ProcurementService", () => {
     };
 
     it("rejects creating a GRN for a warehouse the actor doesn't have access to", async () => {
-      mockPrisma.purchaseOrder.findFirst.mockResolvedValue({ id: "po-1", companyId: "company-1", status: "APPROVED", supplierId: "sup-1" });
+      mockPrisma.purchaseOrder.findFirst.mockResolvedValue({ id: "po-1", companyId: "company-1", status: "APPROVED", supplierId: "sup-1", items: [], grnRecords: [] });
       mockPrisma.warehouse.findFirst.mockResolvedValue({ id: "wh-1", companyId: "company-1" });
 
       await expect(
@@ -137,7 +178,7 @@ describe("ProcurementService", () => {
     });
 
     it("allows creating a GRN for a warehouse the actor is assigned to", async () => {
-      mockPrisma.purchaseOrder.findFirst.mockResolvedValue({ id: "po-1", companyId: "company-1", status: "APPROVED", supplierId: "sup-1" });
+      mockPrisma.purchaseOrder.findFirst.mockResolvedValue({ id: "po-1", companyId: "company-1", status: "APPROVED", supplierId: "sup-1", items: [], grnRecords: [] });
       mockPrisma.warehouse.findFirst.mockResolvedValue({ id: "wh-1", companyId: "company-1" });
       mockPrisma.goodsReceivedNote.create.mockResolvedValue({ id: "grn-1" });
 
@@ -147,7 +188,7 @@ describe("ProcurementService", () => {
     });
 
     it("creates the GRN and advances the PO's receivedQty/status inside the same transaction (H8)", async () => {
-      mockPrisma.purchaseOrder.findFirst.mockResolvedValue({ id: "po-1", companyId: "company-1", status: "APPROVED", supplierId: "sup-1" });
+      mockPrisma.purchaseOrder.findFirst.mockResolvedValue({ id: "po-1", companyId: "company-1", status: "APPROVED", supplierId: "sup-1", items: [], grnRecords: [] });
       mockPrisma.warehouse.findFirst.mockResolvedValue({ id: "wh-1", companyId: "company-1" });
       mockPrisma.goodsReceivedNote.create.mockResolvedValue({ id: "grn-1" });
       mockPrisma.purchaseOrder.findUnique.mockResolvedValue({
@@ -172,9 +213,92 @@ describe("ProcurementService", () => {
     });
   });
 
+  describe("createGRN — duplicate-delivery and over-receipt guards (H-HIGH)", () => {
+    it("rejects a GRN whose deliveryNoteRef was already recorded against the same PO", async () => {
+      mockPrisma.purchaseOrder.findFirst.mockResolvedValue({
+        id: "po-1", companyId: "company-1", status: "APPROVED", supplierId: "sup-1",
+        items: [], grnRecords: [{ reference: "GRN-2026-0001", deliveryNoteRef: "DN-555", items: [] }]
+      });
+      mockPrisma.warehouse.findFirst.mockResolvedValue({ id: "wh-1", companyId: "company-1" });
+
+      await expect(
+        service.createGRN(makeUser({ warehouseIds: ["wh-1"] }), { purchaseOrderId: "po-1", warehouseId: "wh-1", deliveryNoteRef: "DN-555", items: [] } as never, {})
+      ).rejects.toThrow(/already exists/);
+      expect(mockPrisma.goodsReceivedNote.create).not.toHaveBeenCalled();
+    });
+
+    it("allows a GRN with a deliveryNoteRef that hasn't been used before", async () => {
+      mockPrisma.purchaseOrder.findFirst.mockResolvedValue({
+        id: "po-1", companyId: "company-1", status: "APPROVED", supplierId: "sup-1",
+        items: [], grnRecords: [{ reference: "GRN-2026-0001", deliveryNoteRef: "DN-555", items: [] }]
+      });
+      mockPrisma.warehouse.findFirst.mockResolvedValue({ id: "wh-1", companyId: "company-1" });
+      mockPrisma.goodsReceivedNote.create.mockResolvedValue({ id: "grn-2" });
+
+      await service.createGRN(makeUser({ warehouseIds: ["wh-1"] }), { purchaseOrderId: "po-1", warehouseId: "wh-1", deliveryNoteRef: "DN-556", items: [] } as never, {});
+
+      expect(mockPrisma.goodsReceivedNote.create).toHaveBeenCalled();
+    });
+
+    it("rejects receiving more against a PO line than it actually ordered, across this GRN plus everything already received", async () => {
+      mockPrisma.purchaseOrder.findFirst.mockResolvedValue({
+        id: "po-1", companyId: "company-1", status: "PARTIALLY_RECEIVED", supplierId: "sup-1",
+        items: [{ id: "poi-1", productName: "Widget", quantity: 10 }],
+        // 7 already received against this line — receiving 5 more would total 12, over the ordered 10.
+        grnRecords: [{ reference: "GRN-2026-0001", items: [{ purchaseOrderItemId: "poi-1", receivedQty: 7 }] }]
+      });
+      mockPrisma.warehouse.findFirst.mockResolvedValue({ id: "wh-1", companyId: "company-1" });
+
+      await expect(
+        service.createGRN(
+          makeUser({ warehouseIds: ["wh-1"] }),
+          { purchaseOrderId: "po-1", warehouseId: "wh-1", items: [{ purchaseOrderItemId: "poi-1", productName: "Widget", orderedQty: 10, receivedQty: 5, unitCost: 10 }] } as never,
+          {}
+        )
+      ).rejects.toThrow(/more than the 10 ordered/);
+      expect(mockPrisma.goodsReceivedNote.create).not.toHaveBeenCalled();
+    });
+
+    it("allows receiving up to exactly what remains on the PO line", async () => {
+      mockPrisma.purchaseOrder.findFirst.mockResolvedValue({
+        id: "po-1", companyId: "company-1", status: "PARTIALLY_RECEIVED", supplierId: "sup-1",
+        items: [{ id: "poi-1", productName: "Widget", quantity: 10 }],
+        grnRecords: [{ reference: "GRN-2026-0001", items: [{ purchaseOrderItemId: "poi-1", receivedQty: 7 }] }]
+      });
+      mockPrisma.warehouse.findFirst.mockResolvedValue({ id: "wh-1", companyId: "company-1" });
+      mockPrisma.goodsReceivedNote.create.mockResolvedValue({ id: "grn-2" });
+
+      await service.createGRN(
+        makeUser({ warehouseIds: ["wh-1"] }),
+        { purchaseOrderId: "po-1", warehouseId: "wh-1", items: [{ purchaseOrderItemId: "poi-1", productName: "Widget", orderedQty: 10, receivedQty: 3, unitCost: 10 }] } as never,
+        {}
+      );
+
+      expect(mockPrisma.goodsReceivedNote.create).toHaveBeenCalled();
+    });
+
+    it("does not attempt to validate a line item with no purchaseOrderItemId (manual/off-PO entries stay trusted as before)", async () => {
+      mockPrisma.purchaseOrder.findFirst.mockResolvedValue({
+        id: "po-1", companyId: "company-1", status: "APPROVED", supplierId: "sup-1",
+        items: [{ id: "poi-1", productName: "Widget", quantity: 10 }],
+        grnRecords: []
+      });
+      mockPrisma.warehouse.findFirst.mockResolvedValue({ id: "wh-1", companyId: "company-1" });
+      mockPrisma.goodsReceivedNote.create.mockResolvedValue({ id: "grn-1" });
+
+      await service.createGRN(
+        makeUser({ warehouseIds: ["wh-1"] }),
+        { purchaseOrderId: "po-1", warehouseId: "wh-1", items: [{ productName: "Unplanned extra item", orderedQty: 999, receivedQty: 999, unitCost: 10 }] } as never,
+        {}
+      );
+
+      expect(mockPrisma.goodsReceivedNote.create).toHaveBeenCalled();
+    });
+  });
+
   describe("updatePOReceivedQty — writes per-line receivedQty, not just PO status (L3)", () => {
     it("writes the summed GRN-item receivedQty back onto each PurchaseOrderItem", async () => {
-      mockPrisma.purchaseOrder.findFirst.mockResolvedValue({ id: "po-1", companyId: "company-1", status: "APPROVED", supplierId: "sup-1" });
+      mockPrisma.purchaseOrder.findFirst.mockResolvedValue({ id: "po-1", companyId: "company-1", status: "APPROVED", supplierId: "sup-1", items: [], grnRecords: [] });
       mockPrisma.warehouse.findFirst.mockResolvedValue({ id: "wh-1", companyId: "company-1" });
       mockPrisma.goodsReceivedNote.create.mockResolvedValue({ id: "grn-1" });
       mockPrisma.purchaseOrder.findUnique.mockResolvedValue({
@@ -199,7 +323,7 @@ describe("ProcurementService", () => {
     });
 
     it("writes 0 for a PO line with no matching GRN items at all", async () => {
-      mockPrisma.purchaseOrder.findFirst.mockResolvedValue({ id: "po-1", companyId: "company-1", status: "APPROVED", supplierId: "sup-1" });
+      mockPrisma.purchaseOrder.findFirst.mockResolvedValue({ id: "po-1", companyId: "company-1", status: "APPROVED", supplierId: "sup-1", items: [], grnRecords: [] });
       mockPrisma.warehouse.findFirst.mockResolvedValue({ id: "wh-1", companyId: "company-1" });
       mockPrisma.goodsReceivedNote.create.mockResolvedValue({ id: "grn-1" });
       mockPrisma.purchaseOrder.findUnique.mockResolvedValue({

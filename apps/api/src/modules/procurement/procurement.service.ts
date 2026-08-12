@@ -390,6 +390,18 @@ export class ProcurementService {
   }
 
   async createPurchaseOrder(user: AuthenticatedUser, dto: CreatePurchaseOrderDto, ctx: RequestContext) {
+    // H-HIGH (2026-08-12): this never looked up the supplier at all — the
+    // "only active suppliers" dropdown on the create screen was purely
+    // cosmetic, since the API itself accepted any UUID. A blacklisted or
+    // deactivated supplier (or, worse, one belonging to a different
+    // company) could still have real purchase orders written against them
+    // by anyone who had or guessed the ID.
+    const supplier = await this.prisma.supplier.findFirst({ where: { id: dto.supplierId, companyId: user.companyId, deletedAt: null } });
+    if (!supplier) throw new NotFoundException("Supplier not found");
+    if (supplier.status !== "ACTIVE") {
+      throw new BadRequestException(`Cannot raise a purchase order against "${supplier.name}" — its status is ${supplier.status.replace(/_/g, " ").toLowerCase()}, not active.`);
+    }
+
     // Every other lookup in this file scopes by companyId — this write
     // previously didn't, letting any PROCUREMENT_MANAGE user flip another
     // company's (or another branch's) purchase request status by ID alone.
@@ -555,6 +567,7 @@ export class ProcurementService {
   async createGRN(user: AuthenticatedUser, dto: CreateGRNDto, ctx: RequestContext) {
     const po = await this.prisma.purchaseOrder.findFirst({
       where: { id: dto.purchaseOrderId, companyId: user.companyId, deletedAt: null },
+      include: { items: true, grnRecords: { where: { deletedAt: null }, include: { items: true } } },
     });
     if (!po) throw new NotFoundException("Purchase Order not found");
     if (!["APPROVED", "SENT_TO_SUPPLIER", "PARTIALLY_RECEIVED"].includes(po.status)) {
@@ -566,6 +579,44 @@ export class ProcurementService {
     const warehouse = await this.prisma.warehouse.findFirst({ where: { id: dto.warehouseId, companyId: user.companyId } });
     if (!warehouse) throw new NotFoundException("Warehouse not found");
     this.assertWarehouseAccess(user, dto.warehouseId);
+
+    // H-HIGH (2026-08-12): neither of these was checked at all — a
+    // double-click, a network retry, or a clerk re-entering the same paper
+    // delivery note twice silently doubled real, trusted stock at post time.
+    //
+    // 1. Duplicate-delivery guard: same PO + same delivery note reference
+    // already recorded (and not soft-deleted) is almost certainly the same
+    // physical delivery being logged twice. deliveryNoteRef is optional, so
+    // this only catches it when one was actually given — a real gap that
+    // remains for GRNs with no reference, but it's the common case.
+    if (dto.deliveryNoteRef) {
+      const dupe = (po.grnRecords ?? []).find((g) => g.deliveryNoteRef === dto.deliveryNoteRef);
+      if (dupe) throw new BadRequestException(`A GRN for delivery note "${dto.deliveryNoteRef}" against this purchase order already exists (${dupe.reference}). If this is a genuinely new delivery, use a different reference.`);
+    }
+
+    // 2. Over-receipt guard: a line item tied to a specific PO line can't
+    // receive more (across this GRN plus everything already received
+    // against that line) than was actually ordered. Lines with no
+    // purchaseOrderItemId (a manual/off-PO entry) can't be checked this way
+    // and are trusted as before.
+    const alreadyReceivedByLine = new Map<string, number>();
+    for (const g of po.grnRecords ?? []) {
+      for (const item of g.items) {
+        if (!item.purchaseOrderItemId) continue;
+        alreadyReceivedByLine.set(item.purchaseOrderItemId, (alreadyReceivedByLine.get(item.purchaseOrderItemId) ?? 0) + num(item.receivedQty));
+      }
+    }
+    const poItemById = new Map((po.items ?? []).map((i) => [i.id, i]));
+    for (const item of dto.items) {
+      if (!item.purchaseOrderItemId) continue;
+      const line = poItemById.get(item.purchaseOrderItemId);
+      if (!line) throw new BadRequestException(`Purchase order line ${item.purchaseOrderItemId} was not found on this purchase order.`);
+      const alreadyReceived = alreadyReceivedByLine.get(item.purchaseOrderItemId) ?? 0;
+      const ordered = num(line.quantity);
+      if (alreadyReceived + item.receivedQty > ordered) {
+        throw new BadRequestException(`Receiving ${item.receivedQty} of "${line.productName}" would bring total received to ${(alreadyReceived + item.receivedQty).toFixed(2)}, more than the ${ordered} ordered on this line (${alreadyReceived.toFixed(2)} already received).`);
+      }
+    }
 
     const reference = await nextRef(this.prisma, user.companyId, "GRN");
 
