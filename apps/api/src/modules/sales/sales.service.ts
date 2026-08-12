@@ -816,6 +816,18 @@ export class SalesService {
     }
   }
 
+  // H-BUG-1 (2026-08-12, from the inventory-integration logic audit): this was
+  // the one place in the whole codebase that took stock via a plain `update`
+  // instead of a floor-guarded `updateMany` — every sibling module's FIFO
+  // consumer (feed-production, market-planning, soya-processing, poultry,
+  // maintenance) re-checks "is there still actually enough left" at the exact
+  // moment it decrements, so two concurrent consumers of the same lot can't
+  // both succeed. This one only checked `available < quantity` once, up
+  // front, then trusted that snapshot for the rest of the loop — two sales
+  // orders releasing the last units of the same product within the same
+  // transaction window could both pass that check and both "succeed",
+  // driving quantityRemaining/quantityOnHand negative. Now matches the
+  // guarded pattern every other module already uses.
   private async consumeFifoTx(tx: Prisma.TransactionClient, user: AuthenticatedUser, item: InventoryItemContext, quantity: number, referenceType: string, referenceId: string, notes?: string) {
     let remaining = quantity;
     const batches = await tx.stockBatch.findMany({ where: { companyId: user.companyId, inventoryItemId: item.id, quantityRemaining: { gt: 0 }, deletedAt: null }, orderBy: [{ expiryDate: "asc" }, { createdAt: "asc" }] });
@@ -824,7 +836,18 @@ export class SalesService {
     for (const batch of batches) {
       if (remaining <= 0) break;
       const issue = Math.min(remaining, Number(batch.quantityRemaining));
-      await tx.stockBatch.update({ where: { id: batch.id }, data: { quantityRemaining: { decrement: issue }, status: Number(batch.quantityRemaining) - issue <= 0 ? "CONSUMED" : batch.status } });
+      const batchUpdate = await tx.stockBatch.updateMany({
+        where: { id: batch.id, quantityRemaining: { gte: issue } },
+        data: { quantityRemaining: { decrement: issue } }
+      });
+      if (batchUpdate.count === 0) {
+        throw new BadRequestException("Stock batch was consumed concurrently by another sale. Please retry.");
+      }
+      // Separate, self-contained status flip: re-reads the batch's current
+      // quantityRemaining via the where clause rather than trusting the
+      // pre-loop snapshot, so it's correct regardless of what else touched
+      // this batch concurrently.
+      await tx.stockBatch.updateMany({ where: { id: batch.id, quantityRemaining: 0 }, data: { status: "CONSUMED" } });
       await tx.stockMovement.create({
         data: {
           companyId: user.companyId,
@@ -848,7 +871,16 @@ export class SalesService {
       });
       remaining -= issue;
     }
-    await tx.inventoryItem.update({ where: { id: item.id }, data: { quantityOnHand: { decrement: quantity }, updatedById: user.id } });
+    if (remaining > 0) {
+      throw new BadRequestException("Stock batches on hand cover less than the required quantity — inventory and lot records are out of sync. Please investigate before retrying.");
+    }
+    const itemUpdate = await tx.inventoryItem.updateMany({
+      where: { id: item.id, quantityOnHand: { gte: quantity } },
+      data: { quantityOnHand: { decrement: quantity }, updatedById: user.id }
+    });
+    if (itemUpdate.count === 0) {
+      throw new BadRequestException("Insufficient stock — possibly consumed concurrently. Please retry.");
+    }
   }
 
   private async addCustomerDebitTx(tx: Prisma.TransactionClient, customerId: string, branchId: string, invoiceId: string, amount: number, description: string) {

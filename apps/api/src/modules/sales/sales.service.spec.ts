@@ -13,8 +13,8 @@ const mockTx = {
   customerCreditLimit: { upsert: jest.fn(), update: jest.fn(), findUniqueOrThrow: jest.fn().mockResolvedValue({ id: "cl-1", companyId: "company-1", creditLimit: 0, currentBalance: 0 }) },
   customerStatement: { create: jest.fn() },
   receipt: { create: jest.fn() },
-  inventoryItem: { upsert: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
-  stockBatch: { create: jest.fn(), findMany: jest.fn(), update: jest.fn() },
+  inventoryItem: { upsert: jest.fn(), findFirst: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
+  stockBatch: { create: jest.fn(), findMany: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
   stockMovement: { create: jest.fn() },
   salesReturn: { update: jest.fn() },
   $executeRaw: jest.fn().mockResolvedValue(undefined)
@@ -343,7 +343,9 @@ describe("SalesService.approveStockRelease — atomic credit balance + re-checke
     mockTx.inventoryItem.findFirst.mockResolvedValue(inventoryItem);
     mockTx.stockBatch.findMany.mockResolvedValue([{ id: "batch-1", quantityRemaining: 10, unitCost: 5, status: "AVAILABLE" }]);
     mockTx.inventoryItem.update.mockResolvedValue({});
+    mockTx.inventoryItem.updateMany.mockResolvedValue({ count: 1 });
     mockTx.stockBatch.update.mockResolvedValue({});
+    mockTx.stockBatch.updateMany.mockResolvedValue({ count: 1 });
     mockTx.stockMovement.create.mockResolvedValue({});
     mockTx.invoice.create.mockResolvedValue({ id: "inv-1", invoiceNumber: "INV-REF-001" });
     mockTx.deliveryNote.create.mockResolvedValue({ id: "dn-1" });
@@ -398,6 +400,45 @@ describe("SalesService.approveStockRelease — atomic credit balance + re-checke
 
     const service = makeService();
     await expect(service.approveStockRelease(user(), "so-1", {})).resolves.toBeDefined();
+  });
+
+  // H-BUG-1: consumeFifoTx used to take stock via a plain `update`, trusting
+  // a pre-loop snapshot for the whole loop — the one place in the codebase
+  // that could oversell under concurrency, unlike every sibling module's
+  // FIFO consumer. These exercise the floor-guarded updateMany fix.
+  describe("consumeFifoTx — floor-guarded against concurrent overdraw (H-BUG-1)", () => {
+    it("rejects cleanly when the stock batch was consumed concurrently by another release", async () => {
+      mockTx.stockBatch.updateMany.mockResolvedValueOnce({ count: 0 });
+
+      const service = makeService();
+      await expect(service.approveStockRelease(user(), "so-1", {})).rejects.toThrow(/consumed concurrently/);
+      expect(mockTx.stockMovement.create).not.toHaveBeenCalled();
+    });
+
+    it("rejects cleanly when the inventory item itself was consumed concurrently", async () => {
+      // Batch-level decrement succeeds, but the aggregate item-level decrement
+      // (the final updateMany in consumeFifoTx) loses the race instead.
+      mockTx.stockBatch.updateMany.mockResolvedValue({ count: 1 });
+      mockTx.inventoryItem.updateMany.mockResolvedValueOnce({ count: 0 });
+
+      const service = makeService();
+      await expect(service.approveStockRelease(user(), "so-1", {})).rejects.toThrow(/Insufficient stock/);
+    });
+
+    it("succeeds and logs stock movement when nothing raced it", async () => {
+      const service = makeService();
+      await expect(service.approveStockRelease(user(), "so-1", {})).resolves.toBeDefined();
+
+      expect(mockTx.stockBatch.updateMany).toHaveBeenCalledWith({
+        where: { id: "batch-1", quantityRemaining: { gte: 10 } },
+        data: { quantityRemaining: { decrement: 10 } }
+      });
+      expect(mockTx.inventoryItem.updateMany).toHaveBeenCalledWith({
+        where: { id: "inv-item-1", quantityOnHand: { gte: 10 } },
+        data: { quantityOnHand: { decrement: 10 }, updatedById: expect.any(String) }
+      });
+      expect(mockTx.stockMovement.create).toHaveBeenCalled();
+    });
   });
 });
 
