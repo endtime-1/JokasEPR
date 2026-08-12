@@ -379,7 +379,17 @@ export class MaintenanceService {
       remaining -= take;
     }
     if (remaining > 0) throw new BadRequestException("Insufficient stock across batches for spare part consumption.");
-    await tx.inventoryItem.update({ where: { id: item.id }, data: { quantityOnHand: { decrement: quantity }, updatedById: user.id } });
+    // H-BUG-4 (2026-08-12, inventory-integration logic audit): the per-lot
+    // decrement above is floor-guarded, but this final aggregate-item
+    // decrement was a plain `update` — the one step in this function that
+    // wasn't guarded, unlike every sibling FIFO consumer's item-level write.
+    const guarded = await tx.inventoryItem.updateMany({
+      where: { id: item.id, quantityOnHand: { gte: quantity } },
+      data: { quantityOnHand: { decrement: quantity }, updatedById: user.id }
+    });
+    if (guarded.count === 0) {
+      throw new BadRequestException("Insufficient stock — possibly consumed concurrently. Please retry.");
+    }
   }
 
   // Returns an OR-scope that restricts results to the user's assigned locations.

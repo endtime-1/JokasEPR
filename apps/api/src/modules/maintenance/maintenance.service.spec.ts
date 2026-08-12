@@ -5,6 +5,14 @@ import { nextRef } from "../../common/next-ref";
 
 jest.mock("../../common/next-ref", () => ({ nextRef: jest.fn().mockResolvedValue("REF-001") }));
 
+const mockTx = {
+  sparePartUsage: { create: jest.fn() },
+  stockBatch: { findMany: jest.fn().mockResolvedValue([]), updateMany: jest.fn() },
+  stockMovement: { create: jest.fn() },
+  inventoryItem: { updateMany: jest.fn() },
+  maintenanceCost: { create: jest.fn() }
+};
+
 const mockPrisma = {
   machine: { findFirst: jest.fn(), count: jest.fn(), update: jest.fn().mockResolvedValue({}) },
   equipment: { findFirst: jest.fn(), update: jest.fn().mockResolvedValue({}) },
@@ -13,7 +21,11 @@ const mockPrisma = {
   breakdownRecord: { count: jest.fn(), findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn().mockResolvedValue({}), create: jest.fn().mockResolvedValue({ id: "bd-1" }) },
   machineDowntimeRecord: { aggregate: jest.fn() },
   maintenanceCost: { aggregate: jest.fn(), findMany: jest.fn() },
-  technicianAssignment: { findMany: jest.fn() }
+  technicianAssignment: { findMany: jest.fn() },
+  inventoryItem: { findFirst: jest.fn() },
+  product: { findFirst: jest.fn() },
+  warehouse: { findFirst: jest.fn() },
+  $transaction: jest.fn().mockImplementation((cb: (tx: typeof mockTx) => Promise<unknown>) => cb(mockTx))
 };
 const mockAudit = { write: jest.fn().mockResolvedValue(undefined) };
 
@@ -233,5 +245,38 @@ describe("MaintenanceService — document numbers use the atomic sequence, not a
     await service.createRecord(makeUser(), { machineId: "mach-1", maintenanceType: "PREVENTIVE" } as never, {});
 
     expect(nextRef).toHaveBeenCalledWith(expect.anything(), "company-1", "MR");
+  });
+});
+
+describe("MaintenanceService.createSparePartUsage / consumeSparePartTx — floor-guarded item decrement (H-BUG-4)", () => {
+  const dto = { warehouseId: "wh-1", productId: "prod-1", quantity: 5, unitCost: 10 } as never;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPrisma.inventoryItem.findFirst.mockResolvedValue({ id: "inv-1", branchId: "branch-1", warehouseId: "wh-1", productionSiteId: null, productId: "prod-1", uomId: "uom-1", quantityOnHand: 10 });
+    mockPrisma.product.findFirst.mockResolvedValue({ id: "prod-1", sku: "SP-1" });
+    mockPrisma.warehouse.findFirst.mockResolvedValue({ id: "wh-1", branchId: "branch-1", productionSiteId: null });
+    mockTx.sparePartUsage.create.mockResolvedValue({ id: "spu-1" });
+    mockTx.stockBatch.findMany.mockResolvedValue([{ id: "sb-1", quantityRemaining: 5, unitCost: 10 }]);
+    mockTx.stockBatch.updateMany.mockResolvedValue({ count: 1 });
+    mockTx.inventoryItem.updateMany.mockResolvedValue({ count: 1 });
+  });
+
+  it("issues the final aggregate decrement as a floor-guarded updateMany, not a plain unguarded update", async () => {
+    const service = makeService();
+    await service.createSparePartUsage(makeUser({ hasGlobalAccess: true }), dto, {});
+
+    expect(mockTx.inventoryItem.updateMany).toHaveBeenCalledWith({
+      where: { id: "inv-1", quantityOnHand: { gte: 5 } },
+      data: { quantityOnHand: { decrement: 5 }, updatedById: "user-1" }
+    });
+  });
+
+  it("rolls back the whole issuance when the guarded decrement loses a concurrent race", async () => {
+    mockTx.inventoryItem.updateMany.mockResolvedValue({ count: 0 });
+
+    const service = makeService();
+    await expect(service.createSparePartUsage(makeUser({ hasGlobalAccess: true }), dto, {}))
+      .rejects.toThrow(/insufficient stock/i);
   });
 });
