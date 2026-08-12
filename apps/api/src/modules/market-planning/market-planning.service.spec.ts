@@ -165,3 +165,135 @@ describe("MarketPlanningService.targetVsActualReport — target list is capped, 
     expect(mockPrisma.marketTarget.findMany.mock.calls[0][0].take).toBe(200);
   });
 });
+
+describe("MarketPlanningService — target/plan/MRP/recommendation edit+delete (H-CRUD-1)", () => {
+  const mockTx = {
+    marketTarget: { update: jest.fn() },
+    marketTargetItem: { updateMany: jest.fn() }
+  };
+  const mockPrisma = {
+    marketTarget: { findFirst: jest.fn(), update: jest.fn() },
+    productionPlan: { findFirst: jest.fn(), update: jest.fn() },
+    materialRequirementPlan: { findFirst: jest.fn(), update: jest.fn() },
+    procurementRecommendation: { findFirst: jest.fn(), update: jest.fn() },
+    $transaction: jest.fn().mockImplementation((cb: (tx: typeof mockTx) => Promise<unknown>) => cb(mockTx))
+  };
+  const mockAudit = { write: jest.fn().mockResolvedValue(undefined) };
+
+  function makeService() {
+    return new MarketPlanningService(mockPrisma as never, mockAudit as never);
+  }
+
+  function makeUser(overrides: Partial<AuthenticatedUser> = {}): AuthenticatedUser {
+    return {
+      id: "user-1", companyId: "company-1", email: "u@x.com", fullName: "U",
+      roles: [], permissions: [], branchIds: [], farmIds: [], warehouseIds: [], productionSiteIds: [],
+      hasGlobalAccess: true,
+      ...overrides
+    };
+  }
+
+  beforeEach(() => jest.clearAllMocks());
+
+  describe("updateTarget", () => {
+    it("edits a DRAFT target", async () => {
+      mockPrisma.marketTarget.findFirst.mockResolvedValue({ id: "mt-1", companyId: "company-1", status: "DRAFT", branchId: null, productionSiteId: null, periodStart: new Date("2026-09-01"), periodEnd: new Date("2026-09-30") });
+      mockPrisma.marketTarget.update.mockResolvedValue({ id: "mt-1", title: "Corrected title" });
+
+      const service = makeService();
+      await service.updateTarget(makeUser(), "mt-1", { title: "Corrected title" } as never, {});
+
+      expect(mockPrisma.marketTarget.update).toHaveBeenCalledWith({
+        where: { id: "mt-1" },
+        data: expect.objectContaining({ title: "Corrected title" })
+      });
+    });
+
+    it("rejects editing a target that has already been submitted or approved", async () => {
+      mockPrisma.marketTarget.findFirst.mockResolvedValue({ id: "mt-1", companyId: "company-1", status: "APPROVED", branchId: null, productionSiteId: null });
+
+      const service = makeService();
+      await expect(service.updateTarget(makeUser(), "mt-1", { title: "x" } as never, {})).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.marketTarget.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("deleteTarget", () => {
+    it("soft-deletes a DRAFT target and its items", async () => {
+      mockPrisma.marketTarget.findFirst.mockResolvedValue({ id: "mt-1", companyId: "company-1", status: "DRAFT", branchId: null, productionSiteId: null, targetNumber: "MT-1" });
+
+      const service = makeService();
+      await service.deleteTarget(makeUser(), "mt-1", {});
+
+      expect(mockTx.marketTarget.update).toHaveBeenCalledWith({ where: { id: "mt-1" }, data: expect.objectContaining({ deletedAt: expect.any(Date) }) });
+      expect(mockTx.marketTargetItem.updateMany).toHaveBeenCalled();
+    });
+
+    it("allows deleting a SUBMITTED target (nothing downstream exists yet)", async () => {
+      mockPrisma.marketTarget.findFirst.mockResolvedValue({ id: "mt-1", companyId: "company-1", status: "SUBMITTED", branchId: null, productionSiteId: null, targetNumber: "MT-1" });
+
+      const service = makeService();
+      await expect(service.deleteTarget(makeUser(), "mt-1", {})).resolves.toEqual({ success: true });
+    });
+
+    it("rejects deleting an APPROVED target — production plans may already depend on it", async () => {
+      mockPrisma.marketTarget.findFirst.mockResolvedValue({ id: "mt-1", companyId: "company-1", status: "APPROVED", branchId: null, productionSiteId: null, targetNumber: "MT-1" });
+
+      const service = makeService();
+      await expect(service.deleteTarget(makeUser(), "mt-1", {})).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe("deleteProductionPlan", () => {
+    it("allows deleting a DRAFT plan", async () => {
+      mockPrisma.productionPlan.findFirst.mockResolvedValue({ id: "pp-1", companyId: "company-1", status: "DRAFT", branchId: "branch-1", productionSiteId: "site-1", centralWarehouseId: "wh-1", planNumber: "PP-1" });
+      mockPrisma.productionPlan.update.mockResolvedValue({});
+
+      const service = makeService();
+      await expect(service.deleteProductionPlan(makeUser(), "pp-1", {})).resolves.toEqual({ success: true });
+    });
+
+    it("rejects deleting a plan that's already IN_PROGRESS", async () => {
+      mockPrisma.productionPlan.findFirst.mockResolvedValue({ id: "pp-1", companyId: "company-1", status: "IN_PROGRESS", branchId: "branch-1", productionSiteId: "site-1", centralWarehouseId: "wh-1", planNumber: "PP-1" });
+
+      const service = makeService();
+      await expect(service.deleteProductionPlan(makeUser(), "pp-1", {})).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe("deleteMrp", () => {
+    it("allows deleting a CALCULATED run", async () => {
+      mockPrisma.materialRequirementPlan.findFirst.mockResolvedValue({ id: "mrp-1", companyId: "company-1", status: "CALCULATED", branchId: "branch-1", centralWarehouseId: "wh-1", mrpNumber: "MRP-1" });
+      mockPrisma.materialRequirementPlan.update.mockResolvedValue({});
+
+      const service = makeService();
+      await expect(service.deleteMrp(makeUser(), "mrp-1", {})).resolves.toEqual({ success: true });
+    });
+
+    it("rejects deleting a run once procurement recommendations have been generated from it", async () => {
+      mockPrisma.materialRequirementPlan.findFirst.mockResolvedValue({ id: "mrp-1", companyId: "company-1", status: "PROCUREMENT_RECOMMENDED", branchId: "branch-1", centralWarehouseId: "wh-1", mrpNumber: "MRP-1" });
+
+      const service = makeService();
+      await expect(service.deleteMrp(makeUser(), "mrp-1", {})).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe("cancelRecommendation", () => {
+    it("cancels an OPEN recommendation", async () => {
+      mockPrisma.procurementRecommendation.findFirst.mockResolvedValue({ id: "rec-1", companyId: "company-1", status: "OPEN", branchId: "branch-1" });
+      mockPrisma.procurementRecommendation.update.mockResolvedValue({ id: "rec-1", status: "CANCELLED" });
+
+      const service = makeService();
+      await service.cancelRecommendation(makeUser(), "rec-1", {});
+
+      expect(mockPrisma.procurementRecommendation.update).toHaveBeenCalledWith({ where: { id: "rec-1" }, data: { status: "CANCELLED", updatedById: "user-1" } });
+    });
+
+    it("rejects cancelling a recommendation that was already converted to a purchase request", async () => {
+      mockPrisma.procurementRecommendation.findFirst.mockResolvedValue({ id: "rec-1", companyId: "company-1", status: "CONVERTED_TO_PR", branchId: "branch-1" });
+
+      const service = makeService();
+      await expect(service.cancelRecommendation(makeUser(), "rec-1", {})).rejects.toThrow(BadRequestException);
+    });
+  });
+});

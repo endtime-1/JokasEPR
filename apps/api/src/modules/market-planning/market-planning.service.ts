@@ -19,7 +19,8 @@ import {
   CreateMarketTargetDto,
   CreateProductionExecutionDto,
   GenerateProcurementRecommendationsDto,
-  MarketPlanningQueryDto
+  MarketPlanningQueryDto,
+  UpdateMarketTargetDto
 } from "./dto/market-planning.dto";
 
 type RequestContext = { ipAddress?: string; userAgent?: string };
@@ -264,6 +265,60 @@ export class MarketPlanningService {
     return { data: updated };
   }
 
+  // H-CRUD-1: targets could be created, submitted, and approved, but never
+  // edited or deleted — a typo'd title or a mistakenly-created draft had no
+  // fix path short of direct database access. Restricted to DRAFT only:
+  // once SUBMITTED, item-level corrections go through adjustTargetItem's
+  // own audit trail instead, and once APPROVED, downstream production
+  // plans/MRP/recommendations already depend on this target's values.
+  async updateTarget(user: AuthenticatedUser, id: string, dto: UpdateMarketTargetDto, context: RequestContext) {
+    const target = await this.requireTarget(user, id);
+    if (target.status !== "DRAFT") {
+      throw new BadRequestException(`Only DRAFT targets can be edited directly — this target is ${target.status.toLowerCase()}.`);
+    }
+    if (dto.periodStart || dto.periodEnd) {
+      const newStart = new Date(dto.periodStart ?? target.periodStart);
+      const newEnd = new Date(dto.periodEnd ?? target.periodEnd);
+      if (newEnd < newStart) throw new BadRequestException("Target end date must be after start date.");
+    }
+    if (dto.branchId) this.assertBranchAccess(user, dto.branchId);
+    if (dto.productionSiteId) this.assertProductionSiteAccess(user, dto.productionSiteId);
+
+    const updated = await this.prisma.marketTarget.update({
+      where: { id },
+      data: {
+        title: dto.title,
+        period: dto.period,
+        periodStart: dto.periodStart ? new Date(dto.periodStart) : undefined,
+        periodEnd: dto.periodEnd ? new Date(dto.periodEnd) : undefined,
+        branchId: dto.branchId,
+        productionSiteId: dto.productionSiteId,
+        notes: dto.notes,
+        updatedById: user.id
+      }
+    });
+    await this.writeAudit(user, "UPDATE", "MarketTarget", id, `Edited market target ${target.targetNumber}`, context, { branchId: updated.branchId ?? undefined, productionSiteId: updated.productionSiteId ?? undefined });
+    return { data: updated };
+  }
+
+  // H-CRUD-1: allowed for DRAFT and SUBMITTED — neither state has any
+  // downstream production plan/MRP/procurement recommendation yet (those
+  // are only ever created inside approveTarget's own transaction), so
+  // there's nothing to orphan. Soft-delete, matching the deletedAt
+  // convention used everywhere else in this codebase.
+  async deleteTarget(user: AuthenticatedUser, id: string, context: RequestContext) {
+    const target = await this.requireTarget(user, id);
+    if (!["DRAFT", "SUBMITTED"].includes(target.status)) {
+      throw new BadRequestException(`Cannot delete a target that has already been ${target.status.toLowerCase()} — it may have production plans or purchase recommendations depending on it.`);
+    }
+    await this.prisma.$transaction(async (tx) => {
+      await tx.marketTarget.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+      await tx.marketTargetItem.updateMany({ where: { companyId: user.companyId, marketTargetId: id, deletedAt: null }, data: { deletedAt: new Date(), updatedById: user.id } });
+    });
+    await this.writeAudit(user, "DELETE", "MarketTarget", id, `Deleted market target ${target.targetNumber}`, context, { branchId: target.branchId ?? undefined, productionSiteId: target.productionSiteId ?? undefined });
+    return { success: true };
+  }
+
   async adjustTargetItem(user: AuthenticatedUser, targetId: string, itemId: string, dto: AdjustTargetItemDto, context: RequestContext) {
     const target = await this.requireTarget(user, targetId);
     const item = await this.prisma.marketTargetItem.findFirst({ where: { id: itemId, companyId: user.companyId, marketTargetId: targetId, deletedAt: null } });
@@ -397,6 +452,24 @@ export class MarketPlanningService {
     return { data: { ...plan, items: items.map((item) => ({ ...item, product: products.get(item.productId) })), mrps, executions } };
   }
 
+  // H-CRUD-1: production plans, MRP runs, and procurement recommendations
+  // are computed artifacts (generated from an approved target), so a
+  // free-form edit screen would let displayed numbers drift from the
+  // calculation that produced them — the correct "fix" for a wrong number
+  // is recalculating, which calculateMrp/generateProcurementRecommendations
+  // already support. What was genuinely missing was a way to discard a
+  // mistaken or duplicate run; delete-only, restricted to states with
+  // nothing real yet built on top of it.
+  async deleteProductionPlan(user: AuthenticatedUser, id: string, context: RequestContext) {
+    const plan = await this.requireProductionPlan(user, id);
+    if (!["DRAFT", "READY_FOR_APPROVAL"].includes(plan.status)) {
+      throw new BadRequestException(`Cannot delete a production plan that is ${plan.status.toLowerCase()} — MRP runs or executions may already depend on it.`);
+    }
+    await this.prisma.productionPlan.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    await this.writeAudit(user, "DELETE", "ProductionPlan", id, `Deleted production plan ${plan.planNumber}`, context, { branchId: plan.branchId, productionSiteId: plan.productionSiteId });
+    return { success: true };
+  }
+
   async calculateMrp(user: AuthenticatedUser, productionPlanId: string, dto: CalculateMrpDto, context: RequestContext) {
     const plan = await this.requireProductionPlan(user, productionPlanId);
     const warehouseId = dto.centralWarehouseId ?? plan.centralWarehouseId;
@@ -495,6 +568,19 @@ export class MarketPlanningService {
     return { data: { ...mrp, items: items.map((item) => ({ ...item, rawMaterial: products.get(item.rawMaterialId), finishedProduct: products.get(item.finishedProductId) })), checks, recommendations } };
   }
 
+  // H-CRUD-1: same reasoning as deleteProductionPlan above — delete-only,
+  // blocked once procurement recommendations have actually been generated
+  // from this run (PROCUREMENT_RECOMMENDED+).
+  async deleteMrp(user: AuthenticatedUser, id: string, context: RequestContext) {
+    const mrp = await this.requireMrp(user, id);
+    if (!["DRAFT", "CALCULATED", "SHORTAGE"].includes(mrp.status)) {
+      throw new BadRequestException(`Cannot delete an MRP run that is ${mrp.status.toLowerCase()} — procurement recommendations may already depend on it.`);
+    }
+    await this.prisma.materialRequirementPlan.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    await this.writeAudit(user, "DELETE", "MaterialRequirementPlan", id, `Deleted MRP run ${mrp.mrpNumber}`, context, { branchId: mrp.branchId });
+    return { success: true };
+  }
+
   async generateProcurementRecommendations(user: AuthenticatedUser, mrpId: string, dto: GenerateProcurementRecommendationsDto, context: RequestContext) {
     const mrp = await this.requireMrp(user, mrpId);
     const shortageItems = await this.prisma.materialRequirementItem.findMany({
@@ -540,6 +626,23 @@ export class MarketPlanningService {
     const rows = await this.prisma.procurementRecommendation.findMany({ where: this.recommendationWhere(user, query), orderBy: { createdAt: "desc" } });
     const products = await this.productMap(user.companyId, rows.map((row) => row.rawMaterialId));
     return { data: rows.map((row) => ({ ...row, rawMaterial: products.get(row.rawMaterialId) })) };
+  }
+
+  // H-CRUD-1: same reasoning as deleteProductionPlan/deleteMrp above, but
+  // using status: CANCELLED rather than deletedAt — this table already
+  // distinguishes "actionable" (OPEN) from "no longer relevant"
+  // (CONVERTED_TO_PR / CANCELLED), and keeping a cancelled recommendation
+  // visible in list/history (rather than hiding it via soft-delete) matches
+  // how rejected purchase orders/requests behave elsewhere in this codebase.
+  async cancelRecommendation(user: AuthenticatedUser, id: string, context: RequestContext) {
+    const recommendation = await this.prisma.procurementRecommendation.findFirst({ where: { ...this.recommendationWhere(user, {}), id } });
+    if (!recommendation) throw new NotFoundException("Procurement recommendation was not found.");
+    if (recommendation.status !== "OPEN") {
+      throw new BadRequestException(`Cannot cancel a recommendation that is already ${recommendation.status.toLowerCase().replace(/_/g, " ")}.`);
+    }
+    const updated = await this.prisma.procurementRecommendation.update({ where: { id }, data: { status: "CANCELLED", updatedById: user.id } });
+    await this.writeAudit(user, "UPDATE", "ProcurementRecommendation", id, "Cancelled procurement recommendation", context, { branchId: recommendation.branchId });
+    return { data: updated };
   }
 
   async convertRecommendationToPurchaseRequest(user: AuthenticatedUser, id: string, dto: ConvertRecommendationDto, context: RequestContext) {

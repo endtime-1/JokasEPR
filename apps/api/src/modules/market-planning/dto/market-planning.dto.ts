@@ -103,6 +103,23 @@ export class CreateMarketTargetDto {
   items!: MarketTargetItemInputDto[];
 }
 
+// H-CRUD-1: fixes the reported gap — targets could be created, submitted,
+// and approved, but never edited (a typo'd title, a wrong period) or
+// removed. Only DRAFT targets are freely editable/deletable — once
+// SUBMITTED, item-level values are meant to be corrected via
+// adjustTargetItem's own audit trail (TargetAdjustment), and once APPROVED,
+// downstream production plans/MRP/recommendations already exist and
+// depend on the target's values.
+export class UpdateMarketTargetDto {
+  @IsOptional() @IsString() @MaxLength(200) title?: string;
+  @IsOptional() @IsEnum(MarketTargetPeriod) period?: MarketTargetPeriod;
+  @IsOptional() @IsDateString() periodStart?: string;
+  @IsOptional() @IsDateString() periodEnd?: string;
+  @IsOptional() @IsUUID() branchId?: string;
+  @IsOptional() @IsUUID() productionSiteId?: string;
+  @IsOptional() @IsString() @MaxLength(500) notes?: string;
+}
+
 export class AdjustTargetItemDto {
   @IsNumber()
   @Min(-100)

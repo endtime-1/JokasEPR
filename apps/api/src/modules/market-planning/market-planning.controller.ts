@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Ip, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Headers, Ip, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { AuthenticatedUser, PERMISSIONS } from "@jokas/shared";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { RequirePermissions } from "../../common/decorators/permissions.decorator";
@@ -12,7 +12,8 @@ import {
   CreateMarketTargetDto,
   CreateProductionExecutionDto,
   GenerateProcurementRecommendationsDto,
-  MarketPlanningQueryDto
+  MarketPlanningQueryDto,
+  UpdateMarketTargetDto
 } from "./dto/market-planning.dto";
 import { MarketPlanningService } from "./market-planning.service";
 
@@ -51,6 +52,18 @@ export class MarketPlanningController {
     return this.marketPlanningService.getTarget(user, id);
   }
 
+  @Patch("targets/:id")
+  @RequirePermissions(PERMISSIONS.MARKET_PLANNING_MANAGE)
+  updateTarget(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateMarketTargetDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.marketPlanningService.updateTarget(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Delete("targets/:id")
+  @RequirePermissions(PERMISSIONS.MARKET_PLANNING_MANAGE)
+  deleteTarget(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.marketPlanningService.deleteTarget(user, id, { ipAddress, userAgent });
+  }
+
   @Patch("targets/:id/submit")
   @RequirePermissions(PERMISSIONS.MARKET_PLANNING_MANAGE)
   submitTarget(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
@@ -81,6 +94,12 @@ export class MarketPlanningController {
     return this.marketPlanningService.getProductionPlan(user, id);
   }
 
+  @Delete("production-plans/:id")
+  @RequirePermissions(PERMISSIONS.MARKET_PLANNING_MANAGE)
+  deleteProductionPlan(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.marketPlanningService.deleteProductionPlan(user, id, { ipAddress, userAgent });
+  }
+
   @Post("production-plans/:id/mrp")
   @RequirePermissions(PERMISSIONS.MARKET_PLANNING_MANAGE, PERMISSIONS.INVENTORY_READ)
   calculateMrp(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: CalculateMrpDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
@@ -99,6 +118,12 @@ export class MarketPlanningController {
     return this.marketPlanningService.getMrp(user, id);
   }
 
+  @Delete("mrp/:id")
+  @RequirePermissions(PERMISSIONS.MARKET_PLANNING_MANAGE)
+  deleteMrp(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.marketPlanningService.deleteMrp(user, id, { ipAddress, userAgent });
+  }
+
   @Post("mrp/:id/recommendations")
   @RequirePermissions(PERMISSIONS.MARKET_PLANNING_MANAGE, PERMISSIONS.PROCUREMENT_READ)
   generateRecommendations(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: GenerateProcurementRecommendationsDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
@@ -109,6 +134,12 @@ export class MarketPlanningController {
   @RequirePermissions(PERMISSIONS.MARKET_PLANNING_READ)
   recommendations(@CurrentUser() user: AuthenticatedUser, @Query() query: MarketPlanningQueryDto) {
     return this.marketPlanningService.listRecommendations(user, query);
+  }
+
+  @Patch("recommendations/:id/cancel")
+  @RequirePermissions(PERMISSIONS.MARKET_PLANNING_MANAGE)
+  cancelRecommendation(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.marketPlanningService.cancelRecommendation(user, id, { ipAddress, userAgent });
   }
 
   @Post("recommendations/:id/convert-to-purchase-request")
