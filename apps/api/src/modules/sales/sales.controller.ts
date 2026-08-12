@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Ip, Param, Patch, Post, Query, Req, Res, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Headers, Ip, Param, Patch, Post, Query, Req, Res, UseGuards } from "@nestjs/common";
 import { Request } from "express";
 import { Response } from "express";
 import { AuthenticatedUser, PERMISSIONS } from "@jokas/shared";
@@ -6,7 +6,7 @@ import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { RequirePermissions } from "../../common/decorators/permissions.decorator";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { PermissionsGuard } from "../../common/guards/permissions.guard";
-import { CreateCustomerDto, CreateCustomerGroupDto, CreatePaymentDto, CreatePriceListDto, CreateProspectVisitDto, CreateSalesOrderDto, CreateSalesReturnDto, ProspectVisitQueryDto, SalesQueryDto } from "./dto/sales.dto";
+import { CreateCustomerDto, CreateCustomerGroupDto, CreatePaymentDto, CreatePriceListDto, CreateProspectVisitDto, CreateSalesOrderDto, CreateSalesReturnDto, ProspectVisitQueryDto, SalesQueryDto, UpdateCustomerDto, UpdateCustomerGroupDto, UpdatePriceListDto } from "./dto/sales.dto";
 import { SalesService } from "./sales.service";
 
 @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -38,6 +38,18 @@ export class SalesController {
     return this.salesService.createCustomerGroup(user, dto, { ipAddress, userAgent });
   }
 
+  @Patch("customer-groups/:id")
+  @RequirePermissions(PERMISSIONS.SALES_MANAGE)
+  updateCustomerGroup(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateCustomerGroupDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.salesService.updateCustomerGroup(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Delete("customer-groups/:id")
+  @RequirePermissions(PERMISSIONS.SALES_MANAGE)
+  deleteCustomerGroup(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.salesService.deleteCustomerGroup(user, id, { ipAddress, userAgent });
+  }
+
   @Get("customers")
   @RequirePermissions(PERMISSIONS.SALES_READ)
   customers(@CurrentUser() user: AuthenticatedUser, @Query() query: SalesQueryDto) {
@@ -56,6 +68,18 @@ export class SalesController {
     return this.salesService.getCustomer(user, id);
   }
 
+  @Patch("customers/:id")
+  @RequirePermissions(PERMISSIONS.SALES_MANAGE)
+  updateCustomer(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateCustomerDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.salesService.updateCustomer(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Delete("customers/:id")
+  @RequirePermissions(PERMISSIONS.SALES_MANAGE)
+  deleteCustomer(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.salesService.deleteCustomer(user, id, { ipAddress, userAgent });
+  }
+
   @Get("price-lists")
   @RequirePermissions(PERMISSIONS.SALES_READ)
   priceLists(@CurrentUser() user: AuthenticatedUser, @Query() query: SalesQueryDto) {
@@ -66,6 +90,18 @@ export class SalesController {
   @RequirePermissions(PERMISSIONS.SALES_MANAGE)
   createPriceList(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreatePriceListDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.salesService.createPriceList(user, dto, { ipAddress, userAgent });
+  }
+
+  @Patch("price-lists/:id")
+  @RequirePermissions(PERMISSIONS.SALES_MANAGE)
+  updatePriceList(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdatePriceListDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.salesService.updatePriceList(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Delete("price-lists/:id")
+  @RequirePermissions(PERMISSIONS.SALES_MANAGE)
+  deletePriceList(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.salesService.deletePriceList(user, id, { ipAddress, userAgent });
   }
 
   @Get("orders")

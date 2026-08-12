@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { AuthenticatedUser } from "@jokas/shared";
 import { SalesService } from "./sales.service";
 
@@ -21,8 +21,11 @@ const mockTx = {
 };
 
 const mockPrisma = {
-  customer: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
-  invoice: { findFirst: jest.fn(), findUnique: jest.fn().mockResolvedValue(null) },
+  customer: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), count: jest.fn(), update: jest.fn() },
+  customerGroup: { findFirst: jest.fn(), update: jest.fn() },
+  customerCreditLimit: { findFirst: jest.fn() },
+  priceList: { findFirst: jest.fn(), update: jest.fn() },
+  invoice: { findFirst: jest.fn(), findUnique: jest.fn().mockResolvedValue(null), count: jest.fn() },
   payment: { findFirst: jest.fn() },
   receipt: { findFirst: jest.fn() },
   revenue: { create: jest.fn().mockResolvedValue({}) },
@@ -30,7 +33,7 @@ const mockPrisma = {
   branch: { findMany: jest.fn().mockResolvedValue([]) },
   product: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
   salesOrderItem: { findFirst: jest.fn(), groupBy: jest.fn().mockResolvedValue([]) },
-  salesOrder: { findFirst: jest.fn(), groupBy: jest.fn().mockResolvedValue([]) },
+  salesOrder: { findFirst: jest.fn(), groupBy: jest.fn().mockResolvedValue([]), count: jest.fn() },
   salesReturn: { aggregate: jest.fn(), create: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
   $transaction: jest.fn().mockImplementation((cb: (tx: typeof mockTx) => Promise<unknown>) => cb(mockTx))
 };
@@ -479,5 +482,171 @@ describe("SalesService.reports — top-lists aggregate over every matching order
     const result = await service.reports(makeUser(), {} as never);
 
     expect(result.data.byCustomer).toEqual([{ code: "C-001", customer: "Acme Ltd", orders: 250, salesValue: 500000, balanceDue: 12000 }]);
+  });
+});
+
+describe("SalesService — Customer / CustomerGroup / PriceList edit & delete", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  describe("updateCustomer", () => {
+    it("updates the whitelisted fields and writes an audit entry", async () => {
+      mockPrisma.customer.findFirst.mockResolvedValue({ id: "cust-1", companyId: "company-1", branchId: "branch-1", code: "C-001" });
+      mockPrisma.customer.update.mockResolvedValue({ id: "cust-1", code: "C-001", branchId: "branch-1", phone: "0551234567" });
+
+      const service = makeService();
+      const result = await service.updateCustomer(makeUser(), "cust-1", { phone: "0551234567" } as never, {});
+
+      expect(mockPrisma.customer.update).toHaveBeenCalledWith({
+        where: { id: "cust-1" },
+        data: expect.objectContaining({ phone: "0551234567", updatedById: "user-1" })
+      });
+      expect(mockAudit.write).toHaveBeenCalledWith(expect.objectContaining({ action: "UPDATE", entityType: "Customer", entityId: "cust-1" }));
+      expect(result.data.phone).toBe("0551234567");
+    });
+
+    it("throws NotFoundException when the customer is outside the caller's scope", async () => {
+      mockPrisma.customer.findFirst.mockResolvedValue(null);
+
+      const service = makeService();
+      await expect(service.updateCustomer(makeUser(), "missing", { phone: "1" } as never, {})).rejects.toThrow(NotFoundException);
+      expect(mockPrisma.customer.update).not.toHaveBeenCalled();
+    });
+
+    it("rejects reassigning to a branch the caller doesn't have access to", async () => {
+      mockPrisma.customer.findFirst.mockResolvedValue({ id: "cust-1", companyId: "company-1", branchId: "branch-1", code: "C-001" });
+
+      const service = makeService();
+      await expect(service.updateCustomer(makeUser(), "cust-1", { branchId: "branch-2" } as never, {})).rejects.toThrow(ForbiddenException);
+      expect(mockPrisma.customer.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("deleteCustomer", () => {
+    beforeEach(() => {
+      mockPrisma.customer.findFirst.mockResolvedValue({ id: "cust-1", companyId: "company-1", branchId: "branch-1", code: "C-001" });
+      mockPrisma.salesOrder.count.mockResolvedValue(0);
+      mockPrisma.invoice.count.mockResolvedValue(0);
+      mockPrisma.customerCreditLimit.findFirst.mockResolvedValue(null);
+    });
+
+    it("soft-deletes via deletedAt when the customer has no active orders, unpaid invoices, or balance", async () => {
+      mockPrisma.customer.update.mockResolvedValue({ id: "cust-1", deletedAt: new Date() });
+
+      const service = makeService();
+      await service.deleteCustomer(makeUser(), "cust-1", {});
+
+      expect(mockPrisma.customer.update).toHaveBeenCalledWith({
+        where: { id: "cust-1" },
+        data: expect.objectContaining({ deletedAt: expect.any(Date) })
+      });
+      expect(mockAudit.write).toHaveBeenCalledWith(expect.objectContaining({ action: "DELETE", entityType: "Customer" }));
+    });
+
+    it("blocks the delete when the customer has active (non-fulfilled, non-cancelled) sales orders", async () => {
+      mockPrisma.salesOrder.count.mockResolvedValue(2);
+
+      const service = makeService();
+      await expect(service.deleteCustomer(makeUser(), "cust-1", {})).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.customer.update).not.toHaveBeenCalled();
+    });
+
+    it("blocks the delete when the customer has unpaid (non-PAID, non-VOID) invoices", async () => {
+      mockPrisma.invoice.count.mockResolvedValue(1);
+
+      const service = makeService();
+      await expect(service.deleteCustomer(makeUser(), "cust-1", {})).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.customer.update).not.toHaveBeenCalled();
+    });
+
+    it("blocks the delete when the customer carries a non-zero credit balance", async () => {
+      mockPrisma.customerCreditLimit.findFirst.mockResolvedValue({ currentBalance: 450 });
+
+      const service = makeService();
+      await expect(service.deleteCustomer(makeUser(), "cust-1", {})).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.customer.update).not.toHaveBeenCalled();
+    });
+
+    it("throws NotFoundException for a customer outside the caller's scope", async () => {
+      mockPrisma.customer.findFirst.mockResolvedValue(null);
+
+      const service = makeService();
+      await expect(service.deleteCustomer(makeUser(), "missing", {})).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe("updateCustomerGroup / deleteCustomerGroup", () => {
+    it("updates the whitelisted fields", async () => {
+      mockPrisma.customerGroup.findFirst.mockResolvedValue({ id: "grp-1", companyId: "company-1", branchId: "branch-1", code: "GRP-1" });
+      mockPrisma.customerGroup.update.mockResolvedValue({ id: "grp-1", code: "GRP-1", name: "Wholesale" });
+
+      const service = makeService();
+      await service.updateCustomerGroup(makeUser(), "grp-1", { name: "Wholesale" } as never, {});
+
+      expect(mockPrisma.customerGroup.update).toHaveBeenCalledWith({
+        where: { id: "grp-1" },
+        data: expect.objectContaining({ name: "Wholesale", updatedById: "user-1" })
+      });
+      expect(mockAudit.write).toHaveBeenCalledWith(expect.objectContaining({ action: "UPDATE", entityType: "CustomerGroup" }));
+    });
+
+    it("soft-deletes a customer group with no customers assigned", async () => {
+      mockPrisma.customerGroup.findFirst.mockResolvedValue({ id: "grp-1", companyId: "company-1", branchId: "branch-1", code: "GRP-1" });
+      mockPrisma.customer.count.mockResolvedValue(0);
+      mockPrisma.customerGroup.update.mockResolvedValue({ id: "grp-1", deletedAt: new Date() });
+
+      const service = makeService();
+      await service.deleteCustomerGroup(makeUser(), "grp-1", {});
+
+      expect(mockPrisma.customerGroup.update).toHaveBeenCalledWith({
+        where: { id: "grp-1" },
+        data: expect.objectContaining({ deletedAt: expect.any(Date) })
+      });
+    });
+
+    it("blocks deleting a customer group that still has customers assigned to it", async () => {
+      mockPrisma.customerGroup.findFirst.mockResolvedValue({ id: "grp-1", companyId: "company-1", branchId: "branch-1", code: "GRP-1" });
+      mockPrisma.customer.count.mockResolvedValue(3);
+
+      const service = makeService();
+      await expect(service.deleteCustomerGroup(makeUser(), "grp-1", {})).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.customerGroup.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("updatePriceList / deletePriceList", () => {
+    it("updates the whitelisted fields, converting date strings", async () => {
+      mockPrisma.priceList.findFirst.mockResolvedValue({ id: "pl-1", companyId: "company-1", branchId: "branch-1", name: "Standard" });
+      mockPrisma.priceList.update.mockResolvedValue({ id: "pl-1", name: "Standard", unitPrice: 55 });
+
+      const service = makeService();
+      await service.updatePriceList(makeUser(), "pl-1", { unitPrice: 55, validTo: "2027-01-01" } as never, {});
+
+      expect(mockPrisma.priceList.update).toHaveBeenCalledWith({
+        where: { id: "pl-1" },
+        data: expect.objectContaining({ unitPrice: 55, validTo: new Date("2027-01-01"), updatedById: "user-1" })
+      });
+      expect(mockAudit.write).toHaveBeenCalledWith(expect.objectContaining({ action: "UPDATE", entityType: "PriceList" }));
+    });
+
+    it("soft-deletes a price list via deletedAt", async () => {
+      mockPrisma.priceList.findFirst.mockResolvedValue({ id: "pl-1", companyId: "company-1", branchId: "branch-1", name: "Standard" });
+      mockPrisma.priceList.update.mockResolvedValue({ id: "pl-1", deletedAt: new Date() });
+
+      const service = makeService();
+      await service.deletePriceList(makeUser(), "pl-1", {});
+
+      expect(mockPrisma.priceList.update).toHaveBeenCalledWith({
+        where: { id: "pl-1" },
+        data: expect.objectContaining({ deletedAt: expect.any(Date) })
+      });
+      expect(mockAudit.write).toHaveBeenCalledWith(expect.objectContaining({ action: "DELETE", entityType: "PriceList" }));
+    });
+
+    it("throws NotFoundException for a price list outside the caller's scope", async () => {
+      mockPrisma.priceList.findFirst.mockResolvedValue(null);
+
+      const service = makeService();
+      await expect(service.deletePriceList(makeUser(), "missing", {})).rejects.toThrow(NotFoundException);
+    });
   });
 });

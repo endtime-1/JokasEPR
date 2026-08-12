@@ -86,6 +86,55 @@ export class CreateCustomerDto {
   creditLimit?: number;
 }
 
+export class UpdateCustomerGroupDto {
+  @IsOptional()
+  @IsUUID()
+  branchId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(240)
+  description?: string;
+}
+
+export class UpdateCustomerDto {
+  @IsOptional()
+  @IsUUID()
+  branchId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  customerGroupId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  phone?: string;
+
+  @IsOptional()
+  @IsEmail()
+  email?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(240)
+  address?: string;
+
+  @IsOptional()
+  @IsEnum(CustomerStatus)
+  status?: CustomerStatus;
+}
+
 export class CreatePriceListDto {
   @IsOptional()
   @IsUUID()
@@ -105,6 +154,43 @@ export class CreatePriceListDto {
   @IsNumber()
   @Min(0)
   unitPrice!: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(8)
+  currency?: string;
+
+  @IsOptional()
+  @IsDateString()
+  validFrom?: string;
+
+  @IsOptional()
+  @IsDateString()
+  validTo?: string;
+}
+
+export class UpdatePriceListDto {
+  @IsOptional()
+  @IsUUID()
+  branchId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  customerGroupId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  productId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  name?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  unitPrice?: number;
 
   @IsOptional()
   @IsString()

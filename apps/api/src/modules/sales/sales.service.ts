@@ -14,7 +14,10 @@ import {
   CreateSalesOrderItemDto,
   CreateSalesReturnDto,
   ProspectVisitQueryDto,
-  SalesQueryDto
+  SalesQueryDto,
+  UpdateCustomerDto,
+  UpdateCustomerGroupDto,
+  UpdatePriceListDto
 } from "./dto/sales.dto";
 
 type RequestContext = {
@@ -101,6 +104,30 @@ export class SalesService {
     return { data };
   }
 
+  async updateCustomerGroup(user: AuthenticatedUser, id: string, dto: UpdateCustomerGroupDto, context: RequestContext) {
+    const group = await this.prisma.customerGroup.findFirst({ where: { ...this.customerGroupWhere(user, {}), id } });
+    if (!group) throw new NotFoundException("Customer group was not found.");
+    if (dto.branchId) this.assertBranchAccess(user, dto.branchId);
+    const data = await this.prisma.customerGroup.update({
+      where: { id },
+      data: { branchId: dto.branchId, name: dto.name, description: dto.description, updatedById: user.id }
+    });
+    await this.writeAudit(user, "UPDATE", "CustomerGroup", id, `Updated customer group ${data.code}`, context, { branchId: data.branchId ?? undefined });
+    return { data };
+  }
+
+  async deleteCustomerGroup(user: AuthenticatedUser, id: string, context: RequestContext) {
+    const group = await this.prisma.customerGroup.findFirst({ where: { ...this.customerGroupWhere(user, {}), id } });
+    if (!group) throw new NotFoundException("Customer group was not found.");
+    const assignedCustomers = await this.prisma.customer.count({ where: { companyId: user.companyId, customerGroupId: id, deletedAt: null } });
+    if (assignedCustomers > 0) {
+      throw new BadRequestException(`Cannot delete customer group "${group.code}" — ${assignedCustomers} customer(s) are still assigned to it. Reassign them first.`);
+    }
+    const data = await this.prisma.customerGroup.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    await this.writeAudit(user, "DELETE", "CustomerGroup", id, `Deleted customer group ${group.code}`, context, { branchId: group.branchId ?? undefined });
+    return { data };
+  }
+
   async listCustomers(user: AuthenticatedUser, query: SalesQueryDto) {
     const data = await this.prisma.customer.findMany({
       where: this.customerWhere(user, query),
@@ -156,6 +183,57 @@ export class SalesService {
     return { data: customer };
   }
 
+  async updateCustomer(user: AuthenticatedUser, id: string, dto: UpdateCustomerDto, context: RequestContext) {
+    const customer = await this.prisma.customer.findFirst({ where: { ...this.customerWhere(user, {}), id } });
+    if (!customer) throw new NotFoundException("Customer was not found.");
+    if (dto.branchId) this.assertBranchAccess(user, dto.branchId);
+    const data = await this.prisma.customer.update({
+      where: { id },
+      data: {
+        branchId: dto.branchId,
+        customerGroupId: dto.customerGroupId,
+        name: dto.name,
+        phone: dto.phone,
+        email: dto.email,
+        address: dto.address,
+        status: dto.status,
+        updatedById: user.id
+      }
+    });
+    await this.writeAudit(user, "UPDATE", "Customer", id, `Updated customer ${data.code}`, context, { branchId: data.branchId });
+    return { data };
+  }
+
+  // A customer with unresolved money on the books (open orders, unpaid
+  // invoices, or a non-zero credit balance) is blocked from deletion —
+  // soft-deleting it would silently orphan that history instead of
+  // surfacing it, matching the dependent-record guard every other module's
+  // delete already enforces (see e.g. FlockBatch/FeedFormula deletes).
+  async deleteCustomer(user: AuthenticatedUser, id: string, context: RequestContext) {
+    const customer = await this.prisma.customer.findFirst({ where: { ...this.customerWhere(user, {}), id } });
+    if (!customer) throw new NotFoundException("Customer was not found.");
+
+    const [activeOrders, liveInvoices, creditLimit] = await Promise.all([
+      this.prisma.salesOrder.count({ where: { companyId: user.companyId, customerId: id, status: { notIn: ["FULFILLED", "CANCELLED"] }, deletedAt: null } }),
+      this.prisma.invoice.count({ where: { companyId: user.companyId, customerId: id, status: { notIn: ["PAID", "VOID"] }, deletedAt: null } }),
+      this.prisma.customerCreditLimit.findFirst({ where: { companyId: user.companyId, customerId: id, deletedAt: null } })
+    ]);
+    if (activeOrders > 0) {
+      throw new BadRequestException(`Cannot delete customer "${customer.code}" — it has ${activeOrders} active sales order(s). Fulfill or cancel them first.`);
+    }
+    if (liveInvoices > 0) {
+      throw new BadRequestException(`Cannot delete customer "${customer.code}" — it has ${liveInvoices} unpaid invoice(s). Settle them first.`);
+    }
+    const outstandingBalance = Number(creditLimit?.currentBalance ?? 0);
+    if (outstandingBalance > 0) {
+      throw new BadRequestException(`Cannot delete customer "${customer.code}" — it has an outstanding balance of ${outstandingBalance.toFixed(2)}. Settle the balance first.`);
+    }
+
+    const data = await this.prisma.customer.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    await this.writeAudit(user, "DELETE", "Customer", id, `Deleted customer ${customer.code}`, context, { branchId: customer.branchId });
+    return { data };
+  }
+
   async listPriceLists(user: AuthenticatedUser, query: SalesQueryDto) {
     const data = await this.prisma.priceList.findMany({ where: this.priceListWhere(user, query), include: { product: true, branch: true, customerGroup: true }, orderBy: { createdAt: "desc" }, take: 200 });
     return { data };
@@ -178,6 +256,36 @@ export class SalesService {
       }
     });
     await this.writeAudit(user, "CREATE", "PriceList", data.id, `Created price list ${data.name}`, context, { branchId: dto.branchId });
+    return { data };
+  }
+
+  async updatePriceList(user: AuthenticatedUser, id: string, dto: UpdatePriceListDto, context: RequestContext) {
+    const priceList = await this.prisma.priceList.findFirst({ where: { ...this.priceListWhere(user, {}), id } });
+    if (!priceList) throw new NotFoundException("Price list was not found.");
+    if (dto.branchId) this.assertBranchAccess(user, dto.branchId);
+    const data = await this.prisma.priceList.update({
+      where: { id },
+      data: {
+        branchId: dto.branchId,
+        customerGroupId: dto.customerGroupId,
+        productId: dto.productId,
+        name: dto.name,
+        unitPrice: dto.unitPrice,
+        currency: dto.currency,
+        validFrom: dto.validFrom ? new Date(dto.validFrom) : undefined,
+        validTo: dto.validTo ? new Date(dto.validTo) : undefined,
+        updatedById: user.id
+      }
+    });
+    await this.writeAudit(user, "UPDATE", "PriceList", id, `Updated price list ${data.name}`, context, { branchId: data.branchId ?? undefined });
+    return { data };
+  }
+
+  async deletePriceList(user: AuthenticatedUser, id: string, context: RequestContext) {
+    const priceList = await this.prisma.priceList.findFirst({ where: { ...this.priceListWhere(user, {}), id } });
+    if (!priceList) throw new NotFoundException("Price list was not found.");
+    const data = await this.prisma.priceList.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    await this.writeAudit(user, "DELETE", "PriceList", id, `Deleted price list ${priceList.name}`, context, { branchId: priceList.branchId ?? undefined });
     return { data };
   }
 
@@ -1011,7 +1119,7 @@ export class SalesService {
     return date;
   }
 
-  private async writeAudit(user: AuthenticatedUser, action: "CREATE" | "APPROVE" | "REJECT", entityType: string, entityId: string, summary: string, context: RequestContext, scope: Scope) {
+  private async writeAudit(user: AuthenticatedUser, action: "CREATE" | "UPDATE" | "DELETE" | "APPROVE" | "REJECT", entityType: string, entityId: string, summary: string, context: RequestContext, scope: Scope) {
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action, entityType, entityId, summary, branchId: scope.branchId, warehouseId: scope.warehouseId, ipAddress: context.ipAddress, userAgent: context.userAgent });
   }
 
