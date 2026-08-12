@@ -5,6 +5,7 @@ import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { LookupCacheService } from "../../common/services/lookup-cache.service";
 import { nextRef } from "../../common/next-ref";
+import { roundMoney } from "../../common/utils/money";
 import { validateEnumFilter } from "../../common/utils/validate-enum-filter";
 import {
   ApproveExpenseDto,
@@ -496,8 +497,12 @@ export class FinanceService {
     }
 
     const reference = await nextRef(this.prisma, user.companyId, "PAY");
-    const gross = (dto.basicSalary ?? 0) + (dto.allowances ?? 0) - (dto.deductions ?? 0);
-    const net = gross - (dto.taxDeduction ?? 0) - (dto.ssnit ?? 0);
+    // H-BACK-8: plain JS float arithmetic on currency without a rounding
+    // step is the standard source of drift (e.g. 19.999999999998 landing in
+    // a fixed-precision decimal column). roundMoney() matches the pattern
+    // hr.service.ts's own payroll paths already use.
+    const gross = roundMoney((dto.basicSalary ?? 0) + (dto.allowances ?? 0) - (dto.deductions ?? 0));
+    const net = roundMoney(gross - (dto.taxDeduction ?? 0) - (dto.ssnit ?? 0));
 
     const record = await this.prisma.payrollRecord.create({
       data: {

@@ -9,6 +9,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { sanitizeFormulaCell } from "../../common/utils/csv";
 import { validateEnumFilter } from "../../common/utils/validate-enum-filter";
 import { nextRef } from "../../common/next-ref";
+import { roundMoney } from "../../common/utils/money";
 import {
   AssignTaskDto,
   BulkAttendanceDto,
@@ -840,14 +841,14 @@ export class HRService {
     const allowances = dto.allowances ?? 0;
     const deductions = dto.deductions ?? 0;
     const overtimePay = dto.overtimePay ?? 0;
-    const grossPay = num(dto.basicSalary) + allowances + overtimePay - deductions;
+    const grossPay = roundMoney(num(dto.basicSalary) + allowances + overtimePay - deductions);
     const computed = this.computePaye(grossPay);
     const taxDeduction = dto.taxDeduction ?? computed.paye;
     const ssnit = dto.ssnit ?? computed.ssnit;
     const employerSsnit = dto.employerSsnit ?? computed.employerSsnit;
     const pensionTier2 = dto.pensionTier2 ?? computed.pensionTier2;
     const pensionTier3 = dto.pensionTier3 ?? 0;
-    const netPay = grossPay - taxDeduction - ssnit;
+    const netPay = roundMoney(grossPay - taxDeduction - ssnit);
 
     const reference = await nextRef(this.prisma, user.companyId, "PAY");
 
@@ -1405,9 +1406,9 @@ export class HRService {
   async computePayrollEstimate(user: AuthenticatedUser, dto: ComputePayrollDto) {
     const allowances = dto.allowances ?? 0;
     const deductions = dto.deductions ?? 0;
-    const grossMonthly = num(dto.basicSalary) + allowances - deductions;
+    const grossMonthly = roundMoney(num(dto.basicSalary) + allowances - deductions);
     const { paye, ssnit, employerSsnit, pensionTier2, payeBandsStale, payeBandsTaxYear } = this.computePaye(grossMonthly);
-    const netPay = Math.round((grossMonthly - paye - ssnit) * 100) / 100;
+    const netPay = roundMoney(grossMonthly - paye - ssnit);
     return { data: { grossMonthly, ssnit, paye, netPay, totalDeductions: paye + ssnit, employerSsnit, pensionTier2, payeBandsStale, payeBandsTaxYear } };
   }
 
@@ -1430,10 +1431,10 @@ export class HRService {
     const overtimeHoursTotal = attendance.reduce((s, a) => s + num((a as any).overtimeHours), 0);
 
     const basicSalary = num(employee.basicSalary);
-    const overtimePay = Math.round(overtimeHoursTotal * (basicSalary / 208) * 1.5 * 100) / 100; // 208 = 26 days × 8 h
-    const grossMonthly = basicSalary + overtimePay;
+    const overtimePay = roundMoney(overtimeHoursTotal * (basicSalary / 208) * 1.5); // 208 = 26 days × 8 h
+    const grossMonthly = roundMoney(basicSalary + overtimePay);
     const { paye, ssnit, employerSsnit, pensionTier2 } = this.computePaye(grossMonthly);
-    const netPay = Math.round((grossMonthly - paye - ssnit) * 100) / 100;
+    const netPay = roundMoney(grossMonthly - paye - ssnit);
 
     return {
       data: {
@@ -1482,10 +1483,10 @@ export class HRService {
         const attendance = await this.prisma.attendanceRecord.findMany({ where: { companyId: user.companyId, employeeId: employee.id, date: { gte: periodStart, lte: periodEnd } }, select: { id: true, status: true, hoursWorked: true, overtimeHours: true } });
         const overtimeHoursTotal = attendance.reduce((s, a) => s + num((a as any).overtimeHours), 0);
         const basicSalary = num(employee.basicSalary);
-        const overtimePay = Math.round(overtimeHoursTotal * (basicSalary / 208) * 1.5 * 100) / 100;
-        const grossMonthly = basicSalary + overtimePay;
+        const overtimePay = roundMoney(overtimeHoursTotal * (basicSalary / 208) * 1.5);
+        const grossMonthly = roundMoney(basicSalary + overtimePay);
         const { paye, ssnit, employerSsnit, pensionTier2 } = this.computePaye(grossMonthly);
-        const netPay = Math.round((grossMonthly - paye - ssnit) * 100) / 100;
+        const netPay = roundMoney(grossMonthly - paye - ssnit);
 
         await this.prisma.payrollRecord.create({
           data: {
