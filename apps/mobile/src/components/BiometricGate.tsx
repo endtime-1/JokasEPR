@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { AppState, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Alert, AppState, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import * as LocalAuthentication from "expo-local-authentication";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { colors, font, radius, spacing } from "../constants/theme";
@@ -21,7 +21,22 @@ export function BiometricGate({ children }: { children: React.ReactNode }) {
       // BIOMETRIC, so the lock now arms whenever the device has ANY form of
       // authentication set up, not biometrics specifically.
       const level = await LocalAuthentication.getEnrolledLevelAsync();
-      setHasBiometrics(level !== LocalAuthentication.SecurityLevel.NONE);
+      const enrolled = level !== LocalAuthentication.SecurityLevel.NONE;
+      setHasBiometrics(enrolled);
+      // H-MOB-7: the app-lock feature only arms when the OS itself has a
+      // lock configured — on a device with no PIN/pattern/biometric set up
+      // (common on an inexpensive shared field device), it silently never
+      // re-locks with nothing telling the user why. Can't build a real
+      // in-app lock without a much larger scope increase (its own PIN
+      // storage/verification), so this at least surfaces the gap instead of
+      // leaving it invisible. Once per cold start, not on every foreground.
+      if (!enrolled) {
+        Alert.alert(
+          "No Device Lock Set",
+          "This device has no screen lock (PIN, pattern, fingerprint, or face) configured. Jokas ERP can't automatically re-lock itself when backgrounded without one — anyone who picks up this device stays signed in. Set a screen lock in your device Settings to protect your session.",
+          [{ text: "OK" }]
+        );
+      }
     })();
   }, []);
 
