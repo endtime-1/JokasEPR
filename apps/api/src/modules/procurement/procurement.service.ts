@@ -1,10 +1,18 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { AuthenticatedUser } from "@jokas/shared";
-import { Prisma } from "@prisma/client";
+import {
+  Prisma,
+  SupplierStatus,
+  PurchaseRequestStatus,
+  PurchaseOrderStatus,
+  GRNStatus,
+  SupplierInvoiceStatus,
+} from "@prisma/client";
 import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { nextRef } from "../../common/next-ref";
 import { LookupCacheService } from "../../common/services/lookup-cache.service";
+import { validateEnumFilter } from "../../common/utils/validate-enum-filter";
 import {
   ApprovePurchaseOrderDto,
   ApprovePurchaseRequestDto,
@@ -165,7 +173,7 @@ export class ProcurementService {
       where: {
         companyId: user.companyId,
         deletedAt: null,
-        ...(query.status ? { status: query.status as never } : {}),
+        ...(query.status ? { status: validateEnumFilter(query.status, Object.values(SupplierStatus)) as never } : {}),
         ...(query.search ? { OR: [{ name: { contains: query.search } }, { code: { contains: query.search } }, { contactPerson: { contains: query.search } }] } : {}),
       },
       include: { category: { select: { name: true, code: true } }, _count: { select: { purchaseOrders: true } } },
@@ -216,7 +224,7 @@ export class ProcurementService {
       where: {
         companyId: user.companyId,
         deletedAt: null,
-        ...(query.status ? { status: query.status as never } : {}),
+        ...(query.status ? { status: validateEnumFilter(query.status, Object.values(PurchaseRequestStatus)) as never } : {}),
         ...(query.branchId ? { branchId: query.branchId } : {}),
         ...(query.search ? { OR: [{ reference: { contains: query.search } }, { title: { contains: query.search } }] } : {}),
       },
@@ -351,7 +359,7 @@ export class ProcurementService {
       where: {
         companyId: user.companyId,
         deletedAt: null,
-        ...(query.status ? { status: query.status as never } : {}),
+        ...(query.status ? { status: validateEnumFilter(query.status, Object.values(PurchaseOrderStatus)) as never } : {}),
         ...(query.supplierId ? { supplierId: query.supplierId } : {}),
         ...(query.search ? { OR: [{ reference: { contains: query.search } }] } : {}),
       },
@@ -511,7 +519,7 @@ export class ProcurementService {
       where: {
         companyId: user.companyId,
         deletedAt: null,
-        ...(query.status ? { status: query.status as never } : {}),
+        ...(query.status ? { status: validateEnumFilter(query.status, Object.values(GRNStatus)) as never } : {}),
         ...(query.supplierId ? { supplierId: query.supplierId } : {}),
         ...(query.branchId ? { branchId: query.branchId } : {}),
         ...(query.search ? { OR: [{ reference: { contains: query.search } }, { deliveryNoteRef: { contains: query.search } }] } : {}),
@@ -749,7 +757,7 @@ export class ProcurementService {
       where: {
         companyId: user.companyId,
         deletedAt: null,
-        ...(query.status ? { status: query.status as never } : {}),
+        ...(query.status ? { status: validateEnumFilter(query.status, Object.values(SupplierInvoiceStatus)) as never } : {}),
         ...(query.supplierId ? { supplierId: query.supplierId } : {}),
         ...(query.search ? { OR: [{ reference: { contains: query.search } }, { invoiceNumber: { contains: query.search } }] } : {}),
       },

@@ -1,9 +1,11 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { AuthenticatedUser } from "@jokas/shared";
+import { ExpenseStatus, PayrollStatus, JournalEntryStatus } from "@prisma/client";
 import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { LookupCacheService } from "../../common/services/lookup-cache.service";
 import { nextRef } from "../../common/next-ref";
+import { validateEnumFilter } from "../../common/utils/validate-enum-filter";
 import {
   ApproveExpenseDto,
   ApprovePayrollDto,
@@ -249,7 +251,7 @@ export class FinanceService {
       deletedAt: null,
       ...this.branchScope(user),
       ...(query.branchId ? { branchId: query.branchId } : {}),
-      ...(query.status ? { status: query.status as never } : {}),
+      ...(query.status ? { status: validateEnumFilter(query.status, Object.values(ExpenseStatus)) as never } : {}),
       ...this.dateBetween(query, "expenseDate")
     };
     const { take, skip, page, pageSize } = this.pageArgs(query);
@@ -462,7 +464,7 @@ export class FinanceService {
   // ─── Payroll ───────────────────────────────────────────────────────────────
 
   async listPayroll(user: AuthenticatedUser, query: FinanceQueryDto) {
-    const where = { companyId: user.companyId, deletedAt: null, ...this.branchScope(user), ...(query.status ? { status: query.status as never } : {}) };
+    const where = { companyId: user.companyId, deletedAt: null, ...this.branchScope(user), ...(query.status ? { status: validateEnumFilter(query.status, Object.values(PayrollStatus)) as never } : {}) };
     const { take, skip, page, pageSize } = this.pageArgs(query, 100);
     const [records, total] = await Promise.all([
       this.prisma.payrollRecord.findMany({ where, include: { branch: { select: { name: true } } }, orderBy: [{ period: "desc" }, { employeeName: "asc" }], take, skip }),
@@ -619,7 +621,7 @@ export class FinanceService {
     const where = {
       companyId: user.companyId,
       deletedAt: null,
-      ...(query.status ? { status: query.status as never } : {}),
+      ...(query.status ? { status: validateEnumFilter(query.status, Object.values(JournalEntryStatus)) as never } : {}),
       ...this.dateBetween(query, "entryDate")
     };
     const { take, skip, page, pageSize } = this.pageArgs(query, 50);

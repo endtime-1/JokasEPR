@@ -1,7 +1,8 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { AuthenticatedUser } from "@jokas/shared";
-import { Prisma } from "@prisma/client";
+import { Prisma, FeedProductionOrderStatus } from "@prisma/client";
 import { nextRef } from "../../common/next-ref";
+import { validateEnumFilter } from "../../common/utils/validate-enum-filter";
 import { AuditService } from "../audit/audit.service";
 import { LookupCacheService } from "../../common/services/lookup-cache.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -1486,7 +1487,7 @@ export class FeedProductionService {
       ...(query.branchId ? { branchId: query.branchId } : {}),
       productionSiteId,
       formulaId: query.formulaId,
-      ...(query.status ? { status: query.status } : {}),
+      ...(query.status ? { status: validateEnumFilter(query.status, Object.values(FeedProductionOrderStatus)) as never } : {}),
       ...(this.dateRange(query, "scheduledDate"))
     };
   }

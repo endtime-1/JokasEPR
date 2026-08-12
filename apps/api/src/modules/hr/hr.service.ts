@@ -1,12 +1,13 @@
 ﻿import { BadRequestException, ConflictException, ForbiddenException, Injectable, InternalServerErrorException, Logger, NotFoundException } from "@nestjs/common";
 import { Response } from "express";
 import { AuthenticatedUser } from "@jokas/shared";
-import { Prisma } from "@prisma/client";
+import { Prisma, EmployeeStatus, TaskStatus, PayrollStatus, HRPerformanceStatus, LeaveStatus } from "@prisma/client";
 import { AuditService } from "../audit/audit.service";
 import { EmailService } from "../notifications/email.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { sanitizeFormulaCell } from "../../common/utils/csv";
+import { validateEnumFilter } from "../../common/utils/validate-enum-filter";
 import { nextRef } from "../../common/next-ref";
 import {
   AssignTaskDto,
@@ -259,7 +260,7 @@ export class HRService {
       companyId: user.companyId,
       deletedAt: null,
       ...this.employeeScope(user),
-      ...(query.status ? { status: query.status as never } : {}),
+      ...(query.status ? { status: validateEnumFilter(query.status, Object.values(EmployeeStatus)) as never } : {}),
       ...(query.branchId ? { branchId: query.branchId } : {}),
       ...(query.search ? { OR: [{ fullName: { contains: query.search } }, { code: { contains: query.search } }, { phone: { contains: query.search } }] } : {}),
     };
@@ -661,7 +662,7 @@ export class HRService {
       where: {
         companyId: user.companyId,
         deletedAt: null,
-        ...(query.status ? { status: query.status as never } : {}),
+        ...(query.status ? { status: validateEnumFilter(query.status, Object.values(TaskStatus)) as never } : {}),
         ...(query.priority ? { priority: query.priority as never } : {}),
         ...(query.branchId ? { branchId: query.branchId } : {}),
         ...(query.search ? { OR: [{ title: { contains: query.search } }, { taskType: { contains: query.search } }] } : {}),
@@ -810,7 +811,7 @@ export class HRService {
         // which is also more correct since payroll scope should follow the
         // employee's actual assignment.
         employee: this.employeeScope(user),
-        ...(query.status ? { status: query.status as never } : {}),
+        ...(query.status ? { status: validateEnumFilter(query.status, Object.values(PayrollStatus)) as never } : {}),
         ...(query.period ? { period: query.period } : {}),
       },
       include: { employee: { select: { fullName: true, code: true } }, branch: { select: { name: true } } },
@@ -993,7 +994,7 @@ export class HRService {
         deletedAt: null,
         ...(query.employeeId ? { employeeId: query.employeeId } : {}),
         ...(query.period ? { period: query.period } : {}),
-        ...(query.status ? { status: query.status as never } : {}),
+        ...(query.status ? { status: validateEnumFilter(query.status, Object.values(HRPerformanceStatus)) as never } : {}),
       },
       include: { employee: { select: { fullName: true, code: true } }, reviewer: { select: { fullName: true } } },
       orderBy: [{ period: "desc" }, { createdAt: "desc" }],
@@ -1173,7 +1174,7 @@ export class HRService {
       where: {
         companyId: user.companyId,
         deletedAt: null,
-        ...(query.status ? { status: query.status as never } : {}),
+        ...(query.status ? { status: validateEnumFilter(query.status, Object.values(LeaveStatus)) as never } : {}),
       },
       orderBy: { createdAt: "desc" },
       take: 50,

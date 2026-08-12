@@ -1,9 +1,16 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { AuthenticatedUser } from "@jokas/shared";
-import { Prisma } from "@prisma/client";
+import {
+  Prisma,
+  MarketPlanningStatus,
+  ProductionPlanStatus,
+  MaterialRequirementPlanStatus,
+  ProcurementRecommendationStatus,
+} from "@prisma/client";
 import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { nextRef } from "../../common/next-ref";
+import { validateEnumFilter } from "../../common/utils/validate-enum-filter";
 import {
   AdjustTargetItemDto,
   ApproveMarketTargetDto,
@@ -1027,7 +1034,7 @@ export class MarketPlanningService {
       companyId: user.companyId,
       deletedAt: null,
       ...(query.period ? { period: query.period } : {}),
-      ...(query.status ? { status: query.status as never } : {}),
+      ...(query.status ? { status: validateEnumFilter(query.status, Object.values(MarketPlanningStatus)) as never } : {}),
       ...(query.branchId ? { branchId: query.branchId } : {}),
       ...(query.productionSiteId ? { productionSiteId: query.productionSiteId } : {}),
       ...(query.startDate || query.endDate ? { periodStart: { ...(query.startDate ? { gte: new Date(query.startDate) } : {}), ...(query.endDate ? { lte: new Date(query.endDate) } : {}) } } : {}),
@@ -1051,7 +1058,7 @@ export class MarketPlanningService {
     return {
       companyId: user.companyId,
       deletedAt: null,
-      ...(query.status ? { status: query.status as never } : {}),
+      ...(query.status ? { status: validateEnumFilter(query.status, Object.values(ProductionPlanStatus)) as never } : {}),
       ...(query.branchId ? { branchId: query.branchId } : {}),
       ...(query.productionSiteId ? { productionSiteId: query.productionSiteId } : {}),
       ...(query.warehouseId ? { centralWarehouseId: query.warehouseId } : {}),
@@ -1072,7 +1079,7 @@ export class MarketPlanningService {
     return {
       companyId: user.companyId,
       deletedAt: null,
-      ...(query.status ? { status: query.status as never } : {}),
+      ...(query.status ? { status: validateEnumFilter(query.status, Object.values(MaterialRequirementPlanStatus)) as never } : {}),
       ...(query.branchId ? { branchId: query.branchId } : {}),
       ...(query.warehouseId ? { centralWarehouseId: query.warehouseId } : {}),
       ...accessFilter,
@@ -1083,7 +1090,7 @@ export class MarketPlanningService {
     return {
       companyId: user.companyId,
       deletedAt: null,
-      ...(query.status ? { status: query.status as never } : {}),
+      ...(query.status ? { status: validateEnumFilter(query.status, Object.values(ProcurementRecommendationStatus)) as never } : {}),
       ...(query.branchId ? { branchId: query.branchId } : {}),
       ...(user.hasGlobalAccess ? {} : user.branchIds.length ? { branchId: { in: user.branchIds } } : { id: "__no_access__" }),
     };
