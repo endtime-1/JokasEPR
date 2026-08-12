@@ -23,7 +23,8 @@ const NAV_GROUPS = [
     items: [
       { href: "/soya-processing/oil-stock", label: "Oil Stock" },
       { href: "/soya-processing/cake-stock", label: "Cake Stock" },
-      { href: "/soya-processing/internal-transfer", label: "Transfers" }
+      { href: "/soya-processing/internal-transfer", label: "Transfers" },
+      { href: "/soya-processing/sales", label: "Sales" }
     ]
   },
   {

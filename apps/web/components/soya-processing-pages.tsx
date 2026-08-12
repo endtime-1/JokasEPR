@@ -2,10 +2,11 @@
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Download, Plus, ShieldCheck } from "lucide-react";
+import { Download, Pencil, Plus, ShieldCheck, Trash2 } from "lucide-react";
 import { DataTable } from "./data-table";
 import { FormField } from "./form-field";
-import { ApiEnvelope, apiFetch, downloadReport, getCached, getCachedFirst, hasCached } from "../lib/api";
+import { ConfirmModal, Modal } from "./ui";
+import { ApiEnvelope, apiFetch, downloadReport, getCached, getCachedFirst, hasCached, invalidateCache } from "../lib/api";
 
 type Option = {
   id: string;
@@ -93,6 +94,13 @@ export function SoyaIntakesPage({ create = false }: { create?: boolean }) {
   const [loadError, setLoadError] = useState("");
   const [form, setForm] = useState({ productionSiteId: "", warehouseId: "", productId: "", receiptNumber: "", supplierName: "", quantityKg: "", unitCost: "", moisturePercent: "", qualityStatus: "APPROVED", receivedAt: today() });
   const beanProducts = products(options, (product) => product.sku?.includes("SOYA-BEANS") ?? false);
+  const [editRow, setEditRow] = useState<Record<string, unknown> | null>(null);
+  const [editForm, setEditForm] = useState({ receiptNumber: "", supplierName: "", moisturePercent: "", qualityStatus: "APPROVED", receivedAt: "", notes: "" });
+  const [editError, setEditError] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deleteRow, setDeleteRow] = useState<Record<string, unknown> | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   async function load() {
     setLoadError("");
@@ -112,6 +120,52 @@ export function SoyaIntakesPage({ create = false }: { create?: boolean }) {
     await load();
   }
 
+  function openEdit(row: Record<string, unknown>) {
+    setEditError("");
+    setEditForm({
+      receiptNumber: String(row.receiptNumber ?? ""),
+      supplierName: String(row.supplierName ?? ""),
+      moisturePercent: String(row.moisturePercent ?? ""),
+      qualityStatus: String(row.qualityStatus ?? "APPROVED"),
+      receivedAt: String(row.receivedAt ?? "").slice(0, 10),
+      notes: String(row.notes ?? "")
+    });
+    setEditRow(row);
+  }
+
+  async function saveEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editRow) return;
+    setSavingEdit(true);
+    setEditError("");
+    try {
+      await apiFetch(`/soya-processing/intakes/${editRow.id}`, { method: "PATCH", body: JSON.stringify({ receiptNumber: editForm.receiptNumber, supplierName: editForm.supplierName, moisturePercent: Number(editForm.moisturePercent || 0), qualityStatus: editForm.qualityStatus, receivedAt: editForm.receivedAt || undefined, notes: editForm.notes || undefined }) });
+      invalidateCache("/soya-processing/intakes", true);
+      setEditRow(null);
+      await load();
+    } catch (err: any) {
+      setEditError(err?.message ?? "Failed to save changes.");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!deleteRow) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await apiFetch(`/soya-processing/intakes/${deleteRow.id}`, { method: "DELETE" });
+      invalidateCache("/soya-processing/intakes", true);
+      setDeleteRow(null);
+      await load();
+    } catch (err: any) {
+      setDeleteError(err?.message ?? "Failed to delete intake.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <>
       <PageHeader title={create ? "Create Soya Bean Intake" : "Soya Bean Intakes"} subtitle="Record supplier, received quantity, cost, moisture, and intake quality status." />
@@ -128,7 +182,32 @@ export function SoyaIntakesPage({ create = false }: { create?: boolean }) {
           <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white md:col-span-4"><Plus aria-hidden className="h-4 w-4" /> Save intake</button>
         </form>
       ) : <Link className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" href="/soya-processing/intakes/create"><Plus aria-hidden className="h-4 w-4" /> Create intake</Link>}
-      <SimpleRowsTable rows={rows} loading={loading} />
+      {deleteError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{deleteError}</p>}
+      <SimpleRowsTable rows={rows} loading={loading} onEdit={openEdit} onDelete={(row) => { setDeleteError(""); setDeleteRow(row); }} />
+      <Modal open={!!editRow} onClose={() => setEditRow(null)} title="Edit intake">
+        <form onSubmit={saveEdit} className="grid gap-4">
+          {editError && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{editError}</p>}
+          <FormField label="Receipt number"><input className={inputClass} value={editForm.receiptNumber} onChange={(event) => setEditForm({ ...editForm, receiptNumber: event.target.value })} required /></FormField>
+          <FormField label="Supplier"><input className={inputClass} value={editForm.supplierName} onChange={(event) => setEditForm({ ...editForm, supplierName: event.target.value })} required /></FormField>
+          <FormField label="Moisture %"><input className={inputClass} type="number" value={editForm.moisturePercent} onChange={(event) => setEditForm({ ...editForm, moisturePercent: event.target.value })} /></FormField>
+          <FormField label="Quality status"><select className={inputClass} value={editForm.qualityStatus} onChange={(event) => setEditForm({ ...editForm, qualityStatus: event.target.value })}><option>PENDING</option><option>ACCEPTED</option><option>REJECTED</option><option>APPROVED</option></select></FormField>
+          <FormField label="Received date"><input className={inputClass} type="date" value={editForm.receivedAt} onChange={(event) => setEditForm({ ...editForm, receivedAt: event.target.value })} /></FormField>
+          <FormField label="Notes"><input className={inputClass} value={editForm.notes} onChange={(event) => setEditForm({ ...editForm, notes: event.target.value })} /></FormField>
+          <div className="flex gap-3">
+            <button className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" type="submit" disabled={savingEdit}>{savingEdit ? "Saving…" : "Save changes"}</button>
+            <button type="button" className="inline-flex min-h-11 items-center rounded-md border border-line px-4 text-sm font-semibold hover:bg-field" onClick={() => setEditRow(null)} disabled={savingEdit}>Cancel</button>
+          </div>
+        </form>
+      </Modal>
+      <ConfirmModal
+        open={!!deleteRow}
+        onClose={() => setDeleteRow(null)}
+        onConfirm={confirmDelete}
+        loading={deleting}
+        title="Delete intake?"
+        message={`This will permanently remove receipt "${deleteRow?.receiptNumber}" and reverse its inventory effect. This can't be undone.`}
+        confirmLabel="Delete intake"
+      />
     </>
   );
 }
@@ -139,6 +218,13 @@ export function SoyaBatchesPage({ create = false }: { create?: boolean }) {
   const [loading, setLoading] = useState(!hasCached("/soya-processing/batches"));
   const [loadError, setLoadError] = useState("");
   const [form, setForm] = useState({ productionSiteId: "", rawWarehouseId: "", oilWarehouseId: "", cakeWarehouseId: "", intakeId: "", beansUsedKg: "", oilProducedLitres: "", cakeProducedKg: "", wasteKg: "", laborCost: "", packagingCost: "", overheadCost: "", expectedOilSalesValue: "", expectedCakeSalesValue: "", processingDate: today() });
+  const [editRow, setEditRow] = useState<Record<string, unknown> | null>(null);
+  const [editForm, setEditForm] = useState({ batchNumber: "", processingDate: "", notes: "" });
+  const [editError, setEditError] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deleteRow, setDeleteRow] = useState<Record<string, unknown> | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   async function load() {
     setLoadError("");
@@ -151,6 +237,49 @@ export function SoyaBatchesPage({ create = false }: { create?: boolean }) {
     }
   }
   useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, []);
+
+  function openEdit(row: Record<string, unknown>) {
+    setEditError("");
+    setEditForm({
+      batchNumber: String(row.batchNumber ?? ""),
+      processingDate: String(row.processingDate ?? "").slice(0, 10),
+      notes: String(row.notes ?? "")
+    });
+    setEditRow(row);
+  }
+
+  async function saveEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editRow) return;
+    setSavingEdit(true);
+    setEditError("");
+    try {
+      await apiFetch(`/soya-processing/batches/${editRow.id}`, { method: "PATCH", body: JSON.stringify({ batchNumber: editForm.batchNumber || undefined, processingDate: editForm.processingDate || undefined, notes: editForm.notes || undefined }) });
+      invalidateCache("/soya-processing/batches", true);
+      setEditRow(null);
+      await load();
+    } catch (err: any) {
+      setEditError(err?.message ?? "Failed to save changes.");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!deleteRow) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await apiFetch(`/soya-processing/batches/${deleteRow.id}`, { method: "DELETE" });
+      invalidateCache("/soya-processing/batches", true);
+      setDeleteRow(null);
+      await load();
+    } catch (err: any) {
+      setDeleteError(err?.message ?? "Failed to delete batch.");
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -204,7 +333,29 @@ export function SoyaBatchesPage({ create = false }: { create?: boolean }) {
           <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white md:col-span-4"><Plus aria-hidden className="h-4 w-4" /> Save batch</button>
         </form>
       ) : <Link className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" href="/soya-processing/batches/create"><Plus aria-hidden className="h-4 w-4" /> Create batch</Link>}
-      <SimpleRowsTable rows={rows} loading={loading} />
+      {deleteError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{deleteError}</p>}
+      <SimpleRowsTable rows={rows} loading={loading} onEdit={openEdit} onDelete={(row) => { setDeleteError(""); setDeleteRow(row); }} />
+      <Modal open={!!editRow} onClose={() => setEditRow(null)} title="Edit batch">
+        <form onSubmit={saveEdit} className="grid gap-4">
+          {editError && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{editError}</p>}
+          <FormField label="Batch number"><input className={inputClass} value={editForm.batchNumber} onChange={(event) => setEditForm({ ...editForm, batchNumber: event.target.value })} /></FormField>
+          <FormField label="Processing date"><input className={inputClass} type="date" value={editForm.processingDate} onChange={(event) => setEditForm({ ...editForm, processingDate: event.target.value })} /></FormField>
+          <FormField label="Notes"><input className={inputClass} value={editForm.notes} onChange={(event) => setEditForm({ ...editForm, notes: event.target.value })} /></FormField>
+          <div className="flex gap-3">
+            <button className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" type="submit" disabled={savingEdit}>{savingEdit ? "Saving…" : "Save changes"}</button>
+            <button type="button" className="inline-flex min-h-11 items-center rounded-md border border-line px-4 text-sm font-semibold hover:bg-field" onClick={() => setEditRow(null)} disabled={savingEdit}>Cancel</button>
+          </div>
+        </form>
+      </Modal>
+      <ConfirmModal
+        open={!!deleteRow}
+        onClose={() => setDeleteRow(null)}
+        onConfirm={confirmDelete}
+        loading={deleting}
+        title="Delete batch?"
+        message={`This will permanently remove batch "${deleteRow?.batchNumber}" and reverse its inventory effect. This can't be undone.`}
+        confirmLabel="Delete batch"
+      />
     </>
   );
 }
@@ -215,6 +366,13 @@ export function SoyaQualityPage() {
   const [loading, setLoading] = useState(!hasCached("/soya-processing/quality-checks"));
   const [loadError, setLoadError] = useState("");
   const [form, setForm] = useState({ productionBatchId: "", moisturePercent: "", oilPurityPercent: "", cakeProteinPercent: "", status: "APPROVED", notes: "" });
+  const [editRow, setEditRow] = useState<Record<string, unknown> | null>(null);
+  const [editForm, setEditForm] = useState({ moisturePercent: "", oilPurityPercent: "", cakeProteinPercent: "", notes: "" });
+  const [editError, setEditError] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deleteRow, setDeleteRow] = useState<Record<string, unknown> | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
   async function load() {
     setLoadError("");
     try {
@@ -231,6 +389,47 @@ export function SoyaQualityPage() {
     await apiFetch("/soya-processing/quality-checks", { method: "POST", body: JSON.stringify({ productionBatchId: form.productionBatchId || options.batches[0]?.id, moisturePercent: Number(form.moisturePercent || 0), oilPurityPercent: Number(form.oilPurityPercent || 0), cakeProteinPercent: Number(form.cakeProteinPercent || 0), status: form.status, notes: form.notes }) });
     await load();
   }
+  function openEdit(row: Record<string, unknown>) {
+    setEditError("");
+    setEditForm({
+      moisturePercent: String(row.moisturePercent ?? ""),
+      oilPurityPercent: String(row.oilPurityPercent ?? ""),
+      cakeProteinPercent: String(row.cakeProteinPercent ?? ""),
+      notes: String(row.notes ?? "")
+    });
+    setEditRow(row);
+  }
+  async function saveEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editRow) return;
+    setSavingEdit(true);
+    setEditError("");
+    try {
+      await apiFetch(`/soya-processing/quality-checks/${editRow.id}`, { method: "PATCH", body: JSON.stringify({ moisturePercent: Number(editForm.moisturePercent || 0), oilPurityPercent: Number(editForm.oilPurityPercent || 0), cakeProteinPercent: Number(editForm.cakeProteinPercent || 0), notes: editForm.notes || undefined }) });
+      invalidateCache("/soya-processing/quality-checks", true);
+      setEditRow(null);
+      await load();
+    } catch (err: any) {
+      setEditError(err?.message ?? "Failed to save changes.");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+  async function confirmDelete() {
+    if (!deleteRow) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await apiFetch(`/soya-processing/quality-checks/${deleteRow.id}`, { method: "DELETE" });
+      invalidateCache("/soya-processing/quality-checks", true);
+      setDeleteRow(null);
+      await load();
+    } catch (err: any) {
+      setDeleteError(err?.message ?? "Failed to delete quality check.");
+    } finally {
+      setDeleting(false);
+    }
+  }
   return (
     <>
       <PageHeader title="Soya Quality Control" subtitle="Approve soya oil purity, cake protein, moisture, and batch quality status." />
@@ -242,7 +441,30 @@ export function SoyaQualityPage() {
         <FormField label="Status"><select className={inputClass} value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}><option>APPROVED</option><option>ACCEPTED</option><option>REJECTED</option><option>PENDING</option></select></FormField>
         <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white md:col-span-5"><ShieldCheck aria-hidden className="h-4 w-4" /> Save quality check</button>
       </form>
-      <SimpleRowsTable rows={rows} loading={loading} />
+      {deleteError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{deleteError}</p>}
+      <SimpleRowsTable rows={rows} loading={loading} onEdit={openEdit} onDelete={(row) => { setDeleteError(""); setDeleteRow(row); }} />
+      <Modal open={!!editRow} onClose={() => setEditRow(null)} title="Edit quality check">
+        <form onSubmit={saveEdit} className="grid gap-4">
+          {editError && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{editError}</p>}
+          <FormField label="Moisture %"><input className={inputClass} type="number" value={editForm.moisturePercent} onChange={(event) => setEditForm({ ...editForm, moisturePercent: event.target.value })} /></FormField>
+          <FormField label="Oil purity %"><input className={inputClass} type="number" value={editForm.oilPurityPercent} onChange={(event) => setEditForm({ ...editForm, oilPurityPercent: event.target.value })} /></FormField>
+          <FormField label="Cake protein %"><input className={inputClass} type="number" value={editForm.cakeProteinPercent} onChange={(event) => setEditForm({ ...editForm, cakeProteinPercent: event.target.value })} /></FormField>
+          <FormField label="Notes"><input className={inputClass} value={editForm.notes} onChange={(event) => setEditForm({ ...editForm, notes: event.target.value })} /></FormField>
+          <div className="flex gap-3">
+            <button className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" type="submit" disabled={savingEdit}>{savingEdit ? "Saving…" : "Save changes"}</button>
+            <button type="button" className="inline-flex min-h-11 items-center rounded-md border border-line px-4 text-sm font-semibold hover:bg-field" onClick={() => setEditRow(null)} disabled={savingEdit}>Cancel</button>
+          </div>
+        </form>
+      </Modal>
+      <ConfirmModal
+        open={!!deleteRow}
+        onClose={() => setDeleteRow(null)}
+        onConfirm={confirmDelete}
+        loading={deleting}
+        title="Delete quality check?"
+        message="This will permanently remove this quality check. This can't be undone."
+        confirmLabel="Delete quality check"
+      />
     </>
   );
 }
@@ -282,6 +504,13 @@ export function SoyaTransferPage() {
   const [loadError, setLoadError] = useState("");
   const [form, setForm] = useState({ productionBatchId: "", fromWarehouseId: "", toWarehouseId: "", toProductionSiteId: "", outputType: "CAKE", productId: "", quantity: "", notes: "" });
   const outputProducts = useMemo(() => products(options, (product) => ["SOYA-OIL", "SOYA-CAKE"].includes(product.sku ?? "")), [options]);
+  const [editRow, setEditRow] = useState<Record<string, unknown> | null>(null);
+  const [editNotes, setEditNotes] = useState("");
+  const [editError, setEditError] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deleteRow, setDeleteRow] = useState<Record<string, unknown> | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
   async function load() {
     setLoadError("");
     try {
@@ -298,6 +527,42 @@ export function SoyaTransferPage() {
     await apiFetch("/soya-processing/transfers", { method: "POST", body: JSON.stringify({ ...form, productionBatchId: form.productionBatchId || options.batches[0]?.id, fromWarehouseId: form.fromWarehouseId || options.warehouses[0]?.id, toWarehouseId: form.toWarehouseId || options.warehouses[0]?.id, toProductionSiteId: form.toProductionSiteId || undefined, productId: form.productId || outputProducts[0]?.id, quantity: Number(form.quantity) }) });
     await load();
   }
+  function openEdit(row: Record<string, unknown>) {
+    setEditError("");
+    setEditNotes(String(row.notes ?? ""));
+    setEditRow(row);
+  }
+  async function saveEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editRow) return;
+    setSavingEdit(true);
+    setEditError("");
+    try {
+      await apiFetch(`/soya-processing/transfers/${editRow.id}`, { method: "PATCH", body: JSON.stringify({ notes: editNotes || undefined }) });
+      invalidateCache("/soya-processing/transfers", true);
+      setEditRow(null);
+      await load();
+    } catch (err: any) {
+      setEditError(err?.message ?? "Failed to save changes.");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+  async function confirmDelete() {
+    if (!deleteRow) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await apiFetch(`/soya-processing/transfers/${deleteRow.id}`, { method: "DELETE" });
+      invalidateCache("/soya-processing/transfers", true);
+      setDeleteRow(null);
+      await load();
+    } catch (err: any) {
+      setDeleteError(err?.message ?? "Failed to delete transfer.");
+    } finally {
+      setDeleting(false);
+    }
+  }
   return (
     <>
       <PageHeader title="Soya Internal Transfer" subtitle="Transfer soya cake to feed production inventory or move oil and cake between warehouses." />
@@ -310,7 +575,140 @@ export function SoyaTransferPage() {
         <FormField label="Quantity"><input className={inputClass} type="number" value={form.quantity} onChange={(event) => setForm({ ...form, quantity: event.target.value })} required /></FormField>
         <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white md:col-span-5">Create transfer</button>
       </form>
-      <SimpleRowsTable rows={rows} loading={loading} />
+      {deleteError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{deleteError}</p>}
+      <SimpleRowsTable rows={rows} loading={loading} onEdit={openEdit} onDelete={(row) => { setDeleteError(""); setDeleteRow(row); }} />
+      <Modal open={!!editRow} onClose={() => setEditRow(null)} title="Edit transfer">
+        <form onSubmit={saveEdit} className="grid gap-4">
+          {editError && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{editError}</p>}
+          <FormField label="Notes"><input className={inputClass} value={editNotes} onChange={(event) => setEditNotes(event.target.value)} /></FormField>
+          <div className="flex gap-3">
+            <button className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" type="submit" disabled={savingEdit}>{savingEdit ? "Saving…" : "Save changes"}</button>
+            <button type="button" className="inline-flex min-h-11 items-center rounded-md border border-line px-4 text-sm font-semibold hover:bg-field" onClick={() => setEditRow(null)} disabled={savingEdit}>Cancel</button>
+          </div>
+        </form>
+      </Modal>
+      <ConfirmModal
+        open={!!deleteRow}
+        onClose={() => setDeleteRow(null)}
+        onConfirm={confirmDelete}
+        loading={deleting}
+        title="Delete transfer?"
+        message="This will permanently remove this transfer and reverse its inventory effect. This can't be undone."
+        confirmLabel="Delete transfer"
+      />
+    </>
+  );
+}
+
+export function SoyaSalesPage({ create = false }: { create?: boolean }) {
+  const { options, optionsError } = useSoyaOptions();
+  const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/soya-processing/sales")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/soya-processing/sales"));
+  const [loadError, setLoadError] = useState("");
+  const [form, setForm] = useState({ productionBatchId: "", warehouseId: "", productId: "", outputType: "CAKE", customerName: "", quantity: "", unitPrice: "" });
+  const outputProducts = useMemo(() => products(options, (product) => ["SOYA-OIL", "SOYA-CAKE"].includes(product.sku ?? "")), [options]);
+  const [editRow, setEditRow] = useState<Record<string, unknown> | null>(null);
+  const [editForm, setEditForm] = useState({ customerName: "", saleDate: "" });
+  const [editError, setEditError] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deleteRow, setDeleteRow] = useState<Record<string, unknown> | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+
+  async function load() {
+    setLoadError("");
+    try {
+      const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/soya-processing/sales");
+      const fresh = response.data ?? [];
+      setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh);
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, []);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await apiFetch("/soya-processing/sales", { method: "POST", body: JSON.stringify({ productionBatchId: form.productionBatchId || options.batches[0]?.id, warehouseId: form.warehouseId || options.warehouses[0]?.id, productId: form.productId || outputProducts[0]?.id, outputType: form.outputType, customerName: form.customerName, quantity: Number(form.quantity), unitPrice: Number(form.unitPrice) }) });
+    await load();
+  }
+
+  function openEdit(row: Record<string, unknown>) {
+    setEditError("");
+    setEditForm({ customerName: String(row.customerName ?? ""), saleDate: String(row.saleDate ?? "").slice(0, 10) });
+    setEditRow(row);
+  }
+
+  async function saveEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editRow) return;
+    setSavingEdit(true);
+    setEditError("");
+    try {
+      await apiFetch(`/soya-processing/sales/${editRow.id}`, { method: "PATCH", body: JSON.stringify({ customerName: editForm.customerName || undefined, saleDate: editForm.saleDate || undefined }) });
+      invalidateCache("/soya-processing/sales", true);
+      setEditRow(null);
+      await load();
+    } catch (err: any) {
+      setEditError(err?.message ?? "Failed to save changes.");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!deleteRow) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await apiFetch(`/soya-processing/sales/${deleteRow.id}`, { method: "DELETE" });
+      invalidateCache("/soya-processing/sales", true);
+      setDeleteRow(null);
+      await load();
+    } catch (err: any) {
+      setDeleteError(err?.message ?? "Failed to delete sale.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <>
+      <PageHeader title={create ? "Record Soya Sale" : "Soya Sales"} subtitle="Record external sales of soya oil and cake and dispatch them from warehouse stock." />
+      {create ? (
+        <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-4">
+          <SelectField label="Batch" value={form.productionBatchId || options.batches[0]?.id || ""} options={options.batches.map((batch) => ({ ...batch, name: batch.batchNumber }))} onChange={(value) => setForm({ ...form, productionBatchId: value })} />
+          <SelectField label="Warehouse" value={form.warehouseId || options.warehouses[0]?.id || ""} options={options.warehouses} onChange={(value) => setForm({ ...form, warehouseId: value })} />
+          <SelectField label="Product" value={form.productId || outputProducts[0]?.id || ""} options={outputProducts} onChange={(value) => setForm({ ...form, productId: value })} />
+          <FormField label="Output type"><select className={inputClass} value={form.outputType} onChange={(event) => setForm({ ...form, outputType: event.target.value })}><option>CAKE</option><option>OIL</option></select></FormField>
+          <FormField label="Customer"><input className={inputClass} value={form.customerName} onChange={(event) => setForm({ ...form, customerName: event.target.value })} required /></FormField>
+          <FormField label="Quantity"><input className={inputClass} type="number" value={form.quantity} onChange={(event) => setForm({ ...form, quantity: event.target.value })} required /></FormField>
+          <FormField label="Unit price"><input className={inputClass} type="number" value={form.unitPrice} onChange={(event) => setForm({ ...form, unitPrice: event.target.value })} required /></FormField>
+          <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white md:col-span-4"><Plus aria-hidden className="h-4 w-4" /> Save sale</button>
+        </form>
+      ) : <Link className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" href="/soya-processing/sales/create"><Plus aria-hidden className="h-4 w-4" /> Record sale</Link>}
+      {deleteError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{deleteError}</p>}
+      <SimpleRowsTable rows={rows} loading={loading} onEdit={openEdit} onDelete={(row) => { setDeleteError(""); setDeleteRow(row); }} />
+      <Modal open={!!editRow} onClose={() => setEditRow(null)} title="Edit sale">
+        <form onSubmit={saveEdit} className="grid gap-4">
+          {editError && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{editError}</p>}
+          <FormField label="Customer"><input className={inputClass} value={editForm.customerName} onChange={(event) => setEditForm({ ...editForm, customerName: event.target.value })} required /></FormField>
+          <FormField label="Sale date"><input className={inputClass} type="date" value={editForm.saleDate} onChange={(event) => setEditForm({ ...editForm, saleDate: event.target.value })} /></FormField>
+          <div className="flex gap-3">
+            <button className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" type="submit" disabled={savingEdit}>{savingEdit ? "Saving…" : "Save changes"}</button>
+            <button type="button" className="inline-flex min-h-11 items-center rounded-md border border-line px-4 text-sm font-semibold hover:bg-field" onClick={() => setEditRow(null)} disabled={savingEdit}>Cancel</button>
+          </div>
+        </form>
+      </Modal>
+      <ConfirmModal
+        open={!!deleteRow}
+        onClose={() => setDeleteRow(null)}
+        onConfirm={confirmDelete}
+        loading={deleting}
+        title="Delete sale?"
+        message={`This will permanently remove the sale to "${deleteRow?.customerName}" and reverse its inventory effect. This can't be undone.`}
+        confirmLabel="Delete sale"
+      />
     </>
   );
 }
@@ -336,8 +734,30 @@ function SelectField({ label, value, options, onChange }: { label: string; value
   );
 }
 
-function SimpleRowsTable({ rows, loading }: { rows: Record<string, unknown>[]; loading?: boolean }) {
+function SimpleRowsTable({ rows, loading, onEdit, onDelete }: { rows: Record<string, unknown>[]; loading?: boolean; onEdit?: (row: Record<string, unknown>) => void; onDelete?: (row: Record<string, unknown>) => void }) {
   const keys = Object.keys(rows[0] ?? {}).filter((key) => !["id", "companyId", "branchId", "deletedAt", "updatedAt"].includes(key)).slice(0, 8);
-  return <DataTable rows={rows} empty="No records found" loading={loading} columns={keys.map((key) => ({ key, label: key.replace(/([A-Z])/g, " $1"), render: (row: Record<string, unknown>) => typeof row[key] === "object" && row[key] !== null ? JSON.stringify(row[key]).slice(0, 80) : String(row[key] ?? "-").slice(0, 90) }))} />;
+  const columns: { key: string; label: string; sortable?: boolean; render: (row: Record<string, unknown>) => React.ReactNode }[] = keys.map((key) => ({ key, label: key.replace(/([A-Z])/g, " $1"), render: (row: Record<string, unknown>) => typeof row[key] === "object" && row[key] !== null ? JSON.stringify(row[key]).slice(0, 80) : String(row[key] ?? "-").slice(0, 90) }));
+  if (onEdit || onDelete) {
+    columns.push({
+      key: "actions",
+      label: "",
+      sortable: false,
+      render: (row: Record<string, unknown>) => (
+        <div className="flex items-center gap-2">
+          {onEdit && (
+            <button type="button" className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-brand hover:bg-brand/10" onClick={(event) => { event.stopPropagation(); onEdit(row); }} title="Edit">
+              <Pencil className="h-3.5 w-3.5" /> Edit
+            </button>
+          )}
+          {onDelete && (
+            <button type="button" className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50" onClick={(event) => { event.stopPropagation(); onDelete(row); }} title="Delete">
+              <Trash2 className="h-3.5 w-3.5" /> Delete
+            </button>
+          )}
+        </div>
+      )
+    });
+  }
+  return <DataTable rows={rows} empty="No records found" loading={loading} columns={columns} />;
 }
 
