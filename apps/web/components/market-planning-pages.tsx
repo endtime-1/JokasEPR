@@ -161,7 +161,14 @@ function TargetTable({ rows, loading, onDelete }: { rows: TargetRow[]; loading?:
   );
 }
 
-function PlanTable({ rows, loading }: { rows: PlanRow[]; loading?: boolean }) {
+// Mirrors deleteProductionPlan's guard exactly: delete allowed only before
+// an MRP run or execution could depend on it.
+const PLAN_DELETABLE_STATUSES = ["DRAFT", "READY_FOR_APPROVAL"];
+// Mirrors deleteMrp's guard: delete allowed only before a procurement
+// recommendation could depend on it.
+const MRP_DELETABLE_STATUSES = ["DRAFT", "CALCULATED", "SHORTAGE"];
+
+function PlanTable({ rows, loading, onDelete }: { rows: PlanRow[]; loading?: boolean; onDelete?: (row: PlanRow) => void }) {
   return (
     <DataTable<PlanRow>
       rows={rows}
@@ -172,29 +179,48 @@ function PlanTable({ rows, loading }: { rows: PlanRow[]; loading?: boolean }) {
         { key: "status", label: "Status" },
         { key: "totalPlannedKg", label: "Planned kg", render: (row) => number(row.totalPlannedKg) },
         { key: "producedQuantityKg", label: "Produced kg", render: (row) => number(row.producedQuantityKg) },
-        { key: "createdAt", label: "Created", render: (row) => new Date(row.createdAt).toLocaleDateString() }
+        { key: "createdAt", label: "Created", render: (row) => new Date(row.createdAt).toLocaleDateString() },
+        ...(onDelete ? [{
+          key: "actions", label: "", render: (row: PlanRow) => (
+            PLAN_DELETABLE_STATUSES.includes(row.status) ? (
+              <button type="button" className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50" onClick={(e) => { e.stopPropagation(); onDelete(row); }} title="Delete production plan">
+                <Trash2 className="h-3.5 w-3.5" /> Delete
+              </button>
+            ) : <span className="text-xs text-ink/35" title="Only DRAFT or READY_FOR_APPROVAL plans can be deleted">—</span>
+          )
+        }] : [])
       ]}
     />
   );
 }
 
-function MrpTable({ rows }: { rows: MrpRow[] }) {
+function MrpTable({ rows, loading, onDelete }: { rows: MrpRow[]; loading?: boolean; onDelete?: (row: MrpRow) => void }) {
   return (
     <DataTable<MrpRow>
       rows={rows}
+      loading={loading}
       empty="No MRP checks found."
       columns={[
         { key: "mrpNumber", label: "MRP" },
         { key: "status", label: "Status" },
         { key: "totalRequiredKg", label: "Required kg", render: (row) => number(row.totalRequiredKg) },
         { key: "totalAvailableKg", label: "Available kg", render: (row) => number(row.totalAvailableKg) },
-        { key: "totalShortageKg", label: "Shortage kg", render: (row) => number(row.totalShortageKg) }
+        { key: "totalShortageKg", label: "Shortage kg", render: (row) => number(row.totalShortageKg) },
+        ...(onDelete ? [{
+          key: "actions", label: "", render: (row: MrpRow) => (
+            MRP_DELETABLE_STATUSES.includes(row.status) ? (
+              <button type="button" className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50" onClick={(e) => { e.stopPropagation(); onDelete(row); }} title="Delete MRP run">
+                <Trash2 className="h-3.5 w-3.5" /> Delete
+              </button>
+            ) : <span className="text-xs text-ink/35" title="Only DRAFT, CALCULATED, or SHORTAGE MRP runs can be deleted">—</span>
+          )
+        }] : [])
       ]}
     />
   );
 }
 
-function RecommendationTable({ rows, loading }: { rows: RecommendationRow[]; loading?: boolean }) {
+function RecommendationTable({ rows, loading, onCancel }: { rows: RecommendationRow[]; loading?: boolean; onCancel?: (row: RecommendationRow) => void }) {
   return (
     <DataTable<RecommendationRow>
       rows={rows}
@@ -205,7 +231,16 @@ function RecommendationTable({ rows, loading }: { rows: RecommendationRow[]; loa
         { key: "recommendedQuantityKg", label: "Quantity kg", render: (row) => number(row.recommendedQuantityKg) },
         { key: "estimatedTotalCost", label: "Estimate", render: (row) => money(row.estimatedTotalCost) },
         { key: "status", label: "Status" },
-        { key: "purchaseRequestId", label: "Purchase request", render: (row) => row.purchaseRequestId ?? "-" }
+        { key: "purchaseRequestId", label: "Purchase request", render: (row) => row.purchaseRequestId ?? "-" },
+        ...(onCancel ? [{
+          key: "actions", label: "", render: (row: RecommendationRow) => (
+            row.status === "OPEN" ? (
+              <button type="button" className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50" onClick={(e) => { e.stopPropagation(); onCancel(row); }} title="Cancel recommendation">
+                <Trash2 className="h-3.5 w-3.5" /> Cancel
+              </button>
+            ) : <span className="text-xs text-ink/35" title="Only OPEN recommendations can be cancelled">—</span>
+          )
+        }] : [])
       ]}
     />
   );
@@ -352,6 +387,9 @@ export function MarketTargetDetailsPage() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  const [deletePlanRow, setDeletePlanRow] = useState<PlanRow | null>(null);
+  const [deletingPlan, setDeletingPlan] = useState(false);
+  const [deletePlanError, setDeletePlanError] = useState("");
 
   async function load() {
     setLoadError("");
@@ -359,6 +397,22 @@ export function MarketTargetDetailsPage() {
     setTarget(res.data);
   }
   useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, [params.id]);
+
+  async function confirmDeletePlan() {
+    if (!deletePlanRow) return;
+    setDeletingPlan(true);
+    setDeletePlanError("");
+    try {
+      await apiFetch(`/market-planning/production-plans/${deletePlanRow.id}`, { method: "DELETE" });
+      invalidateCache("/market-planning/production-plans", true);
+      setDeletePlanRow(null);
+      await load();
+    } catch (err: any) {
+      setDeletePlanError(err?.message ?? "Failed to delete production plan.");
+    } finally {
+      setDeletingPlan(false);
+    }
+  }
 
   async function approveTarget(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -465,7 +519,11 @@ export function MarketTargetDetailsPage() {
       </form>
       <section className="grid gap-6 xl:grid-cols-2">
         <div><h3 className="mb-3 text-lg font-semibold">Target items</h3><DataTable<TargetItem> rows={target?.items ?? []} empty="No target items." columns={[{ key: "productId", label: "Product", render: (row) => row.product?.name ?? row.productId }, { key: "baseQuantity", label: "Base bags", render: (row) => number(row.baseQuantity) }, { key: "adjustmentPercent", label: "Adjustment %", render: (row) => number(row.adjustmentPercent) }, { key: "targetQuantityKg", label: "Target kg", render: (row) => number(row.targetQuantityKg) }, { key: "approvalStatus", label: "Status" }]} /></div>
-        <div><h3 className="mb-3 text-lg font-semibold">Production plans</h3><PlanTable rows={target?.productionPlans ?? []} /></div>
+        <div>
+          <h3 className="mb-3 text-lg font-semibold">Production plans</h3>
+          {deletePlanError && <p className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{deletePlanError}</p>}
+          <PlanTable rows={target?.productionPlans ?? []} onDelete={(row) => { setDeletePlanError(""); setDeletePlanRow(row); }} />
+        </div>
       </section>
       <ConfirmModal
         open={confirmDelete}
@@ -475,6 +533,15 @@ export function MarketTargetDetailsPage() {
         title="Delete market target?"
         message={`This will permanently remove "${target?.title}" (${target?.targetNumber}). This can't be undone.`}
         confirmLabel="Delete target"
+      />
+      <ConfirmModal
+        open={!!deletePlanRow}
+        onClose={() => setDeletePlanRow(null)}
+        onConfirm={confirmDeletePlan}
+        loading={deletingPlan}
+        title="Delete production plan?"
+        message={`This will permanently remove plan "${deletePlanRow?.planNumber}". This can't be undone.`}
+        confirmLabel="Delete plan"
       />
     </>
   );
@@ -517,12 +584,38 @@ export function ProductionPlanPage() {
   const [planId, setPlanId] = useState("");
   const [message, setMessage] = useState("");
   const [loadError, setLoadError] = useState("");
-  useEffect(() => { apiFetch<ApiEnvelope<PlanRow[]>>("/market-planning/production-plans").then((res) => setPlans(res.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false)); }, []);
+  const [deletePlan, setDeletePlan] = useState<PlanRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+
+  function load() {
+    setLoadError("");
+    apiFetch<ApiEnvelope<PlanRow[]>>("/market-planning/production-plans").then((res) => setPlans(res.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
+  }
+  useEffect(load, []);
+
   async function calculate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const res = await apiFetch<ApiEnvelope<MrpRow>>(`/market-planning/production-plans/${planId}/mrp`, { method: "POST", body: JSON.stringify({}) });
     setMessage(`Created ${res.data.mrpNumber}`);
   }
+
+  async function confirmDelete() {
+    if (!deletePlan) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await apiFetch(`/market-planning/production-plans/${deletePlan.id}`, { method: "DELETE" });
+      invalidateCache("/market-planning/production-plans", true);
+      setDeletePlan(null);
+      load();
+    } catch (err: any) {
+      setDeleteError(err?.message ?? "Failed to delete production plan.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <>
       <Header title="Production Plans" subtitle="Approved market targets translated into feed mill production plans." />
@@ -531,24 +624,61 @@ export function ProductionPlanPage() {
         <button className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" type="submit"><PackageCheck className="h-4 w-4" /> Calculate MRP</button>
         {message && <span className="text-sm font-semibold text-emerald-700">{message}</span>}
       </form>
-      <PlanTable rows={plans} loading={loading} />
+      {deleteError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{deleteError}</p>}
+      <PlanTable rows={plans} loading={loading} onDelete={(row) => { setDeleteError(""); setDeletePlan(row); }} />
+      <ConfirmModal
+        open={!!deletePlan}
+        onClose={() => setDeletePlan(null)}
+        onConfirm={confirmDelete}
+        loading={deleting}
+        title="Delete production plan?"
+        message={`This will permanently remove plan "${deletePlan?.planNumber}". This can't be undone.`}
+        confirmLabel="Delete plan"
+      />
     </>
   );
 }
 
 export function MaterialRequirementPlanningPage() {
   const [plans, setPlans] = useState<PlanRow[]>(() => getCachedFirst<ApiEnvelope<PlanRow[]>>("/market-planning/production-plans")?.data ?? []);
-  const [mrps, setMrps] = useState<MrpRow[]>([]);
+  const [mrps, setMrps] = useState<MrpRow[]>(() => getCachedFirst<ApiEnvelope<MrpRow[]>>("/market-planning/mrp")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/market-planning/mrp"));
   const [planId, setPlanId] = useState("");
   const [loadError, setLoadError] = useState("");
+  const [deleteMrpRow, setDeleteMrpRow] = useState<MrpRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+
+  function loadMrps() {
+    apiFetch<ApiEnvelope<MrpRow[]>>("/market-planning/mrp").then((res) => setMrps(res.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
+  }
   useEffect(() => {
     apiFetch<ApiEnvelope<PlanRow[]>>("/market-planning/production-plans").then((res) => setPlans(res.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load."));
+    loadMrps();
   }, []);
   async function calculate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const res = await apiFetch<ApiEnvelope<MrpRow>>(`/market-planning/production-plans/${planId}/mrp`, { method: "POST", body: JSON.stringify({}) });
-    setMrps([res.data, ...mrps]);
+    await apiFetch<ApiEnvelope<MrpRow>>(`/market-planning/production-plans/${planId}/mrp`, { method: "POST", body: JSON.stringify({}) });
+    invalidateCache("/market-planning/mrp", true);
+    loadMrps();
   }
+
+  async function confirmDelete() {
+    if (!deleteMrpRow) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await apiFetch(`/market-planning/mrp/${deleteMrpRow.id}`, { method: "DELETE" });
+      invalidateCache("/market-planning/mrp", true);
+      setDeleteMrpRow(null);
+      loadMrps();
+    } catch (err: any) {
+      setDeleteError(err?.message ?? "Failed to delete MRP run.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <>
       <Header title="Material Requirement Planning" subtitle="Calculate raw material needs from active feed formulas and central inventory." />
@@ -556,7 +686,17 @@ export function MaterialRequirementPlanningPage() {
         <label className="grid min-w-72 gap-1 text-sm font-semibold">Production plan<select required className={inputClass} value={planId} onChange={(e) => setPlanId(e.target.value)}><option value="">Select plan</option>{plans.map((x) => <option key={x.id} value={x.id}>{x.planNumber}</option>)}</select></label>
         <button className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" type="submit"><PackageCheck className="h-4 w-4" /> Run availability check</button>
       </form>
-      <MrpTable rows={mrps.length ? mrps : plans.flatMap((p) => [])} />
+      {deleteError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{deleteError}</p>}
+      <MrpTable rows={mrps} loading={loading} onDelete={(row) => { setDeleteError(""); setDeleteMrpRow(row); }} />
+      <ConfirmModal
+        open={!!deleteMrpRow}
+        onClose={() => setDeleteMrpRow(null)}
+        onConfirm={confirmDelete}
+        loading={deleting}
+        title="Delete MRP run?"
+        message={`This will permanently remove MRP run "${deleteMrpRow?.mrpNumber}". This can't be undone.`}
+        confirmLabel="Delete MRP run"
+      />
     </>
   );
 }
@@ -649,6 +789,9 @@ export function ProcurementRecommendationPage({ convert = false }: { convert?: b
   const [recommendationId, setRecommendationId] = useState("");
   const [message, setMessage] = useState("");
   const [loadError, setLoadError] = useState("");
+  const [cancelRow, setCancelRow] = useState<RecommendationRow | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState("");
   async function load() {
     setLoadError("");
     const res = await apiFetch<ApiEnvelope<RecommendationRow[]>>("/market-planning/recommendations");
@@ -667,6 +810,21 @@ export function ProcurementRecommendationPage({ convert = false }: { convert?: b
     setMessage("Converted to purchase request");
     await load();
   }
+  async function confirmCancel() {
+    if (!cancelRow) return;
+    setCancelling(true);
+    setCancelError("");
+    try {
+      await apiFetch(`/market-planning/recommendations/${cancelRow.id}/cancel`, { method: "PATCH" });
+      invalidateCache("/market-planning/recommendations", true);
+      setCancelRow(null);
+      await load();
+    } catch (err: any) {
+      setCancelError(err?.message ?? "Failed to cancel recommendation.");
+    } finally {
+      setCancelling(false);
+    }
+  }
   return (
     <>
       <Header title={convert ? "Convert Recommendation" : "Procurement Recommendations"} subtitle="Turn raw material shortages into purchase requests linked to the originating market target and MRP." />
@@ -682,7 +840,17 @@ export function ProcurementRecommendationPage({ convert = false }: { convert?: b
           <button className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" type="submit"><ShoppingCart className="h-4 w-4" /> Generate recommendations</button>
         </form>
       )}
-      <RecommendationTable rows={rows} loading={loading} />
+      {cancelError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{cancelError}</p>}
+      <RecommendationTable rows={rows} loading={loading} onCancel={(row) => { setCancelError(""); setCancelRow(row); }} />
+      <ConfirmModal
+        open={!!cancelRow}
+        onClose={() => setCancelRow(null)}
+        onConfirm={confirmCancel}
+        loading={cancelling}
+        title="Cancel recommendation?"
+        message={`This will cancel the recommendation for "${cancelRow?.rawMaterial?.name ?? cancelRow?.rawMaterialId}". This can't be undone.`}
+        confirmLabel="Cancel recommendation"
+      />
     </>
   );
 }
