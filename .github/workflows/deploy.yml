@@ -255,6 +255,12 @@ jobs:
       - name: Setup SSH key
         run: |
           mkdir -p ~/.ssh
+          # H-INFRA-7: write-then-chmod leaves a brief window where the file is
+          # created at the default (often world-readable) mode before chmod
+          # narrows it. umask restricts the mode new files are created with from
+          # the moment of creation, closing that window entirely rather than
+          # narrowing it after the fact.
+          umask 077
           echo "${{ secrets.HOSTINGER_SSH_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           echo "${{ secrets.HOSTINGER_SSH_KNOWN_HOST }}" >> ~/.ssh/known_hosts
@@ -473,7 +479,11 @@ jobs:
             case "$_ah" in :*) DB_PORT="${_ah#:}"; DB_PORT="${DB_PORT%%/*}" ;; *) DB_PORT="3306" ;; esac
             DB_NAME="${_hp#*/}"; DB_NAME="${DB_NAME%%[?#]*}"
 
-            # Write options file — keeps credentials out of process args and logs
+            # Write options file — keeps credentials out of process args and logs.
+            # H-INFRA-7: umask closes the write-then-chmod race window (see
+            # "Setup SSH key" step's comment for the full reasoning) — the file
+            # is created at 600 from the start instead of narrowed after.
+            umask 077
             printf '[client]\nhost=%s\nport=%s\nuser=%s\npassword=%s\ndatabase=%s\n' \
               "$DB_HOST" "$DB_PORT" "$DB_USER" "$DB_PASS" "$DB_NAME" > /tmp/deploy-my.cnf
             chmod 600 /tmp/deploy-my.cnf

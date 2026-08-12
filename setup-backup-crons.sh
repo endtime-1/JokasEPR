@@ -23,6 +23,13 @@
 # start.js's checkDailyBackup()/checkDailyFilesBackup() polling, not cron.
 set -u
 
+# H-INFRA-7: umask restricts every file this script creates (the credentials
+# file below, and the generated backup scripts) to owner-only from the moment
+# of creation, closing the write-then-chmod race window a `chmod` call after
+# the fact leaves open. The explicit `chmod 600`/`chmod +x` calls below still
+# run too — this makes them redundant rather than load-bearing, not wrong.
+umask 077
+
 echo "=== DB backup cron ==="
 if [ -z "${DATABASE_URL:-}" ]; then
   echo "WARNING: DATABASE_URL not set — skipping DB backup setup"
