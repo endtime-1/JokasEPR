@@ -5,6 +5,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
 import { LookupCacheService } from "../../common/services/lookup-cache.service";
 import { startOfTodayAccra } from "../../common/utils/timezone";
+import { nextRef } from "../../common/next-ref";
 import {
   AddPenDto,
   CreateBirdWeightRecordDto,
@@ -1335,6 +1336,32 @@ export class PoultryService {
       where: { companyId_warehouseId_productId: { companyId: user.companyId, warehouseId, productId } },
       update: { quantityOnHand: { increment: quantity }, updatedById: user.id },
       create: { companyId: user.companyId, branchId: warehouse.branchId, warehouseId, farmId: batch.farmId, productId, uomId: product.uomId, quantityOnHand: quantity, createdById: user.id }
+    });
+    // H-BUG-2 (2026-08-12): this only ever raised the aggregate
+    // quantityOnHand — it never created a StockBatch. Every FIFO consumer
+    // in the system (Sales' consumeFifoTx included) checks
+    // StockBatch.quantityRemaining, not quantityOnHand, to decide what's
+    // actually sellable/available — so stock credited here (eggs) looked
+    // "in stock" on every dashboard but could never actually be released
+    // to a customer. Mirrors the pattern every other production-output
+    // path in this codebase already uses (see feed-production.service.ts's
+    // createBatch).
+    const batchNumber = await nextRef(tx, user.companyId, "EGG");
+    await tx.stockBatch.create({
+      data: {
+        companyId: user.companyId,
+        branchId: batch.branchId,
+        farmId: batch.farmId,
+        warehouseId,
+        productId,
+        inventoryItemId: item.id,
+        uomId: product.uomId,
+        batchNumber,
+        quantityReceived: quantity,
+        quantityRemaining: quantity,
+        manufactureDate: new Date(),
+        createdById: user.id
+      }
     });
     await tx.stockMovement.create({
       data: { companyId: user.companyId, branchId: batch.branchId, productId, inventoryItemId: item.id, toWarehouseId: warehouseId, warehouseId, farmId: batch.farmId, uomId: product.uomId, movementType: "PRODUCTION_OUTPUT", quantity, referenceType, referenceId, notes, createdById: user.id }

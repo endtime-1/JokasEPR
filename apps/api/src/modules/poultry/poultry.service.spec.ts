@@ -2,10 +2,15 @@ import { ForbiddenException, Logger } from "@nestjs/common";
 import { AuthenticatedUser } from "@jokas/shared";
 import { PoultryService } from "./poultry.service";
 
+jest.mock("../../common/next-ref", () => ({ nextRef: jest.fn().mockResolvedValue("EGG-2026-0001") }));
+
 const mockTx = {
   feedConsumptionRecord: { create: jest.fn(), update: jest.fn() },
-  inventoryItem: { findFirst: jest.fn(), updateMany: jest.fn(), update: jest.fn() },
+  eggProductionRecord: { create: jest.fn() },
+  inventoryItem: { findFirst: jest.fn(), updateMany: jest.fn(), update: jest.fn(), upsert: jest.fn() },
   product: { findFirst: jest.fn().mockResolvedValue({ id: "prod-feed", uomId: "uom-1" }) },
+  warehouse: { findFirst: jest.fn() },
+  stockBatch: { create: jest.fn() },
   stockMovement: { create: jest.fn() },
   mortalityRecord: { aggregate: jest.fn(), create: jest.fn() },
   poultryTransferRecord: { aggregate: jest.fn(), create: jest.fn() },
@@ -90,6 +95,36 @@ describe("PoultryService — farm/warehouse access checks (H7)", () => {
           {}
         )
       ).rejects.toThrow(ForbiddenException);
+    });
+
+    it("H-BUG-2: crediting egg output creates a real, sellable StockBatch — not just a quantityOnHand bump", async () => {
+      mockPrisma.flockBatch.findFirst.mockResolvedValue({ id: "batch-1", companyId: "company-1", farmId: "farm-1", branchId: "branch-1", poultryHouseId: "house-1", birdType: "LAYERS", status: "ACTIVE", code: "FLK-1" });
+      mockTx.eggProductionRecord.create.mockResolvedValue({ id: "egg-rec-1" });
+      mockTx.warehouse.findFirst.mockResolvedValue({ id: "wh-1", companyId: "company-1", branchId: "branch-1" });
+      mockTx.product.findFirst.mockResolvedValue({ id: "prod-1", companyId: "company-1", uomId: "uom-1" });
+      mockTx.inventoryItem.upsert.mockResolvedValue({ id: "inv-1" });
+
+      const service = makeService();
+      await service.createEggs(
+        makeUser({ farmIds: ["farm-1"], warehouseIds: ["wh-1"] }),
+        { flockBatchId: "batch-1", recordDate: "2026-01-01", goodEggs: 10, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0, warehouseId: "wh-1", eggProductId: "prod-1" } as never,
+        {}
+      );
+
+      // Sales' consumeFifoTx (and every other FIFO consumer) checks
+      // StockBatch.quantityRemaining to decide what's actually sellable —
+      // an inventoryItem bump alone left eggs permanently unreleasable.
+      expect(mockTx.stockBatch.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          companyId: "company-1",
+          warehouseId: "wh-1",
+          productId: "prod-1",
+          inventoryItemId: "inv-1",
+          batchNumber: "EGG-2026-0001",
+          quantityReceived: 10,
+          quantityRemaining: 10
+        })
+      });
     });
   });
 });
