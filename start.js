@@ -126,12 +126,50 @@ function killOrphans() {
   } catch {}
 }
 
+// ---------------------------------------------------------------------------
+// H-OPS-2: nothing in this file ever reached a human — a crash-looping API,
+// a failed daily backup, a dead CI runner all just logged a line and moved
+// on, discoverable only by someone manually opening /__status. Fires a
+// webhook (Slack- and Discord-compatible payload shape — set ALERT_WEBHOOK_URL
+// to either service's incoming-webhook URL) on the failure modes below. A
+// no-op with a one-time startup note if unset, so this is purely opt-in and
+// never blocks anything if the webhook itself is unreachable. Defined before
+// the process-level handlers just below so there's no ordering/hoisting
+// subtlety around ALERT_WEBHOOK_URL being a const.
+// ---------------------------------------------------------------------------
+const ALERT_WEBHOOK_URL = process.env.ALERT_WEBHOOK_URL || "";
+if (!ALERT_WEBHOOK_URL) {
+  console.log("[start] ALERT_WEBHOOK_URL not set — failure alerts are disabled (only /__status will show problems)");
+}
+function sendAlert(message) {
+  if (!ALERT_WEBHOOK_URL) return;
+  try {
+    const text = `🚨 Jokas ERP (${os.hostname()}): ${message}`;
+    const body = JSON.stringify({ text, content: text });
+    const url = new URL(ALERT_WEBHOOK_URL);
+    const mod = url.protocol === "https:" ? https : http;
+    const req = mod.request(
+      url,
+      { method: "POST", headers: { "content-type": "application/json", "content-length": Buffer.byteLength(body) }, timeout: 8000 },
+      (res) => { res.resume(); }
+    );
+    req.on("error", (e) => console.error("[start] alert webhook failed:", e.message));
+    req.on("timeout", () => req.destroy());
+    req.write(body);
+    req.end();
+  } catch (e) {
+    console.error("[start] alert webhook error:", e.message);
+  }
+}
+
 // Surface any crash that would otherwise kill the process silently.
 process.on("uncaughtException", (e) => {
   console.error("[start] uncaughtException:", e?.stack || e);
+  sendAlert(`uncaughtException in the supervisor process: ${e?.message || e}`);
 });
 process.on("unhandledRejection", (reason) => {
   console.error("[start] unhandledRejection:", reason?.stack || reason);
+  sendAlert(`unhandledRejection in the supervisor process: ${reason?.message || reason}`);
 });
 process.on("exit", (code) => {
   process.stdout.write(`[start] process.exit code=${code}\n`);
@@ -666,6 +704,12 @@ startProxy(0);
         lastWebLines.push(exitMsg);
         if (lastWebLines.length > 20) lastWebLines = lastWebLines.slice(-20);
         console.log(`[start] Next.js worker exited code=${code} — restart #${webRestarts} in ${delay}ms`);
+        // H-OPS-2: alert once a crash-loop is established (not on an isolated
+        // one-off restart), then periodically thereafter so a still-down web
+        // app doesn't go completely silent, without paging on every restart.
+        if (webRestarts === 3 || webRestarts % 10 === 0) {
+          sendAlert(`Web app has crashed ${webRestarts} times in a row (exit code=${code}). Check /__status.`);
+        }
         setTimeout(startWeb, delay);
       });
     });
@@ -735,6 +779,10 @@ startProxy(0);
         apiRestarts++;
         const delay = Math.min(3000 * apiRestarts, 30000);
         console.log(`[start] API exited code=${code} — restart #${apiRestarts} in ${delay}ms`);
+        // H-OPS-2: same threshold-then-periodic pattern as the web worker above.
+        if (apiRestarts === 3 || apiRestarts % 10 === 0) {
+          sendAlert(`API has crashed ${apiRestarts} times in a row (exit code=${code}). Check /__status.`);
+        }
         setTimeout(startApi, delay);
       });
     });
@@ -882,18 +930,30 @@ startProxy(0);
       console.log(`[start] CI runner was down — restarted, PID=${child.pid}`);
     } catch (e) {
       console.error("[start] failed to restart CI runner:", e.message);
+      sendAlert(`Failed to restart the CI runner: ${e.message}`);
     }
   }
   setInterval(checkCiRunner, 5 * 60 * 1000);
   checkCiRunner();
 
+  let dbBackupAlerted = ""; // dateStr already alerted for, so this fires at most once/day
   function checkDailyBackup() {
     const backupScript = path.join(HOME_DIR, "jokas-db-backup.sh");
     if (!fs.existsSync(backupScript)) return; // not written yet by a deploy
     const now = new Date();
-    if (now.getHours() !== 2) return; // only fire during the 02:00 hour
     const dateStr = now.toISOString().slice(0, 10).replace(/-/g, "");
     const expected = path.join(HOME_DIR, "jokas-db-backups", `db-${dateStr}.sql.gz`);
+    // H-OPS-2: this only ever knew whether it managed to SPAWN the backup
+    // script, never whether the script's own mysqldump actually succeeded —
+    // a failure inside the script landed silently in backup-error.log with
+    // nothing surfacing it. During the 03:00 hour (one hour after the backup
+    // should have run), check that today's file actually landed; if not,
+    // alert once — covers both "never spawned" and "spawned but failed".
+    if (now.getHours() === 3 && !fs.existsSync(expected) && dbBackupAlerted !== dateStr) {
+      dbBackupAlerted = dateStr;
+      sendAlert(`Daily DB backup for ${dateStr} did not land — check ~/jokas-db-backups/backup-error.log on the server.`);
+    }
+    if (now.getHours() !== 2) return; // only fire during the 02:00 hour
     if (fs.existsSync(expected)) return; // already ran today
     try {
       // Same reasoning as checkCiRunner() — exec by absolute path, not via "bash".
@@ -902,6 +962,7 @@ startProxy(0);
       console.log(`[start] running daily DB backup, PID=${child.pid}`);
     } catch (e) {
       console.error("[start] failed to run daily DB backup:", e.message);
+      sendAlert(`Failed to start the daily DB backup: ${e.message}`);
     }
   }
   // Checked every 15 min so the 02:00-04:00 UTC-ish window is never missed
@@ -909,6 +970,7 @@ startProxy(0);
   setInterval(checkDailyBackup, 15 * 60 * 1000);
   checkDailyBackup();
 
+  let filesBackupAlerted = ""; // same once-per-day guard as dbBackupAlerted above
   function checkDailyFilesBackup() {
     // C8: same polling fallback as checkDailyBackup() above, for the sibling
     // uploaded-files backup cron written by deploy.yml's "Setup uploaded-files
@@ -916,9 +978,14 @@ startProxy(0);
     const backupScript = path.join(HOME_DIR, "jokas-files-backup.sh");
     if (!fs.existsSync(backupScript)) return; // not written yet by a deploy
     const now = new Date();
-    if (now.getHours() !== 2) return; // only fire during the 02:00 hour
     const dateStr = now.toISOString().slice(0, 10).replace(/-/g, "");
     const expected = path.join(HOME_DIR, "jokas-files-backups", `files-${dateStr}.tar.gz`);
+    // H-OPS-2: same "did it actually land" check as checkDailyBackup() above.
+    if (now.getHours() === 3 && !fs.existsSync(expected) && filesBackupAlerted !== dateStr) {
+      filesBackupAlerted = dateStr;
+      sendAlert(`Daily uploaded-files backup for ${dateStr} did not land — check ~/jokas-files-backups/backup-error.log on the server.`);
+    }
+    if (now.getHours() !== 2) return; // only fire during the 02:00 hour
     if (fs.existsSync(expected)) return; // already ran today
     try {
       const child = spawn(backupScript, [], { detached: true, stdio: "ignore" });
@@ -926,6 +993,7 @@ startProxy(0);
       console.log(`[start] running daily uploaded-files backup, PID=${child.pid}`);
     } catch (e) {
       console.error("[start] failed to run daily uploaded-files backup:", e.message);
+      sendAlert(`Failed to start the daily uploaded-files backup: ${e.message}`);
     }
   }
   setInterval(checkDailyFilesBackup, 15 * 60 * 1000);

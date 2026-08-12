@@ -60,6 +60,17 @@ If you're debugging a process that keeps dying every ~30s in production, this is
 
 This is the primary diagnostic tool for this deployment — there is no SSH-free way to tail logs otherwise, and interactive SSH access is often slow/unavailable when something's actively broken. `lastStartLines`/`lastWebLines`/`lastApiLines` are rolling buffers of each component's recent stdout/stderr. The deploy pipeline's smoke test polls this exact endpoint to confirm the app came back up after a restart.
 
+### Failure alerts
+
+By default, nothing pushes a notification to a human — the only way to know something's wrong is to check `/__status` yourself. Setting `ALERT_WEBHOOK_URL` in `.env` (a Slack or Discord "incoming webhook" URL) turns on `start.js` sending a message when:
+
+- the web app or API crash-loops (fires once at the 3rd consecutive crash, then every 10th crash after that — not on every single restart),
+- a daily DB or uploaded-files backup didn't land by 03:00 (an hour after it should have run),
+- the backup script or the CI-runner restart itself fails to even start,
+- the supervisor process (`start.js` itself) hits an uncaught exception.
+
+Leave it unset to keep this disabled — nothing else in the app depends on it, and a webhook failure never blocks anything else from running.
+
 ---
 
 ## Prerequisites (local dev only — production needs nothing installed locally)
