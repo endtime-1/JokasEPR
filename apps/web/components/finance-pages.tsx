@@ -8,6 +8,7 @@ import { DataTable } from "./data-table";
 import { FormField } from "./form-field";
 import { ApiEnvelope, apiFetch, getCached, getCachedFirst, hasCached } from "../lib/api";
 import { Badge, EmptyState, StatusBadge } from "./ui";
+import { useAuth } from "./auth-context";
 
 // ─── Shared Types ────────────────────────────────────────────────────────────
 
@@ -1194,6 +1195,13 @@ export function PettyCashPage() {
 export function PayrollPage() {
   useFinancePageHeader("Payroll Records", "Employee salaries, deductions, and payment tracking.");
   const { options, optionsError } = useFinanceOptions();
+  // H-WEB-4: approve/mark-paid rendered for anyone who could view this page,
+  // even without finance.manage — the server independently enforces the real
+  // permission on both actions, so this was UX confusion, not a security
+  // gap. A read-only user clicking either got a failure instead of the
+  // button simply not being there.
+  const { profile } = useAuth();
+  const canManagePayroll = profile?.hasGlobalAccess || (profile?.permissions ?? []).includes("finance.manage");
   const [records, setRecords] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/finance/payroll")?.data ?? []);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ period: new Date().toISOString().slice(0, 7), periodStart: "", periodEnd: "", employeeName: "", employeeCode: "", basicSalary: "", allowances: "0", deductions: "0", taxDeduction: "0", ssnit: "0", branchId: "", bankAccountId: "", notes: "" });
@@ -1291,8 +1299,8 @@ export function PayrollPage() {
           {
             key: "actions", label: "", render: (r) => (
               <div className="flex gap-2">
-                {r.status === "DRAFT" && <button onClick={() => handleApprove(r.id as string)} className="text-xs text-brand hover:underline">Approve</button>}
-                {r.status === "APPROVED" && <button onClick={() => handleMarkPaid(r.id as string)} className="text-xs text-green-700 hover:underline">Mark Paid</button>}
+                {canManagePayroll && r.status === "DRAFT" && <button onClick={() => handleApprove(r.id as string)} className="text-xs text-brand hover:underline">Approve</button>}
+                {canManagePayroll && r.status === "APPROVED" && <button onClick={() => handleMarkPaid(r.id as string)} className="text-xs text-green-700 hover:underline">Mark Paid</button>}
               </div>
             )
           }

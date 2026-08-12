@@ -5,6 +5,7 @@ import { KeyRound, Pencil, Plus, ShieldCheck, Trash2, UserCheck, UserX } from "l
 import { DataTable } from "../../../../components/data-table";
 import { FormField } from "../../../../components/form-field";
 import { ApiEnvelope, apiFetch, getCachedFirst } from "../../../../lib/api";
+import { useAuth } from "../../../../components/auth-context";
 
 type Role = {
   id: string;
@@ -60,6 +61,14 @@ function scopeNames<T extends Record<string, ScopeOption>>(items: T[] | undefine
 }
 
 export default function UsersPage() {
+  // H-WEB-4: reset-password and delete render for anyone who can view this
+  // page, even without identity.manage — the server independently enforces
+  // the real permission on both actions regardless of what the page shows,
+  // so this was never a security gap, but a read-only user clicking either
+  // button got a confusing failure instead of the button simply not being
+  // there.
+  const { profile } = useAuth();
+  const canManageIdentity = profile?.hasGlobalAccess || (profile?.permissions ?? []).includes("identity.manage");
   const [users, setUsers] = useState<UserRow[]>(() => getCachedFirst<ApiEnvelope<UserRow[]>>("/identity/users")?.data ?? []);
   const [roles, setRoles] = useState<Role[]>([]);
   const [branches, setBranches] = useState<ScopeOption[]>([]);
@@ -468,14 +477,18 @@ export default function UsersPage() {
                   <UserX aria-hidden className="h-4 w-4" />
                   Deactivate
                 </button>
-                <button className="inline-flex min-h-9 items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 text-xs font-semibold text-amber-700 hover:bg-amber-100" onClick={() => openResetPassword(row)}>
-                  <KeyRound aria-hidden className="h-4 w-4" />
-                  Reset pwd
-                </button>
-                <button className="inline-flex min-h-9 items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 text-xs font-semibold text-red-600 hover:bg-red-100" onClick={() => setDeleteConfirmId(row.id)}>
-                  <Trash2 aria-hidden className="h-4 w-4" />
-                  Delete
-                </button>
+                {canManageIdentity && (
+                  <button className="inline-flex min-h-9 items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 text-xs font-semibold text-amber-700 hover:bg-amber-100" onClick={() => openResetPassword(row)}>
+                    <KeyRound aria-hidden className="h-4 w-4" />
+                    Reset pwd
+                  </button>
+                )}
+                {canManageIdentity && (
+                  <button className="inline-flex min-h-9 items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 text-xs font-semibold text-red-600 hover:bg-red-100" onClick={() => setDeleteConfirmId(row.id)}>
+                    <Trash2 aria-hidden className="h-4 w-4" />
+                    Delete
+                  </button>
+                )}
               </div>
             )
           }
