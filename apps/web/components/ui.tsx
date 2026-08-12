@@ -14,6 +14,7 @@ import {
   CircleAlert,
   CircleCheckBig,
   Info,
+  Lock,
   X,
   CircleX,
   type LucideIcon
@@ -146,6 +147,20 @@ export function StatusBadge({
     <Badge variant={variant} className={className}>
       {status.replace(/_/g, " ")}
     </Badge>
+  );
+}
+
+// ─── LockedNote ───────────────────────────────────────────────────────────────
+// A blank "—" for a disabled action reads as "there's nothing here" rather
+// than "this is disabled for a reason." Use this instead anywhere an
+// edit/delete/cancel action is hidden because the record's current status
+// doesn't allow it — visible at a glance, full reason on hover.
+
+export function LockedNote({ reason }: { reason: string }) {
+  return (
+    <span className="inline-flex items-center gap-1 text-xs text-ink/45" title={reason}>
+      <Lock className="h-3 w-3" /> Locked
+    </span>
   );
 }
 

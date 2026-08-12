@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { CircleCheckBig, ClipboardList, Factory, PackageCheck, Pencil, Plus, RefreshCw, ShoppingCart, Trash2, TrendingUp } from "lucide-react";
 import { DataTable } from "./data-table";
-import { ConfirmModal } from "./ui";
+import { ConfirmModal, LockedNote } from "./ui";
 import { ApiEnvelope, apiFetch, getCached, getCachedFirst, hasCached, invalidateCache } from "../lib/api";
 
 type Option = { id: string; branchId?: string; productionSiteId?: string; code?: string; sku?: string; name: string; finishedProductId?: string };
@@ -152,7 +152,7 @@ function TargetTable({ rows, loading, onDelete }: { rows: TargetRow[]; loading?:
                 <Trash2 className="h-3.5 w-3.5" /> Delete
               </button>
             ) : (
-              <span className="text-xs text-ink/35" title="Only DRAFT or SUBMITTED targets can be deleted">—</span>
+              <LockedNote reason={`${row.status.charAt(0) + row.status.slice(1).toLowerCase()} targets can't be deleted — only Draft or Submitted ones can.`} />
             )
           )
         }] : [])
@@ -186,7 +186,7 @@ function PlanTable({ rows, loading, onDelete }: { rows: PlanRow[]; loading?: boo
               <button type="button" className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50" onClick={(e) => { e.stopPropagation(); onDelete(row); }} title="Delete production plan">
                 <Trash2 className="h-3.5 w-3.5" /> Delete
               </button>
-            ) : <span className="text-xs text-ink/35" title="Only DRAFT or READY_FOR_APPROVAL plans can be deleted">—</span>
+            ) : <LockedNote reason={`${row.status.charAt(0) + row.status.slice(1).toLowerCase().replace(/_/g, " ")} plans can't be deleted — only Draft or Ready-for-approval ones can.`} />
           )
         }] : [])
       ]}
@@ -212,7 +212,7 @@ function MrpTable({ rows, loading, onDelete }: { rows: MrpRow[]; loading?: boole
               <button type="button" className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50" onClick={(e) => { e.stopPropagation(); onDelete(row); }} title="Delete MRP run">
                 <Trash2 className="h-3.5 w-3.5" /> Delete
               </button>
-            ) : <span className="text-xs text-ink/35" title="Only DRAFT, CALCULATED, or SHORTAGE MRP runs can be deleted">—</span>
+            ) : <LockedNote reason={`${row.status.charAt(0) + row.status.slice(1).toLowerCase().replace(/_/g, " ")} MRP runs can't be deleted — only Draft, Calculated, or Shortage ones can.`} />
           )
         }] : [])
       ]}
@@ -238,7 +238,7 @@ function RecommendationTable({ rows, loading, onCancel }: { rows: Recommendation
               <button type="button" className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50" onClick={(e) => { e.stopPropagation(); onCancel(row); }} title="Cancel recommendation">
                 <Trash2 className="h-3.5 w-3.5" /> Cancel
               </button>
-            ) : <span className="text-xs text-ink/35" title="Only OPEN recommendations can be cancelled">—</span>
+            ) : <LockedNote reason={`${row.status.charAt(0) + row.status.slice(1).toLowerCase().replace(/_/g, " ")} recommendations can't be cancelled — only Open ones can.`} />
           )
         }] : [])
       ]}

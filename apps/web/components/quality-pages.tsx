@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { ApiEnvelope, apiFetch, getCached, getCachedFirst, hasCached, invalidateCache } from "../lib/api";
 import { DataTable } from "./data-table";
-import { ConfirmModal, Modal, StatusBadge } from "./ui";
+import { ConfirmModal, LockedNote, Modal, StatusBadge } from "./ui";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -1668,7 +1668,11 @@ export function CorrectiveActionsPage() {
                 {(r.status === "OPEN" || r.status === "IN_PROGRESS") && <button onClick={() => setResolveId(r.id as string)} className="text-xs font-medium text-brand hover:underline">Resolve</button>}
                 {r.status === "RESOLVED" && <button onClick={() => setVerifyId(r.id as string)} className="text-xs font-medium text-emerald-600 hover:underline">Verify</button>}
                 <button type="button" onClick={() => startEdit(r as unknown as CorrectiveAction & { description?: string; rootCause?: string; preventiveMeasure?: string; assignedToId?: string })} className="text-xs font-medium text-ink/60 hover:underline">Edit</button>
-                {r.status !== "CLOSED" && <button type="button" onClick={() => { setDeleteError(""); setDeleteAction(r as unknown as CorrectiveAction); }} className="text-xs font-medium text-red-600 hover:underline">Delete</button>}
+                {r.status !== "CLOSED" ? (
+                  <button type="button" onClick={() => { setDeleteError(""); setDeleteAction(r as unknown as CorrectiveAction); }} className="text-xs font-medium text-red-600 hover:underline">Delete</button>
+                ) : (
+                  <LockedNote reason="Closed corrective actions can't be deleted — they're part of the compliance record." />
+                )}
               </div>
             ) },
           ]}
