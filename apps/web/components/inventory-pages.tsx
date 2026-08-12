@@ -2,11 +2,12 @@
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Download, Plus } from "lucide-react";
+import { Download, Pencil, Plus, Trash2 } from "lucide-react";
 import { InventoryShell } from "./inventory-shell";
 import { DataTable } from "./data-table";
 import { FormField } from "./form-field";
-import { ApiEnvelope, apiFetch, downloadReport, hasCached, getCached, getCachedFirst } from "../lib/api";
+import { ConfirmModal, Modal } from "./ui";
+import { ApiEnvelope, apiFetch, downloadReport, hasCached, getCached, getCachedFirst, invalidateCache } from "../lib/api";
 
 type Option = {
   id: string;
@@ -83,6 +84,13 @@ export function InventoryItemsPage({ create = false }: { create?: boolean }) {
   const [loading, setLoading] = useState(!hasCached("/inventory/items"));
   const [form, setForm] = useState({ warehouseId: "", productId: "", reorderLevel: "", openingQuantity: "" });
   const [loadError, setLoadError] = useState("");
+  const [editItem, setEditItem] = useState<Record<string, unknown> | null>(null);
+  const [editForm, setEditForm] = useState({ reorderLevel: "", status: "ACTIVE" });
+  const [editError, setEditError] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deleteItem, setDeleteItem] = useState<Record<string, unknown> | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   async function load() {
     setLoadError("");
@@ -99,6 +107,45 @@ export function InventoryItemsPage({ create = false }: { create?: boolean }) {
     await apiFetch("/inventory/items", { method: "POST", body: JSON.stringify({ warehouseId, productId, reorderLevel: Number(form.reorderLevel), openingQuantity: Number(form.openingQuantity || 0) }) });
     await load();
   }
+
+  function startEdit(row: Record<string, unknown>) {
+    setEditForm({ reorderLevel: String(row.reorderLevel ?? ""), status: String(row.status ?? "ACTIVE") });
+    setEditError("");
+    setEditItem(row);
+  }
+  async function saveEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editItem) return;
+    setSavingEdit(true);
+    setEditError("");
+    try {
+      await apiFetch(`/inventory/items/${editItem.id}`, { method: "PATCH", body: JSON.stringify({ reorderLevel: Number(editForm.reorderLevel), status: editForm.status }) });
+      invalidateCache("/inventory/items", true);
+      setEditItem(null);
+      await load();
+    } catch (err: any) {
+      setEditError(err?.message ?? "Failed to save changes.");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function confirmDeleteItem() {
+    if (!deleteItem) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await apiFetch(`/inventory/items/${deleteItem.id}`, { method: "DELETE" });
+      invalidateCache("/inventory/items", true);
+      setDeleteItem(null);
+      await load();
+    } catch (err: any) {
+      setDeleteError(err?.message ?? "Failed to delete item.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <InventoryShell>
       <PageHeader title={create ? "Create Inventory Item" : "Product and Item List"} subtitle="Warehouse-specific stock balances across poultry, feed, soya, eggs, medicine, packaging, spares, equipment, and supplies." />
@@ -109,6 +156,7 @@ export function InventoryItemsPage({ create = false }: { create?: boolean }) {
           <button type="button" className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold hover:bg-red-50" onClick={load}>Retry</button>
         </div>
       )}
+      {deleteError && <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{deleteError}</p>}
       {create ? (
         <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-4">
           <SelectField label="Warehouse" value={form.warehouseId || options.warehouses[0]?.id || ""} options={options.warehouses} onChange={(value) => setForm({ ...form, warehouseId: value })} />
@@ -123,7 +171,33 @@ export function InventoryItemsPage({ create = false }: { create?: boolean }) {
           Showing the first 200 inventory items. Use the table&apos;s search box to find an item outside this list.
         </div>
       )}
-      <InventoryItemsTable rows={rows} loading={loading} />
+      <InventoryItemsTable rows={rows} loading={loading} onEdit={startEdit} onDelete={(row) => { setDeleteError(""); setDeleteItem(row); }} />
+      <Modal open={!!editItem} onClose={() => setEditItem(null)} title="Edit inventory item" size="sm">
+        <form onSubmit={saveEdit} className="grid gap-4">
+          {editError && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{editError}</p>}
+          <FormField label="Reorder level"><input className={inputClass} type="number" min="0" value={editForm.reorderLevel} onChange={(event) => setEditForm({ ...editForm, reorderLevel: event.target.value })} required /></FormField>
+          <FormField label="Status">
+            <select className={inputClass} value={editForm.status} onChange={(event) => setEditForm({ ...editForm, status: event.target.value })}>
+              <option value="ACTIVE">Active</option>
+              <option value="INACTIVE">Inactive</option>
+              <option value="BLOCKED">Blocked</option>
+            </select>
+          </FormField>
+          <div className="flex justify-end gap-3">
+            <button type="button" className="app-button-secondary" onClick={() => setEditItem(null)} disabled={savingEdit}>Cancel</button>
+            <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" type="submit" disabled={savingEdit}>{savingEdit ? "Saving…" : "Save changes"}</button>
+          </div>
+        </form>
+      </Modal>
+      <ConfirmModal
+        open={!!deleteItem}
+        onClose={() => setDeleteItem(null)}
+        onConfirm={confirmDeleteItem}
+        loading={deleting}
+        title="Delete inventory item?"
+        message="This will permanently remove this inventory item. This can't be undone. Items with stock on hand or an active batch can't be deleted."
+        confirmLabel="Delete item"
+      />
     </InventoryShell>
   );
 }
@@ -267,7 +341,157 @@ export function InventoryReportsPage() {
   );
 }
 
-function InventoryItemsTable({ rows, loading }: { rows: Record<string, any>[]; loading?: boolean }) {
+type LocationRow = {
+  id: string;
+  code: string;
+  name: string;
+  barcode?: string | null;
+  status: string;
+  parentId?: string | null;
+  warehouseId: string;
+  warehouse?: { code: string; name: string };
+};
+
+export function WarehouseLocationsPage() {
+  const { options, optionsError } = useInventoryOptions();
+  const [rows, setRows] = useState<LocationRow[]>(() => getCachedFirst<ApiEnvelope<LocationRow[]>>("/inventory/locations")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/inventory/locations"));
+  const [loadError, setLoadError] = useState("");
+  const [form, setForm] = useState({ warehouseId: "", parentId: "", code: "", name: "", barcode: "" });
+  const [createError, setCreateError] = useState("");
+  const [editLocation, setEditLocation] = useState<LocationRow | null>(null);
+  const [editForm, setEditForm] = useState({ name: "", barcode: "", status: "ACTIVE" });
+  const [editError, setEditError] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deleteLocation, setDeleteLocation] = useState<LocationRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+
+  async function load() {
+    setLoadError("");
+    const response = await apiFetch<ApiEnvelope<LocationRow[]>>("/inventory/locations");
+    const fresh = response.data ?? [];
+    setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh);
+  }
+  useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false)); }, []);
+
+  const rootLocations = rows.filter((row) => !row.parentId);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setCreateError("");
+    const warehouseId = form.warehouseId || options.warehouses[0]?.id;
+    if (!warehouseId || !form.code || !form.name) return;
+    try {
+      await apiFetch("/inventory/locations", {
+        method: "POST",
+        body: JSON.stringify({ warehouseId, parentId: form.parentId || undefined, code: form.code, name: form.name, barcode: form.barcode || undefined })
+      });
+      invalidateCache("/inventory/locations", true);
+      setForm({ warehouseId: form.warehouseId, parentId: "", code: "", name: "", barcode: "" });
+      await load();
+    } catch (err: any) {
+      setCreateError(err?.message ?? "Failed to create location.");
+    }
+  }
+
+  function startEdit(row: LocationRow) {
+    setEditForm({ name: row.name ?? "", barcode: row.barcode ?? "", status: row.status ?? "ACTIVE" });
+    setEditError("");
+    setEditLocation(row);
+  }
+  async function saveEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editLocation) return;
+    setSavingEdit(true);
+    setEditError("");
+    try {
+      await apiFetch(`/inventory/locations/${editLocation.id}`, { method: "PATCH", body: JSON.stringify({ name: editForm.name, barcode: editForm.barcode || undefined, status: editForm.status }) });
+      invalidateCache("/inventory/locations", true);
+      setEditLocation(null);
+      await load();
+    } catch (err: any) {
+      setEditError(err?.message ?? "Failed to save changes.");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function confirmDeleteLocation() {
+    if (!deleteLocation) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await apiFetch(`/inventory/locations/${deleteLocation.id}`, { method: "DELETE" });
+      invalidateCache("/inventory/locations", true);
+      setDeleteLocation(null);
+      await load();
+    } catch (err: any) {
+      setDeleteError(err?.message ?? "Failed to delete location.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <InventoryShell>
+      <PageHeader title="Warehouse Locations" subtitle="Bins, shelves, and sub-areas within each warehouse for precise put-away and picking." />
+      {optionsError && <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{optionsError}</p>}
+      {loadError && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <span>{loadError}</span>
+          <button type="button" className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold hover:bg-red-50" onClick={load}>Retry</button>
+        </div>
+      )}
+      {deleteError && <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{deleteError}</p>}
+      <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-5">
+        {createError && <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 md:col-span-5">{createError}</p>}
+        <SelectField label="Warehouse" value={form.warehouseId || options.warehouses[0]?.id || ""} options={options.warehouses} onChange={(value) => setForm({ ...form, warehouseId: value })} />
+        <FormField label="Parent location">
+          <select className={inputClass} value={form.parentId} onChange={(event) => setForm({ ...form, parentId: event.target.value })}>
+            <option value="">None (top-level)</option>
+            {rootLocations.map((loc) => <option key={loc.id} value={loc.id}>{loc.code} — {loc.name}</option>)}
+          </select>
+        </FormField>
+        <FormField label="Code"><input className={inputClass} value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value })} required maxLength={40} /></FormField>
+        <FormField label="Name"><input className={inputClass} value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required maxLength={120} /></FormField>
+        <FormField label="Barcode"><input className={inputClass} value={form.barcode} onChange={(event) => setForm({ ...form, barcode: event.target.value })} /></FormField>
+        <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white md:col-span-5"><Plus aria-hidden className="h-4 w-4" /> Save location</button>
+      </form>
+      <LocationsTable rows={rows} loading={loading} onEdit={startEdit} onDelete={(row) => { setDeleteError(""); setDeleteLocation(row); }} />
+      <Modal open={!!editLocation} onClose={() => setEditLocation(null)} title="Edit warehouse location" size="sm">
+        <form onSubmit={saveEdit} className="grid gap-4">
+          {editError && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{editError}</p>}
+          <FormField label="Name"><input className={inputClass} value={editForm.name} onChange={(event) => setEditForm({ ...editForm, name: event.target.value })} required maxLength={120} /></FormField>
+          <FormField label="Barcode"><input className={inputClass} value={editForm.barcode} onChange={(event) => setEditForm({ ...editForm, barcode: event.target.value })} /></FormField>
+          <FormField label="Status">
+            <select className={inputClass} value={editForm.status} onChange={(event) => setEditForm({ ...editForm, status: event.target.value })}>
+              <option value="ACTIVE">Active</option>
+              <option value="INACTIVE">Inactive</option>
+              <option value="SUSPENDED">Suspended</option>
+              <option value="ARCHIVED">Archived</option>
+            </select>
+          </FormField>
+          <div className="flex justify-end gap-3">
+            <button type="button" className="app-button-secondary" onClick={() => setEditLocation(null)} disabled={savingEdit}>Cancel</button>
+            <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" type="submit" disabled={savingEdit}>{savingEdit ? "Saving…" : "Save changes"}</button>
+          </div>
+        </form>
+      </Modal>
+      <ConfirmModal
+        open={!!deleteLocation}
+        onClose={() => setDeleteLocation(null)}
+        onConfirm={confirmDeleteLocation}
+        loading={deleting}
+        title="Delete warehouse location?"
+        message={`This will permanently remove "${deleteLocation?.name}" (${deleteLocation?.code}). Locations with child locations can't be deleted.`}
+        confirmLabel="Delete location"
+      />
+    </InventoryShell>
+  );
+}
+
+function InventoryItemsTable({ rows, loading, onEdit, onDelete }: { rows: Record<string, any>[]; loading?: boolean; onEdit?: (row: Record<string, any>) => void; onDelete?: (row: Record<string, any>) => void }) {
   return (
     <DataTable
       rows={rows}
@@ -301,6 +525,57 @@ function InventoryItemsTable({ rows, loading }: { rows: Record<string, any>[]; l
             return active.length > 0 ? `${active.length} active` : "0";
           }
         },
+        ...(onEdit || onDelete ? [{
+          key: "actions", label: "", sortable: false, render: (row: Record<string, any>) => (
+            <div className="flex items-center gap-1">
+              {onEdit && (
+                <button type="button" className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-ink/70 hover:bg-field" onClick={(e) => { e.stopPropagation(); onEdit(row); }} title="Edit item">
+                  <Pencil className="h-3.5 w-3.5" /> Edit
+                </button>
+              )}
+              {onDelete && (
+                <button type="button" className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50" onClick={(e) => { e.stopPropagation(); onDelete(row); }} title="Delete item">
+                  <Trash2 className="h-3.5 w-3.5" /> Delete
+                </button>
+              )}
+            </div>
+          )
+        }] : [])
+      ]}
+    />
+  );
+}
+
+function LocationsTable({ rows, loading, onEdit, onDelete }: { rows: LocationRow[]; loading?: boolean; onEdit?: (row: LocationRow) => void; onDelete?: (row: LocationRow) => void }) {
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  return (
+    <DataTable<LocationRow>
+      rows={rows}
+      loading={loading}
+      empty="No warehouse locations found"
+      columns={[
+        { key: "code", label: "Code" },
+        { key: "name", label: "Name" },
+        { key: "warehouse", label: "Warehouse", render: (row) => row.warehouse ? `${row.warehouse.code} — ${row.warehouse.name}` : "-" },
+        { key: "parentId", label: "Parent", render: (row) => row.parentId ? (byId.get(row.parentId)?.name ?? row.parentId) : "—" },
+        { key: "barcode", label: "Barcode", render: (row) => row.barcode ?? "-" },
+        { key: "status", label: "Status" },
+        ...(onEdit || onDelete ? [{
+          key: "actions", label: "", sortable: false, render: (row: LocationRow) => (
+            <div className="flex items-center gap-1">
+              {onEdit && (
+                <button type="button" className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-ink/70 hover:bg-field" onClick={(e) => { e.stopPropagation(); onEdit(row); }} title="Edit location">
+                  <Pencil className="h-3.5 w-3.5" /> Edit
+                </button>
+              )}
+              {onDelete && (
+                <button type="button" className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50" onClick={(e) => { e.stopPropagation(); onDelete(row); }} title="Delete location">
+                  <Trash2 className="h-3.5 w-3.5" /> Delete
+                </button>
+              )}
+            </div>
+          )
+        }] : [])
       ]}
     />
   );

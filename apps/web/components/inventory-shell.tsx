@@ -40,7 +40,8 @@ const NAV_GROUPS = [
     items: [
       { href: "/inventory/warehouses", label: "Warehouses" },
       { href: "/inventory/farms", label: "Farms" },
-      { href: "/inventory/production-sites", label: "Production Sites" }
+      { href: "/inventory/production-sites", label: "Production Sites" },
+      { href: "/inventory/locations", label: "Storage Locations" }
     ]
   }
 ];
