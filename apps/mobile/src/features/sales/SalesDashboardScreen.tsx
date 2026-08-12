@@ -129,7 +129,7 @@ export function SalesDashboardScreen() {
                 <View key={o.id} style={[styles.orderRow, i === 0 && styles.orderRowFirst]}>
                   <View style={styles.orderLeft}>
                     <Text style={styles.orderNum}>{o.orderNumber}</Text>
-                    <Text style={styles.orderCustomer}>{o.customer.name}</Text>
+                    <Text style={styles.orderCustomer}>{o.customer?.name ?? "—"}</Text>
                   </View>
                   <View style={styles.orderRight}>
                     <View style={[styles.statusDot, { backgroundColor: s.color }]} />

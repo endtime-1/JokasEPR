@@ -25,8 +25,8 @@ function DebtorRow({ item }: { item: DebtorItem }) {
     <View style={[styles.row, isOverdue && styles.rowOverdue]}>
       <View style={styles.rowTop}>
         <View style={styles.rowLeft}>
-          <Text style={styles.customerName}>{item.customer.name}</Text>
-          <Text style={styles.invoiceNum}>{item.invoiceNumber} · {item.customer.code}</Text>
+          <Text style={styles.customerName}>{item.customer?.name ?? "—"}</Text>
+          <Text style={styles.invoiceNum}>{item.invoiceNumber} · {item.customer?.code ?? "—"}</Text>
           {item.dueDate && (
             <Text style={[styles.dueDate, { color: isOverdue ? "#b91c1c" : colors.inkLight }]}>
               Due: {new Date(item.dueDate).toLocaleDateString("en-GH", { day: "numeric", month: "short", year: "numeric" })}

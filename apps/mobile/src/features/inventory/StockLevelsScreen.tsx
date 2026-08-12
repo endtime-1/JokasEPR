@@ -18,12 +18,12 @@ function StockRow({ item }: { item: InventoryItemOption }) {
         <Text style={[styles.qtyUnit, { color: stockColor }]}>units</Text>
       </View>
       <View style={styles.rowInfo}>
-        <Text style={styles.rowName} numberOfLines={1}>{item.product.name}</Text>
+        <Text style={styles.rowName} numberOfLines={1}>{item.product?.name ?? "—"}</Text>
         <View style={styles.rowMeta}>
-          <Text style={styles.rowSku}>{item.product.sku}</Text>
+          <Text style={styles.rowSku}>{item.product?.sku ?? "—"}</Text>
           <Text style={styles.rowMetaSep}>·</Text>
           <Icon name="warehouse" size={11} color={colors.inkLight} />
-          <Text style={styles.rowWarehouse}>{item.warehouse.name}</Text>
+          <Text style={styles.rowWarehouse}>{item.warehouse?.name ?? "—"}</Text>
         </View>
       </View>
       <View style={[styles.stockDot, { backgroundColor: stockColor }]} />
@@ -60,7 +60,7 @@ export function StockLevelsScreen() {
   const filtered = items.filter((item) => {
     const matchesWarehouse = warehouseFilter === "ALL" || item.warehouseId === warehouseFilter;
     const q = search.toLowerCase();
-    const matchesSearch = !q || item.product.name.toLowerCase().includes(q) || item.product.sku.toLowerCase().includes(q);
+    const matchesSearch = !q || (item.product?.name ?? "").toLowerCase().includes(q) || (item.product?.sku ?? "").toLowerCase().includes(q);
     return matchesWarehouse && matchesSearch;
   });
 

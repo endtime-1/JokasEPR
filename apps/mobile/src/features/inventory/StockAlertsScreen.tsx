@@ -36,9 +36,9 @@ function ExpiryRow({ item }: { item: ExpiryAlert }) {
   return (
     <View style={[styles.row, { borderColor: border, backgroundColor: bg }]}>
       <View style={styles.rowLeft}>
-        <Text style={styles.rowProduct}>{item.product.name}</Text>
+        <Text style={styles.rowProduct}>{item.product?.name ?? "—"}</Text>
         <Text style={styles.rowMeta}>
-          {item.product.sku} · {item.warehouse.name}
+          {item.product?.sku ?? "—"} · {item.warehouse?.name ?? "—"}
         </Text>
         {item.stockBatch && (
           <Text style={styles.rowBatch}>Batch: {item.stockBatch.batchNumber} · {Number(item.stockBatch.quantityRemaining)} units</Text>

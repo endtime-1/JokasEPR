@@ -53,14 +53,14 @@ export function StockTransferScreen() {
 
   const productOptions: SelectOption[] = useMemo(
     () => sourceItems.map((i) => ({
-      label: `${i.product.name} (${i.product.sku}) — ${Number(i.quantityOnHand)} available`,
-      value: i.product.id,
+      label: `${i.product?.name ?? "Unknown product"} (${i.product?.sku ?? "—"}) — ${Number(i.quantityOnHand)} available`,
+      value: i.product?.id ?? i.id,
     })),
     [sourceItems]
   );
 
   const selectedItem = useMemo(
-    () => sourceItems.find((i) => i.product.id === productId),
+    () => sourceItems.find((i) => (i.product?.id ?? i.id) === productId),
     [sourceItems, productId]
   );
 
@@ -156,7 +156,7 @@ export function StockTransferScreen() {
 
         {selectedItem && (
           <View style={styles.availableCard}>
-            <Text style={styles.availableLabel}>Available in {selectedItem.warehouse.name}</Text>
+            <Text style={styles.availableLabel}>Available in {selectedItem.warehouse?.name ?? "—"}</Text>
             <Text style={styles.availableValue}>{Number(selectedItem.quantityOnHand)}</Text>
           </View>
         )}

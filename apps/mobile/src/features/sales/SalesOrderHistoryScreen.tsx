@@ -105,7 +105,7 @@ export function SalesOrderHistoryScreen() {
                   </View>
                   <View style={styles.cardText}>
                     <Text style={styles.orderNum}>{item.orderNumber}</Text>
-                    <Text style={styles.customer}>{item.customer.name}</Text>
+                    <Text style={styles.customer}>{item.customer?.name ?? "—"}</Text>
                     <Text style={styles.date}>{new Date(item.orderDate).toLocaleDateString("en-GH", { day: "numeric", month: "short", year: "numeric" })}</Text>
                   </View>
                 </View>

@@ -58,7 +58,7 @@ export function StockAdjustmentScreen() {
 
   const itemOptions: SelectOption[] = useMemo(
     () => warehouseItems.map((i) => ({
-      label: `${i.product.name} (${i.product.sku}) — ${Number(i.quantityOnHand)} on hand`,
+      label: `${i.product?.name ?? "Unknown product"} (${i.product?.sku ?? "—"}) — ${Number(i.quantityOnHand)} on hand`,
       value: i.id,
     })),
     [warehouseItems]
@@ -140,7 +140,7 @@ export function StockAdjustmentScreen() {
           <View style={styles.stockCard}>
             <Text style={styles.stockCardLabel}>Current Stock</Text>
             <Text style={styles.stockCardValue}>{Number(selectedItem.quantityOnHand)}</Text>
-            <Text style={styles.stockCardSub}>{selectedItem.warehouse.name}</Text>
+            <Text style={styles.stockCardSub}>{selectedItem.warehouse?.name ?? "—"}</Text>
           </View>
         )}
       </FormCard>

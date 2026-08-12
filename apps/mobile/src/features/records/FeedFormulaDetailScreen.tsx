@@ -130,8 +130,8 @@ export function FeedFormulaDetailScreen() {
             return (
               <View key={ing.id} style={[styles.ingRow, isLast && styles.ingRowLast]}>
                 <View style={styles.ingNameCol}>
-                  <Text style={styles.ingName} numberOfLines={1}>{ing.product.name}</Text>
-                  <Text style={styles.ingSku}>{ing.product.sku}</Text>
+                  <Text style={styles.ingName} numberOfLines={1}>{ing.product?.name ?? "Unknown product"}</Text>
+                  <Text style={styles.ingSku}>{ing.product?.sku ?? "—"}</Text>
                   {/* Proportion bar */}
                   <View style={styles.barBg}>
                     <View style={[styles.barFill, { width: `${barW}%` as any }]} />

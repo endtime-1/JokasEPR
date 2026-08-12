@@ -87,8 +87,8 @@ export function FeedFormulaCostingScreen() {
             return (
               <View key={i} style={[styles.row, isLast && styles.rowLast]}>
                 <View style={[styles.thName, { gap: 1 }]}>
-                  <Text style={styles.ingName} numberOfLines={1}>{ing.product.name}</Text>
-                  <Text style={styles.ingSku}>{ing.product.sku}</Text>
+                  <Text style={styles.ingName} numberOfLines={1}>{ing.product?.name ?? "Unknown product"}</Text>
+                  <Text style={styles.ingSku}>{ing.product?.sku ?? "—"}</Text>
                 </View>
                 <Text style={[styles.td, styles.thNum]}>{ing.kgPerTonne.toFixed(1)}</Text>
                 <Text style={[styles.td, styles.thNum]}>{GHS(ing.unitCostGhs)}</Text>

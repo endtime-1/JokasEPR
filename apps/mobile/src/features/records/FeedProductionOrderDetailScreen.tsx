@@ -142,8 +142,8 @@ export function FeedProductionOrderDetailScreen() {
             {order.formula.ingredients.map((ing, i) => (
               <View key={i} style={styles.ingRow}>
                 <View style={styles.ingLeft}>
-                  <Text style={styles.ingName}>{ing.product.name}</Text>
-                  <Text style={styles.ingSku}>{ing.product.sku}</Text>
+                  <Text style={styles.ingName}>{ing.product?.name ?? "Unknown product"}</Text>
+                  <Text style={styles.ingSku}>{ing.product?.sku ?? "—"}</Text>
                 </View>
                 <View style={styles.ingRight}>
                   <Text style={styles.ingKgTonne}>{ing.kgPerTonne.toFixed(1)} kg/t</Text>

@@ -28,7 +28,7 @@ function PORow({ item, onPress }: { item: PurchaseOrderListItem; onPress: () => 
       <View style={styles.rowTop}>
         <View style={styles.rowTopLeft}>
           <Text style={styles.poRef}>{item.reference}</Text>
-          <Text style={styles.supplier}>{item.supplier.name}</Text>
+          <Text style={styles.supplier}>{item.supplier?.name ?? "—"}</Text>
         </View>
         <View style={[styles.badge, { backgroundColor: s.bg }]}>
           <Text style={[styles.badgeText, { color: s.text }]}>{s.label}</Text>
@@ -112,7 +112,7 @@ export function PurchaseOrderListScreen() {
                 navigation.navigate("GrnCreate", {
                   poId: item.id,
                   poRef: item.reference,
-                  supplierName: item.supplier.name,
+                  supplierName: item.supplier?.name ?? "—",
                 })
               }
             />

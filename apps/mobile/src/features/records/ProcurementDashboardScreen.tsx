@@ -98,12 +98,12 @@ export function ProcurementDashboardScreen() {
                 <TouchableOpacity
                   key={po.id}
                   style={[styles.poRow, i === 0 && styles.poRowFirst]}
-                  onPress={() => navigation.navigate("GrnCreate", { poId: po.id, poRef: po.reference, supplierName: po.supplier.name })}
+                  onPress={() => navigation.navigate("GrnCreate", { poId: po.id, poRef: po.reference, supplierName: po.supplier?.name ?? "—" })}
                   activeOpacity={0.8}
                 >
                   <View style={styles.poLeft}>
                     <Text style={styles.poRef}>{po.reference}</Text>
-                    <Text style={styles.poSupplier}>{po.supplier.name}</Text>
+                    <Text style={styles.poSupplier}>{po.supplier?.name ?? "—"}</Text>
                   </View>
                   <View style={styles.poRight}>
                     <Badge label={s.label} color={s.color} bg={s.bg} border={s.border} size="xs" />

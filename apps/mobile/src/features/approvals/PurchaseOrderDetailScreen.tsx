@@ -107,7 +107,7 @@ export function PurchaseOrderDetailScreen() {
               </View>
               <View style={styles.headerText}>
                 <Text style={styles.ref}>{po.reference}</Text>
-                <Text style={styles.supplier}>{po.supplier.name} · {po.supplier.code}</Text>
+                <Text style={styles.supplier}>{po.supplier?.name ?? "—"} · {po.supplier?.code ?? "—"}</Text>
               </View>
             </View>
             <Badge label={s.label} color={s.color} bg={s.bg} border={s.border} />
