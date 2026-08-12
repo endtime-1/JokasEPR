@@ -146,11 +146,18 @@ export class RejectBatchDto {
   @IsOptional() @IsString() unitOfMeasure?: string;
   @IsOptional() @IsNumber() estimatedValue?: number;
   @IsOptional() @IsUUID() supplierId?: string;
+  // H-BUG-2: lets the caller identify which physical stock lot this
+  // rejection applies to, so it can actually be pulled out of the sellable/
+  // usable pool (see quality.service.ts's rejectBatch) — mirrors
+  // ApproveBatchDto's existing stockBatchId field.
+  @IsOptional() @IsUUID() stockBatchId?: string;
 }
 
 export class QuarantineBatchDto {
   @IsString() reason!: string;
   @IsOptional() @IsString() notes?: string;
+  // H-BUG-2: same purpose as RejectBatchDto.stockBatchId.
+  @IsOptional() @IsUUID() stockBatchId?: string;
 }
 
 // â”€â”€â”€ Lab reports â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

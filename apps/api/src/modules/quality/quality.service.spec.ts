@@ -6,13 +6,23 @@ import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
 import { LookupCacheService } from "../../common/services/lookup-cache.service";
 
+jest.mock("../../common/next-ref", () => ({ nextRef: jest.fn().mockResolvedValue("REF-2026-0001") }));
+
+const mockTx = {
+  qualityCheck: { update: jest.fn() },
+  rejectedBatch: { create: jest.fn() },
+  approvedBatch: { create: jest.fn() },
+  stockBatch: { updateMany: jest.fn() }
+};
+
 const mockPrisma = {
   qualityCheck: { findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn(), update: jest.fn(), groupBy: jest.fn() },
   rejectedBatch: { findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn() },
   approvedBatch: { findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn() },
   correctiveAction: { count: jest.fn(), groupBy: jest.fn(), findFirst: jest.fn(), create: jest.fn(), update: jest.fn(), findMany: jest.fn() },
   qualityCheckParameter: { count: jest.fn() },
-  labReportUpload: { findMany: jest.fn() }
+  labReportUpload: { findMany: jest.fn() },
+  $transaction: jest.fn().mockImplementation((cb: (tx: typeof mockTx) => Promise<unknown>) => cb(mockTx))
 };
 const mockAudit = { write: jest.fn().mockResolvedValue(undefined) };
 
@@ -243,5 +253,58 @@ describe("QualityService — batch/lab/corrective-action lists are capped, not u
     const service = makeService();
     await service.listCorrectiveActions(makeUser(), {} as never);
     expect(mockPrisma.correctiveAction.findMany.mock.calls[0][0].take).toBe(200);
+  });
+});
+
+describe("QualityService — approve/reject/quarantine actually gate the stock lot (H-BUG-2)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const inScopeCheck = { id: "chk-1", status: "IN_PROGRESS", inspectorId: "inspector-1", createdById: "creator-1", referenceType: "GRN", referenceId: "grn-1", batchNumber: "B-1" };
+
+  it("approveBatch confirms the lot AVAILABLE when a stockBatchId is given", async () => {
+    mockPrisma.qualityCheck.findFirst.mockResolvedValue(inScopeCheck);
+    mockPrisma.approvedBatch.findFirst.mockResolvedValue(null);
+    mockTx.approvedBatch.create.mockResolvedValue({ id: "ab-1" });
+
+    const service = makeService();
+    await service.approveBatch(makeUser({ id: "approver-1" }), "chk-1", { stockBatchId: "sb-1" } as never, {});
+
+    expect(mockTx.stockBatch.updateMany).toHaveBeenCalledWith({ where: { id: "sb-1", companyId: "company-1" }, data: { status: "AVAILABLE" } });
+  });
+
+  it("approveBatch does not touch any stock lot when no stockBatchId is given", async () => {
+    mockPrisma.qualityCheck.findFirst.mockResolvedValue(inScopeCheck);
+    mockPrisma.approvedBatch.findFirst.mockResolvedValue(null);
+    mockTx.approvedBatch.create.mockResolvedValue({ id: "ab-1" });
+
+    const service = makeService();
+    await service.approveBatch(makeUser({ id: "approver-1" }), "chk-1", {} as never, {});
+
+    expect(mockTx.stockBatch.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("rejectBatch quarantines the lot when a stockBatchId is given — this is the actual gate", async () => {
+    // The real bug this closes: before this fix, nothing anywhere set
+    // StockBatch.status on a rejection, so every FIFO consumer (sales,
+    // feed-production, etc.) still happily sold/consumed a rejected lot.
+    mockPrisma.qualityCheck.findFirst.mockResolvedValue(inScopeCheck);
+    mockPrisma.rejectedBatch.findFirst.mockResolvedValue(null);
+    mockTx.rejectedBatch.create.mockResolvedValue({ id: "rb-1" });
+
+    const service = makeService();
+    await service.rejectBatch(makeUser({ id: "approver-1" }), "chk-1", { rejectionReason: "contaminated", stockBatchId: "sb-1" } as never, {});
+
+    expect(mockTx.stockBatch.updateMany).toHaveBeenCalledWith({ where: { id: "sb-1", companyId: "company-1" }, data: { status: "QUARANTINED" } });
+  });
+
+  it("quarantineBatch quarantines the lot when a stockBatchId is given, inside a transaction", async () => {
+    mockPrisma.qualityCheck.findFirst.mockResolvedValue(inScopeCheck);
+    mockTx.qualityCheck.update.mockResolvedValue({ id: "chk-1", decision: "QUARANTINE" });
+
+    const service = makeService();
+    await service.quarantineBatch(makeUser({ id: "approver-1" }), "chk-1", { reason: "pending re-test", stockBatchId: "sb-1" } as never, {});
+
+    expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(mockTx.stockBatch.updateMany).toHaveBeenCalledWith({ where: { id: "sb-1", companyId: "company-1" }, data: { status: "QUARANTINED" } });
   });
 });

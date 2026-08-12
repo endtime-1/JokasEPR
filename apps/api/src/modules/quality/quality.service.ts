@@ -468,6 +468,17 @@ export class QualityService {
         },
       });
       await tx.qualityCheck.update({ where: { id: checkId }, data: { status: "PASSED", decision: "APPROVED", approvedById: user.id, approvedAt: new Date(), updatedById: user.id } });
+      // H-BUG-2 (2026-08-12, from the inventory-integration logic audit):
+      // approve/reject/quarantine decisions never touched StockBatch.status —
+      // every FIFO consumer (sales, feed-production, market-planning,
+      // soya-processing, maintenance, inventory's own consumeFifoTx) selected
+      // batches by quantityRemaining alone, with no status filter, so a
+      // rejected or quarantined lot was exactly as sellable/usable as an
+      // approved one. Approving explicitly (re)confirms AVAILABLE — this also
+      // covers un-quarantining a batch that passes on a second check.
+      if (dto.stockBatchId) {
+        await tx.stockBatch.updateMany({ where: { id: dto.stockBatchId, companyId: user.companyId }, data: { status: "AVAILABLE" } });
+      }
       return ab;
     });
 
@@ -513,6 +524,13 @@ export class QualityService {
         },
       });
       await tx.qualityCheck.update({ where: { id: checkId }, data: { status: "FAILED", decision: "REJECTED", approvedById: user.id, approvedAt: new Date(), updatedById: user.id } });
+      // H-BUG-2: pull the rejected lot out of the sellable/usable pool —
+      // QUARANTINED matches RejectedBatch's own default disposalMethod, and
+      // every FIFO consumer now filters to status: AVAILABLE only (see the
+      // approveBatch comment above for the full reasoning).
+      if (dto.stockBatchId) {
+        await tx.stockBatch.updateMany({ where: { id: dto.stockBatchId, companyId: user.companyId }, data: { status: "QUARANTINED" } });
+      }
       return rb;
     });
 
@@ -523,9 +541,17 @@ export class QualityService {
   async quarantineBatch(user: AuthenticatedUser, checkId: string, dto: QuarantineBatchDto, ctx: RequestContext) {
     const check = await this.prisma.qualityCheck.findFirst({ where: { id: checkId, companyId: user.companyId, deletedAt: null, ...this.scopeWhere(user) } }); // H15
     if (!check) throw new NotFoundException("Quality check not found");
-    const updated = await this.prisma.qualityCheck.update({
-      where: { id: checkId },
-      data: { decision: "QUARANTINE", notes: `Quarantined: ${dto.reason}. ${dto.notes ?? ""}`.trim(), updatedById: user.id },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const qc = await tx.qualityCheck.update({
+        where: { id: checkId },
+        data: { decision: "QUARANTINE", notes: `Quarantined: ${dto.reason}. ${dto.notes ?? ""}`.trim(), updatedById: user.id },
+      });
+      // H-BUG-2: same gating as rejectBatch — a quarantined lot must not
+      // remain selectable by any FIFO consumer.
+      if (dto.stockBatchId) {
+        await tx.stockBatch.updateMany({ where: { id: dto.stockBatchId, companyId: user.companyId }, data: { status: "QUARANTINED" } });
+      }
+      return qc;
     });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "UPDATE", entityType: "QualityCheck", entityId: checkId, ...ctx });
     return updated;

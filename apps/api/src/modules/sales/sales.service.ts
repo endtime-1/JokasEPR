@@ -830,7 +830,9 @@ export class SalesService {
   // guarded pattern every other module already uses.
   private async consumeFifoTx(tx: Prisma.TransactionClient, user: AuthenticatedUser, item: InventoryItemContext, quantity: number, referenceType: string, referenceId: string, notes?: string) {
     let remaining = quantity;
-    const batches = await tx.stockBatch.findMany({ where: { companyId: user.companyId, inventoryItemId: item.id, quantityRemaining: { gt: 0 }, deletedAt: null }, orderBy: [{ expiryDate: "asc" }, { createdAt: "asc" }] });
+    // H-BUG-2: status: "AVAILABLE" excludes lots Quality has rejected or
+    // quarantined — see quality.service.ts's approve/reject/quarantineBatch.
+    const batches = await tx.stockBatch.findMany({ where: { companyId: user.companyId, inventoryItemId: item.id, quantityRemaining: { gt: 0 }, status: "AVAILABLE", deletedAt: null }, orderBy: [{ expiryDate: "asc" }, { createdAt: "asc" }] });
     const available = batches.reduce((sum, batch) => sum + Number(batch.quantityRemaining), 0);
     if (available < quantity || Number(item.quantityOnHand) < quantity) throw new BadRequestException("Insufficient stock to release this sale.");
     for (const batch of batches) {

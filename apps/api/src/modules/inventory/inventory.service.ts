@@ -398,7 +398,9 @@ export class InventoryService {
     let remaining = quantity;
     let value = 0;
     const issued: Array<{ batchId: string; quantity: number; unitCost: number }> = [];
-    const batches = await tx.stockBatch.findMany({ where: { companyId: user.companyId, inventoryItemId: item.id, deletedAt: null, quantityRemaining: { gt: 0 } }, orderBy: [{ expiryDate: "asc" }, { createdAt: "asc" }] });
+    // H-BUG-2: status: "AVAILABLE" excludes lots Quality has rejected or
+    // quarantined — see quality.service.ts's approve/reject/quarantineBatch.
+    const batches = await tx.stockBatch.findMany({ where: { companyId: user.companyId, inventoryItemId: item.id, deletedAt: null, quantityRemaining: { gt: 0 }, status: "AVAILABLE" }, orderBy: [{ expiryDate: "asc" }, { createdAt: "asc" }] });
     for (const batch of batches) {
       if (remaining <= 0) break;
       const take = Math.min(remaining, Number(batch.quantityRemaining));

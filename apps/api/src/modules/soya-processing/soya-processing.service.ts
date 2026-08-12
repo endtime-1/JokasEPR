@@ -496,8 +496,10 @@ export class SoyaProcessingService {
     let remaining = quantity;
     let costTotal = 0;
     let costedQty = 0;
+    // H-BUG-2: status: "AVAILABLE" excludes lots Quality has rejected or
+    // quarantined — see quality.service.ts's approve/reject/quarantineBatch.
     const batches = await tx.stockBatch.findMany({
-      where: { companyId, warehouseId, productId, quantityRemaining: { gt: 0 }, deletedAt: null },
+      where: { companyId, warehouseId, productId, quantityRemaining: { gt: 0 }, status: "AVAILABLE", deletedAt: null },
       orderBy: { createdAt: "asc" }
     });
     for (const sb of batches) {

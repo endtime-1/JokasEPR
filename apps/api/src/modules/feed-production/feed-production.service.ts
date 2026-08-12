@@ -564,8 +564,10 @@ export class FeedProductionService {
         // letting inventory and its batch-level lot records drift apart with
         // nothing logged. Both now fail loudly and roll back the whole batch.
         let remaining = ingredient.quantityKg;
+        // H-BUG-2: status: "AVAILABLE" excludes lots Quality has rejected or
+        // quarantined — see quality.service.ts's approve/reject/quarantineBatch.
         const stockBatches = await tx.stockBatch.findMany({
-          where: { companyId: user.companyId, warehouseId: dto.rawMaterialWarehouseId, productId: ingredient.ingredientId, quantityRemaining: { gt: 0 }, deletedAt: null },
+          where: { companyId: user.companyId, warehouseId: dto.rawMaterialWarehouseId, productId: ingredient.ingredientId, quantityRemaining: { gt: 0 }, status: "AVAILABLE", deletedAt: null },
           orderBy: { createdAt: "asc" }
         });
         for (const sb of stockBatches) {

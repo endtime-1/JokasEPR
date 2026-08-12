@@ -364,8 +364,10 @@ export class MaintenanceService {
 
   private async consumeSparePartTx(tx: Prisma.TransactionClient, user: AuthenticatedUser, item: { id: string; branchId: string; warehouseId: string; productionSiteId: string | null; productId: string; uomId: string }, quantity: number, usageId: string, unitCost: number) {
     let remaining = quantity;
+    // H-BUG-2: status: "AVAILABLE" excludes lots Quality has rejected or
+    // quarantined — see quality.service.ts's approve/reject/quarantineBatch.
     const batches = await tx.stockBatch.findMany({
-      where: { companyId: user.companyId, inventoryItemId: item.id, deletedAt: null, quantityRemaining: { gt: 0 } },
+      where: { companyId: user.companyId, inventoryItemId: item.id, deletedAt: null, quantityRemaining: { gt: 0 }, status: "AVAILABLE" },
       orderBy: [{ expiryDate: "asc" }, { createdAt: "asc" }],
     });
     for (const batch of batches) {
