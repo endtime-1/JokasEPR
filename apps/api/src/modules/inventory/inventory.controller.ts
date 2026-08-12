@@ -119,6 +119,12 @@ export class InventoryController {
     return this.inventoryService.releaseReservation(user, id, dto, { ipAddress, userAgent });
   }
 
+  @Get("locations")
+  @RequirePermissions(PERMISSIONS.INVENTORY_READ)
+  locations(@CurrentUser() user: AuthenticatedUser, @Query() query: InventoryQueryDto) {
+    return this.inventoryService.listLocations(user, query);
+  }
+
   @Post("locations")
   @RequirePermissions(PERMISSIONS.INVENTORY_MANAGE)
   createLocation(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateWarehouseLocationDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {

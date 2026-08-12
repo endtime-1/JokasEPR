@@ -312,6 +312,23 @@ export class InventoryService {
     return { data };
   }
 
+  async listLocations(user: AuthenticatedUser, query: InventoryQueryDto) {
+    const andConditions: object[] = [];
+    if (query.warehouseId) andConditions.push({ warehouseId: query.warehouseId });
+    // Same empty-IN() guard as itemWhere: an empty warehouseIds array means
+    // "no explicit assignment" -> fall through to company-level visibility.
+    if (!user.hasGlobalAccess && user.warehouseIds.length > 0) {
+      andConditions.push({ warehouseId: { in: user.warehouseIds } });
+    }
+    const data = await this.prisma.warehouseLocation.findMany({
+      where: { companyId: user.companyId, deletedAt: null, ...(andConditions.length > 0 ? { AND: andConditions } : {}) },
+      include: { warehouse: { select: { code: true, name: true } } },
+      orderBy: { code: "asc" },
+      take: 200
+    });
+    return { data };
+  }
+
   async createLocation(user: AuthenticatedUser, dto: CreateWarehouseLocationDto, context: RequestContext) {
     this.assertWarehouseAccess(user, dto.warehouseId);
     const warehouse = await this.getWarehouse(user.companyId, dto.warehouseId);

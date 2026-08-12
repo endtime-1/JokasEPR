@@ -18,7 +18,7 @@ const mockPrisma = {
   stockReservation: { findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn(), update: jest.fn() },
   stockBatch: { findFirst: jest.fn() },
   stockReorderLevel: { upsert: jest.fn().mockResolvedValue({}) },
-  warehouseLocation: { findFirst: jest.fn(), update: jest.fn(), count: jest.fn() },
+  warehouseLocation: { findFirst: jest.fn(), findMany: jest.fn(), update: jest.fn(), count: jest.fn() },
   $transaction: jest.fn().mockImplementation((cb: (tx: typeof mockTx) => Promise<unknown>) => cb(mockTx))
 };
 const mockAudit = { write: jest.fn().mockResolvedValue(undefined) };
@@ -268,6 +268,43 @@ describe("InventoryService.updateItem / deleteItem", () => {
     const service = makeService();
     await expect(service.deleteItem(makeUser(), "item-1", {})).rejects.toThrow(/live stock batches/);
     expect(mockPrisma.inventoryItem.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("InventoryService.listLocations", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("scopes to the actor's company and assigned warehouses (no empty-IN() for global-access users)", async () => {
+    mockPrisma.warehouseLocation.findMany.mockResolvedValue([{ id: "loc-1", code: "A1" }]);
+
+    const service = makeService();
+    await service.listLocations(makeUser({ hasGlobalAccess: true, warehouseIds: [] }), {} as never);
+
+    expect(mockPrisma.warehouseLocation.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { companyId: "company-1", deletedAt: null } })
+    );
+  });
+
+  it("filters by the actor's assigned warehouses when not globally scoped", async () => {
+    mockPrisma.warehouseLocation.findMany.mockResolvedValue([]);
+
+    const service = makeService();
+    await service.listLocations(makeUser({ hasGlobalAccess: false, warehouseIds: ["wh-1"] }), {} as never);
+
+    expect(mockPrisma.warehouseLocation.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { companyId: "company-1", deletedAt: null, AND: [{ warehouseId: { in: ["wh-1"] } }] } })
+    );
+  });
+
+  it("applies an explicit warehouseId filter from the query", async () => {
+    mockPrisma.warehouseLocation.findMany.mockResolvedValue([]);
+
+    const service = makeService();
+    await service.listLocations(makeUser(), { warehouseId: "wh-2" } as never);
+
+    expect(mockPrisma.warehouseLocation.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ AND: expect.arrayContaining([{ warehouseId: "wh-2" }]) }) })
+    );
   });
 });
 
