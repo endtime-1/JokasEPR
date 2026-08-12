@@ -236,6 +236,20 @@ export class QualityService {
     return updated;
   }
 
+  // Blocked while any quality check still references this template — deleting
+  // it out from under existing check history would orphan that reference.
+  // Deactivating (isActive: false via updateTemplate) is the right move for
+  // a template that's simply no longer wanted for new checks.
+  async deleteTemplate(user: AuthenticatedUser, id: string, ctx: RequestContext) {
+    const t = await this.prisma.qualityCheckTemplate.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!t) throw new NotFoundException("Template not found");
+    const usedByChecks = await this.prisma.qualityCheck.count({ where: { templateId: id, deletedAt: null } });
+    if (usedByChecks > 0) throw new BadRequestException("Cannot delete a template referenced by existing quality checks. Deactivate it instead.");
+    await this.prisma.qualityCheckTemplate.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "DELETE", entityType: "QualityCheckTemplate", entityId: id, ...ctx });
+    return { ok: true };
+  }
+
   async addParameter(user: AuthenticatedUser, templateId: string, dto: CreateQualityCheckDto & { paramCode: string; name: string }, ctx: RequestContext) {
     const t = await this.prisma.qualityCheckTemplate.findFirst({ where: { id: templateId, companyId: user.companyId, deletedAt: null } });
     if (!t) throw new NotFoundException("Template not found");
@@ -652,6 +666,15 @@ export class QualityService {
     return report;
   }
 
+  async deleteLabReport(user: AuthenticatedUser, id: string, ctx: RequestContext) {
+    // Scoped via its check relation, same as listLabReports/H15's other fixes.
+    const report = await this.prisma.labReportUpload.findFirst({ where: { id, companyId: user.companyId, deletedAt: null, check: this.scopeWhere(user) } });
+    if (!report) throw new NotFoundException("Lab report not found");
+    await this.prisma.labReportUpload.update({ where: { id }, data: { deletedAt: new Date() } });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "DELETE", entityType: "LabReportUpload", entityId: id, ...ctx });
+    return { ok: true };
+  }
+
   // â”€â”€â”€ Corrective Actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   async listCorrectiveActions(user: AuthenticatedUser, q: QualityQueryDto) {
@@ -725,6 +748,19 @@ export class QualityService {
     });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "UPDATE", entityType: "CorrectiveAction", entityId: id, ...ctx });
     return updated;
+  }
+
+  // A CLOSED corrective action has already been through resolve + verify —
+  // it's the finalised compliance record for a food-safety/QA event, so it's
+  // blocked from deletion the same way finalised quality-check decisions
+  // elsewhere in this file can't be silently reopened or removed.
+  async deleteCorrectiveAction(user: AuthenticatedUser, id: string, ctx: RequestContext) {
+    const ca = await this.prisma.correctiveAction.findFirst({ where: { id, companyId: user.companyId, deletedAt: null, check: this.scopeWhere(user) } }); // H15
+    if (!ca) throw new NotFoundException("Corrective action not found");
+    if (ca.status === "CLOSED") throw new BadRequestException("Cannot delete a closed corrective action; it is part of the compliance record.");
+    await this.prisma.correctiveAction.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "DELETE", entityType: "CorrectiveAction", entityId: id, ...ctx });
+    return { ok: true };
   }
 
   async resolveCorrectiveAction(user: AuthenticatedUser, id: string, dto: ResolveCorrectiveActionDto, ctx: RequestContext) {

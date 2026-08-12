@@ -12,10 +12,13 @@ const mockTx = {
 };
 
 const mockPrisma = {
-  inventoryItem: { findFirst: jest.fn(), findUniqueOrThrow: jest.fn() },
+  inventoryItem: { findFirst: jest.fn(), findUniqueOrThrow: jest.fn(), update: jest.fn() },
   stockAdjustment: { findFirst: jest.fn(), update: jest.fn().mockResolvedValue({}) },
   stockApproval: { updateMany: jest.fn().mockResolvedValue({}) },
   stockReservation: { findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn(), update: jest.fn() },
+  stockBatch: { findFirst: jest.fn() },
+  stockReorderLevel: { upsert: jest.fn().mockResolvedValue({}) },
+  warehouseLocation: { findFirst: jest.fn(), update: jest.fn(), count: jest.fn() },
   $transaction: jest.fn().mockImplementation((cb: (tx: typeof mockTx) => Promise<unknown>) => cb(mockTx))
 };
 const mockAudit = { write: jest.fn().mockResolvedValue(undefined) };
@@ -181,6 +184,101 @@ describe("InventoryService.releaseReservation — gives reservations an actual e
       service.releaseReservation(makeUser({ warehouseIds: ["wh-1"] }), "rsv-1", {} as never, {})
     ).rejects.toThrow();
     expect(mockPrisma.stockReservation.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("InventoryService.updateItem / deleteItem", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("updateItem patches reorderLevel and status without touching quantityOnHand", async () => {
+    mockPrisma.inventoryItem.findFirst.mockResolvedValue({ id: "item-1", companyId: "company-1", warehouseId: "wh-1" });
+    mockPrisma.inventoryItem.update.mockResolvedValue({ id: "item-1", reorderLevel: 25, status: "INACTIVE" });
+    mockPrisma.inventoryItem.findUniqueOrThrow.mockResolvedValue({ id: "item-1", companyId: "company-1", branchId: "branch-1", warehouseId: "wh-1", productionSiteId: null, productId: "prod-1" });
+
+    const service = makeService();
+    await service.updateItem(makeUser(), "item-1", { reorderLevel: 25, status: "INACTIVE" } as never, {});
+
+    const data = mockPrisma.inventoryItem.update.mock.calls[0][0].data;
+    expect(data).toEqual({ reorderLevel: 25, status: "INACTIVE", updatedById: "user-1" });
+    expect(data.quantityOnHand).toBeUndefined();
+  });
+
+  it("updateItem 404s for an item outside the actor's company", async () => {
+    mockPrisma.inventoryItem.findFirst.mockResolvedValue(null);
+    const service = makeService();
+    await expect(service.updateItem(makeUser(), "item-other", {} as never, {})).rejects.toThrow();
+    expect(mockPrisma.inventoryItem.update).not.toHaveBeenCalled();
+  });
+
+  it("deleteItem soft-deletes an item with zero quantity and no live batches", async () => {
+    mockPrisma.inventoryItem.findFirst.mockResolvedValue({ id: "item-1", companyId: "company-1", warehouseId: "wh-1", branchId: "branch-1", quantityOnHand: 0 });
+    mockPrisma.stockBatch.findFirst.mockResolvedValue(null);
+    mockPrisma.inventoryItem.update.mockResolvedValue({});
+
+    const service = makeService();
+    await service.deleteItem(makeUser(), "item-1", {});
+
+    expect(mockPrisma.inventoryItem.update).toHaveBeenCalledWith({
+      where: { id: "item-1" },
+      data: expect.objectContaining({ deletedAt: expect.any(Date), updatedById: "user-1" })
+    });
+  });
+
+  it("deleteItem is blocked when quantityOnHand is non-zero", async () => {
+    mockPrisma.inventoryItem.findFirst.mockResolvedValue({ id: "item-1", companyId: "company-1", warehouseId: "wh-1", branchId: "branch-1", quantityOnHand: 10 });
+
+    const service = makeService();
+    await expect(service.deleteItem(makeUser(), "item-1", {})).rejects.toThrow(/non-zero quantity/);
+    expect(mockPrisma.inventoryItem.update).not.toHaveBeenCalled();
+  });
+
+  it("deleteItem is blocked when a live stock batch still exists", async () => {
+    mockPrisma.inventoryItem.findFirst.mockResolvedValue({ id: "item-1", companyId: "company-1", warehouseId: "wh-1", branchId: "branch-1", quantityOnHand: 0 });
+    mockPrisma.stockBatch.findFirst.mockResolvedValue({ id: "batch-1" });
+
+    const service = makeService();
+    await expect(service.deleteItem(makeUser(), "item-1", {})).rejects.toThrow(/live stock batches/);
+    expect(mockPrisma.inventoryItem.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("InventoryService.updateLocation / deleteLocation", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("updateLocation patches name/barcode/status", async () => {
+    mockPrisma.warehouseLocation.findFirst.mockResolvedValue({ id: "loc-1", companyId: "company-1", warehouseId: "wh-1", branchId: "branch-1", code: "A1" });
+    mockPrisma.warehouseLocation.update.mockResolvedValue({ id: "loc-1", name: "Bay 2" });
+
+    const service = makeService();
+    await service.updateLocation(makeUser(), "loc-1", { name: "Bay 2" } as never, {});
+
+    expect(mockPrisma.warehouseLocation.update).toHaveBeenCalledWith({
+      where: { id: "loc-1" },
+      data: { name: "Bay 2", updatedById: "user-1" }
+    });
+  });
+
+  it("deleteLocation soft-deletes a location with no children", async () => {
+    mockPrisma.warehouseLocation.findFirst.mockResolvedValue({ id: "loc-1", companyId: "company-1", warehouseId: "wh-1", branchId: "branch-1", code: "A1" });
+    mockPrisma.warehouseLocation.count.mockResolvedValue(0);
+    mockPrisma.warehouseLocation.update.mockResolvedValue({});
+
+    const service = makeService();
+    await service.deleteLocation(makeUser(), "loc-1", {});
+
+    expect(mockPrisma.warehouseLocation.update).toHaveBeenCalledWith({
+      where: { id: "loc-1" },
+      data: expect.objectContaining({ deletedAt: expect.any(Date) })
+    });
+  });
+
+  it("deleteLocation is blocked when child locations still reference it", async () => {
+    mockPrisma.warehouseLocation.findFirst.mockResolvedValue({ id: "loc-1", companyId: "company-1", warehouseId: "wh-1", branchId: "branch-1", code: "A1" });
+    mockPrisma.warehouseLocation.count.mockResolvedValue(2);
+
+    const service = makeService();
+    await expect(service.deleteLocation(makeUser(), "loc-1", {})).rejects.toThrow(/child locations/);
+    expect(mockPrisma.warehouseLocation.update).not.toHaveBeenCalled();
   });
 });
 

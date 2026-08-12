@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Ip, Param, Patch, Post, Query, Res, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Headers, Ip, Param, Patch, Post, Query, Res, UseGuards } from "@nestjs/common";
 import { Response } from "express";
 import { AuthenticatedUser, PERMISSIONS } from "@jokas/shared";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
@@ -18,7 +18,9 @@ import {
   StockInDto,
   StockOutDto,
   StockReservationDto,
-  StockTransferDto
+  StockTransferDto,
+  UpdateInventoryItemDto,
+  UpdateWarehouseLocationDto
 } from "./dto/inventory.dto";
 import { InventoryService } from "./inventory.service";
 
@@ -55,6 +57,18 @@ export class InventoryController {
   @RequirePermissions(PERMISSIONS.INVENTORY_MANAGE)
   createItem(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateInventoryItemDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.inventoryService.createItem(user, dto, { ipAddress, userAgent });
+  }
+
+  @Patch("items/:id")
+  @RequirePermissions(PERMISSIONS.INVENTORY_MANAGE)
+  updateItem(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateInventoryItemDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.inventoryService.updateItem(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Delete("items/:id")
+  @RequirePermissions(PERMISSIONS.INVENTORY_MANAGE)
+  deleteItem(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.inventoryService.deleteItem(user, id, { ipAddress, userAgent });
   }
 
   @Post("stock-movements")
@@ -109,6 +123,18 @@ export class InventoryController {
   @RequirePermissions(PERMISSIONS.INVENTORY_MANAGE)
   createLocation(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateWarehouseLocationDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.inventoryService.createLocation(user, dto, { ipAddress, userAgent });
+  }
+
+  @Patch("locations/:id")
+  @RequirePermissions(PERMISSIONS.INVENTORY_MANAGE)
+  updateLocation(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateWarehouseLocationDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.inventoryService.updateLocation(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Delete("locations/:id")
+  @RequirePermissions(PERMISSIONS.INVENTORY_MANAGE)
+  deleteLocation(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.inventoryService.deleteLocation(user, id, { ipAddress, userAgent });
   }
 
   @Post("reorder-levels")

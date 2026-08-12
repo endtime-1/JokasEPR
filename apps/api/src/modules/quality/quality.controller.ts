@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
 import { AuthenticatedUser, PERMISSIONS } from "@jokas/shared";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { RequirePermissions } from "../../common/decorators/permissions.decorator";
@@ -72,6 +72,12 @@ export class QualityController {
   @RequirePermissions(PERMISSIONS.QUALITY_MANAGE)
   async updateTemplate(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateTemplateDto, @Req() req: Request) {
     return { data: await this.svc.updateTemplate(user, id, dto, ctx(req)) };
+  }
+
+  @Delete("templates/:id")
+  @RequirePermissions(PERMISSIONS.QUALITY_MANAGE)
+  async deleteTemplate(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Req() req: Request) {
+    return { data: await this.svc.deleteTemplate(user, id, ctx(req)) };
   }
 
   // ─── Quality Checks ────────────────────────────────────────────────────────
@@ -166,6 +172,12 @@ export class QualityController {
     return { data: await this.svc.createLabReport(user, dto, ctx(req)) };
   }
 
+  @Delete("lab-reports/:id")
+  @RequirePermissions(PERMISSIONS.QUALITY_MANAGE)
+  async deleteLabReport(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Req() req: Request) {
+    return { data: await this.svc.deleteLabReport(user, id, ctx(req)) };
+  }
+
   // ─── Corrective Actions ───────────────────────────────────────────────────
 
   @Get("corrective-actions")
@@ -184,6 +196,12 @@ export class QualityController {
   @RequirePermissions(PERMISSIONS.QUALITY_MANAGE)
   async updateCorrectiveAction(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateCorrectiveActionDto, @Req() req: Request) {
     return { data: await this.svc.updateCorrectiveAction(user, id, dto, ctx(req)) };
+  }
+
+  @Delete("corrective-actions/:id")
+  @RequirePermissions(PERMISSIONS.QUALITY_MANAGE)
+  async deleteCorrectiveAction(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Req() req: Request) {
+    return { data: await this.svc.deleteCorrectiveAction(user, id, ctx(req)) };
   }
 
   @Patch("corrective-actions/:id/resolve")

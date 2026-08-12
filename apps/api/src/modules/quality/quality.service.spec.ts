@@ -21,7 +21,8 @@ const mockPrisma = {
   approvedBatch: { findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn() },
   correctiveAction: { count: jest.fn(), groupBy: jest.fn(), findFirst: jest.fn(), create: jest.fn(), update: jest.fn(), findMany: jest.fn() },
   qualityCheckParameter: { count: jest.fn() },
-  labReportUpload: { findMany: jest.fn() },
+  qualityCheckTemplate: { findFirst: jest.fn(), update: jest.fn() },
+  labReportUpload: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
   $transaction: jest.fn().mockImplementation((cb: (tx: typeof mockTx) => Promise<unknown>) => cb(mockTx))
 };
 const mockAudit = { write: jest.fn().mockResolvedValue(undefined) };
@@ -221,6 +222,81 @@ describe("QualityService — finalize/approve/reject actions are scoped, not jus
 
     const where = mockPrisma.correctiveAction.findMany.mock.calls[0][0].where;
     expect(where.check.AND).toEqual([{ OR: [{ branchId: null }, { branchId: { in: ["branch-1"] } }] }]);
+  });
+});
+
+describe("QualityService — delete routes (templates, corrective actions, lab reports)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  describe("deleteTemplate", () => {
+    it("soft-deletes a template with no referencing checks", async () => {
+      mockPrisma.qualityCheckTemplate.findFirst.mockResolvedValue({ id: "tpl-1", companyId: "company-1" });
+      mockPrisma.qualityCheck.count.mockResolvedValue(0);
+      mockPrisma.qualityCheckTemplate.update.mockResolvedValue({});
+
+      const service = makeService();
+      await service.deleteTemplate(makeUser(), "tpl-1", {});
+
+      expect(mockPrisma.qualityCheckTemplate.update).toHaveBeenCalledWith({
+        where: { id: "tpl-1" },
+        data: expect.objectContaining({ deletedAt: expect.any(Date) })
+      });
+    });
+
+    it("is blocked when existing quality checks still reference the template", async () => {
+      mockPrisma.qualityCheckTemplate.findFirst.mockResolvedValue({ id: "tpl-1", companyId: "company-1" });
+      mockPrisma.qualityCheck.count.mockResolvedValue(2);
+
+      const service = makeService();
+      await expect(service.deleteTemplate(makeUser(), "tpl-1", {})).rejects.toThrow(/referenced by existing quality checks/);
+      expect(mockPrisma.qualityCheckTemplate.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("deleteCorrectiveAction", () => {
+    it("soft-deletes an OPEN corrective action", async () => {
+      mockPrisma.correctiveAction.findFirst.mockResolvedValue({ id: "ca-1", companyId: "company-1", status: "OPEN" });
+      mockPrisma.correctiveAction.update.mockResolvedValue({});
+
+      const service = makeService();
+      await service.deleteCorrectiveAction(makeUser(), "ca-1", {});
+
+      expect(mockPrisma.correctiveAction.update).toHaveBeenCalledWith({
+        where: { id: "ca-1" },
+        data: expect.objectContaining({ deletedAt: expect.any(Date) })
+      });
+    });
+
+    it("is blocked when the corrective action is already CLOSED", async () => {
+      mockPrisma.correctiveAction.findFirst.mockResolvedValue({ id: "ca-1", companyId: "company-1", status: "CLOSED" });
+
+      const service = makeService();
+      await expect(service.deleteCorrectiveAction(makeUser(), "ca-1", {})).rejects.toThrow(/closed corrective action/);
+      expect(mockPrisma.correctiveAction.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("deleteLabReport", () => {
+    it("soft-deletes a lab report within the actor's scope", async () => {
+      mockPrisma.labReportUpload.findFirst.mockResolvedValue({ id: "lr-1", companyId: "company-1" });
+      mockPrisma.labReportUpload.update.mockResolvedValue({});
+
+      const service = makeService();
+      await service.deleteLabReport(makeUser(), "lr-1", {});
+
+      expect(mockPrisma.labReportUpload.update).toHaveBeenCalledWith({
+        where: { id: "lr-1" },
+        data: expect.objectContaining({ deletedAt: expect.any(Date) })
+      });
+    });
+
+    it("404s for a lab report outside the actor's scope", async () => {
+      mockPrisma.labReportUpload.findFirst.mockResolvedValue(null);
+
+      const service = makeService();
+      await expect(service.deleteLabReport(makeUser(), "lr-1", {})).rejects.toThrow(/not found/i);
+      expect(mockPrisma.labReportUpload.update).not.toHaveBeenCalled();
+    });
   });
 });
 

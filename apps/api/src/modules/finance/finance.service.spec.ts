@@ -6,15 +6,18 @@ jest.mock("../../common/next-ref", () => ({ nextRef: jest.fn().mockResolvedValue
 
 const mockPrisma = {
   expense: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0), create: jest.fn(), update: jest.fn(), aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 }, _count: 0 }) },
-  revenue: { findMany: jest.fn().mockResolvedValue([]), count: jest.fn(), create: jest.fn(), aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 }, _count: 0 }) },
-  supplierPayment: { aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 }, _count: 0 }) },
-  customerPayment: { aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 }, _count: 0 }) },
-  bankAccount: { findMany: jest.fn().mockResolvedValue([]) },
-  payrollRecord: { findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn(), create: jest.fn(), update: jest.fn() },
-  pettyCashTransaction: { findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn(), create: jest.fn() },
+  revenue: { findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0), create: jest.fn(), aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 }, _count: 0 }) },
+  supplierPayment: { aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 }, _count: 0 }), count: jest.fn().mockResolvedValue(0) },
+  customerPayment: { aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 }, _count: 0 }), count: jest.fn().mockResolvedValue(0) },
+  bankAccount: { findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn(), update: jest.fn() },
+  payrollRecord: { findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn().mockResolvedValue(0), create: jest.fn(), update: jest.fn() },
+  pettyCashTransaction: { findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn().mockResolvedValue(0), create: jest.fn() },
   invoice: { findMany: jest.fn() },
   poultryCostRecord: { groupBy: jest.fn() },
   productProfitability: { create: jest.fn() },
+  account: { findFirst: jest.fn(), update: jest.fn(), count: jest.fn().mockResolvedValue(0) },
+  expenseCategory: { findFirst: jest.fn(), update: jest.fn(), count: jest.fn().mockResolvedValue(0) },
+  journalEntryLine: { count: jest.fn().mockResolvedValue(0) },
   $transaction: jest.fn().mockImplementation((cb: (tx: typeof mockPrisma) => Promise<unknown>) => cb(mockPrisma))
 };
 const mockAudit = { write: jest.fn().mockResolvedValue(undefined) };
@@ -183,6 +186,118 @@ describe("FinanceService.generateProductProfitability — revenue-weighted cost 
     const bySku = Object.fromEntries((result.data as unknown as Array<{ productCode: string; totalCost: number }>).map((r) => [r.productCode, r.totalCost]));
     expect(bySku.A).toBe(100);
     expect(bySku.B).toBe(100);
+  });
+});
+
+describe("FinanceService — Account edit/delete", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("updateAccount patches only the provided fields", async () => {
+    mockPrisma.account.findFirst.mockResolvedValue({ id: "acc-1", companyId: "company-1" });
+    mockPrisma.account.update.mockResolvedValue({ id: "acc-1", name: "Cash" });
+
+    const service = makeService();
+    await service.updateAccount(makeUser(), "acc-1", { name: "Cash" } as never, {});
+
+    expect(mockPrisma.account.update).toHaveBeenCalledWith({ where: { id: "acc-1" }, data: { name: "Cash", updatedById: "user-1" } });
+  });
+
+  it("deleteAccount soft-deletes an account with no dependents", async () => {
+    mockPrisma.account.findFirst.mockResolvedValue({ id: "acc-1", companyId: "company-1" });
+    mockPrisma.journalEntryLine.count.mockResolvedValue(0);
+    mockPrisma.account.count.mockResolvedValue(0);
+    mockPrisma.expenseCategory.count.mockResolvedValue(0);
+
+    const service = makeService();
+    await service.deleteAccount(makeUser(), "acc-1", {});
+
+    expect(mockPrisma.account.update).toHaveBeenCalledWith({
+      where: { id: "acc-1" },
+      data: expect.objectContaining({ deletedAt: expect.any(Date), isActive: false })
+    });
+  });
+
+  it("deleteAccount is blocked when journal entry lines still reference it", async () => {
+    mockPrisma.account.findFirst.mockResolvedValue({ id: "acc-1", companyId: "company-1" });
+    mockPrisma.journalEntryLine.count.mockResolvedValue(3);
+    mockPrisma.account.count.mockResolvedValue(0);
+    mockPrisma.expenseCategory.count.mockResolvedValue(0);
+
+    const service = makeService();
+    await expect(service.deleteAccount(makeUser(), "acc-1", {})).rejects.toThrow(/journal entries/);
+    expect(mockPrisma.account.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("FinanceService — ExpenseCategory edit/delete", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("deleteExpenseCategory soft-deletes a category with no referencing expenses", async () => {
+    mockPrisma.expenseCategory.findFirst.mockResolvedValue({ id: "cat-1", companyId: "company-1" });
+    mockPrisma.expense.count.mockResolvedValue(0);
+    mockPrisma.pettyCashTransaction.count.mockResolvedValue(0);
+
+    const service = makeService();
+    await service.deleteExpenseCategory(makeUser(), "cat-1", {});
+
+    expect(mockPrisma.expenseCategory.update).toHaveBeenCalledWith({
+      where: { id: "cat-1" },
+      data: expect.objectContaining({ deletedAt: expect.any(Date), isActive: false })
+    });
+  });
+
+  it("deleteExpenseCategory is blocked when referenced by existing expenses", async () => {
+    mockPrisma.expenseCategory.findFirst.mockResolvedValue({ id: "cat-1", companyId: "company-1" });
+    mockPrisma.expense.count.mockResolvedValue(2);
+    mockPrisma.pettyCashTransaction.count.mockResolvedValue(0);
+
+    const service = makeService();
+    await expect(service.deleteExpenseCategory(makeUser(), "cat-1", {})).rejects.toThrow(/expenses or petty cash/);
+    expect(mockPrisma.expenseCategory.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("FinanceService — BankAccount edit/delete", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("updateBankAccount patches only the provided fields", async () => {
+    mockPrisma.bankAccount.findFirst.mockResolvedValue({ id: "bank-1", companyId: "company-1" });
+    mockPrisma.bankAccount.update.mockResolvedValue({ id: "bank-1", isActive: false });
+
+    const service = makeService();
+    await service.updateBankAccount(makeUser(), "bank-1", { isActive: false } as never, {});
+
+    expect(mockPrisma.bankAccount.update).toHaveBeenCalledWith({ where: { id: "bank-1" }, data: { isActive: false, updatedById: "user-1" } });
+  });
+
+  it("deleteBankAccount soft-deletes an account with no referencing transactions", async () => {
+    mockPrisma.bankAccount.findFirst.mockResolvedValue({ id: "bank-1", companyId: "company-1" });
+    mockPrisma.expense.count.mockResolvedValue(0);
+    mockPrisma.revenue.count.mockResolvedValue(0);
+    mockPrisma.supplierPayment.count.mockResolvedValue(0);
+    mockPrisma.customerPayment.count.mockResolvedValue(0);
+    mockPrisma.payrollRecord.count.mockResolvedValue(0);
+
+    const service = makeService();
+    await service.deleteBankAccount(makeUser(), "bank-1", {});
+
+    expect(mockPrisma.bankAccount.update).toHaveBeenCalledWith({
+      where: { id: "bank-1" },
+      data: expect.objectContaining({ deletedAt: expect.any(Date), isActive: false })
+    });
+  });
+
+  it("deleteBankAccount is blocked when referenced by existing payments", async () => {
+    mockPrisma.bankAccount.findFirst.mockResolvedValue({ id: "bank-1", companyId: "company-1" });
+    mockPrisma.expense.count.mockResolvedValue(0);
+    mockPrisma.revenue.count.mockResolvedValue(0);
+    mockPrisma.supplierPayment.count.mockResolvedValue(1);
+    mockPrisma.customerPayment.count.mockResolvedValue(0);
+    mockPrisma.payrollRecord.count.mockResolvedValue(0);
+
+    const service = makeService();
+    await expect(service.deleteBankAccount(makeUser(), "bank-1", {})).rejects.toThrow(/existing transactions/);
+    expect(mockPrisma.bankAccount.update).not.toHaveBeenCalled();
   });
 });
 

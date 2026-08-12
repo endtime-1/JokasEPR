@@ -76,6 +76,26 @@ export class CreateAccountDto {
   description?: string;
 }
 
+export class UpdateAccountDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  name?: string;
+
+  @IsOptional()
+  @IsUUID()
+  parentId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(240)
+  description?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}
+
 // ─── Expense Category ─────────────────────────────────────────────────────────
 
 export class CreateExpenseCategoryDto {
@@ -95,6 +115,26 @@ export class CreateExpenseCategoryDto {
   @IsOptional()
   @IsUUID()
   accountId?: string;
+}
+
+export class UpdateExpenseCategoryDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(240)
+  description?: string;
+
+  @IsOptional()
+  @IsUUID()
+  accountId?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
 }
 
 // ─── Bank Account ─────────────────────────────────────────────────────────────
@@ -124,6 +164,32 @@ export class CreateBankAccountDto {
   @IsNumber()
   @Min(0)
   openingBalance?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  notes?: string;
+}
+
+export class UpdateBankAccountDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  accountName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  bankName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  branchName?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
 
   @IsOptional()
   @IsString()

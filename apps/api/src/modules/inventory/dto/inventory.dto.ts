@@ -1,4 +1,4 @@
-import { StockAdjustmentType, StockMovementType, StockReservationStatus, StockWorkflowStatus } from "@prisma/client";
+import { InventoryItemStatus, RecordStatus, StockAdjustmentType, StockMovementType, StockReservationStatus, StockWorkflowStatus } from "@prisma/client";
 import { IsBoolean, IsDateString, IsEnum, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, MaxLength, Min } from "class-validator";
 
 export class InventoryQueryDto {
@@ -54,6 +54,20 @@ export class CreateInventoryItemDto {
   @IsNumber()
   @Min(0)
   openingQuantity?: number;
+}
+
+// Only the fields it makes sense to correct after creation — never
+// quantityOnHand, which must only ever change through the existing
+// stock-adjustment/consumption/transfer flows (see InventoryService.updateItem).
+export class UpdateInventoryItemDto {
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  reorderLevel?: number;
+
+  @IsOptional()
+  @IsEnum(InventoryItemStatus)
+  status?: InventoryItemStatus;
 }
 
 export class StockInDto {
@@ -215,6 +229,22 @@ export class CreateWarehouseLocationDto {
   @IsString()
   @MaxLength(120)
   barcode?: string;
+}
+
+export class UpdateWarehouseLocationDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  barcode?: string;
+
+  @IsOptional()
+  @IsEnum(RecordStatus)
+  status?: RecordStatus;
 }
 
 export class SetReorderLevelDto {

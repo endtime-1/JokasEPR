@@ -23,7 +23,10 @@ import {
   CreateSupplierPaymentDto,
   FinanceQueryDto,
   GenerateReportDto,
-  RejectExpenseDto
+  RejectExpenseDto,
+  UpdateAccountDto,
+  UpdateBankAccountDto,
+  UpdateExpenseCategoryDto
 } from "./dto/finance.dto";
 
 type RequestContext = { ipAddress?: string; userAgent?: string };
@@ -190,6 +193,43 @@ export class FinanceService {
     return { data: account };
   }
 
+  async updateAccount(user: AuthenticatedUser, id: string, dto: UpdateAccountDto, ctx: RequestContext) {
+    const account = await this.prisma.account.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!account) throw new NotFoundException("Account not found");
+    const updated = await this.prisma.account.update({
+      where: { id },
+      data: {
+        ...(dto.name !== undefined && { name: dto.name }),
+        ...(dto.parentId !== undefined && { parentId: dto.parentId }),
+        ...(dto.description !== undefined && { description: dto.description }),
+        ...(dto.isActive !== undefined && { isActive: dto.isActive }),
+        updatedById: user.id
+      }
+    });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "UPDATE", entityType: "Account", entityId: id, ...ctx });
+    return { data: updated };
+  }
+
+  // Chart-of-accounts entries are pure config, but they can still be
+  // referenced by posted journal history, child accounts in the hierarchy,
+  // or expense categories — deleting out from under any of those would
+  // orphan the reference, so each is checked before the soft-delete lands.
+  async deleteAccount(user: AuthenticatedUser, id: string, ctx: RequestContext) {
+    const account = await this.prisma.account.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!account) throw new NotFoundException("Account not found");
+    const [journalLines, childAccounts, expenseCategories] = await Promise.all([
+      this.prisma.journalEntryLine.count({ where: { accountId: id } }),
+      this.prisma.account.count({ where: { parentId: id, deletedAt: null } }),
+      this.prisma.expenseCategory.count({ where: { accountId: id, deletedAt: null } })
+    ]);
+    if (journalLines > 0) throw new BadRequestException("Cannot delete an account referenced by existing journal entries.");
+    if (childAccounts > 0) throw new BadRequestException("Cannot delete an account that has child accounts.");
+    if (expenseCategories > 0) throw new BadRequestException("Cannot delete an account referenced by expense categories.");
+    await this.prisma.account.update({ where: { id }, data: { deletedAt: new Date(), isActive: false, updatedById: user.id } });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "DELETE", entityType: "Account", entityId: id, ...ctx });
+    return { data: { ok: true } };
+  }
+
   // ─── Expense Categories ────────────────────────────────────────────────────
 
   async listExpenseCategories(user: AuthenticatedUser) {
@@ -213,6 +253,36 @@ export class FinanceService {
     });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "CREATE", entityType: "ExpenseCategory", entityId: category.id, ...ctx });
     return { data: category };
+  }
+
+  async updateExpenseCategory(user: AuthenticatedUser, id: string, dto: UpdateExpenseCategoryDto, ctx: RequestContext) {
+    const category = await this.prisma.expenseCategory.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!category) throw new NotFoundException("Expense category not found");
+    const updated = await this.prisma.expenseCategory.update({
+      where: { id },
+      data: {
+        ...(dto.name !== undefined && { name: dto.name }),
+        ...(dto.description !== undefined && { description: dto.description }),
+        ...(dto.accountId !== undefined && { accountId: dto.accountId }),
+        ...(dto.isActive !== undefined && { isActive: dto.isActive }),
+        updatedById: user.id
+      }
+    });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "UPDATE", entityType: "ExpenseCategory", entityId: id, ...ctx });
+    return { data: updated };
+  }
+
+  async deleteExpenseCategory(user: AuthenticatedUser, id: string, ctx: RequestContext) {
+    const category = await this.prisma.expenseCategory.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!category) throw new NotFoundException("Expense category not found");
+    const [expenses, pettyCash] = await Promise.all([
+      this.prisma.expense.count({ where: { categoryId: id, deletedAt: null } }),
+      this.prisma.pettyCashTransaction.count({ where: { categoryId: id, deletedAt: null } })
+    ]);
+    if (expenses > 0 || pettyCash > 0) throw new BadRequestException("Cannot delete an expense category referenced by existing expenses or petty cash transactions.");
+    await this.prisma.expenseCategory.update({ where: { id }, data: { deletedAt: new Date(), isActive: false, updatedById: user.id } });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "DELETE", entityType: "ExpenseCategory", entityId: id, ...ctx });
+    return { data: { ok: true } };
   }
 
   // ─── Bank Accounts ─────────────────────────────────────────────────────────
@@ -242,6 +312,45 @@ export class FinanceService {
     });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "CREATE", entityType: "BankAccount", entityId: account.id, ...ctx });
     return { data: account };
+  }
+
+  async updateBankAccount(user: AuthenticatedUser, id: string, dto: UpdateBankAccountDto, ctx: RequestContext) {
+    const account = await this.prisma.bankAccount.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!account) throw new NotFoundException("Bank account not found");
+    const updated = await this.prisma.bankAccount.update({
+      where: { id },
+      data: {
+        ...(dto.accountName !== undefined && { accountName: dto.accountName }),
+        ...(dto.bankName !== undefined && { bankName: dto.bankName }),
+        ...(dto.branchName !== undefined && { branchName: dto.branchName }),
+        ...(dto.isActive !== undefined && { isActive: dto.isActive }),
+        ...(dto.notes !== undefined && { notes: dto.notes }),
+        updatedById: user.id
+      }
+    });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "UPDATE", entityType: "BankAccount", entityId: id, ...ctx });
+    return { data: updated };
+  }
+
+  // A bank account referenced by any existing expense/revenue/payment/payroll
+  // transaction is reconciliation history, not config — deleting it would
+  // orphan those references, so it's blocked rather than soft-deleted.
+  async deleteBankAccount(user: AuthenticatedUser, id: string, ctx: RequestContext) {
+    const account = await this.prisma.bankAccount.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!account) throw new NotFoundException("Bank account not found");
+    const [expenses, revenues, supplierPayments, customerPayments, payroll] = await Promise.all([
+      this.prisma.expense.count({ where: { bankAccountId: id, deletedAt: null } }),
+      this.prisma.revenue.count({ where: { bankAccountId: id, deletedAt: null } }),
+      this.prisma.supplierPayment.count({ where: { bankAccountId: id, deletedAt: null } }),
+      this.prisma.customerPayment.count({ where: { bankAccountId: id, deletedAt: null } }),
+      this.prisma.payrollRecord.count({ where: { bankAccountId: id, deletedAt: null } })
+    ]);
+    if (expenses + revenues + supplierPayments + customerPayments + payroll > 0) {
+      throw new BadRequestException("Cannot delete a bank account referenced by existing transactions.");
+    }
+    await this.prisma.bankAccount.update({ where: { id }, data: { deletedAt: new Date(), isActive: false, updatedById: user.id } });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "DELETE", entityType: "BankAccount", entityId: id, ...ctx });
+    return { data: { ok: true } };
   }
 
   // ─── Expenses ──────────────────────────────────────────────────────────────

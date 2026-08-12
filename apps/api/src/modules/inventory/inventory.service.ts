@@ -19,7 +19,9 @@ import {
   StockInDto,
   StockOutDto,
   StockReservationDto,
-  StockTransferDto
+  StockTransferDto,
+  UpdateInventoryItemDto,
+  UpdateWarehouseLocationDto
 } from "./dto/inventory.dto";
 
 type RequestContext = {
@@ -139,6 +141,43 @@ export class InventoryService {
     await this.upsertReorder(item.id, dto.reorderLevel, undefined, undefined, user.id);
     await this.writeAudit(user, "CREATE", "InventoryItem", item.id, `Created inventory item for ${product.sku}`, context, { branchId: warehouse.branchId, warehouseId: warehouse.id });
     return { data: item };
+  }
+
+  // Only metadata (reorderLevel, status) is editable here — quantityOnHand is
+  // deliberately excluded from UpdateInventoryItemDto so it can never be set
+  // directly via this generic PATCH; it must only ever move through
+  // stockIn/stockOut/transfer/createAdjustment's own guarded FIFO paths.
+  async updateItem(user: AuthenticatedUser, id: string, dto: UpdateInventoryItemDto, context: RequestContext) {
+    const item = await this.prisma.inventoryItem.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!item) throw new NotFoundException("Inventory item was not found.");
+    this.assertWarehouseAccess(user, item.warehouseId);
+    const updated = await this.prisma.inventoryItem.update({
+      where: { id },
+      data: {
+        ...(dto.reorderLevel !== undefined && { reorderLevel: dto.reorderLevel }),
+        ...(dto.status !== undefined && { status: dto.status }),
+        updatedById: user.id
+      }
+    });
+    if (dto.reorderLevel !== undefined) await this.upsertReorder(item.id, dto.reorderLevel, undefined, undefined, user.id);
+    await this.writeAudit(user, "UPDATE", "InventoryItem", id, "Updated inventory item", context, { branchId: item.branchId, warehouseId: item.warehouseId });
+    return { data: updated };
+  }
+
+  // Blocked while the item still carries stock — a non-zero quantityOnHand
+  // or a live (undepleted, non-deleted) StockBatch means real inventory is
+  // still tracked against this row; deleting it would silently orphan that
+  // stock from any FIFO consumer.
+  async deleteItem(user: AuthenticatedUser, id: string, context: RequestContext) {
+    const item = await this.prisma.inventoryItem.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!item) throw new NotFoundException("Inventory item was not found.");
+    this.assertWarehouseAccess(user, item.warehouseId);
+    if (Number(item.quantityOnHand) !== 0) throw new BadRequestException("Cannot delete an inventory item with non-zero quantity on hand.");
+    const liveBatch = await this.prisma.stockBatch.findFirst({ where: { inventoryItemId: id, deletedAt: null, quantityRemaining: { gt: 0 } } });
+    if (liveBatch) throw new BadRequestException("Cannot delete an inventory item that still has live stock batches.");
+    await this.prisma.inventoryItem.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    await this.writeAudit(user, "DELETE", "InventoryItem", id, "Deleted inventory item", context, { branchId: item.branchId, warehouseId: item.warehouseId });
+    return { data: { ok: true } };
   }
 
   async stockIn(user: AuthenticatedUser, dto: StockInDto, context: RequestContext) {
@@ -279,6 +318,38 @@ export class InventoryService {
     const data = await this.prisma.warehouseLocation.create({ data: { companyId: user.companyId, branchId: warehouse.branchId, warehouseId: warehouse.id, productionSiteId: warehouse.productionSiteId, parentId: dto.parentId, code: dto.code.toUpperCase(), name: dto.name, barcode: dto.barcode, createdById: user.id } });
     await this.writeAudit(user, "CREATE", "WarehouseLocation", data.id, `Created warehouse location ${data.code}`, context, { branchId: warehouse.branchId, warehouseId: warehouse.id });
     return { data };
+  }
+
+  async updateLocation(user: AuthenticatedUser, id: string, dto: UpdateWarehouseLocationDto, context: RequestContext) {
+    const location = await this.prisma.warehouseLocation.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!location) throw new NotFoundException("Warehouse location was not found.");
+    this.assertWarehouseAccess(user, location.warehouseId);
+    const updated = await this.prisma.warehouseLocation.update({
+      where: { id },
+      data: {
+        ...(dto.name !== undefined && { name: dto.name }),
+        ...(dto.barcode !== undefined && { barcode: dto.barcode }),
+        ...(dto.status !== undefined && { status: dto.status }),
+        updatedById: user.id
+      }
+    });
+    await this.writeAudit(user, "UPDATE", "WarehouseLocation", id, `Updated warehouse location ${location.code}`, context, { branchId: location.branchId, warehouseId: location.warehouseId });
+    return { data: updated };
+  }
+
+  // WarehouseLocation has no direct relation to StockBatch/InventoryItem in
+  // this schema (it's a hierarchical bin/shelf label, not a stock ledger row)
+  // — the real dependent-record risk here is orphaning child locations that
+  // point back at this one via parentId, so that's what's guarded.
+  async deleteLocation(user: AuthenticatedUser, id: string, context: RequestContext) {
+    const location = await this.prisma.warehouseLocation.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!location) throw new NotFoundException("Warehouse location was not found.");
+    this.assertWarehouseAccess(user, location.warehouseId);
+    const childCount = await this.prisma.warehouseLocation.count({ where: { parentId: id, deletedAt: null } });
+    if (childCount > 0) throw new BadRequestException("Cannot delete a warehouse location that has child locations.");
+    await this.prisma.warehouseLocation.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    await this.writeAudit(user, "DELETE", "WarehouseLocation", id, `Deleted warehouse location ${location.code}`, context, { branchId: location.branchId, warehouseId: location.warehouseId });
+    return { data: { ok: true } };
   }
 
   async setReorderLevel(user: AuthenticatedUser, dto: SetReorderLevelDto) {
@@ -601,7 +672,7 @@ export class InventoryService {
     return rows.reduce((sum, row) => sum + Number(row[key] ?? 0), 0);
   }
 
-  private async writeAudit(user: AuthenticatedUser, action: "CREATE" | "TRANSFER" | "APPROVE" | "REJECT", entityType: string, entityId: string, summary: string, context: RequestContext, scope: { branchId?: string; warehouseId?: string }) {
+  private async writeAudit(user: AuthenticatedUser, action: "CREATE" | "UPDATE" | "DELETE" | "TRANSFER" | "APPROVE" | "REJECT", entityType: string, entityId: string, summary: string, context: RequestContext, scope: { branchId?: string; warehouseId?: string }) {
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action, entityType, entityId, summary, branchId: scope.branchId, warehouseId: scope.warehouseId, ipAddress: context.ipAddress, userAgent: context.userAgent });
   }
 }

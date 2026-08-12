@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Ip, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Headers, Ip, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { AuthenticatedUser, PERMISSIONS } from "@jokas/shared";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { RequirePermissions } from "../../common/decorators/permissions.decorator";
@@ -21,7 +21,10 @@ import {
   CreateSupplierPaymentDto,
   FinanceQueryDto,
   GenerateReportDto,
-  RejectExpenseDto
+  RejectExpenseDto,
+  UpdateAccountDto,
+  UpdateBankAccountDto,
+  UpdateExpenseCategoryDto
 } from "./dto/finance.dto";
 import { FinanceService } from "./finance.service";
 
@@ -64,6 +67,18 @@ export class FinanceController {
     return this.financeService.createAccount(user, dto, { ipAddress, userAgent });
   }
 
+  @Patch("accounts/:id")
+  @RequirePermissions(PERMISSIONS.FINANCE_MANAGE)
+  updateAccount(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateAccountDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.financeService.updateAccount(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Delete("accounts/:id")
+  @RequirePermissions(PERMISSIONS.FINANCE_MANAGE)
+  deleteAccount(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.financeService.deleteAccount(user, id, { ipAddress, userAgent });
+  }
+
   // ─── Expense Categories ────────────────────────────────────────────────────
 
   @Get("expense-categories")
@@ -78,6 +93,18 @@ export class FinanceController {
     return this.financeService.createExpenseCategory(user, dto, { ipAddress, userAgent });
   }
 
+  @Patch("expense-categories/:id")
+  @RequirePermissions(PERMISSIONS.FINANCE_MANAGE)
+  updateExpenseCategory(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateExpenseCategoryDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.financeService.updateExpenseCategory(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Delete("expense-categories/:id")
+  @RequirePermissions(PERMISSIONS.FINANCE_MANAGE)
+  deleteExpenseCategory(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.financeService.deleteExpenseCategory(user, id, { ipAddress, userAgent });
+  }
+
   // ─── Bank Accounts ─────────────────────────────────────────────────────────
 
   @Get("bank-accounts")
@@ -90,6 +117,18 @@ export class FinanceController {
   @RequirePermissions(PERMISSIONS.FINANCE_MANAGE)
   createBankAccount(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateBankAccountDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.financeService.createBankAccount(user, dto, { ipAddress, userAgent });
+  }
+
+  @Patch("bank-accounts/:id")
+  @RequirePermissions(PERMISSIONS.FINANCE_MANAGE)
+  updateBankAccount(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateBankAccountDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.financeService.updateBankAccount(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Delete("bank-accounts/:id")
+  @RequirePermissions(PERMISSIONS.FINANCE_MANAGE)
+  deleteBankAccount(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.financeService.deleteBankAccount(user, id, { ipAddress, userAgent });
   }
 
   // ─── Expenses ──────────────────────────────────────────────────────────────
