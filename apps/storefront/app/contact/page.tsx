@@ -217,10 +217,11 @@ export default function ContactPage() {
                     )}
                     <div className="grid gap-4 sm:grid-cols-2">
                       <div>
-                        <label className="mb-2 block text-xs font-semibold text-white/50">
+                        <label htmlFor="contact-name" className="mb-2 block text-xs font-semibold text-white/50">
                           Full Name <span className="text-brand">*</span>
                         </label>
                         <input
+                          id="contact-name"
                           required type="text"
                           value={form.name}
                           onChange={(e) => field("name", e.target.value)}
@@ -231,10 +232,11 @@ export default function ContactPage() {
                         />
                       </div>
                       <div>
-                        <label className="mb-2 block text-xs font-semibold text-white/50">
+                        <label htmlFor="contact-phone" className="mb-2 block text-xs font-semibold text-white/50">
                           Phone Number <span className="text-brand">*</span>
                         </label>
                         <input
+                          id="contact-phone"
                           required type="tel"
                           value={form.phone}
                           onChange={(e) => field("phone", e.target.value)}
@@ -246,10 +248,11 @@ export default function ContactPage() {
                       </div>
                     </div>
                     <div>
-                      <label className="mb-2 block text-xs font-semibold text-white/50">
+                      <label htmlFor="contact-subject" className="mb-2 block text-xs font-semibold text-white/50">
                         Subject
                       </label>
                       <input
+                        id="contact-subject"
                         type="text"
                         value={form.subject}
                         onChange={(e) => field("subject", e.target.value)}
@@ -260,10 +263,11 @@ export default function ContactPage() {
                       />
                     </div>
                     <div>
-                      <label className="mb-2 block text-xs font-semibold text-white/50">
+                      <label htmlFor="contact-message" className="mb-2 block text-xs font-semibold text-white/50">
                         Message <span className="text-brand">*</span>
                       </label>
                       <textarea
+                        id="contact-message"
                         required rows={5}
                         value={form.message}
                         onChange={(e) => field("message", e.target.value)}
