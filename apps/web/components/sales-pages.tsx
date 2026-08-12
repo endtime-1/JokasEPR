@@ -5,12 +5,12 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   AlertTriangle, ArrowUpRight, ChartBar, CircleCheck, ChevronRight,
-  Clock, DollarSign, Download, FileText, Package, Plus,
-  RefreshCw, ShoppingCart, TrendingUp, Users, Wallet,
+  Clock, DollarSign, Download, FileText, Package, Pencil, Plus,
+  RefreshCw, ShoppingCart, Trash2, TrendingUp, Users, Wallet,
 } from "lucide-react";
-import { ApiEnvelope, apiFetch, downloadReport, getCached, getCachedFirst, hasCached } from "../lib/api";
+import { ApiEnvelope, apiFetch, downloadReport, getCached, getCachedFirst, hasCached, invalidateCache } from "../lib/api";
 import { DataTable } from "./data-table";
-import { EmptyState, StatusBadge } from "./ui";
+import { ConfirmModal, EmptyState, Modal, StatusBadge } from "./ui";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -76,6 +76,7 @@ function KpiCard({ label, value, Icon, color, sub }: { label: string; value: str
 const salesNavLinks = [
   { href: "/sales",               label: "Dashboard" },
   { href: "/sales/customers",     label: "Customers" },
+  { href: "/sales/customer-groups", label: "Customer Groups" },
   { href: "/sales/orders",        label: "Orders" },
   { href: "/sales/invoices",      label: "Invoices" },
   { href: "/sales/payments",      label: "Payments" },
@@ -481,10 +482,13 @@ export function SalesDashboardPage() {
 // ─── Customers ────────────────────────────────────────────────────────────────
 
 type Customer = {
-  id: string; code: string; name: string; phone?: string; email?: string; status: string;
+  id: string; code: string; name: string; phone?: string; email?: string; address?: string; status: string;
+  branchId?: string; customerGroupId?: string;
   branch?: { name: string }; customerGroup?: { name: string };
   creditLimits?: Array<{ creditLimit: number; currentBalance: number }>;
 };
+
+const CUSTOMER_STATUSES = ["ACTIVE", "ON_HOLD", "INACTIVE"];
 
 export function CustomersPage({ create = false }: { create?: boolean }) {
   const { opts, optionsError } = useSalesOptions();
@@ -496,6 +500,14 @@ export function CustomersPage({ create = false }: { create?: boolean }) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(!hasCached("/sales/customers"));
 
+  const [editRow, setEditRow] = useState<Customer | null>(null);
+  const [editForm, setEditForm] = useState({ branchId: "", customerGroupId: "", name: "", phone: "", email: "", address: "", status: "ACTIVE" });
+  const [editError, setEditError] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deleteRow, setDeleteRow] = useState<Customer | null>(null);
+  const [deleteError, setDeleteError] = useState("");
+  const [deleting, setDeleting] = useState(false);
+
   async function load() {
     const p = new URLSearchParams();
     if (search) p.set("search", search);
@@ -505,6 +517,57 @@ export function CustomersPage({ create = false }: { create?: boolean }) {
   useEffect(() => { void load(); }, [search]);
 
   const f = (k: string) => (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm((p) => ({ ...p, [k]: e.target.value }));
+  const ef = (k: string) => (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setEditForm((p) => ({ ...p, [k]: e.target.value }));
+
+  function openEdit(row: Customer) {
+    setEditError("");
+    setEditRow(row);
+    setEditForm({
+      branchId: row.branchId ?? "",
+      customerGroupId: row.customerGroupId ?? "",
+      name: row.name ?? "",
+      phone: row.phone ?? "",
+      email: row.email ?? "",
+      address: row.address ?? "",
+      status: row.status ?? "ACTIVE",
+    });
+  }
+
+  async function saveEdit(e: FormEvent) {
+    e.preventDefault();
+    if (!editRow) return;
+    setSavingEdit(true); setEditError("");
+    try {
+      await apiFetch(`/sales/customers/${editRow.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          branchId: editForm.branchId || undefined,
+          customerGroupId: editForm.customerGroupId || undefined,
+          name: editForm.name,
+          phone: editForm.phone || undefined,
+          email: editForm.email || undefined,
+          address: editForm.address || undefined,
+          status: editForm.status,
+        }),
+      });
+      invalidateCache("/sales/customers", true);
+      setEditRow(null);
+      await load();
+    } catch (e2: unknown) { setEditError(e2 instanceof Error ? e2.message : "Failed to save changes."); }
+    finally { setSavingEdit(false); }
+  }
+
+  async function confirmDeleteCustomer() {
+    if (!deleteRow) return;
+    setDeleting(true); setDeleteError("");
+    try {
+      await apiFetch(`/sales/customers/${deleteRow.id}`, { method: "DELETE" });
+      invalidateCache("/sales/customers", true);
+      setDeleteRow(null);
+      await load();
+    } catch (e2: unknown) { setDeleteError(e2 instanceof Error ? e2.message : "Failed to delete customer."); }
+    finally { setDeleting(false); }
+  }
 
   async function submit(e: FormEvent) {
     e.preventDefault(); setSaving(true); setError("");
@@ -583,6 +646,8 @@ export function CustomersPage({ create = false }: { create?: boolean }) {
         </div>
       )}
 
+      {deleteError && <div className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{deleteError}</div>}
+
       <div className="overflow-hidden rounded-2xl border border-line bg-white shadow-card">
         <DataTable
           columns={[
@@ -594,12 +659,63 @@ export function CustomersPage({ create = false }: { create?: boolean }) {
             { key: "email",         label: "Email",   render: (r) => String(r.email ?? "—") },
             { key: "creditLimit",   label: "Credit Limit", render: (r) => { const cl = (r.creditLimits as Array<{ creditLimit: number }> | undefined)?.[0]; return cl ? money(cl.creditLimit) : "—"; } },
             { key: "status",        label: "Status",  render: (r) => <StatusBadge status={r.status as string} /> },
+            { key: "actions",       label: "",        render: (r) => (
+              <div className="flex items-center gap-1">
+                <button type="button" onClick={() => openEdit(r as unknown as Customer)} className="rounded-lg p-1.5 text-ink/50 transition hover:bg-field hover:text-brand" title="Edit customer">
+                  <Pencil className="h-4 w-4" />
+                </button>
+                <button type="button" onClick={() => { setDeleteError(""); setDeleteRow(r as unknown as Customer); }} className="rounded-lg p-1.5 text-ink/50 transition hover:bg-red-50 hover:text-red-600" title="Delete customer">
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            ) },
           ]}
           rows={rows as Record<string, unknown>[]}
           empty="No customers yet"
           loading={loading}
         />
       </div>
+
+      <Modal open={!!editRow} onClose={() => setEditRow(null)} title="Edit Customer">
+        {editError && <div className="mb-4 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{editError}</div>}
+        <form onSubmit={saveEdit} className="grid gap-4 sm:grid-cols-2">
+          <div><FormLabel>Branch</FormLabel>
+            <select value={editForm.branchId} onChange={ef("branchId")} className={inputCls}>
+              <option value="">— Keep current —</option>
+              {opts.branches.map((b) => <option key={b.id} value={b.id}>{b.code} {b.name}</option>)}
+            </select>
+          </div>
+          <div><FormLabel>Customer Group</FormLabel>
+            <select value={editForm.customerGroupId} onChange={ef("customerGroupId")} className={inputCls}>
+              <option value="">— None —</option>
+              {opts.customerGroups.map((g) => <option key={g.id} value={g.id}>{g.code} {g.name}</option>)}
+            </select>
+          </div>
+          <div><FormLabel>Name *</FormLabel><input required value={editForm.name} onChange={ef("name")} className={inputCls} /></div>
+          <div><FormLabel>Phone</FormLabel><input value={editForm.phone} onChange={ef("phone")} className={inputCls} /></div>
+          <div><FormLabel>Email</FormLabel><input type="email" value={editForm.email} onChange={ef("email")} className={inputCls} /></div>
+          <div><FormLabel>Status</FormLabel>
+            <select value={editForm.status} onChange={ef("status")} className={inputCls}>
+              {CUSTOMER_STATUSES.map((s) => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
+            </select>
+          </div>
+          <div className="sm:col-span-2"><FormLabel>Address</FormLabel><input value={editForm.address} onChange={ef("address")} className={inputCls} /></div>
+          <div className="flex justify-end gap-3 sm:col-span-2">
+            <button type="button" onClick={() => setEditRow(null)} className="app-button-secondary" disabled={savingEdit}>Cancel</button>
+            <button type="submit" disabled={savingEdit} className="app-button-primary disabled:opacity-50">{savingEdit ? "Saving…" : "Save Changes"}</button>
+          </div>
+        </form>
+      </Modal>
+
+      <ConfirmModal
+        open={!!deleteRow}
+        onClose={() => setDeleteRow(null)}
+        onConfirm={confirmDeleteCustomer}
+        loading={deleting}
+        title="Delete customer?"
+        message={`This will permanently remove "${deleteRow?.name}" (${deleteRow?.code}). This can't be undone.`}
+        confirmLabel="Delete customer"
+      />
     </>
   );
 }
@@ -1472,7 +1588,16 @@ export function PriceListsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
+  const [editRow, setEditRow] = useState<Record<string, unknown> | null>(null);
+  const [editForm, setEditForm] = useState({ productId: "", customerGroupId: "", branchId: "", name: "", unitPrice: "", validFrom: "", validTo: "" });
+  const [editError, setEditError] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deleteRow, setDeleteRow] = useState<Record<string, unknown> | null>(null);
+  const [deleteError, setDeleteError] = useState("");
+  const [deleting, setDeleting] = useState(false);
+
   const f = (k: string) => (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm((p) => ({ ...p, [k]: e.target.value }));
+  const ef = (k: string) => (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setEditForm((p) => ({ ...p, [k]: e.target.value }));
 
   function load() {
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/sales/price-lists")
@@ -1494,6 +1619,56 @@ export function PriceListsPage() {
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to create price list.");
     } finally { setSubmitting(false); }
+  }
+
+  function openEdit(row: Record<string, unknown>) {
+    setEditError("");
+    setEditRow(row);
+    setEditForm({
+      productId: String(row.productId ?? ""),
+      customerGroupId: String(row.customerGroupId ?? ""),
+      branchId: String(row.branchId ?? ""),
+      name: String(row.name ?? ""),
+      unitPrice: String(row.unitPrice ?? ""),
+      validFrom: row.validFrom ? String(row.validFrom).slice(0, 10) : "",
+      validTo: row.validTo ? String(row.validTo).slice(0, 10) : "",
+    });
+  }
+
+  async function saveEdit(e: FormEvent) {
+    e.preventDefault();
+    if (!editRow) return;
+    setSavingEdit(true); setEditError("");
+    try {
+      await apiFetch(`/sales/price-lists/${editRow.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          productId: editForm.productId || undefined,
+          customerGroupId: editForm.customerGroupId || undefined,
+          branchId: editForm.branchId || undefined,
+          name: editForm.name,
+          unitPrice: editForm.unitPrice ? Number(editForm.unitPrice) : undefined,
+          validFrom: editForm.validFrom || undefined,
+          validTo: editForm.validTo || undefined,
+        }),
+      });
+      invalidateCache("/sales/price-lists", true);
+      setEditRow(null);
+      load();
+    } catch (err: unknown) { setEditError(err instanceof Error ? err.message : "Failed to save changes."); }
+    finally { setSavingEdit(false); }
+  }
+
+  async function confirmDeletePriceList() {
+    if (!deleteRow) return;
+    setDeleting(true); setDeleteError("");
+    try {
+      await apiFetch(`/sales/price-lists/${deleteRow.id}`, { method: "DELETE" });
+      invalidateCache("/sales/price-lists", true);
+      setDeleteRow(null);
+      load();
+    } catch (err: unknown) { setDeleteError(err instanceof Error ? err.message : "Failed to delete price list."); }
+    finally { setDeleting(false); }
   }
 
   const selectCls = "min-h-10 w-full rounded-md border border-line bg-white px-3 text-sm outline-none focus:border-brand";
@@ -1553,6 +1728,8 @@ export function PriceListsPage() {
           </div>
         </form>
       )}
+      {deleteError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{deleteError}</p>}
+
       <DataTable
         columns={[
           { key: "name", label: "Name" },
@@ -1563,10 +1740,268 @@ export function PriceListsPage() {
           { key: "validFrom", label: "Valid From", render: (r) => fmt(r.validFrom as string) },
           { key: "validTo", label: "Valid To", render: (r) => r.validTo ? fmt(r.validTo as string) : "No expiry" },
           { key: "status", label: "Status" },
+          { key: "actions", label: "", render: (r) => (
+            <div className="flex items-center gap-1">
+              <button type="button" onClick={() => openEdit(r)} className="rounded-lg p-1.5 text-ink/50 transition hover:bg-field hover:text-brand" title="Edit price list">
+                <Pencil className="h-4 w-4" />
+              </button>
+              <button type="button" onClick={() => { setDeleteError(""); setDeleteRow(r); }} className="rounded-lg p-1.5 text-ink/50 transition hover:bg-red-50 hover:text-red-600" title="Delete price list">
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          ) },
         ]}
         rows={rows}
         loading={loading}
         empty="No price lists configured. Click 'New Price' to create one."
+      />
+
+      <Modal open={!!editRow} onClose={() => setEditRow(null)} title="Edit Price List">
+        {editError && <p className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{editError}</p>}
+        <form onSubmit={saveEdit} className="grid gap-4 md:grid-cols-2">
+          <div>
+            <label className="mb-1 block text-xs font-bold text-ink/60">Product *</label>
+            <select value={editForm.productId} onChange={ef("productId")} className={selectCls} required>
+              <option value="">— select product —</option>
+              {opts.products.map((p) => <option key={p.id} value={p.id}>{p.sku ?? p.code} — {p.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-bold text-ink/60">Price list name *</label>
+            <input value={editForm.name} onChange={ef("name")} className={inputCls} required />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-bold text-ink/60">Unit price (GHS) *</label>
+            <input type="number" step="0.01" min="0" value={editForm.unitPrice} onChange={ef("unitPrice")} className={inputCls} required />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-bold text-ink/60">Customer group</label>
+            <select value={editForm.customerGroupId} onChange={ef("customerGroupId")} className={selectCls}>
+              <option value="">All customer groups</option>
+              {opts.customerGroups.map((g) => <option key={g.id} value={g.id}>{g.code} — {g.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-bold text-ink/60">Branch</label>
+            <select value={editForm.branchId} onChange={ef("branchId")} className={selectCls}>
+              <option value="">All branches</option>
+              {opts.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-bold text-ink/60">Valid from</label>
+            <input type="date" value={editForm.validFrom} onChange={ef("validFrom")} className={inputCls} />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-bold text-ink/60">Valid to (leave blank = no expiry)</label>
+            <input type="date" value={editForm.validTo} onChange={ef("validTo")} className={inputCls} />
+          </div>
+          <div className="flex justify-end gap-3 md:col-span-2">
+            <button type="button" onClick={() => setEditRow(null)} className="app-button-secondary" disabled={savingEdit}>Cancel</button>
+            <button type="submit" disabled={savingEdit} className="app-button-primary disabled:opacity-50">{savingEdit ? "Saving…" : "Save Changes"}</button>
+          </div>
+        </form>
+      </Modal>
+
+      <ConfirmModal
+        open={!!deleteRow}
+        onClose={() => setDeleteRow(null)}
+        onConfirm={confirmDeletePriceList}
+        loading={deleting}
+        title="Delete price list?"
+        message={`This will permanently remove "${deleteRow?.name}". This can't be undone.`}
+        confirmLabel="Delete price list"
+      />
+    </>
+  );
+}
+
+// ─── Customer Groups ────────────────────────────────────────────────────────
+
+type CustomerGroup = {
+  id: string; code: string; name: string; description?: string; branchId?: string;
+  branch?: { name: string }; customers?: unknown[]; status?: string;
+};
+
+export function CustomerGroupsPage() {
+  const { opts } = useSalesOptions();
+  const [rows, setRows] = useState<CustomerGroup[]>(() => getCachedFirst<ApiEnvelope<CustomerGroup[]>>("/sales/customer-groups")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/sales/customer-groups"));
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ branchId: "", code: "", name: "", description: "" });
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  const [editRow, setEditRow] = useState<CustomerGroup | null>(null);
+  const [editForm, setEditForm] = useState({ branchId: "", name: "", description: "" });
+  const [editError, setEditError] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deleteRow, setDeleteRow] = useState<CustomerGroup | null>(null);
+  const [deleteError, setDeleteError] = useState("");
+  const [deleting, setDeleting] = useState(false);
+
+  const f = (k: string) => (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm((p) => ({ ...p, [k]: e.target.value }));
+  const ef = (k: string) => (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setEditForm((p) => ({ ...p, [k]: e.target.value }));
+
+  function load() {
+    apiFetch<ApiEnvelope<CustomerGroup[]>>("/sales/customer-groups")
+      .then((r) => { const d = r.data ?? []; setRows((prev) => d.length === 0 && prev.length > 0 ? prev : d); })
+      .catch(() => undefined)
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(() => { load(); }, []);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setError(""); setSubmitting(true);
+    try {
+      await apiFetch("/sales/customer-groups", {
+        method: "POST",
+        body: JSON.stringify({ branchId: form.branchId || opts.branches[0]?.id, code: form.code, name: form.name, description: form.description || undefined }),
+      });
+      setForm({ branchId: "", code: "", name: "", description: "" });
+      setShowForm(false);
+      load();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to create customer group.");
+    } finally { setSubmitting(false); }
+  }
+
+  function openEdit(row: CustomerGroup) {
+    setEditError("");
+    setEditRow(row);
+    setEditForm({ branchId: row.branchId ?? "", name: row.name ?? "", description: row.description ?? "" });
+  }
+
+  async function saveEdit(e: FormEvent) {
+    e.preventDefault();
+    if (!editRow) return;
+    setSavingEdit(true); setEditError("");
+    try {
+      await apiFetch(`/sales/customer-groups/${editRow.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ branchId: editForm.branchId || undefined, name: editForm.name, description: editForm.description || undefined }),
+      });
+      invalidateCache("/sales/customer-groups", true);
+      setEditRow(null);
+      load();
+    } catch (err: unknown) { setEditError(err instanceof Error ? err.message : "Failed to save changes."); }
+    finally { setSavingEdit(false); }
+  }
+
+  async function confirmDeleteGroup() {
+    if (!deleteRow) return;
+    setDeleting(true); setDeleteError("");
+    try {
+      await apiFetch(`/sales/customer-groups/${deleteRow.id}`, { method: "DELETE" });
+      invalidateCache("/sales/customer-groups", true);
+      setDeleteRow(null);
+      load();
+    } catch (err: unknown) { setDeleteError(err instanceof Error ? err.message : "Failed to delete customer group."); }
+    finally { setDeleting(false); }
+  }
+
+  const selectCls = "min-h-10 w-full rounded-md border border-line bg-white px-3 text-sm outline-none focus:border-brand";
+  const groupInputCls = "min-h-10 w-full rounded-md border border-line bg-white px-3 text-sm outline-none focus:border-brand";
+
+  return (
+    <>
+      <PageHero
+        kicker="Sales"
+        title="Customer Groups"
+        subtitle="Segment customers for pricing tiers, discounts, and reporting."
+        actions={<button onClick={() => setShowForm((v) => !v)} className="app-button-primary"><Users className="h-4 w-4" /> {showForm ? "Cancel" : "New Group"}</button>}
+      />
+      <SalesNav />
+
+      {showForm && (
+        <form onSubmit={submit} className="mb-6 grid gap-4 rounded-xl border border-line bg-white p-5 shadow-panel md:grid-cols-3">
+          <div>
+            <label className="mb-1 block text-xs font-bold text-ink/60">Branch *</label>
+            <select value={form.branchId || opts.branches[0]?.id || ""} onChange={f("branchId")} className={selectCls} required>
+              {opts.branches.map((b) => <option key={b.id} value={b.id}>{b.code} {b.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-bold text-ink/60">Code *</label>
+            <input value={form.code} onChange={f("code")} className={groupInputCls} placeholder="e.g. WHOLESALE" required />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-bold text-ink/60">Name *</label>
+            <input value={form.name} onChange={f("name")} className={groupInputCls} placeholder="e.g. Wholesale Buyers" required />
+          </div>
+          <div className="md:col-span-3">
+            <label className="mb-1 block text-xs font-bold text-ink/60">Description</label>
+            <input value={form.description} onChange={f("description")} className={groupInputCls} />
+          </div>
+          {error && <p className="col-span-full text-sm text-red-600">{error}</p>}
+          <div className="col-span-full flex gap-3">
+            <button type="submit" disabled={submitting} className="app-button-primary disabled:opacity-50">{submitting ? "Saving…" : "Create group"}</button>
+            <button type="button" onClick={() => setShowForm(false)} className="app-button-secondary">Cancel</button>
+          </div>
+        </form>
+      )}
+
+      {deleteError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{deleteError}</p>}
+
+      <DataTable
+        columns={[
+          { key: "code", label: "Code" },
+          { key: "name", label: "Name" },
+          { key: "description", label: "Description", render: (r) => String(r.description ?? "—") },
+          { key: "branch", label: "Branch", render: (r) => { const b = r.branch as Record<string, unknown>; return (b?.name as string) ?? "All"; } },
+          { key: "customers", label: "Customers", render: (r) => String((r.customers as unknown[] | undefined)?.length ?? 0) },
+          { key: "status", label: "Status" },
+          { key: "actions", label: "", render: (r) => (
+            <div className="flex items-center gap-1">
+              <button type="button" onClick={() => openEdit(r as unknown as CustomerGroup)} className="rounded-lg p-1.5 text-ink/50 transition hover:bg-field hover:text-brand" title="Edit customer group">
+                <Pencil className="h-4 w-4" />
+              </button>
+              <button type="button" onClick={() => { setDeleteError(""); setDeleteRow(r as unknown as CustomerGroup); }} className="rounded-lg p-1.5 text-ink/50 transition hover:bg-red-50 hover:text-red-600" title="Delete customer group">
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          ) },
+        ]}
+        rows={rows as unknown as Record<string, unknown>[]}
+        loading={loading}
+        empty="No customer groups configured. Click 'New Group' to create one."
+      />
+
+      <Modal open={!!editRow} onClose={() => setEditRow(null)} title="Edit Customer Group">
+        {editError && <p className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{editError}</p>}
+        <form onSubmit={saveEdit} className="grid gap-4">
+          <div>
+            <label className="mb-1 block text-xs font-bold text-ink/60">Branch</label>
+            <select value={editForm.branchId} onChange={ef("branchId")} className={selectCls}>
+              <option value="">— Keep current —</option>
+              {opts.branches.map((b) => <option key={b.id} value={b.id}>{b.code} {b.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-bold text-ink/60">Name *</label>
+            <input value={editForm.name} onChange={ef("name")} className={groupInputCls} required />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-bold text-ink/60">Description</label>
+            <input value={editForm.description} onChange={ef("description")} className={groupInputCls} />
+          </div>
+          <div className="flex justify-end gap-3">
+            <button type="button" onClick={() => setEditRow(null)} className="app-button-secondary" disabled={savingEdit}>Cancel</button>
+            <button type="submit" disabled={savingEdit} className="app-button-primary disabled:opacity-50">{savingEdit ? "Saving…" : "Save Changes"}</button>
+          </div>
+        </form>
+      </Modal>
+
+      <ConfirmModal
+        open={!!deleteRow}
+        onClose={() => setDeleteRow(null)}
+        onConfirm={confirmDeleteGroup}
+        loading={deleting}
+        title="Delete customer group?"
+        message={`This will permanently remove "${deleteRow?.name}" (${deleteRow?.code}). This can't be undone.`}
+        confirmLabel="Delete customer group"
       />
     </>
   );
