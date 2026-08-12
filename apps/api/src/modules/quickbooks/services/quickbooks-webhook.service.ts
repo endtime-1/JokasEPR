@@ -1,7 +1,7 @@
 import { ForbiddenException, Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { QBWebhookStatus } from "@prisma/client";
-import { createHmac } from "crypto";
+import { createHmac, timingSafeEqual } from "crypto";
 import { PrismaService } from "../../prisma/prisma.service";
 
 interface QBWebhookPayload {
@@ -35,7 +35,18 @@ export class QuickBooksWebhookService {
       throw new ForbiddenException("Webhook verification is not configured on this server.");
     }
     const hash = createHmac("sha256", verifierToken).update(rawBody).digest("base64");
-    if (hash !== signature) throw new ForbiddenException("Invalid webhook signature");
+    // H-BACK-9: `!==` on the raw strings short-circuits at the first mismatched
+    // character, so how long a match runs before failing leaks (in principle)
+    // through response timing. timingSafeEqual compares in constant time for
+    // its actual comparison — but itself throws if the two buffers differ in
+    // length, which would leak length via which code path threw. Comparing
+    // length first and only running timingSafeEqual when they match avoids
+    // that: an attacker learns "wrong length" only as fast as "right length,
+    // wrong content", both handled by the same rejection.
+    const hashBuf = Buffer.from(hash, "utf8");
+    const sigBuf = Buffer.from(signature ?? "", "utf8");
+    const valid = hashBuf.length === sigBuf.length && timingSafeEqual(hashBuf, sigBuf);
+    if (!valid) throw new ForbiddenException("Invalid webhook signature");
   }
 
   async processPayload(rawBody: Buffer, signature: string): Promise<void> {
