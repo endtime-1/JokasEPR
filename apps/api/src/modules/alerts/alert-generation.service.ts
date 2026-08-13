@@ -171,7 +171,7 @@ export class AlertGenerationService {
   private async forecastFeedDemand(companyId: string, out: RawForecast[]) {
     const since14 = new Date(Date.now() - 14 * 86400000);
     const totals = await this.prisma.feedConsumptionRecord.aggregate({
-      where: { companyId, recordDate: { gte: since14 } },
+      where: { companyId, deletedAt: null, recordDate: { gte: since14 } },
       _sum: { quantityKg: true },
       _count: { id: true }
     });
@@ -194,7 +194,7 @@ export class AlertGenerationService {
   private async forecastSales(companyId: string, out: RawForecast[]) {
     const since30 = new Date(Date.now() - 30 * 86400000);
     const result = await this.prisma.invoice.aggregate({
-      where: { companyId, invoiceDate: { gte: since30 }, status: { notIn: ["VOID", "DRAFT"] } },
+      where: { companyId, deletedAt: null, invoiceDate: { gte: since30 }, status: { notIn: ["VOID", "DRAFT"] } },
       _sum: { totalAmount: true },
       _count: { id: true }
     });
@@ -219,7 +219,7 @@ export class AlertGenerationService {
     const since21 = new Date(Date.now() - 21 * 86400000);
     const regulars = await this.prisma.invoice.groupBy({
       by: ["customerId"],
-      where: { companyId, invoiceDate: { gte: since90 }, status: { notIn: ["VOID", "DRAFT"] } },
+      where: { companyId, deletedAt: null, invoiceDate: { gte: since90 }, status: { notIn: ["VOID", "DRAFT"] } },
       _count: { id: true },
       having: { id: { _count: { gte: 2 } } },
       orderBy: { _count: { id: "desc" } },
@@ -230,13 +230,13 @@ export class AlertGenerationService {
 
     const recent = await this.prisma.invoice.groupBy({
       by: ["customerId"],
-      where: { companyId, customerId: { in: customerIds }, invoiceDate: { gte: since21 }, status: { notIn: ["VOID", "DRAFT"] } },
+      where: { companyId, deletedAt: null, customerId: { in: customerIds }, invoiceDate: { gte: since21 }, status: { notIn: ["VOID", "DRAFT"] } },
       _count: { id: true }
     });
     const recentIds = new Set(recent.map((r) => r.customerId));
     const candidates = customerIds.filter((id) => !recentIds.has(id)).slice(0, 10);
     const customers = await this.prisma.customer.findMany({
-      where: { companyId, id: { in: candidates } },
+      where: { companyId, deletedAt: null, id: { in: candidates } },
       select: { id: true, name: true }
     });
 
@@ -272,6 +272,7 @@ export class AlertGenerationService {
       by: ["inventoryItemId"],
       where: {
         companyId,
+        deletedAt: null,
         inventoryItemId: { in: itemIds },
         createdAt: { gte: since30 },
         movementType: { in: ["SALE_DISPATCH", "PRODUCTION_INPUT", "TRANSFER", "ADJUSTMENT_OUT", "WASTE"] }
@@ -372,7 +373,7 @@ export class AlertGenerationService {
     // last 14 records without re-introducing per-flock queries.
     const since = new Date(Date.now() - 60 * 86400000);
     const allRecords = await this.prisma.mortalityRecord.findMany({
-      where: { companyId, flockBatchId: { in: flocks.map((f) => f.id) }, isCulling: false, recordDate: { gte: since } },
+      where: { companyId, deletedAt: null, flockBatchId: { in: flocks.map((f) => f.id) }, isCulling: false, recordDate: { gte: since } },
       orderBy: { recordDate: "desc" },
       select: { flockBatchId: true, birdCount: true }
     });
@@ -421,7 +422,7 @@ export class AlertGenerationService {
     // M4: batched in one round trip instead of one query per flock — see mortalityAnomaly above.
     const since = new Date(Date.now() - 60 * 86400000);
     const allRecords = await this.prisma.eggProductionRecord.findMany({
-      where: { companyId, flockBatchId: { in: flocks.map((f) => f.id) }, recordDate: { gte: since } },
+      where: { companyId, deletedAt: null, flockBatchId: { in: flocks.map((f) => f.id) }, recordDate: { gte: since } },
       orderBy: { recordDate: "desc" },
       select: { flockBatchId: true, goodEggs: true }
     });
@@ -469,7 +470,7 @@ export class AlertGenerationService {
     // M4: batched in one round trip instead of one query per flock — see mortalityAnomaly above.
     const since = new Date(Date.now() - 60 * 86400000);
     const allRecords = await this.prisma.feedConsumptionRecord.findMany({
-      where: { companyId, flockBatchId: { in: flocks.map((f) => f.id) }, recordDate: { gte: since } },
+      where: { companyId, deletedAt: null, flockBatchId: { in: flocks.map((f) => f.id) }, recordDate: { gte: since } },
       orderBy: { recordDate: "desc" },
       select: { flockBatchId: true, quantityKg: true }
     });
@@ -578,7 +579,7 @@ export class AlertGenerationService {
   private async feedDemandForecast(companyId: string, out: RawAlert[]) {
     const since14 = new Date(Date.now() - 14 * 86400000);
     const totals = await this.prisma.feedConsumptionRecord.aggregate({
-      where: { companyId, recordDate: { gte: since14 } },
+      where: { companyId, deletedAt: null, recordDate: { gte: since14 } },
       _sum: { quantityKg: true },
       _count: { id: true }
     });
@@ -617,11 +618,11 @@ export class AlertGenerationService {
 
     const [older, recent] = await Promise.all([
       this.prisma.invoice.aggregate({
-        where: { companyId, invoiceDate: { gte: since90, lt: since60 }, status: { notIn: ["VOID", "DRAFT"] } },
+        where: { companyId, deletedAt: null, invoiceDate: { gte: since90, lt: since60 }, status: { notIn: ["VOID", "DRAFT"] } },
         _sum: { totalAmount: true }
       }),
       this.prisma.invoice.aggregate({
-        where: { companyId, invoiceDate: { gte: since30 }, status: { notIn: ["VOID", "DRAFT"] } },
+        where: { companyId, deletedAt: null, invoiceDate: { gte: since30 }, status: { notIn: ["VOID", "DRAFT"] } },
         _sum: { totalAmount: true }
       })
     ]);
@@ -653,7 +654,7 @@ export class AlertGenerationService {
 
     const regulars = await this.prisma.invoice.groupBy({
       by: ["customerId"],
-      where: { companyId, invoiceDate: { gte: since90 }, status: { notIn: ["VOID", "DRAFT"] } },
+      where: { companyId, deletedAt: null, invoiceDate: { gte: since90 }, status: { notIn: ["VOID", "DRAFT"] } },
       _count: { id: true },
       having: { id: { _count: { gte: 2 } } }
     });
@@ -663,7 +664,7 @@ export class AlertGenerationService {
 
     const recent = await this.prisma.invoice.groupBy({
       by: ["customerId"],
-      where: { companyId, customerId: { in: regularIds }, invoiceDate: { gte: since45 }, status: { notIn: ["VOID", "DRAFT"] } },
+      where: { companyId, deletedAt: null, customerId: { in: regularIds }, invoiceDate: { gte: since45 }, status: { notIn: ["VOID", "DRAFT"] } },
       _max: { invoiceDate: true }
     });
     const recentMap = new Map(recent.map((r) => [r.customerId, r._max.invoiceDate]));
@@ -672,7 +673,7 @@ export class AlertGenerationService {
     if (!overdue.length) return;
 
     const customers = await this.prisma.customer.findMany({
-      where: { id: { in: overdue.slice(0, 5) } },
+      where: { companyId, deletedAt: null, id: { in: overdue.slice(0, 5) } },
       select: { id: true, name: true, branchId: true }
     });
     for (const c of customers) {
@@ -699,13 +700,13 @@ export class AlertGenerationService {
     const [recentLines, olderLines] = await Promise.all([
       this.prisma.salesOrderItem.groupBy({
         by: ["productId"],
-        where: { salesOrder: { companyId, orderDate: { gte: since30 }, status: { not: "CANCELLED" } } },
+        where: { salesOrder: { companyId, deletedAt: null, orderDate: { gte: since30 }, status: { not: "CANCELLED" } } },
         _avg: { unitPrice: true },
         _sum: { quantity: true }
       }),
       this.prisma.salesOrderItem.groupBy({
         by: ["productId"],
-        where: { salesOrder: { companyId, orderDate: { gte: since90, lt: since30 }, status: { not: "CANCELLED" } } },
+        where: { salesOrder: { companyId, deletedAt: null, orderDate: { gte: since90, lt: since30 }, status: { not: "CANCELLED" } } },
         _avg: { unitPrice: true }
       })
     ]);
@@ -719,7 +720,7 @@ export class AlertGenerationService {
       const drop = ((olderPrice - recentPrice) / olderPrice) * 100;
       if (drop >= 15) {
         const product = await this.prisma.product.findFirst({
-          where: { id: line.productId },
+          where: { id: line.productId, companyId, deletedAt: null },
           select: { name: true }
         });
         if (!product) continue;
@@ -741,7 +742,7 @@ export class AlertGenerationService {
   // ── 9. Soya Yield Anomaly ─────────────────────────────────────────────────
   private async soyaYieldAnomaly(companyId: string, out: RawAlert[]) {
     const batches = await this.prisma.soyaProcessingBatch.findMany({
-      where: { companyId, status: { in: ["COMPLETED", "PROCESSING"] } },
+      where: { companyId, deletedAt: null, status: { in: ["COMPLETED", "PROCESSING"] } },
       orderBy: { createdAt: "desc" },
       take: 20,
       select: {
@@ -797,6 +798,7 @@ export class AlertGenerationService {
     const upcoming = await this.prisma.maintenanceSchedule.findMany({
       where: {
         companyId,
+        deletedAt: null,
         status: { in: ["SCHEDULED", "OVERDUE"] },
         nextDueDate: { lte: new Date(Date.now() + 7 * 86400000) }
       },
@@ -867,6 +869,7 @@ export class AlertGenerationService {
     const overduePOs = await this.prisma.purchaseOrder.findMany({
       where: {
         companyId,
+        deletedAt: null,
         status: { in: ["APPROVED", "SENT_TO_SUPPLIER", "PARTIALLY_RECEIVED"] },
         expectedDelivery: { lt: new Date() }
       },
