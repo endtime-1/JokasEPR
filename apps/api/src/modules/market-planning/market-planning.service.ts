@@ -202,6 +202,7 @@ export class MarketPlanningService {
     if (dto.productionSiteId) this.assertProductionSiteAccess(user, dto.productionSiteId);
 
     const targetNumber = await nextRef(this.prisma, user.companyId, "MT");
+    const warnings: string[] = [];
     const items = await Promise.all(
       dto.items.map(async (item) => {
         const product = await this.getProduct(user.companyId, item.productId);
@@ -211,6 +212,18 @@ export class MarketPlanningService {
           : await this.activeFormulaVersion(user.companyId, formula.id);
         const finalTargetQuantity = item.baseQuantity * (1 + (item.adjustmentPercent ?? 0) / 100);
         const bagSizeKg = item.bagSizeKg ?? 50;
+        const targetQuantityKg = finalTargetQuantity * bagSizeKg;
+        // M-BUG (2026-08-13): baseQuantity is silently treated as a BAG
+        // count and multiplied by bagSizeKg — nothing stops someone from
+        // typing a kg figure directly into it, which inflates the computed
+        // target by up to 50x with no warning. Can't reliably tell intent
+        // from the number alone, so this doesn't block the request (a
+        // genuinely large operation may mean it) — it just surfaces a
+        // clear, checkable warning back to the caller instead of staying
+        // silent.
+        if (targetQuantityKg > 100000) {
+          warnings.push(`"${product.name}": ${item.baseQuantity} bags × ${bagSizeKg}kg computes to ${targetQuantityKg.toLocaleString()}kg — please confirm this quantity is really in BAGS, not kg.`);
+        }
         return {
           companyId: user.companyId,
           productId: product.id,
@@ -220,7 +233,7 @@ export class MarketPlanningService {
           adjustmentPercent: item.adjustmentPercent ?? 0,
           finalTargetQuantity,
           bagSizeKg,
-          targetQuantityKg: finalTargetQuantity * bagSizeKg,
+          targetQuantityKg,
           adjustmentReason: item.adjustmentReason,
           demandEstimateNotes: item.demandEstimateNotes,
           createdById: user.id
@@ -250,7 +263,7 @@ export class MarketPlanningService {
       return { ...created, items: createdItems };
     });
     await this.writeAudit(user, "CREATE", "MarketTarget", target.id, `Created market target ${targetNumber}`, context, { branchId: dto.branchId, productionSiteId: dto.productionSiteId });
-    return { data: target };
+    return { data: target, warnings: warnings.length ? warnings : undefined };
   }
 
   async submitTarget(user: AuthenticatedUser, id: string, context: RequestContext) {
@@ -590,8 +603,17 @@ export class MarketPlanningService {
     const recommendations = await this.prisma.$transaction(async (tx) => {
       const created = [];
       for (const item of shortageItems) {
+        // M-BUG (2026-08-13): calculateMrp always creates a brand-new
+        // MaterialRequirementPlan row on every "recalculate" — this dedup
+        // check used to be scoped to materialRequirementPlanId: mrp.id, so
+        // it only ever looked within the CURRENT run, which is always fresh
+        // and therefore never has any recommendations of its own yet.
+        // Recalculating then generating recommendations twice for the same
+        // target created two separate OPEN recommendations for the same
+        // shortage. marketTargetId is the one thing that stays stable
+        // across recalculations, so dedupe against it instead.
         const exists = await tx.procurementRecommendation.findFirst({
-          where: { companyId: user.companyId, materialRequirementPlanId: mrp.id, materialRequirementItemId: item.id, status: "OPEN", deletedAt: null }
+          where: { companyId: user.companyId, marketTargetId: mrp.marketTargetId, rawMaterialId: item.rawMaterialId, status: "OPEN", deletedAt: null }
         });
         if (exists) {
           created.push(exists);
@@ -1200,9 +1222,15 @@ export class MarketPlanningService {
     return new Map(products.map((product) => [product.id, product]));
   }
 
+  // M-BUG (2026-08-13): the ACTIVE-only status check only ever applied when
+  // the system auto-picked a formula (the finishedProductId branch below) —
+  // when a specific formulaId was already attached to a plan item (the
+  // normal case, once a target has been created), its status was never
+  // re-checked, so a discontinued or still-draft formula could still be
+  // used for real production just by referencing its id directly.
   private async resolveFormula(companyId: string, productId: string, formulaId?: string) {
     const formula = await this.prisma.feedFormula.findFirst({
-      where: { companyId, deletedAt: null, ...(formulaId ? { id: formulaId } : { finishedProductId: productId, status: "ACTIVE" }) },
+      where: { companyId, deletedAt: null, status: "ACTIVE", ...(formulaId ? { id: formulaId } : { finishedProductId: productId }) },
       orderBy: { updatedAt: "desc" }
     });
     if (!formula) throw new BadRequestException("An active feed formula is required for each market target product.");
@@ -1211,8 +1239,8 @@ export class MarketPlanningService {
 
   private async getFormulaForExecution(companyId: string, formulaId?: string) {
     if (!formulaId) throw new BadRequestException("Production plan item is missing a feed formula.");
-    const formula = await this.prisma.feedFormula.findFirst({ where: { id: formulaId, companyId, deletedAt: null } });
-    if (!formula) throw new NotFoundException("Feed formula was not found.");
+    const formula = await this.prisma.feedFormula.findFirst({ where: { id: formulaId, companyId, deletedAt: null, status: "ACTIVE" } });
+    if (!formula) throw new NotFoundException("Feed formula was not found, or is no longer active.");
     return formula;
   }
 

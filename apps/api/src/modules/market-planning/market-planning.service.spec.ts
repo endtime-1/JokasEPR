@@ -474,3 +474,153 @@ describe("MarketPlanningService.calculateIngredientNeeds — locked formula vers
     expect(mockPrisma.feedFormulaIngredient.findMany).not.toHaveBeenCalled();
   });
 });
+
+describe("MarketPlanningService.generateProcurementRecommendations — dedupes across recalculations, not just within one MRP run (M-BUG)", () => {
+  const mockTx = {
+    procurementRecommendation: { findFirst: jest.fn(), create: jest.fn() },
+    materialRequirementPlan: { update: jest.fn() }
+  };
+  const mockPrisma = {
+    materialRequirementPlan: { findFirst: jest.fn() },
+    materialRequirementItem: { findMany: jest.fn() },
+    $transaction: jest.fn().mockImplementation((cb: (tx: typeof mockTx) => Promise<unknown>) => cb(mockTx))
+  };
+
+  function makeService() {
+    return new MarketPlanningService(mockPrisma as never, { write: jest.fn() } as never);
+  }
+
+  function makeUser(): AuthenticatedUser {
+    return {
+      id: "user-1", companyId: "company-1", email: "u@x.com", fullName: "U",
+      roles: [], permissions: [], branchIds: [], farmIds: [], warehouseIds: [], productionSiteIds: [],
+      hasGlobalAccess: true,
+      ...({} as Partial<AuthenticatedUser>)
+    };
+  }
+
+  beforeEach(() => jest.clearAllMocks());
+
+  it("reuses an existing OPEN recommendation for the same target+material even though this MRP run is brand new", async () => {
+    // The second "recalculate" always creates a fresh MaterialRequirementPlan row
+    // (mrp-2, different id from the one the earlier recommendation was generated
+    // under) — dedup has to look across the whole market target, not just this run.
+    mockPrisma.materialRequirementPlan.findFirst.mockResolvedValue({ id: "mrp-2", companyId: "company-1", branchId: "branch-1", centralWarehouseId: "wh-1", marketTargetId: "mt-1" });
+    mockPrisma.materialRequirementItem.findMany.mockResolvedValue([{ id: "item-1", rawMaterialId: "prod-maize", shortageQuantityKg: 50, unitCost: 2, estimatedShortageCost: 100 }]);
+    mockTx.procurementRecommendation.findFirst.mockResolvedValue({ id: "rec-existing", marketTargetId: "mt-1", rawMaterialId: "prod-maize", status: "OPEN" });
+
+    const service = makeService();
+    const result = await service.generateProcurementRecommendations(makeUser(), "mrp-2", {} as never, {});
+
+    expect(mockTx.procurementRecommendation.findFirst).toHaveBeenCalledWith({
+      where: { companyId: "company-1", marketTargetId: "mt-1", rawMaterialId: "prod-maize", status: "OPEN", deletedAt: null }
+    });
+    expect(mockTx.procurementRecommendation.create).not.toHaveBeenCalled();
+    expect(result.data).toEqual([{ id: "rec-existing", marketTargetId: "mt-1", rawMaterialId: "prod-maize", status: "OPEN" }]);
+  });
+
+  it("creates a new recommendation when no OPEN one exists yet for this target+material", async () => {
+    mockPrisma.materialRequirementPlan.findFirst.mockResolvedValue({ id: "mrp-1", companyId: "company-1", branchId: "branch-1", centralWarehouseId: "wh-1", marketTargetId: "mt-1" });
+    mockPrisma.materialRequirementItem.findMany.mockResolvedValue([{ id: "item-1", rawMaterialId: "prod-maize", shortageQuantityKg: 50, unitCost: 2, estimatedShortageCost: 100 }]);
+    mockTx.procurementRecommendation.findFirst.mockResolvedValue(null);
+    mockTx.procurementRecommendation.create.mockResolvedValue({ id: "rec-new" });
+
+    const service = makeService();
+    await service.generateProcurementRecommendations(makeUser(), "mrp-1", {} as never, {});
+
+    expect(mockTx.procurementRecommendation.create).toHaveBeenCalled();
+  });
+});
+
+describe("MarketPlanningService — an old/unapproved formula can't be used just by referencing its id directly (M-BUG)", () => {
+  const mockPrisma = { feedFormula: { findFirst: jest.fn() } };
+
+  function makeService() {
+    return new MarketPlanningService(mockPrisma as never, {} as never) as unknown as {
+      resolveFormula: (companyId: string, productId: string, formulaId?: string) => Promise<unknown>;
+      getFormulaForExecution: (companyId: string, formulaId?: string) => Promise<unknown>;
+    };
+  }
+
+  beforeEach(() => jest.clearAllMocks());
+
+  it("resolveFormula requires status ACTIVE even when a formulaId is explicitly given", async () => {
+    mockPrisma.feedFormula.findFirst.mockResolvedValue(null);
+    const service = makeService();
+
+    await expect(service.resolveFormula("company-1", "prod-1", "formula-1")).rejects.toThrow(/active feed formula/);
+    expect(mockPrisma.feedFormula.findFirst).toHaveBeenCalledWith({
+      where: { companyId: "company-1", deletedAt: null, status: "ACTIVE", id: "formula-1" },
+      orderBy: { updatedAt: "desc" }
+    });
+  });
+
+  it("getFormulaForExecution requires status ACTIVE, not just companyId+id", async () => {
+    mockPrisma.feedFormula.findFirst.mockResolvedValue(null);
+    const service = makeService();
+
+    await expect(service.getFormulaForExecution("company-1", "formula-1")).rejects.toThrow(/not found, or is no longer active/);
+    expect(mockPrisma.feedFormula.findFirst).toHaveBeenCalledWith({
+      where: { id: "formula-1", companyId: "company-1", deletedAt: null, status: "ACTIVE" }
+    });
+  });
+});
+
+describe("MarketPlanningService.createTarget — flags a suspiciously large computed quantity instead of staying silent (M-BUG)", () => {
+  const mockTx = {
+    marketTarget: { create: jest.fn() },
+    marketTargetItem: { createMany: jest.fn(), findMany: jest.fn().mockResolvedValue([]) }
+  };
+  const mockPrisma = {
+    product: { findFirst: jest.fn() },
+    feedFormula: { findFirst: jest.fn().mockResolvedValue({ id: "formula-1", targetBatchKg: 100 }) },
+    feedFormulaVersion: { findFirst: jest.fn().mockResolvedValue(null) },
+    $transaction: jest.fn().mockImplementation((cb: (tx: typeof mockTx) => Promise<unknown>) => cb(mockTx))
+  };
+
+  function makeService() {
+    return new MarketPlanningService(mockPrisma as never, { write: jest.fn() } as never);
+  }
+
+  function makeUser(): AuthenticatedUser {
+    return {
+      id: "user-1", companyId: "company-1", email: "u@x.com", fullName: "U",
+      roles: [], permissions: [], branchIds: [], farmIds: [], warehouseIds: [], productionSiteIds: [],
+      hasGlobalAccess: true
+    };
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPrisma.feedFormula.findFirst.mockResolvedValue({ id: "formula-1", targetBatchKg: 100 });
+    mockPrisma.feedFormulaVersion.findFirst.mockResolvedValue(null);
+    mockTx.marketTarget.create.mockResolvedValue({ id: "mt-1", targetNumber: "MT-1" });
+  });
+
+  it("warns when baseQuantity × bagSizeKg produces an implausibly large total (likely kg typed into a bags field)", async () => {
+    mockPrisma.product.findFirst.mockResolvedValue({ id: "prod-1", name: "Broiler Starter", companyId: "company-1" });
+    const service = makeService();
+
+    const result = await service.createTarget(
+      makeUser(),
+      { title: "Q3 Target", period: "Q3", periodStart: "2026-07-01", periodEnd: "2026-09-30", items: [{ productId: "prod-1", baseQuantity: 5000, bagSizeKg: 50 }] } as never,
+      {}
+    );
+
+    expect(result.warnings).toBeDefined();
+    expect(result.warnings?.[0]).toMatch(/confirm this quantity is really in BAGS/);
+  });
+
+  it("does not warn for a plausible bag count", async () => {
+    mockPrisma.product.findFirst.mockResolvedValue({ id: "prod-1", name: "Broiler Starter", companyId: "company-1" });
+    const service = makeService();
+
+    const result = await service.createTarget(
+      makeUser(),
+      { title: "Q3 Target", period: "Q3", periodStart: "2026-07-01", periodEnd: "2026-09-30", items: [{ productId: "prod-1", baseQuantity: 50, bagSizeKg: 50 }] } as never,
+      {}
+    );
+
+    expect(result.warnings).toBeUndefined();
+  });
+});
