@@ -6,7 +6,7 @@ jest.mock("../../common/next-ref", () => ({ nextRef: jest.fn().mockResolvedValue
 
 const mockTx = {
   payment: { create: jest.fn() },
-  invoice: { updateMany: jest.fn(), findUniqueOrThrow: jest.fn(), update: jest.fn(), create: jest.fn() },
+  invoice: { updateMany: jest.fn(), findUniqueOrThrow: jest.fn(), update: jest.fn(), create: jest.fn(), findFirst: jest.fn() },
   salesOrder: { update: jest.fn() },
   deliveryNote: { create: jest.fn() },
   customer: { findUniqueOrThrow: jest.fn() },
@@ -309,6 +309,96 @@ describe("SalesService — sales returns require a second approver (C5)", () => 
         where: { id: "ret-1" },
         data: expect.objectContaining({ status: "POSTED", approvedById: "approver-1" })
       });
+    });
+
+    it("H-HIGH: approving a return tied to a sales order reduces that order's invoice balance too, not just the customer's overall credit", async () => {
+      mockPrisma.salesReturn.findFirst.mockResolvedValue(pendingReturn({ createdById: "creator-1", salesOrderId: "so-1" }));
+      mockTx.inventoryItem.upsert.mockResolvedValue({ id: "inv-item-1" });
+      mockTx.stockBatch.create.mockResolvedValue({});
+      mockTx.stockMovement.create.mockResolvedValue({});
+      mockTx.customerCreditLimit.upsert.mockResolvedValue({ id: "cl-1", companyId: "company-1", currentBalance: 0 });
+      mockTx.customerCreditLimit.update.mockResolvedValue({});
+      mockTx.customerStatement.create.mockResolvedValue({});
+      mockTx.customer.findUniqueOrThrow.mockResolvedValue({ id: "cust-1", companyId: "company-1" });
+      mockTx.salesReturn.update.mockResolvedValue({ id: "ret-1", status: "POSTED" });
+      mockTx.invoice.findFirst.mockResolvedValue({ id: "inv-1", salesOrderId: "so-1", balanceDue: 80 });
+      mockTx.invoice.updateMany.mockResolvedValue({ count: 1 });
+      mockTx.invoice.findUniqueOrThrow.mockResolvedValue({ balanceDue: 30 }); // 80 - 50 (the return's totalAmount)
+
+      const service = makeService();
+      await service.approveReturn(makeUser({ id: "approver-1" }), "ret-1", {});
+
+      expect(mockTx.invoice.findFirst).toHaveBeenCalledWith({ where: { salesOrderId: "so-1", companyId: "company-1", deletedAt: null } });
+      expect(mockTx.invoice.updateMany).toHaveBeenCalledWith({
+        where: { id: "inv-1", balanceDue: { gte: 50 } },
+        data: { balanceDue: { decrement: 50 }, updatedById: "approver-1" }
+      });
+      // Balance is still > 0 after the reduction — status shouldn't be forced to PAID.
+      expect(mockTx.invoice.update).not.toHaveBeenCalledWith(expect.objectContaining({ data: { status: "PAID" } }));
+    });
+
+    it("H-HIGH: marks the invoice PAID when the return brings its balance to zero", async () => {
+      mockPrisma.salesReturn.findFirst.mockResolvedValue(pendingReturn({ createdById: "creator-1", salesOrderId: "so-1", totalAmount: 50, quantity: 5, unitPrice: 10 }));
+      mockTx.inventoryItem.upsert.mockResolvedValue({ id: "inv-item-1" });
+      mockTx.stockBatch.create.mockResolvedValue({});
+      mockTx.stockMovement.create.mockResolvedValue({});
+      mockTx.customerCreditLimit.upsert.mockResolvedValue({ id: "cl-1", companyId: "company-1", currentBalance: 0 });
+      mockTx.customerCreditLimit.update.mockResolvedValue({});
+      mockTx.customerStatement.create.mockResolvedValue({});
+      mockTx.customer.findUniqueOrThrow.mockResolvedValue({ id: "cust-1", companyId: "company-1" });
+      mockTx.salesReturn.update.mockResolvedValue({ id: "ret-1", status: "POSTED" });
+      mockTx.invoice.findFirst.mockResolvedValue({ id: "inv-1", salesOrderId: "so-1", balanceDue: 50 });
+      mockTx.invoice.updateMany.mockResolvedValue({ count: 1 });
+      mockTx.invoice.findUniqueOrThrow.mockResolvedValue({ balanceDue: 0 });
+
+      const service = makeService();
+      await service.approveReturn(makeUser({ id: "approver-1" }), "ret-1", {});
+
+      expect(mockTx.invoice.update).toHaveBeenCalledWith({ where: { id: "inv-1" }, data: { status: "PAID" } });
+    });
+
+    it("H-HIGH: a return larger than the invoice's own balance only reduces it to zero, the rest still lands on the customer's overall credit", async () => {
+      // Return totalAmount (50) exceeds the invoice's remaining balance (20) —
+      // e.g. it was already partially paid down. The invoice can't go negative;
+      // addCustomerCreditTx (unchanged, already tested elsewhere) still receives
+      // the full 50 for the customer's overall running balance.
+      mockPrisma.salesReturn.findFirst.mockResolvedValue(pendingReturn({ createdById: "creator-1", salesOrderId: "so-1" }));
+      mockTx.inventoryItem.upsert.mockResolvedValue({ id: "inv-item-1" });
+      mockTx.stockBatch.create.mockResolvedValue({});
+      mockTx.stockMovement.create.mockResolvedValue({});
+      mockTx.customerCreditLimit.upsert.mockResolvedValue({ id: "cl-1", companyId: "company-1", currentBalance: 0 });
+      mockTx.customerCreditLimit.update.mockResolvedValue({});
+      mockTx.customerStatement.create.mockResolvedValue({});
+      mockTx.customer.findUniqueOrThrow.mockResolvedValue({ id: "cust-1", companyId: "company-1" });
+      mockTx.salesReturn.update.mockResolvedValue({ id: "ret-1", status: "POSTED" });
+      mockTx.invoice.findFirst.mockResolvedValue({ id: "inv-1", salesOrderId: "so-1", balanceDue: 20 });
+      mockTx.invoice.updateMany.mockResolvedValue({ count: 1 });
+      mockTx.invoice.findUniqueOrThrow.mockResolvedValue({ balanceDue: 0 });
+
+      const service = makeService();
+      await service.approveReturn(makeUser({ id: "approver-1" }), "ret-1", {});
+
+      expect(mockTx.invoice.updateMany).toHaveBeenCalledWith({
+        where: { id: "inv-1", balanceDue: { gte: 20 } },
+        data: { balanceDue: { decrement: 20 }, updatedById: "approver-1" }
+      });
+    });
+
+    it("H-HIGH: skips the invoice lookup entirely for a return with no linked sales order", async () => {
+      mockPrisma.salesReturn.findFirst.mockResolvedValue(pendingReturn({ createdById: "creator-1", salesOrderId: null }));
+      mockTx.inventoryItem.upsert.mockResolvedValue({ id: "inv-item-1" });
+      mockTx.stockBatch.create.mockResolvedValue({});
+      mockTx.stockMovement.create.mockResolvedValue({});
+      mockTx.customerCreditLimit.upsert.mockResolvedValue({ id: "cl-1", companyId: "company-1", currentBalance: 0 });
+      mockTx.customerCreditLimit.update.mockResolvedValue({});
+      mockTx.customerStatement.create.mockResolvedValue({});
+      mockTx.customer.findUniqueOrThrow.mockResolvedValue({ id: "cust-1", companyId: "company-1" });
+      mockTx.salesReturn.update.mockResolvedValue({ id: "ret-1", status: "POSTED" });
+
+      const service = makeService();
+      await service.approveReturn(makeUser({ id: "approver-1" }), "ret-1", {});
+
+      expect(mockTx.invoice.findFirst).not.toHaveBeenCalled();
     });
 
     it("rejectReturn sets status REJECTED without touching stock or credit", async () => {

@@ -659,6 +659,34 @@ export class SalesService {
       await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: warehouse.branchId, productId: product.id, inventoryItemId: item.id, toWarehouseId: warehouse.id, warehouseId: warehouse.id, farmId: warehouse.farmId, productionSiteId: warehouse.productionSiteId, uomId: product.uomId, movementType: "RETURN_IN", quantity, unitCost: unitPrice, referenceType: "SalesReturn", referenceId: salesReturn.id, notes: salesReturn.reason, createdById: user.id } });
       await this.addCustomerCreditTx(tx, salesReturn.customerId, salesReturn.branchId, salesReturn.id, totalAmount, `Sales return ${product.sku}`, true);
 
+      // H-HIGH (2026-08-12): this credited the customer's overall running
+      // balance but never touched the specific invoice for the sale being
+      // returned — SalesReturn has no invoiceId, but a return tied to a
+      // sales order can still find that order's invoice via salesOrderId.
+      // Without this, the invoice keeps showing the full pre-return amount
+      // due (someone collecting against invoices, not the debtors summary,
+      // would still ask for the full amount), and the dashboard's
+      // outstandingDebt figure (summed from Invoice.balanceDue) stays
+      // overstated indefinitely. Capped at the invoice's own balance —
+      // any excess still lands on the customer's overall credit via
+      // addCustomerCreditTx above, same as before.
+      if (salesReturn.salesOrderId) {
+        const invoice = await tx.invoice.findFirst({ where: { salesOrderId: salesReturn.salesOrderId, companyId: user.companyId, deletedAt: null } });
+        if (invoice && Number(invoice.balanceDue) > 0) {
+          const reduceBy = Math.min(totalAmount, Number(invoice.balanceDue));
+          const invUpdate = await tx.invoice.updateMany({
+            where: { id: invoice.id, balanceDue: { gte: reduceBy } },
+            data: { balanceDue: { decrement: reduceBy }, updatedById: user.id }
+          });
+          if (invUpdate.count > 0) {
+            const refreshed = await tx.invoice.findUniqueOrThrow({ where: { id: invoice.id }, select: { balanceDue: true } });
+            if (Number(refreshed.balanceDue) <= 0) {
+              await tx.invoice.update({ where: { id: invoice.id }, data: { status: "PAID" } });
+            }
+          }
+        }
+      }
+
       return tx.salesReturn.update({ where: { id }, data: { status: "POSTED", approvedById: user.id, approvedAt: new Date() } });
     });
 
