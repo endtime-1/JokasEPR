@@ -198,30 +198,37 @@ export class DashboardService {
       select: { id: true },
     }).catch(() => null);
 
+    // L-BUG (2026-08-13): none of these "done today" counts filtered
+    // deletedAt — a mortality/feed/egg/etc. entry that was deleted or
+    // corrected-away still counted as "today's duty complete", and a
+    // deleted stock movement still counted toward stockCount. Discovered
+    // live: a company that soft-deleted its test data via the app's own
+    // delete flow (or direct SQL matching it) still saw the duty checklist
+    // and executive KPIs reporting activity that no longer exists.
     const [eggCount, feedCount, mortalityCount, dailyCount, prodCount, salesCount, stockCount, soyaCount, attendanceCount, visitCount] = await Promise.all([
       hasFarms
-        ? this.prisma.eggProductionRecord.count({ where: { ...base, ...farmFilter, recordDate: dateRange } }).catch(() => -1)
+        ? this.prisma.eggProductionRecord.count({ where: { ...base, deletedAt: null, ...farmFilter, recordDate: dateRange } }).catch(() => -1)
         : Promise.resolve(-1),
       hasFarms
-        ? this.prisma.feedConsumptionRecord.count({ where: { ...base, ...farmFilter, recordDate: dateRange } }).catch(() => -1)
+        ? this.prisma.feedConsumptionRecord.count({ where: { ...base, deletedAt: null, ...farmFilter, recordDate: dateRange } }).catch(() => -1)
         : Promise.resolve(-1),
       hasFarms
-        ? this.prisma.mortalityRecord.count({ where: { ...base, ...farmFilter, recordDate: dateRange } }).catch(() => -1)
+        ? this.prisma.mortalityRecord.count({ where: { ...base, deletedAt: null, ...farmFilter, recordDate: dateRange } }).catch(() => -1)
         : Promise.resolve(-1),
       hasFarms
-        ? this.prisma.dailyPoultryRecord.count({ where: { ...base, ...farmFilter, recordDate: dateRange } }).catch(() => -1)
+        ? this.prisma.dailyPoultryRecord.count({ where: { ...base, deletedAt: null, ...farmFilter, recordDate: dateRange } }).catch(() => -1)
         : Promise.resolve(-1),
       hasSites
-        ? this.prisma.feedProductionBatch.count({ where: { ...base, ...siteFilter, createdAt: dateRange } }).catch(() => -1)
+        ? this.prisma.feedProductionBatch.count({ where: { ...base, deletedAt: null, ...siteFilter, createdAt: dateRange } }).catch(() => -1)
         : Promise.resolve(-1),
       canSales
         ? this.prisma.salesOrder.count({ where: { ...base, createdAt: dateRange } }).catch(() => -1)
         : Promise.resolve(-1),
       canStock
-        ? this.prisma.stockMovement.count({ where: { ...base, createdAt: dateRange } }).catch(() => -1)
+        ? this.prisma.stockMovement.count({ where: { ...base, deletedAt: null, createdAt: dateRange } }).catch(() => -1)
         : Promise.resolve(-1),
       canSoya
-        ? this.prisma.soyaBeanIntake.count({ where: { ...base, ...siteFilter, receivedAt: dateRange } }).catch(() => -1)
+        ? this.prisma.soyaBeanIntake.count({ where: { ...base, deletedAt: null, ...siteFilter, receivedAt: dateRange } }).catch(() => -1)
         : Promise.resolve(-1),
       selfEmployee
         ? this.prisma.attendanceRecord.count({ where: { companyId: user.companyId, employeeId: selfEmployee.id, date: dateRange } }).catch(() => -1)
@@ -323,11 +330,14 @@ export class DashboardService {
       user.hasGlobalAccess || user.productionSiteIds.length === 0
         ? this.prisma.productionSite.count({ where: { companyId: user.companyId, deletedAt: null } })
         : Promise.resolve(user.productionSiteIds.length),
-      this.prisma.eggProductionRecord.findMany({ where: { ...base, ...farmFilter, recordDate: dateRange }, distinct: ["farmId"], select: { farmId: true } }),
-      this.prisma.feedConsumptionRecord.findMany({ where: { ...base, ...farmFilter, recordDate: dateRange }, distinct: ["farmId"], select: { farmId: true } }),
-      this.prisma.mortalityRecord.findMany({ where: { ...base, ...farmFilter, recordDate: dateRange }, distinct: ["farmId"], select: { farmId: true } }),
-      this.prisma.dailyPoultryRecord.findMany({ where: { ...base, ...farmFilter, recordDate: dateRange }, distinct: ["farmId"], select: { farmId: true } }),
-      this.prisma.feedProductionBatch.findMany({ where: { ...base, ...siteFilter, createdAt: dateRange }, distinct: ["productionSiteId"], select: { productionSiteId: true } }),
+      // L-BUG (2026-08-13): same missing-deletedAt gap as myDuties above —
+      // a deleted/corrected record still counted this farm/site as having
+      // "submitted" today's entry.
+      this.prisma.eggProductionRecord.findMany({ where: { ...base, deletedAt: null, ...farmFilter, recordDate: dateRange }, distinct: ["farmId"], select: { farmId: true } }),
+      this.prisma.feedConsumptionRecord.findMany({ where: { ...base, deletedAt: null, ...farmFilter, recordDate: dateRange }, distinct: ["farmId"], select: { farmId: true } }),
+      this.prisma.mortalityRecord.findMany({ where: { ...base, deletedAt: null, ...farmFilter, recordDate: dateRange }, distinct: ["farmId"], select: { farmId: true } }),
+      this.prisma.dailyPoultryRecord.findMany({ where: { ...base, deletedAt: null, ...farmFilter, recordDate: dateRange }, distinct: ["farmId"], select: { farmId: true } }),
+      this.prisma.feedProductionBatch.findMany({ where: { ...base, deletedAt: null, ...siteFilter, createdAt: dateRange }, distinct: ["productionSiteId"], select: { productionSiteId: true } }),
     ]);
 
     type OperationRow = {
@@ -406,8 +416,14 @@ export class DashboardService {
 
       this.prisma.flockBatch.count({ where: { companyId: cid, status: "ACTIVE", deletedAt: null, ...farmF } }),
 
+      // L-BUG (2026-08-13): none of these five aggregates filtered
+      // deletedAt — a soft-deleted egg/mortality/feed/soya/production
+      // record still counted toward the executive dashboard's "today"
+      // figures indefinitely. Live symptom: deleting a test flock's
+      // mortality and feed records left the KPI tiles still showing the
+      // old numbers with no live birds behind them.
       this.prisma.eggProductionRecord.aggregate({
-        where: { companyId: cid, ...farmF, recordDate: dateRange },
+        where: { companyId: cid, deletedAt: null, ...farmF, recordDate: dateRange },
         _sum: { goodEggs: true, crackedEggs: true, dirtyEggs: true, brokenEggs: true, rejectedEggs: true }
       }).then(r => {
         const s = r._sum;
@@ -415,22 +431,22 @@ export class DashboardService {
       }),
 
       this.prisma.mortalityRecord.aggregate({
-        where: { companyId: cid, ...farmF, recordDate: dateRange },
+        where: { companyId: cid, deletedAt: null, ...farmF, recordDate: dateRange },
         _sum: { birdCount: true }
       }).then(r => Number(r._sum.birdCount ?? 0)),
 
       this.prisma.feedConsumptionRecord.aggregate({
-        where: { companyId: cid, ...farmF, recordDate: dateRange },
+        where: { companyId: cid, deletedAt: null, ...farmF, recordDate: dateRange },
         _sum: { quantityKg: true }
       }).then(r => Number(r._sum.quantityKg ?? 0)),
 
       this.prisma.feedProductionBatch.aggregate({
-        where: { companyId: cid, ...siteF, createdAt: dateRange },
+        where: { companyId: cid, deletedAt: null, ...siteF, createdAt: dateRange },
         _sum: { producedQuantityKg: true }
       }).then(r => Number(r._sum.producedQuantityKg ?? 0)),
 
       this.prisma.soyaBeanIntake.aggregate({
-        where: { companyId: cid, ...siteF, receivedAt: dateRange },
+        where: { companyId: cid, deletedAt: null, ...siteF, receivedAt: dateRange },
         _sum: { quantityKg: true }
       }).then(r => Number(r._sum.quantityKg ?? 0)),
 
@@ -473,7 +489,9 @@ export class DashboardService {
       // executive dashboard regardless of their actual assignment.
       this.prisma.stockExpiryAlert.count({ where: { companyId: cid, deletedAt: null, daysToExpiry: { lte: 30 }, ...branchF, ...warehouseF, ...siteF } }),
 
-      this.prisma.feedProductionOrder.count({ where: { companyId: cid, status: { in: ["DRAFT", "APPROVED"] as any[] }, ...branchF, ...siteF } }),
+      // L-BUG (2026-08-13): missing deletedAt here too — a deleted feed
+      // production order still counted toward "pending production orders".
+      this.prisma.feedProductionOrder.count({ where: { companyId: cid, deletedAt: null, status: { in: ["DRAFT", "APPROVED"] as any[] }, ...branchF, ...siteF } }),
 
       // PurchaseOrder has no branch/farm/warehouse/site columns in the
       // schema — nothing to scope by, not a bug (mirrors the equivalent
@@ -489,7 +507,9 @@ export class DashboardService {
       // both correct now and immune to a future new non-terminal status
       // needing this list updated again, matching the notIn/not pattern
       // already used for salesOrder/etc. elsewhere in this same method.
-      this.prisma.maintenanceRecord.count({ where: { companyId: cid, status: { notIn: ["COMPLETED", "CANCELLED"] }, ...branchF, ...farmF, ...warehouseF, ...siteF } }),
+      // L-BUG (2026-08-13): missing deletedAt here too — a deleted
+      // maintenance record still counted toward "machine maintenance alerts".
+      this.prisma.maintenanceRecord.count({ where: { companyId: cid, deletedAt: null, status: { notIn: ["COMPLETED", "CANCELLED"] }, ...branchF, ...farmF, ...warehouseF, ...siteF } }),
 
       this.prisma.aiAlert.count({ where: { companyId: cid, status: "UNREAD" } }),
 
@@ -534,24 +554,27 @@ export class DashboardService {
     // failure. Left to reject now; the outer .catch(() => emptyCharts) at
     // this method's only call site (executive(), below) was also removed
     // for the same reason — see executive()'s own try/catch.
+    // L-BUG (2026-08-13): the same missing-deletedAt gap as
+    // computeMetricValues above — deleted egg/mortality/feed/soya records
+    // still plotted into these trend charts.
     const [eggRows, mortalityRows, feedProdRows, soyaBeanRows, soyaOilRows, soyaCakeRows, salesRows, eggFarmRows, salesBranchRows] = await Promise.all([
       this.prisma.eggProductionRecord.findMany({
-        where: { companyId: cid, ...farmF, recordDate: dateRange },
+        where: { companyId: cid, deletedAt: null, ...farmF, recordDate: dateRange },
         select: { recordDate: true, farmId: true, goodEggs: true, crackedEggs: true, dirtyEggs: true, brokenEggs: true, rejectedEggs: true }
       }),
 
       this.prisma.mortalityRecord.findMany({
-        where: { companyId: cid, ...farmF, recordDate: dateRange },
+        where: { companyId: cid, deletedAt: null, ...farmF, recordDate: dateRange },
         select: { recordDate: true, birdCount: true }
       }),
 
       this.prisma.feedProductionBatch.findMany({
-        where: { companyId: cid, ...siteF, createdAt: dateRange },
+        where: { companyId: cid, deletedAt: null, ...siteF, createdAt: dateRange },
         select: { createdAt: true, producedQuantityKg: true }
       }),
 
       this.prisma.soyaBeanIntake.findMany({
-        where: { companyId: cid, ...siteF, receivedAt: dateRange },
+        where: { companyId: cid, deletedAt: null, ...siteF, receivedAt: dateRange },
         select: { receivedAt: true, quantityKg: true }
       }),
 
@@ -571,7 +594,7 @@ export class DashboardService {
       }),
 
       this.prisma.eggProductionRecord.findMany({
-        where: { companyId: cid, ...farmF, recordDate: dateRange },
+        where: { companyId: cid, deletedAt: null, ...farmF, recordDate: dateRange },
         select: { farmId: true, goodEggs: true, crackedEggs: true, dirtyEggs: true, brokenEggs: true, rejectedEggs: true }
       }),
 

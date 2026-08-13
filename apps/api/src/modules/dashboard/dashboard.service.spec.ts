@@ -332,6 +332,78 @@ describe("DashboardService", () => {
     });
   });
 
+  describe("computeMetricValues / liveCharts — soft-deleted records no longer count toward the KPIs (L-BUG, 2026-08-13)", () => {
+    beforeEach(() => {
+      prisma.stockBatch.findMany.mockResolvedValue([]);
+      prisma.productProfitability.findMany.mockResolvedValue([]);
+    });
+
+    function callComputeMetricValues(user: AuthenticatedUser) {
+      const range = { start: new Date("2026-01-01"), end: new Date("2026-01-31") };
+      return (service as any).computeMetricValues(user, {}, range);
+    }
+
+    function callLiveCharts(user: AuthenticatedUser) {
+      const range = { start: new Date("2026-01-01"), end: new Date("2026-01-31") };
+      return (service as any).liveCharts(user, {}, range);
+    }
+
+    it("filters deletedAt on every aggregate that feeds the executive KPI tiles", async () => {
+      await callComputeMetricValues(makeUser());
+      expect(prisma.eggProductionRecord.aggregate.mock.calls[0][0].where.deletedAt).toBeNull();
+      expect(prisma.mortalityRecord.aggregate.mock.calls[0][0].where.deletedAt).toBeNull();
+      expect(prisma.feedConsumptionRecord.aggregate.mock.calls[0][0].where.deletedAt).toBeNull();
+      expect(prisma.feedProductionBatch.aggregate.mock.calls[0][0].where.deletedAt).toBeNull();
+      expect(prisma.soyaBeanIntake.aggregate.mock.calls[0][0].where.deletedAt).toBeNull();
+      expect(prisma.feedProductionOrder.count.mock.calls[0][0].where.deletedAt).toBeNull();
+      expect(prisma.maintenanceRecord.count.mock.calls[0][0].where.deletedAt).toBeNull();
+    });
+
+    it("filters deletedAt on every query feeding the trend charts", async () => {
+      await callLiveCharts(makeUser());
+      expect(prisma.eggProductionRecord.findMany.mock.calls[0][0].where.deletedAt).toBeNull();
+      expect(prisma.mortalityRecord.findMany.mock.calls[0][0].where.deletedAt).toBeNull();
+      expect(prisma.feedProductionBatch.findMany.mock.calls[0][0].where.deletedAt).toBeNull();
+      expect(prisma.soyaBeanIntake.findMany.mock.calls[0][0].where.deletedAt).toBeNull();
+    });
+
+    it("a deleted mortality/feed record no longer contributes to the KPI total (end-to-end through the mock)", async () => {
+      // Simulates what the deletedAt filter actually protects against: a
+      // mock that behaves like Prisma actually filtering deletedAt: null
+      // returns 0 once the underlying record is "deleted", instead of the
+      // stale value a query with no deletedAt filter would keep returning.
+      prisma.mortalityRecord.aggregate.mockImplementation((args: any) =>
+        Promise.resolve(args.where.deletedAt === null ? { _sum: { birdCount: 0 } } : { _sum: { birdCount: 25 } })
+      );
+      const result = await callComputeMetricValues(makeUser());
+      expect(result.mortalityToday).toBe(0);
+    });
+  });
+
+  describe("myDuties / farmOperationsToday — soft-deleted records no longer count as 'done today' (L-BUG, 2026-08-13)", () => {
+    it("myDuties filters deletedAt on every duty-completion count", async () => {
+      // hasGlobalAccess so every permission-gated query (canSales/canStock/
+      // canSoya) actually runs instead of short-circuiting to Promise.resolve(-1).
+      await service.myDuties(makeUser({ hasGlobalAccess: true }));
+      expect(prisma.eggProductionRecord.count.mock.calls[0][0].where.deletedAt).toBeNull();
+      expect(prisma.feedConsumptionRecord.count.mock.calls[0][0].where.deletedAt).toBeNull();
+      expect(prisma.mortalityRecord.count.mock.calls[0][0].where.deletedAt).toBeNull();
+      expect(prisma.dailyPoultryRecord.count.mock.calls[0][0].where.deletedAt).toBeNull();
+      expect(prisma.feedProductionBatch.count.mock.calls[0][0].where.deletedAt).toBeNull();
+      expect(prisma.stockMovement.count.mock.calls[0][0].where.deletedAt).toBeNull();
+      expect(prisma.soyaBeanIntake.count.mock.calls[0][0].where.deletedAt).toBeNull();
+    });
+
+    it("farmOperationsToday filters deletedAt on every farm/site completion lookup", async () => {
+      await service.farmOperationsToday(makeUser());
+      expect(prisma.eggProductionRecord.findMany.mock.calls[0][0].where.deletedAt).toBeNull();
+      expect(prisma.feedConsumptionRecord.findMany.mock.calls[0][0].where.deletedAt).toBeNull();
+      expect(prisma.mortalityRecord.findMany.mock.calls[0][0].where.deletedAt).toBeNull();
+      expect(prisma.dailyPoultryRecord.findMany.mock.calls[0][0].where.deletedAt).toBeNull();
+      expect(prisma.feedProductionBatch.findMany.mock.calls[0][0].where.deletedAt).toBeNull();
+    });
+  });
+
   describe("executive — a failure anywhere surfaces as a real error, not a corrupted period-over-period comparison (H23)", () => {
     beforeEach(() => {
       prisma.stockBatch.findMany.mockResolvedValue([]);
