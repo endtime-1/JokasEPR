@@ -509,6 +509,14 @@ export class FinanceService {
   }
 
   async createSupplierPayment(user: AuthenticatedUser, dto: CreateSupplierPaymentDto, ctx: RequestContext) {
+    // L-BUG (2026-08-13): unlike CustomerPayment/Payment/ProcurementPayment,
+    // this had no idempotency support at all — a client retry after a
+    // dropped response (network timeout, double-click) could record the
+    // same supplier payment twice with nothing to recognize the resend.
+    if (dto.idempotencyKey) {
+      const existing = await this.findSupplierPaymentByIdempotencyKey(user.companyId, dto.idempotencyKey);
+      if (existing) return { data: existing };
+    }
     const reference = await nextRef(this.prisma, user.companyId, "SP");
 
     // M-BUG (2026-08-13): this used to just record a free-text payment with
@@ -525,45 +533,59 @@ export class FinanceService {
     if (dto.invoiceId && !invoice) throw new NotFoundException("Supplier invoice was not found.");
     if (invoice && Number(invoice.balanceDue) <= 0) throw new BadRequestException("Invoice has no outstanding balance.");
 
-    const payment = await this.prisma.$transaction(async (tx) => {
-      const row = await tx.supplierPayment.create({
-        data: {
-          companyId: user.companyId,
-          reference,
-          supplierName: dto.supplierName,
-          supplierId: dto.supplierId,
-          invoiceId: dto.invoiceId,
-          amount: dto.amount,
-          paymentDate: new Date(dto.paymentDate),
-          paymentMethod: dto.paymentMethod,
-          description: dto.description,
-          purchaseOrderRef: dto.purchaseOrderRef,
-          bankAccountId: dto.bankAccountId,
-          notes: dto.notes,
-          createdById: user.id
+    let payment;
+    try {
+      payment = await this.prisma.$transaction(async (tx) => {
+        const row = await tx.supplierPayment.create({
+          data: {
+            companyId: user.companyId,
+            reference,
+            supplierName: dto.supplierName,
+            supplierId: dto.supplierId,
+            invoiceId: dto.invoiceId,
+            amount: dto.amount,
+            paymentDate: new Date(dto.paymentDate),
+            paymentMethod: dto.paymentMethod,
+            description: dto.description,
+            purchaseOrderRef: dto.purchaseOrderRef,
+            bankAccountId: dto.bankAccountId,
+            notes: dto.notes,
+            idempotencyKey: dto.idempotencyKey,
+            createdById: user.id
+          }
+        });
+
+        if (invoice) {
+          const decremented = await tx.supplierInvoice.updateMany({
+            where: { id: invoice.id, balanceDue: { gte: dto.amount } },
+            data: { paidAmount: { increment: dto.amount }, balanceDue: { decrement: dto.amount }, updatedById: user.id }
+          });
+          if (decremented.count === 0) {
+            throw new BadRequestException(`Payment of ${dto.amount} exceeds the outstanding balance on this invoice.`);
+          }
+          const refreshed = await tx.supplierInvoice.findUniqueOrThrow({ where: { id: invoice.id }, select: { balanceDue: true } });
+          await tx.supplierInvoice.update({
+            where: { id: invoice.id },
+            data: { status: Number(refreshed.balanceDue) <= 0 ? "PAID" : "MATCHED" }
+          });
         }
+
+        return row;
       });
-
-      if (invoice) {
-        const decremented = await tx.supplierInvoice.updateMany({
-          where: { id: invoice.id, balanceDue: { gte: dto.amount } },
-          data: { paidAmount: { increment: dto.amount }, balanceDue: { decrement: dto.amount }, updatedById: user.id }
-        });
-        if (decremented.count === 0) {
-          throw new BadRequestException(`Payment of ${dto.amount} exceeds the outstanding balance on this invoice.`);
-        }
-        const refreshed = await tx.supplierInvoice.findUniqueOrThrow({ where: { id: invoice.id }, select: { balanceDue: true } });
-        await tx.supplierInvoice.update({
-          where: { id: invoice.id },
-          data: { status: Number(refreshed.balanceDue) <= 0 ? "PAID" : "MATCHED" }
-        });
+    } catch (err: unknown) {
+      if (dto.idempotencyKey && (err as { code?: string })?.code === "P2002") {
+        const existing = await this.findSupplierPaymentByIdempotencyKey(user.companyId, dto.idempotencyKey);
+        if (existing) return { data: existing };
       }
-
-      return row;
-    });
+      throw err;
+    }
 
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "CREATE", entityType: "SupplierPayment", entityId: payment.id, ...ctx });
     return { data: payment };
+  }
+
+  private async findSupplierPaymentByIdempotencyKey(companyId: string, idempotencyKey: string) {
+    return this.prisma.supplierPayment.findFirst({ where: { companyId, idempotencyKey, deletedAt: null } });
   }
 
   // ─── Customer Payments ─────────────────────────────────────────────────────

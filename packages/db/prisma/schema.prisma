@@ -4957,6 +4957,7 @@ model SupplierPayment {
   purchaseOrderRef String?       @db.VarChar(60)
   bankAccountId    String?
   notes            String?       @db.VarChar(500)
+  idempotencyKey   String?       @db.VarChar(100)
   createdById      String?
   updatedById      String?
   createdAt        DateTime      @default(now())
@@ -4969,6 +4970,7 @@ model SupplierPayment {
   invoice     SupplierInvoice? @relation(fields: [invoiceId], references: [id])
 
   @@unique([companyId, reference])
+  @@unique([companyId, idempotencyKey])
   @@index([companyId])
   @@index([companyId, paymentDate])
   @@index([deletedAt])

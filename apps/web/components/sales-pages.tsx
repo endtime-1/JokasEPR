@@ -1122,6 +1122,11 @@ export function PaymentsPage() {
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(!hasCached("/sales/payments"));
+  // L-BUG (2026-08-13): the backend's double-click protection (H9) only
+  // engages when a client actually sends an idempotencyKey — this form
+  // never did, so a request timeout followed by a retry could record the
+  // same payment twice. Regenerated after each successful submit.
+  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
 
   async function load() {
     apiFetch<ApiEnvelope<Payment[]>>("/sales/payments").then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); }).catch(() => undefined).finally(() => setLoading(false));
@@ -1144,9 +1149,11 @@ export function PaymentsPage() {
           amount: Number(form.amount),
           method: form.method,
           reference: form.reference || undefined,
+          idempotencyKey,
         }),
       });
       setForm({ customerId: "", invoiceId: "", amount: "", method: "BANK_TRANSFER", reference: "" });
+      setIdempotencyKey(crypto.randomUUID());
       setShowForm(false);
       await load();
     } catch (e2: unknown) { setError(e2 instanceof Error ? e2.message : "Failed"); }

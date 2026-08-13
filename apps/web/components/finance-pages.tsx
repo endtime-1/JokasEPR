@@ -971,6 +971,11 @@ export function CustomerPaymentsPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState("");
+  // L-BUG (2026-08-13): the backend's double-click protection only engages
+  // when a client actually sends an idempotencyKey — this form never did,
+  // so a request timeout followed by a retry could record the same
+  // payment twice. Regenerated after each successful submit.
+  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
 
   function load() {
     setLoadError("");
@@ -987,8 +992,9 @@ export function CustomerPaymentsPage() {
     setError("");
     setLoading(true);
     try {
-      await apiFetch("/finance/customer-payments", { method: "POST", body: JSON.stringify({ ...form, amount: Number(form.amount) }) });
+      await apiFetch("/finance/customer-payments", { method: "POST", body: JSON.stringify({ ...form, amount: Number(form.amount), idempotencyKey }) });
       setShowForm(false);
+      setIdempotencyKey(crypto.randomUUID());
       load();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed");
@@ -1052,6 +1058,11 @@ export function SupplierPaymentsPage() {
   // (free-text) way.
   const [suppliers, setSuppliers] = useState<Array<{ id: string; name: string }>>([]);
   const [invoices, setInvoices] = useState<Array<{ id: string; reference: string; invoiceNumber: string; balanceDue: number }>>([]);
+  // L-BUG (2026-08-13): the backend's double-click protection only engages
+  // when a client actually sends an idempotencyKey — this form never did,
+  // so a request timeout followed by a retry could record the same
+  // payment twice. Regenerated after each successful submit.
+  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
 
   function load() {
     setLoadError("");
@@ -1086,10 +1097,12 @@ export function SupplierPaymentsPage() {
           ...form,
           amount: Number(form.amount),
           supplierId: form.supplierId || undefined,
-          invoiceId: form.invoiceId || undefined
+          invoiceId: form.invoiceId || undefined,
+          idempotencyKey
         })
       });
       setShowForm(false);
+      setIdempotencyKey(crypto.randomUUID());
       load();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed");

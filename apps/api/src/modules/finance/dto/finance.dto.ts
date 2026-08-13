@@ -345,6 +345,14 @@ export class CreateSupplierPaymentDto {
   @IsString()
   @MaxLength(500)
   notes?: string;
+
+  // L-BUG (2026-08-13): unlike CustomerPayment/Payment/ProcurementPayment,
+  // this had no idempotency support at all — a client retry after a
+  // dropped response could record the same supplier payment twice.
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  idempotencyKey?: string;
 }
 
 // ─── Customer Payment ─────────────────────────────────────────────────────────

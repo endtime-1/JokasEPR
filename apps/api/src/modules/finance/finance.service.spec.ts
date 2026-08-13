@@ -7,7 +7,7 @@ jest.mock("../../common/next-ref", () => ({ nextRef: jest.fn().mockResolvedValue
 const mockPrisma = {
   expense: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0), create: jest.fn(), update: jest.fn(), aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 }, _count: 0 }) },
   revenue: { findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0), create: jest.fn(), aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 }, _count: 0 }) },
-  supplierPayment: { aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 }, _count: 0 }), count: jest.fn().mockResolvedValue(0), create: jest.fn() },
+  supplierPayment: { aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 }, _count: 0 }), count: jest.fn().mockResolvedValue(0), create: jest.fn(), findFirst: jest.fn() },
   supplierInvoice: {
     aggregate: jest.fn().mockResolvedValue({ _sum: { balanceDue: 0 }, _count: 0 }),
     findFirst: jest.fn(),
@@ -432,5 +432,47 @@ describe("FinanceService.createSupplierPayment — a linked invoice actually get
       )
     ).rejects.toThrow(BadRequestException);
     expect(mockPrisma.supplierPayment.create).not.toHaveBeenCalled();
+  });
+
+  it("L-BUG: replays the original payment instead of recording a duplicate when the idempotencyKey was already used", async () => {
+    mockPrisma.supplierPayment.findFirst.mockResolvedValue({ id: "sp-existing", reference: "SP-1" });
+    const service = makeService();
+
+    const result = await service.createSupplierPayment(
+      makeUser(),
+      { supplierName: "Acme Feeds", amount: 500, paymentDate: "2026-08-13", paymentMethod: "CASH", description: "Retry", idempotencyKey: "key-1" } as never,
+      {}
+    );
+
+    expect(result.data).toEqual({ id: "sp-existing", reference: "SP-1" });
+    expect(mockPrisma.supplierPayment.create).not.toHaveBeenCalled();
+  });
+
+  it("L-BUG: passes the idempotencyKey through to the payment row on a genuinely new payment", async () => {
+    mockPrisma.supplierPayment.findFirst.mockResolvedValue(null);
+    mockPrisma.supplierPayment.create.mockResolvedValue({ id: "sp-1" });
+    const service = makeService();
+
+    await service.createSupplierPayment(
+      makeUser(),
+      { supplierName: "Acme Feeds", amount: 500, paymentDate: "2026-08-13", paymentMethod: "CASH", description: "First try", idempotencyKey: "key-1" } as never,
+      {}
+    );
+
+    expect(mockPrisma.supplierPayment.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ idempotencyKey: "key-1" }) }));
+  });
+
+  it("L-BUG: replays the original payment when a concurrent duplicate loses the unique-constraint race (P2002)", async () => {
+    mockPrisma.supplierPayment.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "sp-existing" });
+    mockPrisma.supplierPayment.create.mockRejectedValue({ code: "P2002" });
+    const service = makeService();
+
+    const result = await service.createSupplierPayment(
+      makeUser(),
+      { supplierName: "Acme Feeds", amount: 500, paymentDate: "2026-08-13", paymentMethod: "CASH", description: "Race", idempotencyKey: "key-1" } as never,
+      {}
+    );
+
+    expect(result.data).toEqual({ id: "sp-existing" });
   });
 });
