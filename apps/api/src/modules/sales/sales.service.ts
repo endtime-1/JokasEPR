@@ -691,7 +691,38 @@ export class SalesService {
     });
 
     await this.writeAudit(user, "APPROVE", "SalesReturn", id, `Approved sales return for ${product.sku}`, context, { branchId: salesReturn.branchId, warehouseId: warehouse.id });
+    // M-BUG (2026-08-13): a payment mirrors into Finance's Revenue ledger
+    // (createSalesRevenue/H21 above), but approving a return never created
+    // the reversing entry — Finance's P&L/cash-flow reports built entirely
+    // from the Revenue table overstated real revenue by the value of every
+    // return, with no automatic way to catch the drift. A negative-amount
+    // Revenue row is the standard reversing-entry pattern; the reports
+    // already sum this table with a plain aggregate, so it nets out
+    // correctly with zero changes needed on the reporting side.
+    try {
+      await this.createSalesReturnReversal(user, salesReturn, product, totalAmount);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      this.logger.warn(`Failed to create Finance revenue reversal for sales return ${id} (company ${user.companyId}): ${message}`);
+    }
     return { data };
+  }
+
+  private async createSalesReturnReversal(user: AuthenticatedUser, salesReturn: { id: string; branchId: string; customer: { name: string } | null }, product: { sku: string }, totalAmount: number) {
+    await this.prisma.revenue.create({
+      data: {
+        companyId: user.companyId,
+        branchId: salesReturn.branchId,
+        reference: await nextRef(this.prisma, user.companyId, "REV"),
+        source: "PRODUCT_SALES",
+        description: `Sales return reversal ${product.sku}`.slice(0, 240),
+        amount: -totalAmount,
+        revenueDate: new Date(),
+        paymentMethod: "CREDIT_NOTE",
+        customerName: salesReturn.customer?.name,
+        createdById: user.id
+      }
+    });
   }
 
   async rejectReturn(user: AuthenticatedUser, id: string, context: RequestContext) {
@@ -708,7 +739,7 @@ export class SalesService {
   private async loadPendingReturn(user: AuthenticatedUser, id: string) {
     const salesReturn = await this.prisma.salesReturn.findFirst({
       where: { id, companyId: user.companyId, deletedAt: null },
-      include: { product: true, warehouse: true }
+      include: { product: true, warehouse: true, customer: { select: { name: true } } }
     });
     if (!salesReturn) throw new NotFoundException("Sales return was not found.");
     if (salesReturn.status !== "REQUESTED") throw new BadRequestException("Only pending returns can be approved or rejected.");
@@ -1045,12 +1076,25 @@ export class SalesService {
 
   private async addCustomerCreditTx(tx: Prisma.TransactionClient, customerId: string, branchId: string, referenceId: string, amount: number, description: string, isReturn = false) {
     const credit = await this.ensureCreditLimitTx(tx, customerId, branchId);
-    // H6: atomic, clamped-at-zero decrement via raw SQL. Prisma's
-    // `decrement` has no floor, and a plain read-then-write in JS let two
-    // concurrent credits for the same customer (e.g. a payment and a return
-    // recorded together) both read the same currentBalance and each
-    // silently overwrite the other's effect on it.
-    await tx.$executeRaw`UPDATE CustomerCreditLimit SET currentBalance = GREATEST(0, currentBalance - ${amount}) WHERE id = ${credit.id}`;
+    // H6: atomic decrement via raw SQL rather than a plain read-then-write
+    // in JS, which let two concurrent credits for the same customer (e.g. a
+    // payment and a return recorded together) both read the same
+    // currentBalance and each silently overwrite the other's effect on it.
+    //
+    // M-BUG (2026-08-13): payments floor at zero — you can't owe a negative
+    // amount by paying down a bill, and any genuine overpayment is a
+    // separate concern from this function. Returns are different: a return
+    // worth more than the customer currently owes means the business now
+    // owes THEM a refund, and flooring that at zero made the excess simply
+    // vanish — the system showed "balance: zero, all clear" while actually
+    // owing the customer money. Returns are allowed to drive the balance
+    // negative; the debtors report already filters on currentBalance > 0,
+    // so a negative (we-owe-them) balance correctly stops showing up there.
+    if (isReturn) {
+      await tx.$executeRaw`UPDATE CustomerCreditLimit SET currentBalance = currentBalance - ${amount} WHERE id = ${credit.id}`;
+    } else {
+      await tx.$executeRaw`UPDATE CustomerCreditLimit SET currentBalance = GREATEST(0, currentBalance - ${amount}) WHERE id = ${credit.id}`;
+    }
     const updated = await tx.customerCreditLimit.findUniqueOrThrow({ where: { id: credit.id } });
     const balance = Number(updated.currentBalance);
     await tx.customerStatement.create({ data: { companyId: credit.companyId, branchId, customerId, paymentId: isReturn ? undefined : referenceId, salesReturnId: isReturn ? referenceId : undefined, entryType: isReturn ? "RETURN" : "PAYMENT", debit: 0, credit: amount, balance, description } });

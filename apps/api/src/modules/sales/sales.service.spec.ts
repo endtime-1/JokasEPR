@@ -272,6 +272,7 @@ describe("SalesService — sales returns require a second approver (C5)", () => 
         reason: "damaged", status: "REQUESTED", createdById: "creator-1",
         product: { id: "prod-1", sku: "SKU-1", uomId: "uom-1" },
         warehouse: { id: "wh-1", branchId: "branch-1", farmId: null, productionSiteId: null },
+        customer: { name: "Acme Ltd" },
         ...overrides
       };
     }
@@ -413,6 +414,62 @@ describe("SalesService — sales returns require a second approver (C5)", () => 
         data: expect.objectContaining({ status: "REJECTED", approvedById: "approver-1" })
       });
       expect(mockTx.inventoryItem.upsert).not.toHaveBeenCalled();
+    });
+
+    it("M-BUG: a return larger than what the customer owes drives the balance negative (credit owed to them) instead of flooring at zero", async () => {
+      mockPrisma.salesReturn.findFirst.mockResolvedValue(pendingReturn({ createdById: "creator-1", totalAmount: 80 }));
+      mockTx.inventoryItem.upsert.mockResolvedValue({ id: "inv-item-1" });
+      mockTx.stockBatch.create.mockResolvedValue({});
+      mockTx.stockMovement.create.mockResolvedValue({});
+      mockTx.customerCreditLimit.upsert.mockResolvedValue({ id: "cl-1", companyId: "company-1", currentBalance: 30 });
+      // The customer only owed 30; the return is worth 80 — the excess 50
+      // is now owed BACK to them, represented as a negative balance.
+      mockTx.customerCreditLimit.findUniqueOrThrow.mockResolvedValue({ id: "cl-1", companyId: "company-1", currentBalance: -50 });
+      mockTx.customerStatement.create.mockResolvedValue({});
+      mockTx.customer.findUniqueOrThrow.mockResolvedValue({ id: "cust-1", companyId: "company-1" });
+      mockTx.salesReturn.update.mockResolvedValue({ id: "ret-1", status: "POSTED" });
+
+      const service = makeService();
+      await service.approveReturn(makeUser({ id: "approver-1" }), "ret-1", {});
+
+      const sql = mockTx.$executeRaw.mock.calls[0][0].join("");
+      expect(sql).not.toMatch(/GREATEST/);
+      expect(mockTx.customerStatement.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ balance: -50, entryType: "RETURN", credit: 80 })
+      });
+    });
+
+    it("M-BUG: creates a negative-amount Finance revenue entry to reverse the sale, so P&L doesn't overstate real revenue", async () => {
+      mockPrisma.salesReturn.findFirst.mockResolvedValue(pendingReturn({ createdById: "creator-1", totalAmount: 50 }));
+      mockTx.inventoryItem.upsert.mockResolvedValue({ id: "inv-item-1" });
+      mockTx.stockBatch.create.mockResolvedValue({});
+      mockTx.stockMovement.create.mockResolvedValue({});
+      mockTx.customerCreditLimit.upsert.mockResolvedValue({ id: "cl-1", companyId: "company-1", currentBalance: 0 });
+      mockTx.customerStatement.create.mockResolvedValue({});
+      mockTx.customer.findUniqueOrThrow.mockResolvedValue({ id: "cust-1", companyId: "company-1" });
+      mockTx.salesReturn.update.mockResolvedValue({ id: "ret-1", status: "POSTED" });
+
+      const service = makeService();
+      await service.approveReturn(makeUser({ id: "approver-1" }), "ret-1", {});
+
+      expect(mockPrisma.revenue.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ amount: -50, paymentMethod: "CREDIT_NOTE", customerName: "Acme Ltd", source: "PRODUCT_SALES" })
+      });
+    });
+
+    it("M-BUG: does not fail the return approval itself when the Finance revenue reversal fails", async () => {
+      mockPrisma.salesReturn.findFirst.mockResolvedValue(pendingReturn({ createdById: "creator-1" }));
+      mockTx.inventoryItem.upsert.mockResolvedValue({ id: "inv-item-1" });
+      mockTx.stockBatch.create.mockResolvedValue({});
+      mockTx.stockMovement.create.mockResolvedValue({});
+      mockTx.customerCreditLimit.upsert.mockResolvedValue({ id: "cl-1", companyId: "company-1", currentBalance: 0 });
+      mockTx.customerStatement.create.mockResolvedValue({});
+      mockTx.customer.findUniqueOrThrow.mockResolvedValue({ id: "cust-1", companyId: "company-1" });
+      mockTx.salesReturn.update.mockResolvedValue({ id: "ret-1", status: "POSTED" });
+      mockPrisma.revenue.create.mockRejectedValueOnce(new Error("DB unavailable"));
+
+      const service = makeService();
+      await expect(service.approveReturn(makeUser({ id: "approver-1" }), "ret-1", {})).resolves.toBeDefined();
     });
   });
 });
