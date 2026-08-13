@@ -15,10 +15,11 @@ const mockTx = {
   warehouse: { findFirst: jest.fn() },
   stockBatch: { create: jest.fn(), findMany: jest.fn().mockResolvedValue([]), updateMany: jest.fn() },
   stockMovement: { create: jest.fn(), findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn() },
-  mortalityRecord: { aggregate: jest.fn(), create: jest.fn() },
+  mortalityRecord: { aggregate: jest.fn(), create: jest.fn(), update: jest.fn() },
   poultryTransferRecord: { aggregate: jest.fn(), create: jest.fn() },
   batchPenAllocation: { findFirst: jest.fn(), upsert: jest.fn() },
   pen: { update: jest.fn(), findFirst: jest.fn() },
+  flockBatch: { findFirstOrThrow: jest.fn(), update: jest.fn() },
   $queryRaw: jest.fn().mockResolvedValue([])
 };
 
@@ -33,6 +34,7 @@ const mockPrisma = {
   medicationRecord: { findFirst: jest.fn() },
   vaccinationRecord: { findFirst: jest.fn() },
   dailyPoultryRecord: { findFirst: jest.fn() },
+  mortalityRecord: { findFirst: jest.fn() },
   $transaction: jest.fn().mockImplementation((cb: (tx: typeof mockTx) => Promise<unknown>) => cb(mockTx))
 };
 const mockAudit = { write: jest.fn().mockResolvedValue(undefined) };
@@ -163,6 +165,69 @@ describe("PoultryService — farm/warehouse access checks (H7)", () => {
 
       expect(mockTx.eggProductionRecord.create).toHaveBeenCalled();
       expect(mockTx.stockBatch.create).not.toHaveBeenCalled();
+    });
+
+    it("M-BUG: credits cracked/dirty eggs to a 'seconds' product when one is given", async () => {
+      mockPrisma.flockBatch.findFirst.mockResolvedValue({ id: "batch-1", companyId: "company-1", farmId: "farm-1", branchId: "branch-1", poultryHouseId: "house-1", birdType: "LAYERS", status: "ACTIVE", code: "FLK-1", startDate: new Date("2020-01-01") });
+      mockTx.eggProductionRecord.create.mockResolvedValue({ id: "egg-rec-1" });
+      mockTx.warehouse.findFirst.mockResolvedValue({ id: "wh-1", companyId: "company-1", branchId: "branch-1" });
+      mockTx.product.findFirst.mockResolvedValue({ id: "prod-seconds", companyId: "company-1", uomId: "uom-1" });
+      mockTx.inventoryItem.upsert.mockResolvedValue({ id: "inv-seconds" });
+
+      const service = makeService();
+      const result = await service.createEggs(
+        makeUser({ farmIds: ["farm-1"], warehouseIds: ["wh-1"] }),
+        { flockBatchId: "batch-1", recordDate: "2026-01-01", goodEggs: 0, crackedEggs: 3, dirtyEggs: 2, brokenEggs: 0, rejectedEggs: 0, warehouseId: "wh-1", secondsProductId: "prod-seconds" } as never,
+        {}
+      );
+
+      expect(mockTx.stockBatch.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ productId: "prod-seconds", quantityReceived: 5, quantityRemaining: 5 })
+      });
+      expect(result.warning).toBeUndefined();
+    });
+
+    it("M-BUG: warns instead of silently discarding cracked/dirty eggs when no 'seconds' product is set", async () => {
+      mockPrisma.flockBatch.findFirst.mockResolvedValue({ id: "batch-1", companyId: "company-1", farmId: "farm-1", branchId: "branch-1", poultryHouseId: "house-1", birdType: "LAYERS", status: "ACTIVE", code: "FLK-1", startDate: new Date("2020-01-01") });
+      mockTx.eggProductionRecord.create.mockResolvedValue({ id: "egg-rec-1" });
+
+      const service = makeService();
+      const result = await service.createEggs(
+        makeUser({ farmIds: ["farm-1"], warehouseIds: ["wh-1"] }),
+        { flockBatchId: "batch-1", recordDate: "2026-01-01", goodEggs: 0, crackedEggs: 3, dirtyEggs: 2, brokenEggs: 0, rejectedEggs: 0 } as never,
+        {}
+      );
+
+      expect(mockTx.stockBatch.create).not.toHaveBeenCalled();
+      expect(result.warning).toMatch(/not credited to sellable stock/);
+    });
+
+    it("M-BUG: warns when eggs are logged for a LAYERS flock that's too young to plausibly be laying", async () => {
+      mockPrisma.flockBatch.findFirst.mockResolvedValue({ id: "batch-1", companyId: "company-1", farmId: "farm-1", branchId: "branch-1", poultryHouseId: "house-1", birdType: "LAYERS", status: "ACTIVE", code: "FLK-1", startDate: new Date("2026-01-01") });
+      mockTx.eggProductionRecord.create.mockResolvedValue({ id: "egg-rec-1" });
+
+      const service = makeService();
+      const result = await service.createEggs(
+        makeUser({ farmIds: ["farm-1"], warehouseIds: ["wh-1"] }),
+        { flockBatchId: "batch-1", recordDate: "2026-01-15", goodEggs: 10, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0 } as never,
+        {}
+      );
+
+      expect(result.warning).toMatch(/don't typically begin laying/);
+    });
+
+    it("M-BUG: no age warning once the flock is well past typical lay age", async () => {
+      mockPrisma.flockBatch.findFirst.mockResolvedValue({ id: "batch-1", companyId: "company-1", farmId: "farm-1", branchId: "branch-1", poultryHouseId: "house-1", birdType: "LAYERS", status: "ACTIVE", code: "FLK-1", startDate: new Date("2025-01-01") });
+      mockTx.eggProductionRecord.create.mockResolvedValue({ id: "egg-rec-1" });
+
+      const service = makeService();
+      const result = await service.createEggs(
+        makeUser({ farmIds: ["farm-1"], warehouseIds: ["wh-1"] }),
+        { flockBatchId: "batch-1", recordDate: "2026-01-15", goodEggs: 10, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0 } as never,
+        {}
+      );
+
+      expect(result.warning).toBeUndefined();
     });
   });
 });
@@ -400,7 +465,24 @@ describe("PoultryService.createFeed / consumeInventoryTx — floor-guarded decre
     expect(result.data.id).toBe("fc-1"); // the record still saves
     expect(mockTx.inventoryItem.updateMany).not.toHaveBeenCalled();
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("no InventoryItem"));
+    // M-BUG: previously visible server-side only — the caller (and
+    // therefore the UI) had no way to know stock wasn't actually deducted.
+    expect(result.warning).toMatch(/no stock was deducted/);
     warnSpy.mockRestore();
+  });
+
+  it("M-BUG: does not set a warning when stock is actually deducted", async () => {
+    mockPrisma.flockBatch.findFirst.mockResolvedValue(flockBatch);
+    mockTx.feedConsumptionRecord.create.mockResolvedValue({ id: "fc-1" });
+    mockTx.inventoryItem.findFirst.mockResolvedValue({ id: "inv-1" });
+    mockTx.inventoryItem.updateMany.mockResolvedValue({ count: 1 });
+    mockTx.stockBatch.findMany.mockResolvedValue([{ id: "sb-1", quantityRemaining: 50 }]);
+    mockTx.stockBatch.updateMany.mockResolvedValue({ count: 1 });
+
+    const service = makeService();
+    const result = await service.createFeed(makeUser(), dto as never, {});
+
+    expect(result.warning).toBeUndefined();
   });
 
   it("H-BUG-2: also consumes matching StockBatch lots FIFO, not just the aggregate quantityOnHand", async () => {
@@ -542,6 +624,44 @@ describe("PoultryService.createMortality / createTransfer — lock the batch row
         )
       ).rejects.toThrow(/only has 70 birds available/);
       expect(mockTx.poultryTransferRecord.create).not.toHaveBeenCalled();
+    });
+
+    it("M-BUG: reassigns the batch's own farm/house when a whole-flock, batch-level transfer moves every remaining bird", async () => {
+      mockPrisma.flockBatch.findFirst.mockResolvedValue(flockBatch);
+      mockPrisma.poultryHouse.findFirst.mockResolvedValue(toHouse);
+      mockTx.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+      mockTx.poultryTransferRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+      mockTx.poultryTransferRecord.create.mockResolvedValue({ id: "trf-1" });
+
+      const service = makeService();
+      // openingBirdCount is 1000 with zero mortality/prior transfers — moving all 1000 is a full-flock transfer.
+      await service.createTransfer(
+        makeUser({ hasGlobalAccess: true }),
+        { flockBatchId: "batch-1", toFarmId: "farm-2", toPoultryHouseId: "house-2", birdCount: 1000, transferDate: "2026-08-09" } as never,
+        {}
+      );
+
+      expect(mockTx.flockBatch.update).toHaveBeenCalledWith({
+        where: { id: "batch-1" },
+        data: { farmId: "farm-2", poultryHouseId: "house-2", updatedById: "user-1" }
+      });
+    });
+
+    it("does not reassign the batch's farm/house for a partial batch-level transfer", async () => {
+      mockPrisma.flockBatch.findFirst.mockResolvedValue(flockBatch);
+      mockPrisma.poultryHouse.findFirst.mockResolvedValue(toHouse);
+      mockTx.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+      mockTx.poultryTransferRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+      mockTx.poultryTransferRecord.create.mockResolvedValue({ id: "trf-1" });
+
+      const service = makeService();
+      await service.createTransfer(
+        makeUser({ hasGlobalAccess: true }),
+        { flockBatchId: "batch-1", toFarmId: "farm-2", toPoultryHouseId: "house-2", birdCount: 500, transferDate: "2026-08-09" } as never,
+        {}
+      );
+
+      expect(mockTx.flockBatch.update).not.toHaveBeenCalled();
     });
   });
 });
@@ -737,6 +857,66 @@ describe("PoultryService.updateRecord — feed correction is transactional and f
     await service.updateRecord(makeUser({ farmIds: ["farm-1"] }), "feed", "fc-1", { notes: "corrected note" }, {});
 
     expect(mockTx.inventoryItem.findFirst).not.toHaveBeenCalled();
+  });
+});
+
+describe("PoultryService.updateRecord — mortality correction uses the same lock-and-floor-guard as recording it fresh (M-BUG)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const existingMortalityRecord = { id: "mort-1", companyId: "company-1", farmId: "farm-1", flockBatchId: "batch-1", birdCount: 20 };
+
+  it("locks the batch row and floor-guards an increase, matching createMortality's own safety check", async () => {
+    mockPrisma.mortalityRecord.findFirst.mockResolvedValue(existingMortalityRecord);
+    mockTx.flockBatch.findFirstOrThrow.mockResolvedValue({ openingBirdCount: 1000 });
+    // 700 total dead recorded across the batch, of which 20 is THIS record (already counted) —
+    // excluding it: 680 dead elsewhere, so 320 live birds are available for this correction.
+    mockTx.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 680 } });
+    mockTx.mortalityRecord.update.mockResolvedValue({ id: "mort-1", birdCount: 300 });
+
+    const service = makeService();
+    await service.updateRecord(makeUser({ farmIds: ["farm-1"] }), "mortality", "mort-1", { birdCount: 300 }, {});
+
+    expect(mockTx.$queryRaw).toHaveBeenCalled();
+    expect(mockTx.mortalityRecord.aggregate).toHaveBeenCalledWith({
+      where: { flockBatchId: "batch-1", deletedAt: null, id: { not: "mort-1" } },
+      _sum: { birdCount: true }
+    });
+    expect(mockTx.mortalityRecord.update).toHaveBeenCalledWith({ where: { id: "mort-1" }, data: { birdCount: 300, updatedById: "user-1" } });
+  });
+
+  it("rejects a correction that would exceed the batch's actual live-bird count instead of silently flooring to zero", async () => {
+    mockPrisma.mortalityRecord.findFirst.mockResolvedValue(existingMortalityRecord);
+    mockTx.flockBatch.findFirstOrThrow.mockResolvedValue({ openingBirdCount: 1000 });
+    mockTx.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 680 } });
+
+    const service = makeService();
+    await expect(
+      service.updateRecord(makeUser({ farmIds: ["farm-1"] }), "mortality", "mort-1", { birdCount: 500 }, {})
+    ).rejects.toThrow(/Only 320 live bird/);
+    expect(mockTx.mortalityRecord.update).not.toHaveBeenCalled();
+  });
+
+  it("skips the lock/floor-guard entirely when the correction doesn't actually change birdCount", async () => {
+    mockPrisma.mortalityRecord.findFirst.mockResolvedValue(existingMortalityRecord);
+    mockTx.mortalityRecord.update.mockResolvedValue({ id: "mort-1", birdCount: 20, reason: "Updated note" });
+
+    const service = makeService();
+    await service.updateRecord(makeUser({ farmIds: ["farm-1"] }), "mortality", "mort-1", { birdCount: 20, reason: "Updated note" }, {});
+
+    expect(mockTx.$queryRaw).not.toHaveBeenCalled();
+    expect(mockTx.flockBatch.findFirstOrThrow).not.toHaveBeenCalled();
+  });
+
+  it("gives birds back without needing a floor guard when the correction decreases birdCount", async () => {
+    mockPrisma.mortalityRecord.findFirst.mockResolvedValue(existingMortalityRecord);
+    mockTx.flockBatch.findFirstOrThrow.mockResolvedValue({ openingBirdCount: 1000 });
+    mockTx.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 680 } });
+    mockTx.mortalityRecord.update.mockResolvedValue({ id: "mort-1", birdCount: 5 });
+
+    const service = makeService();
+    await service.updateRecord(makeUser({ farmIds: ["farm-1"] }), "mortality", "mort-1", { birdCount: 5 }, {});
+
+    expect(mockTx.mortalityRecord.update).toHaveBeenCalledWith({ where: { id: "mort-1" }, data: { birdCount: 5, updatedById: "user-1" } });
   });
 });
 

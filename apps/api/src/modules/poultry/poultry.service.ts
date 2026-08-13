@@ -733,17 +733,23 @@ export class PoultryService {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
     if (dto.warehouseId) this.assertWarehouseAccess(user, dto.warehouseId);
     const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
+    let stockWarning: string | undefined;
     const data = await this.prisma.$transaction(async (tx) => {
       const record = await tx.feedConsumptionRecord.create({
         data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), recordDate: new Date(dto.recordDate), feedProductId: dto.feedProductId, warehouseId: dto.warehouseId, quantityKg: dto.quantityKg, costAmount: dto.costAmount, notes: dto.notes, status: dto.status ?? "SUBMITTED" }
       });
       if (dto.feedProductId && dto.warehouseId) {
-        await this.consumeInventoryTx(tx, user, batch, dto.warehouseId, dto.feedProductId, dto.quantityKg, "PRODUCTION_INPUT", "FeedConsumptionRecord", record.id, `Feed consumption for flock ${batch.code}`);
+        // M-BUG (2026-08-13): a mismatch between this warehouse and the one
+        // the product's actually stocked in used to fail completely
+        // silently — the record saved as if stock was deducted, with
+        // nothing telling the person who entered it that it wasn't.
+        const result = await this.consumeInventoryTx(tx, user, batch, dto.warehouseId, dto.feedProductId, dto.quantityKg, "PRODUCTION_INPUT", "FeedConsumptionRecord", record.id, `Feed consumption for flock ${batch.code}`);
+        stockWarning = result.warning;
       }
       return record;
     });
     await this.writeAudit(user, "CREATE", "FeedConsumptionRecord", data.id, "Recorded poultry feed consumption", context, batch.farmId);
-    return { data };
+    return { data, warning: stockWarning };
   }
 
   async createEggs(user: AuthenticatedUser, dto: CreateEggProductionRecordDto, context: RequestContext) {
@@ -763,7 +769,22 @@ export class PoultryService {
     if (dto.eggProductId && dto.warehouseId && dto.goodEggs > 0) {
       await this.assertNoActiveWithdrawal(dto.flockBatchId, user.companyId, "eggs collected during this window can still be logged, but omit the product/warehouse to record them without crediting sellable stock");
     }
+    // M-BUG (2026-08-13): no sanity check that this flock is old enough to
+    // plausibly be laying — a wrong-batch data-entry mistake (an obvious
+    // error to a person looking at it) went through unquestioned. Can't
+    // know for sure whether birds arrived as day-olds or already-point-of-
+    // lay pullets, so this warns rather than blocks — 16 weeks is a
+    // generously early floor even for day-old-reared layers.
+    const rawBatch = batch as unknown as { startDate?: Date | string };
+    let ageWarning: string | undefined;
+    if (batch.birdType === "LAYERS" && rawBatch.startDate) {
+      const daysSinceStart = (new Date(dto.recordDate).getTime() - new Date(rawBatch.startDate).getTime()) / 86400000;
+      if (daysSinceStart < 112) {
+        ageWarning = `This flock started ${Math.max(Math.floor(daysSinceStart), 0)} day(s) ago — layers don't typically begin laying until ~16 weeks. Please confirm this is the right batch.`;
+      }
+    }
     const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
+    let stockWarning: string | undefined;
     const data = await this.prisma.$transaction(async (tx) => {
       const record = await tx.eggProductionRecord.create({
         data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), recordDate: new Date(dto.recordDate), goodEggs: dto.goodEggs, crackedEggs: dto.crackedEggs, dirtyEggs: dto.dirtyEggs, brokenEggs: dto.brokenEggs, rejectedEggs: dto.rejectedEggs, notes: dto.notes, status: dto.status ?? "SUBMITTED" }
@@ -771,10 +792,20 @@ export class PoultryService {
       if (dto.eggProductId && dto.warehouseId && dto.goodEggs > 0) {
         await this.addToInventoryTx(tx, user, batch, dto.warehouseId, dto.eggProductId, dto.goodEggs, "EggProductionRecord", record.id, `Egg production from flock ${batch.code}`);
       }
+      // M-BUG (2026-08-13): only goodEggs could ever become sellable stock —
+      // cracked/dirty eggs (commonly sold at a discount as "seconds" on real
+      // farms) had no way to be sold through the system at all.
+      const seconds = dto.crackedEggs + dto.dirtyEggs;
+      if (dto.secondsProductId && dto.warehouseId && seconds > 0) {
+        await this.addToInventoryTx(tx, user, batch, dto.warehouseId, dto.secondsProductId, seconds, "EggProductionRecord", record.id, `Seconds (cracked/dirty) eggs from flock ${batch.code}`);
+      } else if (seconds > 0 && !dto.secondsProductId) {
+        stockWarning = `${seconds} cracked/dirty egg(s) were recorded but not credited to sellable stock — set a "seconds" product to sell them at a discount.`;
+      }
       return record;
     });
     await this.writeAudit(user, "CREATE", "EggProductionRecord", data.id, "Recorded egg production", context, batch.farmId);
-    return { data };
+    const warning = [ageWarning, stockWarning].filter(Boolean).join(" ") || undefined;
+    return { data, warning };
   }
 
   async createWeight(user: AuthenticatedUser, dto: CreateBirdWeightRecordDto, context: RequestContext) {
@@ -791,34 +822,38 @@ export class PoultryService {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
     if (dto.warehouseId) this.assertWarehouseAccess(user, dto.warehouseId);
     const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
+    let stockWarning: string | undefined;
     const data = await this.prisma.$transaction(async (tx) => {
       const record = await tx.medicationRecord.create({
         data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), medicationName: dto.medicationName, dosage: dto.dosage, route: dto.route, startDate: new Date(dto.startDate), endDate: dto.endDate ? new Date(dto.endDate) : undefined, withdrawalUntil: dto.withdrawalUntil ? new Date(dto.withdrawalUntil) : undefined, notes: dto.notes }
       });
       if (dto.medicineProductId && dto.warehouseId && dto.quantityUsed) {
-        await this.consumeInventoryTx(tx, user, batch, dto.warehouseId, dto.medicineProductId, dto.quantityUsed, "PRODUCTION_INPUT", "MedicationRecord", record.id, `Medication (${dto.medicationName}) for flock ${batch.code}`);
+        const result = await this.consumeInventoryTx(tx, user, batch, dto.warehouseId, dto.medicineProductId, dto.quantityUsed, "PRODUCTION_INPUT", "MedicationRecord", record.id, `Medication (${dto.medicationName}) for flock ${batch.code}`);
+        stockWarning = result.warning;
       }
       return record;
     });
     await this.writeAudit(user, "CREATE", "MedicationRecord", data.id, "Recorded poultry medication", context, batch.farmId);
-    return { data };
+    return { data, warning: stockWarning };
   }
 
   async createVaccination(user: AuthenticatedUser, dto: CreateVaccinationRecordDto, context: RequestContext) {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
     if (dto.warehouseId) this.assertWarehouseAccess(user, dto.warehouseId);
     const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
+    let stockWarning: string | undefined;
     const data = await this.prisma.$transaction(async (tx) => {
       const record = await tx.vaccinationRecord.create({
         data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), vaccineName: dto.vaccineName, dose: dto.dose, vaccinationDate: new Date(dto.vaccinationDate), nextDueDate: dto.nextDueDate ? new Date(dto.nextDueDate) : undefined, notes: dto.notes }
       });
       if (dto.vaccineProductId && dto.warehouseId && dto.quantityUsed) {
-        await this.consumeInventoryTx(tx, user, batch, dto.warehouseId, dto.vaccineProductId, dto.quantityUsed, "PRODUCTION_INPUT", "VaccinationRecord", record.id, `Vaccination (${dto.vaccineName}) for flock ${batch.code}`);
+        const result = await this.consumeInventoryTx(tx, user, batch, dto.warehouseId, dto.vaccineProductId, dto.quantityUsed, "PRODUCTION_INPUT", "VaccinationRecord", record.id, `Vaccination (${dto.vaccineName}) for flock ${batch.code}`);
+        stockWarning = result.warning;
       }
       return record;
     });
     await this.writeAudit(user, "CREATE", "VaccinationRecord", data.id, "Recorded poultry vaccination", context, batch.farmId);
-    return { data };
+    return { data, warning: stockWarning };
   }
 
   async createHealthObservation(user: AuthenticatedUser, dto: CreateHealthObservationDto, context: RequestContext) {
@@ -869,6 +904,17 @@ export class PoultryService {
         ]);
         const liveBirds = Math.max(0, batch.openingBirdCount - (mortalityAgg._sum.birdCount ?? 0) - (outgoingAgg._sum.birdCount ?? 0));
         if (dto.birdCount > liveBirds) throw new BadRequestException(`Cannot transfer ${dto.birdCount} birds. Only ${liveBirds} live birds remain in this batch.`);
+        // M-BUG (2026-08-13): a whole-flock, batch-level transfer (not
+        // scoped to one pen) updated the transfer paperwork but never the
+        // batch's own farmId/poultryHouseId — access checks throughout
+        // this service gate on FlockBatch.farmId, so staff scoped only to
+        // the destination farm could find themselves unable to log
+        // anything further for a flock that's physically now theirs. Only
+        // reassign when the ENTIRE remaining flock moves — a partial
+        // transfer legitimately leaves birds (and the batch's home) behind.
+        if (dto.birdCount === liveBirds && liveBirds > 0) {
+          await tx.flockBatch.update({ where: { id: batch.id }, data: { farmId: dto.toFarmId, poultryHouseId: dto.toPoultryHouseId, updatedById: user.id } });
+        }
       }
 
       const transfer = await tx.poultryTransferRecord.create({
@@ -1181,6 +1227,29 @@ export class PoultryService {
         vaccinations: "vaccinationRecord", health: "poultryHealthObservation",
         transfers: "poultryTransferRecord", costs: "poultryCostRecord"
       } as Record<string, string>)[type];
+
+      // M-BUG (2026-08-13): recording a death for the first time
+      // (createMortality) locks the batch row and refuses to let the live
+      // count go negative — correcting an existing entry did neither, so an
+      // implausible correction just silently floored to zero live birds
+      // with no warning anything was off. Mirrors createMortality's own
+      // lock-then-check exactly, applied to the delta versus what this
+      // record already contributed to the aggregate.
+      if (type === "mortality" && updateData.birdCount !== undefined) {
+        const mortality = existing as { birdCount: number; flockBatchId: string };
+        const newCount = Number(updateData.birdCount);
+        if (newCount < 0) throw new BadRequestException("Bird count cannot be negative.");
+        if (newCount !== mortality.birdCount) {
+          await tx.$queryRaw`SELECT id FROM FlockBatch WHERE id = ${mortality.flockBatchId} FOR UPDATE`;
+          const batch = await tx.flockBatch.findFirstOrThrow({ where: { id: mortality.flockBatchId }, select: { openingBirdCount: true } });
+          const { _sum } = await tx.mortalityRecord.aggregate({ where: { flockBatchId: mortality.flockBatchId, deletedAt: null, id: { not: id } }, _sum: { birdCount: true } });
+          const liveBirdsExcludingThisRecord = Math.max(0, batch.openingBirdCount - (_sum.birdCount ?? 0));
+          if (newCount > liveBirdsExcludingThisRecord) {
+            throw new BadRequestException(`Cannot correct this entry to ${newCount}. Only ${liveBirdsExcludingThisRecord} live bird(s) would remain available in this batch.`);
+          }
+        }
+      }
+
       const updated = await (tx[modelKey as keyof typeof tx] as { update: (args: unknown) => Promise<unknown> }).update({ where: { id }, data: updateData });
 
       if (type === "feed" && updateData.quantityKg !== undefined) {
@@ -1592,8 +1661,13 @@ export class PoultryService {
       // which could mask a warehouse/product misconfiguration indefinitely.
       // Still don't block the record (a missing inventory setup shouldn't
       // stop a vet from logging medication given), but make it visible.
+      // M-BUG (2026-08-13): visible server-side only wasn't enough — the
+      // person who entered the record saw the same "saved successfully"
+      // response either way, with nothing telling them stock wasn't
+      // actually touched. Now returned so the caller can surface it.
+      const warning = `No inventory item is set up for this product in the selected warehouse — the record was saved, but no stock was deducted.`;
       this.logger.warn(`consumeInventoryTx: no InventoryItem for product ${productId} in warehouse ${warehouseId} (companyId ${user.companyId}) — ${referenceType} ${referenceId} saved with no stock deducted.`);
-      return;
+      return { stockDeducted: false, warning };
     }
     const product = await tx.product.findFirst({ where: { id: productId } });
     // H4: floor-guarded updateMany — same reasoning as the other guarded
@@ -1637,6 +1711,7 @@ export class PoultryService {
     await tx.stockMovement.create({
       data: { companyId: user.companyId, branchId: batch.branchId, productId, inventoryItemId: item.id, fromWarehouseId: warehouseId, warehouseId, farmId: batch.farmId, uomId: product!.uomId, movementType, quantity, referenceType, referenceId, notes, createdById: user.id }
     });
+    return { stockDeducted: true as const };
   }
 
   private async addToInventoryTx(

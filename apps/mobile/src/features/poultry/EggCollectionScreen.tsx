@@ -29,6 +29,7 @@ export function EggCollectionScreen() {
   const [notes, setNotes]             = useState("");
   const [warehouseId, setWarehouseId] = useState("");
   const [eggProductId, setEggProductId] = useState("");
+  const [secondsProductId, setSecondsProductId] = useState("");
   const [penId, setPenId]             = useState("");
   const [errors, setErrors]           = useState<Record<string, string>>({});
 
@@ -127,6 +128,7 @@ export function EggCollectionScreen() {
       notes:         notes || undefined,
       warehouseId:   warehouseId  || undefined,
       eggProductId:  eggProductId || undefined,
+      secondsProductId: secondsProductId || undefined,
       penId:         penId        || undefined,
     });
   }
@@ -228,6 +230,15 @@ export function EggCollectionScreen() {
             <Text style={styles.sectionHint}>Choose a warehouse and the matching inventory item to automatically update stock with the good eggs collected today.</Text>
             <SelectField label="Warehouse" value={warehouseId} options={warehouses} onChange={setWarehouseId} placeholder="No warehouse selected" />
             <SelectField label="Inventory Item (Eggs)" value={eggProductId} options={products} onChange={setEggProductId} placeholder="No inventory item selected" />
+            {totalRejects > 0 && (
+              <SelectField
+                label="Seconds Item (Cracked/Dirty, optional)"
+                value={secondsProductId}
+                options={products}
+                onChange={setSecondsProductId}
+                placeholder="Not added to stock"
+              />
+            )}
           </View>
 
         </ScrollView>

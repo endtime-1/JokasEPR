@@ -321,6 +321,15 @@ export class CreateEggProductionRecordDto extends FlockRecordDto {
   @IsOptional()
   @IsUUID()
   warehouseId?: string;
+
+  // M-BUG (2026-08-13): only goodEggs could ever become sellable stock —
+  // cracked/dirty eggs (commonly sold at a discount as "seconds" on real
+  // farms) had no way to be sold through the system at all. Mirrors the
+  // goodEggs convention: optional, credited to its own product (a "Grade B
+  // / Seconds" SKU) in the same warehouse if given.
+  @IsOptional()
+  @IsUUID()
+  secondsProductId?: string;
 }
 
 export class CreateBirdWeightRecordDto extends FlockRecordDto {
