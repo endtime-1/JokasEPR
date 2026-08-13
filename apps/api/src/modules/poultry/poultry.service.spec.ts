@@ -6,13 +6,15 @@ jest.mock("../../common/next-ref", () => ({ nextRef: jest.fn().mockResolvedValue
 
 const mockTx = {
   feedConsumptionRecord: { create: jest.fn(), update: jest.fn() },
-  eggProductionRecord: { create: jest.fn() },
+  eggProductionRecord: { create: jest.fn(), update: jest.fn() },
+  medicationRecord: { update: jest.fn() },
+  vaccinationRecord: { update: jest.fn() },
   dailyPoultryRecord: { create: jest.fn(), update: jest.fn() },
   inventoryItem: { findFirst: jest.fn(), updateMany: jest.fn(), update: jest.fn(), upsert: jest.fn() },
   product: { findFirst: jest.fn().mockResolvedValue({ id: "prod-feed", uomId: "uom-1" }) },
   warehouse: { findFirst: jest.fn() },
   stockBatch: { create: jest.fn(), findMany: jest.fn().mockResolvedValue([]), updateMany: jest.fn() },
-  stockMovement: { create: jest.fn() },
+  stockMovement: { create: jest.fn(), findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn() },
   mortalityRecord: { aggregate: jest.fn(), create: jest.fn() },
   poultryTransferRecord: { aggregate: jest.fn(), create: jest.fn() },
   batchPenAllocation: { findFirst: jest.fn(), upsert: jest.fn() },
@@ -23,10 +25,13 @@ const mockTx = {
 const mockPrisma = {
   poultryHouse: { findFirst: jest.fn() },
   pen: { findFirst: jest.fn(), findMany: jest.fn() },
-  flockBatch: { findFirst: jest.fn(), create: jest.fn() },
+  flockBatch: { findFirst: jest.fn(), create: jest.fn(), update: jest.fn() },
   batchPenAllocation: { findFirst: jest.fn() },
   poultryTransferRecord: { findFirst: jest.fn() },
   feedConsumptionRecord: { findFirst: jest.fn() },
+  eggProductionRecord: { findFirst: jest.fn() },
+  medicationRecord: { findFirst: jest.fn() },
+  vaccinationRecord: { findFirst: jest.fn() },
   dailyPoultryRecord: { findFirst: jest.fn() },
   $transaction: jest.fn().mockImplementation((cb: (tx: typeof mockTx) => Promise<unknown>) => cb(mockTx))
 };
@@ -128,6 +133,72 @@ describe("PoultryService — farm/warehouse access checks (H7)", () => {
         })
       });
     });
+
+    it("H-BUG-2: blocks crediting eggs to sellable stock while the batch is inside an active medication withdrawal window", async () => {
+      mockPrisma.flockBatch.findFirst.mockResolvedValue({ id: "batch-1", companyId: "company-1", farmId: "farm-1", branchId: "branch-1", poultryHouseId: "house-1", birdType: "LAYERS", status: "ACTIVE", code: "FLK-1" });
+      mockPrisma.medicationRecord.findFirst.mockResolvedValue({ medicationName: "Amoxicillin", withdrawalUntil: new Date("2099-01-01") });
+
+      const service = makeService();
+      await expect(
+        service.createEggs(
+          makeUser({ farmIds: ["farm-1"], warehouseIds: ["wh-1"] }),
+          { flockBatchId: "batch-1", recordDate: "2026-01-01", goodEggs: 10, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0, warehouseId: "wh-1", eggProductId: "prod-1" } as never,
+          {}
+        )
+      ).rejects.toThrow(/active withdrawal period/);
+      expect(mockTx.eggProductionRecord.create).not.toHaveBeenCalled();
+    });
+
+    it("still allows logging the raw egg count during an active withdrawal window when no product/warehouse is given (no stock effect)", async () => {
+      mockPrisma.flockBatch.findFirst.mockResolvedValue({ id: "batch-1", companyId: "company-1", farmId: "farm-1", branchId: "branch-1", poultryHouseId: "house-1", birdType: "LAYERS", status: "ACTIVE", code: "FLK-1" });
+      mockPrisma.medicationRecord.findFirst.mockResolvedValue({ medicationName: "Amoxicillin", withdrawalUntil: new Date("2099-01-01") });
+      mockTx.eggProductionRecord.create.mockResolvedValue({ id: "egg-rec-1" });
+
+      const service = makeService();
+      await service.createEggs(
+        makeUser({ farmIds: ["farm-1"], warehouseIds: ["wh-1"] }),
+        { flockBatchId: "batch-1", recordDate: "2026-01-01", goodEggs: 10, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0 } as never,
+        {}
+      );
+
+      expect(mockTx.eggProductionRecord.create).toHaveBeenCalled();
+      expect(mockTx.stockBatch.create).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe("PoultryService.updateBatchStatus — cannot mark SOLD during an active medication withdrawal window (H-BUG-2)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("blocks the ACTIVE→SOLD transition while a withdrawal period is still in effect", async () => {
+    mockPrisma.flockBatch.findFirst.mockResolvedValue({ id: "batch-1", companyId: "company-1", farmId: "farm-1", status: "ACTIVE" });
+    mockPrisma.medicationRecord.findFirst.mockResolvedValue({ medicationName: "Amoxicillin", withdrawalUntil: new Date("2099-01-01") });
+
+    const service = makeService();
+    await expect(
+      service.updateBatchStatus(makeUser({ farmIds: ["farm-1"] }), "batch-1", { status: "SOLD" } as never, {})
+    ).rejects.toThrow(/active withdrawal period/);
+  });
+
+  it("allows the ACTIVE→SOLD transition once the withdrawal period has passed", async () => {
+    mockPrisma.flockBatch.findFirst.mockResolvedValue({ id: "batch-1", companyId: "company-1", farmId: "farm-1", status: "ACTIVE" });
+    mockPrisma.medicationRecord.findFirst.mockResolvedValue(null);
+    mockPrisma.flockBatch.update.mockResolvedValue({ id: "batch-1", status: "SOLD" });
+
+    const service = makeService();
+    await expect(
+      service.updateBatchStatus(makeUser({ farmIds: ["farm-1"] }), "batch-1", { status: "SOLD" } as never, {})
+    ).resolves.toBeDefined();
+  });
+
+  it("does not check withdrawal at all for transitions other than SOLD", async () => {
+    mockPrisma.flockBatch.findFirst.mockResolvedValue({ id: "batch-1", companyId: "company-1", farmId: "farm-1", status: "ACTIVE" });
+    mockPrisma.flockBatch.update.mockResolvedValue({ id: "batch-1", status: "CLOSED" });
+
+    const service = makeService();
+    await service.updateBatchStatus(makeUser({ farmIds: ["farm-1"] }), "batch-1", { status: "CLOSED" } as never, {});
+
+    expect(mockPrisma.medicationRecord.findFirst).not.toHaveBeenCalled();
   });
 });
 
@@ -666,5 +737,156 @@ describe("PoultryService.updateRecord — feed correction is transactional and f
     await service.updateRecord(makeUser({ farmIds: ["farm-1"] }), "feed", "fc-1", { notes: "corrected note" }, {});
 
     expect(mockTx.inventoryItem.findFirst).not.toHaveBeenCalled();
+  });
+});
+
+describe("PoultryService.updateRecord — eggs correction adjusts the inventory it originally credited (H-BUG-2)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const existingEggRecord = { id: "egg-1", companyId: "company-1", farmId: "farm-1", goodEggs: 100 };
+  const originalMovement = { warehouseId: "wh-1", productId: "prod-egg" };
+
+  it("credits a new adjustment lot when the correction raises goodEggs", async () => {
+    mockPrisma.eggProductionRecord.findFirst.mockResolvedValue(existingEggRecord);
+    mockTx.eggProductionRecord.update.mockResolvedValue({ id: "egg-1", goodEggs: 150 });
+    mockTx.stockMovement.findFirst.mockResolvedValue(originalMovement);
+    mockTx.inventoryItem.findFirst.mockResolvedValue({ id: "inv-egg", branchId: "branch-1", farmId: "farm-1", uomId: "uom-1" });
+
+    const service = makeService();
+    await service.updateRecord(makeUser({ farmIds: ["farm-1"] }), "eggs", "egg-1", { goodEggs: 150 }, {});
+
+    expect(mockTx.inventoryItem.update).toHaveBeenCalledWith({
+      where: { id: "inv-egg" },
+      data: { quantityOnHand: { increment: 50 }, updatedById: "user-1" }
+    });
+    expect(mockTx.stockBatch.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ batchNumber: "ADJ-EGG-1", quantityReceived: 50, quantityRemaining: 50 })
+    });
+  });
+
+  it("pulls stock back out, floor-guarded, when the correction lowers goodEggs", async () => {
+    mockPrisma.eggProductionRecord.findFirst.mockResolvedValue(existingEggRecord);
+    mockTx.eggProductionRecord.update.mockResolvedValue({ id: "egg-1", goodEggs: 60 });
+    mockTx.stockMovement.findFirst.mockResolvedValue(originalMovement);
+    mockTx.inventoryItem.findFirst.mockResolvedValue({ id: "inv-egg", branchId: "branch-1", farmId: "farm-1", uomId: "uom-1" });
+    mockTx.inventoryItem.updateMany.mockResolvedValue({ count: 1 });
+    mockTx.stockBatch.findMany.mockResolvedValue([{ id: "sb-1", quantityRemaining: 40 }]);
+    mockTx.stockBatch.updateMany.mockResolvedValue({ count: 1 });
+
+    const service = makeService();
+    await service.updateRecord(makeUser({ farmIds: ["farm-1"] }), "eggs", "egg-1", { goodEggs: 60 }, {});
+
+    expect(mockTx.inventoryItem.updateMany).toHaveBeenCalledWith({
+      where: { id: "inv-egg", quantityOnHand: { gte: 40 } },
+      data: { quantityOnHand: { decrement: 40 }, updatedById: "user-1" }
+    });
+    expect(mockTx.stockBatch.updateMany).toHaveBeenCalledWith({
+      where: { id: "sb-1", quantityRemaining: { gte: 40 } },
+      data: { quantityRemaining: { decrement: 40 } }
+    });
+  });
+
+  it("blocks lowering goodEggs when the previously credited stock was already consumed elsewhere", async () => {
+    mockPrisma.eggProductionRecord.findFirst.mockResolvedValue(existingEggRecord);
+    mockTx.eggProductionRecord.update.mockResolvedValue({ id: "egg-1", goodEggs: 60 });
+    mockTx.stockMovement.findFirst.mockResolvedValue(originalMovement);
+    mockTx.inventoryItem.findFirst.mockResolvedValue({ id: "inv-egg", branchId: "branch-1", farmId: "farm-1", uomId: "uom-1" });
+    mockTx.inventoryItem.updateMany.mockResolvedValue({ count: 0 });
+
+    const service = makeService();
+    await expect(
+      service.updateRecord(makeUser({ farmIds: ["farm-1"] }), "eggs", "egg-1", { goodEggs: 60 }, {})
+    ).rejects.toThrow(/already been consumed elsewhere/);
+  });
+
+  it("skips inventory adjustment entirely when the original record never had a stock movement (no product/warehouse given at creation)", async () => {
+    mockPrisma.eggProductionRecord.findFirst.mockResolvedValue(existingEggRecord);
+    mockTx.eggProductionRecord.update.mockResolvedValue({ id: "egg-1", goodEggs: 150 });
+    mockTx.stockMovement.findFirst.mockResolvedValue(null);
+
+    const service = makeService();
+    await service.updateRecord(makeUser({ farmIds: ["farm-1"] }), "eggs", "egg-1", { goodEggs: 150 }, {});
+
+    expect(mockTx.inventoryItem.findFirst).not.toHaveBeenCalled();
+  });
+});
+
+describe("PoultryService.softDelete — feed/medication/vaccination/egg deletes reverse their inventory effect (H-BUG-2)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("gives feed stock back when a feed-consumption record with a stock movement is deleted", async () => {
+    mockPrisma.feedConsumptionRecord.findFirst.mockResolvedValue({ id: "fc-1", companyId: "company-1", farmId: "farm-1", branchId: "branch-1" });
+    mockTx.stockMovement.findMany.mockResolvedValue([
+      { warehouseId: "wh-1", quantity: 50, productId: "prod-feed", uomId: "uom-1", movementType: "PRODUCTION_INPUT" }
+    ]);
+    mockTx.inventoryItem.findFirst.mockResolvedValue({ id: "inv-1" });
+    mockTx.feedConsumptionRecord.update.mockResolvedValue({ id: "fc-1", deletedAt: new Date() });
+
+    const service = makeService();
+    await service.softDelete(makeUser({ farmIds: ["farm-1"] }), "feed", "fc-1", {});
+
+    expect(mockTx.inventoryItem.update).toHaveBeenCalledWith({
+      where: { id: "inv-1" },
+      data: { quantityOnHand: { increment: 50 }, updatedById: "user-1" }
+    });
+    expect(mockTx.stockBatch.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ batchNumber: "ADJ-FC-1", quantityReceived: 50, quantityRemaining: 50 })
+    });
+    expect(mockTx.feedConsumptionRecord.update).toHaveBeenCalledWith({
+      where: { id: "fc-1" },
+      data: { deletedAt: expect.any(Date), updatedById: "user-1" }
+    });
+  });
+
+  it("pulls egg stock back out, floor-guarded, when an egg-production record with a stock movement is deleted", async () => {
+    mockPrisma.eggProductionRecord.findFirst.mockResolvedValue({ id: "egg-1", companyId: "company-1", farmId: "farm-1", branchId: "branch-1" });
+    mockTx.stockMovement.findMany.mockResolvedValue([
+      { warehouseId: "wh-1", quantity: 100, productId: "prod-egg", uomId: "uom-1", movementType: "PRODUCTION_OUTPUT" }
+    ]);
+    mockTx.inventoryItem.findFirst.mockResolvedValue({ id: "inv-egg" });
+    mockTx.inventoryItem.updateMany.mockResolvedValue({ count: 1 });
+    mockTx.stockBatch.findMany.mockResolvedValue([{ id: "sb-1", quantityRemaining: 100 }]);
+    mockTx.stockBatch.updateMany.mockResolvedValue({ count: 1 });
+    mockTx.eggProductionRecord.update.mockResolvedValue({ id: "egg-1", deletedAt: new Date() });
+
+    const service = makeService();
+    await service.softDelete(makeUser({ farmIds: ["farm-1"] }), "eggs", "egg-1", {});
+
+    expect(mockTx.inventoryItem.updateMany).toHaveBeenCalledWith({
+      where: { id: "inv-egg", quantityOnHand: { gte: 100 } },
+      data: { quantityOnHand: { decrement: 100 }, updatedById: "user-1" }
+    });
+    expect(mockTx.stockBatch.updateMany).toHaveBeenCalledWith({
+      where: { id: "sb-1", quantityRemaining: { gte: 100 } },
+      data: { quantityRemaining: { decrement: 100 } }
+    });
+  });
+
+  it("blocks deleting an egg-production record when the credited eggs were already consumed elsewhere", async () => {
+    mockPrisma.eggProductionRecord.findFirst.mockResolvedValue({ id: "egg-1", companyId: "company-1", farmId: "farm-1", branchId: "branch-1" });
+    mockTx.stockMovement.findMany.mockResolvedValue([
+      { warehouseId: "wh-1", quantity: 100, productId: "prod-egg", uomId: "uom-1", movementType: "PRODUCTION_OUTPUT" }
+    ]);
+    mockTx.inventoryItem.findFirst.mockResolvedValue({ id: "inv-egg" });
+    mockTx.inventoryItem.updateMany.mockResolvedValue({ count: 0 });
+
+    const service = makeService();
+    await expect(service.softDelete(makeUser({ farmIds: ["farm-1"] }), "eggs", "egg-1", {})).rejects.toThrow(/already been partly or fully consumed/);
+    expect(mockTx.eggProductionRecord.update).not.toHaveBeenCalled();
+  });
+
+  it("skips inventory reversal entirely and just soft-deletes when the record never had a stock movement", async () => {
+    mockPrisma.feedConsumptionRecord.findFirst.mockResolvedValue({ id: "fc-2", companyId: "company-1", farmId: "farm-1", branchId: "branch-1" });
+    mockTx.stockMovement.findMany.mockResolvedValue([]);
+    mockTx.feedConsumptionRecord.update.mockResolvedValue({ id: "fc-2", deletedAt: new Date() });
+
+    const service = makeService();
+    await service.softDelete(makeUser({ farmIds: ["farm-1"] }), "feed", "fc-2", {});
+
+    expect(mockTx.inventoryItem.findFirst).not.toHaveBeenCalled();
+    expect(mockTx.feedConsumptionRecord.update).toHaveBeenCalledWith({
+      where: { id: "fc-2" },
+      data: { deletedAt: expect.any(Date), updatedById: "user-1" }
+    });
   });
 });

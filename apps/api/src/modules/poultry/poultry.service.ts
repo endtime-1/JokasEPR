@@ -34,6 +34,16 @@ type RequestContext = {
   userAgent?: string;
 };
 
+// Record types whose create path optionally moves real inventory
+// (consumeInventoryTx/addToInventoryTx), keyed to the referenceType string
+// the resulting StockMovement was written with.
+const INVENTORY_LINKED_RECORD_TYPES: Record<string, string> = {
+  feed: "FeedConsumptionRecord",
+  eggs: "EggProductionRecord",
+  medications: "MedicationRecord",
+  vaccinations: "VaccinationRecord"
+};
+
 type BatchContext = {
   id: string;
   code: string;
@@ -565,6 +575,14 @@ export class PoultryService {
     if (!allowed.includes(dto.status)) {
       throw new BadRequestException(`Cannot transition a batch from ${batch.status} to ${dto.status}.${allowed.length ? ` Allowed: ${allowed.join(", ")}.` : " This status is terminal."}`);
     }
+    // H-BUG-2 (2026-08-13): withdrawalUntil was captured on every medication
+    // record and shown as a passive reminder, but nothing ever actually
+    // stopped a batch from being marked SOLD while still inside that
+    // withdrawal window — the whole point of the field is food safety
+    // (residue hasn't cleared the birds yet), not just record-keeping.
+    if (dto.status === "SOLD") {
+      await this.assertNoActiveWithdrawal(id, user.companyId, "cannot mark it SOLD until the withdrawal period has passed");
+    }
     const data = await this.prisma.flockBatch.update({
       where: { id },
       data: {
@@ -737,6 +755,14 @@ export class PoultryService {
     // this credited inventory to dto.warehouseId with no access check, letting
     // a user credit egg output to a warehouse outside their assignment.
     if (dto.warehouseId) this.assertWarehouseAccess(user, dto.warehouseId);
+    // H-BUG-2 (2026-08-13): a batch inside an active medication withdrawal
+    // window shouldn't have its eggs credited to sellable stock — residue
+    // hasn't cleared yet. The raw count can still be logged for
+    // record-keeping (omit product/warehouse), only the stock-crediting
+    // path is blocked.
+    if (dto.eggProductId && dto.warehouseId && dto.goodEggs > 0) {
+      await this.assertNoActiveWithdrawal(dto.flockBatchId, user.companyId, "eggs collected during this window can still be logged, but omit the product/warehouse to record them without crediting sellable stock");
+    }
     const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
     const data = await this.prisma.$transaction(async (tx) => {
       const record = await tx.eggProductionRecord.create({
@@ -1025,11 +1051,86 @@ export class PoultryService {
         return deleted;
       });
       this.lookupCache.invalidate(`poultry:opts:${user.companyId}`);
+    } else if (INVENTORY_LINKED_RECORD_TYPES[type]) {
+      // H-BUG-2 follow-up (2026-08-13): feed/medication/vaccination/egg
+      // deletes used to just soft-delete the record with zero inventory
+      // reversal — a deleted feed-consumption entry left the stock it
+      // consumed gone forever, and a deleted egg-production entry left
+      // phantom stock in the system that was never actually produced.
+      // These record types have no stored productId/warehouseId/quantity
+      // of their own (only carried transiently through the DTO at create
+      // time), so the reversal reads the actual StockMovement ledger
+      // entry the create call wrote — the one durable record of what
+      // moved and where.
+      const modelKey = ({ feed: "feedConsumptionRecord", eggs: "eggProductionRecord", medications: "medicationRecord", vaccinations: "vaccinationRecord" } as Record<string, string>)[type];
+      const referenceType = INVENTORY_LINKED_RECORD_TYPES[type];
+      data = await this.prisma.$transaction(async (tx) => {
+        await this.reverseInventoryForRecordTx(tx, user, referenceType, id, farmId, existing.branchId);
+        return (tx[modelKey as keyof typeof tx] as { update: (args: unknown) => Promise<unknown> }).update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+      });
     } else {
       data = await model.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
     }
     await this.writeAudit(user, "DELETE", type, id, `Deleted poultry ${type} record`, context, farmId);
     return { data };
+  }
+
+  private async reverseInventoryForRecordTx(tx: Prisma.TransactionClient, user: AuthenticatedUser, referenceType: string, referenceId: string, farmId: string, branchId: string) {
+    const movements = await tx.stockMovement.findMany({ where: { companyId: user.companyId, referenceType, referenceId, deletedAt: null } });
+    for (const mv of movements) {
+      const warehouseId = mv.warehouseId;
+      if (!warehouseId) continue;
+      const quantity = Number(mv.quantity);
+      const item = await tx.inventoryItem.findFirst({ where: { companyId: user.companyId, warehouseId, productId: mv.productId, deletedAt: null } });
+      if (!item) continue; // nothing left to reverse against if the item itself is gone
+
+      if (mv.movementType === "PRODUCTION_INPUT") {
+        // Reversing a consumption (feed/medication/vaccine): give the quantity back.
+        await tx.inventoryItem.update({ where: { id: item.id }, data: { quantityOnHand: { increment: quantity }, updatedById: user.id } });
+        await tx.stockBatch.create({
+          data: {
+            companyId: user.companyId, branchId, farmId, warehouseId, productId: mv.productId,
+            inventoryItemId: item.id, uomId: mv.uomId, batchNumber: `ADJ-${referenceId.slice(0, 8).toUpperCase()}`,
+            quantityReceived: quantity, quantityRemaining: quantity, manufactureDate: new Date(), createdById: user.id
+          }
+        });
+        await tx.stockMovement.create({
+          data: { companyId: user.companyId, branchId, productId: mv.productId, inventoryItemId: item.id, toWarehouseId: warehouseId, warehouseId, farmId, uomId: mv.uomId, movementType: "ADJUSTMENT_IN", quantity, referenceType, referenceId, notes: `Reversal — ${referenceType} record deleted`, createdById: user.id }
+        });
+      } else if (mv.movementType === "PRODUCTION_OUTPUT") {
+        // Reversing a production credit (eggs): pull it back out,
+        // floor-guarded and FIFO across whatever lots are still available —
+        // if it's already been partly consumed elsewhere, block the delete
+        // rather than drive stock negative.
+        const guarded = await tx.inventoryItem.updateMany({
+          where: { id: item.id, quantityOnHand: { gte: quantity } },
+          data: { quantityOnHand: { decrement: quantity }, updatedById: user.id }
+        });
+        if (guarded.count === 0) {
+          throw new BadRequestException("Cannot delete this record — the stock it credited has already been partly or fully consumed elsewhere.");
+        }
+        let remaining = quantity;
+        const lots = await tx.stockBatch.findMany({
+          where: { companyId: user.companyId, warehouseId, productId: mv.productId, quantityRemaining: { gt: 0 }, status: "AVAILABLE", deletedAt: null },
+          orderBy: { createdAt: "asc" }
+        });
+        for (const lot of lots) {
+          if (remaining <= 0) break;
+          const consumed = Math.min(remaining, Number(lot.quantityRemaining));
+          const lotUpdate = await tx.stockBatch.updateMany({ where: { id: lot.id, quantityRemaining: { gte: consumed } }, data: { quantityRemaining: { decrement: consumed } } });
+          if (lotUpdate.count === 0) {
+            throw new BadRequestException("Stock batch for this product was consumed concurrently. Please retry.");
+          }
+          remaining -= consumed;
+        }
+        if (remaining > 0) {
+          throw new BadRequestException("Cannot delete this record — the stock it credited has already been partly or fully consumed elsewhere.");
+        }
+        await tx.stockMovement.create({
+          data: { companyId: user.companyId, branchId, productId: mv.productId, inventoryItemId: item.id, fromWarehouseId: warehouseId, warehouseId, farmId, uomId: mv.uomId, movementType: "ADJUSTMENT_OUT", quantity, referenceType, referenceId, notes: `Reversal — ${referenceType} record deleted`, createdById: user.id }
+        });
+      }
+    }
   }
 
   async updateRecord(user: AuthenticatedUser, type: string, id: string, dto: Record<string, any>, context: RequestContext) {
@@ -1146,6 +1247,76 @@ export class PoultryService {
                 });
               }
               await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: invItem.branchId, productId: feed.feedProductId, inventoryItemId: invItem.id, fromWarehouseId: feed.warehouseId, warehouseId: feed.warehouseId, uomId: invItem.uomId, movementType: delta > 0 ? "PRODUCTION_INPUT" : "ADJUSTMENT_IN", quantity: Math.abs(delta), referenceType: "FeedConsumptionRecord", referenceId: id, notes: "Feed quantity correction", createdById: user.id } });
+            }
+          }
+        }
+      }
+
+      // H-BUG-2 follow-up (2026-08-13): eggs corrections used to only touch
+      // the EggProductionRecord row itself, leaving whatever inventory the
+      // original goodEggs count had credited completely unchanged. Unlike
+      // feed, EggProductionRecord stores no productId/warehouseId of its
+      // own — the original StockMovement is the only durable record of
+      // where the eggs actually landed, so we look there first.
+      if (type === "eggs" && updateData.goodEggs !== undefined) {
+        const egg = existing as { goodEggs: number };
+        const delta = Number(updateData.goodEggs) - Number(egg.goodEggs);
+        if (delta !== 0) {
+          const mv = await tx.stockMovement.findFirst({ where: { companyId: user.companyId, referenceType: "EggProductionRecord", referenceId: id, movementType: "PRODUCTION_OUTPUT", deletedAt: null } });
+          if (mv && mv.warehouseId) {
+            const invItem = await tx.inventoryItem.findFirst({ where: { companyId: user.companyId, warehouseId: mv.warehouseId, productId: mv.productId, deletedAt: null } });
+            if (invItem) {
+              if (delta > 0) {
+                // More eggs than first recorded — credit the difference as
+                // its own traceable lot, same convention as a positive
+                // stock adjustment.
+                await tx.inventoryItem.update({ where: { id: invItem.id }, data: { quantityOnHand: { increment: delta }, updatedById: user.id } });
+                await tx.stockBatch.create({
+                  data: {
+                    companyId: user.companyId, branchId: invItem.branchId, farmId: invItem.farmId,
+                    warehouseId: mv.warehouseId, productId: mv.productId, inventoryItemId: invItem.id, uomId: invItem.uomId,
+                    batchNumber: `ADJ-${id.slice(0, 8).toUpperCase()}`, quantityReceived: delta, quantityRemaining: delta,
+                    manufactureDate: new Date(), createdById: user.id
+                  }
+                });
+              } else {
+                // Fewer eggs than first recorded — pull the excess back out,
+                // floor-guarded and FIFO across whatever lots are still
+                // available; block the correction if it's already been
+                // partly or fully consumed elsewhere.
+                const guarded = await tx.inventoryItem.updateMany({
+                  where: { id: invItem.id, quantityOnHand: { gte: -delta } },
+                  data: { quantityOnHand: { decrement: -delta }, updatedById: user.id }
+                });
+                if (guarded.count === 0) {
+                  throw new BadRequestException("Cannot apply this correction — the previously credited egg stock has already been consumed elsewhere.");
+                }
+                let remaining = -delta;
+                const lots = await tx.stockBatch.findMany({
+                  where: { companyId: user.companyId, warehouseId: mv.warehouseId, productId: mv.productId, quantityRemaining: { gt: 0 }, status: "AVAILABLE", deletedAt: null },
+                  orderBy: { createdAt: "asc" }
+                });
+                for (const lot of lots) {
+                  if (remaining <= 0) break;
+                  const consumed = Math.min(remaining, Number(lot.quantityRemaining));
+                  const lotUpdate = await tx.stockBatch.updateMany({ where: { id: lot.id, quantityRemaining: { gte: consumed } }, data: { quantityRemaining: { decrement: consumed } } });
+                  if (lotUpdate.count === 0) {
+                    throw new BadRequestException("Stock batch for this product was consumed concurrently. Please retry.");
+                  }
+                  remaining -= consumed;
+                }
+                if (remaining > 0) {
+                  throw new BadRequestException("Cannot apply this correction — the previously credited egg stock has already been partly or fully consumed elsewhere.");
+                }
+              }
+              await tx.stockMovement.create({
+                data: {
+                  companyId: user.companyId, branchId: invItem.branchId, productId: mv.productId, inventoryItemId: invItem.id,
+                  toWarehouseId: delta > 0 ? mv.warehouseId : undefined, fromWarehouseId: delta < 0 ? mv.warehouseId : undefined,
+                  warehouseId: mv.warehouseId, uomId: invItem.uomId, movementType: delta > 0 ? "PRODUCTION_OUTPUT" : "ADJUSTMENT_OUT",
+                  quantity: Math.abs(delta), referenceType: "EggProductionRecord", referenceId: id, notes: "Egg quantity correction", createdById: user.id
+                }
+              });
             }
           }
         }
@@ -1388,6 +1559,17 @@ export class PoultryService {
   private assertWarehouseAccess(user: AuthenticatedUser, warehouseId: string) {
     if (!user.hasGlobalAccess && !user.warehouseIds.includes(warehouseId)) {
       throw new ForbiddenException("You do not have access to this warehouse.");
+    }
+  }
+
+  private async assertNoActiveWithdrawal(flockBatchId: string, companyId: string, guidance: string) {
+    const active = await this.prisma.medicationRecord.findFirst({
+      where: { flockBatchId, companyId, deletedAt: null, withdrawalUntil: { gt: new Date() } },
+      orderBy: { withdrawalUntil: "desc" }
+    });
+    if (active) {
+      const until = active.withdrawalUntil!.toISOString().slice(0, 10);
+      throw new BadRequestException(`This batch is within an active withdrawal period (${active.medicationName}) until ${until} — ${guidance}.`);
     }
   }
 
