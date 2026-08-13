@@ -1097,8 +1097,53 @@ export class PoultryService {
                 if (guarded.count === 0) {
                   throw new BadRequestException("Cannot apply this correction — insufficient stock remains to cover the increased quantity. Please investigate before retrying.");
                 }
+                // H-BUG-2 follow-up: mirrors consumeInventoryTx — the
+                // aggregate guard above isn't enough on its own, the
+                // StockBatch lots FIFO consumers actually read from must
+                // move too or they drift out of sync with quantityOnHand.
+                let remaining = delta;
+                const lots = await tx.stockBatch.findMany({
+                  where: { companyId: user.companyId, warehouseId: feed.warehouseId, productId: feed.feedProductId, quantityRemaining: { gt: 0 }, status: "AVAILABLE", deletedAt: null },
+                  orderBy: { createdAt: "asc" }
+                });
+                for (const lot of lots) {
+                  if (remaining <= 0) break;
+                  const consumed = Math.min(remaining, Number(lot.quantityRemaining));
+                  const lotUpdate = await tx.stockBatch.updateMany({
+                    where: { id: lot.id, quantityRemaining: { gte: consumed } },
+                    data: { quantityRemaining: { decrement: consumed } }
+                  });
+                  if (lotUpdate.count === 0) {
+                    throw new BadRequestException("Stock batch for this product was consumed concurrently. Please retry.");
+                  }
+                  remaining -= consumed;
+                }
+                if (remaining > 0) {
+                  throw new BadRequestException(`Stock batches on hand cover only ${(delta - remaining).toFixed(2)} of the ${delta} needed for this correction — inventory and lot records are out of sync, or the remaining stock is quarantined. Please investigate before retrying.`);
+                }
               } else {
                 await tx.inventoryItem.update({ where: { id: invItem.id }, data: { quantityOnHand: { increment: -delta }, updatedById: user.id } });
+                // Giving stock back has no single lot to credit (the original
+                // consumption may have drawn FIFO across several) — same
+                // convention as inventory.service.ts's positive stock
+                // adjustments: land it as a new, separately traceable lot
+                // rather than guessing which existing lot to restore.
+                await tx.stockBatch.create({
+                  data: {
+                    companyId: user.companyId,
+                    branchId: invItem.branchId,
+                    farmId: invItem.farmId,
+                    warehouseId: feed.warehouseId,
+                    productId: feed.feedProductId,
+                    inventoryItemId: invItem.id,
+                    uomId: invItem.uomId,
+                    batchNumber: `ADJ-${id.slice(0, 8).toUpperCase()}`,
+                    quantityReceived: -delta,
+                    quantityRemaining: -delta,
+                    manufactureDate: new Date(),
+                    createdById: user.id
+                  }
+                });
               }
               await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: invItem.branchId, productId: feed.feedProductId, inventoryItemId: invItem.id, fromWarehouseId: feed.warehouseId, warehouseId: feed.warehouseId, uomId: invItem.uomId, movementType: delta > 0 ? "PRODUCTION_INPUT" : "ADJUSTMENT_IN", quantity: Math.abs(delta), referenceType: "FeedConsumptionRecord", referenceId: id, notes: "Feed quantity correction", createdById: user.id } });
             }
@@ -1379,6 +1424,33 @@ export class PoultryService {
     });
     if (invUpdate.count === 0) {
       throw new BadRequestException(`Stock for this product was modified concurrently. Please retry.`);
+    }
+    // H-BUG-2 (2026-08-13): this used to stop at the aggregate
+    // quantityOnHand decrement above and never touch StockBatch —
+    // mirrors the same drift bug already fixed in Feed Production and
+    // Market Planning. Every FIFO consumer (Sales' consumeFifoTx
+    // included) reads StockBatch.quantityRemaining, not
+    // quantityOnHand, so lots here would silently go stale relative to
+    // what was actually recorded as consumed.
+    let remaining = quantity;
+    const stockBatches = await tx.stockBatch.findMany({
+      where: { companyId: user.companyId, warehouseId, productId, quantityRemaining: { gt: 0 }, status: "AVAILABLE", deletedAt: null },
+      orderBy: { createdAt: "asc" }
+    });
+    for (const sb of stockBatches) {
+      if (remaining <= 0) break;
+      const consumed = Math.min(remaining, Number(sb.quantityRemaining));
+      const batchUpdate = await tx.stockBatch.updateMany({
+        where: { id: sb.id, quantityRemaining: { gte: consumed } },
+        data: { quantityRemaining: { decrement: consumed } }
+      });
+      if (batchUpdate.count === 0) {
+        throw new BadRequestException(`Stock batch for this product was consumed concurrently. Please retry.`);
+      }
+      remaining -= consumed;
+    }
+    if (remaining > 0) {
+      throw new BadRequestException(`Stock batches on hand for this product cover only ${(quantity - remaining).toFixed(2)} of the required ${quantity} — inventory and lot records are out of sync, or the remaining stock is quarantined. Please investigate before retrying.`);
     }
     await tx.stockMovement.create({
       data: { companyId: user.companyId, branchId: batch.branchId, productId, inventoryItemId: item.id, fromWarehouseId: warehouseId, warehouseId, farmId: batch.farmId, uomId: product!.uomId, movementType, quantity, referenceType, referenceId, notes, createdById: user.id }

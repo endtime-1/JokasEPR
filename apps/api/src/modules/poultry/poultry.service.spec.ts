@@ -11,7 +11,7 @@ const mockTx = {
   inventoryItem: { findFirst: jest.fn(), updateMany: jest.fn(), update: jest.fn(), upsert: jest.fn() },
   product: { findFirst: jest.fn().mockResolvedValue({ id: "prod-feed", uomId: "uom-1" }) },
   warehouse: { findFirst: jest.fn() },
-  stockBatch: { create: jest.fn() },
+  stockBatch: { create: jest.fn(), findMany: jest.fn().mockResolvedValue([]), updateMany: jest.fn() },
   stockMovement: { create: jest.fn() },
   mortalityRecord: { aggregate: jest.fn(), create: jest.fn() },
   poultryTransferRecord: { aggregate: jest.fn(), create: jest.fn() },
@@ -228,6 +228,8 @@ describe("PoultryService.createDailyRecord — mortality/culled/feed/egg deltas 
     mockTx.dailyPoultryRecord.create.mockResolvedValue({ id: "daily-1" });
     mockTx.inventoryItem.findFirst.mockResolvedValue({ id: "inv-1" });
     mockTx.inventoryItem.updateMany.mockResolvedValue({ count: 1 });
+    mockTx.stockBatch.findMany.mockResolvedValue([{ id: "sb-1", quantityRemaining: 250 }]);
+    mockTx.stockBatch.updateMany.mockResolvedValue({ count: 1 });
 
     const service = makeService();
     await service.createDailyRecord(
@@ -293,6 +295,8 @@ describe("PoultryService.createFeed / consumeInventoryTx — floor-guarded decre
     mockTx.feedConsumptionRecord.create.mockResolvedValue({ id: "fc-1" });
     mockTx.inventoryItem.findFirst.mockResolvedValue({ id: "inv-1" });
     mockTx.inventoryItem.updateMany.mockResolvedValue({ count: 1 });
+    mockTx.stockBatch.findMany.mockResolvedValue([{ id: "sb-1", quantityRemaining: 50 }]);
+    mockTx.stockBatch.updateMany.mockResolvedValue({ count: 1 });
 
     const service = makeService();
     await service.createFeed(makeUser(), dto as never, {});
@@ -326,6 +330,54 @@ describe("PoultryService.createFeed / consumeInventoryTx — floor-guarded decre
     expect(mockTx.inventoryItem.updateMany).not.toHaveBeenCalled();
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("no InventoryItem"));
     warnSpy.mockRestore();
+  });
+
+  it("H-BUG-2: also consumes matching StockBatch lots FIFO, not just the aggregate quantityOnHand", async () => {
+    mockPrisma.flockBatch.findFirst.mockResolvedValue(flockBatch);
+    mockTx.feedConsumptionRecord.create.mockResolvedValue({ id: "fc-1" });
+    mockTx.inventoryItem.findFirst.mockResolvedValue({ id: "inv-1" });
+    mockTx.inventoryItem.updateMany.mockResolvedValue({ count: 1 });
+    mockTx.stockBatch.findMany.mockResolvedValue([
+      { id: "sb-old", quantityRemaining: 30 },
+      { id: "sb-new", quantityRemaining: 40 }
+    ]);
+    mockTx.stockBatch.updateMany.mockResolvedValue({ count: 1 });
+
+    const service = makeService();
+    await service.createFeed(makeUser(), dto as never, {});
+
+    expect(mockTx.stockBatch.updateMany).toHaveBeenNthCalledWith(1, {
+      where: { id: "sb-old", quantityRemaining: { gte: 30 } },
+      data: { quantityRemaining: { decrement: 30 } }
+    });
+    expect(mockTx.stockBatch.updateMany).toHaveBeenNthCalledWith(2, {
+      where: { id: "sb-new", quantityRemaining: { gte: 20 } },
+      data: { quantityRemaining: { decrement: 20 } }
+    });
+  });
+
+  it("H-BUG-2: rejects when the aggregate is sufficient but a quarantined/short lot makes lots on hand fall short", async () => {
+    mockPrisma.flockBatch.findFirst.mockResolvedValue(flockBatch);
+    mockTx.feedConsumptionRecord.create.mockResolvedValue({ id: "fc-1" });
+    mockTx.inventoryItem.findFirst.mockResolvedValue({ id: "inv-1" });
+    mockTx.inventoryItem.updateMany.mockResolvedValue({ count: 1 });
+    mockTx.stockBatch.findMany.mockResolvedValue([{ id: "sb-1", quantityRemaining: 10 }]);
+    mockTx.stockBatch.updateMany.mockResolvedValue({ count: 1 });
+
+    const service = makeService();
+    await expect(service.createFeed(makeUser(), dto as never, {})).rejects.toThrow(/out of sync/);
+  });
+
+  it("H-BUG-2: rejects when a lot was consumed concurrently by another request", async () => {
+    mockPrisma.flockBatch.findFirst.mockResolvedValue(flockBatch);
+    mockTx.feedConsumptionRecord.create.mockResolvedValue({ id: "fc-1" });
+    mockTx.inventoryItem.findFirst.mockResolvedValue({ id: "inv-1" });
+    mockTx.inventoryItem.updateMany.mockResolvedValue({ count: 1 });
+    mockTx.stockBatch.findMany.mockResolvedValue([{ id: "sb-1", quantityRemaining: 50 }]);
+    mockTx.stockBatch.updateMany.mockResolvedValue({ count: 0 });
+
+    const service = makeService();
+    await expect(service.createFeed(makeUser(), dto as never, {})).rejects.toThrow(/concurrently/);
   });
 });
 
@@ -536,6 +588,8 @@ describe("PoultryService.updateRecord — feed correction is transactional and f
     mockTx.feedConsumptionRecord.update.mockResolvedValue({ id: "fc-1", quantityKg: 150 });
     mockTx.inventoryItem.findFirst.mockResolvedValue({ id: "inv-1", branchId: "branch-1", uomId: "uom-1" });
     mockTx.inventoryItem.updateMany.mockResolvedValue({ count: 1 });
+    mockTx.stockBatch.findMany.mockResolvedValue([{ id: "sb-1", quantityRemaining: 50, createdAt: new Date() }]);
+    mockTx.stockBatch.updateMany.mockResolvedValue({ count: 1 });
 
     const service = makeService();
     await service.updateRecord(makeUser({ farmIds: ["farm-1"] }), "feed", "fc-1", { quantityKg: 150 }, {});
@@ -544,7 +598,24 @@ describe("PoultryService.updateRecord — feed correction is transactional and f
       where: { id: "inv-1", quantityOnHand: { gte: 50 } },
       data: { quantityOnHand: { decrement: 50 }, updatedById: "user-1" }
     });
+    expect(mockTx.stockBatch.updateMany).toHaveBeenCalledWith({
+      where: { id: "sb-1", quantityRemaining: { gte: 50 } },
+      data: { quantityRemaining: { decrement: 50 } }
+    });
     expect(mockTx.stockMovement.create).toHaveBeenCalled();
+  });
+
+  it("H-BUG-2: rejects the correction when the aggregate has room but StockBatch lots are quarantined/short", async () => {
+    mockPrisma.feedConsumptionRecord.findFirst.mockResolvedValue(existingFeedRecord);
+    mockTx.feedConsumptionRecord.update.mockResolvedValue({ id: "fc-1", quantityKg: 150 });
+    mockTx.inventoryItem.findFirst.mockResolvedValue({ id: "inv-1", branchId: "branch-1", uomId: "uom-1" });
+    mockTx.inventoryItem.updateMany.mockResolvedValue({ count: 1 });
+    mockTx.stockBatch.findMany.mockResolvedValue([]);
+
+    const service = makeService();
+    await expect(
+      service.updateRecord(makeUser({ farmIds: ["farm-1"] }), "feed", "fc-1", { quantityKg: 150 }, {})
+    ).rejects.toThrow(/out of sync/);
   });
 
   it("rejects the whole correction when there isn't enough stock left to cover the increase", async () => {
@@ -575,6 +646,16 @@ describe("PoultryService.updateRecord — feed correction is transactional and f
       data: { quantityOnHand: { increment: 40 }, updatedById: "user-1" }
     });
     expect(mockTx.inventoryItem.updateMany).not.toHaveBeenCalled();
+    expect(mockTx.stockBatch.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        batchNumber: "ADJ-FC-1",
+        quantityReceived: 40,
+        quantityRemaining: 40,
+        productId: "prod-feed",
+        warehouseId: "wh-1",
+        inventoryItemId: "inv-1"
+      })
+    });
   });
 
   it("does not touch inventory at all when quantityKg isn't part of the correction", async () => {
