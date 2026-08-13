@@ -58,7 +58,7 @@ export class FinanceService {
     const supWhere = { companyId: user.companyId, deletedAt: null, ...this.dateBetween(query, "paymentDate") };
     const cusWhere = { companyId: user.companyId, deletedAt: null, ...this.dateBetween(query, "paymentDate") };
 
-    const [expenses, revenues, supplierPayments, customerPayments, pendingExpenses, bankAccounts, recentExpenses, recentRevenue] = await Promise.all([
+    const [expenses, revenues, supplierPayments, customerPayments, pendingExpenses, bankAccounts, recentExpenses, recentRevenue, accountsPayable] = await Promise.all([
       this.prisma.expense.aggregate({ where: expWhere, _sum: { amount: true }, _count: true }),
       this.prisma.revenue.aggregate({ where: revWhere, _sum: { amount: true }, _count: true }),
       this.prisma.supplierPayment.aggregate({ where: supWhere, _sum: { amount: true }, _count: true }),
@@ -66,7 +66,18 @@ export class FinanceService {
       this.prisma.expense.count({ where: { companyId: user.companyId, deletedAt: null, status: "PENDING_APPROVAL" } }),
       this.prisma.bankAccount.findMany({ where: { companyId: user.companyId, deletedAt: null, isActive: true }, select: { id: true, accountName: true, bankName: true, currentBalance: true } }),
       this.prisma.expense.findMany({ where: expWhere, orderBy: { createdAt: "desc" }, take: 10, include: { category: { select: { name: true } } } }),
-      this.prisma.revenue.findMany({ where: revWhere, orderBy: { createdAt: "desc" }, take: 10 })
+      this.prisma.revenue.findMany({ where: revWhere, orderBy: { createdAt: "desc" }, take: 10 }),
+      // M-BUG (2026-08-13): the real record of "we owe this supplier this
+      // much" lives entirely in Procurement's SupplierInvoice and was never
+      // read by Finance — an expense only appears here once it's actually
+      // paid, so "what do we currently owe our suppliers" was silently
+      // missing every invoice still outstanding. Same status set Procurement's
+      // own dashboard already uses for "open" invoices.
+      this.prisma.supplierInvoice.aggregate({
+        where: { companyId: user.companyId, deletedAt: null, status: { in: ["PENDING", "MATCHED", "APPROVED", "OVERDUE"] } },
+        _sum: { balanceDue: true },
+        _count: true
+      })
     ]);
 
     const totalRevenue = money(revenues._sum.amount);
@@ -84,7 +95,9 @@ export class FinanceService {
         pendingApprovals: pendingExpenses,
         bankAccounts: bankAccounts.map((a) => ({ ...a, currentBalance: Number(a.currentBalance) })),
         recentExpenses,
-        recentRevenue
+        recentRevenue,
+        accountsPayable: money(accountsPayable._sum.balanceDue),
+        accountsPayableCount: accountsPayable._count
       }
     };
   }

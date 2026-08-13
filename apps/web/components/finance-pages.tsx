@@ -333,7 +333,20 @@ export function FinanceDashboardPage() {
       </div>
 
       {/* ── Action KPIs ─────────────────────────────────────────────────────── */}
-      <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+
+        {/* Owed to Suppliers — the real, live AP figure Procurement tracks, previously invisible here */}
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
+          <div className="mb-3 flex items-start justify-between">
+            <p className="text-[11px] font-bold uppercase tracking-widest text-amber-700">Owed to Suppliers</p>
+            <span className="grid h-8 w-8 place-items-center rounded-lg bg-amber-100">
+              <CircleArrowDown className="h-4 w-4 text-amber-600" />
+            </span>
+          </div>
+          {loading ? <div className="h-8 w-24 animate-pulse rounded-md bg-white/60" /> : <p className="text-3xl font-bold tracking-tight text-amber-800">{money(Number(dash?.accountsPayable ?? 0))}</p>}
+          <p className="mt-1 text-xs text-amber-600">{Number(dash?.accountsPayableCount ?? 0)} outstanding invoice{Number(dash?.accountsPayableCount ?? 0) !== 1 ? "s" : ""}</p>
+          <Link href="/procurement/invoices" className="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-amber-700 hover:underline">View invoices <ChevronRight className="h-3.5 w-3.5" /></Link>
+        </div>
 
         {/* Needs Approval */}
         <div className={`rounded-xl border p-5 shadow-sm ${pendingCount > 0 ? "border-brand/30 bg-field" : "border-slate-200 bg-white"}`}>

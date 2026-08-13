@@ -8,6 +8,7 @@ const mockPrisma = {
   expense: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0), create: jest.fn(), update: jest.fn(), aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 }, _count: 0 }) },
   revenue: { findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0), create: jest.fn(), aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 }, _count: 0 }) },
   supplierPayment: { aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 }, _count: 0 }), count: jest.fn().mockResolvedValue(0) },
+  supplierInvoice: { aggregate: jest.fn().mockResolvedValue({ _sum: { balanceDue: 0 }, _count: 0 }) },
   customerPayment: { aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 }, _count: 0 }), count: jest.fn().mockResolvedValue(0) },
   bankAccount: { findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn(), update: jest.fn() },
   payrollRecord: { findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn().mockResolvedValue(0), create: jest.fn(), update: jest.fn() },
@@ -326,5 +327,22 @@ describe("FinanceService.dashboard — net profit excludes rejected/cancelled ex
 
     expect(result.data.totalExpenses).toBe(300);
     expect(result.data.netProfit).toBe(700);
+  });
+
+  it("M-BUG: surfaces the real, live accounts-payable figure from Procurement's SupplierInvoice, not just realized expenses", async () => {
+    mockPrisma.revenue.aggregate.mockResolvedValue({ _sum: { amount: 1000 }, _count: 1 });
+    mockPrisma.expense.aggregate.mockResolvedValue({ _sum: { amount: 300 }, _count: 1 });
+    mockPrisma.supplierInvoice.aggregate.mockResolvedValue({ _sum: { balanceDue: 4500 }, _count: 3 });
+
+    const service = makeService();
+    const result = await service.dashboard(makeUser(), {} as never);
+
+    expect(mockPrisma.supplierInvoice.aggregate).toHaveBeenCalledWith({
+      where: { companyId: "company-1", deletedAt: null, status: { in: ["PENDING", "MATCHED", "APPROVED", "OVERDUE"] } },
+      _sum: { balanceDue: true },
+      _count: true
+    });
+    expect(result.data.accountsPayable).toBe(4500);
+    expect(result.data.accountsPayableCount).toBe(3);
   });
 });
