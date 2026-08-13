@@ -700,7 +700,7 @@ export class MarketPlanningService {
     const plan = await this.requireProductionPlan(user, planItem.productionPlanId);
     const formula = await this.getFormulaForExecution(user.companyId, planItem.formulaId ?? undefined);
     const inputQuantityKg = dto.producedQuantityKg + (dto.wastageKg ?? 0);
-    const ingredientPlan = await this.executionMaterialAvailability(user.companyId, formula.id, dto.rawMaterialWarehouseId, inputQuantityKg);
+    const ingredientPlan = await this.executionMaterialAvailability(user.companyId, formula.id, planItem.formulaVersionId, dto.rawMaterialWarehouseId, inputQuantityKg);
     const shortages = ingredientPlan.filter((item) => item.shortageKg > 0);
     if (shortages.length) throw new BadRequestException({ message: "Raw material stock is not sufficient for this production execution.", shortages });
 
@@ -970,13 +970,63 @@ export class MarketPlanningService {
     };
   }
 
+  // H-BUG-2 (2026-08-13): FeedFormulaVersion.ingredientSnapshot exists
+  // specifically to lock a formula's exact ratios at a point in time, but
+  // nothing ever read it — both MRP and production execution always
+  // re-read today's LIVE feedFormulaIngredient rows regardless of which
+  // version a plan item says it's locked to. Editing a formula would
+  // silently change the ratios for every plan already approved against an
+  // older version. The snapshot only stores {sku, name, quantityKg,
+  // unitCost} (no ingredientId — see feed-production.service.ts's
+  // createVersion), so each entry is resolved back to a live Product by
+  // SKU; a SKU that can no longer be matched (renamed/deleted since the
+  // lock) fails loudly rather than silently dropping that raw material.
+  // Returns null when no version is locked, meaning "use the live formula"
+  // (the pre-existing, still-valid behavior for un-versioned targets).
+  private async lockedFormulaIngredients(companyId: string, formulaId: string, formulaVersionId: string | null | undefined) {
+    if (!formulaVersionId) return null;
+    const version = await this.prisma.feedFormulaVersion.findFirst({ where: { id: formulaVersionId, companyId, formulaId } });
+    if (!version) throw new NotFoundException("The locked feed formula version was not found.");
+    const snapshot = version.ingredientSnapshot as unknown as Array<{ sku: string; name: string; quantityKg: number; unitCost: number }>;
+    if (!snapshot.length) throw new BadRequestException(`Formula version ${version.versionNo} has no ingredients in its locked snapshot.`);
+    const products = await this.prisma.product.findMany({ where: { companyId, sku: { in: snapshot.map((s) => s.sku) }, deletedAt: null } });
+    const bySku = new Map(products.map((p) => [p.sku, p]));
+    return snapshot.map((entry) => {
+      const product = bySku.get(entry.sku);
+      if (!product) throw new BadRequestException(`Formula version ${version.versionNo}'s ingredient "${entry.name}" (SKU ${entry.sku}) could not be matched to a current product — it may have been renamed or deleted since this version was locked.`);
+      return { ingredientId: product.id, name: entry.name, sku: entry.sku, quantityKg: num(entry.quantityKg), unitCost: num(entry.unitCost) };
+    });
+  }
+
+  // H-BUG-2 (2026-08-13): mirrors inventory.service.ts's assertAvailable —
+  // stock actively reserved for something else (StockReservation,
+  // status ACTIVE and not expired) was previously ignored entirely here,
+  // so a material check could report "ready to produce" and an actual
+  // production run could consume stock that was supposed to be held back
+  // for a different purpose.
+  private async availableQuantity(inventoryItemId: string, quantityOnHand: number) {
+    const reservations = await this.prisma.stockReservation.findMany({
+      where: { inventoryItemId, status: "ACTIVE", deletedAt: null, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
+      select: { quantity: true }
+    });
+    const reserved = reservations.reduce((sum, r) => sum + num(r.quantity), 0);
+    return Math.max(quantityOnHand - reserved, 0);
+  }
+
   private async calculateIngredientNeeds(companyId: string, planItems: Array<{ id: string; productId: string; formulaId: string | null; formulaVersionId: string | null; plannedQuantityKg: Prisma.Decimal }>) {
     const needs: IngredientNeed[] = [];
     for (const item of planItems) {
       const formula = await this.resolveFormula(companyId, item.productId, item.formulaId ?? undefined);
-      const ingredients = await this.prisma.feedFormulaIngredient.findMany({ where: { companyId, formulaId: formula.id, deletedAt: null } });
-      if (!ingredients.length) throw new BadRequestException(`Formula ${formula.code} has no ingredients.`);
       const ratio = num(item.plannedQuantityKg) / Math.max(num(formula.targetBatchKg), 1);
+      const locked = await this.lockedFormulaIngredients(companyId, formula.id, item.formulaVersionId);
+      const ingredients =
+        locked ??
+        (await this.prisma.feedFormulaIngredient.findMany({ where: { companyId, formulaId: formula.id, deletedAt: null } })).map((i) => ({
+          ingredientId: i.ingredientId,
+          quantityKg: num(i.quantityKg),
+          unitCost: num(i.unitCost)
+        }));
+      if (!ingredients.length) throw new BadRequestException(`Formula ${formula.code} has no ingredients.`);
       for (const ingredient of ingredients) {
         needs.push({
           productionPlanItemId: item.id,
@@ -984,36 +1034,41 @@ export class MarketPlanningService {
           rawMaterialId: ingredient.ingredientId,
           formulaId: formula.id,
           formulaVersionId: item.formulaVersionId,
-          requiredQuantityKg: num(ingredient.quantityKg) * ratio,
-          unitCost: num(ingredient.unitCost)
+          requiredQuantityKg: ingredient.quantityKg * ratio,
+          unitCost: ingredient.unitCost
         });
       }
     }
     return needs;
   }
 
-  private async executionMaterialAvailability(companyId: string, formulaId: string, warehouseId: string, inputQuantityKg: number) {
+  private async executionMaterialAvailability(companyId: string, formulaId: string, formulaVersionId: string | null | undefined, warehouseId: string, inputQuantityKg: number) {
     const formula = await this.prisma.feedFormula.findFirst({ where: { id: formulaId, companyId, deletedAt: null } });
     if (!formula) throw new NotFoundException("Feed formula was not found.");
-    const ingredients = await this.prisma.feedFormulaIngredient.findMany({
-      where: { companyId, formulaId, deletedAt: null },
-      include: { ingredient: { select: { name: true, sku: true } } },
-      orderBy: { sortOrder: "asc" }
-    });
     const ratio = inputQuantityKg / Math.max(num(formula.targetBatchKg), 1);
+    const locked = await this.lockedFormulaIngredients(companyId, formula.id, formulaVersionId);
+    const ingredients =
+      locked ??
+      (
+        await this.prisma.feedFormulaIngredient.findMany({
+          where: { companyId, formulaId, deletedAt: null },
+          include: { ingredient: { select: { name: true, sku: true } } },
+          orderBy: { sortOrder: "asc" }
+        })
+      ).map((i) => ({ ingredientId: i.ingredientId, name: i.ingredient.name, sku: i.ingredient.sku, quantityKg: num(i.quantityKg), unitCost: num(i.unitCost) }));
     const result = [];
     for (const ingredient of ingredients) {
-      const quantityKg = num(ingredient.quantityKg) * ratio;
+      const quantityKg = ingredient.quantityKg * ratio;
       const inventory = await this.prisma.inventoryItem.findUnique({
         where: { companyId_warehouseId_productId: { companyId, warehouseId, productId: ingredient.ingredientId } }
       });
-      const availableKg = num(inventory?.quantityOnHand);
+      const availableKg = inventory ? await this.availableQuantity(inventory.id, num(inventory.quantityOnHand)) : 0;
       result.push({
         ingredientId: ingredient.ingredientId,
-        productName: ingredient.ingredient.name,
-        sku: ingredient.ingredient.sku,
+        productName: ingredient.name,
+        sku: ingredient.sku,
         quantityKg,
-        unitCost: num(ingredient.unitCost),
+        unitCost: ingredient.unitCost,
         availableKg,
         shortageKg: Math.max(quantityKg - availableKg, 0)
       });
@@ -1024,9 +1079,15 @@ export class MarketPlanningService {
   private async inventoryAvailability(companyId: string, warehouseId: string, productIds: string[]) {
     const rows = await this.prisma.inventoryItem.findMany({
       where: { companyId, warehouseId, productId: { in: [...new Set(productIds)] }, deletedAt: null },
-      select: { productId: true, quantityOnHand: true }
+      select: { id: true, productId: true, quantityOnHand: true }
     });
-    return new Map(rows.map((row) => [row.productId, { quantityOnHand: num(row.quantityOnHand) }]));
+    const map = new Map<string, { quantityOnHand: number }>();
+    for (const row of rows) {
+      // Field is still named quantityOnHand for the caller's sake, but the
+      // value is now net of active reservations — see availableQuantity.
+      map.set(row.productId, { quantityOnHand: await this.availableQuantity(row.id, num(row.quantityOnHand)) });
+    }
+    return map;
   }
 
   // Previously this only checked quantityOnHand > 0 (present at all), not

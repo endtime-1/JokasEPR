@@ -340,3 +340,137 @@ describe("MarketPlanningService — target/plan/MRP/recommendation edit+delete (
     });
   });
 });
+
+describe("MarketPlanningService.lockedFormulaIngredients — a plan item's formula version is actually honored, not just carried around decoratively (H-BUG-2)", () => {
+  const mockPrisma = {
+    feedFormulaVersion: { findFirst: jest.fn() },
+    product: { findMany: jest.fn() }
+  };
+
+  function makeService() {
+    return new MarketPlanningService(mockPrisma as never, {} as never) as unknown as {
+      lockedFormulaIngredients: (companyId: string, formulaId: string, formulaVersionId: string | null | undefined) => Promise<unknown>;
+    };
+  }
+
+  beforeEach(() => jest.clearAllMocks());
+
+  it("returns null (use the live formula) when no version is locked", async () => {
+    const service = makeService();
+    const result = await service.lockedFormulaIngredients("company-1", "formula-1", null);
+    expect(result).toBeNull();
+    expect(mockPrisma.feedFormulaVersion.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("throws when the locked version can't be found", async () => {
+    mockPrisma.feedFormulaVersion.findFirst.mockResolvedValue(null);
+    const service = makeService();
+    await expect(service.lockedFormulaIngredients("company-1", "formula-1", "ver-1")).rejects.toThrow(/version was not found/);
+  });
+
+  it("resolves the snapshot's SKUs back to live products and returns the LOCKED quantities, ignoring whatever the live formula looks like now", async () => {
+    mockPrisma.feedFormulaVersion.findFirst.mockResolvedValue({
+      versionNo: 3,
+      ingredientSnapshot: [{ sku: "MAIZE-1", name: "Maize", quantityKg: 60, unitCost: 2.5 }]
+    });
+    mockPrisma.product.findMany.mockResolvedValue([{ id: "prod-maize", sku: "MAIZE-1" }]);
+    const service = makeService();
+
+    const result = await service.lockedFormulaIngredients("company-1", "formula-1", "ver-1");
+
+    expect(result).toEqual([{ ingredientId: "prod-maize", name: "Maize", sku: "MAIZE-1", quantityKg: 60, unitCost: 2.5 }]);
+  });
+
+  it("throws loudly instead of silently dropping an ingredient whose SKU no longer matches a live product", async () => {
+    mockPrisma.feedFormulaVersion.findFirst.mockResolvedValue({
+      versionNo: 3,
+      ingredientSnapshot: [{ sku: "MAIZE-DISCONTINUED", name: "Old Maize", quantityKg: 60, unitCost: 2.5 }]
+    });
+    mockPrisma.product.findMany.mockResolvedValue([]); // SKU no longer matches anything
+    const service = makeService();
+
+    await expect(service.lockedFormulaIngredients("company-1", "formula-1", "ver-1")).rejects.toThrow(/could not be matched/);
+  });
+});
+
+describe("MarketPlanningService.availableQuantity — active reservations reduce what MRP/execution see as available (H-BUG-2)", () => {
+  const mockPrisma = { stockReservation: { findMany: jest.fn() } };
+
+  function makeService() {
+    return new MarketPlanningService(mockPrisma as never, {} as never) as unknown as {
+      availableQuantity: (inventoryItemId: string, quantityOnHand: number) => Promise<number>;
+    };
+  }
+
+  beforeEach(() => jest.clearAllMocks());
+
+  it("returns the full quantityOnHand when nothing is reserved", async () => {
+    mockPrisma.stockReservation.findMany.mockResolvedValue([]);
+    const service = makeService();
+    await expect(service.availableQuantity("inv-1", 100)).resolves.toBe(100);
+  });
+
+  it("subtracts active, unexpired reservations from quantityOnHand", async () => {
+    mockPrisma.stockReservation.findMany.mockResolvedValue([{ quantity: 30 }, { quantity: 10 }]);
+    const service = makeService();
+    await expect(service.availableQuantity("inv-1", 100)).resolves.toBe(60);
+    expect(mockPrisma.stockReservation.findMany).toHaveBeenCalledWith({
+      where: { inventoryItemId: "inv-1", status: "ACTIVE", deletedAt: null, OR: [{ expiresAt: null }, { expiresAt: { gt: expect.any(Date) } }] },
+      select: { quantity: true }
+    });
+  });
+
+  it("never returns negative available stock even if reservations exceed quantityOnHand", async () => {
+    mockPrisma.stockReservation.findMany.mockResolvedValue([{ quantity: 150 }]);
+    const service = makeService();
+    await expect(service.availableQuantity("inv-1", 100)).resolves.toBe(0);
+  });
+});
+
+describe("MarketPlanningService.calculateIngredientNeeds — locked formula version wins over the live formula (H-BUG-2)", () => {
+  const mockPrisma = {
+    feedFormula: { findFirst: jest.fn() },
+    feedFormulaVersion: { findFirst: jest.fn() },
+    feedFormulaIngredient: { findMany: jest.fn() },
+    product: { findMany: jest.fn() }
+  };
+
+  function makeService() {
+    return new MarketPlanningService(mockPrisma as never, {} as never) as unknown as {
+      calculateIngredientNeeds: (companyId: string, planItems: unknown[]) => Promise<Array<{ rawMaterialId: string; requiredQuantityKg: number }>>;
+    };
+  }
+
+  beforeEach(() => jest.clearAllMocks());
+
+  it("uses the LIVE formula ingredients when the plan item has no locked version (legacy/unversioned behavior, unchanged)", async () => {
+    mockPrisma.feedFormula.findFirst.mockResolvedValue({ id: "formula-1", code: "BROILER-STARTER", targetBatchKg: 100 });
+    mockPrisma.feedFormulaIngredient.findMany.mockResolvedValue([{ ingredientId: "prod-maize", quantityKg: 60, unitCost: 2.5 }]);
+    const service = makeService();
+
+    const needs = await service.calculateIngredientNeeds("company-1", [
+      { id: "item-1", productId: "prod-feed", formulaId: "formula-1", formulaVersionId: null, plannedQuantityKg: 200 }
+    ]);
+
+    expect(needs).toEqual([expect.objectContaining({ rawMaterialId: "prod-maize", requiredQuantityKg: 120 })]);
+  });
+
+  it("uses the LOCKED version's snapshot ingredients when the plan item has a formulaVersionId, even though the live formula has since changed", async () => {
+    mockPrisma.feedFormula.findFirst.mockResolvedValue({ id: "formula-1", code: "BROILER-STARTER", targetBatchKg: 100 });
+    mockPrisma.feedFormulaVersion.findFirst.mockResolvedValue({
+      versionNo: 2,
+      ingredientSnapshot: [{ sku: "MAIZE-1", name: "Maize", quantityKg: 60, unitCost: 2.5 }]
+    });
+    mockPrisma.product.findMany.mockResolvedValue([{ id: "prod-maize", sku: "MAIZE-1" }]);
+    // Live formula now calls for a completely different quantity — this must NOT be used.
+    mockPrisma.feedFormulaIngredient.findMany.mockResolvedValue([{ ingredientId: "prod-maize", quantityKg: 999, unitCost: 2.5 }]);
+    const service = makeService();
+
+    const needs = await service.calculateIngredientNeeds("company-1", [
+      { id: "item-1", productId: "prod-feed", formulaId: "formula-1", formulaVersionId: "ver-2", plannedQuantityKg: 200 }
+    ]);
+
+    expect(needs).toEqual([expect.objectContaining({ rawMaterialId: "prod-maize", requiredQuantityKg: 120 })]);
+    expect(mockPrisma.feedFormulaIngredient.findMany).not.toHaveBeenCalled();
+  });
+});
