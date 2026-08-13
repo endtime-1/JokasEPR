@@ -132,8 +132,6 @@ export class AlertGenerationService {
 
   private async generateForecasts(companyId: string): Promise<number> {
     const forecasts: RawForecast[] = [];
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
 
     await Promise.all([
       this.forecastFeedDemand(companyId, forecasts),
@@ -144,8 +142,13 @@ export class AlertGenerationService {
       this.forecastMachineMaintenance(companyId, forecasts)
     ]);
 
+    // Forecasts represent the current prediction, not a history log — the
+    // scheduler reruns every 4 hours indefinitely, so scoping this to only
+    // "today's" rows (as it did before) left every prior day's forecast for
+    // the same entity/category permanently on the board, duplicating and
+    // crowding out other categories in the 12-slot display.
     await this.prisma.aiForecast.deleteMany({
-      where: { companyId, createdAt: { gte: today } }
+      where: { companyId }
     });
 
     if (!forecasts.length) return 0;
