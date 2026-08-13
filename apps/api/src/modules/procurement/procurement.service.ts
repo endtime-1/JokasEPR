@@ -226,7 +226,10 @@ export class ProcurementService {
         deletedAt: null,
         ...(query.status ? { status: validateEnumFilter(query.status, Object.values(PurchaseRequestStatus)) as never } : {}),
         ...(query.branchId ? { branchId: query.branchId } : {}),
-        ...(query.search ? { OR: [{ reference: { contains: query.search } }, { title: { contains: query.search } }] } : {}),
+        AND: [
+          ...(query.search ? [{ OR: [{ reference: { contains: query.search } }, { title: { contains: query.search } }] }] : []),
+          ...(this.branchRestricted(user) ? [{ OR: [{ branchId: null }, { branchId: { in: user.branchIds } }] }] : [])
+        ]
       },
       include: {
         requestedBy: { select: { fullName: true } },
@@ -241,7 +244,12 @@ export class ProcurementService {
 
   async getPurchaseRequest(user: AuthenticatedUser, id: string) {
     const row = await this.prisma.purchaseRequest.findFirst({
-      where: { id, companyId: user.companyId, deletedAt: null },
+      where: {
+        id,
+        companyId: user.companyId,
+        deletedAt: null,
+        ...(this.branchRestricted(user) ? { OR: [{ branchId: null }, { branchId: { in: user.branchIds } }] } : {})
+      },
       include: {
         items: { orderBy: { sequence: "asc" } },
         requestedBy: { select: { fullName: true, email: true } },
@@ -361,7 +369,12 @@ export class ProcurementService {
         deletedAt: null,
         ...(query.status ? { status: validateEnumFilter(query.status, Object.values(PurchaseOrderStatus)) as never } : {}),
         ...(query.supplierId ? { supplierId: query.supplierId } : {}),
-        ...(query.search ? { OR: [{ reference: { contains: query.search } }] } : {}),
+        AND: [
+          ...(query.search ? [{ OR: [{ reference: { contains: query.search } }] }] : []),
+          ...(this.branchRestricted(user)
+            ? [{ OR: [{ purchaseRequestId: null }, { purchaseRequest: { branchId: null } }, { purchaseRequest: { branchId: { in: user.branchIds } } }] }]
+            : [])
+        ]
       },
       include: {
         supplier: { select: { name: true, code: true } },
@@ -375,7 +388,14 @@ export class ProcurementService {
 
   async getPurchaseOrder(user: AuthenticatedUser, id: string) {
     const row = await this.prisma.purchaseOrder.findFirst({
-      where: { id, companyId: user.companyId, deletedAt: null },
+      where: {
+        id,
+        companyId: user.companyId,
+        deletedAt: null,
+        ...(this.branchRestricted(user)
+          ? { OR: [{ purchaseRequestId: null }, { purchaseRequest: { branchId: null } }, { purchaseRequest: { branchId: { in: user.branchIds } } }] }
+          : {})
+      },
       include: {
         supplier: true,
         purchaseRequest: { select: { id: true, reference: true, title: true } },
@@ -534,7 +554,10 @@ export class ProcurementService {
         ...(query.status ? { status: validateEnumFilter(query.status, Object.values(GRNStatus)) as never } : {}),
         ...(query.supplierId ? { supplierId: query.supplierId } : {}),
         ...(query.branchId ? { branchId: query.branchId } : {}),
-        ...(query.search ? { OR: [{ reference: { contains: query.search } }, { deliveryNoteRef: { contains: query.search } }] } : {}),
+        AND: [
+          ...(query.search ? [{ OR: [{ reference: { contains: query.search } }, { deliveryNoteRef: { contains: query.search } }] }] : []),
+          ...(this.branchRestricted(user) ? [{ OR: [{ branchId: null }, { branchId: { in: user.branchIds } }] }] : [])
+        ]
       },
       include: {
         supplier: { select: { name: true } },
@@ -550,7 +573,12 @@ export class ProcurementService {
 
   async getGRN(user: AuthenticatedUser, id: string) {
     const row = await this.prisma.goodsReceivedNote.findFirst({
-      where: { id, companyId: user.companyId, deletedAt: null },
+      where: {
+        id,
+        companyId: user.companyId,
+        deletedAt: null,
+        ...(this.branchRestricted(user) ? { OR: [{ branchId: null }, { branchId: { in: user.branchIds } }] } : {})
+      },
       include: {
         supplier: { select: { name: true, code: true } },
         purchaseOrder: { select: { id: true, reference: true, status: true } },
@@ -810,7 +838,21 @@ export class ProcurementService {
         deletedAt: null,
         ...(query.status ? { status: validateEnumFilter(query.status, Object.values(SupplierInvoiceStatus)) as never } : {}),
         ...(query.supplierId ? { supplierId: query.supplierId } : {}),
-        ...(query.search ? { OR: [{ reference: { contains: query.search } }, { invoiceNumber: { contains: query.search } }] } : {}),
+        AND: [
+          ...(query.search ? [{ OR: [{ reference: { contains: query.search } }, { invoiceNumber: { contains: query.search } }] }] : []),
+          ...(this.branchRestricted(user)
+            ? [
+                {
+                  OR: [
+                    { purchaseOrderId: null },
+                    { purchaseOrder: { purchaseRequestId: null } },
+                    { purchaseOrder: { purchaseRequest: { branchId: null } } },
+                    { purchaseOrder: { purchaseRequest: { branchId: { in: user.branchIds } } } }
+                  ]
+                }
+              ]
+            : [])
+        ]
       },
       include: {
         supplier: { select: { name: true } },
@@ -856,7 +898,22 @@ export class ProcurementService {
         companyId: user.companyId,
         deletedAt: null,
         ...(query.supplierId ? { supplierId: query.supplierId } : {}),
-        ...(query.search ? { OR: [{ reference: { contains: query.search } }, { description: { contains: query.search } }] } : {}),
+        AND: [
+          ...(query.search ? [{ OR: [{ reference: { contains: query.search } }, { description: { contains: query.search } }] }] : []),
+          ...(this.branchRestricted(user)
+            ? [
+                {
+                  OR: [
+                    { invoiceId: null },
+                    { invoice: { purchaseOrderId: null } },
+                    { invoice: { purchaseOrder: { purchaseRequestId: null } } },
+                    { invoice: { purchaseOrder: { purchaseRequest: { branchId: null } } } },
+                    { invoice: { purchaseOrder: { purchaseRequest: { branchId: { in: user.branchIds } } } } }
+                  ]
+                }
+              ]
+            : [])
+        ]
       },
       include: {
         supplier: { select: { name: true } },
@@ -1101,6 +1158,18 @@ export class ProcurementService {
     if (!user.hasGlobalAccess && !user.warehouseIds.includes(warehouseId)) {
       throw new ForbiddenException("You do not have access to this warehouse.");
     }
+  }
+
+  // M-BUG (2026-08-13): list/detail endpoints for requests, orders, goods
+  // receipts, invoices, and payments had no branch scoping at all — a
+  // branch-restricted user could see every other branch's purchasing data
+  // just by omitting the branchId filter (or passing another branch's id
+  // directly). Matches the "Aug 5" convention used everywhere else:
+  // unrestricted for a global user or one with zero branch assignments,
+  // otherwise limited to their own branches — with records that genuinely
+  // have no branch attached left visible rather than guessed at.
+  private branchRestricted(user: AuthenticatedUser) {
+    return !user.hasGlobalAccess && user.branchIds.length > 0;
   }
 }
 

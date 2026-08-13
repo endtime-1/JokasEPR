@@ -9,14 +9,14 @@ import { LookupCacheService } from "../../common/services/lookup-cache.service";
 jest.mock("../../common/next-ref", () => ({ nextRef: jest.fn().mockResolvedValue("PO-REF-001") }));
 
 const mockPrisma = {
-  purchaseRequest: { findFirst: jest.fn(), update: jest.fn().mockResolvedValue({}), updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
-  purchaseOrder: { create: jest.fn(), findFirst: jest.fn(), findUnique: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
+  purchaseRequest: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), update: jest.fn().mockResolvedValue({}), updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
+  purchaseOrder: { create: jest.fn(), findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
   warehouse: { findFirst: jest.fn() },
-  goodsReceivedNote: { create: jest.fn(), findFirst: jest.fn(), update: jest.fn().mockResolvedValue({}) },
+  goodsReceivedNote: { create: jest.fn(), findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), update: jest.fn().mockResolvedValue({}) },
   product: { findMany: jest.fn() },
   purchaseOrderItem: { update: jest.fn().mockResolvedValue({}) },
-  supplierInvoice: { findFirst: jest.fn(), update: jest.fn().mockResolvedValue({}), updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
-  procurementPayment: { create: jest.fn(), findFirst: jest.fn() },
+  supplierInvoice: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), update: jest.fn().mockResolvedValue({}), updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
+  procurementPayment: { create: jest.fn(), findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
   purchaseApproval: { create: jest.fn().mockResolvedValue({}) },
   supplier: { findFirst: jest.fn().mockResolvedValue({ id: "sup-1", companyId: "company-1", name: "Acme Supplies", status: "ACTIVE" }) },
   expenseCategory: { findFirst: jest.fn().mockResolvedValue({ id: "cat-procurement" }), create: jest.fn() },
@@ -588,6 +588,87 @@ describe("ProcurementService", () => {
         service.rejectPurchaseRequest(makeUser({ id: "approver-1" }), "pr-1", { reason: "duplicate" } as never, {})
       ).resolves.toBeDefined();
       expect(mockPrisma.purchaseApproval.create).toHaveBeenCalled();
+    });
+  });
+
+  describe("list* endpoints — branch-restricted users only see their own branches' purchasing data (M-BUG)", () => {
+    it("listPurchaseRequests adds no branch filter for a global-access user", async () => {
+      await service.listPurchaseRequests(makeUser({ hasGlobalAccess: true }), {} as never);
+      const where = mockPrisma.purchaseRequest.findMany.mock.calls[0][0].where;
+      expect(where.AND).toEqual([]);
+    });
+
+    it("listPurchaseRequests adds no branch filter for a user with zero branch assignments (Aug-5 convention: unrestricted, not blank)", async () => {
+      await service.listPurchaseRequests(makeUser({ branchIds: [] }), {} as never);
+      const where = mockPrisma.purchaseRequest.findMany.mock.calls[0][0].where;
+      expect(where.AND).toEqual([]);
+    });
+
+    it("listPurchaseRequests restricts a branch-scoped user to their own branches plus branch-less records", async () => {
+      await service.listPurchaseRequests(makeUser({ branchIds: ["branch-1"] }), {} as never);
+      const where = mockPrisma.purchaseRequest.findMany.mock.calls[0][0].where;
+      expect(where.AND).toEqual([{ OR: [{ branchId: null }, { branchId: { in: ["branch-1"] } }] }]);
+    });
+
+    it("getPurchaseRequest restricts a branch-scoped user's lookup", async () => {
+      mockPrisma.purchaseRequest.findFirst.mockResolvedValue({ id: "pr-1" });
+      await service.getPurchaseRequest(makeUser({ branchIds: ["branch-1"] }), "pr-1");
+      const where = mockPrisma.purchaseRequest.findFirst.mock.calls[0][0].where;
+      expect(where.OR).toEqual([{ branchId: null }, { branchId: { in: ["branch-1"] } }]);
+    });
+
+    it("listPurchaseOrders scopes through the linked purchase request's branch (PurchaseOrder has no branchId of its own)", async () => {
+      await service.listPurchaseOrders(makeUser({ branchIds: ["branch-1"] }), {} as never);
+      const where = mockPrisma.purchaseOrder.findMany.mock.calls[0][0].where;
+      expect(where.AND).toEqual([
+        { OR: [{ purchaseRequestId: null }, { purchaseRequest: { branchId: null } }, { purchaseRequest: { branchId: { in: ["branch-1"] } } }] }
+      ]);
+    });
+
+    it("listGRNs restricts a branch-scoped user to their own branches plus branch-less records", async () => {
+      await service.listGRNs(makeUser({ branchIds: ["branch-1"] }), {} as never);
+      const where = mockPrisma.goodsReceivedNote.findMany.mock.calls[0][0].where;
+      expect(where.AND).toEqual([{ OR: [{ branchId: null }, { branchId: { in: ["branch-1"] } }] }]);
+    });
+
+    it("listInvoices scopes two hops through purchaseOrder.purchaseRequest.branchId", async () => {
+      await service.listInvoices(makeUser({ branchIds: ["branch-1"] }), {} as never);
+      const where = mockPrisma.supplierInvoice.findMany.mock.calls[0][0].where;
+      expect(where.AND).toEqual([
+        {
+          OR: [
+            { purchaseOrderId: null },
+            { purchaseOrder: { purchaseRequestId: null } },
+            { purchaseOrder: { purchaseRequest: { branchId: null } } },
+            { purchaseOrder: { purchaseRequest: { branchId: { in: ["branch-1"] } } } }
+          ]
+        }
+      ]);
+    });
+
+    it("listPayments scopes three hops through invoice.purchaseOrder.purchaseRequest.branchId", async () => {
+      await service.listPayments(makeUser({ branchIds: ["branch-1"] }), {} as never);
+      const where = mockPrisma.procurementPayment.findMany.mock.calls[0][0].where;
+      expect(where.AND).toEqual([
+        {
+          OR: [
+            { invoiceId: null },
+            { invoice: { purchaseOrderId: null } },
+            { invoice: { purchaseOrder: { purchaseRequestId: null } } },
+            { invoice: { purchaseOrder: { purchaseRequest: { branchId: null } } } },
+            { invoice: { purchaseOrder: { purchaseRequest: { branchId: { in: ["branch-1"] } } } } }
+          ]
+        }
+      ]);
+    });
+
+    it("combines search AND branch-scope without either OR clause clobbering the other", async () => {
+      await service.listPurchaseRequests(makeUser({ branchIds: ["branch-1"] }), { search: "fertilizer" } as never);
+      const where = mockPrisma.purchaseRequest.findMany.mock.calls[0][0].where;
+      expect(where.AND).toEqual([
+        { OR: [{ reference: { contains: "fertilizer" } }, { title: { contains: "fertilizer" } }] },
+        { OR: [{ branchId: null }, { branchId: { in: ["branch-1"] } }] }
+      ]);
     });
   });
 });
