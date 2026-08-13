@@ -496,6 +496,7 @@ export function CreateEmployeePage() {
         body: JSON.stringify({
           ...form,
           basicSalary: form.basicSalary ? Number(form.basicSalary) : undefined,
+          email: form.email || undefined,
           gender: form.gender || undefined,
           dateOfBirth: form.dateOfBirth || undefined,
           employeeRoleId: form.employeeRoleId || undefined,
