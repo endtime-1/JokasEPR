@@ -475,8 +475,25 @@ export class MarketPlanningService {
   // nothing real yet built on top of it.
   async deleteProductionPlan(user: AuthenticatedUser, id: string, context: RequestContext) {
     const plan = await this.requireProductionPlan(user, id);
-    if (!["DRAFT", "READY_FOR_APPROVAL"].includes(plan.status)) {
+    if (!["DRAFT", "READY_FOR_APPROVAL", "APPROVED"].includes(plan.status)) {
       throw new BadRequestException(`Cannot delete a production plan that is ${plan.status.toLowerCase()} — MRP runs or executions may already depend on it.`);
+    }
+    // L-BUG (2026-08-13): approveTarget always creates a plan with status
+    // APPROVED directly — DRAFT/READY_FOR_APPROVAL are never actually
+    // reachable through the normal flow, so this guard could never
+    // actually be satisfied and the delete option that exists in the API
+    // could never actually be used. APPROVED is now allowed too, but only
+    // when nothing real has been built on top of it yet — a mistaken or
+    // duplicate approval still has an undo, same as the equivalent guard
+    // on deleteMrp/cancelRecommendation.
+    if (plan.status === "APPROVED") {
+      const [mrpCount, executionCount] = await Promise.all([
+        this.prisma.materialRequirementPlan.count({ where: { productionPlanId: id, deletedAt: null } }),
+        this.prisma.productionExecution.count({ where: { productionPlanId: id, deletedAt: null } })
+      ]);
+      if (mrpCount > 0 || executionCount > 0) {
+        throw new BadRequestException("Cannot delete this production plan — MRP runs or executions already depend on it.");
+      }
     }
     await this.prisma.productionPlan.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
     await this.writeAudit(user, "DELETE", "ProductionPlan", id, `Deleted production plan ${plan.planNumber}`, context, { branchId: plan.branchId, productionSiteId: plan.productionSiteId });

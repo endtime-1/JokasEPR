@@ -663,7 +663,18 @@ export class ProcurementService {
           branchId: dto.branchId,
           receivedDate: dto.receivedDate ? new Date(dto.receivedDate) : new Date(),
           deliveryNoteRef: dto.deliveryNoteRef,
-          status: "RECEIVED",
+          // L-BUG (2026-08-13): GRNStatus.QUALITY_HOLD exists specifically
+          // for "physically received, awaiting a quality decision" — but
+          // every GRN was hardcoded to RECEIVED regardless of
+          // qualityCheckRequired, so nothing ever actually reached
+          // QUALITY_HOLD. The dashboard's own "pending quality hold" tile
+          // always read zero, giving false reassurance nothing was stuck in
+          // review. qualityPassGRN/qualityFailGRN already accept RECEIVED
+          // or QUALITY_HOLD as valid starting statuses, and postGRN's
+          // canPostDirectly already only allows RECEIVED (not QUALITY_HOLD)
+          // through without an explicit pass — so this needed no other
+          // changes to slot in correctly.
+          status: (dto.qualityCheckRequired ?? true) ? "QUALITY_HOLD" : "RECEIVED",
           qualityCheckRequired: dto.qualityCheckRequired ?? true,
           notes: dto.notes,
           createdById: user.id,

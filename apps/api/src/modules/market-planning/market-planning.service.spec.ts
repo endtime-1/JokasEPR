@@ -217,7 +217,8 @@ describe("MarketPlanningService — target/plan/MRP/recommendation edit+delete (
   const mockPrisma = {
     marketTarget: { findFirst: jest.fn(), update: jest.fn() },
     productionPlan: { findFirst: jest.fn(), update: jest.fn() },
-    materialRequirementPlan: { findFirst: jest.fn(), update: jest.fn() },
+    materialRequirementPlan: { findFirst: jest.fn(), update: jest.fn(), count: jest.fn().mockResolvedValue(0) },
+    productionExecution: { count: jest.fn().mockResolvedValue(0) },
     procurementRecommendation: { findFirst: jest.fn(), update: jest.fn() },
     $transaction: jest.fn().mockImplementation((cb: (tx: typeof mockTx) => Promise<unknown>) => cb(mockTx))
   };
@@ -301,6 +302,36 @@ describe("MarketPlanningService — target/plan/MRP/recommendation edit+delete (
 
       const service = makeService();
       await expect(service.deleteProductionPlan(makeUser(), "pp-1", {})).rejects.toThrow(BadRequestException);
+    });
+
+    it("L-BUG: allows deleting an APPROVED plan with nothing built on top of it — plans are always created APPROVED, so DRAFT/READY_FOR_APPROVAL alone made this permanently unusable", async () => {
+      mockPrisma.productionPlan.findFirst.mockResolvedValue({ id: "pp-1", companyId: "company-1", status: "APPROVED", branchId: "branch-1", productionSiteId: "site-1", centralWarehouseId: "wh-1", planNumber: "PP-1" });
+      mockPrisma.materialRequirementPlan.count.mockResolvedValue(0);
+      mockPrisma.productionExecution.count.mockResolvedValue(0);
+      mockPrisma.productionPlan.update.mockResolvedValue({});
+
+      const service = makeService();
+      await expect(service.deleteProductionPlan(makeUser(), "pp-1", {})).resolves.toEqual({ success: true });
+    });
+
+    it("L-BUG: rejects deleting an APPROVED plan once an MRP run depends on it", async () => {
+      mockPrisma.productionPlan.findFirst.mockResolvedValue({ id: "pp-1", companyId: "company-1", status: "APPROVED", branchId: "branch-1", productionSiteId: "site-1", centralWarehouseId: "wh-1", planNumber: "PP-1" });
+      mockPrisma.materialRequirementPlan.count.mockResolvedValue(1);
+      mockPrisma.productionExecution.count.mockResolvedValue(0);
+
+      const service = makeService();
+      await expect(service.deleteProductionPlan(makeUser(), "pp-1", {})).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.productionPlan.update).not.toHaveBeenCalled();
+    });
+
+    it("L-BUG: rejects deleting an APPROVED plan once a production execution depends on it", async () => {
+      mockPrisma.productionPlan.findFirst.mockResolvedValue({ id: "pp-1", companyId: "company-1", status: "APPROVED", branchId: "branch-1", productionSiteId: "site-1", centralWarehouseId: "wh-1", planNumber: "PP-1" });
+      mockPrisma.materialRequirementPlan.count.mockResolvedValue(0);
+      mockPrisma.productionExecution.count.mockResolvedValue(1);
+
+      const service = makeService();
+      await expect(service.deleteProductionPlan(makeUser(), "pp-1", {})).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.productionPlan.update).not.toHaveBeenCalled();
     });
   });
 

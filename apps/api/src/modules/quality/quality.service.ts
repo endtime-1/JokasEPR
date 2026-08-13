@@ -703,10 +703,30 @@ export class QualityService {
   async createCorrectiveAction(user: AuthenticatedUser, dto: CreateCorrectiveActionDto, ctx: RequestContext) {
     const cid = user.companyId;
     // H15: CorrectiveAction has no location fields of its own — scoped via
-    // its check relation, same as the read endpoints. Previously this
-    // trusted dto.checkId with no existence or scope check at all.
-    const check = await this.prisma.qualityCheck.findFirst({ where: { id: dto.checkId, companyId: cid, deletedAt: null, ...this.scopeWhere(user) } });
-    if (!check) throw new NotFoundException("Quality check not found");
+    // its anchor's own relation, same as the read endpoints. Previously
+    // this trusted dto.checkId with no existence or scope check at all, and
+    // required a checkId unconditionally — a corrective action could only
+    // ever be anchored to a Quality check, even though rejectedBatchId was
+    // already accepted in the create data.
+    //
+    // L-BUG (2026-08-13): a serious Poultry health observation only ever
+    // produced a passive notification — never a trackable, assigned,
+    // follow-up-verified corrective action the way Quality's own findings
+    // already get. poultryHealthObservationId is now a third valid anchor,
+    // validated the same way: exists, in-company, in-scope.
+    if (!dto.checkId && !dto.rejectedBatchId && !dto.poultryHealthObservationId) {
+      throw new BadRequestException("A corrective action must be anchored to a quality check, a rejected batch, or a poultry health observation.");
+    }
+    if (dto.checkId) {
+      const check = await this.prisma.qualityCheck.findFirst({ where: { id: dto.checkId, companyId: cid, deletedAt: null, ...this.scopeWhere(user) } });
+      if (!check) throw new NotFoundException("Quality check not found");
+    }
+    if (dto.poultryHealthObservationId) {
+      const observation = await this.prisma.poultryHealthObservation.findFirst({
+        where: { id: dto.poultryHealthObservationId, companyId: cid, deletedAt: null, ...this.scopeWhere(user) }
+      });
+      if (!observation) throw new NotFoundException("Poultry health observation not found");
+    }
     const reference = await nextRef(this.prisma, cid, "CA");
 
     const ca = await this.prisma.correctiveAction.create({
@@ -715,6 +735,7 @@ export class QualityService {
         reference,
         checkId: dto.checkId,
         rejectedBatchId: dto.rejectedBatchId,
+        poultryHealthObservationId: dto.poultryHealthObservationId,
         title: dto.title,
         description: dto.description,
         rootCause: dto.rootCause,

@@ -179,6 +179,10 @@ export class CreateLabReportDto {
 export class CreateCorrectiveActionDto {
   @IsOptional() @IsUUID() checkId?: string;
   @IsOptional() @IsUUID() rejectedBatchId?: string;
+  // L-BUG (2026-08-13): lets a serious Poultry health observation (disease
+  // outbreak, unusual mortality) anchor a real, trackable corrective action
+  // instead of only ever producing a passive notification.
+  @IsOptional() @IsUUID() poultryHealthObservationId?: string;
   @IsString() title!: string;
   @IsString() description!: string;
   @IsOptional() @IsString() rootCause?: string;

@@ -203,6 +203,30 @@ describe("ProcurementService", () => {
       expect(mockPrisma.purchaseOrder.update).toHaveBeenCalledWith({ where: { id: "po-1" }, data: { status: "FULLY_RECEIVED" } });
     });
 
+    it("L-BUG: starts a quality-checked GRN in QUALITY_HOLD, not RECEIVED, so it actually shows up as pending review", async () => {
+      mockPrisma.purchaseOrder.findFirst.mockResolvedValue({ id: "po-1", companyId: "company-1", status: "APPROVED", supplierId: "sup-1", items: [], grnRecords: [] });
+      mockPrisma.warehouse.findFirst.mockResolvedValue({ id: "wh-1", companyId: "company-1" });
+      mockPrisma.goodsReceivedNote.create.mockResolvedValue({ id: "grn-1" });
+
+      await service.createGRN(makeUser({ warehouseIds: ["wh-1"] }), grnDto as never, {});
+
+      expect(mockPrisma.goodsReceivedNote.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ status: "QUALITY_HOLD", qualityCheckRequired: true }) })
+      );
+    });
+
+    it("L-BUG: starts a GRN explicitly marked as not needing a quality check in RECEIVED, not QUALITY_HOLD", async () => {
+      mockPrisma.purchaseOrder.findFirst.mockResolvedValue({ id: "po-1", companyId: "company-1", status: "APPROVED", supplierId: "sup-1", items: [], grnRecords: [] });
+      mockPrisma.warehouse.findFirst.mockResolvedValue({ id: "wh-1", companyId: "company-1" });
+      mockPrisma.goodsReceivedNote.create.mockResolvedValue({ id: "grn-1" });
+
+      await service.createGRN(makeUser({ warehouseIds: ["wh-1"] }), { ...grnDto, qualityCheckRequired: false } as never, {});
+
+      expect(mockPrisma.goodsReceivedNote.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ status: "RECEIVED", qualityCheckRequired: false }) })
+      );
+    });
+
     it("rejects posting a GRN for a warehouse the actor doesn't have access to", async () => {
       mockPrisma.goodsReceivedNote.findFirst.mockResolvedValue({ id: "grn-1", companyId: "company-1", status: "QUALITY_PASSED", warehouseId: "wh-OTHER", items: [] });
 

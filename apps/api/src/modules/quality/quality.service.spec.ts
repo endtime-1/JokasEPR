@@ -23,6 +23,7 @@ const mockPrisma = {
   qualityCheckParameter: { count: jest.fn() },
   qualityCheckTemplate: { findFirst: jest.fn(), update: jest.fn() },
   labReportUpload: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
+  poultryHealthObservation: { findFirst: jest.fn() },
   $transaction: jest.fn().mockImplementation((cb: (tx: typeof mockTx) => Promise<unknown>) => cb(mockTx))
 };
 const mockAudit = { write: jest.fn().mockResolvedValue(undefined) };
@@ -188,6 +189,43 @@ describe("QualityService — finalize/approve/reject actions are scoped, not jus
     const service = makeService();
     await expect(
       service.createCorrectiveAction(makeUser({ branchIds: ["branch-1"] }), { checkId: "chk-other-branch", title: "x", description: "x" } as never, {})
+    ).rejects.toThrow(/not found/i);
+    expect(mockPrisma.correctiveAction.create).not.toHaveBeenCalled();
+  });
+
+  it("L-BUG: rejects a corrective action with no anchor at all — not a quality check, rejected batch, or poultry health observation", async () => {
+    const service = makeService();
+    await expect(
+      service.createCorrectiveAction(makeUser(), { title: "x", description: "x" } as never, {})
+    ).rejects.toThrow(/must be anchored/);
+    expect(mockPrisma.correctiveAction.create).not.toHaveBeenCalled();
+  });
+
+  it("L-BUG: anchors a corrective action to a Poultry health observation, giving a serious outbreak a real trackable follow-up", async () => {
+    mockPrisma.poultryHealthObservation.findFirst.mockResolvedValue({ id: "obs-1", companyId: "company-1", branchId: "branch-1" });
+    mockPrisma.correctiveAction.create.mockResolvedValue({ id: "ca-1" });
+
+    const service = makeService();
+    await service.createCorrectiveAction(
+      makeUser({ branchIds: ["branch-1"] }),
+      { poultryHealthObservationId: "obs-1", title: "Investigate outbreak", description: "Unusual mortality in FLK-1", assignedToId: "vet-1", dueDate: "2026-08-20" } as never,
+      {}
+    );
+
+    expect(mockPrisma.poultryHealthObservation.findFirst).toHaveBeenCalledWith({
+      where: { id: "obs-1", companyId: "company-1", deletedAt: null, AND: [{ OR: [{ branchId: null }, { branchId: { in: ["branch-1"] } }] }] }
+    });
+    expect(mockPrisma.correctiveAction.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ poultryHealthObservationId: "obs-1" }) })
+    );
+  });
+
+  it("L-BUG: 404s when the referenced poultry health observation doesn't exist or is out of scope", async () => {
+    mockPrisma.poultryHealthObservation.findFirst.mockResolvedValue(null);
+
+    const service = makeService();
+    await expect(
+      service.createCorrectiveAction(makeUser(), { poultryHealthObservationId: "obs-other", title: "x", description: "x" } as never, {})
     ).rejects.toThrow(/not found/i);
     expect(mockPrisma.correctiveAction.create).not.toHaveBeenCalled();
   });

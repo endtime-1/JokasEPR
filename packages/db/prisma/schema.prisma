@@ -3367,8 +3367,8 @@ model PoultryHealthObservation {
   veterinarianName String?
   recommendation String?
   status         PoultryRecordStatus   @default(SUBMITTED)
-  createdById    String?              
-  updatedById    String?              
+  createdById    String?
+  updatedById    String?
   createdAt      DateTime              @default(now())
   updatedAt      DateTime              @updatedAt
   deletedAt      DateTime?
@@ -3379,6 +3379,7 @@ model PoultryHealthObservation {
   poultryHouse PoultryHouse @relation(fields: [poultryHouseId], references: [id])
   pen          Pen?         @relation(fields: [penId], references: [id])
   flockBatch   FlockBatch   @relation(fields: [flockBatchId], references: [id])
+  correctiveActions CorrectiveAction[]
 
   @@index([companyId])
   @@index([branchId])
@@ -6367,8 +6368,9 @@ model CorrectiveAction {
   id                String                 @id @default(uuid())
   companyId         String                
   reference         String                 @db.VarChar(30)
-  checkId           String?               
-  rejectedBatchId   String?               
+  checkId           String?
+  rejectedBatchId   String?
+  poultryHealthObservationId String?
   title             String                 @db.VarChar(200)
   description       String                 @db.VarChar(1000)
   rootCause         String?                @db.VarChar(500)
@@ -6390,11 +6392,13 @@ model CorrectiveAction {
   company       Company        @relation(fields: [companyId], references: [id])
   check         QualityCheck?  @relation(fields: [checkId], references: [id])
   rejectedBatch RejectedBatch? @relation(fields: [rejectedBatchId], references: [id])
+  poultryHealthObservation PoultryHealthObservation? @relation(fields: [poultryHealthObservationId], references: [id])
   assignedTo    User?          @relation("CorrectiveActionAssignee", fields: [assignedToId], references: [id])
   verifiedBy    User?          @relation("CorrectiveActionVerifier", fields: [verifiedById], references: [id])
 
   @@unique([companyId, reference])
   @@index([companyId])
+  @@index([poultryHealthObservationId])
   @@index([checkId])
   @@index([rejectedBatchId])
   @@index([companyId, status])
