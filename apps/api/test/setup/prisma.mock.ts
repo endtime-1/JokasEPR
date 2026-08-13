@@ -72,6 +72,7 @@ export function createPrismaMock() {
     expense: modelMock(),
     revenue: modelMock(),
     supplierPayment: modelMock(),
+    supplierInvoice: modelMock(),
     customerPayment: modelMock(),
     bankAccount: modelMock(),
     payroll: modelMock(),

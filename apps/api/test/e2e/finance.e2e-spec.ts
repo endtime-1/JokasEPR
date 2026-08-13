@@ -42,14 +42,19 @@ describe("Finance Module (e2e)", () => {
     // intended permission set.
     authService.clearProfileCache(TEST_USER_ID);
     prisma.auditLog.create.mockResolvedValue({});
-    // finance.service.ts's dashboard() Promise.all's 8 queries together — these
-    // 4 aren't relevant to any current assertion but must resolve to something
+    // finance.service.ts's dashboard() Promise.all's 9 queries together — these
+    // aren't relevant to any current assertion but must resolve to something
     // array/object-shaped or bankAccounts.map() etc. throws on undefined.
     // Individual tests override expense/revenue aggregates as needed below.
     prisma.bankAccount.findMany.mockResolvedValue([]);
     prisma.expense.count.mockResolvedValue(0);
     prisma.supplierPayment.aggregate.mockResolvedValue({ _sum: { amount: 0 }, _count: 0 });
     prisma.customerPayment.aggregate.mockResolvedValue({ _sum: { amount: 0 }, _count: 0 });
+    // M-BUG (2026-08-13): dashboard()'s new accountsPayable figure reads
+    // supplierInvoice.aggregate — the model was missing from prisma.mock.ts
+    // entirely (added alongside this), and modelMock()'s bare `{}` default
+    // isn't enough on its own since dashboard() reads `._sum.balanceDue`.
+    prisma.supplierInvoice.aggregate.mockResolvedValue({ _sum: { balanceDue: 0 }, _count: 0 });
   });
 
   // JwtStrategy.validate() hydrates the real AuthenticatedUser from the DB via
