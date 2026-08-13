@@ -510,21 +510,58 @@ export class FinanceService {
 
   async createSupplierPayment(user: AuthenticatedUser, dto: CreateSupplierPaymentDto, ctx: RequestContext) {
     const reference = await nextRef(this.prisma, user.companyId, "SP");
-    const payment = await this.prisma.supplierPayment.create({
-      data: {
-        companyId: user.companyId,
-        reference,
-        supplierName: dto.supplierName,
-        amount: dto.amount,
-        paymentDate: new Date(dto.paymentDate),
-        paymentMethod: dto.paymentMethod,
-        description: dto.description,
-        purchaseOrderRef: dto.purchaseOrderRef,
-        bankAccountId: dto.bankAccountId,
-        notes: dto.notes,
-        createdById: user.id
+
+    // M-BUG (2026-08-13): this used to just record a free-text payment with
+    // zero connection to the real Supplier/SupplierInvoice records in
+    // Procurement — a payment entered here never reduced what was actually
+    // owed, risking the same payment being entered twice (once "for real"
+    // in Procurement, once here). When a real invoice is linked, apply the
+    // exact same floor-guarded decrement procurement.service.ts's own
+    // createPayment uses, so recording through either screen has one
+    // consistent effect on the real AP balance.
+    const invoice = dto.invoiceId
+      ? await this.prisma.supplierInvoice.findFirst({ where: { id: dto.invoiceId, companyId: user.companyId, deletedAt: null } })
+      : null;
+    if (dto.invoiceId && !invoice) throw new NotFoundException("Supplier invoice was not found.");
+    if (invoice && Number(invoice.balanceDue) <= 0) throw new BadRequestException("Invoice has no outstanding balance.");
+
+    const payment = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.supplierPayment.create({
+        data: {
+          companyId: user.companyId,
+          reference,
+          supplierName: dto.supplierName,
+          supplierId: dto.supplierId,
+          invoiceId: dto.invoiceId,
+          amount: dto.amount,
+          paymentDate: new Date(dto.paymentDate),
+          paymentMethod: dto.paymentMethod,
+          description: dto.description,
+          purchaseOrderRef: dto.purchaseOrderRef,
+          bankAccountId: dto.bankAccountId,
+          notes: dto.notes,
+          createdById: user.id
+        }
+      });
+
+      if (invoice) {
+        const decremented = await tx.supplierInvoice.updateMany({
+          where: { id: invoice.id, balanceDue: { gte: dto.amount } },
+          data: { paidAmount: { increment: dto.amount }, balanceDue: { decrement: dto.amount }, updatedById: user.id }
+        });
+        if (decremented.count === 0) {
+          throw new BadRequestException(`Payment of ${dto.amount} exceeds the outstanding balance on this invoice.`);
+        }
+        const refreshed = await tx.supplierInvoice.findUniqueOrThrow({ where: { id: invoice.id }, select: { balanceDue: true } });
+        await tx.supplierInvoice.update({
+          where: { id: invoice.id },
+          data: { status: Number(refreshed.balanceDue) <= 0 ? "PAID" : "MATCHED" }
+        });
       }
+
+      return row;
     });
+
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "CREATE", entityType: "SupplierPayment", entityId: payment.id, ...ctx });
     return { data: payment };
   }

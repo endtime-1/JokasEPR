@@ -328,6 +328,19 @@ export class CreateSupplierPaymentDto {
   @IsUUID()
   bankAccountId?: string;
 
+  // M-BUG (2026-08-13): supplierName/purchaseOrderRef above are free text —
+  // linking to a real Supplier/SupplierInvoice lets this payment actually
+  // reduce what's owed on that invoice, the same way Procurement's own
+  // payment screen already does. Optional so suppliers not yet tracked in
+  // Procurement can still be recorded the old way.
+  @IsOptional()
+  @IsUUID()
+  supplierId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  invoiceId?: string;
+
   @IsOptional()
   @IsString()
   @MaxLength(500)

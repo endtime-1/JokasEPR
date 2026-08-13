@@ -4943,30 +4943,36 @@ model Revenue {
 
 model SupplierPayment {
   id               String        @id @default(uuid())
-  companyId        String       
+  companyId        String
   reference        String        @db.VarChar(30)
   supplierName     String        @db.VarChar(160)
+  supplierId       String?
+  invoiceId        String?
   amount           Decimal       @db.Decimal(15, 2)
   currency         String        @default("GHS") @db.VarChar(10)
   paymentDate      DateTime
   paymentMethod    PaymentMethod
   description      String        @db.VarChar(240)
   purchaseOrderRef String?       @db.VarChar(60)
-  bankAccountId    String?      
+  bankAccountId    String?
   notes            String?       @db.VarChar(500)
-  createdById      String?      
-  updatedById      String?      
+  createdById      String?
+  updatedById      String?
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
   deletedAt        DateTime?
 
-  company     Company      @relation(fields: [companyId], references: [id])
-  bankAccount BankAccount? @relation(fields: [bankAccountId], references: [id])
+  company     Company          @relation(fields: [companyId], references: [id])
+  bankAccount BankAccount?     @relation(fields: [bankAccountId], references: [id])
+  supplier    Supplier?        @relation(fields: [supplierId], references: [id])
+  invoice     SupplierInvoice? @relation(fields: [invoiceId], references: [id])
 
   @@unique([companyId, reference])
   @@index([companyId])
   @@index([companyId, paymentDate])
   @@index([deletedAt])
+  @@index([supplierId])
+  @@index([invoiceId])
 }
 
 model CustomerPayment {
@@ -5351,6 +5357,7 @@ model Supplier {
   purchaseOrders     PurchaseOrder[]
   invoices           SupplierInvoice[]
   payments           ProcurementPayment[]
+  financePayments    SupplierPayment[]
   performanceRecords SupplierPerformanceRecord[]
   priceHistory       SupplierPriceHistory[]
   goodsReceivedNotes GoodsReceivedNote[]
@@ -5574,6 +5581,7 @@ model SupplierInvoice {
   supplier      Supplier             @relation(fields: [supplierId], references: [id])
   purchaseOrder PurchaseOrder?       @relation(fields: [purchaseOrderId], references: [id])
   payments      ProcurementPayment[]
+  financePayments SupplierPayment[]
 
   @@unique([companyId, reference])
   @@index([companyId])

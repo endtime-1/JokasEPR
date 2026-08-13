@@ -1042,10 +1042,16 @@ export function SupplierPaymentsPage() {
   const { options, optionsError } = useFinanceOptions();
   const [payments, setPayments] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/finance/supplier-payments")?.data ?? []);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ supplierName: "", amount: "", paymentDate: new Date().toISOString().slice(0, 10), paymentMethod: "BANK_TRANSFER", description: "", purchaseOrderRef: "", bankAccountId: "", notes: "" });
+  const [form, setForm] = useState({ supplierName: "", supplierId: "", invoiceId: "", amount: "", paymentDate: new Date().toISOString().slice(0, 10), paymentMethod: "BANK_TRANSFER", description: "", purchaseOrderRef: "", bankAccountId: "", notes: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState("");
+  // M-BUG (2026-08-13): a real supplier/invoice link is what lets this
+  // payment actually reduce the invoice balance Procurement tracks — kept
+  // optional so a supplier not yet in Procurement can still be paid the old
+  // (free-text) way.
+  const [suppliers, setSuppliers] = useState<Array<{ id: string; name: string }>>([]);
+  const [invoices, setInvoices] = useState<Array<{ id: string; reference: string; invoiceNumber: string; balanceDue: number }>>([]);
 
   function load() {
     setLoadError("");
@@ -1055,6 +1061,18 @@ export function SupplierPaymentsPage() {
   }
 
   useEffect(() => { load(); }, []);
+  useEffect(() => {
+    if (!showForm) return;
+    apiFetch<ApiEnvelope<Array<{ id: string; name: string }>>>("/procurement/suppliers")
+      .then((r) => setSuppliers(r.data ?? []))
+      .catch(() => setSuppliers([]));
+  }, [showForm]);
+  useEffect(() => {
+    if (!form.supplierId) { setInvoices([]); return; }
+    apiFetch<ApiEnvelope<Array<{ id: string; reference: string; invoiceNumber: string; balanceDue: number; status: string }>>>(`/procurement/invoices?supplierId=${form.supplierId}`)
+      .then((r) => setInvoices((r.data ?? []).filter((inv) => inv.status !== "PAID" && Number(inv.balanceDue) > 0)))
+      .catch(() => setInvoices([]));
+  }, [form.supplierId]);
   function set(k: string, v: string) { setForm((f) => ({ ...f, [k]: v })); }
 
   async function handleSubmit(e: FormEvent) {
@@ -1062,7 +1080,15 @@ export function SupplierPaymentsPage() {
     setError("");
     setLoading(true);
     try {
-      await apiFetch("/finance/supplier-payments", { method: "POST", body: JSON.stringify({ ...form, amount: Number(form.amount) }) });
+      await apiFetch("/finance/supplier-payments", {
+        method: "POST",
+        body: JSON.stringify({
+          ...form,
+          amount: Number(form.amount),
+          supplierId: form.supplierId || undefined,
+          invoiceId: form.invoiceId || undefined
+        })
+      });
       setShowForm(false);
       load();
     } catch (err: unknown) {
@@ -1082,7 +1108,28 @@ export function SupplierPaymentsPage() {
           <h3 className="mb-4 text-lg font-semibold">New Supplier Payment</h3>
           {error && <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</p>}
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <FormField label="Supplier (tracked in Procurement)">
+              <select
+                className={selectClass}
+                value={form.supplierId}
+                onChange={(e) => {
+                  const supplier = suppliers.find((s) => s.id === e.target.value);
+                  setForm((f) => ({ ...f, supplierId: e.target.value, invoiceId: "", supplierName: supplier ? supplier.name : f.supplierName }));
+                }}
+              >
+                <option value="">None — enter name manually below</option>
+                {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </FormField>
             <FormField label="Supplier Name *"><input className={inputClass} value={form.supplierName} onChange={(e) => set("supplierName", e.target.value)} required /></FormField>
+            {form.supplierId && (
+              <FormField label="Reduce a specific invoice (optional)">
+                <select className={selectClass} value={form.invoiceId} onChange={(e) => set("invoiceId", e.target.value)}>
+                  <option value="">Don&apos;t link to an invoice</option>
+                  {invoices.map((inv) => <option key={inv.id} value={inv.id}>{inv.invoiceNumber || inv.reference} — owed {money(inv.balanceDue)}</option>)}
+                </select>
+              </FormField>
+            )}
             <FormField label="Amount (GHS) *"><input type="number" className={inputClass} value={form.amount} onChange={(e) => set("amount", e.target.value)} min="0.01" step="0.01" required /></FormField>
             <FormField label="Payment Date *"><input type="date" className={inputClass} value={form.paymentDate} onChange={(e) => set("paymentDate", e.target.value)} required /></FormField>
             <FormField label="Payment Method"><select className={selectClass} value={form.paymentMethod} onChange={(e) => set("paymentMethod", e.target.value)}>{["CASH", "BANK_TRANSFER", "MOBILE_MONEY", "CHEQUE"].map((m) => <option key={m} value={m}>{m.replace(/_/g, " ")}</option>)}</select></FormField>

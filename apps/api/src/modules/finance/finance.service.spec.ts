@@ -7,8 +7,14 @@ jest.mock("../../common/next-ref", () => ({ nextRef: jest.fn().mockResolvedValue
 const mockPrisma = {
   expense: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0), create: jest.fn(), update: jest.fn(), aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 }, _count: 0 }) },
   revenue: { findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0), create: jest.fn(), aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 }, _count: 0 }) },
-  supplierPayment: { aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 }, _count: 0 }), count: jest.fn().mockResolvedValue(0) },
-  supplierInvoice: { aggregate: jest.fn().mockResolvedValue({ _sum: { balanceDue: 0 }, _count: 0 }) },
+  supplierPayment: { aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 }, _count: 0 }), count: jest.fn().mockResolvedValue(0), create: jest.fn() },
+  supplierInvoice: {
+    aggregate: jest.fn().mockResolvedValue({ _sum: { balanceDue: 0 }, _count: 0 }),
+    findFirst: jest.fn(),
+    updateMany: jest.fn(),
+    findUniqueOrThrow: jest.fn(),
+    update: jest.fn()
+  },
   customerPayment: { aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 }, _count: 0 }), count: jest.fn().mockResolvedValue(0) },
   bankAccount: { findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn(), update: jest.fn() },
   payrollRecord: { findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn().mockResolvedValue(0), create: jest.fn(), update: jest.fn() },
@@ -344,5 +350,87 @@ describe("FinanceService.dashboard — net profit excludes rejected/cancelled ex
     });
     expect(result.data.accountsPayable).toBe(4500);
     expect(result.data.accountsPayableCount).toBe(3);
+  });
+});
+
+describe("FinanceService.createSupplierPayment — a linked invoice actually gets reduced, not just recorded as a free-text note (M-BUG)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("records a free-text payment with no invoice touch when no invoice is linked (legacy behavior, unchanged)", async () => {
+    mockPrisma.supplierPayment.create.mockResolvedValue({ id: "sp-1" });
+    const service = makeService();
+
+    await service.createSupplierPayment(makeUser(), { supplierName: "Acme Feeds", amount: 500, paymentDate: "2026-08-13", paymentMethod: "CASH", description: "Cash payment" } as never, {});
+
+    expect(mockPrisma.supplierInvoice.findFirst).not.toHaveBeenCalled();
+    expect(mockPrisma.supplierInvoice.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("floor-guards the decrement and marks the invoice PAID when a linked invoice's balance reaches zero", async () => {
+    mockPrisma.supplierInvoice.findFirst.mockResolvedValue({ id: "inv-1", balanceDue: 500 });
+    mockPrisma.supplierInvoice.updateMany.mockResolvedValue({ count: 1 });
+    mockPrisma.supplierInvoice.findUniqueOrThrow.mockResolvedValue({ balanceDue: 0 });
+    mockPrisma.supplierPayment.create.mockResolvedValue({ id: "sp-1" });
+    const service = makeService();
+
+    await service.createSupplierPayment(
+      makeUser(),
+      { supplierName: "Acme Feeds", supplierId: "sup-1", invoiceId: "inv-1", amount: 500, paymentDate: "2026-08-13", paymentMethod: "BANK_TRANSFER", description: "Full settlement" } as never,
+      {}
+    );
+
+    expect(mockPrisma.supplierInvoice.updateMany).toHaveBeenCalledWith({
+      where: { id: "inv-1", balanceDue: { gte: 500 } },
+      data: { paidAmount: { increment: 500 }, balanceDue: { decrement: 500 }, updatedById: "user-1" }
+    });
+    expect(mockPrisma.supplierInvoice.update).toHaveBeenCalledWith({ where: { id: "inv-1" }, data: { status: "PAID" } });
+  });
+
+  it("marks the invoice MATCHED (not PAID) when balance remains after a partial payment", async () => {
+    mockPrisma.supplierInvoice.findFirst.mockResolvedValue({ id: "inv-1", balanceDue: 500 });
+    mockPrisma.supplierInvoice.updateMany.mockResolvedValue({ count: 1 });
+    mockPrisma.supplierInvoice.findUniqueOrThrow.mockResolvedValue({ balanceDue: 200 });
+    mockPrisma.supplierPayment.create.mockResolvedValue({ id: "sp-1" });
+    const service = makeService();
+
+    await service.createSupplierPayment(
+      makeUser(),
+      { supplierName: "Acme Feeds", supplierId: "sup-1", invoiceId: "inv-1", amount: 300, paymentDate: "2026-08-13", paymentMethod: "BANK_TRANSFER", description: "Partial" } as never,
+      {}
+    );
+
+    expect(mockPrisma.supplierInvoice.update).toHaveBeenCalledWith({ where: { id: "inv-1" }, data: { status: "MATCHED" } });
+  });
+
+  it("rejects a payment larger than the invoice's outstanding balance instead of driving it negative", async () => {
+    mockPrisma.supplierInvoice.findFirst.mockResolvedValue({ id: "inv-1", balanceDue: 200 });
+    mockPrisma.supplierInvoice.updateMany.mockResolvedValue({ count: 0 });
+    const service = makeService();
+
+    await expect(
+      service.createSupplierPayment(
+        makeUser(),
+        { supplierName: "Acme Feeds", supplierId: "sup-1", invoiceId: "inv-1", amount: 500, paymentDate: "2026-08-13", paymentMethod: "BANK_TRANSFER", description: "Overpay" } as never,
+        {}
+      )
+    ).rejects.toThrow(BadRequestException);
+    expect(mockPrisma.supplierInvoice.updateMany).toHaveBeenCalledWith({
+      where: { id: "inv-1", balanceDue: { gte: 500 } },
+      data: expect.objectContaining({ paidAmount: { increment: 500 }, balanceDue: { decrement: 500 } })
+    });
+  });
+
+  it("rejects up front when the linked invoice already has no outstanding balance", async () => {
+    mockPrisma.supplierInvoice.findFirst.mockResolvedValue({ id: "inv-1", balanceDue: 0 });
+    const service = makeService();
+
+    await expect(
+      service.createSupplierPayment(
+        makeUser(),
+        { supplierName: "Acme Feeds", supplierId: "sup-1", invoiceId: "inv-1", amount: 100, paymentDate: "2026-08-13", paymentMethod: "BANK_TRANSFER", description: "Already paid" } as never,
+        {}
+      )
+    ).rejects.toThrow(BadRequestException);
+    expect(mockPrisma.supplierPayment.create).not.toHaveBeenCalled();
   });
 });
