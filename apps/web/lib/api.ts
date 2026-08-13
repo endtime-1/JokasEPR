@@ -75,6 +75,10 @@ export function clearAllCache(): void {
 export type ApiEnvelope<T> = {
   data: T;
   meta?: Record<string, unknown>;
+  // Non-fatal, checkable warnings a 2xx response can still carry — e.g.
+  // market-planning's createTarget flags an implausibly large computed
+  // quantity (likely kg typed into a bags field) without blocking creation.
+  warnings?: string[];
 };
 
 // Three distinct refresh outcomes.

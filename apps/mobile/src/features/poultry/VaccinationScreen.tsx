@@ -90,14 +90,19 @@ export function VaccinationScreen() {
   const { submit, loading } = useSubmit({
     module: "poultry_vaccination",
     endpoint: "/poultry/vaccination-records",
-    onSuccess: (queued) =>
+    // M-BUG follow-up (2026-08-13): consumeInventoryTx now returns a
+    // warning when the warehouse/product combo has no inventory item set
+    // up (stock wasn't actually deducted), but nothing displayed it.
+    onSuccess: (queued, response) => {
+      const warning = !queued ? (response as { warning?: string } | undefined)?.warning : undefined;
       Alert.alert(
-        queued ? "Saved Offline" : "Saved",
+        queued ? "Saved Offline" : warning ? "Saved — please check" : "Saved",
         queued
           ? "Your vaccination record was saved on this device and will sync automatically once you're back online."
-          : "Vaccination recorded.",
+          : warning ?? "Vaccination recorded.",
         [{ text: "OK", onPress: () => navigation.goBack() }]
-      )
+      );
+    }
   });
 
   async function handleSubmit() {

@@ -105,14 +105,20 @@ export function EggCollectionScreen() {
   const { submit, loading } = useSubmit({
     module: "poultry_eggs",
     endpoint: "/poultry/egg-production-records",
-    onSuccess: (queued) =>
+    // M-BUG follow-up (2026-08-13): createEggs now returns a warning for a
+    // young-flock age check and for cracked/dirty eggs recorded with no
+    // "seconds" product set, but nothing displayed either — same silent
+    // gap the fix was meant to close, just moved here.
+    onSuccess: (queued, response) => {
+      const warning = !queued ? (response as { warning?: string } | undefined)?.warning : undefined;
       Alert.alert(
-        queued ? "Saved Offline" : "Saved",
+        queued ? "Saved Offline" : warning ? "Saved — please check" : "Saved",
         queued
           ? "Your egg collection record was saved on this device and will sync automatically once you're back online."
-          : "Egg collection recorded.",
+          : warning ?? "Egg collection recorded.",
         [{ text: "OK", onPress: () => navigation.goBack() }]
-      )
+      );
+    }
   });
 
   async function handleSave() {

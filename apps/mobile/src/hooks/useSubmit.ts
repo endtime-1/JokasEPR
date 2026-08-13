@@ -15,7 +15,11 @@ type Options = {
   // offline, or a network/timeout failure fell back to queueing (see the C6
   // note below). Callers use this to show "saved on this device, will sync
   // later" instead of implying the record already reached the server.
-  onSuccess?: (queued: boolean) => void;
+  // `response` is the parsed server response body (undefined when queued
+  // offline, since there's nothing to parse yet) — lets a caller surface a
+  // non-fatal field like a stock-effect warning that a 2xx response can
+  // still carry.
+  onSuccess?: (queued: boolean, response?: unknown) => void;
   onError?: (msg: string) => void;
   // The idempotency key used to previously be sent as a query param, which
   // no endpoint's DTO ever reads — every server-side dedup check reads it
@@ -64,11 +68,11 @@ export function useSubmit({ module, endpoint, method = "POST", onSuccess, onErro
 
     try {
       const body = sendIdempotencyKeyInBody ? { ...payload, idempotencyKey: localId } : payload;
-      await apiFetch(endpoint, {
+      const res = await apiFetch(endpoint, {
         method,
         body: JSON.stringify(body)
       });
-      onSuccess?.(false);
+      onSuccess?.(false, res);
     } catch (err) {
       // C6: apiFetch() wraps every failure mode — a real 4xx/5xx from the
       // server, a request timeout, a mid-flight connection drop, a malformed

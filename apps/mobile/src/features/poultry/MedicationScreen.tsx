@@ -91,14 +91,19 @@ export function MedicationScreen() {
   const { submit, loading } = useSubmit({
     module: "poultry_medication",
     endpoint: "/poultry/medication-records",
-    onSuccess: (queued) =>
+    // M-BUG follow-up (2026-08-13): consumeInventoryTx now returns a
+    // warning when the warehouse/product combo has no inventory item set
+    // up (stock wasn't actually deducted), but nothing displayed it.
+    onSuccess: (queued, response) => {
+      const warning = !queued ? (response as { warning?: string } | undefined)?.warning : undefined;
       Alert.alert(
-        queued ? "Saved Offline" : "Saved",
+        queued ? "Saved Offline" : warning ? "Saved — please check" : "Saved",
         queued
           ? "Your medication record was saved on this device and will sync automatically once you're back online."
-          : "Medication record saved.",
+          : warning ?? "Medication record saved.",
         [{ text: "OK", onPress: () => navigation.goBack() }]
-      )
+      );
+    }
   });
 
   async function handleSubmit() {

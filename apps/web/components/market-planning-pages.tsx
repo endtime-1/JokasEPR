@@ -161,9 +161,18 @@ function TargetTable({ rows, loading, onDelete }: { rows: TargetRow[]; loading?:
   );
 }
 
-// Mirrors deleteProductionPlan's guard exactly: delete allowed only before
-// an MRP run or execution could depend on it.
-const PLAN_DELETABLE_STATUSES = ["DRAFT", "READY_FOR_APPROVAL"];
+// L-BUG follow-up (2026-08-13): deleteProductionPlan's backend guard was
+// fixed to also allow APPROVED (plans are always created APPROVED through
+// the normal flow — DRAFT/READY_FOR_APPROVAL are never actually reachable),
+// gated on no MRP run or execution depending on it yet. This array was left
+// listing only the two unreachable statuses, so the delete button still
+// never rendered for any real plan — the exact "fixed on the backend, dead
+// on the frontend" bug this whole audit pass was about, reintroduced by
+// the same fix that closed it. Whether an APPROVED plan is ACTUALLY
+// deletable depends on data (MRP/execution counts) this list can't see —
+// show the button and let the backend's real guard be the source of truth;
+// a genuinely blocked delete surfaces its own clear error via deleteError.
+const PLAN_DELETABLE_STATUSES = ["DRAFT", "READY_FOR_APPROVAL", "APPROVED"];
 // Mirrors deleteMrp's guard: delete allowed only before a procurement
 // recommendation could depend on it.
 const MRP_DELETABLE_STATUSES = ["DRAFT", "CALCULATED", "SHORTAGE"];
@@ -186,7 +195,7 @@ function PlanTable({ rows, loading, onDelete }: { rows: PlanRow[]; loading?: boo
               <button type="button" className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50" onClick={(e) => { e.stopPropagation(); onDelete(row); }} title="Delete production plan">
                 <Trash2 className="h-3.5 w-3.5" /> Delete
               </button>
-            ) : <LockedNote reason={`${row.status.charAt(0) + row.status.slice(1).toLowerCase().replace(/_/g, " ")} plans can't be deleted — only Draft or Ready-for-approval ones can.`} />
+            ) : <LockedNote reason={`${row.status.charAt(0) + row.status.slice(1).toLowerCase().replace(/_/g, " ")} plans can't be deleted — production has moved too far along.`} />
           )
         }] : [])
       ]}
@@ -304,6 +313,7 @@ export function MarketTargetListPage() {
 export function CreateMarketTargetPage({ period }: { period: "WEEKLY" | "MONTHLY" }) {
   const { options, optionsError } = useOptions();
   const [message, setMessage] = useState("");
+  const [messageHasWarning, setMessageHasWarning] = useState(false);
   const [form, setForm] = useState({
     title: period === "WEEKLY" ? "Weekly feed market target" : "Monthly feed market target",
     periodStart: today(),
@@ -342,7 +352,16 @@ export function CreateMarketTargetPage({ period }: { period: "WEEKLY" | "MONTHLY
         }]
       })
     });
-    setMessage(`Created ${response.data.targetNumber}`);
+    // M-BUG follow-up (2026-08-13): createTarget now returns a warning when
+    // a computed quantity looks implausibly large (likely kg typed into the
+    // bags field), but nothing displayed it — the exact silence the fix
+    // was meant to close, just moved here.
+    setMessageHasWarning(!!response.warnings?.length);
+    setMessage(
+      response.warnings?.length
+        ? `Created ${response.data.targetNumber} — ${response.warnings.join(" ")}`
+        : `Created ${response.data.targetNumber}`
+    );
   }
 
   return (
@@ -360,7 +379,7 @@ export function CreateMarketTargetPage({ period }: { period: "WEEKLY" | "MONTHLY
         <label className="grid gap-1 text-sm font-semibold">Adjustment %<input className={inputClass} type="number" step="0.01" value={form.adjustmentPercent} onChange={(e) => setForm({ ...form, adjustmentPercent: e.target.value })} /></label>
         <label className="grid gap-1 text-sm font-semibold">Bag size kg<input className={inputClass} type="number" min="1" step="0.01" value={form.bagSizeKg} onChange={(e) => setForm({ ...form, bagSizeKg: e.target.value })} /></label>
         <label className="grid gap-1 text-sm font-semibold md:col-span-2">Adjustment reason<textarea className="min-h-24 rounded-md border border-line px-3 py-2" value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} /></label>
-        <div className="flex items-center gap-3 md:col-span-2"><button className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" type="submit"><Plus className="h-4 w-4" /> Create target</button>{message && <span className="text-sm font-semibold text-emerald-700">{message}</span>}</div>
+        <div className="flex items-center gap-3 md:col-span-2"><button className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" type="submit"><Plus className="h-4 w-4" /> Create target</button>{message && <span className={`text-sm font-semibold ${messageHasWarning ? "text-amber-700" : "text-emerald-700"}`}>{message}</span>}</div>
       </form>
     </>
   );

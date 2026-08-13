@@ -112,14 +112,21 @@ export function FeedConsumptionScreen() {
   const { submit, loading } = useSubmit({
     module: "poultry_feed",
     endpoint: "/poultry/feed-consumption-records",
-    onSuccess: (queued) =>
+    // M-BUG follow-up (2026-08-13): consumeInventoryTx now returns a
+    // warning when the warehouse/product combo has no inventory item set
+    // up (stock wasn't actually deducted), but nothing displayed it — the
+    // exact "saved successfully" silence the fix was meant to close, just
+    // moved from the backend to here.
+    onSuccess: (queued, response) => {
+      const warning = !queued ? (response as { warning?: string } | undefined)?.warning : undefined;
       Alert.alert(
-        queued ? "Saved Offline" : "Saved",
+        queued ? "Saved Offline" : warning ? "Saved — please check" : "Saved",
         queued
           ? "Your feed consumption record was saved on this device and will sync automatically once you're back online."
-          : "Feed consumption recorded.",
+          : warning ?? "Feed consumption recorded.",
         [{ text: "OK", onPress: () => navigation.goBack() }]
-      )
+      );
+    }
   });
 
   async function handleSubmit() {
