@@ -860,7 +860,7 @@ export function PurchaseRequestsPage() {
   const statuses = ["", "DRAFT", "SUBMITTED", "APPROVED", "REJECTED", "CONVERTED_TO_PO"];
 
   return (
-    
+    <>
       <div className="space-y-5">
         <PageHero
           kicker="Procurement"
@@ -944,6 +944,7 @@ export function PurchaseRequestsPage() {
         </div>
       </div>
       <RejectReasonModal open={!!rejectId} onClose={() => setRejectId(null)} onConfirm={confirmReject} loading={rejecting} />
+    </>
   );
 }
 
@@ -1157,7 +1158,7 @@ export function PurchaseOrdersPage() {
   const statuses = ["", "DRAFT", "PENDING_APPROVAL", "APPROVED", "SENT_TO_SUPPLIER", "PARTIALLY_RECEIVED", "FULLY_RECEIVED", "REJECTED"];
 
   return (
-    
+    <>
       <div className="space-y-5">
         <PageHero
           kicker="Procurement"
@@ -1242,6 +1243,7 @@ export function PurchaseOrdersPage() {
         </div>
       </div>
       <RejectReasonModal open={!!rejectId} onClose={() => setRejectId(null)} onConfirm={confirmReject} loading={rejecting} />
+    </>
   );
 }
 
@@ -1462,7 +1464,7 @@ export function GRNsPage() {
   const statuses = ["", "RECEIVED", "QUALITY_HOLD", "QUALITY_PASSED", "QUALITY_FAILED", "POSTED"];
 
   return (
-    
+    <>
       <div className="space-y-5">
         <PageHero
           kicker="Procurement"
@@ -1556,6 +1558,7 @@ export function GRNsPage() {
         confirmLabel="Fail"
         busyLabel="Failing…"
       />
+    </>
   );
 }
 
