@@ -785,7 +785,7 @@ export function CreateExpensePage() {
     if (!form.categoryId || !form.amount || !form.description) { setError("Category, amount and description are required."); return; }
     setLoading(true);
     try {
-      const res = await apiFetch<ApiEnvelope<Record<string, unknown>>>("/finance/expenses", { method: "POST", body: JSON.stringify({ ...form, amount: Number(form.amount) }) });
+      const res = await apiFetch<ApiEnvelope<Record<string, unknown>>>("/finance/expenses", { method: "POST", body: JSON.stringify({ ...form, amount: Number(form.amount), branchId: form.branchId || undefined, bankAccountId: form.bankAccountId || undefined }) });
       const ref = res.data.reference as string;
       const status = res.data.status as string;
       setSuccess(`Expense ${ref} recorded. Status: ${status.replace(/_/g, " ")}. ${status === "PENDING_APPROVAL" ? "Large expense — awaiting manager approval." : ""}`);
@@ -890,7 +890,7 @@ export function RevenuePage() {
     setError("");
     setLoading(true);
     try {
-      await apiFetch("/finance/revenue", { method: "POST", body: JSON.stringify({ ...form, amount: Number(form.amount) }) });
+      await apiFetch("/finance/revenue", { method: "POST", body: JSON.stringify({ ...form, amount: Number(form.amount), branchId: form.branchId || undefined, bankAccountId: form.bankAccountId || undefined }) });
       setShowForm(false);
       load();
     } catch (err: unknown) {
@@ -992,7 +992,7 @@ export function CustomerPaymentsPage() {
     setError("");
     setLoading(true);
     try {
-      await apiFetch("/finance/customer-payments", { method: "POST", body: JSON.stringify({ ...form, amount: Number(form.amount), idempotencyKey }) });
+      await apiFetch("/finance/customer-payments", { method: "POST", body: JSON.stringify({ ...form, amount: Number(form.amount), bankAccountId: form.bankAccountId || undefined, idempotencyKey }) });
       setShowForm(false);
       setIdempotencyKey(crypto.randomUUID());
       load();
@@ -1098,6 +1098,7 @@ export function SupplierPaymentsPage() {
           amount: Number(form.amount),
           supplierId: form.supplierId || undefined,
           invoiceId: form.invoiceId || undefined,
+          bankAccountId: form.bankAccountId || undefined,
           idempotencyKey
         })
       });
@@ -1196,7 +1197,7 @@ export function PettyCashPage() {
     setError("");
     setLoading(true);
     try {
-      await apiFetch("/finance/petty-cash", { method: "POST", body: JSON.stringify({ ...form, amount: Number(form.amount) }) });
+      await apiFetch("/finance/petty-cash", { method: "POST", body: JSON.stringify({ ...form, amount: Number(form.amount), categoryId: form.categoryId || undefined, branchId: form.branchId || undefined }) });
       setShowForm(false);
       load();
     } catch (err: unknown) {
@@ -1301,7 +1302,7 @@ export function PayrollPage() {
     setError("");
     setLoading(true);
     try {
-      await apiFetch("/finance/payroll", { method: "POST", body: JSON.stringify({ ...form, basicSalary: Number(form.basicSalary), allowances: Number(form.allowances), deductions: Number(form.deductions), taxDeduction: Number(form.taxDeduction), ssnit: Number(form.ssnit) }) });
+      await apiFetch("/finance/payroll", { method: "POST", body: JSON.stringify({ ...form, basicSalary: Number(form.basicSalary), allowances: Number(form.allowances), deductions: Number(form.deductions), taxDeduction: Number(form.taxDeduction), ssnit: Number(form.ssnit), branchId: form.branchId || undefined, bankAccountId: form.bankAccountId || undefined }) });
       setShowForm(false);
       load();
     } catch (err: unknown) {
@@ -2122,7 +2123,7 @@ export function ExpenseCategoriesPage() {
     e.preventDefault();
     setError(""); setLoading(true);
     try {
-      await apiFetch("/finance/expense-categories", { method: "POST", body: JSON.stringify(form) });
+      await apiFetch("/finance/expense-categories", { method: "POST", body: JSON.stringify({ ...form, accountId: form.accountId || undefined }) });
       setShowForm(false);
       setForm({ name: "", code: "", description: "", accountId: "" });
       load();

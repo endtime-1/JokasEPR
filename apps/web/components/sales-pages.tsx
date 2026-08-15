@@ -1264,7 +1264,6 @@ export function ReturnsPage() {
           quantity: Number(form.quantity),
           unitPrice: Number(form.unitPrice),
           reason: form.reason,
-          status: "POSTED",
         }),
       });
       setForm({ customerId: "", warehouseId: "", productId: "", quantity: "", unitPrice: "", reason: "" });
