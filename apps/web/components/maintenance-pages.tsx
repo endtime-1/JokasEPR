@@ -114,8 +114,11 @@ function PageHeader({ title, subtitle }: { title: string; subtitle: string }) {
         </div>
         <div className="flex flex-wrap gap-2">
           <Link className="app-button-secondary text-xs" href="/maintenance/machines">Machines</Link>
+          <Link className="app-button-secondary text-xs" href="/maintenance/equipment">Equipment</Link>
           <Link className="app-button-secondary text-xs" href="/maintenance/schedules">Schedules</Link>
           <Link className="app-button-secondary text-xs" href="/maintenance/breakdowns">Breakdowns</Link>
+          <Link className="app-button-secondary text-xs" href="/maintenance/assignments">Assignments</Link>
+          <Link className="app-button-secondary text-xs" href="/maintenance/downtime">Downtime</Link>
           <Link className="app-button-secondary text-xs" href="/maintenance/costs">Costs</Link>
         </div>
       </div>
@@ -176,10 +179,13 @@ function SeverityBadge({ severity }: { severity: string }) {
 
 const QUICK_ACTIONS = [
   { href: "/maintenance/machines",           label: "Machines",        desc: "Register & view assets",     icon: Cpu,           color: "text-blue-700 bg-blue-50 border-blue-200 hover:bg-blue-100" },
+  { href: "/maintenance/equipment",          label: "Equipment",       desc: "Register & view equipment",  icon: Cpu,           color: "text-cyan-700 bg-cyan-50 border-cyan-200 hover:bg-cyan-100" },
   { href: "/maintenance/schedules",          label: "PM Schedules",    desc: "Preventive maintenance",     icon: Calendar,      color: "text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100" },
   { href: "/maintenance/breakdowns",         label: "Breakdowns",      desc: "Log & track incidents",      icon: AlertTriangle, color: "text-red-700 bg-red-50 border-red-200 hover:bg-red-100" },
-  { href: "/maintenance/records",            label: "Work Orders",     desc: "Completed maintenance",      icon: Activity,      color: "text-purple-700 bg-purple-50 border-purple-200 hover:bg-purple-100" },
+  { href: "/maintenance/records",            label: "Work Orders",     desc: "Log & view completed work",  icon: Activity,      color: "text-purple-700 bg-purple-50 border-purple-200 hover:bg-purple-100" },
+  { href: "/maintenance/assignments",        label: "Assignments",     desc: "Technician work assignment", icon: User,          color: "text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-100" },
   { href: "/maintenance/spare-parts",        label: "Spare Parts",     desc: "Parts inventory",            icon: Wrench,        color: "text-amber-700 bg-amber-50 border-amber-200 hover:bg-amber-100" },
+  { href: "/maintenance/downtime",           label: "Downtime",        desc: "Log asset downtime",         icon: Clock,         color: "text-orange-700 bg-orange-50 border-orange-200 hover:bg-orange-100" },
   { href: "/maintenance/costs",              label: "Costs",           desc: "Repair & labour costs",      icon: DollarSign,    color: "text-pink-700 bg-pink-50 border-pink-200 hover:bg-pink-100" },
 ];
 
@@ -532,6 +538,230 @@ export function MachineDetailsPage({ id }: { id: string }) {
   );
 }
 
+export function EquipmentPage({ create = false }: { create?: boolean }) {
+  const { options, optionsError } = useOptions();
+  const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/equipment")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/maintenance/equipment"));
+  const [form, setForm] = useState({ branchId: "", farmId: "", warehouseId: "", productionSiteId: "", machineId: "", code: "", name: "", equipmentType: "FARM_EQUIPMENT", serialNumber: "", location: "" });
+  const [submitError, setSubmitError] = useState("");
+  const [loadError, setLoadError] = useState("");
+  async function load() {
+    setLoadError("");
+    try {
+      const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/equipment");
+      const fresh = response.data ?? [];
+      setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh);
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, []);
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSubmitError("");
+    const branchId = form.branchId || options.branches[0]?.id;
+    if (!branchId) { setSubmitError("Wait for branches to load, then select a branch."); return; }
+    try {
+      await apiFetch("/maintenance/equipment", { method: "POST", body: JSON.stringify({ ...form, branchId, farmId: form.farmId || undefined, warehouseId: form.warehouseId || undefined, productionSiteId: form.productionSiteId || undefined, machineId: form.machineId || undefined }) });
+      setForm({ ...form, code: "", name: "", serialNumber: "", location: "" });
+      await load();
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Failed to save equipment. Please try again.");
+    }
+  }
+  return (
+    <>
+      <PageHeader title={create ? "Register Equipment" : "Equipment List"} subtitle="Register and track equipment — tools, safety gear, and processing/warehouse accessories — across farms, warehouses, and production sites." />
+      {create ? (
+        <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-4">
+          <SelectField label="Branch" value={form.branchId || options.branches[0]?.id || ""} options={options.branches} onChange={(value) => setForm({ ...form, branchId: value })} />
+          <SelectField label="Farm" value={form.farmId} options={options.farms} onChange={(value) => setForm({ ...form, farmId: value })} />
+          <SelectField label="Warehouse" value={form.warehouseId} options={options.warehouses} onChange={(value) => setForm({ ...form, warehouseId: value })} />
+          <SelectField label="Production site" value={form.productionSiteId} options={options.productionSites} onChange={(value) => setForm({ ...form, productionSiteId: value })} />
+          <SelectField label="Parent machine" value={form.machineId} options={options.machines} onChange={(value) => setForm({ ...form, machineId: value })} />
+          <TextField label="Code" value={form.code} onChange={(value) => setForm({ ...form, code: value })} required />
+          <TextField label="Name" value={form.name} onChange={(value) => setForm({ ...form, name: value })} required />
+          <FormField label="Type"><select className={inputClass} value={form.equipmentType} onChange={(event) => setForm({ ...form, equipmentType: event.target.value })}>{["FARM_EQUIPMENT", "PROCESSING_EQUIPMENT", "WAREHOUSE_EQUIPMENT", "VEHICLE_ACCESSORY", "TOOL", "SAFETY_EQUIPMENT", "OTHER"].map((type) => <option key={type}>{type}</option>)}</select></FormField>
+          <TextField label="Serial number" value={form.serialNumber} onChange={(value) => setForm({ ...form, serialNumber: value })} />
+          <TextField label="Location" value={form.location} onChange={(value) => setForm({ ...form, location: value })} />
+          <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white md:col-span-4">
+            <Save aria-hidden className="h-4 w-4" /> Save equipment
+          </button>
+          {submitError && <p className="col-span-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>}
+        </form>
+      ) : <Link className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" href="/maintenance/equipment/create"><Plus aria-hidden className="h-4 w-4" /> Register equipment</Link>}
+      <SimpleRowsTable rows={rows} loading={loading} />
+    </>
+  );
+}
+
+export function AssignmentsPage() {
+  const { options, optionsError } = useOptions();
+  const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/assignments")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/maintenance/assignments"));
+  const [form, setForm] = useState({ technicianId: "", machineId: "", equipmentId: "", dueDate: "", notes: "" });
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+  const [loadError, setLoadError] = useState("");
+  async function load() {
+    setLoadError("");
+    try {
+      const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/assignments");
+      const fresh = response.data ?? [];
+      setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh);
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, []);
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSubmitting(true);
+    setSubmitError("");
+    try {
+      await apiFetch("/maintenance/assignments", {
+        method: "POST",
+        body: JSON.stringify({ ...form, technicianId: form.technicianId || options.technicians[0]?.id, machineId: form.machineId || undefined, equipmentId: form.equipmentId || undefined, dueDate: form.dueDate || undefined })
+      });
+      setForm({ ...form, dueDate: "", notes: "" });
+      await load();
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Failed to assign technician. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+  return (
+    <>
+      <PageHeader title="Technician Assignments" subtitle="Assign a technician to a machine or equipment for scheduled or breakdown work." />
+      <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-4">
+        <SelectField label="Technician" value={form.technicianId || options.technicians[0]?.id || ""} options={options.technicians} onChange={(value) => setForm({ ...form, technicianId: value })} />
+        <SelectField label="Machine" value={form.machineId} options={options.machines} onChange={(value) => setForm({ ...form, machineId: value, equipmentId: value ? "" : form.equipmentId })} />
+        <SelectField label="Equipment" value={form.equipmentId} options={options.equipment} onChange={(value) => setForm({ ...form, equipmentId: value, machineId: value ? "" : form.machineId })} />
+        <TextField label="Due date" type="date" value={form.dueDate} onChange={(value) => setForm({ ...form, dueDate: value })} />
+        <TextField label="Notes" value={form.notes} onChange={(value) => setForm({ ...form, notes: value })} />
+        <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:col-span-4">
+          {submitting ? "Assigning…" : "Assign technician"}
+        </button>
+        {submitError && <p className="col-span-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>}
+      </form>
+      <SimpleRowsTable rows={rows} loading={loading} />
+    </>
+  );
+}
+
+export function DowntimePage() {
+  const { options, optionsError } = useOptions();
+  const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/downtime")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/maintenance/downtime"));
+  const [form, setForm] = useState({ machineId: "", equipmentId: "", startAt: "", endAt: "", reason: "", status: "OPEN" });
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+  const [loadError, setLoadError] = useState("");
+  async function load() {
+    setLoadError("");
+    try {
+      const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/downtime");
+      const fresh = response.data ?? [];
+      setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh);
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, []);
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSubmitting(true);
+    setSubmitError("");
+    try {
+      await apiFetch("/maintenance/downtime", {
+        method: "POST",
+        body: JSON.stringify({ ...form, machineId: form.machineId || (form.equipmentId ? undefined : options.machines[0]?.id), equipmentId: form.equipmentId || undefined, endAt: form.endAt || undefined })
+      });
+      setForm({ ...form, startAt: "", endAt: "", reason: "" });
+      await load();
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Failed to log downtime. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+  return (
+    <>
+      <PageHeader title="Downtime Log" subtitle="Machine and equipment downtime by asset, reason, duration, and status." />
+      <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-4">
+        <SelectField label="Machine" value={form.machineId} options={options.machines} onChange={(value) => setForm({ ...form, machineId: value, equipmentId: value ? "" : form.equipmentId })} />
+        <SelectField label="Equipment" value={form.equipmentId} options={options.equipment} onChange={(value) => setForm({ ...form, equipmentId: value, machineId: value ? "" : form.machineId })} />
+        <TextField label="Started at" type="datetime-local" value={form.startAt} onChange={(value) => setForm({ ...form, startAt: value })} required />
+        <TextField label="Ended at" type="datetime-local" value={form.endAt} onChange={(value) => setForm({ ...form, endAt: value })} />
+        <TextField label="Reason" value={form.reason} onChange={(value) => setForm({ ...form, reason: value })} required />
+        <FormField label="Status"><select className={inputClass} value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}><option>OPEN</option><option>CLOSED</option><option>VERIFIED</option></select></FormField>
+        <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:col-span-4">
+          {submitting ? "Logging…" : "Log downtime"}
+        </button>
+        {submitError && <p className="col-span-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>}
+      </form>
+      <SimpleRowsTable rows={rows} loading={loading} />
+    </>
+  );
+}
+
+export function RecordsPage() {
+  const { options, optionsError } = useOptions();
+  const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/records")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/maintenance/records"));
+  const [form, setForm] = useState({ machineId: "", equipmentId: "", maintenanceType: "PREVENTIVE", description: "", findings: "", nextDueDate: "" });
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+  const [loadError, setLoadError] = useState("");
+  async function load() {
+    setLoadError("");
+    try {
+      const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/records");
+      const fresh = response.data ?? [];
+      setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh);
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, []);
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSubmitting(true);
+    setSubmitError("");
+    try {
+      await apiFetch("/maintenance/records", {
+        method: "POST",
+        body: JSON.stringify({ ...form, machineId: form.machineId || (form.equipmentId ? undefined : options.machines[0]?.id), equipmentId: form.equipmentId || undefined, findings: form.findings || undefined, nextDueDate: form.nextDueDate || undefined })
+      });
+      setForm({ ...form, description: "", findings: "", nextDueDate: "" });
+      await load();
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Failed to log work. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+  return (
+    <>
+      <PageHeader title="Work Orders" subtitle="Log completed preventive, corrective, inspection, calibration, and repair work." />
+      <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-4">
+        <SelectField label="Machine" value={form.machineId} options={options.machines} onChange={(value) => setForm({ ...form, machineId: value, equipmentId: value ? "" : form.equipmentId })} />
+        <SelectField label="Equipment" value={form.equipmentId} options={options.equipment} onChange={(value) => setForm({ ...form, equipmentId: value, machineId: value ? "" : form.machineId })} />
+        <FormField label="Type"><select className={inputClass} value={form.maintenanceType} onChange={(event) => setForm({ ...form, maintenanceType: event.target.value })}><option>PREVENTIVE</option><option>CORRECTIVE</option><option>INSPECTION</option><option>CALIBRATION</option><option>REPAIR</option></select></FormField>
+        <TextField label="Next due date" type="date" value={form.nextDueDate} onChange={(value) => setForm({ ...form, nextDueDate: value })} />
+        <TextField label="Description" value={form.description} onChange={(value) => setForm({ ...form, description: value })} required />
+        <TextField label="Findings" value={form.findings} onChange={(value) => setForm({ ...form, findings: value })} />
+        <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:col-span-4">
+          {submitting ? "Logging…" : "Log work done"}
+        </button>
+        {submitError && <p className="col-span-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>}
+      </form>
+      <SimpleRowsTable rows={rows} loading={loading} />
+    </>
+  );
+}
+
 export function SchedulePage() {
   const { options, optionsError } = useOptions();
   const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/schedules")?.data ?? []);
@@ -587,6 +817,15 @@ export function SchedulePage() {
   );
 }
 
+const BREAKDOWN_STATUS_FLOW: Record<string, string | null> = {
+  REPORTED: "ASSIGNED",
+  ASSIGNED: "IN_REPAIR",
+  IN_REPAIR: "RESOLVED",
+  RESOLVED: "CLOSED",
+  CLOSED: null,
+  CANCELLED: null,
+};
+
 export function BreakdownPage() {
   const { options, optionsError } = useOptions();
   const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/breakdowns")?.data ?? []);
@@ -595,6 +834,8 @@ export function BreakdownPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [loadError, setLoadError] = useState("");
+  const [resolvingId, setResolvingId] = useState("");
+  const [resolveError, setResolveError] = useState("");
   async function load() {
     setLoadError("");
     try {
@@ -620,6 +861,18 @@ export function BreakdownPage() {
       setSubmitting(false);
     }
   }
+  async function advance(id: string, nextStatus: string) {
+    setResolvingId(id);
+    setResolveError("");
+    try {
+      await apiFetch(`/maintenance/breakdowns/${id}/status`, { method: "PATCH", body: JSON.stringify({ status: nextStatus }) });
+      await load();
+    } catch (err) {
+      setResolveError(err instanceof Error ? err.message : "Failed to update breakdown status.");
+    } finally {
+      setResolvingId("");
+    }
+  }
   return (
     <>
       <PageHeader title="Breakdown Records" subtitle="Production managers and maintenance teams can report, triage, and resolve machine failures." />
@@ -633,7 +886,38 @@ export function BreakdownPage() {
         </button>
         {submitError && <p className="col-span-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>}
       </form>
-      <SimpleRowsTable rows={rows} loading={loading} />
+      {resolveError && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{resolveError}</p>}
+      <DataTable
+        rows={rows}
+        loading={loading}
+        empty="No breakdowns recorded"
+        columns={[
+          { key: "breakdownNumber", label: "Ref" },
+          { key: "severity", label: "Severity", render: (row) => <SeverityBadge severity={String(row.severity ?? "")} /> },
+          { key: "description", label: "Description" },
+          { key: "status", label: "Status", render: (row) => <StatusBadge status={String(row.status ?? "")} /> },
+          {
+            key: "actions",
+            label: "Action",
+            sortable: false,
+            render: (row) => {
+              const id = String(row.id ?? "");
+              const status = String(row.status ?? "");
+              const next = BREAKDOWN_STATUS_FLOW[status];
+              if (!next) return <span className="text-xs text-ink/40">—</span>;
+              return (
+                <button
+                  className="app-button-secondary text-xs"
+                  disabled={resolvingId === id}
+                  onClick={() => advance(id, next)}
+                >
+                  {resolvingId === id ? "Updating…" : `Mark ${next.replace(/_/g, " ").toLowerCase()}`}
+                </button>
+              );
+            }
+          }
+        ]}
+      />
     </>
   );
 }
@@ -691,36 +975,51 @@ export function SparePartsPage() {
   );
 }
 
-export function MaintenanceListPage({ title, endpoint, subtitle }: { title: string; endpoint: string; subtitle: string }) {
-  const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>(endpoint)?.data ?? []);
-  const [loading, setLoading] = useState(!hasCached(endpoint));
-  useEffect(() => {
-    setLoading(true);
-    apiFetch<ApiEnvelope<Record<string, unknown>[]>>(endpoint)
-      .then((response) => setRows(response.data ?? []))
-      .catch(() => undefined)
-      .finally(() => setLoading(false));
-  }, [endpoint]);
-  return (
-    <>
-      <PageHeader title={title} subtitle={subtitle} />
-      <SimpleRowsTable rows={rows} loading={loading} />
-    </>
-  );
-}
-
 export function MaintenanceCostReportPage() {
+  const { options, optionsError } = useOptions();
   const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/costs")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/maintenance/costs"));
-  useEffect(() => {
-    apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/costs")
-      .then((response) => setRows(response.data ?? []))
-      .catch(() => undefined)
+  const [form, setForm] = useState({ machineId: "", equipmentId: "", costType: "LABOR", amount: "", costDate: "", description: "" });
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+  async function load() {
+    return apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/costs")
+      .then((response) => { const fresh = response.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
       .finally(() => setLoading(false));
-  }, []);
+  }
+  useEffect(() => { load().catch(() => undefined); }, []);
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSubmitting(true);
+    setSubmitError("");
+    try {
+      await apiFetch("/maintenance/costs", {
+        method: "POST",
+        body: JSON.stringify({ ...form, machineId: form.machineId || undefined, equipmentId: form.equipmentId || undefined, amount: Number(form.amount), costDate: form.costDate || undefined })
+      });
+      setForm({ ...form, amount: "", costDate: "", description: "" });
+      await load();
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Failed to record cost. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
   return (
     <>
       <PageHeader title="Maintenance Cost Report" subtitle="Repair cost tracking by machine, equipment, spare parts, labor, and outsourced work." />
+      <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-4">
+        <SelectField label="Machine" value={form.machineId} options={options.machines} onChange={(value) => setForm({ ...form, machineId: value, equipmentId: value ? "" : form.equipmentId })} />
+        <SelectField label="Equipment" value={form.equipmentId} options={options.equipment} onChange={(value) => setForm({ ...form, equipmentId: value, machineId: value ? "" : form.machineId })} />
+        <FormField label="Cost type"><select className={inputClass} value={form.costType} onChange={(event) => setForm({ ...form, costType: event.target.value })}>{["LABOR", "SPARE_PART", "OUTSOURCED_SERVICE", "UTILITIES", "TRANSPORT", "OTHER"].map((type) => <option key={type}>{type}</option>)}</select></FormField>
+        <TextField label="Amount (GHS)" type="number" value={form.amount} onChange={(value) => setForm({ ...form, amount: value })} required />
+        <TextField label="Cost date" type="date" value={form.costDate} onChange={(value) => setForm({ ...form, costDate: value })} />
+        <TextField label="Description" value={form.description} onChange={(value) => setForm({ ...form, description: value })} />
+        <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:col-span-4">
+          {submitting ? "Recording…" : "Record cost"}
+        </button>
+        {submitError && <p className="col-span-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>}
+      </form>
       <button className="mb-6 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" onClick={() => downloadReport("/maintenance/reports/costs.csv", "maintenance-costs.csv")}>
         <Download aria-hidden className="h-4 w-4" /> Download maintenance costs CSV
       </button>
