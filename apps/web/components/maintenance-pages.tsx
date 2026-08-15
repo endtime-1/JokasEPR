@@ -2,7 +2,7 @@
 
 import { ComponentType, FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Activity, AlertTriangle, Calendar, ChevronRight, Clock, Cpu, DollarSign, Download, Plus, RefreshCw, Save, User, Wrench } from "lucide-react";
+import { Activity, AlertTriangle, Calendar, ChevronRight, Clock, Cpu, DollarSign, Download, FileText, Plus, RefreshCw, Save, User, Wrench } from "lucide-react";
 import { DataTable } from "./data-table";
 import { FormField } from "./form-field";
 import { StatusBadge } from "./ui";
@@ -63,15 +63,26 @@ type Assignment = {
   equipment?: AssetRef | null;
 };
 
+type AssetDocument = {
+  id: string;
+  documentType: string;
+  documentNumber?: string | null;
+  expiryDate: string;
+  machine?: AssetRef | null;
+  equipment?: AssetRef | null;
+};
+
 type DashboardData = {
   machineCount: number;
   activeMachines: number;
   maintenanceAlerts: number;
   openBreakdowns: number;
+  expiringDocuments: number;
   downtimeHours: number;
   maintenanceCost: number;
   schedules: Schedule[];
   breakdowns: Breakdown[];
+  documents: AssetDocument[];
   assignments: Assignment[];
 };
 
@@ -119,6 +130,7 @@ function PageHeader({ title, subtitle }: { title: string; subtitle: string }) {
           <Link className="app-button-secondary text-xs" href="/maintenance/breakdowns">Breakdowns</Link>
           <Link className="app-button-secondary text-xs" href="/maintenance/assignments">Assignments</Link>
           <Link className="app-button-secondary text-xs" href="/maintenance/downtime">Downtime</Link>
+          <Link className="app-button-secondary text-xs" href="/maintenance/documents">Documents</Link>
           <Link className="app-button-secondary text-xs" href="/maintenance/costs">Costs</Link>
         </div>
       </div>
@@ -186,6 +198,7 @@ const QUICK_ACTIONS = [
   { href: "/maintenance/assignments",        label: "Assignments",     desc: "Technician work assignment", icon: User,          color: "text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-100" },
   { href: "/maintenance/spare-parts",        label: "Spare Parts",     desc: "Parts inventory",            icon: Wrench,        color: "text-amber-700 bg-amber-50 border-amber-200 hover:bg-amber-100" },
   { href: "/maintenance/downtime",           label: "Downtime",        desc: "Log asset downtime",         icon: Clock,         color: "text-orange-700 bg-orange-50 border-orange-200 hover:bg-orange-100" },
+  { href: "/maintenance/documents",          label: "Documents",       desc: "Registration & renewals",    icon: FileText,      color: "text-teal-700 bg-teal-50 border-teal-200 hover:bg-teal-100" },
   { href: "/maintenance/costs",              label: "Costs",           desc: "Repair & labour costs",      icon: DollarSign,    color: "text-pink-700 bg-pink-50 border-pink-200 hover:bg-pink-100" },
 ];
 
@@ -211,7 +224,7 @@ export function MaintenanceDashboardPage() {
 
   const today = new Date();
   const overdueCount = (data?.schedules ?? []).filter((s) => new Date(s.nextDueDate) < today && s.status !== "COMPLETED").length;
-  const hasAlerts = (data?.maintenanceAlerts ?? 0) > 0 || (data?.openBreakdowns ?? 0) > 0;
+  const hasAlerts = (data?.maintenanceAlerts ?? 0) > 0 || (data?.openBreakdowns ?? 0) > 0 || (data?.expiringDocuments ?? 0) > 0;
   const utilPct = data && data.machineCount > 0 ? Math.round((data.activeMachines / data.machineCount) * 100) : 0;
 
   return (
@@ -282,6 +295,8 @@ export function MaintenanceDashboardPage() {
               {data.maintenanceAlerts > 0 && `${data.maintenanceAlerts} overdue maintenance ${data.maintenanceAlerts === 1 ? "schedule" : "schedules"}`}
               {data.maintenanceAlerts > 0 && data.openBreakdowns > 0 && " · "}
               {data.openBreakdowns > 0 && `${data.openBreakdowns} open ${data.openBreakdowns === 1 ? "breakdown" : "breakdowns"}`}
+              {(data.maintenanceAlerts > 0 || data.openBreakdowns > 0) && data.expiringDocuments > 0 && " · "}
+              {data.expiringDocuments > 0 && `${data.expiringDocuments} document${data.expiringDocuments === 1 ? "" : "s"} expiring/overdue`}
               {overdueCount > 0 && ` · ${overdueCount} past due date`}
             </p>
           </div>
@@ -297,6 +312,7 @@ export function MaintenanceDashboardPage() {
         <KpiCard label="Active machines"    value={fmt(data?.activeMachines)}         Icon={Activity}      color="emerald" sub={data ? `${utilPct}% fleet utilisation` : undefined} />
         <KpiCard label="Maintenance alerts" value={fmt(data?.maintenanceAlerts)}      Icon={AlertTriangle} color="amber"   sub={overdueCount > 0 ? `${overdueCount} past due` : undefined} />
         <KpiCard label="Open breakdowns"    value={fmt(data?.openBreakdowns)}         Icon={Wrench}        color="red"     />
+        <KpiCard label="Expiring documents" value={fmt(data?.expiringDocuments)}      Icon={FileText}      color="purple"  sub="Due or expiring within 30 days" />
         <KpiCard label="Total downtime"     value={`${fmt(data?.downtimeHours)} hrs`} Icon={Clock}         color="purple"  />
         <KpiCard label="Maintenance cost"   value={`GHS ${fmt(data?.maintenanceCost)}`} Icon={DollarSign}  color="brand"   />
       </section>
@@ -758,6 +774,90 @@ export function RecordsPage() {
         {submitError && <p className="col-span-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>}
       </form>
       <SimpleRowsTable rows={rows} loading={loading} />
+    </>
+  );
+}
+
+const DOCUMENT_TYPES = ["REGISTRATION", "INSURANCE", "ROADWORTHY", "LICENSE", "OTHER"];
+
+function daysUntil(dateStr: unknown) {
+  const ms = new Date(String(dateStr)).getTime() - Date.now();
+  return Math.ceil(ms / 86_400_000);
+}
+
+export function DocumentsPage() {
+  const { options, optionsError } = useOptions();
+  const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/documents")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/maintenance/documents"));
+  const [form, setForm] = useState({ machineId: "", equipmentId: "", documentType: "REGISTRATION", documentNumber: "", issueDate: "", expiryDate: "", notes: "" });
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+  const [loadError, setLoadError] = useState("");
+  async function load() {
+    setLoadError("");
+    try {
+      const response = await apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/documents");
+      const fresh = response.data ?? [];
+      setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh);
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, []);
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSubmitting(true);
+    setSubmitError("");
+    try {
+      await apiFetch("/maintenance/documents", {
+        method: "POST",
+        body: JSON.stringify({ ...form, machineId: form.machineId || (form.equipmentId ? undefined : options.machines[0]?.id), equipmentId: form.equipmentId || undefined, documentNumber: form.documentNumber || undefined, issueDate: form.issueDate || undefined, notes: form.notes || undefined })
+      });
+      setForm({ ...form, documentNumber: "", issueDate: "", expiryDate: "", notes: "" });
+      await load();
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Failed to save document. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+  return (
+    <>
+      <PageHeader title="Machine & Vehicle Documents" subtitle="Track registration, insurance, roadworthy, and license documents with renewal reminders sent automatically as expiry approaches." />
+      <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-4">
+        <SelectField label="Machine" value={form.machineId} options={options.machines} onChange={(value) => setForm({ ...form, machineId: value, equipmentId: value ? "" : form.equipmentId })} />
+        <SelectField label="Equipment" value={form.equipmentId} options={options.equipment} onChange={(value) => setForm({ ...form, equipmentId: value, machineId: value ? "" : form.machineId })} />
+        <FormField label="Document type"><select className={inputClass} value={form.documentType} onChange={(event) => setForm({ ...form, documentType: event.target.value })}>{DOCUMENT_TYPES.map((type) => <option key={type}>{type}</option>)}</select></FormField>
+        <TextField label="Document number" value={form.documentNumber} onChange={(value) => setForm({ ...form, documentNumber: value })} />
+        <TextField label="Issue date" type="date" value={form.issueDate} onChange={(value) => setForm({ ...form, issueDate: value })} />
+        <TextField label="Expiry date" type="date" value={form.expiryDate} onChange={(value) => setForm({ ...form, expiryDate: value })} required />
+        <TextField label="Notes" value={form.notes} onChange={(value) => setForm({ ...form, notes: value })} />
+        <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:col-span-4">
+          {submitting ? "Saving…" : "Save document"}
+        </button>
+        {submitError && <p className="col-span-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>}
+      </form>
+      <DataTable
+        rows={rows}
+        loading={loading}
+        empty="No documents recorded"
+        columns={[
+          { key: "asset", label: "Asset", render: (row) => String((row.machine as Record<string, unknown>)?.name ?? (row.equipment as Record<string, unknown>)?.name ?? "—") },
+          { key: "documentType", label: "Type" },
+          { key: "documentNumber", label: "Number", render: (row) => String(row.documentNumber ?? "—") },
+          {
+            key: "expiryDate",
+            label: "Expires",
+            render: (row) => {
+              const days = daysUntil(row.expiryDate);
+              const cls = days < 0 ? "text-red-600 font-semibold" : days <= 30 ? "text-amber-600 font-semibold" : "text-ink/70";
+              const label = new Date(String(row.expiryDate)).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+              return <span className={cls}>{label}{days < 0 ? " (expired)" : days <= 30 ? ` (${days}d)` : ""}</span>;
+            }
+          },
+          { key: "notes", label: "Notes", render: (row) => String(row.notes ?? "—") }
+        ]}
+      />
     </>
   );
 }

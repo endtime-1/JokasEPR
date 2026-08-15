@@ -7,7 +7,8 @@ const mockPrisma = {
   farm: { findMany: jest.fn().mockResolvedValue([]) },
   trainingRecord: { findMany: jest.fn().mockResolvedValue([]) },
   vaccinationRecord: { findMany: jest.fn().mockResolvedValue([]) },
-  medicationRecord: { findMany: jest.fn().mockResolvedValue([]) }
+  medicationRecord: { findMany: jest.fn().mockResolvedValue([]) },
+  assetDocument: { findMany: jest.fn().mockResolvedValue([]), updateMany: jest.fn().mockResolvedValue({ count: 0 }) }
 };
 const mockNotifications = { broadcast: jest.fn().mockResolvedValue(undefined) };
 
@@ -114,7 +115,10 @@ describe("DutyRemindersService — one company's notification failure doesn't ca
     await expect(service.certificateExpiryAlert()).resolves.toBeUndefined();
 
     expect(mockNotifications.broadcast).toHaveBeenCalledTimes(2);
-    expect(mockNotifications.broadcast).toHaveBeenNthCalledWith(2, "company-2", "HR_MANAGE", expect.objectContaining({ type: "DOCUMENT_EXPIRY_ALERT" }));
+    // C-BACK (2026-08-15): must be the real Permission.key ("hr.manage"),
+    // not the uppercase-underscore form — see the comment on this call site
+    // in hr.service.ts for why that distinction is the whole bug.
+    expect(mockNotifications.broadcast).toHaveBeenNthCalledWith(2, "company-2", "hr.manage", expect.objectContaining({ type: "DOCUMENT_EXPIRY_ALERT" }));
   });
 
   it("vaccinationDueDateReminder still notifies company-2 after company-1's broadcast throws", async () => {
@@ -130,7 +134,7 @@ describe("DutyRemindersService — one company's notification failure doesn't ca
     await expect(service.vaccinationDueDateReminder()).resolves.toBeUndefined();
 
     expect(mockNotifications.broadcast).toHaveBeenCalledTimes(2);
-    expect(mockNotifications.broadcast).toHaveBeenNthCalledWith(2, "company-2", "POULTRY_MANAGE", expect.objectContaining({ entityType: "VaccinationRecord" }));
+    expect(mockNotifications.broadcast).toHaveBeenNthCalledWith(2, "company-2", "poultry.manage", expect.objectContaining({ entityType: "VaccinationRecord" }));
   });
 
   it("withdrawalPeriodAlert still notifies company-2 after company-1's broadcast throws", async () => {
@@ -146,6 +150,29 @@ describe("DutyRemindersService — one company's notification failure doesn't ca
     await expect(service.withdrawalPeriodAlert()).resolves.toBeUndefined();
 
     expect(mockNotifications.broadcast).toHaveBeenCalledTimes(2);
-    expect(mockNotifications.broadcast).toHaveBeenNthCalledWith(2, "company-2", "POULTRY_MANAGE", expect.objectContaining({ entityType: "MedicationRecord" }));
+    expect(mockNotifications.broadcast).toHaveBeenNthCalledWith(2, "company-2", "poultry.manage", expect.objectContaining({ entityType: "MedicationRecord" }));
+  });
+
+  it("assetDocumentExpiryReminder notifies maintenance.manage with the real permission key, and marks reminded documents", async () => {
+    mockPrisma.assetDocument.findMany.mockResolvedValue([
+      { id: "doc-1", companyId: "company-1", documentType: "INSURANCE", expiryDate: new Date("2026-09-01"), machine: { name: "Delivery Truck" }, equipment: null }
+    ]);
+
+    const service = makeService();
+    await expect(service.assetDocumentExpiryReminder()).resolves.toBeUndefined();
+
+    expect(mockNotifications.broadcast).toHaveBeenCalledWith("company-1", "maintenance.manage", expect.objectContaining({ type: "DOCUMENT_EXPIRY_ALERT", entityType: "AssetDocument" }));
+    expect(mockPrisma.assetDocument.updateMany).toHaveBeenCalledWith({ where: { id: { in: ["doc-1"] } }, data: { lastReminderAt: expect.any(Date) } });
+  });
+
+  it("assetDocumentExpiryReminder does not re-notify a document reminded within the last 7 days", async () => {
+    // The service query itself filters by lastReminderAt — this test just
+    // confirms the query includes that guard, not a stale-timestamp fixture,
+    // since the mock always returns what it's told regardless of the where clause.
+    const service = makeService();
+    await service.assetDocumentExpiryReminder();
+
+    const where = mockPrisma.assetDocument.findMany.mock.calls[0][0].where;
+    expect(where.OR).toEqual([{ lastReminderAt: null }, { lastReminderAt: { lte: expect.any(Date) } }]);
   });
 });

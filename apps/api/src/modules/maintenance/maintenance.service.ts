@@ -7,6 +7,7 @@ import { LookupCacheService } from "../../common/services/lookup-cache.service";
 import { nextRef } from "../../common/next-ref";
 import { sanitizeFormulaCell } from "../../common/utils/csv";
 import {
+  CreateAssetDocumentDto,
   CreateBreakdownDto,
   CreateDowntimeDto,
   CreateEquipmentDto,
@@ -17,6 +18,7 @@ import {
   CreateSparePartUsageDto,
   CreateTechnicianAssignmentDto,
   MaintenanceQueryDto,
+  UpdateAssetDocumentDto,
   UpdateBreakdownStatusDto,
   UpdateEquipmentDto,
   UpdateMachineDto,
@@ -53,13 +55,16 @@ export class MaintenanceService {
     // a genuine DB error rendered as an indistinguishable "no maintenance
     // activity" dashboard. Let it propagate to the global exception filter
     // instead, so a real failure returns a real error response.
-    const [machineCount, activeMachines, maintenanceAlerts, openBreakdowns, schedules, breakdowns, downtime, costs, assignments] = await Promise.all([
+    const in30 = new Date(today.getTime() + 30 * 86_400_000);
+    const [machineCount, activeMachines, maintenanceAlerts, openBreakdowns, expiringDocuments, schedules, breakdowns, documents, downtime, costs, assignments] = await Promise.all([
       this.prisma.machine.count({ where: this.machineWhere(user, query) }),
       this.prisma.machine.count({ where: { ...this.machineWhere(user, query), status: "ACTIVE" } }),
       this.prisma.maintenanceSchedule.count({ where: { ...this.scheduleWhere(user, query), status: { not: "COMPLETED" }, nextDueDate: { lte: today } } }),
       this.prisma.breakdownRecord.count({ where: { ...this.breakdownWhere(user, query), status: { notIn: ["RESOLVED", "CLOSED", "CANCELLED"] } } }),
+      this.prisma.assetDocument.count({ where: { ...this.documentWhere(user, query), expiryDate: { lte: in30 } } }),
       this.prisma.maintenanceSchedule.findMany({ where: this.scheduleWhere(user, query), include: { machine: true, equipment: true }, orderBy: { nextDueDate: "asc" }, take: 12 }),
       this.prisma.breakdownRecord.findMany({ where: this.breakdownWhere(user, query), include: { machine: true, equipment: true }, orderBy: { reportedAt: "desc" }, take: 12 }),
+      this.prisma.assetDocument.findMany({ where: { ...this.documentWhere(user, query), expiryDate: { lte: in30 } }, include: { machine: true, equipment: true }, orderBy: { expiryDate: "asc" }, take: 12 }),
       this.prisma.machineDowntimeRecord.aggregate({ where: this.downtimeWhere(user, query), _sum: { durationHours: true } }),
       this.prisma.maintenanceCost.aggregate({ where: this.costWhere(user, query), _sum: { amount: true } }),
       this.prisma.technicianAssignment.findMany({ where: this.assignmentWhere(user, query), include: { technician: { select: { fullName: true, email: true } }, machine: true, equipment: true }, orderBy: { assignedAt: "desc" }, take: 12 })
@@ -71,10 +76,12 @@ export class MaintenanceService {
         activeMachines,
         maintenanceAlerts,
         openBreakdowns,
+        expiringDocuments,
         downtimeHours: Number(downtime._sum.durationHours ?? 0),
         maintenanceCost: Number(costs._sum.amount ?? 0),
         schedules,
         breakdowns,
+        documents,
         assignments
       }
     };
@@ -348,6 +355,60 @@ export class MaintenanceService {
     return { data: await this.prisma.maintenanceCost.findMany({ where: this.costWhere(user, query), include: { machine: true, equipment: true, maintenanceRecord: true, breakdownRecord: true }, orderBy: { costDate: "desc" }, take: 200 }) };
   }
 
+  async createAssetDocument(user: AuthenticatedUser, dto: CreateAssetDocumentDto, context: RequestContext) {
+    const scope = await this.resolveAssetScope(user, dto.machineId, dto.equipmentId);
+    const data = await this.prisma.assetDocument.create({
+      data: {
+        companyId: user.companyId,
+        ...scope,
+        documentType: dto.documentType,
+        documentNumber: dto.documentNumber,
+        issueDate: dto.issueDate ? new Date(dto.issueDate) : undefined,
+        expiryDate: new Date(dto.expiryDate),
+        fileUrl: dto.fileUrl,
+        notes: dto.notes,
+        createdById: user.id
+      }
+    });
+    await this.writeAudit(user, "CREATE", "AssetDocument", data.id, `Recorded ${dto.documentType} document`, context, data);
+    return { data };
+  }
+
+  async listAssetDocuments(user: AuthenticatedUser, query: MaintenanceQueryDto) {
+    return { data: await this.prisma.assetDocument.findMany({ where: this.documentWhere(user, query), include: { machine: true, equipment: true }, orderBy: { expiryDate: "asc" }, take: 200 }) };
+  }
+
+  async updateAssetDocument(user: AuthenticatedUser, id: string, dto: UpdateAssetDocumentDto, context: RequestContext) {
+    const existing = await this.prisma.assetDocument.findFirst({ where: { ...this.documentWhere(user, {}), id } });
+    if (!existing) throw new NotFoundException("Asset document was not found.");
+    const data = await this.prisma.assetDocument.update({
+      where: { id },
+      data: {
+        documentType: dto.documentType,
+        documentNumber: dto.documentNumber,
+        issueDate: dto.issueDate ? new Date(dto.issueDate) : undefined,
+        expiryDate: dto.expiryDate ? new Date(dto.expiryDate) : undefined,
+        fileUrl: dto.fileUrl,
+        notes: dto.notes,
+        // A renewed document's new expiry date means the old reminder no
+        // longer applies — reset so the next approaching expiry can alert
+        // again instead of staying silently suppressed by the last one.
+        lastReminderAt: dto.expiryDate ? null : undefined,
+        updatedById: user.id
+      }
+    });
+    await this.writeAudit(user, "UPDATE", "AssetDocument", id, `Updated ${data.documentType} document`, context, data);
+    return { data };
+  }
+
+  async deleteAssetDocument(user: AuthenticatedUser, id: string, context: RequestContext) {
+    const existing = await this.prisma.assetDocument.findFirst({ where: { ...this.documentWhere(user, {}), id } });
+    if (!existing) throw new NotFoundException("Asset document was not found.");
+    await this.prisma.assetDocument.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    await this.writeAudit(user, "REJECT", "AssetDocument", id, `Deleted ${existing.documentType} document`, context, existing);
+    return { data: { id } };
+  }
+
   async reportCsv(user: AuthenticatedUser, query: MaintenanceQueryDto, context: RequestContext) {
     const rows = await this.prisma.maintenanceCost.findMany({ where: this.costWhere(user, query), include: { machine: true, equipment: true }, orderBy: { costDate: "desc" } });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "EXPORT", entityType: "Report", entityId: "maintenance.cost", summary: "Exported maintenance cost report", ipAddress: context.ipAddress, userAgent: context.userAgent });
@@ -455,6 +516,10 @@ export class MaintenanceService {
 
   private costWhere(user: AuthenticatedUser, query: MaintenanceQueryDto) {
     return { companyId: user.companyId, deletedAt: null, branchId: query.branchId || undefined, farmId: query.farmId || undefined, warehouseId: query.warehouseId || undefined, productionSiteId: query.productionSiteId || undefined, machineId: query.machineId || undefined, equipmentId: query.equipmentId || undefined, ...(this.dateRange(query, "costDate")), ...this.locationScope(user) };
+  }
+
+  private documentWhere(user: AuthenticatedUser, query: MaintenanceQueryDto) {
+    return { companyId: user.companyId, deletedAt: null, branchId: query.branchId || undefined, farmId: query.farmId || undefined, warehouseId: query.warehouseId || undefined, productionSiteId: query.productionSiteId || undefined, machineId: query.machineId || undefined, equipmentId: query.equipmentId || undefined, ...this.locationScope(user) };
   }
 
   private dateRange(query: MaintenanceQueryDto, field: string) {

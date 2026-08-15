@@ -6,6 +6,7 @@ import { RequirePermissions } from "../../common/decorators/permissions.decorato
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { PermissionsGuard } from "../../common/guards/permissions.guard";
 import {
+  CreateAssetDocumentDto,
   CreateBreakdownDto,
   CreateDowntimeDto,
   CreateEquipmentDto,
@@ -16,6 +17,7 @@ import {
   CreateSparePartUsageDto,
   CreateTechnicianAssignmentDto,
   MaintenanceQueryDto,
+  UpdateAssetDocumentDto,
   UpdateBreakdownStatusDto,
   UpdateEquipmentDto,
   UpdateMachineDto,
@@ -207,6 +209,30 @@ export class MaintenanceController {
   @RequirePermissions(PERMISSIONS.FINANCE_MANAGE)
   createCost(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateMaintenanceCostDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.maintenanceService.createCost(user, dto, { ipAddress, userAgent });
+  }
+
+  @Get("documents")
+  @RequirePermissions(PERMISSIONS.MAINTENANCE_READ)
+  documents(@CurrentUser() user: AuthenticatedUser, @Query() query: MaintenanceQueryDto) {
+    return this.maintenanceService.listAssetDocuments(user, query);
+  }
+
+  @Post("documents")
+  @RequirePermissions(PERMISSIONS.MAINTENANCE_MANAGE)
+  createDocument(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateAssetDocumentDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.maintenanceService.createAssetDocument(user, dto, { ipAddress, userAgent });
+  }
+
+  @Patch("documents/:id")
+  @RequirePermissions(PERMISSIONS.MAINTENANCE_MANAGE)
+  updateDocument(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateAssetDocumentDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.maintenanceService.updateAssetDocument(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Delete("documents/:id")
+  @RequirePermissions(PERMISSIONS.MAINTENANCE_MANAGE)
+  deleteDocument(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.maintenanceService.deleteAssetDocument(user, id, { ipAddress, userAgent });
   }
 
   @Get("reports/costs.csv")

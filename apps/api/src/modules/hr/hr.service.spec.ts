@@ -692,7 +692,7 @@ describe("HRService.submitGrievance — excludes the concerned person from the b
     await service.submitGrievance(makeUser({ hasGlobalAccess: true }), { employeeId: "emp-1", submittedDate: "2026-08-11", category: "Conduct", description: "..." } as never, {});
 
     expect(mockNotifications.broadcast).toHaveBeenCalledWith(
-      "company-1", "HR_MANAGE", expect.objectContaining({ entityType: "GrievanceRecord" }), []
+      "company-1", "hr.manage", expect.objectContaining({ entityType: "GrievanceRecord" }), []
     );
   });
 
@@ -711,7 +711,7 @@ describe("HRService.submitGrievance — excludes the concerned person from the b
     );
 
     expect(mockNotifications.broadcast).toHaveBeenCalledWith(
-      "company-1", "HR_MANAGE", expect.objectContaining({ entityType: "GrievanceRecord" }), ["user-manager"]
+      "company-1", "hr.manage", expect.objectContaining({ entityType: "GrievanceRecord" }), ["user-manager"]
     );
   });
 
@@ -729,7 +729,7 @@ describe("HRService.submitGrievance — excludes the concerned person from the b
     );
 
     expect(mockNotifications.broadcast).toHaveBeenCalledWith(
-      "company-1", "HR_MANAGE", expect.objectContaining({ entityType: "GrievanceRecord" }), []
+      "company-1", "hr.manage", expect.objectContaining({ entityType: "GrievanceRecord" }), []
     );
     expect(mockPrisma.user.findFirst).not.toHaveBeenCalled();
   });

@@ -14,6 +14,7 @@ const mockPrisma = {
   machineDowntimeRecord: { aggregate: jest.fn() },
   maintenanceCost: { aggregate: jest.fn(), findMany: jest.fn(), create: jest.fn() },
   technicianAssignment: { findMany: jest.fn() },
+  assetDocument: { count: jest.fn(), findMany: jest.fn(), findFirst: jest.fn(), create: jest.fn(), update: jest.fn() },
   inventoryItem: { findFirst: jest.fn(), updateMany: jest.fn() },
   product: { findFirst: jest.fn() },
   warehouse: { findFirst: jest.fn() },
@@ -110,6 +111,8 @@ describe("MaintenanceService.dashboard — does not mask query failures as an al
     mockPrisma.machineDowntimeRecord.aggregate.mockResolvedValue({ _sum: { durationHours: 0 } });
     mockPrisma.maintenanceCost.aggregate.mockResolvedValue({ _sum: { amount: 0 } });
     mockPrisma.technicianAssignment.findMany.mockResolvedValue([]);
+    mockPrisma.assetDocument.count.mockResolvedValue(0);
+    mockPrisma.assetDocument.findMany.mockResolvedValue([]);
   });
 
   it("rejects instead of silently returning an all-zero payload when a query fails", async () => {
@@ -125,6 +128,75 @@ describe("MaintenanceService.dashboard — does not mask query failures as an al
 
     const result = await service.dashboard(makeUser(), {} as never);
     expect(result.data.machineCount).toBe(7);
+  });
+
+  it("counts documents expiring within 30 days, including ones already overdue", async () => {
+    mockPrisma.assetDocument.count.mockResolvedValueOnce(3);
+    const service = makeService();
+
+    const result = await service.dashboard(makeUser(), {} as never);
+
+    expect(result.data.expiringDocuments).toBe(3);
+    expect(mockPrisma.assetDocument.count).toHaveBeenCalledWith({
+      where: expect.objectContaining({ expiryDate: { lte: expect.any(Date) } })
+    });
+  });
+});
+
+describe("MaintenanceService — asset document CRUD (documents/renewal tracking)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("createAssetDocument resolves the asset scope from the machine and stores the expiry date", async () => {
+    mockPrisma.machine.findFirst.mockResolvedValue({ id: "mach-1", branchId: "branch-1", farmId: null, warehouseId: null, productionSiteId: null });
+    mockPrisma.assetDocument.create.mockResolvedValue({ id: "doc-1" });
+
+    const service = makeService();
+    await service.createAssetDocument(makeUser(), { machineId: "mach-1", documentType: "INSURANCE", expiryDate: "2026-12-01" } as never, {});
+
+    expect(mockPrisma.assetDocument.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        companyId: "company-1", branchId: "branch-1", machineId: "mach-1",
+        documentType: "INSURANCE", expiryDate: new Date("2026-12-01"), createdById: "user-1"
+      })
+    });
+  });
+
+  it("createAssetDocument rejects when neither machineId nor equipmentId is given", async () => {
+    const service = makeService();
+    await expect(
+      service.createAssetDocument(makeUser(), { documentType: "INSURANCE", expiryDate: "2026-12-01" } as never, {})
+    ).rejects.toThrow();
+  });
+
+  it("updateAssetDocument 404s for a document outside the caller's company/branch scope", async () => {
+    mockPrisma.assetDocument.findFirst.mockResolvedValue(null);
+    const service = makeService();
+
+    await expect(
+      service.updateAssetDocument(makeUser(), "doc-OTHER", { expiryDate: "2027-01-01" } as never, {})
+    ).rejects.toThrow(NotFoundException);
+    expect(mockPrisma.assetDocument.update).not.toHaveBeenCalled();
+  });
+
+  it("updateAssetDocument clears lastReminderAt when the expiry date is renewed, so the reminder can fire again", async () => {
+    mockPrisma.assetDocument.findFirst.mockResolvedValue({ id: "doc-1", companyId: "company-1", branchId: "branch-1", documentType: "INSURANCE" });
+    mockPrisma.assetDocument.update.mockResolvedValue({ id: "doc-1", documentType: "INSURANCE" });
+
+    const service = makeService();
+    await service.updateAssetDocument(makeUser(), "doc-1", { expiryDate: "2027-06-01" } as never, {});
+
+    expect(mockPrisma.assetDocument.update).toHaveBeenCalledWith({
+      where: { id: "doc-1" },
+      data: expect.objectContaining({ expiryDate: new Date("2027-06-01"), lastReminderAt: null })
+    });
+  });
+
+  it("deleteAssetDocument soft-deletes and 404s for a document outside scope", async () => {
+    mockPrisma.assetDocument.findFirst.mockResolvedValue(null);
+    const service = makeService();
+
+    await expect(service.deleteAssetDocument(makeUser(), "doc-OTHER", {})).rejects.toThrow(NotFoundException);
+    expect(mockPrisma.assetDocument.update).not.toHaveBeenCalled();
   });
 });
 

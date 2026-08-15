@@ -1,6 +1,6 @@
 ﻿import { BadRequestException, ConflictException, ForbiddenException, Injectable, InternalServerErrorException, Logger, NotFoundException } from "@nestjs/common";
 import { Response } from "express";
-import { AuthenticatedUser } from "@jokas/shared";
+import { AuthenticatedUser, PERMISSIONS } from "@jokas/shared";
 import { Prisma, EmployeeStatus, TaskStatus, PayrollStatus, HRPerformanceStatus, LeaveStatus } from "@prisma/client";
 import { AuditService } from "../audit/audit.service";
 import { EmailService } from "../notifications/email.service";
@@ -894,7 +894,13 @@ export class HRService {
     if (row.createdById === user.id) throw new ForbiddenException("You cannot approve a payroll record you created. A different manager must approve it.");
 
     const updated = await this.prisma.payrollRecord.update({ where: { id }, data: { status: "APPROVED", updatedById: user.id } });
-    void this.notifications.broadcast(user.companyId, "HR_MANAGE", { type: "PAYROLL_APPROVED" as never, title: "Payroll Approved", body: `${row.employeeName} ${row.period} payroll approved`, entityType: "PayrollRecord", entityId: id });
+    // C-BACK (2026-08-15): this and 2 sibling calls in this file (plus 3 in
+    // duty-reminders.service.ts) used to pass the literal string "HR_MANAGE"
+    // — broadcast()'s requiredPermission compares directly against the real
+    // Permission.key stored in the DB, always "hr.manage"/"poultry.manage"/
+    // "maintenance.manage" (lowercase, dotted), never the uppercase form.
+    // Every call using this convention silently notified zero users.
+    void this.notifications.broadcast(user.companyId, PERMISSIONS.HR_MANAGE, { type: "PAYROLL_APPROVED" as never, title: "Payroll Approved", body: `${row.employeeName} ${row.period} payroll approved`, entityType: "PayrollRecord", entityId: id });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "PayrollRecord", entityId: id, action: "APPROVE", ...ctx });
     return { data: updated };
   }
@@ -1148,7 +1154,7 @@ export class HRService {
       await this.upsertLeaveBalance(user.companyId, emp.id, dto.leaveType, new Date().getFullYear(), { pendingDelta: dto.daysRequested });
     }
 
-    void this.notifications.broadcast(user.companyId, "HR_MANAGE", { type: "LEAVE_REQUEST_SUBMITTED" as never, title: "New Leave Request", body: `${row.employeeName} submitted a ${row.leaveType} leave request (${row.daysRequested} days)`, entityType: "LeaveRequest", entityId: row.id });
+    void this.notifications.broadcast(user.companyId, PERMISSIONS.HR_MANAGE, { type: "LEAVE_REQUEST_SUBMITTED" as never, title: "New Leave Request", body: `${row.employeeName} submitted a ${row.leaveType} leave request (${row.daysRequested} days)`, entityType: "LeaveRequest", entityId: row.id });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "LeaveRequest", entityId: row.id, action: "CREATE", ...ctx });
     return { data: row };
   }
@@ -2098,7 +2104,7 @@ export class HRService {
       const concernedUser = concernedEmployee?.email ? await this.prisma.user.findFirst({ where: { email: concernedEmployee.email, companyId: user.companyId }, select: { id: true } }) : null;
       if (concernedUser) excludeUserIds = [concernedUser.id];
     }
-    void this.notifications.broadcast(user.companyId, "HR_MANAGE", { type: "GRIEVANCE_UPDATED" as never, title: "New Grievance Submitted", body: `${employee.fullName} has submitted a grievance. Category: ${dto.category}`, entityType: "GrievanceRecord", entityId: row.id }, excludeUserIds);
+    void this.notifications.broadcast(user.companyId, PERMISSIONS.HR_MANAGE, { type: "GRIEVANCE_UPDATED" as never, title: "New Grievance Submitted", body: `${employee.fullName} has submitted a grievance. Category: ${dto.category}`, entityType: "GrievanceRecord", entityId: row.id }, excludeUserIds);
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "GrievanceRecord", entityId: row.id, action: "CREATE", ...ctx });
     return { data: row };
   }

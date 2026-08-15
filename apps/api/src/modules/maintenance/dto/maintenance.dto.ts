@@ -1,4 +1,4 @@
-import { AssetStatus, BreakdownSeverity, BreakdownStatus, DowntimeStatus, EquipmentType, MachineType, MaintenanceCostType, MaintenancePriority, MaintenanceType, MaintenanceWorkflowStatus, TechnicianAssignmentStatus } from "@prisma/client";
+import { AssetDocumentType, AssetStatus, BreakdownSeverity, BreakdownStatus, DowntimeStatus, EquipmentType, MachineType, MaintenanceCostType, MaintenancePriority, MaintenanceType, MaintenanceWorkflowStatus, TechnicianAssignmentStatus } from "@prisma/client";
 import { IsDateString, IsEnum, IsInt, IsNumber, IsOptional, IsString, IsUUID, MaxLength, Min, ValidateIf } from "class-validator";
 
 export class UpdateMachineDto {
@@ -493,5 +493,69 @@ export class CreateMaintenanceCostDto {
   @IsOptional()
   @IsEnum(MaintenanceWorkflowStatus)
   status?: MaintenanceWorkflowStatus;
+}
+
+export class CreateAssetDocumentDto {
+  @ValidateIf((dto) => !dto.equipmentId)
+  @IsUUID()
+  machineId?: string;
+
+  @ValidateIf((dto) => !dto.machineId)
+  @IsUUID()
+  equipmentId?: string;
+
+  @IsEnum(AssetDocumentType)
+  documentType!: AssetDocumentType;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  documentNumber?: string;
+
+  @IsOptional()
+  @IsDateString()
+  issueDate?: string;
+
+  @IsDateString()
+  expiryDate!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  fileUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  notes?: string;
+}
+
+export class UpdateAssetDocumentDto {
+  @IsOptional()
+  @IsEnum(AssetDocumentType)
+  documentType?: AssetDocumentType;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  documentNumber?: string;
+
+  @IsOptional()
+  @IsDateString()
+  issueDate?: string;
+
+  @IsOptional()
+  @IsDateString()
+  expiryDate?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  fileUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  notes?: string;
 }
 

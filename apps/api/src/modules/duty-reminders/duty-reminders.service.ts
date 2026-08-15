@@ -1,5 +1,6 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
+import { PERMISSIONS } from "@jokas/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { NotificationType } from "../notifications/dto/notifications.dto";
@@ -240,7 +241,13 @@ export class DutyRemindersService {
       for (const [companyId, names] of byCompany) {
         const body = `${names.length} certificate(s) expiring within 30 days:\n${names.slice(0, 10).join("\n")}${names.length > 10 ? `\n…and ${names.length - 10} more` : ""}`;
         try {
-          await this.notifications.broadcast(companyId, "HR_MANAGE", {
+          // C-BACK (2026-08-15): this passed the literal string "HR_MANAGE"
+          // to broadcast()'s requiredPermission, which compares directly
+          // against the real Permission.key stored in the DB — always
+          // "hr.manage" (lowercase, dotted), never the uppercase form. Every
+          // call using this convention across this file and hr.service.ts
+          // has silently notified zero users since it was written.
+          await this.notifications.broadcast(companyId, PERMISSIONS.HR_MANAGE, {
             type: "DOCUMENT_EXPIRY_ALERT" as never,
             title: "Certificate Expiry Alert",
             body,
@@ -324,7 +331,7 @@ export class DutyRemindersService {
           items.slice(0, 10).map((i) => `${i.batchCode} — ${i.vaccineName} (due ${i.dueDate.toISOString().slice(0, 10)})`).join("\n") +
           (items.length > 10 ? `\n…and ${items.length - 10} more` : "");
         try {
-          await this.notifications.broadcast(companyId, "POULTRY_MANAGE", {
+          await this.notifications.broadcast(companyId, PERMISSIONS.POULTRY_MANAGE, {
             type: NotificationType.VACCINATION_REMINDER,
             title: "Vaccination Due Soon",
             body,
@@ -338,6 +345,62 @@ export class DutyRemindersService {
       if (due.length > 0) this.logger.log(`vaccinationDueDateReminder: notified ${notified}/${byCompany.size} company/ies for ${due.length} record(s)`);
     } catch (err) {
       this.logger.warn("vaccinationDueDateReminder: skipped — " + (err instanceof Error ? err.message : String(err)));
+    }
+  }
+
+  // ── 8 AM daily: machine/vehicle document renewal reminder ────────────────
+  // Finds AssetDocuments (registration, insurance, roadworthy, license)
+  // expiring within 30 days or already expired, and notifies
+  // MAINTENANCE_MANAGE users per company. Unlike the monthly certificate
+  // alert above, this re-checks daily but only re-notifies a given document
+  // once lastReminderAt is more than 7 days old (or unset) — so an
+  // unrenewed document keeps surfacing weekly instead of going silent after
+  // the first alert, without spamming the same document every single day.
+  @Cron("0 8 * * *", { timeZone: "Africa/Accra" })
+  async assetDocumentExpiryReminder() {
+    if (!(await this.acquireCronLock("assetDocumentExpiryReminder"))) return;
+    try {
+      const now = new Date();
+      const in30 = new Date(now.getTime() + 30 * 24 * 3_600_000);
+      const reminderStale = new Date(now.getTime() - 7 * 24 * 3_600_000);
+      const expiring = await this.prisma.assetDocument.findMany({
+        where: {
+          deletedAt: null,
+          expiryDate: { lte: in30 },
+          OR: [{ lastReminderAt: null }, { lastReminderAt: { lte: reminderStale } }],
+        },
+        include: { machine: { select: { name: true } }, equipment: { select: { name: true } } },
+      });
+
+      const byCompany = new Map<string, { id: string; label: string; documentType: string; expiryDate: Date }[]>();
+      for (const doc of expiring) {
+        const list = byCompany.get(doc.companyId) ?? [];
+        list.push({ id: doc.id, label: doc.machine?.name ?? doc.equipment?.name ?? "Unassigned asset", documentType: doc.documentType, expiryDate: doc.expiryDate });
+        byCompany.set(doc.companyId, list);
+      }
+
+      // H26: isolated per-company — see certificateExpiryAlert above for why.
+      let notified = 0;
+      for (const [companyId, items] of byCompany) {
+        const body = `${items.length} document(s) expiring within 30 days or overdue:\n` +
+          items.slice(0, 10).map((i) => `${i.label} — ${i.documentType} (expires ${i.expiryDate.toISOString().slice(0, 10)})`).join("\n") +
+          (items.length > 10 ? `\n…and ${items.length - 10} more` : "");
+        try {
+          await this.notifications.broadcast(companyId, PERMISSIONS.MAINTENANCE_MANAGE, {
+            type: NotificationType.DOCUMENT_EXPIRY_ALERT,
+            title: "Document Renewal Due",
+            body,
+            entityType: "AssetDocument",
+          });
+          await this.prisma.assetDocument.updateMany({ where: { id: { in: items.map((i) => i.id) } }, data: { lastReminderAt: now } });
+          notified++;
+        } catch (err) {
+          this.logger.error(`assetDocumentExpiryReminder: failed to notify company ${companyId}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+      if (expiring.length > 0) this.logger.log(`assetDocumentExpiryReminder: notified ${notified}/${byCompany.size} company/ies for ${expiring.length} document(s)`);
+    } catch (err) {
+      this.logger.warn("assetDocumentExpiryReminder: skipped — " + (err instanceof Error ? err.message : String(err)));
     }
   }
 
@@ -373,7 +436,7 @@ export class DutyRemindersService {
           items.slice(0, 10).map((i) => `${i.batchCode} — ${i.medicationName} (withdrawal ends ${i.until.toISOString().slice(0, 10)})`).join("\n") +
           (items.length > 10 ? `\n…and ${items.length - 10} more` : "");
         try {
-          await this.notifications.broadcast(companyId, "POULTRY_MANAGE", {
+          await this.notifications.broadcast(companyId, PERMISSIONS.POULTRY_MANAGE, {
             type: NotificationType.MEDICATION_REMINDER,
             title: "⚠️ Withdrawal Period Active",
             body,

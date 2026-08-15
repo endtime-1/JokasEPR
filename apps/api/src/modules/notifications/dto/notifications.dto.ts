@@ -1,6 +1,11 @@
 import { IsArray, IsBoolean, IsEnum, IsOptional, IsUUID, ValidateNested } from "class-validator";
 import { Transform, Type } from "class-transformer";
 
+// C-BACK (2026-08-15): this had drifted out of sync with the Prisma schema's
+// own NotificationType enum, which already had DOCUMENT_EXPIRY_ALERT and 6
+// other values this one was missing — existing call sites worked around the
+// gap with `as never` casts instead of the enum, which is exactly how the
+// gap went unnoticed. Synced to match the schema exactly.
 export enum NotificationType {
   LOW_STOCK_ALERT = "LOW_STOCK_ALERT",
   EXPIRY_ALERT = "EXPIRY_ALERT",
@@ -14,7 +19,15 @@ export enum NotificationType {
   AI_RISK_ALERT = "AI_RISK_ALERT",
   TASK_ASSIGNED = "TASK_ASSIGNED",
   QUALITY_BATCH_REJECTED = "QUALITY_BATCH_REJECTED",
-  STOCK_TRANSFER_REQUEST = "STOCK_TRANSFER_REQUEST"
+  STOCK_TRANSFER_REQUEST = "STOCK_TRANSFER_REQUEST",
+  LEAVE_REQUEST_SUBMITTED = "LEAVE_REQUEST_SUBMITTED",
+  LEAVE_APPROVED = "LEAVE_APPROVED",
+  LEAVE_REJECTED = "LEAVE_REJECTED",
+  PAYROLL_APPROVED = "PAYROLL_APPROVED",
+  PAYROLL_PAID = "PAYROLL_PAID",
+  DOCUMENT_EXPIRY_ALERT = "DOCUMENT_EXPIRY_ALERT",
+  DISCIPLINARY_ISSUED = "DISCIPLINARY_ISSUED",
+  GRIEVANCE_UPDATED = "GRIEVANCE_UPDATED"
 }
 
 export class NotificationQueryDto {
