@@ -48,6 +48,13 @@ overrides:
   # FileInterceptor (used on 2 authenticated + 1 unauthenticated public
   # upload endpoint) resolved the vulnerable version regardless. Force it.
   multer: '^2.2.0'
+  # next@15.5.23 pulls sharp@0.34.5 (inherited libvips CVEs) for its image
+  # optimization pipeline, used on web + storefront. Force the fixed line.
+  sharp: '^0.35.0'
+  # @nestjs/config pins lodash@4.17.21 (Code Injection via _.template,
+  # CVE-2020-8203-class) while every other dependency in the tree already
+  # resolves the fixed 4.18.1 — force the older resolution up to match.
+  lodash: '^4.18.1'
 
 patchedDependencies:
   esbuild@0.28.1: patches/esbuild@0.28.1.patch

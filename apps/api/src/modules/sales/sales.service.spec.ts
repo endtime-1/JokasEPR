@@ -24,7 +24,7 @@ const mockPrisma = {
   customer: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), count: jest.fn(), update: jest.fn() },
   customerGroup: { findFirst: jest.fn(), update: jest.fn() },
   customerCreditLimit: { findFirst: jest.fn() },
-  priceList: { findFirst: jest.fn(), update: jest.fn() },
+  priceList: { findFirst: jest.fn(), update: jest.fn(), aggregate: jest.fn() },
   invoice: { findFirst: jest.fn(), findUnique: jest.fn().mockResolvedValue(null), count: jest.fn() },
   payment: { findFirst: jest.fn() },
   receipt: { findFirst: jest.fn() },
@@ -32,7 +32,7 @@ const mockPrisma = {
   warehouse: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
   branch: { findMany: jest.fn().mockResolvedValue([]) },
   product: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
-  salesOrderItem: { findFirst: jest.fn(), groupBy: jest.fn().mockResolvedValue([]) },
+  salesOrderItem: { findFirst: jest.fn(), groupBy: jest.fn().mockResolvedValue([]), aggregate: jest.fn() },
   salesOrder: { findFirst: jest.fn(), groupBy: jest.fn().mockResolvedValue([]), count: jest.fn() },
   salesReturn: { aggregate: jest.fn(), create: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
   $transaction: jest.fn().mockImplementation((cb: (tx: typeof mockTx) => Promise<unknown>) => cb(mockTx))
@@ -198,6 +198,8 @@ describe("SalesService — sales returns require a second approver (C5)", () => 
     mockPrisma.customer.findFirst.mockResolvedValue({ id: "cust-1", branchId: "branch-1" });
     mockPrisma.warehouse.findFirst.mockResolvedValue({ id: "wh-1", branchId: "branch-1", farmId: null, productionSiteId: null });
     mockPrisma.product.findFirst.mockResolvedValue({ id: "prod-1", sku: "SKU-1", uomId: "uom-1" });
+    mockPrisma.salesOrderItem.aggregate.mockResolvedValue({ _max: { unitPrice: 10 } });
+    mockPrisma.priceList.aggregate.mockResolvedValue({ _max: { unitPrice: 0 } });
   });
 
   describe("createReturn", () => {
@@ -216,6 +218,35 @@ describe("SalesService — sales returns require a second approver (C5)", () => 
       );
       // No stock/credit side effects at creation time anymore.
       expect(mockTx.inventoryItem.upsert).not.toHaveBeenCalled();
+    });
+
+    it("rejects a standalone return (no salesOrderId) whose client-supplied price exceeds the highest recorded price for the product", async () => {
+      mockPrisma.salesOrderItem.aggregate.mockResolvedValue({ _max: { unitPrice: 10 } });
+      mockPrisma.priceList.aggregate.mockResolvedValue({ _max: { unitPrice: 0 } });
+
+      const service = makeService();
+      await expect(
+        service.createReturn(
+          makeUser(),
+          { customerId: "cust-1", productId: "prod-1", warehouseId: "wh-1", quantity: 5, unitPrice: 999, reason: "damaged" } as never,
+          {}
+        )
+      ).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.salesReturn.create).not.toHaveBeenCalled();
+    });
+
+    it("rejects a standalone return for a product with no recorded sale or price-list entry", async () => {
+      mockPrisma.salesOrderItem.aggregate.mockResolvedValue({ _max: { unitPrice: null } });
+      mockPrisma.priceList.aggregate.mockResolvedValue({ _max: { unitPrice: null } });
+
+      const service = makeService();
+      await expect(
+        service.createReturn(
+          makeUser(),
+          { customerId: "cust-1", productId: "prod-1", warehouseId: "wh-1", quantity: 5, unitPrice: 10, reason: "damaged" } as never,
+          {}
+        )
+      ).rejects.toThrow(BadRequestException);
     });
 
     it("rejects a return for a product that wasn't part of the referenced sales order", async () => {

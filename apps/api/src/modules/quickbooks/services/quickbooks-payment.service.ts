@@ -3,6 +3,7 @@ import { QBSyncOperation, QBSyncStatus } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { QuickBooksClientService } from "./quickbooks-client.service";
 import { QuickBooksLoggerService } from "./quickbooks-logger.service";
+import { escapeQboString } from "./quickbooks-query-escape";
 
 @Injectable()
 export class QuickBooksPaymentService {
@@ -63,7 +64,8 @@ export class QuickBooksPaymentService {
       const payload: Record<string, unknown> = {
         CustomerRef: { value: payment.customer.qbCustomerId },
         TotalAmt: Number(payment.amount),
-        TxnDate: payment.paymentDate.toISOString().split("T")[0]
+        TxnDate: payment.paymentDate.toISOString().split("T")[0],
+        PaymentRefNum: payment.paymentNumber
       };
 
       if (payment.invoice?.qbInvoiceId) {
@@ -72,8 +74,13 @@ export class QuickBooksPaymentService {
 
       let qbId = payment.qbPaymentId;
       if (!qbId) {
-        const resp = await this.client.post<{ Payment: { Id: string } }>(companyId, "payment", payload);
-        qbId = resp.Payment.Id;
+        // H21: if the POST above succeeded in QB but the local qbPaymentId
+        // write below failed to land, the next automatic retry saw qbId
+        // still null and created a second Payment object for the same real
+        // payment — nothing caught it, unlike Invoice/Bill sync which check
+        // for an existing record by document number first.
+        const existing = await this.findQBPaymentByRefNum(companyId, payment.paymentNumber);
+        qbId = existing ? existing.Id : (await this.client.post<{ Payment: { Id: string } }>(companyId, "payment", payload)).Payment.Id;
       }
 
       await this.prisma.payment.update({
@@ -86,6 +93,16 @@ export class QuickBooksPaymentService {
         data: { qbSyncStatus: QBSyncStatus.FAILED, qbSyncError: (err as Error).message.slice(0, 500) }
       });
       throw err;
+    }
+  }
+
+  private async findQBPaymentByRefNum(companyId: string, refNum: string): Promise<{ Id: string } | null> {
+    try {
+      const escaped = escapeQboString(refNum);
+      const resp = await this.client.query<{ QueryResponse: { Payment?: Array<{ Id: string }> } }>(companyId, `SELECT Id FROM Payment WHERE PaymentRefNum = '${escaped}'`);
+      return resp.QueryResponse.Payment?.[0] ?? null;
+    } catch {
+      return null;
     }
   }
 }

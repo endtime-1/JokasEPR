@@ -607,6 +607,24 @@ export class SalesService {
       // inflated price it never actually sold for.
       unitPrice = Number(orderItem.unitPrice);
       quantity = dto.quantity;
+    } else {
+      // H-BACK: a standalone return (no salesOrderId) took the client-
+      // supplied unitPrice with no bound at all — any quantity x price a
+      // caller specified, for a product that may never have sold at that
+      // price. Cap it at the highest price this product has actually ever
+      // sold for (or been listed at), so a return can never credit more
+      // than the product has legitimately been worth.
+      const [maxSold, maxListed] = await Promise.all([
+        this.prisma.salesOrderItem.aggregate({ where: { companyId: user.companyId, productId: dto.productId }, _max: { unitPrice: true } }),
+        this.prisma.priceList.aggregate({ where: { companyId: user.companyId, productId: dto.productId, deletedAt: null }, _max: { unitPrice: true } })
+      ]);
+      const maxKnownPrice = Math.max(Number(maxSold._max.unitPrice ?? 0), Number(maxListed._max.unitPrice ?? 0));
+      if (maxKnownPrice <= 0) {
+        throw new BadRequestException("This product has no recorded sale or price-list entry — link this return to the original sales order instead.");
+      }
+      if (dto.unitPrice > maxKnownPrice) {
+        throw new BadRequestException(`Unit price cannot exceed GHS ${maxKnownPrice.toFixed(2)}, the highest recorded price for this product.`);
+      }
     }
 
     const totalAmount = quantity * unitPrice;

@@ -229,7 +229,13 @@ export class AiDataService {
     // ── Procurement ───────────────────────────────────────────
     if (has("procurement.read")) {
       const pendingPOs = await this.prisma.purchaseOrder.aggregate({
-        where: { companyId, status: { in: ["DRAFT", "PENDING_APPROVAL", "APPROVED"] } },
+        where: {
+          companyId,
+          status: { in: ["DRAFT", "PENDING_APPROVAL", "APPROVED"] },
+          ...(!user.hasGlobalAccess && user.branchIds.length > 0
+            ? { OR: [{ purchaseRequestId: null }, { purchaseRequest: { branchId: null } }, { purchaseRequest: { branchId: { in: user.branchIds } } }] }
+            : {})
+        },
         _count: { id: true },
         _sum: { totalAmount: true }
       });

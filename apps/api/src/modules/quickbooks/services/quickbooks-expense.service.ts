@@ -4,6 +4,7 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { QuickBooksClientService } from "./quickbooks-client.service";
 import { QuickBooksLoggerService } from "./quickbooks-logger.service";
 import { QuickBooksMappingService } from "./quickbooks-mapping.service";
+import { escapeQboString } from "./quickbooks-query-escape";
 
 @Injectable()
 export class QuickBooksExpenseService {
@@ -66,6 +67,7 @@ export class QuickBooksExpenseService {
       const payload = {
         TxnDate: expense.expenseDate.toISOString().split("T")[0],
         PaymentType: expense.paymentMethod === "CASH" ? "Cash" : "Check",
+        DocNumber: expense.reference,
         EntityRef: expense.vendorName ? undefined : undefined,
         Line: [
           {
@@ -81,8 +83,13 @@ export class QuickBooksExpenseService {
 
       let qbId = expense.qbExpenseId;
       if (!qbId) {
-        const resp = await this.client.post<{ Purchase: { Id: string } }>(companyId, "purchase", payload);
-        qbId = resp.Purchase.Id;
+        // H21: same retry-double-post risk as Payment sync — if the POST
+        // below succeeded in QB but the local qbExpenseId write failed to
+        // land, the next retry saw qbId still null and created a duplicate
+        // Purchase object. Check for an existing one by DocNumber first,
+        // matching the pattern Invoice/Bill sync already use.
+        const existing = await this.findQBPurchaseByDocNumber(companyId, expense.reference);
+        qbId = existing ? existing.Id : (await this.client.post<{ Purchase: { Id: string } }>(companyId, "purchase", payload)).Purchase.Id;
       }
 
       await this.prisma.expense.update({
@@ -95,6 +102,16 @@ export class QuickBooksExpenseService {
         data: { qbSyncStatus: QBSyncStatus.FAILED, qbSyncError: (err as Error).message.slice(0, 500) }
       });
       throw err;
+    }
+  }
+
+  private async findQBPurchaseByDocNumber(companyId: string, docNumber: string): Promise<{ Id: string } | null> {
+    try {
+      const escaped = escapeQboString(docNumber);
+      const resp = await this.client.query<{ QueryResponse: { Purchase?: Array<{ Id: string }> } }>(companyId, `SELECT Id FROM Purchase WHERE DocNumber = '${escaped}'`);
+      return resp.QueryResponse.Purchase?.[0] ?? null;
+    } catch {
+      return null;
     }
   }
 }
