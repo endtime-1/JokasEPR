@@ -36,7 +36,7 @@ export class UploadsController {
   ) {
     if (!SAFE_FILENAME_RE.test(filename)) throw new NotFoundException();
     const owned = await this.prisma.employee.findFirst({
-      where: { companyId: user.companyId, photoUrl: `/api/v1/uploads/employees/${filename}` },
+      where: { companyId: user.companyId, deletedAt: null, photoUrl: `/api/v1/uploads/employees/${filename}` },
       select: { id: true }
     });
     if (!owned) throw new NotFoundException("File not found.");
@@ -54,7 +54,7 @@ export class UploadsController {
   ) {
     if (!SAFE_DOC_FILENAME_RE.test(filename)) throw new NotFoundException();
     const owned = await this.prisma.employeeDocument.findFirst({
-      where: { companyId: user.companyId, fileUrl: `/api/v1/uploads/documents/${filename}` },
+      where: { companyId: user.companyId, deletedAt: null, fileUrl: `/api/v1/uploads/documents/${filename}` },
       select: { id: true }
     });
     if (!owned) throw new NotFoundException("File not found.");

@@ -121,16 +121,16 @@ export class DutyRemindersService {
     // Determine which farms have any pending duties
     const [eggFarms, feedFarms, mortalityFarms, dailyFarms] = await Promise.all([
       slot === "MORNING"
-        ? this.prisma.eggProductionRecord.findMany({ where: { companyId, recordDate: dateRange }, distinct: ["farmId"], select: { farmId: true } })
+        ? this.prisma.eggProductionRecord.findMany({ where: { companyId, deletedAt: null, recordDate: dateRange }, distinct: ["farmId"], select: { farmId: true } })
         : [],
       slot === "MORNING"
-        ? this.prisma.feedConsumptionRecord.findMany({ where: { companyId, recordDate: dateRange }, distinct: ["farmId"], select: { farmId: true } })
+        ? this.prisma.feedConsumptionRecord.findMany({ where: { companyId, deletedAt: null, recordDate: dateRange }, distinct: ["farmId"], select: { farmId: true } })
         : [],
       slot === "MORNING"
-        ? this.prisma.mortalityRecord.findMany({ where: { companyId, recordDate: dateRange }, distinct: ["farmId"], select: { farmId: true } })
+        ? this.prisma.mortalityRecord.findMany({ where: { companyId, deletedAt: null, recordDate: dateRange }, distinct: ["farmId"], select: { farmId: true } })
         : [],
       slot === "EVENING"
-        ? this.prisma.dailyPoultryRecord.findMany({ where: { companyId, recordDate: dateRange }, distinct: ["farmId"], select: { farmId: true } })
+        ? this.prisma.dailyPoultryRecord.findMany({ where: { companyId, deletedAt: null, recordDate: dateRange }, distinct: ["farmId"], select: { farmId: true } })
         : [],
     ]);
 
@@ -264,10 +264,10 @@ export class DutyRemindersService {
 
     const [farms, eggs, feed, mortality, daily] = await Promise.all([
       this.prisma.farm.findMany({ where: { companyId, deletedAt: null }, select: { id: true, name: true } }),
-      this.prisma.eggProductionRecord.findMany({ where: { companyId, recordDate: dateRange }, distinct: ["farmId"], select: { farmId: true } }),
-      this.prisma.feedConsumptionRecord.findMany({ where: { companyId, recordDate: dateRange }, distinct: ["farmId"], select: { farmId: true } }),
-      this.prisma.mortalityRecord.findMany({ where: { companyId, recordDate: dateRange }, distinct: ["farmId"], select: { farmId: true } }),
-      this.prisma.dailyPoultryRecord.findMany({ where: { companyId, recordDate: dateRange }, distinct: ["farmId"], select: { farmId: true } }),
+      this.prisma.eggProductionRecord.findMany({ where: { companyId, deletedAt: null, recordDate: dateRange }, distinct: ["farmId"], select: { farmId: true } }),
+      this.prisma.feedConsumptionRecord.findMany({ where: { companyId, deletedAt: null, recordDate: dateRange }, distinct: ["farmId"], select: { farmId: true } }),
+      this.prisma.mortalityRecord.findMany({ where: { companyId, deletedAt: null, recordDate: dateRange }, distinct: ["farmId"], select: { farmId: true } }),
+      this.prisma.dailyPoultryRecord.findMany({ where: { companyId, deletedAt: null, recordDate: dateRange }, distinct: ["farmId"], select: { farmId: true } }),
     ]);
 
     const eggDone = new Set(eggs.map((r) => r.farmId));

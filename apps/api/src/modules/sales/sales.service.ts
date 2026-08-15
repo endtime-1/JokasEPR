@@ -301,6 +301,13 @@ export class SalesService {
 
   async createOrder(user: AuthenticatedUser, dto: CreateSalesOrderDto, context: RequestContext) {
     if (!dto.items.length) throw new BadRequestException("Sales order must contain at least one item.");
+    // L-BACK: the order-level total guard below already blocks the
+    // aggregate from going negative, but nothing stopped a single line's
+    // discountAmount from exceeding its own quantity*unitPrice — cosmetic
+    // (never let real money go out wrong, since the aggregate guard still
+    // holds), but a negative line total is never a legitimate value.
+    const overDiscounted = dto.items.find((item) => (item.discountAmount ?? 0) > item.quantity * item.unitPrice);
+    if (overDiscounted) throw new BadRequestException("A line's discount cannot exceed that line's own total.");
     const [customer, warehouse] = await Promise.all([
       this.prisma.customer.findFirst({ where: { companyId: user.companyId, id: dto.customerId, deletedAt: null } }),
       this.prisma.warehouse.findFirst({ where: { companyId: user.companyId, id: dto.warehouseId, deletedAt: null } })

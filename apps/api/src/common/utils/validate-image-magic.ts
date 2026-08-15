@@ -1,6 +1,7 @@
 import { readFileSync, unlinkSync } from "fs";
 
 type ImageType = "jpeg" | "png" | "webp" | "gif";
+type DocumentType = ImageType | "pdf";
 
 /**
  * Read the first 12 bytes of a file and match against known image magic bytes.
@@ -42,6 +43,40 @@ export function detectImageType(filePath: string): ImageType | null {
  */
 export function validateAndCleanImageUpload(filePath: string): boolean {
   const type = detectImageType(filePath);
+  if (!type) {
+    try { unlinkSync(filePath); } catch {
+      // Best-effort cleanup of a rejected upload — nothing to act on if it fails.
+    }
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Read the first bytes of a file and match against known image or PDF magic
+ * bytes. Returns the detected type, or null if neither. PDF: 25 50 44 46
+ * ("%PDF").
+ */
+export function detectDocumentType(filePath: string): DocumentType | null {
+  const imageType = detectImageType(filePath);
+  if (imageType) return imageType;
+  try {
+    const buf = readFileSync(filePath);
+    if (buf.length >= 4 && buf[0] === 0x25 && buf[1] === 0x50 && buf[2] === 0x44 && buf[3] === 0x46) return "pdf";
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Validate an uploaded file is a real image or PDF by checking its magic
+ * bytes — the same content-validation the employee-photo path already has,
+ * extended to cover the document upload path (images + PDFs). Deletes the
+ * file and returns false if it is not a recognised format.
+ */
+export function validateAndCleanDocumentUpload(filePath: string): boolean {
+  const type = detectDocumentType(filePath);
   if (!type) {
     try { unlinkSync(filePath); } catch {
       // Best-effort cleanup of a rejected upload — nothing to act on if it fails.

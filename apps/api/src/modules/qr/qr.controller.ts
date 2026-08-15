@@ -13,22 +13,26 @@ import { QrService } from "./qr.service";
 export class QrController {
   constructor(private readonly qr: QrService) {}
 
+  // L-BACK: these three previously required inventory.read at the controller
+  // level on top of the domain-specific permission (feed.read, sales.read,
+  // procurement.read, etc.) that resolveEntity() already enforces per entity
+  // type below — a sales-only user without inventory access couldn't scan a
+  // sales-document QR code. The service-level check is the real, correctly-
+  // scoped gate; the blanket controller requirement was just redundant and
+  // over-restrictive.
   @Get(":entityType/:entityId")
-  @RequirePermissions(PERMISSIONS.INVENTORY_READ)
   getOrCreate(@CurrentUser() user: AuthenticatedUser, @Param() params: QrEntityParamsDto) {
     return this.qr.getOrCreate(user, params.entityType, params.entityId);
   }
 
   @Get(":entityType/:entityId/label.svg")
   @Header("content-type", "image/svg+xml")
-  @RequirePermissions(PERMISSIONS.INVENTORY_READ)
   async labelSvg(@CurrentUser() user: AuthenticatedUser, @Param() params: QrEntityParamsDto, @Res() res: Response) {
     const svg = await this.qr.labelSvg(user, params.entityType, params.entityId);
     res.type("image/svg+xml").send(svg);
   }
 
   @Post("scan")
-  @RequirePermissions(PERMISSIONS.INVENTORY_READ)
   scan(@CurrentUser() user: AuthenticatedUser, @Body() dto: ScanQrDto) {
     return this.qr.scan(user, dto.code);
   }

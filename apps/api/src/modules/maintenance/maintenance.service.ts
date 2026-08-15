@@ -236,9 +236,16 @@ export class MaintenanceService {
   async createBreakdown(user: AuthenticatedUser, dto: CreateBreakdownDto, context: RequestContext) {
     const scope = await this.resolveAssetScope(user, dto.machineId, dto.equipmentId);
     const breakdownNumber = await nextRef(this.prisma, user.companyId, "BD");
-    const data = await this.prisma.breakdownRecord.create({ data: { companyId: user.companyId, ...scope, breakdownNumber, reportedAt: dto.reportedAt ? new Date(dto.reportedAt) : new Date(), severity: dto.severity ?? "MEDIUM", description: dto.description, rootCause: dto.rootCause, reportedById: user.id, createdById: user.id } });
-    if (scope.machineId) await this.prisma.machine.update({ where: { id: scope.machineId }, data: { status: "BROKEN_DOWN", updatedById: user.id } });
-    if (scope.equipmentId) await this.prisma.equipment.update({ where: { id: scope.equipmentId }, data: { status: "BROKEN_DOWN", updatedById: user.id } });
+    // M-BACK: the breakdown row and the asset's BROKEN_DOWN flag were two
+    // separate top-level writes — a crash between them left the asset
+    // showing ACTIVE while a breakdown against it was already open. Same
+    // fix already applied to spare-part consumption in this file.
+    const data = await this.prisma.$transaction(async (tx) => {
+      const record = await tx.breakdownRecord.create({ data: { companyId: user.companyId, ...scope, breakdownNumber, reportedAt: dto.reportedAt ? new Date(dto.reportedAt) : new Date(), severity: dto.severity ?? "MEDIUM", description: dto.description, rootCause: dto.rootCause, reportedById: user.id, createdById: user.id } });
+      if (scope.machineId) await tx.machine.update({ where: { id: scope.machineId }, data: { status: "BROKEN_DOWN", updatedById: user.id } });
+      if (scope.equipmentId) await tx.equipment.update({ where: { id: scope.equipmentId }, data: { status: "BROKEN_DOWN", updatedById: user.id } });
+      return record;
+    });
     await this.writeAudit(user, "CREATE", "BreakdownRecord", data.id, `Reported breakdown ${breakdownNumber}`, context, data);
     return { data };
   }
@@ -247,7 +254,6 @@ export class MaintenanceService {
     const existing = await this.prisma.breakdownRecord.findFirst({ where: { ...this.breakdownWhere(user, {}), id } });
     if (!existing) throw new NotFoundException("Breakdown record was not found.");
     const isResolved = ["RESOLVED", "CLOSED"].includes(dto.status);
-    const data = await this.prisma.breakdownRecord.update({ where: { id }, data: { status: dto.status, resolution: dto.resolution, resolvedById: isResolved ? user.id : existing.resolvedById, resolvedAt: isResolved ? new Date() : existing.resolvedAt, updatedById: user.id } });
 
     // (M13) createBreakdown marks the machine/equipment BROKEN_DOWN, but nothing
     // ever set it back — an asset stayed BROKEN_DOWN forever even after every
@@ -255,17 +261,25 @@ export class MaintenanceService {
     // read. Only restore ACTIVE once no OTHER open breakdown remains against the
     // same asset, so resolving one of two concurrent breakdowns can't falsely
     // clear a machine/equipment that's still actually broken.
+    // M-BACK: the status update and the asset-restore writes below were
+    // separate top-level calls — a crash in between left the breakdown
+    // marked resolved while the asset stayed stuck BROKEN_DOWN. Same
+    // transactional fix as createBreakdown above.
     const openStatuses: BreakdownStatus[] = ["REPORTED", "ASSIGNED", "IN_REPAIR"];
-    if (isResolved) {
-      if (existing.machineId) {
-        const stillOpen = await this.prisma.breakdownRecord.count({ where: { id: { not: id }, machineId: existing.machineId, status: { in: openStatuses }, deletedAt: null } });
-        if (stillOpen === 0) await this.prisma.machine.update({ where: { id: existing.machineId }, data: { status: "ACTIVE", updatedById: user.id } });
+    const data = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.breakdownRecord.update({ where: { id }, data: { status: dto.status, resolution: dto.resolution, resolvedById: isResolved ? user.id : existing.resolvedById, resolvedAt: isResolved ? new Date() : existing.resolvedAt, updatedById: user.id } });
+      if (isResolved) {
+        if (existing.machineId) {
+          const stillOpen = await tx.breakdownRecord.count({ where: { id: { not: id }, machineId: existing.machineId, status: { in: openStatuses }, deletedAt: null } });
+          if (stillOpen === 0) await tx.machine.update({ where: { id: existing.machineId }, data: { status: "ACTIVE", updatedById: user.id } });
+        }
+        if (existing.equipmentId) {
+          const stillOpen = await tx.breakdownRecord.count({ where: { id: { not: id }, equipmentId: existing.equipmentId, status: { in: openStatuses }, deletedAt: null } });
+          if (stillOpen === 0) await tx.equipment.update({ where: { id: existing.equipmentId }, data: { status: "ACTIVE", updatedById: user.id } });
+        }
       }
-      if (existing.equipmentId) {
-        const stillOpen = await this.prisma.breakdownRecord.count({ where: { id: { not: id }, equipmentId: existing.equipmentId, status: { in: openStatuses }, deletedAt: null } });
-        if (stillOpen === 0) await this.prisma.equipment.update({ where: { id: existing.equipmentId }, data: { status: "ACTIVE", updatedById: user.id } });
-      }
-    }
+      return updated;
+    });
 
     await this.writeAudit(user, dto.status === "CANCELLED" ? "REJECT" : "UPDATE", "BreakdownRecord", id, `Updated breakdown to ${dto.status}`, context, data);
     return { data };

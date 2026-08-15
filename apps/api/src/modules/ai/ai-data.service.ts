@@ -44,19 +44,19 @@ export class AiDataService {
 
       const eggTotals = await this.prisma.eggProductionRecord.groupBy({
         by: ["flockBatchId"],
-        where: { companyId, recordDate: { gte: since7 } },
+        where: { companyId, deletedAt: null, recordDate: { gte: since7 } },
         _sum: { goodEggs: true, crackedEggs: true, brokenEggs: true }
       });
 
       const mortalityTotals = await this.prisma.mortalityRecord.groupBy({
         by: ["flockBatchId"],
-        where: { companyId, recordDate: { gte: since7 }, isCulling: false },
+        where: { companyId, deletedAt: null, recordDate: { gte: since7 }, isCulling: false },
         _sum: { birdCount: true }
       });
 
       const feedTotals = await this.prisma.feedConsumptionRecord.groupBy({
         by: ["flockBatchId"],
-        where: { companyId, recordDate: { gte: since7 } },
+        where: { companyId, deletedAt: null, recordDate: { gte: since7 } },
         _sum: { quantityKg: true }
       });
 
@@ -74,7 +74,7 @@ export class AiDataService {
       });
 
       const healthObs = await this.prisma.poultryHealthObservation.findMany({
-        where: { companyId, observationDate: { gte: since7 }, ...this.locationScope(user, { branch: true, farm: true }) },
+        where: { companyId, deletedAt: null, observationDate: { gte: since7 }, ...this.locationScope(user, { branch: true, farm: true }) },
         select: { severity: true, observation: true, recommendation: true, flockBatch: { select: { name: true } } },
         take: 5,
         orderBy: { observationDate: "desc" }
@@ -86,7 +86,7 @@ export class AiDataService {
     // ── Feed Production ───────────────────────────────────────
     if (has("feed.read")) {
       const batches = await this.prisma.feedProductionBatch.findMany({
-        where: { companyId, createdAt: { gte: since30 }, ...this.locationScope(user, { branch: true, site: true }) },
+        where: { companyId, deletedAt: null, createdAt: { gte: since30 }, ...this.locationScope(user, { branch: true, site: true }) },
         select: {
           batchNumber: true, status: true, producedQuantityKg: true,
           productionOrder: { select: { formula: { select: { name: true, feedType: true } } } }
@@ -118,7 +118,7 @@ export class AiDataService {
     // ── Soya Processing ───────────────────────────────────────
     if (has("soya.read")) {
       const soyaBatches = await this.prisma.soyaProcessingBatch.findMany({
-        where: { companyId, createdAt: { gte: since30 }, ...this.locationScope(user, { branch: true, site: true }) },
+        where: { companyId, deletedAt: null, createdAt: { gte: since30 }, ...this.locationScope(user, { branch: true, site: true }) },
         select: {
           batchNumber: true, status: true, beansUsedKg: true,
           oilOutputs: { select: { quantityLitres: true } },
@@ -144,6 +144,7 @@ export class AiDataService {
       const lowStock = await this.prisma.inventoryItem.findMany({
         where: {
           companyId,
+          deletedAt: null,
           status: "ACTIVE",
           reorderLevel: { gt: 0 },
           quantityOnHand: { gt: 0 },
@@ -163,7 +164,7 @@ export class AiDataService {
         .map((i) => `  - ${i.product.name} (${i.warehouse.name}): ${Number(i.quantityOnHand).toFixed(2)} on hand, reorder at ${Number(i.reorderLevel).toFixed(2)}`);
 
       const totalValue = await this.prisma.inventoryValuation.aggregate({
-        where: { companyId, ...this.locationScope(user, { branch: true, warehouse: true, site: true }) },
+        where: { companyId, deletedAt: null, ...this.locationScope(user, { branch: true, warehouse: true, site: true }) },
         _sum: { totalValue: true }
       });
 
@@ -173,13 +174,13 @@ export class AiDataService {
     // ── Sales ─────────────────────────────────────────────────
     if (has("sales.read")) {
       const salesStats = await this.prisma.salesOrder.aggregate({
-        where: { companyId, createdAt: { gte: since30 }, status: { not: "CANCELLED" }, ...this.locationScope(user, { branch: true, warehouse: true }) },
+        where: { companyId, deletedAt: null, createdAt: { gte: since30 }, status: { not: "CANCELLED" }, ...this.locationScope(user, { branch: true, warehouse: true }) },
         _sum: { totalAmount: true, paidAmount: true, balanceDue: true },
         _count: { id: true }
       });
 
       const topDebtors = await this.prisma.customer.findMany({
-        where: { companyId, status: "ACTIVE", ...this.locationScope(user, { branch: true }) },
+        where: { companyId, deletedAt: null, status: "ACTIVE", ...this.locationScope(user, { branch: true }) },
         select: {
           name: true, code: true,
           creditLimits: { select: { currentBalance: true }, take: 1, orderBy: { createdAt: "desc" } }
@@ -196,7 +197,7 @@ export class AiDataService {
       const inactiveThreshold = new Date(Date.now() - 60 * 86400000);
       const stoppedBuying = await this.prisma.customer.findMany({
         where: {
-          companyId, status: "ACTIVE",
+          companyId, deletedAt: null, status: "ACTIVE",
           salesOrders: { none: { createdAt: { gte: inactiveThreshold } } },
           ...this.locationScope(user, { branch: true })
         },
@@ -212,11 +213,11 @@ export class AiDataService {
     // ── Finance ───────────────────────────────────────────────
     if (has("finance.read")) {
       const revenue = await this.prisma.revenue.aggregate({
-        where: { companyId, revenueDate: { gte: since30 }, ...this.locationScope(user, { branch: true }) },
+        where: { companyId, deletedAt: null, revenueDate: { gte: since30 }, ...this.locationScope(user, { branch: true }) },
         _sum: { amount: true }
       });
       const expenses = await this.prisma.expense.aggregate({
-        where: { companyId, expenseDate: { gte: since30 }, ...this.locationScope(user, { branch: true }) },
+        where: { companyId, deletedAt: null, expenseDate: { gte: since30 }, ...this.locationScope(user, { branch: true }) },
         _sum: { amount: true }
       });
 
@@ -231,6 +232,7 @@ export class AiDataService {
       const pendingPOs = await this.prisma.purchaseOrder.aggregate({
         where: {
           companyId,
+          deletedAt: null,
           status: { in: ["DRAFT", "PENDING_APPROVAL", "APPROVED"] },
           ...(!user.hasGlobalAccess && user.branchIds.length > 0
             ? { OR: [{ purchaseRequestId: null }, { purchaseRequest: { branchId: null } }, { purchaseRequest: { branchId: { in: user.branchIds } } }] }
@@ -243,6 +245,7 @@ export class AiDataService {
       const rawMaterials = await this.prisma.inventoryItem.findMany({
         where: {
           companyId,
+          deletedAt: null,
           status: "ACTIVE",
           product: { type: "RAW_MATERIAL" },
           ...this.locationScope(user, { branch: true, farm: true, warehouse: true, site: true })
@@ -265,13 +268,13 @@ export class AiDataService {
     // ── Maintenance ───────────────────────────────────────────
     if (has("maintenance.read")) {
       const breakdowns = await this.prisma.breakdownRecord.findMany({
-        where: { companyId, status: { in: ["REPORTED", "ASSIGNED", "IN_REPAIR"] }, ...this.locationScope(user, { branch: true, farm: true, warehouse: true, site: true }) },
+        where: { companyId, deletedAt: null, status: { in: ["REPORTED", "ASSIGNED", "IN_REPAIR"] }, ...this.locationScope(user, { branch: true, farm: true, warehouse: true, site: true }) },
         select: { severity: true, machine: { select: { name: true } } },
         take: 5
       });
 
       const overdue = await this.prisma.maintenanceSchedule.findMany({
-        where: { companyId, nextDueDate: { lt: new Date() }, status: { not: "CANCELLED" }, ...this.locationScope(user, { branch: true, farm: true, warehouse: true, site: true }) },
+        where: { companyId, deletedAt: null, nextDueDate: { lt: new Date() }, status: { not: "CANCELLED" }, ...this.locationScope(user, { branch: true, farm: true, warehouse: true, site: true }) },
         select: { machine: { select: { name: true } }, nextDueDate: true },
         take: 5
       });

@@ -225,6 +225,7 @@ export function SoyaBatchesPage({ create = false }: { create?: boolean }) {
   const [deleteRow, setDeleteRow] = useState<Record<string, unknown> | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  const [submitError, setSubmitError] = useState("");
 
   async function load() {
     setLoadError("");
@@ -283,30 +284,48 @@ export function SoyaBatchesPage({ create = false }: { create?: boolean }) {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await apiFetch("/soya-processing/batches", {
-      method: "POST",
-      body: JSON.stringify({
-        ...form,
-        productionSiteId: form.productionSiteId || options.productionSites[0]?.id,
-        rawWarehouseId: form.rawWarehouseId || options.warehouses[0]?.id,
-        oilWarehouseId: form.oilWarehouseId || options.warehouses[0]?.id,
-        cakeWarehouseId: form.cakeWarehouseId || options.warehouses[0]?.id,
-        intakeId: form.intakeId || undefined,
-        beanProductId: productBySku(options, "SOYA-BEANS-RAW"),
-        oilProductId: productBySku(options, "SOYA-OIL"),
-        cakeProductId: productBySku(options, "SOYA-CAKE"),
-        beansUsedKg: Number(form.beansUsedKg),
-        oilProducedLitres: Number(form.oilProducedLitres),
-        cakeProducedKg: Number(form.cakeProducedKg),
-        wasteKg: Number(form.wasteKg || 0),
-        laborCost: Number(form.laborCost || 0),
-        packagingCost: Number(form.packagingCost || 0),
-        overheadCost: Number(form.overheadCost || 0),
-        expectedOilSalesValue: Number(form.expectedOilSalesValue || 0),
-        expectedCakeSalesValue: Number(form.expectedCakeSalesValue || 0)
-      })
-    });
-    await load();
+    setSubmitError("");
+    // L-BACK: these three products are resolved by a fixed SKU rather than
+    // picked from a dropdown — if a seed product is ever renamed or
+    // re-SKU'd, productBySku silently returns "" and the create would
+    // otherwise fail with a generic backend "must be a UUID" error instead
+    // of naming which product is missing.
+    const beanProductId = productBySku(options, "SOYA-BEANS-RAW");
+    const oilProductId = productBySku(options, "SOYA-OIL");
+    const cakeProductId = productBySku(options, "SOYA-CAKE");
+    const missing = [!beanProductId && "SOYA-BEANS-RAW", !oilProductId && "SOYA-OIL", !cakeProductId && "SOYA-CAKE"].filter(Boolean);
+    if (missing.length) {
+      setSubmitError(`Product(s) with SKU ${missing.join(", ")} not found — check the product catalog for renamed or missing SKUs.`);
+      return;
+    }
+    try {
+      await apiFetch("/soya-processing/batches", {
+        method: "POST",
+        body: JSON.stringify({
+          ...form,
+          productionSiteId: form.productionSiteId || options.productionSites[0]?.id,
+          rawWarehouseId: form.rawWarehouseId || options.warehouses[0]?.id,
+          oilWarehouseId: form.oilWarehouseId || options.warehouses[0]?.id,
+          cakeWarehouseId: form.cakeWarehouseId || options.warehouses[0]?.id,
+          intakeId: form.intakeId || undefined,
+          beanProductId,
+          oilProductId,
+          cakeProductId,
+          beansUsedKg: Number(form.beansUsedKg),
+          oilProducedLitres: Number(form.oilProducedLitres),
+          cakeProducedKg: Number(form.cakeProducedKg),
+          wasteKg: Number(form.wasteKg || 0),
+          laborCost: Number(form.laborCost || 0),
+          packagingCost: Number(form.packagingCost || 0),
+          overheadCost: Number(form.overheadCost || 0),
+          expectedOilSalesValue: Number(form.expectedOilSalesValue || 0),
+          expectedCakeSalesValue: Number(form.expectedCakeSalesValue || 0)
+        })
+      });
+      await load();
+    } catch (err: any) {
+      setSubmitError(err?.message ?? "Failed to save batch.");
+    }
   }
 
   return (
@@ -331,6 +350,7 @@ export function SoyaBatchesPage({ create = false }: { create?: boolean }) {
             ["expectedCakeSalesValue", "Cake sales value"]
           ].map(([key, label]) => <FormField key={key} label={label}><input className={inputClass} type="number" value={form[key as keyof typeof form]} onChange={(event) => setForm({ ...form, [key]: event.target.value })} /></FormField>)}
           <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white md:col-span-4"><Plus aria-hidden className="h-4 w-4" /> Save batch</button>
+          {submitError && <p className="col-span-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{submitError}</p>}
         </form>
       ) : <Link className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" href="/soya-processing/batches/create"><Plus aria-hidden className="h-4 w-4" /> Create batch</Link>}
       {deleteError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{deleteError}</p>}

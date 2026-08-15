@@ -4,7 +4,7 @@ import { FileInterceptor } from "@nestjs/platform-express";
 import { diskStorage } from "multer";
 import { extname, join } from "path";
 import { mkdirSync } from "fs";
-import { validateAndCleanImageUpload } from "../../common/utils/validate-image-magic";
+import { validateAndCleanDocumentUpload, validateAndCleanImageUpload } from "../../common/utils/validate-image-magic";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { PermissionsGuard } from "../../common/guards/permissions.guard";
 import { RequirePermissions } from "../../common/decorators/permissions.decorator";
@@ -599,6 +599,9 @@ export class HRController {
     @Req() req: Request,
   ) {
     if (!file) throw new BadRequestException("No file uploaded");
+    if (!validateAndCleanDocumentUpload(file.path)) {
+      throw new BadRequestException("Invalid file. Upload a JPEG, PNG, WebP, GIF, or PDF.");
+    }
     return this.svc.uploadEmployeeDocument(user, id, dto, file.filename, ctx(req));
   }
 

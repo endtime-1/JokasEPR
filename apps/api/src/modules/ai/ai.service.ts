@@ -385,7 +385,7 @@ export class AiService {
     }
 
     const feedRecords = await this.prisma.feedConsumptionRecord.findMany({
-      where: { flockBatchId: batchId, companyId: user.companyId, recordDate: { gte: since7 } },
+      where: { flockBatchId: batchId, companyId: user.companyId, deletedAt: null, recordDate: { gte: since7 } },
       orderBy: { recordDate: "asc" },
       select: { recordDate: true, quantityKg: true, costAmount: true },
     });

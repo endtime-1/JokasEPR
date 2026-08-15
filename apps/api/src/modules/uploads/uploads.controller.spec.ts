@@ -38,7 +38,7 @@ describe("UploadsController — cross-tenant file access (C3)", () => {
       ).rejects.toThrow(NotFoundException);
 
       expect(mockPrisma.employee.findFirst).toHaveBeenCalledWith({
-        where: { companyId: "company-1", photoUrl: "/api/v1/uploads/employees/emp-123-abc.jpg" },
+        where: { companyId: "company-1", deletedAt: null, photoUrl: "/api/v1/uploads/employees/emp-123-abc.jpg" },
         select: { id: true }
       });
     });
@@ -69,7 +69,7 @@ describe("UploadsController — cross-tenant file access (C3)", () => {
       ).rejects.toThrow(NotFoundException);
 
       expect(mockPrisma.employeeDocument.findFirst).toHaveBeenCalledWith({
-        where: { companyId: "company-1", fileUrl: "/api/v1/uploads/documents/123-456.pdf" },
+        where: { companyId: "company-1", deletedAt: null, fileUrl: "/api/v1/uploads/documents/123-456.pdf" },
         select: { id: true }
       });
     });

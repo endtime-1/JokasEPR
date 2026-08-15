@@ -182,7 +182,7 @@ const MODEL_FIELDS: Record<string, string[]> = {
   soyaQualityCheck: ["companyId", "branchId", "productionSiteId", "deletedAt"],
   soyaProductionCost: ["companyId", "branchId", "productionSiteId", "deletedAt"],
   inventoryItem: ["companyId", "branchId", "farmId", "warehouseId", "productionSiteId", "productId", "deletedAt"],
-  stockMovement: ["companyId", "branchId", "farmId", "warehouseId", "productionSiteId", "productId"],
+  stockMovement: ["companyId", "branchId", "farmId", "warehouseId", "productionSiteId", "productId", "deletedAt"],
   stockBatch: ["companyId", "branchId", "farmId", "warehouseId", "productionSiteId", "productId", "deletedAt"],
   salesOrder: ["companyId", "branchId", "warehouseId", "customerId", "deletedAt"],
   customerStatement: ["companyId", "branchId", "customerId"],
