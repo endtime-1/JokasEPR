@@ -578,6 +578,7 @@ export function CustomersPage({ create = false }: { create?: boolean }) {
           ...form,
           branchId: form.branchId || opts.branches[0]?.id,
           customerGroupId: form.customerGroupId || undefined,
+          email: form.email || undefined,
           creditLimit: form.creditLimit ? Number(form.creditLimit) : 0,
         }),
       });

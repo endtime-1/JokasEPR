@@ -333,7 +333,7 @@ export class PlatformService {
     return {
       companyId: user.companyId,
       deletedAt: null,
-      ...(user.hasGlobalAccess ? {} : { id: { in: user.branchIds } })
+      ...(user.hasGlobalAccess || user.branchIds.length === 0 ? {} : { id: { in: user.branchIds } })
     };
   }
 
@@ -341,7 +341,7 @@ export class PlatformService {
     return {
       companyId: user.companyId,
       deletedAt: null,
-      ...(user.hasGlobalAccess ? {} : { id: { in: user.farmIds } })
+      ...(user.hasGlobalAccess || user.farmIds.length === 0 ? {} : { id: { in: user.farmIds } })
     };
   }
 
@@ -349,7 +349,7 @@ export class PlatformService {
     return {
       companyId: user.companyId,
       deletedAt: null,
-      ...(user.hasGlobalAccess ? {} : { id: { in: user.warehouseIds } })
+      ...(user.hasGlobalAccess || user.warehouseIds.length === 0 ? {} : { id: { in: user.warehouseIds } })
     };
   }
 
@@ -357,7 +357,7 @@ export class PlatformService {
     return {
       companyId: user.companyId,
       deletedAt: null,
-      ...(user.hasGlobalAccess ? {} : { id: { in: user.productionSiteIds } })
+      ...(user.hasGlobalAccess || user.productionSiteIds.length === 0 ? {} : { id: { in: user.productionSiteIds } })
     };
   }
 

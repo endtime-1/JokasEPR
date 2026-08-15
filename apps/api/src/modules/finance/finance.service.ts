@@ -684,6 +684,7 @@ export class FinanceService {
     // hr.service.ts's own payroll paths already use.
     const gross = roundMoney((dto.basicSalary ?? 0) + (dto.allowances ?? 0) - (dto.deductions ?? 0));
     const net = roundMoney(gross - (dto.taxDeduction ?? 0) - (dto.ssnit ?? 0));
+    if (net < 0) throw new BadRequestException("Net pay cannot be negative — check deductions/tax against gross pay.");
 
     const record = await this.prisma.payrollRecord.create({
       data: {

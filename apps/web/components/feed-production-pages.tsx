@@ -276,7 +276,7 @@ export function FeedFormulaListPage() {
                   <select className={inputCls} value={editDraft.status} onChange={(e) => setEditDraft({ ...editDraft, status: e.target.value })}>
                     <option value="DRAFT">Draft</option>
                     <option value="ACTIVE">Active</option>
-                    <option value="INACTIVE">Inactive</option>
+                    <option value="ARCHIVED">Archived</option>
                   </select>
                 </div>
                 <p className="text-xs text-ink/45">To edit ingredients or view costing, open the <Link href={`/feed-production/formulas/${editTarget.id}`} className="text-brand underline">formula detail page</Link>.</p>

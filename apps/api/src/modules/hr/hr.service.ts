@@ -849,6 +849,7 @@ export class HRService {
     const pensionTier2 = dto.pensionTier2 ?? computed.pensionTier2;
     const pensionTier3 = dto.pensionTier3 ?? 0;
     const netPay = roundMoney(grossPay - taxDeduction - ssnit);
+    if (netPay < 0) throw new BadRequestException("Net pay cannot be negative — check deductions/tax against gross pay.");
 
     const reference = await nextRef(this.prisma, user.companyId, "PAY");
 
