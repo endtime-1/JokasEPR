@@ -464,7 +464,7 @@ describe("HRService.reviewLeaveRequest — status-guarded, no double-debit under
   });
 });
 
-describe("HRService.markPayrollPaid — status-guarded, awaited+logged Finance sync (H13)", () => {
+describe("HRService.markPayrollPaid — status-guarded transition (H13); no Finance mirror (C-BACK 2026-08-15)", () => {
   beforeEach(() => jest.clearAllMocks());
 
   const payroll = { id: "pay-1", status: "APPROVED", paymentDate: null, netPay: 1000, reference: "PR-001", employeeName: "Jane", period: "2026-09", employee: { email: "jane@x.com" } };
@@ -473,8 +473,6 @@ describe("HRService.markPayrollPaid — status-guarded, awaited+logged Finance s
     mockPrisma.payrollRecord.findFirst.mockResolvedValue(payroll);
     mockPrisma.payrollRecord.updateMany.mockResolvedValue({ count: 1 });
     mockPrisma.payrollRecord.findUniqueOrThrow.mockResolvedValue({ ...payroll, status: "PAID" });
-    mockPrisma.expenseCategory.findFirst.mockResolvedValue({ id: "cat-1" });
-    mockPrisma.expense.create.mockResolvedValue({ id: "exp-1" });
     mockPrisma.user.findFirst.mockResolvedValue(null);
 
     const service = makeService();
@@ -492,22 +490,19 @@ describe("HRService.markPayrollPaid — status-guarded, awaited+logged Finance s
 
     const service = makeService();
     await expect(service.markPayrollPaid(makeUser(), "pay-1", {})).rejects.toThrow(BadRequestException);
-    expect(mockPrisma.expense.create).not.toHaveBeenCalled();
   });
 
-  it("awaits the Finance expense sync and logs a warning on failure, without failing the mark-paid call itself", async () => {
+  it("does not create a Finance Expense row — PayrollRecord is the single source of truth for payroll cost, summed directly by finance.service.ts", async () => {
     mockPrisma.payrollRecord.findFirst.mockResolvedValue(payroll);
     mockPrisma.payrollRecord.updateMany.mockResolvedValue({ count: 1 });
     mockPrisma.payrollRecord.findUniqueOrThrow.mockResolvedValue({ ...payroll, status: "PAID" });
-    mockPrisma.expenseCategory.findFirst.mockRejectedValue(new Error("DB unavailable"));
     mockPrisma.user.findFirst.mockResolvedValue(null);
-    const warnSpy = jest.spyOn(Logger.prototype, "warn").mockImplementation(() => undefined as never);
 
     const service = makeService();
-    await expect(service.markPayrollPaid(makeUser(), "pay-1", {})).resolves.toBeDefined();
+    await service.markPayrollPaid(makeUser(), "pay-1", {});
 
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("pay-1"));
-    warnSpy.mockRestore();
+    expect(mockPrisma.expenseCategory.findFirst).not.toHaveBeenCalled();
+    expect(mockPrisma.expense.create).not.toHaveBeenCalled();
   });
 });
 

@@ -17,7 +17,7 @@ const mockPrisma = {
   },
   customerPayment: { aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 }, _count: 0 }), count: jest.fn().mockResolvedValue(0) },
   bankAccount: { findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn(), update: jest.fn() },
-  payrollRecord: { findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn().mockResolvedValue(0), create: jest.fn(), update: jest.fn() },
+  payrollRecord: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0), create: jest.fn(), update: jest.fn(), aggregate: jest.fn().mockResolvedValue({ _sum: { netPay: 0 }, _count: 0 }) },
   pettyCashTransaction: { findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn().mockResolvedValue(0), create: jest.fn() },
   invoice: { findMany: jest.fn() },
   poultryCostRecord: { groupBy: jest.fn() },
@@ -333,6 +333,28 @@ describe("FinanceService.dashboard — net profit excludes rejected/cancelled ex
 
     expect(result.data.totalExpenses).toBe(300);
     expect(result.data.netProfit).toBe(700);
+  });
+
+  it("C-BACK (2026-08-15): folds PAID PayrollRecord.netPay into totalExpenses/netProfit, regardless of which module marked it paid", async () => {
+    // PayrollRecord is the single source of truth for payroll cost — no
+    // longer mirrored into Expense by either HR's or Finance's own
+    // markPayrollPaid, so it must be summed directly here or payroll paid
+    // through Finance's screen would silently vanish from net profit.
+    mockPrisma.revenue.aggregate.mockResolvedValue({ _sum: { amount: 1000 }, _count: 1 });
+    mockPrisma.expense.aggregate.mockResolvedValue({ _sum: { amount: 300 }, _count: 1 });
+    mockPrisma.payrollRecord.aggregate.mockResolvedValue({ _sum: { netPay: 150 }, _count: 1 });
+
+    const service = makeService();
+    const result = await service.dashboard(makeUser(), {} as never);
+
+    expect(mockPrisma.payrollRecord.aggregate).toHaveBeenCalledWith({
+      where: { companyId: "company-1", deletedAt: null, status: "PAID" },
+      _sum: { netPay: true },
+      _count: true
+    });
+    expect(result.data.totalPayroll).toBe(150);
+    expect(result.data.totalExpenses).toBe(450);
+    expect(result.data.netProfit).toBe(550);
   });
 
   it("M-BUG: surfaces the real, live accounts-payable figure from Procurement's SupplierInvoice, not just realized expenses", async () => {

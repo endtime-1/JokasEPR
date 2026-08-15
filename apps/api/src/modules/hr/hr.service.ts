@@ -916,19 +916,15 @@ export class HRService {
     }
     const updated = await this.prisma.payrollRecord.findUniqueOrThrow({ where: { id } });
 
-    // H13: previously fire-and-forget (`void ... .catch(() => {})`), so a
-    // sync failure was silently swallowed with no log at all — a payroll
-    // could be marked PAID with no corresponding Finance expense ever
-    // created, breaking reconciliation with zero trace. Awaited now so a
-    // failure is at least visible; still non-fatal to the payroll-paid
-    // transition itself, since that money has genuinely been paid
-    // regardless of whether the Finance-side mirror succeeded.
-    try {
-      await this.createPayrollExpense(user, row, ctx);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Unknown error";
-      this.logger.warn(`Failed to create Finance expense for payroll record ${id} (company ${user.companyId}): ${message}`);
-    }
+    // C-BACK (2026-08-15): this used to mirror the payment into Finance's
+    // Expense table — but Finance's own markPayrollPaid never did the same,
+    // so Cash Flow (which sums Expense AND PayrollRecord independently)
+    // double-counted payroll paid through HR while dashboard/P&L net-profit
+    // (which only reads Expense) never saw payroll paid through Finance at
+    // all. PayrollRecord is now the single source of truth for payroll cash
+    // cost — dashboard() and generateProfitLoss() in finance.service.ts sum
+    // it directly, the same way generateCashFlow already did, so it's
+    // counted exactly once regardless of which module marks it paid.
 
     // Notify employee
     const empEmail = (row as any).employee?.email;
@@ -1998,33 +1994,6 @@ export class HRService {
     res.setHeader("Content-Type", "text/csv");
     res.setHeader("Content-Disposition", `attachment; filename="payroll-bank-export-${period}.csv"`);
     res.send(csv);
-  }
-
-  private async createPayrollExpense(user: AuthenticatedUser, payroll: any, _ctx: RequestContext) {
-    let category = await this.prisma.expenseCategory.findFirst({ where: { companyId: user.companyId, name: "Payroll", deletedAt: null } });
-    if (!category) {
-      category = await this.prisma.expenseCategory.create({
-        data: { companyId: user.companyId, name: "Payroll", code: "PAYROLL", description: "Staff salary payments", createdById: user.id },
-      });
-    }
-
-    const ref = `PAY-${(payroll.reference ?? payroll.id.slice(0, 8)).slice(0, 22)}`;
-    await this.prisma.expense.create({
-      data: {
-        companyId: user.companyId,
-        categoryId: category.id,
-        reference: ref,
-        amount: payroll.netPay,
-        description: `Payroll: ${payroll.employeeName} — ${payroll.period}`.slice(0, 240),
-        expenseDate: payroll.paymentDate ?? new Date(),
-        paymentMethod: "BANK_TRANSFER" as never,
-        status: "APPROVED" as never,
-        submittedById: user.id,
-        approvedById: user.id,
-        approvedAt: new Date(),
-        createdById: user.id,
-      },
-    });
   }
 
   // ─── HR-D: Disciplinary Records ───────────────────────────────────────────────

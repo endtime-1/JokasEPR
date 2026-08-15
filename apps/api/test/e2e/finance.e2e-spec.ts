@@ -55,6 +55,11 @@ describe("Finance Module (e2e)", () => {
     // entirely (added alongside this), and modelMock()'s bare `{}` default
     // isn't enough on its own since dashboard() reads `._sum.balanceDue`.
     prisma.supplierInvoice.aggregate.mockResolvedValue({ _sum: { balanceDue: 0 }, _count: 0 });
+    // C-BACK (2026-08-15): dashboard()/dashboardChart()/generateProfitLoss()
+    // now sum PayrollRecord directly (it's the single source of truth for
+    // payroll cost, no longer mirrored into Expense) — same modelMock()
+    // bare-{} gap as supplierInvoice.aggregate above.
+    prisma.payrollRecord.aggregate.mockResolvedValue({ _sum: { netPay: 0 }, _count: 0 });
   });
 
   // JwtStrategy.validate() hydrates the real AuthenticatedUser from the DB via

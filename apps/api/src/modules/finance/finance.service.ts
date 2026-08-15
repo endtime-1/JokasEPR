@@ -57,12 +57,19 @@ export class FinanceService {
     const revWhere = { companyId: user.companyId, deletedAt: null, ...this.dateBetween(query, "revenueDate") };
     const supWhere = { companyId: user.companyId, deletedAt: null, ...this.dateBetween(query, "paymentDate") };
     const cusWhere = { companyId: user.companyId, deletedAt: null, ...this.dateBetween(query, "paymentDate") };
+    // C-BACK (2026-08-15): PayrollRecord is the single source of truth for
+    // payroll cash cost (see the comment on hr.service.ts's markPayrollPaid)
+    // — folded into totalExpenses/netProfit here the same way
+    // generateCashFlow already sums it, so net profit doesn't overstate
+    // itself by whatever payroll was paid through Finance's own screen.
+    const payWhere = { companyId: user.companyId, deletedAt: null, status: "PAID" as const, ...this.dateBetween(query, "paymentDate") };
 
-    const [expenses, revenues, supplierPayments, customerPayments, pendingExpenses, bankAccounts, recentExpenses, recentRevenue, accountsPayable] = await Promise.all([
+    const [expenses, revenues, supplierPayments, customerPayments, payrolls, pendingExpenses, bankAccounts, recentExpenses, recentRevenue, accountsPayable] = await Promise.all([
       this.prisma.expense.aggregate({ where: expWhere, _sum: { amount: true }, _count: true }),
       this.prisma.revenue.aggregate({ where: revWhere, _sum: { amount: true }, _count: true }),
       this.prisma.supplierPayment.aggregate({ where: supWhere, _sum: { amount: true }, _count: true }),
       this.prisma.customerPayment.aggregate({ where: cusWhere, _sum: { amount: true }, _count: true }),
+      this.prisma.payrollRecord.aggregate({ where: payWhere, _sum: { netPay: true }, _count: true }),
       this.prisma.expense.count({ where: { companyId: user.companyId, deletedAt: null, status: "PENDING_APPROVAL" } }),
       this.prisma.bankAccount.findMany({ where: { companyId: user.companyId, deletedAt: null, isActive: true }, select: { id: true, accountName: true, bankName: true, currentBalance: true } }),
       this.prisma.expense.findMany({ where: expWhere, orderBy: { createdAt: "desc" }, take: 10, include: { category: { select: { name: true } } } }),
@@ -81,12 +88,14 @@ export class FinanceService {
     ]);
 
     const totalRevenue = money(revenues._sum.amount);
-    const totalExpenses = money(expenses._sum.amount);
+    const totalPayroll = money(payrolls._sum.netPay);
+    const totalExpenses = money(expenses._sum.amount) + totalPayroll;
 
     return {
       data: {
         totalRevenue,
         totalExpenses,
+        totalPayroll,
         netProfit: totalRevenue - totalExpenses,
         totalSupplierPayments: money(supplierPayments._sum.amount),
         totalCustomerPayments: money(customerPayments._sum.amount),
@@ -108,7 +117,7 @@ export class FinanceService {
     const now = new Date();
     const start = new Date(now.getFullYear(), now.getMonth() - months + 1, 1);
 
-    const [revenues, expenses, expByCategory] = await Promise.all([
+    const [revenues, expenses, expByCategory, payrolls] = await Promise.all([
       this.prisma.revenue.findMany({
         where: { companyId: user.companyId, deletedAt: null, revenueDate: { gte: start } },
         select: { revenueDate: true, amount: true }
@@ -121,6 +130,14 @@ export class FinanceService {
         by: ["categoryId"],
         where: { companyId: user.companyId, deletedAt: null, expenseDate: { gte: start }, status: { notIn: ["REJECTED", "CANCELLED"] } },
         _sum: { amount: true }
+      }),
+      // C-BACK (2026-08-15): PayrollRecord is the single source of truth for
+      // payroll cost (see dashboard() above) — folded into the monthly
+      // expense trend the same way, so a month with payroll paid through
+      // Finance doesn't show an artificially low expense total.
+      this.prisma.payrollRecord.findMany({
+        where: { companyId: user.companyId, deletedAt: null, status: "PAID", paymentDate: { gte: start } },
+        select: { paymentDate: true, netPay: true }
       })
     ]);
 
@@ -143,6 +160,13 @@ export class FinanceService {
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
       const b = buckets.find((x) => x.month === key);
       if (b) b.expenses += Number(e.amount);
+    }
+    for (const p of payrolls) {
+      if (!p.paymentDate) continue;
+      const d = new Date(p.paymentDate);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const b = buckets.find((x) => x.month === key);
+      if (b) b.expenses += Number(p.netPay);
     }
 
     const catIds = expByCategory.map((e) => e.categoryId).filter(Boolean) as string[];
@@ -872,16 +896,22 @@ export class FinanceService {
     const end = new Date(dto.endDate);
     end.setHours(23, 59, 59, 999);
 
-    const [revData, expData] = await Promise.all([
+    const [revData, expData, payrollData] = await Promise.all([
       this.prisma.revenue.groupBy({ by: ["source"], where: { companyId: user.companyId, deletedAt: null, revenueDate: { gte: start, lte: end } }, _sum: { amount: true } }),
-      this.prisma.expense.groupBy({ by: ["categoryId"], where: { companyId: user.companyId, deletedAt: null, expenseDate: { gte: start, lte: end }, status: { notIn: ["REJECTED", "CANCELLED"] } }, _sum: { amount: true } })
+      this.prisma.expense.groupBy({ by: ["categoryId"], where: { companyId: user.companyId, deletedAt: null, expenseDate: { gte: start, lte: end }, status: { notIn: ["REJECTED", "CANCELLED"] } }, _sum: { amount: true } }),
+      // C-BACK (2026-08-15): PayrollRecord is the single source of truth for
+      // payroll cost (see dashboard() above) — folded into totalExpenses the
+      // same way, so P&L doesn't overstate net profit by whatever payroll
+      // was paid through Finance's own screen.
+      this.prisma.payrollRecord.aggregate({ where: { companyId: user.companyId, deletedAt: null, status: "PAID", paymentDate: { gte: start, lte: end } }, _sum: { netPay: true } })
     ]);
 
     const totalRevenue = revData.reduce((s, r) => s + money(r._sum.amount), 0);
-    const totalExpenses = expData.reduce((s, e) => s + money(e._sum.amount), 0);
+    const totalPayroll = money(payrollData._sum.netPay);
+    const totalExpenses = expData.reduce((s, e) => s + money(e._sum.amount), 0) + totalPayroll;
     const grossProfit = totalRevenue - totalExpenses;
 
-    const reportData = { revenueBySource: revData, expenseByCategory: expData };
+    const reportData = { revenueBySource: revData, expenseByCategory: expData, payroll: totalPayroll };
     const title = dto.title ?? `P&L ${dto.startDate} to ${dto.endDate}`;
 
     const report = await this.prisma.profitLossReport.create({
