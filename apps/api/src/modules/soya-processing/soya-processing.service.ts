@@ -5,6 +5,7 @@ import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { LookupCacheService } from "../../common/services/lookup-cache.service";
 import { nextRef } from "../../common/next-ref";
+import { withDbRetry } from "../../common/db-retry";
 import {
   CreateSoyaBeanIntakeDto,
   CreateSoyaInternalTransferDto,
@@ -209,9 +210,20 @@ export class SoyaProcessingService {
     this.assertProductionSiteAccess(user, intake.productionSiteId);
     this.assertWarehouseAccess(user, intake.warehouseId);
     const quantityKg = Number(intake.quantityKg);
-    await this.prisma.$transaction(async (tx) => {
+    // Lock order (DB stability audit, 2026-08-16): StockBatch lots first,
+    // then InventoryItem — matches inventory.service.ts's own consumeFifoTx,
+    // the canonical FIFO consumer, closing a cross-module deadlock risk from
+    // the previous (opposite) order. Retry still covers whatever risk
+    // remains from other transient DB errors.
+    await withDbRetry(() => this.prisma.$transaction(async (tx) => {
       const inventory = await tx.inventoryItem.findFirst({ where: { companyId: user.companyId, warehouseId: intake.warehouseId, productId: intake.productId, deletedAt: null } });
       if (inventory) {
+        // Best-effort retirement of the StockBatch lot this intake created
+        // (H3) — floor-guarded on quantityRemaining but not a hard blocker on
+        // the delete itself; StockBatch tracking is deliberately best-effort
+        // in this file (see consumeStockBatchesFifo), so if the lot was
+        // already partially consumed we just leave it as-is.
+        await tx.stockBatch.updateMany({ where: { companyId: user.companyId, warehouseId: intake.warehouseId, productId: intake.productId, batchNumber: intake.receiptNumber.toUpperCase(), quantityRemaining: { gte: quantityKg } }, data: { deletedAt: new Date(), quantityRemaining: { decrement: quantityKg } } });
         // Guarded like every decrement in this file: if the beans this intake
         // added have already moved on (processed into a batch, transferred,
         // sold) there may not be enough left to give back — block the delete
@@ -221,15 +233,9 @@ export class SoyaProcessingService {
           throw new BadRequestException("Cannot delete this intake — its stock has already been used downstream (processed, transferred, or sold), so reversing it would drive inventory negative.");
         }
         await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: intake.branchId, productId: intake.productId, inventoryItemId: inventory.id, fromWarehouseId: intake.warehouseId, warehouseId: intake.warehouseId, productionSiteId: intake.productionSiteId, uomId: inventory.uomId, movementType: "ADJUSTMENT_OUT", quantity: quantityKg, unitCost: Number(intake.unitCost), referenceType: "SoyaBeanIntake", referenceId: intake.id, notes: `Reversal — soya bean intake ${intake.receiptNumber} deleted`, createdById: user.id } });
-        // Best-effort retirement of the StockBatch lot this intake created
-        // (H3) — floor-guarded on quantityRemaining but not a hard blocker on
-        // the delete itself; StockBatch tracking is deliberately best-effort
-        // in this file (see consumeStockBatchesFifo), so if the lot was
-        // already partially consumed we just leave it as-is.
-        await tx.stockBatch.updateMany({ where: { companyId: user.companyId, warehouseId: intake.warehouseId, productId: intake.productId, batchNumber: intake.receiptNumber.toUpperCase(), quantityRemaining: { gte: quantityKg } }, data: { deletedAt: new Date(), quantityRemaining: { decrement: quantityKg } } });
       }
       await tx.soyaBeanIntake.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
-    });
+    }), { label: "SoyaProcessingService.deleteIntake" });
     await this.writeAudit(user, "DELETE", "SoyaBeanIntake", id, `Deleted soya bean intake ${intake.receiptNumber}`, context, { branchId: intake.branchId, warehouseId: intake.warehouseId, productionSiteId: intake.productionSiteId });
     return { data: { id } };
   }
@@ -253,6 +259,14 @@ export class SoyaProcessingService {
   }
 
   async createBatch(user: AuthenticatedUser, dto: CreateSoyaProcessingBatchDto, context: RequestContext) {
+    // Idempotency (DB stability audit, 2026-08-16): mirrors the existing
+    // Payment/SalesOrder/CustomerPayment pattern — a client retry after a
+    // dropped response used to post the same processing run twice, each one
+    // consuming beans and crediting oil/cake output a second time.
+    if (dto.idempotencyKey) {
+      const existing = await this.prisma.soyaProcessingBatch.findFirst({ where: { companyId: user.companyId, idempotencyKey: dto.idempotencyKey, deletedAt: null } });
+      if (existing) return { data: existing };
+    }
     this.assertProductionSiteAccess(user, dto.productionSiteId);
     this.assertWarehouseAccess(user, dto.rawWarehouseId);
     this.assertWarehouseAccess(user, dto.oilWarehouseId);
@@ -279,7 +293,16 @@ export class SoyaProcessingService {
     const oilCost = totalCost * 0.42;
     const cakeCost = totalCost * 0.58;
 
-    const data = await this.prisma.$transaction(async (tx) => {
+    let data;
+    try {
+      data = await withDbRetry(() => this.prisma.$transaction(async (tx) => {
+      // Lock order (DB stability audit, 2026-08-16): StockBatch lots first,
+      // then InventoryItem — matches inventory.service.ts's own
+      // consumeFifoTx, the canonical FIFO consumer, closing a cross-module
+      // deadlock risk from the previous (opposite) order.
+      // H3: best-effort FIFO consumption of bean StockBatch lots — see
+      // consumeStockBatchesFifo for why this doesn't hard-block on shortfall.
+      await this.consumeStockBatchesFifo(tx, user.companyId, dto.rawWarehouseId, dto.beanProductId, dto.beansUsedKg);
       // M10: floor-guarded updateMany prevents concurrent overdraw at the DB
       // level — the pre-check above is a plain read, so a race between two
       // concurrent requests could otherwise both pass it and both decrement.
@@ -290,10 +313,7 @@ export class SoyaProcessingService {
       if (invUpdate.count === 0) {
         throw new BadRequestException("Soya bean stock was modified concurrently — please retry.");
       }
-      // H3: best-effort FIFO consumption of bean StockBatch lots — see
-      // consumeStockBatchesFifo for why this doesn't hard-block on shortfall.
-      await this.consumeStockBatchesFifo(tx, user.companyId, dto.rawWarehouseId, dto.beanProductId, dto.beansUsedKg);
-      const batch = await tx.soyaProcessingBatch.create({ data: { companyId: user.companyId, branchId: site.branchId, productionSiteId: site.id, intakeId: dto.intakeId, beanProductId: dto.beanProductId, batchNumber, beansUsedKg: dto.beansUsedKg, processingDate: dto.processingDate ? new Date(dto.processingDate) : new Date(), status: dto.status ?? "POSTED", createdById: user.id } });
+      const batch = await tx.soyaProcessingBatch.create({ data: { companyId: user.companyId, branchId: site.branchId, productionSiteId: site.id, intakeId: dto.intakeId, beanProductId: dto.beanProductId, batchNumber, beansUsedKg: dto.beansUsedKg, processingDate: dto.processingDate ? new Date(dto.processingDate) : new Date(), status: dto.status ?? "POSTED", idempotencyKey: dto.idempotencyKey, createdById: user.id } });
       await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: site.branchId, productId: dto.beanProductId, inventoryItemId: beanInventory.id, fromWarehouseId: dto.rawWarehouseId, productionSiteId: site.id, uomId: beanProduct.uomId, movementType: "PRODUCTION_INPUT", quantity: dto.beansUsedKg, unitCost: rawBeanCost / dto.beansUsedKg, referenceType: "SoyaProcessingBatch", referenceId: batch.id, notes: `Soya beans issued for ${batch.batchNumber}`, createdById: user.id } });
 
       const oilInventory = await tx.inventoryItem.upsert({ where: { companyId_warehouseId_productId: { companyId: user.companyId, warehouseId: dto.oilWarehouseId, productId: dto.oilProductId } }, update: { quantityOnHand: { increment: dto.oilProducedLitres }, updatedById: user.id }, create: { companyId: user.companyId, branchId: site.branchId, warehouseId: dto.oilWarehouseId, productionSiteId: site.id, productId: dto.oilProductId, uomId: oilProduct.uomId, quantityOnHand: dto.oilProducedLitres, createdById: user.id } });
@@ -311,7 +331,14 @@ export class SoyaProcessingService {
       await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: site.branchId, productId: dto.oilProductId, inventoryItemId: oilInventory.id, toWarehouseId: dto.oilWarehouseId, warehouseId: dto.oilWarehouseId, productionSiteId: site.id, uomId: oilProduct.uomId, movementType: "PRODUCTION_OUTPUT", quantity: dto.oilProducedLitres, unitCost: oilCost / Math.max(dto.oilProducedLitres, 1), referenceType: "SoyaProcessingBatch", referenceId: batch.id, notes: `Soya oil output from ${batch.batchNumber}`, createdById: user.id } });
       await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: site.branchId, productId: dto.cakeProductId, inventoryItemId: cakeInventory.id, toWarehouseId: dto.cakeWarehouseId, warehouseId: dto.cakeWarehouseId, productionSiteId: site.id, uomId: cakeProduct.uomId, movementType: "PRODUCTION_OUTPUT", quantity: dto.cakeProducedKg, unitCost: cakeCost / Math.max(dto.cakeProducedKg, 1), referenceType: "SoyaProcessingBatch", referenceId: batch.id, notes: `Soya cake output from ${batch.batchNumber}`, createdById: user.id } });
       return batch;
-    });
+      }), { label: "SoyaProcessingService.createBatch" });
+    } catch (err: unknown) {
+      if (dto.idempotencyKey && (err as { code?: string })?.code === "P2002") {
+        const existing = await this.prisma.soyaProcessingBatch.findFirst({ where: { companyId: user.companyId, idempotencyKey: dto.idempotencyKey, deletedAt: null } });
+        if (existing) return { data: existing };
+      }
+      throw err;
+    }
     await this.writeAudit(user, "CREATE", "SoyaProcessingBatch", data.id, `Posted soya processing batch ${batchNumber}`, context, { branchId: site.branchId, productionSiteId: site.id });
     return { data };
   }
@@ -354,7 +381,9 @@ export class SoyaProcessingService {
     const beanMovement = await this.prisma.stockMovement.findFirst({ where: { companyId: user.companyId, referenceType: "SoyaProcessingBatch", referenceId: batch.id, movementType: "PRODUCTION_INPUT" } });
     const beansUsedKg = Number(batch.beansUsedKg);
 
-    await this.prisma.$transaction(async (tx) => {
+    // Lock order (DB stability audit, 2026-08-16): StockBatch lots first,
+    // then InventoryItem — see deleteIntake above for why.
+    await withDbRetry(() => this.prisma.$transaction(async (tx) => {
       if (beanMovement?.fromWarehouseId) {
         const beanInventory = await tx.inventoryItem.findFirst({ where: { companyId: user.companyId, warehouseId: beanMovement.fromWarehouseId, productId: batch.beanProductId, deletedAt: null } });
         if (beanInventory) {
@@ -366,20 +395,24 @@ export class SoyaProcessingService {
       for (const output of batch.oilOutputs) {
         const qty = Number(output.quantityLitres);
         const inv = await tx.inventoryItem.findFirst({ where: { companyId: user.companyId, warehouseId: output.warehouseId, productId: output.productId, deletedAt: null } });
+        // Lock order: StockBatch lot first, then the guarded InventoryItem
+        // decrement — see createBatch above for why.
+        await tx.stockBatch.updateMany({ where: { companyId: user.companyId, warehouseId: output.warehouseId, productId: output.productId, batchNumber: `${batch.batchNumber}-OIL`, quantityRemaining: { gte: qty } }, data: { deletedAt: new Date(), quantityRemaining: { decrement: qty } } });
         const guarded = inv ? await tx.inventoryItem.updateMany({ where: { id: inv.id, quantityOnHand: { gte: qty } }, data: { quantityOnHand: { decrement: qty }, updatedById: user.id } }) : { count: 0 };
         if (guarded.count === 0) throw new BadRequestException("Cannot delete this batch — its oil output has already moved on (transferred or sold), so reversing it would drive inventory negative.");
         await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: batch.branchId, productId: output.productId, inventoryItemId: inv!.id, fromWarehouseId: output.warehouseId, warehouseId: output.warehouseId, productionSiteId: batch.productionSiteId, uomId: inv!.uomId, movementType: "ADJUSTMENT_OUT", quantity: qty, referenceType: "SoyaProcessingBatch", referenceId: batch.id, notes: `Reversal — soya processing batch ${batch.batchNumber} deleted`, createdById: user.id } });
-        await tx.stockBatch.updateMany({ where: { companyId: user.companyId, warehouseId: output.warehouseId, productId: output.productId, batchNumber: `${batch.batchNumber}-OIL`, quantityRemaining: { gte: qty } }, data: { deletedAt: new Date(), quantityRemaining: { decrement: qty } } });
         await tx.soyaOilOutput.update({ where: { id: output.id }, data: { deletedAt: new Date() } });
       }
 
       for (const output of batch.cakeOutputs) {
         const qty = Number(output.quantityKg);
         const inv = await tx.inventoryItem.findFirst({ where: { companyId: user.companyId, warehouseId: output.warehouseId, productId: output.productId, deletedAt: null } });
+        // Lock order: StockBatch lot first, then the guarded InventoryItem
+        // decrement — see createBatch above for why.
+        await tx.stockBatch.updateMany({ where: { companyId: user.companyId, warehouseId: output.warehouseId, productId: output.productId, batchNumber: `${batch.batchNumber}-CAKE`, quantityRemaining: { gte: qty } }, data: { deletedAt: new Date(), quantityRemaining: { decrement: qty } } });
         const guarded = inv ? await tx.inventoryItem.updateMany({ where: { id: inv.id, quantityOnHand: { gte: qty } }, data: { quantityOnHand: { decrement: qty }, updatedById: user.id } }) : { count: 0 };
         if (guarded.count === 0) throw new BadRequestException("Cannot delete this batch — its cake output has already moved on (transferred or sold), so reversing it would drive inventory negative.");
         await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: batch.branchId, productId: output.productId, inventoryItemId: inv!.id, fromWarehouseId: output.warehouseId, warehouseId: output.warehouseId, productionSiteId: batch.productionSiteId, uomId: inv!.uomId, movementType: "ADJUSTMENT_OUT", quantity: qty, referenceType: "SoyaProcessingBatch", referenceId: batch.id, notes: `Reversal — soya processing batch ${batch.batchNumber} deleted`, createdById: user.id } });
-        await tx.stockBatch.updateMany({ where: { companyId: user.companyId, warehouseId: output.warehouseId, productId: output.productId, batchNumber: `${batch.batchNumber}-CAKE`, quantityRemaining: { gte: qty } }, data: { deletedAt: new Date(), quantityRemaining: { decrement: qty } } });
         await tx.soyaCakeOutput.update({ where: { id: output.id }, data: { deletedAt: new Date() } });
       }
 
@@ -390,7 +423,7 @@ export class SoyaProcessingService {
       for (const cost of batch.costs) await tx.soyaProductionCost.update({ where: { id: cost.id }, data: { deletedAt: new Date() } });
 
       await tx.soyaProcessingBatch.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
-    });
+    }), { label: "SoyaProcessingService.deleteBatch" });
     await this.writeAudit(user, "DELETE", "SoyaProcessingBatch", id, `Deleted soya processing batch ${batch.batchNumber}`, context, { branchId: batch.branchId, productionSiteId: batch.productionSiteId });
     return { data: { id } };
   }
@@ -464,7 +497,14 @@ export class SoyaProcessingService {
     const batch = await this.requireBatch(user, dto.productionBatchId);
     const product = await this.getProduct(user.companyId, dto.productId);
     const source = await this.requireStock(user.companyId, dto.fromWarehouseId, dto.productId, dto.quantity);
-    const data = await this.prisma.$transaction(async (tx) => {
+    // Lock order (DB stability audit, 2026-08-16): StockBatch lots first,
+    // then InventoryItem — see createBatch above for why.
+    const data = await withDbRetry(() => this.prisma.$transaction(async (tx) => {
+      // H3: best-effort FIFO consumption at the source, and a fresh
+      // StockBatch at the destination carrying the consumed lots' weighted
+      // cost forward — see consumeStockBatchesFifo for why source
+      // consumption doesn't hard-block on shortfall.
+      const consumedSource = await this.consumeStockBatchesFifo(tx, user.companyId, dto.fromWarehouseId, dto.productId, dto.quantity);
       // C1: floor-guarded updateMany prevents concurrent overdraw at the DB
       // level — requireStock above is a plain read, so a race between two
       // concurrent transfers could otherwise both pass it and both decrement.
@@ -475,18 +515,13 @@ export class SoyaProcessingService {
       if (invUpdate.count === 0) {
         throw new BadRequestException("Soya stock was modified concurrently — please retry.");
       }
-      // H3: best-effort FIFO consumption at the source, and a fresh
-      // StockBatch at the destination carrying the consumed lots' weighted
-      // cost forward — see consumeStockBatchesFifo for why source
-      // consumption doesn't hard-block on shortfall.
-      const consumedSource = await this.consumeStockBatchesFifo(tx, user.companyId, dto.fromWarehouseId, dto.productId, dto.quantity);
       const destination = await tx.inventoryItem.upsert({ where: { companyId_warehouseId_productId: { companyId: user.companyId, warehouseId: dto.toWarehouseId, productId: dto.productId } }, update: { quantityOnHand: { increment: dto.quantity }, updatedById: user.id }, create: { companyId: user.companyId, branchId: batch.branchId, warehouseId: dto.toWarehouseId, productionSiteId: dto.toProductionSiteId, productId: dto.productId, uomId: product.uomId, quantityOnHand: dto.quantity, createdById: user.id } });
       const transfer = await tx.soyaInternalTransfer.create({ data: { companyId: user.companyId, branchId: batch.branchId, productionSiteId: batch.productionSiteId, productionBatchId: batch.id, productId: dto.productId, outputType: dto.outputType, fromWarehouseId: dto.fromWarehouseId, toWarehouseId: dto.toWarehouseId, toProductionSiteId: dto.toProductionSiteId, quantity: dto.quantity, status: "COMPLETED", notes: dto.notes, createdById: user.id } });
       await tx.stockBatch.create({ data: { companyId: user.companyId, branchId: batch.branchId, warehouseId: dto.toWarehouseId, productionSiteId: dto.toProductionSiteId, productId: dto.productId, inventoryItemId: destination.id, uomId: product.uomId, batchNumber: `${transfer.id}-TRF`, quantityReceived: dto.quantity, quantityRemaining: dto.quantity, unitCost: consumedSource.unitCost, createdById: user.id } });
       await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: batch.branchId, productId: dto.productId, inventoryItemId: source.id, fromWarehouseId: dto.fromWarehouseId, toWarehouseId: dto.toWarehouseId, toProductionSiteId: dto.toProductionSiteId, uomId: product.uomId, movementType: "TRANSFER", quantity: dto.quantity, referenceType: "SoyaInternalTransfer", referenceId: transfer.id, notes: "Soya internal transfer dispatched", createdById: user.id } });
       await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: batch.branchId, productId: dto.productId, inventoryItemId: destination.id, toWarehouseId: dto.toWarehouseId, warehouseId: dto.toWarehouseId, toProductionSiteId: dto.toProductionSiteId, uomId: product.uomId, movementType: "TRANSFER", quantity: dto.quantity, referenceType: "SoyaInternalTransfer", referenceId: transfer.id, notes: "Soya internal transfer received", createdById: user.id } });
       return transfer;
-    });
+    }), { label: "SoyaProcessingService.createTransfer" });
     await this.writeAudit(user, "TRANSFER", "SoyaInternalTransfer", data.id, "Transferred soya output internally", context, { branchId: batch.branchId, warehouseId: dto.fromWarehouseId, productionSiteId: batch.productionSiteId });
     return { data };
   }
@@ -513,8 +548,13 @@ export class SoyaProcessingService {
     this.assertWarehouseAccess(user, transfer.fromWarehouseId);
     this.assertWarehouseAccess(user, transfer.toWarehouseId);
     const quantity = Number(transfer.quantity);
-    await this.prisma.$transaction(async (tx) => {
+    // Lock order (DB stability audit, 2026-08-16): StockBatch lots first,
+    // then InventoryItem — see deleteIntake above for why.
+    await withDbRetry(() => this.prisma.$transaction(async (tx) => {
       const destination = await tx.inventoryItem.findFirst({ where: { companyId: user.companyId, warehouseId: transfer.toWarehouseId, productId: transfer.productId, deletedAt: null } });
+      // Best-effort retirement of the destination StockBatch lot this
+      // transfer created (H3) — see the equivalent note in deleteIntake.
+      await tx.stockBatch.updateMany({ where: { companyId: user.companyId, warehouseId: transfer.toWarehouseId, productId: transfer.productId, batchNumber: `${transfer.id}-TRF`, quantityRemaining: { gte: quantity } }, data: { deletedAt: new Date(), quantityRemaining: { decrement: quantity } } });
       const guarded = destination ? await tx.inventoryItem.updateMany({ where: { id: destination.id, quantityOnHand: { gte: quantity } }, data: { quantityOnHand: { decrement: quantity }, updatedById: user.id } }) : { count: 0 };
       if (guarded.count === 0) {
         throw new BadRequestException("Cannot delete this transfer — the destination stock has already moved on, so reversing it would drive inventory negative.");
@@ -527,11 +567,8 @@ export class SoyaProcessingService {
         await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: transfer.branchId, productId: transfer.productId, inventoryItemId: source.id, toWarehouseId: transfer.fromWarehouseId, warehouseId: transfer.fromWarehouseId, productionSiteId: transfer.productionSiteId, uomId: source.uomId, movementType: "ADJUSTMENT_IN", quantity, referenceType: "SoyaInternalTransfer", referenceId: transfer.id, notes: "Reversal — soya internal transfer deleted", createdById: user.id } });
       }
 
-      // Best-effort retirement of the destination StockBatch lot this
-      // transfer created (H3) — see the equivalent note in deleteIntake.
-      await tx.stockBatch.updateMany({ where: { companyId: user.companyId, warehouseId: transfer.toWarehouseId, productId: transfer.productId, batchNumber: `${transfer.id}-TRF`, quantityRemaining: { gte: quantity } }, data: { deletedAt: new Date(), quantityRemaining: { decrement: quantity } } });
       await tx.soyaInternalTransfer.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id, status: "CANCELLED" } });
-    });
+    }), { label: "SoyaProcessingService.deleteTransfer" });
     await this.writeAudit(user, "DELETE", "SoyaInternalTransfer", id, "Deleted soya internal transfer", context, { branchId: transfer.branchId, warehouseId: transfer.fromWarehouseId, productionSiteId: transfer.productionSiteId });
     return { data: { id } };
   }
@@ -564,7 +601,12 @@ export class SoyaProcessingService {
     const product = await this.getProduct(user.companyId, dto.productId);
     const source = await this.requireStock(user.companyId, dto.warehouseId, dto.productId, dto.quantity);
     const totalAmount = dto.quantity * dto.unitPrice;
-    const data = await this.prisma.$transaction(async (tx) => {
+    // Lock order (DB stability audit, 2026-08-16): StockBatch lots first,
+    // then InventoryItem — see createBatch above for why.
+    const data = await withDbRetry(() => this.prisma.$transaction(async (tx) => {
+      // H3: best-effort FIFO consumption of the sold lots — see
+      // consumeStockBatchesFifo for why this doesn't hard-block on shortfall.
+      await this.consumeStockBatchesFifo(tx, user.companyId, dto.warehouseId, dto.productId, dto.quantity);
       // C1: floor-guarded updateMany prevents concurrent overdraw at the DB
       // level — requireStock above is a plain read, so a race between two
       // concurrent sales could otherwise both pass it and both decrement,
@@ -576,13 +618,10 @@ export class SoyaProcessingService {
       if (invUpdate.count === 0) {
         throw new BadRequestException("Soya stock was modified concurrently — please retry.");
       }
-      // H3: best-effort FIFO consumption of the sold lots — see
-      // consumeStockBatchesFifo for why this doesn't hard-block on shortfall.
-      await this.consumeStockBatchesFifo(tx, user.companyId, dto.warehouseId, dto.productId, dto.quantity);
       const sale = await tx.soyaSalesLink.create({ data: { companyId: user.companyId, branchId: batch.branchId, productionSiteId: batch.productionSiteId, productionBatchId: batch.id, productId: dto.productId, warehouseId: dto.warehouseId, outputType: dto.outputType, customerName: dto.customerName, quantity: dto.quantity, unitPrice: dto.unitPrice, totalAmount, status: "POSTED", createdById: user.id } });
       await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: batch.branchId, productId: dto.productId, inventoryItemId: source.id, fromWarehouseId: dto.warehouseId, warehouseId: dto.warehouseId, productionSiteId: batch.productionSiteId, uomId: product.uomId, movementType: "SALE_DISPATCH", quantity: dto.quantity, unitCost: dto.unitPrice, referenceType: "SoyaSalesLink", referenceId: sale.id, notes: `Soya ${dto.outputType.toLowerCase()} sale to ${dto.customerName}`, createdById: user.id } });
       return sale;
-    });
+    }), { label: "SoyaProcessingService.createSale" });
     await this.writeAudit(user, "CREATE", "SoyaSalesLink", data.id, "Recorded external soya sale", context, { branchId: batch.branchId, warehouseId: dto.warehouseId, productionSiteId: batch.productionSiteId });
     return { data };
   }

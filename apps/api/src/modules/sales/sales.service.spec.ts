@@ -16,7 +16,7 @@ const mockTx = {
   inventoryItem: { upsert: jest.fn(), findFirst: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
   stockBatch: { create: jest.fn(), findMany: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
   stockMovement: { create: jest.fn() },
-  salesReturn: { update: jest.fn() },
+  salesReturn: { update: jest.fn(), updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
   $executeRaw: jest.fn().mockResolvedValue(undefined)
 };
 
@@ -34,7 +34,7 @@ const mockPrisma = {
   product: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
   salesOrderItem: { findFirst: jest.fn(), groupBy: jest.fn().mockResolvedValue([]), aggregate: jest.fn() },
   salesOrder: { findFirst: jest.fn(), groupBy: jest.fn().mockResolvedValue([]), count: jest.fn() },
-  salesReturn: { aggregate: jest.fn(), create: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
+  salesReturn: { aggregate: jest.fn(), create: jest.fn(), findFirst: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
   $transaction: jest.fn().mockImplementation((cb: (tx: typeof mockTx) => Promise<unknown>) => cb(mockTx))
 };
 
@@ -331,14 +331,15 @@ describe("SalesService — sales returns require a second approver (C5)", () => 
       mockTx.customerCreditLimit.update.mockResolvedValue({});
       mockTx.customerStatement.create.mockResolvedValue({});
       mockTx.customer.findUniqueOrThrow.mockResolvedValue({ id: "cust-1", companyId: "company-1" });
-      mockTx.salesReturn.update.mockResolvedValue({ id: "ret-1", status: "POSTED" });
+      mockTx.salesReturn.updateMany.mockResolvedValue({ count: 1 });
+      mockTx.salesReturn.findUniqueOrThrow.mockResolvedValue({ id: "ret-1", status: "POSTED" });
 
       const service = makeService();
       await service.approveReturn(makeUser({ id: "approver-1" }), "ret-1", {});
 
       expect(mockTx.inventoryItem.upsert).toHaveBeenCalled();
-      expect(mockTx.salesReturn.update).toHaveBeenCalledWith({
-        where: { id: "ret-1" },
+      expect(mockTx.salesReturn.updateMany).toHaveBeenCalledWith({
+        where: { id: "ret-1", status: "REQUESTED" },
         data: expect.objectContaining({ status: "POSTED", approvedById: "approver-1" })
       });
     });
@@ -352,7 +353,8 @@ describe("SalesService — sales returns require a second approver (C5)", () => 
       mockTx.customerCreditLimit.update.mockResolvedValue({});
       mockTx.customerStatement.create.mockResolvedValue({});
       mockTx.customer.findUniqueOrThrow.mockResolvedValue({ id: "cust-1", companyId: "company-1" });
-      mockTx.salesReturn.update.mockResolvedValue({ id: "ret-1", status: "POSTED" });
+      mockTx.salesReturn.updateMany.mockResolvedValue({ count: 1 });
+      mockTx.salesReturn.findUniqueOrThrow.mockResolvedValue({ id: "ret-1", status: "POSTED" });
       mockTx.invoice.findFirst.mockResolvedValue({ id: "inv-1", salesOrderId: "so-1", balanceDue: 80 });
       mockTx.invoice.updateMany.mockResolvedValue({ count: 1 });
       mockTx.invoice.findUniqueOrThrow.mockResolvedValue({ balanceDue: 30 }); // 80 - 50 (the return's totalAmount)
@@ -378,7 +380,8 @@ describe("SalesService — sales returns require a second approver (C5)", () => 
       mockTx.customerCreditLimit.update.mockResolvedValue({});
       mockTx.customerStatement.create.mockResolvedValue({});
       mockTx.customer.findUniqueOrThrow.mockResolvedValue({ id: "cust-1", companyId: "company-1" });
-      mockTx.salesReturn.update.mockResolvedValue({ id: "ret-1", status: "POSTED" });
+      mockTx.salesReturn.updateMany.mockResolvedValue({ count: 1 });
+      mockTx.salesReturn.findUniqueOrThrow.mockResolvedValue({ id: "ret-1", status: "POSTED" });
       mockTx.invoice.findFirst.mockResolvedValue({ id: "inv-1", salesOrderId: "so-1", balanceDue: 50 });
       mockTx.invoice.updateMany.mockResolvedValue({ count: 1 });
       mockTx.invoice.findUniqueOrThrow.mockResolvedValue({ balanceDue: 0 });
@@ -402,7 +405,8 @@ describe("SalesService — sales returns require a second approver (C5)", () => 
       mockTx.customerCreditLimit.update.mockResolvedValue({});
       mockTx.customerStatement.create.mockResolvedValue({});
       mockTx.customer.findUniqueOrThrow.mockResolvedValue({ id: "cust-1", companyId: "company-1" });
-      mockTx.salesReturn.update.mockResolvedValue({ id: "ret-1", status: "POSTED" });
+      mockTx.salesReturn.updateMany.mockResolvedValue({ count: 1 });
+      mockTx.salesReturn.findUniqueOrThrow.mockResolvedValue({ id: "ret-1", status: "POSTED" });
       mockTx.invoice.findFirst.mockResolvedValue({ id: "inv-1", salesOrderId: "so-1", balanceDue: 20 });
       mockTx.invoice.updateMany.mockResolvedValue({ count: 1 });
       mockTx.invoice.findUniqueOrThrow.mockResolvedValue({ balanceDue: 0 });
@@ -425,7 +429,8 @@ describe("SalesService — sales returns require a second approver (C5)", () => 
       mockTx.customerCreditLimit.update.mockResolvedValue({});
       mockTx.customerStatement.create.mockResolvedValue({});
       mockTx.customer.findUniqueOrThrow.mockResolvedValue({ id: "cust-1", companyId: "company-1" });
-      mockTx.salesReturn.update.mockResolvedValue({ id: "ret-1", status: "POSTED" });
+      mockTx.salesReturn.updateMany.mockResolvedValue({ count: 1 });
+      mockTx.salesReturn.findUniqueOrThrow.mockResolvedValue({ id: "ret-1", status: "POSTED" });
 
       const service = makeService();
       await service.approveReturn(makeUser({ id: "approver-1" }), "ret-1", {});
@@ -435,16 +440,36 @@ describe("SalesService — sales returns require a second approver (C5)", () => 
 
     it("rejectReturn sets status REJECTED without touching stock or credit", async () => {
       mockPrisma.salesReturn.findFirst.mockResolvedValue(pendingReturn({ createdById: "creator-1" }));
-      mockPrisma.salesReturn.update.mockResolvedValue({ id: "ret-1", status: "REJECTED" });
+      mockPrisma.salesReturn.updateMany.mockResolvedValue({ count: 1 });
+      mockPrisma.salesReturn.findUniqueOrThrow.mockResolvedValue({ id: "ret-1", status: "REJECTED" });
 
       const service = makeService();
       await service.rejectReturn(makeUser({ id: "approver-1" }), "ret-1", {});
 
-      expect(mockPrisma.salesReturn.update).toHaveBeenCalledWith({
-        where: { id: "ret-1" },
+      expect(mockPrisma.salesReturn.updateMany).toHaveBeenCalledWith({
+        where: { id: "ret-1", status: "REQUESTED" },
         data: expect.objectContaining({ status: "REJECTED", approvedById: "approver-1" })
       });
       expect(mockTx.inventoryItem.upsert).not.toHaveBeenCalled();
+    });
+
+    it("C1 (DB stability audit): a second concurrent approveReturn call is rejected once the first has claimed the row", async () => {
+      mockPrisma.salesReturn.findFirst.mockResolvedValue(pendingReturn({ createdById: "creator-1" }));
+      // Simulates the guarded updateMany matching zero rows because another
+      // concurrent request already flipped status away from REQUESTED.
+      mockTx.salesReturn.updateMany.mockResolvedValue({ count: 0 });
+
+      const service = makeService();
+      await expect(service.approveReturn(makeUser({ id: "approver-1" }), "ret-1", {})).rejects.toThrow(BadRequestException);
+      expect(mockTx.inventoryItem.upsert).not.toHaveBeenCalled();
+    });
+
+    it("C1 (DB stability audit): a second concurrent rejectReturn call is rejected once the first has claimed the row", async () => {
+      mockPrisma.salesReturn.findFirst.mockResolvedValue(pendingReturn({ createdById: "creator-1" }));
+      mockPrisma.salesReturn.updateMany.mockResolvedValue({ count: 0 });
+
+      const service = makeService();
+      await expect(service.rejectReturn(makeUser({ id: "approver-1" }), "ret-1", {})).rejects.toThrow(BadRequestException);
     });
 
     it("M-BUG: a return larger than what the customer owes drives the balance negative (credit owed to them) instead of flooring at zero", async () => {
@@ -458,7 +483,8 @@ describe("SalesService — sales returns require a second approver (C5)", () => 
       mockTx.customerCreditLimit.findUniqueOrThrow.mockResolvedValue({ id: "cl-1", companyId: "company-1", currentBalance: -50 });
       mockTx.customerStatement.create.mockResolvedValue({});
       mockTx.customer.findUniqueOrThrow.mockResolvedValue({ id: "cust-1", companyId: "company-1" });
-      mockTx.salesReturn.update.mockResolvedValue({ id: "ret-1", status: "POSTED" });
+      mockTx.salesReturn.updateMany.mockResolvedValue({ count: 1 });
+      mockTx.salesReturn.findUniqueOrThrow.mockResolvedValue({ id: "ret-1", status: "POSTED" });
 
       const service = makeService();
       await service.approveReturn(makeUser({ id: "approver-1" }), "ret-1", {});
@@ -478,7 +504,8 @@ describe("SalesService — sales returns require a second approver (C5)", () => 
       mockTx.customerCreditLimit.upsert.mockResolvedValue({ id: "cl-1", companyId: "company-1", currentBalance: 0 });
       mockTx.customerStatement.create.mockResolvedValue({});
       mockTx.customer.findUniqueOrThrow.mockResolvedValue({ id: "cust-1", companyId: "company-1" });
-      mockTx.salesReturn.update.mockResolvedValue({ id: "ret-1", status: "POSTED" });
+      mockTx.salesReturn.updateMany.mockResolvedValue({ count: 1 });
+      mockTx.salesReturn.findUniqueOrThrow.mockResolvedValue({ id: "ret-1", status: "POSTED" });
 
       const service = makeService();
       await service.approveReturn(makeUser({ id: "approver-1" }), "ret-1", {});
@@ -496,7 +523,8 @@ describe("SalesService — sales returns require a second approver (C5)", () => 
       mockTx.customerCreditLimit.upsert.mockResolvedValue({ id: "cl-1", companyId: "company-1", currentBalance: 0 });
       mockTx.customerStatement.create.mockResolvedValue({});
       mockTx.customer.findUniqueOrThrow.mockResolvedValue({ id: "cust-1", companyId: "company-1" });
-      mockTx.salesReturn.update.mockResolvedValue({ id: "ret-1", status: "POSTED" });
+      mockTx.salesReturn.updateMany.mockResolvedValue({ count: 1 });
+      mockTx.salesReturn.findUniqueOrThrow.mockResolvedValue({ id: "ret-1", status: "POSTED" });
       mockPrisma.revenue.create.mockRejectedValueOnce(new Error("DB unavailable"));
 
       const service = makeService();

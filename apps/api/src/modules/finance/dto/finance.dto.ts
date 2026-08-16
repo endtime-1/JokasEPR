@@ -381,6 +381,15 @@ export class CreateCustomerPaymentDto {
   @MaxLength(60)
   invoiceRef?: string;
 
+  // Medium (DB stability audit, 2026-08-16): optional link to a real Sales
+  // Invoice — when given, the payment actually reduces Invoice.balanceDue
+  // (and the linked SalesOrder's), mirroring the SupplierInvoice link on
+  // CreateSupplierPaymentDto. invoiceRef stays as free text for customers
+  // not tracked as a real Invoice.
+  @IsOptional()
+  @IsUUID()
+  invoiceId?: string;
+
   @IsOptional()
   @IsUUID()
   bankAccountId?: string;

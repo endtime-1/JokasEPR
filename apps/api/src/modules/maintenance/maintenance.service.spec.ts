@@ -98,6 +98,32 @@ describe("MaintenanceService.createRecord — cross-tenant scheduleId guard (H4)
     expect(mockPrisma.maintenanceSchedule.findFirst).not.toHaveBeenCalled();
     expect(mockPrisma.maintenanceRecord.create).toHaveBeenCalled();
   });
+
+  it("High (DB stability audit, 2026-08-16): runs the record create and schedule advance inside one transaction — same fix shape as createBreakdown", async () => {
+    mockPrisma.maintenanceSchedule.findFirst.mockResolvedValue({ id: "sched-1", companyId: "company-1" });
+    mockPrisma.maintenanceRecord.create.mockResolvedValue({ id: "rec-1", maintenanceDate: new Date() });
+
+    const service = makeService();
+    await service.createRecord(
+      makeUser(),
+      { machineId: "mach-1", scheduleId: "sched-1", nextDueDate: "2026-09-01", maintenanceType: "PREVENTIVE" } as never,
+      {}
+    );
+
+    expect(mockPrisma.$transaction).toHaveBeenCalled();
+  });
+
+  it("High (DB stability audit, 2026-08-16): rolls back the record create when the schedule advance fails, instead of leaving the record COMPLETED with a stale schedule", async () => {
+    mockPrisma.maintenanceSchedule.findFirst.mockResolvedValue({ id: "sched-1", companyId: "company-1" });
+    mockPrisma.maintenanceRecord.create.mockResolvedValue({ id: "rec-1", maintenanceDate: new Date() });
+    mockPrisma.maintenanceSchedule.update.mockRejectedValueOnce(new Error("db blip"));
+
+    const service = makeService();
+    await expect(
+      service.createRecord(makeUser(), { machineId: "mach-1", scheduleId: "sched-1", nextDueDate: "2026-09-01", maintenanceType: "PREVENTIVE" } as never, {})
+    ).rejects.toThrow("db blip");
+    expect(mockAudit.write).not.toHaveBeenCalled();
+  });
 });
 
 describe("MaintenanceService.dashboard — does not mask query failures as an all-zero payload (M1)", () => {

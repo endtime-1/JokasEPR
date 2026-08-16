@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { AuthenticatedUser } from "@jokas/shared";
 import { Prisma, FeedProductionOrderStatus } from "@prisma/client";
 import { nextRef } from "../../common/next-ref";
+import { withDbRetry } from "../../common/db-retry";
 import { validateEnumFilter } from "../../common/utils/validate-enum-filter";
 import { AuditService } from "../audit/audit.service";
 import { LookupCacheService } from "../../common/services/lookup-cache.service";
@@ -302,7 +303,7 @@ export class FeedProductionService {
 
   async updateFormulaIngredient(user: AuthenticatedUser, formulaId: string, ingredientId: string, dto: UpdateFeedFormulaIngredientDto, context: RequestContext) {
     const formula = await this.requireFormula(user, formulaId);
-    const row = await this.prisma.feedFormulaIngredient.findFirst({ where: { id: ingredientId, formulaId, companyId: user.companyId } });
+    const row = await this.prisma.feedFormulaIngredient.findFirst({ where: { id: ingredientId, formulaId, companyId: user.companyId, deletedAt: null } });
     if (!row) throw new NotFoundException("Ingredient not found");
     const updated = await this.prisma.feedFormulaIngredient.update({
       where: { id: ingredientId },
@@ -317,7 +318,7 @@ export class FeedProductionService {
 
   async deleteFormulaIngredient(user: AuthenticatedUser, formulaId: string, ingredientId: string, context: RequestContext) {
     const formula = await this.requireFormula(user, formulaId);
-    const row = await this.prisma.feedFormulaIngredient.findFirst({ where: { id: ingredientId, formulaId, companyId: user.companyId } });
+    const row = await this.prisma.feedFormulaIngredient.findFirst({ where: { id: ingredientId, formulaId, companyId: user.companyId, deletedAt: null } });
     if (!row) throw new NotFoundException("Ingredient not found");
     // H4: soft delete to preserve formula history and audit trail
     await this.prisma.feedFormulaIngredient.update({ where: { id: ingredientId }, data: { deletedAt: new Date() } });
@@ -486,13 +487,25 @@ export class FeedProductionService {
   }
 
   async createBatch(user: AuthenticatedUser, dto: CreateFeedProductionBatchDto, context: RequestContext) {
+    // Idempotency (DB stability audit, 2026-08-16): mirrors the existing
+    // Payment/SalesOrder/CustomerPayment pattern — a client retry after a
+    // dropped response used to post the same production run twice, each one
+    // consuming raw materials and crediting finished goods a second time.
+    if (dto.idempotencyKey) {
+      const existing = await this.findBatchByIdempotencyKey(user.companyId, dto.idempotencyKey);
+      if (existing) return { data: existing };
+    }
     this.assertWarehouseAccess(user, dto.rawMaterialWarehouseId);
     this.assertWarehouseAccess(user, dto.finishedWarehouseId);
     const order = await this.getOrderForBatch(user, dto.productionOrderId);
     const formula = order.formula;
     const inputQuantityKg = dto.producedQuantityKg + (dto.wastageKg ?? 0);
 
-    // H7: enforce planned quantity cap — prevent unlimited batches from one order
+    // H7: enforce planned quantity cap — prevent unlimited batches from one
+    // order. Fast-fail UX check only, so an obviously-over-cap request
+    // doesn't waste the material-availability check below — the real,
+    // race-safe guard is the locked re-check inside the transaction further
+    // down (DB stability audit, 2026-08-16).
     const produced = await this.prisma.feedProductionBatch.aggregate({
       where: { companyId: user.companyId, productionOrderId: order.id, deletedAt: null },
       _sum: { producedQuantityKg: true }
@@ -523,7 +536,36 @@ export class FeedProductionService {
     const totalCost = rawMaterialCost + (dto.laborCost ?? 0) + (dto.packagingCost ?? 0) + (dto.overheadCost ?? 0);
     const unitCost = totalCost / Math.max(dto.producedQuantityKg, 1);
 
-    const data = await this.prisma.$transaction(async (tx) => {
+    // Lock order (DB stability audit, 2026-08-16): the raw-material
+    // consumption loop below now locks StockBatch lots before InventoryItem,
+    // matching inventory.service.ts's own consumeFifoTx. The finished-goods
+    // side still upserts InventoryItem before creating a brand-new StockBatch
+    // row, which doesn't contend with any existing StockBatch lock. Retry
+    // remains as a backstop for whatever transient DB errors remain.
+    let data;
+    try {
+      data = await withDbRetry(() => this.prisma.$transaction(async (tx) => {
+      // High (DB stability audit, 2026-08-16): the planned-quantity cap
+      // above is a plain read-then-compare outside any lock — two concurrent
+      // createBatch calls against the same order could both read the same
+      // alreadyProducedKg, both pass the check, and jointly overshoot the
+      // plan (raw materials stay protected by their own floor-guarded
+      // decrements below; only this soft plan/costing cap was bypassable).
+      // Locking the order row for the rest of this transaction and
+      // re-checking against a fresh sum closes the race — the same
+      // SELECT...FOR UPDATE idiom already used for poultry's live-bird-count
+      // and HR's leave-balance races.
+      await tx.$queryRaw`SELECT id FROM FeedProductionOrder WHERE id = ${order.id} FOR UPDATE`;
+      const lockedProduced = await tx.feedProductionBatch.aggregate({
+        where: { companyId: user.companyId, productionOrderId: order.id, deletedAt: null },
+        _sum: { producedQuantityKg: true }
+      });
+      const lockedAlreadyProducedKg = Number(lockedProduced._sum.producedQuantityKg ?? 0);
+      if (lockedAlreadyProducedKg + dto.producedQuantityKg > Number(order.plannedQuantityKg)) {
+        throw new BadRequestException(
+          `Batch would exceed the planned quantity of ${Number(order.plannedQuantityKg)} kg. Already produced: ${lockedAlreadyProducedKg} kg.`
+        );
+      }
       const batch = await tx.feedProductionBatch.create({
         data: {
           companyId: user.companyId,
@@ -536,6 +578,7 @@ export class FeedProductionService {
           wastageKg: dto.wastageKg ?? 0,
           productionDate: dto.productionDate ? new Date(dto.productionDate) : new Date(),
           status: "POSTED",
+          idempotencyKey: dto.idempotencyKey,
           createdById: user.id
         }
       });
@@ -544,18 +587,14 @@ export class FeedProductionService {
         const inv = inventoryMap.get(ingredient.ingredientId);
         if (!inv) throw new BadRequestException(`Inventory record not found for ingredient "${ingredient.productName}".`);
 
-        // H2: floor-guarded updateMany prevents concurrent overdraw at the DB level
-        const invUpdate = await tx.inventoryItem.updateMany({
-          where: { id: inv.id, quantityOnHand: { gte: ingredient.quantityKg }, deletedAt: null },
-          data: { quantityOnHand: { decrement: ingredient.quantityKg }, updatedById: user.id }
-        });
-        if (invUpdate.count === 0) {
-          throw new BadRequestException(`Insufficient stock for "${ingredient.productName}" — possibly consumed concurrently. Please retry.`);
-        }
-
+        // Lock order (DB stability audit, 2026-08-16): StockBatch lots first,
+        // then InventoryItem — matches inventory.service.ts's own
+        // consumeFifoTx, the canonical FIFO consumer, closing a cross-module
+        // deadlock risk from the previous (opposite) order.
+        //
         // H6/H2 (High-tier): FIFO — consume from oldest StockBatch records first
         // to maintain lot traceability. Each per-lot decrement is floor-guarded
-        // the same way the inventoryItem decrement above it is — a plain update
+        // the same way the inventoryItem decrement below it is — a plain update
         // here let a concurrent consumer of the same lot drive quantityRemaining
         // negative even though quantityOnHand was correctly protected. And if
         // the lots on hand sum to less than what's needed (data already out of
@@ -584,6 +623,15 @@ export class FeedProductionService {
         }
         if (remaining > 0) {
           throw new BadRequestException(`Stock batches on hand for "${ingredient.productName}" cover only ${(ingredient.quantityKg - remaining).toFixed(2)}kg of the required ${ingredient.quantityKg}kg — inventory and lot records are out of sync. Please investigate before retrying.`);
+        }
+
+        // H2: floor-guarded updateMany prevents concurrent overdraw at the DB level
+        const invUpdate = await tx.inventoryItem.updateMany({
+          where: { id: inv.id, quantityOnHand: { gte: ingredient.quantityKg }, deletedAt: null },
+          data: { quantityOnHand: { decrement: ingredient.quantityKg }, updatedById: user.id }
+        });
+        if (invUpdate.count === 0) {
+          throw new BadRequestException(`Insufficient stock for "${ingredient.productName}" — possibly consumed concurrently. Please retry.`);
         }
 
         await tx.feedRawMaterialUsage.create({
@@ -699,13 +747,30 @@ export class FeedProductionService {
       });
       await tx.feedProductionOrder.update({ where: { id: order.id }, data: { status: "COMPLETED", updatedById: user.id } });
       return batch;
-    });
+      }), { label: "FeedProductionService.postProduction" });
+    } catch (err: unknown) {
+      if (dto.idempotencyKey && (err as { code?: string })?.code === "P2002") {
+        const existing = await this.findBatchByIdempotencyKey(user.companyId, dto.idempotencyKey);
+        if (existing) return { data: existing };
+      }
+      throw err;
+    }
 
     // M8: invalidate options cache so new batch appears in form dropdowns immediately
     this.lookupCache.invalidate(`feed:opts:${user.companyId}:`);
 
     await this.writeAudit(user, "CREATE", "FeedProductionBatch", data.id, `Posted feed production batch ${batchNumber}`, context, { branchId: order.branchId, warehouseId: dto.finishedWarehouseId, productionSiteId: order.productionSiteId });
     return { data: { ...data, costing: { rawMaterialCost, totalCost, unitCost, margin: this.margin(dto.expectedSalesValue ?? 0, totalCost) } } };
+  }
+
+  private async findBatchByIdempotencyKey(companyId: string, idempotencyKey: string) {
+    const batch = await this.prisma.feedProductionBatch.findFirst({ where: { companyId, idempotencyKey, deletedAt: null } });
+    if (!batch) return null;
+    const cost = await this.prisma.feedProductionCost.findFirst({ where: { companyId, productionBatchId: batch.id }, orderBy: { createdAt: "desc" } });
+    const rawMaterialCost = Number(cost?.rawMaterialCost ?? 0);
+    const totalCost = rawMaterialCost + Number(cost?.laborCost ?? 0) + Number(cost?.packagingCost ?? 0) + Number(cost?.overheadCost ?? 0);
+    const unitCost = totalCost / Math.max(Number(batch.producedQuantityKg), 1);
+    return { ...batch, costing: { rawMaterialCost, totalCost, unitCost, margin: this.margin(Number(cost?.expectedSalesValue ?? 0), totalCost) } };
   }
 
   async listBatches(user: AuthenticatedUser, query: FeedProductionQueryDto) {
@@ -1148,7 +1213,7 @@ export class FeedProductionService {
     const conflict = await this.prisma.product.findUnique({ where: { companyId_sku: { companyId: user.companyId, sku } } });
     if (conflict) throw new ConflictException(`SKU "${sku}" is already in use.`);
 
-    const uom = await this.prisma.unitOfMeasure.findFirst({ where: { id: dto.uomId, companyId: user.companyId } });
+    const uom = await this.prisma.unitOfMeasure.findFirst({ where: { id: dto.uomId, companyId: user.companyId, deletedAt: null } });
     if (!uom) throw new NotFoundException("Unit of measure not found.");
 
     const item = await this.prisma.product.create({

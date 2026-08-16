@@ -27,6 +27,10 @@ describe("MarketPlanningService.consumeInventoryTx — atomic guarded decrement 
   beforeEach(() => jest.clearAllMocks());
 
   it("throws instead of decrementing when the guarded updateMany finds insufficient stock", async () => {
+    // Lock order (2026-08-16): StockBatch lots are consumed first, so give
+    // them enough to succeed and let the InventoryItem-level guard be what fails.
+    mockTx.stockBatch.findMany.mockResolvedValue([{ id: "batch-1", quantityRemaining: 10 }]);
+    mockTx.stockBatch.updateMany.mockResolvedValue({ count: 1 });
     mockTx.inventoryItem.updateMany.mockResolvedValue({ count: 0 });
     const service = makeService() as unknown as { consumeInventoryTx: (...args: unknown[]) => Promise<unknown> };
 
@@ -39,8 +43,6 @@ describe("MarketPlanningService.consumeInventoryTx — atomic guarded decrement 
       data: { quantityOnHand: { decrement: 10 }, updatedById: "user-1" }
     });
     expect(mockTx.inventoryItem.findFirstOrThrow).not.toHaveBeenCalled();
-    // Never even looked at lots — the aggregate check already failed.
-    expect(mockTx.stockBatch.findMany).not.toHaveBeenCalled();
   });
 
   it("succeeds, consumes from AVAILABLE lots FIFO, and returns identifying fields when enough stock exists", async () => {
@@ -88,6 +90,54 @@ describe("MarketPlanningService.consumeInventoryTx — atomic guarded decrement 
     await expect(
       service.consumeInventoryTx(mockTx, "company-1", "wh-1", "prod-1", 10, "user-1", "Maize")
     ).rejects.toThrow(/consumed concurrently/);
+  });
+});
+
+// createProductionExecution's happy path has many dependent lookups (plan/
+// formula/product/etc.) — same reasoning as the consumeInventoryTx block
+// above for not exercising it end-to-end. The idempotency pre-check runs
+// before any of those lookups though, so it's cheap to verify in isolation.
+describe("MarketPlanningService.createProductionExecution — idempotency (DB stability audit, 2026-08-16)", () => {
+  const mockPrisma = {
+    productionPlanItem: { findFirst: jest.fn() },
+    feedProductionBatch: { findFirst: jest.fn() },
+    productionExecution: { findFirst: jest.fn() },
+    feedProductionOrder: { findFirst: jest.fn() },
+    feedProductionCost: { findFirst: jest.fn() }
+  };
+  const mockAudit = { write: jest.fn().mockResolvedValue(undefined) };
+
+  function makeService() {
+    return new MarketPlanningService(mockPrisma as never, mockAudit as never);
+  }
+
+  function makeUser(): AuthenticatedUser {
+    return {
+      id: "user-1", companyId: "company-1", email: "u@x.com", fullName: "U",
+      roles: [], permissions: [], branchIds: [], farmIds: [], warehouseIds: ["wh-raw", "wh-fin"], productionSiteIds: [],
+      hasGlobalAccess: true
+    };
+  }
+
+  beforeEach(() => jest.clearAllMocks());
+
+  it("replays the original execution instead of double-processing when the idempotencyKey was already used", async () => {
+    mockPrisma.feedProductionBatch.findFirst.mockResolvedValue({ id: "batch-existing", productionExecutionId: "exec-existing", productionOrderId: "order-existing", producedQuantityKg: 100 });
+    mockPrisma.productionExecution.findFirst.mockResolvedValue({ id: "exec-existing" });
+    mockPrisma.feedProductionOrder.findFirst.mockResolvedValue({ id: "order-existing" });
+    mockPrisma.feedProductionCost.findFirst.mockResolvedValue({ rawMaterialCost: 100, laborCost: 0, packagingCost: 0, overheadCost: 0 });
+
+    const service = makeService();
+    const result = await service.createProductionExecution(
+      makeUser(),
+      { productionPlanItemId: "ppi-1", rawMaterialWarehouseId: "wh-raw", finishedGoodsWarehouseId: "wh-fin", producedQuantityKg: 100, idempotencyKey: "key-1" } as never,
+      {}
+    );
+
+    expect(result.data.execution.id).toBe("exec-existing");
+    // Never touched the productionPlanItem lookup — the very first thing the
+    // real flow does — confirming the replay short-circuits before it.
+    expect(mockPrisma.productionPlanItem.findFirst).not.toHaveBeenCalled();
   });
 });
 

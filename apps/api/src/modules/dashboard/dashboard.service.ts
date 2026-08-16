@@ -4,6 +4,7 @@ import { AuthenticatedUser, PERMISSIONS } from "@jokas/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { endOfDayAccra, startOfDayAccra, startOfMonthAccra, startOfTodayAccra } from "../../common/utils/timezone";
 import { DashboardQueryDto } from "./dto/dashboard-query.dto";
+import { createLimiter } from "../../common/concurrency-limit";
 
 type Card = {
   key: string;
@@ -52,6 +53,16 @@ const CARD_CONFIG: Array<{ key: string; label: string; metricKey: DashboardMetri
 export class DashboardService {
   private readonly logger = new Logger(DashboardService.name);
 
+  // High (DB stability audit, 2026-08-16): computeMetricValues() alone fires
+  // 17 concurrent queries, and executive() calls it twice (current + prior
+  // period) alongside liveCharts()/alerts() in the same Promise.all — around
+  // 46 queries in flight from a single page load, against a 10-connection
+  // pool. Two users loading the dashboard together could queue past the
+  // pool's timeout and starve unrelated requests too. Shared across all
+  // requests (not per-call) so it throttles concurrent *users*, not just
+  // one request's internal fan-out.
+  private readonly dashboardQueryLimit = createLimiter(6);
+
   constructor(private readonly prisma: PrismaService) {}
 
   async options(user: AuthenticatedUser) {
@@ -90,8 +101,8 @@ export class DashboardService {
     const siteF = this.liveSiteFilter(user, {} as DashboardQueryDto);
 
     const [salesAgg, openOrders, totalBirds, pendingAlerts] = await Promise.all([
-      this.prisma.salesOrder.aggregate({ where: { companyId, status: { not: "CANCELLED" }, createdAt: { gte: monthStart }, ...branchF, ...warehouseF }, _sum: { totalAmount: true } }),
-      this.prisma.salesOrder.count({ where: { companyId, status: { in: ["DRAFT", "PENDING_STOCK_APPROVAL", "APPROVED"] }, ...branchF, ...warehouseF } }),
+      this.prisma.salesOrder.aggregate({ where: { companyId, deletedAt: null, status: { not: "CANCELLED" }, createdAt: { gte: monthStart }, ...branchF, ...warehouseF }, _sum: { totalAmount: true } }),
+      this.prisma.salesOrder.count({ where: { companyId, deletedAt: null, status: { in: ["DRAFT", "PENDING_STOCK_APPROVAL", "APPROVED"] }, ...branchF, ...warehouseF } }),
       this.prisma.flockBatch.aggregate({ where: { companyId, status: "ACTIVE", deletedAt: null, ...branchF, ...farmF }, _sum: { openingBirdCount: true } }),
       this.prisma.stockExpiryAlert.count({ where: { companyId, deletedAt: null, daysToExpiry: { lte: 30 }, ...branchF, ...warehouseF, ...siteF } }),
     ]);
@@ -192,11 +203,18 @@ export class DashboardService {
     const farmFilter = user.hasGlobalAccess || user.farmIds.length === 0 ? {} : { farmId: { in: user.farmIds } };
     const siteFilter = user.hasGlobalAccess || user.productionSiteIds.length === 0 ? {} : { productionSiteId: { in: user.productionSiteIds } };
 
-    // Resolve employee record for attendance duty (email-matched, same pattern as myTasks)
+    // Resolve employee record for attendance duty (email-matched, same pattern as myTasks).
+    // Medium (DB stability audit, 2026-08-16): this used to end in
+    // .catch(() => null) — the identical silent-zero anti-pattern H23
+    // explicitly removed everywhere else in this file, just missed here. A
+    // real DB failure rendered indistinguishably from "no employee linked,"
+    // silently hiding the attendance duty section instead of surfacing an
+    // error. Left uncaught now so a genuine failure reaches Nest's global
+    // exception filter as a real 500, same as every other query in this method.
     const selfEmployee = await this.prisma.employee.findFirst({
       where: { companyId: user.companyId, email: user.email, deletedAt: null },
       select: { id: true },
-    }).catch(() => null);
+    });
 
     // L-BUG (2026-08-13): none of these "done today" counts filtered
     // deletedAt — a mortality/feed/egg/etc. entry that was deleted or
@@ -222,7 +240,7 @@ export class DashboardService {
         ? this.prisma.feedProductionBatch.count({ where: { ...base, deletedAt: null, ...siteFilter, createdAt: dateRange } }).catch(() => -1)
         : Promise.resolve(-1),
       canSales
-        ? this.prisma.salesOrder.count({ where: { ...base, createdAt: dateRange } }).catch(() => -1)
+        ? this.prisma.salesOrder.count({ where: { ...base, deletedAt: null, createdAt: dateRange } }).catch(() => -1)
         : Promise.resolve(-1),
       canStock
         ? this.prisma.stockMovement.count({ where: { ...base, deletedAt: null, createdAt: dateRange } }).catch(() => -1)
@@ -411,10 +429,13 @@ export class DashboardService {
       // reject now and propagate up through executive()'s own try/catch
       // (see below) turns a wrong number into a visible 500, which is the
       // correct failure mode for a financial/operational KPI.
-      this.prisma.flockBatch.aggregate({ where: { companyId: cid, status: "ACTIVE", deletedAt: null, ...farmF }, _sum: { openingBirdCount: true } })
-        .then(r => Number(r._sum.openingBirdCount ?? 0)),
+      //
+      // High (DB stability audit, 2026-08-16): each query below is now
+      // gated through dashboardQueryLimit — see the field comment for why.
+      this.dashboardQueryLimit.run(() => this.prisma.flockBatch.aggregate({ where: { companyId: cid, status: "ACTIVE", deletedAt: null, ...farmF }, _sum: { openingBirdCount: true } })
+        .then(r => Number(r._sum.openingBirdCount ?? 0))),
 
-      this.prisma.flockBatch.count({ where: { companyId: cid, status: "ACTIVE", deletedAt: null, ...farmF } }),
+      this.dashboardQueryLimit.run(() => this.prisma.flockBatch.count({ where: { companyId: cid, status: "ACTIVE", deletedAt: null, ...farmF } })),
 
       // L-BUG (2026-08-13): none of these five aggregates filtered
       // deletedAt — a soft-deleted egg/mortality/feed/soya/production
@@ -422,53 +443,53 @@ export class DashboardService {
       // figures indefinitely. Live symptom: deleting a test flock's
       // mortality and feed records left the KPI tiles still showing the
       // old numbers with no live birds behind them.
-      this.prisma.eggProductionRecord.aggregate({
+      this.dashboardQueryLimit.run(() => this.prisma.eggProductionRecord.aggregate({
         where: { companyId: cid, deletedAt: null, ...farmF, recordDate: dateRange },
         _sum: { goodEggs: true, crackedEggs: true, dirtyEggs: true, brokenEggs: true, rejectedEggs: true }
       }).then(r => {
         const s = r._sum;
         return [s.goodEggs, s.crackedEggs, s.dirtyEggs, s.brokenEggs, s.rejectedEggs].reduce((acc: number, v) => acc + Number(v ?? 0), 0);
-      }),
+      })),
 
-      this.prisma.mortalityRecord.aggregate({
+      this.dashboardQueryLimit.run(() => this.prisma.mortalityRecord.aggregate({
         where: { companyId: cid, deletedAt: null, ...farmF, recordDate: dateRange },
         _sum: { birdCount: true }
-      }).then(r => Number(r._sum.birdCount ?? 0)),
+      }).then(r => Number(r._sum.birdCount ?? 0))),
 
-      this.prisma.feedConsumptionRecord.aggregate({
+      this.dashboardQueryLimit.run(() => this.prisma.feedConsumptionRecord.aggregate({
         where: { companyId: cid, deletedAt: null, ...farmF, recordDate: dateRange },
         _sum: { quantityKg: true }
-      }).then(r => Number(r._sum.quantityKg ?? 0)),
+      }).then(r => Number(r._sum.quantityKg ?? 0))),
 
-      this.prisma.feedProductionBatch.aggregate({
+      this.dashboardQueryLimit.run(() => this.prisma.feedProductionBatch.aggregate({
         where: { companyId: cid, deletedAt: null, ...siteF, createdAt: dateRange },
         _sum: { producedQuantityKg: true }
-      }).then(r => Number(r._sum.producedQuantityKg ?? 0)),
+      }).then(r => Number(r._sum.producedQuantityKg ?? 0))),
 
-      this.prisma.soyaBeanIntake.aggregate({
+      this.dashboardQueryLimit.run(() => this.prisma.soyaBeanIntake.aggregate({
         where: { companyId: cid, deletedAt: null, ...siteF, receivedAt: dateRange },
         _sum: { quantityKg: true }
-      }).then(r => Number(r._sum.quantityKg ?? 0)),
+      }).then(r => Number(r._sum.quantityKg ?? 0))),
 
-      this.prisma.soyaOilOutput.aggregate({
+      this.dashboardQueryLimit.run(() => this.prisma.soyaOilOutput.aggregate({
         where: { companyId: cid, ...siteF, deletedAt: null, createdAt: dateRange },
         _sum: { quantityLitres: true }
-      }).then(r => Number(r._sum.quantityLitres ?? 0)),
+      }).then(r => Number(r._sum.quantityLitres ?? 0))),
 
-      this.prisma.soyaCakeOutput.aggregate({
+      this.dashboardQueryLimit.run(() => this.prisma.soyaCakeOutput.aggregate({
         where: { companyId: cid, ...siteF, deletedAt: null, createdAt: dateRange },
         _sum: { quantityKg: true }
-      }).then(r => Number(r._sum.quantityKg ?? 0)),
+      }).then(r => Number(r._sum.quantityKg ?? 0))),
 
-      this.prisma.salesOrder.aggregate({
-        where: { companyId: cid, ...branchF, status: { not: "CANCELLED" }, orderDate: dateRange },
+      this.dashboardQueryLimit.run(() => this.prisma.salesOrder.aggregate({
+        where: { companyId: cid, deletedAt: null, ...branchF, status: { not: "CANCELLED" }, orderDate: dateRange },
         _sum: { totalAmount: true }
-      }).then(r => Number(r._sum.totalAmount ?? 0)),
+      }).then(r => Number(r._sum.totalAmount ?? 0))),
 
-      this.prisma.salesOrder.aggregate({
-        where: { companyId: cid, ...branchF, status: { not: "CANCELLED" } },
+      this.dashboardQueryLimit.run(() => this.prisma.salesOrder.aggregate({
+        where: { companyId: cid, deletedAt: null, ...branchF, status: { not: "CANCELLED" } },
         _sum: { balanceDue: true }
-      }).then(r => Number(r._sum.balanceDue ?? 0)),
+      }).then(r => Number(r._sum.balanceDue ?? 0))),
 
       // H22: supplierDebt was hardcoded to 0 while this card's customer-side
       // equivalent (debtAgg, immediately above) was already correctly
@@ -477,26 +498,26 @@ export class DashboardService {
       // warehouse/site columns in the schema (unlike SalesOrder), so
       // there's no location filter to apply here — not a bug, matches the
       // purchaseOrder.count query below for the same reason.
-      this.prisma.supplierInvoice.aggregate({
+      this.dashboardQueryLimit.run(() => this.prisma.supplierInvoice.aggregate({
         where: { companyId: cid, deletedAt: null },
         _sum: { balanceDue: true }
-      }).then(r => Number(r._sum.balanceDue ?? 0)),
+      }).then(r => Number(r._sum.balanceDue ?? 0))),
 
       // C4: these four queries previously carried no location filter at all,
       // unlike every sibling query in this same Promise.all — a
       // location-restricted user (branch/farm/warehouse/site) saw
       // company-wide inventory valuation and alert counts through the
       // executive dashboard regardless of their actual assignment.
-      this.prisma.stockExpiryAlert.count({ where: { companyId: cid, deletedAt: null, daysToExpiry: { lte: 30 }, ...branchF, ...warehouseF, ...siteF } }),
+      this.dashboardQueryLimit.run(() => this.prisma.stockExpiryAlert.count({ where: { companyId: cid, deletedAt: null, daysToExpiry: { lte: 30 }, ...branchF, ...warehouseF, ...siteF } })),
 
       // L-BUG (2026-08-13): missing deletedAt here too — a deleted feed
       // production order still counted toward "pending production orders".
-      this.prisma.feedProductionOrder.count({ where: { companyId: cid, deletedAt: null, status: { in: ["DRAFT", "APPROVED"] as any[] }, ...branchF, ...siteF } }),
+      this.dashboardQueryLimit.run(() => this.prisma.feedProductionOrder.count({ where: { companyId: cid, deletedAt: null, status: { in: ["DRAFT", "APPROVED"] as any[] }, ...branchF, ...siteF } })),
 
       // PurchaseOrder has no branch/farm/warehouse/site columns in the
       // schema — nothing to scope by, not a bug (mirrors the equivalent
       // query already verified clean in ai-data.service.ts).
-      this.prisma.purchaseOrder.count({ where: { companyId: cid, status: "PENDING_APPROVAL" as any, deletedAt: null } }),
+      this.dashboardQueryLimit.run(() => this.prisma.purchaseOrder.count({ where: { companyId: cid, status: "PENDING_APPROVAL" as any, deletedAt: null } })),
 
       // MaintenanceWorkflowStatus has no OPEN or PENDING value (only
       // SCHEDULED/ASSIGNED/IN_PROGRESS/COMPLETED/CANCELLED/OVERDUE) — the
@@ -509,14 +530,14 @@ export class DashboardService {
       // already used for salesOrder/etc. elsewhere in this same method.
       // L-BUG (2026-08-13): missing deletedAt here too — a deleted
       // maintenance record still counted toward "machine maintenance alerts".
-      this.prisma.maintenanceRecord.count({ where: { companyId: cid, deletedAt: null, status: { notIn: ["COMPLETED", "CANCELLED"] }, ...branchF, ...farmF, ...warehouseF, ...siteF } }),
+      this.dashboardQueryLimit.run(() => this.prisma.maintenanceRecord.count({ where: { companyId: cid, deletedAt: null, status: { notIn: ["COMPLETED", "CANCELLED"] }, ...branchF, ...farmF, ...warehouseF, ...siteF } })),
 
-      this.prisma.aiAlert.count({ where: { companyId: cid, status: "UNREAD" } }),
+      this.dashboardQueryLimit.run(() => this.prisma.aiAlert.count({ where: { companyId: cid, status: "UNREAD" } })),
 
-      this.prisma.stockBatch.findMany({
+      this.dashboardQueryLimit.run(() => this.prisma.stockBatch.findMany({
         where: { companyId: cid, deletedAt: null, status: "AVAILABLE" as any, quantityRemaining: { gt: 0 }, unitCost: { not: null }, ...branchF, ...farmF, ...warehouseF, ...siteF },
         select: { quantityRemaining: true, unitCost: true }
-      }).then(rows => rows.reduce((sum, b) => sum + Number(b.quantityRemaining) * Number(b.unitCost), 0)),
+      }).then(rows => rows.reduce((sum, b) => sum + Number(b.quantityRemaining) * Number(b.unitCost), 0))),
     ]);
 
     return {
@@ -589,7 +610,7 @@ export class DashboardService {
       }),
 
       this.prisma.salesOrder.findMany({
-        where: { companyId: cid, ...branchF, status: { not: "CANCELLED" }, orderDate: dateRange },
+        where: { companyId: cid, deletedAt: null, ...branchF, status: { not: "CANCELLED" }, orderDate: dateRange },
         select: { orderDate: true, branchId: true, totalAmount: true }
       }),
 
@@ -599,7 +620,7 @@ export class DashboardService {
       }),
 
       this.prisma.salesOrder.findMany({
-        where: { companyId: cid, ...branchF, status: { not: "CANCELLED" }, orderDate: dateRange },
+        where: { companyId: cid, deletedAt: null, ...branchF, status: { not: "CANCELLED" }, orderDate: dateRange },
         select: { branchId: true, totalAmount: true }
       }),
     ]);
@@ -733,17 +754,25 @@ export class DashboardService {
 
   // ── Private helpers ───────────────────────────────────────────────────────
 
+  // Low (DB stability audit, 2026-08-16): this used to fire one aggregate
+  // query per card (18 today, fixed by CARD_CONFIG's length, not
+  // data-driven — still a real N+1 shape). A single groupBy on metricKey
+  // gets every card's sum in one round trip.
   private async summaryCards(baseWhere: Prisma.DashboardMetricSnapshotWhereInput): Promise<Card[]> {
-    return Promise.all(
-      CARD_CONFIG.map(async (card) => ({
-        key: card.key,
-        label: card.label,
-        value: await this.sumMetric(baseWhere, card.metricKey),
-        unit: card.unit,
-        tone: card.tone,
-        delta: null,
-      }))
-    );
+    const rows = await this.prisma.dashboardMetricSnapshot.groupBy({
+      by: ["metricKey"],
+      where: baseWhere,
+      _sum: { value: true }
+    });
+    const sums = new Map(rows.map((row) => [row.metricKey, Number(row._sum.value ?? 0)]));
+    return CARD_CONFIG.map((card) => ({
+      key: card.key,
+      label: card.label,
+      value: sums.get(card.metricKey) ?? 0,
+      unit: card.unit,
+      tone: card.tone,
+      delta: null,
+    }));
   }
 
   private async charts(baseWhere: Prisma.DashboardMetricSnapshotWhereInput) {
@@ -777,14 +806,6 @@ export class DashboardService {
       farmPerformanceComparison,
       branchPerformanceComparison
     };
-  }
-
-  private async sumMetric(baseWhere: Prisma.DashboardMetricSnapshotWhereInput, metricKey: DashboardMetricKey) {
-    const result = await this.prisma.dashboardMetricSnapshot.aggregate({
-      where: { ...baseWhere, metricKey },
-      _sum: { value: true }
-    });
-    return Number(result._sum.value ?? 0);
   }
 
   private async trend(baseWhere: Prisma.DashboardMetricSnapshotWhereInput, metricKey: DashboardMetricKey, name: string): Promise<Series[]> {

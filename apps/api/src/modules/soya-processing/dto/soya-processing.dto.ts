@@ -151,6 +151,11 @@ export class CreateSoyaProcessingBatchDto {
   @IsNumber()
   @Min(0)
   expectedCakeSalesValue?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  idempotencyKey?: string;
 }
 
 export class CreateSoyaQualityCheckDto {

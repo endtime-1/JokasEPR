@@ -26,10 +26,18 @@ export class ReportsController {
     return this.reportsService.options(user);
   }
 
-  // Reports run heavy aggregation queries against a pool capped at 5-10
-  // connections (see DATABASE_URL patching in start.js/deploy.yml) — a burst of
-  // requests here can starve every other endpoint of a connection. The global
-  // guard allows 300/60s per IP, far too loose for this specific cost profile.
+  // Medium (DB stability audit, 2026-08-16): this comment previously said
+  // "capped at 5-10" — deploy.yml patches DATABASE_URL to
+  // connection_limit=10&pool_timeout=30 on every deploy, and start.js only
+  // appends its own connection_limit=5&pool_timeout=20 fallback when those
+  // substrings are absent from the existing value, so in the normal deploy
+  // path the resolved limit is 10, not a 5-10 range. That resolution rests
+  // on Passenger auto-loading .env into process.env before start.js runs,
+  // which isn't independently confirmable from repo evidence alone — worth
+  // a live spot-check if this ever needs re-verifying. Reports run heavy
+  // aggregation queries against that pool — a burst of requests here can
+  // starve every other endpoint of a connection. The global guard allows
+  // 300/60s per IP, far too loose for this specific cost profile.
   @Get(":id")
   @RequirePermissions(PERMISSIONS.PLATFORM_READ)
   @Throttle({ default: { limit: 30, ttl: 60_000 } })

@@ -176,6 +176,28 @@ describe("SoyaProcessingService.createBatch — costs from the linked intake and
       data: { quantityOnHand: { decrement: 40 }, updatedById: "user-1" }
     });
   });
+
+  it("idempotency (DB stability audit, 2026-08-16): replays the original batch instead of double-processing when the idempotencyKey was already used", async () => {
+    mockPrisma.soyaProcessingBatch.findFirst.mockResolvedValue({ id: "batch-existing" });
+
+    const service = makeService();
+    const result = await service.createBatch(makeUser(), makeDto({ idempotencyKey: "key-1" }), {});
+
+    expect(result.data).toEqual({ id: "batch-existing" });
+    expect(mockPrisma.soyaBeanIntake.findFirst).not.toHaveBeenCalled();
+    expect(mockTx.soyaProcessingBatch.create).not.toHaveBeenCalled();
+  });
+
+  it("idempotency (DB stability audit, 2026-08-16): replays the original batch when a concurrent duplicate loses the unique-constraint race (P2002)", async () => {
+    mockPrisma.soyaBeanIntake.findFirst.mockResolvedValue({ id: "intake-1", unitCost: 5 });
+    mockPrisma.soyaProcessingBatch.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "batch-existing" });
+    mockTx.soyaProcessingBatch.create.mockRejectedValue({ code: "P2002" });
+
+    const service = makeService();
+    const result = await service.createBatch(makeUser(), makeDto({ idempotencyKey: "key-1" }), {});
+
+    expect(result.data).toEqual({ id: "batch-existing" });
+  });
 });
 
 describe("SoyaProcessingService.createTransfer / createSale — floor-guarded decrement (C1)", () => {

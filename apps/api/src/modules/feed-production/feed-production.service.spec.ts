@@ -4,7 +4,7 @@ import { FeedProductionService } from "./feed-production.service";
 jest.mock("../../common/next-ref", () => ({ nextRef: jest.fn().mockResolvedValue("FB-2026-0001") }));
 
 const mockTx = {
-  feedProductionBatch: { create: jest.fn(), update: jest.fn() },
+  feedProductionBatch: { create: jest.fn(), update: jest.fn(), aggregate: jest.fn().mockResolvedValue({ _sum: { producedQuantityKg: 0 } }) },
   inventoryItem: { updateMany: jest.fn(), upsert: jest.fn() },
   stockBatch: { findMany: jest.fn(), updateMany: jest.fn(), create: jest.fn() },
   feedRawMaterialUsage: { create: jest.fn() },
@@ -12,12 +12,14 @@ const mockTx = {
   finishedFeedStock: { create: jest.fn() },
   feedProductionCost: { create: jest.fn() },
   feedProductionOrder: { update: jest.fn() },
-  feedQualityCheck: { update: jest.fn() }
+  feedQualityCheck: { update: jest.fn() },
+  $queryRaw: jest.fn().mockResolvedValue([])
 };
 
 const mockPrisma = {
   feedProductionOrder: { findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn() },
-  feedProductionBatch: { aggregate: jest.fn() },
+  feedProductionBatch: { aggregate: jest.fn(), findFirst: jest.fn() },
+  feedProductionCost: { findFirst: jest.fn() },
   feedFormula: { findFirst: jest.fn() },
   inventoryItem: { findMany: jest.fn() },
   feedQualityCheck: { findFirst: jest.fn() },
@@ -153,6 +155,50 @@ describe("FeedProductionService.createBatch — per-lot floor guard + full-consu
     await expect(
       service.createBatch(makeUser({ warehouseIds: ["wh-raw", "wh-fin"] }), dto as never, {})
     ).rejects.toThrow(/out of sync/);
+  });
+
+  it("High (DB stability audit, 2026-08-16): re-checks the planned-quantity cap under a row lock, catching a concurrent batch the pre-check's plain read couldn't see", async () => {
+    // The fast-fail pre-check (mockPrisma.feedProductionBatch.aggregate) sees
+    // 0 already produced and passes — but by the time this call reaches the
+    // transaction, a concurrent batch has landed and pushed the real total to
+    // 950/1000kg. The locked re-check (mockTx.feedProductionBatch.aggregate)
+    // must catch what the pre-check missed.
+    mockTx.stockBatch.findMany.mockResolvedValue([{ id: "lot-a", quantityRemaining: 50 }]);
+    mockTx.stockBatch.updateMany.mockResolvedValue({ count: 1 });
+    mockTx.feedProductionBatch.aggregate.mockResolvedValueOnce({ _sum: { producedQuantityKg: 950 } });
+
+    const service = makeService();
+    await expect(
+      service.createBatch(makeUser({ warehouseIds: ["wh-raw", "wh-fin"] }), dto as never, {})
+    ).rejects.toThrow(/exceed the planned quantity/);
+
+    expect(mockTx.$queryRaw).toHaveBeenCalled();
+    expect(mockTx.feedProductionBatch.create).not.toHaveBeenCalled();
+  });
+
+  it("idempotency (DB stability audit, 2026-08-16): replays the original batch instead of double-processing when the idempotencyKey was already used", async () => {
+    mockPrisma.feedProductionBatch.findFirst.mockResolvedValue({ id: "batch-existing", producedQuantityKg: 100 });
+    mockPrisma.feedProductionCost.findFirst.mockResolvedValue({ rawMaterialCost: 100, laborCost: 0, packagingCost: 0, overheadCost: 0, expectedSalesValue: 0 });
+
+    const service = makeService();
+    const result = await service.createBatch(makeUser({ warehouseIds: ["wh-raw", "wh-fin"] }), { ...dto, idempotencyKey: "key-1" } as never, {});
+
+    expect(result.data.id).toBe("batch-existing");
+    expect(mockPrisma.feedProductionOrder.findFirst).not.toHaveBeenCalled();
+    expect(mockTx.feedProductionBatch.create).not.toHaveBeenCalled();
+  });
+
+  it("idempotency (DB stability audit, 2026-08-16): replays the original batch when a concurrent duplicate loses the unique-constraint race (P2002)", async () => {
+    mockPrisma.feedProductionBatch.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "batch-existing", producedQuantityKg: 100 });
+    mockPrisma.feedProductionCost.findFirst.mockResolvedValue(null);
+    mockTx.stockBatch.findMany.mockResolvedValue([{ id: "lot-a", quantityRemaining: 50 }]);
+    mockTx.stockBatch.updateMany.mockResolvedValue({ count: 1 });
+    mockTx.feedProductionBatch.create.mockRejectedValue({ code: "P2002" });
+
+    const service = makeService();
+    const result = await service.createBatch(makeUser({ warehouseIds: ["wh-raw", "wh-fin"] }), { ...dto, idempotencyKey: "key-1" } as never, {});
+
+    expect(result.data.id).toBe("batch-existing");
   });
 });
 

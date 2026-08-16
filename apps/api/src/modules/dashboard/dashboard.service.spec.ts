@@ -186,6 +186,13 @@ describe("DashboardService", () => {
       expect(salesWhere.branchId).toBeUndefined();
       expect(salesWhere.warehouseId).toBeUndefined();
     });
+
+    it("H-BUG (DB stability audit, 2026-08-16): filters deletedAt on both SalesOrder queries — a deleted order no longer inflates monthly revenue or the open-orders count", async () => {
+      await service.summary(makeUser());
+
+      expect(prisma.salesOrder.aggregate.mock.calls[0][0].where.deletedAt).toBeNull();
+      expect(prisma.salesOrder.count.mock.calls[0][0].where.deletedAt).toBeNull();
+    });
   });
 
   describe("myDuties / farmOperationsToday — empty-array convention consistency (H13)", () => {
@@ -390,6 +397,7 @@ describe("DashboardService", () => {
       expect(prisma.mortalityRecord.count.mock.calls[0][0].where.deletedAt).toBeNull();
       expect(prisma.dailyPoultryRecord.count.mock.calls[0][0].where.deletedAt).toBeNull();
       expect(prisma.feedProductionBatch.count.mock.calls[0][0].where.deletedAt).toBeNull();
+      expect(prisma.salesOrder.count.mock.calls[0][0].where.deletedAt).toBeNull();
       expect(prisma.stockMovement.count.mock.calls[0][0].where.deletedAt).toBeNull();
       expect(prisma.soyaBeanIntake.count.mock.calls[0][0].where.deletedAt).toBeNull();
     });

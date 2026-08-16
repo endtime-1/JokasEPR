@@ -8,6 +8,7 @@ import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { ChangePasswordDto } from "./dto/change-password.dto";
 import { LoginDto } from "./dto/login.dto";
+import { withTimeout } from "../../common/with-timeout";
 
 type RequestContext = {
   ipAddress?: string;
@@ -221,7 +222,14 @@ export class AuthService {
     const cached = this.profileCache.get(userId);
     if (cached && cached.expiresAt > Date.now()) return cached.profile;
 
-    const user = await this.prisma.user.findFirst({
+    // Medium (DB stability audit, 2026-08-16): most authenticated requests
+    // never reach this query at all thanks to the 5-minute cache above, but
+    // on a cache miss (fresh login, eviction, or every 5 minutes per user)
+    // this lookup previously had no timeout of its own — during a slow-DB
+    // period it hung for however long the connection took to fail, holding
+    // up that one request's auth check with nothing failing fast. 8s leaves
+    // headroom under typical request-level timeouts upstream.
+    const user = await withTimeout(this.prisma.user.findFirst({
       where: { id: userId, deletedAt: null, status: UserStatus.ACTIVE },
       include: {
         roles: {
@@ -238,7 +246,7 @@ export class AuthService {
         warehouseAccesses: { select: { warehouseId: true } },
         productionSiteAccess: { select: { productionSiteId: true } }
       }
-    });
+    }), 8000, "Auth profile lookup");
 
     if (!user) {
       throw new UnauthorizedException("User is no longer active.");
@@ -272,14 +280,23 @@ export class AuthService {
   }
 
   private async findLoginUser(email: string, companyId?: string) {
+    // Low (DB stability audit, 2026-08-16): neither branch filtered
+    // deletedAt — login() itself still correctly rejects a soft-deleted
+    // match afterward (see the explicit `user.deletedAt` check right
+    // after this call), so this was never an auth bypass. But the
+    // no-companyId branch's "more than one account with this email —
+    // ask which company" disambiguation counted soft-deleted accounts
+    // too: a removed user in Company A sharing an email with an active
+    // user in Company B would wrongly force the companyId prompt on a
+    // login that should have resolved unambiguously.
     if (companyId) {
       return this.prisma.user.findFirst({
-        where: { email: email.toLowerCase(), companyId }
+        where: { email: email.toLowerCase(), companyId, deletedAt: null }
       });
     }
 
     const users = await this.prisma.user.findMany({
-      where: { email: email.toLowerCase() },
+      where: { email: email.toLowerCase(), deletedAt: null },
       take: 2
     });
 

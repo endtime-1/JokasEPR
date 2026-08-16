@@ -483,7 +483,17 @@ export class QualityService {
 
     const reference = await nextRef(this.prisma, user.companyId, "APB");
 
-    const batch = await this.prisma.$transaction(async (tx) => {
+    // Medium (DB stability audit, 2026-08-16): the pre-check above is a
+    // plain read, so two concurrent approveBatch calls for the same check
+    // can both pass it. ApprovedBatch.checkId is @unique, so the loser
+    // still can't corrupt anything — but it used to fail with a raw,
+    // untranslated 500 instead of the same clean "already approved"
+    // message the pre-check gives a slower caller. Catching P2002 here
+    // gives both callers the identical, correct response regardless of
+    // which one actually lost the race.
+    let batch;
+    try {
+      batch = await this.prisma.$transaction(async (tx) => {
       const ab = await tx.approvedBatch.create({
         data: {
           companyId: user.companyId,
@@ -514,7 +524,11 @@ export class QualityService {
         await tx.stockBatch.updateMany({ where: { id: dto.stockBatchId, companyId: user.companyId }, data: { status: "AVAILABLE" } });
       }
       return ab;
-    });
+      });
+    } catch (err: unknown) {
+      if ((err as { code?: string } | undefined)?.code === "P2002") throw new BadRequestException("Batch already approved");
+      throw err;
+    }
 
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "CREATE", entityType: "ApprovedBatch", entityId: batch.id, ...ctx });
     return batch;
@@ -537,7 +551,13 @@ export class QualityService {
 
     const reference = await nextRef(this.prisma, user.companyId, "RJB");
 
-    const batch = await this.prisma.$transaction(async (tx) => {
+    // Medium (DB stability audit, 2026-08-16): see approveBatch above —
+    // RejectedBatch.checkId is @unique, so a losing concurrent call is
+    // safe from corruption but used to surface as a raw 500 instead of
+    // the same clean "already rejected" message.
+    let batch;
+    try {
+      batch = await this.prisma.$transaction(async (tx) => {
       const rb = await tx.rejectedBatch.create({
         data: {
           companyId: user.companyId,
@@ -566,7 +586,11 @@ export class QualityService {
         await tx.stockBatch.updateMany({ where: { id: dto.stockBatchId, companyId: user.companyId }, data: { status: "QUARANTINED" } });
       }
       return rb;
-    });
+      });
+    } catch (err: unknown) {
+      if ((err as { code?: string } | undefined)?.code === "P2002") throw new BadRequestException("Batch already rejected");
+      throw err;
+    }
 
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "CREATE", entityType: "RejectedBatch", entityId: batch.id, ...ctx });
     return batch;

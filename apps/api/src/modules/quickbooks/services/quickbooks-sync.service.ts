@@ -88,21 +88,48 @@ export class QuickBooksSyncService {
     }
   }
 
+  private static readonly ENTITY_OPERATIONS: Record<SyncEntity, QBSyncOperation> = {
+    customers: QBSyncOperation.CUSTOMER_SYNC,
+    vendors: QBSyncOperation.VENDOR_SYNC,
+    items: QBSyncOperation.ITEM_SYNC,
+    invoices: QBSyncOperation.INVOICE_SYNC,
+    payments: QBSyncOperation.PAYMENT_SYNC,
+    bills: QBSyncOperation.BILL_SYNC,
+    expenses: QBSyncOperation.EXPENSE_SYNC
+  };
+
+  // High (DB stability audit, 2026-08-16): this used to have no catch block
+  // at all — the controller's "Sync Now" button fires it via
+  // `setImmediate(...).catch(() => undefined)`, so any failure here (QB API
+  // down, token expired, a single bad record) vanished with zero
+  // operator-visible trace, while its sibling syncAll three lines away
+  // correctly logged to quickBooksSyncLog. Now mirrors syncAll exactly: the
+  // same connection-active check, a real log row, and the failure recorded
+  // before it's swallowed upstream.
   async syncEntity(companyId: string, entity: SyncEntity, triggeredById?: string): Promise<void> {
+    const conn = await this.qbLogger.getConnection(companyId);
+    if (!conn?.isActive) return;
+
     if (!(await this.acquireSyncLock(companyId))) {
       this.logger.warn(`Skipped ${entity} sync for company ${companyId} — another sync is already in progress`);
       return;
     }
+
+    const logId = await this.qbLogger.begin({ companyId, connectionId: conn.id, operation: QuickBooksSyncService.ENTITY_OPERATIONS[entity], triggeredById, entityType: entity });
     try {
       switch (entity) {
-        case "customers": return await this.customerSvc.syncAll(companyId, triggeredById);
-        case "vendors": return await this.vendorSvc.syncAll(companyId, triggeredById);
-        case "items": return await this.itemSvc.syncAll(companyId, triggeredById);
-        case "invoices": return await this.invoiceSvc.syncAll(companyId, triggeredById);
-        case "payments": return await this.paymentSvc.syncAll(companyId, triggeredById);
-        case "bills": return await this.billSvc.syncAll(companyId, triggeredById);
-        case "expenses": return await this.expenseSvc.syncAll(companyId, triggeredById);
+        case "customers": await this.customerSvc.syncAll(companyId, triggeredById); break;
+        case "vendors": await this.vendorSvc.syncAll(companyId, triggeredById); break;
+        case "items": await this.itemSvc.syncAll(companyId, triggeredById); break;
+        case "invoices": await this.invoiceSvc.syncAll(companyId, triggeredById); break;
+        case "payments": await this.paymentSvc.syncAll(companyId, triggeredById); break;
+        case "bills": await this.billSvc.syncAll(companyId, triggeredById); break;
+        case "expenses": await this.expenseSvc.syncAll(companyId, triggeredById); break;
       }
+      await this.qbLogger.succeed(logId, { recordsProcessed: 1 });
+    } catch (err) {
+      await this.qbLogger.fail(logId, (err as Error).message);
+      this.logger.error(`${entity} sync failed for company ${companyId}: ${(err as Error).message}`);
     } finally {
       await this.releaseSyncLock(companyId);
     }

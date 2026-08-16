@@ -225,6 +225,11 @@ export class CreateFeedProductionBatchDto {
   @IsNumber()
   @Min(0)
   expectedSalesValue?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  idempotencyKey?: string;
 }
 
 export class CreateFeedQualityCheckDto {

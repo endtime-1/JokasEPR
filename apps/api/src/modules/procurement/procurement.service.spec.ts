@@ -12,7 +12,7 @@ const mockPrisma = {
   purchaseRequest: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), update: jest.fn().mockResolvedValue({}), updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
   purchaseOrder: { create: jest.fn(), findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
   warehouse: { findFirst: jest.fn() },
-  goodsReceivedNote: { create: jest.fn(), findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), update: jest.fn().mockResolvedValue({}) },
+  goodsReceivedNote: { create: jest.fn(), findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), update: jest.fn().mockResolvedValue({}), updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
   product: { findMany: jest.fn() },
   purchaseOrderItem: { update: jest.fn().mockResolvedValue({}) },
   supplierInvoice: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), update: jest.fn().mockResolvedValue({}), updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
@@ -381,8 +381,8 @@ describe("ProcurementService", () => {
 
       await service.postGRN(makeUser({ warehouseIds: ["wh-1"] }), "grn-1", {});
 
-      expect(mockPrisma.goodsReceivedNote.update).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { id: "grn-1" }, data: expect.objectContaining({ status: "POSTED" }) })
+      expect(mockPrisma.goodsReceivedNote.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: "grn-1", status: "RECEIVED" }, data: expect.objectContaining({ status: "POSTED" }) })
       );
     });
 
@@ -393,7 +393,20 @@ describe("ProcurementService", () => {
 
       await service.postGRN(makeUser({ warehouseIds: ["wh-1"] }), "grn-1", {});
 
-      expect(mockPrisma.goodsReceivedNote.update).toHaveBeenCalled();
+      expect(mockPrisma.goodsReceivedNote.updateMany).toHaveBeenCalled();
+    });
+
+    it("C3 (DB stability audit): a second concurrent postGRN call is rejected once the first has claimed the row", async () => {
+      mockPrisma.goodsReceivedNote.findFirst.mockResolvedValue({ id: "grn-1", companyId: "company-1", status: "QUALITY_PASSED", qualityCheckRequired: true, warehouseId: "wh-1", items: [] });
+      mockPrisma.warehouse.findFirst.mockResolvedValue({ id: "wh-1", branchId: "branch-1", farmId: null, productionSiteId: null });
+      mockPrisma.product.findMany.mockResolvedValue([]);
+      // Simulates the guarded updateMany matching zero rows because another
+      // concurrent request already posted this GRN.
+      mockPrisma.goodsReceivedNote.updateMany.mockResolvedValueOnce({ count: 0 });
+
+      await expect(service.postGRN(makeUser({ warehouseIds: ["wh-1"] }), "grn-1", {})).rejects.toThrow(
+        "This GRN has already been posted."
+      );
     });
   });
 

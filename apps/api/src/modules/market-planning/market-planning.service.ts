@@ -10,6 +10,7 @@ import {
 import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { nextRef } from "../../common/next-ref";
+import { withDbRetry } from "../../common/db-retry";
 import { validateEnumFilter } from "../../common/utils/validate-enum-filter";
 import {
   AdjustTargetItemDto,
@@ -73,9 +74,15 @@ export class MarketPlanningService {
         },
         select: { quantityOnHand: true }
       }),
-      this.prisma.salesOrder.findMany({
-        where: { companyId: user.companyId, deletedAt: null, marketTargetId: { not: null } },
-        include: { items: true }
+      // Medium (DB stability audit, 2026-08-16): this used to load every
+      // SalesOrder ever linked to any market target, with nested line items,
+      // just to sum quantities — unbounded, grows with the company's full
+      // sales history. Only the sum is ever used (salesKg below), so
+      // aggregating on the line-item table directly is both the fix and a
+      // smaller query than the thing it replaces.
+      this.prisma.salesOrderItem.aggregate({
+        where: { salesOrder: { companyId: user.companyId, deletedAt: null, marketTargetId: { not: null } } },
+        _sum: { quantity: true }
       }),
       this.prisma.materialRequirementPlan.findMany({
         where: { ...this.mrpWhere(user, query), totalShortageKg: { gt: 0 } },
@@ -98,7 +105,7 @@ export class MarketPlanningService {
     const availableRawMaterials = mrps.reduce((sum, mrp) => sum + num(mrp.totalAvailableKg), 0);
     const shortageMaterials = mrps.reduce((sum, mrp) => sum + num(mrp.totalShortageKg), 0);
     const producedKg = batches.reduce((sum, batch) => sum + num(batch.producedQuantityKg), 0);
-    const salesKg = sales.flatMap((order) => order.items).reduce((sum, item) => sum + num(item.quantity), 0);
+    const salesKg = num(sales._sum.quantity ?? 0);
     const finishedGoodsKg = finishedInventory.reduce((sum, row) => sum + num(row.quantityOnHand), 0);
 
     return {
@@ -536,27 +543,30 @@ export class MarketPlanningService {
           createdById: user.id
         }
       });
-      const createdItems: Array<{ id: string; rawMaterialId: string; productionPlanItemId: string | null }> = [];
-      for (const item of itemRows) {
-        createdItems.push(
-          await tx.materialRequirementItem.create({
-            data: {
-              companyId: user.companyId,
-              materialRequirementPlanId: created.id,
-              productionPlanItemId: item.productionPlanItemId,
-              finishedProductId: item.finishedProductId,
-              rawMaterialId: item.rawMaterialId,
-              formulaId: item.formulaId,
-              formulaVersionId: item.formulaVersionId,
-              requiredQuantityKg: item.requiredQuantityKg,
-              availableQuantityKg: item.availableQuantityKg,
-              shortageQuantityKg: item.shortageQuantityKg,
-              unitCost: item.unitCost,
-              estimatedShortageCost: item.estimatedShortageCost
-            }
-          })
-        );
-      }
+      // Low (DB stability audit, 2026-08-16): this used to create rows one
+      // at a time in a sequential loop — the very next block already
+      // correctly batches inventoryAvailabilityCheck via createMany.
+      // MySQL's createMany doesn't return the created rows, so the ids
+      // createdItems needs below (for the availability-check link and the
+      // response payload) come from one findMany scoped to this freshly
+      // created plan right after.
+      await tx.materialRequirementItem.createMany({
+        data: itemRows.map((item) => ({
+          companyId: user.companyId,
+          materialRequirementPlanId: created.id,
+          productionPlanItemId: item.productionPlanItemId,
+          finishedProductId: item.finishedProductId,
+          rawMaterialId: item.rawMaterialId,
+          formulaId: item.formulaId,
+          formulaVersionId: item.formulaVersionId,
+          requiredQuantityKg: item.requiredQuantityKg,
+          availableQuantityKg: item.availableQuantityKg,
+          shortageQuantityKg: item.shortageQuantityKg,
+          unitCost: item.unitCost,
+          estimatedShortageCost: item.estimatedShortageCost
+        }))
+      });
+      const createdItems = await tx.materialRequirementItem.findMany({ where: { materialRequirementPlanId: created.id } });
       await tx.inventoryAvailabilityCheck.createMany({
         data: itemRows.map((item) => ({
           companyId: user.companyId,
@@ -732,6 +742,16 @@ export class MarketPlanningService {
   }
 
   async createProductionExecution(user: AuthenticatedUser, dto: CreateProductionExecutionDto, context: RequestContext) {
+    // Idempotency (DB stability audit, 2026-08-16): mirrors the existing
+    // Payment/SalesOrder/CustomerPayment pattern — a client retry after a
+    // dropped response used to post the same production run twice, each one
+    // consuming raw materials and crediting finished goods a second time.
+    // Reuses FeedProductionBatch.idempotencyKey since this endpoint creates
+    // one, same as feed-production.service.ts's own createBatch.
+    if (dto.idempotencyKey) {
+      const existing = await this.findExecutionByIdempotencyKey(user.companyId, dto.idempotencyKey);
+      if (existing) return { data: existing };
+    }
     this.assertWarehouseAccess(user, dto.rawMaterialWarehouseId);
     this.assertWarehouseAccess(user, dto.finishedGoodsWarehouseId);
     const planItem = await this.prisma.productionPlanItem.findFirst({ where: { id: dto.productionPlanItemId, companyId: user.companyId, deletedAt: null } });
@@ -753,7 +773,15 @@ export class MarketPlanningService {
     const unitCost = totalCost / Math.max(dto.producedQuantityKg, 1);
     const product = await this.getProduct(user.companyId, planItem.productId);
 
-    const result = await this.prisma.$transaction(async (tx) => {
+    // Lock order (DB stability audit, 2026-08-16): consumeInventoryTx now
+    // locks StockBatch lots before InventoryItem, matching
+    // inventory.service.ts's own consumeFifoTx. The finished-goods side
+    // still upserts InventoryItem before creating a brand-new StockBatch
+    // row, which doesn't contend with any existing StockBatch lock. Retry
+    // remains as a backstop for whatever transient DB errors remain.
+    let result;
+    try {
+      result = await withDbRetry(() => this.prisma.$transaction(async (tx) => {
       const order = await tx.feedProductionOrder.create({
         data: {
           companyId: user.companyId,
@@ -807,6 +835,7 @@ export class MarketPlanningService {
           marketTargetId: plan.marketTargetId,
           productionPlanId: plan.id,
           productionExecutionId: execution.id,
+          idempotencyKey: dto.idempotencyKey,
           createdById: user.id
         } as Prisma.FeedProductionBatchUncheckedCreateInput
       });
@@ -938,9 +967,31 @@ export class MarketPlanningService {
       const remaining = await tx.productionPlanItem.count({ where: { companyId: user.companyId, productionPlanId: plan.id, deletedAt: null, status: { not: "COMPLETED" } } });
       await tx.productionPlan.update({ where: { id: plan.id }, data: { status: remaining <= 1 ? "COMPLETED" : "IN_PROGRESS", updatedById: user.id } });
       return { execution, order, batch, costing: { rawMaterialCost, totalCost, unitCost } };
-    });
+      }), { label: "MarketPlanningService.executeProduction" });
+    } catch (err: unknown) {
+      if (dto.idempotencyKey && (err as { code?: string })?.code === "P2002") {
+        const existing = await this.findExecutionByIdempotencyKey(user.companyId, dto.idempotencyKey);
+        if (existing) return { data: existing };
+      }
+      throw err;
+    }
     await this.writeAudit(user, "CREATE", "ProductionExecution", result.execution.id, `Completed market-led feed production batch ${batchNumber}`, context, { branchId: plan.branchId, productionSiteId: plan.productionSiteId, warehouseId: dto.finishedGoodsWarehouseId });
     return { data: result };
+  }
+
+  private async findExecutionByIdempotencyKey(companyId: string, idempotencyKey: string) {
+    const batch = await this.prisma.feedProductionBatch.findFirst({ where: { companyId, idempotencyKey, deletedAt: null } });
+    if (!batch || !batch.productionExecutionId) return null;
+    const [execution, order, cost] = await Promise.all([
+      this.prisma.productionExecution.findFirst({ where: { id: batch.productionExecutionId, companyId } }),
+      this.prisma.feedProductionOrder.findFirst({ where: { id: batch.productionOrderId, companyId } }),
+      this.prisma.feedProductionCost.findFirst({ where: { companyId, productionBatchId: batch.id }, orderBy: { createdAt: "desc" } })
+    ]);
+    if (!execution || !order) return null;
+    const rawMaterialCost = Number(cost?.rawMaterialCost ?? 0);
+    const totalCost = rawMaterialCost + Number(cost?.laborCost ?? 0) + Number(cost?.packagingCost ?? 0) + Number(cost?.overheadCost ?? 0);
+    const unitCost = totalCost / Math.max(Number(batch.producedQuantityKg), 1);
+    return { execution, order, batch, costing: { rawMaterialCost, totalCost, unitCost } };
   }
 
   async targetVsActualReport(user: AuthenticatedUser, query: MarketPlanningQueryDto) {
@@ -1149,14 +1200,11 @@ export class MarketPlanningService {
   // feed-production.service.ts's createBatch FIFO loop exactly.
   private async consumeInventoryTx(tx: Tx, companyId: string, warehouseId: string, productId: string, quantity: number, updatedById: string, productName?: string) {
     const label = productName ?? productId;
-    const result = await tx.inventoryItem.updateMany({
-      where: { companyId, warehouseId, productId, quantityOnHand: { gte: quantity } },
-      data: { quantityOnHand: { decrement: quantity }, updatedById }
-    });
-    if (result.count === 0) {
-      throw new BadRequestException("Inventory item is missing or does not have enough stock for this production execution.");
-    }
 
+    // Lock order (DB stability audit, 2026-08-16): StockBatch lots first,
+    // then InventoryItem — matches inventory.service.ts's own consumeFifoTx,
+    // the canonical FIFO consumer, closing a cross-module deadlock risk from
+    // the previous (opposite) order.
     let remaining = quantity;
     const stockBatches = await tx.stockBatch.findMany({
       where: { companyId, warehouseId, productId, quantityRemaining: { gt: 0 }, status: "AVAILABLE", deletedAt: null },
@@ -1176,6 +1224,14 @@ export class MarketPlanningService {
     }
     if (remaining > 0) {
       throw new BadRequestException(`Stock batches on hand for "${label}" cover only ${(quantity - remaining).toFixed(2)}kg of the required ${quantity}kg — inventory and lot records are out of sync, or the remaining stock is quarantined. Please investigate before retrying.`);
+    }
+
+    const result = await tx.inventoryItem.updateMany({
+      where: { companyId, warehouseId, productId, quantityOnHand: { gte: quantity } },
+      data: { quantityOnHand: { decrement: quantity }, updatedById }
+    });
+    if (result.count === 0) {
+      throw new BadRequestException("Inventory item is missing or does not have enough stock for this production execution.");
     }
 
     // Safe to read separately now — the guarded decrement above already

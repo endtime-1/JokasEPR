@@ -17,12 +17,19 @@ const mockPrisma = {
   grievanceRecord: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn(), create: jest.fn() },
   task: { findMany: jest.fn(), count: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
   leaveRequest: { findMany: jest.fn(), count: jest.fn(), create: jest.fn(), findFirst: jest.fn(), updateMany: jest.fn(), findUniqueOrThrow: jest.fn(), groupBy: jest.fn() },
-  leaveBalance: { findUnique: jest.fn(), update: jest.fn(), create: jest.fn() },
+  leaveBalance: { findUnique: jest.fn(), findUniqueOrThrow: jest.fn(), update: jest.fn(), create: jest.fn() },
   leavePolicy: { findFirst: jest.fn() },
   expenseCategory: { findFirst: jest.fn(), create: jest.fn() },
   expense: { create: jest.fn() },
-  user: { findFirst: jest.fn() }
+  user: { findFirst: jest.fn() },
+  $queryRaw: jest.fn().mockResolvedValue([]),
+  $transaction: jest.fn()
 };
+// upsertLeaveBalance runs its read-lock-compute-write inside $transaction —
+// reuse mockPrisma itself as the tx object (same convention as
+// procurement.service.spec.ts) so per-test mocks on mockPrisma.leaveBalance.*
+// are seen through tx.leaveBalance.* too.
+mockPrisma.$transaction.mockImplementation((cb: (tx: typeof mockPrisma) => Promise<unknown>) => cb(mockPrisma));
 
 function makeRes() {
   return { setHeader: jest.fn(), send: jest.fn() };
@@ -461,6 +468,64 @@ describe("HRService.reviewLeaveRequest — status-guarded, no double-debit under
     // The leave balance must not be touched by the loser of the race.
     expect(mockPrisma.leaveBalance.update).not.toHaveBeenCalled();
     expect(mockPrisma.leaveBalance.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("HRService.reviewLeaveRequest → upsertLeaveBalance — row-locked read-compute-write closes the lost-update race (DB stability audit, 2026-08-16)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  function approve() {
+    mockPrisma.leaveRequest.findFirst.mockResolvedValue({ id: "lvr-1", status: "PENDING", employeeId: "emp-1", daysRequested: 3, startDate: new Date("2026-09-01"), leaveType: "ANNUAL" });
+    mockPrisma.leaveRequest.updateMany.mockResolvedValue({ count: 1 });
+    mockPrisma.leaveRequest.findUniqueOrThrow.mockResolvedValue({ id: "lvr-1", status: "APPROVED" });
+    const service = makeService();
+    return service.reviewLeaveRequest(makeUser(), "lvr-1", { decision: "APPROVED" } as never, {});
+  }
+
+  it("locks the existing row with SELECT ... FOR UPDATE before computing the new balance, then writes inside the same transaction", async () => {
+    mockPrisma.leaveBalance.findUnique.mockResolvedValue({ id: "bal-1", pending: 5, taken: 2, entitled: 21, carryOver: 0 });
+    mockPrisma.leaveBalance.findUniqueOrThrow.mockResolvedValue({ id: "bal-1", pending: 5, taken: 2, entitled: 21, carryOver: 0 });
+
+    await approve();
+
+    expect(mockPrisma.$transaction).toHaveBeenCalled();
+    expect(mockPrisma.$queryRaw).toHaveBeenCalled();
+    // APPROVED: pendingDelta -3 (was pending for the request), takenDelta +3.
+    expect(mockPrisma.leaveBalance.update).toHaveBeenCalledWith({
+      where: { id: "bal-1" },
+      data: { pending: 2, taken: 5, remaining: 14 } // 21 + 0 - 5 - 2
+    });
+  });
+
+  it("creates a new balance row when none exists yet for this employee/type/year", async () => {
+    mockPrisma.leaveBalance.findUnique.mockResolvedValue(null);
+    mockPrisma.leavePolicy.findFirst.mockResolvedValue({ daysPerYear: 21 });
+    mockPrisma.leaveBalance.create.mockResolvedValue({ id: "bal-new" });
+
+    await approve();
+
+    expect(mockPrisma.leaveBalance.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ companyId: "company-1", employeeId: "emp-1", entitled: 21, taken: 3, pending: 0 })
+    }));
+    expect(mockPrisma.leaveBalance.update).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the locked-update path instead of losing the delta when a concurrent call created the row first (P2002)", async () => {
+    // Two approvals for the same employee/type/year, both for a brand-new
+    // balance row, racing each other — the second's create loses the unique
+    // constraint. Before this fix that delta would just vanish into the
+    // generic catch; now it's applied via the same locked-update path.
+    mockPrisma.leaveBalance.findUnique.mockResolvedValueOnce(null);
+    mockPrisma.leavePolicy.findFirst.mockResolvedValue({ daysPerYear: 21 });
+    mockPrisma.leaveBalance.create.mockRejectedValueOnce({ code: "P2002" });
+    mockPrisma.leaveBalance.findUniqueOrThrow.mockResolvedValue({ id: "bal-1", pending: 0, taken: 3, entitled: 21, carryOver: 0 });
+
+    await approve();
+
+    expect(mockPrisma.leaveBalance.update).toHaveBeenCalledWith({
+      where: { id: "bal-1" },
+      data: { pending: 0, taken: 6, remaining: 15 } // 21 + 0 - 6 - 0
+    });
   });
 });
 

@@ -7,6 +7,7 @@ import { LookupCacheService } from "../../common/services/lookup-cache.service";
 import { nextRef } from "../../common/next-ref";
 import { roundMoney } from "../../common/utils/money";
 import { validateEnumFilter } from "../../common/utils/validate-enum-filter";
+import { createLimiter } from "../../common/concurrency-limit";
 import {
   ApproveExpenseDto,
   ApprovePayrollDto,
@@ -40,6 +41,13 @@ function money(v: unknown) {
 
 @Injectable()
 export class FinanceService {
+  // Medium (DB stability audit, 2026-08-16): productProfitabilityReport
+  // creates one ProductProfitability row per distinct SKU sold in the
+  // period via an uncapped Promise.all — a company with a large catalog
+  // fans out into that many simultaneous writes from one request. Caps it
+  // to a bounded number in flight at once instead.
+  private readonly profitabilityWriteLimit = createLimiter(8);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
@@ -634,23 +642,64 @@ export class FinanceService {
       if (existing) return { data: existing };
     }
     const reference = await nextRef(this.prisma, user.companyId, "CP");
+
+    // Medium (DB stability audit, 2026-08-16): this used to just record a
+    // free-text payment with zero connection to the real Invoice records in
+    // Sales — a payment entered here never reduced what was actually owed,
+    // risking the same payment being entered twice (once "for real" via
+    // Sales' own recordPayment, once here). When a real invoice is linked,
+    // apply the exact same floor-guarded decrement (and linked-SalesOrder
+    // update) sales.service.ts's own recordPayment uses, so recording
+    // through either screen has one consistent effect on the real AR
+    // balance. Mirrors the equivalent SupplierPayment/SupplierInvoice fix
+    // above.
+    const invoice = dto.invoiceId
+      ? await this.prisma.invoice.findFirst({ where: { id: dto.invoiceId, companyId: user.companyId, deletedAt: null } })
+      : null;
+    if (dto.invoiceId && !invoice) throw new NotFoundException("Invoice was not found.");
+    if (invoice && Number(invoice.balanceDue) <= 0) throw new BadRequestException("Invoice has no outstanding balance.");
+    if (invoice && dto.amount > Number(invoice.balanceDue)) throw new BadRequestException("Payment amount cannot exceed invoice balance.");
+
     let payment;
     try {
-      payment = await this.prisma.customerPayment.create({
-        data: {
-          companyId: user.companyId,
-          reference,
-          customerName: dto.customerName,
-          amount: dto.amount,
-          paymentDate: new Date(dto.paymentDate),
-          paymentMethod: dto.paymentMethod,
-          description: dto.description,
-          invoiceRef: dto.invoiceRef,
-          bankAccountId: dto.bankAccountId,
-          notes: dto.notes,
-          idempotencyKey: dto.idempotencyKey,
-          createdById: user.id
+      payment = await this.prisma.$transaction(async (tx) => {
+        const row = await tx.customerPayment.create({
+          data: {
+            companyId: user.companyId,
+            reference,
+            customerName: dto.customerName,
+            amount: dto.amount,
+            paymentDate: new Date(dto.paymentDate),
+            paymentMethod: dto.paymentMethod,
+            description: dto.description,
+            invoiceRef: dto.invoiceRef,
+            invoiceId: dto.invoiceId,
+            bankAccountId: dto.bankAccountId,
+            notes: dto.notes,
+            idempotencyKey: dto.idempotencyKey,
+            createdById: user.id
+          }
+        });
+
+        if (invoice) {
+          const decremented = await tx.invoice.updateMany({
+            where: { id: invoice.id, balanceDue: { gte: dto.amount } },
+            data: { paidAmount: { increment: dto.amount }, balanceDue: { decrement: dto.amount }, updatedById: user.id }
+          });
+          if (decremented.count === 0) {
+            throw new BadRequestException(`Payment of ${dto.amount} exceeds the outstanding balance on this invoice.`);
+          }
+          const refreshed = await tx.invoice.findUniqueOrThrow({ where: { id: invoice.id }, select: { balanceDue: true } });
+          await tx.invoice.update({
+            where: { id: invoice.id },
+            data: { status: Number(refreshed.balanceDue) <= 0 ? "PAID" : "PARTIALLY_PAID" }
+          });
+          if (invoice.salesOrderId) {
+            await tx.salesOrder.update({ where: { id: invoice.salesOrderId }, data: { paidAmount: { increment: dto.amount }, balanceDue: { decrement: dto.amount }, updatedById: user.id } });
+          }
         }
+
+        return row;
       });
     } catch (err: unknown) {
       if (dto.idempotencyKey && (err as { code?: string })?.code === "P2002") {
@@ -1027,7 +1076,7 @@ export class FinanceService {
     const totalRevenue = Object.values(productMap).reduce((s, p) => s + p.revenue, 0);
 
     const results = await Promise.all(
-      Object.entries(productMap).map(async ([sku, data]) => {
+      Object.entries(productMap).map(([sku, data]) => this.profitabilityWriteLimit.run(async () => {
         const cost = totalRevenue > 0
           ? totalCostFromPoultry * (data.revenue / totalRevenue)
           : totalCostFromPoultry / productCount;
@@ -1049,7 +1098,7 @@ export class FinanceService {
           }
         });
         return rec;
-      })
+      }))
     );
 
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "EXPORT", entityType: "ProductProfitability", entityId: user.companyId, ...ctx });

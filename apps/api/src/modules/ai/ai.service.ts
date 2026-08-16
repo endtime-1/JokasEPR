@@ -368,7 +368,7 @@ export class AiService {
     const since7 = new Date(Date.now() - 7 * 86400000);
 
     const batch = await this.prisma.flockBatch.findFirst({
-      where: { id: batchId, companyId: user.companyId },
+      where: { id: batchId, companyId: user.companyId, deletedAt: null },
       include: { farm: { select: { name: true } } },
     });
     if (!batch) throw new BadRequestException("Flock batch not found.");

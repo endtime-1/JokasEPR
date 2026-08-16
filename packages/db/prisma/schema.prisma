@@ -2257,7 +2257,7 @@ model SalesOrderItem {
   updatedAt      DateTime @updatedAt
 
   company    Company    @relation(fields: [companyId], references: [id])
-  salesOrder SalesOrder @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
+  salesOrder SalesOrder @relation(fields: [salesOrderId], references: [id], onDelete: Restrict)
   product    Product    @relation(fields: [productId], references: [id])
 
   @@index([companyId])
@@ -2297,9 +2297,10 @@ model Invoice {
   branch     Branch              @relation(fields: [branchId], references: [id])
   customer   Customer            @relation(fields: [customerId], references: [id])
   salesOrder SalesOrder?         @relation(fields: [salesOrderId], references: [id])
-  payments   Payment[]
-  receipts   Receipt[]
-  statements CustomerStatement[]
+  payments         Payment[]
+  receipts         Receipt[]
+  statements       CustomerStatement[]
+  customerPayments CustomerPayment[]
 
   @@unique([companyId, invoiceNumber])
   @@index([companyId])
@@ -2481,7 +2482,7 @@ model SalesCommission {
 
   company    Company    @relation(fields: [companyId], references: [id])
   branch     Branch     @relation(fields: [branchId], references: [id])
-  salesOrder SalesOrder @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
+  salesOrder SalesOrder @relation(fields: [salesOrderId], references: [id], onDelete: Restrict)
 
   @@index([companyId])
   @@index([branchId])
@@ -2540,7 +2541,7 @@ model DeliveryNote {
 
   company    Company    @relation(fields: [companyId], references: [id])
   branch     Branch     @relation(fields: [branchId], references: [id])
-  salesOrder SalesOrder @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
+  salesOrder SalesOrder @relation(fields: [salesOrderId], references: [id], onDelete: Restrict)
   warehouse  Warehouse  @relation(fields: [warehouseId], references: [id])
 
   @@unique([companyId, deliveryNumber])
@@ -3698,6 +3699,7 @@ model FeedProductionBatch {
   wastageKg             Decimal                   @default(0) @db.Decimal(18, 4)
   productionDate        DateTime                  @default(now())
   status                FeedProductionBatchStatus @default(PLANNED)
+  idempotencyKey        String?                   @db.VarChar(100)
   createdById           String?
   updatedById           String?
   createdAt             DateTime                  @default(now())
@@ -3718,6 +3720,7 @@ model FeedProductionBatch {
   externalSales      FeedExternalSale[]
 
   @@unique([companyId, batchNumber])
+  @@unique([companyId, idempotencyKey])
   @@index([companyId])
   @@index([branchId])
   @@index([productionSiteId])
@@ -3748,7 +3751,7 @@ model FeedRawMaterialUsage {
   company         Company             @relation(fields: [companyId], references: [id])
   branch          Branch              @relation(fields: [branchId], references: [id])
   productionSite  ProductionSite      @relation(fields: [productionSiteId], references: [id])
-  productionBatch FeedProductionBatch @relation(fields: [productionBatchId], references: [id], onDelete: Cascade)
+  productionBatch FeedProductionBatch @relation(fields: [productionBatchId], references: [id], onDelete: Restrict)
   rawMaterial     Product             @relation(fields: [rawMaterialId], references: [id])
 
   @@index([companyId])
@@ -3780,7 +3783,7 @@ model FeedQualityCheck {
   company         Company             @relation(fields: [companyId], references: [id])
   branch          Branch              @relation(fields: [branchId], references: [id])
   productionSite  ProductionSite      @relation(fields: [productionSiteId], references: [id])
-  productionBatch FeedProductionBatch @relation(fields: [productionBatchId], references: [id], onDelete: Cascade)
+  productionBatch FeedProductionBatch @relation(fields: [productionBatchId], references: [id], onDelete: Restrict)
 
   @@index([companyId])
   @@index([branchId])
@@ -3810,7 +3813,7 @@ model FinishedFeedStock {
   branch          Branch              @relation(fields: [branchId], references: [id])
   productionSite  ProductionSite      @relation(fields: [productionSiteId], references: [id])
   warehouse       Warehouse           @relation(fields: [warehouseId], references: [id])
-  productionBatch FeedProductionBatch @relation(fields: [productionBatchId], references: [id], onDelete: Cascade)
+  productionBatch FeedProductionBatch @relation(fields: [productionBatchId], references: [id], onDelete: Restrict)
   product         Product             @relation(fields: [productId], references: [id])
 
   @@index([companyId])
@@ -3839,7 +3842,7 @@ model FeedPackagingRecord {
   company         Company             @relation(fields: [companyId], references: [id])
   branch          Branch              @relation(fields: [branchId], references: [id])
   productionSite  ProductionSite      @relation(fields: [productionSiteId], references: [id])
-  productionBatch FeedProductionBatch @relation(fields: [productionBatchId], references: [id], onDelete: Cascade)
+  productionBatch FeedProductionBatch @relation(fields: [productionBatchId], references: [id], onDelete: Restrict)
 
   @@index([companyId])
   @@index([branchId])
@@ -3867,7 +3870,7 @@ model FeedProductionCost {
   company         Company             @relation(fields: [companyId], references: [id])
   branch          Branch              @relation(fields: [branchId], references: [id])
   productionSite  ProductionSite      @relation(fields: [productionSiteId], references: [id])
-  productionBatch FeedProductionBatch @relation(fields: [productionBatchId], references: [id], onDelete: Cascade)
+  productionBatch FeedProductionBatch @relation(fields: [productionBatchId], references: [id], onDelete: Restrict)
 
   @@index([companyId])
   @@index([branchId])
@@ -3898,7 +3901,7 @@ model FeedInternalTransfer {
 
   company         Company             @relation(fields: [companyId], references: [id])
   branch          Branch              @relation(fields: [branchId], references: [id])
-  productionBatch FeedProductionBatch @relation(fields: [productionBatchId], references: [id], onDelete: Cascade)
+  productionBatch FeedProductionBatch @relation(fields: [productionBatchId], references: [id], onDelete: Restrict)
   product         Product             @relation(fields: [productId], references: [id])
   fromWarehouse   Warehouse           @relation("FeedTransferFromWarehouse", fields: [fromWarehouseId], references: [id])
   toFarm          Farm?               @relation(fields: [toFarmId], references: [id])
@@ -3933,7 +3936,7 @@ model FeedExternalSale {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
-  productionBatch FeedProductionBatch @relation(fields: [productionBatchId], references: [id], onDelete: Cascade)
+  productionBatch FeedProductionBatch @relation(fields: [productionBatchId], references: [id], onDelete: Restrict)
 
   @@index([companyId])
   @@index([companyId, productionBatchId])
@@ -4337,6 +4340,7 @@ model SoyaProcessingBatch {
   processingDate   DateTime                  @default(now())
   status           SoyaProcessingBatchStatus @default(PLANNED)
   notes            String?
+  idempotencyKey   String?                   @db.VarChar(100)
   createdById      String?
   updatedById      String?
   createdAt        DateTime                  @default(now())
@@ -4357,6 +4361,7 @@ model SoyaProcessingBatch {
   salesLinks        SoyaSalesLink[]
 
   @@unique([companyId, batchNumber])
+  @@unique([companyId, idempotencyKey])
   @@index([companyId])
   @@index([branchId])
   @@index([productionSiteId])
@@ -4385,7 +4390,7 @@ model SoyaOilOutput {
   company         Company             @relation(fields: [companyId], references: [id])
   branch          Branch              @relation(fields: [branchId], references: [id])
   productionSite  ProductionSite      @relation(fields: [productionSiteId], references: [id])
-  productionBatch SoyaProcessingBatch @relation(fields: [productionBatchId], references: [id], onDelete: Cascade)
+  productionBatch SoyaProcessingBatch @relation(fields: [productionBatchId], references: [id], onDelete: Restrict)
   warehouse       Warehouse           @relation(fields: [warehouseId], references: [id])
   product         Product             @relation("SoyaOilProduct", fields: [productId], references: [id])
 
@@ -4417,7 +4422,7 @@ model SoyaCakeOutput {
   company         Company             @relation(fields: [companyId], references: [id])
   branch          Branch              @relation(fields: [branchId], references: [id])
   productionSite  ProductionSite      @relation(fields: [productionSiteId], references: [id])
-  productionBatch SoyaProcessingBatch @relation(fields: [productionBatchId], references: [id], onDelete: Cascade)
+  productionBatch SoyaProcessingBatch @relation(fields: [productionBatchId], references: [id], onDelete: Restrict)
   warehouse       Warehouse           @relation(fields: [warehouseId], references: [id])
   product         Product             @relation("SoyaCakeProduct", fields: [productId], references: [id])
 
@@ -4447,7 +4452,7 @@ model SoyaWasteRecord {
   company         Company             @relation(fields: [companyId], references: [id])
   branch          Branch              @relation(fields: [branchId], references: [id])
   productionSite  ProductionSite      @relation(fields: [productionSiteId], references: [id])
-  productionBatch SoyaProcessingBatch @relation(fields: [productionBatchId], references: [id], onDelete: Cascade)
+  productionBatch SoyaProcessingBatch @relation(fields: [productionBatchId], references: [id], onDelete: Restrict)
 
   @@index([companyId])
   @@index([branchId])
@@ -4479,7 +4484,7 @@ model SoyaQualityCheck {
   company         Company             @relation(fields: [companyId], references: [id])
   branch          Branch              @relation(fields: [branchId], references: [id])
   productionSite  ProductionSite      @relation(fields: [productionSiteId], references: [id])
-  productionBatch SoyaProcessingBatch @relation(fields: [productionBatchId], references: [id], onDelete: Cascade)
+  productionBatch SoyaProcessingBatch @relation(fields: [productionBatchId], references: [id], onDelete: Restrict)
 
   @@index([companyId])
   @@index([branchId])
@@ -4510,7 +4515,7 @@ model SoyaProductionCost {
   company         Company             @relation(fields: [companyId], references: [id])
   branch          Branch              @relation(fields: [branchId], references: [id])
   productionSite  ProductionSite      @relation(fields: [productionSiteId], references: [id])
-  productionBatch SoyaProcessingBatch @relation(fields: [productionBatchId], references: [id], onDelete: Cascade)
+  productionBatch SoyaProcessingBatch @relation(fields: [productionBatchId], references: [id], onDelete: Restrict)
 
   @@index([companyId])
   @@index([branchId])
@@ -4544,7 +4549,7 @@ model SoyaInternalTransfer {
   company          Company             @relation(fields: [companyId], references: [id])
   branch           Branch              @relation(fields: [branchId], references: [id])
   productionSite   ProductionSite      @relation(fields: [productionSiteId], references: [id])
-  productionBatch  SoyaProcessingBatch @relation(fields: [productionBatchId], references: [id], onDelete: Cascade)
+  productionBatch  SoyaProcessingBatch @relation(fields: [productionBatchId], references: [id], onDelete: Restrict)
   product          Product             @relation(fields: [productId], references: [id])
   fromWarehouse    Warehouse           @relation("SoyaTransferFromWarehouse", fields: [fromWarehouseId], references: [id])
   toWarehouse      Warehouse           @relation("SoyaTransferToWarehouse", fields: [toWarehouseId], references: [id])
@@ -4587,7 +4592,7 @@ model SoyaSalesLink {
   company         Company             @relation(fields: [companyId], references: [id])
   branch          Branch              @relation(fields: [branchId], references: [id])
   productionSite  ProductionSite      @relation(fields: [productionSiteId], references: [id])
-  productionBatch SoyaProcessingBatch @relation(fields: [productionBatchId], references: [id], onDelete: Cascade)
+  productionBatch SoyaProcessingBatch @relation(fields: [productionBatchId], references: [id], onDelete: Restrict)
   product         Product             @relation(fields: [productId], references: [id])
   warehouse       Warehouse           @relation(fields: [warehouseId], references: [id])
 
@@ -5046,6 +5051,7 @@ model CustomerPayment {
   paymentMethod  PaymentMethod
   description    String        @db.VarChar(240)
   invoiceRef     String?       @db.VarChar(60)
+  invoiceId      String?
   bankAccountId  String?
   notes          String?       @db.VarChar(500)
   idempotencyKey String?       @db.VarChar(100)
@@ -5057,10 +5063,12 @@ model CustomerPayment {
 
   company     Company      @relation(fields: [companyId], references: [id])
   bankAccount BankAccount? @relation(fields: [bankAccountId], references: [id])
+  invoice     Invoice?     @relation(fields: [invoiceId], references: [id])
 
   @@unique([companyId, reference])
   @@unique([companyId, idempotencyKey])
   @@index([companyId])
+  @@index([invoiceId])
   @@index([companyId, paymentDate])
   @@index([deletedAt])
 }

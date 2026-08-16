@@ -6,6 +6,7 @@ import { AuditService } from "../audit/audit.service";
 import { LookupCacheService } from "../../common/services/lookup-cache.service";
 import { startOfTodayAccra } from "../../common/utils/timezone";
 import { nextRef } from "../../common/next-ref";
+import { withDbRetry } from "../../common/db-retry";
 import {
   AddPenDto,
   CreateBirdWeightRecordDto,
@@ -595,8 +596,14 @@ export class PoultryService {
     this.lookupCache.invalidate(`poultry:opts:${user.companyId}`);
     await this.writeAudit(user, "UPDATE", "FlockBatch", id, `Updated batch status to ${dto.status}`, context, batch.farmId);
 
+    // Low (DB stability audit, 2026-08-16): non-blocking by design (a
+    // profitability snapshot failure shouldn't fail the status update that
+    // already succeeded), but this used to swallow the error completely —
+    // logged now so a persistent failure is at least discoverable.
     if (["CLOSED", "SOLD", "CULLED"].includes(dto.status)) {
-      void this.snapshotBatchProfitability(user, id).catch(() => undefined);
+      void this.snapshotBatchProfitability(user, id).catch((err) =>
+        this.logger.error(`Batch profitability snapshot failed for flock batch ${id}: ${err instanceof Error ? err.message : err}`)
+      );
     }
     return { data };
   }
@@ -670,7 +677,12 @@ export class PoultryService {
     // section) — the count is still recorded either way, just without a
     // stock-movement side effect if no product/warehouse was given.
 
-    const record = await this.prisma.$transaction(async (tx) => {
+    // High (DB stability audit, 2026-08-16): consumeInventoryTx locks
+    // InventoryItem before StockBatch, opposite the order used by
+    // inventory.service.ts's own FIFO consumption — a concurrent call
+    // through the other path can deadlock. Retrying (instead of a raw 500)
+    // is the mitigation; the real lock-order fix is a separate follow-up.
+    const record = await withDbRetry(() => this.prisma.$transaction(async (tx) => {
       const row = existing
         ? await tx.dailyPoultryRecord.update({ where: { id: existing.id }, data: { ...payload, updatedById: user.id } })
         : await tx.dailyPoultryRecord.create({ data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), recordDate, ...payload } });
@@ -704,7 +716,7 @@ export class PoultryService {
         await this.addToInventoryTx(tx, user, batch, dto.eggWarehouseId, dto.eggProductId, eggsDelta, "DailyPoultryRecord", row.id, `Egg production from daily record for flock ${batch.code}`);
       }
       return row;
-    });
+    }), { label: "PoultryService.upsertDailyRecord" });
     await this.writeAudit(user, "CREATE", "DailyPoultryRecord", record.id, "Submitted daily poultry record", context, batch.farmId);
     return { data: record };
   }
@@ -734,7 +746,10 @@ export class PoultryService {
     if (dto.warehouseId) this.assertWarehouseAccess(user, dto.warehouseId);
     const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
     let stockWarning: string | undefined;
-    const data = await this.prisma.$transaction(async (tx) => {
+    // High (DB stability audit, 2026-08-16): consumeInventoryTx's lock order
+    // conflicts with inventory.service.ts's FIFO path — retry mitigates the
+    // resulting deadlock risk until the lock order is reconciled.
+    const data = await withDbRetry(() => this.prisma.$transaction(async (tx) => {
       const record = await tx.feedConsumptionRecord.create({
         data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), recordDate: new Date(dto.recordDate), feedProductId: dto.feedProductId, warehouseId: dto.warehouseId, quantityKg: dto.quantityKg, costAmount: dto.costAmount, notes: dto.notes, status: dto.status ?? "SUBMITTED" }
       });
@@ -747,7 +762,7 @@ export class PoultryService {
         stockWarning = result.warning;
       }
       return record;
-    });
+    }), { label: "PoultryService.createFeed" });
     await this.writeAudit(user, "CREATE", "FeedConsumptionRecord", data.id, "Recorded poultry feed consumption", context, batch.farmId);
     return { data, warning: stockWarning };
   }
@@ -823,7 +838,9 @@ export class PoultryService {
     if (dto.warehouseId) this.assertWarehouseAccess(user, dto.warehouseId);
     const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
     let stockWarning: string | undefined;
-    const data = await this.prisma.$transaction(async (tx) => {
+    // High (DB stability audit, 2026-08-16): see createFeed above — same
+    // consumeInventoryTx lock-order deadlock risk, mitigated with retry.
+    const data = await withDbRetry(() => this.prisma.$transaction(async (tx) => {
       const record = await tx.medicationRecord.create({
         data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), medicationName: dto.medicationName, dosage: dto.dosage, route: dto.route, startDate: new Date(dto.startDate), endDate: dto.endDate ? new Date(dto.endDate) : undefined, withdrawalUntil: dto.withdrawalUntil ? new Date(dto.withdrawalUntil) : undefined, notes: dto.notes }
       });
@@ -832,7 +849,7 @@ export class PoultryService {
         stockWarning = result.warning;
       }
       return record;
-    });
+    }), { label: "PoultryService.createMedication" });
     await this.writeAudit(user, "CREATE", "MedicationRecord", data.id, "Recorded poultry medication", context, batch.farmId);
     return { data, warning: stockWarning };
   }
@@ -842,7 +859,9 @@ export class PoultryService {
     if (dto.warehouseId) this.assertWarehouseAccess(user, dto.warehouseId);
     const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
     let stockWarning: string | undefined;
-    const data = await this.prisma.$transaction(async (tx) => {
+    // High (DB stability audit, 2026-08-16): see createFeed above — same
+    // consumeInventoryTx lock-order deadlock risk, mitigated with retry.
+    const data = await withDbRetry(() => this.prisma.$transaction(async (tx) => {
       const record = await tx.vaccinationRecord.create({
         data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), vaccineName: dto.vaccineName, dose: dto.dose, vaccinationDate: new Date(dto.vaccinationDate), nextDueDate: dto.nextDueDate ? new Date(dto.nextDueDate) : undefined, notes: dto.notes }
       });
@@ -851,7 +870,7 @@ export class PoultryService {
         stockWarning = result.warning;
       }
       return record;
-    });
+    }), { label: "PoultryService.createVaccination" });
     await this.writeAudit(user, "CREATE", "VaccinationRecord", data.id, "Recorded poultry vaccination", context, batch.farmId);
     return { data, warning: stockWarning };
   }
@@ -873,7 +892,7 @@ export class PoultryService {
     if (toHouse.farmId !== dto.toFarmId) {
       throw new BadRequestException("Destination poultry house does not belong to the destination farm.");
     }
-    const fromPen = dto.fromPenId ? await this.prisma.pen.findFirst({ where: { id: dto.fromPenId, companyId: user.companyId } }) : null;
+    const fromPen = dto.fromPenId ? await this.prisma.pen.findFirst({ where: { id: dto.fromPenId, companyId: user.companyId, deletedAt: null } }) : null;
     const fromHouseId = fromPen?.poultryHouseId ?? dto.fromPoultryHouseId ?? batch.poultryHouseId;
     if (!fromHouseId) throw new BadRequestException("Cannot determine source house. Specify a fromPenId or fromPoultryHouseId.");
 
@@ -941,7 +960,7 @@ export class PoultryService {
         // could silently push a pen's bird count past what it can actually
         // hold. capacity is nullable, so a pen with none recorded has no cap.
         const [toPen, toAlloc] = await Promise.all([
-          tx.pen.findFirst({ where: { id: dto.toPenId, companyId: user.companyId } }),
+          tx.pen.findFirst({ where: { id: dto.toPenId, companyId: user.companyId, deletedAt: null } }),
           tx.batchPenAllocation.findFirst({ where: { flockBatchId: batch.id, penId: dto.toPenId } })
         ]);
         if (!toPen) throw new BadRequestException("Destination pen was not found.");
@@ -1005,11 +1024,11 @@ export class PoultryService {
     if (!transfer) throw new NotFoundException("Transfer was not found.");
     if (transfer.toPenId) throw new BadRequestException("This transfer already has a pen assigned.");
 
-    const pen = await this.prisma.pen.findFirst({ where: { id: dto.penId, companyId: user.companyId } });
+    const pen = await this.prisma.pen.findFirst({ where: { id: dto.penId, companyId: user.companyId, deletedAt: null } });
     if (!pen) throw new NotFoundException("Pen not found.");
     if (pen.poultryHouseId !== transfer.toPoultryHouseId) throw new BadRequestException("Pen does not belong to the transfer's destination house.");
 
-    const house = await this.prisma.poultryHouse.findFirst({ where: { id: transfer.toPoultryHouseId!, companyId: user.companyId } });
+    const house = await this.prisma.poultryHouse.findFirst({ where: { id: transfer.toPoultryHouseId!, companyId: user.companyId, deletedAt: null } });
     // Previously missing entirely — a user scoped to Farm A could allocate a
     // pen (and increment live bird counts) for a transfer whose destination
     // farm is Farm B, which they have no access to.
@@ -1217,7 +1236,11 @@ export class PoultryService {
     // quantityOnHand negative with nothing to catch it, and a crash between
     // the two writes could leave the record corrected but inventory
     // unadjusted (or vice versa).
-    const data = await this.prisma.$transaction(async (tx) => {
+    // High (DB stability audit, 2026-08-16): this correction path locks
+    // InventoryItem before StockBatch (same order as consumeInventoryTx),
+    // conflicting with FIFO consumers that lock the opposite way — retry
+    // mitigates the deadlock risk until the lock order is reconciled.
+    const data = await withDbRetry(() => this.prisma.$transaction(async (tx) => {
       // Same type→model mapping as recordModel(), just resolved against `tx`
       // instead of `this.prisma` so the record update lands in the same
       // transaction as the inventory adjustment below.
@@ -1260,17 +1283,9 @@ export class PoultryService {
             const invItem = await tx.inventoryItem.findFirst({ where: { companyId: user.companyId, warehouseId: feed.warehouseId, productId: feed.feedProductId, deletedAt: null } });
             if (invItem) {
               if (delta > 0) {
-                const guarded = await tx.inventoryItem.updateMany({
-                  where: { id: invItem.id, quantityOnHand: { gte: delta } },
-                  data: { quantityOnHand: { decrement: delta }, updatedById: user.id }
-                });
-                if (guarded.count === 0) {
-                  throw new BadRequestException("Cannot apply this correction — insufficient stock remains to cover the increased quantity. Please investigate before retrying.");
-                }
-                // H-BUG-2 follow-up: mirrors consumeInventoryTx — the
-                // aggregate guard above isn't enough on its own, the
-                // StockBatch lots FIFO consumers actually read from must
-                // move too or they drift out of sync with quantityOnHand.
+                // Lock order (DB stability audit, 2026-08-16): StockBatch
+                // lots first, then InventoryItem — see consumeInventoryTx
+                // above for why.
                 let remaining = delta;
                 const lots = await tx.stockBatch.findMany({
                   where: { companyId: user.companyId, warehouseId: feed.warehouseId, productId: feed.feedProductId, quantityRemaining: { gt: 0 }, status: "AVAILABLE", deletedAt: null },
@@ -1290,6 +1305,13 @@ export class PoultryService {
                 }
                 if (remaining > 0) {
                   throw new BadRequestException(`Stock batches on hand cover only ${(delta - remaining).toFixed(2)} of the ${delta} needed for this correction — inventory and lot records are out of sync, or the remaining stock is quarantined. Please investigate before retrying.`);
+                }
+                const guarded = await tx.inventoryItem.updateMany({
+                  where: { id: invItem.id, quantityOnHand: { gte: delta } },
+                  data: { quantityOnHand: { decrement: delta }, updatedById: user.id }
+                });
+                if (guarded.count === 0) {
+                  throw new BadRequestException("Cannot apply this correction — insufficient stock remains to cover the increased quantity. Please investigate before retrying.");
                 }
               } else {
                 await tx.inventoryItem.update({ where: { id: invItem.id }, data: { quantityOnHand: { increment: -delta }, updatedById: user.id } });
@@ -1352,14 +1374,9 @@ export class PoultryService {
                 // Fewer eggs than first recorded — pull the excess back out,
                 // floor-guarded and FIFO across whatever lots are still
                 // available; block the correction if it's already been
-                // partly or fully consumed elsewhere.
-                const guarded = await tx.inventoryItem.updateMany({
-                  where: { id: invItem.id, quantityOnHand: { gte: -delta } },
-                  data: { quantityOnHand: { decrement: -delta }, updatedById: user.id }
-                });
-                if (guarded.count === 0) {
-                  throw new BadRequestException("Cannot apply this correction — the previously credited egg stock has already been consumed elsewhere.");
-                }
+                // partly or fully consumed elsewhere. Lock order (DB
+                // stability audit, 2026-08-16): StockBatch lots first, then
+                // InventoryItem — see consumeInventoryTx above for why.
                 let remaining = -delta;
                 const lots = await tx.stockBatch.findMany({
                   where: { companyId: user.companyId, warehouseId: mv.warehouseId, productId: mv.productId, quantityRemaining: { gt: 0 }, status: "AVAILABLE", deletedAt: null },
@@ -1377,6 +1394,13 @@ export class PoultryService {
                 if (remaining > 0) {
                   throw new BadRequestException("Cannot apply this correction — the previously credited egg stock has already been partly or fully consumed elsewhere.");
                 }
+                const guarded = await tx.inventoryItem.updateMany({
+                  where: { id: invItem.id, quantityOnHand: { gte: -delta } },
+                  data: { quantityOnHand: { decrement: -delta }, updatedById: user.id }
+                });
+                if (guarded.count === 0) {
+                  throw new BadRequestException("Cannot apply this correction — the previously credited egg stock has already been consumed elsewhere.");
+                }
               }
               await tx.stockMovement.create({
                 data: {
@@ -1391,7 +1415,7 @@ export class PoultryService {
         }
       }
       return updated;
-    });
+    }), { label: "PoultryService.correctRecord" });
 
     await this.writeAudit(user, "UPDATE", type, id, `Corrected poultry ${type} record`, context, farmId);
     return { data };
@@ -1670,24 +1694,21 @@ export class PoultryService {
       return { stockDeducted: false, warning };
     }
     const product = await tx.product.findFirst({ where: { id: productId } });
-    // H4: floor-guarded updateMany — same reasoning as the other guarded
-    // decrements in this codebase; a plain update() let two concurrent
-    // consumption entries for the same product/warehouse both succeed and
-    // jointly overdraw stock.
-    const invUpdate = await tx.inventoryItem.updateMany({
-      where: { id: item.id, quantityOnHand: { gte: quantity } },
-      data: { quantityOnHand: { decrement: quantity }, updatedById: user.id }
-    });
-    if (invUpdate.count === 0) {
-      throw new BadRequestException(`Stock for this product was modified concurrently. Please retry.`);
-    }
+    // Lock order (DB stability audit, 2026-08-16): StockBatch lots first,
+    // then InventoryItem — matches inventory.service.ts's own consumeFifoTx,
+    // the canonical FIFO consumer. This used to decrement InventoryItem
+    // first and StockBatch second, the opposite order, which risked a
+    // deadlock against any concurrent transaction locking the same two rows
+    // through the canonical path. A throw anywhere below still rolls back
+    // everything already written in this transaction, so reordering which
+    // guard runs first doesn't change correctness — only lock order.
+    //
     // H-BUG-2 (2026-08-13): this used to stop at the aggregate
-    // quantityOnHand decrement above and never touch StockBatch —
-    // mirrors the same drift bug already fixed in Feed Production and
-    // Market Planning. Every FIFO consumer (Sales' consumeFifoTx
-    // included) reads StockBatch.quantityRemaining, not
-    // quantityOnHand, so lots here would silently go stale relative to
-    // what was actually recorded as consumed.
+    // quantityOnHand decrement and never touch StockBatch — mirrors the
+    // same drift bug already fixed in Feed Production and Market Planning.
+    // Every FIFO consumer (Sales' consumeFifoTx included) reads
+    // StockBatch.quantityRemaining, not quantityOnHand, so lots here would
+    // silently go stale relative to what was actually recorded as consumed.
     let remaining = quantity;
     const stockBatches = await tx.stockBatch.findMany({
       where: { companyId: user.companyId, warehouseId, productId, quantityRemaining: { gt: 0 }, status: "AVAILABLE", deletedAt: null },
@@ -1707,6 +1728,17 @@ export class PoultryService {
     }
     if (remaining > 0) {
       throw new BadRequestException(`Stock batches on hand for this product cover only ${(quantity - remaining).toFixed(2)} of the required ${quantity} — inventory and lot records are out of sync, or the remaining stock is quarantined. Please investigate before retrying.`);
+    }
+    // H4: floor-guarded updateMany — same reasoning as the other guarded
+    // decrements in this codebase; a plain update() let two concurrent
+    // consumption entries for the same product/warehouse both succeed and
+    // jointly overdraw stock.
+    const invUpdate = await tx.inventoryItem.updateMany({
+      where: { id: item.id, quantityOnHand: { gte: quantity } },
+      data: { quantityOnHand: { decrement: quantity }, updatedById: user.id }
+    });
+    if (invUpdate.count === 0) {
+      throw new BadRequestException(`Stock for this product was modified concurrently. Please retry.`);
     }
     await tx.stockMovement.create({
       data: { companyId: user.companyId, branchId: batch.branchId, productId, inventoryItemId: item.id, fromWarehouseId: warehouseId, warehouseId, farmId: batch.farmId, uomId: product!.uomId, movementType, quantity, referenceType, referenceId, notes, createdById: user.id }

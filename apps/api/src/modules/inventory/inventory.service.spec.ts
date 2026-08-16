@@ -8,6 +8,8 @@ const mockTx = {
   stockMovement: { create: jest.fn() },
   inventoryItem: { update: jest.fn(), updateMany: jest.fn() },
   stockReservation: { create: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
+  stockAdjustment: { updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
+  stockApproval: { updateMany: jest.fn().mockResolvedValue({}) },
   $queryRaw: jest.fn().mockResolvedValue([])
 };
 
@@ -143,6 +145,8 @@ describe("InventoryService.approveAdjustment → applyAdjustment — StockBatch 
     mockTx.stockBatch.create.mockResolvedValue({ id: "batch-1" });
     mockTx.inventoryItem.update.mockResolvedValue({});
     mockTx.stockMovement.create.mockResolvedValue({});
+    mockTx.stockAdjustment.updateMany.mockResolvedValue({ count: 1 });
+    mockTx.stockAdjustment.findUniqueOrThrow.mockResolvedValue({ id: "adj-1", status: "APPROVED" });
 
     const service = makeService();
     await service.approveAdjustment(makeUser(), "adj-1", { status: "APPROVED" } as never, {});
@@ -150,6 +154,26 @@ describe("InventoryService.approveAdjustment → applyAdjustment — StockBatch 
     expect(mockTx.stockBatch.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ quantityReceived: 15, quantityRemaining: 15, unitCost: 8 }) })
     );
+  });
+
+  it("C2 (DB stability audit): a second concurrent approveAdjustment call is rejected once the first has claimed the row", async () => {
+    mockPrisma.stockAdjustment.findFirst.mockResolvedValue({
+      id: "adj-1", companyId: "company-1", warehouseId: "wh-1", status: "PENDING_APPROVAL",
+      inventoryItemId: "item-1", quantity: 15, unitCost: 8, adjustmentType: "RECOUNT", reason: "recount", branchId: "branch-1"
+    });
+    mockPrisma.inventoryItem.findUniqueOrThrow.mockResolvedValue({
+      id: "item-1", companyId: "company-1", branchId: "branch-1", farmId: null, warehouseId: "wh-1",
+      productionSiteId: null, productId: "prod-1", uomId: "uom-1", quantityOnHand: 100
+    });
+    // Simulates the guarded updateMany matching zero rows because another
+    // concurrent request already flipped status away from PENDING_APPROVAL.
+    mockTx.stockAdjustment.updateMany.mockResolvedValue({ count: 0 });
+
+    const service = makeService();
+    await expect(service.approveAdjustment(makeUser(), "adj-1", { status: "APPROVED" } as never, {})).rejects.toThrow(
+      "This adjustment has already been processed."
+    );
+    expect(mockTx.stockBatch.create).not.toHaveBeenCalled();
   });
 });
 

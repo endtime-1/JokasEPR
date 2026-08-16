@@ -604,7 +604,7 @@ export class ProcurementService {
     // Previously dto.warehouseId was trusted with no lookup at all — a
     // foreign or nonexistent warehouse would only surface as an error much
     // later, at postGRN time.
-    const warehouse = await this.prisma.warehouse.findFirst({ where: { id: dto.warehouseId, companyId: user.companyId } });
+    const warehouse = await this.prisma.warehouse.findFirst({ where: { id: dto.warehouseId, companyId: user.companyId, deletedAt: null } });
     if (!warehouse) throw new NotFoundException("Warehouse not found");
     this.assertWarehouseAccess(user, dto.warehouseId);
 
@@ -753,7 +753,7 @@ export class ProcurementService {
     this.assertWarehouseAccess(user, grn.warehouseId);
 
     const warehouse = await this.prisma.warehouse.findFirst({
-      where: { id: grn.warehouseId, companyId: user.companyId },
+      where: { id: grn.warehouseId, companyId: user.companyId, deletedAt: null },
       select: { branchId: true, farmId: true, productionSiteId: true },
     });
     if (!warehouse) throw new NotFoundException("Warehouse not found");
@@ -766,6 +766,23 @@ export class ProcurementService {
     const productMap = Object.fromEntries(products.map((p) => [p.id, p]));
 
     await this.prisma.$transaction(async (tx) => {
+      // C3 (DB stability audit, 2026-08-16): status was only checked by the
+      // plain read above, then every line item was posted unconditionally —
+      // two concurrent postGRN calls (two clerks, or one double-click) both
+      // passed that check and both ran the full receiving loop, doubling
+      // on-hand quantity and creating duplicate StockBatch rows for goods
+      // that were only physically received once. Claim the row first,
+      // matching the exact status already validated above (either of the
+      // two valid starting states) — same guarded-updateMany fix as Sales
+      // Return approval and Inventory Adjustment approval.
+      const claimed = await tx.goodsReceivedNote.updateMany({
+        where: { id, status: grn.status },
+        data: { status: "POSTED", postedAt: new Date(), updatedById: user.id }
+      });
+      if (claimed.count === 0) {
+        throw new BadRequestException("This GRN has already been posted.");
+      }
+
       for (const item of grn.items) {
         if (!item.productId || num(item.receivedQty) <= 0) continue;
 
@@ -832,8 +849,6 @@ export class ProcurementService {
           },
         });
       }
-
-      await tx.goodsReceivedNote.update({ where: { id }, data: { status: "POSTED", postedAt: new Date(), updatedById: user.id } });
     });
 
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "GoodsReceivedNote", entityId: id, action: "APPROVE", ...ctx });
@@ -1036,7 +1051,7 @@ export class ProcurementService {
   }
 
   private async createProcurementExpense(user: AuthenticatedUser, supplierId: string, payment: { id: string; amount: Prisma.Decimal | number; paymentDate: Date; paymentMethod: string; reference: string }) {
-    const supplier = await this.prisma.supplier.findFirst({ where: { id: supplierId, companyId: user.companyId }, select: { name: true } });
+    const supplier = await this.prisma.supplier.findFirst({ where: { id: supplierId, companyId: user.companyId, deletedAt: null }, select: { name: true } });
     let category = await this.prisma.expenseCategory.findFirst({ where: { companyId: user.companyId, name: "Procurement", deletedAt: null } });
     if (!category) {
       category = await this.prisma.expenseCategory.create({

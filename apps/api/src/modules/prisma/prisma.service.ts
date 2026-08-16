@@ -4,6 +4,19 @@ import { PrismaClient } from "@prisma/client";
 // Models that carry companyId and whose queries must always be tenant-scoped.
 // Prisma 6 removed $use() middleware — we install a Proxy on each model delegate
 // in onModuleInit() so that warning fire whenever companyId is absent.
+//
+// Medium (DB stability audit, 2026-08-16): of 170 companyId-bearing models in
+// the schema, only the ones below were covered — manually tracing every site
+// the guard would flag found no live miss today, but also found the guard
+// already noisy enough with false positives (self-service-on-own-id lookups,
+// prior-scoped-query indirection the Proxy's shallow check can't see through,
+// intentionally cross-tenant cron jobs) that blindly adding the other ~130
+// models risked making that noise problem worse, not better — the opposite
+// of the finding's actual point. Extended here only with models whose shape
+// and call pattern are structurally identical to ones already proven clean
+// on this list (direct per-request financial/stock transactions), not a
+// blanket sweep. `maintenanceTask` removed — it never matched a real Prisma
+// model (the model is `Task`, already guarded) and had silently done nothing.
 const TENANT_GUARDED_MODELS = [
   // Identity & HR
   "user", "employee", "attendanceRecord", "payrollRecord", "leaveRequest",
@@ -17,15 +30,17 @@ const TENANT_GUARDED_MODELS = [
   "customer", "customerGroup",
   // Inventory
   "stockMovement", "stockBatch", "inventoryItem", "stockApproval",
+  "stockAdjustment", "stockReservation", "stockTransfer",
   // Procurement
   "purchaseOrder", "purchaseRequest", "goodsReceivedNote", "supplierInvoice",
   "supplier",
   // Finance
-  "expense",
+  "expense", "customerPayment", "supplierPayment", "procurementPayment",
+  "journalEntry", "pettyCashTransaction",
   // Feed & Production
   "feedProductionOrder", "feedFormula",
   // Maintenance
-  "maintenanceTask", "machineDowntimeRecord",
+  "machineDowntimeRecord", "maintenanceRecord", "breakdownRecord", "sparePartUsage",
   // Shared
   "product", "auditLog",
 ] as const;
@@ -40,8 +55,17 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
 
   constructor() {
     super({
-      // Abort any individual query that runs longer than 15 seconds.
-      // Prevents a slow dashboard aggregation from stalling the NestJS event loop.
+      // High (DB stability audit, 2026-08-16): this bounds interactive
+      // $transaction() callbacks only — Prisma has no global per-query
+      // timeout option, so standalone queries (most of the app's DB
+      // traffic, including the executive dashboard's aggregations) are
+      // NOT covered by this setting despite what an earlier version of
+      // this comment claimed. The dashboard's own concurrency risk is
+      // mitigated separately by dashboard.service.ts's dashboardQueryLimit
+      // (caps how many of its own queries run at once); this timeout's
+      // actual job is preventing a stuck $transaction() (e.g. the
+      // stock-consumption transactions across sales/inventory/poultry/etc.)
+      // from holding a pool connection open indefinitely.
       transactionOptions: { timeout: 15000 },
     });
   }

@@ -127,5 +127,41 @@ describe("QuickBooksSyncService — per-company sync lock prevents duplicate-rec
       await service.syncRecord("company-1", "payments", "pay-1");
       expect(mockPaymentSvc.syncOne).not.toHaveBeenCalled();
     });
+
+    it("H-BUG (DB stability audit, 2026-08-16): syncEntity logs a real sync-log row on success, same as syncAll", async () => {
+      const service = makeService();
+      await service.syncEntity("company-1", "invoices", "user-1");
+
+      expect(mockQbLogger.begin).toHaveBeenCalledWith(
+        expect.objectContaining({ companyId: "company-1", connectionId: "conn-1", entityType: "invoices", triggeredById: "user-1" })
+      );
+      expect(mockQbLogger.succeed).toHaveBeenCalledWith("log-1", expect.objectContaining({ recordsProcessed: 1 }));
+      expect(mockQbLogger.fail).not.toHaveBeenCalled();
+    });
+
+    it("H-BUG (DB stability audit, 2026-08-16): syncEntity records the failure to the DB-backed log instead of vanishing silently", async () => {
+      mockInvoiceSvc.syncAll.mockRejectedValueOnce(new Error("QBO API down"));
+      const service = makeService();
+
+      // The controller fires this via setImmediate(...).catch(() => undefined) —
+      // the fix is that the failure gets recorded before it's swallowed there,
+      // not that it stops being swallowed. This must not throw.
+      await expect(service.syncEntity("company-1", "invoices")).resolves.toBeUndefined();
+
+      expect(mockQbLogger.fail).toHaveBeenCalledWith("log-1", "QBO API down");
+      expect(mockQbLogger.succeed).not.toHaveBeenCalled();
+      // Lock is still released even though the sync failed.
+      expect(mockPrisma.loginRateLimit.deleteMany).toHaveBeenCalledWith({ where: { key: "qb-sync-lock:company-1" } });
+    });
+
+    it("syncEntity no-ops without acquiring the lock when the QuickBooks connection isn't active", async () => {
+      mockQbLogger.getConnection.mockResolvedValueOnce({ id: "conn-1", isActive: false });
+      const service = makeService();
+
+      await service.syncEntity("company-1", "invoices");
+
+      expect(mockPrisma.loginRateLimit.create).not.toHaveBeenCalled();
+      expect(mockInvoiceSvc.syncAll).not.toHaveBeenCalled();
+    });
   });
 });

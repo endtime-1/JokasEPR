@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { nextRef } from "../../common/next-ref";
+import { withDbRetry } from "../../common/db-retry";
 import {
   CreateCustomerDto,
   CreateCustomerGroupDto,
@@ -318,6 +319,19 @@ export class SalesService {
     if (warehouse.branchId !== customer.branchId) throw new BadRequestException("Sales warehouse must belong to the customer's branch.");
     this.assertBranchAccess(user, customer.branchId);
 
+    // C4 (DB stability audit, 2026-08-16): productId was never validated as
+    // belonging to the caller's company before being persisted — only its
+    // UUID shape was checked at the DTO level. Since the create response (and
+    // every later list/detail read) includes the full `product` relation,
+    // supplying a foreign company's productId embedded that company's
+    // product name/SKU/description/QuickBooks IDs in this order, persistently.
+    // createReturn already does this exact check; createOrder just never did.
+    const requestedProductIds = [...new Set(dto.items.map((item) => item.productId))];
+    const ownedProducts = await this.prisma.product.findMany({ where: { companyId: user.companyId, id: { in: requestedProductIds }, deletedAt: null }, select: { id: true } });
+    if (ownedProducts.length !== requestedProductIds.length) {
+      throw new NotFoundException("One or more products were not found.");
+    }
+
     // Check stock levels — informational only, never blocks the order
     const stockChecks = await Promise.all(dto.items.map((item) => this.availableStock(user.companyId, dto.warehouseId, item.productId)));
     const itemsWithStock = dto.items.map((item, i) => ({ item, available: stockChecks[i] }));
@@ -356,9 +370,14 @@ export class SalesService {
     });
     await this.writeAudit(user, "CREATE", "SalesOrder", data.id, `Created sales order ${orderNumber}`, context, { branchId: customer.branchId, warehouseId: warehouse.id });
 
-    // Fire production + procurement alerts for any short items (non-blocking)
+    // Fire production + procurement alerts for any short items (non-blocking
+    // — a failure here shouldn't fail the sales order that already
+    // succeeded, but this used to swallow it completely silently while its
+    // neighbor below was already fixed for the identical failure mode).
     if (shortItems.length > 0) {
-      void this.fireStockShortageAlerts(user.companyId, customer.branchId, orderNumber, shortItems).catch(() => undefined);
+      void this.fireStockShortageAlerts(user.companyId, customer.branchId, orderNumber, shortItems).catch((err) =>
+        this.logger.error(`Stock shortage alert failed for sales order ${orderNumber}: ${err instanceof Error ? err.message : err}`)
+      );
     }
 
     // Auto-generate draft production orders for all items (non-blocking —
@@ -381,7 +400,14 @@ export class SalesService {
     this.assertWarehouseAccess(user, order.warehouseId);
     if (!["PENDING_STOCK_APPROVAL", "APPROVED"].includes(order.status)) throw new BadRequestException("Only pending sales orders can be released.");
 
-    const data = await this.prisma.$transaction(async (tx) => {
+    // High (DB stability audit, 2026-08-16): this locks StockBatch then
+    // InventoryItem via consumeFifoTx, while Poultry/Soya/Market-Planning/
+    // Feed-Production lock the opposite order for the same tables — a
+    // genuine InnoDB deadlock risk under concurrent stock writes. Retrying
+    // the whole transaction on Prisma's P2034 (Prisma's own documented
+    // response to a deadlock) turns that from a hard user-visible failure
+    // into a transparent retry.
+    const data = await withDbRetry(() => this.prisma.$transaction(async (tx) => {
       for (const item of order.items) {
         const inventoryItem = await tx.inventoryItem.findFirst({ where: { companyId: user.companyId, warehouseId: order.warehouseId, productId: item.productId, deletedAt: null } });
         if (!inventoryItem) throw new BadRequestException("Inventory item was not found for one or more sales order items.");
@@ -421,7 +447,7 @@ export class SalesService {
       await tx.salesOrder.update({ where: { id: order.id }, data: { status: "FULFILLED", stockApprovedById: user.id, stockApprovedAt: new Date(), updatedById: user.id } });
       await this.addCustomerDebitTx(tx, order.customerId, order.branchId, invoice.id, Number(order.totalAmount), `Invoice ${invoice.invoiceNumber}`);
       return { invoice, deliveryNote };
-    });
+    }), { label: "SalesOrder.approveStockRelease" });
 
     await this.writeAudit(user, "APPROVE", "SalesOrder", order.id, `Approved stock release for ${order.orderNumber}`, context, { branchId: order.branchId, warehouseId: order.warehouseId });
     return { data };
@@ -673,6 +699,25 @@ export class SalesService {
     const product = salesReturn.product;
 
     const data = await this.prisma.$transaction(async (tx) => {
+      // C1 (DB stability audit, 2026-08-16): status was only ever checked by
+      // loadPendingReturn's plain findFirst, outside this transaction — two
+      // concurrent approvals (two managers, or one double-click) both passed
+      // that check and both applied the full stock+credit effect below,
+      // duplicating inventory and double-crediting the customer. Claiming the
+      // row via a guarded updateMany, first thing inside the transaction, is
+      // the same fix already used correctly elsewhere in this codebase
+      // (market-planning's approveTarget, procurement's approvePurchaseOrder)
+      // — MySQL re-evaluates this WHERE clause against the latest committed
+      // row for UPDATE statements, so only one concurrent caller can ever
+      // claim REQUESTED -> POSTED.
+      const claimed = await tx.salesReturn.updateMany({
+        where: { id, status: "REQUESTED" },
+        data: { status: "POSTED", approvedById: user.id, approvedAt: new Date() }
+      });
+      if (claimed.count === 0) {
+        throw new BadRequestException("This return has already been processed.");
+      }
+
       const item = await tx.inventoryItem.upsert({
         where: { companyId_warehouseId_productId: { companyId: user.companyId, warehouseId: warehouse.id, productId: product.id } },
         update: { quantityOnHand: { increment: quantity }, updatedById: user.id },
@@ -712,7 +757,7 @@ export class SalesService {
         }
       }
 
-      return tx.salesReturn.update({ where: { id }, data: { status: "POSTED", approvedById: user.id, approvedAt: new Date() } });
+      return tx.salesReturn.findUniqueOrThrow({ where: { id } });
     });
 
     await this.writeAudit(user, "APPROVE", "SalesReturn", id, `Approved sales return for ${product.sku}`, context, { branchId: salesReturn.branchId, warehouseId: warehouse.id });
@@ -753,10 +798,16 @@ export class SalesService {
   async rejectReturn(user: AuthenticatedUser, id: string, context: RequestContext) {
     const salesReturn = await this.loadPendingReturn(user, id);
 
-    const data = await this.prisma.salesReturn.update({
-      where: { id },
+    // Same guarded-claim fix as approveReturn — prevents a reject racing an
+    // approve (or a double-reject) from silently no-op'ing or double-logging.
+    const claimed = await this.prisma.salesReturn.updateMany({
+      where: { id, status: "REQUESTED" },
       data: { status: "REJECTED", approvedById: user.id, approvedAt: new Date() }
     });
+    if (claimed.count === 0) {
+      throw new BadRequestException("This return has already been processed.");
+    }
+    const data = await this.prisma.salesReturn.findUniqueOrThrow({ where: { id } });
     await this.writeAudit(user, "REJECT", "SalesReturn", id, `Rejected sales return for ${salesReturn.product.sku}`, context, { branchId: salesReturn.branchId, warehouseId: salesReturn.warehouseId });
     return { data };
   }
@@ -767,6 +818,8 @@ export class SalesService {
       include: { product: true, warehouse: true, customer: { select: { name: true } } }
     });
     if (!salesReturn) throw new NotFoundException("Sales return was not found.");
+    // Fast-fail UX check only — the actual race-safe guard is the
+    // status-guarded updateMany in approveReturn/rejectReturn below.
     if (salesReturn.status !== "REQUESTED") throw new BadRequestException("Only pending returns can be approved or rejected.");
     if (salesReturn.createdById === user.id) throw new ForbiddenException("You cannot approve or reject your own return request.");
     this.assertWarehouseAccess(user, salesReturn.warehouseId);

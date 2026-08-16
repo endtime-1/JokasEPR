@@ -6,6 +6,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { LookupCacheService } from "../../common/services/lookup-cache.service";
 import { nextRef } from "../../common/next-ref";
 import { startOfTodayAccra } from "../../common/utils/timezone";
+import { withDbRetry } from "../../common/db-retry";
 import {
   ApproveStockDto,
   CreateInventoryItemDto,
@@ -267,10 +268,34 @@ export class InventoryService {
     if (!adjustment) throw new NotFoundException("Stock adjustment was not found.");
     this.assertWarehouseAccess(user, adjustment.warehouseId);
     if (!user.permissions.includes("inventory.manage")) throw new ForbiddenException("You cannot approve stock adjustments.");
+    // Fast-fail UX check only — the real guard is the status-guarded
+    // updateMany inside the transaction below.
     if (adjustment.status !== "PENDING_APPROVAL") throw new BadRequestException(`Adjustment is already ${adjustment.status.toLowerCase().replace(/_/g, " ")}. Only pending adjustments can be processed.`);
-    if (dto.status === "APPROVED") await this.applyAdjustment(user, id);
-    const data = await this.prisma.stockAdjustment.update({ where: { id }, data: { status: dto.status, approvedById: user.id, approvedAt: new Date(), updatedById: user.id } });
-    await this.prisma.stockApproval.updateMany({ where: { companyId: user.companyId, entityType: "StockAdjustment", entityId: id }, data: { status: dto.status, approvedById: user.id, approvedAt: new Date(), notes: dto.notes } });
+    const item = await this.prisma.inventoryItem.findUniqueOrThrow({ where: { id: adjustment.inventoryItemId } });
+
+    const data = await this.prisma.$transaction(async (tx) => {
+      // C2 (DB stability audit, 2026-08-16): status used to be checked by a
+      // plain read above, then applyAdjustment() ran in its OWN separate
+      // transaction, unconditionally — two concurrent approve calls on the
+      // same PENDING_APPROVAL adjustment both passed the check and both
+      // applied the stock effect (e.g. a +500kg stock-count correction
+      // applied twice, inflating on-hand quantity by 500kg that was never
+      // physically received). Claiming the row via a guarded updateMany
+      // first, and running the actual stock effect inside the SAME
+      // transaction as that claim, closes the race and keeps the two
+      // effects atomic with each other (same fix shape as approveReturn).
+      const claimed = await tx.stockAdjustment.updateMany({
+        where: { id, status: "PENDING_APPROVAL" },
+        data: { status: dto.status, approvedById: user.id, approvedAt: new Date(), updatedById: user.id }
+      });
+      if (claimed.count === 0) {
+        throw new BadRequestException("This adjustment has already been processed.");
+      }
+      if (dto.status === "APPROVED") await this.applyAdjustmentTx(tx, user, adjustment, item);
+      await tx.stockApproval.updateMany({ where: { companyId: user.companyId, entityType: "StockAdjustment", entityId: id }, data: { status: dto.status, approvedById: user.id, approvedAt: new Date(), notes: dto.notes } });
+      return tx.stockAdjustment.findUniqueOrThrow({ where: { id } });
+    });
+
     await this.writeAudit(user, dto.status === "APPROVED" ? "APPROVE" : "REJECT", "StockAdjustment", id, `Updated stock adjustment to ${dto.status}`, context, { branchId: adjustment.branchId, warehouseId: adjustment.warehouseId });
     return { data };
   }
@@ -427,20 +452,11 @@ export class InventoryService {
     return [["warehouse", "sku", "product", "quantity", "unit_cost", "total_value"], ...rows.map((row) => [row.warehouse, row.sku, row.product, String(row.quantityOnHand), String(row.unitCost), String(row.totalValue)])].map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(",")).join("\n");
   }
 
-  // Called outside any existing transaction (from approveAdjustment) — fetches
-  // its own rows and opens its own transaction around the shared tx-based core.
-  private async applyAdjustment(user: AuthenticatedUser, id: string) {
-    const adjustment = await this.prisma.stockAdjustment.findFirst({ where: { companyId: user.companyId, id, deletedAt: null } });
-    if (!adjustment) throw new NotFoundException("Stock adjustment was not found.");
-    const item = await this.prisma.inventoryItem.findUniqueOrThrow({ where: { id: adjustment.inventoryItemId } });
-    await this.prisma.$transaction((tx) => this.applyAdjustmentTx(tx, user, adjustment, item));
-  }
-
-  // Shared core, callable either standalone (applyAdjustment above) or nested
-  // inside an already-open transaction (createAdjustment) so the adjustment
-  // row's own creation/approval and the actual stock movement either both
-  // commit or both roll back together — see the (C1 follow-up) note on
-  // createAdjustment for why that matters.
+  // Shared core, called from within an already-open transaction (either
+  // createAdjustment or approveAdjustment) so the adjustment row's own
+  // creation/approval and the actual stock movement either both commit or
+  // both roll back together — see the (C1 follow-up) note on createAdjustment
+  // for why that matters.
   private async applyAdjustmentTx(
     tx: Prisma.TransactionClient,
     user: AuthenticatedUser,
@@ -479,7 +495,14 @@ export class InventoryService {
   }
 
   private async consumeFifo(user: AuthenticatedUser, item: { id: string; companyId: string; branchId: string; warehouseId: string; productionSiteId: string | null; productId: string; uomId: string }, quantity: number, movementType: "ADJUSTMENT_OUT" | "SALE_DISPATCH" | "TRANSFER" | "WASTE" | "PRODUCTION_INPUT" | "RETURN_OUT", referenceType: string, referenceId?: string, notes?: string) {
-    return this.prisma.$transaction((tx) => this.consumeFifoTx(tx, user, item, quantity, movementType, referenceType, referenceId, notes));
+    // High (DB stability audit, 2026-08-16): this locks StockBatch then
+    // InventoryItem, the opposite order used by Poultry/Soya/Market-Planning/
+    // Feed-Production for the same tables — retry on Prisma's deadlock code
+    // (P2034) instead of surfacing it as a hard failure.
+    return withDbRetry(
+      () => this.prisma.$transaction((tx) => this.consumeFifoTx(tx, user, item, quantity, movementType, referenceType, referenceId, notes)),
+      { label: "InventoryService.consumeFifo" }
+    );
   }
 
   private async consumeFifoTx(tx: Prisma.TransactionClient, user: AuthenticatedUser, item: { id: string; companyId: string; branchId: string; warehouseId: string; productionSiteId: string | null; productId: string; uomId: string }, quantity: number, movementType: "ADJUSTMENT_OUT" | "SALE_DISPATCH" | "TRANSFER" | "WASTE" | "PRODUCTION_INPUT" | "RETURN_OUT", referenceType: string, referenceId?: string, notes?: string) {

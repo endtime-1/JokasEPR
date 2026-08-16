@@ -520,6 +520,37 @@ jobs:
             # Written as a single -e string to avoid YAML-breaking heredocs.
             $MYSQL -e "CREATE TABLE IF NOT EXISTS \`_prisma_migrations\` (\`id\` varchar(36) NOT NULL,\`checksum\` varchar(64) NOT NULL DEFAULT '',\`finished_at\` datetime(3) DEFAULT NULL,\`migration_name\` varchar(255) NOT NULL,\`logs\` text DEFAULT NULL,\`rolled_back_at\` datetime(3) DEFAULT NULL,\`started_at\` datetime(3) NOT NULL DEFAULT current_timestamp(3),\`applied_steps_count\` int NOT NULL DEFAULT 0,PRIMARY KEY (\`id\`),UNIQUE KEY \`_prisma_migrations_migration_name_key\` (\`migration_name\`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;"
 
+            # High (DB stability audit, 2026-08-16): the seed block just below
+            # unconditionally marks 14 foundational migrations as "already
+            # applied" — correct for the actual prod DB this pipeline has
+            # always run against, but silently wrong on a genuinely fresh
+            # database: the loop further down would then skip those 14 files
+            # (marked done) and run only the LATER migrations against tables
+            # that were never created, producing a broken half-schema with no
+            # error. Worse, several of those early migration.sql files predate
+            # the Postgres→MySQL schema switch (see
+            # project_prisma_schema_consolidation memory) and contain
+            # Postgres-only DDL (`CREATE SCHEMA "public"`, `CREATE TYPE ...
+            # AS ENUM`) that can't even run against MySQL — so "just let the
+            # loop run every file" is not a safe fix here, only a louder
+            # failure is. `Company` is the tenant root every later table
+            # depends on, created by the very first real migration — its
+            # absence is a reliable signal this database has never been
+            # bootstrapped at all. Fail loudly and point at the verified
+            # restore-from-backup path (scripts/verify-backup-restore.sh)
+            # rather than silently seeding fake "already applied" markers
+            # over an empty schema.
+            HAS_COMPANY_TABLE=$($MYSQL -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='Company';" 2>/dev/null || echo "0")
+            if [ "$HAS_COMPANY_TABLE" = "0" ]; then
+              echo "ERROR: database '$DB_NAME' has no Company table — this looks like a genuinely fresh/empty database."
+              echo "This pipeline's migration runner assumes an existing, already-bootstrapped schema and cannot"
+              echo "safely initialize one from scratch (the earliest migration files predate the Postgres->MySQL"
+              echo "schema switch and are not valid MySQL DDL). Restore from the most recent backup instead —"
+              echo "see scripts/verify-backup-restore.sh for the verified restore procedure — then re-run this deploy."
+              rm -f /tmp/deploy-my.cnf
+              exit 1
+            fi
+
             # NOTE: as of 2026-08-05 every migration through 20260804000000 already has
             # a REAL checksum recorded (via scripts/reconcile-migration-history.sh, run
             # once by hand) instead of the historical placeholder ''. This seed block is
@@ -543,6 +574,16 @@ jobs:
             # (Notification table didn't exist yet). Superseded by 20260801085000_hr_d_tables_recovery.
             # Mark as rolled-back so the runner skips it permanently. Single-line for the
             # same drone-ssh-transport reason as the INSERT immediately above (H31).
+            #
+            # Medium (DB stability audit, 2026-08-16): this line is the ONLY thing
+            # preventing 20260801030000 from being attempted again and failing the
+            # same way it did before — there is no other record anywhere that this
+            # migration is permanently dead. If this line is ever refactored away
+            # (e.g. while cleaning up old one-off seed INSERTs) without carrying its
+            # semantics forward, the loop below will see 20260801030000 as pending
+            # and re-run it, hitting the exact same ALTER-before-CREATE failure this
+            # was written to prevent. Do not remove without confirming the rolled-back
+            # marker for this migration_name is preserved some other way first.
             $MYSQL -e "INSERT INTO \`_prisma_migrations\` (id,checksum,migration_name,started_at,rolled_back_at,applied_steps_count) VALUES (UUID(),'','20260801030000_hr_d_disciplinary_grievance',NOW(3),NOW(3),0) ON DUPLICATE KEY UPDATE rolled_back_at=COALESCE(rolled_back_at,NOW(3)),applied_steps_count=0,finished_at=NULL;" 2>&1 || true
 
             # Pre-fetch ALL migration statuses in ONE query — eliminates per-migration

@@ -15,11 +15,18 @@ const mockPrisma = {
     findUniqueOrThrow: jest.fn(),
     update: jest.fn()
   },
-  customerPayment: { aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 }, _count: 0 }), count: jest.fn().mockResolvedValue(0) },
+  customerPayment: { aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 }, _count: 0 }), count: jest.fn().mockResolvedValue(0), create: jest.fn(), findFirst: jest.fn() },
   bankAccount: { findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn(), update: jest.fn() },
   payrollRecord: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0), create: jest.fn(), update: jest.fn(), aggregate: jest.fn().mockResolvedValue({ _sum: { netPay: 0 }, _count: 0 }) },
   pettyCashTransaction: { findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn().mockResolvedValue(0), create: jest.fn() },
-  invoice: { findMany: jest.fn() },
+  invoice: {
+    findMany: jest.fn(),
+    findFirst: jest.fn(),
+    updateMany: jest.fn(),
+    findUniqueOrThrow: jest.fn(),
+    update: jest.fn()
+  },
+  salesOrder: { update: jest.fn() },
   poultryCostRecord: { groupBy: jest.fn() },
   productProfitability: { create: jest.fn() },
   account: { findFirst: jest.fn(), update: jest.fn(), count: jest.fn().mockResolvedValue(0) },
@@ -496,5 +503,116 @@ describe("FinanceService.createSupplierPayment — a linked invoice actually get
     );
 
     expect(result.data).toEqual({ id: "sp-existing" });
+  });
+});
+
+describe("FinanceService.createCustomerPayment — a linked invoice actually gets reduced, not just recorded as a free-text note (DB stability audit, 2026-08-16)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("records a free-text payment with no invoice touch when no invoice is linked (legacy behavior, unchanged)", async () => {
+    mockPrisma.customerPayment.create.mockResolvedValue({ id: "cp-1" });
+    const service = makeService();
+
+    await service.createCustomerPayment(makeUser(), { customerName: "Jane Farms", amount: 500, paymentDate: "2026-08-16", paymentMethod: "CASH", description: "Cash payment" } as never, {});
+
+    expect(mockPrisma.invoice.findFirst).not.toHaveBeenCalled();
+    expect(mockPrisma.invoice.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("floor-guards the decrement and marks the invoice PAID when a linked invoice's balance reaches zero, and syncs the linked SalesOrder", async () => {
+    mockPrisma.invoice.findFirst.mockResolvedValue({ id: "inv-1", balanceDue: 500, salesOrderId: "so-1" });
+    mockPrisma.invoice.updateMany.mockResolvedValue({ count: 1 });
+    mockPrisma.invoice.findUniqueOrThrow.mockResolvedValue({ balanceDue: 0 });
+    mockPrisma.customerPayment.create.mockResolvedValue({ id: "cp-1" });
+    const service = makeService();
+
+    await service.createCustomerPayment(
+      makeUser(),
+      { customerName: "Jane Farms", invoiceId: "inv-1", amount: 500, paymentDate: "2026-08-16", paymentMethod: "BANK_TRANSFER", description: "Full settlement" } as never,
+      {}
+    );
+
+    expect(mockPrisma.invoice.updateMany).toHaveBeenCalledWith({
+      where: { id: "inv-1", balanceDue: { gte: 500 } },
+      data: { paidAmount: { increment: 500 }, balanceDue: { decrement: 500 }, updatedById: "user-1" }
+    });
+    expect(mockPrisma.invoice.update).toHaveBeenCalledWith({ where: { id: "inv-1" }, data: { status: "PAID" } });
+    expect(mockPrisma.salesOrder.update).toHaveBeenCalledWith({
+      where: { id: "so-1" },
+      data: { paidAmount: { increment: 500 }, balanceDue: { decrement: 500 }, updatedById: "user-1" }
+    });
+  });
+
+  it("marks the invoice PARTIALLY_PAID (not PAID) when balance remains after a partial payment", async () => {
+    mockPrisma.invoice.findFirst.mockResolvedValue({ id: "inv-1", balanceDue: 500, salesOrderId: null });
+    mockPrisma.invoice.updateMany.mockResolvedValue({ count: 1 });
+    mockPrisma.invoice.findUniqueOrThrow.mockResolvedValue({ balanceDue: 200 });
+    mockPrisma.customerPayment.create.mockResolvedValue({ id: "cp-1" });
+    const service = makeService();
+
+    await service.createCustomerPayment(
+      makeUser(),
+      { customerName: "Jane Farms", invoiceId: "inv-1", amount: 300, paymentDate: "2026-08-16", paymentMethod: "BANK_TRANSFER", description: "Partial" } as never,
+      {}
+    );
+
+    expect(mockPrisma.invoice.update).toHaveBeenCalledWith({ where: { id: "inv-1" }, data: { status: "PARTIALLY_PAID" } });
+    expect(mockPrisma.salesOrder.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects a payment larger than the invoice's outstanding balance instead of driving it negative", async () => {
+    mockPrisma.invoice.findFirst.mockResolvedValue({ id: "inv-1", balanceDue: 200 });
+    const service = makeService();
+
+    await expect(
+      service.createCustomerPayment(
+        makeUser(),
+        { customerName: "Jane Farms", invoiceId: "inv-1", amount: 500, paymentDate: "2026-08-16", paymentMethod: "BANK_TRANSFER", description: "Overpay" } as never,
+        {}
+      )
+    ).rejects.toThrow(BadRequestException);
+    expect(mockPrisma.customerPayment.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects up front when the linked invoice already has no outstanding balance", async () => {
+    mockPrisma.invoice.findFirst.mockResolvedValue({ id: "inv-1", balanceDue: 0 });
+    const service = makeService();
+
+    await expect(
+      service.createCustomerPayment(
+        makeUser(),
+        { customerName: "Jane Farms", invoiceId: "inv-1", amount: 100, paymentDate: "2026-08-16", paymentMethod: "BANK_TRANSFER", description: "Already paid" } as never,
+        {}
+      )
+    ).rejects.toThrow(BadRequestException);
+    expect(mockPrisma.customerPayment.create).not.toHaveBeenCalled();
+  });
+
+  it("replays the original payment instead of recording a duplicate when the idempotencyKey was already used", async () => {
+    mockPrisma.customerPayment.findFirst.mockResolvedValue({ id: "cp-existing", reference: "CP-1" });
+    const service = makeService();
+
+    const result = await service.createCustomerPayment(
+      makeUser(),
+      { customerName: "Jane Farms", amount: 500, paymentDate: "2026-08-16", paymentMethod: "CASH", description: "Retry", idempotencyKey: "key-1" } as never,
+      {}
+    );
+
+    expect(result.data).toEqual({ id: "cp-existing", reference: "CP-1" });
+    expect(mockPrisma.customerPayment.create).not.toHaveBeenCalled();
+  });
+
+  it("replays the original payment when a concurrent duplicate loses the unique-constraint race (P2002)", async () => {
+    mockPrisma.customerPayment.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "cp-existing" });
+    mockPrisma.customerPayment.create.mockRejectedValue({ code: "P2002" });
+    const service = makeService();
+
+    const result = await service.createCustomerPayment(
+      makeUser(),
+      { customerName: "Jane Farms", amount: 500, paymentDate: "2026-08-16", paymentMethod: "CASH", description: "Race", idempotencyKey: "key-1" } as never,
+      {}
+    );
+
+    expect(result.data).toEqual({ id: "cp-existing" });
   });
 });

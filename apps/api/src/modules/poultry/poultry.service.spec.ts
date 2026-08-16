@@ -813,6 +813,9 @@ describe("PoultryService.updateRecord — feed correction is transactional and f
     mockPrisma.feedConsumptionRecord.findFirst.mockResolvedValue(existingFeedRecord);
     mockTx.feedConsumptionRecord.update.mockResolvedValue({ id: "fc-1", quantityKg: 150 });
     mockTx.inventoryItem.findFirst.mockResolvedValue({ id: "inv-1", branchId: "branch-1", uomId: "uom-1" });
+    // StockBatch lots are locked first (2026-08-16 lock-order reconciliation) —
+    // give them enough so this test exercises the InventoryItem-level race instead.
+    mockTx.stockBatch.findMany.mockResolvedValue([{ id: "sb-1", quantityRemaining: 50 }]);
     mockTx.inventoryItem.updateMany.mockResolvedValue({ count: 0 });
 
     const service = makeService();

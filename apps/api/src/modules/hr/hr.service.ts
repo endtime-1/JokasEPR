@@ -10,6 +10,7 @@ import { sanitizeFormulaCell } from "../../common/utils/csv";
 import { validateEnumFilter } from "../../common/utils/validate-enum-filter";
 import { nextRef } from "../../common/next-ref";
 import { roundMoney } from "../../common/utils/money";
+import { createLimiter } from "../../common/concurrency-limit";
 import {
   AssignTaskDto,
   BulkAttendanceDto,
@@ -75,9 +76,24 @@ function num(v: unknown) {
 // before trusting the numbers.
 const PAYE_BANDS_TAX_YEAR = 2024;
 
+// Shared shape for buildPayslipPdf/renderPayslipPdf/bulkEmailPayslips — see
+// the DB stability audit (2026-08-16) comment on renderPayslipPdf for why
+// this was split out.
+type PayslipPdfRow = Prisma.PayrollRecordGetPayload<{
+  include: {
+    employee: { select: { ssnitNumber: true; tinNumber: true; bankName: true; bankAccount: true; email: true } };
+    company: { select: { name: true } };
+  };
+}>;
+
 @Injectable()
 export class HRService {
   private readonly logger = new Logger(HRService.name);
+
+  // Medium (DB stability audit, 2026-08-16): caps how many payslip
+  // renders + SMTP sends bulkEmailPayslips runs at once — see its own
+  // comment for the full reasoning.
+  private readonly bulkPayslipLimit = createLimiter(5);
 
   constructor(
     private readonly prisma: PrismaService,
@@ -935,7 +951,7 @@ export class HRService {
     // Notify employee
     const empEmail = (row as any).employee?.email;
     if (empEmail) {
-      const empUser = await this.prisma.user.findFirst({ where: { email: empEmail, companyId: user.companyId } });
+      const empUser = await this.prisma.user.findFirst({ where: { email: empEmail, companyId: user.companyId, deletedAt: null } });
       if (empUser) void this.notifications.send({ companyId: user.companyId, userId: empUser.id, type: "PAYROLL_PAID" as never, title: "Payslip Ready", body: `Your ${row.period} salary has been processed. Net pay: GHS ${Number(row.netPay).toFixed(2)}`, entityType: "PayrollRecord", entityId: id });
     }
 
@@ -1228,8 +1244,8 @@ export class HRService {
 
     // Notify the employee
     if (row.employeeId) {
-      const emp = await this.prisma.employee.findFirst({ where: { id: row.employeeId }, select: { email: true } });
-      const empUser = emp?.email ? await this.prisma.user.findFirst({ where: { email: emp.email, companyId: user.companyId } }) : null;
+      const emp = await this.prisma.employee.findFirst({ where: { id: row.employeeId, deletedAt: null }, select: { email: true } });
+      const empUser = emp?.email ? await this.prisma.user.findFirst({ where: { email: emp.email, companyId: user.companyId, deletedAt: null } }) : null;
       if (empUser) {
         const type = dto.decision === "APPROVED" ? "LEAVE_APPROVED" : "LEAVE_REJECTED";
         void this.notifications.send({ companyId: user.companyId, userId: empUser.id, type: type as never, title: `Leave ${dto.decision}`, body: `Your ${row.leaveType} leave request has been ${dto.decision.toLowerCase()}`, entityType: "LeaveRequest", entityId: id });
@@ -1622,32 +1638,63 @@ export class HRService {
     year: number,
     delta: { pendingDelta?: number; takenDelta?: number },
   ) {
-    try {
-      const existing = await this.prisma.leaveBalance.findUnique({
-        where: { companyId_employeeId_leaveType_year: { companyId, employeeId, leaveType: leaveType as never, year } },
+    // High (DB stability audit, 2026-08-16): this used to be a plain
+    // findUnique → compute in JS → update, with no lock — two leave
+    // requests for the same employee/type/year approved close together
+    // (a manager clearing a backlog) could both read the same starting
+    // pending/taken values, and whichever write landed second silently
+    // clobbered the first, losing that request's effect on the balance
+    // entirely. `SELECT ... FOR UPDATE` inside a transaction is the same
+    // row-lock idiom poultry.service.ts already uses for its live-bird-count
+    // race — it holds the row for the rest of the transaction so a second
+    // concurrent call waits and reads this call's committed result instead
+    // of the stale snapshot.
+    const applyLockedDelta = async (tx: Prisma.TransactionClient, id: string) => {
+      await tx.$queryRaw`SELECT id FROM LeaveBalance WHERE id = ${id} FOR UPDATE`;
+      const locked = await tx.leaveBalance.findUniqueOrThrow({ where: { id } });
+      const newPending = Math.max(0, locked.pending + (delta.pendingDelta ?? 0));
+      const newTaken = Math.max(0, locked.taken + (delta.takenDelta ?? 0));
+      const newRemaining = Math.max(0, locked.entitled + locked.carryOver - newTaken - newPending);
+      await tx.leaveBalance.update({
+        where: { id: locked.id },
+        data: { pending: newPending, taken: newTaken, remaining: newRemaining },
       });
+    };
 
-      if (existing) {
-        const newPending = Math.max(0, existing.pending + (delta.pendingDelta ?? 0));
-        const newTaken = Math.max(0, existing.taken + (delta.takenDelta ?? 0));
-        const newRemaining = Math.max(0, existing.entitled + existing.carryOver - newTaken - newPending);
-        await this.prisma.leaveBalance.update({
-          where: { id: existing.id },
-          data: { pending: newPending, taken: newTaken, remaining: newRemaining },
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        const existing = await tx.leaveBalance.findUnique({
+          where: { companyId_employeeId_leaveType_year: { companyId, employeeId, leaveType: leaveType as never, year } },
         });
-      } else {
+
+        if (existing) {
+          await applyLockedDelta(tx, existing.id);
+          return;
+        }
+
         // Find entitlement from policy
-        const policy = await this.prisma.leavePolicy.findFirst({
+        const policy = await tx.leavePolicy.findFirst({
           where: { companyId, leaveType: leaveType as never, deletedAt: null, isActive: true },
         });
         const entitled = policy?.daysPerYear ?? 0;
         const pending = Math.max(0, delta.pendingDelta ?? 0);
         const taken = Math.max(0, delta.takenDelta ?? 0);
         const remaining = Math.max(0, entitled - taken - pending);
-        await this.prisma.leaveBalance.create({
-          data: { companyId, employeeId, leaveType: leaveType as never, year, entitled, taken, pending, remaining, carryOver: 0 },
-        });
-      }
+        try {
+          await tx.leaveBalance.create({
+            data: { companyId, employeeId, leaveType: leaveType as never, year, entitled, taken, pending, remaining, carryOver: 0 },
+          });
+        } catch (createErr: unknown) {
+          // A concurrent call for the same employee/type/year created the
+          // row first (unique constraint) — fall back to the locked-update
+          // path instead of losing this delta.
+          if ((createErr as { code?: string } | undefined)?.code !== "P2002") throw createErr;
+          const row = await tx.leaveBalance.findUniqueOrThrow({
+            where: { companyId_employeeId_leaveType_year: { companyId, employeeId, leaveType: leaveType as never, year } },
+          });
+          await applyLockedDelta(tx, row.id);
+        }
+      });
     } catch (err) {
       // Non-fatal by design — a balance-bookkeeping failure shouldn't roll back
       // an otherwise-valid leave request. (M12) But it used to be a bare `catch {}`,
@@ -1856,7 +1903,14 @@ export class HRService {
       include: { employee: { select: { ssnitNumber: true, tinNumber: true, bankName: true, bankAccount: true, email: true } }, company: { select: { name: true } } },
     });
     if (!row) throw new NotFoundException("Payroll record not found");
+    return this.renderPayslipPdf(row);
+  }
 
+  // Medium (DB stability audit, 2026-08-16): split out of buildPayslipPdf so
+  // bulkEmailPayslips can render straight from the row it already fetched in
+  // one findMany, instead of this method re-querying the same PayrollRecord
+  // by id for every single row in the batch (a pure N+1 re-fetch).
+  private async renderPayslipPdf(row: PayslipPdfRow): Promise<{ pdf: Buffer; filename: string }> {
     // Lazy dynamic import (not a static import) so pdfkit — and its font assets —
     // only load into memory when a payslip is actually being generated, not on
     // every API boot. This also satisfies the no-require-imports lint rule that
@@ -1955,23 +2009,31 @@ export class HRService {
   }
 
   async bulkEmailPayslips(user: AuthenticatedUser, period: string, ctx: RequestContext) {
+    // Medium (DB stability audit, 2026-08-16): this findMany now selects the
+    // full shape renderPayslipPdf needs, so each row below renders directly
+    // instead of buildPayslipPdf re-querying the same PayrollRecord by id a
+    // second time — a pure N+1 re-fetch for every row in the batch. The fan-
+    // out itself is also capped now (bulkPayslipLimit) instead of firing
+    // every row's PDF render + SMTP send simultaneously with no limit — a
+    // company with hundreds of employees used to fan out into hundreds of
+    // simultaneous DB queries, PDF renders, and SMTP sends from one request.
     const rows = await this.prisma.payrollRecord.findMany({
       where: { companyId: user.companyId, period, status: { in: ["APPROVED", "PAID"] }, deletedAt: null },
-      include: { employee: { select: { email: true } } },
+      include: { employee: { select: { ssnitNumber: true, tinNumber: true, bankName: true, bankAccount: true, email: true } }, company: { select: { name: true } } },
     });
 
     let sent = 0;
     let failed = 0;
-    await Promise.allSettled(rows.map(async (row) => {
-      const empEmail = (row as any).employee?.email;
+    await Promise.allSettled(rows.map((row) => this.bulkPayslipLimit.run(async () => {
+      const empEmail = row.employee?.email;
       if (!empEmail) { failed++; return; }
       try {
-        const { pdf, filename } = await this.buildPayslipPdf(row.id, user.companyId);
+        const { pdf, filename } = await this.renderPayslipPdf(row);
         const html = `<p>Dear ${row.employeeName},</p><p>Please find your payslip for ${row.period} attached.</p>`;
         const ok = await this.email.sendWithAttachment(empEmail, `Payslip — ${row.period}`, html, { filename, content: pdf });
         if (ok) sent++; else failed++;
       } catch { failed++; }
-    }));
+    })));
 
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "PayrollRecord", entityId: "bulk-email", action: "EXPORT", summary: `Sent ${sent}, failed ${failed} for ${period}`, ...ctx });
     return { data: { sent, failed, period } };
@@ -2035,7 +2097,7 @@ export class HRService {
     });
 
     // Notify the employee
-    const empUser = employee.email ? await this.prisma.user.findFirst({ where: { email: employee.email, companyId: user.companyId } }) : null;
+    const empUser = employee.email ? await this.prisma.user.findFirst({ where: { email: employee.email, companyId: user.companyId, deletedAt: null } }) : null;
     if (empUser) void this.notifications.send({ companyId: user.companyId, userId: empUser.id, type: "DISCIPLINARY_ISSUED" as never, title: "Disciplinary Notice", body: `A disciplinary action has been recorded for you. Category: ${dto.category}`, entityType: "DisciplinaryRecord", entityId: row.id });
 
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "DisciplinaryRecord", entityId: row.id, action: "CREATE", ...ctx });

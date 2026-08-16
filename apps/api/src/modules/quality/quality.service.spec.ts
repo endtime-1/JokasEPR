@@ -422,3 +422,42 @@ describe("QualityService — approve/reject/quarantine actually gate the stock l
     expect(mockTx.stockBatch.updateMany).toHaveBeenCalledWith({ where: { id: "sb-1", companyId: "company-1" }, data: { status: "QUARANTINED" } });
   });
 });
+
+describe("QualityService.approveBatch/rejectBatch — a losing concurrent race gets the same clean message, not a raw 500 (Medium, DB stability audit 2026-08-16)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const inScopeCheck = { id: "chk-1", status: "IN_PROGRESS", inspectorId: "inspector-1", createdById: "creator-1", referenceType: "GRN", referenceId: "grn-1", batchNumber: "B-1" };
+
+  it("approveBatch translates a P2002 (ApprovedBatch.checkId unique-constraint loss) into the same 'already approved' message the pre-check gives", async () => {
+    mockPrisma.qualityCheck.findFirst.mockResolvedValue(inScopeCheck);
+    mockPrisma.approvedBatch.findFirst.mockResolvedValue(null); // pre-check sees nothing yet — the race lands after this
+    mockTx.approvedBatch.create.mockRejectedValue({ code: "P2002" });
+
+    const service = makeService();
+    await expect(
+      service.approveBatch(makeUser({ id: "approver-1" }), "chk-1", { stockBatchId: "sb-1" } as never, {})
+    ).rejects.toThrow(/already approved/);
+  });
+
+  it("approveBatch re-throws a non-P2002 error unchanged", async () => {
+    mockPrisma.qualityCheck.findFirst.mockResolvedValue(inScopeCheck);
+    mockPrisma.approvedBatch.findFirst.mockResolvedValue(null);
+    mockTx.approvedBatch.create.mockRejectedValue(new Error("db unavailable"));
+
+    const service = makeService();
+    await expect(
+      service.approveBatch(makeUser({ id: "approver-1" }), "chk-1", { stockBatchId: "sb-1" } as never, {})
+    ).rejects.toThrow("db unavailable");
+  });
+
+  it("rejectBatch translates a P2002 (RejectedBatch.checkId unique-constraint loss) into the same 'already rejected' message the pre-check gives", async () => {
+    mockPrisma.qualityCheck.findFirst.mockResolvedValue(inScopeCheck);
+    mockPrisma.rejectedBatch.findFirst.mockResolvedValue(null);
+    mockTx.rejectedBatch.create.mockRejectedValue({ code: "P2002" });
+
+    const service = makeService();
+    await expect(
+      service.rejectBatch(makeUser({ id: "approver-1" }), "chk-1", { rejectionReason: "contaminated", stockBatchId: "sb-1" } as never, {})
+    ).rejects.toThrow(/already rejected/);
+  });
+});

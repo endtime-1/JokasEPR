@@ -5,6 +5,7 @@ import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { LookupCacheService } from "../../common/services/lookup-cache.service";
 import { nextRef } from "../../common/next-ref";
+import { withDbRetry } from "../../common/db-retry";
 import { sanitizeFormulaCell } from "../../common/utils/csv";
 import {
   CreateAssetDocumentDto,
@@ -212,10 +213,19 @@ export class MaintenanceService {
       if (!schedule) throw new NotFoundException("Maintenance schedule was not found.");
     }
     const recordNumber = await nextRef(this.prisma, user.companyId, "MR");
-    const data = await this.prisma.maintenanceRecord.create({ data: { companyId: user.companyId, ...scope, scheduleId: dto.scheduleId, recordNumber, maintenanceDate: dto.maintenanceDate ? new Date(dto.maintenanceDate) : new Date(), maintenanceType: dto.maintenanceType, status: "COMPLETED", completedById: user.id, description: dto.description, findings: dto.findings, nextDueDate: dto.nextDueDate ? new Date(dto.nextDueDate) : undefined, createdById: user.id } });
-    if (dto.scheduleId && dto.nextDueDate) {
-      await this.prisma.maintenanceSchedule.update({ where: { id: dto.scheduleId }, data: { lastCompletedAt: data.maintenanceDate, nextDueDate: new Date(dto.nextDueDate), status: "SCHEDULED", updatedById: user.id } });
-    }
+    // High (DB stability audit, 2026-08-16): the record and its schedule
+    // advance were two separate, unguarded writes — a crash between them
+    // left a maintenance record COMPLETED while the schedule it closed out
+    // never advanced, so the next-due date stayed stale and the asset kept
+    // showing as overdue forever. Same fix already applied to the
+    // breakdown/asset-status pair in createBreakdown above.
+    const data = await this.prisma.$transaction(async (tx) => {
+      const record = await tx.maintenanceRecord.create({ data: { companyId: user.companyId, ...scope, scheduleId: dto.scheduleId, recordNumber, maintenanceDate: dto.maintenanceDate ? new Date(dto.maintenanceDate) : new Date(), maintenanceType: dto.maintenanceType, status: "COMPLETED", completedById: user.id, description: dto.description, findings: dto.findings, nextDueDate: dto.nextDueDate ? new Date(dto.nextDueDate) : undefined, createdById: user.id } });
+      if (dto.scheduleId && dto.nextDueDate) {
+        await tx.maintenanceSchedule.update({ where: { id: dto.scheduleId }, data: { lastCompletedAt: record.maintenanceDate, nextDueDate: new Date(dto.nextDueDate), status: "SCHEDULED", updatedById: user.id } });
+      }
+      return record;
+    });
     await this.writeAudit(user, "CREATE", "MaintenanceRecord", data.id, `Recorded maintenance ${recordNumber}`, context, data);
     return { data };
   }
@@ -302,14 +312,19 @@ export class MaintenanceService {
     if (!item || Number(item.quantityOnHand) < dto.quantity) throw new BadRequestException("Insufficient spare part stock.");
     if (!product || !warehouse) throw new NotFoundException("Spare part or warehouse was not found.");
     const totalCost = dto.quantity * (dto.unitCost ?? 0);
-    const data = await this.prisma.$transaction(async (tx) => {
+    // High (DB stability audit, 2026-08-16): consumeSparePartTx locks
+    // StockBatch before InventoryItem — the opposite order used by
+    // inventory.service.ts's own FIFO consumption, which can deadlock under
+    // concurrent load. Retrying is the mitigation; the lock order itself is
+    // a separate follow-up.
+    const data = await withDbRetry(() => this.prisma.$transaction(async (tx) => {
       const usage = await tx.sparePartUsage.create({ data: { companyId: user.companyId, branchId: warehouse.branchId, warehouseId: warehouse.id, machineId: dto.machineId, equipmentId: dto.equipmentId, maintenanceRecordId: dto.maintenanceRecordId, breakdownRecordId: dto.breakdownRecordId, productId: product.id, quantity: dto.quantity, unitCost: dto.unitCost ?? 0, totalCost, issuedById: user.id, notes: dto.notes, createdById: user.id } });
       await this.consumeSparePartTx(tx, user, item, dto.quantity, usage.id, dto.unitCost ?? 0);
       if (totalCost > 0) {
         await tx.maintenanceCost.create({ data: { companyId: user.companyId, branchId: warehouse.branchId, warehouseId: warehouse.id, productionSiteId: warehouse.productionSiteId, machineId: dto.machineId, equipmentId: dto.equipmentId, maintenanceRecordId: dto.maintenanceRecordId, breakdownRecordId: dto.breakdownRecordId, costType: "SPARE_PART", amount: totalCost, description: `Spare part ${product.sku}`, approvedById: user.id, approvedAt: new Date(), createdById: user.id } });
       }
       return usage;
-    });
+    }), { label: "MaintenanceService.createSparePartUsage" });
     await this.writeAudit(user, "CREATE", "SparePartUsage", data.id, `Issued spare part ${product.sku}`, context, { branchId: warehouse.branchId, warehouseId: warehouse.id });
     return { data };
   }
