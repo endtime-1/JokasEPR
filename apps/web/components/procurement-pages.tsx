@@ -284,6 +284,10 @@ export function ProcurementDashboardPage() {
 
         <ProcurementNav />
 
+        {loadError && (
+          <div className="rounded-xl border-l-[3px] border-red-400 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">{loadError}</div>
+        )}
+
         {data && (data.systemAlerts ?? []).length > 0 && (
           <section className="overflow-hidden rounded-2xl border border-amber-200 border-l-[3px] border-l-amber-500 bg-white shadow-card">
             <div className="flex items-center gap-3 border-b border-amber-100 bg-amber-50/60 px-4 py-3">
@@ -525,6 +529,9 @@ export function SuppliersPage() {
           }
         />
         <ProcurementNav />
+        {loadError && (
+          <div className="rounded-xl border-l-[3px] border-red-400 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">{loadError}</div>
+        )}
         <div className="flex gap-3">
           <input
             value={search}
@@ -618,6 +625,11 @@ export function CreateSupplierPage() {
           }
         />
         <ProcurementNav />
+        {optionsError && (
+          <div className="rounded-xl border-l-[3px] border-red-400 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">
+            {optionsError}
+          </div>
+        )}
         {error && (
           <div className="rounded-xl border-l-[3px] border-red-400 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">
             {error}
@@ -752,6 +764,9 @@ export function SupplierCategoriesPage() {
           subtitle="Classify and group your suppliers"
         />
         <ProcurementNav />
+        {loadError && (
+          <div className="rounded-xl border-l-[3px] border-red-400 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">{loadError}</div>
+        )}
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-[380px_1fr]">
           <div className="rounded-2xl border border-line bg-white p-6 shadow-panel">
             <h2 className="mb-5 text-sm font-bold uppercase tracking-wide text-ink/45">New Category</h2>
@@ -876,6 +891,11 @@ export function PurchaseRequestsPage() {
         {actionErr && (
           <div className="rounded-xl border-l-[3px] border-red-400 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">
             {actionErr}
+          </div>
+        )}
+        {loadError && (
+          <div className="rounded-xl border-l-[3px] border-red-400 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">
+            {loadError}
           </div>
         )}
         <div className="flex flex-wrap gap-1.5">
@@ -1009,6 +1029,11 @@ export function CreatePurchaseRequestPage() {
           actions={<Link href="/procurement/purchase-requests" className="app-button-secondary">Cancel</Link>}
         />
         <ProcurementNav />
+        {optionsError && (
+          <div className="rounded-xl border-l-[3px] border-red-400 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">
+            {optionsError}
+          </div>
+        )}
         {error && (
           <div className="rounded-xl border-l-[3px] border-red-400 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">
             {error}
@@ -1176,6 +1201,11 @@ export function PurchaseOrdersPage() {
             {actionErr}
           </div>
         )}
+        {loadError && (
+          <div className="rounded-xl border-l-[3px] border-red-400 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">
+            {loadError}
+          </div>
+        )}
         <div className="flex flex-wrap gap-1.5">
           {statuses.map((s) => (
             <button
@@ -1312,6 +1342,11 @@ export function CreatePurchaseOrderPage() {
           actions={<Link href="/procurement/purchase-orders" className="app-button-secondary">Cancel</Link>}
         />
         <ProcurementNav />
+        {optionsError && (
+          <div className="rounded-xl border-l-[3px] border-red-400 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">
+            {optionsError}
+          </div>
+        )}
         {error && (
           <div className="rounded-xl border-l-[3px] border-red-400 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">
             {error}
@@ -1482,6 +1517,11 @@ export function GRNsPage() {
             {actionErr}
           </div>
         )}
+        {loadError && (
+          <div className="rounded-xl border-l-[3px] border-red-400 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">
+            {loadError}
+          </div>
+        )}
         <div className="flex flex-wrap gap-1.5">
           {statuses.map((s) => (
             <button
@@ -1580,10 +1620,15 @@ export function CreateGRNPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    apiFetch<ApiEnvelope<POOption[]>>("/procurement/purchase-orders?status=SENT_TO_SUPPLIER")
-      .then((r) => setPoOptions(r.data ?? []))
+    const p = new URLSearchParams({ status: "SENT_TO_SUPPLIER" });
+    if (form.supplierId) p.set("supplierId", form.supplierId);
+    apiFetch<ApiEnvelope<POOption[]>>(`/procurement/purchase-orders?${p}`)
+      .then((r) => {
+        setPoOptions(r.data ?? []);
+        setForm((prev) => (r.data ?? []).some((po) => po.id === prev.purchaseOrderId) ? prev : { ...prev, purchaseOrderId: "" });
+      })
       .catch(() => undefined);
-  }, []);
+  }, [form.supplierId]);
 
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm((p) => ({ ...p, [k]: e.target.value }));
@@ -1635,6 +1680,11 @@ export function CreateGRNPage() {
           actions={<Link href="/procurement/grns" className="app-button-secondary">Cancel</Link>}
         />
         <ProcurementNav />
+        {optionsError && (
+          <div className="rounded-xl border-l-[3px] border-red-400 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">
+            {optionsError}
+          </div>
+        )}
         {error && (
           <div className="rounded-xl border-l-[3px] border-red-400 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">
             {error}
@@ -1813,6 +1863,11 @@ export function SupplierInvoicesPage() {
           }
         />
         <ProcurementNav />
+        {(loadError || optionsError) && (
+          <div className="rounded-xl border-l-[3px] border-red-400 bg-red-50 px-4 py-3 text-sm text-red-800">
+            {loadError || optionsError}
+          </div>
+        )}
         {showForm && (
           <div className="rounded-2xl border border-line bg-white p-6 shadow-panel">
             <h2 className="mb-5 text-sm font-bold uppercase tracking-wide text-ink/45">New Invoice</h2>
@@ -1975,6 +2030,11 @@ export function ProcurementPaymentsPage() {
           }
         />
         <ProcurementNav />
+        {(loadError || optionsError) && (
+          <div className="rounded-xl border-l-[3px] border-red-400 bg-red-50 px-4 py-3 text-sm text-red-800">
+            {loadError || optionsError}
+          </div>
+        )}
         {showForm && (
           <div className="rounded-2xl border border-line bg-white p-6 shadow-panel">
             <h2 className="mb-5 text-sm font-bold uppercase tracking-wide text-ink/45">New Payment</h2>
@@ -2131,6 +2191,11 @@ export function SupplierPerformancePage() {
           }
         />
         <ProcurementNav />
+        {(loadError || optionsError) && (
+          <div className="rounded-xl border-l-[3px] border-red-400 bg-red-50 px-4 py-3 text-sm text-red-800">
+            {loadError || optionsError}
+          </div>
+        )}
         {showForm && (
           <div className="rounded-2xl border border-line bg-white p-6 shadow-panel">
             <h2 className="mb-5 text-sm font-bold uppercase tracking-wide text-ink/45">Performance Record</h2>
@@ -2292,6 +2357,11 @@ export function PriceHistoryPage() {
           }
         />
         <ProcurementNav />
+        {(loadError || optionsError) && (
+          <div className="rounded-xl border-l-[3px] border-red-400 bg-red-50 px-4 py-3 text-sm text-red-800">
+            {loadError || optionsError}
+          </div>
+        )}
         {showForm && (
           <div className="rounded-2xl border border-line bg-white p-6 shadow-panel">
             <h2 className="mb-5 text-sm font-bold uppercase tracking-wide text-ink/45">Record Price</h2>

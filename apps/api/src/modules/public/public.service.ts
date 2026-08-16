@@ -72,7 +72,7 @@ export class PublicService {
     const products = await this.prisma.product.findMany({
       where,
       select: {
-        id: true, name: true, sku: true, publicSlug: true, publicDescription: true,
+        id: true, name: true, publicSlug: true, publicDescription: true,
         publicImageUrl: true, storefrontCategory: true, minOrderQty: true, unitLabel: true,
         priceLists: {
           where: { status: "ACTIVE" },
@@ -84,8 +84,12 @@ export class PublicService {
       orderBy: [{ storefrontCategory: "asc" }, { name: "asc" }],
     });
 
+    // M-BUG: the internal SKU code was included in this public,
+    // unauthenticated response even though the storefront UI never reads or
+    // displays it — anyone calling the API directly (or scraping it) could
+    // read internal catalog codes for free.
     return products.map((p) => ({
-      id: p.id, name: p.name, sku: p.sku, slug: p.publicSlug, description: p.publicDescription,
+      id: p.id, name: p.name, slug: p.publicSlug, description: p.publicDescription,
       imageUrl: p.publicImageUrl, category: p.storefrontCategory,
       minOrderQty: p.minOrderQty ? Number(p.minOrderQty) : 1,
       unitLabel: p.unitLabel ?? "unit",
@@ -98,7 +102,7 @@ export class PublicService {
     const p = await this.prisma.product.findFirst({
       where: { companyId, publicSlug: slug, isPublic: true, deletedAt: null, status: "ACTIVE" },
       select: {
-        id: true, name: true, sku: true, publicSlug: true, publicDescription: true,
+        id: true, name: true, publicSlug: true, publicDescription: true,
         publicImageUrl: true, storefrontCategory: true, minOrderQty: true, unitLabel: true,
         priceLists: {
           where: { status: "ACTIVE" },
@@ -112,7 +116,7 @@ export class PublicService {
     if (!p) throw new NotFoundException("Product not found");
 
     return {
-      id: p.id, name: p.name, sku: p.sku, slug: p.publicSlug, description: p.publicDescription,
+      id: p.id, name: p.name, slug: p.publicSlug, description: p.publicDescription,
       imageUrl: p.publicImageUrl, category: p.storefrontCategory,
       minOrderQty: p.minOrderQty ? Number(p.minOrderQty) : 1,
       unitLabel: p.unitLabel ?? "unit",
@@ -475,7 +479,6 @@ export class PublicService {
       where: { storefrontRef: ref },
       select: {
         orderNumber: true, status: true, orderDate: true, totalAmount: true,
-        storefrontCustomerName: true, storefrontDeliveryAddress: true,
         items: {
           select: {
             quantity: true, unitPrice: true, lineTotal: true,
@@ -492,6 +495,12 @@ export class PublicService {
       APPROVED: "Confirmed — Preparing", FULFILLED: "Delivered", CANCELLED: "Cancelled",
     };
 
+    // M-BUG: this response used to include the customer's full name and
+    // delivery address for anyone holding a valid order reference — the
+    // order-status page never reads or renders either field. Access is
+    // gated only by possession of an unguessable reference (fine today),
+    // but returning more PII than the page needs means any future leak of
+    // that one reference exposes a full name and address, not just status.
     return {
       storefrontRef: ref,
       orderNumber:   order.orderNumber,
@@ -499,8 +508,6 @@ export class PublicService {
       statusLabel:   statusLabel[order.status] ?? order.status,
       createdAt:     order.orderDate,
       total:         Number(order.totalAmount),
-      customerName:  order.storefrontCustomerName,
-      deliveryAddress: order.storefrontDeliveryAddress,
       lines: order.items.map((i) => ({
         productName: (i.product as { name: string; unitLabel?: string | null }).name,
         qty:         Number(i.quantity),

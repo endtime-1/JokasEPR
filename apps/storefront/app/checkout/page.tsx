@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, FormEvent } from "react";
+import { useEffect, useState, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useCart } from "@/lib/cart-context";
 import { api } from "@/lib/api";
@@ -30,12 +30,14 @@ function getIdempotencyKey(): string {
 }
 
 export default function CheckoutPage() {
-  const { items, totalPrice, clear } = useCart();
+  const { items, totalPrice, clear, refreshPrices } = useCart();
   const router = useRouter();
 
   const [form, setForm] = useState({ name: "", phone: "", email: "", address: "", notes: "" });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => { void refreshPrices(); }, [refreshPrices]);
 
   if (!items.length)
     return (

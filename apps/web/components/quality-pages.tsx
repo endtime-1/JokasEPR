@@ -479,6 +479,7 @@ export function QualityTemplatesPage() {
       />
       <QualityNav />
 
+      {loadError && <div className="mb-4 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{loadError}</div>}
       {deleteError && <div className="mb-4 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{deleteError}</div>}
 
       {showCreate && (
@@ -639,6 +640,7 @@ export function QualityChecksPage({ filterType }: { filterType?: string }) {
       />
       <QualityNav checkType={checkType} />
 
+      {loadError && <div className="app-alert-warning mb-5">{loadError}</div>}
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <select value={checkType} onChange={(e) => setCheckType(e.target.value)} className={selectCls}>
           <option value="">All Types</option>
@@ -646,7 +648,7 @@ export function QualityChecksPage({ filterType }: { filterType?: string }) {
         </select>
         <select value={status} onChange={(e) => setStatus(e.target.value)} className={selectCls}>
           <option value="">All Statuses</option>
-          {["PENDING", "IN_PROGRESS", "PASSED", "FAILED", "CONDITIONALLY_PASSED"].map((s) => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
+          {["PENDING", "IN_PROGRESS", "PASSED", "FAILED", "CONDITIONALLY_PASSED", "CANCELLED"].map((s) => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
         </select>
         <select value={decision} onChange={(e) => setDecision(e.target.value)} className={selectCls}>
           <option value="">All Decisions</option>
@@ -742,6 +744,7 @@ export function CreateQualityCheckPage() {
           actions={<Link href="/quality/checks" className="app-button-secondary text-xs">← Back to checks</Link>}
         />
 
+        {optionsError && <div className="mb-5 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{optionsError}</div>}
         {error && <div className="mb-5 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
         <form onSubmit={submit} className="space-y-5">
@@ -880,8 +883,10 @@ const ACTION_BTNS = [
 export function QualityCheckDetailPage({ id }: { id: string }) {
   const [check, setCheck] = useState<CheckDetail | null>(() => getCachedFirst<ApiEnvelope<CheckDetail>>(`/quality/checks/${id}`)?.data ?? null);
   const [tab, setTab] = useState("overview");
-  const [actionForm, setActionForm] = useState({ type: "", notes: "", reason: "", conditions: "", score: "" });
+  const [actionForm, setActionForm] = useState({ type: "", notes: "", reason: "", conditions: "", score: "", stockBatchId: "", quantity: "", unitOfMeasure: "", disposalMethod: "QUARANTINE", disposalNotes: "" });
   const [saving, setSaving] = useState(false);
+  const [stockBatches, setStockBatches] = useState<{ id: string; batchNumber: string; status: string; quantityRemaining: string | number; product?: { name: string }; warehouse?: { name: string } }[]>([]);
+  const [stockBatchesError, setStockBatchesError] = useState("");
   const [error, setError] = useState("");
   const { opts, optionsError } = useQCOptions();
   const [showLabForm, setShowLabForm] = useState(false);
@@ -900,6 +905,14 @@ export function QualityCheckDetailPage({ id }: { id: string }) {
 
   useEffect(() => { load(); }, [id]);
 
+  useEffect(() => {
+    if (!["approve", "reject", "quarantine"].includes(actionForm.type)) return;
+    setStockBatchesError("");
+    apiFetch<ApiEnvelope<typeof stockBatches>>(`/quality/checks/${id}/stock-batch-candidates`)
+      .then((r) => setStockBatches(r.data ?? []))
+      .catch((err: any) => setStockBatchesError(err?.message ?? "Failed to load stock lots."));
+  }, [actionForm.type, id]);
+
   async function takeAction(type: string) {
     setSaving(true); setError("");
     try {
@@ -912,13 +925,13 @@ export function QualityCheckDetailPage({ id }: { id: string }) {
         pass:        { notes: actionForm.notes, overallScore: actionForm.score ? Number(actionForm.score) : undefined },
         fail:        { reason: actionForm.reason, notes: actionForm.notes, overallScore: actionForm.score ? Number(actionForm.score) : undefined },
         conditional: { conditions: actionForm.conditions, notes: actionForm.notes, overallScore: actionForm.score ? Number(actionForm.score) : undefined },
-        approve:     { approvalNotes: actionForm.notes },
-        reject:      { rejectionReason: actionForm.reason },
-        quarantine:  { reason: actionForm.reason, notes: actionForm.notes },
+        approve:     { approvalNotes: actionForm.notes, stockBatchId: actionForm.stockBatchId || undefined, quantity: actionForm.quantity ? Number(actionForm.quantity) : undefined, unitOfMeasure: actionForm.unitOfMeasure || undefined },
+        reject:      { rejectionReason: actionForm.reason, stockBatchId: actionForm.stockBatchId || undefined, quantity: actionForm.quantity ? Number(actionForm.quantity) : undefined, unitOfMeasure: actionForm.unitOfMeasure || undefined, disposalMethod: actionForm.disposalMethod || undefined, disposalNotes: actionForm.disposalNotes || undefined },
+        quarantine:  { reason: actionForm.reason, notes: actionForm.notes, stockBatchId: actionForm.stockBatchId || undefined },
       };
       if (ep[type]) {
         await apiFetch(ep[type], { method: "PATCH", body: JSON.stringify(body[type]) });
-        setActionForm({ type: "", notes: "", reason: "", conditions: "", score: "" });
+        setActionForm({ type: "", notes: "", reason: "", conditions: "", score: "", stockBatchId: "", quantity: "", unitOfMeasure: "", disposalMethod: "QUARANTINE", disposalNotes: "" });
         load();
       }
     } catch (err: unknown) { setError(err instanceof Error ? err.message : "Failed"); }
@@ -1030,6 +1043,7 @@ export function QualityCheckDetailPage({ id }: { id: string }) {
         </div>
       </div>
 
+      {optionsError && <div className="mb-5 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{optionsError}</div>}
       {error && <div className="mb-5 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
       {canDecide && !actionForm.type && (
@@ -1057,10 +1071,42 @@ export function QualityCheckDetailPage({ id }: { id: string }) {
                 <input type="number" min={0} max={100} value={actionForm.score} onChange={(e) => setActionForm((p) => ({ ...p, score: e.target.value }))} className="w-40 rounded-xl border border-line bg-white px-3 py-2 text-sm outline-none focus:border-brand focus:ring-4 focus:ring-brand/10" />
               </div>
             )}
+            {["approve", "reject", "quarantine"].includes(actionForm.type) && (
+              <>
+                {stockBatchesError && <p className="text-xs text-red-600">{stockBatchesError}</p>}
+                <div>
+                  <FormLabel>Stock Lot {actionForm.type === "approve" ? "(optional — confirms it available for use)" : "(optional — pulls it out of the usable pool)"}</FormLabel>
+                  <select value={actionForm.stockBatchId} onChange={(e) => setActionForm((p) => ({ ...p, stockBatchId: e.target.value }))} className={inputCls}>
+                    <option value="">— None —</option>
+                    {stockBatches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.batchNumber} · {b.product?.name ?? "—"} · {b.warehouse?.name ?? "—"} · {b.quantityRemaining} remaining · {b.status}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {actionForm.stockBatchId && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><FormLabel>Quantity</FormLabel><input type="number" min="0" step="0.001" value={actionForm.quantity} onChange={(e) => setActionForm((p) => ({ ...p, quantity: e.target.value }))} className={inputCls} /></div>
+                    <div><FormLabel>Unit of Measure</FormLabel><input value={actionForm.unitOfMeasure} onChange={(e) => setActionForm((p) => ({ ...p, unitOfMeasure: e.target.value }))} placeholder="e.g. kg" className={inputCls} /></div>
+                  </div>
+                )}
+                {actionForm.type === "reject" && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><FormLabel>Disposal Method</FormLabel>
+                      <select value={actionForm.disposalMethod} onChange={(e) => setActionForm((p) => ({ ...p, disposalMethod: e.target.value }))} className={inputCls}>
+                        {["QUARANTINE", "RETURN_TO_SUPPLIER", "DESTROY", "DOWNGRADE", "REWORK"].map((m) => <option key={m} value={m}>{m.replace(/_/g, " ")}</option>)}
+                      </select>
+                    </div>
+                    <div><FormLabel>Disposal Notes</FormLabel><input value={actionForm.disposalNotes} onChange={(e) => setActionForm((p) => ({ ...p, disposalNotes: e.target.value }))} className={inputCls} /></div>
+                  </div>
+                )}
+              </>
+            )}
             <div><FormLabel>Notes</FormLabel><textarea value={actionForm.notes} onChange={(e) => setActionForm((p) => ({ ...p, notes: e.target.value }))} rows={2} className={inputCls} /></div>
             <div className="flex gap-2">
               <button onClick={() => takeAction(actionForm.type)} disabled={saving} className="app-button-primary disabled:opacity-50">{saving ? "Saving..." : "Confirm"}</button>
-              <button onClick={() => setActionForm({ type: "", notes: "", reason: "", conditions: "", score: "" })} className="app-button-secondary">Cancel</button>
+              <button onClick={() => setActionForm({ type: "", notes: "", reason: "", conditions: "", score: "", stockBatchId: "", quantity: "", unitOfMeasure: "", disposalMethod: "QUARANTINE", disposalNotes: "" })} className="app-button-secondary">Cancel</button>
             </div>
           </div>
         </div>
@@ -1249,6 +1295,7 @@ export function RejectedBatchesPage() {
     <>
       <PageHero kicker="Operations · Quality Control" title="Rejected Batches" subtitle="Batches that failed quality inspection, with disposal status and linked corrective actions." />
       <QualityNav />
+      {loadError && <div className="app-alert-warning mb-6">{loadError}</div>}
       <div className="overflow-hidden rounded-2xl border border-line bg-white shadow-card">
         <DataTable
           columns={[
@@ -1291,6 +1338,7 @@ export function ApprovedBatchesPage() {
     <>
       <PageHero kicker="Operations · Quality Control" title="Approved Batches" subtitle="Batches that passed quality inspection and have been released to stock." />
       <QualityNav />
+      {loadError && <div className="app-alert-warning mb-6">{loadError}</div>}
       <div className="overflow-hidden rounded-2xl border border-line bg-white shadow-card">
         <DataTable
           columns={[
@@ -1355,7 +1403,11 @@ export function LabReportsPage() {
 
   useEffect(() => {
     load();
-    apiFetch<ApiEnvelope<{ total: number; items: { id: string; reference: string; checkType: string; batchNumber?: string }[] }>>("/quality/checks")
+    // Low: the backend caps this list at 100 per page — with no search or
+    // pagination in this picker, an older check beyond that cutoff simply
+    // can't be selected. Asking for the max page size narrows the gap; a
+    // real fix would need a searchable picker.
+    apiFetch<ApiEnvelope<{ total: number; items: { id: string; reference: string; checkType: string; batchNumber?: string }[] }>>("/quality/checks?limit=100")
       .then((r) => setChecks(r.data?.items ?? [])).catch(() => undefined);
   }, []);
 
@@ -1385,6 +1437,7 @@ export function LabReportsPage() {
       />
       <QualityNav />
 
+      {loadError && <div className="mb-4 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{loadError}</div>}
       {deleteError && <div className="mb-4 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{deleteError}</div>}
 
       {showForm && (
@@ -1463,8 +1516,12 @@ export function CorrectiveActionsPage() {
   const [error, setError] = useState("");
   const [resolveId, setResolveId] = useState("");
   const [resolution, setResolution] = useState("");
+  const [resolving, setResolving] = useState(false);
+  const [resolveActionError, setResolveActionError] = useState("");
   const [verifyId, setVerifyId] = useState("");
   const [verificationNotes, setVerificationNotes] = useState("");
+  const [verifying, setVerifying] = useState(false);
+  const [verifyActionError, setVerifyActionError] = useState("");
   const [loading, setLoading] = useState(!hasCached("/quality/corrective-actions"));
   const [loadError, setLoadError] = useState("");
   const [editAction, setEditAction] = useState<(CorrectiveAction & { description?: string; rootCause?: string; preventiveMeasure?: string; assignedToId?: string }) | null>(null);
@@ -1474,6 +1531,8 @@ export function CorrectiveActionsPage() {
   const [deleteAction, setDeleteAction] = useState<CorrectiveAction | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  const [checks, setChecks] = useState<{ id: string; reference: string; checkType: string; batchNumber?: string }[]>([]);
+  const [rejectedBatches, setRejectedBatches] = useState<{ id: string; reference: string; batchNumber?: string }[]>([]);
 
   function load() {
     setLoadError("");
@@ -1483,6 +1542,13 @@ export function CorrectiveActionsPage() {
   }
 
   useEffect(() => { load(); }, [status]);
+
+  useEffect(() => {
+    apiFetch<ApiEnvelope<{ total: number; items: { id: string; reference: string; checkType: string; batchNumber?: string }[] }>>("/quality/checks?limit=100")
+      .then((r) => setChecks(r.data?.items ?? [])).catch(() => undefined);
+    apiFetch<ApiEnvelope<{ id: string; reference: string; batchNumber?: string }[]>>("/quality/rejected-batches")
+      .then((r) => setRejectedBatches(r.data ?? [])).catch(() => undefined);
+  }, []);
 
   const f = (k: string) => (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm((p) => ({ ...p, [k]: e.target.value }));
@@ -1500,15 +1566,31 @@ export function CorrectiveActionsPage() {
   }
 
   async function resolve() {
-    if (!resolveId || !resolution) return;
-    await apiFetch(`/quality/corrective-actions/${resolveId}/resolve`, { method: "PATCH", body: JSON.stringify({ resolution }) })
-      .then(() => { setResolveId(""); setResolution(""); load(); }).catch(() => undefined);
+    if (!resolveId || !resolution || resolving) return;
+    setResolving(true);
+    setResolveActionError("");
+    try {
+      await apiFetch(`/quality/corrective-actions/${resolveId}/resolve`, { method: "PATCH", body: JSON.stringify({ resolution }) });
+      setResolveId(""); setResolution(""); load();
+    } catch (err: unknown) {
+      setResolveActionError(err instanceof Error ? err.message : "Failed to resolve.");
+    } finally {
+      setResolving(false);
+    }
   }
 
   async function verify() {
-    if (!verifyId || !verificationNotes) return;
-    await apiFetch(`/quality/corrective-actions/${verifyId}/verify`, { method: "PATCH", body: JSON.stringify({ verificationNotes }) })
-      .then(() => { setVerifyId(""); setVerificationNotes(""); load(); }).catch(() => undefined);
+    if (!verifyId || !verificationNotes || verifying) return;
+    setVerifying(true);
+    setVerifyActionError("");
+    try {
+      await apiFetch(`/quality/corrective-actions/${verifyId}/verify`, { method: "PATCH", body: JSON.stringify({ verificationNotes }) });
+      setVerifyId(""); setVerificationNotes(""); load();
+    } catch (err: unknown) {
+      setVerifyActionError(err instanceof Error ? err.message : "Failed to verify.");
+    } finally {
+      setVerifying(false);
+    }
   }
 
   function startEdit(r: CorrectiveAction & { description?: string; rootCause?: string; preventiveMeasure?: string; assignedToId?: string }) {
@@ -1582,6 +1664,7 @@ export function CorrectiveActionsPage() {
       />
       <QualityNav />
 
+      {(loadError || optionsError) && <div className="mb-4 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{loadError || optionsError}</div>}
       {deleteError && <div className="mb-4 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{deleteError}</div>}
 
       {overdueCount > 0 && (
@@ -1603,6 +1686,18 @@ export function CorrectiveActionsPage() {
           <form onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
             <div className="sm:col-span-2"><FormLabel>Title *</FormLabel><input required value={form.title} onChange={f("title")} className={inputCls} /></div>
             <div className="sm:col-span-2"><FormLabel>Description *</FormLabel><textarea required value={form.description} onChange={f("description")} rows={3} className={inputCls} /></div>
+            <div><FormLabel>Linked Quality Check</FormLabel>
+              <select value={form.checkId} onChange={(e) => setForm((p) => ({ ...p, checkId: e.target.value, rejectedBatchId: e.target.value ? "" : p.rejectedBatchId }))} className={inputCls}>
+                <option value="">— None —</option>
+                {checks.map((c) => <option key={c.id} value={c.id}>{c.reference} — {c.checkType}{c.batchNumber ? ` (${c.batchNumber})` : ""}</option>)}
+              </select>
+            </div>
+            <div><FormLabel>Linked Rejected Batch</FormLabel>
+              <select value={form.rejectedBatchId} onChange={(e) => setForm((p) => ({ ...p, rejectedBatchId: e.target.value, checkId: e.target.value ? "" : p.checkId }))} className={inputCls}>
+                <option value="">— None —</option>
+                {rejectedBatches.map((b) => <option key={b.id} value={b.id}>{b.reference}{b.batchNumber ? ` (${b.batchNumber})` : ""}</option>)}
+              </select>
+            </div>
             <div><FormLabel>Priority</FormLabel>
               <select value={form.priority} onChange={f("priority")} className={inputCls}>
                 {["LOW", "MEDIUM", "HIGH", "URGENT"].map((p) => <option key={p} value={p}>{p}</option>)}
@@ -1627,10 +1722,11 @@ export function CorrectiveActionsPage() {
       {resolveId && (
         <div className="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50/40 p-5 shadow-card">
           <p className="mb-3 font-semibold text-ink">Resolve Corrective Action</p>
+          {resolveActionError && <p className="mb-3 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{resolveActionError}</p>}
           <textarea value={resolution} onChange={(e) => setResolution(e.target.value)} placeholder="Describe the resolution steps taken..." rows={3} className={inputCls} />
           <div className="mt-3 flex gap-2">
-            <button onClick={resolve} className="rounded-xl bg-emerald-600 px-5 py-2 text-sm font-bold text-white hover:bg-emerald-700">Confirm Resolution</button>
-            <button onClick={() => { setResolveId(""); setResolution(""); }} className="app-button-secondary">Cancel</button>
+            <button onClick={resolve} disabled={resolving} className="rounded-xl bg-emerald-600 px-5 py-2 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50">{resolving ? "Resolving..." : "Confirm Resolution"}</button>
+            <button onClick={() => { setResolveId(""); setResolution(""); setResolveActionError(""); }} className="app-button-secondary">Cancel</button>
           </div>
         </div>
       )}
@@ -1638,10 +1734,11 @@ export function CorrectiveActionsPage() {
       {verifyId && (
         <div className="mb-5 rounded-2xl border border-blue-200 bg-blue-50/40 p-5 shadow-card">
           <p className="mb-3 font-semibold text-ink">Verify Resolution Effectiveness</p>
+          {verifyActionError && <p className="mb-3 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{verifyActionError}</p>}
           <textarea value={verificationNotes} onChange={(e) => setVerificationNotes(e.target.value)} placeholder="Confirm the resolution was effective and the root cause has been eliminated..." rows={3} className={inputCls} />
           <div className="mt-3 flex gap-2">
-            <button onClick={verify} className="rounded-xl bg-blue-600 px-5 py-2 text-sm font-bold text-white hover:bg-blue-700">Confirm Verification</button>
-            <button onClick={() => { setVerifyId(""); setVerificationNotes(""); }} className="app-button-secondary">Cancel</button>
+            <button onClick={verify} disabled={verifying} className="rounded-xl bg-blue-600 px-5 py-2 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50">{verifying ? "Verifying..." : "Confirm Verification"}</button>
+            <button onClick={() => { setVerifyId(""); setVerificationNotes(""); setVerifyActionError(""); }} className="app-button-secondary">Cancel</button>
           </div>
         </div>
       )}

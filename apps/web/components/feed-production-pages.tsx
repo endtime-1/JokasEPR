@@ -433,6 +433,12 @@ export function FormulaBuilderPage() {
           </div>
         </div>
 
+        {optionsError && (
+          <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+            <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{optionsError}</span>
+          </div>
+        )}
         {error && (
           <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
             <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
@@ -468,11 +474,11 @@ export function FormulaBuilderPage() {
               </div>
               <div>
                 <label className="mb-1.5 block text-xs font-semibold text-ink/55">Formula Code *</label>
-                <input required className={inputCls} placeholder="e.g. FM-LM-001" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} />
+                <input required maxLength={40} className={inputCls} placeholder="e.g. FM-LM-001" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} />
               </div>
               <div>
                 <label className="mb-1.5 block text-xs font-semibold text-ink/55">Formula Name *</label>
-                <input required className={inputCls} placeholder="e.g. Layer Mash Premium" value={name} onChange={(e) => setName(e.target.value)} />
+                <input required maxLength={160} className={inputCls} placeholder="e.g. Layer Mash Premium" value={name} onChange={(e) => setName(e.target.value)} />
               </div>
               <div>
                 <label className="mb-1.5 block text-xs font-semibold text-ink/55">Target Batch kg *</label>
@@ -699,16 +705,19 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
   const { options, optionsError } = useFeedOptions();
   const [formula, setFormula] = useState<FormulaRow | null>(() => getCachedFirst<ApiEnvelope<FormulaRow>>(`/feed-production/formulas/${params.id}`)?.data ?? null);
   const [costing, setCosting] = useState<FormulaRow["costing"] | null>(() => getCachedFirst<ApiEnvelope<FormulaRow["costing"]>>(`/feed-production/formulas/${params.id}/costing`)?.data ?? null);
+  const [loading, setLoading] = useState(!hasCached(`/feed-production/formulas/${params.id}`));
 
   // Header edit state
   const [editingHeader, setEditingHeader] = useState(false);
   const [headerDraft, setHeaderDraft] = useState({ name: "", targetBatchKg: "" });
   const [headerSaving, setHeaderSaving] = useState(false);
+  const [headerErr, setHeaderErr] = useState("");
 
   // Per-ingredient edit state
   const [editingRow, setEditingRow] = useState<string | null>(null);
   const [rowDraft, setRowDraft] = useState({ quantityKg: "", unitCost: "" });
   const [rowSaving, setRowSaving] = useState(false);
+  const [rowErr, setRowErr] = useState("");
   // confirmDeleteId: first click → show inline confirm; deletingId: delete in flight
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -728,11 +737,15 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
 
   async function load() {
     setLoadError("");
-    const response = await apiFetch<ApiEnvelope<FormulaRow>>(`/feed-production/formulas/${params.id}`);
-    setFormula(response.data);
-    if (mode === "costing") {
-      const cost = await apiFetch<ApiEnvelope<FormulaRow["costing"]>>(`/feed-production/formulas/${params.id}/costing`);
-      setCosting(cost.data);
+    try {
+      const response = await apiFetch<ApiEnvelope<FormulaRow>>(`/feed-production/formulas/${params.id}`);
+      setFormula(response.data);
+      if (mode === "costing") {
+        const cost = await apiFetch<ApiEnvelope<FormulaRow["costing"]>>(`/feed-production/formulas/${params.id}/costing`);
+        setCosting(cost.data);
+      }
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -745,6 +758,7 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
 
   async function saveHeader() {
     setHeaderSaving(true);
+    setHeaderErr("");
     try {
       await apiFetch(`/feed-production/formulas/${params.id}`, {
         method: "PATCH",
@@ -752,6 +766,8 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
       });
       setEditingHeader(false);
       await load();
+    } catch (e: unknown) {
+      setHeaderErr(e instanceof Error ? e.message : "Failed to save changes.");
     } finally {
       setHeaderSaving(false);
     }
@@ -764,6 +780,7 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
 
   async function saveRow(ingId: string) {
     setRowSaving(true);
+    setRowErr("");
     try {
       await apiFetch(`/feed-production/formulas/${params.id}/ingredients/${ingId}`, {
         method: "PATCH",
@@ -771,6 +788,8 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
       });
       setEditingRow(null);
       await load();
+    } catch (e: unknown) {
+      setRowErr(e instanceof Error ? e.message : "Failed to save changes.");
     } finally {
       setRowSaving(false);
     }
@@ -790,26 +809,46 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
     }
   }
 
+  const [addingIngredient, setAddingIngredient] = useState(false);
+  const [addIngredientErr, setAddIngredientErr] = useState("");
   async function addIngredient(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await apiFetch(`/feed-production/formulas/${params.id}/ingredients`, {
-      method: "POST",
-      body: JSON.stringify({ ingredientId: ingredient.ingredientId || options.rawMaterials[0]?.id, quantityKg: Number(ingredient.quantityKg), unitCost: Number(ingredient.unitCost) })
-    });
-    setIngredient({ ingredientId: "", quantityKg: "", unitCost: "" });
-    await load();
+    setAddingIngredient(true);
+    setAddIngredientErr("");
+    try {
+      await apiFetch(`/feed-production/formulas/${params.id}/ingredients`, {
+        method: "POST",
+        body: JSON.stringify({ ingredientId: ingredient.ingredientId || options.rawMaterials[0]?.id, quantityKg: Number(ingredient.quantityKg), unitCost: Number(ingredient.unitCost) })
+      });
+      setIngredient({ ingredientId: "", quantityKg: "", unitCost: "" });
+      await load();
+    } catch (e: unknown) {
+      setAddIngredientErr(e instanceof Error ? e.message : "Failed to add ingredient.");
+    } finally {
+      setAddingIngredient(false);
+    }
   }
 
+  const [creatingVersion, setCreatingVersion] = useState(false);
+  const [createVersionErr, setCreateVersionErr] = useState("");
   async function createVersion() {
-    await apiFetch(`/feed-production/formulas/${params.id}/versions`, { method: "POST", body: JSON.stringify({ status: "ACTIVE", notes: "Version created from current formula ingredients" }) });
-    await load();
+    setCreatingVersion(true);
+    setCreateVersionErr("");
+    try {
+      await apiFetch(`/feed-production/formulas/${params.id}/versions`, { method: "POST", body: JSON.stringify({ status: "ACTIVE", notes: "Version created from current formula ingredients" }) });
+      await load();
+    } catch (e: unknown) {
+      setCreateVersionErr(e instanceof Error ? e.message : "Failed to create version.");
+    } finally {
+      setCreatingVersion(false);
+    }
   }
 
   async function archiveFormula() {
     setArchiving(true);
     setArchiveErr("");
     try {
-      await apiFetch(`/feed-production/formulas/${params.id}`, { method: "PATCH", body: JSON.stringify({ status: "INACTIVE" }) });
+      await apiFetch(`/feed-production/formulas/${params.id}`, { method: "PATCH", body: JSON.stringify({ status: "ARCHIVED" }) });
       await load();
     } catch (e: unknown) {
       setArchiveErr(e instanceof Error ? e.message : "Archive failed");
@@ -863,7 +902,7 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
             >
               <Pencil className="h-3.5 w-3.5" aria-hidden /> Edit
             </button>
-            {formula?.status === "INACTIVE" ? (
+            {formula?.status === "ARCHIVED" ? (
               <button
                 onClick={restoreFormula}
                 disabled={archiving}
@@ -880,7 +919,7 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
                 {archiving ? "Archiving…" : "Archive"}
               </button>
             )}
-            {formula?.status === "INACTIVE" && (
+            {formula?.status === "ARCHIVED" && (
               confirmDeleteFormula ? (
                 <div className="flex items-center gap-1.5">
                   <span className="text-sm text-ink/50">Delete permanently?</span>
@@ -910,6 +949,12 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
           </div>
         )}
       </div>
+      {(loadError || optionsError) && (
+        <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+          <CircleAlert className="h-4 w-4 shrink-0" />
+          <span>{loadError || optionsError}</span>
+        </div>
+      )}
       {(archiveErr || deleteFormulaErr) && (
         <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
           <CircleAlert className="h-4 w-4 shrink-0" />
@@ -951,6 +996,7 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
               Cancel
             </button>
           </div>
+          {headerErr && <p className="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{headerErr}</p>}
         </div>
       )}
 
@@ -970,10 +1016,11 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
 
       {mode === "versions" ? (
         <>
-          <button className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" onClick={createVersion}>
-            <RotateCw aria-hidden className="h-4 w-4" /> Create version
+          <button disabled={creatingVersion} className="mb-2 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60" onClick={createVersion}>
+            <RotateCw aria-hidden className="h-4 w-4" /> {creatingVersion ? "Creating…" : "Create version"}
           </button>
-          <DataTable rows={formula?.versions ?? []} empty="No versions found" columns={[
+          {createVersionErr && <p className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{createVersionErr}</p>}
+          <DataTable rows={formula?.versions ?? []} loading={loading} empty="No versions found" columns={[
             { key: "version", label: "Version", render: (row) => `v${row.versionNo}` },
             { key: "status", label: "Status", render: (row) => row.status },
             { key: "cost100", label: "Cost / 100kg", render: (row) => money(row.costPer100Kg) },
@@ -1009,7 +1056,9 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
                   </tr>
                 </thead>
                 <tbody>
-                  {(formula?.ingredients ?? []).length === 0 ? (
+                  {loading ? (
+                    <tr><td colSpan={9} className="px-5 py-10 text-center text-sm text-ink/40">Loading…</td></tr>
+                  ) : (formula?.ingredients ?? []).length === 0 ? (
                     <tr><td colSpan={9} className="px-5 py-10 text-center text-sm text-ink/40">No ingredients yet — add below</td></tr>
                   ) : (
                     (formula?.ingredients ?? []).map((ing, idx) => {
@@ -1135,10 +1184,18 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
               <button onClick={() => setDeleteErr("")} className="ml-auto text-red-400 hover:text-red-600">✕</button>
             </div>
           )}
+          {rowErr && (
+            <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+              <CircleAlert className="h-4 w-4 shrink-0" />
+              <span>{rowErr}</span>
+              <button onClick={() => setRowErr("")} className="ml-auto text-red-400 hover:text-red-600">✕</button>
+            </div>
+          )}
 
           {/* Add ingredient */}
           <div className="rounded-2xl border border-line bg-white p-5 shadow-panel">
             <h3 className="mb-4 text-sm font-bold text-ink">Add Ingredient</h3>
+            {addIngredientErr && <p className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{addIngredientErr}</p>}
             <form onSubmit={addIngredient} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div className="sm:col-span-2">
                 <label className="mb-1.5 block text-xs font-semibold text-ink/55">Ingredient *</label>
@@ -1172,8 +1229,8 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
                   onChange={(e) => setIngredient({ ...ingredient, unitCost: e.target.value })}
                 />
               </div>
-              <button type="submit" className="app-button-primary lg:mt-[22px] sm:col-span-2 lg:col-span-4 lg:w-max">
-                <Plus className="h-4 w-4" /> Add ingredient
+              <button type="submit" disabled={addingIngredient} className="app-button-primary lg:mt-[22px] sm:col-span-2 lg:col-span-4 lg:w-max disabled:opacity-60">
+                <Plus className="h-4 w-4" /> {addingIngredient ? "Adding…" : "Add ingredient"}
               </button>
             </form>
           </div>
@@ -1305,6 +1362,11 @@ export function FeedProductionOrdersPage({ create = false }: { create?: boolean 
   return (
     <>
       <PageHeader title={create ? "Create Production Order" : "Feed Production Orders"} subtitle="Plan, approve, and monitor feed mill production orders." />
+      {(loadError || optionsError) && (
+        <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+          <CircleAlert className="h-4 w-4 shrink-0" /><span>{loadError || optionsError}</span>
+        </div>
+      )}
       {actionErr && (
         <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
           <CircleAlert className="h-4 w-4 shrink-0" /><span>{actionErr}</span>
@@ -1609,6 +1671,11 @@ export function FeedBatchCreatePage() {
         <p className="mt-0.5 text-sm text-ink/50">Record produced quantities, costs, and link to an approved production order.</p>
       </div>
 
+      {optionsError && (
+        <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+          <CircleAlert className="h-4 w-4 shrink-0" /><span>{optionsError}</span>
+        </div>
+      )}
       {submitErr && (
         <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
           <CircleAlert className="h-4 w-4 shrink-0" /><span>{submitErr}</span>
@@ -1675,7 +1742,7 @@ export function FeedBatchCreatePage() {
             <div>
               <label className="mb-1.5 block text-xs font-semibold text-ink/55">Batch number (auto if blank)</label>
               <input
-                type="text" placeholder="e.g. BATCH-2026-0012"
+                type="text" placeholder="e.g. BATCH-2026-0012" maxLength={48}
                 className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
                 value={form.batchNumber}
                 onChange={(e) => setForm((f) => ({ ...f, batchNumber: e.target.value }))}
@@ -1766,6 +1833,7 @@ export function FeedBatchDetailsPage() {
   const params = useParams<{ id: string }>();
   const { options, optionsError } = useFeedOptions();
   const [batch, setBatch] = useState<BatchDetail | null>(() => getCachedFirst<ApiEnvelope<BatchDetail>>(`/feed-production/batches/${params.id}`)?.data ?? null);
+  const [loading, setLoading] = useState(!hasCached(`/feed-production/batches/${params.id}`));
   const [label, setLabel] = useState<BatchLabel | null>(null);
   const [showLabel, setShowLabel] = useState(false);
   const [qcErr, setQcErr] = useState("");
@@ -1784,8 +1852,12 @@ export function FeedBatchDetailsPage() {
 
   async function load() {
     setLoadError("");
-    const res = await apiFetch<ApiEnvelope<BatchDetail>>(`/feed-production/batches/${params.id}`);
-    setBatch(res.data);
+    try {
+      const res = await apiFetch<ApiEnvelope<BatchDetail>>(`/feed-production/batches/${params.id}`);
+      setBatch(res.data);
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, [params.id]);
@@ -1881,6 +1953,12 @@ export function FeedBatchDetailsPage() {
         </button>
       </div>
 
+      {(loadError || optionsError) && (
+        <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+          <CircleAlert className="h-4 w-4 shrink-0" /><span>{loadError || optionsError}</span>
+        </div>
+      )}
+
       {/* Batch label card */}
       {showLabel && label && (
         <div className="mb-6 overflow-hidden rounded-2xl border-2 border-brand/20 bg-white shadow-panel print:border-black">
@@ -1953,7 +2031,7 @@ export function FeedBatchDetailsPage() {
         </div>
       )}
       <BatchSection title="Quality Checks">
-        <DataTable rows={b?.qualityChecks ?? []} empty="No quality checks recorded" columns={[
+        <DataTable rows={b?.qualityChecks ?? []} loading={loading} empty="No quality checks recorded" columns={[
           { key: "status", label: "Status", render: (r) => <StatusBadge status={r.status} /> },
           { key: "moisture", label: "Moisture %", render: (r) => r.moisturePercent != null ? `${r.moisturePercent}%` : "-" },
           { key: "protein", label: "Protein %", render: (r) => r.proteinPercent != null ? `${r.proteinPercent}%` : "-" },
@@ -2042,7 +2120,7 @@ export function FeedBatchDetailsPage() {
             </div>
             <div>
               <label className="mb-1.5 block text-xs font-semibold text-ink/55">Customer name</label>
-              <input type="text" placeholder="optional"
+              <input type="text" placeholder="optional" maxLength={160}
                 className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
                 value={saleForm.customerName}
                 onChange={(e) => setSaleForm((f) => ({ ...f, customerName: e.target.value }))}
@@ -2107,11 +2185,12 @@ type UsageRow = {
 export function FeedRawMaterialUsagePage() {
   const [rows, setRows] = useState<UsageRow[]>(() => getCachedFirst<ApiEnvelope<UsageRow[]>>("/feed-production/raw-material-usage")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/feed-production/raw-material-usage"));
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
     apiFetch<ApiEnvelope<UsageRow[]>>("/feed-production/raw-material-usage")
       .then((res) => setRows(res.data ?? []))
-      .catch(() => undefined)
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
       .finally(() => setLoading(false));
   }, []);
 
@@ -2122,6 +2201,11 @@ export function FeedRawMaterialUsagePage() {
   return (
     <>
       <PageHeader title="Raw Material Usage" subtitle="Raw material issue, cost, and wastage records by batch." />
+      {loadError && (
+        <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+          <CircleAlert className="h-4 w-4 shrink-0" /><span>{loadError}</span>
+        </div>
+      )}
       <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
         {[
           ["Usage records", rows.length],
@@ -2172,8 +2256,10 @@ export function FeedQualityControlPage() {
   const [form, setForm] = useState({ productionBatchId: "", moisturePercent: "", proteinPercent: "", textureNotes: "" });
   const [submitting, setSubmitting] = useState(false);
   const [submitErr, setSubmitErr] = useState("");
+  const [loadError, setLoadError] = useState("");
 
   async function load() {
+    setLoadError("");
     try {
       const response = await apiFetch<ApiEnvelope<QcRow[]>>("/feed-production/quality-checks");
       const fresh = response.data ?? [];
@@ -2182,7 +2268,7 @@ export function FeedQualityControlPage() {
       setLoading(false);
     }
   }
-  useEffect(() => { load().catch(() => undefined); }, []);
+  useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -2212,6 +2298,11 @@ export function FeedQualityControlPage() {
   return (
     <>
       <PageHeader title="Feed Quality Control" subtitle="Record and approve feed quality checks for production batches." />
+      {(loadError || optionsError) && (
+        <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+          <CircleAlert className="h-4 w-4 shrink-0" /><span>{loadError || optionsError}</span>
+        </div>
+      )}
       {pending > 0 && (
         <div className="mb-4 flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
           <AlertTriangle className="h-4 w-4 shrink-0" />
@@ -2269,10 +2360,11 @@ type StockRow = {
 export function FinishedFeedInventoryPage() {
   const [rows, setRows] = useState<StockRow[]>(() => getCachedFirst<ApiEnvelope<StockRow[]>>("/feed-production/finished-feed-stock")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/feed-production/finished-feed-stock"));
+  const [loadError, setLoadError] = useState("");
   useEffect(() => {
     apiFetch<ApiEnvelope<StockRow[]>>("/feed-production/finished-feed-stock")
       .then((res) => setRows(res.data ?? []))
-      .catch(() => undefined)
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
       .finally(() => setLoading(false));
   }, []);
 
@@ -2283,6 +2375,11 @@ export function FinishedFeedInventoryPage() {
   return (
     <>
       <PageHeader title="Finished Feed Inventory" subtitle="Current finished feed stock by warehouse, batch, product, bag count, and unit cost." />
+      {loadError && (
+        <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+          <CircleAlert className="h-4 w-4 shrink-0" /><span>{loadError}</span>
+        </div>
+      )}
       <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
         {[
           ["Stock lines", rows.length],
@@ -2332,9 +2429,11 @@ export function InternalFeedTransferPage() {
   const [form, setForm] = useState({ productionBatchId: "", fromWarehouseId: "", toFarmId: "", toPoultryHouseId: "", quantityKg: "", notes: "" });
   const [submitting, setSubmitting] = useState(false);
   const [submitErr, setSubmitErr] = useState("");
+  const [loadError, setLoadError] = useState("");
   const houses = useMemo(() => options.poultryHouses.filter((house) => !form.toFarmId || house.farmId === form.toFarmId), [options.poultryHouses, form.toFarmId]);
 
   async function load() {
+    setLoadError("");
     try {
       const response = await apiFetch<ApiEnvelope<TransferRow[]>>("/feed-production/transfers");
       const fresh = response.data ?? [];
@@ -2343,7 +2442,7 @@ export function InternalFeedTransferPage() {
       setLoading(false);
     }
   }
-  useEffect(() => { load().catch(() => undefined); }, []);
+  useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -2375,6 +2474,11 @@ export function InternalFeedTransferPage() {
   return (
     <>
       <PageHeader title="Internal Feed Transfer" subtitle="Transfer finished feed from feed mill stores to assigned farms and poultry houses." />
+      {(loadError || optionsError) && (
+        <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+          <CircleAlert className="h-4 w-4 shrink-0" /><span>{loadError || optionsError}</span>
+        </div>
+      )}
       <div className="mb-6 rounded-2xl border border-line bg-white p-5 shadow-panel">
         <h3 className="mb-4 text-sm font-bold text-ink">New Transfer</h3>
         {submitErr && (
@@ -2538,8 +2642,10 @@ export function FeedPackagingRecordPage() {
   const [form, setForm] = useState({ productionBatchId: "", packageSizeKg: "50", packageCount: "", packagedAt: today() });
   const [submitting, setSubmitting] = useState(false);
   const [submitErr, setSubmitErr] = useState("");
+  const [loadError, setLoadError] = useState("");
 
   async function load() {
+    setLoadError("");
     try {
       const response = await apiFetch<ApiEnvelope<PackagingRow[]>>("/feed-production/packaging-records");
       const fresh = response.data ?? [];
@@ -2549,7 +2655,7 @@ export function FeedPackagingRecordPage() {
     }
   }
 
-  useEffect(() => { load().catch(() => undefined); }, []);
+  useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, []);
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -2577,6 +2683,11 @@ export function FeedPackagingRecordPage() {
   return (
     <>
       <PageHeader title="Packaging Records" subtitle="Record and track feed packaging — bag counts, sizes, and dates." />
+      {(loadError || optionsError) && (
+        <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+          <CircleAlert className="h-4 w-4 shrink-0" /><span>{loadError || optionsError}</span>
+        </div>
+      )}
       <div className="mb-8 rounded-2xl border border-line bg-white p-5 shadow-panel">
         <h3 className="mb-4 text-sm font-bold text-ink">Record Packaging</h3>
         {submitErr && (
@@ -3170,9 +3281,9 @@ export function HiproPredictivePage() {
           </div>
         )}
 
-        {fetchError && (
+        {(fetchError || optionsError) && (
           <div className="flex items-center gap-3 rounded-xl border-l-[3px] border-red-400 bg-red-50 px-4 py-3 text-sm text-red-700">
-            <AlertTriangle className="h-4 w-4 shrink-0" /> {fetchError}
+            <AlertTriangle className="h-4 w-4 shrink-0" /> {fetchError || optionsError}
           </div>
         )}
 

@@ -90,15 +90,20 @@ function buildTrend(raw: TrendPoint[], valueKey: "oilLitres" | "cakeKg" | "waste
 
 function statusColor(status: string) {
   const map: Record<string, string> = {
-    DRAFT:       "bg-gray-100 text-gray-700",
-    IN_PROGRESS: "bg-amber-100 text-amber-800",
-    COMPLETED:   "bg-emerald-100 text-emerald-800",
-    CANCELLED:   "bg-red-100 text-red-700",
-    PENDING:     "bg-amber-100 text-amber-800",
-    APPROVED:    "bg-emerald-100 text-emerald-800",
-    REJECTED:    "bg-red-100 text-red-700",
-    PASSED:      "bg-emerald-100 text-emerald-800",
-    FAILED:      "bg-red-100 text-red-700"
+    DRAFT:         "bg-gray-100 text-gray-700",
+    PLANNED:       "bg-gray-100 text-gray-700",
+    IN_PROGRESS:   "bg-amber-100 text-amber-800",
+    PROCESSING:    "bg-amber-100 text-amber-800",
+    QUALITY_HOLD:  "bg-orange-100 text-orange-800",
+    COMPLETED:     "bg-emerald-100 text-emerald-800",
+    POSTED:        "bg-emerald-100 text-emerald-800",
+    CANCELLED:     "bg-red-100 text-red-700",
+    PENDING:       "bg-amber-100 text-amber-800",
+    ACCEPTED:      "bg-emerald-100 text-emerald-800",
+    APPROVED:      "bg-emerald-100 text-emerald-800",
+    REJECTED:      "bg-red-100 text-red-700",
+    PASSED:        "bg-emerald-100 text-emerald-800",
+    FAILED:        "bg-red-100 text-red-700"
   };
   return map[status] ?? "bg-gray-100 text-gray-600";
 }

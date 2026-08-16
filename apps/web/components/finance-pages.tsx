@@ -717,6 +717,7 @@ export function ExpenseListPage() {
         <Link href="/finance/expenses/create" className={btnPrimary}><BadgeDollarSign className="h-4 w-4" /> Record Expense</Link>
       </div>
       {actionErr && <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{actionErr}</p>}
+      {loadError && <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{loadError}</p>}
       {rejectingId && (
         <div className="mb-4 rounded-md border border-red-200 bg-red-50 p-4">
           <p className="mb-2 text-sm font-semibold text-red-800">Enter rejection reason:</p>
@@ -800,6 +801,7 @@ export function CreateExpensePage() {
   return (
     <>
       <form onSubmit={handleSubmit} className="mx-auto max-w-2xl space-y-4 rounded-md border border-line bg-white p-6 shadow-panel">
+        {optionsError && <p className="rounded-md bg-red-50 p-3 text-sm text-red-700">{optionsError}</p>}
         {error && <p className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</p>}
         {success && <p className="rounded-md bg-green-50 p-3 text-sm text-green-700">{success}</p>}
         <div className="grid gap-4 md:grid-cols-2">
@@ -902,6 +904,7 @@ export function RevenuePage() {
 
   return (
     <>
+      {(loadError || optionsError) && <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{loadError || optionsError}</p>}
       <div className="mb-4 flex justify-end">
         <button className={btnPrimary} onClick={() => setShowForm(!showForm)}><CircleArrowUp className="h-4 w-4" /> {showForm ? "Cancel" : "Record Revenue"}</button>
       </div>
@@ -1005,6 +1008,7 @@ export function CustomerPaymentsPage() {
 
   return (
     <>
+      {(loadError || optionsError) && <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{loadError || optionsError}</p>}
       <div className="mb-4 flex justify-end">
         <button className={btnPrimary} onClick={() => setShowForm(!showForm)}><Users className="h-4 w-4" /> {showForm ? "Cancel" : "Record Payment"}</button>
       </div>
@@ -1114,6 +1118,7 @@ export function SupplierPaymentsPage() {
 
   return (
     <>
+      {(loadError || optionsError) && <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{loadError || optionsError}</p>}
       <div className="mb-4 flex justify-end">
         <button className={btnPrimary} onClick={() => setShowForm(!showForm)}><Building2 className="h-4 w-4" /> {showForm ? "Cancel" : "Record Payment"}</button>
       </div>
@@ -1212,6 +1217,7 @@ export function PettyCashPage() {
 
   return (
     <>
+      {(loadError || optionsError) && <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{loadError || optionsError}</p>}
       <div className="mb-4 flex justify-end">
         <button className={btnPrimary} onClick={() => setShowForm(!showForm)}><PiggyBank className="h-4 w-4" /> {showForm ? "Cancel" : "New Transaction"}</button>
       </div>
@@ -1338,6 +1344,7 @@ export function PayrollPage() {
         <button className={btnPrimary} onClick={() => setShowForm(!showForm)}><Wallet className="h-4 w-4" /> {showForm ? "Cancel" : "Add Payroll Record"}</button>
       </div>
       {actionErr && <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{actionErr}</p>}
+      {(loadError || optionsError) && <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{loadError || optionsError}</p>}
       {showForm && (
         <form onSubmit={handleSubmit} className="mb-6 rounded-md border border-line bg-white p-6 shadow-panel">
           <h3 className="mb-4 text-lg font-semibold">New Payroll Record</h3>
@@ -1479,6 +1486,7 @@ export function BankAccountsPage() {
       <div className="mb-4 flex justify-end">
         <button className={btnPrimary} onClick={() => setShowForm(!showForm)}><Building2 className="h-4 w-4" /> {showForm ? "Cancel" : "Add Bank Account"}</button>
       </div>
+      {loadError && <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{loadError}</p>}
       {deleteError && <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{deleteError}</p>}
       {showForm && (
         <form onSubmit={handleSubmit} className="mb-6 rounded-md border border-line bg-white p-6 shadow-panel">
@@ -1625,6 +1633,7 @@ export function JournalEntriesPage() {
         <button className={btnPrimary} onClick={() => setShowForm(!showForm)}><BookOpen className="h-4 w-4" /> {showForm ? "Cancel" : "New Journal Entry"}</button>
       </div>
       {actionErr && <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{actionErr}</p>}
+      {(loadError || optionsError) && <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{loadError || optionsError}</p>}
       {showForm && (
         <form onSubmit={handleSubmit} className="mb-6 rounded-md border border-line bg-white p-6 shadow-panel">
           <h3 className="mb-4 text-lg font-semibold">New Journal Entry</h3>
@@ -1721,6 +1730,7 @@ export function ProfitLossReportPage() {
 
   return (
     <>
+      {loadError && <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{loadError}</p>}
       <div className="mb-4 flex flex-wrap items-center justify-end gap-2">
         <input type="date" className={inputClass} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
         <input type="date" className={inputClass} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
@@ -1788,6 +1798,7 @@ export function CashFlowReportPage() {
 
   return (
     <>
+      {loadError && <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{loadError}</p>}
       <div className="mb-4 flex flex-wrap items-center justify-end gap-2">
         <input type="date" className={inputClass} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
         <input type="date" className={inputClass} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
@@ -1870,6 +1881,7 @@ export function ProductProfitabilityPage() {
 
   return (
     <>
+      {loadError && <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{loadError}</p>}
       <div className="mb-4 flex flex-wrap items-center justify-end gap-2">
         <input type="date" className={inputClass} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
         <input type="date" className={inputClass} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
@@ -1934,6 +1946,7 @@ export function BatchProfitabilityPage() {
 
   return (
     <>
+      {loadError && <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{loadError}</p>}
       <div className="mb-4 flex justify-end">
         <button className={btnPrimary} onClick={() => setShowForm(!showForm)}><FileChartColumn className="h-4 w-4" /> {showForm ? "Cancel" : "Record Batch P&L"}</button>
       </div>
@@ -2015,6 +2028,7 @@ export function DebtorsPage() {
 
   return (
     <>
+      {loadError && <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{loadError}</p>}
       {!loading && rows.length > 0 && (
         <div className="mb-5 grid gap-3 sm:grid-cols-3">
           <StatCard label="Total Outstanding" value={money(total)} icon={DollarSign} sub={`${rows.length} invoice${rows.length !== 1 ? "s" : ""}`} />
@@ -2186,6 +2200,7 @@ export function ExpenseCategoriesPage() {
           <BadgeDollarSign className="h-4 w-4" /> {showForm ? "Cancel" : "New Category"}
         </button>
       </div>
+      {loadError && <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{loadError}</p>}
       {deleteError && <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{deleteError}</p>}
       {showForm && (
         <form onSubmit={handleSubmit} className="mb-6 rounded-md border border-line bg-white p-6 shadow-panel">
@@ -2395,6 +2410,7 @@ export function ChartOfAccountsPage() {
         </button>
       </div>
 
+      {loadError && <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{loadError}</p>}
       {deleteError && <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{deleteError}</p>}
 
       {showForm && (

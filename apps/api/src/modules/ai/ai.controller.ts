@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Ip, Param, Post, Query, Headers, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Ip, Param, Patch, Post, Query, Headers, UseGuards } from "@nestjs/common";
 import { AuthenticatedUser, PERMISSIONS } from "@jokas/shared";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { RequirePermissions } from "../../common/decorators/permissions.decorator";
@@ -6,6 +6,7 @@ import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { PermissionsGuard } from "../../common/guards/permissions.guard";
 import { AiChatDto } from "./dto/ai-chat.dto";
 import { FeedAnalysisQueryDto } from "./dto/feed-analysis-query.dto";
+import { RenameSessionDto } from "./dto/rename-session.dto";
 import { AiService } from "./ai.service";
 
 @Controller("ai")
@@ -58,6 +59,11 @@ export class AiController {
   @Get("sessions/:id")
   sessionMessages(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
     return this.ai.sessionMessages(user, id);
+  }
+
+  @Patch("sessions/:id")
+  renameSession(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: RenameSessionDto) {
+    return this.ai.renameSession(user, id, dto.title);
   }
 
   @Delete("sessions/:id")

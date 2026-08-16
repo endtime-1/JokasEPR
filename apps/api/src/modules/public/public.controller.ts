@@ -11,7 +11,7 @@ import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { RequirePermissions } from "../../common/decorators/permissions.decorator";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { PermissionsGuard } from "../../common/guards/permissions.guard";
-import { StorefrontBrowseRateLimitGuard, StorefrontOrderRateLimitGuard } from "../../common/guards/storefront-rate-limit.guard";
+import { StorefrontBrowseRateLimitGuard, StorefrontContactRateLimitGuard, StorefrontOrderRateLimitGuard } from "../../common/guards/storefront-rate-limit.guard";
 import { validateAndCleanImageUpload } from "../../common/utils/validate-image-magic";
 import { PlacePublicOrderDto, UpdateOrderStatusDto } from "./dto/public-order.dto";
 import { PublicContactDto } from "./dto/public-contact.dto";
@@ -55,7 +55,7 @@ export class PublicController {
     return this.service.getOrderStatus(ref).then((data) => ({ data }));
   }
 
-  @UseGuards(StorefrontOrderRateLimitGuard)
+  @UseGuards(StorefrontContactRateLimitGuard)
   @Post("contact")
   submitContact(@Body() dto: PublicContactDto) {
     return this.service.submitContact(dto).then((data) => ({ data }));

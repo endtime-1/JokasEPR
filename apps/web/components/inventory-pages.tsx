@@ -84,6 +84,8 @@ export function InventoryItemsPage({ create = false }: { create?: boolean }) {
   const [loading, setLoading] = useState(!hasCached("/inventory/items"));
   const [form, setForm] = useState({ warehouseId: "", productId: "", reorderLevel: "", openingQuantity: "" });
   const [loadError, setLoadError] = useState("");
+  const [submitError, setSubmitError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const [editItem, setEditItem] = useState<Record<string, unknown> | null>(null);
   const [editForm, setEditForm] = useState({ reorderLevel: "", status: "ACTIVE" });
   const [editError, setEditError] = useState("");
@@ -104,8 +106,17 @@ export function InventoryItemsPage({ create = false }: { create?: boolean }) {
     const warehouseId = form.warehouseId || options.warehouses[0]?.id;
     const productId = form.productId || options.products[0]?.id;
     if (!warehouseId || !productId) return;
-    await apiFetch("/inventory/items", { method: "POST", body: JSON.stringify({ warehouseId, productId, reorderLevel: Number(form.reorderLevel), openingQuantity: Number(form.openingQuantity || 0) }) });
-    await load();
+    setSubmitting(true);
+    setSubmitError("");
+    try {
+      await apiFetch("/inventory/items", { method: "POST", body: JSON.stringify({ warehouseId, productId, reorderLevel: Number(form.reorderLevel), openingQuantity: Number(form.openingQuantity || 0) }) });
+      setForm({ ...form, reorderLevel: "", openingQuantity: "" });
+      await load();
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Failed to save item.");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   function startEdit(row: Record<string, unknown>) {
@@ -163,7 +174,8 @@ export function InventoryItemsPage({ create = false }: { create?: boolean }) {
           <SelectField label="Product" value={form.productId || options.products[0]?.id || ""} options={options.products} onChange={(value) => setForm({ ...form, productId: value })} />
           <FormField label="Reorder level"><input className={inputClass} type="number" value={form.reorderLevel} onChange={(event) => setForm({ ...form, reorderLevel: event.target.value })} required /></FormField>
           <FormField label="Opening quantity"><input className={inputClass} type="number" value={form.openingQuantity} onChange={(event) => setForm({ ...form, openingQuantity: event.target.value })} /></FormField>
-          <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white md:col-span-4"><Plus aria-hidden className="h-4 w-4" /> Save item</button>
+          <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:col-span-4"><Plus aria-hidden className="h-4 w-4" /> {submitting ? "Saving…" : "Save item"}</button>
+          {submitError && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 md:col-span-4">{submitError}</p>}
         </form>
       ) : <Link className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" href="/inventory/items/create"><Plus aria-hidden className="h-4 w-4" /> Create item</Link>}
       {!create && rows.length >= 200 && (
@@ -205,6 +217,8 @@ export function InventoryItemsPage({ create = false }: { create?: boolean }) {
 export function StockOperationPage({ mode }: { mode: "stock-in" | "stock-out" | "transfers" | "adjustments" }) {
   const { options, optionsError } = useInventoryOptions();
   const [form, setForm] = useState<Record<string, string>>({ warehouseId: "", fromWarehouseId: "", toWarehouseId: "", productId: "", batchNumber: "", bags: "", quantity: "", unitCost: "", reason: "", adjustmentType: "DAMAGE", movementType: "ADJUSTMENT_OUT", expiryDate: "" });
+  const [submitError, setSubmitError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const title = mode === "stock-in" ? "Stock In" : mode === "stock-out" ? "Stock Out" : mode === "transfers" ? "Stock Transfer" : "Stock Adjustment";
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -220,8 +234,16 @@ export function StockOperationPage({ mode }: { mode: "stock-in" | "stock-out" | 
       mode === "transfers" ? { ...base, fromWarehouseId, toWarehouseId } :
       { ...base, warehouseId, adjustmentType: form.adjustmentType, quantity: Number(form.quantity), reason: form.reason, approveNow: false };
     const endpoint = mode === "transfers" ? "/inventory/transfers" : mode === "adjustments" ? "/inventory/adjustments" : `/inventory/${mode}`;
-    await apiFetch(endpoint, { method: "POST", body: JSON.stringify(payload) });
-    setForm({ ...form, batchNumber: "", bags: "", quantity: "", unitCost: "", reason: "" });
+    setSubmitting(true);
+    setSubmitError("");
+    try {
+      await apiFetch(endpoint, { method: "POST", body: JSON.stringify(payload) });
+      setForm({ ...form, batchNumber: "", bags: "", quantity: "", unitCost: "", reason: "" });
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : `Failed to submit ${title.toLowerCase()}.`);
+    } finally {
+      setSubmitting(false);
+    }
   }
   return (
     <InventoryShell>
@@ -253,14 +275,15 @@ export function StockOperationPage({ mode }: { mode: "stock-in" | "stock-out" | 
           </FormField>
         )}
         <FormField label={form.bags && mode !== "adjustments" ? `Quantity kg — ${form.bags} bag${Number(form.bags) !== 1 ? "s" : ""} × 50` : "Quantity kg"}>
-          <input className={inputClass} type="number" value={form.quantity} onChange={(event) => setForm({ ...form, bags: "", quantity: event.target.value })} required />
+          <input className={inputClass} type="number" min="0.001" step="0.001" value={form.quantity} onChange={(event) => setForm({ ...form, bags: "", quantity: event.target.value })} required />
         </FormField>
-        {mode === "stock-in" ? <FormField label="Unit cost"><input className={inputClass} type="number" value={form.unitCost} onChange={(event) => setForm({ ...form, unitCost: event.target.value })} required /></FormField> : null}
+        {mode === "stock-in" ? <FormField label="Unit cost"><input className={inputClass} type="number" min="0" step="0.01" value={form.unitCost} onChange={(event) => setForm({ ...form, unitCost: event.target.value })} required /></FormField> : null}
         {mode === "stock-in" ? <FormField label="Expiry date"><input className={inputClass} type="date" value={form.expiryDate} onChange={(event) => setForm({ ...form, expiryDate: event.target.value })} /></FormField> : null}
         {mode === "stock-out" ? <FormField label="Movement type"><select className={inputClass} value={form.movementType} onChange={(event) => setForm({ ...form, movementType: event.target.value })}><option>ADJUSTMENT_OUT</option><option>SALE_DISPATCH</option><option>PRODUCTION_INPUT</option><option>WASTE</option></select></FormField> : null}
         {mode === "adjustments" ? <FormField label="Adjustment type"><select className={inputClass} value={form.adjustmentType} onChange={(event) => setForm({ ...form, adjustmentType: event.target.value })}><option>DAMAGE</option><option>EXPIRY</option><option>WASTE</option><option>COUNT_CORRECTION</option><option>WRITE_OFF</option><option>FOUND_STOCK</option></select></FormField> : null}
         {mode === "adjustments" ? <FormField label="Reason"><input className={inputClass} value={form.reason} onChange={(event) => setForm({ ...form, reason: event.target.value })} required /></FormField> : null}
-        <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white md:col-span-4">Submit {title.toLowerCase()}</button>
+        <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:col-span-4">{submitting ? "Submitting…" : `Submit ${title.toLowerCase()}`}</button>
+        {submitError && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 md:col-span-4">{submitError}</p>}
       </form>
     </InventoryShell>
   );

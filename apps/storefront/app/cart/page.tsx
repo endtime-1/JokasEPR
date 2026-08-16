@@ -1,11 +1,14 @@
 "use client";
 
+import { useEffect } from "react";
 import { useCart } from "@/lib/cart-context";
 import Link from "next/link";
 import { Trash2, Minus, Plus, ShoppingBag, ArrowRight, ShieldCheck } from "lucide-react";
 
 export default function CartPage() {
-  const { items, totalPrice, updateQty, removeItem } = useCart();
+  const { items, totalPrice, updateQty, removeItem, refreshPrices } = useCart();
+
+  useEffect(() => { void refreshPrices(); }, [refreshPrices]);
 
   if (!items.length)
     return (

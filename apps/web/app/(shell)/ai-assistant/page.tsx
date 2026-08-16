@@ -320,15 +320,16 @@ export default function AiAssistantPage() {
   }
 
   async function renameSession(id: string, newTitle: string) {
-    // Optimistic update
+    const previous = sessions;
     setSessions((prev) => prev.map((s) => s.id === id ? { ...s, title: newTitle } : s));
     try {
       await apiFetch(`/ai/sessions/${id}`, {
-        method: "PUT",
+        method: "PATCH",
         body: JSON.stringify({ title: newTitle })
       });
     } catch {
-      console.warn("PUT /ai/sessions/:id not available — rename kept in local state only.");
+      setSessions(previous);
+      setError("Failed to rename conversation.");
     }
   }
 

@@ -89,9 +89,14 @@ export interface ContactPayload {
   message: string;
 }
 
-async function get<T>(path: string): Promise<T> {
+// Low: this used to hardcode cache: "no-store" unconditionally, which forces
+// every route dynamic regardless of the page-level `revalidate` export —
+// every browse hit the live, rate-limited API instead of ever being cached.
+// Callers that need per-request freshness (order status) still get that by
+// omitting `revalidate`; browse endpoints opt into ISR explicitly.
+async function get<T>(path: string, opts?: { revalidate?: number }): Promise<T> {
   const res = await fetch(`${BASE}/public${path}`, {
-    cache: "no-store",
+    ...(opts?.revalidate !== undefined ? { next: { revalidate: opts.revalidate } } : { cache: "no-store" as const }),
     signal: AbortSignal.timeout(10000),
   });
   if (!res.ok) throw new Error(`API error ${res.status}`);
@@ -115,12 +120,13 @@ export const api = {
   products: {
     list: async (category?: string): Promise<PublicProduct[]> => {
       const raw = await get<RawPublicProduct[]>(
-        category ? `/products?category=${encodeURIComponent(category)}` : "/products"
+        category ? `/products?category=${encodeURIComponent(category)}` : "/products",
+        { revalidate: 60 }
       );
       return raw.map(toPublicProduct);
     },
     get: async (slug: string): Promise<PublicProduct> => {
-      const raw = await get<RawPublicProduct>(`/products/${slug}`);
+      const raw = await get<RawPublicProduct>(`/products/${slug}`, { revalidate: 60 });
       return toPublicProduct(raw);
     },
   },

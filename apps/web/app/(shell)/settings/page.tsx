@@ -612,8 +612,8 @@ function NumberingEditor({ settings, onChange }: { settings: SettingsMap["number
         <div key={key} className="grid gap-2 rounded-md border border-line p-3 md:grid-cols-4">
           <span className="text-sm font-semibold">{key.replace(/([A-Z])/g, " $1")}</span>
           <input className={inputClass} value={settings[key].prefix} onChange={(e) => onChange({ ...settings, [key]: { ...settings[key], prefix: e.target.value } })} />
-          <input className={inputClass} type="number" value={settings[key].padding ?? 4} onChange={(e) => onChange({ ...settings, [key]: { ...settings[key], padding: Number(e.target.value) } })} />
-          <input className={inputClass} type="number" value={settings[key].nextNumber ?? 1} onChange={(e) => onChange({ ...settings, [key]: { ...settings[key], nextNumber: Number(e.target.value) } })} />
+          <input className={inputClass} type="number" min={1} value={settings[key].padding ?? 4} onChange={(e) => onChange({ ...settings, [key]: { ...settings[key], padding: e.target.value === "" ? settings[key].padding : Number(e.target.value) } })} />
+          <input className={inputClass} type="number" min={1} value={settings[key].nextNumber ?? 1} onChange={(e) => onChange({ ...settings, [key]: { ...settings[key], nextNumber: e.target.value === "" ? settings[key].nextNumber : Number(e.target.value) } })} />
         </div>
       ))}
     </div>

@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useParams } from "next/navigation";
 import { Download, Pencil, Plus, ShieldCheck, Trash2 } from "lucide-react";
 import { DataTable } from "./data-table";
 import { FormField } from "./form-field";
@@ -101,6 +102,8 @@ export function SoyaIntakesPage({ create = false }: { create?: boolean }) {
   const [deleteRow, setDeleteRow] = useState<Record<string, unknown> | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  const [submitError, setSubmitError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   async function load() {
     setLoadError("");
@@ -116,8 +119,16 @@ export function SoyaIntakesPage({ create = false }: { create?: boolean }) {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await apiFetch("/soya-processing/intakes", { method: "POST", body: JSON.stringify({ ...form, productionSiteId: form.productionSiteId || options.productionSites[0]?.id, warehouseId: form.warehouseId || options.warehouses[0]?.id, productId: form.productId || beanProducts[0]?.id, quantityKg: Number(form.quantityKg), unitCost: Number(form.unitCost), moisturePercent: Number(form.moisturePercent || 0), receivedAt: form.receivedAt }) });
-    await load();
+    setSubmitting(true);
+    setSubmitError("");
+    try {
+      await apiFetch("/soya-processing/intakes", { method: "POST", body: JSON.stringify({ ...form, productionSiteId: form.productionSiteId || options.productionSites[0]?.id, warehouseId: form.warehouseId || options.warehouses[0]?.id, productId: form.productId || beanProducts[0]?.id, quantityKg: Number(form.quantityKg), unitCost: Number(form.unitCost), moisturePercent: Number(form.moisturePercent || 0), receivedAt: form.receivedAt }) });
+      await load();
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Failed to save intake.");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   function openEdit(row: Record<string, unknown>) {
@@ -169,6 +180,7 @@ export function SoyaIntakesPage({ create = false }: { create?: boolean }) {
   return (
     <>
       <PageHeader title={create ? "Create Soya Bean Intake" : "Soya Bean Intakes"} subtitle="Record supplier, received quantity, cost, moisture, and intake quality status." />
+      {optionsError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{optionsError}</p>}
       {create ? (
         <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-4">
           <SelectField label="Production site" value={form.productionSiteId || options.productionSites[0]?.id || ""} options={options.productionSites} onChange={(value) => setForm({ ...form, productionSiteId: value })} />
@@ -179,9 +191,11 @@ export function SoyaIntakesPage({ create = false }: { create?: boolean }) {
           <FormField label="Quantity kg"><input className={inputClass} type="number" value={form.quantityKg} onChange={(event) => setForm({ ...form, quantityKg: event.target.value })} required /></FormField>
           <FormField label="Unit cost"><input className={inputClass} type="number" value={form.unitCost} onChange={(event) => setForm({ ...form, unitCost: event.target.value })} required /></FormField>
           <FormField label="Moisture %"><input className={inputClass} type="number" value={form.moisturePercent} onChange={(event) => setForm({ ...form, moisturePercent: event.target.value })} /></FormField>
-          <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white md:col-span-4"><Plus aria-hidden className="h-4 w-4" /> Save intake</button>
+          <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:col-span-4"><Plus aria-hidden className="h-4 w-4" /> {submitting ? "Saving…" : "Save intake"}</button>
+          {submitError && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 md:col-span-4">{submitError}</p>}
         </form>
       ) : <Link className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" href="/soya-processing/intakes/create"><Plus aria-hidden className="h-4 w-4" /> Create intake</Link>}
+      {loadError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</p>}
       {deleteError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{deleteError}</p>}
       <SimpleRowsTable rows={rows} loading={loading} onEdit={openEdit} onDelete={(row) => { setDeleteError(""); setDeleteRow(row); }} />
       <Modal open={!!editRow} onClose={() => setEditRow(null)} title="Edit intake">
@@ -331,6 +345,8 @@ export function SoyaBatchesPage({ create = false }: { create?: boolean }) {
   return (
     <>
       <PageHeader title={create ? "Create Processing Batch" : "Soya Processing Batches"} subtitle="Post soya processing batches and calculate oil yield, cake yield, loss, costs, and profitability." />
+      {optionsError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{optionsError}</p>}
+      {loadError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</p>}
       {create ? (
         <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-4">
           <SelectField label="Production site" value={form.productionSiteId || options.productionSites[0]?.id || ""} options={options.productionSites} onChange={(value) => setForm({ ...form, productionSiteId: value })} />
@@ -380,6 +396,180 @@ export function SoyaBatchesPage({ create = false }: { create?: boolean }) {
   );
 }
 
+type BatchDetail = {
+  id: string;
+  batchNumber: string;
+  status: string;
+  processingDate: string;
+  beansUsedKg: number | string;
+  notes?: string | null;
+  productionSite?: { name: string; code: string };
+  intake?: { receiptNumber: string; supplierName: string } | null;
+  oilOutputs: { id: string; quantityLitres: number | string; unitCost: number | string }[];
+  cakeOutputs: { id: string; quantityKg: number | string; unitCost: number | string }[];
+  wasteRecords: { id: string; quantityKg: number | string; reason?: string | null }[];
+  qualityChecks: { id: string; status: string; moisturePercent?: number | string | null; oilPurityPercent?: number | string | null; cakeProteinPercent?: number | string | null; checkedAt: string; notes?: string | null }[];
+  costs: { id: string; rawBeanCost: number | string; laborCost: number | string; packagingCost: number | string; overheadCost: number | string; expectedOilSalesValue: number | string; expectedCakeSalesValue: number | string }[];
+  metrics: {
+    oilProducedLitres: number;
+    cakeProducedKg: number;
+    wasteKg: number;
+    oilYieldPercent: number;
+    cakeYieldPercent: number;
+    productionLossPercent: number;
+    costPerLitreOil: number;
+    costPerKgCake: number;
+    profitMargin: number;
+  };
+};
+
+const batchStatusColor: Record<string, string> = {
+  PLANNED: "bg-slate-100 text-slate-700",
+  IN_PROGRESS: "bg-amber-100 text-amber-700",
+  COMPLETED: "bg-emerald-100 text-emerald-700",
+  CANCELLED: "bg-red-100 text-red-700",
+};
+
+export function SoyaBatchDetailsPage() {
+  const params = useParams<{ id: string }>();
+  const [batch, setBatch] = useState<BatchDetail | null>(() => getCachedFirst<ApiEnvelope<BatchDetail>>(`/soya-processing/batches/${params.id}`)?.data ?? null);
+  const [loading, setLoading] = useState(!hasCached(`/soya-processing/batches/${params.id}`));
+  const [loadError, setLoadError] = useState("");
+
+  async function load() {
+    setLoadError("");
+    try {
+      const response = await apiFetch<ApiEnvelope<BatchDetail>>(`/soya-processing/batches/${params.id}`);
+      setBatch(response.data);
+    } catch (err: any) {
+      setLoadError(err?.message ?? "Failed to load batch.");
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => { load(); }, [params.id]);
+
+  if (loading && !batch) {
+    return <p className="p-6 text-sm text-ink/55">Loading batch…</p>;
+  }
+  if (loadError && !batch) {
+    return <p className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</p>;
+  }
+  if (!batch) {
+    return <p className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">Batch not found.</p>;
+  }
+
+  const cost = batch.costs[0];
+  const totalCost = cost ? Number(cost.rawBeanCost) + Number(cost.laborCost) + Number(cost.packagingCost) + Number(cost.overheadCost) : 0;
+
+  return (
+    <>
+      <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-2xl font-semibold">{batch.batchNumber}</h2>
+            <span className={`inline-flex rounded-md px-2 py-0.5 text-xs font-bold uppercase tracking-wide ${batchStatusColor[batch.status] ?? "bg-slate-100 text-slate-700"}`}>{batch.status}</span>
+          </div>
+          <p className="mt-1 text-sm text-ink/65">
+            {batch.productionSite?.name ?? "—"} · Processed {new Date(batch.processingDate).toLocaleDateString()}
+            {batch.intake && ` · Intake ${batch.intake.receiptNumber} (${batch.intake.supplierName})`}
+          </p>
+        </div>
+        <Link className="inline-flex min-h-10 items-center rounded-md border border-line px-3 text-sm font-semibold hover:bg-field" href="/soya-processing/batches">← Back to batches</Link>
+      </div>
+
+      {loadError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</p>}
+
+      <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
+        {[
+          ["Beans used (kg)", number(batch.beansUsedKg)],
+          ["Oil produced (L)", number(batch.metrics.oilProducedLitres)],
+          ["Cake produced (kg)", number(batch.metrics.cakeProducedKg)],
+          ["Waste (kg)", number(batch.metrics.wasteKg)],
+          ["Oil yield", `${batch.metrics.oilYieldPercent}%`],
+          ["Cake yield", `${batch.metrics.cakeYieldPercent}%`],
+          ["Production loss", `${batch.metrics.productionLossPercent}%`],
+          ["Profit margin", `${batch.metrics.profitMargin}%`],
+        ].map(([label, value]) => (
+          <article key={label} className="rounded-md border border-line bg-white p-4 shadow-panel">
+            <p className="text-xs text-ink/50">{label}</p>
+            <strong className="mt-1.5 block text-xl font-bold text-ink">{value}</strong>
+          </article>
+        ))}
+      </div>
+
+      <div className="mb-6 grid gap-4 lg:grid-cols-2">
+        <div className="rounded-md border border-line bg-white p-5 shadow-panel">
+          <h3 className="mb-4 text-sm font-bold text-ink">Costing</h3>
+          {cost ? (
+            <dl className="space-y-2.5 text-sm">
+              {([
+                ["Raw bean cost", money(cost.rawBeanCost)],
+                ["Labor cost", money(cost.laborCost)],
+                ["Packaging cost", money(cost.packagingCost)],
+                ["Overhead cost", money(cost.overheadCost)],
+                ["Total cost", money(totalCost)],
+                ["Cost per litre oil", money(batch.metrics.costPerLitreOil)],
+                ["Cost per kg cake", money(batch.metrics.costPerKgCake)],
+                ["Expected oil sales", money(cost.expectedOilSalesValue)],
+                ["Expected cake sales", money(cost.expectedCakeSalesValue)],
+              ] as [string, string][]).map(([k, v]) => (
+                <div key={k} className="flex items-center justify-between border-b border-line/60 pb-2 last:border-0 last:pb-0">
+                  <dt className="text-ink/55">{k}</dt>
+                  <dd className="font-medium text-ink">{v}</dd>
+                </div>
+              ))}
+            </dl>
+          ) : <p className="text-sm text-ink/45">No costing recorded for this batch.</p>}
+        </div>
+
+        <div className="rounded-md border border-line bg-white p-5 shadow-panel">
+          <h3 className="mb-4 text-sm font-bold text-ink">Quality Checks</h3>
+          {batch.qualityChecks.length === 0 ? (
+            <p className="text-sm text-ink/45">No quality checks recorded for this batch.</p>
+          ) : (
+            <div className="space-y-3">
+              {batch.qualityChecks.map((qc) => (
+                <div key={qc.id} className="rounded-md border border-line/70 p-3 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className={`inline-flex rounded-md px-2 py-0.5 text-xs font-bold uppercase tracking-wide ${qc.status === "APPROVED" ? "bg-emerald-100 text-emerald-700" : qc.status === "REJECTED" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}`}>{qc.status}</span>
+                    <span className="text-xs text-ink/45">{new Date(qc.checkedAt).toLocaleDateString()}</span>
+                  </div>
+                  <p className="mt-2 text-xs text-ink/60">
+                    Moisture {qc.moisturePercent != null ? `${qc.moisturePercent}%` : "—"} · Oil purity {qc.oilPurityPercent != null ? `${qc.oilPurityPercent}%` : "—"} · Cake protein {qc.cakeProteinPercent != null ? `${qc.cakeProteinPercent}%` : "—"}
+                  </p>
+                  {qc.notes && <p className="mt-1 text-xs text-ink/45">{qc.notes}</p>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {batch.wasteRecords.length > 0 && (
+        <div className="mb-6 rounded-md border border-line bg-white p-5 shadow-panel">
+          <h3 className="mb-4 text-sm font-bold text-ink">Waste Records</h3>
+          <div className="space-y-2 text-sm">
+            {batch.wasteRecords.map((w) => (
+              <div key={w.id} className="flex items-center justify-between border-b border-line/60 pb-2 last:border-0 last:pb-0">
+                <span className="text-ink/60">{w.reason ?? "No reason given"}</span>
+                <span className="font-medium text-ink">{number(w.quantityKg)} kg</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {batch.notes && (
+        <div className="rounded-md border border-line bg-white p-5 shadow-panel">
+          <h3 className="mb-2 text-sm font-bold text-ink">Notes</h3>
+          <p className="text-sm text-ink/65">{batch.notes}</p>
+        </div>
+      )}
+    </>
+  );
+}
+
 export function SoyaQualityPage() {
   const { options, optionsError } = useSoyaOptions();
   const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/soya-processing/quality-checks")?.data ?? []);
@@ -393,6 +583,8 @@ export function SoyaQualityPage() {
   const [deleteRow, setDeleteRow] = useState<Record<string, unknown> | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  const [submitError, setSubmitError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   async function load() {
     setLoadError("");
     try {
@@ -406,8 +598,16 @@ export function SoyaQualityPage() {
   useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, []);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await apiFetch("/soya-processing/quality-checks", { method: "POST", body: JSON.stringify({ productionBatchId: form.productionBatchId || options.batches[0]?.id, moisturePercent: Number(form.moisturePercent || 0), oilPurityPercent: Number(form.oilPurityPercent || 0), cakeProteinPercent: Number(form.cakeProteinPercent || 0), status: form.status, notes: form.notes }) });
-    await load();
+    setSubmitting(true);
+    setSubmitError("");
+    try {
+      await apiFetch("/soya-processing/quality-checks", { method: "POST", body: JSON.stringify({ productionBatchId: form.productionBatchId || options.batches[0]?.id, moisturePercent: Number(form.moisturePercent || 0), oilPurityPercent: Number(form.oilPurityPercent || 0), cakeProteinPercent: Number(form.cakeProteinPercent || 0), status: form.status, notes: form.notes }) });
+      await load();
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Failed to save quality check.");
+    } finally {
+      setSubmitting(false);
+    }
   }
   function openEdit(row: Record<string, unknown>) {
     setEditError("");
@@ -450,19 +650,34 @@ export function SoyaQualityPage() {
       setDeleting(false);
     }
   }
+  const [approveError, setApproveError] = useState("");
+  async function approveCheck(row: Record<string, unknown>, status: "APPROVED" | "REJECTED") {
+    setApproveError("");
+    try {
+      await apiFetch(`/soya-processing/quality-checks/${row.id}/approve`, { method: "PATCH", body: JSON.stringify({ status }) });
+      invalidateCache("/soya-processing/quality-checks", true);
+      await load();
+    } catch (err) {
+      setApproveError(err instanceof Error ? err.message : "Failed to update quality check status.");
+    }
+  }
   return (
     <>
       <PageHeader title="Soya Quality Control" subtitle="Approve soya oil purity, cake protein, moisture, and batch quality status." />
+      {optionsError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{optionsError}</p>}
       <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-5">
         <SelectField label="Batch" value={form.productionBatchId || options.batches[0]?.id || ""} options={options.batches.map((batch) => ({ ...batch, name: batch.batchNumber }))} onChange={(value) => setForm({ ...form, productionBatchId: value })} />
         <FormField label="Moisture %"><input className={inputClass} type="number" value={form.moisturePercent} onChange={(event) => setForm({ ...form, moisturePercent: event.target.value })} /></FormField>
         <FormField label="Oil purity %"><input className={inputClass} type="number" value={form.oilPurityPercent} onChange={(event) => setForm({ ...form, oilPurityPercent: event.target.value })} /></FormField>
         <FormField label="Cake protein %"><input className={inputClass} type="number" value={form.cakeProteinPercent} onChange={(event) => setForm({ ...form, cakeProteinPercent: event.target.value })} /></FormField>
         <FormField label="Status"><select className={inputClass} value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}><option>APPROVED</option><option>ACCEPTED</option><option>REJECTED</option><option>PENDING</option></select></FormField>
-        <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white md:col-span-5"><ShieldCheck aria-hidden className="h-4 w-4" /> Save quality check</button>
+        <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:col-span-5"><ShieldCheck aria-hidden className="h-4 w-4" /> {submitting ? "Saving…" : "Save quality check"}</button>
+        {submitError && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 md:col-span-5">{submitError}</p>}
       </form>
+      {loadError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</p>}
+      {approveError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{approveError}</p>}
       {deleteError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{deleteError}</p>}
-      <SimpleRowsTable rows={rows} loading={loading} onEdit={openEdit} onDelete={(row) => { setDeleteError(""); setDeleteRow(row); }} />
+      <SimpleRowsTable rows={rows} loading={loading} onEdit={openEdit} onDelete={(row) => { setDeleteError(""); setDeleteRow(row); }} onApprove={approveCheck} />
       <Modal open={!!editRow} onClose={() => setEditRow(null)} title="Edit quality check">
         <form onSubmit={saveEdit} className="grid gap-4">
           {editError && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{editError}</p>}
@@ -504,6 +719,7 @@ export function SoyaStockPage({ type }: { type: "oil" | "cake" }) {
   return (
     <>
       <PageHeader title={type === "oil" ? "Soya Oil Stock" : "Soya Cake Stock"} subtitle="Production output stock by warehouse, batch, unit cost, and quantity." />
+      {loadError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</p>}
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <Link className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white hover:bg-brand/90" href="/soya-processing/batches/create">
           <Plus aria-hidden className="h-4 w-4" /> Record new processing batch
@@ -531,6 +747,8 @@ export function SoyaTransferPage() {
   const [deleteRow, setDeleteRow] = useState<Record<string, unknown> | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  const [submitError, setSubmitError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   async function load() {
     setLoadError("");
     try {
@@ -544,8 +762,16 @@ export function SoyaTransferPage() {
   useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, []);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await apiFetch("/soya-processing/transfers", { method: "POST", body: JSON.stringify({ ...form, productionBatchId: form.productionBatchId || options.batches[0]?.id, fromWarehouseId: form.fromWarehouseId || options.warehouses[0]?.id, toWarehouseId: form.toWarehouseId || options.warehouses[0]?.id, toProductionSiteId: form.toProductionSiteId || undefined, productId: form.productId || outputProducts[0]?.id, quantity: Number(form.quantity) }) });
-    await load();
+    setSubmitting(true);
+    setSubmitError("");
+    try {
+      await apiFetch("/soya-processing/transfers", { method: "POST", body: JSON.stringify({ ...form, productionBatchId: form.productionBatchId || options.batches[0]?.id, fromWarehouseId: form.fromWarehouseId || options.warehouses[0]?.id, toWarehouseId: form.toWarehouseId || options.warehouses[0]?.id, toProductionSiteId: form.toProductionSiteId || undefined, productId: form.productId || outputProducts[0]?.id, quantity: Number(form.quantity) }) });
+      await load();
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Failed to create transfer.");
+    } finally {
+      setSubmitting(false);
+    }
   }
   function openEdit(row: Record<string, unknown>) {
     setEditError("");
@@ -586,15 +812,19 @@ export function SoyaTransferPage() {
   return (
     <>
       <PageHeader title="Soya Internal Transfer" subtitle="Transfer soya cake to feed production inventory or move oil and cake between warehouses." />
+      {optionsError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{optionsError}</p>}
       <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-5">
         <SelectField label="Batch" value={form.productionBatchId || options.batches[0]?.id || ""} options={options.batches.map((batch) => ({ ...batch, name: batch.batchNumber }))} onChange={(value) => setForm({ ...form, productionBatchId: value })} />
         <SelectField label="From warehouse" value={form.fromWarehouseId || options.warehouses[0]?.id || ""} options={options.warehouses} onChange={(value) => setForm({ ...form, fromWarehouseId: value })} />
         <SelectField label="To warehouse" value={form.toWarehouseId || options.warehouses[0]?.id || ""} options={options.warehouses} onChange={(value) => setForm({ ...form, toWarehouseId: value })} />
+        <SelectField label="To production site" value={form.toProductionSiteId} options={options.productionSites} onChange={(value) => setForm({ ...form, toProductionSiteId: value })} />
         <SelectField label="Product" value={form.productId || outputProducts[0]?.id || ""} options={outputProducts} onChange={(value) => setForm({ ...form, productId: value })} />
         <FormField label="Output type"><select className={inputClass} value={form.outputType} onChange={(event) => setForm({ ...form, outputType: event.target.value })}><option>CAKE</option><option>OIL</option></select></FormField>
         <FormField label="Quantity"><input className={inputClass} type="number" value={form.quantity} onChange={(event) => setForm({ ...form, quantity: event.target.value })} required /></FormField>
-        <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white md:col-span-5">Create transfer</button>
+        <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:col-span-5">{submitting ? "Creating…" : "Create transfer"}</button>
+        {submitError && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 md:col-span-5">{submitError}</p>}
       </form>
+      {loadError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</p>}
       {deleteError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{deleteError}</p>}
       <SimpleRowsTable rows={rows} loading={loading} onEdit={openEdit} onDelete={(row) => { setDeleteError(""); setDeleteRow(row); }} />
       <Modal open={!!editRow} onClose={() => setEditRow(null)} title="Edit transfer">
@@ -634,6 +864,8 @@ export function SoyaSalesPage({ create = false }: { create?: boolean }) {
   const [deleteRow, setDeleteRow] = useState<Record<string, unknown> | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  const [submitError, setSubmitError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   async function load() {
     setLoadError("");
@@ -649,8 +881,16 @@ export function SoyaSalesPage({ create = false }: { create?: boolean }) {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await apiFetch("/soya-processing/sales", { method: "POST", body: JSON.stringify({ productionBatchId: form.productionBatchId || options.batches[0]?.id, warehouseId: form.warehouseId || options.warehouses[0]?.id, productId: form.productId || outputProducts[0]?.id, outputType: form.outputType, customerName: form.customerName, quantity: Number(form.quantity), unitPrice: Number(form.unitPrice) }) });
-    await load();
+    setSubmitting(true);
+    setSubmitError("");
+    try {
+      await apiFetch("/soya-processing/sales", { method: "POST", body: JSON.stringify({ productionBatchId: form.productionBatchId || options.batches[0]?.id, warehouseId: form.warehouseId || options.warehouses[0]?.id, productId: form.productId || outputProducts[0]?.id, outputType: form.outputType, customerName: form.customerName, quantity: Number(form.quantity), unitPrice: Number(form.unitPrice) }) });
+      await load();
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Failed to record sale.");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   function openEdit(row: Record<string, unknown>) {
@@ -695,6 +935,7 @@ export function SoyaSalesPage({ create = false }: { create?: boolean }) {
   return (
     <>
       <PageHeader title={create ? "Record Soya Sale" : "Soya Sales"} subtitle="Record external sales of soya oil and cake and dispatch them from warehouse stock." />
+      {optionsError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{optionsError}</p>}
       {create ? (
         <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-4">
           <SelectField label="Batch" value={form.productionBatchId || options.batches[0]?.id || ""} options={options.batches.map((batch) => ({ ...batch, name: batch.batchNumber }))} onChange={(value) => setForm({ ...form, productionBatchId: value })} />
@@ -704,9 +945,11 @@ export function SoyaSalesPage({ create = false }: { create?: boolean }) {
           <FormField label="Customer"><input className={inputClass} value={form.customerName} onChange={(event) => setForm({ ...form, customerName: event.target.value })} required /></FormField>
           <FormField label="Quantity"><input className={inputClass} type="number" value={form.quantity} onChange={(event) => setForm({ ...form, quantity: event.target.value })} required /></FormField>
           <FormField label="Unit price"><input className={inputClass} type="number" value={form.unitPrice} onChange={(event) => setForm({ ...form, unitPrice: event.target.value })} required /></FormField>
-          <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white md:col-span-4"><Plus aria-hidden className="h-4 w-4" /> Save sale</button>
+          <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:col-span-4"><Plus aria-hidden className="h-4 w-4" /> {submitting ? "Saving…" : "Save sale"}</button>
+          {submitError && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 md:col-span-4">{submitError}</p>}
         </form>
       ) : <Link className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" href="/soya-processing/sales/create"><Plus aria-hidden className="h-4 w-4" /> Record sale</Link>}
+      {loadError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</p>}
       {deleteError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{deleteError}</p>}
       <SimpleRowsTable rows={rows} loading={loading} onEdit={openEdit} onDelete={(row) => { setDeleteError(""); setDeleteRow(row); }} />
       <Modal open={!!editRow} onClose={() => setEditRow(null)} title="Edit sale">
@@ -754,16 +997,26 @@ function SelectField({ label, value, options, onChange }: { label: string; value
   );
 }
 
-function SimpleRowsTable({ rows, loading, onEdit, onDelete }: { rows: Record<string, unknown>[]; loading?: boolean; onEdit?: (row: Record<string, unknown>) => void; onDelete?: (row: Record<string, unknown>) => void }) {
+function SimpleRowsTable({ rows, loading, onEdit, onDelete, onApprove }: { rows: Record<string, unknown>[]; loading?: boolean; onEdit?: (row: Record<string, unknown>) => void; onDelete?: (row: Record<string, unknown>) => void; onApprove?: (row: Record<string, unknown>, status: "APPROVED" | "REJECTED") => void }) {
   const keys = Object.keys(rows[0] ?? {}).filter((key) => !["id", "companyId", "branchId", "deletedAt", "updatedAt"].includes(key)).slice(0, 8);
   const columns: { key: string; label: string; sortable?: boolean; render: (row: Record<string, unknown>) => React.ReactNode }[] = keys.map((key) => ({ key, label: key.replace(/([A-Z])/g, " $1"), render: (row: Record<string, unknown>) => typeof row[key] === "object" && row[key] !== null ? JSON.stringify(row[key]).slice(0, 80) : String(row[key] ?? "-").slice(0, 90) }));
-  if (onEdit || onDelete) {
+  if (onEdit || onDelete || onApprove) {
     columns.push({
       key: "actions",
       label: "",
       sortable: false,
       render: (row: Record<string, unknown>) => (
         <div className="flex items-center gap-2">
+          {onApprove && row.status === "PENDING" && (
+            <>
+              <button type="button" className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-50" onClick={(event) => { event.stopPropagation(); onApprove(row, "APPROVED"); }} title="Approve">
+                <ShieldCheck className="h-3.5 w-3.5" /> Approve
+              </button>
+              <button type="button" className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50" onClick={(event) => { event.stopPropagation(); onApprove(row, "REJECTED"); }} title="Reject">
+                Reject
+              </button>
+            </>
+          )}
           {onEdit && (
             <button type="button" className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-brand hover:bg-brand/10" onClick={(event) => { event.stopPropagation(); onEdit(row); }} title="Edit">
               <Pencil className="h-3.5 w-3.5" /> Edit

@@ -543,6 +543,7 @@ export function CreateEmployeePage() {
           <h1 className="text-xl font-bold">New Employee</h1>
         </div>
         {error && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+        {optionsError && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{optionsError}</div>}
         <p className="text-xs text-ink/50">Fields marked <span className="text-red-500">*</span> are required.</p>
 
         <form onSubmit={submit} className="space-y-5">
@@ -849,6 +850,8 @@ export function EmployeeDetailPage({ id }: { id: string }) {
           <StatusBadge status={data.status} />
         </div>
 
+        {optionsError && <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{optionsError}</div>}
+
         {/* Profile strip */}
         <div className="flex flex-wrap items-center gap-5 rounded-xl border border-line bg-white px-5 py-4 shadow-sm">
           <div className="relative shrink-0">
@@ -1146,6 +1149,7 @@ export function AttendancePage() {
             <button type="button" className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold hover:bg-red-50" onClick={load}>Retry</button>
           </div>
         )}
+        {optionsError && <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{optionsError}</div>}
 
         {showForm && (
           <div className="rounded-lg border border-line bg-white p-5">
@@ -1273,6 +1277,7 @@ export function ShiftSchedulePage() {
             <button type="button" className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold hover:bg-red-50" onClick={load}>Retry</button>
           </div>
         )}
+        {optionsError && <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{optionsError}</div>}
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <div className="rounded-lg border border-line bg-white p-5">
             <h2 className="mb-4 font-semibold">Add Shift</h2>
@@ -1476,6 +1481,7 @@ export function CreateTaskPage() {
           <h1 className="text-xl font-bold">New Task</h1>
         </div>
         {error && <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+        {optionsError && <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{optionsError}</div>}
         <form onSubmit={submit} className="space-y-5">
           <div className="rounded-lg border border-line bg-white p-5 space-y-4">
             <div><label className="mb-1 block text-xs font-medium">Title *</label><input required value={form.title} onChange={f("title")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
@@ -1621,6 +1627,7 @@ export function PayrollPage() {
             <button type="button" className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold hover:bg-red-50" onClick={load}>Retry</button>
           </div>
         )}
+        {optionsError && <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{optionsError}</div>}
 
         {showBulk && (
           <form onSubmit={bulkRun} className="rounded-lg border border-amber-200 bg-amber-50 p-5 space-y-4">
@@ -1790,6 +1797,7 @@ export function TrainingPage() {
             <button type="button" className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold hover:bg-red-50" onClick={load}>Retry</button>
           </div>
         )}
+        {optionsError && <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{optionsError}</div>}
         {showForm && (
           <div className="rounded-lg border border-line bg-white p-5">
             <h2 className="mb-4 font-semibold">New Training Record</h2>
@@ -1899,6 +1907,7 @@ export function PerformancePage() {
             <button type="button" className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold hover:bg-red-50" onClick={load}>Retry</button>
           </div>
         )}
+        {optionsError && <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{optionsError}</div>}
         {showForm && (
           <div className="rounded-lg border border-line bg-white p-5">
             <h2 className="mb-4 font-semibold">New Performance Review</h2>

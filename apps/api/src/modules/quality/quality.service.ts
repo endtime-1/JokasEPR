@@ -447,6 +447,26 @@ export class QualityService {
 
   // â”€â”€â”€ Batch Approve / Reject / Quarantine â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
+  // Candidate stock lots for the approve/reject/quarantine stockBatchId field
+  // — narrows StockBatch by the check's own warehouse/batchNumber so the
+  // inspector picks from a short relevant list instead of typing a raw UUID.
+  async stockBatchCandidates(user: AuthenticatedUser, checkId: string) {
+    const check = await this.prisma.qualityCheck.findFirst({ where: { id: checkId, companyId: user.companyId, deletedAt: null, ...this.scopeWhere(user) } });
+    if (!check) throw new NotFoundException("Quality check not found");
+    const where: Record<string, unknown> = { companyId: user.companyId, deletedAt: null };
+    const or: Record<string, unknown>[] = [];
+    if (check.warehouseId) or.push({ warehouseId: check.warehouseId });
+    if (check.batchNumber) or.push({ batchNumber: { contains: check.batchNumber } });
+    if (or.length) where.OR = or;
+    const batches = await this.prisma.stockBatch.findMany({
+      where,
+      select: { id: true, batchNumber: true, status: true, quantityRemaining: true, product: { select: { name: true } }, warehouse: { select: { name: true } } },
+      orderBy: { createdAt: "desc" },
+      take: 25,
+    });
+    return batches;
+  }
+
   async approveBatch(user: AuthenticatedUser, checkId: string, dto: ApproveBatchDto, ctx: RequestContext) {
     const check = await this.prisma.qualityCheck.findFirst({ where: { id: checkId, companyId: user.companyId, deletedAt: null, ...this.scopeWhere(user) } }); // H15
     if (!check) throw new NotFoundException("Quality check not found");

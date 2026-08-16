@@ -43,7 +43,7 @@ import {
   X
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { ApiEnvelope, apiFetch } from "../lib/api";
+import { ApiEnvelope, apiFetch, clearAllCache } from "../lib/api";
 
 type NavItem = {
   href: string;
@@ -229,6 +229,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // Redirect to login when any apiFetch signals the session has fully expired
   useEffect(() => {
     function onSessionExpired() {
+      // M-BUG: this path (session expiry) previously left every jokas_*
+      // sessionStorage entry and the in-memory cache intact — only the
+      // explicit sign-out button cleared them. On a shared device, the next
+      // person to log in in the same tab would briefly see the expired
+      // user's cached data until fresh fetches overwrote it.
+      clearAllCache();
+      for (const key of [...Object.keys(sessionStorage)]) {
+        if (key.startsWith("jokas_")) sessionStorage.removeItem(key);
+      }
       router.push("/login");
     }
     window.addEventListener("auth:session-expired", onSessionExpired);

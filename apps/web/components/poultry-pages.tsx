@@ -121,17 +121,20 @@ export function FarmPoultryOverviewPage() {
   const [overview, setOverview] = useState<Record<string, number> | null>(() =>
     selectedFarmId ? getCachedFirst<ApiEnvelope<Record<string, number>>>(`/poultry/farms/${selectedFarmId}/overview`)?.data ?? null : null
   );
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
     if (!selectedFarmId) return;
+    setLoadError("");
     apiFetch<ApiEnvelope<Record<string, number>>>(`/poultry/farms/${selectedFarmId}/overview`)
       .then((response) => setOverview(response.data))
-      .catch(() => undefined);
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load overview."));
   }, [selectedFarmId]);
 
   return (
     <>
       <PageHeader title="Farm Poultry Overview" subtitle="Farm-level poultry operating totals for assigned farms." />
+      {loadError && <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{loadError}</p>}
       <FormField label="Farm">
         <select className={inputClass} value={selectedFarmId} onChange={(event) => setFarmId(event.target.value)}>
           {options.farms.map((farm) => (
@@ -654,6 +657,7 @@ function FlockBatchForm({ options, onSaved }: { options: PoultryOptions; onSaved
   });
   const [allocations, setAllocations] = useState<PenAllocation[]>([]);
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   const totalAllocated = allocations.reduce((sum, a) => sum + (Number(a.birdCount) || 0), 0);
   const openingCount = Number(form.openingBirdCount) || 0;
@@ -674,10 +678,12 @@ function FlockBatchForm({ options, onSaved }: { options: PoultryOptions; onSaved
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submitting) return;
     setError("");
     if (openingCount === 0) { setError("Opening bird count must be greater than 0."); return; }
     if (allocations.length === 0) { setError("Select at least one pen to allocate birds."); return; }
     if (totalAllocated !== openingCount) { setError(`Allocated ${totalAllocated} birds but opening count is ${openingCount}. They must match.`); return; }
+    setSubmitting(true);
     try {
       await apiFetch("/poultry/batches", {
         method: "POST",
@@ -699,6 +705,8 @@ function FlockBatchForm({ options, onSaved }: { options: PoultryOptions; onSaved
       router.push("/poultry/batches");
     } catch (err: any) {
       setError(err?.message ?? "Failed to create batch.");
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -787,8 +795,8 @@ function FlockBatchForm({ options, onSaved }: { options: PoultryOptions; onSaved
         ))}
       </div>
 
-      <button type="submit" className="min-h-11 rounded-md bg-brand px-6 text-sm font-semibold text-white">
-        Create flock batch
+      <button type="submit" disabled={submitting} className="min-h-11 rounded-md bg-brand px-6 text-sm font-semibold text-white disabled:opacity-60">
+        {submitting ? "Creating…" : "Create flock batch"}
       </button>
     </form>
   );
@@ -837,7 +845,7 @@ type BatchDetail = {
 
 export function FlockBatchDetailsPage() {
   const params = useParams<{ id: string }>();
-  const { options } = usePoultryOptions();
+  const { options, optionsError } = usePoultryOptions();
   const [batch, setBatch] = useState<BatchDetail | null>(() => getCachedFirst<ApiEnvelope<BatchDetail>>(`/poultry/batches/${params?.id}`)?.data ?? null);
   const [batchError, setBatchError] = useState("");
   const [tab, setTab] = useState<"overview" | "pens" | "records">("overview");
@@ -890,6 +898,7 @@ export function FlockBatchDetailsPage() {
   return (
     <>
       <PageHeader title={batch?.name ?? "Flock Batch"} subtitle={batch ? `${batch.code} · ${batch.birdType} · ${batch.farm?.name ?? ""}` : batchError ? "Failed to load" : "Loading…"} />
+      {optionsError && <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">{optionsError}</div>}
       {batchError && !batch && (
         <div className="mb-4 rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700">
           <p className="font-medium">{batchError}</p>
@@ -1077,6 +1086,9 @@ function BatchRecordSection({ batchId, type, label, cols, endpoint, options }: {
       defaults.feedProductId = options.products[0]?.id ?? "";
       defaults.warehouseId = options.warehouses[0]?.id ?? "";
     }
+    if (["eggs", "medications", "vaccinations"].includes(type)) {
+      defaults.warehouseId = options.warehouses[0]?.id ?? "";
+    }
     setAddForm(defaults);
     setAddError("");
     setAddOpen(true);
@@ -1180,6 +1192,62 @@ function BatchRecordSection({ batchId, type, label, cols, endpoint, options }: {
                         <option value="">— none —</option>
                         {options.warehouses.map((w) => <option key={w.id} value={w.id}>{w.code} — {w.name}</option>)}
                       </select>
+                    </div>
+                  </>
+                )}
+                {type === "mortality" && (
+                  <div>
+                    <label className="mb-0.5 block text-[10px] text-ink/60">Reason</label>
+                    <select className="w-full rounded border border-line bg-white px-2 py-1 text-xs" value={addForm.isCulling ?? "false"} onChange={(e) => setAddForm((f) => ({ ...f, isCulling: e.target.value }))}>
+                      <option value="false">Death</option>
+                      <option value="true">Deliberate cull</option>
+                    </select>
+                  </div>
+                )}
+                {type === "eggs" && (
+                  <>
+                    <div>
+                      <label className="mb-0.5 block text-[10px] text-ink/60">Egg product (good eggs → stock)</label>
+                      <select className="w-full rounded border border-line bg-white px-2 py-1 text-xs" value={addForm.eggProductId ?? ""} onChange={(e) => setAddForm((f) => ({ ...f, eggProductId: e.target.value }))}>
+                        <option value="">— none —</option>
+                        {options.products.map((p) => <option key={p.id} value={p.id}>{p.sku ?? p.code} — {p.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-0.5 block text-[10px] text-ink/60">Seconds product (cracked/dirty → stock)</label>
+                      <select className="w-full rounded border border-line bg-white px-2 py-1 text-xs" value={addForm.secondsProductId ?? ""} onChange={(e) => setAddForm((f) => ({ ...f, secondsProductId: e.target.value }))}>
+                        <option value="">— none —</option>
+                        {options.products.map((p) => <option key={p.id} value={p.id}>{p.sku ?? p.code} — {p.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-0.5 block text-[10px] text-ink/60">Warehouse</label>
+                      <select className="w-full rounded border border-line bg-white px-2 py-1 text-xs" value={addForm.warehouseId ?? ""} onChange={(e) => setAddForm((f) => ({ ...f, warehouseId: e.target.value }))}>
+                        <option value="">— none —</option>
+                        {options.warehouses.map((w) => <option key={w.id} value={w.id}>{w.code} — {w.name}</option>)}
+                      </select>
+                    </div>
+                  </>
+                )}
+                {(type === "medications" || type === "vaccinations") && (
+                  <>
+                    <div>
+                      <label className="mb-0.5 block text-[10px] text-ink/60">{type === "medications" ? "Medicine product (deducts stock)" : "Vaccine product (deducts stock)"}</label>
+                      <select className="w-full rounded border border-line bg-white px-2 py-1 text-xs" value={(type === "medications" ? addForm.medicineProductId : addForm.vaccineProductId) ?? ""} onChange={(e) => setAddForm((f) => ({ ...f, [type === "medications" ? "medicineProductId" : "vaccineProductId"]: e.target.value }))}>
+                        <option value="">— none —</option>
+                        {options.products.map((p) => <option key={p.id} value={p.id}>{p.sku ?? p.code} — {p.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-0.5 block text-[10px] text-ink/60">Warehouse</label>
+                      <select className="w-full rounded border border-line bg-white px-2 py-1 text-xs" value={addForm.warehouseId ?? ""} onChange={(e) => setAddForm((f) => ({ ...f, warehouseId: e.target.value }))}>
+                        <option value="">— none —</option>
+                        {options.warehouses.map((w) => <option key={w.id} value={w.id}>{w.code} — {w.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-0.5 block text-[10px] text-ink/60">Quantity used</label>
+                      <input type="number" min="0" step="0.001" className="w-full rounded border border-line bg-white px-2 py-1 text-xs" value={addForm.quantityUsed ?? ""} onChange={(e) => setAddForm((f) => ({ ...f, quantityUsed: e.target.value }))} />
                     </div>
                   </>
                 )}
@@ -1320,6 +1388,7 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
   const [submitError, setSubmitError] = useState("");
   const [saving, setSaving] = useState(false);
   const [recordsLoading, setRecordsLoading] = useState(rows.length === 0);
+  const [recordsError, setRecordsError] = useState("");
   const [confirmRow, setConfirmRow] = useState<Record<string, any> | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const recordLoadingRef = useRef(false);
@@ -1338,7 +1407,8 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
     if (recordLoadingRef.current) return;
     recordLoadingRef.current = true;
     setRecordsLoading(true);
-    load().catch(() => undefined).finally(() => { recordLoadingRef.current = false; setRecordsLoading(false); });
+    setRecordsError("");
+    load().catch((err: any) => setRecordsError(err?.message ?? "Failed to load records.")).finally(() => { recordLoadingRef.current = false; setRecordsLoading(false); });
   }
 
   useEffect(() => {
@@ -1452,6 +1522,7 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
         </div>
       )}
       {submitError && <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{submitError}</p>}
+      {recordsError && <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{recordsError}</p>}
       <GenericRecordForm options={options} optionsLoading={optionsLoading} form={form} setForm={setForm} submit={submit} type={type} isEditing={!!editingId} saving={saving} />
       <SimpleRecordTable rows={rows} loading={recordsLoading} onEdit={startEdit} onDelete={canManage ? setConfirmRow : undefined} />
       <ConfirmModal
@@ -1554,6 +1625,63 @@ function GenericRecordForm({ options, optionsLoading = false, form, setForm, sub
         </>
       )}
 
+      {type === "mortality" && (
+        <FormField label="Reason">
+          <select name="isCulling" className={inputClass} value={form.isCulling ?? "false"} onChange={(e) => setForm({ ...form, isCulling: e.target.value })}>
+            <option value="false">Death</option>
+            <option value="true">Deliberate cull</option>
+          </select>
+        </FormField>
+      )}
+
+      {type === "eggs" && (
+        <>
+          <FormField label="Egg product (good eggs → stock)">
+            <select name="eggProductId" className={inputClass} value={form.eggProductId ?? ""} onChange={(e) => setForm({ ...form, eggProductId: e.target.value })}>
+              <option value="">— none —</option>
+              {options.products.map((p) => <option key={p.id} value={p.id}>{p.sku ?? p.code} — {p.name}</option>)}
+            </select>
+          </FormField>
+          <FormField label="Seconds product (cracked/dirty → stock)">
+            <select name="secondsProductId" className={inputClass} value={form.secondsProductId ?? ""} onChange={(e) => setForm({ ...form, secondsProductId: e.target.value })}>
+              <option value="">— none —</option>
+              {options.products.map((p) => <option key={p.id} value={p.id}>{p.sku ?? p.code} — {p.name}</option>)}
+            </select>
+          </FormField>
+          <FormField label="Warehouse">
+            <select name="warehouseId" className={inputClass} value={form.warehouseId ?? ""} onChange={(e) => setForm({ ...form, warehouseId: e.target.value })}>
+              <option value="">— none —</option>
+              {options.warehouses.map((w) => <option key={w.id} value={w.id}>{w.code} — {w.name}</option>)}
+            </select>
+          </FormField>
+        </>
+      )}
+
+      {(type === "medications" || type === "vaccinations") && (
+        <>
+          <FormField label={type === "medications" ? "Medicine product (deducts stock)" : "Vaccine product (deducts stock)"}>
+            <select
+              name={type === "medications" ? "medicineProductId" : "vaccineProductId"}
+              className={inputClass}
+              value={(type === "medications" ? form.medicineProductId : form.vaccineProductId) ?? ""}
+              onChange={(e) => setForm({ ...form, [type === "medications" ? "medicineProductId" : "vaccineProductId"]: e.target.value })}
+            >
+              <option value="">— none —</option>
+              {options.products.map((p) => <option key={p.id} value={p.id}>{p.sku ?? p.code} — {p.name}</option>)}
+            </select>
+          </FormField>
+          <FormField label="Warehouse">
+            <select name="warehouseId" className={inputClass} value={form.warehouseId ?? ""} onChange={(e) => setForm({ ...form, warehouseId: e.target.value })}>
+              <option value="">— none —</option>
+              {options.warehouses.map((w) => <option key={w.id} value={w.id}>{w.code} — {w.name}</option>)}
+            </select>
+          </FormField>
+          <FormField label="Quantity used">
+            <input type="number" min="0" step="0.001" name="quantityUsed" className={inputClass} value={form.quantityUsed ?? ""} onChange={(e) => setForm({ ...form, quantityUsed: e.target.value })} />
+          </FormField>
+        </>
+      )}
+
       {fields.map((field) => (
         <FormField key={field.name} label={field.label}>
           {field.kind === "select" ? (
@@ -1604,13 +1732,13 @@ function buildRecordPayload(type: string, form: Record<string, string>, options:
     penId: merged.penId || undefined,
     poultryHouseId: undefined
   };
-  const numericKeys = ["mortalityCount", "culledCount", "feedConsumedKg", "totalEggs", "birdCount", "quantityKg", "costAmount", "goodEggs", "crackedEggs", "dirtyEggs", "brokenEggs", "rejectedEggs", "sampleSize", "averageWeightKg", "amount", "openingBirdCount"];
+  const numericKeys = ["mortalityCount", "culledCount", "feedConsumedKg", "totalEggs", "birdCount", "quantityKg", "costAmount", "goodEggs", "crackedEggs", "dirtyEggs", "brokenEggs", "rejectedEggs", "sampleSize", "averageWeightKg", "amount", "openingBirdCount", "quantityUsed"];
   for (const key of Object.keys(payload)) {
     if (numericKeys.includes(key)) {
       payload[key] = Number(payload[key] || 0);
     }
   }
-  if (type === "mortality") payload.isCulling = false;
+  if (type === "mortality") payload.isCulling = merged.isCulling === "true";
 
   // Strip recordDate for record types that use a different date field name
   const hasRecordDate = recordFields(type).some((f) => f.name === "recordDate");
@@ -1668,7 +1796,7 @@ type PenSelection = { penId: string; code: string; name?: string; selected: bool
 export function PoultryTransferPage() {
   const { profile } = useAuth();
   const canManage = !!profile;
-  const { options, optionsLoading, refreshOptions } = usePoultryOptions();
+  const { options, optionsError, optionsLoading, refreshOptions } = usePoultryOptions();
   const [rows, setRows] = useState<Record<string, any>[]>(() => {
     const cached = getCachedFirst<ApiEnvelope<Record<string, any>[]>>("/poultry/records/transfers");
     if (Array.isArray(cached?.data) && cached.data.length > 0) return cached.data;
@@ -1681,11 +1809,13 @@ export function PoultryTransferPage() {
   const [form, setForm] = useState({ flockBatchId: "", fromHouseId: "", toFarmId: "", toPoultryHouseId: "", toPenId: "", birdCount: "", transferDate: new Date().toISOString().slice(0, 10), reason: "" });
   const [penSelections, setPenSelections] = useState<PenSelection[]>([]);
   const [submitError, setSubmitError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const [editRow, setEditRow] = useState<Record<string, any> | null>(null);
   const [editForm, setEditForm] = useState({ birdCount: "", reason: "", status: "" });
   const [editMsg, setEditMsg] = useState("");
   const [confirmRow, setConfirmRow] = useState<Record<string, any> | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   const fromHouses = useMemo(() => {
     const houseIds = new Set(options.pens.map((p) => p.poultryHouseId));
@@ -1729,15 +1859,18 @@ export function PoultryTransferPage() {
   function loadTransfers() {
     if (transferLoadingRef.current) return;
     transferLoadingRef.current = true;
-    load().catch(() => undefined).finally(() => { transferLoadingRef.current = false; });
+    setLoadError("");
+    load().catch((err: any) => setLoadError(err?.message ?? "Failed to load transfers.")).finally(() => { transferLoadingRef.current = false; });
   }
 
   useEffect(() => { loadTransfers(); }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submitting) return;
     setSubmitError("");
     if (!form.flockBatchId) { setSubmitError("Please select a flock batch."); return; }
+    if (!effectiveToHouseId) { setSubmitError("Please select a destination house (the destination farm has no houses to choose from)."); return; }
     const base = {
       flockBatchId: form.flockBatchId,
       fromPoultryHouseId: form.fromHouseId || undefined,
@@ -1747,6 +1880,7 @@ export function PoultryTransferPage() {
       transferDate: form.transferDate,
       reason: form.reason || undefined
     };
+    setSubmitting(true);
     try {
       if (anyPenSelected) {
         for (const p of selectedPens) {
@@ -1761,6 +1895,8 @@ export function PoultryTransferPage() {
       await load();
     } catch (err: any) {
       setSubmitError(err?.message ?? "Failed to create transfer.");
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -1812,6 +1948,7 @@ export function PoultryTransferPage() {
   return (
     <>
       <PageHeader title="Poultry Transfers" subtitle="Move birds between pens, houses, or farms with full transfer audit tracking." />
+      {(loadError || optionsError) && <p className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">{loadError || optionsError}</p>}
       <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-3">
         <FormField label="Batch">
           <select
@@ -1881,8 +2018,8 @@ export function PoultryTransferPage() {
           <input className={inputClass} value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} />
         </FormField>
         {submitError && <p className="text-sm text-red-600 md:col-span-3">{submitError}</p>}
-        <button className="min-h-11 rounded-md bg-brand px-4 text-sm font-semibold text-white md:col-span-3">
-          {anyPenSelected ? `Create ${selectedPens.length} transfer${selectedPens.length > 1 ? "s" : ""}` : "Create transfer"}
+        <button disabled={submitting} className="min-h-11 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:col-span-3">
+          {submitting ? "Creating…" : anyPenSelected ? `Create ${selectedPens.length} transfer${selectedPens.length > 1 ? "s" : ""}` : "Create transfer"}
         </button>
       </form>
       <SimpleRecordTable

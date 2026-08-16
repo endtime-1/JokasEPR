@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { KeyRound, Pencil, Plus, ShieldCheck, Trash2, UserCheck, UserX } from "lucide-react";
 import { DataTable } from "../../../../components/data-table";
 import { FormField } from "../../../../components/form-field";
@@ -91,8 +91,6 @@ export default function UsersPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [savingReset, setSavingReset] = useState(false);
 
-  const defaultRoleIds = useMemo(() => (form.roleIds.length ? form.roleIds : roles[0] ? [roles[0].id] : []), [form.roleIds, roles]);
-
   const empty = { data: [] as ScopeOption[] };
   async function load() {
     setError("");
@@ -111,7 +109,6 @@ export default function UsersPage() {
     setFarms(farmResponse.data ?? []);
     setWarehouses(warehouseResponse.data ?? []);
     setProductionSites(productionSiteResponse.data ?? []);
-    setForm((current) => ({ ...current, roleIds: current.roleIds.length ? current.roleIds : roles[0] ? [roles[0].id] : [] }));
   }
 
   useEffect(() => {
@@ -128,19 +125,26 @@ export default function UsersPage() {
     event.preventDefault();
     setMessage("");
     setError("");
+    // M-BUG: roles used to default to whichever role sorted first
+    // alphabetically the moment the roles list loaded — no deliberate click
+    // required. Require an explicit selection instead of silently trusting
+    // a JS-computed fallback.
+    if (form.roleIds.length === 0) {
+      setError("Select at least one role for this user.");
+      return;
+    }
     try {
       await apiFetch("/identity/users", {
         method: "POST",
         body: JSON.stringify({
           ...form,
-          roleIds: defaultRoleIds,
           branchId: form.branchIds[0],
           farmId: form.farmIds[0],
           warehouseId: form.warehouseIds[0],
           productionSiteId: form.productionSiteIds[0]
         })
       });
-      setForm({ ...emptyForm, roleIds: roles[0] ? [roles[0].id] : [] });
+      setForm(emptyForm);
       setMessage("User created and access assigned.");
       await load();
     } catch (err) {
@@ -279,9 +283,10 @@ export default function UsersPage() {
         </FormField>
         <FormField label="Temporary password">
           <input className="min-h-11 rounded-md border border-line px-3" type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} required minLength={10} />
+          <p className="mt-1 text-[11px] text-ink/45">At least 10 characters, with uppercase, lowercase, a number, and a symbol.</p>
         </FormField>
         <FormField label="Roles">
-          <select className="min-h-28 rounded-md border border-line px-3 py-2" multiple value={defaultRoleIds} onChange={(event) => setForm({ ...form, roleIds: selectedOptions(event) })} required>
+          <select className="min-h-28 rounded-md border border-line px-3 py-2" multiple value={form.roleIds} onChange={(event) => setForm({ ...form, roleIds: selectedOptions(event) })} required>
             {roles.map((role) => (
               <option key={role.id} value={role.id}>
                 {role.name}
@@ -376,6 +381,7 @@ export default function UsersPage() {
             </FormField>
             <FormField label="New password (optional — leave blank to keep)">
               <input className="min-h-10 rounded-md border border-line px-3 text-sm" type="password" minLength={10} value={editUserForm.password} onChange={(e) => setEditUserForm({ ...editUserForm, password: e.target.value })} />
+              <p className="mt-1 text-[11px] text-ink/45">At least 10 characters, with uppercase, lowercase, a number, and a symbol.</p>
             </FormField>
           </div>
           <div className="flex gap-2">
@@ -405,6 +411,7 @@ export default function UsersPage() {
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
               />
+              <p className="mt-1 text-[11px] text-ink/45">At least 10 characters, with uppercase, lowercase, a number, and a symbol.</p>
             </FormField>
             <FormField label="Confirm new password">
               <input

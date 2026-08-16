@@ -597,6 +597,7 @@ export function CustomersPage({ create = false }: { create?: boolean }) {
             subtitle="Register a new customer account with contact details, group assignment, and credit limit."
             actions={<Link href="/sales/customers" className="app-button-secondary text-xs">← Back</Link>}
           />
+          {optionsError && <div className="mb-5 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{optionsError}</div>}
           {error && <div className="mb-5 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
           <form onSubmit={submit} className="rounded-2xl border border-line bg-white p-6 shadow-panel">
             <div className="grid gap-4 sm:grid-cols-2">
@@ -902,6 +903,17 @@ export function OrdersPage({ create = false }: { create?: boolean }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(!hasCached("/sales/orders"));
+  const [customerCredit, setCustomerCredit] = useState<{ creditLimit: number; currentBalance: number } | null>(null);
+
+  const effectiveCustomerId = form.customerId || opts.customers[0]?.id || "";
+  useEffect(() => {
+    if (!effectiveCustomerId) { setCustomerCredit(null); return; }
+    let cancelled = false;
+    apiFetch<ApiEnvelope<{ creditLimits?: Array<{ creditLimit: number; currentBalance: number }> }>>(`/sales/customers/${effectiveCustomerId}`)
+      .then((r) => { if (!cancelled) setCustomerCredit(r.data?.creditLimits?.[0] ?? null); })
+      .catch(() => { if (!cancelled) setCustomerCredit(null); });
+    return () => { cancelled = true; };
+  }, [effectiveCustomerId]);
 
   async function load() {
     const p = new URLSearchParams();
@@ -932,7 +944,7 @@ export function OrdersPage({ create = false }: { create?: boolean }) {
       const r = await apiFetch<ApiEnvelope<{ id: string }>>("/sales/orders", {
         method: "POST",
         body: JSON.stringify({
-          customerId: form.customerId || opts.customers[0]?.id,
+          customerId: effectiveCustomerId,
           warehouseId: form.warehouseId || opts.warehouses[0]?.id,
           discountAmount: discount,
           taxAmount: tax,
@@ -968,6 +980,7 @@ export function OrdersPage({ create = false }: { create?: boolean }) {
             subtitle="Create a sales order with one or more line items. Stock release requires storekeeper approval."
             actions={<Link href="/sales/orders" className="app-button-secondary text-xs">← Back</Link>}
           />
+          {optionsError && <div className="mb-5 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{optionsError}</div>}
           {error && <div className="mb-5 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
           <form onSubmit={submit} className="space-y-5">
@@ -975,10 +988,21 @@ export function OrdersPage({ create = false }: { create?: boolean }) {
               <h2 className="mb-4 text-sm font-semibold text-ink">Order Details</h2>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div><FormLabel>Customer *</FormLabel>
-                  <select required value={form.customerId || opts.customers[0]?.id || ""} onChange={f("customerId")} className={inputCls}>
+                  <select required value={effectiveCustomerId} onChange={f("customerId")} className={inputCls}>
                     <option value="">— Select customer —</option>
                     {opts.customers.map((c) => <option key={c.id} value={c.id}>{c.code} {c.name}</option>)}
                   </select>
+                  {customerCredit && Number(customerCredit.creditLimit) > 0 && (() => {
+                    const limit = Number(customerCredit.creditLimit);
+                    const used = Number(customerCredit.currentBalance);
+                    const available = limit - used;
+                    const pct = (used / limit) * 100;
+                    return (
+                      <p className={`mt-1.5 text-xs ${pct >= 100 ? "font-semibold text-red-600" : pct >= 80 ? "font-semibold text-amber-600" : "text-ink/50"}`}>
+                        Credit: GHS {available.toLocaleString("en-GH", { maximumFractionDigits: 2 })} available of GHS {limit.toLocaleString("en-GH", { maximumFractionDigits: 2 })} ({pct.toFixed(0)}% used)
+                      </p>
+                    );
+                  })()}
                 </div>
                 <div><FormLabel>Warehouse *</FormLabel>
                   <select required value={form.warehouseId || opts.warehouses[0]?.id || ""} onChange={f("warehouseId")} className={inputCls}>
@@ -1175,6 +1199,7 @@ export function PaymentsPage() {
       />
       <SalesNav />
 
+      {optionsError && <div className="mb-4 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{optionsError}</div>}
       {showForm && (
         <div className="mb-6 rounded-2xl border border-line bg-white p-6 shadow-panel">
           <h2 className="mb-5 text-base font-semibold text-ink">New Payment</h2>
@@ -1288,6 +1313,7 @@ export function ReturnsPage() {
       />
       <SalesNav />
 
+      {optionsError && <div className="mb-4 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{optionsError}</div>}
       {showForm && (
         <div className="mb-6 rounded-2xl border border-line bg-white p-6 shadow-panel">
           <h2 className="mb-5 text-base font-semibold text-ink">Post Sales Return</h2>

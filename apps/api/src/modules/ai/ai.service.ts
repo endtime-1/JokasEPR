@@ -476,6 +476,15 @@ export class AiService {
     return { data: { session, messages } };
   }
 
+  async renameSession(user: AuthenticatedUser, sessionId: string, title: string) {
+    const session = await this.prisma.aiChatSession.findFirst({
+      where: { id: sessionId, userId: user.id, companyId: user.companyId },
+    });
+    if (!session) throw new ForbiddenException("Session not found.");
+    const updated = await this.prisma.aiChatSession.update({ where: { id: sessionId }, data: { title } });
+    return { data: updated };
+  }
+
   async deleteSession(user: AuthenticatedUser, sessionId: string) {
     const session = await this.prisma.aiChatSession.findFirst({
       where: { id: sessionId, userId: user.id, companyId: user.companyId },

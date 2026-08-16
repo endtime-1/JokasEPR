@@ -124,6 +124,12 @@ export class QualityController {
     return { data: await this.svc.conditionalPass(user, id, dto, ctx(req)) };
   }
 
+  @Get("checks/:id/stock-batch-candidates")
+  @RequirePermissions(PERMISSIONS.QUALITY_READ)
+  async stockBatchCandidates(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
+    return { data: await this.svc.stockBatchCandidates(user, id) };
+  }
+
   @Patch("checks/:id/approve-batch")
   @RequirePermissions(PERMISSIONS.QUALITY_MANAGE)
   async approveBatch(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: ApproveBatchDto, @Req() req: Request) {

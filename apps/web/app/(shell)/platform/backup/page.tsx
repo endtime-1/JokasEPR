@@ -1,6 +1,6 @@
-﻿"use client";
+"use client";
 
-import { AlertTriangle, Archive, CircleCheckBig, Clock, Cloud, Database, FileArchive, HardDrive, Info, RefreshCw, Shield, Terminal } from "lucide-react";
+import { AlertTriangle, Archive, CircleCheckBig, Clock, Database, FileArchive, HardDrive, Info, RefreshCw, Shield, Terminal } from "lucide-react";
 
 function SectionHeader({ icon: Icon, title, subtitle }: { icon: React.ElementType; title: string; subtitle?: string }) {
   return (
@@ -70,22 +70,31 @@ export default function BackupPage() {
             <p className="app-kicker">Platform</p>
             <h1 className="mt-1 text-2xl font-bold tracking-tight">Backup & Recovery</h1>
             <p className="mt-1 text-sm text-ink/60">
-              Data protection configuration, schedule, storage, and recovery procedures for this ERP system.
+              How this app is actually backed up on its Hostinger hosting plan — not a generic Linux-server writeup.
             </p>
           </div>
           <span className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700">
             <AlertTriangle size={13} />
-            Configure on deployment server
+            No cron on this host
           </span>
+        </div>
+
+        <div className="flex gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3">
+          <Info size={15} className="mt-0.5 shrink-0 text-blue-500" />
+          <p className="text-sm text-blue-800">
+            This Hostinger plan has no cron/crontab access. Everything below that looks cron-like is a shell script written to the server by the
+            deploy pipeline and triggered by a polling loop inside <code className="font-mono text-xs">start.js</code>, not by the system crontab.
+            There is also no systemd here — restart/recovery steps use PM2 and plain file operations, not <code className="font-mono text-xs">systemctl</code>.
+          </p>
         </div>
 
         {/* Status cards */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {[
-            { label: "Daily Backup", value: "02:00 AM", sub: "Every day", icon: Clock, color: "text-brand" },
-            { label: "Retention", value: "7 / 30 / 365", sub: "Days kept per tier", icon: Archive, color: "text-emerald-600" },
-            { label: "Storage", value: "Local + S3", sub: "Two copies minimum", icon: Cloud, color: "text-blue-600" },
-            { label: "Test Frequency", value: "Monthly", sub: "Verify restorability", icon: RefreshCw, color: "text-violet-600" }
+            { label: "Database Backup", value: "Daily, ~02:00", sub: "Polled by start.js, not cron", icon: Clock, color: "text-brand" },
+            { label: "Retention", value: "7 days / 5 deploys", sub: "Daily DB+files / pre-deploy snapshots", icon: Archive, color: "text-emerald-600" },
+            { label: "Storage", value: "Hostinger account only", sub: "No off-site / S3 copy", icon: HardDrive, color: "text-blue-600" },
+            { label: "Restore Drill", value: "Monthly, manual", sub: "Not wired into CI", icon: RefreshCw, color: "text-violet-600" }
           ].map(({ label, value, sub, icon: Icon, color }) => (
             <Card key={label} className="flex items-start gap-3">
               <Icon size={18} className={`mt-0.5 shrink-0 ${color}`} />
@@ -98,84 +107,79 @@ export default function BackupPage() {
           ))}
         </div>
 
-        {/* Backup schedule */}
+        {/* What gets backed up */}
         <Card>
           <SectionHeader
             icon={Clock}
-            title="Backup Schedule"
-            subtitle="Three automated tiers running via cron on the deployment server"
+            title="What Gets Backed Up, and How"
+            subtitle="Three independent mechanisms, all triggered by start.js polling every 15 minutes"
           />
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-line text-left text-xs font-semibold uppercase tracking-wide text-ink/45">
-                  <th className="pb-2 pr-6">Tier</th>
-                  <th className="pb-2 pr-6">When</th>
-                  <th className="pb-2 pr-6">Cron</th>
-                  <th className="pb-2 pr-6">Retention</th>
-                  <th className="pb-2">Purpose</th>
+                  <th className="pb-2 pr-6">What</th>
+                  <th className="pb-2 pr-6">Trigger</th>
+                  <th className="pb-2 pr-6">Location</th>
+                  <th className="pb-2">Retention</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
                 {[
-                  { tier: "Daily", when: "Every day at 02:00 AM", cron: "0 2 * * *", retain: "7 days", purpose: "Recover from yesterday's bad import" },
-                  { tier: "Weekly", when: "Every Sunday at 03:00 AM", cron: "0 3 * * 0", retain: "30 days", purpose: "Recover from last month's corruption" },
-                  { tier: "Monthly", when: "1st of month at 04:00 AM", cron: "0 4 1 * *", retain: "365 days", purpose: "Compliance and long-range recovery" }
-                ].map(({ tier, when, cron, retain, purpose }) => (
-                  <tr key={tier} className="text-ink/80">
-                    <td className="py-2.5 pr-6 font-semibold">{tier}</td>
-                    <td className="py-2.5 pr-6">{when}</td>
-                    <td className="py-2.5 pr-6 font-mono text-xs text-ink/60">{cron}</td>
-                    <td className="py-2.5 pr-6"><StatusPill color={tier === "Daily" ? "green" : tier === "Weekly" ? "blue" : "yellow"} label={retain} /></td>
-                    <td className="py-2.5 text-ink/60">{purpose}</td>
+                  { what: "Database", trigger: "start.js checkDailyBackup() — fires once during the 02:00 hour if today's file is missing", loc: "~/jokas-db-backups/db-YYYYMMDD.sql.gz", retain: "7 days" },
+                  { what: "Uploaded files", trigger: "start.js checkDailyFilesBackup() — same polling pattern", loc: "~/jokas-files-backups/files-YYYYMMDD.tar.gz", retain: "7 days" },
+                  { what: "Pre-deploy DB snapshot", trigger: "Every deploy, immediately before migrations run; deploy aborts if this snapshot fails", loc: "~/jokas-db-backups/pre-deploy-<timestamp>.sql.gz", retain: "5 most recent" }
+                ].map(({ what, trigger, loc, retain }) => (
+                  <tr key={what} className="align-top text-ink/80">
+                    <td className="py-2.5 pr-6 font-semibold">{what}</td>
+                    <td className="py-2.5 pr-6 text-ink/60">{trigger}</td>
+                    <td className="py-2.5 pr-6 font-mono text-xs text-ink/60">{loc}</td>
+                    <td className="py-2.5"><StatusPill color={what === "Pre-deploy DB snapshot" ? "yellow" : "green"} label={retain} /></td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          <p className="mt-4 text-sm text-ink/70">
+            The database dump uses <code className="rounded bg-gray-100 px-1 font-mono text-xs">mysqldump --single-transaction --routines</code>,
+            gzipped only after confirming the dump succeeded and the file is non-empty — an earlier version piped straight into gzip and reported
+            success even when <code className="font-mono text-xs">mysqldump</code> silently produced nothing. Failures now land in{" "}
+            <code className="rounded bg-gray-100 px-1 font-mono text-xs">~/jokas-db-backups/backup-error.log</code> instead of vanishing.
+            Uploaded files (<code className="font-mono text-xs">apps/api/uploads/</code> — employee photos, HR documents, product images) are the
+            only production data that lives outside MySQL.
+          </p>
         </Card>
 
-        {/* Setup commands */}
+        {/* Verify */}
         <Card>
           <SectionHeader
             icon={Terminal}
-            title="Setup & Manual Backup Commands"
-            subtitle="Run on the Linux deployment server"
+            title="Verifying a Backup Actually Restores"
+            subtitle="A backup that's never been restored is a guess, not a backup"
           />
-          <div className="space-y-4">
-            <div>
-              <p className="text-sm font-semibold text-ink">1. First-time setup</p>
-              <CodeBlock>{`# Copy config template and fill in your values
-cp scripts/backup/backup.env.example scripts/backup/backup.env
-nano scripts/backup/backup.env
-
-# Make scripts executable
-chmod +x scripts/backup/*.sh
-
-# Create backup directory
-mkdir -p /opt/jokas/backups`}</CodeBlock>
-            </div>
-
-            <div>
-              <p className="text-sm font-semibold text-ink">2. Install automated cron jobs</p>
-              <CodeBlock>{`scripts/backup/setup-cron.sh`}</CodeBlock>
-            </div>
-
-            <div>
-              <p className="text-sm font-semibold text-ink">3. Run a manual backup</p>
-              <CodeBlock>{`# Full backup (database + files)
-scripts/backup/backup.sh daily
-
-# Database only (e.g., before deploying a migration)
-source scripts/backup/backup.env
-scripts/backup/backup-db.sh /tmp/pre-deploy-$(date +%Y%m%d).dump`}</CodeBlock>
-            </div>
-
-            <div>
-              <p className="text-sm font-semibold text-ink">4. Verify a backup</p>
-              <CodeBlock>{`scripts/backup/verify-backup.sh \\
-  /opt/jokas/backups/daily/jokas_daily_YYYYMMDD_HHmmss`}</CodeBlock>
-            </div>
+          <p className="mb-3 text-sm text-ink/70">
+            <code className="rounded bg-gray-100 px-1 font-mono text-xs">scripts/verify-backup-restore.sh</code> runs the real restore path
+            without touching production data. Run it periodically (monthly is reasonable) — it is deliberately not wired into CI, since restoring
+            a multi-MB dump on every push isn't worth the CI time or host load.
+          </p>
+          <CodeBlock>{`ssh -p 65002 user@host
+cd ~/domains/jokasfarms.com/nodejs
+./scripts/verify-backup-restore.sh                      # uses the most recent db-*.sql.gz
+./scripts/verify-backup-restore.sh path/to/specific.sql.gz`}</CodeBlock>
+          <ol className="mt-4 space-y-2.5">
+            <Step n={1}>Verifies gzip integrity and that the file isn&apos;t suspiciously small.</Step>
+            <Step n={2}>Creates a disposable scratch database (<code className="font-mono text-xs">&lt;dbname&gt;_restoretest</code>) on the same MySQL instance.</Step>
+            <Step n={3}>Restores the backup into the scratch database.</Step>
+            <Step n={4}>Compares row counts on core tables (User, Employee, InventoryItem, SalesOrder) against the live database — trailing counts are expected, zero everywhere is the real failure signal.</Step>
+            <Step n={5}>Drops the scratch database, then sanity-checks the latest files backup is a valid tar archive (integrity only — it does not untar into place).</Step>
+          </ol>
+          <div className="mt-4 flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
+            <AlertTriangle size={15} className="mt-0.5 shrink-0 text-amber-600" />
+            <p className="text-sm text-amber-800">
+              Known Hostinger constraint: some database users lack <code className="font-mono text-xs">CREATE DATABASE</code> privilege. If step 2
+              fails with access-denied, the script says so explicitly — either create the scratch database once via hPanel and grant access, or ask
+              Hostinger support to grant the privilege.
+            </p>
           </div>
         </Card>
 
@@ -183,134 +187,83 @@ scripts/backup/backup-db.sh /tmp/pre-deploy-$(date +%Y%m%d).dump`}</CodeBlock>
         <Card>
           <SectionHeader
             icon={Database}
-            title="How to Restore the Database"
-            subtitle="Destructive operation — stops all active sessions and recreates the database"
+            title="Restoring in a Real Incident"
+            subtitle="Application-code rollback and database restore are separate, independent operations"
           />
           <div className="mb-4 flex gap-2 rounded-lg border border-red-200 bg-red-50 p-3">
             <AlertTriangle size={15} className="mt-0.5 shrink-0 text-red-500" />
             <p className="text-sm text-red-700 font-medium">
-              Restore drops and recreates the target database. Stop the API and ensure all
-              users are logged out before proceeding.
+              MySQL DDL auto-commits per statement, so a migration can partially apply before failing. Restoring old code against a schema that has
+              moved forward can be just as broken as the original failure — check schema state before assuming a code-only rollback fixed things.
             </p>
           </div>
-          <ol className="space-y-3">
-            <Step n={1}>Stop the API server: <code className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs">systemctl stop jokas-api</code></Step>
-            <Step n={2}>Choose a backup: <code className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs">ls /opt/jokas/backups/daily/</code></Step>
-            <Step n={3}>
-              Run restore: <code className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs">scripts/backup/restore-db.sh /path/to/database.dump</code>
-              {" "}— type <code className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs">yes-restore</code> at the confirmation prompt.
-            </Step>
-            <Step n={4}>Apply any pending Prisma migrations: <code className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs">packages/db/node_modules/.bin/prisma migrate deploy</code></Step>
-            <Step n={5}>Restart the API: <code className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs">systemctl start jokas-api</code></Step>
-            <Step n={6}>Log in and verify key records (dashboard, audit log, recent transactions).</Step>
-          </ol>
-        </Card>
 
-        {/* Storage */}
-        <Card>
-          <SectionHeader
-            icon={HardDrive}
-            title="Secure Backup Storage"
-            subtitle="Recommended two-copy minimum: local disk + encrypted cloud object storage"
-          />
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="rounded-lg border border-line p-4">
-              <div className="mb-2 flex items-center gap-2">
-                <HardDrive size={15} className="text-ink/60" />
-                <span className="text-sm font-semibold">Local disk</span>
-                <StatusPill color="green" label="Required" />
-              </div>
-              <p className="text-xs text-ink/60 leading-relaxed">
-                Fast recovery. Stored at <code className="font-mono">/opt/jokas/backups/</code>.
-                Use a separate disk or partition from the application data.
-                Protect with restricted permissions (<code className="font-mono">chmod 700</code>).
-              </p>
-            </div>
-            <div className="rounded-lg border border-line p-4">
-              <div className="mb-2 flex items-center gap-2">
-                <Cloud size={15} className="text-blue-500" />
-                <span className="text-sm font-semibold">S3-compatible storage</span>
-                <StatusPill color="blue" label="Recommended" />
-              </div>
-              <p className="text-xs text-ink/60 leading-relaxed">
-                Off-site copy. Configure <code className="font-mono">S3_BUCKET</code> in <code className="font-mono">backup.env</code>.
-                Enable versioning and MFA delete on the bucket.
-                Scripts upload with AES-256 server-side encryption.
-              </p>
-            </div>
-          </div>
-          <div className="mt-4">
-            <p className="mb-2 text-sm font-semibold text-ink">Security checklist</p>
-            <ul className="space-y-1.5">
-              <CheckItem>Enable server-side encryption (SSE-AES256) on the S3 bucket</CheckItem>
-              <CheckItem>Restrict the backup IAM role to PutObject only — no DeleteObject</CheckItem>
-              <CheckItem>Enable S3 versioning and MFA delete on the backup bucket</CheckItem>
-              <CheckItem>Store <code className="font-mono text-xs">backup.env</code> in a secrets manager, not on disk in plaintext</CheckItem>
-              <CheckItem>Rotate AWS access keys quarterly</CheckItem>
-              <CheckItem>Test a restore every month using <code className="font-mono text-xs">verify-backup.sh</code></CheckItem>
-            </ul>
-          </div>
-        </Card>
-
-        {/* File uploads */}
-        <Card>
-          <SectionHeader
-            icon={FileArchive}
-            title="File Upload Backup"
-            subtitle="Uploaded documents, reports, and attachments are archived alongside the database"
-          />
-          <p className="mb-3 text-sm text-ink/70">
-            Set <code className="rounded bg-gray-100 px-1 font-mono text-xs">APP_UPLOAD_DIR</code> in{" "}
-            <code className="rounded bg-gray-100 px-1 font-mono text-xs">scripts/backup/backup.env</code>{" "}
-            to the path where the API stores uploaded files (matches <code className="rounded bg-gray-100 px-1 font-mono text-xs">UPLOAD_DIR</code> in the API <code className="font-mono text-xs">.env</code>).
-            The main backup script archives this directory automatically.
+          <p className="mb-1 text-sm font-semibold text-ink">Restore the database (daily backup or a pre-deploy snapshot)</p>
+          <CodeBlock>{`ssh -p 65002 user@host
+gunzip -c ~/jokas-db-backups/db-YYYYMMDD.sql.gz | mysql --defaults-file=~/.jokas-backup.cnf <dbname>`}</CodeBlock>
+          <p className="mt-2 text-xs text-ink/55">
+            <code className="font-mono">~/.jokas-backup.cnf</code> already has the right host/user/password/database — no need to re-derive
+            credentials from <code className="font-mono">DATABASE_URL</code> by hand.
           </p>
-          <p className="mb-1 text-sm font-semibold text-ink">Restore file uploads</p>
-          <CodeBlock>{`# Extract to original path (overwrites current files)
-tar -xzf /path/to/backup/uploads.tar.gz -C /opt/jokas`}</CodeBlock>
+
+          <p className="mb-1 mt-4 text-sm font-semibold text-ink">Restore uploaded files</p>
+          <CodeBlock>{`tar -xzf ~/jokas-files-backups/files-YYYYMMDD.tar.gz -C ~/domains/jokasfarms.com/nodejs/apps/api/uploads/`}</CodeBlock>
+
+          <p className="mb-1 mt-4 text-sm font-semibold text-ink">Restore application code (manual, beyond the pipeline&apos;s own auto-rollback)</p>
+          <CodeBlock>{`rsync -a --delete ~/domains/jokasfarms.com/nodejs_prev/ ~/domains/jokasfarms.com/nodejs/
+mkdir -p ~/domains/jokasfarms.com/nodejs/tmp
+touch ~/domains/jokasfarms.com/nodejs/tmp/restart.txt`}</CodeBlock>
+          <p className="mt-2 text-xs text-ink/55">
+            <code className="font-mono">nodejs_prev</code> is a hardlinked snapshot of the previous deploy, refreshed before every extraction —
+            this is exactly what the pipeline&apos;s own automatic rollback does after a failed smoke test, and is safe to run by hand if a problem
+            surfaces after the smoke test already passed.
+          </p>
         </Card>
 
-        {/* Disaster recovery */}
+        {/* Recovery checklist */}
         <Card>
-          <SectionHeader
-            icon={Shield}
-            title="Disaster Recovery"
-            subtitle="What to do when the production server fails completely"
-          />
-          <p className="mb-3 text-sm text-ink/70">
-            Full recovery from a destroyed server takes approximately <strong>2–4 hours</strong> with a recent
-            backup in S3. See{" "}
-            <code className="rounded bg-gray-100 px-1 font-mono text-xs">docs/backup-and-recovery.md</code>{" "}
-            for the complete step-by-step procedure.
-          </p>
+          <SectionHeader icon={Shield} title="Recovery Scenario Checklist" />
           <div className="rounded-lg border border-line divide-y divide-line">
             {[
-              { phase: "Phase 1 — Assess (0–15 min)", items: ["Confirm server is unreachable", "Identify most recent backup in S3", "Notify stakeholders"] },
-              { phase: "Phase 2 — New server (15–60 min)", items: ["Provision Ubuntu 22.04 or Debian 12", "Install Node.js 20+, pnpm, PostgreSQL 15+"] },
-              { phase: "Phase 3 — Restore data (30–60 min)", items: ["Download backup from S3", "Run restore-db.sh", "Run prisma migrate deploy"] },
-              { phase: "Phase 4 — Deploy app (30–60 min)", items: ["Clone repository and install dependencies", "Copy .env files from secrets vault", "Build and start API + web"] },
-              { phase: "Phase 5 — Go live (15–30 min)", items: ["Verify API health endpoint returns 401", "Log in and check dashboard data", "Update DNS / load balancer", "Re-enable cron backups"] }
-            ].map(({ phase, items }) => (
-              <div key={phase} className="px-4 py-3">
-                <p className="mb-2 text-xs font-bold uppercase tracking-wide text-ink/50">{phase}</p>
-                <ul className="space-y-1">
-                  {items.map((item) => (
-                    <CheckItem key={item}>{item}</CheckItem>
-                  ))}
-                </ul>
+              { scenario: "Bad deploy, smoke test failed", action: "Pipeline auto-rolls-back code automatically (nodejs_prev → nodejs, 3 retries). No action needed unless the rollback itself failed — the job log says so explicitly." },
+              { scenario: "Bad deploy, smoke test passed but something's still wrong", action: "Manual code rollback (above), then check whether a migration ran — if so, verify/restore schema state too." },
+              { scenario: "Migration failed mid-deploy", action: "Read the migration step's failure output for the exact pre-deploy snapshot filename. Restore it if the partially-applied schema is causing problems." },
+              { scenario: "Data corruption / accidental deletion, no bad deploy involved", action: "Restore from the most recent db-*.sql.gz (up to 24h old) or files-*.tar.gz." },
+              { scenario: "Uploads directory lost/corrupted", action: "Restore from the most recent files-*.tar.gz." },
+              { scenario: "Want to confirm backups actually work before you need them", action: "Run scripts/verify-backup-restore.sh — periodically, not just once." }
+            ].map(({ scenario, action }) => (
+              <div key={scenario} className="px-4 py-3">
+                <p className="text-sm font-semibold text-ink">{scenario}</p>
+                <p className="mt-1 text-sm text-ink/65">{action}</p>
               </div>
             ))}
           </div>
+        </Card>
+
+        {/* Deliberate gaps */}
+        <Card>
+          <SectionHeader icon={FileArchive} title="What This Setup Deliberately Does Not Do" />
+          <ul className="space-y-1.5">
+            <CheckItem>
+              <span><strong>No off-site/S3 copy</strong> — backups live on the same Hostinger account as the data they protect. They cover bad deploys, bad migrations, and accidental deletion, but not total account loss. If that risk matters, periodically <code className="font-mono text-xs">rsync</code>/<code className="font-mono text-xs">scp</code> the backup directories somewhere off Hostinger.</span>
+            </CheckItem>
+            <CheckItem>
+              <span><strong>No point-in-time recovery</strong> — daily snapshots plus per-deploy snapshots, not continuous binlog replication. Recovery granularity is &quot;as of the last snapshot,&quot; not &quot;as of any given second.&quot;</span>
+            </CheckItem>
+            <CheckItem>
+              <span><strong>No automated restore-drill in CI</strong> — by design, to avoid restoring a multi-MB dump on every push.</span>
+            </CheckItem>
+          </ul>
         </Card>
 
         {/* Info footer */}
         <div className="flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
           <Info size={16} className="mt-0.5 shrink-0" />
           <p>
-            All backup scripts are in <code className="font-mono text-xs">scripts/backup/</code>.
-            Full documentation including server-failure playbook is in{" "}
-            <code className="font-mono text-xs">docs/backup-and-recovery.md</code>.
-            This page is a reference view — actual backup execution happens on the deployment server via cron or manual command.
+            Full detail lives in <code className="font-mono text-xs">docs/backup-and-recovery.md</code> — this page is a summary view of that
+            document. The scripts in <code className="font-mono text-xs">scripts/backup/</code> (Postgres/Docker/crontab-flavored) are leftovers
+            from an earlier deployment design and are not what runs in production; the ones that matter are{" "}
+            <code className="font-mono text-xs">setup-backup-crons.sh</code> and <code className="font-mono text-xs">verify-backup-restore.sh</code> at the repo root.
           </p>
         </div>
 
