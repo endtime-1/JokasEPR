@@ -29,6 +29,7 @@ export function PaymentCollectScreen() {
   const [paymentDate,   setPaymentDate]   = useState("");
   const [paymentMethod, setPaymentMethod] = useState("");
   const [invoiceRef,    setInvoiceRef]    = useState("");
+  const [invoiceId,     setInvoiceId]     = useState("");
   const [bankAccountId, setBankAccountId] = useState("");
   const [description,   setDescription]  = useState("");
   const [notes,         setNotes]         = useState("");
@@ -52,10 +53,22 @@ export function PaymentCollectScreen() {
     [opts]
   );
 
+  // Mobile parity audit (2026-08-17): only outstanding invoices for the
+  // selected customer — matches what CreatePaymentDto.invoiceId actually
+  // accepts server-side (balanceDue > 0, same customer).
+  const customerInvoices: SelectOption[] = useMemo(
+    () =>
+      (opts?.invoices ?? [])
+        .filter((inv) => inv.customerId === customerId)
+        .map((inv) => ({ label: `${inv.invoiceNumber} — GHS ${Number(inv.balanceDue).toFixed(2)} due`, value: inv.id })),
+    [opts, customerId]
+  );
+
   function onCustomerChange(id: string) {
     setCustomerId(id);
     const found = (rawCustomers ?? []).find((c: any) => c.id === id);
     setCustomerName(found?.name ?? "");
+    setInvoiceId("");
     setErrors((e) => ({ ...e, customerId: "" }));
   }
 
@@ -67,6 +80,12 @@ export function PaymentCollectScreen() {
     if (!amount || amountNum <= 0) e.amount = "Enter a valid amount";
     if (!paymentDate)   e.paymentDate   = "Enter payment date (YYYY-MM-DD)";
     if (!paymentMethod) e.paymentMethod = "Select a payment method";
+    // Mobile parity audit (2026-08-17): CreateCustomerPaymentDto.description
+    // is required server-side (no @IsOptional) — every other required field
+    // here has a matching validate() check and a visible required marker,
+    // this one had neither, so a user filling only the asterisked fields
+    // still got rejected with no indication why.
+    if (!description.trim()) e.description = "Enter a description for this payment";
     setErrors(e);
     return Object.keys(e).length === 0;
   }
@@ -93,8 +112,9 @@ export function PaymentCollectScreen() {
       paymentDate,
       paymentMethod,
       invoiceRef:    invoiceRef    || undefined,
+      invoiceId:     invoiceId     || undefined,
       bankAccountId: bankAccountId || undefined,
-      description:   description   || undefined,
+      description:   description.trim(),
       notes:         notes         || undefined,
     });
   }
@@ -137,8 +157,12 @@ export function PaymentCollectScreen() {
           onChange={(v) => { setPaymentMethod(v); setErrors((e) => ({ ...e, paymentMethod: "" })); }}
           error={errors.paymentMethod} required placeholder="Select method…" />
 
+        <SelectField label="Apply to Invoice" value={invoiceId} options={customerInvoices}
+          onChange={setInvoiceId}
+          placeholder={customerId ? "Select outstanding invoice (optional)…" : "Select a customer first…"} />
+
         <FormField label="Invoice Reference" value={invoiceRef}
-          onChangeText={setInvoiceRef} placeholder="INV-2026-0001 (optional)" />
+          onChangeText={setInvoiceRef} placeholder="INV-2026-0001 (optional, for invoices not tracked here)" />
 
         <SelectField label="Received Into Account" value={bankAccountId} options={bankAccounts}
           onChange={setBankAccountId} placeholder="Select bank account (optional)" />
@@ -146,7 +170,8 @@ export function PaymentCollectScreen() {
 
       <FormCard label="NOTES">
         <FormField label="Description" value={description}
-          onChangeText={setDescription} placeholder="Optional payment note" />
+          onChangeText={(v) => { setDescription(v); setErrors((e) => ({ ...e, description: "" })); }}
+          required error={errors.description} placeholder="e.g. Payment for invoice INV-2026-0001" />
 
         <FormField label="Notes" value={notes} onChangeText={setNotes}
           multiline numberOfLines={2}

@@ -69,6 +69,8 @@ export function MaintenanceLogScreen() {
   const { submit, loading } = useSubmit({
     module: "maintenance_record",
     endpoint: "/maintenance/records",
+    // Mobile parity audit (2026-08-17): MaintenanceRecord now accepts idempotencyKey.
+    sendIdempotencyKeyInBody: true,
     onSuccess: (queued) =>
       Alert.alert(
         queued ? "Saved Offline" : "Work Logged",

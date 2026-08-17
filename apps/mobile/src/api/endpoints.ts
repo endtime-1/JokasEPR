@@ -311,6 +311,11 @@ export type FinanceOptions = {
     bankAccounts: (FinanceOption & { bankName: string; accountType: string })[];
     expenseCategories: FinanceOption[];
     accounts: FinanceOption[];
+    // Mobile parity audit (2026-08-17): already returned by GET
+    // /finance/options (outstanding invoices only — ISSUED/PARTIALLY_PAID/
+    // OVERDUE) but never typed or read on mobile, so PaymentCollectScreen
+    // had no way to link a payment to a real Invoice.balanceDue.
+    invoices: { id: string; invoiceNumber: string; customerId: string; balanceDue: number }[];
   };
 };
 export type ExpenseRecord = {

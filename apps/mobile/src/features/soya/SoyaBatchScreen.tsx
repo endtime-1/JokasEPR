@@ -69,6 +69,11 @@ export function SoyaBatchScreen() {
   const { submit, loading } = useSubmit({
     module:   "soya_batch",
     endpoint: "/soya-processing/batches",
+    // DB stability audit (2026-08-16): CreateSoyaProcessingBatchDto now
+    // accepts idempotencyKey — a network drop or app-kill mid-submit no
+    // longer risks double-posting a batch (double bean consumption) on
+    // retry/resend.
+    sendIdempotencyKeyInBody: true,
     onSuccess: (queued) =>
       Alert.alert(
         queued ? "Saved Offline" : "Batch Saved",

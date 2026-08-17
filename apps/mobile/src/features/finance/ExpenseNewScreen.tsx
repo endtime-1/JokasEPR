@@ -70,6 +70,8 @@ export function ExpenseNewScreen() {
   const { submit, loading } = useSubmit({
     module: "expense",
     endpoint: "/finance/expenses",
+    // Mobile parity audit (2026-08-17): Expense now accepts idempotencyKey.
+    sendIdempotencyKeyInBody: true,
     onSuccess: (queued) =>
       Alert.alert(
         queued ? "Saved Offline" : "Expense Saved",

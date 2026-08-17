@@ -84,6 +84,8 @@ export function BirdWeightScreen() {
   const { submit, loading } = useSubmit({
     module: "bird_weight",
     endpoint: "/poultry/bird-weight-records",
+    // Mobile parity audit (2026-08-17): BirdWeightRecord now accepts idempotencyKey.
+    sendIdempotencyKeyInBody: true,
     onSuccess: (queued) =>
       Alert.alert(
         queued ? "Saved Offline" : "Weight Recorded",

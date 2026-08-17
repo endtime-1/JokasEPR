@@ -132,6 +132,8 @@ function IntakeForm({
   const { submit, loading } = useSubmit({
     module: "soya_intake",
     endpoint: "/soya-processing/intakes",
+    // Mobile parity audit (2026-08-17): SoyaBeanIntake now accepts idempotencyKey.
+    sendIdempotencyKeyInBody: true,
     onSuccess: (queued) =>
       Alert.alert(
         queued ? "Saved Offline" : "Saved",
@@ -276,6 +278,12 @@ function BatchForm({
   const { submit, loading } = useSubmit({
     module: "soya_batch",
     endpoint: "/soya-processing/batches",
+    // Mobile parity audit (2026-08-17): this is a second, separate
+    // submission point for the same /soya-processing/batches endpoint as
+    // SoyaBatchScreen.tsx (which already got this flag in an earlier fix
+    // this session) — missed the first time since it lives inside this
+    // screen's own batch-entry form rather than its own file.
+    sendIdempotencyKeyInBody: true,
     onSuccess: (queued) =>
       Alert.alert(
         queued ? "Saved Offline" : "Saved",

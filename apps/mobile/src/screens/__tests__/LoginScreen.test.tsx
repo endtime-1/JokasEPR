@@ -31,7 +31,7 @@ describe("LoginScreen — validation", () => {
   it("shows an error when email is empty and form is submitted", async () => {
     const { getByText } = await render(<LoginScreen />);
     await act(async () => {
-      fireEvent.press(getByText("Sign in"));
+      fireEvent.press(getByText("Sign In"));
     });
     await waitFor(() => expect(getByText(/Email is required/)).toBeTruthy());
   });
@@ -39,10 +39,10 @@ describe("LoginScreen — validation", () => {
   it("shows an error for an invalid email format", async () => {
     const { getByText, getByPlaceholderText } = await render(<LoginScreen />);
     await act(async () => {
-      fireEvent.changeText(getByPlaceholderText("you@company.com"), "not-an-email");
+      fireEvent.changeText(getByPlaceholderText("name@company.com"), "not-an-email");
     });
     await act(async () => {
-      fireEvent.press(getByText("Sign in"));
+      fireEvent.press(getByText("Sign In"));
     });
     await waitFor(() => expect(getByText(/Invalid email address/)).toBeTruthy());
   });
@@ -50,10 +50,10 @@ describe("LoginScreen — validation", () => {
   it("shows an error when password is empty", async () => {
     const { getByText, getByPlaceholderText } = await render(<LoginScreen />);
     await act(async () => {
-      fireEvent.changeText(getByPlaceholderText("you@company.com"), "admin@jokas.local");
+      fireEvent.changeText(getByPlaceholderText("name@company.com"), "admin@jokas.local");
     });
     await act(async () => {
-      fireEvent.press(getByText("Sign in"));
+      fireEvent.press(getByText("Sign In"));
     });
     await waitFor(() => expect(getByText(/Password is required/)).toBeTruthy());
   });
@@ -61,13 +61,13 @@ describe("LoginScreen — validation", () => {
   it("shows an error when password is too short", async () => {
     const { getByText, getByPlaceholderText } = await render(<LoginScreen />);
     await act(async () => {
-      fireEvent.changeText(getByPlaceholderText("you@company.com"), "admin@jokas.local");
+      fireEvent.changeText(getByPlaceholderText("name@company.com"), "admin@jokas.local");
     });
     await act(async () => {
       fireEvent.changeText(getByPlaceholderText("••••••••"), "abc");
     });
     await act(async () => {
-      fireEvent.press(getByText("Sign in"));
+      fireEvent.press(getByText("Sign In"));
     });
     await waitFor(() => expect(getByText(/Password too short/)).toBeTruthy());
   });
@@ -80,13 +80,13 @@ describe("LoginScreen — submission", () => {
 
     const { getByText, getByPlaceholderText } = await render(<LoginScreen />);
     await act(async () => {
-      fireEvent.changeText(getByPlaceholderText("you@company.com"), "  Admin@Jokas.LOCAL  ");
+      fireEvent.changeText(getByPlaceholderText("name@company.com"), "  Admin@Jokas.LOCAL  ");
     });
     await act(async () => {
       fireEvent.changeText(getByPlaceholderText("••••••••"), "Password1");
     });
     await act(async () => {
-      fireEvent.press(getByText("Sign in"));
+      fireEvent.press(getByText("Sign In"));
     });
 
     await waitFor(() => expect(loginFn).toHaveBeenCalledWith("admin@jokas.local", "Password1"));
@@ -98,13 +98,13 @@ describe("LoginScreen — submission", () => {
 
     const { getByText, getByPlaceholderText } = await render(<LoginScreen />);
     await act(async () => {
-      fireEvent.changeText(getByPlaceholderText("you@company.com"), "admin@jokas.local");
+      fireEvent.changeText(getByPlaceholderText("name@company.com"), "admin@jokas.local");
     });
     await act(async () => {
       fireEvent.changeText(getByPlaceholderText("••••••••"), "WrongPassword");
     });
     await act(async () => {
-      fireEvent.press(getByText("Sign in"));
+      fireEvent.press(getByText("Sign In"));
     });
 
     await waitFor(() =>

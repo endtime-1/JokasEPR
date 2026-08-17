@@ -80,6 +80,8 @@ export function StockMovementScreen() {
   const { submit, loading } = useSubmit({
     module: "stock_movement",
     endpoint: "/inventory/stock-movements",
+    // Mobile parity audit (2026-08-17): StockMovement now accepts idempotencyKey.
+    sendIdempotencyKeyInBody: true,
     onSuccess: (queued) =>
       Alert.alert(
         queued ? "Saved Offline" : "Recorded",

@@ -140,10 +140,20 @@ export class SoyaProcessingService {
   async createIntake(user: AuthenticatedUser, dto: CreateSoyaBeanIntakeDto, context: RequestContext) {
     this.assertProductionSiteAccess(user, dto.productionSiteId);
     this.assertWarehouseAccess(user, dto.warehouseId);
+    // Mobile parity audit (2026-08-17): mirrors createBatch's idempotencyKey
+    // handling below — a mobile offline-queue resend (or a client retry
+    // after a dropped response) carrying the same idempotencyKey replays the
+    // original intake instead of creating a second one.
+    if (dto.idempotencyKey) {
+      const existing = await this.findIntakeByIdempotencyKey(user.companyId, dto.idempotencyKey);
+      if (existing) return { data: existing };
+    }
     const site = await this.getProductionSite(user.companyId, dto.productionSiteId);
     const product = await this.getProduct(user.companyId, dto.productId);
     const totalCost = dto.quantityKg * dto.unitCost;
-    const data = await this.prisma.$transaction(async (tx) => {
+    let data;
+    try {
+      data = await this.prisma.$transaction(async (tx) => {
       const inventory = await tx.inventoryItem.upsert({
         where: { companyId_warehouseId_productId: { companyId: user.companyId, warehouseId: dto.warehouseId, productId: dto.productId } },
         update: { quantityOnHand: { increment: dto.quantityKg }, updatedById: user.id },
@@ -165,6 +175,7 @@ export class SoyaProcessingService {
           qualityStatus: dto.qualityStatus ?? "PENDING",
           receivedAt: dto.receivedAt ? new Date(dto.receivedAt) : new Date(),
           notes: dto.notes,
+          idempotencyKey: dto.idempotencyKey,
           createdById: user.id
         }
       });
@@ -176,9 +187,20 @@ export class SoyaProcessingService {
       await tx.stockBatch.create({ data: { companyId: user.companyId, branchId: site.branchId, farmId: null, warehouseId: dto.warehouseId, productionSiteId: dto.productionSiteId, productId: dto.productId, inventoryItemId: inventory.id, uomId: product.uomId, batchNumber: dto.receiptNumber.toUpperCase(), quantityReceived: dto.quantityKg, quantityRemaining: dto.quantityKg, unitCost: dto.unitCost, createdById: user.id } });
       await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: site.branchId, productId: dto.productId, inventoryItemId: inventory.id, toWarehouseId: dto.warehouseId, warehouseId: dto.warehouseId, productionSiteId: dto.productionSiteId, uomId: product.uomId, movementType: "PURCHASE_RECEIPT", quantity: dto.quantityKg, unitCost: dto.unitCost, referenceType: "SoyaBeanIntake", referenceId: intake.id, notes: `Soya beans received from ${dto.supplierName}`, createdById: user.id } });
       return intake;
-    });
+      });
+    } catch (err: unknown) {
+      if (dto.idempotencyKey && (err as { code?: string })?.code === "P2002") {
+        const existing = await this.findIntakeByIdempotencyKey(user.companyId, dto.idempotencyKey);
+        if (existing) return { data: existing };
+      }
+      throw err;
+    }
     await this.writeAudit(user, "CREATE", "SoyaBeanIntake", data.id, `Recorded soya bean intake ${data.receiptNumber}`, context, { branchId: site.branchId, warehouseId: dto.warehouseId, productionSiteId: dto.productionSiteId });
     return { data };
+  }
+
+  private async findIntakeByIdempotencyKey(companyId: string, idempotencyKey: string) {
+    return this.prisma.soyaBeanIntake.findFirst({ where: { companyId, idempotencyKey, deletedAt: null } });
   }
 
   // Metadata-only — see UpdateSoyaBeanIntakeDto for why quantityKg/unitCost/

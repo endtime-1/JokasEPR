@@ -54,8 +54,12 @@ export function PurchaseOrderDetailScreen() {
       await approvePurchaseOrder(poId);
       toast.show({ type: "success", message: "Purchase order approved." });
       navigation.goBack();
-    } catch {
-      toast.show({ type: "error", message: "Approval failed." });
+    } catch (err) {
+      // Mobile parity audit (2026-08-17): surface the backend's specific
+      // rejection reason (e.g. "already approved", self-approval block)
+      // instead of a generic message — see ExpenseApprovalDetailScreen for
+      // the full reasoning.
+      toast.show({ type: "error", message: err instanceof Error ? err.message : "Approval failed." });
     } finally {
       setSubmitting(false);
     }
@@ -69,8 +73,8 @@ export function PurchaseOrderDetailScreen() {
       await rejectPurchaseOrder(poId, { reason: rejectReason.trim() });
       toast.show({ type: "info", message: "Purchase order rejected." });
       navigation.goBack();
-    } catch {
-      toast.show({ type: "error", message: "Rejection failed." });
+    } catch (err) {
+      toast.show({ type: "error", message: err instanceof Error ? err.message : "Rejection failed." });
     } finally {
       setSubmitting(false);
     }

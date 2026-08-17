@@ -13,7 +13,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as SecureStore from "expo-secure-store";
 import { useAuth } from "../auth/AuthContext";
 import { colors, font, radius, shadow, spacing } from "../constants/theme";
 
@@ -33,8 +33,15 @@ export function LoginScreen() {
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
 
   // restore saved email on mount
+  // Mobile parity audit (2026-08-17): was AsyncStorage — plain, unencrypted
+  // on-device storage. An email address is low-sensitivity on its own, but
+  // it's still account-identifying PII sitting in a plaintext file readable
+  // from a lost/stolen device or an Android backup extraction. SecureStore
+  // (iOS Keychain / Android Keystore) is what every other piece of
+  // account-identifying data in this app already uses (session tokens,
+  // the offline-payload encryption key).
   useEffect(() => {
-    AsyncStorage.getItem(SAVED_EMAIL_KEY)
+    SecureStore.getItemAsync(SAVED_EMAIL_KEY)
       .then((saved) => { if (saved) setEmail(saved); })
       .catch(() => {});
   }, []);
@@ -54,7 +61,7 @@ export function LoginScreen() {
     if (!validate()) return;
     setLoading(true);
     try {
-      await AsyncStorage.setItem(SAVED_EMAIL_KEY, email.trim().toLowerCase());
+      await SecureStore.setItemAsync(SAVED_EMAIL_KEY, email.trim().toLowerCase());
       await login(email.trim().toLowerCase(), password);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Sign-in failed. Check your credentials.";

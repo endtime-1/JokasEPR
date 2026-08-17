@@ -43,8 +43,13 @@ export function ExpenseApprovalDetailScreen() {
       await approveExpense(expenseId);
       toast.show({ type: "success", message: "Expense approved successfully." });
       navigation.goBack();
-    } catch {
-      toast.show({ type: "error", message: "Approval failed. Please try again." });
+    } catch (err) {
+      // Mobile parity audit (2026-08-17): the backend's guarded-transition
+      // pattern throws specific, actionable reasons (e.g. "already approved
+      // by someone else", a self-approval block) — surface them instead of
+      // a generic message that leaves the user guessing, matching the
+      // pattern QualityCheckScreen/BatchStatusUpdateScreen already use.
+      toast.show({ type: "error", message: err instanceof Error ? err.message : "Approval failed. Please try again." });
     } finally {
       setSubmitting(false);
     }
@@ -61,8 +66,8 @@ export function ExpenseApprovalDetailScreen() {
       await rejectExpense(expenseId, { reason: rejectReason.trim() });
       toast.show({ type: "info", message: "Expense rejected." });
       navigation.goBack();
-    } catch {
-      toast.show({ type: "error", message: "Rejection failed. Please try again." });
+    } catch (err) {
+      toast.show({ type: "error", message: err instanceof Error ? err.message : "Rejection failed. Please try again." });
     } finally {
       setSubmitting(false);
     }

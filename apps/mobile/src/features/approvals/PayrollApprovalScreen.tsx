@@ -49,8 +49,11 @@ export function PayrollApprovalScreen() {
       await approvePayroll(id);
       toast.show({ type: "success", message: "Payroll approved." });
       await load(true);
-    } catch {
-      toast.show({ type: "error", message: "Approval failed. Try again." });
+    } catch (err) {
+      // Mobile parity audit (2026-08-17): surface the backend's specific
+      // rejection reason instead of a generic message — see
+      // ExpenseApprovalDetailScreen for the full reasoning.
+      toast.show({ type: "error", message: err instanceof Error ? err.message : "Approval failed. Try again." });
     } finally {
       setApproving(null);
     }

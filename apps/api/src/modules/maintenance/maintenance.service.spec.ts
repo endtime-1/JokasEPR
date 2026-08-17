@@ -9,7 +9,7 @@ const mockPrisma = {
   machine: { findFirst: jest.fn(), count: jest.fn(), update: jest.fn().mockResolvedValue({}) },
   equipment: { findFirst: jest.fn(), update: jest.fn().mockResolvedValue({}) },
   maintenanceSchedule: { findFirst: jest.fn(), update: jest.fn().mockResolvedValue({}), count: jest.fn(), findMany: jest.fn(), create: jest.fn().mockResolvedValue({ id: "sched-1" }) },
-  maintenanceRecord: { count: jest.fn().mockResolvedValue(0), create: jest.fn() },
+  maintenanceRecord: { count: jest.fn().mockResolvedValue(0), findFirst: jest.fn(), create: jest.fn() },
   breakdownRecord: { count: jest.fn(), findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn().mockResolvedValue({}), create: jest.fn().mockResolvedValue({ id: "bd-1" }) },
   machineDowntimeRecord: { aggregate: jest.fn() },
   maintenanceCost: { aggregate: jest.fn(), findMany: jest.fn(), create: jest.fn() },
@@ -123,6 +123,91 @@ describe("MaintenanceService.createRecord — cross-tenant scheduleId guard (H4)
       service.createRecord(makeUser(), { machineId: "mach-1", scheduleId: "sched-1", nextDueDate: "2026-09-01", maintenanceType: "PREVENTIVE" } as never, {})
     ).rejects.toThrow("db blip");
     expect(mockAudit.write).not.toHaveBeenCalled();
+  });
+});
+
+describe("MaintenanceService.createRecord — idempotencyKey dedup (mobile parity audit, 2026-08-17)", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPrisma.machine.findFirst.mockResolvedValue({ id: "mach-1", branchId: "branch-1", farmId: null, warehouseId: null, productionSiteId: null });
+    mockPrisma.maintenanceRecord.count.mockResolvedValue(0);
+  });
+
+  it("replays the original record instead of creating a duplicate when the idempotencyKey was already used", async () => {
+    mockPrisma.maintenanceRecord.findFirst.mockResolvedValue({ id: "rec-existing" });
+
+    const service = makeService();
+    const result = await service.createRecord(makeUser(), { machineId: "mach-1", maintenanceType: "PREVENTIVE", idempotencyKey: "idem-1" } as never, {});
+
+    expect(result.data.id).toBe("rec-existing");
+    expect(mockPrisma.maintenanceRecord.create).not.toHaveBeenCalled();
+  });
+
+  it("passes the idempotencyKey through to the record row on a genuinely new record", async () => {
+    mockPrisma.maintenanceRecord.findFirst.mockResolvedValue(null);
+    mockPrisma.maintenanceRecord.create.mockResolvedValue({ id: "rec-1", maintenanceDate: new Date() });
+
+    const service = makeService();
+    await service.createRecord(makeUser(), { machineId: "mach-1", maintenanceType: "PREVENTIVE", idempotencyKey: "idem-2" } as never, {});
+
+    expect(mockPrisma.maintenanceRecord.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ idempotencyKey: "idem-2" }) })
+    );
+  });
+
+  it("replays the original record when a concurrent duplicate loses the unique-constraint race (P2002)", async () => {
+    mockPrisma.maintenanceRecord.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "rec-winner" });
+    mockPrisma.maintenanceRecord.create.mockImplementationOnce(() => {
+      const err = Object.assign(new Error("Unique constraint failed"), { code: "P2002" });
+      return Promise.reject(err);
+    });
+
+    const service = makeService();
+    const result = await service.createRecord(makeUser(), { machineId: "mach-1", maintenanceType: "PREVENTIVE", idempotencyKey: "idem-3" } as never, {});
+
+    expect(result.data.id).toBe("rec-winner");
+  });
+});
+
+describe("MaintenanceService.createBreakdown — idempotencyKey dedup (mobile parity audit, 2026-08-17)", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPrisma.machine.findFirst.mockResolvedValue({ id: "mach-1", branchId: "branch-1", farmId: null, warehouseId: null, productionSiteId: null });
+  });
+
+  it("replays the original breakdown instead of creating a duplicate when the idempotencyKey was already used", async () => {
+    mockPrisma.breakdownRecord.findFirst.mockResolvedValue({ id: "bd-existing" });
+
+    const service = makeService();
+    const result = await service.createBreakdown(makeUser(), { machineId: "mach-1", description: "x", idempotencyKey: "idem-1" } as never, {});
+
+    expect(result.data.id).toBe("bd-existing");
+    expect(mockPrisma.breakdownRecord.create).not.toHaveBeenCalled();
+  });
+
+  it("passes the idempotencyKey through to the breakdown row on a genuinely new breakdown", async () => {
+    mockPrisma.breakdownRecord.findFirst.mockResolvedValue(null);
+    mockPrisma.breakdownRecord.create.mockResolvedValue({ id: "bd-1" });
+
+    const service = makeService();
+    await service.createBreakdown(makeUser(), { machineId: "mach-1", description: "x", idempotencyKey: "idem-2" } as never, {});
+
+    expect(mockPrisma.breakdownRecord.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ idempotencyKey: "idem-2" }) })
+    );
+  });
+
+  it("replays the original breakdown when a concurrent duplicate loses the unique-constraint race (P2002)", async () => {
+    mockPrisma.breakdownRecord.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "bd-winner" });
+    mockPrisma.breakdownRecord.create.mockImplementationOnce(() => {
+      const err = Object.assign(new Error("Unique constraint failed"), { code: "P2002" });
+      return Promise.reject(err);
+    });
+
+    const service = makeService();
+    const result = await service.createBreakdown(makeUser(), { machineId: "mach-1", description: "x", idempotencyKey: "idem-3" } as never, {});
+
+    expect(result.data.id).toBe("bd-winner");
   });
 });
 

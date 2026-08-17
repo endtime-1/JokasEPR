@@ -254,6 +254,16 @@ export class CreateSalesOrderDto {
   @ValidateNested({ each: true })
   @Type(() => CreateSalesOrderItemDto)
   items!: CreateSalesOrderItemDto[];
+
+  // Mobile parity audit (2026-08-17): SalesOrder already had an
+  // idempotencyKey column (added for the storefront's own duplicate-submit
+  // protection) but createOrder never accepted or checked it, so a mobile
+  // offline-queue resend of this endpoint had no dedup protection at all —
+  // unlike customer-payments/soya-batches/feed-batches, already fixed.
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  idempotencyKey?: string;
 }
 
 export class CreatePaymentDto {
@@ -327,6 +337,12 @@ export class CreateProspectVisitDto {
   @IsOptional() @IsString() @MaxLength(500) notes?: string;
   @IsOptional() @IsDateString() visitedAt?: string;
   @IsOptional() @IsUUID() branchId?: string;
+  // Mobile parity audit (2026-08-17): closes the idempotency gap for mobile
+  // offline-queue resends.
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  idempotencyKey?: string;
 }
 
 export class ProspectVisitQueryDto {

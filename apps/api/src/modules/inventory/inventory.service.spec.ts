@@ -6,10 +6,11 @@ jest.mock("../../common/next-ref", () => ({ nextRef: jest.fn().mockResolvedValue
 const mockTx = {
   stockBatch: { create: jest.fn(), findMany: jest.fn(), updateMany: jest.fn() },
   stockMovement: { create: jest.fn() },
-  inventoryItem: { update: jest.fn(), updateMany: jest.fn() },
+  inventoryItem: { update: jest.fn(), updateMany: jest.fn(), upsert: jest.fn() },
   stockReservation: { create: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
-  stockAdjustment: { updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
-  stockApproval: { updateMany: jest.fn().mockResolvedValue({}) },
+  stockAdjustment: { create: jest.fn(), updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
+  stockApproval: { create: jest.fn(), updateMany: jest.fn().mockResolvedValue({}) },
+  stockTransfer: { create: jest.fn() },
   $queryRaw: jest.fn().mockResolvedValue([])
 };
 
@@ -19,7 +20,11 @@ const mockPrisma = {
   stockApproval: { updateMany: jest.fn().mockResolvedValue({}) },
   stockReservation: { findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn(), update: jest.fn() },
   stockBatch: { findFirst: jest.fn() },
+  stockTransfer: { findFirst: jest.fn() },
+  stockMovement: { findFirst: jest.fn() },
   stockReorderLevel: { upsert: jest.fn().mockResolvedValue({}) },
+  warehouse: { findFirst: jest.fn() },
+  product: { findFirst: jest.fn() },
   warehouseLocation: { findFirst: jest.fn(), findMany: jest.fn(), update: jest.fn(), count: jest.fn() },
   $transaction: jest.fn().mockImplementation((cb: (tx: typeof mockTx) => Promise<unknown>) => cb(mockTx))
 };
@@ -400,5 +405,142 @@ describe("InventoryService.reserve — locks the item row so concurrent reservat
       service.reserve(makeUser(), { warehouseId: "wh-1", productId: "prod-1", quantity: 50, purpose: "hold" } as never, {})
     ).rejects.toThrow(/Insufficient available stock/);
     expect(mockTx.stockReservation.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("InventoryService.createAdjustment — idempotencyKey dedup (mobile parity audit, 2026-08-17)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("replays the original adjustment instead of creating a duplicate when the idempotencyKey was already used", async () => {
+    mockPrisma.inventoryItem.findFirst.mockResolvedValue({
+      id: "item-1", companyId: "company-1", branchId: "branch-1", warehouseId: "wh-1", productionSiteId: null, productId: "prod-1"
+    });
+    mockPrisma.stockAdjustment.findFirst.mockResolvedValue({ id: "adj-existing", adjustmentNumber: "ADJ-EXIST" });
+
+    const service = makeService();
+    const result = await service.createAdjustment(
+      makeUser(),
+      { warehouseId: "wh-1", productId: "prod-1", adjustmentType: "RECOUNT", quantity: 5, reason: "recount", idempotencyKey: "key-1" } as never,
+      {}
+    );
+
+    expect(result.data).toEqual({ id: "adj-existing", adjustmentNumber: "ADJ-EXIST" });
+    expect(mockTx.stockAdjustment.create).not.toHaveBeenCalled();
+  });
+
+  it("passes the idempotencyKey through to the adjustment row on a genuinely new adjustment", async () => {
+    mockPrisma.inventoryItem.findFirst.mockResolvedValue({
+      id: "item-1", companyId: "company-1", branchId: "branch-1", warehouseId: "wh-1", productionSiteId: null, productId: "prod-1"
+    });
+    mockPrisma.stockAdjustment.findFirst.mockResolvedValue(null);
+    mockTx.stockAdjustment.create.mockResolvedValue({ id: "adj-1", adjustmentNumber: "ADJ-1" });
+    mockTx.stockApproval.create.mockResolvedValue({});
+
+    const service = makeService();
+    await service.createAdjustment(
+      makeUser(),
+      { warehouseId: "wh-1", productId: "prod-1", adjustmentType: "RECOUNT", quantity: 5, reason: "recount", idempotencyKey: "key-1" } as never,
+      {}
+    );
+
+    expect(mockTx.stockAdjustment.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ idempotencyKey: "key-1" }) })
+    );
+  });
+});
+
+describe("InventoryService.transfer — idempotencyKey dedup (mobile parity audit, 2026-08-17)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  function stubTransferPrereqs() {
+    mockPrisma.inventoryItem.findFirst.mockResolvedValue({
+      id: "item-1", companyId: "company-1", branchId: "branch-1", warehouseId: "wh-1", productionSiteId: null, productId: "prod-1", quantityOnHand: 100
+    });
+    mockPrisma.warehouse.findFirst.mockResolvedValue({ id: "wh-2", companyId: "company-1", branchId: "branch-1", farmId: null, productionSiteId: null });
+    mockPrisma.product.findFirst.mockResolvedValue({ id: "prod-1", companyId: "company-1", sku: "SKU-1", uomId: "uom-1" });
+  }
+
+  it("replays the original transfer instead of creating a duplicate when the idempotencyKey was already used", async () => {
+    stubTransferPrereqs();
+    mockPrisma.stockTransfer.findFirst.mockResolvedValue({ id: "tr-existing", transferNumber: "STR-EXIST" });
+
+    const service = makeService();
+    const result = await service.transfer(
+      makeUser({ warehouseIds: ["wh-1", "wh-2"] }),
+      { fromWarehouseId: "wh-1", toWarehouseId: "wh-2", productId: "prod-1", quantity: 5, idempotencyKey: "key-1" } as never,
+      {}
+    );
+
+    expect(result.data).toEqual({ id: "tr-existing", transferNumber: "STR-EXIST" });
+    expect(mockTx.stockTransfer.create).not.toHaveBeenCalled();
+  });
+
+  it("passes the idempotencyKey through to the transfer row on a genuinely new transfer", async () => {
+    stubTransferPrereqs();
+    mockPrisma.stockTransfer.findFirst.mockResolvedValue(null);
+    mockTx.stockTransfer.create.mockResolvedValue({ id: "tr-1", transferNumber: "STR-1" });
+    mockTx.stockBatch.findMany.mockResolvedValue([{ id: "batch-1", quantityRemaining: 30, unitCost: 5, expiryDate: null, createdAt: new Date() }]);
+    mockTx.stockBatch.updateMany.mockResolvedValue({ count: 1 });
+    mockTx.stockMovement.create.mockResolvedValue({ id: "mov-1" });
+    mockTx.inventoryItem.updateMany.mockResolvedValue({ count: 1 });
+    mockTx.inventoryItem.upsert.mockResolvedValue({ id: "item-2" });
+    mockTx.stockBatch.create.mockResolvedValue({ id: "batch-2" });
+
+    const service = makeService();
+    await service.transfer(
+      makeUser({ warehouseIds: ["wh-1", "wh-2"] }),
+      { fromWarehouseId: "wh-1", toWarehouseId: "wh-2", productId: "prod-1", quantity: 5, idempotencyKey: "key-1" } as never,
+      {}
+    );
+
+    expect(mockTx.stockTransfer.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ idempotencyKey: "key-1" }) })
+    );
+  });
+});
+
+describe("InventoryService.createStockMovement — idempotencyKey dedup on the 'in' path (mobile parity audit, 2026-08-17)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("replays the original movement instead of creating a duplicate when the idempotencyKey was already used", async () => {
+    mockPrisma.inventoryItem.findFirst.mockResolvedValue({
+      id: "item-1", companyId: "company-1", branchId: "branch-1", farmId: null, warehouseId: "wh-1",
+      productionSiteId: null, productId: "prod-1", uomId: "uom-1",
+      product: { id: "prod-1", sku: "SKU-1", uomId: "uom-1" }
+    });
+    mockPrisma.stockMovement.findFirst.mockResolvedValue({ id: "mov-existing" });
+
+    const service = makeService();
+    const result = await service.createStockMovement(
+      makeUser(),
+      { inventoryItemId: "item-1", movementType: "PURCHASE_RECEIPT", quantity: 20, unitCost: 5, idempotencyKey: "key-1" } as never,
+      {}
+    );
+
+    expect(result.data).toEqual({ id: "mov-existing" });
+    expect(mockTx.stockBatch.create).not.toHaveBeenCalled();
+  });
+
+  it("passes the idempotencyKey through to the movement row on a genuinely new 'in' movement", async () => {
+    mockPrisma.inventoryItem.findFirst.mockResolvedValue({
+      id: "item-1", companyId: "company-1", branchId: "branch-1", farmId: null, warehouseId: "wh-1",
+      productionSiteId: null, productId: "prod-1", uomId: "uom-1",
+      product: { id: "prod-1", sku: "SKU-1", uomId: "uom-1" }
+    });
+    mockPrisma.stockMovement.findFirst.mockResolvedValue(null);
+    mockTx.stockBatch.create.mockResolvedValue({ id: "batch-1" });
+    mockTx.stockMovement.create.mockResolvedValue({ id: "mov-1" });
+    mockTx.inventoryItem.update.mockResolvedValue({});
+
+    const service = makeService();
+    await service.createStockMovement(
+      makeUser(),
+      { inventoryItemId: "item-1", movementType: "PURCHASE_RECEIPT", quantity: 20, unitCost: 5, idempotencyKey: "key-1" } as never,
+      {}
+    );
+
+    expect(mockTx.stockMovement.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ idempotencyKey: "key-1" }) })
+    );
   });
 });

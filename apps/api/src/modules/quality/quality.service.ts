@@ -687,27 +687,51 @@ export class QualityService {
     const check = await this.prisma.qualityCheck.findFirst({ where: { id: dto.checkId, companyId: cid, deletedAt: null } });
     if (!check) throw new NotFoundException("Quality check not found");
 
+    // Mobile parity audit (2026-08-17): checked before the reportNumber
+    // uniqueness guard below — a genuine mobile offline-queue resend (or a
+    // client retry after a dropped response) carrying the same
+    // idempotencyKey used to hit the "report number already exists"
+    // rejection instead of replaying the original success.
+    if (dto.idempotencyKey) {
+      const existing = await this.findLabReportByIdempotencyKey(cid, dto.idempotencyKey);
+      if (existing) return existing;
+    }
+
     const exists = await this.prisma.labReportUpload.findFirst({ where: { companyId: cid, reportNumber: dto.reportNumber, deletedAt: null } });
     if (exists) throw new BadRequestException(`Report number ${dto.reportNumber} already exists`);
 
-    const report = await this.prisma.labReportUpload.create({
-      data: {
-        companyId: cid,
-        checkId: dto.checkId,
-        reportNumber: dto.reportNumber,
-        labName: dto.labName,
-        reportDate: new Date(dto.reportDate),
-        fileUrl: dto.fileUrl,
-        fileType: dto.fileType,
-        summary: dto.summary,
-        findings: dto.findings,
-        recommendations: dto.recommendations,
-        uploadedById: user.id,
-      },
-    });
+    let report;
+    try {
+      report = await this.prisma.labReportUpload.create({
+        data: {
+          companyId: cid,
+          checkId: dto.checkId,
+          reportNumber: dto.reportNumber,
+          labName: dto.labName,
+          reportDate: new Date(dto.reportDate),
+          fileUrl: dto.fileUrl,
+          fileType: dto.fileType,
+          summary: dto.summary,
+          findings: dto.findings,
+          recommendations: dto.recommendations,
+          idempotencyKey: dto.idempotencyKey,
+          uploadedById: user.id,
+        },
+      });
+    } catch (err: unknown) {
+      if (dto.idempotencyKey && (err as { code?: string })?.code === "P2002") {
+        const existing = await this.findLabReportByIdempotencyKey(cid, dto.idempotencyKey);
+        if (existing) return existing;
+      }
+      throw err;
+    }
 
     await this.audit.write({ companyId: cid, actorUserId: user.id, action: "CREATE", entityType: "LabReportUpload", entityId: report.id, ...ctx });
     return report;
+  }
+
+  private async findLabReportByIdempotencyKey(companyId: string, idempotencyKey: string) {
+    return this.prisma.labReportUpload.findFirst({ where: { companyId, idempotencyKey, deletedAt: null } });
   }
 
   async deleteLabReport(user: AuthenticatedUser, id: string, ctx: RequestContext) {
@@ -771,28 +795,52 @@ export class QualityService {
       });
       if (!observation) throw new NotFoundException("Poultry health observation not found");
     }
+
+    // Mobile parity audit (2026-08-17): a mobile offline-queue resend (or a
+    // client retry after a dropped response) carrying the same
+    // idempotencyKey replays the original record instead of creating a
+    // second one.
+    if (dto.idempotencyKey) {
+      const existing = await this.findCorrectiveActionByIdempotencyKey(cid, dto.idempotencyKey);
+      if (existing) return existing;
+    }
+
     const reference = await nextRef(this.prisma, cid, "CA");
 
-    const ca = await this.prisma.correctiveAction.create({
-      data: {
-        companyId: cid,
-        reference,
-        checkId: dto.checkId,
-        rejectedBatchId: dto.rejectedBatchId,
-        poultryHealthObservationId: dto.poultryHealthObservationId,
-        title: dto.title,
-        description: dto.description,
-        rootCause: dto.rootCause,
-        preventiveMeasure: dto.preventiveMeasure,
-        priority: dto.priority ?? "MEDIUM",
-        assignedToId: dto.assignedToId,
-        dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
-        createdById: user.id,
-      },
-    });
+    let ca;
+    try {
+      ca = await this.prisma.correctiveAction.create({
+        data: {
+          companyId: cid,
+          reference,
+          checkId: dto.checkId,
+          rejectedBatchId: dto.rejectedBatchId,
+          poultryHealthObservationId: dto.poultryHealthObservationId,
+          title: dto.title,
+          description: dto.description,
+          rootCause: dto.rootCause,
+          preventiveMeasure: dto.preventiveMeasure,
+          priority: dto.priority ?? "MEDIUM",
+          assignedToId: dto.assignedToId,
+          dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
+          idempotencyKey: dto.idempotencyKey,
+          createdById: user.id,
+        },
+      });
+    } catch (err: unknown) {
+      if (dto.idempotencyKey && (err as { code?: string })?.code === "P2002") {
+        const existing = await this.findCorrectiveActionByIdempotencyKey(cid, dto.idempotencyKey);
+        if (existing) return existing;
+      }
+      throw err;
+    }
 
     await this.audit.write({ companyId: cid, actorUserId: user.id, action: "CREATE", entityType: "CorrectiveAction", entityId: ca.id, ...ctx });
     return ca;
+  }
+
+  private async findCorrectiveActionByIdempotencyKey(companyId: string, idempotencyKey: string) {
+    return this.prisma.correctiveAction.findFirst({ where: { companyId, idempotencyKey, deletedAt: null } });
   }
 
   async updateCorrectiveAction(user: AuthenticatedUser, id: string, dto: UpdateCorrectiveActionDto, ctx: RequestContext) {

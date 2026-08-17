@@ -10,11 +10,13 @@ import { DateField } from "../../components/DateField";
 import { SelectField, SelectOption } from "../../components/SelectField";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
+import { useToast } from "../../components/Toast";
 import { fetchFeedProductionOptions, fetchOpenFeedOrders, FeedOrder } from "../../api/endpoints";
 import { colors, font, radius, spacing } from "../../constants/theme";
 
 export function FeedProductionBatchScreen() {
   const navigation = useNavigation<any>();
+  const toast = useToast();
 
   const today = new Date().toISOString().split("T")[0];
 
@@ -37,7 +39,12 @@ export function FeedProductionBatchScreen() {
   useEffect(() => {
     fetchOpenFeedOrders()
       .then((r) => setOrders((r.data as FeedOrder[]) ?? []))
-      .catch(() => {});
+      .catch(() => {
+        // Mobile parity audit (2026-08-17): this used to fail completely
+        // silently — the Production Order picker just looked permanently
+        // empty, indistinguishable from "no open orders right now."
+        toast.show({ type: "error", message: "Could not load open production orders." });
+      });
   }, []);
 
   const orderOptions: SelectOption[] = useMemo(
@@ -69,6 +76,11 @@ export function FeedProductionBatchScreen() {
   const { submit, loading } = useSubmit({
     module:   "feed_production_batch",
     endpoint: "/feed-production/batches",
+    // DB stability audit (2026-08-16): CreateFeedProductionBatchDto now
+    // accepts idempotencyKey — a network drop or app-kill mid-submit no
+    // longer risks double-posting a batch (double stock consumption) on
+    // retry/resend.
+    sendIdempotencyKeyInBody: true,
     onSuccess: (queued) =>
       Alert.alert(
         queued ? "Saved Offline" : "Batch Logged",

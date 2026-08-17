@@ -1,4 +1,4 @@
-﻿import { IsArray, IsBoolean, IsDateString, IsEnum, IsNumber, IsObject, IsOptional, IsString, IsUUID, Min, ValidateNested } from "class-validator";
+﻿import { IsArray, IsBoolean, IsDateString, IsEnum, IsNumber, IsObject, IsOptional, IsString, IsUUID, MaxLength, Min, ValidateNested } from "class-validator";
 import { Type } from "class-transformer";
 
 export enum QCCheckType {
@@ -172,6 +172,12 @@ export class CreateLabReportDto {
   @IsOptional() @IsString() summary?: string;
   @IsOptional() @IsString() findings?: string;
   @IsOptional() @IsString() recommendations?: string;
+  // Mobile parity audit (2026-08-17): closes the idempotency gap for mobile
+  // offline-queue resends.
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  idempotencyKey?: string;
 }
 
 // â”€â”€â”€ Corrective actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -190,6 +196,12 @@ export class CreateCorrectiveActionDto {
   @IsOptional() @IsString() priority?: string;
   @IsOptional() @IsUUID() assignedToId?: string;
   @IsOptional() @IsDateString() dueDate?: string;
+  // Mobile parity audit (2026-08-17): closes the idempotency gap for mobile
+  // offline-queue resends.
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  idempotencyKey?: string;
 }
 
 export class UpdateCorrectiveActionDto {

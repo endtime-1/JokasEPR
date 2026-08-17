@@ -6,11 +6,23 @@ import {
   getAccessToken,
   login,
   logout,
+  markAuthReady,
   setSession,
 } from "../client";
 
 const mockFetch = jest.fn();
 global.fetch = mockFetch as unknown as typeof fetch;
+
+// Mobile app update (2026-08-16): the cold-launch auth-ready gate (S-03)
+// has apiFetch() await a module-level `_authReady` promise before doing
+// anything else — normally resolved by AuthContext.restoreSession() calling
+// markAuthReady() once on app startup. This test file never called it, so
+// every test that goes through apiFetch (directly, or via login/logout,
+// which call it internally) hung forever on that await and hit Jest's
+// 5000ms timeout. `_authReady` is a single module-level promise with no
+// reset, so opening the gate once here — matching what real app startup
+// does — is enough for every test in this file.
+markAuthReady();
 
 const ss = SecureStore as unknown as {
   __reset: () => void;

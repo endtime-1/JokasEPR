@@ -44,7 +44,15 @@ beforeEach(() => {
 });
 
 describe("useSubmit", () => {
-  it("calls the API with idempotency key when online", async () => {
+  it("calls the API with the plain payload when online and sendIdempotencyKeyInBody is not set", async () => {
+    // DB stability audit (2026-08-16) / mobile app update: idempotencyKey
+    // used to always be sent as a query param, which no endpoint's DTO ever
+    // read — every server-side dedup check reads it from the request body.
+    // It's opt-in now (sendIdempotencyKeyInBody) because the global
+    // ValidationPipe rejects any unrecognized body property outright
+    // (forbidNonWhitelisted) — sending it to a DTO without the field would
+    // break the submission instead of silently no-op'ing like the query
+    // param did. Default (unset) must not send it at all.
     mockApiFetch.mockResolvedValueOnce({ ok: true });
     const onSuccess = jest.fn();
 
@@ -57,11 +65,31 @@ describe("useSubmit", () => {
     });
 
     expect(mockApiFetch).toHaveBeenCalledWith(
-      expect.stringContaining("/livestock/batches?idempotencyKey="),
-      expect.objectContaining({ method: "POST" })
+      "/livestock/batches",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ name: "Batch A" }) })
     );
-    expect(onSuccess).toHaveBeenCalledWith(false);
+    expect(onSuccess).toHaveBeenCalledWith(false, { ok: true });
     expect(mockQueueSubmission).not.toHaveBeenCalled();
+  });
+
+  it("sends idempotencyKey in the request body when sendIdempotencyKeyInBody is true", async () => {
+    mockApiFetch.mockResolvedValueOnce({ ok: true });
+    const onSuccess = jest.fn();
+
+    const { result } = await renderHook(() =>
+      useSubmit({ module: "livestock", endpoint: "/livestock/batches", onSuccess, sendIdempotencyKeyInBody: true })
+    );
+
+    await act(async () => {
+      await result.current.submit({ name: "Batch A" });
+    });
+
+    expect(mockApiFetch).toHaveBeenCalledTimes(1);
+    const [calledUrl, calledInit] = mockApiFetch.mock.calls[0];
+    expect(calledUrl).toBe("/livestock/batches");
+    const sentBody = JSON.parse((calledInit as { body: string }).body);
+    expect(sentBody).toEqual(expect.objectContaining({ name: "Batch A", idempotencyKey: expect.any(String) }));
+    expect(onSuccess).toHaveBeenCalledWith(false, { ok: true });
   });
 
   it("queues to SQLite and calls onSuccess when offline", async () => {

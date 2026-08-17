@@ -59,11 +59,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => { restoreSession(); }, [restoreSession]);
 
   // Proactive token refresh — prevents a visible pause after 15-min idle.
+  // Mobile parity audit (2026-08-17): only an explicit "rejected" (the
+  // server actually invalidated the refresh token) should force a logout —
+  // "unreachable" (network blip, Hostinger cold-start 5xx, timeout) says
+  // nothing about whether the session is still good, and used to force the
+  // same logout, kicking users out over a brief connectivity hiccup. On
+  // "unreachable" this just skips the tick; the next interval retries, and
+  // any real API call in between still goes through apiFetch's own
+  // reactive-refresh-on-401 path.
   useEffect(() => {
     if (!user) return;
     const interval = setInterval(async () => {
-      const ok = await refreshSession();
-      if (!ok) setUser(null); // refresh token revoked → force re-login
+      const outcome = await refreshSession();
+      if (outcome === "rejected") setUser(null);
     }, PROACTIVE_REFRESH_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [user]);

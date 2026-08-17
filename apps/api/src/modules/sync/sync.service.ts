@@ -242,47 +242,56 @@ export class SyncService {
       throw new ForbiddenException(`Missing permission ${rule.permissions.join(", ")} for ${ep}.`);
     }
 
+    // Mobile parity audit (2026-08-17): createDailyRecord and checkInSelf are
+    // intentionally excluded from the idempotencyKey threading below — both
+    // are already naturally idempotent (upsert-by-natural-key: flockBatch+
+    // pen+date for the daily record, employee+date for attendance), so a
+    // retry just re-applies the same absolute values instead of creating a
+    // duplicate row.
     if (ep.includes("/poultry/daily-records")) {
       return this.poultryService.createDailyRecord(user, await this.validateDto(CreateDailyPoultryRecordDto, payload), ctx);
     }
     if (ep.includes("/poultry/mortality-records")) {
-      return this.poultryService.createMortality(user, await this.validateDto(CreateMortalityRecordDto, payload), ctx);
+      return this.poultryService.createMortality(user, await this.validateDto(CreateMortalityRecordDto, { ...payload, idempotencyKey: item.localId }), ctx);
     }
     if (ep.includes("/poultry/egg-production-records")) {
-      return this.poultryService.createEggs(user, await this.validateDto(CreateEggProductionRecordDto, payload), ctx);
+      return this.poultryService.createEggs(user, await this.validateDto(CreateEggProductionRecordDto, { ...payload, idempotencyKey: item.localId }), ctx);
     }
     if (ep.includes("/poultry/feed-consumption-records")) {
-      return this.poultryService.createFeed(user, await this.validateDto(CreateFeedConsumptionRecordDto, payload), ctx);
+      return this.poultryService.createFeed(user, await this.validateDto(CreateFeedConsumptionRecordDto, { ...payload, idempotencyKey: item.localId }), ctx);
     }
     if (ep.includes("/poultry/medication-records")) {
-      return this.poultryService.createMedication(user, await this.validateDto(CreateMedicationRecordDto, payload), ctx);
+      return this.poultryService.createMedication(user, await this.validateDto(CreateMedicationRecordDto, { ...payload, idempotencyKey: item.localId }), ctx);
     }
     if (ep.includes("/poultry/vaccination-records")) {
-      return this.poultryService.createVaccination(user, await this.validateDto(CreateVaccinationRecordDto, payload), ctx);
+      return this.poultryService.createVaccination(user, await this.validateDto(CreateVaccinationRecordDto, { ...payload, idempotencyKey: item.localId }), ctx);
     }
     if (ep.includes("/poultry/bird-weight-records")) {
-      return this.poultryService.createWeight(user, await this.validateDto(CreateBirdWeightRecordDto, payload), ctx);
+      return this.poultryService.createWeight(user, await this.validateDto(CreateBirdWeightRecordDto, { ...payload, idempotencyKey: item.localId }), ctx);
     }
     if (ep.includes("/poultry/health-observations")) {
-      return this.poultryService.createHealthObservation(user, await this.validateDto(CreateHealthObservationDto, payload), ctx);
+      return this.poultryService.createHealthObservation(user, await this.validateDto(CreateHealthObservationDto, { ...payload, idempotencyKey: item.localId }), ctx);
     }
     if (ep.includes("/poultry/costs")) {
-      return this.poultryService.createCost(user, await this.validateDto(CreatePoultryCostRecordDto, payload), ctx);
+      return this.poultryService.createCost(user, await this.validateDto(CreatePoultryCostRecordDto, { ...payload, idempotencyKey: item.localId }), ctx);
     }
     if (ep.includes("/inventory/stock-movements")) {
-      return this.inventoryService.createStockMovement(user, await this.validateDto(MobileStockMovementDto, payload), ctx);
+      // The "out"/FIFO branch of createStockMovement ignores idempotencyKey
+      // (see the StockMovement schema comment) — only the "in" branch uses
+      // it. Threading it through unconditionally here is safe either way.
+      return this.inventoryService.createStockMovement(user, await this.validateDto(MobileStockMovementDto, { ...payload, idempotencyKey: item.localId }), ctx);
     }
     if (ep.includes("/inventory/adjustments")) {
-      return this.inventoryService.createAdjustment(user, await this.validateDto(StockAdjustmentDto, payload), ctx);
+      return this.inventoryService.createAdjustment(user, await this.validateDto(StockAdjustmentDto, { ...payload, idempotencyKey: item.localId }), ctx);
     }
     if (ep.includes("/inventory/transfers")) {
-      return this.inventoryService.transfer(user, await this.validateDto(StockTransferDto, payload), ctx);
+      return this.inventoryService.transfer(user, await this.validateDto(StockTransferDto, { ...payload, idempotencyKey: item.localId }), ctx);
     }
     if (ep.includes("/hr/attendance/me")) {
       return this.hrService.checkInSelf(user, await this.validateDto(CheckInSelfDto, payload), ctx);
     }
     if (ep.includes("/finance/expenses")) {
-      return this.financeService.createExpense(user, await this.validateDto(CreateExpenseDto, payload), ctx);
+      return this.financeService.createExpense(user, await this.validateDto(CreateExpenseDto, { ...payload, idempotencyKey: item.localId }), ctx);
     }
     if (ep.includes("/finance/customer-payments")) {
       // MobileSyncRecord's (companyId, localId) dedup only protects retries
@@ -296,31 +305,44 @@ export class SyncService {
       return this.financeService.createCustomerPayment(user, await this.validateDto(CreateCustomerPaymentDto, { ...payload, idempotencyKey: item.localId }), ctx);
     }
     if (ep.includes("/maintenance/records")) {
-      return this.maintenanceService.createRecord(user, await this.validateDto(CreateMaintenanceRecordDto, payload), ctx);
+      return this.maintenanceService.createRecord(user, await this.validateDto(CreateMaintenanceRecordDto, { ...payload, idempotencyKey: item.localId }), ctx);
     }
     if (ep.includes("/maintenance/breakdowns")) {
-      return this.maintenanceService.createBreakdown(user, await this.validateDto(CreateBreakdownDto, payload), ctx);
+      return this.maintenanceService.createBreakdown(user, await this.validateDto(CreateBreakdownDto, { ...payload, idempotencyKey: item.localId }), ctx);
     }
     if (ep.includes("/quality/lab-reports")) {
-      return this.qualityService.createLabReport(user, await this.validateDto(CreateLabReportDto, payload), ctx);
+      return this.qualityService.createLabReport(user, await this.validateDto(CreateLabReportDto, { ...payload, idempotencyKey: item.localId }), ctx);
     }
     if (ep.includes("/quality/corrective-actions")) {
-      return this.qualityService.createCorrectiveAction(user, await this.validateDto(CreateCorrectiveActionDto, payload), ctx);
+      return this.qualityService.createCorrectiveAction(user, await this.validateDto(CreateCorrectiveActionDto, { ...payload, idempotencyKey: item.localId }), ctx);
     }
     if (ep.includes("/sales/orders")) {
-      return this.salesService.createOrder(user, await this.validateDto(CreateSalesOrderDto, payload), ctx);
+      // Mobile parity audit (2026-08-17): mirrors customer-payments/
+      // soya-batches/feed-batches threading above — SalesOrder already had
+      // an idempotencyKey column (added for the storefront) but createOrder
+      // never accepted it, so a mobile offline-queue resend of a sales order
+      // had no dedup protection at all until this.
+      return this.salesService.createOrder(user, await this.validateDto(CreateSalesOrderDto, { ...payload, idempotencyKey: item.localId }), ctx);
     }
     if (ep.includes("/sales/prospect-visits")) {
-      return this.salesService.logProspectVisit(user, await this.validateDto(CreateProspectVisitDto, payload), ctx);
+      return this.salesService.logProspectVisit(user, await this.validateDto(CreateProspectVisitDto, { ...payload, idempotencyKey: item.localId }), ctx);
     }
     if (ep.includes("/soya-processing/intakes")) {
-      return this.soyaProcessingService.createIntake(user, await this.validateDto(CreateSoyaBeanIntakeDto, payload), ctx);
+      return this.soyaProcessingService.createIntake(user, await this.validateDto(CreateSoyaBeanIntakeDto, { ...payload, idempotencyKey: item.localId }), ctx);
     }
     if (ep.includes("/soya-processing/batches")) {
-      return this.soyaProcessingService.createBatch(user, await this.validateDto(CreateSoyaProcessingBatchDto, payload), ctx);
+      // Mobile app update (2026-08-16): mirrors the customer-payments
+      // threading above — CreateSoyaProcessingBatchDto now accepts
+      // idempotencyKey, so the same MobileSyncRecord-gap protection applies
+      // here: a direct online submit that succeeded server-side but lost
+      // its response, later replayed through /sync/batch as a "fresh" item,
+      // is caught by SoyaProcessingBatch's own unique index instead of
+      // double-consuming beans.
+      return this.soyaProcessingService.createBatch(user, await this.validateDto(CreateSoyaProcessingBatchDto, { ...payload, idempotencyKey: item.localId }), ctx);
     }
     if (ep.includes("/feed-production/batches")) {
-      return this.feedProductionService.createBatch(user, await this.validateDto(CreateFeedProductionBatchDto, payload), ctx);
+      // Mobile app update (2026-08-16): same reasoning as soya-processing/batches above.
+      return this.feedProductionService.createBatch(user, await this.validateDto(CreateFeedProductionBatchDto, { ...payload, idempotencyKey: item.localId }), ctx);
     }
 
     // PATCH /hr/tasks/:id/status

@@ -7,8 +7,8 @@ jest.mock("../../common/next-ref", () => ({ nextRef: jest.fn().mockResolvedValue
 const mockTx = {
   feedConsumptionRecord: { create: jest.fn(), update: jest.fn() },
   eggProductionRecord: { create: jest.fn(), update: jest.fn() },
-  medicationRecord: { update: jest.fn() },
-  vaccinationRecord: { update: jest.fn() },
+  medicationRecord: { create: jest.fn(), update: jest.fn() },
+  vaccinationRecord: { create: jest.fn(), update: jest.fn() },
   dailyPoultryRecord: { create: jest.fn(), update: jest.fn() },
   inventoryItem: { findFirst: jest.fn(), updateMany: jest.fn(), update: jest.fn(), upsert: jest.fn() },
   product: { findFirst: jest.fn().mockResolvedValue({ id: "prod-feed", uomId: "uom-1" }) },
@@ -35,6 +35,9 @@ const mockPrisma = {
   vaccinationRecord: { findFirst: jest.fn() },
   dailyPoultryRecord: { findFirst: jest.fn() },
   mortalityRecord: { findFirst: jest.fn() },
+  birdWeightRecord: { findFirst: jest.fn(), create: jest.fn() },
+  poultryHealthObservation: { findFirst: jest.fn(), create: jest.fn() },
+  poultryCostRecord: { findFirst: jest.fn(), create: jest.fn() },
   $transaction: jest.fn().mockImplementation((cb: (tx: typeof mockTx) => Promise<unknown>) => cb(mockTx))
 };
 const mockAudit = { write: jest.fn().mockResolvedValue(undefined) };
@@ -1070,6 +1073,238 @@ describe("PoultryService.softDelete — feed/medication/vaccination/egg deletes 
     expect(mockTx.feedConsumptionRecord.update).toHaveBeenCalledWith({
       where: { id: "fc-2" },
       data: { deletedAt: expect.any(Date), updatedById: "user-1" }
+    });
+  });
+});
+
+describe("PoultryService — idempotencyKey dedup for the 8 poultry create endpoints (mobile parity audit, 2026-08-17)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const broilerBatch = { id: "batch-1", companyId: "company-1", farmId: "farm-1", branchId: "branch-1", poultryHouseId: "house-1", status: "ACTIVE", code: "FB-1", birdType: "BROILERS", openingBirdCount: 1000 };
+  const layerBatch = { id: "batch-1", companyId: "company-1", farmId: "farm-1", branchId: "branch-1", poultryHouseId: "house-1", status: "ACTIVE", code: "FLK-1", birdType: "LAYERS", openingBirdCount: 1000 };
+
+  describe("createMortality", () => {
+    const dto = { flockBatchId: "batch-1", recordDate: "2026-08-09", birdCount: 5, idempotencyKey: "idem-mort-1" };
+
+    it("replays the original record instead of creating a duplicate when the idempotencyKey was already used", async () => {
+      mockPrisma.flockBatch.findFirst.mockResolvedValue(broilerBatch);
+      mockPrisma.mortalityRecord.findFirst.mockResolvedValue({ id: "mort-existing" });
+
+      const service = makeService();
+      const result = await service.createMortality(makeUser(), dto as never, {});
+
+      expect(result.data.id).toBe("mort-existing");
+      expect(mockTx.mortalityRecord.create).not.toHaveBeenCalled();
+    });
+
+    it("passes the idempotencyKey through to the record row on a genuinely new record", async () => {
+      mockPrisma.flockBatch.findFirst.mockResolvedValue(broilerBatch);
+      mockPrisma.mortalityRecord.findFirst.mockResolvedValue(null);
+      mockTx.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+      mockTx.mortalityRecord.create.mockResolvedValue({ id: "mort-new" });
+
+      const service = makeService();
+      await service.createMortality(makeUser(), dto as never, {});
+
+      expect(mockTx.mortalityRecord.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ idempotencyKey: "idem-mort-1" }) })
+      );
+    });
+  });
+
+  describe("createFeed", () => {
+    const dto = { flockBatchId: "batch-1", recordDate: "2026-08-09", quantityKg: 50, idempotencyKey: "idem-feed-1" };
+
+    it("replays the original record instead of creating a duplicate when the idempotencyKey was already used", async () => {
+      mockPrisma.flockBatch.findFirst.mockResolvedValue(broilerBatch);
+      mockPrisma.feedConsumptionRecord.findFirst.mockResolvedValue({ id: "feed-existing" });
+
+      const service = makeService();
+      const result = await service.createFeed(makeUser(), dto as never, {});
+
+      expect(result.data.id).toBe("feed-existing");
+      expect(mockTx.feedConsumptionRecord.create).not.toHaveBeenCalled();
+    });
+
+    it("passes the idempotencyKey through to the record row on a genuinely new record", async () => {
+      mockPrisma.flockBatch.findFirst.mockResolvedValue(broilerBatch);
+      mockPrisma.feedConsumptionRecord.findFirst.mockResolvedValue(null);
+      mockTx.feedConsumptionRecord.create.mockResolvedValue({ id: "feed-new" });
+
+      const service = makeService();
+      await service.createFeed(makeUser(), dto as never, {});
+
+      expect(mockTx.feedConsumptionRecord.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ idempotencyKey: "idem-feed-1" }) })
+      );
+    });
+  });
+
+  describe("createEggs", () => {
+    const dto = { flockBatchId: "batch-1", recordDate: "2026-01-01", goodEggs: 10, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0, idempotencyKey: "idem-eggs-1" };
+
+    it("replays the original record instead of creating a duplicate when the idempotencyKey was already used", async () => {
+      mockPrisma.flockBatch.findFirst.mockResolvedValue(layerBatch);
+      mockPrisma.eggProductionRecord.findFirst.mockResolvedValue({ id: "egg-existing" });
+
+      const service = makeService();
+      const result = await service.createEggs(makeUser(), dto as never, {});
+
+      expect(result.data.id).toBe("egg-existing");
+      expect(mockTx.eggProductionRecord.create).not.toHaveBeenCalled();
+    });
+
+    it("passes the idempotencyKey through to the record row on a genuinely new record", async () => {
+      mockPrisma.flockBatch.findFirst.mockResolvedValue(layerBatch);
+      mockPrisma.eggProductionRecord.findFirst.mockResolvedValue(null);
+      mockTx.eggProductionRecord.create.mockResolvedValue({ id: "egg-new" });
+
+      const service = makeService();
+      await service.createEggs(makeUser(), dto as never, {});
+
+      expect(mockTx.eggProductionRecord.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ idempotencyKey: "idem-eggs-1" }) })
+      );
+    });
+  });
+
+  describe("createWeight", () => {
+    const dto = { flockBatchId: "batch-1", recordDate: "2026-01-01", sampleSize: 10, averageWeightKg: 1.5, idempotencyKey: "idem-weight-1" };
+
+    it("replays the original record instead of creating a duplicate when the idempotencyKey was already used", async () => {
+      mockPrisma.flockBatch.findFirst.mockResolvedValue(broilerBatch);
+      mockPrisma.birdWeightRecord.findFirst.mockResolvedValue({ id: "weight-existing" });
+
+      const service = makeService();
+      const result = await service.createWeight(makeUser(), dto as never, {});
+
+      expect(result.data.id).toBe("weight-existing");
+      expect(mockPrisma.birdWeightRecord.create).not.toHaveBeenCalled();
+    });
+
+    it("passes the idempotencyKey through to the record row on a genuinely new record", async () => {
+      mockPrisma.flockBatch.findFirst.mockResolvedValue(broilerBatch);
+      mockPrisma.birdWeightRecord.findFirst.mockResolvedValue(null);
+      mockPrisma.birdWeightRecord.create.mockResolvedValue({ id: "weight-new" });
+
+      const service = makeService();
+      await service.createWeight(makeUser(), dto as never, {});
+
+      expect(mockPrisma.birdWeightRecord.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ idempotencyKey: "idem-weight-1" }) })
+      );
+    });
+  });
+
+  describe("createMedication", () => {
+    const dto = { flockBatchId: "batch-1", medicationName: "Amoxicillin", dosage: "5ml", startDate: "2026-01-01", idempotencyKey: "idem-med-1" };
+
+    it("replays the original record instead of creating a duplicate when the idempotencyKey was already used", async () => {
+      mockPrisma.flockBatch.findFirst.mockResolvedValue(broilerBatch);
+      mockPrisma.medicationRecord.findFirst.mockResolvedValue({ id: "med-existing" });
+
+      const service = makeService();
+      const result = await service.createMedication(makeUser(), dto as never, {});
+
+      expect(result.data.id).toBe("med-existing");
+      expect(mockTx.medicationRecord.create).not.toHaveBeenCalled();
+    });
+
+    it("passes the idempotencyKey through to the record row on a genuinely new record", async () => {
+      mockPrisma.flockBatch.findFirst.mockResolvedValue(broilerBatch);
+      mockPrisma.medicationRecord.findFirst.mockResolvedValue(null);
+      mockTx.medicationRecord.create.mockResolvedValue({ id: "med-new" });
+
+      const service = makeService();
+      await service.createMedication(makeUser(), dto as never, {});
+
+      expect(mockTx.medicationRecord.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ idempotencyKey: "idem-med-1" }) })
+      );
+    });
+  });
+
+  describe("createVaccination", () => {
+    const dto = { flockBatchId: "batch-1", vaccineName: "Newcastle", dose: "1ml", vaccinationDate: "2026-01-01", idempotencyKey: "idem-vacc-1" };
+
+    it("replays the original record instead of creating a duplicate when the idempotencyKey was already used", async () => {
+      mockPrisma.flockBatch.findFirst.mockResolvedValue(broilerBatch);
+      mockPrisma.vaccinationRecord.findFirst.mockResolvedValue({ id: "vacc-existing" });
+
+      const service = makeService();
+      const result = await service.createVaccination(makeUser(), dto as never, {});
+
+      expect(result.data.id).toBe("vacc-existing");
+      expect(mockTx.vaccinationRecord.create).not.toHaveBeenCalled();
+    });
+
+    it("passes the idempotencyKey through to the record row on a genuinely new record", async () => {
+      mockPrisma.flockBatch.findFirst.mockResolvedValue(broilerBatch);
+      mockPrisma.vaccinationRecord.findFirst.mockResolvedValue(null);
+      mockTx.vaccinationRecord.create.mockResolvedValue({ id: "vacc-new" });
+
+      const service = makeService();
+      await service.createVaccination(makeUser(), dto as never, {});
+
+      expect(mockTx.vaccinationRecord.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ idempotencyKey: "idem-vacc-1" }) })
+      );
+    });
+  });
+
+  describe("createHealthObservation", () => {
+    const dto = { flockBatchId: "batch-1", observationDate: "2026-01-01", severity: "LOW", observation: "Mild lethargy", idempotencyKey: "idem-health-1" };
+
+    it("replays the original record instead of creating a duplicate when the idempotencyKey was already used", async () => {
+      mockPrisma.flockBatch.findFirst.mockResolvedValue(broilerBatch);
+      mockPrisma.poultryHealthObservation.findFirst.mockResolvedValue({ id: "health-existing" });
+
+      const service = makeService();
+      const result = await service.createHealthObservation(makeUser(), dto as never, {});
+
+      expect(result.data.id).toBe("health-existing");
+      expect(mockPrisma.poultryHealthObservation.create).not.toHaveBeenCalled();
+    });
+
+    it("passes the idempotencyKey through to the record row on a genuinely new record", async () => {
+      mockPrisma.flockBatch.findFirst.mockResolvedValue(broilerBatch);
+      mockPrisma.poultryHealthObservation.findFirst.mockResolvedValue(null);
+      mockPrisma.poultryHealthObservation.create.mockResolvedValue({ id: "health-new" });
+
+      const service = makeService();
+      await service.createHealthObservation(makeUser(), dto as never, {});
+
+      expect(mockPrisma.poultryHealthObservation.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ idempotencyKey: "idem-health-1" }) })
+      );
+    });
+  });
+
+  describe("createCost", () => {
+    const dto = { flockBatchId: "batch-1", costDate: "2026-01-01", costType: "FEED", amount: 100, idempotencyKey: "idem-cost-1" };
+
+    it("replays the original record instead of creating a duplicate when the idempotencyKey was already used", async () => {
+      mockPrisma.flockBatch.findFirst.mockResolvedValue(broilerBatch);
+      mockPrisma.poultryCostRecord.findFirst.mockResolvedValue({ id: "cost-existing" });
+
+      const service = makeService();
+      const result = await service.createCost(makeUser(), dto as never, {});
+
+      expect(result.data.id).toBe("cost-existing");
+      expect(mockPrisma.poultryCostRecord.create).not.toHaveBeenCalled();
+    });
+
+    it("passes the idempotencyKey through to the record row on a genuinely new record", async () => {
+      mockPrisma.flockBatch.findFirst.mockResolvedValue(broilerBatch);
+      mockPrisma.poultryCostRecord.findFirst.mockResolvedValue(null);
+      mockPrisma.poultryCostRecord.create.mockResolvedValue({ id: "cost-new" });
+
+      const service = makeService();
+      await service.createCost(makeUser(), dto as never, {});
+
+      expect(mockPrisma.poultryCostRecord.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ idempotencyKey: "idem-cost-1" }) })
+      );
     });
   });
 });

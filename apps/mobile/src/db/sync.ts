@@ -1,4 +1,4 @@
-import { apiFetch } from "../api/client";
+import { apiFetch, ApiError } from "../api/client";
 import { countFailed, countPending, decryptPayload, getPendingSubmissions, markSyncError, markSynced, type PendingSubmission } from "./database";
 
 export type SyncResult = { synced: number; failed: number; duplicates: number };
@@ -41,13 +41,27 @@ export async function runSync(): Promise<SyncResult> {
   if (pending.length === 0) return { synced: 0, failed: 0, duplicates: 0 };
 
   // Build batch payload — strip internal _offlineId from payload before sending
+  //
+  // Mobile parity audit (2026-08-17): a corrupted/undecryptable row used to
+  // just return null here and get silently dropped from `items`. On a
+  // normal batch response that was recoverable — the result-application
+  // loop below iterates the full `pending` list, so a row missing from the
+  // response fell into the "no result" branch and still got marked failed
+  // with an (honest-enough, if generic) message. But if the /sync/batch
+  // call itself THREW, the catch block only iterated `items` — a corrupted
+  // row present in `pending` but never in `items` was skipped entirely,
+  // its attempts counter never incremented, invisible to both pending and
+  // failed counts, silently retried-and-skipped forever. Marking it failed
+  // immediately, with the real reason, closes that gap and gives the user
+  // an honest error instead of "No result returned from server."
   const itemsOrNull = await Promise.all(pending.map(async (row) => {
     let rawPayload: Record<string, unknown>;
     try {
       const decrypted = await decryptPayload(row.payload);
       rawPayload = JSON.parse(decrypted) as Record<string, unknown>;
     } catch {
-      return null; // skip corrupted or undecryptable rows
+      await markSyncError(row.id, "Saved record could not be read (corrupted or undecryptable) — contact support if this repeats.");
+      return null;
     }
     const { _offlineId, ...cleanPayload } = rawPayload;
     return { localId: row.id, endpoint: row.endpoint, method: row.method, module: row.module, payload: cleanPayload };
@@ -71,7 +85,17 @@ export async function runSync(): Promise<SyncResult> {
       });
       break; // Success — exit retry loop
     } catch (err) {
-      const isNetworkError = err instanceof Error && (err.message.includes("Network") || err.message.includes("fetch"));
+      // Mobile parity audit (2026-08-17): this string-matched the error
+      // message, which never matches apiFetch's actual timeout message
+      // ("Request timed out — check your connection and try again.", no
+      // "Network"/"fetch" substring) — only its "Network error..." message
+      // for a hard connection failure did. Timeouts are the dominant
+      // failure mode on weak field signal, so this was skipping the
+      // 0/1s/2s backoff and burning a lifetime attempt on the very first
+      // try. ApiError.status === 0 is the same "no real server response"
+      // signal client.ts and useSubmit.ts's C6 fix already use — checking
+      // that directly instead of guessing from message text.
+      const isNetworkError = err instanceof ApiError && err.status === 0;
       if (!isNetworkError || attempt >= maxAttempts) {
         // Non-network error or max retries — mark all as failed
         const msg = err instanceof Error ? err.message : "Sync failed";

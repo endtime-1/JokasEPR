@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -58,6 +58,13 @@ export function QualityCheckScreen() {
   const [reason,        setReason]        = useState("");
   const [verdictNotes,  setVerdictNotes]  = useState("");
   const [loading,       setLoading]       = useState(false);
+  // Mobile parity audit (2026-08-17): this screen calls apiFetch directly
+  // instead of going through useSubmit, so it never got useSubmit's
+  // submittingRef double-tap guard — the `loading` state alone disables the
+  // button, but state updates are batched/async, so two taps inside the same
+  // event-loop tick (a fast double-tap) can both fire before the re-render
+  // that disables it lands. A ref mutates synchronously, closing that gap.
+  const submittingRef = useRef(false);
 
   const farmOpts: SelectOption[] = useMemo(
     () => [{ label: "— Select farm —", value: "" }, ...(optData?.farms ?? []).map((f) => ({ label: f.name, value: f.id }))],
@@ -84,6 +91,8 @@ export function QualityCheckScreen() {
   const needsSite      = ["FEED_PRODUCTION", "SOYA_PROCESSING"].includes(checkType);
 
   async function handleCreate() {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setLoading(true);
     try {
       const payload: Record<string, unknown> = {
@@ -105,6 +114,7 @@ export function QualityCheckScreen() {
       Alert.alert("Error", err instanceof Error ? err.message : "Failed to create inspection");
     } finally {
       setLoading(false);
+      submittingRef.current = false;
     }
   }
 
@@ -116,6 +126,8 @@ export function QualityCheckScreen() {
     if (verdict === "CONDITIONAL" && !verdictNotes.trim()) {
       return Alert.alert("Required", "Enter the conditions that must be met");
     }
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setLoading(true);
     try {
       if (verdict === "PASS") {
@@ -132,6 +144,7 @@ export function QualityCheckScreen() {
       Alert.alert("Error", err instanceof Error ? err.message : "Failed to record verdict");
     } finally {
       setLoading(false);
+      submittingRef.current = false;
     }
   }
 

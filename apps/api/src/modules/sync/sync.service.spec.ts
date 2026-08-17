@@ -10,9 +10,9 @@ const mockHrService = {};
 const mockFinanceService = {};
 const mockMaintenanceService = {};
 const mockQualityService = {};
-const mockSalesService = {};
-const mockSoyaProcessingService = {};
-const mockFeedProductionService = {};
+const mockSalesService = { createOrder: jest.fn() };
+const mockSoyaProcessingService = { createBatch: jest.fn() };
+const mockFeedProductionService = { createBatch: jest.fn() };
 
 function makeService() {
   return new SyncService(
@@ -211,5 +211,101 @@ describe("SyncService.routeToService — payload is validated against its target
 
     const forwarded = mockInventoryService.createStockMovement.mock.calls[0][1];
     expect(forwarded).not.toHaveProperty("notAFieldOnTheDto");
+  });
+});
+
+describe("SyncService.routeToService — threads the offline-queue localId through as idempotencyKey (mobile app update, 2026-08-16)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("passes localId as idempotencyKey to feedProductionService.createBatch", async () => {
+    mockPrisma.mobileSyncRecord.findUnique.mockResolvedValue(null);
+    mockPrisma.mobileSyncRecord.create.mockResolvedValue({ id: "rec-1" });
+    mockFeedProductionService.createBatch.mockResolvedValue({ data: { id: "batch-1" } });
+    const service = makeService();
+
+    await service.batchSync(
+      makeUser(),
+      {
+        records: [{
+          localId: "local-feed-1",
+          endpoint: "/feed-production/batches",
+          method: "POST",
+          module: "feed_production_batch",
+          payload: {
+            productionOrderId: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            rawMaterialWarehouseId: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            finishedWarehouseId: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            producedQuantityKg: 100
+          }
+        }]
+      } as never,
+      {}
+    );
+
+    const forwarded = mockFeedProductionService.createBatch.mock.calls[0][1];
+    expect(forwarded.idempotencyKey).toBe("local-feed-1");
+  });
+
+  it("passes localId as idempotencyKey to soyaProcessingService.createBatch", async () => {
+    mockPrisma.mobileSyncRecord.findUnique.mockResolvedValue(null);
+    mockPrisma.mobileSyncRecord.create.mockResolvedValue({ id: "rec-1" });
+    mockSoyaProcessingService.createBatch.mockResolvedValue({ data: { id: "batch-1" } });
+    const service = makeService();
+
+    await service.batchSync(
+      makeUser(),
+      {
+        records: [{
+          localId: "local-soya-1",
+          endpoint: "/soya-processing/batches",
+          method: "POST",
+          module: "soya_batch",
+          payload: {
+            productionSiteId: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            rawWarehouseId: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            oilWarehouseId: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            cakeWarehouseId: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            beanProductId: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            oilProductId: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            cakeProductId: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            beansUsedKg: 100,
+            oilProducedLitres: 15,
+            cakeProducedKg: 75
+          }
+        }]
+      } as never,
+      {}
+    );
+
+    const forwarded = mockSoyaProcessingService.createBatch.mock.calls[0][1];
+    expect(forwarded.idempotencyKey).toBe("local-soya-1");
+  });
+
+  it("passes localId as idempotencyKey to salesService.createOrder (mobile parity audit, 2026-08-17)", async () => {
+    mockPrisma.mobileSyncRecord.findUnique.mockResolvedValue(null);
+    mockPrisma.mobileSyncRecord.create.mockResolvedValue({ id: "rec-1" });
+    mockSalesService.createOrder.mockResolvedValue({ data: { id: "order-1" } });
+    const service = makeService();
+
+    await service.batchSync(
+      makeUser(),
+      {
+        records: [{
+          localId: "local-order-1",
+          endpoint: "/sales/orders",
+          method: "POST",
+          module: "sales_order",
+          payload: {
+            customerId: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            warehouseId: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            items: [{ productId: "3fa85f64-5717-4562-b3fc-2c963f66afa6", quantity: 1, unitPrice: 10 }]
+          }
+        }]
+      } as never,
+      {}
+    );
+
+    const forwarded = mockSalesService.createOrder.mock.calls[0][1];
+    expect(forwarded.idempotencyKey).toBe("local-order-1");
   });
 });

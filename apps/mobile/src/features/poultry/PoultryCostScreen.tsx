@@ -67,6 +67,8 @@ export function PoultryCostScreen() {
   const { submit, loading } = useSubmit({
     module: "poultry_cost",
     endpoint: "/poultry/costs",
+    // Mobile parity audit (2026-08-17): PoultryCostRecord now accepts idempotencyKey.
+    sendIdempotencyKeyInBody: true,
     onSuccess: (queued) =>
       Alert.alert(
         queued ? "Saved Offline" : "Saved",

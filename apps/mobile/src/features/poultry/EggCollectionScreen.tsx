@@ -105,6 +105,8 @@ export function EggCollectionScreen() {
   const { submit, loading } = useSubmit({
     module: "poultry_eggs",
     endpoint: "/poultry/egg-production-records",
+    // Mobile parity audit (2026-08-17): EggProductionRecord now accepts idempotencyKey.
+    sendIdempotencyKeyInBody: true,
     // M-BUG follow-up (2026-08-13): createEggs now returns a warning for a
     // young-flock age check and for cracked/dirty eggs recorded with no
     // "seconds" product set, but nothing displayed either — same silent

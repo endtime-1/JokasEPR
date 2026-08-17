@@ -23,7 +23,7 @@ const mockTx = {
 const mockPrisma = {
   customer: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), count: jest.fn(), update: jest.fn() },
   customerGroup: { findFirst: jest.fn(), update: jest.fn() },
-  customerCreditLimit: { findFirst: jest.fn() },
+  customerCreditLimit: { findFirst: jest.fn().mockResolvedValue(null) },
   priceList: { findFirst: jest.fn(), update: jest.fn(), aggregate: jest.fn() },
   invoice: { findFirst: jest.fn(), findUnique: jest.fn().mockResolvedValue(null), count: jest.fn() },
   payment: { findFirst: jest.fn() },
@@ -33,8 +33,10 @@ const mockPrisma = {
   branch: { findMany: jest.fn().mockResolvedValue([]) },
   product: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
   salesOrderItem: { findFirst: jest.fn(), groupBy: jest.fn().mockResolvedValue([]), aggregate: jest.fn() },
-  salesOrder: { findFirst: jest.fn(), groupBy: jest.fn().mockResolvedValue([]), count: jest.fn() },
+  salesOrder: { findFirst: jest.fn(), create: jest.fn(), groupBy: jest.fn().mockResolvedValue([]), count: jest.fn() },
+  inventoryItem: { findFirst: jest.fn().mockResolvedValue(null) },
   salesReturn: { aggregate: jest.fn(), create: jest.fn(), findFirst: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
+  prospectVisit: { create: jest.fn(), findFirst: jest.fn() },
   $transaction: jest.fn().mockImplementation((cb: (tx: typeof mockTx) => Promise<unknown>) => cb(mockTx))
 };
 
@@ -189,6 +191,97 @@ describe("SalesService.createPayment — race-safe balance guard (C4)", () => {
     await expect(
       service.createPayment(makeUser(), { customerId: "cust-1", amount: 100, method: "CASH" } as never, {})
     ).resolves.toBeDefined();
+  });
+});
+
+describe("SalesService.createOrder — idempotencyKey dedup (mobile parity audit, 2026-08-17)", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPrisma.customer.findFirst.mockResolvedValue({ id: "cust-1", branchId: "branch-1", status: "ACTIVE" });
+    mockPrisma.warehouse.findFirst.mockResolvedValue({ id: "wh-1", branchId: "branch-1" });
+    mockPrisma.product.findMany.mockResolvedValue([{ id: "prod-1" }]);
+    mockPrisma.inventoryItem.findFirst.mockResolvedValue(null);
+    mockPrisma.customerCreditLimit.findFirst.mockResolvedValue(null);
+    mockPrisma.salesOrder.findFirst.mockResolvedValue(null);
+    mockPrisma.salesOrder.create.mockResolvedValue({ id: "so-1", orderNumber: "SO-REF-001" });
+  });
+
+  const order = { customerId: "cust-1", warehouseId: "wh-1", items: [{ productId: "prod-1", quantity: 1, unitPrice: 10 }] };
+
+  it("replays the original order instead of creating a duplicate when the idempotencyKey was already used", async () => {
+    mockPrisma.salesOrder.findFirst.mockResolvedValue({ id: "so-existing", orderNumber: "SO-0001" });
+
+    const service = makeService();
+    const result = await service.createOrder(makeUser(), { ...order, idempotencyKey: "idem-1" } as never, {});
+
+    expect(result.data.id).toBe("so-existing");
+    expect(mockPrisma.salesOrder.create).not.toHaveBeenCalled();
+  });
+
+  it("passes the idempotencyKey through to the order row on a genuinely new order", async () => {
+    const service = makeService();
+    await service.createOrder(makeUser(), { ...order, idempotencyKey: "idem-2" } as never, {});
+
+    expect(mockPrisma.salesOrder.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ idempotencyKey: "idem-2" }) })
+    );
+  });
+
+  it("replays the original order when a concurrent duplicate loses the unique-constraint race (P2002)", async () => {
+    mockPrisma.salesOrder.create.mockImplementationOnce(() => {
+      const err = Object.assign(new Error("Unique constraint failed"), { code: "P2002" });
+      return Promise.reject(err);
+    });
+    mockPrisma.salesOrder.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: "so-winner", orderNumber: "SO-0002" });
+
+    const service = makeService();
+    const result = await service.createOrder(makeUser(), { ...order, idempotencyKey: "idem-3" } as never, {});
+
+    expect(result.data.id).toBe("so-winner");
+  });
+});
+
+describe("SalesService.logProspectVisit — idempotencyKey dedup (mobile parity audit, 2026-08-17)", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPrisma.prospectVisit.findFirst.mockResolvedValue(null);
+    mockPrisma.prospectVisit.create.mockResolvedValue({ id: "visit-1" });
+  });
+
+  const visit = { prospectName: "Acme Farms" };
+
+  it("replays the original visit instead of creating a duplicate when the idempotencyKey was already used", async () => {
+    mockPrisma.prospectVisit.findFirst.mockResolvedValue({ id: "visit-existing" });
+
+    const service = makeService();
+    const result = await service.logProspectVisit(makeUser(), { ...visit, idempotencyKey: "idem-1" } as never, {});
+
+    expect(result.data.id).toBe("visit-existing");
+    expect(mockPrisma.prospectVisit.create).not.toHaveBeenCalled();
+  });
+
+  it("passes the idempotencyKey through to the visit row on a genuinely new visit", async () => {
+    const service = makeService();
+    await service.logProspectVisit(makeUser(), { ...visit, idempotencyKey: "idem-2" } as never, {});
+
+    expect(mockPrisma.prospectVisit.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ idempotencyKey: "idem-2" }) })
+    );
+  });
+
+  it("replays the original visit when a concurrent duplicate loses the unique-constraint race (P2002)", async () => {
+    mockPrisma.prospectVisit.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "visit-winner" });
+    mockPrisma.prospectVisit.create.mockImplementationOnce(() => {
+      const err = Object.assign(new Error("Unique constraint failed"), { code: "P2002" });
+      return Promise.reject(err);
+    });
+
+    const service = makeService();
+    const result = await service.logProspectVisit(makeUser(), { ...visit, idempotencyKey: "idem-3" } as never, {});
+
+    expect(result.data.id).toBe("visit-winner");
   });
 });
 

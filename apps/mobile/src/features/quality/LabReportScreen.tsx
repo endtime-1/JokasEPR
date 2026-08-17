@@ -35,6 +35,8 @@ export function LabReportScreen() {
   const { submit, loading } = useSubmit({
     module: "lab_report",
     endpoint: "/quality/lab-reports",
+    // Mobile parity audit (2026-08-17): LabReportUpload now accepts idempotencyKey.
+    sendIdempotencyKeyInBody: true,
     onSuccess: (queued) =>
       Alert.alert(
         queued ? "Saved Offline" : "Report Logged",

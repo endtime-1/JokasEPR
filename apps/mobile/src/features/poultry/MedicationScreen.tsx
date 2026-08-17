@@ -91,6 +91,8 @@ export function MedicationScreen() {
   const { submit, loading } = useSubmit({
     module: "poultry_medication",
     endpoint: "/poultry/medication-records",
+    // Mobile parity audit (2026-08-17): MedicationRecord now accepts idempotencyKey.
+    sendIdempotencyKeyInBody: true,
     // M-BUG follow-up (2026-08-13): consumeInventoryTx now returns a
     // warning when the warehouse/product combo has no inventory item set
     // up (stock wasn't actually deducted), but nothing displayed it.

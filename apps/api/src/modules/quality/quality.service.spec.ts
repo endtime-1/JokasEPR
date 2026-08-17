@@ -22,7 +22,7 @@ const mockPrisma = {
   correctiveAction: { count: jest.fn(), groupBy: jest.fn(), findFirst: jest.fn(), create: jest.fn(), update: jest.fn(), findMany: jest.fn() },
   qualityCheckParameter: { count: jest.fn() },
   qualityCheckTemplate: { findFirst: jest.fn(), update: jest.fn() },
-  labReportUpload: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
+  labReportUpload: { findMany: jest.fn(), findFirst: jest.fn(), create: jest.fn(), update: jest.fn() },
   poultryHealthObservation: { findFirst: jest.fn() },
   $transaction: jest.fn().mockImplementation((cb: (tx: typeof mockTx) => Promise<unknown>) => cb(mockTx))
 };
@@ -420,6 +420,108 @@ describe("QualityService — approve/reject/quarantine actually gate the stock l
 
     expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
     expect(mockTx.stockBatch.updateMany).toHaveBeenCalledWith({ where: { id: "sb-1", companyId: "company-1" }, data: { status: "QUARANTINED" } });
+  });
+});
+
+describe("QualityService.createLabReport — idempotencyKey dedup (mobile parity audit, 2026-08-17)", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPrisma.qualityCheck.findFirst.mockResolvedValue({ id: "chk-1", companyId: "company-1" });
+  });
+
+  const dto = { checkId: "chk-1", reportNumber: "RPT-1", labName: "Lab Co", reportDate: "2026-08-17" };
+
+  it("replays the original report instead of creating a duplicate when the idempotencyKey was already used", async () => {
+    mockPrisma.labReportUpload.findFirst.mockResolvedValue({ id: "lr-existing" });
+
+    const service = makeService();
+    const result = await service.createLabReport(makeUser(), { ...dto, idempotencyKey: "idem-1" } as never, {});
+
+    expect((result as { id: string }).id).toBe("lr-existing");
+    expect(mockPrisma.labReportUpload.create).not.toHaveBeenCalled();
+  });
+
+  it("replays instead of hitting the reportNumber-already-exists rejection on a genuine retry", async () => {
+    // The real bug this closes: a retry using the same reportNumber used to
+    // hit the "already exists" guard below instead of replaying success.
+    mockPrisma.labReportUpload.findFirst.mockResolvedValue({ id: "lr-existing" });
+
+    const service = makeService();
+    await expect(
+      service.createLabReport(makeUser(), { ...dto, idempotencyKey: "idem-1" } as never, {})
+    ).resolves.toEqual({ id: "lr-existing" });
+  });
+
+  it("passes the idempotencyKey through to the report row on a genuinely new report", async () => {
+    mockPrisma.labReportUpload.findFirst.mockResolvedValue(null);
+    mockPrisma.labReportUpload.create.mockResolvedValue({ id: "lr-1" });
+
+    const service = makeService();
+    await service.createLabReport(makeUser(), { ...dto, idempotencyKey: "idem-2" } as never, {});
+
+    expect(mockPrisma.labReportUpload.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ idempotencyKey: "idem-2" }) })
+    );
+  });
+
+  it("replays the original report when a concurrent duplicate loses the unique-constraint race (P2002)", async () => {
+    mockPrisma.labReportUpload.findFirst
+      .mockResolvedValueOnce(null) // idempotency pre-check
+      .mockResolvedValueOnce(null) // reportNumber uniqueness check
+      .mockResolvedValueOnce({ id: "lr-winner" }); // post-P2002 lookup
+    mockPrisma.labReportUpload.create.mockImplementationOnce(() => {
+      const err = Object.assign(new Error("Unique constraint failed"), { code: "P2002" });
+      return Promise.reject(err);
+    });
+
+    const service = makeService();
+    const result = await service.createLabReport(makeUser(), { ...dto, idempotencyKey: "idem-3" } as never, {});
+
+    expect((result as { id: string }).id).toBe("lr-winner");
+  });
+});
+
+describe("QualityService.createCorrectiveAction — idempotencyKey dedup (mobile parity audit, 2026-08-17)", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPrisma.qualityCheck.findFirst.mockResolvedValue({ id: "chk-1", companyId: "company-1" });
+  });
+
+  const dto = { checkId: "chk-1", title: "Fix it", description: "desc" };
+
+  it("replays the original corrective action instead of creating a duplicate when the idempotencyKey was already used", async () => {
+    mockPrisma.correctiveAction.findFirst.mockResolvedValue({ id: "ca-existing" });
+
+    const service = makeService();
+    const result = await service.createCorrectiveAction(makeUser(), { ...dto, idempotencyKey: "idem-1" } as never, {});
+
+    expect((result as { id: string }).id).toBe("ca-existing");
+    expect(mockPrisma.correctiveAction.create).not.toHaveBeenCalled();
+  });
+
+  it("passes the idempotencyKey through to the corrective action row on a genuinely new record", async () => {
+    mockPrisma.correctiveAction.findFirst.mockResolvedValue(null);
+    mockPrisma.correctiveAction.create.mockResolvedValue({ id: "ca-1" });
+
+    const service = makeService();
+    await service.createCorrectiveAction(makeUser(), { ...dto, idempotencyKey: "idem-2" } as never, {});
+
+    expect(mockPrisma.correctiveAction.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ idempotencyKey: "idem-2" }) })
+    );
+  });
+
+  it("replays the original corrective action when a concurrent duplicate loses the unique-constraint race (P2002)", async () => {
+    mockPrisma.correctiveAction.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "ca-winner" });
+    mockPrisma.correctiveAction.create.mockImplementationOnce(() => {
+      const err = Object.assign(new Error("Unique constraint failed"), { code: "P2002" });
+      return Promise.reject(err);
+    });
+
+    const service = makeService();
+    const result = await service.createCorrectiveAction(makeUser(), { ...dto, idempotencyKey: "idem-3" } as never, {});
+
+    expect((result as { id: string }).id).toBe("ca-winner");
   });
 });
 

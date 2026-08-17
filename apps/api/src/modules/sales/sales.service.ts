@@ -302,6 +302,14 @@ export class SalesService {
 
   async createOrder(user: AuthenticatedUser, dto: CreateSalesOrderDto, context: RequestContext) {
     if (!dto.items.length) throw new BadRequestException("Sales order must contain at least one item.");
+    // Mobile parity audit (2026-08-17): mirrors createPayment's idempotencyKey
+    // handling below — a mobile offline-queue resend (or a client retry after
+    // a dropped response) carrying the same idempotencyKey replays the
+    // original order instead of creating a second one.
+    if (dto.idempotencyKey) {
+      const existing = await this.findOrderByIdempotencyKey(user.companyId, dto.idempotencyKey);
+      if (existing) return { data: existing };
+    }
     // L-BACK: the order-level total guard below already blocks the
     // aggregate from going negative, but nothing stopped a single line's
     // discountAmount from exceeding its own quantity*unitPrice — cosmetic
@@ -345,29 +353,42 @@ export class SalesService {
 
     await this.assertCreditLimit(customer.id, totalAmount);
     const orderNumber = await nextRef(this.prisma, user.companyId, "SO");
-    const data = await this.prisma.salesOrder.create({
-      data: {
-        companyId: user.companyId,
-        branchId: customer.branchId,
-        customerId: customer.id,
-        warehouseId: warehouse.id,
-        orderNumber,
-        orderDate: dto.orderDate ? new Date(dto.orderDate) : new Date(),
-        status: "PENDING_STOCK_APPROVAL",
-        subtotal,
-        discountAmount,
-        taxAmount,
-        totalAmount,
-        balanceDue: totalAmount,
-        salespersonId: user.id,
-        notes: dto.notes,
-        createdById: user.id,
-        items: {
-          create: dto.items.map((item) => ({ companyId: user.companyId, productId: item.productId, quantity: item.quantity, unitPrice: item.unitPrice, discountAmount: item.discountAmount ?? 0, lineTotal: this.lineTotal(item) }))
-        }
-      },
-      include: { items: { include: { product: true } }, customer: true, warehouse: true }
-    });
+    let data;
+    try {
+      data = await this.prisma.salesOrder.create({
+        data: {
+          companyId: user.companyId,
+          branchId: customer.branchId,
+          customerId: customer.id,
+          warehouseId: warehouse.id,
+          orderNumber,
+          orderDate: dto.orderDate ? new Date(dto.orderDate) : new Date(),
+          status: "PENDING_STOCK_APPROVAL",
+          subtotal,
+          discountAmount,
+          taxAmount,
+          totalAmount,
+          balanceDue: totalAmount,
+          salespersonId: user.id,
+          notes: dto.notes,
+          idempotencyKey: dto.idempotencyKey,
+          createdById: user.id,
+          items: {
+            create: dto.items.map((item) => ({ companyId: user.companyId, productId: item.productId, quantity: item.quantity, unitPrice: item.unitPrice, discountAmount: item.discountAmount ?? 0, lineTotal: this.lineTotal(item) }))
+          }
+        },
+        include: { items: { include: { product: true } }, customer: true, warehouse: true }
+      });
+    } catch (err: unknown) {
+      // Same race-window reasoning as createPayment's own P2002 handling —
+      // the pre-check above isn't atomic, so the unique (companyId,
+      // idempotencyKey) index is the real, race-safe arbiter.
+      if (dto.idempotencyKey && (err as { code?: string })?.code === "P2002") {
+        const existing = await this.findOrderByIdempotencyKey(user.companyId, dto.idempotencyKey);
+        if (existing) return { data: existing };
+      }
+      throw err;
+    }
     await this.writeAudit(user, "CREATE", "SalesOrder", data.id, `Created sales order ${orderNumber}`, context, { branchId: customer.branchId, warehouseId: warehouse.id });
 
     // Fire production + procurement alerts for any short items (non-blocking
@@ -595,6 +616,13 @@ export class SalesService {
     if (!payment) return null;
     const receipt = await this.prisma.receipt.findFirst({ where: { paymentId: payment.id, deletedAt: null } });
     return { payment, receipt };
+  }
+
+  private async findOrderByIdempotencyKey(companyId: string, idempotencyKey: string) {
+    return this.prisma.salesOrder.findFirst({
+      where: { companyId, idempotencyKey, deletedAt: null },
+      include: { items: { include: { product: true } }, customer: true, warehouse: true }
+    });
   }
 
   async listPayments(user: AuthenticatedUser, query: SalesQueryDto) {
@@ -1276,24 +1304,47 @@ export class SalesService {
   // ── Prospect Visits ──────────────────────────────────────────────────────
 
   async logProspectVisit(user: AuthenticatedUser, dto: CreateProspectVisitDto, ctx: RequestContext) {
-    const visit = await this.prisma.prospectVisit.create({
-      data: {
-        companyId:    user.companyId,
-        branchId:     dto.branchId,
-        repId:        user.id,
-        prospectName: dto.prospectName,
-        phone:        dto.phone,
-        address:      dto.address,
-        latitude:     dto.latitude,
-        longitude:    dto.longitude,
-        visitType:    dto.visitType ?? "COLD_CALL",
-        outcome:      dto.outcome   ?? "INTERESTED",
-        notes:        dto.notes,
-        visitedAt:    dto.visitedAt ? new Date(dto.visitedAt) : new Date(),
-      } as never,
-    });
+    // Mobile parity audit (2026-08-17): mirrors createOrder/createPayment's
+    // idempotencyKey handling above — a mobile offline-queue resend (or a
+    // client retry after a dropped response) carrying the same
+    // idempotencyKey replays the original visit instead of creating a
+    // second one.
+    if (dto.idempotencyKey) {
+      const existing = await this.findProspectVisitByIdempotencyKey(user.companyId, dto.idempotencyKey);
+      if (existing) return { data: existing };
+    }
+    let visit;
+    try {
+      visit = await this.prisma.prospectVisit.create({
+        data: {
+          companyId:    user.companyId,
+          branchId:     dto.branchId,
+          repId:        user.id,
+          prospectName: dto.prospectName,
+          phone:        dto.phone,
+          address:      dto.address,
+          latitude:     dto.latitude,
+          longitude:    dto.longitude,
+          visitType:    dto.visitType ?? "COLD_CALL",
+          outcome:      dto.outcome   ?? "INTERESTED",
+          notes:        dto.notes,
+          visitedAt:    dto.visitedAt ? new Date(dto.visitedAt) : new Date(),
+          idempotencyKey: dto.idempotencyKey,
+        } as never,
+      });
+    } catch (err: unknown) {
+      if (dto.idempotencyKey && (err as { code?: string })?.code === "P2002") {
+        const existing = await this.findProspectVisitByIdempotencyKey(user.companyId, dto.idempotencyKey);
+        if (existing) return { data: existing };
+      }
+      throw err;
+    }
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "CREATE", entityType: "ProspectVisit", entityId: visit.id, ipAddress: ctx.ipAddress, userAgent: ctx.userAgent });
     return { data: visit };
+  }
+
+  private async findProspectVisitByIdempotencyKey(companyId: string, idempotencyKey: string) {
+    return this.prisma.prospectVisit.findFirst({ where: { companyId, idempotencyKey, deletedAt: null } as never });
   }
 
   async listProspectVisits(user: AuthenticatedUser, query: ProspectVisitQueryDto) {

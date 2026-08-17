@@ -239,6 +239,13 @@ export class CreateExpenseDto {
   @IsString()
   @MaxLength(500)
   notes?: string;
+
+  // Mobile parity audit (2026-08-17): closes the idempotency gap for mobile
+  // offline-queue resends.
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  idempotencyKey?: string;
 }
 
 export class ApproveExpenseDto {

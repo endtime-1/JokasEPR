@@ -616,3 +616,49 @@ describe("FinanceService.createCustomerPayment — a linked invoice actually get
     expect(result.data).toEqual({ id: "cp-existing" });
   });
 });
+
+describe("FinanceService.createExpense — idempotencyKey dedup (mobile parity audit, 2026-08-17)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("replays the original expense instead of creating a duplicate when the idempotencyKey was already used", async () => {
+    mockPrisma.expense.findFirst.mockResolvedValue({ id: "exp-existing", reference: "EXP-1" });
+    const service = makeService();
+
+    const result = await service.createExpense(
+      makeUser({ branchIds: [] }),
+      { categoryId: "cat-1", description: "Fuel", amount: 100, expenseDate: "2026-08-17", paymentMethod: "CASH", idempotencyKey: "key-1" } as never,
+      {}
+    );
+
+    expect(result.data).toEqual({ id: "exp-existing", reference: "EXP-1" });
+    expect(mockPrisma.expense.create).not.toHaveBeenCalled();
+  });
+
+  it("passes the idempotencyKey through to the expense row on a genuinely new expense", async () => {
+    mockPrisma.expense.findFirst.mockResolvedValue(null);
+    mockPrisma.expense.create.mockResolvedValue({ id: "exp-1" });
+    const service = makeService();
+
+    await service.createExpense(
+      makeUser({ branchIds: [] }),
+      { categoryId: "cat-1", description: "Fuel", amount: 100, expenseDate: "2026-08-17", paymentMethod: "CASH", idempotencyKey: "key-1" } as never,
+      {}
+    );
+
+    expect(mockPrisma.expense.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ idempotencyKey: "key-1" }) }));
+  });
+
+  it("replays the original expense when a concurrent duplicate loses the unique-constraint race (P2002)", async () => {
+    mockPrisma.expense.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "exp-existing" });
+    mockPrisma.expense.create.mockRejectedValue({ code: "P2002" });
+    const service = makeService();
+
+    const result = await service.createExpense(
+      makeUser({ branchIds: [] }),
+      { categoryId: "cat-1", description: "Fuel", amount: 100, expenseDate: "2026-08-17", paymentMethod: "CASH", idempotencyKey: "key-1" } as never,
+      {}
+    );
+
+    expect(result.data).toEqual({ id: "exp-existing" });
+  });
+});

@@ -212,6 +212,14 @@ export class MaintenanceService {
       const schedule = await this.prisma.maintenanceSchedule.findFirst({ where: { ...this.scheduleWhere(user, {}), id: dto.scheduleId } });
       if (!schedule) throw new NotFoundException("Maintenance schedule was not found.");
     }
+    // Mobile parity audit (2026-08-17): a mobile offline-queue resend (or a
+    // client retry after a dropped response) carrying the same
+    // idempotencyKey replays the original record instead of creating a
+    // second one — same pattern as sales.service.ts's createOrder.
+    if (dto.idempotencyKey) {
+      const existing = await this.findRecordByIdempotencyKey(user.companyId, dto.idempotencyKey);
+      if (existing) return { data: existing };
+    }
     const recordNumber = await nextRef(this.prisma, user.companyId, "MR");
     // High (DB stability audit, 2026-08-16): the record and its schedule
     // advance were two separate, unguarded writes — a crash between them
@@ -219,15 +227,28 @@ export class MaintenanceService {
     // never advanced, so the next-due date stayed stale and the asset kept
     // showing as overdue forever. Same fix already applied to the
     // breakdown/asset-status pair in createBreakdown above.
-    const data = await this.prisma.$transaction(async (tx) => {
-      const record = await tx.maintenanceRecord.create({ data: { companyId: user.companyId, ...scope, scheduleId: dto.scheduleId, recordNumber, maintenanceDate: dto.maintenanceDate ? new Date(dto.maintenanceDate) : new Date(), maintenanceType: dto.maintenanceType, status: "COMPLETED", completedById: user.id, description: dto.description, findings: dto.findings, nextDueDate: dto.nextDueDate ? new Date(dto.nextDueDate) : undefined, createdById: user.id } });
-      if (dto.scheduleId && dto.nextDueDate) {
-        await tx.maintenanceSchedule.update({ where: { id: dto.scheduleId }, data: { lastCompletedAt: record.maintenanceDate, nextDueDate: new Date(dto.nextDueDate), status: "SCHEDULED", updatedById: user.id } });
+    let data;
+    try {
+      data = await this.prisma.$transaction(async (tx) => {
+        const record = await tx.maintenanceRecord.create({ data: { companyId: user.companyId, ...scope, scheduleId: dto.scheduleId, recordNumber, maintenanceDate: dto.maintenanceDate ? new Date(dto.maintenanceDate) : new Date(), maintenanceType: dto.maintenanceType, status: "COMPLETED", completedById: user.id, description: dto.description, findings: dto.findings, nextDueDate: dto.nextDueDate ? new Date(dto.nextDueDate) : undefined, idempotencyKey: dto.idempotencyKey, createdById: user.id } });
+        if (dto.scheduleId && dto.nextDueDate) {
+          await tx.maintenanceSchedule.update({ where: { id: dto.scheduleId }, data: { lastCompletedAt: record.maintenanceDate, nextDueDate: new Date(dto.nextDueDate), status: "SCHEDULED", updatedById: user.id } });
+        }
+        return record;
+      });
+    } catch (err: unknown) {
+      if (dto.idempotencyKey && (err as { code?: string })?.code === "P2002") {
+        const existing = await this.findRecordByIdempotencyKey(user.companyId, dto.idempotencyKey);
+        if (existing) return { data: existing };
       }
-      return record;
-    });
+      throw err;
+    }
     await this.writeAudit(user, "CREATE", "MaintenanceRecord", data.id, `Recorded maintenance ${recordNumber}`, context, data);
     return { data };
+  }
+
+  private async findRecordByIdempotencyKey(companyId: string, idempotencyKey: string) {
+    return this.prisma.maintenanceRecord.findFirst({ where: { companyId, idempotencyKey, deletedAt: null } });
   }
 
   async updateRecord(user: AuthenticatedUser, id: string, dto: UpdateMaintenanceRecordDto, context: RequestContext) {
@@ -252,19 +273,40 @@ export class MaintenanceService {
 
   async createBreakdown(user: AuthenticatedUser, dto: CreateBreakdownDto, context: RequestContext) {
     const scope = await this.resolveAssetScope(user, dto.machineId, dto.equipmentId);
+    // Mobile parity audit (2026-08-17): a mobile offline-queue resend (or a
+    // client retry after a dropped response) carrying the same
+    // idempotencyKey replays the original record instead of creating a
+    // second one — same pattern as createRecord above.
+    if (dto.idempotencyKey) {
+      const existing = await this.findBreakdownByIdempotencyKey(user.companyId, dto.idempotencyKey);
+      if (existing) return { data: existing };
+    }
     const breakdownNumber = await nextRef(this.prisma, user.companyId, "BD");
     // M-BACK: the breakdown row and the asset's BROKEN_DOWN flag were two
     // separate top-level writes — a crash between them left the asset
     // showing ACTIVE while a breakdown against it was already open. Same
     // fix already applied to spare-part consumption in this file.
-    const data = await this.prisma.$transaction(async (tx) => {
-      const record = await tx.breakdownRecord.create({ data: { companyId: user.companyId, ...scope, breakdownNumber, reportedAt: dto.reportedAt ? new Date(dto.reportedAt) : new Date(), severity: dto.severity ?? "MEDIUM", description: dto.description, rootCause: dto.rootCause, reportedById: user.id, createdById: user.id } });
-      if (scope.machineId) await tx.machine.update({ where: { id: scope.machineId }, data: { status: "BROKEN_DOWN", updatedById: user.id } });
-      if (scope.equipmentId) await tx.equipment.update({ where: { id: scope.equipmentId }, data: { status: "BROKEN_DOWN", updatedById: user.id } });
-      return record;
-    });
+    let data;
+    try {
+      data = await this.prisma.$transaction(async (tx) => {
+        const record = await tx.breakdownRecord.create({ data: { companyId: user.companyId, ...scope, breakdownNumber, reportedAt: dto.reportedAt ? new Date(dto.reportedAt) : new Date(), severity: dto.severity ?? "MEDIUM", description: dto.description, rootCause: dto.rootCause, idempotencyKey: dto.idempotencyKey, reportedById: user.id, createdById: user.id } });
+        if (scope.machineId) await tx.machine.update({ where: { id: scope.machineId }, data: { status: "BROKEN_DOWN", updatedById: user.id } });
+        if (scope.equipmentId) await tx.equipment.update({ where: { id: scope.equipmentId }, data: { status: "BROKEN_DOWN", updatedById: user.id } });
+        return record;
+      });
+    } catch (err: unknown) {
+      if (dto.idempotencyKey && (err as { code?: string })?.code === "P2002") {
+        const existing = await this.findBreakdownByIdempotencyKey(user.companyId, dto.idempotencyKey);
+        if (existing) return { data: existing };
+      }
+      throw err;
+    }
     await this.writeAudit(user, "CREATE", "BreakdownRecord", data.id, `Reported breakdown ${breakdownNumber}`, context, data);
     return { data };
+  }
+
+  private async findBreakdownByIdempotencyKey(companyId: string, idempotencyKey: string) {
+    return this.prisma.breakdownRecord.findFirst({ where: { companyId, idempotencyKey, deletedAt: null } });
   }
 
   async updateBreakdown(user: AuthenticatedUser, id: string, dto: UpdateBreakdownStatusDto, context: RequestContext) {

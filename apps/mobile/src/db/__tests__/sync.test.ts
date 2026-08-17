@@ -1,16 +1,30 @@
 import { runSync } from "../sync";
 import { getPendingSubmissions, markSynced, markSyncError } from "../database";
-import { apiFetch } from "../../api/client";
+import { apiFetch, ApiError } from "../../api/client";
 
 jest.mock("../database", () => ({
   getPendingSubmissions: jest.fn(),
   markSynced: jest.fn().mockResolvedValue(undefined),
   markSyncError: jest.fn().mockResolvedValue(undefined),
   countPending: jest.fn().mockResolvedValue(0),
+  // Mobile app update (2026-08-16): the encryption-at-rest fix added a
+  // decryptPayload() call in sync.ts that this mock never accounted for —
+  // the omission made every pending row throw inside sync.ts's own
+  // try/catch and silently resolve to null, so `items` ended up empty for
+  // every test regardless of what was actually being tested. Pass-through,
+  // matching the real implementation's behavior for plaintext (non-encrypted)
+  // fixture rows.
+  decryptPayload: jest.fn(async (data: unknown) => data),
 }));
 
 jest.mock("../../api/client", () => ({
   apiFetch: jest.fn(),
+  // Mobile parity audit (2026-08-17): sync.ts's isNetworkError check was
+  // changed from string-matching to `err instanceof ApiError && status ===
+  // 0` (High #4) — without a real ApiError class here, `instanceof`
+  // throws a TypeError against `undefined` for every rejection this suite
+  // tests, regardless of what's actually being tested.
+  ApiError: jest.requireActual("../../api/client").ApiError,
 }));
 
 const mockGetPending = getPendingSubmissions as jest.Mock;
@@ -109,7 +123,7 @@ describe("runSync", () => {
   it("retries up to 3 times on a network error then marks all as failed", async () => {
     jest.useFakeTimers();
     mockGetPending.mockResolvedValueOnce([pending1]);
-    const networkErr = new Error("Network request failed");
+    const networkErr = new ApiError(0, "Network request failed");
     mockApiFetch.mockRejectedValue(networkErr);
 
     const syncPromise = runSync();

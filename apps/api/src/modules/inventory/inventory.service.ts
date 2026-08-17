@@ -220,11 +220,19 @@ export class InventoryService {
     if (dto.fromWarehouseId === dto.toWarehouseId) throw new BadRequestException("Source and destination warehouses must be different.");
     const [sourceItem, toWarehouse, product] = await Promise.all([this.requireItem(user.companyId, dto.fromWarehouseId, dto.productId), this.getWarehouse(user.companyId, dto.toWarehouseId), this.getProduct(user.companyId, dto.productId)]);
     await this.assertAvailable(user, sourceItem, dto.quantity, false);
+    // Mobile parity audit (2026-08-17): mirrors the sales/finance
+    // idempotencyKey pattern — a mobile offline-queue resend carrying the
+    // same idempotencyKey replays the original transfer instead of creating
+    // a second one.
+    if (dto.idempotencyKey) {
+      const existing = await this.findStockTransferByIdempotencyKey(user.companyId, dto.idempotencyKey);
+      if (existing) return { data: existing };
+    }
     const transferNumber = await nextRef(this.prisma, user.companyId, "STR");
     let data;
     try {
       data = await this.prisma.$transaction(async (tx) => {
-        const transfer = await tx.stockTransfer.create({ data: { companyId: user.companyId, branchId: sourceItem.branchId, productId: dto.productId, stockBatchId: dto.stockBatchId, transferNumber, fromWarehouseId: dto.fromWarehouseId, toWarehouseId: dto.toWarehouseId, fromProductionSiteId: sourceItem.productionSiteId, toProductionSiteId: toWarehouse.productionSiteId, quantity: dto.quantity, barcode: dto.barcode, status: "COMPLETED", requestedById: user.id, approvedById: user.id, approvedAt: new Date(), createdById: user.id } });
+        const transfer = await tx.stockTransfer.create({ data: { companyId: user.companyId, branchId: sourceItem.branchId, productId: dto.productId, stockBatchId: dto.stockBatchId, transferNumber, fromWarehouseId: dto.fromWarehouseId, toWarehouseId: dto.toWarehouseId, fromProductionSiteId: sourceItem.productionSiteId, toProductionSiteId: toWarehouse.productionSiteId, quantity: dto.quantity, barcode: dto.barcode, status: "COMPLETED", idempotencyKey: dto.idempotencyKey, requestedById: user.id, approvedById: user.id, approvedAt: new Date(), createdById: user.id } });
         const consumed = await this.consumeFifoTx(tx, user, sourceItem, dto.quantity, "TRANSFER", "StockTransfer", transfer.id, `Transfer ${transferNumber}`);
         const destination = await tx.inventoryItem.upsert({ where: { companyId_warehouseId_productId: { companyId: user.companyId, warehouseId: dto.toWarehouseId, productId: dto.productId } }, update: { quantityOnHand: { increment: dto.quantity }, updatedById: user.id }, create: { companyId: user.companyId, branchId: toWarehouse.branchId, warehouseId: toWarehouse.id, farmId: toWarehouse.farmId, productionSiteId: toWarehouse.productionSiteId, productId: dto.productId, uomId: product.uomId, quantityOnHand: dto.quantity, createdById: user.id } });
         await tx.stockBatch.create({ data: { companyId: user.companyId, branchId: toWarehouse.branchId, farmId: toWarehouse.farmId, warehouseId: toWarehouse.id, productionSiteId: toWarehouse.productionSiteId, productId: dto.productId, inventoryItemId: destination.id, uomId: product.uomId, batchNumber: `${transferNumber}-${product.sku}`, quantityReceived: dto.quantity, quantityRemaining: dto.quantity, unitCost: consumed.unitCost, createdById: user.id } });
@@ -232,11 +240,24 @@ export class InventoryService {
         return transfer;
       });
     } catch (err: any) {
+      // Mobile parity audit (2026-08-17): checked first because it's a
+      // legitimate replay, not a genuine conflict — only fall through to the
+      // generic "concurrent transfer" conflict below when no idempotencyKey
+      // was supplied, or none matches (a real P2002 on some other unique
+      // constraint, e.g. transferNumber).
+      if (dto.idempotencyKey && err?.code === "P2002") {
+        const existing = await this.findStockTransferByIdempotencyKey(user.companyId, dto.idempotencyKey);
+        if (existing) return { data: existing };
+      }
       if (err?.code === "P2002") throw new ConflictException("A concurrent transfer was processed at the same time. Please try again.");
       throw err;
     }
     await this.writeAudit(user, "TRANSFER", "StockTransfer", data.id, `Transferred ${product.sku}`, context, { branchId: sourceItem.branchId, warehouseId: sourceItem.warehouseId });
     return { data };
+  }
+
+  private async findStockTransferByIdempotencyKey(companyId: string, idempotencyKey: string) {
+    return this.prisma.stockTransfer.findFirst({ where: { companyId, idempotencyKey, deletedAt: null } });
   }
 
   // (C1 follow-up) previously created the StockAdjustment row and its
@@ -251,16 +272,40 @@ export class InventoryService {
   async createAdjustment(user: AuthenticatedUser, dto: StockAdjustmentDto, context: RequestContext) {
     this.assertWarehouseAccess(user, dto.warehouseId);
     const item = await this.requireItem(user.companyId, dto.warehouseId, dto.productId);
+    // Mobile parity audit (2026-08-17): mirrors the sales/finance
+    // idempotencyKey pattern — a mobile offline-queue resend carrying the
+    // same idempotencyKey replays the original adjustment instead of
+    // creating a second one.
+    if (dto.idempotencyKey) {
+      const existing = await this.findStockAdjustmentByIdempotencyKey(user.companyId, dto.idempotencyKey);
+      if (existing) return { data: existing };
+    }
     const status = dto.approveNow && user.hasGlobalAccess ? "APPROVED" : "PENDING_APPROVAL";
-    const adjustment = await this.prisma.$transaction(async (tx) => {
-      const adjustmentNumber = await nextRef(tx, user.companyId, "ADJ");
-      const created = await tx.stockAdjustment.create({ data: { companyId: user.companyId, branchId: item.branchId, warehouseId: item.warehouseId, productionSiteId: item.productionSiteId, inventoryItemId: item.id, productId: item.productId, adjustmentNumber, adjustmentType: dto.adjustmentType, quantity: dto.quantity, reason: dto.reason, status, requestedById: user.id, approvedById: status === "APPROVED" ? user.id : undefined, approvedAt: status === "APPROVED" ? new Date() : undefined, createdById: user.id } });
-      await tx.stockApproval.create({ data: { companyId: user.companyId, branchId: item.branchId, approvalNumber: await nextRef(tx, user.companyId, "SAP"), entityType: "StockAdjustment", entityId: created.id, status, requestedById: user.id, approvedById: status === "APPROVED" ? user.id : undefined, approvedAt: status === "APPROVED" ? new Date() : undefined } });
-      if (status === "APPROVED") await this.applyAdjustmentTx(tx, user, created, item);
-      return created;
-    });
+    let adjustment;
+    try {
+      adjustment = await this.prisma.$transaction(async (tx) => {
+        const adjustmentNumber = await nextRef(tx, user.companyId, "ADJ");
+        const created = await tx.stockAdjustment.create({ data: { companyId: user.companyId, branchId: item.branchId, warehouseId: item.warehouseId, productionSiteId: item.productionSiteId, inventoryItemId: item.id, productId: item.productId, adjustmentNumber, adjustmentType: dto.adjustmentType, quantity: dto.quantity, reason: dto.reason, status, idempotencyKey: dto.idempotencyKey, requestedById: user.id, approvedById: status === "APPROVED" ? user.id : undefined, approvedAt: status === "APPROVED" ? new Date() : undefined, createdById: user.id } });
+        await tx.stockApproval.create({ data: { companyId: user.companyId, branchId: item.branchId, approvalNumber: await nextRef(tx, user.companyId, "SAP"), entityType: "StockAdjustment", entityId: created.id, status, requestedById: user.id, approvedById: status === "APPROVED" ? user.id : undefined, approvedAt: status === "APPROVED" ? new Date() : undefined } });
+        if (status === "APPROVED") await this.applyAdjustmentTx(tx, user, created, item);
+        return created;
+      });
+    } catch (err: unknown) {
+      // Same race-window reasoning as createOrder/createCustomerPayment's own
+      // P2002 handling — the pre-check above isn't atomic, so the unique
+      // (companyId, idempotencyKey) index is the real, race-safe arbiter.
+      if (dto.idempotencyKey && (err as { code?: string })?.code === "P2002") {
+        const existing = await this.findStockAdjustmentByIdempotencyKey(user.companyId, dto.idempotencyKey);
+        if (existing) return { data: existing };
+      }
+      throw err;
+    }
     await this.writeAudit(user, "CREATE", "StockAdjustment", adjustment.id, `Created stock adjustment ${adjustment.adjustmentNumber}`, context, { branchId: item.branchId, warehouseId: item.warehouseId });
     return { data: adjustment };
+  }
+
+  private async findStockAdjustmentByIdempotencyKey(companyId: string, idempotencyKey: string) {
+    return this.prisma.stockAdjustment.findFirst({ where: { companyId, idempotencyKey, deletedAt: null } });
   }
 
   async approveAdjustment(user: AuthenticatedUser, id: string, dto: ApproveStockDto, context: RequestContext) {
@@ -560,6 +605,9 @@ export class InventoryService {
     const isIn = inTypes.includes(dto.movementType as string);
     const isOut = !isIn;
 
+    // Mobile parity audit (2026-08-17): idempotencyKey deliberately NOT
+    // applied to the FIFO "out" path — see StockMovement's schema comment.
+    // Relies on MobileSyncRecord's own dedup instead.
     if (isOut) {
       await this.assertAvailable(user, item, dto.quantity, false);
       // Previously a plain, unguarded decrement with no StockBatch consumed —
@@ -574,56 +622,81 @@ export class InventoryService {
       return { data: { itemId: item.id, issued } };
     }
 
+    // Mobile parity audit (2026-08-17): mirrors the sales/finance
+    // idempotencyKey pattern — only the "in" path, which creates exactly one
+    // StockMovement row per call, is safe to dedup this way.
+    if (dto.idempotencyKey) {
+      const existing = await this.findStockMovementByIdempotencyKey(user.companyId, dto.idempotencyKey);
+      if (existing) return { data: existing };
+    }
+
     // "In" movements previously incremented quantityOnHand with no StockBatch
     // created at all — same desync, plus no cost-basis/lot tracking for
     // stock that entered this way. Mirrors stockIn()'s pattern elsewhere.
-    const result = await this.prisma.$transaction(async (tx) => {
-      const batch = await tx.stockBatch.create({
-        data: {
-          companyId: user.companyId,
-          branchId: item.branchId,
-          farmId: item.farmId,
-          warehouseId: item.warehouseId,
-          productionSiteId: item.productionSiteId,
-          productId: item.productId,
-          inventoryItemId: item.id,
-          uomId: item.uomId,
-          batchNumber: `MOB-${Date.now().toString(36).toUpperCase()}`,
-          quantityReceived: dto.quantity,
-          quantityRemaining: dto.quantity,
-          unitCost: dto.unitCost,
-          createdById: user.id
-        }
+    let result;
+    try {
+      result = await this.prisma.$transaction(async (tx) => {
+        const batch = await tx.stockBatch.create({
+          data: {
+            companyId: user.companyId,
+            branchId: item.branchId,
+            farmId: item.farmId,
+            warehouseId: item.warehouseId,
+            productionSiteId: item.productionSiteId,
+            productId: item.productId,
+            inventoryItemId: item.id,
+            uomId: item.uomId,
+            batchNumber: `MOB-${Date.now().toString(36).toUpperCase()}`,
+            quantityReceived: dto.quantity,
+            quantityRemaining: dto.quantity,
+            unitCost: dto.unitCost,
+            createdById: user.id
+          }
+        });
+        const mov = await tx.stockMovement.create({
+          data: {
+            companyId: user.companyId,
+            branchId: item.branchId,
+            productId: item.productId,
+            inventoryItemId: item.id,
+            stockBatchId: batch.id,
+            warehouseId: item.warehouseId,
+            toWarehouseId: item.warehouseId,
+            farmId: item.farmId,
+            productionSiteId: item.productionSiteId,
+            uomId: item.uomId,
+            movementType: dto.movementType,
+            quantity: dto.quantity,
+            unitCost: dto.unitCost,
+            movementDate: new Date(),
+            notes: dto.notes,
+            idempotencyKey: dto.idempotencyKey,
+            createdById: user.id
+          }
+        });
+        await tx.inventoryItem.update({
+          where: { id: item.id },
+          data: { quantityOnHand: { increment: dto.quantity }, updatedById: user.id }
+        });
+        return { batch, movement: mov };
       });
-      const mov = await tx.stockMovement.create({
-        data: {
-          companyId: user.companyId,
-          branchId: item.branchId,
-          productId: item.productId,
-          inventoryItemId: item.id,
-          stockBatchId: batch.id,
-          warehouseId: item.warehouseId,
-          toWarehouseId: item.warehouseId,
-          farmId: item.farmId,
-          productionSiteId: item.productionSiteId,
-          uomId: item.uomId,
-          movementType: dto.movementType,
-          quantity: dto.quantity,
-          unitCost: dto.unitCost,
-          movementDate: new Date(),
-          notes: dto.notes,
-          createdById: user.id
-        }
-      });
-      await tx.inventoryItem.update({
-        where: { id: item.id },
-        data: { quantityOnHand: { increment: dto.quantity }, updatedById: user.id }
-      });
-      return { batch, movement: mov };
-    });
+    } catch (err: unknown) {
+      // Same race-window reasoning as createOrder/createCustomerPayment's own
+      // P2002 handling — the pre-check above isn't atomic, so the unique
+      // (companyId, idempotencyKey) index is the real, race-safe arbiter.
+      if (dto.idempotencyKey && (err as { code?: string })?.code === "P2002") {
+        const existing = await this.findStockMovementByIdempotencyKey(user.companyId, dto.idempotencyKey);
+        if (existing) return { data: existing };
+      }
+      throw err;
+    }
 
     await this.writeAudit(user, "CREATE", "StockMovement", result.movement.id, `Mobile ${dto.movementType} ${item.product.sku}`, context, { branchId: item.branchId, warehouseId: item.warehouseId });
     return { data: result.movement };
+  }
+
+  private async findStockMovementByIdempotencyKey(companyId: string, idempotencyKey: string) {
+    return this.prisma.stockMovement.findFirst({ where: { companyId, idempotencyKey, deletedAt: null } });
   }
 
   private async lowStockRows(user: AuthenticatedUser) {

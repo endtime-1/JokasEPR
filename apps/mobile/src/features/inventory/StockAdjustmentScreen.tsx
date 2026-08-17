@@ -20,7 +20,10 @@ type AdjType = {
 };
 
 const ADJ_TYPES: AdjType[] = [
-  { value: "FOUND",             label: "Found / Surplus",        defaultDir: "add",    desc: "Stock found that wasn't recorded" },
+  // Mobile parity audit (2026-08-17): was "FOUND" — the real Prisma enum
+  // member is FOUND_STOCK (schema.prisma:447). Every "Found / Surplus"
+  // adjustment submitted from mobile failed validation until this was fixed.
+  { value: "FOUND_STOCK",       label: "Found / Surplus",        defaultDir: "add",    desc: "Stock found that wasn't recorded" },
   { value: "COUNT_CORRECTION",  label: "Count Correction",       defaultDir: "add",    desc: "Physical count differs from system" },
   { value: "DAMAGE",            label: "Damaged",                defaultDir: "remove", desc: "Stock damaged and unusable" },
   { value: "EXPIRY",            label: "Expired",                defaultDir: "remove", desc: "Stock past its expiry date" },
@@ -93,6 +96,8 @@ export function StockAdjustmentScreen() {
   const { submit, loading } = useSubmit({
     module: "stock_adjustment",
     endpoint: "/inventory/adjustments",
+    // Mobile parity audit (2026-08-17): StockAdjustment now accepts idempotencyKey.
+    sendIdempotencyKeyInBody: true,
     onSuccess: (queued) =>
       Alert.alert(
         queued ? "Saved Offline" : "Adjustment Submitted",

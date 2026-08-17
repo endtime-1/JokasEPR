@@ -1,6 +1,7 @@
 import React from "react";
 import { renderHook, act, waitFor } from "@testing-library/react-native";
 import { AuthProvider, useAuth } from "../AuthContext";
+import { ApiError } from "../../api/client";
 
 jest.mock("../../api/client", () => ({
   getAccessToken: jest.fn(),
@@ -8,6 +9,20 @@ jest.mock("../../api/client", () => ({
   clearSession: jest.fn().mockResolvedValue(undefined),
   login: jest.fn(),
   logout: jest.fn().mockResolvedValue(undefined),
+  // Mobile app update (2026-08-16): the cold-launch auth-ready gate (S-03)
+  // added an unconditional markAuthReady() call in restoreSession(), right
+  // after getAccessToken() and before the try block that would otherwise
+  // catch it. This mock never accounted for it — calling undefined() threw
+  // synchronously, aborting restoreSession() before setLoading(false) ran,
+  // so `loading` never flipped and every waitFor(() => !loading) timed out.
+  markAuthReady: jest.fn(),
+  // AuthContext.tsx's restoreSession() does `err instanceof ApiError` in
+  // its catch block — this mock never provided it either (masked until the
+  // markAuthReady fix above let execution actually reach that line), so
+  // `err instanceof undefined` threw a TypeError instead of the 401 branch
+  // ever running. Real class, not a mock, same as client.test.ts's own
+  // convention — instanceof needs the genuine constructor.
+  ApiError: jest.requireActual("../../api/client").ApiError,
 }));
 
 import { apiFetch, clearSession, getAccessToken, login as apiLogin } from "../../api/client";
@@ -61,8 +76,12 @@ describe("AuthProvider — restoreSession", () => {
   });
 
   it("clears session and sets user to null when /auth/me returns 401", async () => {
+    // Must be a genuine ApiError with status 401 — restoreSession()'s catch
+    // branch only clears the session on `err instanceof ApiError && err.status
+    // === 401`; a plain Error falls through to the retry-with-delay path
+    // instead (3 attempts, 3s apart) and never calls clearSession at all.
     mockGetAccessToken.mockResolvedValueOnce("expired-token");
-    mockApiFetch.mockRejectedValueOnce(new Error("Unauthorized"));
+    mockApiFetch.mockRejectedValueOnce(new ApiError(401, "Unauthorized"));
 
     const { result } = await renderHook(() => useAuth(), { wrapper });
 

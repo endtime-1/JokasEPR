@@ -45,7 +45,13 @@ export function LeaveRequestScreen() {
 
     setSubmitting(true);
     try {
-      await submitLeaveRequest({ leaveType, startDate, endDate, reason: reason.trim() });
+      // Mobile parity audit (2026-08-17): daysRequested is required by
+      // CreateLeaveRequestDto (@IsInt @Min(1), no @IsOptional) — this screen
+      // computed it (calcDays) and displayed it, but never actually sent it,
+      // so every leave request submitted from mobile 400'd. Same calendar-day
+      // math web's own leave-request form uses (hr-pages.tsx), not a
+      // working-day count — see the label fix below.
+      await submitLeaveRequest({ leaveType, startDate, endDate, daysRequested: calcDays, reason: reason.trim() });
       toast.show({ type: "success", message: "Leave request submitted successfully." });
       navigation.goBack();
     } catch {
@@ -97,7 +103,11 @@ export function LeaveRequestScreen() {
           {calcDays !== null && calcDays > 0 && (
             <View style={styles.daysChip}>
               <Icon name="calendar-check" size={14} color={selected?.color ?? colors.brand} />
-              <Text style={[styles.daysText, { color: selected?.color ?? colors.brand }]}>{calcDays} working day{calcDays !== 1 ? "s" : ""}</Text>
+              {/* Mobile parity audit (2026-08-17): this is calendar-day math
+                  (matches web's own auto-fill exactly), not a working-day
+                  count that excludes weekends — the old "working day(s)"
+                  label overclaimed what the number actually represents. */}
+              <Text style={[styles.daysText, { color: selected?.color ?? colors.brand }]}>{calcDays} day{calcDays !== 1 ? "s" : ""}</Text>
             </View>
           )}
         </View>

@@ -318,6 +318,13 @@ export class CreateMaintenanceRecordDto {
   @IsOptional()
   @IsDateString()
   nextDueDate?: string;
+
+  // Mobile parity audit (2026-08-17): closes the idempotency gap for mobile
+  // offline-queue resends.
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  idempotencyKey?: string;
 }
 
 export class CreateBreakdownDto {
@@ -344,6 +351,13 @@ export class CreateBreakdownDto {
   @IsOptional()
   @IsString()
   rootCause?: string;
+
+  // Mobile parity audit (2026-08-17): closes the idempotency gap for mobile
+  // offline-queue resends.
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  idempotencyKey?: string;
 }
 
 export class UpdateBreakdownStatusDto {

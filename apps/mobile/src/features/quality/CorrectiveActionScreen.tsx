@@ -55,6 +55,8 @@ export function CorrectiveActionScreen() {
   const { submit, loading } = useSubmit({
     module: "corrective_action",
     endpoint: "/quality/corrective-actions",
+    // Mobile parity audit (2026-08-17): CorrectiveAction now accepts idempotencyKey.
+    sendIdempotencyKeyInBody: true,
     onSuccess: (queued) =>
       Alert.alert(
         queued ? "Saved Offline" : "Action Created",

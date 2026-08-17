@@ -53,6 +53,11 @@ export function ProductionRecordScreen() {
   const { submit, loading } = useSubmit({
     module: "production_record",
     endpoint: "/feed-production/batches",
+    // DB stability audit (2026-08-16): CreateFeedProductionBatchDto now
+    // accepts idempotencyKey — a network drop or app-kill mid-submit no
+    // longer risks double-posting a batch (double stock consumption) on
+    // retry/resend.
+    sendIdempotencyKeyInBody: true,
     onSuccess: (queued) =>
       Alert.alert(
         queued ? "Saved Offline" : "Saved",

@@ -53,8 +53,20 @@ export function MoreScreen() {
     (user?.roles?.some((r) => EXEC_ROLES.includes(r.toUpperCase())) ?? false) ||
     (user?.permissions?.includes("executive.read") ?? false);
 
+  // Mobile parity audit (2026-08-17): the offline queue isn't tagged to any
+  // particular user or company — it's just "whatever this device hasn't
+  // synced yet". If someone else logs in on this device before these sync,
+  // the next sync submits them under that person's session instead. That's
+  // not a data leak (every record still lands in the syncing user's own
+  // company — companyId always comes from the session, never the payload),
+  // but it can misattribute who actually submitted the record. Rather than
+  // silently discarding real, already-completed field work to "solve" that,
+  // surface it so the person logging out can choose to wait and sync first.
   function confirmLogout() {
-    Alert.alert("Log Out", "Are you sure you want to log out of your Jokas ERP account?", [
+    const message = pending > 0
+      ? `You have ${pending} record${pending !== 1 ? "s" : ""} saved on this device that ${pending !== 1 ? "haven't" : "hasn't"} synced yet. If you log out now, ${pending !== 1 ? "they'll" : "it'll"} stay queued and sync under whoever logs in next. Log out anyway, or stay and sync first?`
+      : "Are you sure you want to log out of your Jokas ERP account?";
+    Alert.alert("Log Out", message, [
       { text: "Cancel", style: "cancel" },
       { text: "Log Out", style: "destructive", onPress: logout }
     ]);

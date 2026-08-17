@@ -83,6 +83,8 @@ export function StockTransferScreen() {
   const { submit, loading } = useSubmit({
     module: "stock_transfer",
     endpoint: "/inventory/transfers",
+    // Mobile parity audit (2026-08-17): StockTransfer now accepts idempotencyKey.
+    sendIdempotencyKeyInBody: true,
     onSuccess: (queued) =>
       Alert.alert(
         queued ? "Saved Offline" : "Transfer Complete",

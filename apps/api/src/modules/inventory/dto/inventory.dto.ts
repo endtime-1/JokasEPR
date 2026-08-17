@@ -151,6 +151,13 @@ export class StockTransferDto {
   @IsOptional()
   @IsString()
   barcode?: string;
+
+  // Mobile parity audit (2026-08-17): closes the idempotency gap for mobile
+  // offline-queue resends.
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  idempotencyKey?: string;
 }
 
 export class StockAdjustmentDto {
@@ -173,6 +180,13 @@ export class StockAdjustmentDto {
   @IsOptional()
   @IsBoolean()
   approveNow?: boolean;
+
+  // Mobile parity audit (2026-08-17): closes the idempotency gap for mobile
+  // offline-queue resends.
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  idempotencyKey?: string;
 }
 
 export class StockReservationDto {
@@ -306,4 +320,13 @@ export class MobileStockMovementDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  // Mobile parity audit (2026-08-17): closes the idempotency gap for mobile
+  // offline-queue resends. Only honored on the "in" movement path — see
+  // InventoryService.createStockMovement for why the FIFO "out" path
+  // deliberately ignores this field.
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  idempotencyKey?: string;
 }

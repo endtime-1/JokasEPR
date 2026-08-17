@@ -55,11 +55,21 @@ export function markAuthReady() {
 // Multiple concurrent 401s share one /auth/refresh round-trip. Without this the
 // API's refresh-token rotation means callers 2+ get "token already revoked" and
 // incorrectly clear the session, forcing an unnecessary re-login.
-let _refreshPromise: Promise<boolean> | null = null;
 
-async function _doRefresh(): Promise<boolean> {
+// Mobile parity audit (2026-08-17): a plain boolean collapsed three very
+// different outcomes into one "false" — the server explicitly rejecting the
+// refresh token (401/403, genuinely revoked/expired), and a network
+// timeout/5xx/malformed-response that says nothing about the token's
+// validity at all. AuthContext's proactive refresh treated all three as
+// "revoked" and force-logged the user out — so a brief connectivity blip or
+// a Hostinger cold-start 502 during the 12-minute proactive refresh tick
+// logged an otherwise-fine session out. Only an explicit rejection from the
+// server should ever force a logout.
+export type RefreshOutcome = "refreshed" | "rejected" | "unreachable";
+
+async function _doRefresh(): Promise<RefreshOutcome> {
   const refreshToken = await getRefreshToken();
-  if (!refreshToken) return false;
+  if (!refreshToken) return "rejected";
   const controller = new AbortController();
   const tid = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
@@ -70,25 +80,28 @@ async function _doRefresh(): Promise<boolean> {
       signal: controller.signal,
     });
     clearTimeout(tid);
-    if (!response.ok) { await clearSession(); return false; }
+    if (response.status === 401 || response.status === 403) { await clearSession(); return "rejected"; }
+    if (!response.ok) return "unreachable";
     const rawText = await response.text();
-    if (!rawText) { return false; }
+    if (!rawText) { return "unreachable"; }
     const body = JSON.parse(rawText) as { data: { accessToken: string; refreshToken: string } };
     if (typeof body?.data?.accessToken !== "string" || typeof body?.data?.refreshToken !== "string") {
-      return false;
+      return "unreachable";
     }
     await setSession(body.data.accessToken, body.data.refreshToken);
-    return true;
+    return "refreshed";
   } catch {
     clearTimeout(tid);
-    return false;
+    return "unreachable";
   }
 }
 
-export async function refreshSession(): Promise<boolean> {
-  if (_refreshPromise) return _refreshPromise;
-  _refreshPromise = _doRefresh().finally(() => { _refreshPromise = null; });
-  return _refreshPromise;
+let _refreshOutcomePromise: Promise<RefreshOutcome> | null = null;
+
+export async function refreshSession(): Promise<RefreshOutcome> {
+  if (_refreshOutcomePromise) return _refreshOutcomePromise;
+  _refreshOutcomePromise = _doRefresh().finally(() => { _refreshOutcomePromise = null; });
+  return _refreshOutcomePromise;
 }
 
 async function request(path: string, init?: RequestInit): Promise<Response> {
@@ -136,7 +149,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     throw new ApiError(0, "Network error — check your connection and try again.");
   }
 
-  if (response.status === 401 && (await refreshSession())) {
+  if (response.status === 401 && (await refreshSession()) === "refreshed") {
     // Refresh succeeded — build a FRESH controller for the retry so a timer that
     // fired during the (potentially slow) refresh cycle doesn't immediately abort it.
     const retryController = new AbortController();
@@ -178,7 +191,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   // "!response.ok" branch below with no refresh attempt — the mobile
   // equivalent of apps/web/lib/api.ts's "everything vanished" bug it already
   // guards against at lines 248-268.
-  if (response.status === 401 && (await refreshSession())) {
+  if (response.status === 401 && (await refreshSession()) === "refreshed") {
     const postRetryController = new AbortController();
     const postRetryTid = setTimeout(() => postRetryController.abort(), REQUEST_TIMEOUT_MS);
     try {

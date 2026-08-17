@@ -72,6 +72,8 @@ export function HealthObservationScreen() {
   const { submit, loading } = useSubmit({
     module: "health_observation",
     endpoint: "/poultry/health-observations",
+    // Mobile parity audit (2026-08-17): PoultryHealthObservation now accepts idempotencyKey.
+    sendIdempotencyKeyInBody: true,
     onSuccess: (queued) =>
       Alert.alert(
         queued ? "Saved Offline" : "Observation Saved",

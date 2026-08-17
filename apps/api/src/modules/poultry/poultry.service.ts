@@ -724,19 +724,36 @@ export class PoultryService {
   async createMortality(user: AuthenticatedUser, dto: CreateMortalityRecordDto, context: RequestContext) {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
     const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
-    const data = await this.prisma.$transaction(async (tx) => {
-      // H5: lock the FlockBatch row for the transaction's lifetime so two
-      // concurrent mortality entries for the same batch can't both read the
-      // same live-bird snapshot and both pass the check — the second waits
-      // for the first to commit, then its own aggregate includes it.
-      await tx.$queryRaw`SELECT id FROM FlockBatch WHERE id = ${batch.id} FOR UPDATE`;
-      const { _sum } = await tx.mortalityRecord.aggregate({ where: { flockBatchId: batch.id, deletedAt: null }, _sum: { birdCount: true } });
-      const liveBirds = Math.max(0, batch.openingBirdCount - (_sum.birdCount ?? 0));
-      if (dto.birdCount > liveBirds) throw new BadRequestException(`Cannot record ${dto.birdCount} bird${dto.birdCount !== 1 ? "s" : ""}. Only ${liveBirds} live bird${liveBirds !== 1 ? "s" : ""} remain in this batch.`);
-      return tx.mortalityRecord.create({
-        data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), recordDate: new Date(dto.recordDate), birdCount: dto.birdCount, isCulling: dto.isCulling ?? false, reason: dto.reason, notes: dto.notes, status: dto.status ?? "SUBMITTED" }
+    // Mobile parity audit (2026-08-17): a mobile offline-queue resend (or a
+    // client retry after a dropped response) carrying the same
+    // idempotencyKey replays the original record instead of creating a
+    // duplicate — mirrors sales.service.ts's createOrder.
+    if (dto.idempotencyKey) {
+      const existing = await this.findMortalityByIdempotencyKey(user.companyId, dto.idempotencyKey);
+      if (existing) return { data: existing };
+    }
+    let data;
+    try {
+      data = await this.prisma.$transaction(async (tx) => {
+        // H5: lock the FlockBatch row for the transaction's lifetime so two
+        // concurrent mortality entries for the same batch can't both read the
+        // same live-bird snapshot and both pass the check — the second waits
+        // for the first to commit, then its own aggregate includes it.
+        await tx.$queryRaw`SELECT id FROM FlockBatch WHERE id = ${batch.id} FOR UPDATE`;
+        const { _sum } = await tx.mortalityRecord.aggregate({ where: { flockBatchId: batch.id, deletedAt: null }, _sum: { birdCount: true } });
+        const liveBirds = Math.max(0, batch.openingBirdCount - (_sum.birdCount ?? 0));
+        if (dto.birdCount > liveBirds) throw new BadRequestException(`Cannot record ${dto.birdCount} bird${dto.birdCount !== 1 ? "s" : ""}. Only ${liveBirds} live bird${liveBirds !== 1 ? "s" : ""} remain in this batch.`);
+        return tx.mortalityRecord.create({
+          data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), recordDate: new Date(dto.recordDate), birdCount: dto.birdCount, isCulling: dto.isCulling ?? false, reason: dto.reason, notes: dto.notes, status: dto.status ?? "SUBMITTED", idempotencyKey: dto.idempotencyKey }
+        });
       });
-    });
+    } catch (err: unknown) {
+      if (dto.idempotencyKey && (err as { code?: string })?.code === "P2002") {
+        const existing = await this.findMortalityByIdempotencyKey(user.companyId, dto.idempotencyKey);
+        if (existing) return { data: existing };
+      }
+      throw err;
+    }
     await this.writeAudit(user, "CREATE", "MortalityRecord", data.id, dto.isCulling ? "Recorded poultry culling" : "Recorded poultry mortality", context, batch.farmId);
     return { data };
   }
@@ -745,24 +762,41 @@ export class PoultryService {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
     if (dto.warehouseId) this.assertWarehouseAccess(user, dto.warehouseId);
     const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
+    // Mobile parity audit (2026-08-17): a mobile offline-queue resend (or a
+    // client retry after a dropped response) carrying the same
+    // idempotencyKey replays the original record instead of creating a
+    // duplicate — mirrors sales.service.ts's createOrder.
+    if (dto.idempotencyKey) {
+      const existing = await this.findFeedByIdempotencyKey(user.companyId, dto.idempotencyKey);
+      if (existing) return { data: existing };
+    }
     let stockWarning: string | undefined;
-    // High (DB stability audit, 2026-08-16): consumeInventoryTx's lock order
-    // conflicts with inventory.service.ts's FIFO path — retry mitigates the
-    // resulting deadlock risk until the lock order is reconciled.
-    const data = await withDbRetry(() => this.prisma.$transaction(async (tx) => {
-      const record = await tx.feedConsumptionRecord.create({
-        data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), recordDate: new Date(dto.recordDate), feedProductId: dto.feedProductId, warehouseId: dto.warehouseId, quantityKg: dto.quantityKg, costAmount: dto.costAmount, notes: dto.notes, status: dto.status ?? "SUBMITTED" }
-      });
-      if (dto.feedProductId && dto.warehouseId) {
-        // M-BUG (2026-08-13): a mismatch between this warehouse and the one
-        // the product's actually stocked in used to fail completely
-        // silently — the record saved as if stock was deducted, with
-        // nothing telling the person who entered it that it wasn't.
-        const result = await this.consumeInventoryTx(tx, user, batch, dto.warehouseId, dto.feedProductId, dto.quantityKg, "PRODUCTION_INPUT", "FeedConsumptionRecord", record.id, `Feed consumption for flock ${batch.code}`);
-        stockWarning = result.warning;
+    let data;
+    try {
+      // High (DB stability audit, 2026-08-16): consumeInventoryTx's lock order
+      // conflicts with inventory.service.ts's FIFO path — retry mitigates the
+      // resulting deadlock risk until the lock order is reconciled.
+      data = await withDbRetry(() => this.prisma.$transaction(async (tx) => {
+        const record = await tx.feedConsumptionRecord.create({
+          data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), recordDate: new Date(dto.recordDate), feedProductId: dto.feedProductId, warehouseId: dto.warehouseId, quantityKg: dto.quantityKg, costAmount: dto.costAmount, notes: dto.notes, status: dto.status ?? "SUBMITTED", idempotencyKey: dto.idempotencyKey }
+        });
+        if (dto.feedProductId && dto.warehouseId) {
+          // M-BUG (2026-08-13): a mismatch between this warehouse and the one
+          // the product's actually stocked in used to fail completely
+          // silently — the record saved as if stock was deducted, with
+          // nothing telling the person who entered it that it wasn't.
+          const result = await this.consumeInventoryTx(tx, user, batch, dto.warehouseId, dto.feedProductId, dto.quantityKg, "PRODUCTION_INPUT", "FeedConsumptionRecord", record.id, `Feed consumption for flock ${batch.code}`);
+          stockWarning = result.warning;
+        }
+        return record;
+      }), { label: "PoultryService.createFeed" });
+    } catch (err: unknown) {
+      if (dto.idempotencyKey && (err as { code?: string })?.code === "P2002") {
+        const existing = await this.findFeedByIdempotencyKey(user.companyId, dto.idempotencyKey);
+        if (existing) return { data: existing };
       }
-      return record;
-    }), { label: "PoultryService.createFeed" });
+      throw err;
+    }
     await this.writeAudit(user, "CREATE", "FeedConsumptionRecord", data.id, "Recorded poultry feed consumption", context, batch.farmId);
     return { data, warning: stockWarning };
   }
@@ -799,25 +833,42 @@ export class PoultryService {
       }
     }
     const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
+    // Mobile parity audit (2026-08-17): a mobile offline-queue resend (or a
+    // client retry after a dropped response) carrying the same
+    // idempotencyKey replays the original record instead of creating a
+    // duplicate — mirrors sales.service.ts's createOrder.
+    if (dto.idempotencyKey) {
+      const existing = await this.findEggsByIdempotencyKey(user.companyId, dto.idempotencyKey);
+      if (existing) return { data: existing };
+    }
     let stockWarning: string | undefined;
-    const data = await this.prisma.$transaction(async (tx) => {
-      const record = await tx.eggProductionRecord.create({
-        data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), recordDate: new Date(dto.recordDate), goodEggs: dto.goodEggs, crackedEggs: dto.crackedEggs, dirtyEggs: dto.dirtyEggs, brokenEggs: dto.brokenEggs, rejectedEggs: dto.rejectedEggs, notes: dto.notes, status: dto.status ?? "SUBMITTED" }
+    let data;
+    try {
+      data = await this.prisma.$transaction(async (tx) => {
+        const record = await tx.eggProductionRecord.create({
+          data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), recordDate: new Date(dto.recordDate), goodEggs: dto.goodEggs, crackedEggs: dto.crackedEggs, dirtyEggs: dto.dirtyEggs, brokenEggs: dto.brokenEggs, rejectedEggs: dto.rejectedEggs, notes: dto.notes, status: dto.status ?? "SUBMITTED", idempotencyKey: dto.idempotencyKey }
+        });
+        if (dto.eggProductId && dto.warehouseId && dto.goodEggs > 0) {
+          await this.addToInventoryTx(tx, user, batch, dto.warehouseId, dto.eggProductId, dto.goodEggs, "EggProductionRecord", record.id, `Egg production from flock ${batch.code}`);
+        }
+        // M-BUG (2026-08-13): only goodEggs could ever become sellable stock —
+        // cracked/dirty eggs (commonly sold at a discount as "seconds" on real
+        // farms) had no way to be sold through the system at all.
+        const seconds = dto.crackedEggs + dto.dirtyEggs;
+        if (dto.secondsProductId && dto.warehouseId && seconds > 0) {
+          await this.addToInventoryTx(tx, user, batch, dto.warehouseId, dto.secondsProductId, seconds, "EggProductionRecord", record.id, `Seconds (cracked/dirty) eggs from flock ${batch.code}`);
+        } else if (seconds > 0 && !dto.secondsProductId) {
+          stockWarning = `${seconds} cracked/dirty egg(s) were recorded but not credited to sellable stock — set a "seconds" product to sell them at a discount.`;
+        }
+        return record;
       });
-      if (dto.eggProductId && dto.warehouseId && dto.goodEggs > 0) {
-        await this.addToInventoryTx(tx, user, batch, dto.warehouseId, dto.eggProductId, dto.goodEggs, "EggProductionRecord", record.id, `Egg production from flock ${batch.code}`);
+    } catch (err: unknown) {
+      if (dto.idempotencyKey && (err as { code?: string })?.code === "P2002") {
+        const existing = await this.findEggsByIdempotencyKey(user.companyId, dto.idempotencyKey);
+        if (existing) return { data: existing };
       }
-      // M-BUG (2026-08-13): only goodEggs could ever become sellable stock —
-      // cracked/dirty eggs (commonly sold at a discount as "seconds" on real
-      // farms) had no way to be sold through the system at all.
-      const seconds = dto.crackedEggs + dto.dirtyEggs;
-      if (dto.secondsProductId && dto.warehouseId && seconds > 0) {
-        await this.addToInventoryTx(tx, user, batch, dto.warehouseId, dto.secondsProductId, seconds, "EggProductionRecord", record.id, `Seconds (cracked/dirty) eggs from flock ${batch.code}`);
-      } else if (seconds > 0 && !dto.secondsProductId) {
-        stockWarning = `${seconds} cracked/dirty egg(s) were recorded but not credited to sellable stock — set a "seconds" product to sell them at a discount.`;
-      }
-      return record;
-    });
+      throw err;
+    }
     await this.writeAudit(user, "CREATE", "EggProductionRecord", data.id, "Recorded egg production", context, batch.farmId);
     const warning = [ageWarning, stockWarning].filter(Boolean).join(" ") || undefined;
     return { data, warning };
@@ -826,9 +877,26 @@ export class PoultryService {
   async createWeight(user: AuthenticatedUser, dto: CreateBirdWeightRecordDto, context: RequestContext) {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
     const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
-    const data = await this.prisma.birdWeightRecord.create({
-      data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), recordDate: new Date(dto.recordDate), sampleSize: dto.sampleSize, averageWeightKg: dto.averageWeightKg, notes: dto.notes, status: dto.status ?? "SUBMITTED" }
-    });
+    // Mobile parity audit (2026-08-17): a mobile offline-queue resend (or a
+    // client retry after a dropped response) carrying the same
+    // idempotencyKey replays the original record instead of creating a
+    // duplicate — mirrors sales.service.ts's createOrder.
+    if (dto.idempotencyKey) {
+      const existing = await this.findWeightByIdempotencyKey(user.companyId, dto.idempotencyKey);
+      if (existing) return { data: existing };
+    }
+    let data;
+    try {
+      data = await this.prisma.birdWeightRecord.create({
+        data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), recordDate: new Date(dto.recordDate), sampleSize: dto.sampleSize, averageWeightKg: dto.averageWeightKg, notes: dto.notes, status: dto.status ?? "SUBMITTED", idempotencyKey: dto.idempotencyKey }
+      });
+    } catch (err: unknown) {
+      if (dto.idempotencyKey && (err as { code?: string })?.code === "P2002") {
+        const existing = await this.findWeightByIdempotencyKey(user.companyId, dto.idempotencyKey);
+        if (existing) return { data: existing };
+      }
+      throw err;
+    }
     await this.writeAudit(user, "CREATE", "BirdWeightRecord", data.id, "Recorded bird weight", context, batch.farmId);
     return { data };
   }
@@ -837,19 +905,36 @@ export class PoultryService {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
     if (dto.warehouseId) this.assertWarehouseAccess(user, dto.warehouseId);
     const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
+    // Mobile parity audit (2026-08-17): a mobile offline-queue resend (or a
+    // client retry after a dropped response) carrying the same
+    // idempotencyKey replays the original record instead of creating a
+    // duplicate — mirrors sales.service.ts's createOrder.
+    if (dto.idempotencyKey) {
+      const existing = await this.findMedicationByIdempotencyKey(user.companyId, dto.idempotencyKey);
+      if (existing) return { data: existing };
+    }
     let stockWarning: string | undefined;
-    // High (DB stability audit, 2026-08-16): see createFeed above — same
-    // consumeInventoryTx lock-order deadlock risk, mitigated with retry.
-    const data = await withDbRetry(() => this.prisma.$transaction(async (tx) => {
-      const record = await tx.medicationRecord.create({
-        data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), medicationName: dto.medicationName, dosage: dto.dosage, route: dto.route, startDate: new Date(dto.startDate), endDate: dto.endDate ? new Date(dto.endDate) : undefined, withdrawalUntil: dto.withdrawalUntil ? new Date(dto.withdrawalUntil) : undefined, notes: dto.notes }
-      });
-      if (dto.medicineProductId && dto.warehouseId && dto.quantityUsed) {
-        const result = await this.consumeInventoryTx(tx, user, batch, dto.warehouseId, dto.medicineProductId, dto.quantityUsed, "PRODUCTION_INPUT", "MedicationRecord", record.id, `Medication (${dto.medicationName}) for flock ${batch.code}`);
-        stockWarning = result.warning;
+    let data;
+    try {
+      // High (DB stability audit, 2026-08-16): see createFeed above — same
+      // consumeInventoryTx lock-order deadlock risk, mitigated with retry.
+      data = await withDbRetry(() => this.prisma.$transaction(async (tx) => {
+        const record = await tx.medicationRecord.create({
+          data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), medicationName: dto.medicationName, dosage: dto.dosage, route: dto.route, startDate: new Date(dto.startDate), endDate: dto.endDate ? new Date(dto.endDate) : undefined, withdrawalUntil: dto.withdrawalUntil ? new Date(dto.withdrawalUntil) : undefined, notes: dto.notes, idempotencyKey: dto.idempotencyKey }
+        });
+        if (dto.medicineProductId && dto.warehouseId && dto.quantityUsed) {
+          const result = await this.consumeInventoryTx(tx, user, batch, dto.warehouseId, dto.medicineProductId, dto.quantityUsed, "PRODUCTION_INPUT", "MedicationRecord", record.id, `Medication (${dto.medicationName}) for flock ${batch.code}`);
+          stockWarning = result.warning;
+        }
+        return record;
+      }), { label: "PoultryService.createMedication" });
+    } catch (err: unknown) {
+      if (dto.idempotencyKey && (err as { code?: string })?.code === "P2002") {
+        const existing = await this.findMedicationByIdempotencyKey(user.companyId, dto.idempotencyKey);
+        if (existing) return { data: existing };
       }
-      return record;
-    }), { label: "PoultryService.createMedication" });
+      throw err;
+    }
     await this.writeAudit(user, "CREATE", "MedicationRecord", data.id, "Recorded poultry medication", context, batch.farmId);
     return { data, warning: stockWarning };
   }
@@ -858,19 +943,36 @@ export class PoultryService {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
     if (dto.warehouseId) this.assertWarehouseAccess(user, dto.warehouseId);
     const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
+    // Mobile parity audit (2026-08-17): a mobile offline-queue resend (or a
+    // client retry after a dropped response) carrying the same
+    // idempotencyKey replays the original record instead of creating a
+    // duplicate — mirrors sales.service.ts's createOrder.
+    if (dto.idempotencyKey) {
+      const existing = await this.findVaccinationByIdempotencyKey(user.companyId, dto.idempotencyKey);
+      if (existing) return { data: existing };
+    }
     let stockWarning: string | undefined;
-    // High (DB stability audit, 2026-08-16): see createFeed above — same
-    // consumeInventoryTx lock-order deadlock risk, mitigated with retry.
-    const data = await withDbRetry(() => this.prisma.$transaction(async (tx) => {
-      const record = await tx.vaccinationRecord.create({
-        data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), vaccineName: dto.vaccineName, dose: dto.dose, vaccinationDate: new Date(dto.vaccinationDate), nextDueDate: dto.nextDueDate ? new Date(dto.nextDueDate) : undefined, notes: dto.notes }
-      });
-      if (dto.vaccineProductId && dto.warehouseId && dto.quantityUsed) {
-        const result = await this.consumeInventoryTx(tx, user, batch, dto.warehouseId, dto.vaccineProductId, dto.quantityUsed, "PRODUCTION_INPUT", "VaccinationRecord", record.id, `Vaccination (${dto.vaccineName}) for flock ${batch.code}`);
-        stockWarning = result.warning;
+    let data;
+    try {
+      // High (DB stability audit, 2026-08-16): see createFeed above — same
+      // consumeInventoryTx lock-order deadlock risk, mitigated with retry.
+      data = await withDbRetry(() => this.prisma.$transaction(async (tx) => {
+        const record = await tx.vaccinationRecord.create({
+          data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), vaccineName: dto.vaccineName, dose: dto.dose, vaccinationDate: new Date(dto.vaccinationDate), nextDueDate: dto.nextDueDate ? new Date(dto.nextDueDate) : undefined, notes: dto.notes, idempotencyKey: dto.idempotencyKey }
+        });
+        if (dto.vaccineProductId && dto.warehouseId && dto.quantityUsed) {
+          const result = await this.consumeInventoryTx(tx, user, batch, dto.warehouseId, dto.vaccineProductId, dto.quantityUsed, "PRODUCTION_INPUT", "VaccinationRecord", record.id, `Vaccination (${dto.vaccineName}) for flock ${batch.code}`);
+          stockWarning = result.warning;
+        }
+        return record;
+      }), { label: "PoultryService.createVaccination" });
+    } catch (err: unknown) {
+      if (dto.idempotencyKey && (err as { code?: string })?.code === "P2002") {
+        const existing = await this.findVaccinationByIdempotencyKey(user.companyId, dto.idempotencyKey);
+        if (existing) return { data: existing };
       }
-      return record;
-    }), { label: "PoultryService.createVaccination" });
+      throw err;
+    }
     await this.writeAudit(user, "CREATE", "VaccinationRecord", data.id, "Recorded poultry vaccination", context, batch.farmId);
     return { data, warning: stockWarning };
   }
@@ -878,9 +980,26 @@ export class PoultryService {
   async createHealthObservation(user: AuthenticatedUser, dto: CreateHealthObservationDto, context: RequestContext) {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
     const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
-    const data = await this.prisma.poultryHealthObservation.create({
-      data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), observationDate: new Date(dto.observationDate), severity: dto.severity, observation: dto.observation, vetVisitDate: dto.vetVisitDate ? new Date(dto.vetVisitDate) : undefined, veterinarianName: dto.veterinarianName, recommendation: dto.recommendation }
-    });
+    // Mobile parity audit (2026-08-17): a mobile offline-queue resend (or a
+    // client retry after a dropped response) carrying the same
+    // idempotencyKey replays the original record instead of creating a
+    // duplicate — mirrors sales.service.ts's createOrder.
+    if (dto.idempotencyKey) {
+      const existing = await this.findHealthObservationByIdempotencyKey(user.companyId, dto.idempotencyKey);
+      if (existing) return { data: existing };
+    }
+    let data;
+    try {
+      data = await this.prisma.poultryHealthObservation.create({
+        data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), observationDate: new Date(dto.observationDate), severity: dto.severity, observation: dto.observation, vetVisitDate: dto.vetVisitDate ? new Date(dto.vetVisitDate) : undefined, veterinarianName: dto.veterinarianName, recommendation: dto.recommendation, idempotencyKey: dto.idempotencyKey }
+      });
+    } catch (err: unknown) {
+      if (dto.idempotencyKey && (err as { code?: string })?.code === "P2002") {
+        const existing = await this.findHealthObservationByIdempotencyKey(user.companyId, dto.idempotencyKey);
+        if (existing) return { data: existing };
+      }
+      throw err;
+    }
     await this.writeAudit(user, "CREATE", "PoultryHealthObservation", data.id, "Recorded poultry health observation", context, batch.farmId);
     return { data };
   }
@@ -1061,9 +1180,26 @@ export class PoultryService {
   async createCost(user: AuthenticatedUser, dto: CreatePoultryCostRecordDto, context: RequestContext) {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
     const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
-    const data = await this.prisma.poultryCostRecord.create({
-      data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), costDate: new Date(dto.costDate), costType: dto.costType, amount: dto.amount, description: dto.description, status: dto.status ?? "SUBMITTED" }
-    });
+    // Mobile parity audit (2026-08-17): a mobile offline-queue resend (or a
+    // client retry after a dropped response) carrying the same
+    // idempotencyKey replays the original record instead of creating a
+    // duplicate — mirrors sales.service.ts's createOrder.
+    if (dto.idempotencyKey) {
+      const existing = await this.findCostByIdempotencyKey(user.companyId, dto.idempotencyKey);
+      if (existing) return { data: existing };
+    }
+    let data;
+    try {
+      data = await this.prisma.poultryCostRecord.create({
+        data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), costDate: new Date(dto.costDate), costType: dto.costType, amount: dto.amount, description: dto.description, status: dto.status ?? "SUBMITTED", idempotencyKey: dto.idempotencyKey }
+      });
+    } catch (err: unknown) {
+      if (dto.idempotencyKey && (err as { code?: string })?.code === "P2002") {
+        const existing = await this.findCostByIdempotencyKey(user.companyId, dto.idempotencyKey);
+        if (existing) return { data: existing };
+      }
+      throw err;
+    }
     await this.writeAudit(user, "CREATE", "PoultryCostRecord", data.id, "Recorded poultry batch cost", context, batch.farmId);
     return { data };
   }
@@ -1795,6 +1931,41 @@ export class PoultryService {
     await tx.stockMovement.create({
       data: { companyId: user.companyId, branchId: batch.branchId, productId, inventoryItemId: item.id, toWarehouseId: warehouseId, warehouseId, farmId: batch.farmId, uomId: product.uomId, movementType: "PRODUCTION_OUTPUT", quantity, referenceType, referenceId, notes, createdById: user.id }
     });
+  }
+
+  // Mobile parity audit (2026-08-17): idempotency-replay lookups for the 8
+  // poultry create endpoints — mirrors sales.service.ts's
+  // findOrderByIdempotencyKey/findPaymentByIdempotencyKey.
+  private async findMortalityByIdempotencyKey(companyId: string, idempotencyKey: string) {
+    return this.prisma.mortalityRecord.findFirst({ where: { companyId, idempotencyKey, deletedAt: null } });
+  }
+
+  private async findFeedByIdempotencyKey(companyId: string, idempotencyKey: string) {
+    return this.prisma.feedConsumptionRecord.findFirst({ where: { companyId, idempotencyKey, deletedAt: null } });
+  }
+
+  private async findEggsByIdempotencyKey(companyId: string, idempotencyKey: string) {
+    return this.prisma.eggProductionRecord.findFirst({ where: { companyId, idempotencyKey, deletedAt: null } });
+  }
+
+  private async findWeightByIdempotencyKey(companyId: string, idempotencyKey: string) {
+    return this.prisma.birdWeightRecord.findFirst({ where: { companyId, idempotencyKey, deletedAt: null } });
+  }
+
+  private async findMedicationByIdempotencyKey(companyId: string, idempotencyKey: string) {
+    return this.prisma.medicationRecord.findFirst({ where: { companyId, idempotencyKey, deletedAt: null } });
+  }
+
+  private async findVaccinationByIdempotencyKey(companyId: string, idempotencyKey: string) {
+    return this.prisma.vaccinationRecord.findFirst({ where: { companyId, idempotencyKey, deletedAt: null } });
+  }
+
+  private async findHealthObservationByIdempotencyKey(companyId: string, idempotencyKey: string) {
+    return this.prisma.poultryHealthObservation.findFirst({ where: { companyId, idempotencyKey, deletedAt: null } });
+  }
+
+  private async findCostByIdempotencyKey(companyId: string, idempotencyKey: string) {
+    return this.prisma.poultryCostRecord.findFirst({ where: { companyId, idempotencyKey, deletedAt: null } });
   }
 
   private async writeAudit(user: AuthenticatedUser, action: "CREATE" | "UPDATE" | "DELETE" | "TRANSFER" | "APPROVE", entityType: string, entityId: string, summary: string, context: RequestContext, farmId?: string) {

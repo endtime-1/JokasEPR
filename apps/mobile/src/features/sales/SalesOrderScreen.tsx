@@ -75,6 +75,10 @@ export function SalesOrderScreen() {
   const { submit, loading } = useSubmit({
     module: "sales_order",
     endpoint: "/sales/orders",
+    // Mobile parity audit (2026-08-17): CreateSalesOrderDto now accepts
+    // idempotencyKey — same reasoning as customer-payments/soya-batches/
+    // feed-batches.
+    sendIdempotencyKeyInBody: true,
     onSuccess: (queued) =>
       Alert.alert(
         queued ? "Saved Offline" : "Order Created",

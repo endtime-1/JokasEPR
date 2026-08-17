@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { fetchNotifications, markAllNotificationsRead, markNotificationRead, type Notification } from "../../api/endpoints";
+import { useToast } from "../../components/Toast";
 import { colors, font, radius, shadow, spacing } from "../../constants/theme";
 
 const TYPE_META: Record<string, { icon: string; color: string }> = {
@@ -35,6 +36,7 @@ function timeAgo(iso: string) {
 }
 
 export function NotificationsScreen() {
+  const toast = useToast();
   const [items, setItems] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -47,7 +49,10 @@ export function NotificationsScreen() {
       const res = await fetchNotifications("limit=30");
       setItems((res.data as any)?.data ?? []);
     } catch {
-      //
+      // Mobile parity audit (2026-08-17): this used to fail completely
+      // silently — the screen just sat empty with no indication anything
+      // went wrong, indistinguishable from "you have no notifications."
+      toast.show({ type: "error", message: "Could not load notifications." });
     } finally {
       setLoading(false);
       setRefreshing(false);

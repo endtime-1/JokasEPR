@@ -84,6 +84,52 @@ describe("SoyaProcessingService.createIntake — writes a StockBatch for valuati
   });
 });
 
+describe("SoyaProcessingService.createIntake — idempotencyKey dedup (mobile parity audit, 2026-08-17)", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPrisma.productionSite.findFirst.mockResolvedValue({ id: "site-1", branchId: "branch-1" });
+    mockPrisma.product.findFirst.mockResolvedValue({ id: "prod-bean", uomId: "uom-1" });
+    mockTx.inventoryItem.upsert.mockResolvedValue({ id: "inv-1" });
+    mockTx.soyaBeanIntake.create.mockResolvedValue({ id: "intake-1", receiptNumber: "RCPT-001" });
+  });
+
+  const dto = { productionSiteId: "site-1", warehouseId: "wh-raw", productId: "prod-bean", receiptNumber: "rcpt-001", supplierName: "Farm Co", quantityKg: 200, unitCost: 4 };
+
+  it("replays the original intake instead of creating a duplicate when the idempotencyKey was already used", async () => {
+    mockPrisma.soyaBeanIntake.findFirst.mockResolvedValue({ id: "intake-existing" });
+
+    const service = makeService();
+    const result = await service.createIntake(makeUser(), { ...dto, idempotencyKey: "idem-1" } as never, {});
+
+    expect(result.data.id).toBe("intake-existing");
+    expect(mockTx.soyaBeanIntake.create).not.toHaveBeenCalled();
+  });
+
+  it("passes the idempotencyKey through to the intake row on a genuinely new intake", async () => {
+    mockPrisma.soyaBeanIntake.findFirst.mockResolvedValue(null);
+
+    const service = makeService();
+    await service.createIntake(makeUser(), { ...dto, idempotencyKey: "idem-2" } as never, {});
+
+    expect(mockTx.soyaBeanIntake.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ idempotencyKey: "idem-2" }) })
+    );
+  });
+
+  it("replays the original intake when a concurrent duplicate loses the unique-constraint race (P2002)", async () => {
+    mockPrisma.soyaBeanIntake.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "intake-winner" });
+    mockTx.soyaBeanIntake.create.mockImplementationOnce(() => {
+      const err = Object.assign(new Error("Unique constraint failed"), { code: "P2002" });
+      return Promise.reject(err);
+    });
+
+    const service = makeService();
+    const result = await service.createIntake(makeUser(), { ...dto, idempotencyKey: "idem-3" } as never, {});
+
+    expect(result.data.id).toBe("intake-winner");
+  });
+});
+
 describe("SoyaProcessingService.createBatch — costs from the linked intake and guards the decrement (M10)", () => {
   beforeEach(() => {
     jest.clearAllMocks();

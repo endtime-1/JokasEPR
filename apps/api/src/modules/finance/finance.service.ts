@@ -431,32 +431,57 @@ export class FinanceService {
 
   async createExpense(user: AuthenticatedUser, dto: CreateExpenseDto, ctx: RequestContext) {
     this.assertBranchAccess(user, dto.branchId);
+    // Mobile parity audit (2026-08-17): mirrors createCustomerPayment's
+    // idempotencyKey handling — a mobile offline-queue resend carrying the
+    // same idempotencyKey replays the original expense instead of recording
+    // a second one.
+    if (dto.idempotencyKey) {
+      const existing = await this.findExpenseByIdempotencyKey(user.companyId, dto.idempotencyKey);
+      if (existing) return { data: existing };
+    }
     const reference = await nextRef(this.prisma, user.companyId, "EXP");
     const requiresApproval = dto.amount >= LARGE_EXPENSE_THRESHOLD;
     const status = requiresApproval ? "PENDING_APPROVAL" : "PENDING";
 
-    const expense = await this.prisma.expense.create({
-      data: {
-        companyId: user.companyId,
-        reference,
-        categoryId: dto.categoryId,
-        description: dto.description,
-        amount: dto.amount,
-        expenseDate: new Date(dto.expenseDate),
-        paymentMethod: dto.paymentMethod,
-        vendorName: dto.vendorName,
-        receiptRef: dto.receiptRef,
-        notes: dto.notes,
-        branchId: dto.branchId,
-        bankAccountId: dto.bankAccountId,
-        status: status as never,
-        approvalRequired: requiresApproval,
-        submittedById: user.id,
-        createdById: user.id
+    let expense;
+    try {
+      expense = await this.prisma.expense.create({
+        data: {
+          companyId: user.companyId,
+          reference,
+          categoryId: dto.categoryId,
+          description: dto.description,
+          amount: dto.amount,
+          expenseDate: new Date(dto.expenseDate),
+          paymentMethod: dto.paymentMethod,
+          vendorName: dto.vendorName,
+          receiptRef: dto.receiptRef,
+          notes: dto.notes,
+          branchId: dto.branchId,
+          bankAccountId: dto.bankAccountId,
+          status: status as never,
+          approvalRequired: requiresApproval,
+          idempotencyKey: dto.idempotencyKey,
+          submittedById: user.id,
+          createdById: user.id
+        }
+      });
+    } catch (err: unknown) {
+      // Same race-window reasoning as createCustomerPayment's own P2002
+      // handling — the pre-check above isn't atomic, so the unique
+      // (companyId, idempotencyKey) index is the real, race-safe arbiter.
+      if (dto.idempotencyKey && (err as { code?: string })?.code === "P2002") {
+        const existing = await this.findExpenseByIdempotencyKey(user.companyId, dto.idempotencyKey);
+        if (existing) return { data: existing };
       }
-    });
+      throw err;
+    }
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "CREATE", entityType: "Expense", entityId: expense.id, ...ctx });
     return { data: expense };
+  }
+
+  private async findExpenseByIdempotencyKey(companyId: string, idempotencyKey: string) {
+    return this.prisma.expense.findFirst({ where: { companyId, idempotencyKey, deletedAt: null } });
   }
 
   async approveExpense(user: AuthenticatedUser, id: string, dto: ApproveExpenseDto, ctx: RequestContext) {

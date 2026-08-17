@@ -67,6 +67,8 @@ export function BreakdownReportScreen() {
   const { submit, loading } = useSubmit({
     module: "breakdown",
     endpoint: "/maintenance/breakdowns",
+    // Mobile parity audit (2026-08-17): BreakdownRecord now accepts idempotencyKey.
+    sendIdempotencyKeyInBody: true,
     onSuccess: (queued) =>
       Alert.alert(
         queued ? "Saved Offline" : "Breakdown Reported",

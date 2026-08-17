@@ -272,6 +272,14 @@ export class CreateMortalityRecordDto extends FlockRecordDto {
   @IsOptional()
   @IsString()
   reason?: string;
+
+  // Mobile parity audit (2026-08-17): closes the idempotency gap for mobile
+  // offline-queue resends — see sales.dto.ts's CreateSalesOrderDto for the
+  // original pattern this mirrors.
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  idempotencyKey?: string;
 }
 
 export class CreateFeedConsumptionRecordDto extends FlockRecordDto {
@@ -291,6 +299,14 @@ export class CreateFeedConsumptionRecordDto extends FlockRecordDto {
   @IsOptional()
   @IsUUID()
   warehouseId?: string;
+
+  // Mobile parity audit (2026-08-17): closes the idempotency gap for mobile
+  // offline-queue resends — see sales.dto.ts's CreateSalesOrderDto for the
+  // original pattern this mirrors.
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  idempotencyKey?: string;
 }
 
 export class CreateEggProductionRecordDto extends FlockRecordDto {
@@ -330,6 +346,14 @@ export class CreateEggProductionRecordDto extends FlockRecordDto {
   @IsOptional()
   @IsUUID()
   secondsProductId?: string;
+
+  // Mobile parity audit (2026-08-17): closes the idempotency gap for mobile
+  // offline-queue resends — see sales.dto.ts's CreateSalesOrderDto for the
+  // original pattern this mirrors.
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  idempotencyKey?: string;
 }
 
 export class CreateBirdWeightRecordDto extends FlockRecordDto {
@@ -340,6 +364,14 @@ export class CreateBirdWeightRecordDto extends FlockRecordDto {
   @IsNumber()
   @Min(0.001)
   averageWeightKg!: number;
+
+  // Mobile parity audit (2026-08-17): closes the idempotency gap for mobile
+  // offline-queue resends — see sales.dto.ts's CreateSalesOrderDto for the
+  // original pattern this mirrors.
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  idempotencyKey?: string;
 }
 
 export class CreateMedicationRecordDto {
@@ -390,6 +422,14 @@ export class CreateMedicationRecordDto {
   @IsNumber()
   @Min(0)
   quantityUsed?: number;
+
+  // Mobile parity audit (2026-08-17): closes the idempotency gap for mobile
+  // offline-queue resends — see sales.dto.ts's CreateSalesOrderDto for the
+  // original pattern this mirrors.
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  idempotencyKey?: string;
 }
 
 export class CreateVaccinationRecordDto {
@@ -431,6 +471,14 @@ export class CreateVaccinationRecordDto {
   @IsNumber()
   @Min(0)
   quantityUsed?: number;
+
+  // Mobile parity audit (2026-08-17): closes the idempotency gap for mobile
+  // offline-queue resends — see sales.dto.ts's CreateSalesOrderDto for the
+  // original pattern this mirrors.
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  idempotencyKey?: string;
 }
 
 export class CreateHealthObservationDto {
@@ -461,6 +509,14 @@ export class CreateHealthObservationDto {
   @IsOptional()
   @IsString()
   recommendation?: string;
+
+  // Mobile parity audit (2026-08-17): closes the idempotency gap for mobile
+  // offline-queue resends — see sales.dto.ts's CreateSalesOrderDto for the
+  // original pattern this mirrors.
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  idempotencyKey?: string;
 }
 
 export class CreatePoultryTransferDto {
@@ -532,6 +588,14 @@ export class CreatePoultryCostRecordDto {
   @IsOptional()
   @IsEnum(PoultryRecordStatus)
   status?: PoultryRecordStatus;
+
+  // Mobile parity audit (2026-08-17): closes the idempotency gap for mobile
+  // offline-queue resends — see sales.dto.ts's CreateSalesOrderDto for the
+  // original pattern this mirrors.
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  idempotencyKey?: string;
 }
 
 export class UpdateBatchStatusDto {
