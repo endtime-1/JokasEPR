@@ -1027,7 +1027,12 @@ export function EquipmentDetailsPage({ id }: { id: string }) {
   );
 }
 
+const ASSIGNMENT_STATUSES = ["ASSIGNED", "ACCEPTED", "IN_PROGRESS", "COMPLETED", "CANCELLED"];
+const ASSIGNMENT_EDIT_FORM_DEFAULT = { technicianId: "", dueDate: "", status: "ASSIGNED", notes: "" };
+
 export function AssignmentsPage() {
+  const { profile } = useAuth();
+  const canManage = profile?.hasGlobalAccess || (profile?.permissions ?? []).includes("maintenance.manage");
   const { options, optionsError } = useOptions();
   const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/assignments")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/maintenance/assignments"));
@@ -1035,6 +1040,16 @@ export function AssignmentsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [loadError, setLoadError] = useState("");
+
+  const [editRow, setEditRow] = useState<Record<string, unknown> | null>(null);
+  const [editForm, setEditForm] = useState(ASSIGNMENT_EDIT_FORM_DEFAULT);
+  const [editError, setEditError] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const [deleteRow, setDeleteRow] = useState<Record<string, unknown> | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+
   async function load() {
     setLoadError("");
     try {
@@ -1063,10 +1078,60 @@ export function AssignmentsPage() {
       setSubmitting(false);
     }
   }
+
+  function startEdit(row: Record<string, unknown>) {
+    const technician = row.technician as Record<string, unknown> | undefined;
+    setEditForm({
+      technicianId: String(technician?.id ?? ""),
+      dueDate: row.dueDate ? String(row.dueDate).slice(0, 10) : "",
+      status: String(row.status ?? "ASSIGNED"),
+      notes: String(row.notes ?? ""),
+    });
+    setEditError("");
+    setEditRow(row);
+  }
+
+  async function saveEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editRow) return;
+    setSavingEdit(true);
+    setEditError("");
+    try {
+      await apiFetch(`/maintenance/assignments/${editRow.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ ...editForm, technicianId: editForm.technicianId || undefined, dueDate: editForm.dueDate || undefined, notes: editForm.notes || undefined }),
+      });
+      invalidateCache("/maintenance/assignments", true);
+      setEditRow(null);
+      await load();
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : "Failed to save changes.");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function doDelete() {
+    if (!deleteRow) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await apiFetch(`/maintenance/assignments/${deleteRow.id}`, { method: "DELETE" });
+      invalidateCache("/maintenance/assignments", true);
+      setDeleteRow(null);
+      await load();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete assignment.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <>
       <PageHeader title="Technician Assignments" subtitle="Assign a technician to a machine or equipment for scheduled or breakdown work." />
       {(loadError || optionsError) && <div className="app-alert-warning mb-4">{loadError || optionsError}</div>}
+      {deleteError && <div className="app-alert-warning mb-4">{deleteError}</div>}
       <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-4">
         <SelectField label="Technician" value={form.technicianId || options.technicians[0]?.id || ""} options={options.technicians} onChange={(value) => setForm({ ...form, technicianId: value })} />
         <SelectField label="Machine" value={form.machineId} options={options.machines} onChange={(value) => setForm({ ...form, machineId: value, equipmentId: value ? "" : form.equipmentId })} />
@@ -1078,12 +1143,76 @@ export function AssignmentsPage() {
         </button>
         {submitError && <p className="col-span-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>}
       </form>
-      <SimpleRowsTable rows={rows} loading={loading} />
+      <DataTable
+        rows={rows}
+        loading={loading}
+        empty="No technician assignments found"
+        columns={[
+          { key: "technician", label: "Technician", render: (row) => String((row.technician as Record<string, unknown>)?.fullName ?? "—") },
+          { key: "asset", label: "Asset", render: assetName },
+          { key: "dueDate", label: "Due", render: (row) => machineDate(row.dueDate) },
+          { key: "status", label: "Status", render: (row) => <StatusBadge status={String(row.status ?? "")} /> },
+          { key: "notes", label: "Notes", render: (row) => String(row.notes ?? "—") },
+          ...(canManage ? [{
+            key: "actions",
+            label: "Actions",
+            render: (row: Record<string, unknown>) => (
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  onClick={() => startEdit(row)}
+                  className="inline-flex items-center gap-1 rounded-md border border-line bg-white px-2.5 py-1 text-xs font-semibold text-ink/70 hover:border-brand/40 hover:bg-brand/5 hover:text-brand"
+                >
+                  <Pencil className="h-3 w-3" /> Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setDeleteError(""); setDeleteRow(row); }}
+                  className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-600 hover:bg-red-100"
+                >
+                  <Trash2 className="h-3 w-3" /> Delete
+                </button>
+              </div>
+            ),
+          }] : []),
+        ]}
+      />
+
+      <Modal open={!!editRow} onClose={() => !savingEdit && setEditRow(null)} title="Edit Assignment" size="md">
+        <form onSubmit={saveEdit} className="grid gap-4 sm:grid-cols-2">
+          {editError && <p className="col-span-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{editError}</p>}
+          <SelectField label="Technician" value={editForm.technicianId} options={options.technicians} onChange={(value) => setEditForm({ ...editForm, technicianId: value })} />
+          <FormField label="Status"><select className={inputClass} value={editForm.status} onChange={(event) => setEditForm({ ...editForm, status: event.target.value })}>{ASSIGNMENT_STATUSES.map((s) => <option key={s}>{s}</option>)}</select></FormField>
+          <TextField label="Due date" type="date" value={editForm.dueDate} onChange={(value) => setEditForm({ ...editForm, dueDate: value })} />
+          <div className="sm:col-span-2"><TextField label="Notes" value={editForm.notes} onChange={(value) => setEditForm({ ...editForm, notes: value })} /></div>
+          <div className="col-span-2 flex justify-end gap-3">
+            <button type="button" className="app-button-secondary" onClick={() => setEditRow(null)} disabled={savingEdit}>Cancel</button>
+            <button disabled={savingEdit} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60">
+              {savingEdit ? "Saving…" : "Save changes"}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      <ConfirmModal
+        open={!!deleteRow}
+        onClose={() => setDeleteRow(null)}
+        onConfirm={doDelete}
+        loading={deleting}
+        title="Delete assignment?"
+        message="This will permanently remove this technician assignment. This can't be undone."
+        confirmLabel="Delete assignment"
+      />
     </>
   );
 }
 
+const DOWNTIME_STATUSES = ["OPEN", "CLOSED", "VERIFIED"];
+const DOWNTIME_EDIT_FORM_DEFAULT = { endAt: "", reason: "", status: "OPEN" };
+
 export function DowntimePage() {
+  const { profile } = useAuth();
+  const canManage = profile?.hasGlobalAccess || (profile?.permissions ?? []).includes("maintenance.manage");
   const { options, optionsError } = useOptions();
   const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/downtime")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/maintenance/downtime"));
@@ -1091,6 +1220,16 @@ export function DowntimePage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [loadError, setLoadError] = useState("");
+
+  const [editRow, setEditRow] = useState<Record<string, unknown> | null>(null);
+  const [editForm, setEditForm] = useState(DOWNTIME_EDIT_FORM_DEFAULT);
+  const [editError, setEditError] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const [deleteRow, setDeleteRow] = useState<Record<string, unknown> | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+
   async function load() {
     setLoadError("");
     try {
@@ -1120,28 +1259,139 @@ export function DowntimePage() {
       setSubmitting(false);
     }
   }
+
+  function startEdit(row: Record<string, unknown>) {
+    setEditForm({
+      endAt: row.endAt ? String(row.endAt).slice(0, 16) : "",
+      reason: String(row.reason ?? ""),
+      status: String(row.status ?? "OPEN"),
+    });
+    setEditError("");
+    setEditRow(row);
+  }
+
+  async function saveEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editRow) return;
+    setSavingEdit(true);
+    setEditError("");
+    try {
+      await apiFetch(`/maintenance/downtime/${editRow.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ ...editForm, endAt: editForm.endAt || undefined }),
+      });
+      invalidateCache("/maintenance/downtime", true);
+      setEditRow(null);
+      await load();
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : "Failed to save changes.");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function doDelete() {
+    if (!deleteRow) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await apiFetch(`/maintenance/downtime/${deleteRow.id}`, { method: "DELETE" });
+      invalidateCache("/maintenance/downtime", true);
+      setDeleteRow(null);
+      await load();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete downtime record.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <>
       <PageHeader title="Downtime Log" subtitle="Machine and equipment downtime by asset, reason, duration, and status." />
       {(loadError || optionsError) && <div className="app-alert-warning mb-4">{loadError || optionsError}</div>}
+      {deleteError && <div className="app-alert-warning mb-4">{deleteError}</div>}
       <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-4">
         <SelectField label="Machine" value={form.machineId} options={options.machines} onChange={(value) => setForm({ ...form, machineId: value, equipmentId: value ? "" : form.equipmentId })} />
         <SelectField label="Equipment" value={form.equipmentId} options={options.equipment} onChange={(value) => setForm({ ...form, equipmentId: value, machineId: value ? "" : form.machineId })} />
         <TextField label="Started at" type="datetime-local" value={form.startAt} onChange={(value) => setForm({ ...form, startAt: value })} required />
         <TextField label="Ended at" type="datetime-local" value={form.endAt} onChange={(value) => setForm({ ...form, endAt: value })} />
         <TextField label="Reason" value={form.reason} onChange={(value) => setForm({ ...form, reason: value })} required />
-        <FormField label="Status"><select className={inputClass} value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}><option>OPEN</option><option>CLOSED</option><option>VERIFIED</option></select></FormField>
+        <FormField label="Status"><select className={inputClass} value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}>{DOWNTIME_STATUSES.map((s) => <option key={s}>{s}</option>)}</select></FormField>
         <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:col-span-4">
           {submitting ? "Logging…" : "Log downtime"}
         </button>
         {submitError && <p className="col-span-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>}
       </form>
-      <SimpleRowsTable rows={rows} loading={loading} />
+      <DataTable
+        rows={rows}
+        loading={loading}
+        empty="No downtime records found"
+        columns={[
+          { key: "asset", label: "Asset", render: assetName },
+          { key: "startAt", label: "Started", render: (row) => machineDate(row.startAt) },
+          { key: "endAt", label: "Ended", render: (row) => row.endAt ? machineDate(row.endAt) : "—" },
+          { key: "durationHours", label: "Hours", render: (row) => row.durationHours != null ? String(row.durationHours) : "—" },
+          { key: "reason", label: "Reason" },
+          { key: "status", label: "Status", render: (row) => <StatusBadge status={String(row.status ?? "")} /> },
+          ...(canManage ? [{
+            key: "actions",
+            label: "Actions",
+            render: (row: Record<string, unknown>) => (
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  onClick={() => startEdit(row)}
+                  className="inline-flex items-center gap-1 rounded-md border border-line bg-white px-2.5 py-1 text-xs font-semibold text-ink/70 hover:border-brand/40 hover:bg-brand/5 hover:text-brand"
+                >
+                  <Pencil className="h-3 w-3" /> Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setDeleteError(""); setDeleteRow(row); }}
+                  className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-600 hover:bg-red-100"
+                >
+                  <Trash2 className="h-3 w-3" /> Delete
+                </button>
+              </div>
+            ),
+          }] : []),
+        ]}
+      />
+
+      <Modal open={!!editRow} onClose={() => !savingEdit && setEditRow(null)} title="Edit Downtime" size="md">
+        <form onSubmit={saveEdit} className="grid gap-4 sm:grid-cols-2">
+          {editError && <p className="col-span-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{editError}</p>}
+          <TextField label="Ended at" type="datetime-local" value={editForm.endAt} onChange={(value) => setEditForm({ ...editForm, endAt: value })} />
+          <FormField label="Status"><select className={inputClass} value={editForm.status} onChange={(event) => setEditForm({ ...editForm, status: event.target.value })}>{DOWNTIME_STATUSES.map((s) => <option key={s}>{s}</option>)}</select></FormField>
+          <div className="sm:col-span-2"><TextField label="Reason" value={editForm.reason} onChange={(value) => setEditForm({ ...editForm, reason: value })} required /></div>
+          <div className="col-span-2 flex justify-end gap-3">
+            <button type="button" className="app-button-secondary" onClick={() => setEditRow(null)} disabled={savingEdit}>Cancel</button>
+            <button disabled={savingEdit} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60">
+              {savingEdit ? "Saving…" : "Save changes"}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      <ConfirmModal
+        open={!!deleteRow}
+        onClose={() => setDeleteRow(null)}
+        onConfirm={doDelete}
+        loading={deleting}
+        title="Delete downtime record?"
+        message="This will permanently remove this downtime record. This can't be undone."
+        confirmLabel="Delete record"
+      />
     </>
   );
 }
 
+const RECORD_EDIT_FORM_DEFAULT = { maintenanceType: "PREVENTIVE", description: "", findings: "", nextDueDate: "" };
+
 export function RecordsPage() {
+  const { profile } = useAuth();
+  const canManage = profile?.hasGlobalAccess || (profile?.permissions ?? []).includes("maintenance.manage");
   const { options, optionsError } = useOptions();
   const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/records")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/maintenance/records"));
@@ -1149,6 +1399,16 @@ export function RecordsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [loadError, setLoadError] = useState("");
+
+  const [editRow, setEditRow] = useState<Record<string, unknown> | null>(null);
+  const [editForm, setEditForm] = useState(RECORD_EDIT_FORM_DEFAULT);
+  const [editError, setEditError] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const [deleteRow, setDeleteRow] = useState<Record<string, unknown> | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+
   async function load() {
     setLoadError("");
     try {
@@ -1178,14 +1438,63 @@ export function RecordsPage() {
       setSubmitting(false);
     }
   }
+
+  function startEdit(row: Record<string, unknown>) {
+    setEditForm({
+      maintenanceType: String(row.maintenanceType ?? "PREVENTIVE"),
+      description: String(row.description ?? ""),
+      findings: String(row.findings ?? ""),
+      nextDueDate: row.nextDueDate ? String(row.nextDueDate).slice(0, 10) : "",
+    });
+    setEditError("");
+    setEditRow(row);
+  }
+
+  async function saveEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editRow) return;
+    setSavingEdit(true);
+    setEditError("");
+    try {
+      await apiFetch(`/maintenance/records/${editRow.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ ...editForm, findings: editForm.findings || undefined, nextDueDate: editForm.nextDueDate || undefined }),
+      });
+      invalidateCache("/maintenance/records", true);
+      setEditRow(null);
+      await load();
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : "Failed to save changes.");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function doDelete() {
+    if (!deleteRow) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await apiFetch(`/maintenance/records/${deleteRow.id}`, { method: "DELETE" });
+      invalidateCache("/maintenance/records", true);
+      setDeleteRow(null);
+      await load();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete work order.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <>
       <PageHeader title="Work Orders" subtitle="Log completed preventive, corrective, inspection, calibration, and repair work." />
       {(loadError || optionsError) && <div className="app-alert-warning mb-4">{loadError || optionsError}</div>}
+      {deleteError && <div className="app-alert-warning mb-4">{deleteError}</div>}
       <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-4">
         <SelectField label="Machine" value={form.machineId} options={options.machines} onChange={(value) => setForm({ ...form, machineId: value, equipmentId: value ? "" : form.equipmentId })} />
         <SelectField label="Equipment" value={form.equipmentId} options={options.equipment} onChange={(value) => setForm({ ...form, equipmentId: value, machineId: value ? "" : form.machineId })} />
-        <FormField label="Type"><select className={inputClass} value={form.maintenanceType} onChange={(event) => setForm({ ...form, maintenanceType: event.target.value })}><option>PREVENTIVE</option><option>CORRECTIVE</option><option>INSPECTION</option><option>CALIBRATION</option><option>REPAIR</option></select></FormField>
+        <FormField label="Type"><select className={inputClass} value={form.maintenanceType} onChange={(event) => setForm({ ...form, maintenanceType: event.target.value })}>{MAINTENANCE_TYPES.map((t) => <option key={t}>{t}</option>)}</select></FormField>
         <TextField label="Next due date" type="date" value={form.nextDueDate} onChange={(value) => setForm({ ...form, nextDueDate: value })} />
         <TextField label="Description" value={form.description} onChange={(value) => setForm({ ...form, description: value })} required />
         <TextField label="Findings" value={form.findings} onChange={(value) => setForm({ ...form, findings: value })} />
@@ -1194,7 +1503,68 @@ export function RecordsPage() {
         </button>
         {submitError && <p className="col-span-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>}
       </form>
-      <SimpleRowsTable rows={rows} loading={loading} />
+      <DataTable
+        rows={rows}
+        loading={loading}
+        empty="No work orders logged"
+        columns={[
+          { key: "recordNumber", label: "Record #" },
+          { key: "asset", label: "Asset", render: assetName },
+          { key: "maintenanceType", label: "Type" },
+          { key: "maintenanceDate", label: "Date", render: (row) => machineDate(row.maintenanceDate) },
+          { key: "description", label: "Description" },
+          { key: "findings", label: "Findings", render: (row) => String(row.findings ?? "—") },
+          { key: "status", label: "Status", render: (row) => <StatusBadge status={String(row.status ?? "")} /> },
+          ...(canManage ? [{
+            key: "actions",
+            label: "Actions",
+            render: (row: Record<string, unknown>) => (
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  onClick={() => startEdit(row)}
+                  className="inline-flex items-center gap-1 rounded-md border border-line bg-white px-2.5 py-1 text-xs font-semibold text-ink/70 hover:border-brand/40 hover:bg-brand/5 hover:text-brand"
+                >
+                  <Pencil className="h-3 w-3" /> Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setDeleteError(""); setDeleteRow(row); }}
+                  className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-600 hover:bg-red-100"
+                >
+                  <Trash2 className="h-3 w-3" /> Delete
+                </button>
+              </div>
+            ),
+          }] : []),
+        ]}
+      />
+
+      <Modal open={!!editRow} onClose={() => !savingEdit && setEditRow(null)} title="Edit Work Order" size="md">
+        <form onSubmit={saveEdit} className="grid gap-4 sm:grid-cols-2">
+          {editError && <p className="col-span-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{editError}</p>}
+          <FormField label="Type"><select className={inputClass} value={editForm.maintenanceType} onChange={(event) => setEditForm({ ...editForm, maintenanceType: event.target.value })}>{MAINTENANCE_TYPES.map((t) => <option key={t}>{t}</option>)}</select></FormField>
+          <TextField label="Next due date" type="date" value={editForm.nextDueDate} onChange={(value) => setEditForm({ ...editForm, nextDueDate: value })} />
+          <div className="sm:col-span-2"><TextField label="Description" value={editForm.description} onChange={(value) => setEditForm({ ...editForm, description: value })} required /></div>
+          <div className="sm:col-span-2"><TextField label="Findings" value={editForm.findings} onChange={(value) => setEditForm({ ...editForm, findings: value })} /></div>
+          <div className="col-span-2 flex justify-end gap-3">
+            <button type="button" className="app-button-secondary" onClick={() => setEditRow(null)} disabled={savingEdit}>Cancel</button>
+            <button disabled={savingEdit} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60">
+              {savingEdit ? "Saving…" : "Save changes"}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      <ConfirmModal
+        open={!!deleteRow}
+        onClose={() => setDeleteRow(null)}
+        onConfirm={doDelete}
+        loading={deleting}
+        title="Delete work order?"
+        message="This will permanently remove this work order. This can't be undone."
+        confirmLabel="Delete work order"
+      />
     </>
   );
 }
@@ -1398,7 +1768,19 @@ export function DocumentsPage() {
   );
 }
 
+const MAINTENANCE_TYPES = ["PREVENTIVE", "CORRECTIVE", "INSPECTION", "CALIBRATION", "REPAIR"];
+const MAINTENANCE_PRIORITIES = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
+const SCHEDULE_EDIT_FORM_DEFAULT = { title: "", maintenanceType: "PREVENTIVE", priority: "MEDIUM", frequencyDays: "", nextDueDate: "", instructions: "" };
+
+function assetName(row: Record<string, unknown>) {
+  const machine = row.machine as Record<string, unknown> | undefined;
+  const equipment = row.equipment as Record<string, unknown> | undefined;
+  return String(machine?.name ?? equipment?.name ?? "—");
+}
+
 export function SchedulePage() {
+  const { profile } = useAuth();
+  const canManage = profile?.hasGlobalAccess || (profile?.permissions ?? []).includes("maintenance.manage");
   const { options, optionsError } = useOptions();
   const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/schedules")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/maintenance/schedules"));
@@ -1406,6 +1788,16 @@ export function SchedulePage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [loadError, setLoadError] = useState("");
+
+  const [editRow, setEditRow] = useState<Record<string, unknown> | null>(null);
+  const [editForm, setEditForm] = useState(SCHEDULE_EDIT_FORM_DEFAULT);
+  const [editError, setEditError] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const [deleteRow, setDeleteRow] = useState<Record<string, unknown> | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+
   async function load() {
     setLoadError("");
     try {
@@ -1432,17 +1824,68 @@ export function SchedulePage() {
       setSubmitting(false);
     }
   }
+
+  function startEdit(row: Record<string, unknown>) {
+    setEditForm({
+      title: String(row.title ?? ""),
+      maintenanceType: String(row.maintenanceType ?? "PREVENTIVE"),
+      priority: String(row.priority ?? "MEDIUM"),
+      frequencyDays: row.frequencyDays != null ? String(row.frequencyDays) : "",
+      nextDueDate: row.nextDueDate ? String(row.nextDueDate).slice(0, 10) : "",
+      instructions: String(row.instructions ?? ""),
+    });
+    setEditError("");
+    setEditRow(row);
+  }
+
+  async function saveEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editRow) return;
+    setSavingEdit(true);
+    setEditError("");
+    try {
+      await apiFetch(`/maintenance/schedules/${editRow.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ ...editForm, frequencyDays: Number(editForm.frequencyDays), instructions: editForm.instructions || undefined }),
+      });
+      invalidateCache("/maintenance/schedules", true);
+      setEditRow(null);
+      await load();
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : "Failed to save changes.");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function doDelete() {
+    if (!deleteRow) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await apiFetch(`/maintenance/schedules/${deleteRow.id}`, { method: "DELETE" });
+      invalidateCache("/maintenance/schedules", true);
+      setDeleteRow(null);
+      await load();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete schedule.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <>
       <PageHeader title="Maintenance Schedule" subtitle="Preventive maintenance, inspection, calibration, and service due-date planning." />
       {(loadError || optionsError) && <div className="app-alert-warning mb-4">{loadError || optionsError}</div>}
+      {deleteError && <div className="app-alert-warning mb-4">{deleteError}</div>}
       <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-4">
         <SelectField label="Branch" value={form.branchId || options.branches[0]?.id || ""} options={options.branches} onChange={(value) => setForm({ ...form, branchId: value })} />
         <SelectField label="Machine" value={form.machineId} options={options.machines} onChange={(value) => setForm({ ...form, machineId: value, equipmentId: value ? "" : form.equipmentId })} />
         <SelectField label="Equipment" value={form.equipmentId} options={options.equipment} onChange={(value) => setForm({ ...form, equipmentId: value, machineId: value ? "" : form.machineId })} />
         <TextField label="Title" value={form.title} onChange={(value) => setForm({ ...form, title: value })} required />
-        <FormField label="Type"><select className={inputClass} value={form.maintenanceType} onChange={(event) => setForm({ ...form, maintenanceType: event.target.value })}><option>PREVENTIVE</option><option>CORRECTIVE</option><option>INSPECTION</option><option>CALIBRATION</option><option>REPAIR</option></select></FormField>
-        <FormField label="Priority"><select className={inputClass} value={form.priority} onChange={(event) => setForm({ ...form, priority: event.target.value })}><option>LOW</option><option>MEDIUM</option><option>HIGH</option><option>CRITICAL</option></select></FormField>
+        <FormField label="Type"><select className={inputClass} value={form.maintenanceType} onChange={(event) => setForm({ ...form, maintenanceType: event.target.value })}>{MAINTENANCE_TYPES.map((t) => <option key={t}>{t}</option>)}</select></FormField>
+        <FormField label="Priority"><select className={inputClass} value={form.priority} onChange={(event) => setForm({ ...form, priority: event.target.value })}>{MAINTENANCE_PRIORITIES.map((p) => <option key={p}>{p}</option>)}</select></FormField>
         <TextField label="Frequency days" type="number" value={form.frequencyDays} onChange={(value) => setForm({ ...form, frequencyDays: value })} required />
         <TextField label="Next due date" type="date" value={form.nextDueDate} onChange={(value) => setForm({ ...form, nextDueDate: value })} required />
         <TextField label="Instructions" value={form.instructions} onChange={(value) => setForm({ ...form, instructions: value })} />
@@ -1451,7 +1894,70 @@ export function SchedulePage() {
       </button>
       {submitError && <p className="col-span-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>}
       </form>
-      <SimpleRowsTable rows={rows} loading={loading} />
+      <DataTable
+        rows={rows}
+        loading={loading}
+        empty="No maintenance schedules found"
+        columns={[
+          { key: "scheduleNumber", label: "Schedule #" },
+          { key: "asset", label: "Asset", render: assetName },
+          { key: "title", label: "Title" },
+          { key: "maintenanceType", label: "Type" },
+          { key: "priority", label: "Priority" },
+          { key: "nextDueDate", label: "Next Due", render: (row) => machineDate(row.nextDueDate) },
+          { key: "status", label: "Status", render: (row) => <StatusBadge status={String(row.status ?? "")} /> },
+          ...(canManage ? [{
+            key: "actions",
+            label: "Actions",
+            render: (row: Record<string, unknown>) => (
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  onClick={() => startEdit(row)}
+                  className="inline-flex items-center gap-1 rounded-md border border-line bg-white px-2.5 py-1 text-xs font-semibold text-ink/70 hover:border-brand/40 hover:bg-brand/5 hover:text-brand"
+                >
+                  <Pencil className="h-3 w-3" /> Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setDeleteError(""); setDeleteRow(row); }}
+                  className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-600 hover:bg-red-100"
+                >
+                  <Trash2 className="h-3 w-3" /> Delete
+                </button>
+              </div>
+            ),
+          }] : []),
+        ]}
+      />
+
+      <Modal open={!!editRow} onClose={() => !savingEdit && setEditRow(null)} title="Edit Schedule" size="md">
+        <form onSubmit={saveEdit} className="grid gap-4 sm:grid-cols-2">
+          {editError && <p className="col-span-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{editError}</p>}
+          <div className="sm:col-span-2"><TextField label="Title" value={editForm.title} onChange={(value) => setEditForm({ ...editForm, title: value })} required /></div>
+          <FormField label="Type"><select className={inputClass} value={editForm.maintenanceType} onChange={(event) => setEditForm({ ...editForm, maintenanceType: event.target.value })}>{MAINTENANCE_TYPES.map((t) => <option key={t}>{t}</option>)}</select></FormField>
+          <FormField label="Priority"><select className={inputClass} value={editForm.priority} onChange={(event) => setEditForm({ ...editForm, priority: event.target.value })}>{MAINTENANCE_PRIORITIES.map((p) => <option key={p}>{p}</option>)}</select></FormField>
+          <TextField label="Frequency days" type="number" value={editForm.frequencyDays} onChange={(value) => setEditForm({ ...editForm, frequencyDays: value })} required />
+          <TextField label="Next due date" type="date" value={editForm.nextDueDate} onChange={(value) => setEditForm({ ...editForm, nextDueDate: value })} required />
+          <div className="sm:col-span-2"><TextField label="Instructions" value={editForm.instructions} onChange={(value) => setEditForm({ ...editForm, instructions: value })} /></div>
+          <div className="col-span-2 flex justify-end gap-3">
+            <button type="button" className="app-button-secondary" onClick={() => setEditRow(null)} disabled={savingEdit}>Cancel</button>
+            <button disabled={savingEdit} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60">
+              {savingEdit ? "Saving…" : "Save changes"}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      <ConfirmModal
+        open={!!deleteRow}
+        onClose={() => setDeleteRow(null)}
+        onConfirm={doDelete}
+        loading={deleting}
+        title="Delete schedule?"
+        message={`This will permanently remove "${deleteRow?.title}". This can't be undone.`}
+        confirmLabel="Delete schedule"
+      />
     </>
   );
 }
@@ -1618,7 +2124,13 @@ export function SparePartsPage() {
   );
 }
 
+const COST_TYPES = ["LABOR", "SPARE_PART", "OUTSOURCED_SERVICE", "UTILITIES", "TRANSPORT", "OTHER"];
+const COST_STATUSES = ["SCHEDULED", "ASSIGNED", "IN_PROGRESS", "COMPLETED", "CANCELLED", "OVERDUE"];
+const COST_EDIT_FORM_DEFAULT = { costType: "LABOR", amount: "", costDate: "", description: "", status: "COMPLETED" };
+
 export function MaintenanceCostReportPage() {
+  const { profile } = useAuth();
+  const canManage = profile?.hasGlobalAccess || (profile?.permissions ?? []).includes("finance.manage");
   const { options, optionsError } = useOptions();
   const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/costs")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/maintenance/costs"));
@@ -1626,6 +2138,16 @@ export function MaintenanceCostReportPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [loadError, setLoadError] = useState("");
+
+  const [editRow, setEditRow] = useState<Record<string, unknown> | null>(null);
+  const [editForm, setEditForm] = useState(COST_EDIT_FORM_DEFAULT);
+  const [editError, setEditError] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const [deleteRow, setDeleteRow] = useState<Record<string, unknown> | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+
   async function load() {
     setLoadError("");
     return apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/costs")
@@ -1650,14 +2172,64 @@ export function MaintenanceCostReportPage() {
       setSubmitting(false);
     }
   }
+
+  function startEdit(row: Record<string, unknown>) {
+    setEditForm({
+      costType: String(row.costType ?? "LABOR"),
+      amount: row.amount != null ? String(row.amount) : "",
+      costDate: row.costDate ? String(row.costDate).slice(0, 10) : "",
+      description: String(row.description ?? ""),
+      status: String(row.status ?? "COMPLETED"),
+    });
+    setEditError("");
+    setEditRow(row);
+  }
+
+  async function saveEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editRow) return;
+    setSavingEdit(true);
+    setEditError("");
+    try {
+      await apiFetch(`/maintenance/costs/${editRow.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ ...editForm, amount: Number(editForm.amount), costDate: editForm.costDate || undefined, description: editForm.description || undefined }),
+      });
+      invalidateCache("/maintenance/costs", true);
+      setEditRow(null);
+      await load();
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : "Failed to save changes.");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function doDelete() {
+    if (!deleteRow) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await apiFetch(`/maintenance/costs/${deleteRow.id}`, { method: "DELETE" });
+      invalidateCache("/maintenance/costs", true);
+      setDeleteRow(null);
+      await load();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete cost record.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <>
       <PageHeader title="Maintenance Cost Report" subtitle="Repair cost tracking by machine, equipment, spare parts, labor, and outsourced work." />
       {(loadError || optionsError) && <div className="app-alert-warning mb-4">{loadError || optionsError}</div>}
+      {deleteError && <div className="app-alert-warning mb-4">{deleteError}</div>}
       <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-4">
         <SelectField label="Machine" value={form.machineId} options={options.machines} onChange={(value) => setForm({ ...form, machineId: value, equipmentId: value ? "" : form.equipmentId })} />
         <SelectField label="Equipment" value={form.equipmentId} options={options.equipment} onChange={(value) => setForm({ ...form, equipmentId: value, machineId: value ? "" : form.machineId })} />
-        <FormField label="Cost type"><select className={inputClass} value={form.costType} onChange={(event) => setForm({ ...form, costType: event.target.value })}>{["LABOR", "SPARE_PART", "OUTSOURCED_SERVICE", "UTILITIES", "TRANSPORT", "OTHER"].map((type) => <option key={type}>{type}</option>)}</select></FormField>
+        <FormField label="Cost type"><select className={inputClass} value={form.costType} onChange={(event) => setForm({ ...form, costType: event.target.value })}>{COST_TYPES.map((type) => <option key={type}>{type}</option>)}</select></FormField>
         <TextField label="Amount (GHS)" type="number" value={form.amount} onChange={(value) => setForm({ ...form, amount: value })} required />
         <TextField label="Cost date" type="date" value={form.costDate} onChange={(value) => setForm({ ...form, costDate: value })} />
         <TextField label="Description" value={form.description} onChange={(value) => setForm({ ...form, description: value })} />
@@ -1669,7 +2241,68 @@ export function MaintenanceCostReportPage() {
       <button className="mb-6 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" onClick={() => downloadReport("/maintenance/reports/costs.csv", "maintenance-costs.csv")}>
         <Download aria-hidden className="h-4 w-4" /> Download maintenance costs CSV
       </button>
-      <SimpleRowsTable rows={rows} loading={loading} />
+      <DataTable
+        rows={rows}
+        loading={loading}
+        empty="No maintenance costs recorded"
+        columns={[
+          { key: "asset", label: "Asset", render: assetName },
+          { key: "costType", label: "Type" },
+          { key: "amount", label: "Amount (GHS)", render: (row) => row.amount != null ? String(row.amount) : "—" },
+          { key: "costDate", label: "Date", render: (row) => machineDate(row.costDate) },
+          { key: "description", label: "Description", render: (row) => String(row.description ?? "—") },
+          { key: "status", label: "Status", render: (row) => <StatusBadge status={String(row.status ?? "")} /> },
+          ...(canManage ? [{
+            key: "actions",
+            label: "Actions",
+            render: (row: Record<string, unknown>) => (
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  onClick={() => startEdit(row)}
+                  className="inline-flex items-center gap-1 rounded-md border border-line bg-white px-2.5 py-1 text-xs font-semibold text-ink/70 hover:border-brand/40 hover:bg-brand/5 hover:text-brand"
+                >
+                  <Pencil className="h-3 w-3" /> Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setDeleteError(""); setDeleteRow(row); }}
+                  className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-600 hover:bg-red-100"
+                >
+                  <Trash2 className="h-3 w-3" /> Delete
+                </button>
+              </div>
+            ),
+          }] : []),
+        ]}
+      />
+
+      <Modal open={!!editRow} onClose={() => !savingEdit && setEditRow(null)} title="Edit Cost Record" size="md">
+        <form onSubmit={saveEdit} className="grid gap-4 sm:grid-cols-2">
+          {editError && <p className="col-span-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{editError}</p>}
+          <FormField label="Cost type"><select className={inputClass} value={editForm.costType} onChange={(event) => setEditForm({ ...editForm, costType: event.target.value })}>{COST_TYPES.map((type) => <option key={type}>{type}</option>)}</select></FormField>
+          <FormField label="Status"><select className={inputClass} value={editForm.status} onChange={(event) => setEditForm({ ...editForm, status: event.target.value })}>{COST_STATUSES.map((s) => <option key={s}>{s}</option>)}</select></FormField>
+          <TextField label="Amount (GHS)" type="number" value={editForm.amount} onChange={(value) => setEditForm({ ...editForm, amount: value })} required />
+          <TextField label="Cost date" type="date" value={editForm.costDate} onChange={(value) => setEditForm({ ...editForm, costDate: value })} />
+          <div className="sm:col-span-2"><TextField label="Description" value={editForm.description} onChange={(value) => setEditForm({ ...editForm, description: value })} /></div>
+          <div className="col-span-2 flex justify-end gap-3">
+            <button type="button" className="app-button-secondary" onClick={() => setEditRow(null)} disabled={savingEdit}>Cancel</button>
+            <button disabled={savingEdit} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60">
+              {savingEdit ? "Saving…" : "Save changes"}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      <ConfirmModal
+        open={!!deleteRow}
+        onClose={() => setDeleteRow(null)}
+        onConfirm={doDelete}
+        loading={deleting}
+        title="Delete cost record?"
+        message="This will permanently remove this maintenance cost record. This can't be undone."
+        confirmLabel="Delete cost record"
+      />
     </>
   );
 }

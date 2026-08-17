@@ -19,10 +19,13 @@ import {
   MaintenanceQueryDto,
   UpdateAssetDocumentDto,
   UpdateBreakdownStatusDto,
+  UpdateDowntimeDto,
   UpdateEquipmentDto,
   UpdateMachineDto,
+  UpdateMaintenanceCostDto,
   UpdateMaintenanceRecordDto,
-  UpdateMaintenanceScheduleDto
+  UpdateMaintenanceScheduleDto,
+  UpdateTechnicianAssignmentDto
 } from "./dto/maintenance.dto";
 import { MaintenanceService } from "./maintenance.service";
 
@@ -193,6 +196,18 @@ export class MaintenanceController {
     return this.maintenanceService.createAssignment(user, dto, { ipAddress, userAgent });
   }
 
+  @Patch("assignments/:id")
+  @RequirePermissions(PERMISSIONS.MAINTENANCE_MANAGE)
+  updateAssignment(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateTechnicianAssignmentDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.maintenanceService.updateAssignment(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Delete("assignments/:id")
+  @RequirePermissions(PERMISSIONS.MAINTENANCE_MANAGE)
+  deleteAssignment(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.maintenanceService.deleteAssignment(user, id, { ipAddress, userAgent });
+  }
+
   @Get("downtime")
   @RequirePermissions(PERMISSIONS.MAINTENANCE_READ)
   downtime(@CurrentUser() user: AuthenticatedUser, @Query() query: MaintenanceQueryDto) {
@@ -205,6 +220,18 @@ export class MaintenanceController {
     return this.maintenanceService.createDowntime(user, dto, { ipAddress, userAgent });
   }
 
+  @Patch("downtime/:id")
+  @RequirePermissions(PERMISSIONS.MAINTENANCE_MANAGE)
+  updateDowntime(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateDowntimeDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.maintenanceService.updateDowntime(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Delete("downtime/:id")
+  @RequirePermissions(PERMISSIONS.MAINTENANCE_MANAGE)
+  deleteDowntime(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.maintenanceService.deleteDowntime(user, id, { ipAddress, userAgent });
+  }
+
   @Get("costs")
   @RequirePermissions(PERMISSIONS.FINANCE_READ)
   costs(@CurrentUser() user: AuthenticatedUser, @Query() query: MaintenanceQueryDto) {
@@ -215,6 +242,18 @@ export class MaintenanceController {
   @RequirePermissions(PERMISSIONS.FINANCE_MANAGE)
   createCost(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateMaintenanceCostDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.maintenanceService.createCost(user, dto, { ipAddress, userAgent });
+  }
+
+  @Patch("costs/:id")
+  @RequirePermissions(PERMISSIONS.FINANCE_MANAGE)
+  updateCost(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateMaintenanceCostDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.maintenanceService.updateCost(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Delete("costs/:id")
+  @RequirePermissions(PERMISSIONS.FINANCE_MANAGE)
+  deleteCost(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.maintenanceService.deleteCost(user, id, { ipAddress, userAgent });
   }
 
   @Get("documents")

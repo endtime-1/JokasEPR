@@ -11,9 +11,9 @@ const mockPrisma = {
   maintenanceSchedule: { findFirst: jest.fn(), update: jest.fn().mockResolvedValue({}), count: jest.fn(), findMany: jest.fn(), create: jest.fn().mockResolvedValue({ id: "sched-1" }) },
   maintenanceRecord: { count: jest.fn().mockResolvedValue(0), findFirst: jest.fn(), create: jest.fn() },
   breakdownRecord: { count: jest.fn(), findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn().mockResolvedValue({}), create: jest.fn().mockResolvedValue({ id: "bd-1" }) },
-  machineDowntimeRecord: { aggregate: jest.fn() },
-  maintenanceCost: { aggregate: jest.fn(), findMany: jest.fn(), create: jest.fn() },
-  technicianAssignment: { findMany: jest.fn(), count: jest.fn().mockResolvedValue(0) },
+  machineDowntimeRecord: { aggregate: jest.fn(), findFirst: jest.fn(), update: jest.fn().mockResolvedValue({}) },
+  maintenanceCost: { aggregate: jest.fn(), findMany: jest.fn(), create: jest.fn(), findFirst: jest.fn(), update: jest.fn().mockResolvedValue({}) },
+  technicianAssignment: { findMany: jest.fn(), count: jest.fn().mockResolvedValue(0), findFirst: jest.fn(), update: jest.fn().mockResolvedValue({}) },
   assetDocument: { count: jest.fn(), findMany: jest.fn(), findFirst: jest.fn(), create: jest.fn(), update: jest.fn() },
   inventoryItem: { findFirst: jest.fn(), updateMany: jest.fn() },
   product: { findFirst: jest.fn() },
@@ -554,6 +554,106 @@ describe("MaintenanceService.deleteEquipment — blocked by dependent live recor
     await service.deleteEquipment(makeUser(), "equip-1", {});
     expect(mockPrisma.equipment.update).toHaveBeenCalledWith({
       where: { id: "equip-1" },
+      data: expect.objectContaining({ deletedAt: expect.any(Date) })
+    });
+  });
+});
+
+describe("MaintenanceService.updateAssignment / deleteAssignment", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPrisma.technicianAssignment.findFirst.mockResolvedValue({ id: "asg-1", companyId: "company-1" });
+  });
+
+  it("404s for an assignment that doesn't exist", async () => {
+    mockPrisma.technicianAssignment.findFirst.mockResolvedValueOnce(null);
+    const service = makeService();
+    await expect(service.updateAssignment(makeUser(), "asg-1", { status: "COMPLETED" } as never, {})).rejects.toThrow(NotFoundException);
+  });
+
+  it("updates an assignment's status/technician/notes", async () => {
+    const service = makeService();
+    await service.updateAssignment(makeUser(), "asg-1", { status: "COMPLETED" } as never, {});
+    expect(mockPrisma.technicianAssignment.update).toHaveBeenCalledWith({
+      where: { id: "asg-1" },
+      data: expect.objectContaining({ status: "COMPLETED" })
+    });
+  });
+
+  it("soft-deletes an assignment", async () => {
+    const service = makeService();
+    await service.deleteAssignment(makeUser(), "asg-1", {});
+    expect(mockPrisma.technicianAssignment.update).toHaveBeenCalledWith({
+      where: { id: "asg-1" },
+      data: expect.objectContaining({ deletedAt: expect.any(Date) })
+    });
+  });
+});
+
+describe("MaintenanceService.updateDowntime / deleteDowntime", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPrisma.machineDowntimeRecord.findFirst.mockResolvedValue({ id: "dt-1", companyId: "company-1", startAt: new Date("2026-08-01T00:00:00Z"), endAt: null });
+  });
+
+  it("404s for a downtime record that doesn't exist", async () => {
+    mockPrisma.machineDowntimeRecord.findFirst.mockResolvedValueOnce(null);
+    const service = makeService();
+    await expect(service.updateDowntime(makeUser(), "dt-1", { endAt: "2026-08-01T02:00:00Z" } as never, {})).rejects.toThrow(NotFoundException);
+  });
+
+  it("recomputes durationHours when endAt is set", async () => {
+    const service = makeService();
+    await service.updateDowntime(makeUser(), "dt-1", { endAt: "2026-08-01T02:30:00Z" } as never, {});
+    expect(mockPrisma.machineDowntimeRecord.update).toHaveBeenCalledWith({
+      where: { id: "dt-1" },
+      data: expect.objectContaining({ durationHours: 2.5 })
+    });
+  });
+
+  it("rejects an endAt before the original startAt", async () => {
+    const service = makeService();
+    await expect(
+      service.updateDowntime(makeUser(), "dt-1", { endAt: "2026-07-31T00:00:00Z" } as never, {})
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it("soft-deletes a downtime record", async () => {
+    const service = makeService();
+    await service.deleteDowntime(makeUser(), "dt-1", {});
+    expect(mockPrisma.machineDowntimeRecord.update).toHaveBeenCalledWith({
+      where: { id: "dt-1" },
+      data: expect.objectContaining({ deletedAt: expect.any(Date) })
+    });
+  });
+});
+
+describe("MaintenanceService.updateCost / deleteCost", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPrisma.maintenanceCost.findFirst.mockResolvedValue({ id: "cost-1", companyId: "company-1" });
+  });
+
+  it("404s for a cost record that doesn't exist", async () => {
+    mockPrisma.maintenanceCost.findFirst.mockResolvedValueOnce(null);
+    const service = makeService();
+    await expect(service.updateCost(makeUser(), "cost-1", { amount: 100 } as never, {})).rejects.toThrow(NotFoundException);
+  });
+
+  it("updates a cost record's amount/type/description", async () => {
+    const service = makeService();
+    await service.updateCost(makeUser(), "cost-1", { amount: 250, costType: "LABOR" } as never, {});
+    expect(mockPrisma.maintenanceCost.update).toHaveBeenCalledWith({
+      where: { id: "cost-1" },
+      data: expect.objectContaining({ amount: 250, costType: "LABOR" })
+    });
+  });
+
+  it("soft-deletes a cost record", async () => {
+    const service = makeService();
+    await service.deleteCost(makeUser(), "cost-1", {});
+    expect(mockPrisma.maintenanceCost.update).toHaveBeenCalledWith({
+      where: { id: "cost-1" },
       data: expect.objectContaining({ deletedAt: expect.any(Date) })
     });
   });

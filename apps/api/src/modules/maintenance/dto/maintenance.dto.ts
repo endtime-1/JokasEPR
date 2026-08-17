@@ -108,6 +108,62 @@ export class UpdateMaintenanceRecordDto {
   nextDueDate?: string;
 }
 
+export class UpdateTechnicianAssignmentDto {
+  @IsOptional()
+  @IsUUID()
+  technicianId?: string;
+
+  @IsOptional()
+  @IsDateString()
+  dueDate?: string;
+
+  @IsOptional()
+  @IsEnum(TechnicianAssignmentStatus)
+  status?: TechnicianAssignmentStatus;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+}
+
+export class UpdateDowntimeDto {
+  @IsOptional()
+  @IsDateString()
+  endAt?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(240)
+  reason?: string;
+
+  @IsOptional()
+  @IsEnum(DowntimeStatus)
+  status?: DowntimeStatus;
+}
+
+export class UpdateMaintenanceCostDto {
+  @IsOptional()
+  @IsDateString()
+  costDate?: string;
+
+  @IsOptional()
+  @IsEnum(MaintenanceCostType)
+  costType?: MaintenanceCostType;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  amount?: number;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @IsOptional()
+  @IsEnum(MaintenanceWorkflowStatus)
+  status?: MaintenanceWorkflowStatus;
+}
+
 export class MaintenanceQueryDto {
   @IsOptional()
   @IsUUID()
