@@ -427,9 +427,9 @@ export function Modal({
         aria-hidden
       />
       <div
-        className={`animate-slide-up relative w-full ${widths[size]} rounded-xl border border-line bg-white shadow-modal`}
+        className={`animate-slide-up relative flex max-h-[90vh] w-full ${widths[size]} flex-col rounded-xl border border-line bg-white shadow-modal`}
       >
-        <div className="flex items-center justify-between border-b border-line px-5 py-4">
+        <div className="flex shrink-0 items-center justify-between border-b border-line px-5 py-4">
           <h3 id="modal-title" className="text-base font-bold text-ink">
             {title}
           </h3>
@@ -441,7 +441,7 @@ export function Modal({
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="p-5">{children}</div>
+        <div className="overflow-y-auto p-5">{children}</div>
       </div>
     </div>
   );
