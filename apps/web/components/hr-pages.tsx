@@ -47,6 +47,19 @@ async function compressImage(file: File, maxDim = 1024, quality = 0.85): Promise
 
 // Renders an employee avatar with automatic initials fallback when the photo
 // URL returns an error (404, network failure, etc.). Resets to photo when url changes.
+//
+// Employee photos are served from an authenticated endpoint
+// (GET /uploads/employees/:filename) via a plain <img src> tag — unlike
+// every other request in this app, that request gets no cold-start retry
+// (apiFetch's TRANSIENT_STATUSES handling never runs for it), so a Hostinger
+// wake-up mid-load (~10-40s) looks identical to a genuinely missing file: the
+// image 404s/fails once and, without this, permanently falls back to
+// initials for the rest of that render. A couple of short-backoff retries
+// before conceding to the fallback closes that gap — this is what "the photo
+// sometimes just doesn't show" looked like.
+const AVATAR_MAX_RETRIES = 2;
+const AVATAR_RETRY_DELAY_MS = 1500;
+
 function EmployeeAvatar({ url, name, size, text = "text-sm", ring = "" }: {
   url?: string | null;
   name: string;
@@ -54,11 +67,23 @@ function EmployeeAvatar({ url, name, size, text = "text-sm", ring = "" }: {
   text?: string;
   ring?: string;
 }) {
+  const [attempt, setAttempt] = useState(0);
   const [broken, setBroken] = useState(false);
   const src = normalizePhotoUrl(url);
-  useEffect(() => { setBroken(false); }, [url]);
+  useEffect(() => { setBroken(false); setAttempt(0); }, [url]);
+
+  function handleError() {
+    if (attempt < AVATAR_MAX_RETRIES) {
+      setTimeout(() => setAttempt((a) => a + 1), AVATAR_RETRY_DELAY_MS);
+    } else {
+      setBroken(true);
+    }
+  }
+
   if (src && !broken) {
-    return <img src={src} alt="" className={`${size} shrink-0 rounded-full object-cover ${ring}`.trim()} onError={() => setBroken(true)} />;
+    // key={attempt} forces a full remount on retry so the browser issues a
+    // genuinely fresh request instead of reusing the failed one.
+    return <img key={attempt} src={src} alt="" className={`${size} shrink-0 rounded-full object-cover ${ring}`.trim()} onError={handleError} />;
   }
   return (
     <span className={`${size} grid shrink-0 place-items-center rounded-full bg-brand/10 ${text} font-bold text-brand`}>
@@ -3167,14 +3192,12 @@ function buildTree(nodes: OrgNode[]): OrgNode & { children: any[] } {
 }
 
 function OrgCard({ node }: { node: OrgNode & { children: any[] } }) {
-  const initial = node.fullName.split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase();
   return (
     <div className="flex flex-col items-center gap-2">
       <div className="rounded-xl border border-line bg-surface p-3 shadow-sm w-44 text-center">
-        {node.photoUrl
-          ? <img src={node.photoUrl} alt={node.fullName} className="w-10 h-10 rounded-full object-cover mx-auto mb-1" />
-          : <div className="w-10 h-10 rounded-full bg-brand/10 flex items-center justify-center text-sm font-bold text-brand mx-auto mb-1">{initial}</div>
-        }
+        <div className="mx-auto mb-1 w-fit">
+          <EmployeeAvatar url={node.photoUrl} name={node.fullName || "?"} size="h-10 w-10" text="text-sm" />
+        </div>
         <p className="text-xs font-semibold text-ink truncate">{node.fullName}</p>
         {node.roleTitle && <p className="text-[10px] text-ink/60 truncate">{node.roleTitle}</p>}
         {node.branchName && <p className="text-[10px] text-ink/50 truncate">{node.branchName}</p>}
