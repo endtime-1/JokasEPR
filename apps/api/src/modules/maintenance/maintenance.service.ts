@@ -120,7 +120,13 @@ export class MaintenanceService {
   }
 
   async getMachine(user: AuthenticatedUser, id: string) {
-    const data = await this.prisma.machine.findFirst({ where: { ...this.machineWhere(user, {}), id }, include: { equipment: true, schedules: true, maintenanceRecords: true, breakdownRecords: true, downtimeRecords: true, costs: true } });
+    const data = await this.prisma.machine.findFirst({
+      where: { ...this.machineWhere(user, {}), id },
+      include: {
+        branch: true, farm: true, warehouse: true, productionSite: true,
+        equipment: true, schedules: true, maintenanceRecords: true, breakdownRecords: true, downtimeRecords: true, costs: true
+      }
+    });
     if (!data) throw new NotFoundException("Machine was not found.");
     return { data };
   }

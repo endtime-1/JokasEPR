@@ -678,6 +678,11 @@ export function MachinesPage({ create = false }: { create?: boolean }) {
   );
 }
 
+function machineDate(value: unknown) {
+  if (!value) return "—";
+  return new Date(String(value)).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+}
+
 export function MachineDetailsPage({ id }: { id: string }) {
   const [machine, setMachine] = useState<Record<string, unknown> | null>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>>>(`/maintenance/machines/${id}`)?.data ?? null);
   const [loadError, setLoadError] = useState("");
@@ -687,15 +692,67 @@ export function MachineDetailsPage({ id }: { id: string }) {
       .then((response) => setMachine(response.data))
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load machine."));
   }, [id]);
+
+  const branch = machine?.branch as { name?: string } | undefined;
+  const farm = machine?.farm as { name?: string } | undefined;
+  const warehouse = machine?.warehouse as { name?: string } | undefined;
+  const productionSite = machine?.productionSite as { name?: string } | undefined;
+
   return (
     <>
       <PageHeader title={String(machine?.name ?? "Machine Details")} subtitle="Maintenance schedules, repairs, breakdowns, downtime, equipment, and cost history." />
       {loadError && <div className="app-alert-warning mb-4">{loadError}</div>}
+
+      <div className="mb-6 rounded-md border border-line bg-white p-5 shadow-panel">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-sm font-bold uppercase tracking-wide text-ink/45">Machine Details</h2>
+          {machine && <StatusBadge status={String(machine.status ?? "")} />}
+        </div>
+        <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Code</dt><dd className="mt-0.5 text-sm text-ink">{String(machine?.code ?? "—")}</dd></div>
+          <div><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Type</dt><dd className="mt-0.5 text-sm text-ink">{String(machine?.machineType ?? "—")}</dd></div>
+          <div><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Manufacturer</dt><dd className="mt-0.5 text-sm text-ink">{String(machine?.manufacturer ?? "—")}</dd></div>
+          <div><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Model</dt><dd className="mt-0.5 text-sm text-ink">{String(machine?.modelNumber ?? "—")}</dd></div>
+          <div><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Serial Number</dt><dd className="mt-0.5 text-sm text-ink">{String(machine?.serialNumber ?? "—")}</dd></div>
+          <div><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Capacity</dt><dd className="mt-0.5 text-sm text-ink">{String(machine?.capacity ?? "—")}</dd></div>
+          <div><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Location</dt><dd className="mt-0.5 text-sm text-ink">{String(machine?.location ?? "—")}</dd></div>
+          <div><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Purchase Date</dt><dd className="mt-0.5 text-sm text-ink">{machineDate(machine?.purchaseDate)}</dd></div>
+          <div><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Installation Date</dt><dd className="mt-0.5 text-sm text-ink">{machineDate(machine?.installationDate)}</dd></div>
+          <div><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Branch</dt><dd className="mt-0.5 text-sm text-ink">{branch?.name ?? "—"}</dd></div>
+          <div><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Farm</dt><dd className="mt-0.5 text-sm text-ink">{farm?.name ?? "—"}</dd></div>
+          <div><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Warehouse</dt><dd className="mt-0.5 text-sm text-ink">{warehouse?.name ?? "—"}</dd></div>
+          <div><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Production Site</dt><dd className="mt-0.5 text-sm text-ink">{productionSite?.name ?? "—"}</dd></div>
+          {!!machine?.notes && (
+            <div className="sm:col-span-2 lg:col-span-3"><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Notes</dt><dd className="mt-0.5 text-sm text-ink">{String(machine.notes)}</dd></div>
+          )}
+        </dl>
+      </div>
+
       <section className="grid gap-6 xl:grid-cols-2">
-        <SimpleRowsTable rows={(machine?.schedules as Record<string, unknown>[]) ?? []} />
-        <SimpleRowsTable rows={(machine?.breakdownRecords as Record<string, unknown>[]) ?? []} />
-        <SimpleRowsTable rows={(machine?.maintenanceRecords as Record<string, unknown>[]) ?? []} />
-        <SimpleRowsTable rows={(machine?.costs as Record<string, unknown>[]) ?? []} />
+        <div>
+          <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-ink/45">Attached Equipment</h3>
+          <SimpleRowsTable rows={(machine?.equipment as Record<string, unknown>[]) ?? []} />
+        </div>
+        <div>
+          <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-ink/45">Maintenance Schedules</h3>
+          <SimpleRowsTable rows={(machine?.schedules as Record<string, unknown>[]) ?? []} />
+        </div>
+        <div>
+          <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-ink/45">Breakdown Records</h3>
+          <SimpleRowsTable rows={(machine?.breakdownRecords as Record<string, unknown>[]) ?? []} />
+        </div>
+        <div>
+          <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-ink/45">Maintenance Records</h3>
+          <SimpleRowsTable rows={(machine?.maintenanceRecords as Record<string, unknown>[]) ?? []} />
+        </div>
+        <div>
+          <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-ink/45">Downtime Records</h3>
+          <SimpleRowsTable rows={(machine?.downtimeRecords as Record<string, unknown>[]) ?? []} />
+        </div>
+        <div>
+          <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-ink/45">Costs</h3>
+          <SimpleRowsTable rows={(machine?.costs as Record<string, unknown>[]) ?? []} />
+        </div>
       </section>
     </>
   );
