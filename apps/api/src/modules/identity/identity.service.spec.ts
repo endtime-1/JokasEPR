@@ -1,9 +1,9 @@
-import { ForbiddenException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { AuthenticatedUser } from "@jokas/shared";
 import { IdentityService } from "./identity.service";
 
 const mockPrisma = {
-  role: { findMany: jest.fn(), count: jest.fn() },
+  role: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn().mockResolvedValue({}), count: jest.fn() },
   permission: { findMany: jest.fn(), count: jest.fn() },
   branch: { count: jest.fn().mockResolvedValue(0) },
   farm: { count: jest.fn().mockResolvedValue(0) },
@@ -11,7 +11,7 @@ const mockPrisma = {
   productionSite: { count: jest.fn().mockResolvedValue(0) },
   user: { findFirst: jest.fn(), findFirstOrThrow: jest.fn(), update: jest.fn(), findMany: jest.fn(), count: jest.fn() },
   refreshToken: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
-  userRole: { deleteMany: jest.fn(), createMany: jest.fn() },
+  userRole: { deleteMany: jest.fn(), createMany: jest.fn(), count: jest.fn().mockResolvedValue(0) },
   userBranchAccess: { deleteMany: jest.fn(), createMany: jest.fn() },
   userFarmAccess: { deleteMany: jest.fn(), createMany: jest.fn() },
   userWarehouseAccess: { deleteMany: jest.fn(), createMany: jest.fn() },
@@ -142,6 +142,71 @@ describe("IdentityService — privilege escalation guards", () => {
       await expect(
         service.createRole(actor, { name: "Sneaky Role", permissionIds: ["perm-1"] }, {})
       ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe("updateRole / deleteRole — system roles are protected, custom roles are fully editable", () => {
+    it("404s for a role that doesn't exist (or belongs to a different company)", async () => {
+      mockPrisma.role.findFirst.mockResolvedValue(null);
+      const actor = makeUser({ hasGlobalAccess: true });
+      await expect(service.updateRole(actor, "role-1", { name: "New Name" }, {})).rejects.toThrow(NotFoundException);
+    });
+
+    it("blocks editing a system role", async () => {
+      mockPrisma.role.findFirst.mockResolvedValue({ id: "role-1", companyId: "company-1", name: "Super Admin", isSystem: true });
+      const actor = makeUser({ hasGlobalAccess: true });
+      await expect(service.updateRole(actor, "role-1", { name: "Hacked" }, {})).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.role.update).not.toHaveBeenCalled();
+    });
+
+    it("blocks deleting a system role", async () => {
+      mockPrisma.role.findFirst.mockResolvedValue({ id: "role-1", companyId: "company-1", name: "Super Admin", isSystem: true });
+      const actor = makeUser({ hasGlobalAccess: true });
+      await expect(service.deleteRole(actor, "role-1", {})).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.role.update).not.toHaveBeenCalled();
+    });
+
+    it("blocks an actor from granting a permission they don't hold themselves via update", async () => {
+      mockPrisma.role.findFirst.mockResolvedValue({ id: "role-1", companyId: "company-1", name: "Custom Role", isSystem: false });
+      mockPrisma.permission.findMany.mockResolvedValue([{ id: "perm-1", key: "platform.manage" }]);
+      const actor = makeUser({ permissions: ["identity.manage"] });
+      await expect(
+        service.updateRole(actor, "role-1", { permissionIds: ["perm-1"] }, {})
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockPrisma.role.update).not.toHaveBeenCalled();
+    });
+
+    it("updates a custom role's name/description and replaces its permission set", async () => {
+      mockPrisma.role.findFirst.mockResolvedValue({ id: "role-1", companyId: "company-1", name: "Custom Role", isSystem: false });
+      mockPrisma.permission.findMany.mockResolvedValue([{ id: "perm-1", key: "hr.manage" }]);
+      const actor = makeUser({ hasGlobalAccess: true });
+
+      await service.updateRole(actor, "role-1", { name: "Renamed", permissionIds: ["perm-1"] }, {});
+
+      expect(mockPrisma.role.update).toHaveBeenCalledWith({
+        where: { id: "role-1" },
+        data: expect.objectContaining({ name: "Renamed", permissions: { set: [{ id: "perm-1" }] } }),
+        include: { permissions: true }
+      });
+    });
+
+    it("blocks deleting a role that still has users assigned to it", async () => {
+      mockPrisma.role.findFirst.mockResolvedValue({ id: "role-1", companyId: "company-1", name: "Custom Role", isSystem: false });
+      mockPrisma.userRole.count.mockResolvedValue(3);
+      const actor = makeUser({ hasGlobalAccess: true });
+      await expect(service.deleteRole(actor, "role-1", {})).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.role.update).not.toHaveBeenCalled();
+    });
+
+    it("soft-deletes a custom role with no users assigned", async () => {
+      mockPrisma.role.findFirst.mockResolvedValue({ id: "role-1", companyId: "company-1", name: "Custom Role", isSystem: false });
+      mockPrisma.userRole.count.mockResolvedValue(0);
+      const actor = makeUser({ hasGlobalAccess: true });
+      await service.deleteRole(actor, "role-1", {});
+      expect(mockPrisma.role.update).toHaveBeenCalledWith({
+        where: { id: "role-1" },
+        data: expect.objectContaining({ deletedAt: expect.any(Date) })
+      });
     });
   });
 

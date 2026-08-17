@@ -11,6 +11,7 @@ import { CreateRoleDto } from "./dto/create-role.dto";
 import { CreateUserDto } from "./dto/create-user.dto";
 import { ListUsersQueryDto } from "./dto/list-users-query.dto";
 import { ResetUserPasswordDto } from "./dto/reset-user-password.dto";
+import { UpdateRoleDto } from "./dto/update-role.dto";
 import { UpdateUserDto } from "./dto/update-user.dto";
 import { UpdateUserStatusDto } from "./dto/update-user-status.dto";
 
@@ -398,6 +399,76 @@ export class IdentityService {
     });
 
     return { data: role };
+  }
+
+  // isSystem roles (Super Admin, CEO, Manager, ... — seeded once per company
+  // by setup.service.ts) are the platform's own baseline RBAC, not a
+  // company's custom role. Letting anyone rename/re-permission/delete one
+  // could silently strip access from every user holding it, with no way to
+  // tell it apart from an intentional custom-role edit in the audit log.
+  private assertRoleIsEditable(role: { isSystem: boolean; name: string }) {
+    if (role.isSystem) {
+      throw new BadRequestException(`"${role.name}" is a built-in system role and cannot be edited or deleted.`);
+    }
+  }
+
+  async updateRole(actor: AuthenticatedUser, id: string, dto: UpdateRoleDto, context: RequestContext) {
+    const existing = await this.prisma.role.findFirst({ where: { id, companyId: actor.companyId, deletedAt: null } });
+    if (!existing) throw new NotFoundException("Role was not found.");
+    this.assertRoleIsEditable(existing);
+
+    if (dto.permissionIds) await this.assertActorCanGrantPermissions(actor, dto.permissionIds);
+
+    const role = await this.prisma.role.update({
+      where: { id },
+      data: {
+        name: dto.name,
+        description: dto.description,
+        updatedById: actor.id,
+        ...(dto.permissionIds ? { permissions: { set: dto.permissionIds.map((permissionId) => ({ id: permissionId })) } } : {})
+      },
+      include: { permissions: true }
+    });
+
+    await this.audit.write({
+      companyId: actor.companyId,
+      actorUserId: actor.id,
+      action: "CHANGE_PERMISSION",
+      entityType: "Role",
+      entityId: role.id,
+      summary: `Updated role ${role.name}`,
+      metadata: dto.permissionIds ? { permissionIds: dto.permissionIds } : undefined,
+      ipAddress: context.ipAddress,
+      userAgent: context.userAgent
+    });
+
+    return { data: role };
+  }
+
+  async deleteRole(actor: AuthenticatedUser, id: string, context: RequestContext) {
+    const existing = await this.prisma.role.findFirst({ where: { id, companyId: actor.companyId, deletedAt: null } });
+    if (!existing) throw new NotFoundException("Role was not found.");
+    this.assertRoleIsEditable(existing);
+
+    const assignedUsers = await this.prisma.userRole.count({ where: { roleId: id, companyId: actor.companyId } });
+    if (assignedUsers > 0) {
+      throw new BadRequestException(`Cannot delete role "${existing.name}" — ${assignedUsers} user(s) are still assigned to it. Reassign them first.`);
+    }
+
+    await this.prisma.role.update({ where: { id }, data: { deletedAt: new Date(), updatedById: actor.id } });
+
+    await this.audit.write({
+      companyId: actor.companyId,
+      actorUserId: actor.id,
+      action: "DELETE",
+      entityType: "Role",
+      entityId: id,
+      summary: `Deleted role ${existing.name}`,
+      ipAddress: context.ipAddress,
+      userAgent: context.userAgent
+    });
+
+    return { data: { ok: true } };
   }
 
   async listPermissions(companyId: string) {

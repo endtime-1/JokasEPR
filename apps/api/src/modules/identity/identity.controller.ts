@@ -10,6 +10,7 @@ import { CreateRoleDto } from "./dto/create-role.dto";
 import { CreateUserDto } from "./dto/create-user.dto";
 import { ListUsersQueryDto } from "./dto/list-users-query.dto";
 import { ResetUserPasswordDto } from "./dto/reset-user-password.dto";
+import { UpdateRoleDto } from "./dto/update-role.dto";
 import { UpdateUserDto } from "./dto/update-user.dto";
 import { UpdateUserStatusDto } from "./dto/update-user-status.dto";
 import { IdentityService } from "./identity.service";
@@ -121,6 +122,29 @@ export class IdentityController {
     @Headers("user-agent") userAgent?: string
   ) {
     return this.identityService.createRole(user, dto, { ipAddress, userAgent });
+  }
+
+  @Patch("roles/:id")
+  @RequirePermissions(PERMISSIONS.IDENTITY_MANAGE)
+  updateRole(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id") roleId: string,
+    @Body() dto: UpdateRoleDto,
+    @Ip() ipAddress: string,
+    @Headers("user-agent") userAgent?: string
+  ) {
+    return this.identityService.updateRole(user, roleId, dto, { ipAddress, userAgent });
+  }
+
+  @Delete("roles/:id")
+  @RequirePermissions(PERMISSIONS.IDENTITY_MANAGE)
+  deleteRole(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id") roleId: string,
+    @Ip() ipAddress: string,
+    @Headers("user-agent") userAgent?: string
+  ) {
+    return this.identityService.deleteRole(user, roleId, { ipAddress, userAgent });
   }
 
   @Get("permissions")
