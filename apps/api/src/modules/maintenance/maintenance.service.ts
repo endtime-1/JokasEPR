@@ -133,9 +133,30 @@ export class MaintenanceService {
     return { data };
   }
 
+  // A machine with unresolved activity against it (an open breakdown, a
+  // schedule not yet completed, an in-flight technician assignment) is
+  // blocked from deletion — soft-deleting it would silently orphan that
+  // history instead of surfacing it, matching the dependent-record guard
+  // procurement.service.ts's deleteSupplier already enforces.
   async deleteMachine(user: AuthenticatedUser, id: string, context: RequestContext) {
     const existing = await this.prisma.machine.findFirst({ where: { ...this.machineWhere(user, {}), id } });
     if (!existing) throw new NotFoundException("Machine was not found.");
+
+    const [openBreakdowns, activeSchedules, activeAssignments] = await Promise.all([
+      this.prisma.breakdownRecord.count({ where: { companyId: user.companyId, machineId: id, status: { notIn: ["RESOLVED", "CLOSED", "CANCELLED"] } } }),
+      this.prisma.maintenanceSchedule.count({ where: { companyId: user.companyId, machineId: id, status: { not: "COMPLETED" } } }),
+      this.prisma.technicianAssignment.count({ where: { companyId: user.companyId, machineId: id, status: { notIn: ["COMPLETED", "CANCELLED"] } } }),
+    ]);
+    if (openBreakdowns > 0) {
+      throw new BadRequestException(`Cannot delete machine "${existing.code}" — it has ${openBreakdowns} open breakdown(s). Resolve or close them first.`);
+    }
+    if (activeSchedules > 0) {
+      throw new BadRequestException(`Cannot delete machine "${existing.code}" — it has ${activeSchedules} incomplete maintenance schedule(s). Complete or cancel them first.`);
+    }
+    if (activeAssignments > 0) {
+      throw new BadRequestException(`Cannot delete machine "${existing.code}" — it has ${activeAssignments} active technician assignment(s). Complete or cancel them first.`);
+    }
+
     const data = await this.prisma.machine.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
     await this.writeAudit(user, "REJECT", "Machine", id, `Deleted machine ${existing.code}`, context, existing);
     return { data };

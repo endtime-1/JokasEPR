@@ -2,11 +2,12 @@
 
 import { ComponentType, FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Activity, AlertTriangle, Calendar, ChevronRight, Clock, Cpu, DollarSign, Download, FileText, Plus, RefreshCw, Save, User, Wrench } from "lucide-react";
+import { Activity, AlertTriangle, Calendar, ChevronRight, Clock, Cpu, DollarSign, Download, FileText, Pencil, Plus, RefreshCw, Save, Trash2, User, Wrench } from "lucide-react";
 import { DataTable } from "./data-table";
 import { FormField } from "./form-field";
-import { StatusBadge } from "./ui";
-import { ApiEnvelope, apiFetch, downloadReport, getCached, getCachedFirst, hasCached } from "../lib/api";
+import { ConfirmModal, Modal, StatusBadge } from "./ui";
+import { useAuth } from "./auth-context";
+import { ApiEnvelope, apiFetch, downloadReport, getCached, getCachedFirst, hasCached, invalidateCache } from "../lib/api";
 
 type Option = {
   id: string;
@@ -476,7 +477,13 @@ export function MaintenanceDashboardPage() {
   );
 }
 
+const MACHINE_TYPES = ["FEED_MIXER", "GRINDER", "PELLETIZER", "SOYA_EXPELLER", "OIL_FILTER", "GENERATOR", "WEIGHING_SCALE", "PACKAGING_MACHINE", "DELIVERY_VEHICLE", "POULTRY_EQUIPMENT", "OTHER"];
+const ASSET_STATUSES = ["ACTIVE", "UNDER_MAINTENANCE", "BROKEN_DOWN", "RETIRED", "INACTIVE"];
+const MACHINE_EDIT_FORM_DEFAULT = { name: "", machineType: "FEED_MIXER", status: "ACTIVE", manufacturer: "", serialNumber: "", capacity: "", location: "" };
+
 export function MachinesPage({ create = false }: { create?: boolean }) {
+  const { profile } = useAuth();
+  const canManage = profile?.hasGlobalAccess || (profile?.permissions ?? []).includes("maintenance.manage");
   const { options, optionsError } = useOptions();
   const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/machines")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/maintenance/machines"));
@@ -484,6 +491,16 @@ export function MachinesPage({ create = false }: { create?: boolean }) {
   const [submitError, setSubmitError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [loadError, setLoadError] = useState("");
+
+  const [editRow, setEditRow] = useState<Record<string, unknown> | null>(null);
+  const [editForm, setEditForm] = useState(MACHINE_EDIT_FORM_DEFAULT);
+  const [editError, setEditError] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const [deleteRow, setDeleteRow] = useState<Record<string, unknown> | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+
   async function load() {
     setLoadError("");
     try {
@@ -511,10 +528,68 @@ export function MachinesPage({ create = false }: { create?: boolean }) {
       setSubmitting(false);
     }
   }
+
+  function startEdit(row: Record<string, unknown>) {
+    setEditForm({
+      name: String(row.name ?? ""),
+      machineType: String(row.machineType ?? "FEED_MIXER"),
+      status: String(row.status ?? "ACTIVE"),
+      manufacturer: String(row.manufacturer ?? ""),
+      serialNumber: String(row.serialNumber ?? ""),
+      capacity: row.capacity != null ? String(row.capacity) : "",
+      location: String(row.location ?? ""),
+    });
+    setEditError("");
+    setEditRow(row);
+  }
+
+  async function saveEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editRow) return;
+    setSavingEdit(true);
+    setEditError("");
+    try {
+      await apiFetch(`/maintenance/machines/${editRow.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          ...editForm,
+          manufacturer: editForm.manufacturer || undefined,
+          serialNumber: editForm.serialNumber || undefined,
+          capacity: editForm.capacity || undefined,
+          location: editForm.location || undefined,
+        }),
+      });
+      invalidateCache("/maintenance/machines", true);
+      setEditRow(null);
+      await load();
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : "Failed to save changes.");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function doDelete() {
+    if (!deleteRow) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await apiFetch(`/maintenance/machines/${deleteRow.id}`, { method: "DELETE" });
+      invalidateCache("/maintenance/machines", true);
+      setDeleteRow(null);
+      await load();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete machine.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <>
       <PageHeader title={create ? "Create Machine" : "Machine List"} subtitle="Register and scope machines across farms, warehouses, production sites, and delivery operations." />
       {(loadError || optionsError) && <div className="app-alert-warning mb-4">{loadError || optionsError}</div>}
+      {deleteError && <div className="app-alert-warning mb-4">{deleteError}</div>}
       {create ? (
         <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-4">
           <SelectField label="Branch" value={form.branchId || options.branches[0]?.id || ""} options={options.branches} onChange={(value) => setForm({ ...form, branchId: value })} />
@@ -523,7 +598,7 @@ export function MachinesPage({ create = false }: { create?: boolean }) {
           <SelectField label="Production site" value={form.productionSiteId} options={options.productionSites} onChange={(value) => setForm({ ...form, productionSiteId: value })} />
           <TextField label="Code" value={form.code} onChange={(value) => setForm({ ...form, code: value })} required />
           <TextField label="Name" value={form.name} onChange={(value) => setForm({ ...form, name: value })} required />
-          <FormField label="Type"><select className={inputClass} value={form.machineType} onChange={(event) => setForm({ ...form, machineType: event.target.value })}>{["FEED_MIXER", "GRINDER", "PELLETIZER", "SOYA_EXPELLER", "OIL_FILTER", "GENERATOR", "WEIGHING_SCALE", "PACKAGING_MACHINE", "DELIVERY_VEHICLE", "POULTRY_EQUIPMENT", "OTHER"].map((type) => <option key={type}>{type}</option>)}</select></FormField>
+          <FormField label="Type"><select className={inputClass} value={form.machineType} onChange={(event) => setForm({ ...form, machineType: event.target.value })}>{MACHINE_TYPES.map((type) => <option key={type}>{type}</option>)}</select></FormField>
           <TextField label="Manufacturer" value={form.manufacturer} onChange={(value) => setForm({ ...form, manufacturer: value })} />
           <TextField label="Serial number" value={form.serialNumber} onChange={(value) => setForm({ ...form, serialNumber: value })} />
           <TextField label="Capacity" value={form.capacity} onChange={(value) => setForm({ ...form, capacity: value })} />
@@ -546,7 +621,58 @@ export function MachinesPage({ create = false }: { create?: boolean }) {
           { key: "serialNumber", label: "Serial", render: (row) => String(row.serialNumber ?? "—") },
           { key: "location", label: "Location", render: (row) => String(row.location ?? "—") },
           { key: "status", label: "Status", render: (row) => <StatusBadge status={String(row.status ?? "")} /> },
+          ...(canManage ? [{
+            key: "actions",
+            label: "Actions",
+            render: (row: Record<string, unknown>) => (
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  onClick={() => startEdit(row)}
+                  className="inline-flex items-center gap-1 rounded-md border border-line bg-white px-2.5 py-1 text-xs font-semibold text-ink/70 hover:border-brand/40 hover:bg-brand/5 hover:text-brand"
+                >
+                  <Pencil className="h-3 w-3" /> Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setDeleteError(""); setDeleteRow(row); }}
+                  className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-600 hover:bg-red-100"
+                >
+                  <Trash2 className="h-3 w-3" /> Delete
+                </button>
+              </div>
+            ),
+          }] : []),
         ]}
+      />
+
+      <Modal open={!!editRow} onClose={() => !savingEdit && setEditRow(null)} title={`Edit ${editRow?.name ?? "Machine"}`} size="md">
+        <form onSubmit={saveEdit} className="grid gap-4 sm:grid-cols-2">
+          {editError && <p className="col-span-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{editError}</p>}
+          <TextField label="Name" value={editForm.name} onChange={(value) => setEditForm({ ...editForm, name: value })} required />
+          <FormField label="Type"><select className={inputClass} value={editForm.machineType} onChange={(event) => setEditForm({ ...editForm, machineType: event.target.value })}>{MACHINE_TYPES.map((type) => <option key={type}>{type}</option>)}</select></FormField>
+          <FormField label="Status"><select className={inputClass} value={editForm.status} onChange={(event) => setEditForm({ ...editForm, status: event.target.value })}>{ASSET_STATUSES.map((s) => <option key={s}>{s}</option>)}</select></FormField>
+          <TextField label="Manufacturer" value={editForm.manufacturer} onChange={(value) => setEditForm({ ...editForm, manufacturer: value })} />
+          <TextField label="Serial number" value={editForm.serialNumber} onChange={(value) => setEditForm({ ...editForm, serialNumber: value })} />
+          <TextField label="Capacity" value={editForm.capacity} onChange={(value) => setEditForm({ ...editForm, capacity: value })} />
+          <TextField label="Location" value={editForm.location} onChange={(value) => setEditForm({ ...editForm, location: value })} />
+          <div className="col-span-2 flex justify-end gap-3">
+            <button type="button" className="app-button-secondary" onClick={() => setEditRow(null)} disabled={savingEdit}>Cancel</button>
+            <button disabled={savingEdit} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60">
+              {savingEdit ? "Saving…" : "Save changes"}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      <ConfirmModal
+        open={!!deleteRow}
+        onClose={() => setDeleteRow(null)}
+        onConfirm={doDelete}
+        loading={deleting}
+        title="Delete machine?"
+        message={`This will permanently remove "${deleteRow?.name}" (${deleteRow?.code}). This can't be undone.`}
+        confirmLabel="Delete machine"
       />
     </>
   );

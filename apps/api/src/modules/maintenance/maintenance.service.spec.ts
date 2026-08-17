@@ -1,4 +1,4 @@
-import { NotFoundException } from "@nestjs/common";
+import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { AuthenticatedUser } from "@jokas/shared";
 import { MaintenanceService } from "./maintenance.service";
 import { nextRef } from "../../common/next-ref";
@@ -13,7 +13,7 @@ const mockPrisma = {
   breakdownRecord: { count: jest.fn(), findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn().mockResolvedValue({}), create: jest.fn().mockResolvedValue({ id: "bd-1" }) },
   machineDowntimeRecord: { aggregate: jest.fn() },
   maintenanceCost: { aggregate: jest.fn(), findMany: jest.fn(), create: jest.fn() },
-  technicianAssignment: { findMany: jest.fn() },
+  technicianAssignment: { findMany: jest.fn(), count: jest.fn().mockResolvedValue(0) },
   assetDocument: { count: jest.fn(), findMany: jest.fn(), findFirst: jest.fn(), create: jest.fn(), update: jest.fn() },
   inventoryItem: { findFirst: jest.fn(), updateMany: jest.fn() },
   product: { findFirst: jest.fn() },
@@ -462,5 +462,52 @@ describe("MaintenanceService.createSparePartUsage / consumeSparePartTx — floor
     const service = makeService();
     await expect(service.createSparePartUsage(makeUser({ hasGlobalAccess: true }), dto, {}))
       .rejects.toThrow(/insufficient stock/i);
+  });
+});
+
+describe("MaintenanceService.deleteMachine — blocked by dependent live records, otherwise soft-deletes", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPrisma.machine.findFirst.mockResolvedValue({ id: "mach-1", companyId: "company-1", code: "M-001" });
+    mockPrisma.breakdownRecord.count.mockResolvedValue(0);
+    mockPrisma.maintenanceSchedule.count.mockResolvedValue(0);
+    mockPrisma.technicianAssignment.count.mockResolvedValue(0);
+  });
+
+  it("404s for a machine that doesn't exist (or belongs to a different company)", async () => {
+    mockPrisma.machine.findFirst.mockResolvedValueOnce(null);
+    const service = makeService();
+    await expect(service.deleteMachine(makeUser(), "mach-1", {})).rejects.toThrow(NotFoundException);
+    expect(mockPrisma.machine.update).not.toHaveBeenCalled();
+  });
+
+  it("blocks deleting a machine with an open (non-resolved/closed/cancelled) breakdown", async () => {
+    mockPrisma.breakdownRecord.count.mockResolvedValueOnce(1);
+    const service = makeService();
+    await expect(service.deleteMachine(makeUser(), "mach-1", {})).rejects.toThrow(BadRequestException);
+    expect(mockPrisma.machine.update).not.toHaveBeenCalled();
+  });
+
+  it("blocks deleting a machine with an incomplete maintenance schedule", async () => {
+    mockPrisma.maintenanceSchedule.count.mockResolvedValueOnce(1);
+    const service = makeService();
+    await expect(service.deleteMachine(makeUser(), "mach-1", {})).rejects.toThrow(BadRequestException);
+    expect(mockPrisma.machine.update).not.toHaveBeenCalled();
+  });
+
+  it("blocks deleting a machine with an active technician assignment", async () => {
+    mockPrisma.technicianAssignment.count.mockResolvedValueOnce(1);
+    const service = makeService();
+    await expect(service.deleteMachine(makeUser(), "mach-1", {})).rejects.toThrow(BadRequestException);
+    expect(mockPrisma.machine.update).not.toHaveBeenCalled();
+  });
+
+  it("soft-deletes a machine with no dependent breakdowns, schedules, or assignments", async () => {
+    const service = makeService();
+    await service.deleteMachine(makeUser(), "mach-1", {});
+    expect(mockPrisma.machine.update).toHaveBeenCalledWith({
+      where: { id: "mach-1" },
+      data: expect.objectContaining({ deletedAt: expect.any(Date) })
+    });
   });
 });

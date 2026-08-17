@@ -495,18 +495,45 @@ type Supplier = {
   contactPerson?: string;
   phone?: string;
   email?: string;
+  address?: string;
+  taxId?: string;
+  bankName?: string;
+  bankAccount?: string;
+  paymentTermsDays?: number;
+  leadTimeDays?: number;
+  notes?: string;
   status: string;
   rating?: number;
+  categoryId?: string;
   category?: { name: string };
 };
 
+const SUPPLIER_EDIT_FORM_DEFAULT = {
+  name: "", contactPerson: "", phone: "", email: "", address: "",
+  categoryId: "", taxId: "", bankName: "", bankAccount: "",
+  paymentTermsDays: "", status: "ACTIVE", leadTimeDays: "", notes: "",
+};
+
 export function SuppliersPage() {
+  const { profile } = useAuth();
+  const { opts } = useProcurementOptions();
+  const canManage = profile?.hasGlobalAccess || (profile?.permissions ?? []).includes("procurement.manage");
+
   const [rows, setRows] = useState<Supplier[]>(() => getCachedFirst<ApiEnvelope<Supplier[]>>("/procurement/suppliers")?.data ?? []);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(!hasCached("/procurement/suppliers"));
   const [loadError, setLoadError] = useState("");
 
-  useEffect(() => {
+  const [editRow, setEditRow] = useState<Supplier | null>(null);
+  const [editForm, setEditForm] = useState(SUPPLIER_EDIT_FORM_DEFAULT);
+  const [editError, setEditError] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const [deleteRow, setDeleteRow] = useState<Supplier | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+
+  function load() {
     setLoading(true);
     setLoadError("");
     const q = search ? `?search=${encodeURIComponent(search)}` : "";
@@ -514,10 +541,78 @@ export function SuppliersPage() {
       .then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
       .finally(() => setLoading(false));
-  }, [search]);
+  }
+  useEffect(() => { load(); }, [search]);
+
+  function startEdit(row: Supplier) {
+    setEditForm({
+      name: row.name,
+      contactPerson: row.contactPerson ?? "",
+      phone: row.phone ?? "",
+      email: row.email ?? "",
+      address: row.address ?? "",
+      categoryId: row.categoryId ?? "",
+      taxId: row.taxId ?? "",
+      bankName: row.bankName ?? "",
+      bankAccount: row.bankAccount ?? "",
+      paymentTermsDays: row.paymentTermsDays?.toString() ?? "",
+      status: row.status,
+      leadTimeDays: row.leadTimeDays?.toString() ?? "",
+      notes: row.notes ?? "",
+    });
+    setEditError("");
+    setEditRow(row);
+  }
+
+  const ef = (k: keyof typeof editForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+    setEditForm((p) => ({ ...p, [k]: e.target.value }));
+
+  async function saveEdit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editRow) return;
+    setSavingEdit(true);
+    setEditError("");
+    try {
+      await apiFetch(`/procurement/suppliers/${editRow.id}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          ...editForm,
+          categoryId: editForm.categoryId || undefined,
+          taxId: editForm.taxId || undefined,
+          bankName: editForm.bankName || undefined,
+          bankAccount: editForm.bankAccount || undefined,
+          paymentTermsDays: editForm.paymentTermsDays ? Number(editForm.paymentTermsDays) : undefined,
+          leadTimeDays: editForm.leadTimeDays ? Number(editForm.leadTimeDays) : undefined,
+        }),
+      });
+      invalidateCache("/procurement/suppliers", true);
+      setEditRow(null);
+      load();
+    } catch (err: unknown) {
+      setEditError(err instanceof Error ? err.message : "Failed to save changes.");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function doDelete() {
+    if (!deleteRow) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await apiFetch(`/procurement/suppliers/${deleteRow.id}`, { method: "DELETE" });
+      invalidateCache("/procurement/suppliers", true);
+      setDeleteRow(null);
+      load();
+    } catch (err: unknown) {
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete supplier.");
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   return (
-    
+    <>
       <div className="space-y-5">
         <PageHero
           kicker="Procurement"
@@ -532,6 +627,9 @@ export function SuppliersPage() {
         <ProcurementNav />
         {loadError && (
           <div className="rounded-xl border-l-[3px] border-red-400 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">{loadError}</div>
+        )}
+        {deleteError && (
+          <div className="rounded-xl border-l-[3px] border-red-400 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">{deleteError}</div>
         )}
         <div className="flex gap-3">
           <input
@@ -563,6 +661,28 @@ export function SuppliersPage() {
                 render: (r) => (r.rating ? `${(Number(r.rating) * 100).toFixed(0)}%` : "—"),
               },
               { key: "status", label: "Status", render: (r) => <StatusBadge status={r.status as string} /> },
+              ...(canManage ? [{
+                key: "actions",
+                label: "Actions",
+                render: (r: Record<string, unknown>) => (
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      onClick={() => startEdit(r as unknown as Supplier)}
+                      className="inline-flex items-center gap-1 rounded-md border border-line bg-white px-2.5 py-1 text-xs font-semibold text-ink/70 hover:border-brand/40 hover:bg-brand/5 hover:text-brand"
+                    >
+                      <Pencil className="h-3 w-3" /> Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setDeleteError(""); setDeleteRow(r as unknown as Supplier); }}
+                      className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-600 hover:bg-red-100"
+                    >
+                      <Trash2 className="h-3 w-3" /> Delete
+                    </button>
+                  </div>
+                ),
+              }] : []),
             ]}
             rows={rows as Record<string, unknown>[]}
             loading={loading}
@@ -570,7 +690,88 @@ export function SuppliersPage() {
           />
         </div>
       </div>
-    
+
+      <Modal open={!!editRow} onClose={() => !savingEdit && setEditRow(null)} title={`Edit ${editRow?.name ?? "Supplier"}`} size="lg">
+        <form onSubmit={saveEdit} className="space-y-4">
+          {editError && (
+            <div className="rounded-xl border-l-[3px] border-red-400 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">{editError}</div>
+          )}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <FormLabel>Supplier Name *</FormLabel>
+              <input required value={editForm.name} onChange={ef("name")} className={inputCls} />
+            </div>
+            <div>
+              <FormLabel>Category</FormLabel>
+              <select value={editForm.categoryId} onChange={ef("categoryId")} className={inputCls}>
+                <option value="">— Select —</option>
+                {opts.supplierCategories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <FormLabel>Status</FormLabel>
+              <select value={editForm.status} onChange={ef("status")} className={inputCls}>
+                {["ACTIVE", "INACTIVE", "UNDER_REVIEW", "BLACKLISTED"].map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <div>
+              <FormLabel>Contact Person</FormLabel>
+              <input value={editForm.contactPerson} onChange={ef("contactPerson")} className={inputCls} />
+            </div>
+            <div>
+              <FormLabel>Phone</FormLabel>
+              <input value={editForm.phone} onChange={ef("phone")} className={inputCls} />
+            </div>
+            <div>
+              <FormLabel>Email</FormLabel>
+              <input type="email" value={editForm.email} onChange={ef("email")} className={inputCls} />
+            </div>
+            <div>
+              <FormLabel>Tax Number</FormLabel>
+              <input value={editForm.taxId} onChange={ef("taxId")} className={inputCls} />
+            </div>
+            <div>
+              <FormLabel>Payment Terms (days)</FormLabel>
+              <input type="number" min={0} value={editForm.paymentTermsDays} onChange={ef("paymentTermsDays")} className={inputCls} />
+            </div>
+            <div>
+              <FormLabel>Lead Time (days)</FormLabel>
+              <input type="number" min={0} value={editForm.leadTimeDays} onChange={ef("leadTimeDays")} className={inputCls} />
+            </div>
+            <div>
+              <FormLabel>Bank Name</FormLabel>
+              <input value={editForm.bankName} onChange={ef("bankName")} className={inputCls} />
+            </div>
+            <div>
+              <FormLabel>Bank Account</FormLabel>
+              <input value={editForm.bankAccount} onChange={ef("bankAccount")} className={inputCls} />
+            </div>
+            <div className="sm:col-span-2">
+              <FormLabel>Address</FormLabel>
+              <input value={editForm.address} onChange={ef("address")} className={inputCls} />
+            </div>
+            <div className="sm:col-span-2">
+              <FormLabel>Notes</FormLabel>
+              <textarea value={editForm.notes} onChange={ef("notes")} rows={2} className={inputCls} />
+            </div>
+          </div>
+          <div className="flex justify-end gap-3">
+            <button type="button" className="app-button-secondary" onClick={() => setEditRow(null)} disabled={savingEdit}>Cancel</button>
+            <button type="submit" disabled={savingEdit} className="app-button-primary">{savingEdit ? "Saving…" : "Save changes"}</button>
+          </div>
+        </form>
+      </Modal>
+
+      <ConfirmModal
+        open={!!deleteRow}
+        onClose={() => setDeleteRow(null)}
+        onConfirm={doDelete}
+        loading={deleting}
+        title="Delete supplier?"
+        message={`This will permanently remove "${deleteRow?.name}" (${deleteRow?.code}). This can't be undone.`}
+        confirmLabel="Delete supplier"
+      />
+    </>
   );
 }
 
@@ -1432,6 +1633,9 @@ type PurchaseOrder = {
 };
 
 export function PurchaseOrdersPage() {
+  const { profile } = useAuth();
+  const canManage = profile?.hasGlobalAccess || (profile?.permissions ?? []).includes("procurement.manage");
+
   const [rows, setRows] = useState<PurchaseOrder[]>(() => getCachedFirst<ApiEnvelope<PurchaseOrder[]>>("/procurement/purchase-orders")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/procurement/purchase-orders"));
   const [statusFilter, setStatusFilter] = useState("");
@@ -1440,6 +1644,16 @@ export function PurchaseOrdersPage() {
   const [loadError, setLoadError] = useState("");
   const [rejectId, setRejectId] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState(false);
+
+  const [editRow, setEditRow] = useState<PurchaseOrder | null>(null);
+  const [editForm, setEditForm] = useState({ expectedDelivery: "", deliveryAddress: "", paymentTermsDays: "", notes: "" });
+  const [editItems, setEditItems] = useState<POItem[]>([]);
+  const [editError, setEditError] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const [deleteRow, setDeleteRow] = useState<PurchaseOrder | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   function load() {
     setLoadError("");
@@ -1476,6 +1690,86 @@ export function PurchaseOrdersPage() {
       setActionErr(err instanceof Error ? err.message : "Action failed");
     } finally {
       setBusy(null);
+    }
+  }
+
+  // Fetches the full record (list rows don't carry items/deliveryAddress) before opening the edit modal.
+  async function startEdit(row: PurchaseOrder) {
+    setBusy(row.id);
+    setActionErr("");
+    try {
+      const res = await apiFetch<ApiEnvelope<{ expectedDelivery?: string; deliveryAddress?: string; paymentTermsDays?: number; notes?: string; items: Array<{ productName: string; quantity: number; unitCost: number; uomCode?: string }> }>>(`/procurement/purchase-orders/${row.id}`);
+      const full = res.data;
+      setEditForm({
+        expectedDelivery: full.expectedDelivery?.slice(0, 10) ?? "",
+        deliveryAddress: full.deliveryAddress ?? "",
+        paymentTermsDays: full.paymentTermsDays?.toString() ?? "",
+        notes: full.notes ?? "",
+      });
+      setEditItems(full.items.map((it) => ({ productName: it.productName, quantity: String(it.quantity), uomCode: it.uomCode ?? "", unitCost: String(it.unitCost) })));
+      setEditError("");
+      setEditRow(row);
+    } catch (err: unknown) {
+      setActionErr(err instanceof Error ? err.message : "Failed to load order for editing.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const ef = (k: keyof typeof editForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+    setEditForm((p) => ({ ...p, [k]: e.target.value }));
+  function setEditItem(i: number, k: keyof POItem, v: string) {
+    setEditItems((prev) => prev.map((it, idx) => (idx === i ? { ...it, [k]: v } : it)));
+  }
+  function addEditItem() { setEditItems((p) => [...p, { productName: "", quantity: "1", uomCode: "PCS", unitCost: "" }]); }
+  function removeEditItem(i: number) { setEditItems((p) => p.filter((_, idx) => idx !== i)); }
+  const editLineTotal = (it: POItem) => Number(it.quantity || 0) * Number(it.unitCost || 0);
+  const editSubtotal = editItems.reduce((s, it) => s + editLineTotal(it), 0);
+
+  async function saveEdit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editRow) return;
+    setSavingEdit(true);
+    setEditError("");
+    try {
+      await apiFetch(`/procurement/purchase-orders/${editRow.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          expectedDelivery: editForm.expectedDelivery || undefined,
+          deliveryAddress: editForm.deliveryAddress || undefined,
+          paymentTermsDays: editForm.paymentTermsDays ? Number(editForm.paymentTermsDays) : undefined,
+          notes: editForm.notes || undefined,
+          items: editItems.map((it) => ({
+            productName: it.productName,
+            quantity: Number(it.quantity),
+            uomCode: it.uomCode || undefined,
+            unitCost: Number(it.unitCost),
+          })),
+        }),
+      });
+      invalidateCache("/procurement/purchase-orders", true);
+      setEditRow(null);
+      load();
+    } catch (err: unknown) {
+      setEditError(err instanceof Error ? err.message : "Failed to save changes.");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function doDelete() {
+    if (!deleteRow) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await apiFetch(`/procurement/purchase-orders/${deleteRow.id}`, { method: "DELETE" });
+      invalidateCache("/procurement/purchase-orders", true);
+      setDeleteRow(null);
+      load();
+    } catch (err: unknown) {
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete purchase order.");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -1561,6 +1855,26 @@ export function PurchaseOrdersPage() {
                         {busy === r.id ? "…" : "Send to Supplier"}
                       </button>
                     )}
+                    {canManage && r.status === "PENDING_APPROVAL" && (
+                      <button
+                        type="button"
+                        onClick={() => startEdit(r as unknown as PurchaseOrder)}
+                        disabled={busy === r.id}
+                        className="inline-flex items-center gap-1 rounded-md border border-line bg-white px-2.5 py-1 text-xs font-semibold text-ink/70 disabled:opacity-50 hover:border-brand/40 hover:bg-brand/5 hover:text-brand"
+                      >
+                        <Pencil className="h-3 w-3" /> Edit
+                      </button>
+                    )}
+                    {canManage && ["PENDING_APPROVAL", "CANCELLED"].includes(r.status as string) && (
+                      <button
+                        type="button"
+                        onClick={() => { setDeleteError(""); setDeleteRow(r as unknown as PurchaseOrder); }}
+                        disabled={busy === r.id}
+                        className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-600 disabled:opacity-50 hover:bg-red-100"
+                      >
+                        <Trash2 className="h-3 w-3" /> Delete
+                      </button>
+                    )}
                   </div>
                 ),
               },
@@ -1570,8 +1884,92 @@ export function PurchaseOrdersPage() {
             empty="No purchase orders yet"
           />
         </div>
+        {deleteError && (
+          <div className="rounded-xl border-l-[3px] border-red-400 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">{deleteError}</div>
+        )}
       </div>
       <RejectReasonModal open={!!rejectId} onClose={() => setRejectId(null)} onConfirm={confirmReject} loading={rejecting} />
+
+      <Modal open={!!editRow} onClose={() => !savingEdit && setEditRow(null)} title={`Edit ${editRow?.reference ?? "Purchase Order"}`} size="lg">
+        <form onSubmit={saveEdit} className="space-y-4">
+          {editError && (
+            <div className="rounded-xl border-l-[3px] border-red-400 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">{editError}</div>
+          )}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <FormLabel>Expected Delivery</FormLabel>
+              <input type="date" value={editForm.expectedDelivery} onChange={ef("expectedDelivery")} className={inputCls} />
+            </div>
+            <div>
+              <FormLabel>Payment Terms (days)</FormLabel>
+              <input type="number" min={0} value={editForm.paymentTermsDays} onChange={ef("paymentTermsDays")} className={inputCls} />
+            </div>
+            <div className="sm:col-span-2">
+              <FormLabel>Delivery Address</FormLabel>
+              <input value={editForm.deliveryAddress} onChange={ef("deliveryAddress")} className={inputCls} />
+            </div>
+            <div className="sm:col-span-2">
+              <FormLabel>Notes</FormLabel>
+              <textarea value={editForm.notes} onChange={ef("notes")} rows={2} className={inputCls} />
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-line">
+            <div className="flex items-center justify-between border-b border-line px-4 py-3">
+              <h3 className="text-xs font-bold uppercase tracking-wide text-ink/45">Line Items</h3>
+              <button type="button" onClick={addEditItem} className="app-button-secondary py-1 text-xs">
+                <Plus className="h-3.5 w-3.5" /> Add Line
+              </button>
+            </div>
+            <div className="divide-y divide-line">
+              {editItems.map((it, i) => (
+                <div key={i} className="grid grid-cols-12 gap-2 px-4 py-3">
+                  <div className="col-span-12 sm:col-span-5">
+                    <FormLabel>Product *</FormLabel>
+                    <input required value={it.productName} onChange={(e) => setEditItem(i, "productName", e.target.value)} className={inputCls} />
+                  </div>
+                  <div className="col-span-4 sm:col-span-2">
+                    <FormLabel>Qty *</FormLabel>
+                    <input required type="number" min={0.01} step={0.01} value={it.quantity} onChange={(e) => setEditItem(i, "quantity", e.target.value)} className={inputCls} />
+                  </div>
+                  <div className="col-span-4 sm:col-span-1">
+                    <FormLabel>Unit</FormLabel>
+                    <input value={it.uomCode} onChange={(e) => setEditItem(i, "uomCode", e.target.value)} className={inputCls} />
+                  </div>
+                  <div className="col-span-4 sm:col-span-2">
+                    <FormLabel>Cost *</FormLabel>
+                    <input required type="number" min={0} step={0.01} value={it.unitCost} onChange={(e) => setEditItem(i, "unitCost", e.target.value)} className={inputCls} />
+                  </div>
+                  <div className="col-span-12 flex items-end justify-between sm:col-span-2">
+                    <p className="text-sm font-bold text-ink">{money(editLineTotal(it))}</p>
+                    {editItems.length > 1 && (
+                      <button type="button" onClick={() => removeEditItem(i)} className="rounded-lg border border-red-200 bg-red-50 px-2 py-2 text-red-600 hover:bg-red-100">×</button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-end border-t border-line px-4 py-3">
+              <p className="text-sm font-bold text-ink">Total: {money(editSubtotal)}</p>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3">
+            <button type="button" className="app-button-secondary" onClick={() => setEditRow(null)} disabled={savingEdit}>Cancel</button>
+            <button type="submit" disabled={savingEdit} className="app-button-primary">{savingEdit ? "Saving…" : "Save changes"}</button>
+          </div>
+        </form>
+      </Modal>
+
+      <ConfirmModal
+        open={!!deleteRow}
+        onClose={() => setDeleteRow(null)}
+        onConfirm={doDelete}
+        loading={deleting}
+        title="Delete purchase order?"
+        message={`This will permanently remove "${deleteRow?.reference}". This can't be undone.`}
+        confirmLabel="Delete order"
+      />
     </>
   );
 }
