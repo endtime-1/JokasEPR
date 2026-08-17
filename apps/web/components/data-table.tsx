@@ -143,7 +143,7 @@ export function DataTable<T extends Record<string, unknown>>({
                     col.sortable !== false
                       ? "cursor-pointer select-none hover:bg-field/80"
                       : ""
-                  }`}
+                  } ${col.key === "actions" ? "sticky right-0 z-10 border-l border-line bg-field/60" : ""}`}
                   onClick={col.sortable !== false ? () => toggleSort(col.key) : undefined}
                   aria-sort={
                     sortKey === col.key
@@ -178,7 +178,7 @@ export function DataTable<T extends Record<string, unknown>>({
               Array.from({ length: 5 }, (_, i) => (
                 <tr key={i} className="border-t border-line/60">
                   {columns.map((col) => (
-                    <td key={col.key} className="px-4 py-3.5">
+                    <td key={col.key} className={`px-4 py-3.5 ${col.key === "actions" ? "sticky right-0 z-10 border-l border-line bg-white" : ""}`}>
                       <div className="h-4 animate-pulse rounded bg-ink/6" style={{ width: `${55 + ((i * 13 + col.key.length * 7) % 40)}%` }} />
                     </td>
                   ))}
@@ -209,7 +209,9 @@ export function DataTable<T extends Record<string, unknown>>({
                   {columns.map((col) => (
                     <td
                       key={col.key}
-                      className="px-4 py-3.5 align-top text-ink/80"
+                      className={`px-4 py-3.5 align-top text-ink/80 ${
+                        col.key === "actions" ? "sticky right-0 z-10 border-l border-line bg-white" : ""
+                      }`}
                     >
                       {col.render ? col.render(row) : String(row[col.key] ?? "")}
                     </td>
