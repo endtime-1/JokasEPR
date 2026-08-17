@@ -85,6 +85,12 @@ export class MaintenanceController {
     return this.maintenanceService.createEquipment(user, dto, { ipAddress, userAgent });
   }
 
+  @Get("equipment/:id")
+  @RequirePermissions(PERMISSIONS.MAINTENANCE_READ)
+  equipmentById(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
+    return this.maintenanceService.getEquipment(user, id);
+  }
+
   @Patch("equipment/:id")
   @RequirePermissions(PERMISSIONS.MAINTENANCE_MANAGE)
   updateEquipment(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateEquipmentDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {

@@ -758,7 +758,12 @@ export function MachineDetailsPage({ id }: { id: string }) {
   );
 }
 
+const EQUIPMENT_TYPES = ["FARM_EQUIPMENT", "PROCESSING_EQUIPMENT", "WAREHOUSE_EQUIPMENT", "VEHICLE_ACCESSORY", "TOOL", "SAFETY_EQUIPMENT", "OTHER"];
+const EQUIPMENT_EDIT_FORM_DEFAULT = { name: "", equipmentType: "FARM_EQUIPMENT", status: "ACTIVE", serialNumber: "", location: "" };
+
 export function EquipmentPage({ create = false }: { create?: boolean }) {
+  const { profile } = useAuth();
+  const canManage = profile?.hasGlobalAccess || (profile?.permissions ?? []).includes("maintenance.manage");
   const { options, optionsError } = useOptions();
   const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/equipment")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/maintenance/equipment"));
@@ -766,6 +771,16 @@ export function EquipmentPage({ create = false }: { create?: boolean }) {
   const [submitError, setSubmitError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [loadError, setLoadError] = useState("");
+
+  const [editRow, setEditRow] = useState<Record<string, unknown> | null>(null);
+  const [editForm, setEditForm] = useState(EQUIPMENT_EDIT_FORM_DEFAULT);
+  const [editError, setEditError] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const [deleteRow, setDeleteRow] = useState<Record<string, unknown> | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+
   async function load() {
     setLoadError("");
     try {
@@ -793,10 +808,60 @@ export function EquipmentPage({ create = false }: { create?: boolean }) {
       setSubmitting(false);
     }
   }
+
+  function startEdit(row: Record<string, unknown>) {
+    setEditForm({
+      name: String(row.name ?? ""),
+      equipmentType: String(row.equipmentType ?? "FARM_EQUIPMENT"),
+      status: String(row.status ?? "ACTIVE"),
+      serialNumber: String(row.serialNumber ?? ""),
+      location: String(row.location ?? ""),
+    });
+    setEditError("");
+    setEditRow(row);
+  }
+
+  async function saveEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editRow) return;
+    setSavingEdit(true);
+    setEditError("");
+    try {
+      await apiFetch(`/maintenance/equipment/${editRow.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ ...editForm, serialNumber: editForm.serialNumber || undefined, location: editForm.location || undefined }),
+      });
+      invalidateCache("/maintenance/equipment", true);
+      setEditRow(null);
+      await load();
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : "Failed to save changes.");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function doDelete() {
+    if (!deleteRow) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await apiFetch(`/maintenance/equipment/${deleteRow.id}`, { method: "DELETE" });
+      invalidateCache("/maintenance/equipment", true);
+      setDeleteRow(null);
+      await load();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete equipment.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <>
       <PageHeader title={create ? "Register Equipment" : "Equipment List"} subtitle="Register and track equipment — tools, safety gear, and processing/warehouse accessories — across farms, warehouses, and production sites." />
       {(loadError || optionsError) && <div className="app-alert-warning mb-4">{loadError || optionsError}</div>}
+      {deleteError && <div className="app-alert-warning mb-4">{deleteError}</div>}
       {create ? (
         <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-4">
           <SelectField label="Branch" value={form.branchId || options.branches[0]?.id || ""} options={options.branches} onChange={(value) => setForm({ ...form, branchId: value })} />
@@ -806,7 +871,7 @@ export function EquipmentPage({ create = false }: { create?: boolean }) {
           <SelectField label="Parent machine" value={form.machineId} options={options.machines} onChange={(value) => setForm({ ...form, machineId: value })} />
           <TextField label="Code" value={form.code} onChange={(value) => setForm({ ...form, code: value })} required />
           <TextField label="Name" value={form.name} onChange={(value) => setForm({ ...form, name: value })} required />
-          <FormField label="Type"><select className={inputClass} value={form.equipmentType} onChange={(event) => setForm({ ...form, equipmentType: event.target.value })}>{["FARM_EQUIPMENT", "PROCESSING_EQUIPMENT", "WAREHOUSE_EQUIPMENT", "VEHICLE_ACCESSORY", "TOOL", "SAFETY_EQUIPMENT", "OTHER"].map((type) => <option key={type}>{type}</option>)}</select></FormField>
+          <FormField label="Type"><select className={inputClass} value={form.equipmentType} onChange={(event) => setForm({ ...form, equipmentType: event.target.value })}>{EQUIPMENT_TYPES.map((type) => <option key={type}>{type}</option>)}</select></FormField>
           <TextField label="Serial number" value={form.serialNumber} onChange={(value) => setForm({ ...form, serialNumber: value })} />
           <TextField label="Location" value={form.location} onChange={(value) => setForm({ ...form, location: value })} />
           <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:col-span-4">
@@ -815,7 +880,149 @@ export function EquipmentPage({ create = false }: { create?: boolean }) {
           {submitError && <p className="col-span-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>}
         </form>
       ) : <Link className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" href="/maintenance/equipment/create"><Plus aria-hidden className="h-4 w-4" /> Register equipment</Link>}
-      <SimpleRowsTable rows={rows} loading={loading} />
+      <DataTable
+        rows={rows}
+        loading={loading}
+        empty="No equipment found"
+        columns={[
+          { key: "code", label: "Code" },
+          { key: "name", label: "Name", render: (row) => <Link href={`/maintenance/equipment/${row.id}`} className="font-medium text-brand hover:underline">{String(row.name ?? "-")}</Link> },
+          { key: "equipmentType", label: "Type" },
+          { key: "serialNumber", label: "Serial", render: (row) => String(row.serialNumber ?? "—") },
+          { key: "location", label: "Location", render: (row) => String(row.location ?? "—") },
+          { key: "status", label: "Status", render: (row) => <StatusBadge status={String(row.status ?? "")} /> },
+          ...(canManage ? [{
+            key: "actions",
+            label: "Actions",
+            render: (row: Record<string, unknown>) => (
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  onClick={() => startEdit(row)}
+                  className="inline-flex items-center gap-1 rounded-md border border-line bg-white px-2.5 py-1 text-xs font-semibold text-ink/70 hover:border-brand/40 hover:bg-brand/5 hover:text-brand"
+                >
+                  <Pencil className="h-3 w-3" /> Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setDeleteError(""); setDeleteRow(row); }}
+                  className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-600 hover:bg-red-100"
+                >
+                  <Trash2 className="h-3 w-3" /> Delete
+                </button>
+              </div>
+            ),
+          }] : []),
+        ]}
+      />
+
+      <Modal open={!!editRow} onClose={() => !savingEdit && setEditRow(null)} title={`Edit ${editRow?.name ?? "Equipment"}`} size="md">
+        <form onSubmit={saveEdit} className="grid gap-4 sm:grid-cols-2">
+          {editError && <p className="col-span-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{editError}</p>}
+          <TextField label="Name" value={editForm.name} onChange={(value) => setEditForm({ ...editForm, name: value })} required />
+          <FormField label="Type"><select className={inputClass} value={editForm.equipmentType} onChange={(event) => setEditForm({ ...editForm, equipmentType: event.target.value })}>{EQUIPMENT_TYPES.map((type) => <option key={type}>{type}</option>)}</select></FormField>
+          <FormField label="Status"><select className={inputClass} value={editForm.status} onChange={(event) => setEditForm({ ...editForm, status: event.target.value })}>{ASSET_STATUSES.map((s) => <option key={s}>{s}</option>)}</select></FormField>
+          <TextField label="Serial number" value={editForm.serialNumber} onChange={(value) => setEditForm({ ...editForm, serialNumber: value })} />
+          <TextField label="Location" value={editForm.location} onChange={(value) => setEditForm({ ...editForm, location: value })} />
+          <div className="col-span-2 flex justify-end gap-3">
+            <button type="button" className="app-button-secondary" onClick={() => setEditRow(null)} disabled={savingEdit}>Cancel</button>
+            <button disabled={savingEdit} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60">
+              {savingEdit ? "Saving…" : "Save changes"}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      <ConfirmModal
+        open={!!deleteRow}
+        onClose={() => setDeleteRow(null)}
+        onConfirm={doDelete}
+        loading={deleting}
+        title="Delete equipment?"
+        message={`This will permanently remove "${deleteRow?.name}" (${deleteRow?.code}). This can't be undone.`}
+        confirmLabel="Delete equipment"
+      />
+    </>
+  );
+}
+
+function equipmentDate(value: unknown) {
+  if (!value) return "—";
+  return new Date(String(value)).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+export function EquipmentDetailsPage({ id }: { id: string }) {
+  const [equipment, setEquipment] = useState<Record<string, unknown> | null>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>>>(`/maintenance/equipment/${id}`)?.data ?? null);
+  const [loadError, setLoadError] = useState("");
+  useEffect(() => {
+    setLoadError("");
+    apiFetch<ApiEnvelope<Record<string, unknown>>>(`/maintenance/equipment/${id}`)
+      .then((response) => setEquipment(response.data))
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load equipment."));
+  }, [id]);
+
+  const branch = equipment?.branch as { name?: string } | undefined;
+  const farm = equipment?.farm as { name?: string } | undefined;
+  const warehouse = equipment?.warehouse as { name?: string } | undefined;
+  const productionSite = equipment?.productionSite as { name?: string } | undefined;
+  const machine = equipment?.machine as { id?: string; name?: string } | undefined;
+
+  return (
+    <>
+      <PageHeader title={String(equipment?.name ?? "Equipment Details")} subtitle="Maintenance schedules, repairs, breakdowns, downtime, and cost history." />
+      {loadError && <div className="app-alert-warning mb-4">{loadError}</div>}
+
+      <div className="mb-6 rounded-md border border-line bg-white p-5 shadow-panel">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-sm font-bold uppercase tracking-wide text-ink/45">Equipment Details</h2>
+          {equipment && <StatusBadge status={String(equipment.status ?? "")} />}
+        </div>
+        <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Code</dt><dd className="mt-0.5 text-sm text-ink">{String(equipment?.code ?? "—")}</dd></div>
+          <div><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Type</dt><dd className="mt-0.5 text-sm text-ink">{String(equipment?.equipmentType ?? "—")}</dd></div>
+          <div><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Manufacturer</dt><dd className="mt-0.5 text-sm text-ink">{String(equipment?.manufacturer ?? "—")}</dd></div>
+          <div><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Model</dt><dd className="mt-0.5 text-sm text-ink">{String(equipment?.modelNumber ?? "—")}</dd></div>
+          <div><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Serial Number</dt><dd className="mt-0.5 text-sm text-ink">{String(equipment?.serialNumber ?? "—")}</dd></div>
+          <div><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Location</dt><dd className="mt-0.5 text-sm text-ink">{String(equipment?.location ?? "—")}</dd></div>
+          <div><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Purchase Date</dt><dd className="mt-0.5 text-sm text-ink">{equipmentDate(equipment?.purchaseDate)}</dd></div>
+          <div>
+            <dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Parent Machine</dt>
+            <dd className="mt-0.5 text-sm text-ink">
+              {machine?.id ? <Link href={`/maintenance/machines/${machine.id}`} className="text-brand hover:underline">{machine.name}</Link> : "—"}
+            </dd>
+          </div>
+          <div><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Branch</dt><dd className="mt-0.5 text-sm text-ink">{branch?.name ?? "—"}</dd></div>
+          <div><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Farm</dt><dd className="mt-0.5 text-sm text-ink">{farm?.name ?? "—"}</dd></div>
+          <div><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Warehouse</dt><dd className="mt-0.5 text-sm text-ink">{warehouse?.name ?? "—"}</dd></div>
+          <div><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Production Site</dt><dd className="mt-0.5 text-sm text-ink">{productionSite?.name ?? "—"}</dd></div>
+          {!!equipment?.notes && (
+            <div className="sm:col-span-2 lg:col-span-3"><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Notes</dt><dd className="mt-0.5 text-sm text-ink">{String(equipment.notes)}</dd></div>
+          )}
+        </dl>
+      </div>
+
+      <section className="grid gap-6 xl:grid-cols-2">
+        <div>
+          <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-ink/45">Maintenance Schedules</h3>
+          <SimpleRowsTable rows={(equipment?.schedules as Record<string, unknown>[]) ?? []} />
+        </div>
+        <div>
+          <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-ink/45">Breakdown Records</h3>
+          <SimpleRowsTable rows={(equipment?.breakdownRecords as Record<string, unknown>[]) ?? []} />
+        </div>
+        <div>
+          <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-ink/45">Maintenance Records</h3>
+          <SimpleRowsTable rows={(equipment?.maintenanceRecords as Record<string, unknown>[]) ?? []} />
+        </div>
+        <div>
+          <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-ink/45">Downtime Records</h3>
+          <SimpleRowsTable rows={(equipment?.downtimeRecords as Record<string, unknown>[]) ?? []} />
+        </div>
+        <div>
+          <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-ink/45">Costs</h3>
+          <SimpleRowsTable rows={(equipment?.costs as Record<string, unknown>[]) ?? []} />
+        </div>
+      </section>
     </>
   );
 }

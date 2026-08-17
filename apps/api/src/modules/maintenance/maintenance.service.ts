@@ -179,6 +179,18 @@ export class MaintenanceService {
     return { data };
   }
 
+  async getEquipment(user: AuthenticatedUser, id: string) {
+    const data = await this.prisma.equipment.findFirst({
+      where: { ...this.equipmentWhere(user, {}), id },
+      include: {
+        branch: true, farm: true, warehouse: true, productionSite: true, machine: true,
+        schedules: true, maintenanceRecords: true, breakdownRecords: true, downtimeRecords: true, costs: true
+      }
+    });
+    if (!data) throw new NotFoundException("Equipment was not found.");
+    return { data };
+  }
+
   async updateEquipment(user: AuthenticatedUser, id: string, dto: UpdateEquipmentDto, context: RequestContext) {
     const existing = await this.prisma.equipment.findFirst({ where: { ...this.equipmentWhere(user, {}), id } });
     if (!existing) throw new NotFoundException("Equipment was not found.");
@@ -187,9 +199,27 @@ export class MaintenanceService {
     return { data };
   }
 
+  // Same dependent-record guard as deleteMachine — see its comment for the
+  // full reasoning.
   async deleteEquipment(user: AuthenticatedUser, id: string, context: RequestContext) {
     const existing = await this.prisma.equipment.findFirst({ where: { ...this.equipmentWhere(user, {}), id } });
     if (!existing) throw new NotFoundException("Equipment was not found.");
+
+    const [openBreakdowns, activeSchedules, activeAssignments] = await Promise.all([
+      this.prisma.breakdownRecord.count({ where: { companyId: user.companyId, equipmentId: id, status: { notIn: ["RESOLVED", "CLOSED", "CANCELLED"] } } }),
+      this.prisma.maintenanceSchedule.count({ where: { companyId: user.companyId, equipmentId: id, status: { not: "COMPLETED" } } }),
+      this.prisma.technicianAssignment.count({ where: { companyId: user.companyId, equipmentId: id, status: { notIn: ["COMPLETED", "CANCELLED"] } } }),
+    ]);
+    if (openBreakdowns > 0) {
+      throw new BadRequestException(`Cannot delete equipment "${existing.code}" — it has ${openBreakdowns} open breakdown(s). Resolve or close them first.`);
+    }
+    if (activeSchedules > 0) {
+      throw new BadRequestException(`Cannot delete equipment "${existing.code}" — it has ${activeSchedules} incomplete maintenance schedule(s). Complete or cancel them first.`);
+    }
+    if (activeAssignments > 0) {
+      throw new BadRequestException(`Cannot delete equipment "${existing.code}" — it has ${activeAssignments} active technician assignment(s). Complete or cancel them first.`);
+    }
+
     const data = await this.prisma.equipment.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
     await this.writeAudit(user, "REJECT", "Equipment", id, `Deleted equipment ${existing.code}`, context, existing);
     return { data };

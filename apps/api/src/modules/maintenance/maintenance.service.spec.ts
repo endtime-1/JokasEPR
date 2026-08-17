@@ -511,3 +511,50 @@ describe("MaintenanceService.deleteMachine — blocked by dependent live records
     });
   });
 });
+
+describe("MaintenanceService.deleteEquipment — blocked by dependent live records, otherwise soft-deletes", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPrisma.equipment.findFirst.mockResolvedValue({ id: "equip-1", companyId: "company-1", code: "E-001" });
+    mockPrisma.breakdownRecord.count.mockResolvedValue(0);
+    mockPrisma.maintenanceSchedule.count.mockResolvedValue(0);
+    mockPrisma.technicianAssignment.count.mockResolvedValue(0);
+  });
+
+  it("404s for equipment that doesn't exist (or belongs to a different company)", async () => {
+    mockPrisma.equipment.findFirst.mockResolvedValueOnce(null);
+    const service = makeService();
+    await expect(service.deleteEquipment(makeUser(), "equip-1", {})).rejects.toThrow(NotFoundException);
+    expect(mockPrisma.equipment.update).not.toHaveBeenCalled();
+  });
+
+  it("blocks deleting equipment with an open (non-resolved/closed/cancelled) breakdown", async () => {
+    mockPrisma.breakdownRecord.count.mockResolvedValueOnce(1);
+    const service = makeService();
+    await expect(service.deleteEquipment(makeUser(), "equip-1", {})).rejects.toThrow(BadRequestException);
+    expect(mockPrisma.equipment.update).not.toHaveBeenCalled();
+  });
+
+  it("blocks deleting equipment with an incomplete maintenance schedule", async () => {
+    mockPrisma.maintenanceSchedule.count.mockResolvedValueOnce(1);
+    const service = makeService();
+    await expect(service.deleteEquipment(makeUser(), "equip-1", {})).rejects.toThrow(BadRequestException);
+    expect(mockPrisma.equipment.update).not.toHaveBeenCalled();
+  });
+
+  it("blocks deleting equipment with an active technician assignment", async () => {
+    mockPrisma.technicianAssignment.count.mockResolvedValueOnce(1);
+    const service = makeService();
+    await expect(service.deleteEquipment(makeUser(), "equip-1", {})).rejects.toThrow(BadRequestException);
+    expect(mockPrisma.equipment.update).not.toHaveBeenCalled();
+  });
+
+  it("soft-deletes equipment with no dependent breakdowns, schedules, or assignments", async () => {
+    const service = makeService();
+    await service.deleteEquipment(makeUser(), "equip-1", {});
+    expect(mockPrisma.equipment.update).toHaveBeenCalledWith({
+      where: { id: "equip-1" },
+      data: expect.objectContaining({ deletedAt: expect.any(Date) })
+    });
+  });
+});
