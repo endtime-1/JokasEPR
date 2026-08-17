@@ -10,15 +10,15 @@ jest.mock("../../common/next-ref", () => ({ nextRef: jest.fn().mockResolvedValue
 
 const mockPrisma = {
   purchaseRequest: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), update: jest.fn().mockResolvedValue({}), updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
-  purchaseOrder: { create: jest.fn(), findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
+  purchaseOrder: { create: jest.fn(), findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn(), update: jest.fn().mockResolvedValue({}), updateMany: jest.fn(), findUniqueOrThrow: jest.fn(), count: jest.fn().mockResolvedValue(0) },
   warehouse: { findFirst: jest.fn() },
-  goodsReceivedNote: { create: jest.fn(), findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), update: jest.fn().mockResolvedValue({}), updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+  goodsReceivedNote: { create: jest.fn(), findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), update: jest.fn().mockResolvedValue({}), updateMany: jest.fn().mockResolvedValue({ count: 1 }), count: jest.fn().mockResolvedValue(0) },
   product: { findMany: jest.fn() },
-  purchaseOrderItem: { update: jest.fn().mockResolvedValue({}) },
-  supplierInvoice: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), update: jest.fn().mockResolvedValue({}), updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
+  purchaseOrderItem: { update: jest.fn().mockResolvedValue({}), deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
+  supplierInvoice: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), update: jest.fn().mockResolvedValue({}), updateMany: jest.fn(), findUniqueOrThrow: jest.fn(), count: jest.fn().mockResolvedValue(0) },
   procurementPayment: { create: jest.fn(), findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
   purchaseApproval: { create: jest.fn().mockResolvedValue({}) },
-  supplier: { findFirst: jest.fn().mockResolvedValue({ id: "sup-1", companyId: "company-1", name: "Acme Supplies", status: "ACTIVE" }) },
+  supplier: { findFirst: jest.fn().mockResolvedValue({ id: "sup-1", companyId: "company-1", name: "Acme Supplies", status: "ACTIVE" }), update: jest.fn().mockResolvedValue({}) },
   expenseCategory: { findFirst: jest.fn().mockResolvedValue({ id: "cat-procurement" }), create: jest.fn() },
   expense: { create: jest.fn().mockResolvedValue({}) },
   $transaction: jest.fn().mockImplementation((cb: (tx: unknown) => Promise<unknown>) => cb(mockPrisma))
@@ -706,6 +706,114 @@ describe("ProcurementService", () => {
         { OR: [{ reference: { contains: "fertilizer" } }, { title: { contains: "fertilizer" } }] },
         { OR: [{ branchId: null }, { branchId: { in: ["branch-1"] } }] }
       ]);
+    });
+  });
+
+  describe("deleteSupplier — blocked by dependent live records, otherwise soft-deletes", () => {
+    it("404s for a supplier that doesn't exist (or belongs to a different company)", async () => {
+      mockPrisma.supplier.findFirst.mockResolvedValueOnce(null);
+      await expect(service.deleteSupplier(makeUser(), "sup-1", {})).rejects.toThrow(NotFoundException);
+      expect(mockPrisma.supplier.update).not.toHaveBeenCalled();
+    });
+
+    it("blocks deleting a supplier with an active (non-cancelled) purchase order", async () => {
+      mockPrisma.purchaseOrder.count.mockResolvedValueOnce(2);
+      await expect(service.deleteSupplier(makeUser(), "sup-1", {})).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.supplier.update).not.toHaveBeenCalled();
+    });
+
+    it("blocks deleting a supplier with an unpaid invoice", async () => {
+      mockPrisma.purchaseOrder.count.mockResolvedValueOnce(0);
+      mockPrisma.supplierInvoice.count.mockResolvedValueOnce(1);
+      await expect(service.deleteSupplier(makeUser(), "sup-1", {})).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.supplier.update).not.toHaveBeenCalled();
+    });
+
+    it("soft-deletes a supplier with no dependent purchase orders or invoices", async () => {
+      mockPrisma.purchaseOrder.count.mockResolvedValueOnce(0);
+      mockPrisma.supplierInvoice.count.mockResolvedValueOnce(0);
+      await service.deleteSupplier(makeUser(), "sup-1", {});
+      expect(mockPrisma.supplier.update).toHaveBeenCalledWith({
+        where: { id: "sup-1" },
+        data: expect.objectContaining({ deletedAt: expect.any(Date) })
+      });
+    });
+  });
+
+  describe("updatePurchaseOrder — PENDING_APPROVAL-only, replaces items when given", () => {
+    it("blocks editing a purchase order that isn't PENDING_APPROVAL", async () => {
+      mockPrisma.purchaseOrder.findFirst.mockResolvedValueOnce({ id: "po-1", companyId: "company-1", status: "APPROVED" });
+      await expect(service.updatePurchaseOrder(makeUser(), "po-1", { notes: "x" } as never, {})).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.purchaseOrder.update).not.toHaveBeenCalled();
+    });
+
+    it("404s for a purchase order that doesn't exist", async () => {
+      mockPrisma.purchaseOrder.findFirst.mockResolvedValueOnce(null);
+      await expect(service.updatePurchaseOrder(makeUser(), "po-1", {} as never, {})).rejects.toThrow(NotFoundException);
+    });
+
+    it("updates scalar fields directly without touching items when none are given", async () => {
+      mockPrisma.purchaseOrder.findFirst.mockResolvedValueOnce({ id: "po-1", companyId: "company-1", status: "PENDING_APPROVAL" });
+      await service.updatePurchaseOrder(makeUser(), "po-1", { notes: "updated notes" } as never, {});
+      expect(mockPrisma.purchaseOrderItem.deleteMany).not.toHaveBeenCalled();
+      expect(mockPrisma.purchaseOrder.update).toHaveBeenCalledWith({
+        where: { id: "po-1" },
+        data: expect.objectContaining({ notes: "updated notes" })
+      });
+    });
+
+    it("replaces all line items and recomputes subtotal/totalAmount when items are given", async () => {
+      mockPrisma.purchaseOrder.findFirst.mockResolvedValueOnce({ id: "po-1", companyId: "company-1", status: "PENDING_APPROVAL" });
+      const items = [{ productName: "Widget", quantity: 2, unitCost: 10 }, { productName: "Gadget", quantity: 1, unitCost: 5 }];
+
+      await service.updatePurchaseOrder(makeUser(), "po-1", { items } as never, {});
+
+      expect(mockPrisma.$transaction).toHaveBeenCalled();
+      expect(mockPrisma.purchaseOrderItem.deleteMany).toHaveBeenCalledWith({ where: { purchaseOrderId: "po-1" } });
+      expect(mockPrisma.purchaseOrder.update).toHaveBeenCalledWith({
+        where: { id: "po-1" },
+        data: expect.objectContaining({ subtotal: 25, totalAmount: 25 }),
+        include: { items: true }
+      });
+    });
+  });
+
+  describe("deletePurchaseOrder — status-gated, blocked by any GRN/invoice against it", () => {
+    it("blocks deleting an order that has already progressed past PENDING_APPROVAL/CANCELLED", async () => {
+      mockPrisma.purchaseOrder.findFirst.mockResolvedValueOnce({ id: "po-1", companyId: "company-1", status: "APPROVED", reference: "PO-0001" });
+      await expect(service.deletePurchaseOrder(makeUser(), "po-1", {})).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.purchaseOrder.update).not.toHaveBeenCalled();
+    });
+
+    it("blocks deleting a PENDING_APPROVAL order that already has a GRN against it (defensive check)", async () => {
+      mockPrisma.purchaseOrder.findFirst.mockResolvedValueOnce({ id: "po-1", companyId: "company-1", status: "PENDING_APPROVAL", reference: "PO-0001" });
+      mockPrisma.goodsReceivedNote.count.mockResolvedValueOnce(1);
+      await expect(service.deletePurchaseOrder(makeUser(), "po-1", {})).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.purchaseOrder.update).not.toHaveBeenCalled();
+    });
+
+    it("soft-deletes a clean PENDING_APPROVAL order", async () => {
+      mockPrisma.purchaseOrder.findFirst.mockResolvedValueOnce({ id: "po-1", companyId: "company-1", status: "PENDING_APPROVAL", reference: "PO-0001" });
+      mockPrisma.goodsReceivedNote.count.mockResolvedValueOnce(0);
+      mockPrisma.supplierInvoice.count.mockResolvedValueOnce(0);
+      await service.deletePurchaseOrder(makeUser(), "po-1", {});
+      expect(mockPrisma.purchaseOrder.update).toHaveBeenCalledWith({
+        where: { id: "po-1" },
+        data: expect.objectContaining({ deletedAt: expect.any(Date) })
+      });
+    });
+
+    it("allows deleting a CANCELLED order — the mistake-cleanup case", async () => {
+      mockPrisma.purchaseOrder.findFirst.mockResolvedValueOnce({ id: "po-1", companyId: "company-1", status: "CANCELLED", reference: "PO-0001" });
+      mockPrisma.goodsReceivedNote.count.mockResolvedValueOnce(0);
+      mockPrisma.supplierInvoice.count.mockResolvedValueOnce(0);
+      await service.deletePurchaseOrder(makeUser(), "po-1", {});
+      expect(mockPrisma.purchaseOrder.update).toHaveBeenCalled();
+    });
+
+    it("404s for a purchase order that doesn't exist", async () => {
+      mockPrisma.purchaseOrder.findFirst.mockResolvedValueOnce(null);
+      await expect(service.deletePurchaseOrder(makeUser(), "po-1", {})).rejects.toThrow(NotFoundException);
     });
   });
 });

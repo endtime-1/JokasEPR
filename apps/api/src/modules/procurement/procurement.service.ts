@@ -30,6 +30,7 @@ import {
   QualityPassGRNDto,
   RejectPurchaseOrderDto,
   RejectPurchaseRequestDto,
+  UpdatePurchaseOrderDto,
   UpdateSupplierDto,
 } from "./dto/procurement.dto";
 
@@ -215,6 +216,31 @@ export class ProcurementService {
     const updated = await this.prisma.supplier.update({ where: { id }, data: { updatedById: user.id, ...dto } });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "Supplier", entityId: id, action: "UPDATE", ...ctx });
     return { data: updated };
+  }
+
+  // A supplier with unresolved money or activity on the books (a live
+  // purchase order, an unpaid invoice) is blocked from deletion — soft-
+  // deleting it would silently orphan that history instead of surfacing it,
+  // matching the dependent-record guard sales.service.ts's deleteCustomer
+  // already enforces.
+  async deleteSupplier(user: AuthenticatedUser, id: string, ctx: RequestContext) {
+    const row = await this.prisma.supplier.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!row) throw new NotFoundException("Supplier not found");
+
+    const [activeOrders, unpaidInvoices] = await Promise.all([
+      this.prisma.purchaseOrder.count({ where: { companyId: user.companyId, supplierId: id, status: { not: "CANCELLED" }, deletedAt: null } }),
+      this.prisma.supplierInvoice.count({ where: { companyId: user.companyId, supplierId: id, status: { not: "PAID" }, deletedAt: null } }),
+    ]);
+    if (activeOrders > 0) {
+      throw new BadRequestException(`Cannot delete supplier "${row.name}" — it has ${activeOrders} active purchase order(s). Cancel or complete them first.`);
+    }
+    if (unpaidInvoices > 0) {
+      throw new BadRequestException(`Cannot delete supplier "${row.name}" — it has ${unpaidInvoices} unpaid invoice(s). Settle them first.`);
+    }
+
+    const deleted = await this.prisma.supplier.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "Supplier", entityId: id, action: "DELETE", ...ctx });
+    return { data: deleted };
   }
 
   // â”€â”€â”€ Purchase Requests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -487,6 +513,60 @@ export class ProcurementService {
     return { data: row };
   }
 
+  // Only PENDING_APPROVAL orders can be edited — createPurchaseOrder always
+  // creates directly at PENDING_APPROVAL (never DRAFT), and nothing else can
+  // reference a PO's lines until it's SENT_TO_SUPPLIER (GRNs/invoices), so
+  // this is always the one safe-to-fully-edit state. PurchaseOrderItem has
+  // no deletedAt of its own — a full items replace (delete then recreate) is
+  // correct here since nothing downstream can be pointing at the old rows yet.
+  async updatePurchaseOrder(user: AuthenticatedUser, id: string, dto: UpdatePurchaseOrderDto, ctx: RequestContext) {
+    const row = await this.prisma.purchaseOrder.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!row) throw new NotFoundException("Purchase Order not found");
+    if (row.status !== "PENDING_APPROVAL") throw new BadRequestException("Only pending-approval purchase orders can be edited.");
+
+    const scalarData = {
+      expectedDelivery: dto.expectedDelivery ? new Date(dto.expectedDelivery) : undefined,
+      deliveryAddress: dto.deliveryAddress,
+      paymentTermsDays: dto.paymentTermsDays,
+      notes: dto.notes,
+      updatedById: user.id,
+    };
+
+    let updated;
+    if (dto.items) {
+      const subtotal = dto.items.reduce((s, i) => s + i.quantity * i.unitCost, 0);
+      updated = await this.prisma.$transaction(async (tx) => {
+        await tx.purchaseOrderItem.deleteMany({ where: { purchaseOrderId: id } });
+        return tx.purchaseOrder.update({
+          where: { id },
+          data: {
+            ...scalarData,
+            subtotal,
+            totalAmount: subtotal,
+            items: {
+              create: dto.items!.map((item, idx) => ({
+                productId: item.productId,
+                productName: item.productName,
+                quantity: item.quantity,
+                unitCost: item.unitCost,
+                lineTotal: item.quantity * item.unitCost,
+                uomCode: item.uomCode,
+                description: item.description,
+                sequence: item.sequence ?? idx + 1,
+              })),
+            },
+          },
+          include: { items: true },
+        });
+      });
+    } else {
+      updated = await this.prisma.purchaseOrder.update({ where: { id }, data: scalarData });
+    }
+
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "PurchaseOrder", entityId: id, action: "UPDATE", ...ctx });
+    return { data: updated };
+  }
+
   // H-BACK-3: same status-guarded-updateMany-inside-a-transaction fix as
   // approvePurchaseRequest/rejectPurchaseRequest above, for the same reason.
   async approvePurchaseOrder(user: AuthenticatedUser, id: string, dto: ApprovePurchaseOrderDto, ctx: RequestContext) {
@@ -542,6 +622,32 @@ export class ProcurementService {
     const updated = await this.prisma.purchaseOrder.update({ where: { id }, data: { status: "SENT_TO_SUPPLIER", updatedById: user.id } });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "PurchaseOrder", entityId: id, action: "UPDATE", ...ctx });
     return { data: updated };
+  }
+
+  // Only PENDING_APPROVAL and CANCELLED orders can be deleted — a
+  // cancelled/rejected PO is exactly the "mistake I want to remove" case,
+  // but once APPROVED/SENT_TO_SUPPLIER/(PARTIALLY|FULLY)_RECEIVED it has real
+  // downstream operational history (approvals at minimum, likely GRNs/
+  // invoices) that a delete would silently orphan. The GRN/invoice count is
+  // a defensive double-check in case that status assumption is ever wrong.
+  async deletePurchaseOrder(user: AuthenticatedUser, id: string, ctx: RequestContext) {
+    const row = await this.prisma.purchaseOrder.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!row) throw new NotFoundException("Purchase Order not found");
+    if (!["PENDING_APPROVAL", "CANCELLED"].includes(row.status)) {
+      throw new BadRequestException(`Cannot delete purchase order "${row.reference}" — it is ${row.status.replace(/_/g, " ").toLowerCase()}. Only pending-approval or cancelled orders can be deleted.`);
+    }
+
+    const [grns, invoices] = await Promise.all([
+      this.prisma.goodsReceivedNote.count({ where: { companyId: user.companyId, purchaseOrderId: id, deletedAt: null } }),
+      this.prisma.supplierInvoice.count({ where: { companyId: user.companyId, purchaseOrderId: id, deletedAt: null } }),
+    ]);
+    if (grns > 0 || invoices > 0) {
+      throw new BadRequestException(`Cannot delete purchase order "${row.reference}" — it has goods-received or invoice records against it.`);
+    }
+
+    const deleted = await this.prisma.purchaseOrder.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "PurchaseOrder", entityId: id, action: "DELETE", ...ctx });
+    return { data: deleted };
   }
 
   // â”€â”€â”€ Goods Received Notes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

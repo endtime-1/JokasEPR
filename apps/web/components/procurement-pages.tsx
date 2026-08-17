@@ -2,16 +2,17 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter, usePathname } from "next/navigation";
+import { useRouter, usePathname, useParams } from "next/navigation";
 import {
   AlertTriangle, ChartBar, Building2, ChevronRight,
-  ClipboardList, Clock, DollarSign, FileText, Package, Plus,
-  ShoppingCart, Star, Tag, Wallet,
+  ClipboardList, Clock, DollarSign, FileText, Package, Pencil, Plus,
+  ShoppingCart, Star, Tag, Trash2, Wallet,
   type LucideIcon,
 } from "lucide-react";
-import { ApiEnvelope, apiFetch, getCached, getCachedFirst, hasCached } from "../lib/api";
+import { ApiEnvelope, apiFetch, getCached, getCachedFirst, hasCached, invalidateCache } from "../lib/api";
 import { DataTable } from "./data-table";
-import { Modal, StatusBadge } from "./ui";
+import { ConfirmModal, LockedNote, Modal, StatusBadge } from "./ui";
+import { useAuth } from "./auth-context";
 
 // RejectPurchaseRequestDto/RejectPurchaseOrderDto/QualityFailGRNDto all
 // require a non-empty reason/qualityNotes string server-side — used by the
@@ -713,6 +714,304 @@ export function CreateSupplierPage() {
   );
 }
 
+// ─── Supplier Details ─────────────────────────────────────────────────────────
+
+type SupplierDetail = {
+  id: string;
+  code: string;
+  name: string;
+  contactPerson?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  taxId?: string;
+  bankName?: string;
+  bankAccount?: string;
+  paymentTermsDays?: number;
+  currency: string;
+  status: string;
+  leadTimeDays?: number;
+  notes?: string;
+  categoryId?: string;
+  category?: { id: string; name: string };
+  purchaseOrders: Array<{ id: string; reference: string; status: string; totalAmount: number; orderDate: string }>;
+  performanceRecords: Array<{ id: string; period: string; rating: string; qualityScore: number }>;
+  priceHistory: Array<{ id: string; productName: string; unitPrice: number; currency: string; effectiveDate: string }>;
+};
+
+export function SupplierDetailsPage() {
+  const params = useParams<{ id: string }>();
+  const router = useRouter();
+  const { profile } = useAuth();
+  const { opts } = useProcurementOptions();
+  const canManage = profile?.hasGlobalAccess || (profile?.permissions ?? []).includes("procurement.manage");
+
+  const [supplier, setSupplier] = useState<SupplierDetail | null>(() => getCachedFirst<ApiEnvelope<SupplierDetail>>(`/procurement/suppliers/${params.id}`)?.data ?? null);
+  const [loadError, setLoadError] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [editForm, setEditForm] = useState({
+    name: "", contactPerson: "", phone: "", email: "", address: "",
+    categoryId: "", taxId: "", bankName: "", bankAccount: "",
+    paymentTermsDays: "", status: "ACTIVE", leadTimeDays: "", notes: "",
+  });
+  const [editError, setEditError] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+
+  async function load() {
+    setLoadError("");
+    try {
+      const res = await apiFetch<ApiEnvelope<SupplierDetail>>(`/procurement/suppliers/${params.id}`);
+      setSupplier(res.data);
+    } catch (err: unknown) {
+      setLoadError(err instanceof Error ? err.message : "Failed to load supplier.");
+    }
+  }
+  useEffect(() => { load(); }, [params.id]);
+
+  function startEdit() {
+    if (!supplier) return;
+    setEditForm({
+      name: supplier.name,
+      contactPerson: supplier.contactPerson ?? "",
+      phone: supplier.phone ?? "",
+      email: supplier.email ?? "",
+      address: supplier.address ?? "",
+      categoryId: supplier.categoryId ?? "",
+      taxId: supplier.taxId ?? "",
+      bankName: supplier.bankName ?? "",
+      bankAccount: supplier.bankAccount ?? "",
+      paymentTermsDays: supplier.paymentTermsDays?.toString() ?? "",
+      status: supplier.status,
+      leadTimeDays: supplier.leadTimeDays?.toString() ?? "",
+      notes: supplier.notes ?? "",
+    });
+    setEditError("");
+    setEditing(true);
+  }
+
+  const f = (k: keyof typeof editForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+    setEditForm((p) => ({ ...p, [k]: e.target.value }));
+
+  async function saveEdit(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingEdit(true);
+    setEditError("");
+    try {
+      await apiFetch(`/procurement/suppliers/${params.id}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          ...editForm,
+          categoryId: editForm.categoryId || undefined,
+          taxId: editForm.taxId || undefined,
+          bankName: editForm.bankName || undefined,
+          bankAccount: editForm.bankAccount || undefined,
+          paymentTermsDays: editForm.paymentTermsDays ? Number(editForm.paymentTermsDays) : undefined,
+          leadTimeDays: editForm.leadTimeDays ? Number(editForm.leadTimeDays) : undefined,
+        }),
+      });
+      invalidateCache("/procurement/suppliers", true);
+      setEditing(false);
+      await load();
+    } catch (err: unknown) {
+      setEditError(err instanceof Error ? err.message : "Failed to save changes.");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function doDelete() {
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await apiFetch(`/procurement/suppliers/${params.id}`, { method: "DELETE" });
+      invalidateCache("/procurement/suppliers", true);
+      router.push("/procurement/suppliers");
+    } catch (err: unknown) {
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete supplier.");
+      setDeleting(false);
+      setConfirmDelete(false);
+    }
+  }
+
+  return (
+    <>
+      <div className="space-y-5">
+        <PageHero
+          kicker="Procurement"
+          title={supplier?.name ?? "Supplier"}
+          subtitle={supplier?.code}
+          actions={
+            <>
+              <Link href="/procurement/suppliers" className="app-button-secondary">Back</Link>
+              {canManage && !editing && (
+                <button type="button" onClick={startEdit} className="app-button-secondary">
+                  <Pencil className="h-4 w-4" /> Edit
+                </button>
+              )}
+              {canManage && (
+                <button
+                  type="button"
+                  onClick={() => { setDeleteError(""); setConfirmDelete(true); }}
+                  className="inline-flex min-h-10 items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 text-sm font-semibold text-red-600 hover:bg-red-100"
+                >
+                  <Trash2 className="h-4 w-4" /> Delete
+                </button>
+              )}
+            </>
+          }
+        />
+        <ProcurementNav />
+
+        {loadError && (
+          <div className="rounded-xl border-l-[3px] border-red-400 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">{loadError}</div>
+        )}
+        {deleteError && (
+          <div className="rounded-xl border-l-[3px] border-red-400 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">{deleteError}</div>
+        )}
+
+        {editing ? (
+          <form onSubmit={saveEdit} className="rounded-2xl border border-line bg-white p-6 shadow-panel">
+            <h2 className="mb-5 text-sm font-bold uppercase tracking-wide text-ink/45">Edit Supplier</h2>
+            {editError && (
+              <div className="mb-4 rounded-xl border-l-[3px] border-red-400 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">{editError}</div>
+            )}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="sm:col-span-2">
+                <FormLabel>Supplier Name *</FormLabel>
+                <input required value={editForm.name} onChange={f("name")} className={inputCls} />
+              </div>
+              <div>
+                <FormLabel>Category</FormLabel>
+                <select value={editForm.categoryId} onChange={f("categoryId")} className={inputCls}>
+                  <option value="">— Select —</option>
+                  {opts.supplierCategories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <FormLabel>Status</FormLabel>
+                <select value={editForm.status} onChange={f("status")} className={inputCls}>
+                  {["ACTIVE", "INACTIVE", "UNDER_REVIEW", "BLACKLISTED"].map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div>
+                <FormLabel>Contact Person</FormLabel>
+                <input value={editForm.contactPerson} onChange={f("contactPerson")} className={inputCls} />
+              </div>
+              <div>
+                <FormLabel>Phone</FormLabel>
+                <input value={editForm.phone} onChange={f("phone")} className={inputCls} />
+              </div>
+              <div>
+                <FormLabel>Email</FormLabel>
+                <input type="email" value={editForm.email} onChange={f("email")} className={inputCls} />
+              </div>
+              <div>
+                <FormLabel>Tax Number</FormLabel>
+                <input value={editForm.taxId} onChange={f("taxId")} className={inputCls} />
+              </div>
+              <div>
+                <FormLabel>Payment Terms (days)</FormLabel>
+                <input type="number" min={0} value={editForm.paymentTermsDays} onChange={f("paymentTermsDays")} className={inputCls} />
+              </div>
+              <div>
+                <FormLabel>Lead Time (days)</FormLabel>
+                <input type="number" min={0} value={editForm.leadTimeDays} onChange={f("leadTimeDays")} className={inputCls} />
+              </div>
+              <div>
+                <FormLabel>Bank Name</FormLabel>
+                <input value={editForm.bankName} onChange={f("bankName")} className={inputCls} />
+              </div>
+              <div>
+                <FormLabel>Bank Account</FormLabel>
+                <input value={editForm.bankAccount} onChange={f("bankAccount")} className={inputCls} />
+              </div>
+              <div className="sm:col-span-2 lg:col-span-3">
+                <FormLabel>Address</FormLabel>
+                <input value={editForm.address} onChange={f("address")} className={inputCls} />
+              </div>
+              <div className="sm:col-span-2 lg:col-span-3">
+                <FormLabel>Notes</FormLabel>
+                <textarea value={editForm.notes} onChange={f("notes")} rows={3} className={inputCls} />
+              </div>
+            </div>
+            <div className="mt-5 flex gap-3">
+              <button type="submit" disabled={savingEdit} className="app-button-primary">
+                {savingEdit ? "Saving…" : "Save changes"}
+              </button>
+              <button type="button" className="app-button-secondary" onClick={() => setEditing(false)} disabled={savingEdit}>Cancel</button>
+            </div>
+          </form>
+        ) : (
+          <div className="rounded-2xl border border-line bg-white p-6 shadow-panel">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-bold uppercase tracking-wide text-ink/45">Supplier Details</h2>
+              {supplier && <StatusBadge status={supplier.status} />}
+            </div>
+            <dl className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Category</dt><dd className="mt-0.5 text-sm text-ink">{supplier?.category?.name ?? "—"}</dd></div>
+              <div><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Contact Person</dt><dd className="mt-0.5 text-sm text-ink">{supplier?.contactPerson || "—"}</dd></div>
+              <div><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Phone</dt><dd className="mt-0.5 text-sm text-ink">{supplier?.phone || "—"}</dd></div>
+              <div><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Email</dt><dd className="mt-0.5 text-sm text-ink">{supplier?.email || "—"}</dd></div>
+              <div><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Tax Number</dt><dd className="mt-0.5 text-sm text-ink">{supplier?.taxId || "—"}</dd></div>
+              <div><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Payment Terms</dt><dd className="mt-0.5 text-sm text-ink">{supplier?.paymentTermsDays != null ? `${supplier.paymentTermsDays} days` : "—"}</dd></div>
+              <div><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Lead Time</dt><dd className="mt-0.5 text-sm text-ink">{supplier?.leadTimeDays != null ? `${supplier.leadTimeDays} days` : "—"}</dd></div>
+              <div><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Bank</dt><dd className="mt-0.5 text-sm text-ink">{supplier?.bankName ? `${supplier.bankName}${supplier.bankAccount ? ` — ${supplier.bankAccount}` : ""}` : "—"}</dd></div>
+              <div className="sm:col-span-2 lg:col-span-3"><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Address</dt><dd className="mt-0.5 text-sm text-ink">{supplier?.address || "—"}</dd></div>
+              {supplier?.notes && (
+                <div className="sm:col-span-2 lg:col-span-3"><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Notes</dt><dd className="mt-0.5 text-sm text-ink">{supplier.notes}</dd></div>
+              )}
+            </dl>
+          </div>
+        )}
+
+        <div className="rounded-2xl border border-line bg-white shadow-panel">
+          <div className="border-b border-line px-5 py-4"><h2 className="font-semibold text-ink">Recent Purchase Orders</h2></div>
+          <DataTable
+            columns={[
+              { key: "reference", label: "Reference", render: (r) => <Link href={`/procurement/purchase-orders/${r.id}`} className="font-semibold text-brand hover:underline">{r.reference as string}</Link> },
+              { key: "orderDate", label: "Order Date", render: (r) => fmt(r.orderDate as string) },
+              { key: "totalAmount", label: "Total", render: (r) => money(r.totalAmount) },
+              { key: "status", label: "Status", render: (r) => <StatusBadge status={r.status as string} /> },
+            ]}
+            rows={(supplier?.purchaseOrders ?? []) as Record<string, unknown>[]}
+            loading={!supplier}
+            empty="No purchase orders yet"
+          />
+        </div>
+
+        {(supplier?.priceHistory?.length ?? 0) > 0 && (
+          <div className="rounded-2xl border border-line bg-white shadow-panel">
+            <div className="border-b border-line px-5 py-4"><h2 className="font-semibold text-ink">Price History</h2></div>
+            <DataTable
+              columns={[
+                { key: "productName", label: "Product" },
+                { key: "unitPrice", label: "Unit Price", render: (r) => money(r.unitPrice) },
+                { key: "effectiveDate", label: "Effective", render: (r) => fmt(r.effectiveDate as string) },
+              ]}
+              rows={(supplier?.priceHistory ?? []) as Record<string, unknown>[]}
+              loading={false}
+              empty="No price history"
+            />
+          </div>
+        )}
+      </div>
+
+      <ConfirmModal
+        open={confirmDelete}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={doDelete}
+        loading={deleting}
+        title="Delete supplier?"
+        message={`This will permanently remove "${supplier?.name}" (${supplier?.code}). This can't be undone.`}
+        confirmLabel="Delete supplier"
+      />
+    </>
+  );
+}
+
 // ─── Supplier Categories ─────────────────────────────────────────────────────
 
 type SupplierCategory = { id: string; code: string; name: string; description?: string };
@@ -1224,7 +1523,7 @@ export function PurchaseOrdersPage() {
         <div className="rounded-2xl border border-line bg-white shadow-panel">
           <DataTable
             columns={[
-              { key: "reference", label: "Reference" },
+              { key: "reference", label: "Reference", render: (r) => <Link href={`/procurement/purchase-orders/${r.id}`} className="font-semibold text-brand hover:underline">{r.reference as string}</Link> },
               { key: "supplier", label: "Supplier", render: (r) => (r.supplier as PurchaseOrder["supplier"])?.name ?? "—" },
               { key: "orderDate", label: "Order Date", render: (r) => fmt(r.orderDate as string) },
               { key: "expectedDeliveryDate", label: "Expected", render: (r) => fmt(r.expectedDeliveryDate as string) },
@@ -1433,7 +1732,343 @@ export function CreatePurchaseOrderPage() {
           </div>
         </form>
       </div>
-    
+
+  );
+}
+
+// ─── Purchase Order Details ────────────────────────────────────────────────────
+
+const PO_EDITABLE_STATUSES = ["PENDING_APPROVAL"];
+const PO_DELETABLE_STATUSES = ["PENDING_APPROVAL", "CANCELLED"];
+
+type PurchaseOrderDetail = {
+  id: string;
+  reference: string;
+  orderDate: string;
+  expectedDelivery?: string;
+  deliveryAddress?: string;
+  status: string;
+  subtotal: number;
+  totalAmount: number;
+  currency: string;
+  paymentTermsDays?: number;
+  notes?: string;
+  rejectionReason?: string;
+  supplier: { id: string; name: string; code: string };
+  purchaseRequest?: { id: string; reference: string; title: string };
+  items: Array<{ id: string; productName: string; quantity: number; unitCost: number; lineTotal: number; uomCode?: string; receivedQty: number }>;
+  grnRecords: Array<{ id: string; reference: string; status: string; receivedDate: string }>;
+  invoices: Array<{ id: string; reference: string; invoiceNumber: string; status: string; totalAmount: number }>;
+  approvals: Array<{ id: string; status: string; comments?: string; createdAt: string; approver?: { fullName: string } }>;
+};
+
+export function PurchaseOrderDetailsPage() {
+  const params = useParams<{ id: string }>();
+  const router = useRouter();
+  const { profile } = useAuth();
+  const canManage = profile?.hasGlobalAccess || (profile?.permissions ?? []).includes("procurement.manage");
+
+  const [po, setPo] = useState<PurchaseOrderDetail | null>(() => getCachedFirst<ApiEnvelope<PurchaseOrderDetail>>(`/procurement/purchase-orders/${params.id}`)?.data ?? null);
+  const [loadError, setLoadError] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [editForm, setEditForm] = useState({ expectedDelivery: "", deliveryAddress: "", paymentTermsDays: "", notes: "" });
+  const [editItems, setEditItems] = useState<POItem[]>([]);
+  const [editError, setEditError] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+
+  async function load() {
+    setLoadError("");
+    try {
+      const res = await apiFetch<ApiEnvelope<PurchaseOrderDetail>>(`/procurement/purchase-orders/${params.id}`);
+      setPo(res.data);
+    } catch (err: unknown) {
+      setLoadError(err instanceof Error ? err.message : "Failed to load purchase order.");
+    }
+  }
+  useEffect(() => { load(); }, [params.id]);
+
+  function startEdit() {
+    if (!po) return;
+    setEditForm({
+      expectedDelivery: po.expectedDelivery?.slice(0, 10) ?? "",
+      deliveryAddress: po.deliveryAddress ?? "",
+      paymentTermsDays: po.paymentTermsDays?.toString() ?? "",
+      notes: po.notes ?? "",
+    });
+    setEditItems(po.items.map((it) => ({ productName: it.productName, quantity: String(it.quantity), uomCode: it.uomCode ?? "", unitCost: String(it.unitCost) })));
+    setEditError("");
+    setEditing(true);
+  }
+
+  const f = (k: keyof typeof editForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+    setEditForm((p) => ({ ...p, [k]: e.target.value }));
+
+  function setEditItem(i: number, k: keyof POItem, v: string) {
+    setEditItems((prev) => prev.map((it, idx) => (idx === i ? { ...it, [k]: v } : it)));
+  }
+  function addEditItem() { setEditItems((p) => [...p, { productName: "", quantity: "1", uomCode: "PCS", unitCost: "" }]); }
+  function removeEditItem(i: number) { setEditItems((p) => p.filter((_, idx) => idx !== i)); }
+  const editLineTotal = (it: POItem) => Number(it.quantity || 0) * Number(it.unitCost || 0);
+  const editSubtotal = editItems.reduce((s, it) => s + editLineTotal(it), 0);
+
+  async function saveEdit(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingEdit(true);
+    setEditError("");
+    try {
+      await apiFetch(`/procurement/purchase-orders/${params.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          expectedDelivery: editForm.expectedDelivery || undefined,
+          deliveryAddress: editForm.deliveryAddress || undefined,
+          paymentTermsDays: editForm.paymentTermsDays ? Number(editForm.paymentTermsDays) : undefined,
+          notes: editForm.notes || undefined,
+          items: editItems.map((it) => ({
+            productName: it.productName,
+            quantity: Number(it.quantity),
+            uomCode: it.uomCode || undefined,
+            unitCost: Number(it.unitCost),
+          })),
+        }),
+      });
+      invalidateCache("/procurement/purchase-orders", true);
+      setEditing(false);
+      await load();
+    } catch (err: unknown) {
+      setEditError(err instanceof Error ? err.message : "Failed to save changes.");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function doDelete() {
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await apiFetch(`/procurement/purchase-orders/${params.id}`, { method: "DELETE" });
+      invalidateCache("/procurement/purchase-orders", true);
+      router.push("/procurement/purchase-orders");
+    } catch (err: unknown) {
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete purchase order.");
+      setDeleting(false);
+      setConfirmDelete(false);
+    }
+  }
+
+  const canEdit = canManage && !!po && PO_EDITABLE_STATUSES.includes(po.status);
+  const canDelete = canManage && !!po && PO_DELETABLE_STATUSES.includes(po.status);
+
+  return (
+    <>
+      <div className="space-y-5">
+        <PageHero
+          kicker="Procurement"
+          title={po?.reference ?? "Purchase Order"}
+          subtitle={po?.supplier?.name}
+          actions={
+            <>
+              <Link href="/procurement/purchase-orders" className="app-button-secondary">Back</Link>
+              {canEdit && !editing && (
+                <button type="button" onClick={startEdit} className="app-button-secondary">
+                  <Pencil className="h-4 w-4" /> Edit
+                </button>
+              )}
+              {canDelete && (
+                <button
+                  type="button"
+                  onClick={() => { setDeleteError(""); setConfirmDelete(true); }}
+                  className="inline-flex min-h-10 items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 text-sm font-semibold text-red-600 hover:bg-red-100"
+                >
+                  <Trash2 className="h-4 w-4" /> Delete
+                </button>
+              )}
+            </>
+          }
+        />
+        <ProcurementNav />
+
+        {loadError && (
+          <div className="rounded-xl border-l-[3px] border-red-400 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">{loadError}</div>
+        )}
+        {deleteError && (
+          <div className="rounded-xl border-l-[3px] border-red-400 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">{deleteError}</div>
+        )}
+        {canManage && po && !canEdit && !canDelete && (
+          <div className="flex items-center gap-1.5 text-xs text-ink/50">
+            <LockedNote reason="Editing and deleting are only available while an order is pending approval or cancelled." />
+            <span>This order is {po.status.replace(/_/g, " ").toLowerCase()} — editing and deleting are no longer available.</span>
+          </div>
+        )}
+
+        {editing ? (
+          <form onSubmit={saveEdit} className="space-y-5">
+            {editError && (
+              <div className="rounded-xl border-l-[3px] border-red-400 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">{editError}</div>
+            )}
+            <div className="rounded-2xl border border-line bg-white p-6 shadow-panel">
+              <h2 className="mb-5 text-sm font-bold uppercase tracking-wide text-ink/45">Order Details</h2>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <div>
+                  <FormLabel>Expected Delivery</FormLabel>
+                  <input type="date" value={editForm.expectedDelivery} onChange={f("expectedDelivery")} className={inputCls} />
+                </div>
+                <div>
+                  <FormLabel>Payment Terms (days)</FormLabel>
+                  <input type="number" min={0} value={editForm.paymentTermsDays} onChange={f("paymentTermsDays")} className={inputCls} />
+                </div>
+                <div className="sm:col-span-2 lg:col-span-1">
+                  <FormLabel>Delivery Address</FormLabel>
+                  <input value={editForm.deliveryAddress} onChange={f("deliveryAddress")} className={inputCls} />
+                </div>
+                <div className="sm:col-span-2 lg:col-span-3">
+                  <FormLabel>Notes</FormLabel>
+                  <textarea value={editForm.notes} onChange={f("notes")} rows={2} className={inputCls} />
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-line bg-white shadow-panel">
+              <div className="flex items-center justify-between border-b border-line px-6 py-4">
+                <h2 className="text-sm font-bold uppercase tracking-wide text-ink/45">Line Items</h2>
+                <button type="button" onClick={addEditItem} className="app-button-secondary py-1.5 text-xs">
+                  <Plus className="h-3.5 w-3.5" /> Add Line
+                </button>
+              </div>
+              <div className="divide-y divide-line">
+                {editItems.map((it, i) => (
+                  <div key={i} className="grid grid-cols-12 gap-3 px-6 py-4">
+                    <div className="col-span-12 sm:col-span-5">
+                      <FormLabel>Product Name *</FormLabel>
+                      <input required value={it.productName} onChange={(e) => setEditItem(i, "productName", e.target.value)} className={inputCls} />
+                    </div>
+                    <div className="col-span-4 sm:col-span-2">
+                      <FormLabel>Qty *</FormLabel>
+                      <input required type="number" min={0.01} step={0.01} value={it.quantity} onChange={(e) => setEditItem(i, "quantity", e.target.value)} className={inputCls} />
+                    </div>
+                    <div className="col-span-4 sm:col-span-1">
+                      <FormLabel>Unit</FormLabel>
+                      <input value={it.uomCode} onChange={(e) => setEditItem(i, "uomCode", e.target.value)} className={inputCls} />
+                    </div>
+                    <div className="col-span-4 sm:col-span-2">
+                      <FormLabel>Unit Cost *</FormLabel>
+                      <input required type="number" min={0} step={0.01} value={it.unitCost} onChange={(e) => setEditItem(i, "unitCost", e.target.value)} className={inputCls} />
+                    </div>
+                    <div className="col-span-6 flex items-end justify-between sm:col-span-2">
+                      <div className="text-right">
+                        <p className="text-[10px] uppercase text-ink/40 font-bold">Line</p>
+                        <p className="text-sm font-bold text-ink">{money(editLineTotal(it))}</p>
+                      </div>
+                      {editItems.length > 1 && (
+                        <button type="button" onClick={() => removeEditItem(i)} className="ml-2 mb-0.5 rounded-lg border border-red-200 bg-red-50 px-2 py-2 text-red-600 hover:bg-red-100">×</button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="flex justify-end border-t border-line px-6 py-4">
+                <div className="text-right">
+                  <p className="text-xs uppercase font-bold tracking-wide text-ink/45">Order Total</p>
+                  <p className="text-2xl font-extrabold text-ink">{money(editSubtotal)}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button type="submit" disabled={savingEdit} className="app-button-primary">{savingEdit ? "Saving…" : "Save changes"}</button>
+              <button type="button" className="app-button-secondary" onClick={() => setEditing(false)} disabled={savingEdit}>Cancel</button>
+            </div>
+          </form>
+        ) : (
+          <>
+            <div className="rounded-2xl border border-line bg-white p-6 shadow-panel">
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-bold uppercase tracking-wide text-ink/45">Order Details</h2>
+                {po && <StatusBadge status={po.status} />}
+              </div>
+              <dl className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <div><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Supplier</dt><dd className="mt-0.5 text-sm text-ink">{po?.supplier ? <Link href={`/procurement/suppliers/${po.supplier.id}`} className="text-brand hover:underline">{po.supplier.name}</Link> : "—"}</dd></div>
+                <div><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Order Date</dt><dd className="mt-0.5 text-sm text-ink">{fmt(po?.orderDate)}</dd></div>
+                <div><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Expected Delivery</dt><dd className="mt-0.5 text-sm text-ink">{fmt(po?.expectedDelivery)}</dd></div>
+                <div><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Payment Terms</dt><dd className="mt-0.5 text-sm text-ink">{po?.paymentTermsDays != null ? `${po.paymentTermsDays} days` : "—"}</dd></div>
+                <div><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Total</dt><dd className="mt-0.5 text-sm font-bold text-ink">{po ? money(po.totalAmount) : "—"}</dd></div>
+                {po?.purchaseRequest && (
+                  <div><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Purchase Request</dt><dd className="mt-0.5 text-sm text-ink">{po.purchaseRequest.reference}</dd></div>
+                )}
+                <div className="sm:col-span-2 lg:col-span-3"><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Delivery Address</dt><dd className="mt-0.5 text-sm text-ink">{po?.deliveryAddress || "—"}</dd></div>
+                {po?.notes && (
+                  <div className="sm:col-span-2 lg:col-span-3"><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Notes</dt><dd className="mt-0.5 text-sm text-ink">{po.notes}</dd></div>
+                )}
+                {po?.rejectionReason && (
+                  <div className="sm:col-span-2 lg:col-span-3"><dt className="text-[11px] font-bold uppercase tracking-wide text-ink/45">Rejection Reason</dt><dd className="mt-0.5 text-sm text-red-700">{po.rejectionReason}</dd></div>
+                )}
+              </dl>
+            </div>
+
+            <div className="rounded-2xl border border-line bg-white shadow-panel">
+              <div className="border-b border-line px-5 py-4"><h2 className="font-semibold text-ink">Line Items</h2></div>
+              <DataTable
+                columns={[
+                  { key: "productName", label: "Product" },
+                  { key: "quantity", label: "Qty" },
+                  { key: "uomCode", label: "Unit" },
+                  { key: "unitCost", label: "Unit Cost", render: (r) => money(r.unitCost) },
+                  { key: "lineTotal", label: "Line Total", render: (r) => money(r.lineTotal) },
+                  { key: "receivedQty", label: "Received" },
+                ]}
+                rows={(po?.items ?? []) as Record<string, unknown>[]}
+                loading={!po}
+                empty="No line items"
+              />
+            </div>
+
+            {(po?.grnRecords?.length ?? 0) > 0 && (
+              <div className="rounded-2xl border border-line bg-white shadow-panel">
+                <div className="border-b border-line px-5 py-4"><h2 className="font-semibold text-ink">Goods Received</h2></div>
+                <DataTable
+                  columns={[
+                    { key: "reference", label: "Reference" },
+                    { key: "receivedDate", label: "Received", render: (r) => fmt(r.receivedDate as string) },
+                    { key: "status", label: "Status", render: (r) => <StatusBadge status={r.status as string} /> },
+                  ]}
+                  rows={(po?.grnRecords ?? []) as Record<string, unknown>[]}
+                  loading={false}
+                  empty="No goods received yet"
+                />
+              </div>
+            )}
+
+            {(po?.invoices?.length ?? 0) > 0 && (
+              <div className="rounded-2xl border border-line bg-white shadow-panel">
+                <div className="border-b border-line px-5 py-4"><h2 className="font-semibold text-ink">Invoices</h2></div>
+                <DataTable
+                  columns={[
+                    { key: "invoiceNumber", label: "Invoice #" },
+                    { key: "totalAmount", label: "Total", render: (r) => money(r.totalAmount) },
+                    { key: "status", label: "Status", render: (r) => <StatusBadge status={r.status as string} /> },
+                  ]}
+                  rows={(po?.invoices ?? []) as Record<string, unknown>[]}
+                  loading={false}
+                  empty="No invoices yet"
+                />
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      <ConfirmModal
+        open={confirmDelete}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={doDelete}
+        loading={deleting}
+        title="Delete purchase order?"
+        message={`This will permanently remove "${po?.reference}". This can't be undone.`}
+        confirmLabel="Delete order"
+      />
+    </>
   );
 }
 

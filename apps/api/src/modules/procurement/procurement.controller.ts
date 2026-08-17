@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Put, Query, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { PermissionsGuard } from "../../common/guards/permissions.guard";
 import { RequirePermissions } from "../../common/decorators/permissions.decorator";
@@ -23,6 +23,7 @@ import {
   QualityPassGRNDto,
   RejectPurchaseOrderDto,
   RejectPurchaseRequestDto,
+  UpdatePurchaseOrderDto,
   UpdateSupplierDto,
 } from "./dto/procurement.dto";
 import { Request } from "express";
@@ -90,6 +91,12 @@ export class ProcurementController {
     return this.svc.updateSupplier(user, id, dto, ctx(req));
   }
 
+  @Delete("suppliers/:id")
+  @RequirePermissions(PERMISSIONS.PROCUREMENT_MANAGE)
+  deleteSupplier(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Req() req: Request) {
+    return this.svc.deleteSupplier(user, id, ctx(req));
+  }
+
   // ─── Purchase Requests ─────────────────────────────────────────────────────
 
   @Get("purchase-requests")
@@ -146,6 +153,18 @@ export class ProcurementController {
   @RequirePermissions(PERMISSIONS.PROCUREMENT_MANAGE)
   createPurchaseOrder(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreatePurchaseOrderDto, @Req() req: Request) {
     return this.svc.createPurchaseOrder(user, dto, ctx(req));
+  }
+
+  @Patch("purchase-orders/:id")
+  @RequirePermissions(PERMISSIONS.PROCUREMENT_MANAGE)
+  updatePurchaseOrder(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdatePurchaseOrderDto, @Req() req: Request) {
+    return this.svc.updatePurchaseOrder(user, id, dto, ctx(req));
+  }
+
+  @Delete("purchase-orders/:id")
+  @RequirePermissions(PERMISSIONS.PROCUREMENT_MANAGE)
+  deletePurchaseOrder(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Req() req: Request) {
+    return this.svc.deletePurchaseOrder(user, id, ctx(req));
   }
 
   @Patch("purchase-orders/:id/approve")

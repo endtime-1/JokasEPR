@@ -148,6 +148,14 @@ export class CreatePurchaseOrderDto {
   @IsOptional() @IsString() @MaxLength(500) notes?: string;
 }
 
+export class UpdatePurchaseOrderDto {
+  @IsOptional() @IsDateString() expectedDelivery?: string;
+  @IsOptional() @IsString() @MaxLength(300) deliveryAddress?: string;
+  @IsOptional() @IsInt() @Min(0) paymentTermsDays?: number;
+  @IsOptional() @IsString() @MaxLength(500) notes?: string;
+  @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => PurchaseOrderItemDto) items?: PurchaseOrderItemDto[];
+}
+
 export class ApprovePurchaseOrderDto {
   @IsOptional() @IsString() @MaxLength(500) comments?: string;
 }
