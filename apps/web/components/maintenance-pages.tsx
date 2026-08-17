@@ -1206,7 +1206,11 @@ function daysUntil(dateStr: unknown) {
   return Math.ceil(ms / 86_400_000);
 }
 
+const DOCUMENT_EDIT_FORM_DEFAULT = { documentType: "REGISTRATION", documentNumber: "", issueDate: "", expiryDate: "", notes: "" };
+
 export function DocumentsPage() {
+  const { profile } = useAuth();
+  const canManage = profile?.hasGlobalAccess || (profile?.permissions ?? []).includes("maintenance.manage");
   const { options, optionsError } = useOptions();
   const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/maintenance/documents")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/maintenance/documents"));
@@ -1214,6 +1218,16 @@ export function DocumentsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [loadError, setLoadError] = useState("");
+
+  const [editRow, setEditRow] = useState<Record<string, unknown> | null>(null);
+  const [editForm, setEditForm] = useState(DOCUMENT_EDIT_FORM_DEFAULT);
+  const [editError, setEditError] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const [deleteRow, setDeleteRow] = useState<Record<string, unknown> | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+
   async function load() {
     setLoadError("");
     try {
@@ -1243,10 +1257,60 @@ export function DocumentsPage() {
       setSubmitting(false);
     }
   }
+
+  function startEdit(row: Record<string, unknown>) {
+    setEditForm({
+      documentType: String(row.documentType ?? "REGISTRATION"),
+      documentNumber: String(row.documentNumber ?? ""),
+      issueDate: row.issueDate ? String(row.issueDate).slice(0, 10) : "",
+      expiryDate: row.expiryDate ? String(row.expiryDate).slice(0, 10) : "",
+      notes: String(row.notes ?? ""),
+    });
+    setEditError("");
+    setEditRow(row);
+  }
+
+  async function saveEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editRow) return;
+    setSavingEdit(true);
+    setEditError("");
+    try {
+      await apiFetch(`/maintenance/documents/${editRow.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ ...editForm, documentNumber: editForm.documentNumber || undefined, issueDate: editForm.issueDate || undefined, notes: editForm.notes || undefined }),
+      });
+      invalidateCache("/maintenance/documents", true);
+      setEditRow(null);
+      await load();
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : "Failed to save changes.");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function doDelete() {
+    if (!deleteRow) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await apiFetch(`/maintenance/documents/${deleteRow.id}`, { method: "DELETE" });
+      invalidateCache("/maintenance/documents", true);
+      setDeleteRow(null);
+      await load();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete document.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <>
       <PageHeader title="Machine & Vehicle Documents" subtitle="Track registration, insurance, roadworthy, and license documents with renewal reminders sent automatically as expiry approaches." />
       {(loadError || optionsError) && <div className="app-alert-warning mb-4">{loadError || optionsError}</div>}
+      {deleteError && <div className="app-alert-warning mb-4">{deleteError}</div>}
       <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-4">
         <SelectField label="Machine" value={form.machineId} options={options.machines} onChange={(value) => setForm({ ...form, machineId: value, equipmentId: value ? "" : form.equipmentId })} />
         <SelectField label="Equipment" value={form.equipmentId} options={options.equipment} onChange={(value) => setForm({ ...form, equipmentId: value, machineId: value ? "" : form.machineId })} />
@@ -1278,8 +1342,57 @@ export function DocumentsPage() {
               return <span className={cls}>{label}{days < 0 ? " (expired)" : days <= 30 ? ` (${days}d)` : ""}</span>;
             }
           },
-          { key: "notes", label: "Notes", render: (row) => String(row.notes ?? "—") }
+          { key: "notes", label: "Notes", render: (row) => String(row.notes ?? "—") },
+          ...(canManage ? [{
+            key: "actions",
+            label: "Actions",
+            render: (row: Record<string, unknown>) => (
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  onClick={() => startEdit(row)}
+                  className="inline-flex items-center gap-1 rounded-md border border-line bg-white px-2.5 py-1 text-xs font-semibold text-ink/70 hover:border-brand/40 hover:bg-brand/5 hover:text-brand"
+                >
+                  <Pencil className="h-3 w-3" /> Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setDeleteError(""); setDeleteRow(row); }}
+                  className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-600 hover:bg-red-100"
+                >
+                  <Trash2 className="h-3 w-3" /> Delete
+                </button>
+              </div>
+            ),
+          }] : []),
         ]}
+      />
+
+      <Modal open={!!editRow} onClose={() => !savingEdit && setEditRow(null)} title="Edit Document" size="md">
+        <form onSubmit={saveEdit} className="grid gap-4 sm:grid-cols-2">
+          {editError && <p className="col-span-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{editError}</p>}
+          <FormField label="Document type"><select className={inputClass} value={editForm.documentType} onChange={(event) => setEditForm({ ...editForm, documentType: event.target.value })}>{DOCUMENT_TYPES.map((type) => <option key={type}>{type}</option>)}</select></FormField>
+          <TextField label="Document number" value={editForm.documentNumber} onChange={(value) => setEditForm({ ...editForm, documentNumber: value })} />
+          <TextField label="Issue date" type="date" value={editForm.issueDate} onChange={(value) => setEditForm({ ...editForm, issueDate: value })} />
+          <TextField label="Expiry date" type="date" value={editForm.expiryDate} onChange={(value) => setEditForm({ ...editForm, expiryDate: value })} required />
+          <div className="sm:col-span-2"><TextField label="Notes" value={editForm.notes} onChange={(value) => setEditForm({ ...editForm, notes: value })} /></div>
+          <div className="col-span-2 flex justify-end gap-3">
+            <button type="button" className="app-button-secondary" onClick={() => setEditRow(null)} disabled={savingEdit}>Cancel</button>
+            <button disabled={savingEdit} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60">
+              {savingEdit ? "Saving…" : "Save changes"}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      <ConfirmModal
+        open={!!deleteRow}
+        onClose={() => setDeleteRow(null)}
+        onConfirm={doDelete}
+        loading={deleting}
+        title="Delete document?"
+        message={`This will permanently remove this ${String(deleteRow?.documentType ?? "").toLowerCase()} document. This can't be undone.`}
+        confirmLabel="Delete document"
       />
     </>
   );
