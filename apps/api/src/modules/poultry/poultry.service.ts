@@ -361,11 +361,16 @@ export class PoultryService {
       ]);
       if (eggs + weights > 0) throw new BadRequestException(`Cannot change bird type from ${batch.birdType} to ${dto.birdType} — this batch has existing egg production or weight records.`);
     }
+    const codeUpper = dto.code ? dto.code.toUpperCase() : undefined;
+    if (codeUpper && codeUpper !== batch.code) {
+      const codeConflict = await this.prisma.flockBatch.findFirst({ where: { companyId: user.companyId, code: codeUpper, deletedAt: null, id: { not: id } } });
+      if (codeConflict) throw new BadRequestException(`A batch with code ${codeUpper} already exists.`);
+    }
     const data = await this.prisma.flockBatch.update({
       where: { id },
       data: {
         name: dto.name,
-        code: dto.code,
+        code: codeUpper,
         birdType: dto.birdType,
         expectedCloseDate: dto.expectedCloseDate ? new Date(dto.expectedCloseDate) : undefined,
         notes: dto.notes,
@@ -390,7 +395,9 @@ export class PoultryService {
     ]);
     const total = mortality + feed + eggs + weights + costs + transfers;
     if (total > 0) throw new BadRequestException(`Cannot delete batch "${batch.code}" — it has ${total} active record${total !== 1 ? "s" : ""} (mortality: ${mortality}, feed: ${feed}, eggs: ${eggs}, weights: ${weights}, costs: ${costs}, transfers: ${transfers}). Delete all records first.`);
-    await this.prisma.flockBatch.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    // The (companyId, code) unique index isn't deletedAt-aware, so a deleted
+    // batch's code otherwise stays permanently reserved and blocks reuse.
+    await this.prisma.flockBatch.update({ where: { id }, data: { code: `${batch.code}__deleted_${id}`, deletedAt: new Date(), updatedById: user.id } });
     this.lookupCache.invalidate(`poultry:opts:${user.companyId}`);
     await this.writeAudit(user, "DELETE", "FlockBatch", id, `Deleted flock batch ${batch.code}`, context, batch.farmId);
     return { data: { id } };

@@ -28,16 +28,16 @@ const mockPrisma = {
   pen: { findFirst: jest.fn(), findMany: jest.fn() },
   flockBatch: { findFirst: jest.fn(), create: jest.fn(), update: jest.fn() },
   batchPenAllocation: { findFirst: jest.fn() },
-  poultryTransferRecord: { findFirst: jest.fn() },
-  feedConsumptionRecord: { findFirst: jest.fn() },
-  eggProductionRecord: { findFirst: jest.fn() },
+  poultryTransferRecord: { findFirst: jest.fn(), count: jest.fn().mockResolvedValue(0) },
+  feedConsumptionRecord: { findFirst: jest.fn(), count: jest.fn().mockResolvedValue(0) },
+  eggProductionRecord: { findFirst: jest.fn(), count: jest.fn().mockResolvedValue(0) },
   medicationRecord: { findFirst: jest.fn() },
   vaccinationRecord: { findFirst: jest.fn() },
   dailyPoultryRecord: { findFirst: jest.fn() },
-  mortalityRecord: { findFirst: jest.fn() },
-  birdWeightRecord: { findFirst: jest.fn(), create: jest.fn() },
+  mortalityRecord: { findFirst: jest.fn(), count: jest.fn().mockResolvedValue(0) },
+  birdWeightRecord: { findFirst: jest.fn(), create: jest.fn(), count: jest.fn().mockResolvedValue(0) },
   poultryHealthObservation: { findFirst: jest.fn(), create: jest.fn() },
-  poultryCostRecord: { findFirst: jest.fn(), create: jest.fn() },
+  poultryCostRecord: { findFirst: jest.fn(), create: jest.fn(), count: jest.fn().mockResolvedValue(0) },
   $transaction: jest.fn().mockImplementation((cb: (tx: typeof mockTx) => Promise<unknown>) => cb(mockTx))
 };
 const mockAudit = { write: jest.fn().mockResolvedValue(undefined) };
@@ -1306,5 +1306,61 @@ describe("PoultryService — idempotencyKey dedup for the 8 poultry create endpo
         expect.objectContaining({ data: expect.objectContaining({ idempotencyKey: "idem-cost-1" }) })
       );
     });
+  });
+});
+
+describe("PoultryService.deleteBatch — frees the batch code for reuse (soft-delete + unique index gap)", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPrisma.flockBatch.findFirst.mockResolvedValue({ id: "batch-1", companyId: "company-1", farmId: "farm-1", code: "001" });
+  });
+
+  it("rewrites the code when soft-deleting, so the (companyId, code) unique index doesn't keep it reserved", async () => {
+    const service = makeService();
+    await service.deleteBatch(makeUser({ farmIds: ["farm-1"] }), "batch-1", {});
+
+    expect(mockPrisma.flockBatch.update).toHaveBeenCalledWith({
+      where: { id: "batch-1" },
+      data: expect.objectContaining({ code: "001__deleted_batch-1", deletedAt: expect.any(Date) })
+    });
+  });
+
+  it("still reports the original code in the audit message and the block-on-dependents error", async () => {
+    mockPrisma.mortalityRecord.count.mockResolvedValueOnce(2);
+    const service = makeService();
+    await expect(service.deleteBatch(makeUser({ farmIds: ["farm-1"] }), "batch-1", {})).rejects.toThrow(/"001"/);
+    expect(mockPrisma.flockBatch.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("PoultryService.updateBatch — code changes are uppercased and checked for conflicts", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPrisma.flockBatch.findFirst.mockResolvedValue({ id: "batch-1", companyId: "company-1", farmId: "farm-1", birdType: "LAYERS", code: "FB-1" });
+  });
+
+  it("uppercases a new code the same way createBatch does", async () => {
+    mockPrisma.flockBatch.findFirst
+      .mockResolvedValueOnce({ id: "batch-1", companyId: "company-1", farmId: "farm-1", birdType: "LAYERS", code: "FB-1" })
+      .mockResolvedValueOnce(null);
+    mockPrisma.flockBatch.update.mockResolvedValue({});
+    const service = makeService();
+
+    await service.updateBatch(makeUser({ farmIds: ["farm-1"] }), "batch-1", { code: "fb-2" } as never, {});
+
+    expect(mockPrisma.flockBatch.update).toHaveBeenCalledWith({
+      where: { id: "batch-1" },
+      data: expect.objectContaining({ code: "FB-2" })
+    });
+  });
+
+  it("rejects renaming to a code already used by another active batch", async () => {
+    mockPrisma.flockBatch.findFirst
+      .mockResolvedValueOnce({ id: "batch-1", companyId: "company-1", farmId: "farm-1", birdType: "LAYERS", code: "FB-1" })
+      .mockResolvedValueOnce({ id: "batch-2", code: "FB-2" });
+    const service = makeService();
+
+    await expect(service.updateBatch(makeUser({ farmIds: ["farm-1"] }), "batch-1", { code: "fb-2" } as never, {})).rejects.toThrow(/already exists/);
+    expect(mockPrisma.flockBatch.update).not.toHaveBeenCalled();
   });
 });
