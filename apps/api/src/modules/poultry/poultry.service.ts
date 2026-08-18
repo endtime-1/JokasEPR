@@ -78,6 +78,7 @@ export class PoultryService {
           farm: { select: { name: true, code: true } },
           poultryHouse: { select: { name: true, code: true } },
           mortalityRecords: { where: { deletedAt: null }, select: { birdCount: true, isCulling: true } },
+          poultryTransferRecords: { where: { deletedAt: null }, select: { birdCount: true, isFullBatchRelocation: true } },
           feedConsumptionRecords: { where: { deletedAt: null }, select: { quantityKg: true } },
           eggProductionRecords: { where: { deletedAt: null }, select: { goodEggs: true, crackedEggs: true, dirtyEggs: true, brokenEggs: true, rejectedEggs: true } },
           birdWeightRecords: { where: { deletedAt: null }, orderBy: { recordDate: "desc" }, take: 1 },
@@ -208,6 +209,7 @@ export class PoultryService {
           where: { companyId: user.companyId, farmId, deletedAt: null },
           include: {
             mortalityRecords: { where: { deletedAt: null } },
+            poultryTransferRecords: { where: { deletedAt: null }, select: { birdCount: true, isFullBatchRelocation: true } },
             eggProductionRecords: { where: { deletedAt: null } },
             feedConsumptionRecords: { where: { deletedAt: null }, select: { quantityKg: true } },
             costRecords: { where: { deletedAt: null } }
@@ -219,7 +221,7 @@ export class PoultryService {
       data: {
         houses,
         batchCount: batches.length,
-        currentLiveBirds: batches.reduce((sum, batch) => sum + this.currentLiveBirds(batch.openingBirdCount, batch.mortalityRecords), 0),
+        currentLiveBirds: batches.reduce((sum, batch) => sum + this.currentLiveBirds(batch.openingBirdCount, batch.mortalityRecords, batch.poultryTransferRecords), 0),
         eggs: batches.flatMap((batch) => batch.eggProductionRecords).reduce((sum, row) => sum + this.totalEggs(row), 0),
         feedKg: batches.flatMap((batch) => batch.feedConsumptionRecords).reduce((sum, row) => sum + Number(row.quantityKg), 0),
         costs: batches.flatMap((batch) => batch.costRecords).reduce((sum, row) => sum + Number(row.amount), 0)
@@ -411,6 +413,7 @@ export class PoultryService {
           farm: { select: { code: true, name: true } },
           poultryHouse: { select: { code: true, name: true } },
           mortalityRecords: { where: { deletedAt: null } },
+          poultryTransferRecords: { where: { deletedAt: null }, select: { birdCount: true, isFullBatchRelocation: true } },
           feedConsumptionRecords: { where: { deletedAt: null } },
           eggProductionRecords: { where: { deletedAt: null } },
           birdWeightRecords: { where: { deletedAt: null }, orderBy: { recordDate: "desc" }, take: 1 },
@@ -631,12 +634,12 @@ export class PoultryService {
       return { data: { openingBirdCount: closing, source: "previous_day" } };
     }
 
-    // Fall back to batch opening count minus all mortality recorded so far
-    const { _sum } = await this.prisma.mortalityRecord.aggregate({
-      where: { companyId: user.companyId, flockBatchId: batch.id, deletedAt: null },
-      _sum: { birdCount: true },
-    });
-    const fallback = Math.max(0, batch.openingBirdCount - Number(_sum.birdCount ?? 0));
+    // Fall back to the batch's live-bird count: opening count minus all
+    // mortality/culling AND minus birds transferred out so far (2026-08-18 —
+    // this used to ignore transfers entirely, so a batch that had already
+    // moved part of its flock elsewhere still prefilled today's opening
+    // count as if every bird it started with were still physically present).
+    const fallback = await this.liveBirdsRemaining(this.prisma, batch.id, batch.openingBirdCount);
     return { data: { openingBirdCount: fallback, source: "batch_total" } };
   }
 
@@ -701,16 +704,14 @@ export class PoultryService {
         await tx.$queryRaw`SELECT id FROM FlockBatch WHERE id = ${batch.id} FOR UPDATE`;
       }
       if (mortalityDelta > 0) {
-        const { _sum } = await tx.mortalityRecord.aggregate({ where: { flockBatchId: batch.id, deletedAt: null }, _sum: { birdCount: true } });
-        const liveBirds = Math.max(0, batch.openingBirdCount - (_sum.birdCount ?? 0));
+        const liveBirds = await this.liveBirdsRemaining(tx, batch.id, batch.openingBirdCount);
         if (mortalityDelta > liveBirds) throw new BadRequestException(`Cannot record ${mortalityDelta} more mortalit${mortalityDelta !== 1 ? "ies" : "y"}. Only ${liveBirds} live bird${liveBirds !== 1 ? "s" : ""} remain in this batch.`);
         await tx.mortalityRecord.create({
           data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), recordDate, birdCount: mortalityDelta, isCulling: false, reason: "Daily record", status: "SUBMITTED" }
         });
       }
       if (culledDelta > 0) {
-        const { _sum } = await tx.mortalityRecord.aggregate({ where: { flockBatchId: batch.id, deletedAt: null }, _sum: { birdCount: true } });
-        const liveBirds = Math.max(0, batch.openingBirdCount - (_sum.birdCount ?? 0));
+        const liveBirds = await this.liveBirdsRemaining(tx, batch.id, batch.openingBirdCount);
         if (culledDelta > liveBirds) throw new BadRequestException(`Cannot record ${culledDelta} more culled. Only ${liveBirds} live bird${liveBirds !== 1 ? "s" : ""} remain in this batch.`);
         await tx.mortalityRecord.create({
           data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), recordDate, birdCount: culledDelta, isCulling: true, reason: "Daily record", status: "SUBMITTED" }
@@ -747,8 +748,7 @@ export class PoultryService {
         // same live-bird snapshot and both pass the check — the second waits
         // for the first to commit, then its own aggregate includes it.
         await tx.$queryRaw`SELECT id FROM FlockBatch WHERE id = ${batch.id} FOR UPDATE`;
-        const { _sum } = await tx.mortalityRecord.aggregate({ where: { flockBatchId: batch.id, deletedAt: null }, _sum: { birdCount: true } });
-        const liveBirds = Math.max(0, batch.openingBirdCount - (_sum.birdCount ?? 0));
+        const liveBirds = await this.liveBirdsRemaining(tx, batch.id, batch.openingBirdCount);
         if (dto.birdCount > liveBirds) throw new BadRequestException(`Cannot record ${dto.birdCount} bird${dto.birdCount !== 1 ? "s" : ""}. Only ${liveBirds} live bird${liveBirds !== 1 ? "s" : ""} remain in this batch.`);
         return tx.mortalityRecord.create({
           data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), recordDate: new Date(dto.recordDate), birdCount: dto.birdCount, isCulling: dto.isCulling ?? false, reason: dto.reason, notes: dto.notes, status: dto.status ?? "SUBMITTED", idempotencyKey: dto.idempotencyKey }
@@ -1031,6 +1031,12 @@ export class PoultryService {
       // waits for the first to commit, then its own aggregate includes it.
       await tx.$queryRaw`SELECT id FROM FlockBatch WHERE id = ${batch.id} FOR UPDATE`;
 
+      // Set below only for a batch-level (no fromPenId) transfer that moves
+      // every remaining live bird — stamped onto the transfer row so
+      // currentLiveBirds/liveBirdsRemaining know not to treat it as birds
+      // that left the batch (see the schema comment on this column).
+      let isFullBatchRelocation = false;
+
       if (dto.fromPenId) {
         const fromAlloc = await tx.batchPenAllocation.findFirst({ where: { flockBatchId: batch.id, penId: dto.fromPenId } });
         if (!fromAlloc) throw new BadRequestException("Source pen is not allocated to this batch.");
@@ -1043,11 +1049,7 @@ export class PoultryService {
           throw new BadRequestException(`Source pen only has ${available} birds available. Cannot transfer ${dto.birdCount}.`);
         }
       } else {
-        const [mortalityAgg, outgoingAgg] = await Promise.all([
-          tx.mortalityRecord.aggregate({ where: { flockBatchId: batch.id, deletedAt: null }, _sum: { birdCount: true } }),
-          tx.poultryTransferRecord.aggregate({ where: { flockBatchId: batch.id, deletedAt: null }, _sum: { birdCount: true } })
-        ]);
-        const liveBirds = Math.max(0, batch.openingBirdCount - (mortalityAgg._sum.birdCount ?? 0) - (outgoingAgg._sum.birdCount ?? 0));
+        const liveBirds = await this.liveBirdsRemaining(tx, batch.id, batch.openingBirdCount);
         if (dto.birdCount > liveBirds) throw new BadRequestException(`Cannot transfer ${dto.birdCount} birds. Only ${liveBirds} live birds remain in this batch.`);
         // M-BUG (2026-08-13): a whole-flock, batch-level transfer (not
         // scoped to one pen) updated the transfer paperwork but never the
@@ -1058,6 +1060,7 @@ export class PoultryService {
         // reassign when the ENTIRE remaining flock moves — a partial
         // transfer legitimately leaves birds (and the batch's home) behind.
         if (dto.birdCount === liveBirds && liveBirds > 0) {
+          isFullBatchRelocation = true;
           await tx.flockBatch.update({ where: { id: batch.id }, data: { farmId: dto.toFarmId, poultryHouseId: dto.toPoultryHouseId, updatedById: user.id } });
         }
       }
@@ -1074,6 +1077,7 @@ export class PoultryService {
           toPoultryHouseId: dto.toPoultryHouseId,
           toPenId: dto.toPenId,
           birdCount: dto.birdCount,
+          isFullBatchRelocation,
           transferDate: new Date(dto.transferDate),
           reason: dto.reason,
           createdById: user.id
@@ -1408,8 +1412,7 @@ export class PoultryService {
         if (newCount !== mortality.birdCount) {
           await tx.$queryRaw`SELECT id FROM FlockBatch WHERE id = ${mortality.flockBatchId} FOR UPDATE`;
           const batch = await tx.flockBatch.findFirstOrThrow({ where: { id: mortality.flockBatchId }, select: { openingBirdCount: true } });
-          const { _sum } = await tx.mortalityRecord.aggregate({ where: { flockBatchId: mortality.flockBatchId, deletedAt: null, id: { not: id } }, _sum: { birdCount: true } });
-          const liveBirdsExcludingThisRecord = Math.max(0, batch.openingBirdCount - (_sum.birdCount ?? 0));
+          const liveBirdsExcludingThisRecord = await this.liveBirdsRemaining(tx, mortality.flockBatchId, batch.openingBirdCount, id);
           if (newCount > liveBirdsExcludingThisRecord) {
             throw new BadRequestException(`Cannot correct this entry to ${newCount}. Only ${liveBirdsExcludingThisRecord} live bird(s) would remain available in this batch.`);
           }
@@ -1591,8 +1594,9 @@ export class PoultryService {
     // Natural deaths only for mortalityRate — culling is a planned management action,
     // not a disease/welfare event, and should not trigger high-mortality alerts.
     const naturalMortality = records.filter((r) => !r.isCulling).reduce((sum: number, r: any) => sum + r.birdCount, 0);
-    // currentLiveBirds subtracts both natural deaths AND culling — culled birds are gone.
-    const currentLiveBirds = this.currentLiveBirds(batch.openingBirdCount, records);
+    // currentLiveBirds subtracts natural deaths, culling, AND birds transferred
+    // out of the batch (excluding whole-batch relocations — see currentLiveBirds).
+    const currentLiveBirds = this.currentLiveBirds(batch.openingBirdCount, records, batch.poultryTransferRecords ?? []);
     const totalFeedKg = (batch.feedConsumptionRecords ?? []).reduce((sum: number, row: any) => sum + Number(row.quantityKg), 0);
     const totalEggs = (batch.eggProductionRecords ?? []).reduce((sum: number, row: any) => sum + this.totalEggs(row), 0);
     const totalCosts = (batch.costRecords ?? []).reduce((sum: number, row: any) => sum + Number(row.amount), 0);
@@ -1636,6 +1640,7 @@ export class PoultryService {
       where: { id: batchId, companyId: user.companyId },
       include: {
         mortalityRecords: { where: { deletedAt: null }, select: { birdCount: true, isCulling: true } },
+        poultryTransferRecords: { where: { deletedAt: null }, select: { birdCount: true, isFullBatchRelocation: true } },
         feedConsumptionRecords: { where: { deletedAt: null }, select: { quantityKg: true } },
         eggProductionRecords: { where: { deletedAt: null }, select: { goodEggs: true, crackedEggs: true, dirtyEggs: true, brokenEggs: true, rejectedEggs: true } },
         birdWeightRecords: { where: { deletedAt: null }, orderBy: { recordDate: "desc" }, take: 1 },
@@ -1658,8 +1663,44 @@ export class PoultryService {
     }
   }
 
-  private currentLiveBirds(openingBirdCount: number, mortalityRecords: Array<{ birdCount: number }>) {
-    return Math.max(0, openingBirdCount - mortalityRecords.reduce((sum, row) => sum + row.birdCount, 0));
+  // (2026-08-18) currentLiveBirds must agree with getBatch's per-pen adjusted
+  // allocations, which already subtract outgoing transfers — see that
+  // method's comment for the invariant this restores. isFullBatchRelocation
+  // transfers are excluded: those don't remove birds from the batch, they
+  // just move the whole batch to a new farm/house (see createTransfer).
+  private currentLiveBirds(
+    openingBirdCount: number,
+    mortalityRecords: Array<{ birdCount: number }>,
+    transferRecords: Array<{ birdCount: number; isFullBatchRelocation: boolean }> = []
+  ) {
+    const mortalityTotal = mortalityRecords.reduce((sum, row) => sum + row.birdCount, 0);
+    const outgoingTotal = transferRecords.filter((t) => !t.isFullBatchRelocation).reduce((sum, row) => sum + row.birdCount, 0);
+    return Math.max(0, openingBirdCount - mortalityTotal - outgoingTotal);
+  }
+
+  // Transactional counterpart of currentLiveBirds, for the write-path checks
+  // (createMortality, createDailyRecord, createTransfer, record corrections)
+  // that need a live, lockable aggregate rather than a pre-fetched array.
+  // Accepts either a live-run Prisma.TransactionClient or the plain
+  // PrismaService for read-only callers (getDailyRecordPrefill) that don't
+  // need row-locking.
+  private async liveBirdsRemaining(
+    client: Prisma.TransactionClient | PrismaService,
+    flockBatchId: string,
+    openingBirdCount: number,
+    excludeMortalityId?: string
+  ): Promise<number> {
+    const [mortalityAgg, outgoingAgg] = await Promise.all([
+      client.mortalityRecord.aggregate({
+        where: { flockBatchId, deletedAt: null, ...(excludeMortalityId ? { id: { not: excludeMortalityId } } : {}) },
+        _sum: { birdCount: true }
+      }),
+      client.poultryTransferRecord.aggregate({
+        where: { flockBatchId, deletedAt: null, isFullBatchRelocation: false },
+        _sum: { birdCount: true }
+      })
+    ]);
+    return Math.max(0, openingBirdCount - (mortalityAgg._sum.birdCount ?? 0) - (outgoingAgg._sum.birdCount ?? 0));
   }
 
   private totalEggs(row: { goodEggs: number; crackedEggs: number; dirtyEggs: number; brokenEggs: number; rejectedEggs: number }) {

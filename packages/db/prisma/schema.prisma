@@ -3408,6 +3408,15 @@ model PoultryTransferRecord {
   toPoultryHouseId   String
   toPenId            String?
   birdCount          Int
+  // True only for a batch-level transfer that moved every remaining live
+  // bird (the FlockBatch's own farmId/poultryHouseId gets reassigned to
+  // match — see createTransfer). Such a transfer doesn't reduce the
+  // batch's live-bird count: the birds aren't gone, the batch just moved
+  // with them. A partial transfer (some birds left behind) does reduce
+  // it. Live-bird calculations must exclude relocation transfers from
+  // "birds that left the batch," or a batch that simply moved would
+  // wrongly appear to have lost its entire flock.
+  isFullBatchRelocation Boolean            @default(false)
   transferDate       DateTime
   status             PoultryTransferStatus @default(PENDING)
   reason             String?

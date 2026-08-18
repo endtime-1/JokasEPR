@@ -1,0 +1,25 @@
+-- Poultry live-bird accounting fix (2026-08-18): currentLiveBirds and every
+-- mortality/culling validation check only ever subtracted mortality from
+-- openingBirdCount — outgoing transfers were never accounted for anywhere
+-- except createTransfer's own availability check. A batch that transferred
+-- part of its flock elsewhere kept showing its pre-transfer bird count on
+-- every dashboard, list, and profitability calculation, and the Daily
+-- Record screen's "today's opening count" auto-fill inherited the same
+-- inflated number. getBatch's own per-pen adjustment already documented the
+-- intended invariant ("the sum across all pens equals currentLiveBirds") —
+-- this migration adds the column needed to make that true at the batch
+-- level too.
+--
+-- isFullBatchRelocation distinguishes the one case where an outgoing
+-- transfer must NOT reduce the count: a batch-level transfer that moves
+-- every remaining bird just relocates the same batch (its farmId/
+-- poultryHouseId get reassigned — see poultry.service.ts's createTransfer)
+-- rather than removing birds from it. Defaults to false for all existing
+-- rows: a full-relocation transfer's own birdCount always equalled the
+-- batch's live count at the time, so treating unflagged history as
+-- "reduces the count" is only wrong for that specific past scenario, and
+-- there is no reliable way to reconstruct it after the fact without
+-- replaying full transfer history in order. New relocations are stamped
+-- correctly going forward.
+
+ALTER TABLE `PoultryTransferRecord` ADD COLUMN `isFullBatchRelocation` BOOLEAN NOT NULL DEFAULT false;

@@ -16,7 +16,10 @@ const mockTx = {
   stockBatch: { create: jest.fn(), findMany: jest.fn().mockResolvedValue([]), updateMany: jest.fn() },
   stockMovement: { create: jest.fn(), findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn() },
   mortalityRecord: { aggregate: jest.fn(), create: jest.fn(), update: jest.fn() },
-  poultryTransferRecord: { aggregate: jest.fn(), create: jest.fn() },
+  // Defaults to "no outgoing transfers" so tests that don't care about
+  // transfers (the vast majority) don't need to mock this explicitly —
+  // tests that DO care override with mockResolvedValueOnce.
+  poultryTransferRecord: { aggregate: jest.fn().mockResolvedValue({ _sum: { birdCount: 0 } }), create: jest.fn() },
   batchPenAllocation: { findFirst: jest.fn(), upsert: jest.fn() },
   pen: { update: jest.fn(), findFirst: jest.fn() },
   flockBatch: { findFirstOrThrow: jest.fn(), update: jest.fn() },
@@ -26,15 +29,16 @@ const mockTx = {
 const mockPrisma = {
   poultryHouse: { findFirst: jest.fn() },
   pen: { findFirst: jest.fn(), findMany: jest.fn() },
-  flockBatch: { findFirst: jest.fn(), create: jest.fn(), update: jest.fn() },
+  flockBatch: { findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn() },
+  systemSetting: { findFirst: jest.fn().mockResolvedValue(null) },
   batchPenAllocation: { findFirst: jest.fn() },
-  poultryTransferRecord: { findFirst: jest.fn(), count: jest.fn().mockResolvedValue(0) },
+  poultryTransferRecord: { findFirst: jest.fn(), count: jest.fn().mockResolvedValue(0), aggregate: jest.fn().mockResolvedValue({ _sum: { birdCount: 0 } }) },
   feedConsumptionRecord: { findFirst: jest.fn(), count: jest.fn().mockResolvedValue(0) },
   eggProductionRecord: { findFirst: jest.fn(), count: jest.fn().mockResolvedValue(0) },
   medicationRecord: { findFirst: jest.fn() },
   vaccinationRecord: { findFirst: jest.fn() },
   dailyPoultryRecord: { findFirst: jest.fn() },
-  mortalityRecord: { findFirst: jest.fn(), count: jest.fn().mockResolvedValue(0) },
+  mortalityRecord: { findFirst: jest.fn(), count: jest.fn().mockResolvedValue(0), aggregate: jest.fn().mockResolvedValue({ _sum: { birdCount: 0 } }) },
   birdWeightRecord: { findFirst: jest.fn(), create: jest.fn(), count: jest.fn().mockResolvedValue(0) },
   poultryHealthObservation: { findFirst: jest.fn(), create: jest.fn() },
   poultryCostRecord: { findFirst: jest.fn(), create: jest.fn(), count: jest.fn().mockResolvedValue(0) },
@@ -1362,5 +1366,190 @@ describe("PoultryService.updateBatch — code changes are uppercased and checked
 
     await expect(service.updateBatch(makeUser({ farmIds: ["farm-1"] }), "batch-1", { code: "fb-2" } as never, {})).rejects.toThrow(/already exists/);
     expect(mockPrisma.flockBatch.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("PoultryService — currentLiveBirds accounts for transfers, not just mortality (2026-08-18)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const baseBatch = {
+    id: "batch-1", companyId: "company-1", farmId: "farm-1", status: "ACTIVE", code: "FB-1",
+    birdType: "BROILERS", openingBirdCount: 1000, mortalityRecords: [{ birdCount: 50, isCulling: false }],
+    feedConsumptionRecords: [], eggProductionRecords: [], birdWeightRecords: [], costRecords: []
+  };
+
+  it("subtracts a partial (non-relocation) transfer from currentLiveBirds", async () => {
+    mockPrisma.flockBatch.findMany.mockResolvedValue([
+      { ...baseBatch, poultryTransferRecords: [{ birdCount: 200, isFullBatchRelocation: false }] }
+    ]);
+    const service = makeService();
+
+    const result = await service.listBatches(makeUser({ hasGlobalAccess: true }), {} as never);
+
+    // 1000 opening - 50 mortality - 200 transferred out = 750
+    expect(result.data[0].currentLiveBirds).toBe(750);
+  });
+
+  it("does NOT subtract a whole-batch relocation transfer — the birds moved with the batch, they didn't leave it", async () => {
+    mockPrisma.flockBatch.findMany.mockResolvedValue([
+      { ...baseBatch, poultryTransferRecords: [{ birdCount: 950, isFullBatchRelocation: true }] }
+    ]);
+    const service = makeService();
+
+    const result = await service.listBatches(makeUser({ hasGlobalAccess: true }), {} as never);
+
+    // 1000 opening - 50 mortality, relocation excluded = 950 (not 0)
+    expect(result.data[0].currentLiveBirds).toBe(950);
+  });
+
+  it("mixes a past relocation with a later partial transfer correctly", async () => {
+    mockPrisma.flockBatch.findMany.mockResolvedValue([
+      {
+        ...baseBatch,
+        poultryTransferRecords: [
+          { birdCount: 950, isFullBatchRelocation: true },
+          { birdCount: 100, isFullBatchRelocation: false }
+        ]
+      }
+    ]);
+    const service = makeService();
+
+    const result = await service.listBatches(makeUser({ hasGlobalAccess: true }), {} as never);
+
+    // 1000 - 50 mortality - 100 partial transfer (relocation excluded) = 850
+    expect(result.data[0].currentLiveBirds).toBe(850);
+  });
+});
+
+describe("PoultryService.createMortality — live-bird check accounts for prior outgoing transfers (2026-08-18)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const flockBatch = { id: "batch-1", farmId: "farm-1", branchId: "branch-1", poultryHouseId: "house-1", status: "ACTIVE", code: "FB-1", openingBirdCount: 1000 };
+
+  it("rejects mortality that ignores birds already transferred out of the batch", async () => {
+    mockPrisma.flockBatch.findFirst.mockResolvedValue(flockBatch);
+    mockTx.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+    // 400 birds already left via a partial transfer — only 600 remain, even
+    // though no mortality has been recorded yet.
+    mockTx.poultryTransferRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 400 } });
+
+    const service = makeService();
+    await expect(
+      service.createMortality(makeUser(), { flockBatchId: "batch-1", recordDate: "2026-08-09", birdCount: 700 } as never, {})
+    ).rejects.toThrow(/Only 600 live bird/);
+    expect(mockTx.mortalityRecord.create).not.toHaveBeenCalled();
+  });
+
+  it("allows mortality within what's actually left after a prior transfer", async () => {
+    mockPrisma.flockBatch.findFirst.mockResolvedValue(flockBatch);
+    mockTx.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+    mockTx.poultryTransferRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 400 } });
+    mockTx.mortalityRecord.create.mockResolvedValue({ id: "mort-1" });
+
+    const service = makeService();
+    await expect(
+      service.createMortality(makeUser(), { flockBatchId: "batch-1", recordDate: "2026-08-09", birdCount: 600 } as never, {})
+    ).resolves.toBeDefined();
+    expect(mockTx.mortalityRecord.create).toHaveBeenCalled();
+  });
+
+  it("does not let a past whole-batch relocation count against remaining live birds", async () => {
+    mockPrisma.flockBatch.findFirst.mockResolvedValue(flockBatch);
+    mockTx.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+    // aggregate is already filtered to isFullBatchRelocation: false at the
+    // query level, so a relocation transfer contributes 0 here regardless
+    // of its birdCount — this simulates that filtered result.
+    mockTx.poultryTransferRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+    mockTx.mortalityRecord.create.mockResolvedValue({ id: "mort-1" });
+
+    const service = makeService();
+    await expect(
+      service.createMortality(makeUser(), { flockBatchId: "batch-1", recordDate: "2026-08-09", birdCount: 999 } as never, {})
+    ).resolves.toBeDefined();
+  });
+});
+
+describe("PoultryService.createTransfer — stamps isFullBatchRelocation only when every remaining bird moves (2026-08-18)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const flockBatch = { id: "batch-1", farmId: "farm-1", branchId: "branch-1", poultryHouseId: "house-1", status: "ACTIVE", code: "FB-1", openingBirdCount: 1000 };
+  const toHouse = { id: "house-2", farmId: "farm-2", branchId: "branch-2" };
+
+  it("marks a whole-flock batch-level transfer as a relocation and reassigns the batch's farm/house", async () => {
+    mockPrisma.flockBatch.findFirst.mockResolvedValue(flockBatch);
+    mockPrisma.poultryHouse.findFirst.mockResolvedValue(toHouse);
+    mockTx.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+    mockTx.poultryTransferRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+    mockTx.poultryTransferRecord.create.mockResolvedValue({ id: "trf-1" });
+
+    const service = makeService();
+    await service.createTransfer(
+      makeUser({ hasGlobalAccess: true }),
+      { flockBatchId: "batch-1", toFarmId: "farm-2", toPoultryHouseId: "house-2", birdCount: 1000, transferDate: "2026-08-09" } as never,
+      {}
+    );
+
+    expect(mockTx.poultryTransferRecord.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ isFullBatchRelocation: true })
+    });
+    expect(mockTx.flockBatch.update).toHaveBeenCalledWith({
+      where: { id: "batch-1" },
+      data: expect.objectContaining({ farmId: "farm-2", poultryHouseId: "house-2" })
+    });
+  });
+
+  it("does not mark a partial transfer as a relocation, and leaves the batch's farm/house alone", async () => {
+    mockPrisma.flockBatch.findFirst.mockResolvedValue(flockBatch);
+    mockPrisma.poultryHouse.findFirst.mockResolvedValue(toHouse);
+    mockTx.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+    mockTx.poultryTransferRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+    mockTx.poultryTransferRecord.create.mockResolvedValue({ id: "trf-2" });
+
+    const service = makeService();
+    await service.createTransfer(
+      makeUser({ hasGlobalAccess: true }),
+      { flockBatchId: "batch-1", toFarmId: "farm-2", toPoultryHouseId: "house-2", birdCount: 400, transferDate: "2026-08-09" } as never,
+      {}
+    );
+
+    expect(mockTx.poultryTransferRecord.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ isFullBatchRelocation: false })
+    });
+    expect(mockTx.flockBatch.update).not.toHaveBeenCalled();
+  });
+
+  it("does not double-count a past relocation against availability for a later transfer", async () => {
+    mockPrisma.flockBatch.findFirst.mockResolvedValue(flockBatch);
+    mockPrisma.poultryHouse.findFirst.mockResolvedValue(toHouse);
+    mockTx.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+    // The prior relocation is excluded by the aggregate's own
+    // isFullBatchRelocation: false filter — simulated here as 0 outgoing.
+    mockTx.poultryTransferRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+    mockTx.poultryTransferRecord.create.mockResolvedValue({ id: "trf-3" });
+
+    const service = makeService();
+    await expect(
+      service.createTransfer(
+        makeUser({ hasGlobalAccess: true }),
+        { flockBatchId: "batch-1", toFarmId: "farm-2", toPoultryHouseId: "house-2", birdCount: 1000, transferDate: "2026-08-09" } as never,
+        {}
+      )
+    ).resolves.toBeDefined();
+  });
+});
+
+describe("PoultryService.getDailyRecordPrefill — batch-total fallback accounts for transfers (2026-08-18)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("subtracts outgoing transfers, not just mortality, when there's no previous day's record", async () => {
+    mockPrisma.flockBatch.findFirst.mockResolvedValue({ id: "batch-1", farmId: "farm-1", status: "ACTIVE", openingBirdCount: 1000 });
+    mockPrisma.dailyPoultryRecord.findFirst.mockResolvedValue(null);
+    mockPrisma.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 50 } });
+    mockPrisma.poultryTransferRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 200 } });
+
+    const service = makeService();
+    const result = await service.getDailyRecordPrefill(makeUser({ farmIds: ["farm-1"] }), "batch-1", "2026-08-18");
+
+    expect(result.data).toEqual({ openingBirdCount: 750, source: "batch_total" });
   });
 });
