@@ -293,7 +293,15 @@ export class PoultryService {
   async addPen(user: AuthenticatedUser, houseId: string, dto: AddPenDto, context: RequestContext) {
     const house = await this.getHouse(user.companyId, houseId);
     this.assertFarmAccess(user, house.farmId);
-    const lastPen = await this.prisma.pen.findFirst({ where: { poultryHouseId: houseId, deletedAt: null }, orderBy: { penNumber: "desc" } });
+    // (2026-08-18) Deliberately NOT filtering deletedAt: null here. The
+    // @@unique([poultryHouseId, penNumber]) index isn't deletedAt-aware —
+    // deleting a pen leaves its penNumber (and derived code, e.g. PEN-05)
+    // still occupying that slot. Excluding deleted pens from this lookup
+    // meant the very next pen created would be handed that same reserved
+    // number/code and fail with a raw duplicate-key error. Looking at
+    // every pen ever created in this house, deleted or not, guarantees the
+    // next number was never used before.
+    const lastPen = await this.prisma.pen.findFirst({ where: { poultryHouseId: houseId }, orderBy: { penNumber: "desc" } });
     const nextNumber = (lastPen?.penNumber ?? 0) + 1;
     const pen = await this.prisma.pen.create({
       data: {
@@ -328,6 +336,18 @@ export class PoultryService {
   async deleteHouse(user: AuthenticatedUser, id: string, context: RequestContext) {
     const house = await this.getHouse(user.companyId, id);
     this.assertFarmAccess(user, house.farmId);
+    // (2026-08-18) Deleting a house had no guard at all — a house whose
+    // pens still held live birds could be deleted outright, silently
+    // orphaning those allocations (still in the DB, but unreachable from
+    // any active pen/house list) rather than surfacing an error telling
+    // the caller to move the birds out first. Mirrors deletePen's own
+    // guard below.
+    const activeAllocation = await this.prisma.batchPenAllocation.findFirst({
+      where: { pen: { poultryHouseId: id, deletedAt: null }, birdCount: { gt: 0 }, flockBatch: { deletedAt: null, status: { notIn: ["CLOSED", "SOLD", "CULLED"] } } }
+    });
+    if (activeAllocation) {
+      throw new BadRequestException(`Cannot delete house "${house.code}" — it still has live birds allocated across its pens. Transfer them out first.`);
+    }
     const data = await this.prisma.poultryHouse.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
     this.lookupCache.invalidate(`poultry:opts:${user.companyId}`);
     await this.writeAudit(user, "DELETE", "PoultryHouse", id, `Deleted poultry house ${house.code}`, context, house.farmId);
@@ -347,6 +367,19 @@ export class PoultryService {
     const pen = await this.prisma.pen.findFirst({ where: { companyId: user.companyId, id, deletedAt: null } });
     if (!pen) throw new NotFoundException("Pen was not found.");
     this.assertFarmAccess(user, pen.farmId);
+    // (2026-08-18) No guard previously existed — deleting a pen that still
+    // held live birds (e.g. someone deleting it just to reset its capacity,
+    // since there was no other way to clear one) silently orphaned that
+    // allocation: still a real row in the DB, but no longer reachable from
+    // any active pen list, so "the birds never came back" after recreating
+    // the pen. Mirrors the dependent-record guards already used elsewhere
+    // (deleteMachine, deleteBatch).
+    const activeAllocation = await this.prisma.batchPenAllocation.findFirst({
+      where: { penId: id, birdCount: { gt: 0 }, flockBatch: { deletedAt: null, status: { notIn: ["CLOSED", "SOLD", "CULLED"] } } }
+    });
+    if (activeAllocation) {
+      throw new BadRequestException(`Cannot delete pen "${pen.code}" — it still has live birds allocated. Transfer them out first.`);
+    }
     await this.prisma.pen.update({ where: { id }, data: { deletedAt: new Date() } });
     await this.writeAudit(user, "DELETE", "Pen", id, `Deleted pen ${pen.code}`, context, pen.farmId);
     return { data: { id } };
@@ -1045,6 +1078,18 @@ export class PoultryService {
     const toHouse = await this.getHouse(user.companyId, dto.toPoultryHouseId);
     if (toHouse.farmId !== dto.toFarmId) {
       throw new BadRequestException("Destination poultry house does not belong to the destination farm.");
+    }
+    // (2026-08-18) A transfer with no toPenId never credits any pen's
+    // batchPenAllocation (that upsert only runs "if (dto.toPenId)" below) —
+    // the birds are correctly counted in the batch's total now, but vanish
+    // from every per-pen breakdown, with no pen to "receive" them. Only
+    // enforce this when the destination house actually has a pen to pick;
+    // a house with none configured has nowhere more specific to put them.
+    if (!dto.toPenId) {
+      const toHousePenCount = await this.prisma.pen.count({ where: { poultryHouseId: dto.toPoultryHouseId, deletedAt: null, isActive: true } });
+      if (toHousePenCount > 0) {
+        throw new BadRequestException(`House "${toHouse.code}" has pens configured — select a destination pen so these birds are tracked to a specific pen, not just added to the batch's total.`);
+      }
     }
     const fromPen = dto.fromPenId ? await this.prisma.pen.findFirst({ where: { id: dto.fromPenId, companyId: user.companyId, deletedAt: null } }) : null;
     const fromHouseId = fromPen?.poultryHouseId ?? dto.fromPoultryHouseId ?? batch.poultryHouseId;

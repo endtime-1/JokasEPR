@@ -30,8 +30,11 @@ const mockTx = {
 };
 
 const mockPrisma = {
-  poultryHouse: { findFirst: jest.fn() },
-  pen: { findFirst: jest.fn(), findMany: jest.fn() },
+  poultryHouse: { findFirst: jest.fn(), update: jest.fn() },
+  // count defaults to 0 ("destination house has no pens") so createTransfer
+  // tests that don't specify toPenId aren't blocked by the new
+  // toHousePenCount check unless a test explicitly says otherwise.
+  pen: { findFirst: jest.fn(), findMany: jest.fn(), update: jest.fn(), create: jest.fn(), count: jest.fn().mockResolvedValue(0) },
   flockBatch: { findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn() },
   systemSetting: { findFirst: jest.fn().mockResolvedValue(null) },
   batchPenAllocation: { findFirst: jest.fn() },
@@ -1750,5 +1753,137 @@ describe("PoultryService — same-day cross-screen duplicate-entry warning (2026
     );
 
     expect(result.warning).toBeUndefined();
+  });
+});
+
+describe("PoultryService — pen/house capacity can be explicitly cleared, not just replaced (2026-08-18)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("updatePen passes an explicit null through to Prisma, clearing the cap", async () => {
+    mockPrisma.pen.findFirst.mockResolvedValue({ id: "pen-1", companyId: "company-1", farmId: "farm-1", code: "PEN-01" });
+    mockPrisma.pen.update.mockResolvedValue({ id: "pen-1", capacity: null });
+
+    const service = makeService();
+    await service.updatePen(makeUser({ farmIds: ["farm-1"] }), "pen-1", { capacity: null } as never, {});
+
+    expect(mockPrisma.pen.update).toHaveBeenCalledWith({ where: { id: "pen-1" }, data: { name: undefined, capacity: null } });
+  });
+
+  it("updatePen omitting capacity entirely leaves it untouched", async () => {
+    mockPrisma.pen.findFirst.mockResolvedValue({ id: "pen-1", companyId: "company-1", farmId: "farm-1", code: "PEN-01" });
+    mockPrisma.pen.update.mockResolvedValue({ id: "pen-1" });
+
+    const service = makeService();
+    await service.updatePen(makeUser({ farmIds: ["farm-1"] }), "pen-1", { name: "Renamed" } as never, {});
+
+    expect(mockPrisma.pen.update).toHaveBeenCalledWith({ where: { id: "pen-1" }, data: { name: "Renamed", capacity: undefined } });
+  });
+
+  it("updateHouse passes an explicit null through to Prisma, clearing the cap", async () => {
+    mockPrisma.poultryHouse.findFirst.mockResolvedValue({ id: "house-1", companyId: "company-1", farmId: "farm-1", code: "H1" });
+    mockPrisma.poultryHouse.update.mockResolvedValue({ id: "house-1", capacity: null });
+
+    const service = makeService();
+    await service.updateHouse(makeUser({ farmIds: ["farm-1"] }), "house-1", { capacity: null } as never, {});
+
+    expect(mockPrisma.poultryHouse.update).toHaveBeenCalledWith({
+      where: { id: "house-1" },
+      data: { name: undefined, code: undefined, capacity: null, updatedById: "user-1" }
+    });
+  });
+});
+
+describe("PoultryService.deletePen / deleteHouse — blocked while live birds are still allocated (2026-08-18)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("deletePen blocks when the pen still has a live allocation", async () => {
+    mockPrisma.pen.findFirst.mockResolvedValue({ id: "pen-1", companyId: "company-1", farmId: "farm-1", code: "PEN-01" });
+    mockPrisma.batchPenAllocation.findFirst.mockResolvedValue({ id: "alloc-1", penId: "pen-1", birdCount: 500 });
+
+    const service = makeService();
+    await expect(service.deletePen(makeUser({ farmIds: ["farm-1"] }), "pen-1", {})).rejects.toThrow(/still has live birds/);
+    expect(mockPrisma.pen.update).not.toHaveBeenCalled();
+  });
+
+  it("deletePen succeeds when there's no live allocation left", async () => {
+    mockPrisma.pen.findFirst.mockResolvedValue({ id: "pen-1", companyId: "company-1", farmId: "farm-1", code: "PEN-01" });
+    mockPrisma.batchPenAllocation.findFirst.mockResolvedValue(null);
+    mockPrisma.pen.update.mockResolvedValue({ id: "pen-1", deletedAt: new Date() });
+
+    const service = makeService();
+    await expect(service.deletePen(makeUser({ farmIds: ["farm-1"] }), "pen-1", {})).resolves.toEqual({ data: { id: "pen-1" } });
+    expect(mockPrisma.pen.update).toHaveBeenCalledWith({ where: { id: "pen-1" }, data: { deletedAt: expect.any(Date) } });
+  });
+
+  it("deleteHouse blocks when any of its pens still has a live allocation", async () => {
+    mockPrisma.poultryHouse.findFirst.mockResolvedValue({ id: "house-1", companyId: "company-1", farmId: "farm-1", code: "H1" });
+    mockPrisma.batchPenAllocation.findFirst.mockResolvedValue({ id: "alloc-1", penId: "pen-2", birdCount: 300 });
+
+    const service = makeService();
+    await expect(service.deleteHouse(makeUser({ farmIds: ["farm-1"] }), "house-1", {})).rejects.toThrow(/still has live birds/);
+    expect(mockPrisma.poultryHouse.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("PoultryService.addPen — never reuses a deleted pen's number (2026-08-18)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("looks at every pen ever created in the house, including deleted ones, when computing the next penNumber", async () => {
+    mockPrisma.poultryHouse.findFirst.mockResolvedValue({ id: "house-1", companyId: "company-1", farmId: "farm-1", branchId: "branch-1", code: "H1" });
+    // Pen 5 was deleted, but its penNumber is still occupying the unique
+    // index slot — the query below must not filter it out, or the next
+    // pen would be handed the same number and fail with a duplicate key.
+    mockPrisma.pen.findFirst.mockResolvedValue({ penNumber: 5 });
+    mockPrisma.pen.create.mockResolvedValue({ id: "pen-6", penNumber: 6, code: "PEN-06" });
+
+    const service = makeService();
+    await service.addPen(makeUser({ farmIds: ["farm-1"] }), "house-1", {} as never, {});
+
+    expect(mockPrisma.pen.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { poultryHouseId: "house-1" } })
+    );
+    expect(mockPrisma.pen.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ penNumber: 6, code: "PEN-06" }) })
+    );
+  });
+});
+
+describe("PoultryService.createTransfer — requires a destination pen when the destination house has one to pick (2026-08-18)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const flockBatch = { id: "batch-1", farmId: "farm-1", branchId: "branch-1", poultryHouseId: "house-1", status: "ACTIVE", code: "FB-1", openingBirdCount: 1000 };
+  const toHouse = { id: "house-2", farmId: "farm-2", branchId: "branch-2", code: "H2" };
+
+  it("rejects a transfer with no toPenId when the destination house has active pens", async () => {
+    mockPrisma.flockBatch.findFirst.mockResolvedValue(flockBatch);
+    mockPrisma.poultryHouse.findFirst.mockResolvedValue(toHouse);
+    mockPrisma.pen.count.mockResolvedValue(3);
+
+    const service = makeService();
+    await expect(
+      service.createTransfer(
+        makeUser({ hasGlobalAccess: true }),
+        { flockBatchId: "batch-1", toFarmId: "farm-2", toPoultryHouseId: "house-2", birdCount: 500, transferDate: "2026-08-09" } as never,
+        {}
+      )
+    ).rejects.toThrow(/has pens configured/);
+  });
+
+  it("allows a transfer with no toPenId when the destination house has no pens at all", async () => {
+    mockPrisma.flockBatch.findFirst.mockResolvedValue(flockBatch);
+    mockPrisma.poultryHouse.findFirst.mockResolvedValue(toHouse);
+    mockPrisma.pen.count.mockResolvedValue(0);
+    mockTx.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+    mockTx.poultryTransferRecord.findMany.mockResolvedValue([]);
+    mockTx.poultryTransferRecord.create.mockResolvedValue({ id: "trf-1" });
+
+    const service = makeService();
+    await expect(
+      service.createTransfer(
+        makeUser({ hasGlobalAccess: true }),
+        { flockBatchId: "batch-1", toFarmId: "farm-2", toPoultryHouseId: "house-2", birdCount: 500, transferDate: "2026-08-09" } as never,
+        {}
+      )
+    ).resolves.toBeDefined();
   });
 });

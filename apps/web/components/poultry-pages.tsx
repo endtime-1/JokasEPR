@@ -257,7 +257,10 @@ export function PoultryHousesPage({ create = false }: { create?: boolean }) {
     try {
       await apiFetch(`/poultry/houses/${editHouse.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ name: editHouseForm.name || undefined, code: editHouseForm.code || undefined, capacity: Number(editHouseForm.capacity) || undefined })
+        // Empty means "clear the cap" here (an edit form reflects the
+        // current state of the field), so it must send null, not undefined
+        // — undefined tells the backend "leave capacity as it was."
+        body: JSON.stringify({ name: editHouseForm.name || undefined, code: editHouseForm.code || undefined, capacity: editHouseForm.capacity ? Number(editHouseForm.capacity) : null })
       });
       setEditHouse(null);
       await load();
@@ -294,7 +297,9 @@ export function PoultryHousesPage({ create = false }: { create?: boolean }) {
     try {
       await apiFetch(`/poultry/pens/${editPen.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ name: editPenForm.name || undefined, capacity: Number(editPenForm.capacity) || undefined })
+        // See saveHouse's comment — empty means "clear the cap," so it
+        // must send null, not undefined.
+        body: JSON.stringify({ name: editPenForm.name || undefined, capacity: editPenForm.capacity ? Number(editPenForm.capacity) : null })
       });
       setEditPen(null);
       await load();
@@ -390,6 +395,7 @@ export function PoultryHousesPage({ create = false }: { create?: boolean }) {
                     <button type="submit" className="min-h-11 rounded-md bg-brand px-4 text-sm font-semibold text-white">Save</button>
                     <button type="button" className="min-h-11 rounded-md border border-line px-4 text-sm" onClick={() => setEditHouse(null)}>Cancel</button>
                   </div>
+                  <p className="mt-1 text-[11px] text-amber-700/70">Leave Capacity blank to remove the cap entirely.</p>
                 </form>
               )}
 
@@ -409,12 +415,15 @@ export function PoultryHousesPage({ create = false }: { create?: boolean }) {
                     ))}
                   </div>
                   {editPen && pens.some((p) => p.id === editPen.id) && (
-                    <form onSubmit={savePen} className="mt-3 flex gap-2 rounded border border-amber-200 bg-amber-50 p-2">
-                      <span className="self-center text-xs font-semibold text-amber-700">{editPen.code}</span>
-                      <input className={inputClass + " flex-1"} placeholder="Name (optional)" value={editPenForm.name} onChange={(e) => setEditPenForm({ ...editPenForm, name: e.target.value })} />
-                      <input className={inputClass + " w-28"} type="number" placeholder="Capacity" value={editPenForm.capacity} onChange={(e) => setEditPenForm({ ...editPenForm, capacity: e.target.value })} />
-                      <button type="submit" className="min-h-11 rounded-md bg-brand px-3 text-sm font-semibold text-white">Save</button>
-                      <button type="button" className="min-h-11 rounded-md border border-line px-3 text-sm" onClick={() => setEditPen(null)}>Cancel</button>
+                    <form onSubmit={savePen} className="mt-3 rounded border border-amber-200 bg-amber-50 p-2">
+                      <div className="flex gap-2">
+                        <span className="self-center text-xs font-semibold text-amber-700">{editPen.code}</span>
+                        <input className={inputClass + " flex-1"} placeholder="Name (optional)" value={editPenForm.name} onChange={(e) => setEditPenForm({ ...editPenForm, name: e.target.value })} />
+                        <input className={inputClass + " w-28"} type="number" placeholder="Capacity" value={editPenForm.capacity} onChange={(e) => setEditPenForm({ ...editPenForm, capacity: e.target.value })} />
+                        <button type="submit" className="min-h-11 rounded-md bg-brand px-3 text-sm font-semibold text-white">Save</button>
+                        <button type="button" className="min-h-11 rounded-md border border-line px-3 text-sm" onClick={() => setEditPen(null)}>Cancel</button>
+                      </div>
+                      <p className="mt-1 text-[11px] text-amber-700/70">Leave Capacity blank to remove the cap entirely.</p>
                     </form>
                   )}
                   {addPenHouseId === house.id && (
@@ -1976,6 +1985,7 @@ export function PoultryTransferPage() {
     setSubmitError("");
     if (!effectiveFlockBatchId) { setSubmitError("Please select a flock batch."); return; }
     if (!effectiveToHouseId) { setSubmitError("Please select a destination house (the destination farm has no houses to choose from)."); return; }
+    if (!form.toPenId && toPens.length > 0) { setSubmitError("Please select a destination pen — this house has pens configured, so the birds need to land in one, not just the batch's total."); return; }
     const base = {
       flockBatchId: effectiveFlockBatchId,
       fromPoultryHouseId: form.fromHouseId || undefined,
@@ -2105,9 +2115,9 @@ export function PoultryTransferPage() {
             {toHouses.map((house) => <option key={house.id} value={house.id}>{house.code} - {house.name}</option>)}
           </select>
         </FormField>
-        <FormField label="To pen (optional)">
-          <select className={inputClass} value={form.toPenId} onChange={(e) => setForm({ ...form, toPenId: e.target.value })}>
-            <option value="">— any pen —</option>
+        <FormField label={toPens.length > 0 ? "To pen" : "To pen (no pens in this house)"}>
+          <select className={inputClass} value={form.toPenId} onChange={(e) => setForm({ ...form, toPenId: e.target.value })} required={toPens.length > 0}>
+            <option value="">{toPens.length > 0 ? "— select a pen —" : "— no pens in this house —"}</option>
             {toPens.map((pen) => <option key={pen.id} value={pen.id}>{pen.code}</option>)}
           </select>
         </FormField>

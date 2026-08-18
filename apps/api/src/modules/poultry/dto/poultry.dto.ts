@@ -112,10 +112,19 @@ export class UpdatePoultryHouseDto {
   @MaxLength(24)
   code?: string;
 
+  // (2026-08-18) capacity?: number with no null option meant there was no
+  // valid payload that could ever clear a capacity once set — omitting the
+  // field left it untouched (Prisma treats undefined as "don't update"),
+  // and any real number just replaced it with another restriction. The
+  // only way to actually remove a capacity was to delete the pen/house and
+  // recreate it. null now explicitly means "clear the cap"; ValidateIf
+  // skips the @IsInt()/@Min(1) checks only for that one value so a real
+  // number is still validated normally.
   @IsOptional()
+  @ValidateIf((o) => o.capacity !== null)
   @IsInt()
   @Min(1)
-  capacity?: number;
+  capacity?: number | null;
 }
 
 export class UpdatePenDto {
@@ -124,10 +133,12 @@ export class UpdatePenDto {
   @MaxLength(100)
   name?: string;
 
+  // See UpdatePoultryHouseDto.capacity — same fix, same reasoning.
   @IsOptional()
+  @ValidateIf((o) => o.capacity !== null)
   @IsInt()
   @Min(1)
-  capacity?: number;
+  capacity?: number | null;
 }
 
 export class UpdateFlockBatchDto {
