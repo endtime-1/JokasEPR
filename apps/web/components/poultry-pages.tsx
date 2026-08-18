@@ -1029,7 +1029,7 @@ export function FlockBatchDetailsPage() {
 // ─── Batch Records Tab ────────────────────────────────────────────────────────
 
 const BATCH_RECORD_TYPES: Array<{ type: string; label: string; cols: string[]; endpoint: string }> = [
-  { type: "daily",        label: "Daily Records",      cols: ["recordDate", "openingBirdCount", "notes"],                                     endpoint: "/poultry/daily-records" },
+  { type: "daily",        label: "Daily Records",      cols: ["recordDate", "openingBirdCount", "mortalityCount", "culledCount", "feedConsumedKg", "totalEggs", "notes"], endpoint: "/poultry/daily-records" },
   { type: "mortality",    label: "Mortality",          cols: ["recordDate", "birdCount", "reason"],                                           endpoint: "/poultry/mortality-records" },
   { type: "feed",         label: "Feed Consumption",   cols: ["recordDate", "quantityKg", "costAmount"],                                      endpoint: "/poultry/feed-consumption-records" },
   { type: "eggs",         label: "Egg Production",     cols: ["recordDate", "goodEggs", "crackedEggs", "dirtyEggs", "brokenEggs", "rejectedEggs"], endpoint: "/poultry/egg-production-records" },
@@ -1223,6 +1223,38 @@ function BatchRecordSection({ batchId, type, label, cols, endpoint, options }: {
                     <div>
                       <label className="mb-0.5 block text-[10px] text-ink/60">Warehouse</label>
                       <select className="w-full rounded border border-line bg-white px-2 py-1 text-xs" value={addForm.warehouseId ?? ""} onChange={(e) => setAddForm((f) => ({ ...f, warehouseId: e.target.value }))}>
+                        <option value="">— none —</option>
+                        {options.warehouses.map((w) => <option key={w.id} value={w.id}>{w.code} — {w.name}</option>)}
+                      </select>
+                    </div>
+                  </>
+                )}
+                {type === "daily" && (
+                  <>
+                    <div>
+                      <label className="mb-0.5 block text-[10px] text-ink/60">Feed product (optional — deducts stock)</label>
+                      <select className="w-full rounded border border-line bg-white px-2 py-1 text-xs" value={addForm.feedProductId ?? ""} onChange={(e) => setAddForm((f) => ({ ...f, feedProductId: e.target.value }))}>
+                        <option value="">— none —</option>
+                        {options.products.map((p) => <option key={p.id} value={p.id}>{p.sku ?? p.code} — {p.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-0.5 block text-[10px] text-ink/60">Feed warehouse</label>
+                      <select className="w-full rounded border border-line bg-white px-2 py-1 text-xs" value={addForm.feedWarehouseId ?? ""} onChange={(e) => setAddForm((f) => ({ ...f, feedWarehouseId: e.target.value }))}>
+                        <option value="">— none —</option>
+                        {options.warehouses.map((w) => <option key={w.id} value={w.id}>{w.code} — {w.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-0.5 block text-[10px] text-ink/60">Egg product (optional — credits stock)</label>
+                      <select className="w-full rounded border border-line bg-white px-2 py-1 text-xs" value={addForm.eggProductId ?? ""} onChange={(e) => setAddForm((f) => ({ ...f, eggProductId: e.target.value }))}>
+                        <option value="">— none —</option>
+                        {options.products.map((p) => <option key={p.id} value={p.id}>{p.sku ?? p.code} — {p.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-0.5 block text-[10px] text-ink/60">Egg warehouse</label>
+                      <select className="w-full rounded border border-line bg-white px-2 py-1 text-xs" value={addForm.eggWarehouseId ?? ""} onChange={(e) => setAddForm((f) => ({ ...f, eggWarehouseId: e.target.value }))}>
                         <option value="">— none —</option>
                         {options.warehouses.map((w) => <option key={w.id} value={w.id}>{w.code} — {w.name}</option>)}
                       </select>
@@ -1634,6 +1666,35 @@ function GenericRecordForm({ options, optionsLoading = false, form, setForm, sub
         </FormField>
       )}
 
+      {type === "daily" && (
+        <>
+          <FormField label="Feed product (optional — deducts stock)">
+            <select name="feedProductId" className={inputClass} value={form.feedProductId ?? ""} onChange={(e) => setForm({ ...form, feedProductId: e.target.value })}>
+              <option value="">— none —</option>
+              {options.products.map((p) => <option key={p.id} value={p.id}>{p.sku ?? p.code} — {p.name}</option>)}
+            </select>
+          </FormField>
+          <FormField label="Feed warehouse">
+            <select name="feedWarehouseId" className={inputClass} value={form.feedWarehouseId ?? ""} onChange={(e) => setForm({ ...form, feedWarehouseId: e.target.value })}>
+              <option value="">— none —</option>
+              {options.warehouses.map((w) => <option key={w.id} value={w.id}>{w.code} — {w.name}</option>)}
+            </select>
+          </FormField>
+          <FormField label="Egg product (optional — credits stock)">
+            <select name="eggProductId" className={inputClass} value={form.eggProductId ?? ""} onChange={(e) => setForm({ ...form, eggProductId: e.target.value })}>
+              <option value="">— none —</option>
+              {options.products.map((p) => <option key={p.id} value={p.id}>{p.sku ?? p.code} — {p.name}</option>)}
+            </select>
+          </FormField>
+          <FormField label="Egg warehouse">
+            <select name="eggWarehouseId" className={inputClass} value={form.eggWarehouseId ?? ""} onChange={(e) => setForm({ ...form, eggWarehouseId: e.target.value })}>
+              <option value="">— none —</option>
+              {options.warehouses.map((w) => <option key={w.id} value={w.id}>{w.code} — {w.name}</option>)}
+            </select>
+          </FormField>
+        </>
+      )}
+
       {type === "eggs" && (
         <>
           <FormField label="Egg product (good eggs → stock)">
@@ -1708,7 +1769,15 @@ function GenericRecordForm({ options, optionsLoading = false, form, setForm, sub
 function recordFields(type: string) {
   const date = { name: "recordDate", label: "Record date", kind: "date", required: true };
   const map: Record<string, Array<{ name: string; label: string; kind: string; required?: boolean; defaultValue?: string; options?: string[] }>> = {
-    daily: [date, { name: "openingBirdCount", label: "Opening birds", kind: "number", defaultValue: "0" }, { name: "notes", label: "Notes", kind: "text" }],
+    daily: [
+      date,
+      { name: "openingBirdCount", label: "Opening birds", kind: "number", defaultValue: "0" },
+      { name: "mortalityCount", label: "Mortality today", kind: "number", defaultValue: "0" },
+      { name: "culledCount", label: "Culled today", kind: "number", defaultValue: "0" },
+      { name: "feedConsumedKg", label: "Feed consumed (kg)", kind: "number", defaultValue: "0" },
+      { name: "totalEggs", label: "Total eggs", kind: "number", defaultValue: "0" },
+      { name: "notes", label: "Notes", kind: "text" }
+    ],
     mortality: [date, { name: "birdCount", label: "Bird count", kind: "number", required: true }, { name: "reason", label: "Reason", kind: "text" }],
     feed: [date, { name: "bags", label: "Bags (50 kg each)", kind: "number", required: true }, { name: "costAmount", label: "Cost (GHS)", kind: "number" }],
     eggs: [date, { name: "goodEggs", label: "Good", kind: "number", defaultValue: "0" }, { name: "crackedEggs", label: "Cracked", kind: "number", defaultValue: "0" }, { name: "dirtyEggs", label: "Dirty", kind: "number", defaultValue: "0" }, { name: "brokenEggs", label: "Broken", kind: "number", defaultValue: "0" }, { name: "rejectedEggs", label: "Rejected", kind: "number", defaultValue: "0" }],
@@ -1750,6 +1819,16 @@ function buildRecordPayload(type: string, form: Record<string, string>, options:
     payload.bags = undefined;
     payload.feedProductId = merged.feedProductId || undefined;
     payload.warehouseId = merged.warehouseId || undefined;
+  }
+
+  // Daily: feed/egg product+warehouse are optional stock links, same convention
+  // as the dedicated Feed/Egg screens — an empty select must become undefined,
+  // not an empty string (the backend's @IsOptional() @IsUUID() rejects "").
+  if (type === "daily") {
+    payload.feedProductId = merged.feedProductId || undefined;
+    payload.feedWarehouseId = merged.feedWarehouseId || undefined;
+    payload.eggProductId = merged.eggProductId || undefined;
+    payload.eggWarehouseId = merged.eggWarehouseId || undefined;
   }
 
   return payload;
