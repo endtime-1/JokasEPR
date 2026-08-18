@@ -78,7 +78,7 @@ export class PoultryService {
           farm: { select: { name: true, code: true } },
           poultryHouse: { select: { name: true, code: true } },
           mortalityRecords: { where: { deletedAt: null }, select: { birdCount: true, isCulling: true } },
-          poultryTransferRecords: { where: { deletedAt: null }, select: { birdCount: true, isFullBatchRelocation: true } },
+          poultryTransferRecords: { where: { deletedAt: null }, select: { birdCount: true, isFullBatchRelocation: true, fromFarmId: true, toFarmId: true } },
           feedConsumptionRecords: { where: { deletedAt: null }, select: { quantityKg: true } },
           eggProductionRecords: { where: { deletedAt: null }, select: { goodEggs: true, crackedEggs: true, dirtyEggs: true, brokenEggs: true, rejectedEggs: true } },
           birdWeightRecords: { where: { deletedAt: null }, orderBy: { recordDate: "desc" }, take: 1 },
@@ -209,7 +209,7 @@ export class PoultryService {
           where: { companyId: user.companyId, farmId, deletedAt: null },
           include: {
             mortalityRecords: { where: { deletedAt: null } },
-            poultryTransferRecords: { where: { deletedAt: null }, select: { birdCount: true, isFullBatchRelocation: true } },
+            poultryTransferRecords: { where: { deletedAt: null }, select: { birdCount: true, isFullBatchRelocation: true, fromFarmId: true, toFarmId: true } },
             eggProductionRecords: { where: { deletedAt: null } },
             feedConsumptionRecords: { where: { deletedAt: null }, select: { quantityKg: true } },
             costRecords: { where: { deletedAt: null } }
@@ -413,7 +413,7 @@ export class PoultryService {
           farm: { select: { code: true, name: true } },
           poultryHouse: { select: { code: true, name: true } },
           mortalityRecords: { where: { deletedAt: null } },
-          poultryTransferRecords: { where: { deletedAt: null }, select: { birdCount: true, isFullBatchRelocation: true } },
+          poultryTransferRecords: { where: { deletedAt: null }, select: { birdCount: true, isFullBatchRelocation: true, fromFarmId: true, toFarmId: true } },
           feedConsumptionRecords: { where: { deletedAt: null } },
           eggProductionRecords: { where: { deletedAt: null } },
           birdWeightRecords: { where: { deletedAt: null }, orderBy: { recordDate: "desc" }, take: 1 },
@@ -1668,7 +1668,7 @@ export class PoultryService {
       where: { id: batchId, companyId: user.companyId },
       include: {
         mortalityRecords: { where: { deletedAt: null }, select: { birdCount: true, isCulling: true } },
-        poultryTransferRecords: { where: { deletedAt: null }, select: { birdCount: true, isFullBatchRelocation: true } },
+        poultryTransferRecords: { where: { deletedAt: null }, select: { birdCount: true, isFullBatchRelocation: true, fromFarmId: true, toFarmId: true } },
         feedConsumptionRecords: { where: { deletedAt: null }, select: { quantityKg: true } },
         eggProductionRecords: { where: { deletedAt: null }, select: { goodEggs: true, crackedEggs: true, dirtyEggs: true, brokenEggs: true, rejectedEggs: true } },
         birdWeightRecords: { where: { deletedAt: null }, orderBy: { recordDate: "desc" }, take: 1 },
@@ -1691,44 +1691,59 @@ export class PoultryService {
     }
   }
 
-  // (2026-08-18) currentLiveBirds must agree with getBatch's per-pen adjusted
-  // allocations, which already subtract outgoing transfers — see that
-  // method's comment for the invariant this restores. isFullBatchRelocation
-  // transfers are excluded: those don't remove birds from the batch, they
-  // just move the whole batch to a new farm/house (see createTransfer).
+  // (2026-08-18, revised same day) currentLiveBirds must agree with
+  // getBatch's per-pen adjusted allocations — see that method's comment for
+  // the invariant this restores. A transfer only actually removes birds
+  // from the batch's total when they leave the FARM: moving birds between
+  // pens or houses within the same farm (the overwhelmingly common case —
+  // "move 6,600 from Pen 1 to Pen 2, same house, same farm") doesn't shrink
+  // the flock at all, it just redistributes it. The first cut of this fix
+  // only excluded isFullBatchRelocation (every remaining bird moving to a
+  // genuinely different farm), which left every same-farm pen/house
+  // transfer wrongly subtracted — exactly the case a live user hit
+  // immediately after this shipped. isFullBatchRelocation is still needed
+  // for the one remaining case a same-farm check can't cover: a whole-batch
+  // move TO a different farm, where the batch's own farmId/poultryHouseId
+  // get reassigned to follow the birds, so nothing was actually lost.
   private currentLiveBirds(
     openingBirdCount: number,
     mortalityRecords: Array<{ birdCount: number }>,
-    transferRecords: Array<{ birdCount: number; isFullBatchRelocation: boolean }> = []
+    transferRecords: Array<{ birdCount: number; isFullBatchRelocation: boolean; fromFarmId: string; toFarmId: string }> = []
   ) {
     const mortalityTotal = mortalityRecords.reduce((sum, row) => sum + row.birdCount, 0);
-    const outgoingTotal = transferRecords.filter((t) => !t.isFullBatchRelocation).reduce((sum, row) => sum + row.birdCount, 0);
+    const outgoingTotal = transferRecords
+      .filter((t) => !t.isFullBatchRelocation && t.fromFarmId !== t.toFarmId)
+      .reduce((sum, row) => sum + row.birdCount, 0);
     return Math.max(0, openingBirdCount - mortalityTotal - outgoingTotal);
   }
 
   // Transactional counterpart of currentLiveBirds, for the write-path checks
   // (createMortality, createDailyRecord, createTransfer, record corrections)
-  // that need a live, lockable aggregate rather than a pre-fetched array.
-  // Accepts either a live-run Prisma.TransactionClient or the plain
-  // PrismaService for read-only callers (getDailyRecordPrefill) that don't
-  // need row-locking.
+  // that need a live, lockable read rather than a pre-fetched array. Uses
+  // findMany instead of aggregate because "exclude same-farm transfers"
+  // compares two columns on the same row, which Prisma's where clause can't
+  // express without raw SQL — summing in JS over what's normally a short
+  // list is simpler and just as correct. Accepts either a live-run
+  // Prisma.TransactionClient or the plain PrismaService for read-only
+  // callers (getDailyRecordPrefill) that don't need row-locking.
   private async liveBirdsRemaining(
     client: Prisma.TransactionClient | PrismaService,
     flockBatchId: string,
     openingBirdCount: number,
     excludeMortalityId?: string
   ): Promise<number> {
-    const [mortalityAgg, outgoingAgg] = await Promise.all([
+    const [mortalityAgg, transfers] = await Promise.all([
       client.mortalityRecord.aggregate({
         where: { flockBatchId, deletedAt: null, ...(excludeMortalityId ? { id: { not: excludeMortalityId } } : {}) },
         _sum: { birdCount: true }
       }),
-      client.poultryTransferRecord.aggregate({
+      client.poultryTransferRecord.findMany({
         where: { flockBatchId, deletedAt: null, isFullBatchRelocation: false },
-        _sum: { birdCount: true }
+        select: { birdCount: true, fromFarmId: true, toFarmId: true }
       })
     ]);
-    return Math.max(0, openingBirdCount - (mortalityAgg._sum.birdCount ?? 0) - (outgoingAgg._sum.birdCount ?? 0));
+    const outgoingTotal = transfers.filter((t) => t.fromFarmId !== t.toFarmId).reduce((sum, t) => sum + t.birdCount, 0);
+    return Math.max(0, openingBirdCount - (mortalityAgg._sum.birdCount ?? 0) - outgoingTotal);
   }
 
   private totalEggs(row: { goodEggs: number; crackedEggs: number; dirtyEggs: number; brokenEggs: number; rejectedEggs: number }) {

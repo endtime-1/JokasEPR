@@ -19,7 +19,10 @@ const mockTx = {
   // Defaults to "no outgoing transfers" so tests that don't care about
   // transfers (the vast majority) don't need to mock this explicitly —
   // tests that DO care override with mockResolvedValueOnce.
-  poultryTransferRecord: { aggregate: jest.fn().mockResolvedValue({ _sum: { birdCount: 0 } }), create: jest.fn() },
+  // aggregate stays for the pen-scoped availability check (createTransfer's
+  // fromPenId branch, unchanged); findMany backs liveBirdsRemaining, which
+  // needs individual rows to compare fromFarmId/toFarmId per transfer.
+  poultryTransferRecord: { aggregate: jest.fn().mockResolvedValue({ _sum: { birdCount: 0 } }), findMany: jest.fn().mockResolvedValue([]), create: jest.fn() },
   batchPenAllocation: { findFirst: jest.fn(), upsert: jest.fn() },
   pen: { update: jest.fn(), findFirst: jest.fn() },
   flockBatch: { findFirstOrThrow: jest.fn(), update: jest.fn() },
@@ -32,7 +35,7 @@ const mockPrisma = {
   flockBatch: { findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn() },
   systemSetting: { findFirst: jest.fn().mockResolvedValue(null) },
   batchPenAllocation: { findFirst: jest.fn() },
-  poultryTransferRecord: { findFirst: jest.fn(), count: jest.fn().mockResolvedValue(0), aggregate: jest.fn().mockResolvedValue({ _sum: { birdCount: 0 } }) },
+  poultryTransferRecord: { findFirst: jest.fn(), count: jest.fn().mockResolvedValue(0), aggregate: jest.fn().mockResolvedValue({ _sum: { birdCount: 0 } }), findMany: jest.fn().mockResolvedValue([]) },
   feedConsumptionRecord: { findFirst: jest.fn(), count: jest.fn().mockResolvedValue(0), aggregate: jest.fn().mockResolvedValue({ _sum: { quantityKg: 0 } }) },
   eggProductionRecord: { findFirst: jest.fn(), count: jest.fn().mockResolvedValue(0), aggregate: jest.fn().mockResolvedValue({ _sum: { goodEggs: 0, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0 } }) },
   medicationRecord: { findFirst: jest.fn() },
@@ -1443,21 +1446,21 @@ describe("PoultryService — currentLiveBirds accounts for transfers, not just m
     feedConsumptionRecords: [], eggProductionRecords: [], birdWeightRecords: [], costRecords: []
   };
 
-  it("subtracts a partial (non-relocation) transfer from currentLiveBirds", async () => {
+  it("subtracts a partial cross-farm (non-relocation) transfer from currentLiveBirds", async () => {
     mockPrisma.flockBatch.findMany.mockResolvedValue([
-      { ...baseBatch, poultryTransferRecords: [{ birdCount: 200, isFullBatchRelocation: false }] }
+      { ...baseBatch, poultryTransferRecords: [{ birdCount: 200, isFullBatchRelocation: false, fromFarmId: "farm-1", toFarmId: "farm-2" }] }
     ]);
     const service = makeService();
 
     const result = await service.listBatches(makeUser({ hasGlobalAccess: true }), {} as never);
 
-    // 1000 opening - 50 mortality - 200 transferred out = 750
+    // 1000 opening - 50 mortality - 200 transferred to a different farm = 750
     expect(result.data[0].currentLiveBirds).toBe(750);
   });
 
   it("does NOT subtract a whole-batch relocation transfer — the birds moved with the batch, they didn't leave it", async () => {
     mockPrisma.flockBatch.findMany.mockResolvedValue([
-      { ...baseBatch, poultryTransferRecords: [{ birdCount: 950, isFullBatchRelocation: true }] }
+      { ...baseBatch, poultryTransferRecords: [{ birdCount: 950, isFullBatchRelocation: true, fromFarmId: "farm-1", toFarmId: "farm-2" }] }
     ]);
     const service = makeService();
 
@@ -1467,13 +1470,26 @@ describe("PoultryService — currentLiveBirds accounts for transfers, not just m
     expect(result.data[0].currentLiveBirds).toBe(950);
   });
 
-  it("mixes a past relocation with a later partial transfer correctly", async () => {
+  it("does NOT subtract a same-farm pen/house transfer — reproduces the live bug report exactly (6,600 Pen1->Pen2, same house/farm)", async () => {
+    mockPrisma.flockBatch.findMany.mockResolvedValue([
+      { ...baseBatch, poultryTransferRecords: [{ birdCount: 6600, isFullBatchRelocation: false, fromFarmId: "farm-1", toFarmId: "farm-1" }] }
+    ]);
+    const service = makeService();
+
+    const result = await service.listBatches(makeUser({ hasGlobalAccess: true }), {} as never);
+
+    // 1000 opening - 50 mortality, same-farm transfer excluded = 950 (previously
+    // wrongly dropped to 1000 - 50 - 6600, floored at 0)
+    expect(result.data[0].currentLiveBirds).toBe(950);
+  });
+
+  it("mixes a past relocation with a later cross-farm partial transfer correctly", async () => {
     mockPrisma.flockBatch.findMany.mockResolvedValue([
       {
         ...baseBatch,
         poultryTransferRecords: [
-          { birdCount: 950, isFullBatchRelocation: true },
-          { birdCount: 100, isFullBatchRelocation: false }
+          { birdCount: 950, isFullBatchRelocation: true, fromFarmId: "farm-1", toFarmId: "farm-2" },
+          { birdCount: 100, isFullBatchRelocation: false, fromFarmId: "farm-1", toFarmId: "farm-3" }
         ]
       }
     ]);
@@ -1481,7 +1497,7 @@ describe("PoultryService — currentLiveBirds accounts for transfers, not just m
 
     const result = await service.listBatches(makeUser({ hasGlobalAccess: true }), {} as never);
 
-    // 1000 - 50 mortality - 100 partial transfer (relocation excluded) = 850
+    // 1000 - 50 mortality - 100 partial cross-farm transfer (relocation excluded) = 850
     expect(result.data[0].currentLiveBirds).toBe(850);
   });
 });
@@ -1494,9 +1510,9 @@ describe("PoultryService.createMortality — live-bird check accounts for prior 
   it("rejects mortality that ignores birds already transferred out of the batch", async () => {
     mockPrisma.flockBatch.findFirst.mockResolvedValue(flockBatch);
     mockTx.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
-    // 400 birds already left via a partial transfer — only 600 remain, even
-    // though no mortality has been recorded yet.
-    mockTx.poultryTransferRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 400 } });
+    // 400 birds already left the FARM via a partial cross-farm transfer —
+    // only 600 remain, even though no mortality has been recorded yet.
+    mockTx.poultryTransferRecord.findMany.mockResolvedValue([{ birdCount: 400, fromFarmId: "farm-1", toFarmId: "farm-2" }]);
 
     const service = makeService();
     await expect(
@@ -1508,7 +1524,7 @@ describe("PoultryService.createMortality — live-bird check accounts for prior 
   it("allows mortality within what's actually left after a prior transfer", async () => {
     mockPrisma.flockBatch.findFirst.mockResolvedValue(flockBatch);
     mockTx.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
-    mockTx.poultryTransferRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 400 } });
+    mockTx.poultryTransferRecord.findMany.mockResolvedValue([{ birdCount: 400, fromFarmId: "farm-1", toFarmId: "farm-2" }]);
     mockTx.mortalityRecord.create.mockResolvedValue({ id: "mort-1" });
 
     const service = makeService();
@@ -1521,10 +1537,25 @@ describe("PoultryService.createMortality — live-bird check accounts for prior 
   it("does not let a past whole-batch relocation count against remaining live birds", async () => {
     mockPrisma.flockBatch.findFirst.mockResolvedValue(flockBatch);
     mockTx.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
-    // aggregate is already filtered to isFullBatchRelocation: false at the
-    // query level, so a relocation transfer contributes 0 here regardless
-    // of its birdCount — this simulates that filtered result.
-    mockTx.poultryTransferRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+    // findMany is already filtered to isFullBatchRelocation: false at the
+    // query level, so a relocation transfer never comes back at all —
+    // this simulates that filtered result (empty).
+    mockTx.poultryTransferRecord.findMany.mockResolvedValue([]);
+    mockTx.mortalityRecord.create.mockResolvedValue({ id: "mort-1" });
+
+    const service = makeService();
+    await expect(
+      service.createMortality(makeUser(), { flockBatchId: "batch-1", recordDate: "2026-08-09", birdCount: 999 } as never, {})
+    ).resolves.toBeDefined();
+  });
+
+  it("does not let a same-farm pen/house transfer count against remaining live birds — the birds never left the farm", async () => {
+    mockPrisma.flockBatch.findFirst.mockResolvedValue(flockBatch);
+    mockTx.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+    // 6,600 birds moved Pen 1 -> Pen 2, same house, same farm. This must not
+    // reduce live birds available for mortality — the exact scenario a live
+    // user hit: a same-farm transfer that visibly tanked currentLiveBirds.
+    mockTx.poultryTransferRecord.findMany.mockResolvedValue([{ birdCount: 600, fromFarmId: "farm-1", toFarmId: "farm-1" }]);
     mockTx.mortalityRecord.create.mockResolvedValue({ id: "mort-1" });
 
     const service = makeService();
@@ -1544,7 +1575,7 @@ describe("PoultryService.createTransfer — stamps isFullBatchRelocation only wh
     mockPrisma.flockBatch.findFirst.mockResolvedValue(flockBatch);
     mockPrisma.poultryHouse.findFirst.mockResolvedValue(toHouse);
     mockTx.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
-    mockTx.poultryTransferRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+    mockTx.poultryTransferRecord.findMany.mockResolvedValue([]);
     mockTx.poultryTransferRecord.create.mockResolvedValue({ id: "trf-1" });
 
     const service = makeService();
@@ -1567,7 +1598,7 @@ describe("PoultryService.createTransfer — stamps isFullBatchRelocation only wh
     mockPrisma.flockBatch.findFirst.mockResolvedValue(flockBatch);
     mockPrisma.poultryHouse.findFirst.mockResolvedValue(toHouse);
     mockTx.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
-    mockTx.poultryTransferRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+    mockTx.poultryTransferRecord.findMany.mockResolvedValue([]);
     mockTx.poultryTransferRecord.create.mockResolvedValue({ id: "trf-2" });
 
     const service = makeService();
@@ -1587,10 +1618,31 @@ describe("PoultryService.createTransfer — stamps isFullBatchRelocation only wh
     mockPrisma.flockBatch.findFirst.mockResolvedValue(flockBatch);
     mockPrisma.poultryHouse.findFirst.mockResolvedValue(toHouse);
     mockTx.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
-    // The prior relocation is excluded by the aggregate's own
-    // isFullBatchRelocation: false filter — simulated here as 0 outgoing.
-    mockTx.poultryTransferRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+    // The prior relocation is excluded by the query's own
+    // isFullBatchRelocation: false filter — simulated here as an empty
+    // result (it never comes back from findMany at all).
+    mockTx.poultryTransferRecord.findMany.mockResolvedValue([]);
     mockTx.poultryTransferRecord.create.mockResolvedValue({ id: "trf-3" });
+
+    const service = makeService();
+    await expect(
+      service.createTransfer(
+        makeUser({ hasGlobalAccess: true }),
+        { flockBatchId: "batch-1", toFarmId: "farm-2", toPoultryHouseId: "house-2", birdCount: 1000, transferDate: "2026-08-09" } as never,
+        {}
+      )
+    ).resolves.toBeDefined();
+  });
+
+  it("a prior same-farm transfer (any house/pen) doesn't count against availability for a later transfer — reproduces the live bug report", async () => {
+    mockPrisma.flockBatch.findFirst.mockResolvedValue(flockBatch);
+    mockPrisma.poultryHouse.findFirst.mockResolvedValue(toHouse);
+    mockTx.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+    // Earlier today: 6,600 birds moved Pen 1 -> Pen 2, same house, same
+    // farm ("farm-1"). All 1,000 openingBirdCount must still be available
+    // for this new transfer — the same-farm move didn't remove any birds.
+    mockTx.poultryTransferRecord.findMany.mockResolvedValue([{ birdCount: 6600, fromFarmId: "farm-1", toFarmId: "farm-1" }]);
+    mockTx.poultryTransferRecord.create.mockResolvedValue({ id: "trf-4" });
 
     const service = makeService();
     await expect(
@@ -1610,12 +1662,26 @@ describe("PoultryService.getDailyRecordPrefill — batch-total fallback accounts
     mockPrisma.flockBatch.findFirst.mockResolvedValue({ id: "batch-1", farmId: "farm-1", status: "ACTIVE", openingBirdCount: 1000 });
     mockPrisma.dailyPoultryRecord.findFirst.mockResolvedValue(null);
     mockPrisma.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 50 } });
-    mockPrisma.poultryTransferRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 200 } });
+    // 200 birds transferred to a genuinely different farm ("farm-2") — a
+    // same-farm move wouldn't count here (see the currentLiveBirds tests).
+    mockPrisma.poultryTransferRecord.findMany.mockResolvedValue([{ birdCount: 200, fromFarmId: "farm-1", toFarmId: "farm-2" }]);
 
     const service = makeService();
     const result = await service.getDailyRecordPrefill(makeUser({ farmIds: ["farm-1"] }), "batch-1", "2026-08-18");
 
     expect(result.data).toEqual({ openingBirdCount: 750, source: "batch_total" });
+  });
+
+  it("does not subtract a same-farm transfer — the birds never left the farm", async () => {
+    mockPrisma.flockBatch.findFirst.mockResolvedValue({ id: "batch-1", farmId: "farm-1", status: "ACTIVE", openingBirdCount: 1000 });
+    mockPrisma.dailyPoultryRecord.findFirst.mockResolvedValue(null);
+    mockPrisma.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 50 } });
+    mockPrisma.poultryTransferRecord.findMany.mockResolvedValue([{ birdCount: 200, fromFarmId: "farm-1", toFarmId: "farm-1" }]);
+
+    const service = makeService();
+    const result = await service.getDailyRecordPrefill(makeUser({ farmIds: ["farm-1"] }), "batch-1", "2026-08-18");
+
+    expect(result.data).toEqual({ openingBirdCount: 950, source: "batch_total" });
   });
 });
 
