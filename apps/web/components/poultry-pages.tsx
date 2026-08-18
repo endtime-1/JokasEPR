@@ -1050,6 +1050,7 @@ function BatchRecordSection({ batchId, type, label, cols, endpoint, options }: {
   const [addOpen, setAddOpen] = useState(false);
   const [addForm, setAddForm] = useState<Record<string, string>>({});
   const [addError, setAddError] = useState("");
+  const [addWarning, setAddWarning] = useState("");
   const [addLoading, setAddLoading] = useState(false);
   const [editRow, setEditRow] = useState<Record<string, any> | null>(null);
   const [editForm, setEditForm] = useState<Record<string, string>>({});
@@ -1099,9 +1100,11 @@ function BatchRecordSection({ batchId, type, label, cols, endpoint, options }: {
     event.preventDefault();
     setAddLoading(true);
     setAddError("");
+    setAddWarning("");
     try {
       const payload = buildRecordPayload(type, { ...addForm, flockBatchId: batchId }, options);
-      await apiFetch(endpoint, { method: "POST", body: JSON.stringify(payload) });
+      const response = await apiFetch<{ warning?: string }>(endpoint, { method: "POST", body: JSON.stringify(payload) });
+      if (response?.warning) setAddWarning(response.warning);
       setAddOpen(false);
       setAddForm({});
       await load();
@@ -1302,6 +1305,12 @@ function BatchRecordSection({ batchId, type, label, cols, endpoint, options }: {
               </button>
             </form>
           )}
+          {addWarning && (
+            <div className="mb-3 flex items-start justify-between gap-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              <span>{addWarning}</span>
+              <button type="button" className="shrink-0 text-amber-600 hover:text-amber-800" onClick={() => setAddWarning("")}><X className="h-3.5 w-3.5" /></button>
+            </div>
+          )}
           {loading && <p className="text-xs text-ink/50">Loading…</p>}
           {!loading && loadError && (
             <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
@@ -1418,6 +1427,7 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
   const [form, setForm] = useState<Record<string, string>>(() => makeFormDefaults(type));
   const [editingId, setEditingId] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState("");
+  const [submitWarning, setSubmitWarning] = useState("");
   const [saving, setSaving] = useState(false);
   const [recordsLoading, setRecordsLoading] = useState(rows.length === 0);
   const [recordsError, setRecordsError] = useState("");
@@ -1514,15 +1524,18 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
     event.preventDefault();
     if (saving) return;
     setSubmitError("");
+    setSubmitWarning("");
     setSaving(true);
     try {
+      let response: { warning?: string } | undefined;
       if (editingId) {
         const payload = buildRecordPayload(type, form, options);
-        await apiFetch(`/poultry/records/${type}/${editingId}`, { method: "PATCH", body: JSON.stringify(payload) });
+        response = await apiFetch(`/poultry/records/${type}/${editingId}`, { method: "PATCH", body: JSON.stringify(payload) });
         setEditingId(null);
       } else {
-        await apiFetch(endpoint, { method: "POST", body: JSON.stringify(buildRecordPayload(type, form, options)) });
+        response = await apiFetch(endpoint, { method: "POST", body: JSON.stringify(buildRecordPayload(type, form, options)) });
       }
+      if (response?.warning) setSubmitWarning(response.warning);
       setForm(makeFormDefaults(type));
       await load();
     } catch (err: any) {
@@ -1554,6 +1567,12 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
         </div>
       )}
       {submitError && <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{submitError}</p>}
+      {submitWarning && (
+        <div className="mb-4 flex items-start justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+          <span>{submitWarning}</span>
+          <button type="button" className="shrink-0 text-amber-600 hover:text-amber-800" onClick={() => setSubmitWarning("")}><X className="h-4 w-4" /></button>
+        </div>
+      )}
       {recordsError && <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{recordsError}</p>}
       <GenericRecordForm options={options} optionsLoading={optionsLoading} form={form} setForm={setForm} submit={submit} type={type} isEditing={!!editingId} saving={saving} />
       <SimpleRecordTable rows={rows} loading={recordsLoading} onEdit={startEdit} onDelete={canManage ? setConfirmRow : undefined} />

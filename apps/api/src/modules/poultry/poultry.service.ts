@@ -680,12 +680,21 @@ export class PoultryService {
     if (mortalityDelta < 0 || culledDelta < 0 || feedDelta < 0 || eggsDelta < 0) {
       throw new BadRequestException("Today's mortality, culled, feed, or egg numbers can't be reduced from this screen — use the Mortality, Feed, or Egg Production screens to correct an entry already recorded.");
     }
-    // Deducting/crediting real stock from the feed/egg numbers is optional,
-    // same convention as the dedicated createFeed/createEggs endpoints
-    // (their own product+warehouse fields are optional too, matching the
-    // mobile Feed Consumption screen's "Deduct from stock (optional)"
-    // section) — the count is still recorded either way, just without a
-    // stock-movement side effect if no product/warehouse was given.
+    // (2026-08-18) A feed/egg delta always creates a real FeedConsumptionRecord/
+    // EggProductionRecord now, same as mortality/culled always create a real
+    // MortalityRecord — previously the delta only ever moved inventory (via
+    // consumeInventoryTx/addToInventoryTx) and, if no product/warehouse was
+    // given, did nothing at all beyond this row. Either way the number never
+    // showed up on the dedicated Feed/Egg pages or in the batch's
+    // totalFeedKg/totalEggs metrics, which read those tables, not this one.
+    // Crediting/deducting real stock from the new record is still optional,
+    // matching createFeed/createEggs's own optional product+warehouse fields.
+    if (eggsDelta > 0 && !["LAYERS", "BREEDERS"].includes(batch.birdType)) {
+      throw new BadRequestException(`Egg production cannot be recorded for a ${batch.birdType} batch. Only LAYERS and BREEDERS batches produce eggs.`);
+    }
+    if (eggsDelta > 0 && dto.eggProductId && dto.eggWarehouseId) {
+      await this.assertNoActiveWithdrawal(dto.flockBatchId, user.companyId, "eggs collected during this window can still be logged, but omit the egg product/warehouse to record them without crediting sellable stock");
+    }
 
     // High (DB stability audit, 2026-08-16): consumeInventoryTx locks
     // InventoryItem before StockBatch, opposite the order used by
@@ -717,16 +726,32 @@ export class PoultryService {
           data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), recordDate, birdCount: culledDelta, isCulling: true, reason: "Daily record", status: "SUBMITTED" }
         });
       }
-      if (feedDelta > 0 && dto.feedProductId && dto.feedWarehouseId) {
-        await this.consumeInventoryTx(tx, user, batch, dto.feedWarehouseId, dto.feedProductId, feedDelta, "PRODUCTION_INPUT", "DailyPoultryRecord", row.id, `Feed consumption from daily record for flock ${batch.code}`);
+      if (feedDelta > 0) {
+        const feedRecord = await tx.feedConsumptionRecord.create({
+          data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), recordDate, feedProductId: dto.feedProductId, warehouseId: dto.feedWarehouseId, quantityKg: feedDelta, notes: "Daily record", status: "SUBMITTED" }
+        });
+        if (dto.feedProductId && dto.feedWarehouseId) {
+          await this.consumeInventoryTx(tx, user, batch, dto.feedWarehouseId, dto.feedProductId, feedDelta, "PRODUCTION_INPUT", "FeedConsumptionRecord", feedRecord.id, `Feed consumption from daily record for flock ${batch.code}`);
+        }
       }
-      if (eggsDelta > 0 && dto.eggProductId && dto.eggWarehouseId) {
-        await this.addToInventoryTx(tx, user, batch, dto.eggWarehouseId, dto.eggProductId, eggsDelta, "DailyPoultryRecord", row.id, `Egg production from daily record for flock ${batch.code}`);
+      if (eggsDelta > 0) {
+        const eggRecord = await tx.eggProductionRecord.create({
+          data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), recordDate, goodEggs: eggsDelta, notes: "Daily record", status: "SUBMITTED" }
+        });
+        if (dto.eggProductId && dto.eggWarehouseId) {
+          await this.addToInventoryTx(tx, user, batch, dto.eggWarehouseId, dto.eggProductId, eggsDelta, "EggProductionRecord", eggRecord.id, `Egg production from daily record for flock ${batch.code}`);
+        }
       }
       return row;
     }), { label: "PoultryService.upsertDailyRecord" });
     await this.writeAudit(user, "CREATE", "DailyPoultryRecord", record.id, "Submitted daily poultry record", context, batch.farmId);
-    return { data: record };
+    const overlapWarnings = (await Promise.all([
+      mortalityDelta > 0 ? this.dedicatedMortalityOverlapWarning(user.companyId, batch.id, recordDate, false) : Promise.resolve(undefined),
+      culledDelta > 0 ? this.dedicatedMortalityOverlapWarning(user.companyId, batch.id, recordDate, true) : Promise.resolve(undefined),
+      feedDelta > 0 ? this.dedicatedFeedOverlapWarning(user.companyId, batch.id, recordDate) : Promise.resolve(undefined),
+      eggsDelta > 0 ? this.dedicatedEggsOverlapWarning(user.companyId, batch.id, recordDate) : Promise.resolve(undefined)
+    ])).filter((w): w is string => !!w);
+    return { data: record, warning: overlapWarnings.join(" ") || undefined };
   }
 
   async createMortality(user: AuthenticatedUser, dto: CreateMortalityRecordDto, context: RequestContext) {
@@ -762,7 +787,8 @@ export class PoultryService {
       throw err;
     }
     await this.writeAudit(user, "CREATE", "MortalityRecord", data.id, dto.isCulling ? "Recorded poultry culling" : "Recorded poultry mortality", context, batch.farmId);
-    return { data };
+    const warning = await this.dailyRecordOverlapWarning(user.companyId, batch.id, new Date(dto.recordDate), dto.isCulling ? "culledCount" : "mortalityCount", dto.isCulling ? "culled" : "mortality");
+    return { data, warning };
   }
 
   async createFeed(user: AuthenticatedUser, dto: CreateFeedConsumptionRecordDto, context: RequestContext) {
@@ -805,7 +831,8 @@ export class PoultryService {
       throw err;
     }
     await this.writeAudit(user, "CREATE", "FeedConsumptionRecord", data.id, "Recorded poultry feed consumption", context, batch.farmId);
-    return { data, warning: stockWarning };
+    const overlapWarning = await this.dailyRecordOverlapWarning(user.companyId, batch.id, new Date(dto.recordDate), "feedConsumedKg", "kg feed");
+    return { data, warning: [stockWarning, overlapWarning].filter(Boolean).join(" ") || undefined };
   }
 
   async createEggs(user: AuthenticatedUser, dto: CreateEggProductionRecordDto, context: RequestContext) {
@@ -877,7 +904,8 @@ export class PoultryService {
       throw err;
     }
     await this.writeAudit(user, "CREATE", "EggProductionRecord", data.id, "Recorded egg production", context, batch.farmId);
-    const warning = [ageWarning, stockWarning].filter(Boolean).join(" ") || undefined;
+    const overlapWarning = await this.dailyRecordOverlapWarning(user.companyId, batch.id, new Date(dto.recordDate), "totalEggs", "eggs");
+    const warning = [ageWarning, stockWarning, overlapWarning].filter(Boolean).join(" ") || undefined;
     return { data, warning };
   }
 
@@ -1837,6 +1865,58 @@ export class PoultryService {
     if (!user.hasGlobalAccess && !user.warehouseIds.includes(warehouseId)) {
       throw new ForbiddenException("You do not have access to this warehouse.");
     }
+  }
+
+  // (2026-08-18) Mortality/culled/feed/eggs can be logged either through
+  // Daily Records or the dedicated Mortality/Feed/Egg screens — both write
+  // to the same real tables, but neither screen knows the other was already
+  // used for the same batch+day, so the same event could get reported
+  // twice. These are advisory only (a legitimate second event on the same
+  // day — a morning cull and a separate afternoon death — must not be
+  // blocked), surfaced to the caller as a non-fatal `warning` string.
+  private async dailyRecordOverlapWarning(companyId: string, flockBatchId: string, recordDate: Date, field: "mortalityCount" | "culledCount" | "feedConsumedKg" | "totalEggs", label: string): Promise<string | undefined> {
+    const agg = await this.prisma.dailyPoultryRecord.aggregate({
+      where: { companyId, flockBatchId, recordDate, deletedAt: null },
+      _sum: { [field]: true }
+    });
+    const total = Number((agg._sum as Record<string, unknown>)[field] ?? 0);
+    return total > 0
+      ? `Heads up: today's Daily Record already logged ${total} ${label} for this batch — check this isn't the same event reported twice.`
+      : undefined;
+  }
+
+  private async dedicatedMortalityOverlapWarning(companyId: string, flockBatchId: string, recordDate: Date, isCulling: boolean): Promise<string | undefined> {
+    const agg = await this.prisma.mortalityRecord.aggregate({
+      where: { companyId, flockBatchId, recordDate, isCulling, deletedAt: null, reason: { not: "Daily record" } },
+      _sum: { birdCount: true }
+    });
+    const total = agg._sum.birdCount ?? 0;
+    return total > 0
+      ? `Heads up: ${total} ${isCulling ? "culled" : "mortality"} already logged today via the dedicated Mortality screen — check this isn't the same event reported twice.`
+      : undefined;
+  }
+
+  private async dedicatedFeedOverlapWarning(companyId: string, flockBatchId: string, recordDate: Date): Promise<string | undefined> {
+    const agg = await this.prisma.feedConsumptionRecord.aggregate({
+      where: { companyId, flockBatchId, recordDate, deletedAt: null, notes: { not: "Daily record" } },
+      _sum: { quantityKg: true }
+    });
+    const total = Number(agg._sum.quantityKg ?? 0);
+    return total > 0
+      ? `Heads up: ${total}kg feed already logged today via the dedicated Feed Consumption screen — check this isn't the same event reported twice.`
+      : undefined;
+  }
+
+  private async dedicatedEggsOverlapWarning(companyId: string, flockBatchId: string, recordDate: Date): Promise<string | undefined> {
+    const agg = await this.prisma.eggProductionRecord.aggregate({
+      where: { companyId, flockBatchId, recordDate, deletedAt: null, notes: { not: "Daily record" } },
+      _sum: { goodEggs: true, crackedEggs: true, dirtyEggs: true, brokenEggs: true, rejectedEggs: true }
+    });
+    const s = agg._sum;
+    const total = (s.goodEggs ?? 0) + (s.crackedEggs ?? 0) + (s.dirtyEggs ?? 0) + (s.brokenEggs ?? 0) + (s.rejectedEggs ?? 0);
+    return total > 0
+      ? `Heads up: ${total} eggs already logged today via the dedicated Egg Production screen — check this isn't the same event reported twice.`
+      : undefined;
   }
 
   private async assertNoActiveWithdrawal(flockBatchId: string, companyId: string, guidance: string) {

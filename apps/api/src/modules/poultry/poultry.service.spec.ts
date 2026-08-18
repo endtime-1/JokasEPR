@@ -5,8 +5,8 @@ import { PoultryService } from "./poultry.service";
 jest.mock("../../common/next-ref", () => ({ nextRef: jest.fn().mockResolvedValue("EGG-2026-0001") }));
 
 const mockTx = {
-  feedConsumptionRecord: { create: jest.fn(), update: jest.fn() },
-  eggProductionRecord: { create: jest.fn(), update: jest.fn() },
+  feedConsumptionRecord: { create: jest.fn().mockResolvedValue({ id: "feed-1" }), update: jest.fn() },
+  eggProductionRecord: { create: jest.fn().mockResolvedValue({ id: "egg-1" }), update: jest.fn() },
   medicationRecord: { create: jest.fn(), update: jest.fn() },
   vaccinationRecord: { create: jest.fn(), update: jest.fn() },
   dailyPoultryRecord: { create: jest.fn(), update: jest.fn() },
@@ -33,11 +33,11 @@ const mockPrisma = {
   systemSetting: { findFirst: jest.fn().mockResolvedValue(null) },
   batchPenAllocation: { findFirst: jest.fn() },
   poultryTransferRecord: { findFirst: jest.fn(), count: jest.fn().mockResolvedValue(0), aggregate: jest.fn().mockResolvedValue({ _sum: { birdCount: 0 } }) },
-  feedConsumptionRecord: { findFirst: jest.fn(), count: jest.fn().mockResolvedValue(0) },
-  eggProductionRecord: { findFirst: jest.fn(), count: jest.fn().mockResolvedValue(0) },
+  feedConsumptionRecord: { findFirst: jest.fn(), count: jest.fn().mockResolvedValue(0), aggregate: jest.fn().mockResolvedValue({ _sum: { quantityKg: 0 } }) },
+  eggProductionRecord: { findFirst: jest.fn(), count: jest.fn().mockResolvedValue(0), aggregate: jest.fn().mockResolvedValue({ _sum: { goodEggs: 0, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0 } }) },
   medicationRecord: { findFirst: jest.fn() },
   vaccinationRecord: { findFirst: jest.fn() },
-  dailyPoultryRecord: { findFirst: jest.fn() },
+  dailyPoultryRecord: { findFirst: jest.fn(), aggregate: jest.fn().mockResolvedValue({ _sum: { mortalityCount: 0, culledCount: 0, feedConsumedKg: 0, totalEggs: 0 } }) },
   mortalityRecord: { findFirst: jest.fn(), count: jest.fn().mockResolvedValue(0), aggregate: jest.fn().mockResolvedValue({ _sum: { birdCount: 0 } }) },
   birdWeightRecord: { findFirst: jest.fn(), create: jest.fn(), count: jest.fn().mockResolvedValue(0) },
   poultryHealthObservation: { findFirst: jest.fn(), create: jest.fn() },
@@ -385,6 +385,71 @@ describe("PoultryService.createDailyRecord — mortality/culled/feed/egg deltas 
       where: { id: "inv-1", quantityOnHand: { gte: 250 } },
       data: { quantityOnHand: { decrement: 250 }, updatedById: "user-1" }
     });
+  });
+
+  it("creates a real FeedConsumptionRecord for the delta — this is what makes it show up on the Feed Consumption page and in batch feed totals (2026-08-18)", async () => {
+    mockPrisma.flockBatch.findFirst.mockResolvedValue(makeBatch());
+    mockPrisma.dailyPoultryRecord.findFirst.mockResolvedValue(null);
+    mockTx.dailyPoultryRecord.create.mockResolvedValue({ id: "daily-1" });
+
+    const service = makeService();
+    await service.createDailyRecord(
+      makeUser({ farmIds: ["farm-1"] }),
+      { flockBatchId: "batch-1", recordDate: "2026-01-01", mortalityCount: 0, culledCount: 0, feedConsumedKg: 250, totalEggs: 0 } as never,
+      {}
+    );
+
+    expect(mockTx.feedConsumptionRecord.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ quantityKg: 250, notes: "Daily record", flockBatchId: "batch-1" }) })
+    );
+  });
+
+  it("creates a real EggProductionRecord (as goodEggs) for the delta — same reasoning as the feed record (2026-08-18)", async () => {
+    mockPrisma.flockBatch.findFirst.mockResolvedValue(makeBatch());
+    mockPrisma.dailyPoultryRecord.findFirst.mockResolvedValue(null);
+    mockTx.dailyPoultryRecord.create.mockResolvedValue({ id: "daily-1" });
+
+    const service = makeService();
+    await service.createDailyRecord(
+      makeUser({ farmIds: ["farm-1"] }),
+      { flockBatchId: "batch-1", recordDate: "2026-01-01", mortalityCount: 0, culledCount: 0, feedConsumedKg: 0, totalEggs: 40 } as never,
+      {}
+    );
+
+    expect(mockTx.eggProductionRecord.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ goodEggs: 40, notes: "Daily record", flockBatchId: "batch-1" }) })
+    );
+  });
+
+  it("rejects an egg delta for a batch that isn't LAYERS or BREEDERS, same guard as createEggs", async () => {
+    mockPrisma.flockBatch.findFirst.mockResolvedValue(makeBatch({ birdType: "BROILERS" }));
+    mockPrisma.dailyPoultryRecord.findFirst.mockResolvedValue(null);
+
+    const service = makeService();
+    await expect(
+      service.createDailyRecord(
+        makeUser({ farmIds: ["farm-1"] }),
+        { flockBatchId: "batch-1", recordDate: "2026-01-01", mortalityCount: 0, culledCount: 0, feedConsumedKg: 0, totalEggs: 40 } as never,
+        {}
+      )
+    ).rejects.toThrow(/BROILERS batch/);
+    expect(mockTx.eggProductionRecord.create).not.toHaveBeenCalled();
+  });
+
+  it("blocks crediting egg stock during an active medication withdrawal, same guard as createEggs", async () => {
+    mockPrisma.flockBatch.findFirst.mockResolvedValue(makeBatch());
+    mockPrisma.dailyPoultryRecord.findFirst.mockResolvedValue(null);
+    mockPrisma.medicationRecord.findFirst.mockResolvedValue({ medicationName: "Amoxicillin", withdrawalUntil: new Date("2099-01-01") });
+
+    const service = makeService();
+    await expect(
+      service.createDailyRecord(
+        makeUser({ farmIds: ["farm-1"], warehouseIds: ["wh-1"] }),
+        { flockBatchId: "batch-1", recordDate: "2026-01-01", mortalityCount: 0, culledCount: 0, feedConsumedKg: 0, totalEggs: 40, eggProductId: "egg-1", eggWarehouseId: "wh-1" } as never,
+        {}
+      )
+    ).rejects.toThrow(/withdrawal period/);
+    expect(mockTx.eggProductionRecord.create).not.toHaveBeenCalled();
   });
 });
 
@@ -1551,5 +1616,73 @@ describe("PoultryService.getDailyRecordPrefill — batch-total fallback accounts
     const result = await service.getDailyRecordPrefill(makeUser({ farmIds: ["farm-1"] }), "batch-1", "2026-08-18");
 
     expect(result.data).toEqual({ openingBirdCount: 750, source: "batch_total" });
+  });
+});
+
+describe("PoultryService — same-day cross-screen duplicate-entry warning (2026-08-18)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const flockBatch = { id: "batch-1", farmId: "farm-1", branchId: "branch-1", poultryHouseId: "house-1", birdType: "LAYERS", status: "ACTIVE", code: "FB-1", openingBirdCount: 1000 };
+
+  it("createMortality warns (but does not block) when today's Daily Record already logged mortality", async () => {
+    mockPrisma.flockBatch.findFirst.mockResolvedValue(flockBatch);
+    mockTx.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+    mockTx.mortalityRecord.create.mockResolvedValue({ id: "mort-1" });
+    mockPrisma.dailyPoultryRecord.aggregate.mockResolvedValue({ _sum: { mortalityCount: 4, culledCount: 0, feedConsumedKg: 0, totalEggs: 0 } });
+
+    const service = makeService();
+    const result = await service.createMortality(makeUser(), { flockBatchId: "batch-1", recordDate: "2026-08-18", birdCount: 3 } as never, {});
+
+    expect(result.data).toBeDefined();
+    expect(result.warning).toMatch(/already logged 4 mortality/);
+  });
+
+  it("createMortality returns no warning when nothing was logged via Daily Record that day", async () => {
+    mockPrisma.flockBatch.findFirst.mockResolvedValue(flockBatch);
+    mockTx.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+    mockTx.mortalityRecord.create.mockResolvedValue({ id: "mort-1" });
+    mockPrisma.dailyPoultryRecord.aggregate.mockResolvedValue({ _sum: { mortalityCount: 0, culledCount: 0, feedConsumedKg: 0, totalEggs: 0 } });
+
+    const service = makeService();
+    const result = await service.createMortality(makeUser(), { flockBatchId: "batch-1", recordDate: "2026-08-18", birdCount: 3 } as never, {});
+
+    expect(result.warning).toBeUndefined();
+  });
+
+  it("createDailyRecord warns when the dedicated Mortality screen already logged an entry for the same day", async () => {
+    mockPrisma.flockBatch.findFirst.mockResolvedValue(flockBatch);
+    mockPrisma.dailyPoultryRecord.findFirst.mockResolvedValue(null);
+    mockTx.dailyPoultryRecord.create.mockResolvedValue({ id: "daily-1" });
+    mockTx.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+    // Simulates a prior dedicated (non-"Daily record") mortality entry for today.
+    mockPrisma.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 6 } });
+
+    const service = makeService();
+    const result = await service.createDailyRecord(
+      makeUser({ farmIds: ["farm-1"] }),
+      { flockBatchId: "batch-1", recordDate: "2026-08-18", mortalityCount: 5, culledCount: 0, feedConsumedKg: 0, totalEggs: 0 } as never,
+      {}
+    );
+
+    expect(result.warning).toMatch(/already logged today via the dedicated Mortality screen/);
+    // Still recorded — this is advisory, not blocking.
+    expect(mockTx.mortalityRecord.create).toHaveBeenCalled();
+  });
+
+  it("createDailyRecord returns no warning when nothing else was logged that day", async () => {
+    mockPrisma.flockBatch.findFirst.mockResolvedValue(flockBatch);
+    mockPrisma.dailyPoultryRecord.findFirst.mockResolvedValue(null);
+    mockTx.dailyPoultryRecord.create.mockResolvedValue({ id: "daily-1" });
+    mockTx.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+    mockPrisma.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+
+    const service = makeService();
+    const result = await service.createDailyRecord(
+      makeUser({ farmIds: ["farm-1"] }),
+      { flockBatchId: "batch-1", recordDate: "2026-08-18", mortalityCount: 5, culledCount: 0, feedConsumedKg: 0, totalEggs: 0 } as never,
+      {}
+    );
+
+    expect(result.warning).toBeUndefined();
   });
 });
