@@ -1921,6 +1921,13 @@ export function PoultryTransferPage() {
   }, [options.houses, options.pens]);
   const toHouses = useMemo(() => options.houses.filter((h) => !form.toFarmId || h.farmId === form.toFarmId), [options.houses, form.toFarmId]);
   const effectiveToHouseId = form.toPoultryHouseId || toHouses[0]?.id || "";
+  // The Batch <select> below displays options.batches[0] as a fallback the
+  // same way "To house" does, so the visible selection and the value
+  // actually submitted must come from the same place — otherwise a batch
+  // clearly shown as selected (because it's the only/first option and the
+  // user never had to touch the dropdown) still submits as empty, and
+  // "Please select a flock batch" fires despite one being visibly chosen.
+  const effectiveFlockBatchId = form.flockBatchId || options.batches[0]?.id || "";
   const toPens = useMemo(() => options.pens.filter((p) => !effectiveToHouseId || p.poultryHouseId === effectiveToHouseId), [options.pens, effectiveToHouseId]);
 
   const selectedPens = penSelections.filter((p) => p.selected);
@@ -1967,10 +1974,10 @@ export function PoultryTransferPage() {
     event.preventDefault();
     if (submitting) return;
     setSubmitError("");
-    if (!form.flockBatchId) { setSubmitError("Please select a flock batch."); return; }
+    if (!effectiveFlockBatchId) { setSubmitError("Please select a flock batch."); return; }
     if (!effectiveToHouseId) { setSubmitError("Please select a destination house (the destination farm has no houses to choose from)."); return; }
     const base = {
-      flockBatchId: form.flockBatchId,
+      flockBatchId: effectiveFlockBatchId,
       fromPoultryHouseId: form.fromHouseId || undefined,
       toFarmId: form.toFarmId || options.farms[0]?.id,
       toPoultryHouseId: effectiveToHouseId,
@@ -2051,7 +2058,7 @@ export function PoultryTransferPage() {
         <FormField label="Batch">
           <select
             className={inputClass}
-            value={form.flockBatchId || options.batches[0]?.id || ""}
+            value={effectiveFlockBatchId}
             onChange={(e) => { setForm({ ...form, flockBatchId: e.target.value, fromHouseId: "" }); setPenSelections([]); }}
             disabled={optionsLoading && options.batches.length === 0}
           >
