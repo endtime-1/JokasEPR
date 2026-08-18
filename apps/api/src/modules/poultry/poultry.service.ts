@@ -78,7 +78,7 @@ export class PoultryService {
           farm: { select: { name: true, code: true } },
           poultryHouse: { select: { name: true, code: true } },
           mortalityRecords: { where: { deletedAt: null }, select: { birdCount: true, isCulling: true } },
-          poultryTransferRecords: { where: { deletedAt: null }, select: { birdCount: true, isFullBatchRelocation: true, fromFarmId: true, toFarmId: true } },
+          poultryTransferRecords: { where: { deletedAt: null }, select: { birdCount: true, isFullBatchRelocation: true, fromFarmId: true, toFarmId: true, status: true } },
           feedConsumptionRecords: { where: { deletedAt: null }, select: { quantityKg: true } },
           eggProductionRecords: { where: { deletedAt: null }, select: { goodEggs: true, crackedEggs: true, dirtyEggs: true, brokenEggs: true, rejectedEggs: true } },
           birdWeightRecords: { where: { deletedAt: null }, orderBy: { recordDate: "desc" }, take: 1 },
@@ -209,7 +209,7 @@ export class PoultryService {
           where: { companyId: user.companyId, farmId, deletedAt: null },
           include: {
             mortalityRecords: { where: { deletedAt: null } },
-            poultryTransferRecords: { where: { deletedAt: null }, select: { birdCount: true, isFullBatchRelocation: true, fromFarmId: true, toFarmId: true } },
+            poultryTransferRecords: { where: { deletedAt: null }, select: { birdCount: true, isFullBatchRelocation: true, fromFarmId: true, toFarmId: true, status: true } },
             eggProductionRecords: { where: { deletedAt: null } },
             feedConsumptionRecords: { where: { deletedAt: null }, select: { quantityKg: true } },
             costRecords: { where: { deletedAt: null } }
@@ -446,7 +446,7 @@ export class PoultryService {
           farm: { select: { code: true, name: true } },
           poultryHouse: { select: { code: true, name: true } },
           mortalityRecords: { where: { deletedAt: null } },
-          poultryTransferRecords: { where: { deletedAt: null }, select: { birdCount: true, isFullBatchRelocation: true, fromFarmId: true, toFarmId: true } },
+          poultryTransferRecords: { where: { deletedAt: null }, select: { birdCount: true, isFullBatchRelocation: true, fromFarmId: true, toFarmId: true, status: true } },
           feedConsumptionRecords: { where: { deletedAt: null } },
           eggProductionRecords: { where: { deletedAt: null } },
           birdWeightRecords: { where: { deletedAt: null }, orderBy: { recordDate: "desc" }, take: 1 },
@@ -497,9 +497,12 @@ export class PoultryService {
     // Outgoing transfers and deaths are not stored against the pen — they are
     // applied at read time so the sum across all pens (across all houses in the
     // batch) equals currentLiveBirds.
+    // A CANCELLED transfer never actually moved anything — the birds are
+    // still sitting in the source pen. Excluded here for the same reason
+    // as currentLiveBirds/liveBirdsRemaining (see their own comments).
     const outgoingByPen = new Map<string, number>();
     for (const t of batch.poultryTransferRecords) {
-      if (t.fromPenId) {
+      if (t.fromPenId && t.status !== "CANCELLED") {
         outgoingByPen.set(t.fromPenId, (outgoingByPen.get(t.fromPenId) ?? 0) + t.birdCount);
       }
     }
@@ -1114,7 +1117,8 @@ export class PoultryService {
         const fromAlloc = await tx.batchPenAllocation.findFirst({ where: { flockBatchId: batch.id, penId: dto.fromPenId } });
         if (!fromAlloc) throw new BadRequestException("Source pen is not allocated to this batch.");
         const [outgoing, penMortality] = await Promise.all([
-          tx.poultryTransferRecord.aggregate({ where: { flockBatchId: batch.id, fromPenId: dto.fromPenId, deletedAt: null }, _sum: { birdCount: true } }),
+          // CANCELLED excluded — those birds never actually left this pen.
+          tx.poultryTransferRecord.aggregate({ where: { flockBatchId: batch.id, fromPenId: dto.fromPenId, deletedAt: null, status: { not: "CANCELLED" } }, _sum: { birdCount: true } }),
           tx.mortalityRecord.aggregate({ where: { flockBatchId: batch.id, penId: dto.fromPenId, deletedAt: null }, _sum: { birdCount: true } })
         ]);
         const available = fromAlloc.birdCount - (outgoing._sum.birdCount ?? 0) - (penMortality._sum.birdCount ?? 0);
@@ -1209,15 +1213,53 @@ export class PoultryService {
       throw new NotFoundException("Transfer was not found.");
     }
     this.assertFarmAccess(user, transfer.fromFarmId);
-    const data = await this.prisma.poultryTransferRecord.update({
-      where: { id },
-      data: {
-        status: dto.status,
-        approvedAt: ["APPROVED", "COMPLETED"].includes(dto.status) ? new Date() : undefined,
-        approvedById: ["APPROVED", "COMPLETED"].includes(dto.status) ? user.id : undefined,
-        updatedById: user.id
+
+    // (2026-08-18) Cancelling a transfer only ever flipped this status
+    // field — nowhere did anything give the birds back. The source side
+    // self-heals now that every outgoing/availability calculation excludes
+    // CANCELLED (see currentLiveBirds/liveBirdsRemaining/getBatch), but the
+    // destination pen's batchPenAllocation.birdCount is a stored increment
+    // applied at creation time, not something recomputed on read — it has
+    // to be explicitly reversed here, or a cancelled transfer keeps
+    // crediting a pen for birds that never arrived.
+    if (dto.status === "CANCELLED" && transfer.status !== "CANCELLED") {
+      if (transfer.status === "COMPLETED") {
+        throw new BadRequestException("Cannot cancel a completed transfer — it already happened. Create a new transfer to move the birds back instead.");
       }
+      if (transfer.isFullBatchRelocation) {
+        throw new BadRequestException("Cannot cancel a whole-batch relocation transfer — it already reassigned this batch to its new farm/house. Create a new transfer to move it back instead.");
+      }
+    }
+    if (dto.status !== "CANCELLED" && transfer.status === "CANCELLED") {
+      throw new BadRequestException("Cannot reactivate a cancelled transfer — create a new one instead.");
+    }
+
+    const data = await this.prisma.$transaction(async (tx) => {
+      if (dto.status === "CANCELLED" && transfer.status !== "CANCELLED" && transfer.toPenId) {
+        const reversed = await tx.batchPenAllocation.updateMany({
+          where: { flockBatchId: transfer.flockBatchId, penId: transfer.toPenId, birdCount: { gte: transfer.birdCount } },
+          data: { birdCount: { decrement: transfer.birdCount } }
+        });
+        // Floor-guarded like every other decrement in this codebase — if
+        // some of these birds were already moved on again before this
+        // cancellation, the destination pen no longer has enough to give
+        // back. Surface that instead of silently leaving the allocation
+        // inflated relative to what's actually there.
+        if (reversed.count === 0) {
+          throw new BadRequestException(`Cannot cancel — the destination pen no longer has ${transfer.birdCount} birds to reverse (some may have already been moved on). Resolve manually or record a correcting transfer instead.`);
+        }
+      }
+      return tx.poultryTransferRecord.update({
+        where: { id },
+        data: {
+          status: dto.status,
+          approvedAt: ["APPROVED", "COMPLETED"].includes(dto.status) ? new Date() : undefined,
+          approvedById: ["APPROVED", "COMPLETED"].includes(dto.status) ? user.id : undefined,
+          updatedById: user.id
+        }
+      });
     });
+    this.lookupCache.invalidate(`poultry:opts:${user.companyId}`);
     await this.writeAudit(user, dto.status === "APPROVED" ? "APPROVE" : "UPDATE", "PoultryTransferRecord", data.id, `Updated poultry transfer to ${dto.status}`, context, transfer.fromFarmId);
     return { data };
   }
@@ -1226,6 +1268,7 @@ export class PoultryService {
     const transfer = await this.prisma.poultryTransferRecord.findFirst({ where: { companyId: user.companyId, id, deletedAt: null } });
     if (!transfer) throw new NotFoundException("Transfer was not found.");
     if (transfer.toPenId) throw new BadRequestException("This transfer already has a pen assigned.");
+    if (transfer.status === "CANCELLED") throw new BadRequestException("Cannot assign a pen to a cancelled transfer.");
 
     const pen = await this.prisma.pen.findFirst({ where: { id: dto.penId, companyId: user.companyId, deletedAt: null } });
     if (!pen) throw new NotFoundException("Pen not found.");
@@ -1713,7 +1756,7 @@ export class PoultryService {
       where: { id: batchId, companyId: user.companyId },
       include: {
         mortalityRecords: { where: { deletedAt: null }, select: { birdCount: true, isCulling: true } },
-        poultryTransferRecords: { where: { deletedAt: null }, select: { birdCount: true, isFullBatchRelocation: true, fromFarmId: true, toFarmId: true } },
+        poultryTransferRecords: { where: { deletedAt: null }, select: { birdCount: true, isFullBatchRelocation: true, fromFarmId: true, toFarmId: true, status: true } },
         feedConsumptionRecords: { where: { deletedAt: null }, select: { quantityKg: true } },
         eggProductionRecords: { where: { deletedAt: null }, select: { goodEggs: true, crackedEggs: true, dirtyEggs: true, brokenEggs: true, rejectedEggs: true } },
         birdWeightRecords: { where: { deletedAt: null }, orderBy: { recordDate: "desc" }, take: 1 },
@@ -1753,11 +1796,16 @@ export class PoultryService {
   private currentLiveBirds(
     openingBirdCount: number,
     mortalityRecords: Array<{ birdCount: number }>,
-    transferRecords: Array<{ birdCount: number; isFullBatchRelocation: boolean; fromFarmId: string; toFarmId: string }> = []
+    transferRecords: Array<{ birdCount: number; isFullBatchRelocation: boolean; fromFarmId: string; toFarmId: string; status: string }> = []
   ) {
     const mortalityTotal = mortalityRecords.reduce((sum, row) => sum + row.birdCount, 0);
+    // (2026-08-18, same day again) A CANCELLED transfer was still counted
+    // as birds gone forever — nothing anywhere reversed its effect, so
+    // cancelling (exposed on the Transfers page as a status option) just
+    // permanently drained the source pen with no way back short of manual
+    // data surgery. Excluded here too, alongside the existing exclusions.
     const outgoingTotal = transferRecords
-      .filter((t) => !t.isFullBatchRelocation && t.fromFarmId !== t.toFarmId)
+      .filter((t) => !t.isFullBatchRelocation && t.fromFarmId !== t.toFarmId && t.status !== "CANCELLED")
       .reduce((sum, row) => sum + row.birdCount, 0);
     return Math.max(0, openingBirdCount - mortalityTotal - outgoingTotal);
   }
@@ -1783,7 +1831,7 @@ export class PoultryService {
         _sum: { birdCount: true }
       }),
       client.poultryTransferRecord.findMany({
-        where: { flockBatchId, deletedAt: null, isFullBatchRelocation: false },
+        where: { flockBatchId, deletedAt: null, isFullBatchRelocation: false, status: { not: "CANCELLED" } },
         select: { birdCount: true, fromFarmId: true, toFarmId: true }
       })
     ]);

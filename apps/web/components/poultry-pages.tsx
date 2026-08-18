@@ -848,7 +848,7 @@ type BatchDetail = {
   openingBirdCount: number; startDate: string; expectedCloseDate?: string; notes?: string;
   farm?: { name: string }; poultryHouse?: { name: string } | null;
   penAllocations?: Array<{ birdCount: number; pen: { code: string; name?: string; poultryHouse?: { name: string } } }>;
-  poultryTransferRecords?: Array<{ id: string; birdCount: number; transferDate: string; toPenId: string | null; toPoultryHouseId: string; toPoultryHouse?: { name: string; code: string } | null; toPen?: { code: string; name?: string } | null }>;
+  poultryTransferRecords?: Array<{ id: string; birdCount: number; transferDate: string; toPenId: string | null; toPoultryHouseId: string; status: string; toPoultryHouse?: { name: string; code: string } | null; toPen?: { code: string; name?: string } | null }>;
   metrics?: { currentLiveBirds: number; mortalityRate: number; eggProductionPercent: number; feedConversionRatio: number; costPerBird: number; profitability: number };
 };
 
@@ -988,12 +988,12 @@ export function FlockBatchDetailsPage() {
                 </div>
               </div>
 
-              {(batch.poultryTransferRecords ?? []).filter((t) => !t.toPenId).length > 0 && (
+              {(batch.poultryTransferRecords ?? []).filter((t) => !t.toPenId && t.status !== "CANCELLED").length > 0 && (
                 <div className="rounded-md border border-amber-200 bg-amber-50 p-4 shadow-panel">
                   <h3 className="mb-1 font-semibold text-amber-800">Pending Pen Assignments</h3>
                   <p className="mb-3 text-xs text-amber-700">These transfers arrived at a house without a specific pen. Assign a pen to complete the allocation.</p>
                   <div className="space-y-3">
-                    {(batch.poultryTransferRecords ?? []).filter((t) => !t.toPenId).map((t) => {
+                    {(batch.poultryTransferRecords ?? []).filter((t) => !t.toPenId && t.status !== "CANCELLED").map((t) => {
                       const housePens = options.pens.filter((p) => p.poultryHouseId === t.toPoultryHouseId);
                       return (
                         <div key={t.id} className="flex flex-wrap items-center gap-3 rounded border border-amber-200 bg-white p-3">

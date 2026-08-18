@@ -22,8 +22,8 @@ const mockTx = {
   // aggregate stays for the pen-scoped availability check (createTransfer's
   // fromPenId branch, unchanged); findMany backs liveBirdsRemaining, which
   // needs individual rows to compare fromFarmId/toFarmId per transfer.
-  poultryTransferRecord: { aggregate: jest.fn().mockResolvedValue({ _sum: { birdCount: 0 } }), findMany: jest.fn().mockResolvedValue([]), create: jest.fn() },
-  batchPenAllocation: { findFirst: jest.fn(), upsert: jest.fn() },
+  poultryTransferRecord: { aggregate: jest.fn().mockResolvedValue({ _sum: { birdCount: 0 } }), findMany: jest.fn().mockResolvedValue([]), create: jest.fn(), update: jest.fn() },
+  batchPenAllocation: { findFirst: jest.fn(), upsert: jest.fn(), updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
   pen: { update: jest.fn(), findFirst: jest.fn() },
   flockBatch: { findFirstOrThrow: jest.fn(), update: jest.fn() },
   $queryRaw: jest.fn().mockResolvedValue([])
@@ -1882,6 +1882,131 @@ describe("PoultryService.createTransfer — requires a destination pen when the 
       service.createTransfer(
         makeUser({ hasGlobalAccess: true }),
         { flockBatchId: "batch-1", toFarmId: "farm-2", toPoultryHouseId: "house-2", birdCount: 500, transferDate: "2026-08-09" } as never,
+        {}
+      )
+    ).resolves.toBeDefined();
+  });
+});
+
+describe("PoultryService.updateTransferStatus — cancelling actually gives the birds back (2026-08-18)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const pendingTransfer = {
+    id: "trf-1", companyId: "company-1", flockBatchId: "batch-1", fromFarmId: "farm-1",
+    toFarmId: "farm-1", toPenId: "pen-2", birdCount: 6600, status: "PENDING", isFullBatchRelocation: false
+  };
+
+  it("reverses the destination pen's allocation when cancelling", async () => {
+    mockPrisma.poultryTransferRecord.findFirst.mockResolvedValue(pendingTransfer);
+    mockTx.batchPenAllocation.updateMany.mockResolvedValue({ count: 1 });
+    mockTx.poultryTransferRecord.update.mockResolvedValue({ id: "trf-1", status: "CANCELLED" });
+
+    const service = makeService();
+    await service.updateTransferStatus(makeUser({ farmIds: ["farm-1"] }), "trf-1", { status: "CANCELLED" } as never, {});
+
+    expect(mockTx.batchPenAllocation.updateMany).toHaveBeenCalledWith({
+      where: { flockBatchId: "batch-1", penId: "pen-2", birdCount: { gte: 6600 } },
+      data: { birdCount: { decrement: 6600 } }
+    });
+  });
+
+  it("does not touch any pen allocation when the transfer never had a destination pen", async () => {
+    mockPrisma.poultryTransferRecord.findFirst.mockResolvedValue({ ...pendingTransfer, toPenId: null });
+    mockTx.poultryTransferRecord.update.mockResolvedValue({ id: "trf-1", status: "CANCELLED" });
+
+    const service = makeService();
+    await service.updateTransferStatus(makeUser({ farmIds: ["farm-1"] }), "trf-1", { status: "CANCELLED" } as never, {});
+
+    expect(mockTx.batchPenAllocation.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects cancelling when the destination pen no longer has enough birds to reverse (already moved on again)", async () => {
+    mockPrisma.poultryTransferRecord.findFirst.mockResolvedValue(pendingTransfer);
+    mockTx.batchPenAllocation.updateMany.mockResolvedValue({ count: 0 });
+
+    const service = makeService();
+    await expect(
+      service.updateTransferStatus(makeUser({ farmIds: ["farm-1"] }), "trf-1", { status: "CANCELLED" } as never, {})
+    ).rejects.toThrow(/no longer has 6600 birds/);
+    expect(mockTx.poultryTransferRecord.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects cancelling an already-completed transfer", async () => {
+    mockPrisma.poultryTransferRecord.findFirst.mockResolvedValue({ ...pendingTransfer, status: "COMPLETED" });
+
+    const service = makeService();
+    await expect(
+      service.updateTransferStatus(makeUser({ farmIds: ["farm-1"] }), "trf-1", { status: "CANCELLED" } as never, {})
+    ).rejects.toThrow(/already happened/);
+    expect(mockTx.batchPenAllocation.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects cancelling a whole-batch relocation transfer", async () => {
+    mockPrisma.poultryTransferRecord.findFirst.mockResolvedValue({ ...pendingTransfer, isFullBatchRelocation: true });
+
+    const service = makeService();
+    await expect(
+      service.updateTransferStatus(makeUser({ farmIds: ["farm-1"] }), "trf-1", { status: "CANCELLED" } as never, {})
+    ).rejects.toThrow(/whole-batch relocation/);
+  });
+
+  it("rejects reactivating an already-cancelled transfer", async () => {
+    mockPrisma.poultryTransferRecord.findFirst.mockResolvedValue({ ...pendingTransfer, status: "CANCELLED" });
+
+    const service = makeService();
+    await expect(
+      service.updateTransferStatus(makeUser({ farmIds: ["farm-1"] }), "trf-1", { status: "APPROVED" } as never, {})
+    ).rejects.toThrow(/Cannot reactivate/);
+  });
+
+  it("does not reverse anything for a plain status change that isn't a cancellation", async () => {
+    mockPrisma.poultryTransferRecord.findFirst.mockResolvedValue(pendingTransfer);
+    mockTx.poultryTransferRecord.update.mockResolvedValue({ id: "trf-1", status: "APPROVED" });
+
+    const service = makeService();
+    await service.updateTransferStatus(makeUser({ farmIds: ["farm-1"] }), "trf-1", { status: "APPROVED" } as never, {});
+
+    expect(mockTx.batchPenAllocation.updateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("PoultryService — CANCELLED transfers no longer count against pen/batch availability (2026-08-18)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("currentLiveBirds does not subtract a cancelled transfer", async () => {
+    mockPrisma.flockBatch.findMany.mockResolvedValue([
+      {
+        id: "batch-1", companyId: "company-1", farmId: "farm-1", status: "ACTIVE", code: "FB-1",
+        birdType: "BROILERS", openingBirdCount: 1000, mortalityRecords: [{ birdCount: 50, isCulling: false }],
+        feedConsumptionRecords: [], eggProductionRecords: [], birdWeightRecords: [], costRecords: [],
+        poultryTransferRecords: [{ birdCount: 6600, isFullBatchRelocation: false, fromFarmId: "farm-1", toFarmId: "farm-1", status: "CANCELLED" }]
+      }
+    ]);
+    const service = makeService();
+
+    const result = await service.listBatches(makeUser({ hasGlobalAccess: true }), {} as never);
+
+    // 1000 - 50 mortality, cancelled transfer excluded = 950 (not floored at 0)
+    expect(result.data[0].currentLiveBirds).toBe(950);
+  });
+
+  it("createTransfer's pen-scoped availability check ignores a cancelled prior transfer from the same pen", async () => {
+    mockPrisma.flockBatch.findFirst.mockResolvedValue({ id: "batch-1", farmId: "farm-1", branchId: "branch-1", poultryHouseId: "house-1", status: "ACTIVE", code: "FB-1", openingBirdCount: 1000 });
+    mockPrisma.poultryHouse.findFirst.mockResolvedValue({ id: "house-2", farmId: "farm-2", branchId: "branch-2" });
+    mockPrisma.pen.findFirst.mockResolvedValue({ id: "pen-1", poultryHouseId: "house-1" });
+    mockTx.batchPenAllocation.findFirst.mockResolvedValue({ birdCount: 6600 });
+    // The prior 6,600-bird transfer from this pen was cancelled — the
+    // aggregate's own status: { not: "CANCELLED" } filter means it
+    // contributes 0 here, simulated directly as the filtered result.
+    mockTx.poultryTransferRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+    mockTx.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+    mockTx.poultryTransferRecord.create.mockResolvedValue({ id: "trf-2" });
+
+    const service = makeService();
+    await expect(
+      service.createTransfer(
+        makeUser({ hasGlobalAccess: true }),
+        { flockBatchId: "batch-1", fromPenId: "pen-1", toFarmId: "farm-2", toPoultryHouseId: "house-2", birdCount: 6600, transferDate: "2026-08-18" } as never,
         {}
       )
     ).resolves.toBeDefined();
