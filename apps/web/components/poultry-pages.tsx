@@ -123,13 +123,23 @@ export function FarmPoultryOverviewPage() {
   );
   const [loadError, setLoadError] = useState("");
 
-  useEffect(() => {
+  function loadOverview() {
     if (!selectedFarmId) return;
     setLoadError("");
     apiFetch<ApiEnvelope<Record<string, number>>>(`/poultry/farms/${selectedFarmId}/overview`)
       .then((response) => setOverview(response.data))
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load overview."));
-  }, [selectedFarmId]);
+  }
+
+  useEffect(() => { loadOverview(); }, [selectedFarmId]);
+
+  // Same "disappearing content" self-heal every other data page in this
+  // file already has — see app-shell.tsx's onApiUnavailable comment.
+  useEffect(() => {
+    function onRecovered() { if (!overview) loadOverview(); }
+    window.addEventListener("api:recovered", onRecovered);
+    return () => window.removeEventListener("api:recovered", onRecovered);
+  }, [overview, selectedFarmId]);
 
   return (
     <>
@@ -875,6 +885,14 @@ export function FlockBatchDetailsPage() {
   }
 
   useEffect(() => { reloadBatch(); }, [params?.id]);
+
+  // Same "disappearing content" self-heal every other data page in this
+  // file already has — see app-shell.tsx's onApiUnavailable comment.
+  useEffect(() => {
+    function onRecovered() { if (!batch) reloadBatch(); }
+    window.addEventListener("api:recovered", onRecovered);
+    return () => window.removeEventListener("api:recovered", onRecovered);
+  }, [batch]);
 
   async function assignPen(transferId: string) {
     const penId = pendingPens[transferId];
@@ -1978,6 +1996,14 @@ export function PoultryTransferPage() {
   }
 
   useEffect(() => { loadTransfers(); }, []);
+
+  // Same "disappearing content" self-heal every other data page in this
+  // file already has — see app-shell.tsx's onApiUnavailable comment.
+  useEffect(() => {
+    function onRecovered() { if (rows.length === 0) loadTransfers(); }
+    window.addEventListener("api:recovered", onRecovered);
+    return () => window.removeEventListener("api:recovered", onRecovered);
+  }, [rows.length]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

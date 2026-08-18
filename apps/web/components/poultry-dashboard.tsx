@@ -447,6 +447,20 @@ export function PoultryDashboardPage() {
 
   useEffect(() => { void load(); }, []);
 
+  // (2026-08-18) This is the "disappearing content" bug described in
+  // app-shell.tsx's onApiUnavailable comment — every other data page in
+  // this app listens for api:recovered so a Hostinger hibernation/cold-start
+  // that happened to hit while this page was loading self-heals once the
+  // server comes back, instead of leaving the dashboard blank until the
+  // user finds the manual Refresh button (and often needs several tries,
+  // since api:recovered fires the moment health-checks succeed, well before
+  // the reporting user's manual retries would have lined up with it).
+  useEffect(() => {
+    function onRecovered() { if (!data) void load(); }
+    window.addEventListener("api:recovered", onRecovered);
+    return () => window.removeEventListener("api:recovered", onRecovered);
+  }, [data]);
+
   const s = data?.summary;
   const activeCount = s?.activeBatches ?? 0;
   const totalAlertCount =
