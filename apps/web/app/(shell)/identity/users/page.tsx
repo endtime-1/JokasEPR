@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { KeyRound, Pencil, Plus, ShieldCheck, Trash2, UserCheck, UserX } from "lucide-react";
+import { KeyRound, MapPin, Pencil, Plus, ShieldCheck, Trash2, UserCheck, UserX } from "lucide-react";
 import { DataTable } from "../../../../components/data-table";
 import { FormField } from "../../../../components/form-field";
 import { ApiEnvelope, apiFetch, getCachedFirst } from "../../../../lib/api";
@@ -81,6 +81,9 @@ export default function UsersPage() {
   const [editingRolesFor, setEditingRolesFor] = useState<UserRow | null>(null);
   const [editRoleIds, setEditRoleIds] = useState<string[]>([]);
   const [savingRoles, setSavingRoles] = useState(false);
+  const [editingAccessFor, setEditingAccessFor] = useState<UserRow | null>(null);
+  const [editAccess, setEditAccess] = useState({ branchIds: [] as string[], farmIds: [] as string[], warehouseIds: [] as string[], productionSiteIds: [] as string[] });
+  const [savingAccess, setSavingAccess] = useState(false);
   const [editingUser, setEditingUser] = useState<UserRow | null>(null);
   const [editUserForm, setEditUserForm] = useState({ fullName: "", email: "", phone: "", password: "" });
   const [savingUser, setSavingUser] = useState(false);
@@ -187,6 +190,36 @@ export default function UsersPage() {
       setError(err instanceof Error ? err.message : "Failed to update roles.");
     } finally {
       setSavingRoles(false);
+    }
+  }
+
+  function openEditAccess(user: UserRow) {
+    setEditingAccessFor(user);
+    setEditAccess({
+      branchIds: (user.branchAccesses ?? []).map((a) => a.branch.id),
+      farmIds: (user.farmAccesses ?? []).map((a) => a.farm.id),
+      warehouseIds: (user.warehouseAccesses ?? []).map((a) => a.warehouse.id),
+      productionSiteIds: (user.productionSiteAccess ?? []).map((a) => a.productionSite.id)
+    });
+  }
+
+  async function saveAccess(e: FormEvent) {
+    e.preventDefault();
+    if (!editingAccessFor) return;
+    setSavingAccess(true);
+    setError("");
+    try {
+      await apiFetch(`/identity/users/${editingAccessFor.id}/access`, {
+        method: "PUT",
+        body: JSON.stringify(editAccess)
+      });
+      setMessage(`Access updated for ${editingAccessFor.fullName}.`);
+      setEditingAccessFor(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update access.");
+    } finally {
+      setSavingAccess(false);
     }
   }
 
@@ -366,6 +399,51 @@ export default function UsersPage() {
         </form>
       )}
 
+      {editingAccessFor && (
+        <form onSubmit={saveAccess} className="mb-4 rounded-md border border-brand/30 bg-brand/5 p-4">
+          <p className="mb-3 text-sm font-semibold">Edit access — <span className="text-brand">{editingAccessFor.fullName}</span></p>
+          <div className="mb-3 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <FormField label="Branches">
+              <select className="min-h-28 rounded-md border border-line px-3 py-2" multiple value={editAccess.branchIds} onChange={(event) => setEditAccess({ ...editAccess, branchIds: selectedOptions(event) })}>
+                {branches.map((branch) => (
+                  <option key={branch.id} value={branch.id}>{branch.code} - {branch.name}</option>
+                ))}
+              </select>
+            </FormField>
+            <FormField label="Farms">
+              <select className="min-h-28 rounded-md border border-line px-3 py-2" multiple value={editAccess.farmIds} onChange={(event) => setEditAccess({ ...editAccess, farmIds: selectedOptions(event) })}>
+                {farms.map((farm) => (
+                  <option key={farm.id} value={farm.id}>{farm.code} - {farm.name}</option>
+                ))}
+              </select>
+            </FormField>
+            <FormField label="Warehouses">
+              <select className="min-h-28 rounded-md border border-line px-3 py-2" multiple value={editAccess.warehouseIds} onChange={(event) => setEditAccess({ ...editAccess, warehouseIds: selectedOptions(event) })}>
+                {warehouses.map((warehouse) => (
+                  <option key={warehouse.id} value={warehouse.id}>{warehouse.code} - {warehouse.name}</option>
+                ))}
+              </select>
+            </FormField>
+            <FormField label="Production sites">
+              <select className="min-h-28 rounded-md border border-line px-3 py-2" multiple value={editAccess.productionSiteIds} onChange={(event) => setEditAccess({ ...editAccess, productionSiteIds: selectedOptions(event) })}>
+                {productionSites.map((site) => (
+                  <option key={site.id} value={site.id}>{site.code} - {site.name}</option>
+                ))}
+              </select>
+            </FormField>
+          </div>
+          <div className="flex gap-2">
+            <button type="submit" disabled={savingAccess} className="inline-flex min-h-9 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-50">
+              <MapPin className="h-4 w-4" />
+              {savingAccess ? "Saving…" : "Save access"}
+            </button>
+            <button type="button" onClick={() => setEditingAccessFor(null)} className="inline-flex min-h-9 items-center gap-2 rounded-md border border-line px-4 text-sm font-semibold hover:bg-field">
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+
       {editingUser && (
         <form onSubmit={saveUser} className="mb-4 rounded-md border border-sky-200 bg-sky-50 p-4">
           <p className="mb-3 text-sm font-semibold">Edit account — <span className="text-brand">{editingUser.fullName}</span></p>
@@ -476,6 +554,12 @@ export default function UsersPage() {
                   <ShieldCheck aria-hidden className="h-4 w-4" />
                   Roles
                 </button>
+                {canManageIdentity && (
+                  <button className="inline-flex min-h-9 items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 text-xs font-semibold text-emerald-700 hover:bg-emerald-100" onClick={() => openEditAccess(row)}>
+                    <MapPin aria-hidden className="h-4 w-4" />
+                    Access
+                  </button>
+                )}
                 <button className="inline-flex min-h-9 items-center gap-2 rounded-md border border-line px-3 text-xs font-semibold hover:bg-field" onClick={() => setStatus(row, "ACTIVE")}>
                   <UserCheck aria-hidden className="h-4 w-4" />
                   Activate
