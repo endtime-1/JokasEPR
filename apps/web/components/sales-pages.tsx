@@ -11,6 +11,7 @@ import {
 import { ApiEnvelope, apiFetch, downloadReport, getCached, getCachedFirst, hasCached, invalidateCache } from "../lib/api";
 import { DataTable } from "./data-table";
 import { ConfirmModal, EmptyState, Modal, StatusBadge } from "./ui";
+import { useApiRecovery } from "../lib/use-api-recovery";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -207,6 +208,7 @@ export function SalesDashboardPage() {
   }
 
   useEffect(() => { void load(); }, []);
+  useApiRecovery(!data, () => void load());
 
   const salesValue  = Number(data?.salesValue ?? 0);
   const paidValue   = Number(data?.paidValue ?? 0);
@@ -515,6 +517,7 @@ export function CustomersPage({ create = false }: { create?: boolean }) {
   }
 
   useEffect(() => { void load(); }, [search]);
+  useApiRecovery(rows.length === 0, () => void load());
 
   const f = (k: string) => (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm((p) => ({ ...p, [k]: e.target.value }));
   const ef = (k: string) => (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setEditForm((p) => ({ ...p, [k]: e.target.value }));
@@ -745,6 +748,7 @@ export function CustomerDetailsPage({ id }: { id: string }) {
   }
 
   useEffect(() => { load(); }, [id]);
+  useApiRecovery(!cust, load);
 
   if (loadError) {
     return (
@@ -922,6 +926,7 @@ export function OrdersPage({ create = false }: { create?: boolean }) {
   }
 
   useEffect(() => { void load(); }, [status]);
+  useApiRecovery(rows.length === 0, () => void load());
 
   const f = (k: string) => (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setForm((p) => ({ ...p, [k]: e.target.value }));
 
@@ -1158,6 +1163,7 @@ export function PaymentsPage() {
   }
 
   useEffect(() => { void load(); }, []);
+  useApiRecovery(rows.length === 0, () => void load());
 
   const f = (k: string) => (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm((p) => ({ ...p, [k]: e.target.value }));
 
@@ -1275,6 +1281,7 @@ export function ReturnsPage() {
   }
 
   useEffect(() => { void load(); }, []);
+  useApiRecovery(rows.length === 0, () => void load());
 
   const f = (k: string) => (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setForm((p) => ({ ...p, [k]: e.target.value }));
 
@@ -1440,6 +1447,7 @@ export function SalesListPage({ title, endpoint, subtitle }: { title: string; en
   }
 
   useEffect(() => { load(); }, [endpoint]);
+  useApiRecovery(rows.length === 0, load);
 
   const iconMap: Record<string, ComponentType<{ className?: string }>> = {
     Invoices: FileText,
@@ -1517,6 +1525,7 @@ export function SalesReportsPage() {
   }
 
   useEffect(() => { load(); }, []);
+  useApiRecovery(!data, () => load());
 
   const maxProduct = Math.max(...(data?.byProduct ?? []).map((r) => Number(r.totalRevenue ?? r.totalAmount ?? 0)), 1);
   const maxCustomer = Math.max(...(data?.byCustomer ?? []).map((r) => Number(r.totalRevenue ?? r.totalAmount ?? 0)), 1);
@@ -1640,6 +1649,7 @@ export function PriceListsPage() {
   }
 
   useEffect(() => { load(); }, []);
+  useApiRecovery(rows.length === 0, load);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -1884,6 +1894,7 @@ export function CustomerGroupsPage() {
   }
 
   useEffect(() => { load(); }, []);
+  useApiRecovery(rows.length === 0, load);
 
   async function submit(e: FormEvent) {
     e.preventDefault();

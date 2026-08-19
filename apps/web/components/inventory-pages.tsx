@@ -8,6 +8,7 @@ import { DataTable } from "./data-table";
 import { FormField } from "./form-field";
 import { ConfirmModal, Modal } from "./ui";
 import { ApiEnvelope, apiFetch, downloadReport, hasCached, getCached, getCachedFirst, invalidateCache } from "../lib/api";
+import { useApiRecovery } from "../lib/use-api-recovery";
 
 type Option = {
   id: string;
@@ -101,6 +102,7 @@ export function InventoryItemsPage({ create = false }: { create?: boolean }) {
     setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh);
   }
   useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false)); }, []);
+  useApiRecovery(rows.length === 0, () => void load());
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const warehouseId = form.warehouseId || options.warehouses[0]?.id;
@@ -301,6 +303,7 @@ export function InventoryListPage({ title, endpoint, subtitle }: { title: string
       .finally(() => setLoading(false));
   }
   useEffect(() => { load(); }, [endpoint]);
+  useApiRecovery(rows.length === 0, load);
   const table =
     endpoint === "/inventory/movements" ? <MovementsTable rows={rows as Record<string, any>[]} loading={loading} /> :
     endpoint === "/inventory/expiry-alerts" ? <ExpiryAlertsTable rows={rows as Record<string, any>[]} loading={loading} /> :
@@ -327,7 +330,7 @@ export function ScopedInventoryViewPage({ scope }: { scope: "warehouses" | "farm
   const [loadError, setLoadError] = useState("");
   const source = scope === "warehouses" ? options.warehouses : scope === "farms" ? options.farms : options.productionSites;
   const id = selectedId || source[0]?.id || "";
-  useEffect(() => {
+  function loadRows() {
     if (!id) return;
     setLoading(true);
     setLoadError("");
@@ -335,7 +338,9 @@ export function ScopedInventoryViewPage({ scope }: { scope: "warehouses" | "farm
       .then((response) => setRows(response.data ?? []))
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
       .finally(() => setLoading(false));
-  }, [id, scope]);
+  }
+  useEffect(() => { loadRows(); }, [id, scope]);
+  useApiRecovery(!!id && rows.length === 0 && !loading, loadRows);
   return (
     <InventoryShell>
       <PageHeader title={scope === "warehouses" ? "Warehouse Stock View" : scope === "farms" ? "Farm Stock View" : "Production Site Stock View"} subtitle="Scoped inventory balances for the selected operating location." />
@@ -345,7 +350,7 @@ export function ScopedInventoryViewPage({ scope }: { scope: "warehouses" | "farm
       {loadError && (
         <div className="mb-4 flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           <span>{loadError}</span>
-          <button type="button" className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold hover:bg-red-50" onClick={() => { setLoading(true); setLoadError(""); apiFetch<ApiEnvelope<Record<string, unknown>[]>>(`/inventory/${scope}/${id}`).then((r) => setRows(r.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false)); }}>Retry</button>
+          <button type="button" className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold hover:bg-red-50" onClick={loadRows}>Retry</button>
         </div>
       )}
       <InventoryItemsTable rows={rows} loading={loading} />
@@ -397,6 +402,7 @@ export function WarehouseLocationsPage() {
     setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh);
   }
   useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false)); }, []);
+  useApiRecovery(rows.length === 0, () => void load());
 
   const rootLocations = rows.filter((row) => !row.parentId);
 

@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { apiFetch, getCachedFirst, hasCached } from "../lib/api";
 import { ConfirmModal, EmptyState, StatusBadge } from "./ui";
+import { useApiRecovery } from "../lib/use-api-recovery";
 
 // ─── Shared Styles ────────────────────────────────────────────────────────────
 
@@ -62,6 +63,7 @@ export function QuickBooksConnectionPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  useApiRecovery(!status, load);
 
   async function connect() {
     try {
@@ -251,6 +253,7 @@ export function QuickBooksSyncLogsPage() {
   }
 
   useEffect(() => { load(); }, [filter]);
+  useApiRecovery(logs.length === 0, load);
 
   return (
     <>
@@ -353,6 +356,7 @@ export function QuickBooksWebhookEventsPage() {
   }
 
   useEffect(() => { load(); }, [statusFilter]);
+  useApiRecovery(events.length === 0, load);
 
   return (
     <>
@@ -419,7 +423,7 @@ export function QuickBooksMappingPage() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  useEffect(() => {
+  function load() {
     Promise.all([
       apiFetch<{ data: QBAccount[] }>("/quickbooks/accounts"),
       apiFetch<{ data: QBMapping[] }>("/quickbooks/mappings"),
@@ -435,7 +439,10 @@ export function QuickBooksMappingPage() {
       })
       .catch(() => setError("Failed to load data — ensure QuickBooks is connected"))
       .finally(() => setLoading(false));
-  }, []);
+  }
+
+  useEffect(() => { load(); }, []);
+  useApiRecovery(qbAccounts.length === 0 && mappings.length === 0, load);
 
   async function saveMapping(e: FormEvent) {
     e.preventDefault();

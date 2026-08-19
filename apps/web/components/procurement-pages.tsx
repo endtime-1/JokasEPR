@@ -13,6 +13,7 @@ import { ApiEnvelope, apiFetch, getCached, getCachedFirst, hasCached, invalidate
 import { DataTable } from "./data-table";
 import { ConfirmModal, LockedNote, Modal, StatusBadge } from "./ui";
 import { useAuth } from "./auth-context";
+import { useApiRecovery } from "../lib/use-api-recovery";
 
 // RejectPurchaseRequestDto/RejectPurchaseOrderDto/QualityFailGRNDto all
 // require a non-empty reason/qualityNotes string server-side — used by the
@@ -259,6 +260,7 @@ export function ProcurementDashboardPage() {
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load dashboard."))
       .finally(() => setLoading(false));
   }, [refresh]);
+  useApiRecovery(!data, () => setRefresh((r) => r + 1));
 
   const quickLinks = [
     { href: "/procurement/purchase-requests/create", label: "New Request",  Icon: ClipboardList, cls: "border-brand/20 bg-brand/5 text-brand hover:bg-brand/10" },
@@ -543,6 +545,7 @@ export function SuppliersPage() {
       .finally(() => setLoading(false));
   }
   useEffect(() => { load(); }, [search]);
+  useApiRecovery(rows.length === 0, load);
 
   function startEdit(row: Supplier) {
     setEditForm({
@@ -971,6 +974,7 @@ export function SupplierDetailsPage() {
     }
   }
   useEffect(() => { load(); }, [params.id]);
+  useApiRecovery(!supplier, load);
 
   function startEdit() {
     if (!supplier) return;
@@ -1236,6 +1240,7 @@ export function SupplierCategoriesPage() {
       .finally(() => setLoading(false));
   }
   useEffect(() => { load(); }, []);
+  useApiRecovery(rows.length === 0, load);
 
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm((p) => ({ ...p, [k]: e.target.value }));
@@ -1343,6 +1348,7 @@ export function PurchaseRequestsPage() {
       .finally(() => setLoading(false));
   }
   useEffect(() => { load(); }, [statusFilter]);
+  useApiRecovery(rows.length === 0, load);
 
   async function confirmReject(reason: string) {
     if (!rejectId) return;
@@ -1664,6 +1670,7 @@ export function PurchaseOrdersPage() {
       .finally(() => setLoading(false));
   }
   useEffect(() => { load(); }, [statusFilter]);
+  useApiRecovery(rows.length === 0, load);
 
   async function confirmReject(reason: string) {
     if (!rejectId) return;
@@ -2187,6 +2194,7 @@ export function PurchaseOrderDetailsPage() {
     }
   }
   useEffect(() => { load(); }, [params.id]);
+  useApiRecovery(!po, load);
 
   function startEdit() {
     if (!po) return;
@@ -2500,6 +2508,7 @@ export function GRNsPage() {
       .finally(() => setLoading(false));
   }
   useEffect(() => { load(); }, [statusFilter]);
+  useApiRecovery(rows.length === 0, load);
 
   async function confirmFail(qualityNotes: string) {
     if (!failId) return;
@@ -2849,6 +2858,7 @@ export function SupplierInvoicesPage() {
       .finally(() => setLoading(false));
   }
   useEffect(() => { load(); }, [statusFilter]);
+  useApiRecovery(rows.length === 0, load);
 
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm((p) => ({ ...p, [k]: e.target.value }));
@@ -3016,6 +3026,7 @@ export function ProcurementPaymentsPage() {
       .finally(() => setLoading(false));
   }
   useEffect(() => { load(); }, []);
+  useApiRecovery(rows.length === 0, load);
 
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm((p) => ({ ...p, [k]: e.target.value }));
@@ -3180,6 +3191,7 @@ export function SupplierPerformancePage() {
       .finally(() => setLoading(false));
   }
   useEffect(() => { load(); }, []);
+  useApiRecovery(rows.length === 0, load);
 
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm((p) => ({ ...p, [k]: e.target.type === "checkbox" ? (e.target as HTMLInputElement).checked as unknown as string : e.target.value }));
@@ -3353,6 +3365,7 @@ export function PriceHistoryPage() {
       .finally(() => setLoading(false));
   }
   useEffect(() => { load(); }, []);
+  useApiRecovery(rows.length === 0, load);
 
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm((p) => ({ ...p, [k]: e.target.value }));

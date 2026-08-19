@@ -8,6 +8,7 @@ import { DataTable } from "./data-table";
 import { FormField } from "./form-field";
 import { ConfirmModal, Modal } from "./ui";
 import { ApiEnvelope, apiFetch, downloadReport, getCached, getCachedFirst, hasCached, invalidateCache } from "../lib/api";
+import { useApiRecovery } from "../lib/use-api-recovery";
 
 type Option = {
   id: string;
@@ -116,6 +117,7 @@ export function SoyaIntakesPage({ create = false }: { create?: boolean }) {
     }
   }
   useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, []);
+  useApiRecovery(rows.length === 0, () => void load());
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -252,6 +254,7 @@ export function SoyaBatchesPage({ create = false }: { create?: boolean }) {
     }
   }
   useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, []);
+  useApiRecovery(rows.length === 0, () => void load());
 
   function openEdit(row: Record<string, unknown>) {
     setEditError("");
@@ -448,6 +451,7 @@ export function SoyaBatchDetailsPage() {
     }
   }
   useEffect(() => { load(); }, [params.id]);
+  useApiRecovery(!batch, () => void load());
 
   if (loading && !batch) {
     return <p className="p-6 text-sm text-ink/55">Loading batch…</p>;
@@ -596,6 +600,7 @@ export function SoyaQualityPage() {
     }
   }
   useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, []);
+  useApiRecovery(rows.length === 0, () => void load());
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitting(true);
@@ -708,14 +713,16 @@ export function SoyaStockPage({ type }: { type: "oil" | "cake" }) {
   const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>(`/soya-processing/${type}-stock`)?.data ?? []);
   const [loading, setLoading] = useState(!hasCached(`/soya-processing/${type}-stock`));
   const [loadError, setLoadError] = useState("");
-  useEffect(() => {
+  function load() {
     setLoading(true);
     setLoadError("");
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>(`/soya-processing/${type}-stock`)
       .then((response) => setRows(response.data ?? []))
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
       .finally(() => setLoading(false));
-  }, [type]);
+  }
+  useEffect(() => { load(); }, [type]);
+  useApiRecovery(rows.length === 0, load);
   return (
     <>
       <PageHeader title={type === "oil" ? "Soya Oil Stock" : "Soya Cake Stock"} subtitle="Production output stock by warehouse, batch, unit cost, and quantity." />
@@ -760,6 +767,7 @@ export function SoyaTransferPage() {
     }
   }
   useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, []);
+  useApiRecovery(rows.length === 0, () => void load());
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitting(true);
@@ -878,6 +886,7 @@ export function SoyaSalesPage({ create = false }: { create?: boolean }) {
     }
   }
   useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, []);
+  useApiRecovery(rows.length === 0, () => void load());
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

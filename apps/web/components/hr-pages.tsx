@@ -7,6 +7,7 @@ import { AlertTriangle, CalendarDays, Camera, CircleAlert, ClipboardList, Dollar
 import { ApiEnvelope, apiFetch, getCached, getCachedFirst, hasCached } from "../lib/api";
 import { DataTable } from "./data-table";
 import { StatusBadge, EmptyState, ConfirmModal } from "./ui";
+import { useApiRecovery } from "../lib/use-api-recovery";
 
 // â"€â"€â"€ Helpers â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
@@ -237,6 +238,11 @@ export function HRDashboardPage() {
         setData({ totalEmployees: 0, activeEmployees: 0, onLeave: 0, presentToday: 0, absentToday: 0, attendanceRate: 0, openLeaveRequests: 0, openTasks: 0, urgentTasks: 0, pendingPayroll: 0, recentEmployees: [], recentTasks: [] });
       });
   }, [refresh]);
+  // loadError, not !data, is the right signal here: a failed load still sets
+  // data to an all-zero fallback object so the KPI strip has something to
+  // render, which would make a `!data` check permanently false after the
+  // very first failure.
+  useApiRecovery(!!loadError, () => setRefresh((r) => r + 1));
 
   const kpis = [
     { label: "Total Employees", value: data?.totalEmployees, icon: Users, color: "text-sky-400" },
@@ -406,6 +412,7 @@ export function EmployeeListPage() {
   // pathname in deps: re-fires load() on every client-side navigation to this page
   // even if Next.js keeps the component instance alive across soft navigations.
   useEffect(() => { load(); }, [search, status, pathname]);
+  useApiRecovery(rows.length === 0, load);
 
   async function deleteEmployee() {
     if (!confirmTarget) return;
@@ -789,6 +796,7 @@ export function EmployeeDetailPage({ id }: { id: string }) {
   }
 
   useEffect(() => { load(); }, [id]);
+  useApiRecovery(!data, load);
 
   if (loadError) return (
     
@@ -1139,6 +1147,7 @@ export function AttendancePage() {
   }
 
   useEffect(() => { load(); }, [dateFilter]);
+  useApiRecovery(rows.length === 0, load);
 
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm((p) => ({ ...p, [k]: e.target.value }));
 
@@ -1265,6 +1274,7 @@ export function ShiftSchedulePage() {
   }
 
   useEffect(() => { load(); }, []);
+  useApiRecovery(rows.length === 0, load);
 
   async function deactivate() {
     if (!confirmDeactivateId) return;
@@ -1377,6 +1387,7 @@ export function TaskBoardPage() {
   }
 
   useEffect(() => { load(); }, [status, priority]);
+  useApiRecovery(rows.length === 0, load);
 
   const columns = ["OPEN", "IN_PROGRESS", "ON_HOLD", "COMPLETED"];
   const byStatus = (s: string) => rows.filter((r) => r.status === s);
@@ -1580,6 +1591,7 @@ export function PayrollPage() {
   }
 
   useEffect(() => { load(); }, []);
+  useApiRecovery(rows.length === 0, load);
 
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm((p) => ({ ...p, [k]: e.target.value }));
   const fb = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setBulkForm((p) => ({ ...p, [k]: e.target.value }));
@@ -1790,6 +1802,7 @@ export function TrainingPage() {
   }
 
   useEffect(() => { load(); }, []);
+  useApiRecovery(rows.length === 0, load);
 
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setForm((p) => ({ ...p, [k]: e.target.value }));
 
@@ -1889,6 +1902,7 @@ export function PerformancePage() {
   }
 
   useEffect(() => { load(); }, []);
+  useApiRecovery(rows.length === 0, load);
 
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setForm((p) => ({ ...p, [k]: e.target.value }));
 
@@ -2017,6 +2031,7 @@ export function TaskDetailPage({ id }: { id: string }) {
   }
 
   useEffect(() => { load(); }, [id]);
+  useApiRecovery(!data, load);
 
   async function updateStatus(e: React.FormEvent) {
     e.preventDefault();
@@ -2145,6 +2160,7 @@ export function LeaveRequestsPage() {
   }
 
   useEffect(() => { load(); }, [statusFilter]);
+  useApiRecovery(rows.length === 0, load);
 
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const val = e.target.value;
@@ -2319,6 +2335,7 @@ export function EmployeeRolesPage() {
   }
 
   useEffect(() => { load(); }, []);
+  useApiRecovery(rows.length === 0, load);
 
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setForm((p) => ({ ...p, [k]: e.target.value }));
   const ef = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setEditForm((p) => ({ ...p, [k]: e.target.value }));
@@ -2455,6 +2472,7 @@ export function LeavePoliciesPage() {
       .finally(() => setLoading(false));
   }
   useEffect(() => { load(); }, []);
+  useApiRecovery(rows.length === 0, load);
 
   function openCreate() { setEditing(null); setForm({ name: "", leaveType: "ANNUAL", daysPerYear: "21", carryOverDays: "0", employeeRoleId: "", isActive: "true" }); setShowForm(true); setError(""); }
   function openEdit(row: LeavePolicy) { setEditing(row); setForm({ name: row.name, leaveType: row.leaveType, daysPerYear: String(row.daysPerYear), carryOverDays: String(row.carryOverDays), employeeRoleId: "", isActive: String(row.isActive) }); setShowForm(true); setError(""); }
@@ -2606,6 +2624,7 @@ export function LeaveBalancePage() {
       .finally(() => setLoading(false));
   }
   useEffect(() => { load(); }, [yearFilter, employeeFilter]);
+  useApiRecovery(rows.length === 0, load);
 
   async function initializeBalances() {
     setInitSaving(true); setInitResult("");
@@ -2707,6 +2726,7 @@ export function PublicHolidaysPage() {
       .finally(() => setLoading(false));
   }
   useEffect(() => { load(); }, [yearFilter]);
+  useApiRecovery(rows.length === 0, load);
 
   async function seedGhana() {
     setSeeding(true); setSeedMsg("");
@@ -2841,6 +2861,7 @@ export function DisciplinaryPage() {
       .finally(() => setLoading(false));
   }
   useEffect(() => { load(); }, []);
+  useApiRecovery(rows.length === 0, load);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault(); setSaving(true); setError("");
@@ -2976,6 +2997,7 @@ export function GrievancesPage() {
       .finally(() => setLoading(false));
   }
   useEffect(() => { load(); }, [statusFilter]);
+  useApiRecovery(rows.length === 0, load);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault(); setSaving(true); setError("");
@@ -3135,9 +3157,10 @@ export function ProductivityReportPage() {
   }
 
   useEffect(() => { load(); }, []);
+  useApiRecovery(!data, load);
 
   return (
-    
+
       <div className="space-y-5">
         <h1 className="text-xl font-bold">Worker Productivity Report</h1>
         <HRNav />
@@ -3227,6 +3250,7 @@ export function OrgChartPage() {
   }
 
   useEffect(() => { void load(); }, []);
+  useApiRecovery(nodes.length === 0, () => void load());
 
   const tree = buildTree(nodes);
 
@@ -3275,6 +3299,7 @@ export function TrainingCatalogPage() {
   }
 
   useEffect(() => { void load(); }, []);
+  useApiRecovery(rows.length === 0, () => void load());
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -3359,6 +3384,7 @@ export function SalaryBandsPage() {
     setLoading(false);
   }
   useEffect(() => { void load(); }, []);
+  useApiRecovery(rows.length === 0, () => void load());
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault(); setSaving(true); setError("");
@@ -3447,6 +3473,7 @@ export function RecruitmentPage() {
     setApps(ar.data ?? []);
   }
   useEffect(() => { void load(); }, []);
+  useApiRecovery(jobs.length === 0 && apps.length === 0, () => void load());
 
   async function saveJob(e: React.FormEvent) {
     e.preventDefault(); setSaving(true); setError("");
@@ -3599,6 +3626,8 @@ export function OnboardingPage() {
     void loadItems(id);
   }
 
+  useApiRecovery(!!employeeId && items.length === 0 && !loading, () => void loadItems(employeeId));
+
   async function applyTemplate() {
     if (!employeeId) return;
     setApplyingTemplate(true);
@@ -3698,6 +3727,7 @@ export function ApprovalWorkflowPage() {
     setLoading(false);
   }
   useEffect(() => { void load(); }, []);
+  useApiRecovery(chains.length === 0, () => void load());
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault(); setSaving(true); setError("");
@@ -3777,6 +3807,7 @@ export function ComplianceReportPage() {
     setLoading(false);
   }
   useEffect(() => { void load(); }, []);
+  useApiRecovery(reports.length === 0, () => void load());
 
   async function generate(type: "ssnit" | "paye" | "headcount") {
     setGenerating(type); setError(""); setResult(null);

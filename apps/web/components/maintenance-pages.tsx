@@ -8,6 +8,7 @@ import { FormField } from "./form-field";
 import { ConfirmModal, Modal, StatusBadge } from "./ui";
 import { useAuth } from "./auth-context";
 import { ApiEnvelope, apiFetch, downloadReport, getCached, getCachedFirst, hasCached, invalidateCache } from "../lib/api";
+import { useApiRecovery } from "../lib/use-api-recovery";
 
 type Option = {
   id: string;
@@ -222,6 +223,7 @@ export function MaintenanceDashboardPage() {
   }
 
   useEffect(() => { void load(); }, []);
+  useApiRecovery(!data, () => void load());
 
   const today = new Date();
   const overdueCount = (data?.schedules ?? []).filter((s) => new Date(s.nextDueDate) < today && s.status !== "COMPLETED").length;
@@ -512,6 +514,7 @@ export function MachinesPage({ create = false }: { create?: boolean }) {
     }
   }
   useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, []);
+  useApiRecovery(rows.length === 0, load);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitError("");
@@ -686,12 +689,14 @@ function machineDate(value: unknown) {
 export function MachineDetailsPage({ id }: { id: string }) {
   const [machine, setMachine] = useState<Record<string, unknown> | null>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>>>(`/maintenance/machines/${id}`)?.data ?? null);
   const [loadError, setLoadError] = useState("");
-  useEffect(() => {
+  function load() {
     setLoadError("");
     apiFetch<ApiEnvelope<Record<string, unknown>>>(`/maintenance/machines/${id}`)
       .then((response) => setMachine(response.data))
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load machine."));
-  }, [id]);
+  }
+  useEffect(() => { load(); }, [id]);
+  useApiRecovery(!machine, load);
 
   const branch = machine?.branch as { name?: string } | undefined;
   const farm = machine?.farm as { name?: string } | undefined;
@@ -792,6 +797,7 @@ export function EquipmentPage({ create = false }: { create?: boolean }) {
     }
   }
   useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, []);
+  useApiRecovery(rows.length === 0, load);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitError("");
@@ -954,12 +960,14 @@ function equipmentDate(value: unknown) {
 export function EquipmentDetailsPage({ id }: { id: string }) {
   const [equipment, setEquipment] = useState<Record<string, unknown> | null>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>>>(`/maintenance/equipment/${id}`)?.data ?? null);
   const [loadError, setLoadError] = useState("");
-  useEffect(() => {
+  function load() {
     setLoadError("");
     apiFetch<ApiEnvelope<Record<string, unknown>>>(`/maintenance/equipment/${id}`)
       .then((response) => setEquipment(response.data))
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load equipment."));
-  }, [id]);
+  }
+  useEffect(() => { load(); }, [id]);
+  useApiRecovery(!equipment, load);
 
   const branch = equipment?.branch as { name?: string } | undefined;
   const farm = equipment?.farm as { name?: string } | undefined;
@@ -1061,6 +1069,7 @@ export function AssignmentsPage() {
     }
   }
   useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, []);
+  useApiRecovery(rows.length === 0, load);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitting(true);
@@ -1241,6 +1250,7 @@ export function DowntimePage() {
     }
   }
   useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, []);
+  useApiRecovery(rows.length === 0, load);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitError("");
@@ -1420,6 +1430,7 @@ export function RecordsPage() {
     }
   }
   useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, []);
+  useApiRecovery(rows.length === 0, load);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitError("");
@@ -1609,6 +1620,7 @@ export function DocumentsPage() {
     }
   }
   useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, []);
+  useApiRecovery(rows.length === 0, load);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitError("");
@@ -1809,6 +1821,7 @@ export function SchedulePage() {
     }
   }
   useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, []);
+  useApiRecovery(rows.length === 0, load);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitError("");
@@ -1992,6 +2005,7 @@ export function BreakdownPage() {
     }
   }
   useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, []);
+  useApiRecovery(rows.length === 0, load);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitError("");
@@ -2089,6 +2103,7 @@ export function SparePartsPage() {
     }
   }
   useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, []);
+  useApiRecovery(rows.length === 0, load);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitting(true);
@@ -2155,6 +2170,7 @@ export function MaintenanceCostReportPage() {
       .finally(() => setLoading(false));
   }
   useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, []);
+  useApiRecovery(rows.length === 0, load);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitting(true);

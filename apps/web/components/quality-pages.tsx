@@ -11,6 +11,7 @@ import {
 import { ApiEnvelope, apiFetch, getCached, getCachedFirst, hasCached, invalidateCache } from "../lib/api";
 import { DataTable } from "./data-table";
 import { ConfirmModal, LockedNote, Modal, StatusBadge } from "./ui";
+import { useApiRecovery } from "../lib/use-api-recovery";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -226,6 +227,7 @@ export function QualityDashboardPage() {
   }
 
   useEffect(() => { void load(); }, []);
+  useApiRecovery(!data, () => void load());
 
   const passRate = data && (data.passedChecks + data.failedChecks) > 0
     ? (data.passedChecks / (data.passedChecks + data.failedChecks)) * 100
@@ -392,6 +394,7 @@ export function QualityTemplatesPage() {
   }
 
   useEffect(() => { load(); }, [checkType]);
+  useApiRecovery(rows.length === 0, load);
 
   const f = (k: string) => (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm((p) => ({ ...p, [k]: e.target.value }));
@@ -626,6 +629,7 @@ export function QualityChecksPage({ filterType }: { filterType?: string }) {
   }
 
   useEffect(() => { load(); }, [checkType, status, decision]);
+  useApiRecovery(data.items.length === 0, load);
 
   const pageTitle = filterType ? `${CHECK_TYPE_LABELS[filterType as CheckType] ?? filterType} Checks` : "Quality Checks";
   const selectCls = "rounded-xl border border-line bg-white px-3 py-2 text-sm text-ink outline-none focus:border-brand focus:ring-4 focus:ring-brand/10";
@@ -904,6 +908,7 @@ export function QualityCheckDetailPage({ id }: { id: string }) {
   }
 
   useEffect(() => { load(); }, [id]);
+  useApiRecovery(!check, load);
 
   useEffect(() => {
     if (!["approve", "reject", "quarantine"].includes(actionForm.type)) return;
@@ -1287,9 +1292,13 @@ export function RejectedBatchesPage() {
   const [rows, setRows] = useState<RejectedBatch[]>(() => getCachedFirst<ApiEnvelope<RejectedBatch[]>>("/quality/rejected-batches")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/quality/rejected-batches"));
   const [loadError, setLoadError] = useState("");
-  useEffect(() => {
+
+  function loadRejectedBatches() {
     apiFetch<ApiEnvelope<RejectedBatch[]>>("/quality/rejected-batches").then((r) => setRows(r.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
-  }, []);
+  }
+
+  useEffect(() => { loadRejectedBatches(); }, []);
+  useApiRecovery(rows.length === 0, loadRejectedBatches);
 
   return (
     <>
@@ -1330,9 +1339,13 @@ export function ApprovedBatchesPage() {
   const [rows, setRows] = useState<ApprovedBatch[]>(() => getCachedFirst<ApiEnvelope<ApprovedBatch[]>>("/quality/approved-batches")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/quality/approved-batches"));
   const [loadError, setLoadError] = useState("");
-  useEffect(() => {
+
+  function loadApprovedBatches() {
     apiFetch<ApiEnvelope<ApprovedBatch[]>>("/quality/approved-batches").then((r) => setRows(r.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
-  }, []);
+  }
+
+  useEffect(() => { loadApprovedBatches(); }, []);
+  useApiRecovery(rows.length === 0, loadApprovedBatches);
 
   return (
     <>
@@ -1410,6 +1423,7 @@ export function LabReportsPage() {
     apiFetch<ApiEnvelope<{ total: number; items: { id: string; reference: string; checkType: string; batchNumber?: string }[] }>>("/quality/checks?limit=100")
       .then((r) => setChecks(r.data?.items ?? [])).catch(() => undefined);
   }, []);
+  useApiRecovery(rows.length === 0, load);
 
   const f = (k: string) => (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm((p) => ({ ...p, [k]: e.target.value }));
@@ -1542,6 +1556,7 @@ export function CorrectiveActionsPage() {
   }
 
   useEffect(() => { load(); }, [status]);
+  useApiRecovery(rows.length === 0, load);
 
   useEffect(() => {
     apiFetch<ApiEnvelope<{ total: number; items: { id: string; reference: string; checkType: string; batchNumber?: string }[] }>>("/quality/checks?limit=100")
@@ -1846,6 +1861,7 @@ export function QualityReportsPage() {
   }
 
   useEffect(() => { load(dateFrom, dateTo); }, []);
+  useApiRecovery(!data, () => load(dateFrom, dateTo));
 
   const decisionsMap = Object.fromEntries((data?.byDecision ?? []).map((d) => [d.decision, d._count._all]));
   const totalDecisions = Object.values(decisionsMap).reduce((s, v) => s + v, 0);

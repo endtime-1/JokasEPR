@@ -9,6 +9,7 @@ import { FormField } from "./form-field";
 import { ApiEnvelope, apiFetch, getCached, getCachedFirst, hasCached, invalidateCache } from "../lib/api";
 import { Badge, ConfirmModal, EmptyState, Modal, StatusBadge } from "./ui";
 import { useAuth } from "./auth-context";
+import { useApiRecovery } from "../lib/use-api-recovery";
 
 // ─── Shared Types ────────────────────────────────────────────────────────────
 
@@ -217,6 +218,7 @@ export function FinanceDashboardPage() {
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load dashboard."))
       .finally(() => setLoading(false));
   }, [period, refresh]);
+  useApiRecovery(!dash, () => setRefresh((r) => r + 1));
 
   async function handleApprove(id: string) {
     setApproving(id);
@@ -688,6 +690,7 @@ export function ExpenseListPage() {
 
   useEffect(() => { setPage(1); load(1); }, [status, startDate, endDate]);
   useEffect(() => { load(page); }, [page]);
+  useApiRecovery(expenses.length === 0, () => load(page));
 
   async function handleApprove(id: string) {
     setActionErr("");
@@ -884,6 +887,7 @@ export function RevenuePage() {
   }
 
   useEffect(() => { load(); }, []);
+  useApiRecovery(revenues.length === 0, load);
 
   function set(k: string, v: string) { setForm((f) => ({ ...f, [k]: v })); }
 
@@ -988,6 +992,7 @@ export function CustomerPaymentsPage() {
   }
 
   useEffect(() => { load(); }, []);
+  useApiRecovery(payments.length === 0, load);
   function set(k: string, v: string) { setForm((f) => ({ ...f, [k]: v })); }
 
   async function handleSubmit(e: FormEvent) {
@@ -1076,6 +1081,7 @@ export function SupplierPaymentsPage() {
   }
 
   useEffect(() => { load(); }, []);
+  useApiRecovery(payments.length === 0, load);
   useEffect(() => {
     if (!showForm) return;
     apiFetch<ApiEnvelope<Array<{ id: string; name: string }>>>("/procurement/suppliers")
@@ -1195,6 +1201,7 @@ export function PettyCashPage() {
   }
 
   useEffect(() => { load(); }, []);
+  useApiRecovery(transactions.length === 0, load);
   function set(k: string, v: string) { setForm((f) => ({ ...f, [k]: v })); }
 
   async function handleSubmit(e: FormEvent) {
@@ -1296,6 +1303,7 @@ export function PayrollPage() {
       .then((r) => { const fresh = r.data ?? []; setRecords((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load."));
   }
+  useApiRecovery(records.length === 0, load);
 
   useEffect(() => { load(); }, []);
   function set(k: string, v: string) { setForm((f) => ({ ...f, [k]: v })); }
@@ -1419,6 +1427,7 @@ export function BankAccountsPage() {
   }
 
   useEffect(() => { load(); }, []);
+  useApiRecovery(accounts.length === 0, load);
   function set(k: string, v: string) { setForm((f) => ({ ...f, [k]: v })); }
 
   async function handleSubmit(e: FormEvent) {
@@ -1587,6 +1596,7 @@ export function JournalEntriesPage() {
       .then((r) => { const fresh = r.data ?? []; setEntries((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load."));
   }
+  useApiRecovery(entries.length === 0, load);
 
   useEffect(() => { load(); }, []);
 
@@ -1710,12 +1720,15 @@ export function ProfitLossReportPage() {
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState("");
 
-  useEffect(() => {
+  function loadReports() {
     setLoadError("");
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/finance/reports/profit-loss")
       .then((r) => setReports(r.data ?? []))
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load."));
-  }, []);
+  }
+
+  useEffect(() => { loadReports(); }, []);
+  useApiRecovery(reports.length === 0, loadReports);
 
   async function generate() {
     setLoading(true);
@@ -1776,12 +1789,15 @@ export function CashFlowReportPage() {
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState("");
 
-  useEffect(() => {
+  function loadReports() {
     setLoadError("");
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/finance/reports/cash-flow")
       .then((r) => setReports(r.data ?? []))
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load."));
-  }, []);
+  }
+
+  useEffect(() => { loadReports(); }, []);
+  useApiRecovery(reports.length === 0, loadReports);
 
   async function generate() {
     setLoading(true);
@@ -1866,6 +1882,7 @@ export function ProductProfitabilityPage() {
       .then((r) => { const fresh = r.data ?? []; setRecords((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load."));
   }
+  useApiRecovery(records.length === 0, load);
 
   useEffect(() => { load(); }, []);
 
@@ -1927,6 +1944,7 @@ export function BatchProfitabilityPage() {
   }
 
   useEffect(() => { load(); }, [batchTypeFilter]);
+  useApiRecovery(records.length === 0, load);
   function set(k: string, v: string) { setForm((f) => ({ ...f, [k]: v })); }
 
   async function handleSubmit(e: FormEvent) {
@@ -2022,6 +2040,7 @@ export function DebtorsPage() {
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
       .finally(() => setLoading(false));
   }, [refresh]);
+  useApiRecovery(rows.length === 0, () => setRefresh((k) => k + 1));
 
   const total = rows.reduce((s, r) => s + Number(r.balanceDue ?? 0), 0);
   const overdueCount = rows.filter((r) => r.status === "OVERDUE").length;
@@ -2066,12 +2085,15 @@ export function CreditorsPage() {
   const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/finance/creditors")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/finance/creditors"));
 
-  useEffect(() => {
+  function loadCreditors() {
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>("/finance/creditors")
       .then((r) => setRows(r.data ?? []))
       .catch(() => undefined)
       .finally(() => setLoading(false));
-  }, []);
+  }
+
+  useEffect(() => { loadCreditors(); }, []);
+  useApiRecovery(rows.length === 0, loadCreditors);
 
   const total = rows.reduce((s, r) => s + Number(r.amount ?? 0), 0);
 
@@ -2130,6 +2152,7 @@ export function ExpenseCategoriesPage() {
     apiFetch<ApiEnvelope<{ id: string; code: string; name: string }[]>>("/finance/accounts?type=EXPENSE")
       .then((r) => setAccounts(r.data ?? [])).catch(() => undefined);
   }, []);
+  useApiRecovery(categories.length === 0, load);
 
   function set(k: string, v: string) { setForm((f) => ({ ...f, [k]: v })); }
 
@@ -2332,6 +2355,7 @@ export function ChartOfAccountsPage() {
     }, search ? 300 : 0);
     return () => clearTimeout(t);
   }, [search, refresh]);
+  useApiRecovery(accounts.length === 0, () => setRefresh((r) => r + 1));
 
   function set(k: string, v: string) { setForm((f) => ({ ...f, [k]: v })); }
 

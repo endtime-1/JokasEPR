@@ -7,6 +7,7 @@ import { CircleCheckBig, ClipboardList, Factory, PackageCheck, Pencil, Plus, Ref
 import { DataTable } from "./data-table";
 import { ConfirmModal, LockedNote } from "./ui";
 import { ApiEnvelope, apiFetch, getCached, getCachedFirst, hasCached, invalidateCache } from "../lib/api";
+import { useApiRecovery } from "../lib/use-api-recovery";
 
 type Option = { id: string; branchId?: string; productionSiteId?: string; code?: string; sku?: string; name: string; finishedProductId?: string };
 type PlanningOptions = { branches: Option[]; productionSites: Option[]; warehouses: Option[]; finishedFeeds: Option[]; formulas: Option[]; rawMaterials: Option[] };
@@ -271,6 +272,7 @@ export function MarketTargetListPage() {
       .finally(() => setLoading(false));
   }
   useEffect(load, []);
+  useApiRecovery(rows.length === 0, load);
 
   async function confirmDelete() {
     if (!deleteTarget) return;
@@ -431,6 +433,7 @@ export function MarketTargetDetailsPage() {
     setTarget(res.data);
   }
   useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, [params.id]);
+  useApiRecovery(!target, () => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); });
 
   async function confirmDeletePlan() {
     if (!deletePlanRow) return;
@@ -606,6 +609,7 @@ export function TargetAdjustmentPage() {
     setTarget(res.data);
   }
   useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, [params.id]);
+  useApiRecovery(!target, () => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); });
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitting(true);
@@ -651,6 +655,7 @@ export function ProductionPlanPage() {
     apiFetch<ApiEnvelope<PlanRow[]>>("/market-planning/production-plans").then((res) => setPlans(res.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
   }
   useEffect(load, []);
+  useApiRecovery(plans.length === 0, load);
 
   async function calculate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -719,13 +724,17 @@ export function MaterialRequirementPlanningPage() {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
 
+  function loadPlans() {
+    apiFetch<ApiEnvelope<PlanRow[]>>("/market-planning/production-plans").then((res) => setPlans(res.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load."));
+  }
   function loadMrps() {
     apiFetch<ApiEnvelope<MrpRow[]>>("/market-planning/mrp").then((res) => setMrps(res.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
   }
   useEffect(() => {
-    apiFetch<ApiEnvelope<PlanRow[]>>("/market-planning/production-plans").then((res) => setPlans(res.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load."));
+    loadPlans();
     loadMrps();
   }, []);
+  useApiRecovery(plans.length === 0 && mrps.length === 0, () => { loadPlans(); loadMrps(); });
   async function calculate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setCalculating(true);
@@ -787,12 +796,14 @@ export function InventoryAvailabilityCheckPage() {
   const [loading, setLoading] = useState(!hasCached("/market-planning/mrp"));
   const [loadError, setLoadError] = useState("");
 
-  useEffect(() => {
+  function loadMrps() {
     apiFetch<ApiEnvelope<MrpRow[]>>("/market-planning/mrp")
       .then((r) => { setMrps(r.data ?? []); if (r.data?.length) setSelected(r.data[0]); })
       .catch((e: any) => setLoadError(e?.message ?? "Failed to load MRP data."))
       .finally(() => setLoading(false));
-  }, []);
+  }
+  useEffect(() => { loadMrps(); }, []);
+  useApiRecovery(mrps.length === 0, loadMrps);
 
   const items: MrpItem[] = (selected as any)?.items ?? [];
   const statusColor = (item: MrpItem) => {
@@ -881,6 +892,7 @@ export function ProcurementRecommendationPage({ convert = false }: { convert?: b
     setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh);
   }
   useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false)); }, []);
+  useApiRecovery(rows.length === 0, () => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false)); });
   async function generate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setActing(true);
@@ -964,7 +976,11 @@ export function ProductionExecutionPage() {
   const [loadError, setLoadError] = useState("");
   const [submitError, setSubmitError] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  useEffect(() => { apiFetch<ApiEnvelope<PlanRow[]>>("/market-planning/production-plans").then((res) => setPlans(res.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, []);
+  function loadPlans() {
+    apiFetch<ApiEnvelope<PlanRow[]>>("/market-planning/production-plans").then((res) => setPlans(res.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load."));
+  }
+  useEffect(() => { loadPlans(); }, []);
+  useApiRecovery(plans.length === 0, loadPlans);
   async function selectPlan(planId: string) {
     setForm({ ...form, planId, productionPlanItemId: "" });
     if (!planId) return setPlan(null);
@@ -1009,11 +1025,13 @@ export function ProductionExecutionPage() {
 
 export function TargetVsActualReportPage({ demandOnly = false }: { demandOnly?: boolean }) {
   const [rows, setRows] = useState<ReportRow[]>(() => getCachedFirst<ApiEnvelope<ReportRow[]>>(demandOnly ? "/market-planning/reports/demand-vs-sales" : "/market-planning/reports/target-vs-actual")?.data ?? []);
-  useEffect(() => {
+  function loadReport() {
     apiFetch<ApiEnvelope<ReportRow[]>>(demandOnly ? "/market-planning/reports/demand-vs-sales" : "/market-planning/reports/target-vs-actual")
       .then((res) => setRows(res.data ?? []))
       .catch(() => undefined);
-  }, [demandOnly]);
+  }
+  useEffect(() => { loadReport(); }, [demandOnly]);
+  useApiRecovery(rows.length === 0, loadReport);
   return (
     <>
       <Header title={demandOnly ? "Market Demand vs Sales" : "Target vs Actual Report"} subtitle="Compare market targets, production targets, required materials, procurement, actual production, finished goods, and sales." />

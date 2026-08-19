@@ -9,6 +9,7 @@ import { DataTable } from "./data-table";
 import { FormField } from "./form-field";
 import { EmptyState, StatusBadge } from "./ui";
 import { ApiEnvelope, apiFetch, downloadReport, getCached, getCachedFirst, hasCached } from "../lib/api";
+import { useApiRecovery } from "../lib/use-api-recovery";
 
 type Option = {
   id: string;
@@ -192,6 +193,7 @@ export function FeedFormulaListPage() {
   }
 
   useEffect(() => { load().catch((err: any) => { setLoadError(err?.message ?? "Failed to load."); setLoading(false); }); }, []);
+  useApiRecovery(rows.length === 0, load);
 
   function openEdit(row: FormulaRow) {
     setEditTarget(row);
@@ -750,6 +752,7 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
   }
 
   useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, [mode, params.id]);
+  useApiRecovery(!formula, load);
 
   function openHeaderEdit() {
     setHeaderDraft({ name: formula?.name ?? "", targetBatchKg: String(formula?.targetBatchKg ?? "") });
@@ -1274,6 +1277,7 @@ export function FeedProductionOrdersPage({ create = false }: { create?: boolean 
     }
   }
   useEffect(() => { load().catch((err: any) => { setLoadError(err?.message ?? "Failed to load."); setLoading(false); }); }, []);
+  useApiRecovery(rows.length === 0, load);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1541,12 +1545,15 @@ export function FeedBatchListPage() {
   const [rows, setRows] = useState<BatchRow[]>(() => getCachedFirst<ApiEnvelope<BatchRow[]>>("/feed-production/batches")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/feed-production/batches"));
 
-  useEffect(() => {
+  function load() {
     apiFetch<ApiEnvelope<BatchRow[]>>("/feed-production/batches")
       .then((res) => setRows(res.data ?? []))
       .catch(() => undefined)
       .finally(() => setLoading(false));
-  }, []);
+  }
+
+  useEffect(() => { load(); }, []);
+  useApiRecovery(rows.length === 0, load);
 
   const totalKg = rows.reduce((s, r) => s + Number(r.producedQuantityKg), 0);
   const completedCount = rows.filter((r) => r.status === "COMPLETED").length;
@@ -1615,11 +1622,14 @@ export function FeedBatchCreatePage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitErr, setSubmitErr] = useState("");
 
-  useEffect(() => {
+  function loadApprovedOrders() {
     apiFetch<ApiEnvelope<ApprovedOrder[]>>("/feed-production/orders?status=APPROVED")
       .then((res) => setApprovedOrders(res.data ?? []))
       .catch(() => undefined);
-  }, []);
+  }
+
+  useEffect(() => { loadApprovedOrders(); }, []);
+  useApiRecovery(approvedOrders.length === 0, loadApprovedOrders);
 
   // Pre-select order from query param
   useEffect(() => {
@@ -1861,6 +1871,7 @@ export function FeedBatchDetailsPage() {
   }
 
   useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, [params.id]);
+  useApiRecovery(!batch, load);
 
   async function fetchLabel() {
     const res = await apiFetch<ApiEnvelope<BatchLabel>>(`/feed-production/batches/${params.id}/label`);
@@ -2187,12 +2198,15 @@ export function FeedRawMaterialUsagePage() {
   const [loading, setLoading] = useState(!hasCached("/feed-production/raw-material-usage"));
   const [loadError, setLoadError] = useState("");
 
-  useEffect(() => {
+  function load() {
     apiFetch<ApiEnvelope<UsageRow[]>>("/feed-production/raw-material-usage")
       .then((res) => setRows(res.data ?? []))
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
       .finally(() => setLoading(false));
-  }, []);
+  }
+
+  useEffect(() => { load(); }, []);
+  useApiRecovery(rows.length === 0, load);
 
   const totalKg = rows.reduce((s, r) => s + Number(r.quantityKg), 0);
   const totalCost = rows.reduce((s, r) => s + Number(r.quantityKg) * Number(r.unitCost), 0);
@@ -2269,6 +2283,7 @@ export function FeedQualityControlPage() {
     }
   }
   useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, []);
+  useApiRecovery(rows.length === 0, load);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -2361,12 +2376,15 @@ export function FinishedFeedInventoryPage() {
   const [rows, setRows] = useState<StockRow[]>(() => getCachedFirst<ApiEnvelope<StockRow[]>>("/feed-production/finished-feed-stock")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/feed-production/finished-feed-stock"));
   const [loadError, setLoadError] = useState("");
-  useEffect(() => {
+  function load() {
     apiFetch<ApiEnvelope<StockRow[]>>("/feed-production/finished-feed-stock")
       .then((res) => setRows(res.data ?? []))
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
       .finally(() => setLoading(false));
-  }, []);
+  }
+
+  useEffect(() => { load(); }, []);
+  useApiRecovery(rows.length === 0, load);
 
   const totalKg = rows.reduce((s, r) => s + Number(r.quantityKg), 0);
   const totalBags = rows.reduce((s, r) => s + r.bag50KgCount, 0);
@@ -2443,6 +2461,7 @@ export function InternalFeedTransferPage() {
     }
   }
   useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, []);
+  useApiRecovery(rows.length === 0, load);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -2656,6 +2675,7 @@ export function FeedPackagingRecordPage() {
   }
 
   useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")); }, []);
+  useApiRecovery(rows.length === 0, load);
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -3171,6 +3191,7 @@ export function HiproPredictivePage() {
   }
 
   useEffect(() => { loadData(warehouseId); }, [warehouseId]);
+  useApiRecovery(!data, () => loadData(warehouseId));
 
   function getBags(formulaId: string, ingId: string): number {
     if (mode === "global") return Number(globalBags[formulaId] ?? 0);
