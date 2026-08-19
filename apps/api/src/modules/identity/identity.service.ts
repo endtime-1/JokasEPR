@@ -202,9 +202,14 @@ export class IdentityService {
     if (actor.id === userId) throw new BadRequestException("You cannot delete your own account.");
     const existing = await this.getCompanyUser(actor.companyId, userId);
 
+    // @@unique([companyId, email]) isn't deletedAt-aware — without rewriting
+    // the email here, deleting a user and recreating one with the same email
+    // (the obvious thing to do when someone leaves and is replaced) fails
+    // the create with a unique-constraint error, and the account looks stuck
+    // forever. Same pattern as FlockBatch.code on batch soft-delete.
     await this.prisma.user.update({
       where: { id: existing.id },
-      data: { deletedAt: new Date(), updatedById: actor.id }
+      data: { email: `${existing.email}__deleted_${existing.id}`, deletedAt: new Date(), updatedById: actor.id }
     });
 
     await this.audit.write({
@@ -546,7 +551,7 @@ export class IdentityService {
   private async getCompanyUser(companyId: string, userId: string) {
     const user = await this.prisma.user.findFirst({
       where: { id: userId, companyId, deletedAt: null },
-      select: { id: true, status: true }
+      select: { id: true, status: true, email: true }
     });
 
     if (!user) {

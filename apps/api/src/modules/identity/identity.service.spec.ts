@@ -242,6 +242,31 @@ describe("IdentityService — privilege escalation guards", () => {
     });
   });
 
+  describe("deleteUser — email must not block recreating a user with the same address", () => {
+    it("rewrites the email on soft-delete so @@unique([companyId, email]) doesn't permanently block reuse", async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({ id: "target-1", status: "ACTIVE", email: "jane@jokas.local" });
+      mockPrisma.user.update.mockResolvedValue({});
+      const actor = makeUser();
+
+      await service.deleteUser(actor, "target-1", {});
+
+      expect(mockPrisma.user.update).toHaveBeenCalledWith({
+        where: { id: "target-1" },
+        data: expect.objectContaining({
+          email: "jane@jokas.local__deleted_target-1",
+          deletedAt: expect.any(Date)
+        })
+      });
+    });
+
+    it("refuses to let an actor delete their own account", async () => {
+      const actor = makeUser({ id: "actor-1" });
+
+      await expect(service.deleteUser(actor, "actor-1", {})).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.user.update).not.toHaveBeenCalled();
+    });
+  });
+
   describe("listUsers — real pagination, not a silent 500-row cap (M14)", () => {
     beforeEach(() => {
       mockPrisma.user.findMany.mockResolvedValue([]);
