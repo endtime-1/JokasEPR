@@ -23,7 +23,7 @@ const mockTx = {
   // fromPenId branch, unchanged); findMany backs liveBirdsRemaining, which
   // needs individual rows to compare fromFarmId/toFarmId per transfer.
   poultryTransferRecord: { aggregate: jest.fn().mockResolvedValue({ _sum: { birdCount: 0 } }), findMany: jest.fn().mockResolvedValue([]), create: jest.fn(), update: jest.fn() },
-  batchPenAllocation: { findFirst: jest.fn(), upsert: jest.fn(), updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+  batchPenAllocation: { findFirst: jest.fn(), upsert: jest.fn(), updateMany: jest.fn().mockResolvedValue({ count: 1 }), update: jest.fn(), aggregate: jest.fn().mockResolvedValue({ _sum: { birdCount: 0 } }) },
   pen: { update: jest.fn(), findFirst: jest.fn() },
   flockBatch: { findFirstOrThrow: jest.fn(), update: jest.fn() },
   $queryRaw: jest.fn().mockResolvedValue([])
@@ -102,6 +102,38 @@ describe("PoultryService — farm/warehouse access checks (H7)", () => {
       await expect(
         service.allocateTransferPen(makeUser({ farmIds: ["farm-1"] }), "trf-1", { penId: "pen-1" } as never, {})
       ).rejects.toThrow(ForbiddenException);
+    });
+
+    it("rejects assigning a pen that's already over capacity from other allocations (readiness review 2026-08-20 — this flow previously had no capacity check at all)", async () => {
+      mockPrisma.poultryTransferRecord.findFirst.mockResolvedValue({
+        id: "trf-1", companyId: "company-1", toPenId: null, toPoultryHouseId: "house-1", toFarmId: "farm-1", flockBatchId: "batch-1", birdCount: 200, branchId: "branch-1"
+      });
+      mockPrisma.pen.findFirst.mockResolvedValue({ id: "pen-1", companyId: "company-1", poultryHouseId: "house-1", code: "P1", capacity: 300 });
+      mockPrisma.poultryHouse.findFirst.mockResolvedValue({ id: "house-1", farmId: "farm-1", branchId: "branch-1" });
+      mockTx.batchPenAllocation.aggregate.mockResolvedValue({ _sum: { birdCount: 250 } }); // already 250 in pen-1 from other batches
+
+      const service = makeService();
+      await expect(
+        service.allocateTransferPen(makeUser({ farmIds: ["farm-1"] }), "trf-1", { penId: "pen-1" } as never, {})
+      ).rejects.toThrow(/capacity is 300.*bring it to 450/);
+      expect(mockTx.batchPenAllocation.upsert).not.toHaveBeenCalled();
+    });
+
+    it("allows assigning a pen that stays within capacity", async () => {
+      mockPrisma.poultryTransferRecord.findFirst.mockResolvedValue({
+        id: "trf-1", companyId: "company-1", toPenId: null, toPoultryHouseId: "house-1", toFarmId: "farm-1", flockBatchId: "batch-1", birdCount: 50, branchId: "branch-1"
+      });
+      mockPrisma.pen.findFirst.mockResolvedValue({ id: "pen-1", companyId: "company-1", poultryHouseId: "house-1", code: "P1", capacity: 300 });
+      mockPrisma.poultryHouse.findFirst.mockResolvedValue({ id: "house-1", farmId: "farm-1", branchId: "branch-1" });
+      mockTx.batchPenAllocation.aggregate.mockResolvedValue({ _sum: { birdCount: 100 } });
+      mockTx.batchPenAllocation.upsert.mockResolvedValue({});
+      mockTx.poultryTransferRecord.update.mockResolvedValue({ id: "trf-1", toPenId: "pen-1" });
+
+      const service = makeService();
+      await expect(
+        service.allocateTransferPen(makeUser({ farmIds: ["farm-1"] }), "trf-1", { penId: "pen-1" } as never, {})
+      ).resolves.toBeDefined();
+      expect(mockTx.batchPenAllocation.upsert).toHaveBeenCalled();
     });
   });
 
@@ -800,7 +832,7 @@ describe("PoultryService — pen physical capacity is enforced, not bypassable (
 
     it("rejects a transfer that would push the destination pen over its recorded capacity", async () => {
       mockTx.pen.findFirst.mockResolvedValue({ id: "pen-2", code: "P2", capacity: 100 });
-      mockTx.batchPenAllocation.findFirst.mockResolvedValue({ birdCount: 60 }); // already 60 in destination pen
+      mockTx.batchPenAllocation.aggregate.mockResolvedValue({ _sum: { birdCount: 60 } }); // already 60 in destination pen
 
       const service = makeService();
       await expect(
@@ -815,7 +847,7 @@ describe("PoultryService — pen physical capacity is enforced, not bypassable (
 
     it("allows a transfer that stays within the destination pen's capacity", async () => {
       mockTx.pen.findFirst.mockResolvedValue({ id: "pen-2", code: "P2", capacity: 100 });
-      mockTx.batchPenAllocation.findFirst.mockResolvedValue({ birdCount: 60 });
+      mockTx.batchPenAllocation.aggregate.mockResolvedValue({ _sum: { birdCount: 60 } });
       mockTx.batchPenAllocation.upsert.mockResolvedValue({});
 
       const service = makeService();
@@ -830,7 +862,7 @@ describe("PoultryService — pen physical capacity is enforced, not bypassable (
 
     it("does not enforce a cap when the destination pen has no capacity recorded (null)", async () => {
       mockTx.pen.findFirst.mockResolvedValue({ id: "pen-2", code: "P2", capacity: null });
-      mockTx.batchPenAllocation.findFirst.mockResolvedValue({ birdCount: 10000 });
+      mockTx.batchPenAllocation.aggregate.mockResolvedValue({ _sum: { birdCount: 10000 } });
       mockTx.batchPenAllocation.upsert.mockResolvedValue({});
 
       const service = makeService();
@@ -841,6 +873,26 @@ describe("PoultryService — pen physical capacity is enforced, not bypassable (
       );
 
       expect(mockTx.batchPenAllocation.upsert).toHaveBeenCalled();
+    });
+
+    it("rejects a transfer that would overfill a pen using a DIFFERENT batch's existing occupancy (readiness review 2026-08-20)", async () => {
+      // The original M18 check only summed THIS batch's own allocation row in
+      // the pen — a second, different batch transferring in always saw its
+      // own prior allocation as 0 and passed regardless of how full the pen
+      // already was from another batch. The fix sums every batch's
+      // allocation via aggregate, so this must now be caught.
+      mockTx.pen.findFirst.mockResolvedValue({ id: "pen-2", code: "P2", capacity: 500 });
+      mockTx.batchPenAllocation.aggregate.mockResolvedValue({ _sum: { birdCount: 400 } }); // 400 already in pen-2, from some other batch
+
+      const service = makeService();
+      await expect(
+        service.createTransfer(
+          makeUser({ hasGlobalAccess: true }),
+          { flockBatchId: "batch-1", toFarmId: "farm-2", toPoultryHouseId: "house-2", toPenId: "pen-2", birdCount: 400, transferDate: "2026-08-09" } as never,
+          {}
+        )
+      ).rejects.toThrow(/capacity is 500.*bring it to 800/);
+      expect(mockTx.batchPenAllocation.upsert).not.toHaveBeenCalled();
     });
   });
 });
@@ -1898,14 +1950,17 @@ describe("PoultryService.updateTransferStatus — cancelling actually gives the 
 
   it("reverses the destination pen's allocation when cancelling", async () => {
     mockPrisma.poultryTransferRecord.findFirst.mockResolvedValue(pendingTransfer);
-    mockTx.batchPenAllocation.updateMany.mockResolvedValue({ count: 1 });
+    mockTx.batchPenAllocation.findFirst.mockResolvedValue({ birdCount: 6600 });
+    mockTx.poultryTransferRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } }); // nothing moved on since
+    mockTx.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+    mockTx.batchPenAllocation.update.mockResolvedValue({});
     mockTx.poultryTransferRecord.update.mockResolvedValue({ id: "trf-1", status: "CANCELLED" });
 
     const service = makeService();
     await service.updateTransferStatus(makeUser({ farmIds: ["farm-1"] }), "trf-1", { status: "CANCELLED" } as never, {});
 
-    expect(mockTx.batchPenAllocation.updateMany).toHaveBeenCalledWith({
-      where: { flockBatchId: "batch-1", penId: "pen-2", birdCount: { gte: 6600 } },
+    expect(mockTx.batchPenAllocation.update).toHaveBeenCalledWith({
+      where: { flockBatchId_penId: { flockBatchId: "batch-1", penId: "pen-2" } },
       data: { birdCount: { decrement: 6600 } }
     });
   });
@@ -1917,18 +1972,36 @@ describe("PoultryService.updateTransferStatus — cancelling actually gives the 
     const service = makeService();
     await service.updateTransferStatus(makeUser({ farmIds: ["farm-1"] }), "trf-1", { status: "CANCELLED" } as never, {});
 
-    expect(mockTx.batchPenAllocation.updateMany).not.toHaveBeenCalled();
+    expect(mockTx.batchPenAllocation.update).not.toHaveBeenCalled();
   });
 
   it("rejects cancelling when the destination pen no longer has enough birds to reverse (already moved on again)", async () => {
     mockPrisma.poultryTransferRecord.findFirst.mockResolvedValue(pendingTransfer);
-    mockTx.batchPenAllocation.updateMany.mockResolvedValue({ count: 0 });
+    mockTx.batchPenAllocation.findFirst.mockResolvedValue({ birdCount: 6600 });
+    // 1000 of these birds already moved on via a later, valid transfer out of
+    // this same pen — only 5600 are actually still there to give back.
+    mockTx.poultryTransferRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 1000 } });
+    mockTx.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
 
     const service = makeService();
     await expect(
       service.updateTransferStatus(makeUser({ farmIds: ["farm-1"] }), "trf-1", { status: "CANCELLED" } as never, {})
-    ).rejects.toThrow(/no longer has 6600 birds/);
+    ).rejects.toThrow(/only 5600 of the 6600 birds/);
+    expect(mockTx.batchPenAllocation.update).not.toHaveBeenCalled();
     expect(mockTx.poultryTransferRecord.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects cancelling when some of the destination pen's birds have since died (mortality also reduces what's reversible)", async () => {
+    mockPrisma.poultryTransferRecord.findFirst.mockResolvedValue(pendingTransfer);
+    mockTx.batchPenAllocation.findFirst.mockResolvedValue({ birdCount: 6600 });
+    mockTx.poultryTransferRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+    mockTx.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 6600 } }); // all of them died in this pen
+
+    const service = makeService();
+    await expect(
+      service.updateTransferStatus(makeUser({ farmIds: ["farm-1"] }), "trf-1", { status: "CANCELLED" } as never, {})
+    ).rejects.toThrow(/only 0 of the 6600 birds/);
+    expect(mockTx.batchPenAllocation.update).not.toHaveBeenCalled();
   });
 
   it("rejects cancelling an already-completed transfer", async () => {
@@ -1938,7 +2011,7 @@ describe("PoultryService.updateTransferStatus — cancelling actually gives the 
     await expect(
       service.updateTransferStatus(makeUser({ farmIds: ["farm-1"] }), "trf-1", { status: "CANCELLED" } as never, {})
     ).rejects.toThrow(/already happened/);
-    expect(mockTx.batchPenAllocation.updateMany).not.toHaveBeenCalled();
+    expect(mockTx.batchPenAllocation.update).not.toHaveBeenCalled();
   });
 
   it("rejects cancelling a whole-batch relocation transfer", async () => {
@@ -1966,7 +2039,7 @@ describe("PoultryService.updateTransferStatus — cancelling actually gives the 
     const service = makeService();
     await service.updateTransferStatus(makeUser({ farmIds: ["farm-1"] }), "trf-1", { status: "APPROVED" } as never, {});
 
-    expect(mockTx.batchPenAllocation.updateMany).not.toHaveBeenCalled();
+    expect(mockTx.batchPenAllocation.update).not.toHaveBeenCalled();
   });
 });
 

@@ -1166,13 +1166,20 @@ export class PoultryService {
         // capacity — a transfer of any size into any pen was accepted, which
         // could silently push a pen's bird count past what it can actually
         // hold. capacity is nullable, so a pen with none recorded has no cap.
-        const [toPen, toAlloc] = await Promise.all([
-          tx.pen.findFirst({ where: { id: dto.toPenId, companyId: user.companyId, deletedAt: null } }),
-          tx.batchPenAllocation.findFirst({ where: { flockBatchId: batch.id, penId: dto.toPenId } })
-        ]);
+        const toPen = await tx.pen.findFirst({ where: { id: dto.toPenId, companyId: user.companyId, deletedAt: null } });
         if (!toPen) throw new BadRequestException("Destination pen was not found.");
         if (toPen.capacity != null) {
-          const newTotal = (toAlloc?.birdCount ?? 0) + dto.birdCount;
+          // (readiness review 2026-08-20) M18's original check only summed
+          // THIS batch's own prior allocation into the pen — a second batch
+          // transferring into an already-full pen always passed, since its
+          // own starting allocation there was 0. Sum every batch's
+          // allocation into the pen, and lock the pen row first so two
+          // concurrent transfers into it can't both read the same
+          // pre-transfer occupancy and both pass (same H5 pattern as the
+          // FlockBatch lock above).
+          await tx.$queryRaw`SELECT id FROM Pen WHERE id = ${dto.toPenId} FOR UPDATE`;
+          const penTotal = await tx.batchPenAllocation.aggregate({ where: { penId: dto.toPenId }, _sum: { birdCount: true } });
+          const newTotal = (penTotal._sum.birdCount ?? 0) + dto.birdCount;
           if (newTotal > toPen.capacity) {
             throw new BadRequestException(`Destination pen ${toPen.code} capacity is ${toPen.capacity}; this transfer would bring it to ${newTotal}.`);
           }
@@ -1236,18 +1243,32 @@ export class PoultryService {
 
     const data = await this.prisma.$transaction(async (tx) => {
       if (dto.status === "CANCELLED" && transfer.status !== "CANCELLED" && transfer.toPenId) {
-        const reversed = await tx.batchPenAllocation.updateMany({
-          where: { flockBatchId: transfer.flockBatchId, penId: transfer.toPenId, birdCount: { gte: transfer.birdCount } },
+        // (readiness review 2026-08-20) The original guard checked the pen's
+        // RAW stored birdCount, which only ever reflects arrivals — a later
+        // transfer moving some of these same birds OUT of this pen doesn't
+        // touch that stored number (departures are applied at read time
+        // everywhere else in this file; see the `available` computation in
+        // the fromPenId branch above). So the raw count could still look
+        // "enough" even after some of these birds already moved on again,
+        // letting a cancellation silently break the
+        // sum-across-pens-equals-currentLiveBirds invariant. Recompute what's
+        // actually still there the same way the outgoing-transfer check does,
+        // under a row lock so a concurrent transfer out of this pen can't
+        // race this cancellation.
+        await tx.$queryRaw`SELECT id FROM Pen WHERE id = ${transfer.toPenId} FOR UPDATE`;
+        const [alloc, movedOn, mortality] = await Promise.all([
+          tx.batchPenAllocation.findFirst({ where: { flockBatchId: transfer.flockBatchId, penId: transfer.toPenId } }),
+          tx.poultryTransferRecord.aggregate({ where: { flockBatchId: transfer.flockBatchId, fromPenId: transfer.toPenId, deletedAt: null, status: { not: "CANCELLED" }, id: { not: transfer.id } }, _sum: { birdCount: true } }),
+          tx.mortalityRecord.aggregate({ where: { flockBatchId: transfer.flockBatchId, penId: transfer.toPenId, deletedAt: null }, _sum: { birdCount: true } })
+        ]);
+        const stillThere = (alloc?.birdCount ?? 0) - (movedOn._sum.birdCount ?? 0) - (mortality._sum.birdCount ?? 0);
+        if (stillThere < transfer.birdCount) {
+          throw new BadRequestException(`Cannot cancel — only ${Math.max(stillThere, 0)} of the ${transfer.birdCount} birds this transfer brought in are still in the destination pen (some may have moved on or died since). Resolve manually or record a correcting transfer instead.`);
+        }
+        await tx.batchPenAllocation.update({
+          where: { flockBatchId_penId: { flockBatchId: transfer.flockBatchId, penId: transfer.toPenId } },
           data: { birdCount: { decrement: transfer.birdCount } }
         });
-        // Floor-guarded like every other decrement in this codebase — if
-        // some of these birds were already moved on again before this
-        // cancellation, the destination pen no longer has enough to give
-        // back. Surface that instead of silently leaving the allocation
-        // inflated relative to what's actually there.
-        if (reversed.count === 0) {
-          throw new BadRequestException(`Cannot cancel — the destination pen no longer has ${transfer.birdCount} birds to reverse (some may have already been moved on). Resolve manually or record a correcting transfer instead.`);
-        }
       }
       return tx.poultryTransferRecord.update({
         where: { id },
@@ -1281,6 +1302,19 @@ export class PoultryService {
     if (house) this.assertFarmAccess(user, house.farmId);
 
     const data = await this.prisma.$transaction(async (tx) => {
+      // (readiness review 2026-08-20) This "assign a pen later" flow had no
+      // capacity check at all — createTransfer's toPenId path checks the
+      // destination pen's capacity, but a transfer created without a pen and
+      // assigned one afterward via this method skipped it entirely. Same
+      // lock-then-sum-every-batch check as createTransfer.
+      if (pen.capacity != null) {
+        await tx.$queryRaw`SELECT id FROM Pen WHERE id = ${dto.penId} FOR UPDATE`;
+        const penTotal = await tx.batchPenAllocation.aggregate({ where: { penId: dto.penId }, _sum: { birdCount: true } });
+        const newTotal = (penTotal._sum.birdCount ?? 0) + transfer.birdCount;
+        if (newTotal > pen.capacity) {
+          throw new BadRequestException(`Destination pen ${pen.code} capacity is ${pen.capacity}; this transfer would bring it to ${newTotal}.`);
+        }
+      }
       await tx.pen.update({ where: { id: dto.penId }, data: { isActive: true } });
       await tx.batchPenAllocation.upsert({
         where: { flockBatchId_penId: { flockBatchId: transfer.flockBatchId, penId: dto.penId } },

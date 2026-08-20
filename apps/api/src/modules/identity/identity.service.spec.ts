@@ -117,6 +117,33 @@ describe("IdentityService — privilege escalation guards", () => {
       ).rejects.toThrow(ForbiddenException);
     });
 
+    it("allows a non-global-access actor with no branch restriction of their own (empty branchIds) to grant branch access (readiness review 2026-08-20 — the Access editor's own motivating scenario: an identity-manager whose account was never assigned branches previously could never grant ANY scope, since an empty array was wrongly treated as 'access to nothing')", async () => {
+      mockPrisma.user.findFirst.mockResolvedValueOnce({ id: "target-1", status: "ACTIVE" });
+      mockPrisma.branch.count.mockResolvedValueOnce(1);
+      mockPrisma.user.findFirstOrThrow.mockResolvedValueOnce({
+        id: "target-1", email: "t@x.com", fullName: "T", phone: null, status: "ACTIVE",
+        roles: [], branchAccesses: [], farmAccesses: [], warehouseAccesses: [], productionSiteAccess: []
+      });
+
+      const actor = makeUser({ branchIds: [], farmIds: [], warehouseIds: [], productionSiteIds: [], hasGlobalAccess: false, permissions: ["identity.manage"] });
+
+      await expect(
+        service.assignUserAccess(actor, "target-1", { branchIds: ["branch-any"] }, {})
+      ).resolves.toBeDefined();
+    });
+
+    it("still blocks a partially-scoped actor (restricted on farms, unrestricted on branches) from granting a farm they don't have", async () => {
+      mockPrisma.user.findFirst.mockResolvedValueOnce({ id: "target-1", status: "ACTIVE" });
+      mockPrisma.branch.count.mockResolvedValueOnce(0); // dto supplies no branchIds — a prior test in this block leaves branch.count's persistent default at 1
+      mockPrisma.farm.count.mockResolvedValueOnce(1);
+
+      const actor = makeUser({ branchIds: [], farmIds: ["farm-1"], hasGlobalAccess: false, permissions: ["identity.manage"] });
+
+      await expect(
+        service.assignUserAccess(actor, "target-1", { farmIds: ["farm-OTHER"] }, {})
+      ).rejects.toThrow(ForbiddenException);
+    });
+
     it("allows a global-access actor to grant access to any in-company branch", async () => {
       mockPrisma.user.findFirst.mockResolvedValue({ id: "target-1", status: "ACTIVE" });
       mockPrisma.branch.count.mockResolvedValue(1);

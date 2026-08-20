@@ -537,11 +537,21 @@ export class IdentityService {
   ) {
     if (actor.hasGlobalAccess) return;
 
+    // (readiness review 2026-08-20) An empty actor.*Ids array means "not
+    // restricted to specific ones" everywhere else this convention is used
+    // (platform.service.ts's branchWhere/farmWhere/etc., hr.service.ts's
+    // employeeScope) — but this check used to treat the actor's own empty
+    // array as "has access to nothing", since `[].includes(id)` is always
+    // false. An identity-manager whose own account was never assigned
+    // farms/branches (this Access editor's own motivating use case) could
+    // then never grant ANY scope — every selection was rejected as "out of
+    // scope you don't have yourself." Only compare dimensions where the
+    // actor actually has a restriction to enforce.
     const outOfScope = [
-      ...access.branchIds.filter((id) => !actor.branchIds.includes(id)),
-      ...access.farmIds.filter((id) => !actor.farmIds.includes(id)),
-      ...access.warehouseIds.filter((id) => !actor.warehouseIds.includes(id)),
-      ...access.productionSiteIds.filter((id) => !actor.productionSiteIds.includes(id))
+      ...(actor.branchIds.length ? access.branchIds.filter((id) => !actor.branchIds.includes(id)) : []),
+      ...(actor.farmIds.length ? access.farmIds.filter((id) => !actor.farmIds.includes(id)) : []),
+      ...(actor.warehouseIds.length ? access.warehouseIds.filter((id) => !actor.warehouseIds.includes(id)) : []),
+      ...(actor.productionSiteIds.length ? access.productionSiteIds.filter((id) => !actor.productionSiteIds.includes(id)) : [])
     ];
     if (outOfScope.length > 0) {
       throw new ForbiddenException("You cannot grant access to a scope you don't have access to yourself.");
