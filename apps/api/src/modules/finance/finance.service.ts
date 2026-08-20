@@ -270,7 +270,10 @@ export class FinanceService {
     if (journalLines > 0) throw new BadRequestException("Cannot delete an account referenced by existing journal entries.");
     if (childAccounts > 0) throw new BadRequestException("Cannot delete an account that has child accounts.");
     if (expenseCategories > 0) throw new BadRequestException("Cannot delete an account referenced by expense categories.");
-    await this.prisma.account.update({ where: { id }, data: { deletedAt: new Date(), isActive: false, updatedById: user.id } });
+    // @@unique([companyId, code]) isn't deletedAt-aware — without rewriting
+    // the code here, deleting an account and recreating one with the same
+    // code fails the create with a unique-constraint error.
+    await this.prisma.account.update({ where: { id }, data: { code: `${account.code}__deleted_${id}`, deletedAt: new Date(), isActive: false, updatedById: user.id } });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "DELETE", entityType: "Account", entityId: id, ...ctx });
     return { data: { ok: true } };
   }
@@ -325,7 +328,10 @@ export class FinanceService {
       this.prisma.pettyCashTransaction.count({ where: { categoryId: id, deletedAt: null } })
     ]);
     if (expenses > 0 || pettyCash > 0) throw new BadRequestException("Cannot delete an expense category referenced by existing expenses or petty cash transactions.");
-    await this.prisma.expenseCategory.update({ where: { id }, data: { deletedAt: new Date(), isActive: false, updatedById: user.id } });
+    // @@unique([companyId, code]) isn't deletedAt-aware — without rewriting
+    // the code here, deleting an expense category and recreating one with
+    // the same code fails the create with a unique-constraint error.
+    await this.prisma.expenseCategory.update({ where: { id }, data: { code: `${category.code}__deleted_${id}`, deletedAt: new Date(), isActive: false, updatedById: user.id } });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "DELETE", entityType: "ExpenseCategory", entityId: id, ...ctx });
     return { data: { ok: true } };
   }

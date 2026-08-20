@@ -434,7 +434,10 @@ export class InventoryService {
     this.assertWarehouseAccess(user, location.warehouseId);
     const childCount = await this.prisma.warehouseLocation.count({ where: { parentId: id, deletedAt: null } });
     if (childCount > 0) throw new BadRequestException("Cannot delete a warehouse location that has child locations.");
-    await this.prisma.warehouseLocation.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    // @@unique([companyId, warehouseId, code]) isn't deletedAt-aware —
+    // without rewriting the code here, deleting a location and recreating
+    // one with the same code fails the create with a unique-constraint error.
+    await this.prisma.warehouseLocation.update({ where: { id }, data: { code: `${location.code}__deleted_${id}`, deletedAt: new Date(), updatedById: user.id } });
     await this.writeAudit(user, "DELETE", "WarehouseLocation", id, `Deleted warehouse location ${location.code}`, context, { branchId: location.branchId, warehouseId: location.warehouseId });
     return { data: { ok: true } };
   }

@@ -238,7 +238,10 @@ export class ProcurementService {
       throw new BadRequestException(`Cannot delete supplier "${row.name}" — it has ${unpaidInvoices} unpaid invoice(s). Settle them first.`);
     }
 
-    const deleted = await this.prisma.supplier.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    // @@unique([companyId, code]) isn't deletedAt-aware — without rewriting
+    // the code here, deleting a supplier and recreating one with the same
+    // code fails the create with a unique-constraint error.
+    const deleted = await this.prisma.supplier.update({ where: { id }, data: { code: `${row.code}__deleted_${id}`, deletedAt: new Date(), updatedById: user.id } });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "Supplier", entityId: id, action: "DELETE", ...ctx });
     return { data: deleted };
   }

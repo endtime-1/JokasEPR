@@ -245,7 +245,10 @@ export class QualityService {
     if (!t) throw new NotFoundException("Template not found");
     const usedByChecks = await this.prisma.qualityCheck.count({ where: { templateId: id, deletedAt: null } });
     if (usedByChecks > 0) throw new BadRequestException("Cannot delete a template referenced by existing quality checks. Deactivate it instead.");
-    await this.prisma.qualityCheckTemplate.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    // @@unique([companyId, code]) isn't deletedAt-aware — without rewriting
+    // the code here, deleting a template and recreating one with the same
+    // code fails the create with a unique-constraint error.
+    await this.prisma.qualityCheckTemplate.update({ where: { id }, data: { code: `${t.code}__deleted_${id}`, deletedAt: new Date(), updatedById: user.id } });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "DELETE", entityType: "QualityCheckTemplate", entityId: id, ...ctx });
     return { ok: true };
   }

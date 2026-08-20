@@ -296,7 +296,10 @@ export class FeedProductionService {
       where: { companyId: user.companyId, formulaId: id, status: { in: ["DRAFT", "APPROVED", "IN_PROGRESS"] }, deletedAt: null }
     });
     if (activeOrders > 0) throw new BadRequestException("Cannot delete a formula with active production orders. Archive it first.");
-    await this.prisma.feedFormula.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    // @@unique([companyId, code]) isn't deletedAt-aware — without rewriting
+    // the code here, deleting a formula and recreating one with the same
+    // code fails the create with a unique-constraint error.
+    await this.prisma.feedFormula.update({ where: { id }, data: { code: `${formula.code}__deleted_${id}`, deletedAt: new Date(), updatedById: user.id } });
     await this.writeAudit(user, "DELETE", "FeedFormula", id, `Deleted formula ${formula.code}`, context, { branchId: formula.branchId });
     return { data: { ok: true } };
   }
@@ -1263,7 +1266,10 @@ export class FeedProductionService {
       throw new BadRequestException(`Cannot delete this ingredient — it is used in ${formulaUsageCount} active formula(s). Remove it from all formulas first.`);
     }
 
-    await this.prisma.product.update({ where: { id }, data: { deletedAt: new Date() } });
+    // @@unique([companyId, sku]) isn't deletedAt-aware — without rewriting
+    // the sku here, deleting an ingredient and recreating one with the same
+    // sku fails the create with a unique-constraint error.
+    await this.prisma.product.update({ where: { id }, data: { sku: `${item.sku}__deleted_${id}`, deletedAt: new Date() } });
     // L5: audit ingredient deletion
     await this.writeAudit(user, "DELETE", "Ingredient", id, `Deleted raw material ingredient "${item.name}" (${item.sku})`, context, {});
     return { data: { ok: true } };

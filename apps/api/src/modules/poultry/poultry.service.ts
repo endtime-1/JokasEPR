@@ -348,7 +348,10 @@ export class PoultryService {
     if (activeAllocation) {
       throw new BadRequestException(`Cannot delete house "${house.code}" — it still has live birds allocated across its pens. Transfer them out first.`);
     }
-    const data = await this.prisma.poultryHouse.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    // @@unique([companyId, farmId, code]) isn't deletedAt-aware — without
+    // rewriting the code here, deleting a house and recreating one with the
+    // same code fails the create with a unique-constraint error.
+    const data = await this.prisma.poultryHouse.update({ where: { id }, data: { code: `${house.code}__deleted_${id}`, deletedAt: new Date(), updatedById: user.id } });
     this.lookupCache.invalidate(`poultry:opts:${user.companyId}`);
     await this.writeAudit(user, "DELETE", "PoultryHouse", id, `Deleted poultry house ${house.code}`, context, house.farmId);
     return { data };

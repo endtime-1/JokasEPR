@@ -460,7 +460,11 @@ export class IdentityService {
       throw new BadRequestException(`Cannot delete role "${existing.name}" — ${assignedUsers} user(s) are still assigned to it. Reassign them first.`);
     }
 
-    await this.prisma.role.update({ where: { id }, data: { deletedAt: new Date(), updatedById: actor.id } });
+    // @@unique([companyId, name]) isn't deletedAt-aware — without rewriting
+    // the name here, deleting a role and recreating one with the same name
+    // fails the create with a unique-constraint error. Same pattern as
+    // User.email on user soft-delete.
+    await this.prisma.role.update({ where: { id }, data: { name: `${existing.name}__deleted_${id}`, deletedAt: new Date(), updatedById: actor.id } });
 
     await this.audit.write({
       companyId: actor.companyId,

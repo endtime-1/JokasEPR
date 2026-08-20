@@ -244,7 +244,10 @@ export class SettingsService {
     this.requireSettings(user);
     const existing = await this.prisma.branch.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
     if (!existing) throw new BadRequestException("Branch not found.");
-    await this.prisma.branch.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    // @@unique([companyId, code]) isn't deletedAt-aware — without rewriting
+    // the code here, deleting a branch and recreating one with the same
+    // code fails the create with a unique-constraint error.
+    await this.prisma.branch.update({ where: { id }, data: { code: `${existing.code}__deleted_${id}`, deletedAt: new Date(), updatedById: user.id } });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "DELETE", entityType: "Branch", entityId: id, summary: `Deleted branch ${existing.code}`, ...ctx });
     return { data: { success: true } };
   }
@@ -263,7 +266,10 @@ export class SettingsService {
     this.requireSettings(user);
     const existing = await this.prisma.farm.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
     if (!existing) throw new BadRequestException("Farm not found.");
-    await this.prisma.farm.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    // @@unique([companyId, code]) isn't deletedAt-aware — without rewriting
+    // the code here, deleting a farm and recreating one with the same code
+    // fails the create with a unique-constraint error.
+    await this.prisma.farm.update({ where: { id }, data: { code: `${existing.code}__deleted_${id}`, deletedAt: new Date(), updatedById: user.id } });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "DELETE", entityType: "Farm", entityId: id, summary: `Deleted farm ${existing.code}`, ...ctx });
     return { data: { success: true } };
   }
@@ -282,7 +288,10 @@ export class SettingsService {
     this.requireSettings(user);
     const existing = await this.prisma.warehouse.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
     if (!existing) throw new BadRequestException("Warehouse not found.");
-    await this.prisma.warehouse.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    // @@unique([companyId, code]) isn't deletedAt-aware — without rewriting
+    // the code here, deleting a warehouse and recreating one with the same
+    // code fails the create with a unique-constraint error.
+    await this.prisma.warehouse.update({ where: { id }, data: { code: `${existing.code}__deleted_${id}`, deletedAt: new Date(), updatedById: user.id } });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "DELETE", entityType: "Warehouse", entityId: id, summary: `Deleted warehouse ${existing.code}`, ...ctx });
     return { data: { success: true } };
   }
@@ -301,7 +310,10 @@ export class SettingsService {
     this.requireSettings(user);
     const existing = await this.prisma.productionSite.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
     if (!existing) throw new BadRequestException("Production site not found.");
-    await this.prisma.productionSite.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    // @@unique([companyId, code]) isn't deletedAt-aware — without rewriting
+    // the code here, deleting a production site and recreating one with the
+    // same code fails the create with a unique-constraint error.
+    await this.prisma.productionSite.update({ where: { id }, data: { code: `${existing.code}__deleted_${id}`, deletedAt: new Date(), updatedById: user.id } });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "DELETE", entityType: "ProductionSite", entityId: id, summary: `Deleted production site ${existing.code}`, ...ctx });
     return { data: { success: true } };
   }
@@ -319,7 +331,10 @@ export class SettingsService {
     this.requireSettings(user);
     const existing = await this.prisma.department.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
     if (!existing) throw new BadRequestException("Department not found.");
-    await this.prisma.department.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    // @@unique([companyId, code]) isn't deletedAt-aware — without rewriting
+    // the code here, deleting a department and recreating one with the same
+    // code fails the create with a unique-constraint error.
+    await this.prisma.department.update({ where: { id }, data: { code: `${existing.code}__deleted_${id}`, deletedAt: new Date(), updatedById: user.id } });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "DELETE", entityType: "Department", entityId: id, summary: `Deleted department ${existing.code}`, ...ctx });
     return { data: { success: true } };
   }
@@ -337,7 +352,10 @@ export class SettingsService {
     this.requireSettings(user);
     const existing = await this.prisma.unitOfMeasure.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
     if (!existing) throw new BadRequestException("Unit of measure not found.");
-    await this.prisma.unitOfMeasure.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    // @@unique([companyId, code]) isn't deletedAt-aware — without rewriting
+    // the code here, deleting a unit of measure and recreating one with the
+    // same code fails the create with a unique-constraint error.
+    await this.prisma.unitOfMeasure.update({ where: { id }, data: { code: `${existing.code}__deleted_${id}`, deletedAt: new Date(), updatedById: user.id } });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "DELETE", entityType: "UnitOfMeasure", entityId: id, summary: `Deleted unit of measure ${existing.code}`, ...ctx });
     return { data: { success: true } };
   }
@@ -355,7 +373,10 @@ export class SettingsService {
     this.requireSettings(user);
     const existing = await this.prisma.productCategory.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
     if (!existing) throw new BadRequestException("Product category not found.");
-    await this.prisma.productCategory.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    // @@unique([companyId, code]) isn't deletedAt-aware — without rewriting
+    // the code here, deleting a product category and recreating one with
+    // the same code fails the create with a unique-constraint error.
+    await this.prisma.productCategory.update({ where: { id }, data: { code: `${existing.code}__deleted_${id}`, deletedAt: new Date(), updatedById: user.id } });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "DELETE", entityType: "ProductCategory", entityId: id, summary: `Deleted product category ${existing.code}`, ...ctx });
     return { data: { success: true } };
   }
@@ -373,7 +394,10 @@ export class SettingsService {
     this.requireSettings(user);
     const existing = await this.prisma.expenseCategory.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
     if (!existing) throw new BadRequestException("Expense category not found.");
-    await this.prisma.expenseCategory.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    // @@unique([companyId, code]) isn't deletedAt-aware — without rewriting
+    // the code here, deleting an expense category and recreating one with
+    // the same code fails the create with a unique-constraint error.
+    await this.prisma.expenseCategory.update({ where: { id }, data: { code: `${existing.code}__deleted_${id}`, deletedAt: new Date(), updatedById: user.id } });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "DELETE", entityType: "ExpenseCategory", entityId: id, summary: `Deleted expense category ${existing.code}`, ...ctx });
     return { data: { success: true } };
   }
@@ -568,9 +592,13 @@ export class SettingsService {
 
   async deleteProduct(user: AuthenticatedUser, id: string, ctx: RequestContext) {
     this.requireSettings(user);
+    const existing = await this.prisma.product.findFirst({ where: { id, companyId: user.companyId }, select: { sku: true } });
+    // @@unique([companyId, sku]) isn't deletedAt-aware — without rewriting
+    // the sku here, deleting a product and recreating one with the same
+    // sku fails the create with a unique-constraint error.
     const row = await this.prisma.product.update({
       where: { id, companyId: user.companyId },
-      data: { deletedAt: new Date(), updatedById: user.id }
+      data: { sku: existing ? `${existing.sku}__deleted_${id}` : undefined, deletedAt: new Date(), updatedById: user.id }
     });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "DELETE", entityType: "Product", entityId: row.id, summary: `Deleted product ${row.sku} — ${row.name}`, ...ctx });
     return { data: { success: true } };

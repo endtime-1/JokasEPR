@@ -97,7 +97,10 @@ export class PlatformService {
     });
     if (!existing) throw new NotFoundException("Branch not found.");
     this.assertAssigned(user, existing.id, user.branchIds, "branch");
-    await this.prisma.branch.update({ where: { id: branchId }, data: { deletedAt: new Date() } });
+    // @@unique([companyId, code]) isn't deletedAt-aware — without rewriting
+    // the code here, deleting a branch and recreating one with the same
+    // code fails the create with a unique-constraint error.
+    await this.prisma.branch.update({ where: { id: branchId }, data: { code: `${existing.code}__deleted_${branchId}`, deletedAt: new Date() } });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "DELETE", entityType: "Branch", entityId: branchId, summary: `Deleted branch ${existing.code}`, ipAddress: context.ipAddress, userAgent: context.userAgent });
     return { data: { id: branchId } };
   }
@@ -162,7 +165,10 @@ export class PlatformService {
     });
     if (!existing) throw new NotFoundException("Farm not found.");
     this.assertAssigned(user, existing.branchId, user.branchIds, "branch");
-    await this.prisma.farm.update({ where: { id: farmId }, data: { deletedAt: new Date() } });
+    // @@unique([companyId, code]) isn't deletedAt-aware — without rewriting
+    // the code here, deleting a farm and recreating one with the same code
+    // fails the create with a unique-constraint error.
+    await this.prisma.farm.update({ where: { id: farmId }, data: { code: `${existing.code}__deleted_${farmId}`, deletedAt: new Date() } });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "DELETE", entityType: "Farm", entityId: farmId, summary: `Deleted farm ${existing.code}`, ipAddress: context.ipAddress, userAgent: context.userAgent });
     return { data: { id: farmId } };
   }
@@ -231,7 +237,10 @@ export class PlatformService {
     });
     if (!existing) throw new NotFoundException("Production site not found.");
     this.assertAssigned(user, existing.branchId, user.branchIds, "branch");
-    await this.prisma.productionSite.update({ where: { id: siteId }, data: { deletedAt: new Date() } });
+    // @@unique([companyId, code]) isn't deletedAt-aware — without rewriting
+    // the code here, deleting a production site and recreating one with the
+    // same code fails the create with a unique-constraint error.
+    await this.prisma.productionSite.update({ where: { id: siteId }, data: { code: `${existing.code}__deleted_${siteId}`, deletedAt: new Date() } });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "DELETE", entityType: "ProductionSite", entityId: siteId, summary: `Deleted production site ${existing.code}`, ipAddress: context.ipAddress, userAgent: context.userAgent });
     return { data: { id: siteId } };
   }
@@ -310,7 +319,10 @@ export class PlatformService {
     this.assertAssigned(user, existing.branchId, user.branchIds, "branch");
     this.assertAssigned(user, existing.farmId ?? undefined, user.farmIds, "farm");
     this.assertAssigned(user, existing.productionSiteId ?? undefined, user.productionSiteIds, "production site");
-    await this.prisma.warehouse.update({ where: { id: warehouseId }, data: { deletedAt: new Date() } });
+    // @@unique([companyId, code]) isn't deletedAt-aware — without rewriting
+    // the code here, deleting a warehouse and recreating one with the same
+    // code fails the create with a unique-constraint error.
+    await this.prisma.warehouse.update({ where: { id: warehouseId }, data: { code: `${existing.code}__deleted_${warehouseId}`, deletedAt: new Date() } });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "DELETE", entityType: "Warehouse", entityId: warehouseId, summary: `Deleted warehouse ${existing.code}`, ipAddress: context.ipAddress, userAgent: context.userAgent });
     return { data: { id: warehouseId } };
   }

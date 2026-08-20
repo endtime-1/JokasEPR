@@ -124,7 +124,10 @@ export class SalesService {
     if (assignedCustomers > 0) {
       throw new BadRequestException(`Cannot delete customer group "${group.code}" — ${assignedCustomers} customer(s) are still assigned to it. Reassign them first.`);
     }
-    const data = await this.prisma.customerGroup.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    // @@unique([companyId, code]) isn't deletedAt-aware — without rewriting
+    // the code here, deleting a customer group and recreating one with the
+    // same code fails the create with a unique-constraint error.
+    const data = await this.prisma.customerGroup.update({ where: { id }, data: { code: `${group.code}__deleted_${id}`, deletedAt: new Date(), updatedById: user.id } });
     await this.writeAudit(user, "DELETE", "CustomerGroup", id, `Deleted customer group ${group.code}`, context, { branchId: group.branchId ?? undefined });
     return { data };
   }
@@ -230,7 +233,10 @@ export class SalesService {
       throw new BadRequestException(`Cannot delete customer "${customer.code}" — it has an outstanding balance of ${outstandingBalance.toFixed(2)}. Settle the balance first.`);
     }
 
-    const data = await this.prisma.customer.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    // @@unique([companyId, code]) isn't deletedAt-aware — without rewriting
+    // the code here, deleting a customer and recreating one with the same
+    // code fails the create with a unique-constraint error.
+    const data = await this.prisma.customer.update({ where: { id }, data: { code: `${customer.code}__deleted_${id}`, deletedAt: new Date(), updatedById: user.id } });
     await this.writeAudit(user, "DELETE", "Customer", id, `Deleted customer ${customer.code}`, context, { branchId: customer.branchId });
     return { data };
   }

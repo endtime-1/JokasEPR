@@ -1341,12 +1341,15 @@ export class HRService {
   }
 
   async deleteEmployee(user: AuthenticatedUser, id: string, ctx: RequestContext) {
-    const row = await this.prisma.employee.findFirst({ where: { id, companyId: user.companyId, deletedAt: null }, select: { id: true, branchId: true, farmId: true, warehouseId: true, productionSiteId: true } });
+    const row = await this.prisma.employee.findFirst({ where: { id, companyId: user.companyId, deletedAt: null }, select: { id: true, code: true, branchId: true, farmId: true, warehouseId: true, productionSiteId: true } });
     if (!row) throw new NotFoundException("Employee not found");
     this.assertEmployeeInScope(user, row); // H14
+    // @@unique([companyId, code]) isn't deletedAt-aware — without rewriting
+    // the code here, deleting an employee and rehiring someone else under
+    // the same code fails the create with a unique-constraint error.
     await this.prisma.employee.update({
       where: { id },
-      data: { deletedAt: new Date(), status: "TERMINATED" as never, updatedById: user.id },
+      data: { code: `${row.code}__deleted_${id}`, deletedAt: new Date(), status: "TERMINATED" as never, updatedById: user.id },
       select: { id: true },
     });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "Employee", entityId: id, action: "DELETE", ...ctx });
@@ -2295,7 +2298,10 @@ export class HRService {
   async deleteTrainingCourse(user: AuthenticatedUser, id: string, ctx: RequestContext) {
     const row = await this.prisma.trainingCourse.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
     if (!row) throw new NotFoundException("Training course not found");
-    await this.prisma.trainingCourse.update({ where: { id }, data: { deletedAt: new Date() } });
+    // @@unique([companyId, code]) isn't deletedAt-aware — without rewriting
+    // the code here, deleting a course and recreating one with the same
+    // code fails the create with a unique-constraint error.
+    await this.prisma.trainingCourse.update({ where: { id }, data: { code: `${row.code}__deleted_${id}`, deletedAt: new Date() } });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "TrainingCourse", entityId: id, action: "DELETE", ...ctx });
     return { success: true };
   }

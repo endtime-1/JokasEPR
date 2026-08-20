@@ -166,7 +166,10 @@ export class MaintenanceService {
       throw new BadRequestException(`Cannot delete machine "${existing.code}" — it has ${activeAssignments} active technician assignment(s). Complete or cancel them first.`);
     }
 
-    const data = await this.prisma.machine.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    // @@unique([companyId, code]) isn't deletedAt-aware — without rewriting
+    // the code here, deleting a machine and recreating one with the same
+    // code fails the create with a unique-constraint error.
+    const data = await this.prisma.machine.update({ where: { id }, data: { code: `${existing.code}__deleted_${id}`, deletedAt: new Date(), updatedById: user.id } });
     await this.writeAudit(user, "REJECT", "Machine", id, `Deleted machine ${existing.code}`, context, existing);
     return { data };
   }
@@ -223,7 +226,10 @@ export class MaintenanceService {
       throw new BadRequestException(`Cannot delete equipment "${existing.code}" — it has ${activeAssignments} active technician assignment(s). Complete or cancel them first.`);
     }
 
-    const data = await this.prisma.equipment.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    // @@unique([companyId, code]) isn't deletedAt-aware — without rewriting
+    // the code here, deleting equipment and recreating one with the same
+    // code fails the create with a unique-constraint error.
+    const data = await this.prisma.equipment.update({ where: { id }, data: { code: `${existing.code}__deleted_${id}`, deletedAt: new Date(), updatedById: user.id } });
     await this.writeAudit(user, "REJECT", "Equipment", id, `Deleted equipment ${existing.code}`, context, existing);
     return { data };
   }
