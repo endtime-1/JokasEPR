@@ -6,6 +6,7 @@ import { DataTable } from "../../../../components/data-table";
 import { FormField } from "../../../../components/form-field";
 import { ApiEnvelope, apiFetch, getCachedFirst } from "../../../../lib/api";
 import { useAuth } from "../../../../components/auth-context";
+import { useApiRecovery } from "../../../../lib/use-api-recovery";
 
 type Role = {
   id: string;
@@ -118,11 +119,14 @@ export default function UsersPage() {
     load().catch((err) => setError(err instanceof Error ? err.message : "Failed to load users."));
   }, []);
 
-  useEffect(() => {
-    function onRecovered() { if (users.length === 0) load().catch(() => undefined); }
-    window.addEventListener("api:recovered", onRecovered);
-    return () => window.removeEventListener("api:recovered", onRecovered);
-  }, [users.length]);
+  // Roles/branches/farms/warehouses/production sites are fetched separately
+  // from `users` and each silently falls back to [] on failure (see `load`
+  // above) — a cold-start hiccup on just one of them used to go unnoticed
+  // forever because the old listener here only checked `users.length`.
+  useApiRecovery(
+    users.length === 0 || roles.length === 0 || branches.length === 0 || farms.length === 0 || warehouses.length === 0 || productionSites.length === 0,
+    () => load().catch(() => undefined)
+  );
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
