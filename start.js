@@ -562,16 +562,27 @@ startProxy(0);
     // accept connections on cold start. 10s was too tight; 30s gives Prisma enough
     // time to establish a connection before declaring failure.
     if (!dbUrl.includes("connect_timeout")) dbUrl += sep() + "connect_timeout=30";
-    // Cap connection pool to 5. Hostinger shared MySQL plans often limit users to
-    // 5-10 simultaneous connections. Prisma defaults to 10, which can exhaust the
-    // quota and cause "too many connections" errors for the 6th+ concurrent query.
-    if (!dbUrl.includes("connection_limit")) dbUrl += "&connection_limit=5";
-    // Wait up to 20s for a pool slot before failing a query. Without this, Prisma
-    // raises "Timed out fetching a connection from the connection pool" immediately
-    // when all 5 slots are busy.
-    if (!dbUrl.includes("pool_timeout")) dbUrl += "&pool_timeout=20";
+    // (readiness review 2026-08-20) This is the value that actually takes
+    // effect — start.js never loads a .env file itself, it only reads
+    // whatever process.env Passenger already handed it, so the ".github/
+    // workflows/deploy.yml 'Patch DATABASE_URL with connection pool limit'"
+    // step's write to .env (connection_limit=10&pool_timeout=30) never
+    // reaches the running process; this hardcoded fallback below is what's
+    // been live the whole time. Confirmed via /__status: the patch log line
+    // only prints when connection_limit is NOT already in the incoming URL,
+    // and it was printing — meaning the .env-side "10" was never seen here.
+    // A single dashboard page load fires 4-6 parallel API calls, each its
+    // own DB query — 5 total connections for the whole server is tight
+    // enough to plausibly explain slow/stalled data loading under any real
+    // concurrency, and pool_timeout=20 means a query queued behind a full
+    // pool waits up to 20s before even failing. Raised to match the value
+    // deploy.yml's own (dead) patch already assumed was safe for this
+    // Hostinger account (its comment: "10 connections: enough for
+    // concurrent page loads (typically 3-5 simultaneous calls)").
+    if (!dbUrl.includes("connection_limit")) dbUrl += "&connection_limit=10";
+    if (!dbUrl.includes("pool_timeout")) dbUrl += "&pool_timeout=30";
     if (dbUrl !== process.env.DATABASE_URL) {
-      console.log("[start] DATABASE_URL patched: localhost→127.0.0.1 + connect_timeout=30 + connection_limit=5 + pool_timeout=20");
+      console.log("[start] DATABASE_URL patched: localhost→127.0.0.1 + connect_timeout=30 + connection_limit=10 + pool_timeout=30");
     }
   }
 

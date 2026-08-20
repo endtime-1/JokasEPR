@@ -373,6 +373,19 @@ jobs:
             echo "  uploads preserved: $([ -d "$APP_DIR/apps/api/uploads" ] && echo YES || echo "none existed")"
 
       - name: Patch DATABASE_URL with connection pool limit
+        # (readiness review 2026-08-20) This writes connection_limit=10 into
+        # .env, but start.js — the only thing that actually launches the app
+        # — never loads .env itself; it only reads whatever process.env
+        # Passenger already handed it (see start.js's own DATABASE_URL
+        # patching, right after the ports-clear log line). Live /__status
+        # output confirmed this step's write isn't reaching the running
+        # process: start.js's fallback of 5 was firing, not this step's 10.
+        # start.js's fallback has been raised to 10 to match what this step
+        # always intended, which is the real fix — but this step itself may
+        # still be dead weight (either Passenger never sources this .env at
+        # all, or the SSH write is silently failing). Worth confirming via
+        # hPanel's own Node.js app environment-variable config before
+        # trusting this step for anything else in the future.
         uses: appleboy/ssh-action@v1.2.0
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
