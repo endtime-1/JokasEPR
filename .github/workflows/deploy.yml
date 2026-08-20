@@ -201,6 +201,7 @@ jobs:
           cp -r /tmp/web-deploy /tmp/deploy-pkg/apps/web
           cp -r /tmp/storefront-deploy /tmp/deploy-pkg/apps/storefront
           cp -r packages/db/prisma /tmp/deploy-pkg/prisma
+          cp -r scripts /tmp/deploy-pkg/scripts 2>/dev/null || true
           cp packages/db/scripts/sync-permissions.mjs /tmp/deploy-pkg/apps/api/sync-permissions.mjs 2>/dev/null || true
           cp ecosystem.config.js start.js package.json /tmp/deploy-pkg/
           cp web-worker-wrapper.js /tmp/deploy-pkg/ 2>/dev/null || true
