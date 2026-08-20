@@ -20,7 +20,7 @@ GitHub Actions (on push to main)
 Hostinger (jokasfarms.com)
   Passenger supervises a single Node.js entry point: start.js
     ├─ Web        (Next.js)        — Worker thread, wrapped by web-worker-wrapper.js
-    ├─ Storefront (Next.js)        — Worker thread, wrapped by storefront-worker-wrapper.js
+    ├─ Storefront (Next.js)        — Worker thread, wrapped by the same web-worker-wrapper.js
     └─ API        (NestJS)         — Worker thread, wrapped by api-worker-wrapper.js
   start.js also runs:
     - a self-ping loop (prevents Hostinger from hibernating an idle app)
@@ -33,7 +33,7 @@ MySQL — Hostinger-managed, same account as the app, no separate host to provis
 
 ### Why Worker threads, not child processes
 
-Hostinger kills any process spawned via `child_process.spawn()` after roughly 30 seconds, regardless of memory usage — confirmed by direct observation in production. Worker threads share the parent process's PID and are exempt from this. `start.js` runs Web, Storefront, and API each as a Worker thread rather than a spawned child process specifically to avoid this kill. Each has a thin wrapper file (`web-worker-wrapper.js`, `storefront-worker-wrapper.js`, `api-worker-wrapper.js`) that:
+Hostinger kills any process spawned via `child_process.spawn()` after roughly 30 seconds, regardless of memory usage — confirmed by direct observation in production. Worker threads share the parent process's PID and are exempt from this. `start.js` runs Web, Storefront, and API each as a Worker thread rather than a spawned child process specifically to avoid this kill. Web and Storefront share the same `web-worker-wrapper.js` (there's no separate `storefront-worker-wrapper.js` — a prior version of this doc claimed otherwise); API has its own `api-worker-wrapper.js`. Each wrapper:
 - intercepts `process.exit()` and converts it to a `postMessage` back to the parent instead of tearing down the whole `start.js` process,
 - forwards `stdout`/`stderr` to the parent via `parentPort` so they show up in the `/__status` diagnostic buffers,
 - for the API specifically, overrides `process.cwd()` to `apps/api` — several controllers resolve their uploads directory from `process.cwd()`, and Worker threads have no spawn-style `cwd` option to set this natively.

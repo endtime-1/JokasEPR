@@ -14,15 +14,18 @@ if [ ! -d "$PREV_DIR" ]; then
   exit 1
 fi
 
-echo "==> Killing current API processes..."
-pkill -f "apps/api/dist/main.js" 2>/dev/null && echo "  Processes killed." || echo "  None running."
-sleep 3
-
 echo "==> Restoring previous deploy (rsync)..."
 rsync -a --delete "$PREV_DIR/" "$APP_DIR/"
 echo "  Restore complete."
 
 echo "==> Signalling Passenger restart..."
+# (readiness review 2026-08-20) This used to pkill "apps/api/dist/main.js"
+# first — a no-op today, since the API runs as a Worker thread inside
+# start.js, not a separately spawned process with that cmdline (same fact
+# noted in deploy.yml's "Restart application" step). touch restart.txt below
+# is what actually recycles everything: Passenger tears down and relaunches
+# the whole start.js process, taking every worker thread (web/storefront/
+# API) with it.
 mkdir -p "$APP_DIR/tmp"
 touch "$APP_DIR/tmp/restart.txt"
 

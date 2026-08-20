@@ -202,7 +202,9 @@ jobs:
           cp -r /tmp/storefront-deploy /tmp/deploy-pkg/apps/storefront
           cp -r packages/db/prisma /tmp/deploy-pkg/prisma
           cp -r scripts /tmp/deploy-pkg/scripts 2>/dev/null || true
-          cp packages/db/scripts/sync-permissions.mjs /tmp/deploy-pkg/apps/api/sync-permissions.mjs 2>/dev/null || true
+          # sync-permissions.mjs is intentionally NOT shipped — nothing invokes
+          # it (see its own header comment); the real sync runs in-process via
+          # permission-sync.service.ts on every API boot.
           cp ecosystem.config.js start.js package.json /tmp/deploy-pkg/
           cp web-worker-wrapper.js /tmp/deploy-pkg/ 2>/dev/null || true
           cp api-worker-wrapper.js /tmp/deploy-pkg/ 2>/dev/null || true
@@ -299,9 +301,19 @@ jobs:
             APP_DIR="$HOME/domains/jokasfarms.com/nodejs"
             if [ -d "$APP_DIR/apps/api/dist" ]; then
               rm -rf "$APP_DIR/../nodejs_prev"
-              cp -al "$APP_DIR" "$APP_DIR/../nodejs_prev" \
-                && echo "Backup complete (hardlinks)." \
-                || echo "WARNING: backup failed, continuing."
+              # (readiness review 2026-08-20) This used to swallow a failure
+              # here with a WARNING and continue — nodejs_prev is the ENTIRE
+              # rollback safety net this pipeline is built around, and its
+              # absence was only ever discovered later, at the worst moment
+              # (smoke test fails, rollback step then finds nothing to
+              # restore). Abort loudly before touching any files, same
+              # philosophy as the pre-migration DB snapshot step below.
+              if cp -al "$APP_DIR" "$APP_DIR/../nodejs_prev"; then
+                echo "Backup complete (hardlinks)."
+              else
+                echo "::error::Backup of the current deploy failed -- aborting before extracting/swapping any files. Without nodejs_prev, a bad deploy would have no fast rollback path. Check disk space (du -sh ~) and filesystem health on the host, then re-run the deploy."
+                exit 1
+              fi
             else
               echo "No existing deploy to back up."
             fi
@@ -609,9 +621,26 @@ jobs:
               sleep 1
               if $MYSQL < "$SQL_FILE" 2>&1; then
                 sleep 1
-                $MYSQL -e "INSERT INTO \`_prisma_migrations\` (id,checksum,migration_name,started_at,finished_at,applied_steps_count) VALUES (UUID(),'','$MIG_NAME',NOW(3),NOW(3),1) ON DUPLICATE KEY UPDATE finished_at=NOW(3),applied_steps_count=1,rolled_back_at=NULL;" 2>&1 || true
-                echo "  [done] $MIG_NAME"
-                APPLIED=$((APPLIED + 1))
+                # (readiness review 2026-08-20) This INSERT used to be masked
+                # with `|| true` — if it failed (this host's own connection
+                # flakiness is exactly why every query here is separated by
+                # `sleep 1` in the first place), the DDL above had genuinely
+                # applied but _prisma_migrations never recorded it, so the
+                # NEXT deploy would see this migration as pending and try to
+                # re-run non-idempotent DDL (CREATE TABLE/ALTER TABLE ADD
+                # COLUMN) against a schema that already has it — wedging
+                # every future deploy with no alert. Treat it as seriously as
+                # a DDL failure: stop and let the rollback path below run.
+                if $MYSQL -e "INSERT INTO \`_prisma_migrations\` (id,checksum,migration_name,started_at,finished_at,applied_steps_count) VALUES (UUID(),'','$MIG_NAME',NOW(3),NOW(3),1) ON DUPLICATE KEY UPDATE finished_at=NOW(3),applied_steps_count=1,rolled_back_at=NULL;" 2>&1; then
+                  echo "  [done] $MIG_NAME"
+                  APPLIED=$((APPLIED + 1))
+                else
+                  echo "  [BOOKKEEPING-FAIL] $MIG_NAME — schema change applied, but recording it in _prisma_migrations failed."
+                  echo "  The next deploy will try to re-run this migration.sql against a schema that already has it and likely fail."
+                  echo "  Fix: manually run the same INSERT above over SSH before the next deploy, or see scripts/reconcile-migration-history.sh."
+                  FAILED=1
+                  break
+                fi
               else
                 echo "  [FAIL] $MIG_NAME"
                 FAILED=1

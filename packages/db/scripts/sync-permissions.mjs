@@ -1,6 +1,15 @@
 /**
- * Idempotent permissions sync — runs after prisma migrate deploy on every deployment.
- * Upserts Permission rows and syncs _RolePermissions for every role in the DB.
+ * SUPERSEDED (readiness review 2026-08-20) — this is NOT run by the deploy
+ * pipeline (it was, until a process refactor around 2026-07-22 dropped the
+ * invocation step and left this file and its tarball-copy step behind). The
+ * real permission sync now runs in-process on every API boot via
+ * apps/api/src/common/services/permission-sync.service.ts, registered as an
+ * OnApplicationBootstrap hook — see setup.service.ts's own comment
+ * referencing it. This file's permission/role list has since drifted from
+ * that live version (missing several newer permissions/roles) — do NOT run
+ * it by hand expecting it to fully provision permissions; it won't.
+ * Kept only as a reference for the original seed shape. Safe to delete once
+ * nobody needs that reference anymore.
  */
 import { PrismaClient } from "@prisma/client";
 
