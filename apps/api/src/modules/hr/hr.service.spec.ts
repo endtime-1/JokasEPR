@@ -199,6 +199,85 @@ describe("HRService — write methods now enforce the same employee scope their 
   });
 });
 
+describe("HRService — payroll/leave endpoints now enforce employee scope (H-SEC, readiness review 2026-08-20)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const outOfScopeEmployee = { branchId: "branch-OTHER", farmId: null, warehouseId: null, productionSiteId: null };
+  const inScopeEmployee = { branchId: "branch-1", farmId: null, warehouseId: null, productionSiteId: null };
+
+  it("approvePayroll blocks approving a payroll record whose employee is outside the actor's branch scope", async () => {
+    mockPrisma.payrollRecord.findFirst.mockResolvedValueOnce({ id: "pay-1", status: "DRAFT", createdById: "someone-else", employee: outOfScopeEmployee });
+    const service = makeService();
+    await expect(service.approvePayroll(makeUser({ branchIds: ["branch-1"] }), "pay-1", {})).rejects.toThrow(ForbiddenException);
+    expect(mockPrisma.payrollRecord.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("markPayrollPaid blocks marking paid a payroll record whose employee is outside the actor's branch scope", async () => {
+    mockPrisma.payrollRecord.findFirst.mockResolvedValueOnce({ id: "pay-1", status: "APPROVED", paymentDate: null, employee: outOfScopeEmployee });
+    const service = makeService();
+    await expect(service.markPayrollPaid(makeUser({ branchIds: ["branch-1"] }), "pay-1", {})).rejects.toThrow(ForbiddenException);
+    expect(mockPrisma.payrollRecord.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("streamPayslipPdf blocks fetching a payslip PDF for an employee outside the actor's branch scope", async () => {
+    mockPrisma.payrollRecord.findFirst.mockResolvedValueOnce({ id: "pay-1", employee: outOfScopeEmployee });
+    const service = makeService();
+    await expect(service.streamPayslipPdf(makeUser({ branchIds: ["branch-1"] }), "pay-1", makeRes() as never)).rejects.toThrow(ForbiddenException);
+  });
+
+  it("emailPayslip blocks emailing a payslip for an employee outside the actor's branch scope", async () => {
+    mockPrisma.payrollRecord.findFirst.mockResolvedValueOnce({ id: "pay-1", employee: { ...outOfScopeEmployee, email: "e@x.com" } });
+    const service = makeService();
+    await expect(service.emailPayslip(makeUser({ branchIds: ["branch-1"] }), "pay-1", {})).rejects.toThrow(ForbiddenException);
+  });
+
+  it("bulkEmailPayslips scopes its query through the employee relation, not company-wide", async () => {
+    mockPrisma.payrollRecord.findMany.mockResolvedValueOnce([]);
+    const service = makeService();
+    await service.bulkEmailPayslips(makeUser({ branchIds: ["branch-1"] }), "2026-09", {});
+
+    const where = mockPrisma.payrollRecord.findMany.mock.calls[0][0].where;
+    expect(where.employee.AND).toEqual([{ OR: [{ branchId: null }, { branchId: { in: ["branch-1"] } }] }]);
+  });
+
+  it("bankExportCsv scopes its query through the employee relation, not company-wide", async () => {
+    mockPrisma.payrollRecord.findMany.mockResolvedValueOnce([]);
+    const service = makeService();
+    await service.bankExportCsv(makeUser({ branchIds: ["branch-1"] }), "2026-09", makeRes() as never);
+
+    const where = mockPrisma.payrollRecord.findMany.mock.calls[0][0].where;
+    expect(where.employee.AND).toEqual([{ OR: [{ branchId: null }, { branchId: { in: ["branch-1"] } }] }]);
+  });
+
+  it("listLeaveRequests scopes its query through the employee relation, not company-wide", async () => {
+    mockPrisma.leaveRequest.findMany.mockResolvedValueOnce([]);
+    const service = makeService();
+    await service.listLeaveRequests(makeUser({ branchIds: ["branch-1"] }), {} as never);
+
+    const where = mockPrisma.leaveRequest.findMany.mock.calls[0][0].where;
+    expect(where.employee.AND).toEqual([{ OR: [{ branchId: null }, { branchId: { in: ["branch-1"] } }] }]);
+  });
+
+  it("reviewLeaveRequest blocks reviewing a leave request whose employee is outside the actor's branch scope", async () => {
+    mockPrisma.leaveRequest.findFirst.mockResolvedValueOnce({ id: "lv-1", status: "PENDING", employeeId: "emp-1", employee: outOfScopeEmployee });
+    const service = makeService();
+    await expect(
+      service.reviewLeaveRequest(makeUser({ branchIds: ["branch-1"] }), "lv-1", { decision: "APPROVED" } as never, {})
+    ).rejects.toThrow(ForbiddenException);
+    expect(mockPrisma.leaveRequest.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("reviewLeaveRequest allows reviewing a leave request whose employee is within the actor's branch scope", async () => {
+    mockPrisma.leaveRequest.findFirst.mockResolvedValueOnce({ id: "lv-1", status: "PENDING", employeeId: "emp-1", daysRequested: 3, startDate: new Date("2026-09-01"), leaveType: "ANNUAL", employee: inScopeEmployee });
+    mockPrisma.leaveRequest.updateMany.mockResolvedValueOnce({ count: 1 });
+    mockPrisma.leaveRequest.findUniqueOrThrow.mockResolvedValueOnce({ id: "lv-1", status: "APPROVED" });
+    const service = makeService();
+    await expect(
+      service.reviewLeaveRequest(makeUser({ branchIds: ["branch-1"] }), "lv-1", { decision: "APPROVED" } as never, {})
+    ).resolves.toBeDefined();
+  });
+});
+
 describe("HRService.dashboard — does not mask query failures as zero counts (M1)", () => {
   beforeEach(() => {
     jest.clearAllMocks();

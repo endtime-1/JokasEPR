@@ -904,8 +904,12 @@ export class HRService {
   }
 
   async approvePayroll(user: AuthenticatedUser, id: string, ctx: RequestContext) {
-    const row = await this.prisma.payrollRecord.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    const row = await this.prisma.payrollRecord.findFirst({
+      where: { id, companyId: user.companyId, deletedAt: null },
+      include: { employee: { select: { branchId: true, farmId: true, warehouseId: true, productionSiteId: true } } },
+    });
     if (!row) throw new NotFoundException("Payroll record not found");
+    if (row.employee) this.assertEmployeeInScope(user, row.employee); // H-SEC: was missing — every other payroll/leave mutation checks this
     if (row.status !== "DRAFT") throw new BadRequestException("Only DRAFT records can be approved");
     if (row.createdById === user.id) throw new ForbiddenException("You cannot approve a payroll record you created. A different manager must approve it.");
 
@@ -922,8 +926,12 @@ export class HRService {
   }
 
   async markPayrollPaid(user: AuthenticatedUser, id: string, ctx: RequestContext) {
-    const row = await this.prisma.payrollRecord.findFirst({ where: { id, companyId: user.companyId, deletedAt: null }, include: { employee: { select: { email: true } } } });
+    const row = await this.prisma.payrollRecord.findFirst({
+      where: { id, companyId: user.companyId, deletedAt: null },
+      include: { employee: { select: { email: true, branchId: true, farmId: true, warehouseId: true, productionSiteId: true } } },
+    });
     if (!row) throw new NotFoundException("Payroll record not found");
+    if (row.employee) this.assertEmployeeInScope(user, row.employee); // H-SEC: was missing
 
     // H13: status-guarded updateMany instead of a separate check + update —
     // a concurrent double-call used to both pass the "status !== APPROVED"
@@ -1194,6 +1202,11 @@ export class HRService {
       where: {
         companyId: user.companyId,
         deletedAt: null,
+        // H-SEC: was missing the employeeScope filter every other HR listing
+        // uses — a scope-restricted user could see every leave request
+        // company-wide instead of just their assigned branch/farm.
+        employeeId: { not: null },
+        employee: this.employeeScope(user),
         ...(query.status ? { status: validateEnumFilter(query.status, Object.values(LeaveStatus)) as never } : {}),
       },
       orderBy: { createdAt: "desc" },
@@ -1204,8 +1217,12 @@ export class HRService {
   }
 
   async reviewLeaveRequest(user: AuthenticatedUser, id: string, dto: ReviewLeaveRequestDto, ctx: RequestContext) {
-    const row = await this.prisma.leaveRequest.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    const row = await this.prisma.leaveRequest.findFirst({
+      where: { id, companyId: user.companyId, deletedAt: null },
+      include: { employee: { select: { branchId: true, farmId: true, warehouseId: true, productionSiteId: true } } },
+    });
     if (!row) throw new NotFoundException("Leave request not found");
+    if (row.employee) this.assertEmployeeInScope(user, row.employee); // H-SEC: was missing — the sibling listDisciplinary/listGrievances flows already scope-check, this one didn't
 
     // H12: status-guarded updateMany instead of a separate check + update —
     // two concurrent approve/reject calls for the same request used to both
@@ -1897,12 +1914,16 @@ export class HRService {
 
   // ─── HR-C: PDF Payslips ───────────────────────────────────────────────────────
 
-  private async buildPayslipPdf(payrollId: string, companyId: string): Promise<{ pdf: Buffer; filename: string }> {
+  private async buildPayslipPdf(user: AuthenticatedUser, payrollId: string): Promise<{ pdf: Buffer; filename: string }> {
     const row = await this.prisma.payrollRecord.findFirst({
-      where: { id: payrollId, companyId, deletedAt: null },
-      include: { employee: { select: { ssnitNumber: true, tinNumber: true, bankName: true, bankAccount: true, email: true } }, company: { select: { name: true } } },
+      where: { id: payrollId, companyId: user.companyId, deletedAt: null },
+      include: {
+        employee: { select: { ssnitNumber: true, tinNumber: true, bankName: true, bankAccount: true, email: true, branchId: true, farmId: true, warehouseId: true, productionSiteId: true } },
+        company: { select: { name: true } },
+      },
     });
     if (!row) throw new NotFoundException("Payroll record not found");
+    if (row.employee) this.assertEmployeeInScope(user, row.employee); // H-SEC: was missing — a scope-restricted HR_READ holder could pull any employee's payslip PDF (SSNIT/TIN/bank details) by ID
     return this.renderPayslipPdf(row);
   }
 
@@ -1987,7 +2008,7 @@ export class HRService {
   }
 
   async streamPayslipPdf(user: AuthenticatedUser, id: string, res: Response) {
-    const { pdf, filename } = await this.buildPayslipPdf(id, user.companyId);
+    const { pdf, filename } = await this.buildPayslipPdf(user, id);
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     res.setHeader("Content-Length", pdf.length);
@@ -1995,12 +2016,16 @@ export class HRService {
   }
 
   async emailPayslip(user: AuthenticatedUser, id: string, ctx: RequestContext) {
-    const row = await this.prisma.payrollRecord.findFirst({ where: { id, companyId: user.companyId, deletedAt: null }, include: { employee: { select: { email: true } } } });
+    const row = await this.prisma.payrollRecord.findFirst({
+      where: { id, companyId: user.companyId, deletedAt: null },
+      include: { employee: { select: { email: true, branchId: true, farmId: true, warehouseId: true, productionSiteId: true } } },
+    });
     if (!row) throw new NotFoundException("Payroll record not found");
+    if (row.employee) this.assertEmployeeInScope(user, row.employee); // H-SEC: was missing
     const empEmail = (row as any).employee?.email;
     if (!empEmail) throw new BadRequestException("No email address on record for this employee.");
 
-    const { pdf, filename } = await this.buildPayslipPdf(id, user.companyId);
+    const { pdf, filename } = await this.buildPayslipPdf(user, id);
     const html = `<p>Dear ${row.employeeName},</p><p>Please find your payslip for ${row.period} attached.</p><p>If you have any queries, please contact HR.</p>`;
     const sent = await this.email.sendWithAttachment(empEmail, `Payslip — ${row.period}`, html, { filename, content: pdf });
     if (!sent) throw new BadRequestException("Email service not configured or send failed.");
@@ -2018,7 +2043,10 @@ export class HRService {
     // company with hundreds of employees used to fan out into hundreds of
     // simultaneous DB queries, PDF renders, and SMTP sends from one request.
     const rows = await this.prisma.payrollRecord.findMany({
-      where: { companyId: user.companyId, period, status: { in: ["APPROVED", "PAID"] }, deletedAt: null },
+      // H-SEC: was missing the employeeScope filter every other payroll listing
+      // uses — a scope-restricted user could bulk-email every employee's
+      // payslip company-wide, not just their assigned branch/farm.
+      where: { companyId: user.companyId, period, status: { in: ["APPROVED", "PAID"] }, deletedAt: null, employeeId: { not: null }, employee: this.employeeScope(user) },
       include: { employee: { select: { ssnitNumber: true, tinNumber: true, bankName: true, bankAccount: true, email: true } }, company: { select: { name: true } } },
     });
 
@@ -2043,7 +2071,9 @@ export class HRService {
 
   async bankExportCsv(user: AuthenticatedUser, period: string, res: Response) {
     const rows = await this.prisma.payrollRecord.findMany({
-      where: { companyId: user.companyId, period, status: { in: ["APPROVED", "PAID"] as never[] }, deletedAt: null },
+      // H-SEC: was missing the employeeScope filter — a scope-restricted user
+      // could export every employee's bank name + account number company-wide.
+      where: { companyId: user.companyId, period, status: { in: ["APPROVED", "PAID"] as never[] }, deletedAt: null, employeeId: { not: null }, employee: this.employeeScope(user) },
       include: { employee: { select: { fullName: true, code: true, bankName: true, bankAccount: true } } },
       orderBy: { createdAt: "asc" },
     });
