@@ -21,6 +21,7 @@ import {
   Zap
 } from "lucide-react";
 import { ApiEnvelope, apiFetch, getCachedFirst, hasCached } from "../lib/api";
+import { useApiRecovery } from "../lib/use-api-recovery";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -406,6 +407,8 @@ export function FeedMillDashboardPage() {
   }
 
   useEffect(() => { void load(); }, []);
+  // The highest-traffic page in the module had no self-heal at all.
+  useApiRecovery(!data, () => void load());
 
   const totalAlertCount = (data?.alerts.stalledOrders.length ?? 0) + ((data?.alerts.pendingQC ?? 0) > 0 ? 1 : 0);
   const productionTrend = buildTrend(data?.trends.production ?? [], "producedKg");

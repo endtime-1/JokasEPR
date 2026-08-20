@@ -2661,16 +2661,26 @@ export function CreateGRNPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => {
+  async function loadPoOptions(supplierId: string) {
     const p = new URLSearchParams({ status: "SENT_TO_SUPPLIER" });
-    if (form.supplierId) p.set("supplierId", form.supplierId);
-    apiFetch<ApiEnvelope<POOption[]>>(`/procurement/purchase-orders?${p}`)
-      .then((r) => {
-        setPoOptions(r.data ?? []);
-        setForm((prev) => (r.data ?? []).some((po) => po.id === prev.purchaseOrderId) ? prev : { ...prev, purchaseOrderId: "" });
-      })
-      .catch(() => undefined);
+    if (supplierId) p.set("supplierId", supplierId);
+    try {
+      const r = await apiFetch<ApiEnvelope<POOption[]>>(`/procurement/purchase-orders?${p}`);
+      setPoOptions(r.data ?? []);
+      setForm((prev) => (r.data ?? []).some((po) => po.id === prev.purchaseOrderId) ? prev : { ...prev, purchaseOrderId: "" });
+    } catch {
+      // leave poOptions as-is — useApiRecovery below retries once the API is back
+    }
+  }
+
+  useEffect(() => {
+    void loadPoOptions(form.supplierId);
   }, [form.supplierId]);
+
+  // This had no recovery path at all — a transient failure left the PO
+  // dropdown permanently empty (GRN creation unsubmittable) until the user
+  // happened to change the supplier filter, re-running this effect.
+  useApiRecovery(poOptions.length === 0, () => loadPoOptions(form.supplierId));
 
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm((p) => ({ ...p, [k]: e.target.value }));

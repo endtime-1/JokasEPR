@@ -442,7 +442,10 @@ export function QuickBooksMappingPage() {
   }
 
   useEffect(() => { load(); }, []);
-  useApiRecovery(qbAccounts.length === 0 && mappings.length === 0, load);
+  // Was AND-of-two and omitted expenseCategories entirely — a cache-
+  // populated qbAccounts/mappings could mask a genuinely-failed
+  // expenseCategories fetch (or vice versa) forever.
+  useApiRecovery(qbAccounts.length === 0 || mappings.length === 0 || expenseCategories.length === 0, load);
 
   async function saveMapping(e: FormEvent) {
     e.preventDefault();

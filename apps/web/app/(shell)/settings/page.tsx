@@ -5,6 +5,7 @@ import { Bot, Building2, ChevronRight, Egg, HardDrive, Package, Pencil, Plus, Sa
 import Link from "next/link";
 import { ApiEnvelope, apiFetch, getCachedFirst, hasCached } from "../../../lib/api";
 import { ConfirmModal } from "../../../components/ui";
+import { useApiRecovery } from "../../../lib/use-api-recovery";
 
 type Row = Record<string, any> & { id: string; code?: string; name?: string };
 type MasterData = Record<string, Row[]>;
@@ -131,6 +132,12 @@ export default function SettingsPage() {
   const [masterMsg, setMasterMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
   const [masterLoadError, setMasterLoadError] = useState(false);
   const [confirmDeleteRow, setConfirmDeleteRow] = useState<Row | null>(null);
+  // Drives the api:recovered self-heal below — company/options/notification
+  // can all legitimately be {} even after a successful load (new company,
+  // no options configured yet, etc.), so "is it empty" isn't a safe retry
+  // signal for them the way it is for a list. Track whether the last load
+  // attempt actually had a failure instead.
+  const [loadHadFailure, setLoadHadFailure] = useState(false);
 
   async function load() {
     const results = await Promise.allSettled([
@@ -168,6 +175,7 @@ export default function SettingsPage() {
     if (notificationRes.status === "fulfilled") setNotification(notificationRes.value.data ?? {});
     setLoading(false);
     const firstFailure = results.find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
+    setLoadHadFailure(!!firstFailure);
     if (firstFailure) throw firstFailure.reason;
   }
 
@@ -178,11 +186,10 @@ export default function SettingsPage() {
     });
   }, []);
 
-  useEffect(() => {
-    function onRecovered() { if (Object.keys(company).length === 0) load().catch(() => undefined); }
-    window.addEventListener("api:recovered", onRecovered);
-    return () => window.removeEventListener("api:recovered", onRecovered);
-  }, [Object.keys(company).length]);
+  // The old condition only checked company — options/settings/notification
+  // had no automatic recovery path if only their own fetch failed while
+  // company's happened to succeed.
+  useApiRecovery(loadHadFailure, () => load().catch(() => undefined));
 
   const rows = useMemo(() => master[camel(activeMaster)] ?? [], [master, activeMaster]);
 

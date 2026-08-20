@@ -5,6 +5,7 @@ import { Pencil, Plus, Trash2 } from "lucide-react";
 import { DataTable } from "../../../components/data-table";
 import { FormField } from "../../../components/form-field";
 import { ApiEnvelope, apiFetch, getCachedFirst } from "../../../lib/api";
+import { useApiRecovery } from "../../../lib/use-api-recovery";
 
 type BranchRow = { id: string; code: string; name: string; city?: string; country?: string; isHeadOffice?: boolean };
 type FarmRow = { id: string; code: string; name: string; location?: string; type?: string };
@@ -70,11 +71,14 @@ export default function PlatformPage() {
     load().catch((err) => setError(err instanceof Error ? err.message : "Failed to load sites."));
   }, []);
 
-  useEffect(() => {
-    function onRecovered() { if (branches.length === 0) load().catch(() => undefined); }
-    window.addEventListener("api:recovered", onRecovered);
-    return () => window.removeEventListener("api:recovered", onRecovered);
-  }, [branches.length]);
+  // Branches/farms/warehouses/production sites are fetched independently and
+  // each falls back to [] on failure — a cold-start hiccup on just one used
+  // to go unnoticed forever because the old listener here only checked
+  // branches.length (same bug class fixed on the identity/users page).
+  useApiRecovery(
+    branches.length === 0 || farms.length === 0 || warehouses.length === 0 || productionSites.length === 0,
+    () => load().catch(() => undefined)
+  );
 
   // ── Create helpers ───────────────────────────────────────────────────────
   async function handleCreate(event: FormEvent, endpoint: string, body: object, reset: () => void) {

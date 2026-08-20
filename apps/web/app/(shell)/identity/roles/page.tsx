@@ -7,6 +7,7 @@ import { FormField } from "../../../../components/form-field";
 import { ConfirmModal, Modal } from "../../../../components/ui";
 import { useAuth } from "../../../../components/auth-context";
 import { ApiEnvelope, apiFetch, getCachedFirst, invalidateCache } from "../../../../lib/api";
+import { useApiRecovery } from "../../../../lib/use-api-recovery";
 
 type Role = {
   id: string;
@@ -94,6 +95,9 @@ export default function RolesPage() {
   }
 
   useEffect(() => { load(); }, []);
+  // Previously had no self-heal at all — a cold-start hiccup left roles
+  // and/or permissions permanently empty until a manual page reload.
+  useApiRecovery(roles.length === 0 || permissions.length === 0, () => { load().catch(() => undefined); });
 
   const permissionsByModule = useMemo(() => {
     const groups: Record<string, Permission[]> = {};

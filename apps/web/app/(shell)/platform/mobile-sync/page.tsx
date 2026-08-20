@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { RefreshCw, CircleAlert, CircleCheckBig, Copy, RotateCcw } from "lucide-react";
 import { ApiEnvelope, apiFetch, getCachedFirst, hasCached } from "../../../../lib/api";
+import { useApiRecovery } from "../../../../lib/use-api-recovery";
 
 type MobileSyncRecord = {
   id: string;
@@ -95,6 +96,9 @@ export default function MobileSyncPage() {
   }, [filter, page]);
 
   useEffect(() => { load(); }, [load]);
+  // Previously had no recovery path at all — a failed fetch left records/
+  // stats stuck until the user noticed and clicked the manual Refresh button.
+  useApiRecovery(records.length === 0 || !stats, load);
 
   async function handleRetry(localId: string) {
     setRetrying((s) => new Set(s).add(localId));

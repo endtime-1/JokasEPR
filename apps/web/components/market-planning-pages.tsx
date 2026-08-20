@@ -734,7 +734,10 @@ export function MaterialRequirementPlanningPage() {
     loadPlans();
     loadMrps();
   }, []);
-  useApiRecovery(plans.length === 0 && mrps.length === 0, () => { loadPlans(); loadMrps(); });
+  // plans and mrps are fully independent fetches, each with its own catch —
+  // the AND here meant either one alone failing (while the other happened
+  // to have data, e.g. from cache) never triggered a retry.
+  useApiRecovery(plans.length === 0 || mrps.length === 0, () => { loadPlans(); loadMrps(); });
   async function calculate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setCalculating(true);

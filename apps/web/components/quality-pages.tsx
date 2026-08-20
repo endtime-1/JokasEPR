@@ -1414,16 +1414,22 @@ export function LabReportsPage() {
     }
   }
 
-  useEffect(() => {
-    load();
+  function loadChecks() {
     // Low: the backend caps this list at 100 per page — with no search or
     // pagination in this picker, an older check beyond that cutoff simply
     // can't be selected. Asking for the max page size narrows the gap; a
     // real fix would need a searchable picker.
     apiFetch<ApiEnvelope<{ total: number; items: { id: string; reference: string; checkType: string; batchNumber?: string }[] }>>("/quality/checks?limit=100")
       .then((r) => setChecks(r.data?.items ?? [])).catch(() => undefined);
+  }
+
+  useEffect(() => {
+    load();
+    loadChecks();
   }, []);
-  useApiRecovery(rows.length === 0, load);
+  // checks previously had no recovery path of its own — a transient failure
+  // left the check picker permanently empty even after rows recovered fine.
+  useApiRecovery(rows.length === 0 || checks.length === 0, () => { load(); loadChecks(); });
 
   const f = (k: string) => (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm((p) => ({ ...p, [k]: e.target.value }));
@@ -1555,15 +1561,19 @@ export function CorrectiveActionsPage() {
     apiFetch<ApiEnvelope<CorrectiveAction[]>>(`/quality/corrective-actions?${p}`).then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); }).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
   }
 
-  useEffect(() => { load(); }, [status]);
-  useApiRecovery(rows.length === 0, load);
-
-  useEffect(() => {
+  function loadPickers() {
     apiFetch<ApiEnvelope<{ total: number; items: { id: string; reference: string; checkType: string; batchNumber?: string }[] }>>("/quality/checks?limit=100")
       .then((r) => setChecks(r.data?.items ?? [])).catch(() => undefined);
     apiFetch<ApiEnvelope<{ id: string; reference: string; batchNumber?: string }[]>>("/quality/rejected-batches")
       .then((r) => setRejectedBatches(r.data ?? [])).catch(() => undefined);
-  }, []);
+  }
+
+  useEffect(() => { load(); }, [status]);
+  useEffect(() => { loadPickers(); }, []);
+  // checks/rejectedBatches previously had no recovery path of their own — a
+  // transient failure left those pickers permanently empty even after rows
+  // recovered fine.
+  useApiRecovery(rows.length === 0 || checks.length === 0 || rejectedBatches.length === 0, () => { load(); loadPickers(); });
 
   const f = (k: string) => (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm((p) => ({ ...p, [k]: e.target.value }));

@@ -321,10 +321,10 @@ export default function AlertsPage() {
   }, [filterCategory, filterSeverity, filterStatus, page]);
 
   useEffect(() => {
-    function onRecovered() { if (alerts.length === 0) void load(); }
+    function onRecovered() { if (alerts.length === 0 || forecasts.length === 0) void load(); }
     window.addEventListener("api:recovered", onRecovered);
     return () => window.removeEventListener("api:recovered", onRecovered);
-  }, [alerts.length]);
+  }, [alerts.length, forecasts.length]);
 
   async function generate() {
     setGenerating(true);

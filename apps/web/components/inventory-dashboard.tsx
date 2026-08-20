@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { InventoryShell } from "./inventory-shell";
 import { ApiEnvelope, apiFetch, getCachedFirst, hasCached } from "../lib/api";
+import { useApiRecovery } from "../lib/use-api-recovery";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -518,6 +519,8 @@ export function InventoryDashboardPage() {
   }
 
   useEffect(() => { void load(); }, []);
+  // The highest-traffic page in the module had no self-heal at all.
+  useApiRecovery(!data, () => void load());
 
   const activityTrend = buildActivityTrend(data?.weekMovements ?? []);
 

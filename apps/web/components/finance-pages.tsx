@@ -218,7 +218,10 @@ export function FinanceDashboardPage() {
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load dashboard."))
       .finally(() => setLoading(false));
   }, [period, refresh]);
-  useApiRecovery(!dash, () => setRefresh((r) => r + 1));
+  // dash/chart/debtors are fetched together but the retry condition only
+  // checked dash — a cached dash value from initial render kept this from
+  // firing even when chart/debtors' live fetch failed and stayed empty.
+  useApiRecovery(!dash || !chart || debtors.length === 0, () => setRefresh((r) => r + 1));
 
   async function handleApprove(id: string) {
     setApproving(id);
@@ -1080,20 +1083,36 @@ export function SupplierPaymentsPage() {
       .catch((err: any) => setLoadError(err?.message ?? "Failed to load."));
   }
 
-  useEffect(() => { load(); }, []);
-  useApiRecovery(payments.length === 0, load);
-  useEffect(() => {
-    if (!showForm) return;
+  function loadSuppliers() {
     apiFetch<ApiEnvelope<Array<{ id: string; name: string }>>>("/procurement/suppliers")
       .then((r) => setSuppliers(r.data ?? []))
       .catch(() => setSuppliers([]));
+  }
+  function loadInvoices(supplierId: string) {
+    apiFetch<ApiEnvelope<Array<{ id: string; reference: string; invoiceNumber: string; balanceDue: number; status: string }>>>(`/procurement/invoices?supplierId=${supplierId}`)
+      .then((r) => setInvoices((r.data ?? []).filter((inv) => inv.status !== "PAID" && Number(inv.balanceDue) > 0)))
+      .catch(() => setInvoices([]));
+  }
+
+  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    if (!showForm) return;
+    loadSuppliers();
   }, [showForm]);
   useEffect(() => {
     if (!form.supplierId) { setInvoices([]); return; }
-    apiFetch<ApiEnvelope<Array<{ id: string; reference: string; invoiceNumber: string; balanceDue: number; status: string }>>>(`/procurement/invoices?supplierId=${form.supplierId}`)
-      .then((r) => setInvoices((r.data ?? []).filter((inv) => inv.status !== "PAID" && Number(inv.balanceDue) > 0)))
-      .catch(() => setInvoices([]));
+    loadInvoices(form.supplierId);
   }, [form.supplierId]);
+  // Neither suppliers nor invoices previously had a recovery path — both
+  // used to fall back to a plain [] on failure with no retry.
+  useApiRecovery(
+    payments.length === 0 || (showForm && suppliers.length === 0) || (!!form.supplierId && invoices.length === 0),
+    () => {
+      load();
+      if (showForm) loadSuppliers();
+      if (form.supplierId) loadInvoices(form.supplierId);
+    }
+  );
   function set(k: string, v: string) { setForm((f) => ({ ...f, [k]: v })); }
 
   async function handleSubmit(e: FormEvent) {
@@ -2147,12 +2166,18 @@ export function ExpenseCategoriesPage() {
       .then((r) => setCategories(r.data ?? [])).catch((err: any) => setLoadError(err?.message ?? "Failed to load."));
   }
 
-  useEffect(() => {
-    load();
+  function loadAccounts() {
     apiFetch<ApiEnvelope<{ id: string; code: string; name: string }[]>>("/finance/accounts?type=EXPENSE")
       .then((r) => setAccounts(r.data ?? [])).catch(() => undefined);
+  }
+
+  useEffect(() => {
+    load();
+    loadAccounts();
   }, []);
-  useApiRecovery(categories.length === 0, load);
+  // accounts previously had no recovery path — a failed fetch left the GL
+  // account dropdown permanently empty even after categories recovered.
+  useApiRecovery(categories.length === 0 || accounts.length === 0, () => { load(); loadAccounts(); });
 
   function set(k: string, v: string) { setForm((f) => ({ ...f, [k]: v })); }
 

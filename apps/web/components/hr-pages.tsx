@@ -3472,8 +3472,12 @@ export function RecruitmentPage() {
     setJobs(jr.data ?? []);
     setApps(ar.data ?? []);
   }
-  useEffect(() => { void load(); }, []);
-  useApiRecovery(jobs.length === 0 && apps.length === 0, () => void load());
+  useEffect(() => { load().catch(() => undefined); }, []);
+  // jobs/apps can diverge when one was pre-populated from cache and the
+  // other wasn't (getCachedFirst) — the AND here meant a live-fetch failure
+  // only triggered retry if BOTH looked empty, so a cached-nonempty jobs
+  // list masked a genuinely-empty, never-loaded apps list forever.
+  useApiRecovery(jobs.length === 0 || apps.length === 0, () => load().catch(() => undefined));
 
   async function saveJob(e: React.FormEvent) {
     e.preventDefault(); setSaving(true); setError("");
