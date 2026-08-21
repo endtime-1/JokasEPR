@@ -904,48 +904,21 @@ startProxy(0);
   const HOME_DIR = path.dirname(path.dirname(path.dirname(root)));
   console.log(`[start] HOME_DIR resolved to: ${HOME_DIR}`);
 
-  // Pure-Node process scan — avoids depending on `pgrep` being resolvable via
-  // PATH, which (like HOME above) may not be set up the way an interactive
-  // SSH shell's is inside Passenger's environment.
-  function isProcessRunning(needle) {
-    try {
-      for (const pid of fs.readdirSync("/proc")) {
-        if (!/^\d+$/.test(pid)) continue;
-        try {
-          const cmdline = fs.readFileSync(`/proc/${pid}/cmdline`, "utf8");
-          if (cmdline.includes(needle)) return true;
-        } catch {}
-      }
-    } catch {}
-    return false;
-  }
-
-  function checkCiRunner() {
-    if (isProcessRunning("actions-runner/run.sh")) return; // already running
-    const runnerDir = path.join(HOME_DIR, "actions-runner");
-    const runScript = path.join(runnerDir, "run.sh");
-    if (!fs.existsSync(runScript)) {
-      console.warn(`[start] CI runner is down but run.sh not found at ${runScript} — skipping restart`);
-      return;
-    }
-    try {
-      // Exec the script directly by absolute path (relies on its own shebang
-      // + execute bit, same as running `./run.sh` manually) instead of
-      // spawning "bash" by name — PATH may not resolve that name here either.
-      const child = spawn(runScript, [], {
-        cwd: runnerDir,
-        detached: true,
-        stdio: "ignore",
-      });
-      child.unref();
-      console.log(`[start] CI runner was down — restarted, PID=${child.pid}`);
-    } catch (e) {
-      console.error("[start] failed to restart CI runner:", e.message);
-      sendAlert(`Failed to restart the CI runner: ${e.message}`);
-    }
-  }
-  setInterval(checkCiRunner, 5 * 60 * 1000);
-  checkCiRunner();
+  // (readiness review 2026-08-21) A self-hosted-CI-runner watchdog used to
+  // live here, restarting ~/actions-runner/run.sh via child_process.spawn()
+  // every 5 minutes if it wasn't running. It never actually worked: this is
+  // exactly the child_process.spawn() pattern the comment above "Why Worker
+  // threads, not child processes" documents Hostinger killing after ~30
+  // seconds regardless — the entire reason Web/Storefront/API run as Worker
+  // threads instead. run.sh is a real external process, not Node.js code,
+  // so it can't be run as a Worker thread either — there's no way to keep
+  // it alive on this host with what's available here. Confirmed live: the
+  // /__status startup-log buffer was found entirely full of nothing but
+  // "CI runner was down — restarted" lines, one per 5-minute check,
+  // indefinitely — it had never once stayed up. Removed rather than left
+  // running a restart loop that can never succeed. The self-hosted
+  // dump-logs.yml workflow that depended on this runner being alive has
+  // been removed too (see .github/workflows/).
 
   let dbBackupAlerted = ""; // dateStr already alerted for, so this fires at most once/day
   function checkDailyBackup() {

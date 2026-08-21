@@ -15,7 +15,7 @@ these instead:
 |---|---|
 | Deploy pipeline | [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) |
 | Process management / startup | [`start.js`](../start.js) |
-| Remote diagnostics | [`.github/workflows/dump-logs.yml`](../.github/workflows/dump-logs.yml) (`workflow_dispatch`) |
+| Remote diagnostics | `https://jokasfarms.com/__status` (the `dump-logs.yml` self-hosted-runner workflow that used to wrap this was removed 2026-08-21 — the self-hosted runner it depended on could never actually stay alive on Hostinger's `child_process.spawn()`-killing plan) |
 | Database backup (daily, automatic) | written by `deploy.yml`'s "Setup database backup cron" step; runs via `start.js`'s `checkDailyBackup()` since this Hostinger plan's `crontab` is a read-only stub |
 | Database restore (emergency) | [`scripts/backup/restore-db.sh`](../scripts/backup/restore-db.sh) |
 | Database restore drill (non-destructive, periodic) | [`scripts/verify-backup-restore.sh`](../scripts/verify-backup-restore.sh) |

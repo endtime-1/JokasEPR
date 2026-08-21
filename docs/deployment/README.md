@@ -25,7 +25,6 @@ Hostinger (jokasfarms.com)
   start.js also runs:
     - a self-ping loop (prevents Hostinger from hibernating an idle app)
     - checkDailyBackup() / checkDailyFilesBackup() (poll-based backup trigger — see "Backups")
-    - checkCiRunner() (keeps the self-hosted CI runner process alive, if configured)
     - the /__status diagnostic endpoint
 
 MySQL — Hostinger-managed, same account as the app, no separate host to provision
