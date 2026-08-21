@@ -187,6 +187,9 @@ let webReady = false;   // proxy switch — true only when BOTH next.js and api 
 let _nextjsUp = false;  // next.js has bound its port
 let _apiUp = false;     // nestjs has bound its port
 let webRestarts = 0;
+let webConsecutiveFailures = 0; // resets on a successful bind; drives the stuck-port escalation below
+let apiConsecutiveFailures = 0;
+let storefrontConsecutiveFailures = 0;
 let lastWebLines = [];  // last 20 lines of web stdout/stderr for diagnostics
 let lastApiLines = [];  // last 20 lines of API stdout/stderr for diagnostics
 let lastStartLines = []; // last 30 lines of start.js own log for diagnostics
@@ -213,6 +216,7 @@ function checkBothReady() {
   // for the full 30-90s NestJS cold-start time on Hostinger.
   if (_nextjsUp && !webReady) {
     webReady = true;
+    webConsecutiveFailures = 0;
     const apiMsg = _apiUp ? "API also ready" : "API still starting — React app will handle it";
     console.log(`[start] Next.js ready — opening to traffic (${apiMsg})`);
   }
@@ -627,6 +631,7 @@ startProxy(0);
         sock.destroy();
         if (!_apiUp && !stopped) {
           _apiUp = true;
+          apiConsecutiveFailures = 0;
           console.log("[start] NestJS API ready (TCP probe)");
           checkBothReady();
         }
@@ -650,9 +655,26 @@ startProxy(0);
     }
     // For Worker threads, port 3001 is held by THIS process's PID (start.js).
     // Calling killPortOwner(WEB_INTERNAL_PORT) would SIGKILL start.js itself —
-    // so we only wait for the port rather than actively killing anything.
-    // On the very first boot the outer async block already called killPortOwner
-    // to clear any orphans from a previous run, so this is safe.
+    // so normally we only wait for the port rather than actively killing
+    // anything. On the very first boot the outer async block already called
+    // killPortOwner to clear any orphans from a previous run, so this is safe.
+    //
+    // (2026-08-21 incident) That reasoning breaks down if a SIBLING start.js
+    // process is squatting this same hardcoded port — confirmed live: a
+    // Passenger restart briefly left two full app processes running at once,
+    // and the loser retried this wait forever (170+ times) since the port
+    // was never actually going to free itself. After enough consecutive
+    // failures, waiting stops being the safe choice — being aggressive here
+    // is strictly better than an infinite unproductive loop: if the port is
+    // genuinely still ours (stuck from an unclean worker.terminate()),
+    // killPortOwner SIGKILLs this very process, and Passenger — which
+    // already supervises and auto-restarts it — cleanly replaces it. If a
+    // sibling process is the actual squatter, this correctly frees the port
+    // from it instead.
+    if (webConsecutiveFailures >= 5) {
+      console.warn(`[start] web port ${WEB_INTERNAL_PORT} still stuck after ${webConsecutiveFailures} consecutive failures — forcing it clear (may SIGKILL this process; Passenger will restart it)`);
+      killPortOwner(WEB_INTERNAL_PORT);
+    }
     waitForPortFree(WEB_INTERNAL_PORT, 10000).then(() => {
       console.log(`[start] launching jokas-web as worker thread — ${serverScript}`);
       const worker = new Worker(workerWrapper, {
@@ -708,6 +730,7 @@ startProxy(0);
         webReady = false;
         _nextjsUp = false;
         webRestarts++;
+        webConsecutiveFailures++;
         // Worker threads are not subject to Hostinger's 30s PID-based kill, so
         // an exit here is a real crash. Use modest backoff to avoid thrashing.
         const delay = Math.min(3000 * webRestarts, 10000);
@@ -743,6 +766,15 @@ startProxy(0);
     // The outer async block already called killPortOwner(API_PORT) once at
     // boot to clear orphans from a previous run — restarts only need to wait
     // for the port, not actively kill anything (that would SIGKILL ourselves).
+    // (2026-08-21 incident) Same escalation as the web worker below — after
+    // enough consecutive failures the port is presumed genuinely stuck
+    // (self or a sibling process), and forcing it clear beats looping
+    // forever. See the web worker's version of this comment for the full
+    // reasoning.
+    if (apiConsecutiveFailures >= 5) {
+      console.warn(`[start] API port ${API_PORT} still stuck after ${apiConsecutiveFailures} consecutive failures — forcing it clear (may SIGKILL this process; Passenger will restart it)`);
+      killPortOwner(API_PORT);
+    }
     waitForPortFree(API_PORT, 10000).then(() => {
       console.log(`[start] launching jokas-api as worker thread — ${apiScript}`);
       const worker = new Worker(apiWorkerWrapper, {
@@ -788,6 +820,7 @@ startProxy(0);
         apiProc = null;
         _apiUp = false;
         apiRestarts++;
+        apiConsecutiveFailures++;
         const delay = Math.min(3000 * apiRestarts, 30000);
         console.log(`[start] API exited code=${code} — restart #${apiRestarts} in ${delay}ms`);
         // H-OPS-2: same threshold-then-periodic pattern as the web worker above.
@@ -812,6 +845,12 @@ startProxy(0);
       try { storefrontWorker.terminate(); } catch {}
       storefrontWorker = null;
     }
+    // (2026-08-21 incident) Same escalation as the web/API workers — see the
+    // web worker's version of this comment for the full reasoning.
+    if (storefrontConsecutiveFailures >= 5) {
+      console.warn(`[start] Storefront port ${STOREFRONT_PORT} still stuck after ${storefrontConsecutiveFailures} consecutive failures — forcing it clear (may SIGKILL this process; Passenger will restart it)`);
+      killPortOwner(STOREFRONT_PORT);
+    }
     waitForPortFree(STOREFRONT_PORT, 10000).then(() => {
       console.log(`[start] launching jokas-storefront as worker thread — ${storefrontServerScript}`);
       const worker = new Worker(workerWrapper, {
@@ -829,6 +868,7 @@ startProxy(0);
       worker.on("message", (msg) => {
         if (msg.type === "log" && !_storefrontUp && /\bready\b/i.test(msg.data)) {
           _storefrontUp = true;
+          storefrontConsecutiveFailures = 0;
           console.log("[start] Storefront ready (worker stdout)");
         } else if (msg.type === "exit") {
           worker.terminate();
@@ -842,7 +882,7 @@ startProxy(0);
         if (sfStopped || _storefrontUp) return;
         const sock = net.createConnection(STOREFRONT_PORT, "127.0.0.1");
         sock.setTimeout(1000);
-        sock.once("connect", () => { sock.destroy(); if (!_storefrontUp && !sfStopped) { _storefrontUp = true; console.log("[start] Storefront ready (TCP probe)"); } });
+        sock.once("connect", () => { sock.destroy(); if (!_storefrontUp && !sfStopped) { _storefrontUp = true; storefrontConsecutiveFailures = 0; console.log("[start] Storefront ready (TCP probe)"); } });
         sock.once("error", () => { sock.destroy(); if (!sfStopped && !_storefrontUp) setTimeout(probeSF, 1000); });
         sock.once("timeout", () => { sock.destroy(); if (!sfStopped && !_storefrontUp) setTimeout(probeSF, 1000); });
       }
@@ -853,6 +893,7 @@ startProxy(0);
         if (storefrontWorker === worker) storefrontWorker = null;
         _storefrontUp = false;
         storefrontRestarts++;
+        storefrontConsecutiveFailures++;
         const delay = Math.min(5000 * storefrontRestarts, 30000);
         console.log(`[start] Storefront exited code=${code} — restart #${storefrontRestarts} in ${delay}ms`);
         setTimeout(startStorefront, delay);
