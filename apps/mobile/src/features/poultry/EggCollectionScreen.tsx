@@ -14,6 +14,10 @@ import { fetchFlockBatches, fetchFarms, fetchWarehouses, fetchProducts, fetchPou
 import { useAuth } from "../../auth/AuthContext";
 import { colors, font, radius, shadow, spacing } from "../../constants/theme";
 
+// Eggs are physically collected and counted in crates on the farm, not
+// individual pieces — 1 crate = 30 eggs.
+const EGGS_PER_CRATE = 30;
+
 export function EggCollectionScreen() {
   const { user } = useAuth();
   const navigation = useNavigation<any>();
@@ -21,6 +25,7 @@ export function EggCollectionScreen() {
   const [farmId, setFarmId]           = useState("");
   const [batchId, setBatchId]         = useState("");
   const [date, setDate]               = useState(new Date().toISOString().split("T")[0]);
+  const [crates, setCrates]           = useState("");
   const [goodEggs, setGoodEggs]       = useState("");
   const [crackedEggs, setCrackedEggs] = useState("0");
   const [dirtyEggs, setDirtyEggs]     = useState("0");
@@ -80,6 +85,18 @@ export function EggCollectionScreen() {
     () => (rawProducts ?? []).map((p: any) => ({ label: `${p.sku} — ${p.name}`, value: p.id })),
     [rawProducts]
   );
+
+  // ── Crates → pieces conversion ───────────────────────────────────────
+  // Crates is a data-entry convenience only — Good Eggs (pieces) stays the
+  // real field submitted to the backend, unchanged from before. Typing a
+  // crate count fills Good Eggs for you; Good Eggs itself is still directly
+  // editable afterward for a partial crate or a manual adjustment.
+  function handleCratesChange(v: string) {
+    setCrates(v);
+    const n = Math.max(0, Number(v) || 0);
+    setGoodEggs(v ? String(n * EGGS_PER_CRATE) : "");
+    setErrors((e) => ({ ...e, goodEggs: "" }));
+  }
 
   // ── Live totals ───────────────────────────────────────────────────────
   const good     = Math.max(0, Number(goodEggs)     || 0);
@@ -175,14 +192,23 @@ export function EggCollectionScreen() {
             <Text style={styles.cardLabel}>EGG COUNT</Text>
 
             <FormField
+              label={`Crates Collected (1 crate = ${EGGS_PER_CRATE} eggs)`}
+              value={crates}
+              onChangeText={handleCratesChange}
+              keyboardType="numeric"
+              placeholder="e.g. 140"
+            />
+
+            <FormField
               label="Good Eggs (Marketable)"
               required
               value={goodEggs}
               onChangeText={(v) => { setGoodEggs(v); setErrors((e) => ({ ...e, goodEggs: "" })); }}
               error={errors.goodEggs}
               keyboardType="numeric"
-              placeholder="e.g. 4200"
+              placeholder="e.g. 4200, or fill in Crates above"
             />
+            {!!crates && <Text style={styles.rejectHint}>{crates} crate{Number(crates) === 1 ? "" : "s"} × {EGGS_PER_CRATE} = {(Math.max(0, Number(crates) || 0) * EGGS_PER_CRATE).toLocaleString()} eggs. Adjust Good Eggs above for a partial crate.</Text>}
 
             <Text style={styles.rejectLabel}>Reject / Non-Marketable Eggs</Text>
             <Text style={styles.rejectHint}>These are still counted as eggs laid — broken or leaking eggs included.</Text>
