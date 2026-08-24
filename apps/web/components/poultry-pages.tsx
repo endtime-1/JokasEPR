@@ -1416,7 +1416,16 @@ function BatchRecordsTab({ batchId, options }: { batchId: string; options: Poult
   return (
     <div className="space-y-3">
       {BATCH_RECORD_TYPES.map(({ type, label, cols, endpoint }) => (
-        <BatchRecordSection key={type} batchId={batchId} type={type} label={label} cols={cols} endpoint={endpoint} options={options} />
+        // (2026-08-24) key was just `type` — navigating from one batch's detail
+        // page to another's (client-side, no full page reload) reused the same
+        // BatchRecordSection instance instead of remounting it. Its `rows` state
+        // from the PREVIOUS batch stuck around, and toggle()'s own "only fetch
+        // if rows is still empty" guard then actively prevented it from ever
+        // re-fetching — so a section already expanded on batch A kept silently
+        // showing batch A's records while the page displayed batch B. Keying on
+        // batchId too forces a full remount (fresh rows/open/forms state) on
+        // every batch switch.
+        <BatchRecordSection key={`${batchId}-${type}`} batchId={batchId} type={type} label={label} cols={cols} endpoint={endpoint} options={options} />
       ))}
     </div>
   );
