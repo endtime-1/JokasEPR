@@ -128,7 +128,17 @@ export class FeedProductionService {
     const cached = this.lookupCache.get<object>(cacheKey);
     if (cached) return cached;
 
-    const [productionSites, warehouses, farms, poultryHouses, rawMaterials, finishedFeeds, formulas, batches] = await Promise.all([
+    const [branches, productionSites, warehouses, farms, poultryHouses, rawMaterials, finishedFeeds, formulas, batches] = await Promise.all([
+      // (readiness review 2026-08-24) Was missing entirely — the Create
+      // Formula form had no way to offer a branch picker, so createFormula's
+      // auto-default (single-branch companies only) was the only path
+      // through, and a multi-branch company had no way to create a formula
+      // at all. See createFormula's own comment for the full chain.
+      this.prisma.branch.findMany({
+        where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess || user.branchIds.length === 0 ? {} : { id: { in: user.branchIds } }) },
+        select: { id: true, code: true, name: true },
+        orderBy: { name: "asc" }
+      }),
       this.prisma.productionSite.findMany({
         where: {
           companyId: user.companyId,
@@ -177,7 +187,7 @@ export class FeedProductionService {
       })
     ]);
 
-    const result = { data: { productionSites, warehouses, farms, poultryHouses, rawMaterials, finishedFeeds, formulas, batches } };
+    const result = { data: { branches, productionSites, warehouses, farms, poultryHouses, rawMaterials, finishedFeeds, formulas, batches } };
     this.lookupCache.set(cacheKey, result);
     return result;
   }

@@ -25,6 +25,7 @@ type Option = {
 };
 
 type FeedOptions = {
+  branches: Option[];
   productionSites: Option[];
   warehouses: Option[];
   farms: Option[];
@@ -110,7 +111,7 @@ const inputClass = "min-h-11 rounded-md border border-line px-3";
 const today = () => new Date().toISOString().slice(0, 10);
 
 function useFeedOptions() {
-  const [options, setOptions] = useState<FeedOptions>(() => getCached<ApiEnvelope<FeedOptions>>("/feed-production/options")?.data ?? { productionSites: [], warehouses: [], farms: [], poultryHouses: [], rawMaterials: [], finishedFeeds: [], formulas: [], batches: [] });
+  const [options, setOptions] = useState<FeedOptions>(() => getCached<ApiEnvelope<FeedOptions>>("/feed-production/options")?.data ?? { branches: [], productionSites: [], warehouses: [], farms: [], poultryHouses: [], rawMaterials: [], finishedFeeds: [], formulas: [], batches: [] });
   const [optionsError, setOptionsError] = useState("");
   const [_feedOptKey, _setFeedOptKey] = useState(0);
   const forceAccept = useRef(false);
@@ -119,7 +120,7 @@ function useFeedOptions() {
     forceAccept.current = false;
     apiFetch<ApiEnvelope<FeedOptions>>("/feed-production/options")
       .then((response) => {
-        const fresh = response.data ?? { productionSites: [], warehouses: [], farms: [], poultryHouses: [], rawMaterials: [], finishedFeeds: [], formulas: [], batches: [] };
+        const fresh = response.data ?? { branches: [], productionSites: [], warehouses: [], farms: [], poultryHouses: [], rawMaterials: [], finishedFeeds: [], formulas: [], batches: [] };
         setOptions((prev) => !force && fresh.rawMaterials.length === 0 && prev.rawMaterials.length > 0 ? prev : fresh);
       })
       .catch((err: any) => setOptionsError(err?.message ?? "Failed to load options."));
@@ -352,6 +353,7 @@ export function FormulaBuilderPage() {
   const router = useRouter();
 
   const [finishedProductId, setFinishedProductId] = useState("");
+  const [branchId, setBranchId] = useState("");
   const [feedType, setFeedType] = useState("LAYER_MASH");
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
@@ -388,6 +390,10 @@ export function FormulaBuilderPage() {
       setError("Add at least one ingredient before saving the formula.");
       return;
     }
+    if (options.branches.length > 1 && !branchId) {
+      setError("Select a branch before saving the formula.");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -395,6 +401,7 @@ export function FormulaBuilderPage() {
         method: "POST",
         body: JSON.stringify({
           finishedProductId: finishedProductId || options.finishedFeeds[0]?.id,
+          branchId: branchId || undefined,
           feedType,
           code,
           name,
@@ -468,6 +475,17 @@ export function FormulaBuilderPage() {
                   ))}
                 </select>
               </div>
+              {options.branches.length > 1 && (
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-ink/55">Branch *</label>
+                  <select required className={inputCls} value={branchId} onChange={(e) => setBranchId(e.target.value)}>
+                    <option value="">Select branch…</option>
+                    {options.branches.map((b) => (
+                      <option key={b.id} value={b.id}>{b.code} — {b.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div>
                 <label className="mb-1.5 block text-xs font-semibold text-ink/55">Feed Type *</label>
                 <select required className={inputCls} value={feedType} onChange={(e) => setFeedType(e.target.value)}>
