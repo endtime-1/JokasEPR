@@ -1472,7 +1472,16 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
   const recordLoadingRef = useRef(false);
 
   async function load() {
-    const response = await apiFetch<{ data: Record<string, any>[]; meta?: any }>(`/poultry/records/${type}?take=200`);
+    // (2026-08-24) Was fetching every batch's records mixed together with no
+    // flockBatchId filter at all — the "Flock batch" dropdown above only
+    // ever controlled which batch a NEW record gets added to, so changing
+    // it appeared to do nothing to the list below: viewing batch one still
+    // showed batch two's (and every other batch's) records right alongside
+    // it. Filters to whichever batch is currently selected in that same
+    // dropdown, same as the batch-detail page's own Records tab does.
+    const params = new URLSearchParams({ take: "200" });
+    if (form.flockBatchId) params.set("flockBatchId", form.flockBatchId);
+    const response = await apiFetch<{ data: Record<string, any>[]; meta?: any }>(`/poultry/records/${type}?${params}`);
     const data = response.data;
     if (!Array.isArray(data)) return;
     setRows((prev) => data.length === 0 && prev.length > 0 ? prev : data);
@@ -1491,7 +1500,7 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
 
   useEffect(() => {
     loadRecords();
-  }, [type]);
+  }, [type, form.flockBatchId]);
 
   // Reload records after API recovery if the table is empty (mounted during outage).
   useEffect(() => {
@@ -1536,7 +1545,11 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
 
   function cancelEdit() {
     setEditingId(null);
-    setForm(makeFormDefaults(type));
+    // Keep the batch filter as-is (see the same reasoning in submit()) —
+    // the record being edited already belonged to whichever batch was
+    // selected, so there's no reason cancelling should jump the filter
+    // elsewhere.
+    setForm((prev) => ({ ...makeFormDefaults(type), flockBatchId: prev.flockBatchId, poultryHouseId: prev.poultryHouseId, penId: prev.penId }));
     setSubmitError("");
   }
 
@@ -1572,7 +1585,12 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
         response = await apiFetch(endpoint, { method: "POST", body: JSON.stringify(buildRecordPayload(type, form, options)) });
       }
       if (response?.warning) setSubmitWarning(response.warning);
-      setForm(makeFormDefaults(type));
+      // Keep the batch/house/pen selection after a successful save — entering
+      // several records in a row for the same batch shouldn't require
+      // re-picking it every time, and it also keeps the records list (now
+      // filtered by this same field) from flipping back to "all batches"
+      // and then back again on every submit.
+      setForm((prev) => ({ ...makeFormDefaults(type), flockBatchId: prev.flockBatchId, poultryHouseId: prev.poultryHouseId, penId: prev.penId }));
       await load();
     } catch (err: any) {
       setSubmitError(err?.message ?? "Failed to save record.");
@@ -1652,7 +1670,7 @@ function GenericRecordForm({ options, optionsLoading = false, form, setForm, sub
 
   return (
     <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-4">
-      <FormField label="Flock batch">
+      <FormField label="Flock batch" hint="Also filters the records list below to this batch">
         <select
           name="flockBatchId"
           className={`${inputClass} ${!optionsLoading && options.batches.length === 0 ? "border-amber-400 bg-amber-50" : ""}`}
