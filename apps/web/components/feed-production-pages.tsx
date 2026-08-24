@@ -390,7 +390,7 @@ export function FormulaBuilderPage() {
       setError("Add at least one ingredient before saving the formula.");
       return;
     }
-    if (options.branches.length > 1 && !branchId) {
+    if ((options.branches ?? []).length > 1 && !branchId) {
       setError("Select a branch before saving the formula.");
       return;
     }
@@ -475,12 +475,12 @@ export function FormulaBuilderPage() {
                   ))}
                 </select>
               </div>
-              {options.branches.length > 1 && (
+              {(options.branches ?? []).length > 1 && (
                 <div>
                   <label className="mb-1.5 block text-xs font-semibold text-ink/55">Branch *</label>
                   <select required className={inputCls} value={branchId} onChange={(e) => setBranchId(e.target.value)}>
                     <option value="">Select branch…</option>
-                    {options.branches.map((b) => (
+                    {(options.branches ?? []).map((b) => (
                       <option key={b.id} value={b.id}>{b.code} — {b.name}</option>
                     ))}
                   </select>
