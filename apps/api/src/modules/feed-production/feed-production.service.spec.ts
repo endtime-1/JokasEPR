@@ -20,9 +20,11 @@ const mockPrisma = {
   feedProductionOrder: { findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn() },
   feedProductionBatch: { aggregate: jest.fn(), findFirst: jest.fn() },
   feedProductionCost: { findFirst: jest.fn() },
-  feedFormula: { findFirst: jest.fn() },
+  feedFormula: { findFirst: jest.fn(), create: jest.fn() },
   inventoryItem: { findMany: jest.fn() },
   feedQualityCheck: { findFirst: jest.fn() },
+  product: { findFirst: jest.fn() },
+  branch: { findMany: jest.fn() },
   $transaction: jest.fn().mockImplementation((cb: (tx: typeof mockTx) => Promise<unknown>) => cb(mockTx))
 };
 
@@ -45,6 +47,78 @@ function makeUser(overrides: Partial<AuthenticatedUser> = {}): AuthenticatedUser
 describe("FeedProductionService", () => {
   it("is defined", () => {
     expect(makeService()).toBeDefined();
+  });
+});
+
+describe("FeedProductionService.createFormula — branch auto-default for single-branch companies (readiness review 2026-08-24)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const dto = { finishedProductId: "prod-1", code: "FM-1", name: "Formula 1", feedType: "BROILER_STARTER", targetBatchKg: 1000 } as never;
+
+  it("auto-defaults to the company's only branch when the product/user/dto all have none (the reported bug)", async () => {
+    mockPrisma.product.findFirst.mockResolvedValue({ id: "prod-1", branchId: null });
+    mockPrisma.branch.findMany.mockResolvedValue([{ id: "branch-1" }]);
+    mockPrisma.feedFormula.findFirst.mockResolvedValue(null);
+    mockPrisma.feedFormula.create.mockResolvedValue({ id: "formula-1", code: "FM-1", ingredients: [] });
+
+    const service = makeService();
+    // hasGlobalAccess with empty branchIds is the normal shape for an
+    // unrestricted admin — the exact account type that hit this bug.
+    const result = await service.createFormula(makeUser({ hasGlobalAccess: true, branchIds: [] }), dto, {});
+
+    expect(mockPrisma.feedFormula.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ branchId: "branch-1" }) })
+    );
+    expect(result.data.id).toBe("formula-1");
+  });
+
+  it("still rejects with a clearer message when the company has multiple branches and none can be picked automatically", async () => {
+    mockPrisma.product.findFirst.mockResolvedValue({ id: "prod-1", branchId: null });
+    mockPrisma.branch.findMany.mockResolvedValue([{ id: "branch-1" }, { id: "branch-2" }]);
+
+    const service = makeService();
+    await expect(
+      service.createFormula(makeUser({ hasGlobalAccess: true, branchIds: [] }), dto, {})
+    ).rejects.toThrow(/branch is required/);
+    expect(mockPrisma.feedFormula.create).not.toHaveBeenCalled();
+  });
+
+  it("skips the branch lookup entirely when the finished product already has a branch assigned", async () => {
+    mockPrisma.product.findFirst.mockResolvedValue({ id: "prod-1", branchId: "branch-9" });
+    mockPrisma.feedFormula.findFirst.mockResolvedValue(null);
+    mockPrisma.feedFormula.create.mockResolvedValue({ id: "formula-1", code: "FM-1", ingredients: [] });
+
+    const service = makeService();
+    await service.createFormula(makeUser({ hasGlobalAccess: true, branchIds: [] }), dto, {});
+
+    expect(mockPrisma.branch.findMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("FeedProductionService — branch/production-site access treats an empty array as unrestricted (readiness review 2026-08-24)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const dto = { finishedProductId: "prod-1", code: "FM-1", name: "Formula 1", feedType: "BROILER_STARTER", targetBatchKg: 1000 } as never;
+
+  it("createFormula does not block a non-global user with an empty branchIds array (was wrongly treated as 'access to nothing')", async () => {
+    mockPrisma.product.findFirst.mockResolvedValue({ id: "prod-1", branchId: null });
+    mockPrisma.branch.findMany.mockResolvedValue([{ id: "branch-1" }]);
+    mockPrisma.feedFormula.findFirst.mockResolvedValue(null);
+    mockPrisma.feedFormula.create.mockResolvedValue({ id: "formula-1", code: "FM-1", ingredients: [] });
+
+    const service = makeService();
+    await expect(
+      service.createFormula(makeUser({ hasGlobalAccess: false, branchIds: [] }), dto, {})
+    ).resolves.toBeDefined();
+  });
+
+  it("still blocks a non-global user whose real branch assignment doesn't match", async () => {
+    mockPrisma.product.findFirst.mockResolvedValue({ id: "prod-1", branchId: "branch-OTHER" });
+
+    const service = makeService();
+    await expect(
+      service.createFormula(makeUser({ hasGlobalAccess: false, branchIds: ["branch-1"] }), dto, {})
+    ).rejects.toThrow(/access to this branch/);
   });
 });
 

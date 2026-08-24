@@ -214,9 +214,21 @@ export class FeedProductionService {
 
   async createFormula(user: AuthenticatedUser, dto: CreateFeedFormulaDto, context: RequestContext) {
     const finishedProduct = await this.getProduct(user.companyId, dto.finishedProductId);
-    const branchId = dto.branchId ?? finishedProduct.branchId ?? user.branchIds[0];
+    let branchId = dto.branchId ?? finishedProduct.branchId ?? user.branchIds[0];
     if (!branchId) {
-      throw new BadRequestException("A branch is required for this feed formula.");
+      // (readiness review 2026-08-24) The formula-create form has no branch
+      // field, and Settings → Products has no branch field either, so
+      // finishedProduct.branchId is null for virtually every product in
+      // practice — leaving user.branchIds[0] as the only fallback, which is
+      // also empty for any global-access admin (empty means unrestricted,
+      // not "no access"). That failed the common case of a single-branch
+      // company outright with a confusing error instead of just using the
+      // company's only branch.
+      const branches = await this.prisma.branch.findMany({ where: { companyId: user.companyId, deletedAt: null }, select: { id: true } });
+      if (branches.length === 1) branchId = branches[0].id;
+    }
+    if (!branchId) {
+      throw new BadRequestException("A branch is required for this feed formula — this company has multiple branches, so one couldn't be picked automatically.");
     }
     this.assertBranchAccess(user, branchId);
 
@@ -1647,14 +1659,22 @@ export class FeedProductionService {
       : {};
   }
 
+  // (readiness review 2026-08-24) An empty branchIds/productionSiteIds array
+  // means "not restricted to specific ones" everywhere else this convention
+  // is used (platform.service.ts's branchWhere/farmWhere, hr.service.ts's
+  // employeeScope, identity.service.ts's assertActorHasScopeAccess) — this
+  // pair used to treat an empty array as "access to nothing" instead, since
+  // `[].includes(id)` is always false. A non-global user whose account was
+  // never assigned a specific branch/production site (the common case for
+  // e.g. a Feed Mill Manager) was wrongly blocked from every branch/site.
   private assertBranchAccess(user: AuthenticatedUser, branchId: string) {
-    if (!user.hasGlobalAccess && !user.branchIds.includes(branchId)) {
+    if (!user.hasGlobalAccess && user.branchIds.length > 0 && !user.branchIds.includes(branchId)) {
       throw new ForbiddenException("You do not have access to this branch.");
     }
   }
 
   private assertProductionSiteAccess(user: AuthenticatedUser, productionSiteId: string) {
-    if (!user.hasGlobalAccess && !user.productionSiteIds.includes(productionSiteId)) {
+    if (!user.hasGlobalAccess && user.productionSiteIds.length > 0 && !user.productionSiteIds.includes(productionSiteId)) {
       throw new ForbiddenException("You do not have access to this production site.");
     }
   }
