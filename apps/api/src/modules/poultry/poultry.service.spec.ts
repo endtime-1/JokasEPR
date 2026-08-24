@@ -155,7 +155,7 @@ describe("PoultryService — farm/warehouse access checks (H7)", () => {
       mockPrisma.flockBatch.findFirst.mockResolvedValue({ id: "batch-1", companyId: "company-1", farmId: "farm-1", branchId: "branch-1", poultryHouseId: "house-1", birdType: "LAYERS", status: "ACTIVE", code: "FLK-1" });
       mockTx.eggProductionRecord.create.mockResolvedValue({ id: "egg-rec-1" });
       mockTx.warehouse.findFirst.mockResolvedValue({ id: "wh-1", companyId: "company-1", branchId: "branch-1" });
-      mockTx.product.findFirst.mockResolvedValue({ id: "prod-1", companyId: "company-1", uomId: "uom-1" });
+      mockTx.product.findFirst.mockResolvedValue({ id: "prod-1", companyId: "company-1", uomId: "uom-1", piecesPerUnit: 1 });
       mockTx.inventoryItem.upsert.mockResolvedValue({ id: "inv-1" });
 
       const service = makeService();
@@ -178,6 +178,72 @@ describe("PoultryService — farm/warehouse access checks (H7)", () => {
           quantityReceived: 10,
           quantityRemaining: 10
         })
+      });
+    });
+
+    it("readiness review 2026-08-24: converts the raw egg-piece count into the product's stock unit (30 eggs = 1 Crate)", async () => {
+      mockPrisma.flockBatch.findFirst.mockResolvedValue({ id: "batch-1", companyId: "company-1", farmId: "farm-1", branchId: "branch-1", poultryHouseId: "house-1", birdType: "LAYERS", status: "ACTIVE", code: "FLK-1" });
+      mockTx.eggProductionRecord.create.mockResolvedValue({ id: "egg-rec-1" });
+      mockTx.warehouse.findFirst.mockResolvedValue({ id: "wh-1", companyId: "company-1", branchId: "branch-1" });
+      // Egg product measured in Crates — 30 eggs per crate.
+      mockTx.product.findFirst.mockResolvedValue({ id: "prod-1", companyId: "company-1", uomId: "uom-crate", piecesPerUnit: 30 });
+      mockTx.inventoryItem.upsert.mockResolvedValue({ id: "inv-1" });
+
+      const service = makeService();
+      await service.createEggs(
+        makeUser({ farmIds: ["farm-1"], warehouseIds: ["wh-1"] }),
+        { flockBatchId: "batch-1", recordDate: "2026-01-01", goodEggs: 4200, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0, warehouseId: "wh-1", eggProductId: "prod-1" } as never,
+        {}
+      );
+
+      // 4200 eggs / 30 per crate = 140 crates credited, not 4200.
+      expect(mockTx.stockBatch.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ quantityReceived: 140, quantityRemaining: 140 })
+      });
+      expect(mockTx.inventoryItem.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({ update: expect.objectContaining({ quantityOnHand: { increment: 140 } }) })
+      );
+      expect(mockTx.stockMovement.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ quantity: 140 }) })
+      );
+    });
+
+    it("readiness review 2026-08-24: handles a partial crate (not an exact multiple of 30) without rounding to a whole number", async () => {
+      mockPrisma.flockBatch.findFirst.mockResolvedValue({ id: "batch-1", companyId: "company-1", farmId: "farm-1", branchId: "branch-1", poultryHouseId: "house-1", birdType: "LAYERS", status: "ACTIVE", code: "FLK-1" });
+      mockTx.eggProductionRecord.create.mockResolvedValue({ id: "egg-rec-1" });
+      mockTx.warehouse.findFirst.mockResolvedValue({ id: "wh-1", companyId: "company-1", branchId: "branch-1" });
+      mockTx.product.findFirst.mockResolvedValue({ id: "prod-1", companyId: "company-1", uomId: "uom-crate", piecesPerUnit: 30 });
+      mockTx.inventoryItem.upsert.mockResolvedValue({ id: "inv-1" });
+
+      const service = makeService();
+      await service.createEggs(
+        makeUser({ farmIds: ["farm-1"], warehouseIds: ["wh-1"] }),
+        { flockBatchId: "batch-1", recordDate: "2026-01-01", goodEggs: 4205, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0, warehouseId: "wh-1", eggProductId: "prod-1" } as never,
+        {}
+      );
+
+      // 4205 / 30 = 140.1666... — credited as a real partial crate, not floored/rounded away.
+      expect(mockTx.stockBatch.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ quantityReceived: 140.1667, quantityRemaining: 140.1667 })
+      });
+    });
+
+    it("readiness review 2026-08-24: falls back to no conversion (1:1) if a product somehow has no piecesPerUnit set", async () => {
+      mockPrisma.flockBatch.findFirst.mockResolvedValue({ id: "batch-1", companyId: "company-1", farmId: "farm-1", branchId: "branch-1", poultryHouseId: "house-1", birdType: "LAYERS", status: "ACTIVE", code: "FLK-1" });
+      mockTx.eggProductionRecord.create.mockResolvedValue({ id: "egg-rec-1" });
+      mockTx.warehouse.findFirst.mockResolvedValue({ id: "wh-1", companyId: "company-1", branchId: "branch-1" });
+      mockTx.product.findFirst.mockResolvedValue({ id: "prod-1", companyId: "company-1", uomId: "uom-1" }); // no piecesPerUnit field at all
+      mockTx.inventoryItem.upsert.mockResolvedValue({ id: "inv-1" });
+
+      const service = makeService();
+      await service.createEggs(
+        makeUser({ farmIds: ["farm-1"], warehouseIds: ["wh-1"] }),
+        { flockBatchId: "batch-1", recordDate: "2026-01-01", goodEggs: 10, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0, warehouseId: "wh-1", eggProductId: "prod-1" } as never,
+        {}
+      );
+
+      expect(mockTx.stockBatch.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ quantityReceived: 10, quantityRemaining: 10 })
       });
     });
 
@@ -216,7 +282,7 @@ describe("PoultryService — farm/warehouse access checks (H7)", () => {
       mockPrisma.flockBatch.findFirst.mockResolvedValue({ id: "batch-1", companyId: "company-1", farmId: "farm-1", branchId: "branch-1", poultryHouseId: "house-1", birdType: "LAYERS", status: "ACTIVE", code: "FLK-1", startDate: new Date("2020-01-01") });
       mockTx.eggProductionRecord.create.mockResolvedValue({ id: "egg-rec-1" });
       mockTx.warehouse.findFirst.mockResolvedValue({ id: "wh-1", companyId: "company-1", branchId: "branch-1" });
-      mockTx.product.findFirst.mockResolvedValue({ id: "prod-seconds", companyId: "company-1", uomId: "uom-1" });
+      mockTx.product.findFirst.mockResolvedValue({ id: "prod-seconds", companyId: "company-1", uomId: "uom-1", piecesPerUnit: 1 });
       mockTx.inventoryItem.upsert.mockResolvedValue({ id: "inv-seconds" });
 
       const service = makeService();

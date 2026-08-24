@@ -555,6 +555,7 @@ export class SettingsService {
         sku: dto.sku.toUpperCase(),
         description: dto.description,
         type: dto.type,
+        piecesPerUnit: dto.piecesPerUnit ?? 1,
         status: ProductStatus.ACTIVE,
         createdById: user.id
       },
@@ -578,6 +579,7 @@ export class SettingsService {
     if (dto.branchId !== undefined) data.branchId = dto.branchId || null;
     if (dto.description !== undefined) data.description = dto.description;
     if (dto.status) data.status = dto.status;
+    if (dto.piecesPerUnit !== undefined) data.piecesPerUnit = dto.piecesPerUnit;
     const row = await this.prisma.product.update({
       where: { id, companyId: user.companyId },
       data,

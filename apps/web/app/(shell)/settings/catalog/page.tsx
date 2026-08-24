@@ -31,6 +31,7 @@ type Product = {
   status: ProductStatus;
   categoryId: string | null;
   uomId: string;
+  piecesPerUnit: number;
   category: { id: string; name: string; code: string } | null;
   uom: { id: string; name: string; symbol: string };
   createdAt: string;
@@ -55,6 +56,7 @@ type FormState = {
   categoryId: string;
   description: string;
   status: ProductStatus;
+  piecesPerUnit: string;
 };
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -88,7 +90,8 @@ const EMPTY_FORM: FormState = {
   uomId: "",
   categoryId: "",
   description: "",
-  status: "ACTIVE"
+  status: "ACTIVE",
+  piecesPerUnit: "1"
 };
 
 const inputCls =
@@ -230,7 +233,8 @@ export default function ProductCatalogPage() {
       uomId: p.uomId,
       categoryId: p.categoryId ?? "",
       description: p.description ?? "",
-      status: p.status
+      status: p.status,
+      piecesPerUnit: String(p.piecesPerUnit ?? 1)
     });
     setSaveError(null);
     setDrawerOpen(true);
@@ -247,7 +251,8 @@ export default function ProductCatalogPage() {
         type: form.type,
         uomId: form.uomId,
         description: form.description || undefined,
-        categoryId: form.categoryId || undefined
+        categoryId: form.categoryId || undefined,
+        piecesPerUnit: Math.max(1, Number(form.piecesPerUnit) || 1)
       };
       if (editing) {
         body.status = form.status;
@@ -584,6 +589,20 @@ export default function ProductCatalogPage() {
                         </option>
                       ))}
                     </select>
+                  </div>
+
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold text-ink/60">Pieces per Unit</label>
+                    <input
+                      type="number"
+                      min={1}
+                      step={1}
+                      className={inputCls}
+                      placeholder="1"
+                      value={form.piecesPerUnit}
+                      onChange={(e) => setForm({ ...form, piecesPerUnit: e.target.value })}
+                    />
+                    <p className="mt-1 text-[10px] text-ink/40">e.g. 30 if this product's unit is a Crate of 30 eggs. Leave at 1 if the unit already is a single piece.</p>
                   </div>
 
                   <div>

@@ -1468,6 +1468,12 @@ model Product {
   description String?
   type        ProductType   @default(FINISHED_GOOD)
   status      ProductStatus @default(ACTIVE)
+  // How many individual pieces make up one of this product's stock unit —
+  // e.g. 30 for an egg product measured in Crates. Defaults to 1 (no
+  // conversion) so every existing product is unaffected. Used when a
+  // per-piece count (egg collection, etc.) is credited to inventory: the
+  // stock quantity is the piece count divided by this, not the raw count.
+  piecesPerUnit Int         @default(1)
 
   // Storefront / public listing
   isPublic           Boolean   @default(false)

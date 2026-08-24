@@ -169,6 +169,10 @@ export class CreateProductDto {
   @IsOptional() @IsUUID() categoryId?: string;
   @IsOptional() @IsUUID() branchId?: string;
   @IsOptional() @IsString() @MaxLength(500) description?: string;
+  // How many individual pieces make up one of this product's stock unit —
+  // e.g. 30 for a Crate-of-eggs product. Omit (or 1) for a product measured
+  // in individual pieces already, where no conversion is needed.
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) piecesPerUnit?: number;
 }
 
 export class UpdateProductDto {
@@ -180,6 +184,7 @@ export class UpdateProductDto {
   @IsOptional() @IsUUID() branchId?: string;
   @IsOptional() @IsString() @MaxLength(500) description?: string;
   @IsOptional() @IsEnum(ProductStatus) status?: ProductStatus;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) piecesPerUnit?: number;
 }
 
 export class ProductListQueryDto {

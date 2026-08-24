@@ -2176,10 +2176,17 @@ export class PoultryService {
     if (!warehouse) throw new BadRequestException("Warehouse not found.");
     const product = await tx.product.findFirst({ where: { companyId: user.companyId, id: productId } });
     if (!product) throw new BadRequestException("Product not found.");
+    // (2026-08-24) `quantity` here is always a raw piece count (eggs
+    // collected). Crediting it directly assumed the product's stock unit
+    // WAS a piece — silently 30x-overstated stock the moment a product was
+    // set up as e.g. a Crate of 30 eggs. piecesPerUnit (default 1, so
+    // unaffected for every ordinary piece-denominated product) converts the
+    // piece count into the product's actual stock unit before crediting.
+    const quantityInStockUnits = Math.round((quantity / (product.piecesPerUnit || 1)) * 10000) / 10000;
     const item = await tx.inventoryItem.upsert({
       where: { companyId_warehouseId_productId: { companyId: user.companyId, warehouseId, productId } },
-      update: { quantityOnHand: { increment: quantity }, updatedById: user.id },
-      create: { companyId: user.companyId, branchId: warehouse.branchId, warehouseId, farmId: batch.farmId, productId, uomId: product.uomId, quantityOnHand: quantity, createdById: user.id }
+      update: { quantityOnHand: { increment: quantityInStockUnits }, updatedById: user.id },
+      create: { companyId: user.companyId, branchId: warehouse.branchId, warehouseId, farmId: batch.farmId, productId, uomId: product.uomId, quantityOnHand: quantityInStockUnits, createdById: user.id }
     });
     // H-BUG-2 (2026-08-12): this only ever raised the aggregate
     // quantityOnHand — it never created a StockBatch. Every FIFO consumer
@@ -2201,14 +2208,14 @@ export class PoultryService {
         inventoryItemId: item.id,
         uomId: product.uomId,
         batchNumber,
-        quantityReceived: quantity,
-        quantityRemaining: quantity,
+        quantityReceived: quantityInStockUnits,
+        quantityRemaining: quantityInStockUnits,
         manufactureDate: new Date(),
         createdById: user.id
       }
     });
     await tx.stockMovement.create({
-      data: { companyId: user.companyId, branchId: batch.branchId, productId, inventoryItemId: item.id, toWarehouseId: warehouseId, warehouseId, farmId: batch.farmId, uomId: product.uomId, movementType: "PRODUCTION_OUTPUT", quantity, referenceType, referenceId, notes, createdById: user.id }
+      data: { companyId: user.companyId, branchId: batch.branchId, productId, inventoryItemId: item.id, toWarehouseId: warehouseId, warehouseId, farmId: batch.farmId, uomId: product.uomId, movementType: "PRODUCTION_OUTPUT", quantity: quantityInStockUnits, referenceType, referenceId, notes, createdById: user.id }
     });
   }
 
