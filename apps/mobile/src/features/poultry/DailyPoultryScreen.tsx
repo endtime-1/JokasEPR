@@ -40,11 +40,17 @@ const EMPTY: Form = {
 
 type Err = Partial<Record<keyof Form, string>>;
 
+// Eggs are physically collected and counted in crates on the farm, not
+// individual pieces — 1 crate = 30 eggs. Mirrors the Egg Collection screen's
+// own constant.
+const EGGS_PER_CRATE = 30;
+
 export function DailyPoultryScreen() {
   const { user } = useAuth();
   const navigation = useNavigation<any>();
   const [form, setForm] = useState<Form>(EMPTY);
   const [errors, setErrors] = useState<Err>({});
+  const [crates, setCrates] = useState("");
 
   const { data: rawFarms } = useLookup("farms", async () => { const r = await fetchFarms(); return (r.data as any[]) ?? []; });
   const farms: SelectOption[] = useMemo(() => {
@@ -84,6 +90,15 @@ export function DailyPoultryScreen() {
     setForm((f) => ({ ...f, [k]: v }));
     setErrors((e) => ({ ...e, [k]: undefined }));
   };
+
+  // Crates is a data-entry convenience only — Total Eggs (pieces) stays the
+  // real field submitted to the backend, unchanged. Total Eggs itself is
+  // still directly editable afterward for a partial crate or an adjustment.
+  function handleCratesChange(v: string) {
+    setCrates(v);
+    const n = Math.max(0, Number(v) || 0);
+    set("totalEggs")(v ? String(n * EGGS_PER_CRATE) : "");
+  }
 
   useEffect(() => {
     if (!form.flockBatchId || !form.recordDate) return;
@@ -175,9 +190,11 @@ export function DailyPoultryScreen() {
             <FormField label="Culled" value={form.culledCount} onChangeText={set("culledCount")} keyboardType="numeric" placeholder="0" />
           </View>
           <View style={styles.half}>
-            <FormField label="Total Eggs" value={form.totalEggs} onChangeText={set("totalEggs")} keyboardType="numeric" placeholder="0" />
+            <FormField label={`Crates (1 = ${EGGS_PER_CRATE} eggs)`} value={crates} onChangeText={handleCratesChange} keyboardType="numeric" placeholder="e.g. 140" />
           </View>
         </View>
+
+        <FormField label="Total Eggs (pieces)" value={form.totalEggs} onChangeText={set("totalEggs")} keyboardType="numeric" placeholder="0" />
 
         <FormField label="Feed Consumed (kg)" value={form.feedConsumedKg} onChangeText={set("feedConsumedKg")} keyboardType="decimal-pad" placeholder="0" />
       </FormCard>

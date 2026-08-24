@@ -11,6 +11,20 @@ import { formatCell } from "../lib/format";
 import { useAuth } from "./auth-context";
 import { ConfirmModal, EmptyState, StatusBadge } from "./ui";
 
+// Eggs are physically collected and counted in crates on the farm, not
+// individual pieces — 1 crate = 30 eggs. Mirrors the mobile Egg Collection
+// screen's own constant.
+const EGGS_PER_CRATE = 30;
+
+// totalEggs/goodEggs (and the other egg quality-grade counts) are always
+// raw piece counts, never crates — spelled out on both record tables since
+// that's where historical data actually gets reviewed, not just on the
+// add-record forms.
+const EGG_PIECE_COLUMN_LABELS: Record<string, string> = {
+  totalEggs: "Total Eggs (pieces)", goodEggs: "Good (pieces)", crackedEggs: "Cracked (pieces)",
+  dirtyEggs: "Dirty (pieces)", brokenEggs: "Broken (pieces)", rejectedEggs: "Rejected (pieces)"
+};
+
 type Option = {
   id: string;
   code?: string;
@@ -1076,6 +1090,16 @@ function BatchRecordSection({ batchId, type, label, cols, endpoint, options }: {
   const [loadError, setLoadError] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   const [addForm, setAddForm] = useState<Record<string, string>>({});
+  // Crates is a data-entry convenience only — the real field submitted
+  // ("goodEggs" for type=eggs, "totalEggs" for type=daily) is still a raw
+  // piece count, unchanged. Mirrors the mobile Egg Collection screen's own
+  // crate field (1 crate = 30 eggs).
+  const [addCrates, setAddCrates] = useState("");
+  function handleAddCratesChange(v: string, pieceField: string) {
+    setAddCrates(v);
+    const n = Math.max(0, Number(v) || 0);
+    setAddForm((f) => ({ ...f, [pieceField]: v ? String(n * EGGS_PER_CRATE) : "" }));
+  }
   const [addError, setAddError] = useState("");
   const [addWarning, setAddWarning] = useState("");
   const [addLoading, setAddLoading] = useState(false);
@@ -1118,6 +1142,7 @@ function BatchRecordSection({ batchId, type, label, cols, endpoint, options }: {
       defaults.warehouseId = options.warehouses[0]?.id ?? "";
     }
     setAddForm(defaults);
+    setAddCrates("");
     setAddError("");
     setAddOpen(true);
     if (!open) { load(); setOpen(true); }
@@ -1134,6 +1159,7 @@ function BatchRecordSection({ batchId, type, label, cols, endpoint, options }: {
       if (response?.warning) setAddWarning(response.warning);
       setAddOpen(false);
       setAddForm({});
+      setAddCrates("");
       await load();
     } catch (err: any) {
       setAddError(err?.message ?? "Failed to save record.");
@@ -1237,6 +1263,10 @@ function BatchRecordSection({ batchId, type, label, cols, endpoint, options }: {
                 {type === "eggs" && (
                   <>
                     <div>
+                      <label className="mb-0.5 block text-[10px] text-ink/60">{`Crates collected (1 crate = ${EGGS_PER_CRATE} eggs, optional)`}</label>
+                      <input type="number" min="0" step="1" className="w-full rounded border border-line bg-white px-2 py-1 text-xs" placeholder="e.g. 140" value={addCrates} onChange={(e) => handleAddCratesChange(e.target.value, "goodEggs")} />
+                    </div>
+                    <div>
                       <label className="mb-0.5 block text-[10px] text-ink/60">Egg product (good eggs → stock)</label>
                       <select className="w-full rounded border border-line bg-white px-2 py-1 text-xs" value={addForm.eggProductId ?? ""} onChange={(e) => setAddForm((f) => ({ ...f, eggProductId: e.target.value }))}>
                         <option value="">— none —</option>
@@ -1261,6 +1291,10 @@ function BatchRecordSection({ batchId, type, label, cols, endpoint, options }: {
                 )}
                 {type === "daily" && (
                   <>
+                    <div>
+                      <label className="mb-0.5 block text-[10px] text-ink/60">{`Crates of eggs collected (1 crate = ${EGGS_PER_CRATE} eggs, optional)`}</label>
+                      <input type="number" min="0" step="1" className="w-full rounded border border-line bg-white px-2 py-1 text-xs" placeholder="e.g. 140" value={addCrates} onChange={(e) => handleAddCratesChange(e.target.value, "totalEggs")} />
+                    </div>
                     <div>
                       <label className="mb-0.5 block text-[10px] text-ink/60">Feed product (optional — deducts stock)</label>
                       <select className="w-full rounded border border-line bg-white px-2 py-1 text-xs" value={addForm.feedProductId ?? ""} onChange={(e) => setAddForm((f) => ({ ...f, feedProductId: e.target.value }))}>
@@ -1351,7 +1385,7 @@ function BatchRecordSection({ batchId, type, label, cols, endpoint, options }: {
               <table className="w-full text-left text-xs">
                 <thead className="bg-field">
                   <tr>
-                    {cols.map((c) => <th key={c} className="px-2 py-1.5 font-semibold text-ink/60 uppercase text-[10px]">{c.replace(/([A-Z])/g, " $1")}</th>)}
+                    {cols.map((c) => <th key={c} className="px-2 py-1.5 font-semibold text-ink/60 uppercase text-[10px]">{EGG_PIECE_COLUMN_LABELS[c] ?? c.replace(/([A-Z])/g, " $1")}</th>)}
                     <th className="px-2 py-1.5 w-16"></th>
                   </tr>
                 </thead>
@@ -1655,6 +1689,16 @@ function GenericRecordForm({ options, optionsLoading = false, form, setForm, sub
   saving?: boolean;
 }) {
   const fields = recordFields(type);
+  // Crates is a data-entry convenience only — the real field submitted
+  // ("goodEggs" for type=eggs, "totalEggs" for type=daily) is still a raw
+  // piece count, unchanged. Mirrors the mobile Egg Collection screen's own
+  // crate field (1 crate = 30 eggs).
+  const [crates, setCrates] = useState("");
+  function handleCratesChange(v: string, pieceField: string) {
+    setCrates(v);
+    const n = Math.max(0, Number(v) || 0);
+    setForm({ ...form, [pieceField]: v ? String(n * EGGS_PER_CRATE) : "" });
+  }
 
   // Houses that actually have at least one pen
   const housesWithPens = useMemo(() => {
@@ -1741,6 +1785,9 @@ function GenericRecordForm({ options, optionsLoading = false, form, setForm, sub
 
       {type === "daily" && (
         <>
+          <FormField label={`Crates of eggs collected (1 crate = ${EGGS_PER_CRATE} eggs, optional)`}>
+            <input type="number" min="0" step="1" className={inputClass} placeholder="e.g. 140" value={crates} onChange={(e) => handleCratesChange(e.target.value, "totalEggs")} />
+          </FormField>
           <FormField label="Feed product (optional — deducts stock)">
             <select name="feedProductId" className={inputClass} value={form.feedProductId ?? ""} onChange={(e) => setForm({ ...form, feedProductId: e.target.value })}>
               <option value="">— none —</option>
@@ -1770,6 +1817,9 @@ function GenericRecordForm({ options, optionsLoading = false, form, setForm, sub
 
       {type === "eggs" && (
         <>
+          <FormField label={`Crates collected (1 crate = ${EGGS_PER_CRATE} eggs, optional)`}>
+            <input type="number" min="0" step="1" className={inputClass} placeholder="e.g. 140" value={crates} onChange={(e) => handleCratesChange(e.target.value, "goodEggs")} />
+          </FormField>
           <FormField label="Egg product (good eggs → stock)">
             <select name="eggProductId" className={inputClass} value={form.eggProductId ?? ""} onChange={(e) => setForm({ ...form, eggProductId: e.target.value })}>
               <option value="">— none —</option>
@@ -1848,12 +1898,15 @@ function recordFields(type: string) {
       { name: "mortalityCount", label: "Mortality today", kind: "number", defaultValue: "0" },
       { name: "culledCount", label: "Culled today", kind: "number", defaultValue: "0" },
       { name: "feedConsumedKg", label: "Feed consumed (kg)", kind: "number", defaultValue: "0" },
-      { name: "totalEggs", label: "Total eggs", kind: "number", defaultValue: "0" },
+      // (2026-08-24) Explicitly labeled "pieces" — this is always a raw egg
+      // count (same as goodEggs below), never crates, whether it was typed
+      // in directly or filled in via the Crates helper above.
+      { name: "totalEggs", label: "Total eggs (pieces)", kind: "number", defaultValue: "0" },
       { name: "notes", label: "Notes", kind: "text" }
     ],
     mortality: [date, { name: "birdCount", label: "Bird count", kind: "number", required: true }, { name: "reason", label: "Reason", kind: "text" }],
     feed: [date, { name: "bags", label: "Bags (50 kg each)", kind: "number", required: true }, { name: "costAmount", label: "Cost (GHS)", kind: "number" }],
-    eggs: [date, { name: "goodEggs", label: "Good", kind: "number", defaultValue: "0" }, { name: "crackedEggs", label: "Cracked", kind: "number", defaultValue: "0" }, { name: "dirtyEggs", label: "Dirty", kind: "number", defaultValue: "0" }, { name: "brokenEggs", label: "Broken", kind: "number", defaultValue: "0" }, { name: "rejectedEggs", label: "Rejected", kind: "number", defaultValue: "0" }],
+    eggs: [date, { name: "goodEggs", label: "Good (pieces)", kind: "number", defaultValue: "0" }, { name: "crackedEggs", label: "Cracked (pieces)", kind: "number", defaultValue: "0" }, { name: "dirtyEggs", label: "Dirty (pieces)", kind: "number", defaultValue: "0" }, { name: "brokenEggs", label: "Broken (pieces)", kind: "number", defaultValue: "0" }, { name: "rejectedEggs", label: "Rejected (pieces)", kind: "number", defaultValue: "0" }],
     weights: [date, { name: "sampleSize", label: "Sample size", kind: "number", required: true }, { name: "averageWeightKg", label: "Average kg", kind: "number", required: true }],
     medications: [{ name: "medicationName", label: "Medication", kind: "text", required: true }, { name: "dosage", label: "Dosage", kind: "text", required: true }, { name: "route", label: "Route", kind: "text" }, { name: "startDate", label: "Start date", kind: "date", required: true }],
     vaccinations: [{ name: "vaccineName", label: "Vaccine", kind: "text", required: true }, { name: "dose", label: "Dose", kind: "text", required: true }, { name: "vaccinationDate", label: "Date", kind: "date", required: true }],
@@ -1919,7 +1972,7 @@ function SimpleRecordTable({ rows, loading, onEdit, onDelete }: { rows: Record<s
   ]);
   const keys = Object.keys(rows?.[0] ?? {}).filter((key) => allowedKeys.has(key));
   const columns = [
-    ...keys.map((key) => ({ key, label: key.replace(/([A-Z])/g, " $1"), render: (row: Record<string, any>) => formatCell(key, row[key], 80) })),
+    ...keys.map((key) => ({ key, label: EGG_PIECE_COLUMN_LABELS[key] ?? key.replace(/([A-Z])/g, " $1"), render: (row: Record<string, any>) => formatCell(key, row[key], 80) })),
     ...((onEdit || onDelete) ? [{ key: "_actions", label: "", render: (row: Record<string, any>) => (
       <div className="flex gap-1">
         {onEdit && (
