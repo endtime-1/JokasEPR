@@ -16,7 +16,7 @@ type ReportCategory = "Poultry" | "Feed" | "Soya" | "Inventory" | "Sales and Fin
 type Column = {
   key: string;
   label: string;
-  type?: "text" | "number" | "money" | "date" | "percent";
+  type?: "text" | "number" | "money" | "date" | "percent" | "balance";
 };
 
 type ReportDefinition = {
@@ -49,7 +49,7 @@ type ReportResult = {
 
 const REPORTS: ReportDefinition[] = [
   report("poultry.daily", "Daily Poultry Report", "Poultry", PERMISSIONS.POULTRY_READ, "dailyPoultryRecord", "recordDate", [
-    col("recordDate", "Date", "date"), col("farmId", "Farm"), col("poultryHouseId", "House"), col("flockBatchId", "Flock"), col("openingBirdCount", "Opening Birds", "number"), col("mortalityCount", "Mortality", "number"), col("culledCount", "Culls", "number"), col("feedConsumedKg", "Feed Kg", "number"), col("totalEggs", "Eggs", "number"), col("status", "Status")
+    col("recordDate", "Date", "date"), col("farmId", "Farm"), col("poultryHouseId", "House"), col("flockBatchId", "Flock"), col("openingBirdCount", "Opening Birds", "balance"), col("mortalityCount", "Mortality", "number"), col("culledCount", "Culls", "number"), col("feedConsumedKg", "Feed Kg", "number"), col("totalEggs", "Eggs", "number"), col("status", "Status")
   ], (row) => row, { labelKey: "recordDate", valueKey: "totalEggs", title: "Eggs by day" }),
   report("poultry.flock-performance", "Flock Performance Report", "Poultry", PERMISSIONS.POULTRY_READ, "flockBatch", "startDate", [
     col("code", "Code"), col("name", "Flock"), col("birdType", "Bird Type"), col("farmId", "Farm"), col("poultryHouseId", "House"), col("openingBirdCount", "Opening Birds", "number"), col("startDate", "Start Date", "date"), col("status", "Status")
@@ -403,6 +403,13 @@ export class ReportsService {
         // margin report could show "Total margin: 340%." A percent column's
         // "total" is its average across the rows, not a sum.
         totals[column.key] = rows.length > 0 ? rows.reduce((sum, row) => sum + n(row[column.key]), 0) / rows.length : 0;
+      } else if (column.type === "balance") {
+        // A "balance" column is a point-in-time snapshot (e.g. a flock's
+        // opening bird count on a given day), not a flow — summing it across
+        // rows double-counts the same birds/stock on every row that shares
+        // them. rows are ordered desc by date, so rows[0] is the most recent
+        // snapshot; that's the figure a "total" should show.
+        totals[column.key] = rows.length > 0 ? n(rows[0][column.key]) : 0;
       }
     }
     return totals;

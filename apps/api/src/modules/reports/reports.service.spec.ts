@@ -135,6 +135,30 @@ describe("ReportsService — totals() averages percent columns instead of summin
   });
 });
 
+describe("ReportsService — totals() uses the latest row for balance columns instead of summing them", () => {
+  it("uses the first row's value for a balance-typed column, not the sum across rows", () => {
+    const service = new ReportsService({} as never, {} as never);
+    const columns = [{ key: "openingBirdCount", label: "Opening Birds", type: "balance" as const }];
+    // rows arrive ordered desc by date (see run()), so rows[0] is the most
+    // recent day's snapshot — 4500 birds today, not 4500 + 4800 + 5000 across
+    // every day this flock has ever been recorded.
+    const rows = [{ openingBirdCount: 4500 }, { openingBirdCount: 4800 }, { openingBirdCount: 5000 }];
+
+    const totals = (service as unknown as { totals: (c: typeof columns, r: typeof rows) => Record<string, number> }).totals(columns, rows);
+
+    expect(totals.openingBirdCount).toBe(4500);
+  });
+
+  it("returns 0 for a balance column with no rows", () => {
+    const service = new ReportsService({} as never, {} as never);
+    const columns = [{ key: "openingBirdCount", label: "Opening Birds", type: "balance" as const }];
+
+    const totals = (service as unknown as { totals: (c: typeof columns, r: never[]) => Record<string, number> }).totals(columns, []);
+
+    expect(totals.openingBirdCount).toBe(0);
+  });
+});
+
 describe("ReportsService — CSV/XLS formula-injection neutralization (M12)", () => {
   function makeReportResult(cellValue: unknown) {
     return {

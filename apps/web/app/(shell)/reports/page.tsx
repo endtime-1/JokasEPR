@@ -520,7 +520,7 @@ function queryString(filters: Record<string, string>) {
 
 function formatValue(value: unknown, type?: string) {
   if (type === "money") return `GHS ${number(value)}`;
-  if (type === "number" || type === "percent") return number(value);
+  if (type === "number" || type === "percent" || type === "balance") return number(value);
   return String(value ?? "-");
 }
 
