@@ -103,6 +103,37 @@ describe("ReportsService.run — row-cap truncation is surfaced, not silent (M6)
   });
 });
 
+describe("ReportsService.run — resolveIds() scopes the ID-to-name lookup to the caller's company (2026-08-25)", () => {
+  function makeUser(overrides: Partial<Parameters<ReportsService["catalog"]>[0]> = {}) {
+    return {
+      id: "user-1", companyId: "company-1", email: "u@x.com", fullName: "U",
+      roles: [], permissions: [PERMISSIONS.POULTRY_READ], branchIds: [], farmIds: [], warehouseIds: [], productionSiteIds: [],
+      hasGlobalAccess: false,
+      ...overrides
+    };
+  }
+
+  it("includes companyId in the flockBatch/poultryHouse lookup, not just id IN (...)", async () => {
+    // The ids here are always drawn from rows the main query already scoped
+    // to this company, so this was never a reachable leak in practice — but
+    // a bare `id: { in: ids }` with no companyId still tripped
+    // PrismaService's tenant guard (a WARN logged on every report view with
+    // a Flock/House column) and left no real defense if that assumption
+    // ever stopped holding as ID_MODELS grows.
+    const mockPrisma = {
+      dailyPoultryRecord: { findMany: jest.fn().mockResolvedValue([{ recordDate: new Date(2026, 0, 1), flockBatchId: "batch-1" }]) },
+      flockBatch: { findMany: jest.fn().mockResolvedValue([{ id: "batch-1", code: "FB-1" }]) }
+    };
+    const service = new ReportsService(mockPrisma as never, {} as never);
+
+    await service.run("poultry.daily", makeUser() as never, {} as never);
+
+    const where = mockPrisma.flockBatch.findMany.mock.calls[0][0].where;
+    expect(where.companyId).toBe("company-1");
+    expect(where.id).toEqual({ in: ["batch-1"] });
+  });
+});
+
 describe("ReportsService — totals() averages percent columns instead of summing them (M6)", () => {
   it("averages a percent-typed column across rows", () => {
     const service = new ReportsService({} as never, {} as never);

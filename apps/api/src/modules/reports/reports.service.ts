@@ -236,7 +236,7 @@ export class ReportsService {
     const truncated = rows.length > ReportsService.ROW_CAP;
     if (truncated) rows.length = ReportsService.ROW_CAP;
     const mappedRows = rows.map((row: Record<string, unknown>) => this.normalize(definition.map(row))).filter((row: Record<string, unknown>) => definition.filter?.(row) ?? true);
-    const resolvedRows = await this.resolveIds(definition.columns, mappedRows);
+    const resolvedRows = await this.resolveIds(definition.columns, mappedRows, user.companyId);
     const totals = this.totals(definition.columns, resolvedRows);
     const chart = this.chart(definition, resolvedRows);
     return { data: { definition: this.publicDefinition(definition), rows: resolvedRows, totals, chart, truncated } };
@@ -327,7 +327,7 @@ export class ReportsService {
     if (fields.includes(field)) where[field] = requested;
   }
 
-  private async resolveIds(columns: Column[], rows: Record<string, unknown>[]): Promise<Record<string, unknown>[]> {
+  private async resolveIds(columns: Column[], rows: Record<string, unknown>[], companyId: string): Promise<Record<string, unknown>[]> {
     const ID_MODELS: Record<string, { model: string; nameField: string }> = {
       farmId:           { model: "farm",           nameField: "name" },
       poultryHouseId:   { model: "poultryHouse",   nameField: "name" },
@@ -363,7 +363,13 @@ export class ReportsService {
         const { model, nameField } = ID_MODELS[col];
         const delegate = (this.prisma as unknown as Record<string, { findMany: (a: unknown) => Promise<Record<string, unknown>[]> }>)[model];
         if (!delegate) return;
-        const records = await delegate.findMany({ where: { id: { in: ids } }, select: { id: true, [nameField]: true } }).catch(() => [] as Record<string, unknown>[]);
+        // The ids here always come from rows already scoped to this company
+        // (via this.where() in run()), so this was never a reachable leak in
+        // practice — but the tenant guard in prisma.service.ts flags any
+        // query on a guarded model with no top-level companyId regardless,
+        // and it's a real belt-and-suspenders gap worth closing rather than
+        // relying on that always staying true as ID_MODELS grows.
+        const records = await delegate.findMany({ where: { id: { in: ids }, companyId }, select: { id: true, [nameField]: true } }).catch(() => [] as Record<string, unknown>[]);
         const m = new Map<string, string>();
         for (const r of records) m.set(r.id as string, (r[nameField] as string) ?? (r.id as string));
         nameMaps[col] = m;
