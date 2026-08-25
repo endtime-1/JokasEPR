@@ -1550,19 +1550,37 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
   }, [options.batches]);
 
   // Auto-prefill opening bird count from previous day's closing count (daily records only).
+  // If today's record for this batch+pen was already saved, the backend
+  // returns it in full ("existing_today") — prefill every field from it, not
+  // just Opening Count, so submitting here (rather than the edit-in-table
+  // flow) doesn't quietly zero out mortality/culled/feed/eggs and trip the
+  // "can't be reduced" guard.
   useEffect(() => {
     if (type !== "daily" || editingId || !form.flockBatchId || !form.recordDate) return;
     let cancelled = false;
-    apiFetch<{ data: { openingBirdCount: number; source: string } }>(
-      `/poultry/daily-records/prefill?flockBatchId=${encodeURIComponent(form.flockBatchId)}&date=${encodeURIComponent(form.recordDate)}`
+    const penQuery = form.penId ? `&penId=${encodeURIComponent(form.penId)}` : "";
+    apiFetch<{ data: { openingBirdCount: number; mortalityCount?: number; culledCount?: number; feedConsumedKg?: number; totalEggs?: number; notes?: string; source: string } }>(
+      `/poultry/daily-records/prefill?flockBatchId=${encodeURIComponent(form.flockBatchId)}&date=${encodeURIComponent(form.recordDate)}${penQuery}`
     ).then((res) => {
       if (cancelled) return;
-      const count = res?.data?.openingBirdCount;
-      if (count == null) return;
-      setForm((prev) => ({ ...prev, openingBirdCount: String(count) }));
+      const data = res?.data;
+      if (data?.openingBirdCount == null) return;
+      if (data.source === "existing_today") {
+        setForm((prev) => ({
+          ...prev,
+          openingBirdCount: String(data.openingBirdCount),
+          mortalityCount: String(data.mortalityCount ?? 0),
+          culledCount: String(data.culledCount ?? 0),
+          feedConsumedKg: String(data.feedConsumedKg ?? 0),
+          totalEggs: String(data.totalEggs ?? 0),
+          notes: data.notes ?? prev.notes ?? "",
+        }));
+      } else {
+        setForm((prev) => ({ ...prev, openingBirdCount: String(data.openingBirdCount) }));
+      }
     }).catch(() => undefined);
     return () => { cancelled = true; };
-  }, [type, form.flockBatchId, form.recordDate, editingId]);
+  }, [type, form.flockBatchId, form.recordDate, form.penId, editingId]);
 
   function startEdit(row: Record<string, any>) {
     const pre: Record<string, string> = { flockBatchId: row.flockBatchId ?? "", penId: row.penId ?? "", poultryHouseId: "" };

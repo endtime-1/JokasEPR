@@ -166,8 +166,8 @@ export class PoultryController {
 
   @Get("daily-records/prefill")
   @RequirePermissions(PERMISSIONS.POULTRY_READ)
-  dailyPrefill(@CurrentUser() user: AuthenticatedUser, @Query("flockBatchId") flockBatchId: string, @Query("date") date: string) {
-    return this.poultryService.getDailyRecordPrefill(user, flockBatchId, date);
+  dailyPrefill(@CurrentUser() user: AuthenticatedUser, @Query("flockBatchId") flockBatchId: string, @Query("date") date: string, @Query("penId") penId?: string) {
+    return this.poultryService.getDailyRecordPrefill(user, flockBatchId, date, penId);
   }
 
   @Post("daily-records")

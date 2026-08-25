@@ -663,9 +663,36 @@ export class PoultryService {
     return { data };
   }
 
-  async getDailyRecordPrefill(user: AuthenticatedUser, flockBatchId: string, date: string) {
+  async getDailyRecordPrefill(user: AuthenticatedUser, flockBatchId: string, date: string, penId?: string) {
     const batch = await this.getBatchContext(user, flockBatchId);
     const targetDate = new Date(date);
+
+    // If today's record for this batch+pen was already saved, prefill from
+    // it directly — createDailyRecord upserts by flockBatchId+penId+date and
+    // rejects any submit whose mortality/culled/feed/egg figure comes in
+    // lower than what's already saved (a "reduction" belongs on the
+    // dedicated Mortality/Feed/Egg screens, not here). The form only ever
+    // prefilled openingBirdCount, so reopening today's record left the other
+    // fields at their empty/zero defaults — submitting anything then looked
+    // like a reduction from the real saved values and was rejected.
+    const existing = await this.prisma.dailyPoultryRecord.findFirst({
+      where: { companyId: user.companyId, flockBatchId: batch.id, penId: penId ?? null, recordDate: targetDate },
+      select: { openingBirdCount: true, mortalityCount: true, culledCount: true, feedConsumedKg: true, totalEggs: true, notes: true },
+    });
+    if (existing) {
+      return {
+        data: {
+          openingBirdCount: existing.openingBirdCount,
+          mortalityCount: existing.mortalityCount,
+          culledCount: existing.culledCount,
+          feedConsumedKg: Number(existing.feedConsumedKg),
+          totalEggs: existing.totalEggs,
+          notes: existing.notes ?? "",
+          source: "existing_today",
+        },
+      };
+    }
+
     const prevDate = new Date(targetDate);
     prevDate.setDate(prevDate.getDate() - 1);
 

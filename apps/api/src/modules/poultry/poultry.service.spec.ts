@@ -1806,6 +1806,28 @@ describe("PoultryService.getDailyRecordPrefill — batch-total fallback accounts
   });
 });
 
+describe("PoultryService.getDailyRecordPrefill — prefills every field from today's own record when one already exists", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("returns today's saved mortality/culled/feed/eggs/notes instead of the previous-day opening-count-only shape", async () => {
+    mockPrisma.flockBatch.findFirst.mockResolvedValue({ id: "batch-1", farmId: "farm-1", status: "ACTIVE", openingBirdCount: 1000 });
+    // The "reduced" bug: reopening today's record used to prefill only
+    // openingBirdCount, leaving mortality/culled/feed/eggs at their form
+    // defaults (0) — submitting anything then looked like a reduction from
+    // what's already saved and was rejected by createDailyRecord's guard.
+    mockPrisma.dailyPoultryRecord.findFirst.mockResolvedValueOnce({
+      openingBirdCount: 950, mortalityCount: 5, culledCount: 2, feedConsumedKg: 120.5, totalEggs: 600, notes: "morning batch"
+    });
+
+    const service = makeService();
+    const result = await service.getDailyRecordPrefill(makeUser({ farmIds: ["farm-1"] }), "batch-1", "2026-08-25");
+
+    expect(result.data).toEqual({
+      openingBirdCount: 950, mortalityCount: 5, culledCount: 2, feedConsumedKg: 120.5, totalEggs: 600, notes: "morning batch", source: "existing_today"
+    });
+  });
+});
+
 describe("PoultryService — same-day cross-screen duplicate-entry warning (2026-08-18)", () => {
   beforeEach(() => jest.clearAllMocks());
 

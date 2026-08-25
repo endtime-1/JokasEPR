@@ -103,16 +103,33 @@ export function DailyPoultryScreen() {
   useEffect(() => {
     if (!form.flockBatchId || !form.recordDate) return;
     let cancelled = false;
-    apiFetch<{ data: { openingBirdCount: number; source: string } }>(
-      `/poultry/daily-records/prefill?flockBatchId=${encodeURIComponent(form.flockBatchId)}&date=${encodeURIComponent(form.recordDate)}`
+    const penQuery = form.penId ? `&penId=${encodeURIComponent(form.penId)}` : "";
+    apiFetch<{ data: { openingBirdCount: number; mortalityCount?: number; culledCount?: number; feedConsumedKg?: number; totalEggs?: number; notes?: string; source: string } }>(
+      `/poultry/daily-records/prefill?flockBatchId=${encodeURIComponent(form.flockBatchId)}&date=${encodeURIComponent(form.recordDate)}${penQuery}`
     ).then((res) => {
       if (cancelled) return;
-      const count = res?.data?.openingBirdCount;
-      if (count == null) return;
-      setForm((f) => ({ ...f, openingBirdCount: String(count) }));
+      const data = res?.data;
+      if (data?.openingBirdCount == null) return;
+      // "existing_today" means this batch+pen+date was already saved —
+      // prefill everything, not just Opening Count, so reopening the screen
+      // to add one more field doesn't silently zero out the rest and trip
+      // the "can't be reduced" guard on submit.
+      if (data.source === "existing_today") {
+        setForm((f) => ({
+          ...f,
+          openingBirdCount: String(data.openingBirdCount),
+          mortalityCount: String(data.mortalityCount ?? 0),
+          culledCount: String(data.culledCount ?? 0),
+          feedConsumedKg: String(data.feedConsumedKg ?? 0),
+          totalEggs: String(data.totalEggs ?? 0),
+          notes: data.notes ?? f.notes,
+        }));
+      } else {
+        setForm((f) => ({ ...f, openingBirdCount: String(data.openingBirdCount) }));
+      }
     }).catch(() => undefined);
     return () => { cancelled = true; };
-  }, [form.flockBatchId, form.recordDate]);
+  }, [form.flockBatchId, form.recordDate, form.penId]);
 
   function validate() {
     const e: Err = {};
