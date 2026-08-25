@@ -1570,29 +1570,31 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
   const [confirmRow, setConfirmRow] = useState<Record<string, any> | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const recordLoadingRef = useRef(false);
+  // (2026-08-25) The empty-result guard below exists to survive a transient
+  // backend hiccup (a "successful" response that comes back empty mid-outage)
+  // without flashing the list to blank — see app-shell.tsx's onApiUnavailable
+  // comment. But it can't tell that case apart from a real, correctly-empty
+  // result for a NEWLY selected batch/house/pen that genuinely has zero
+  // records — it was keeping the PREVIOUS filter's rows on screen instead,
+  // making House/Pen (and even Flock batch) selection look like it silently
+  // does nothing whenever the newly selected scope happens to have no
+  // records yet. Tracks which query produced the rows currently on screen so
+  // a changed query is always trusted, even when it comes back empty; only a
+  // retry of the SAME query gets the anti-flicker protection.
+  const lastLoadedQueryRef = useRef<string | null>(null);
 
   async function load() {
-    // (2026-08-24) Was fetching every batch's records mixed together with no
-    // flockBatchId filter at all — the "Flock batch" dropdown above only
-    // ever controlled which batch a NEW record gets added to, so changing
-    // it appeared to do nothing to the list below: viewing batch one still
-    // showed batch two's (and every other batch's) records right alongside
-    // it. Filters to whichever batch is currently selected in that same
-    // dropdown, same as the batch-detail page's own Records tab does.
-    //
-    // (2026-08-25) Same bug, one level down: House and Pen are selectable
-    // right below Flock batch, but the list ignored both — picking a house
-    // to record against didn't narrow what showed below it, so records for
-    // every house in the batch stayed mixed together. Leaving House/Pen on
-    // "all" (empty) still shows everything, same as before.
     const params = new URLSearchParams({ take: "200" });
     if (form.flockBatchId) params.set("flockBatchId", form.flockBatchId);
     if (form.poultryHouseId) params.set("poultryHouseId", form.poultryHouseId);
     if (form.penId) params.set("penId", form.penId);
+    const queryKey = `${type}|${params}`;
     const response = await apiFetch<{ data: Record<string, any>[]; meta?: any }>(`/poultry/records/${type}?${params}`);
     const data = response.data;
     if (!Array.isArray(data)) return;
-    setRows((prev) => data.length === 0 && prev.length > 0 ? prev : data);
+    const isSameQueryAsShown = lastLoadedQueryRef.current === queryKey;
+    lastLoadedQueryRef.current = queryKey;
+    setRows((prev) => data.length === 0 && prev.length > 0 && isSameQueryAsShown ? prev : data);
     if (data.length > 0) {
       try { sessionStorage.setItem(recordCacheKey, JSON.stringify(data)); } catch { /* noop */ }
     }
@@ -1616,12 +1618,6 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
     window.addEventListener("api:recovered", onRecovered);
     return () => window.removeEventListener("api:recovered", onRecovered);
   }, [rows.length]);
-
-  useEffect(() => {
-    if (!editingId && !form.flockBatchId && options.batches.length > 0) {
-      setForm((prev) => ({ ...prev, flockBatchId: options.batches[0].id }));
-    }
-  }, [options.batches]);
 
   // Auto-prefill opening bird count from previous day's closing count (daily records only).
   // If today's record for this batch+pen was already saved, the backend
@@ -1806,7 +1802,7 @@ function GenericRecordForm({ options, optionsLoading = false, form, setForm, sub
 
   return (
     <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-4">
-      <FormField label="Flock batch" hint="Also filters the records list below to this batch">
+      <FormField label="Flock batch" hint="Also filters the records list below — leave unselected to see every batch">
         <select
           name="flockBatchId"
           className={`${inputClass} ${!optionsLoading && options.batches.length === 0 ? "border-amber-400 bg-amber-50" : ""}`}
@@ -1819,7 +1815,10 @@ function GenericRecordForm({ options, optionsLoading = false, form, setForm, sub
             ? <option value="">Loading batches…</option>
             : options.batches.length === 0
               ? <option value="">— No batches found — create one first —</option>
-              : options.batches.map((b) => <option key={b.id} value={b.id}>{b.code} — {b.name}</option>)
+              : <>
+                  <option value="">— select a batch —</option>
+                  {options.batches.map((b) => <option key={b.id} value={b.id}>{b.code} — {b.name}</option>)}
+                </>
           }
         </select>
       </FormField>
