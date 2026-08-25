@@ -1109,11 +1109,30 @@ function BatchRecordSection({ batchId, type, label, cols, endpoint, options }: {
   const [confirmRow, setConfirmRow] = useState<Record<string, any> | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
+  // (2026-08-25) A batch can span more than one house/pen (multiple pen
+  // allocations) — this whole section was scoped only to flockBatchId, so a
+  // batch with birds in two houses showed both houses' records mixed
+  // together with no way to narrow to just one. Mirrors the standalone
+  // records page's own House/Pen filter.
+  const [houseFilter, setHouseFilter] = useState("");
+  const [penFilter, setPenFilter] = useState("");
+  const housesWithPens = useMemo(() => {
+    const houseIds = new Set(options.pens.map((p) => p.poultryHouseId));
+    return options.houses.filter((h) => houseIds.has(h.id));
+  }, [options.houses, options.pens]);
+  const pensInHouse = useMemo(() => {
+    if (!houseFilter) return [];
+    return options.pens.filter((p) => p.poultryHouseId === houseFilter);
+  }, [options.pens, houseFilter]);
+
   async function load() {
     setLoading(true);
     setLoadError("");
     try {
-      const res = await apiFetch<{ data: Record<string, any>[]; meta: any }>(`/poultry/records/${type}?flockBatchId=${batchId}&take=200`);
+      const params = new URLSearchParams({ flockBatchId: batchId, take: "200" });
+      if (houseFilter) params.set("poultryHouseId", houseFilter);
+      if (penFilter) params.set("penId", penFilter);
+      const res = await apiFetch<{ data: Record<string, any>[]; meta: any }>(`/poultry/records/${type}?${params}`);
       if (Array.isArray(res.data)) setRows(res.data);
     } catch (err: any) {
       setLoadError(err?.message ?? "Failed to load records.");
@@ -1126,6 +1145,11 @@ function BatchRecordSection({ batchId, type, label, cols, endpoint, options }: {
     if (!open && rows.length === 0) load();
     setOpen((o) => !o);
   }
+
+  useEffect(() => {
+    if (open) load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [houseFilter, penFilter]);
 
   function openAdd() {
     const today = new Date().toISOString().slice(0, 10);
@@ -1235,6 +1259,34 @@ function BatchRecordSection({ batchId, type, label, cols, endpoint, options }: {
       </div>
       {open && (
         <div className="border-t border-line p-4">
+          {housesWithPens.length > 0 && (
+            <div className="mb-3 flex flex-wrap items-end gap-2">
+              <div>
+                <label className="mb-0.5 block text-[10px] text-ink/60">House</label>
+                <select
+                  className="rounded border border-line bg-white px-2 py-1 text-xs"
+                  value={houseFilter}
+                  onChange={(e) => { setHouseFilter(e.target.value); setPenFilter(""); }}
+                >
+                  <option value="">— all houses —</option>
+                  {housesWithPens.map((h) => <option key={h.id} value={h.id}>{h.code} — {h.name}</option>)}
+                </select>
+              </div>
+              {houseFilter && pensInHouse.length > 0 && (
+                <div>
+                  <label className="mb-0.5 block text-[10px] text-ink/60">Pen</label>
+                  <select
+                    className="rounded border border-line bg-white px-2 py-1 text-xs"
+                    value={penFilter}
+                    onChange={(e) => setPenFilter(e.target.value)}
+                  >
+                    <option value="">— all pens —</option>
+                    {pensInHouse.map((p) => <option key={p.id} value={p.id}>{p.code}{p.name ? ` — ${p.name}` : ""}</option>)}
+                  </select>
+                </div>
+              )}
+            </div>
+          )}
           {addOpen && (
             <form onSubmit={submitAdd} className="mb-4 rounded-md border border-green-200 bg-green-50 p-3">
               <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-green-700">
