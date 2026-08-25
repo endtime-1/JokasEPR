@@ -1059,6 +1059,47 @@ describe("PoultryService.updateRecord — feed correction is transactional and f
   });
 });
 
+describe("PoultryService.updateRecord — daily record correction never overwrites the linked mortality/feed/egg entries it created", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const existingDailyRecord = {
+    id: "daily-1", companyId: "company-1", farmId: "farm-1", flockBatchId: "batch-1",
+    openingBirdCount: 950, mortalityCount: 5, culledCount: 0, feedConsumedKg: 100, totalEggs: 600, notes: "original"
+  };
+
+  it("ignores mortalityCount/culledCount/feedConsumedKg/totalEggs entirely — only openingBirdCount and notes are applied", async () => {
+    mockPrisma.dailyPoultryRecord.findFirst.mockResolvedValueOnce(existingDailyRecord);
+    mockTx.dailyPoultryRecord.update.mockResolvedValue({ ...existingDailyRecord, openingBirdCount: 940, notes: "fixed a typo" });
+
+    const service = makeService();
+    // A stale/reduced-client payload could still send these — they must be
+    // silently dropped, not applied and not rejected either.
+    await service.updateRecord(
+      makeUser({ farmIds: ["farm-1"] }), "daily", "daily-1",
+      { openingBirdCount: 940, mortalityCount: 999, culledCount: 999, feedConsumedKg: 999, totalEggs: 999, notes: "fixed a typo" },
+      {}
+    );
+
+    expect(mockTx.dailyPoultryRecord.update).toHaveBeenCalledWith({
+      where: { id: "daily-1" },
+      data: { updatedById: "user-1", openingBirdCount: 940, notes: "fixed a typo" }
+    });
+  });
+
+  it("never looks at mortality/feed/egg records or inventory for a daily correction", async () => {
+    mockPrisma.dailyPoultryRecord.findFirst.mockResolvedValueOnce(existingDailyRecord);
+    mockTx.dailyPoultryRecord.update.mockResolvedValue({ ...existingDailyRecord, notes: "fixed a typo" });
+
+    const service = makeService();
+    await service.updateRecord(makeUser({ farmIds: ["farm-1"] }), "daily", "daily-1", { mortalityCount: 999, notes: "fixed a typo" }, {});
+
+    expect(mockTx.mortalityRecord.create).not.toHaveBeenCalled();
+    expect(mockTx.feedConsumptionRecord.create).not.toHaveBeenCalled();
+    expect(mockTx.eggProductionRecord.create).not.toHaveBeenCalled();
+    expect(mockTx.inventoryItem.findFirst).not.toHaveBeenCalled();
+  });
+});
+
 describe("PoultryService.updateRecord — mortality correction uses the same lock-and-floor-guard as recording it fresh (M-BUG)", () => {
   beforeEach(() => jest.clearAllMocks());
 

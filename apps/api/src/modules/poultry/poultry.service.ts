@@ -1540,8 +1540,22 @@ export class PoultryService {
 
     // Per-type correctable fields. Transfer birdCount is excluded — changing it
     // would require resyncing batchPenAllocation and is handled via delete+recreate.
+    //
+    // Daily's mortalityCount/culledCount/feedConsumedKg/totalEggs are excluded
+    // for the same reason: createDailyRecord doesn't just store them on this
+    // row, it applies the day's DELTA as real MortalityRecord/
+    // FeedConsumptionRecord/EggProductionRecord entries (and, for feed/eggs,
+    // moves real inventory). Overwriting the number here would desync the
+    // DailyPoultryRecord row from those linked entries — the live-bird count,
+    // feed stock, and egg stock would keep reflecting the OLD figure while
+    // this row showed the corrected one. There's no single linked entry to
+    // reconcile against either (a day resubmitted several times produces
+    // several linked rows). Corrections to an already-recorded number go
+    // through the dedicated Mortality/Feed/Egg Production screens instead,
+    // which already correct their own row and its real effects together.
+    // openingBirdCount has no such linked side effect, so it stays correctable.
     const CORRECTABLE: Record<string, string[]> = {
-      daily: ["mortalityCount", "culledCount", "feedConsumedKg", "totalEggs", "notes"],
+      daily: ["openingBirdCount", "notes"],
       mortality: ["birdCount", "reason", "notes"],
       feed: ["quantityKg", "costAmount", "notes"],
       eggs: ["goodEggs", "crackedEggs", "dirtyEggs", "brokenEggs", "rejectedEggs", "notes"],

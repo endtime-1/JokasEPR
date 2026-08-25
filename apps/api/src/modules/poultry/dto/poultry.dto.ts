@@ -623,10 +623,10 @@ export class UpdateBatchStatusDto {
 }
 
 export class UpdatePoultryRecordDto {
-  @IsOptional() @IsInt() @Min(0) mortalityCount?: number;
-  @IsOptional() @IsInt() @Min(0) culledCount?: number;
-  @IsOptional() @IsNumber() @Min(0) feedConsumedKg?: number;
-  @IsOptional() @IsInt() @Min(0) totalEggs?: number;
+  // Daily's mortalityCount/culledCount/feedConsumedKg/totalEggs are
+  // deliberately absent — see the CORRECTABLE comment in
+  // PoultryService.updateRecord for why those aren't correctable here.
+  @IsOptional() @IsInt() @Min(0) openingBirdCount?: number;
   @IsOptional() @IsInt() @Min(1) birdCount?: number;
   @IsOptional() @IsString() reason?: string;
   @IsOptional() @IsNumber() @Min(0.001) quantityKg?: number;

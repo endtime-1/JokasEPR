@@ -1211,7 +1211,16 @@ function BatchRecordSection({ batchId, type, label, cols, endpoint, options }: {
     }
   }
 
-  const editableCols = cols.filter((c) => !["recordDate", "startDate", "vaccinationDate", "observationDate"].includes(c));
+  // Daily's mortalityCount/culledCount/feedConsumedKg/totalEggs are each
+  // backed by their own linked Mortality/Feed/Egg entry (see the CORRECTABLE
+  // comment in PoultryService.updateRecord) — the backend silently ignores
+  // corrections to them here, so showing them as editable would look like a
+  // save that does nothing.
+  const DAILY_LOCKED_COLS = ["mortalityCount", "culledCount", "feedConsumedKg", "totalEggs"];
+  const editableCols = cols.filter((c) =>
+    !["recordDate", "startDate", "vaccinationDate", "observationDate"].includes(c) &&
+    !(type === "daily" && DAILY_LOCKED_COLS.includes(c))
+  );
 
   return (
     <div className="rounded-md border border-line bg-white shadow-panel">
@@ -1418,6 +1427,12 @@ function BatchRecordSection({ batchId, type, label, cols, endpoint, options }: {
                 <Pencil className="h-3 w-3" />Correct record
                 <button type="button" className="ml-auto" onClick={() => setEditRow(null)}><X className="h-3.5 w-3.5" /></button>
               </div>
+              {type === "daily" && (
+                <p className="mb-2 text-[11px] text-amber-800">
+                  Mortality, culled, feed, and egg numbers can't be corrected here — each is tracked by its own linked
+                  entry (tagged "Daily record") on the Mortality, Feed, or Egg Production screen. Correct it there instead.
+                </p>
+              )}
               <div className="grid gap-2 sm:grid-cols-3">
                 {editableCols.map((col) => (
                   <div key={col}>
@@ -1589,7 +1604,7 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
       const pen = options.pens.find((p) => p.id === row.penId);
       if (pen) pre.poultryHouseId = pen.poultryHouseId;
     }
-    for (const field of recordFields(type)) pre[field.name] = String(row[field.name] ?? field.defaultValue ?? "");
+    for (const field of recordFields(type, true)) pre[field.name] = String(row[field.name] ?? field.defaultValue ?? "");
     setForm(pre);
     setEditingId(row.id);
     setSubmitError("");
@@ -1706,7 +1721,7 @@ function GenericRecordForm({ options, optionsLoading = false, form, setForm, sub
   isEditing?: boolean;
   saving?: boolean;
 }) {
-  const fields = recordFields(type);
+  const fields = recordFields(type, isEditing);
   // Crates is a data-entry convenience only — the real field submitted
   // ("goodEggs" for type=eggs, "totalEggs" for type=daily) is still a raw
   // piece count, unchanged. Mirrors the mobile Egg Collection screen's own
@@ -1801,7 +1816,14 @@ function GenericRecordForm({ options, optionsLoading = false, form, setForm, sub
         </FormField>
       )}
 
-      {type === "daily" && (
+      {type === "daily" && isEditing && (
+        <p className="md:col-span-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          Today's mortality, culled, feed, and egg numbers can't be corrected from here — each one is tracked by its own
+          linked entry (tagged "Daily record") on the Mortality, Feed, or Egg Production screen. Correct it there instead.
+        </p>
+      )}
+
+      {type === "daily" && !isEditing && (
         <>
           <FormField label={`Crates of eggs collected (1 crate = ${EGGS_PER_CRATE} eggs, optional)`}>
             <input type="number" min="0" step="1" className={inputClass} placeholder="e.g. 140" value={crates} onChange={(e) => handleCratesChange(e.target.value, "totalEggs")} />
@@ -1907,8 +1929,19 @@ function GenericRecordForm({ options, optionsLoading = false, form, setForm, sub
   );
 }
 
-function recordFields(type: string) {
+function recordFields(type: string, isEditing = false) {
   const date = { name: "recordDate", label: "Record date", kind: "date", required: true };
+  // Editing a daily record only ever writes openingBirdCount/notes (see the
+  // CORRECTABLE comment in PoultryService.updateRecord) — mortality/culled/
+  // feed/eggs are each backed by their own linked Mortality/Feed/Egg entry,
+  // so showing them here as editable would look like a save that silently
+  // does nothing.
+  if (type === "daily" && isEditing) {
+    return [
+      { name: "openingBirdCount", label: "Opening birds", kind: "number", defaultValue: "0" },
+      { name: "notes", label: "Notes", kind: "text" }
+    ];
+  }
   const map: Record<string, Array<{ name: string; label: string; kind: string; required?: boolean; defaultValue?: string; options?: string[] }>> = {
     daily: [
       date,
