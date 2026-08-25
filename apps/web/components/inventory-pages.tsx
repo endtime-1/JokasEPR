@@ -73,9 +73,24 @@ function PageHeader({ title, subtitle }: { title: string; subtitle: string }) {
 }
 
 
-function formatQtyWithBags(val: unknown): string {
-  const qty = parseFloat(String(val ?? "0"));
-  if (isNaN(qty) || qty <= 0) return String(val ?? "-");
+// (2026-08-26) Every quantity display in Inventory (Items on-hand/reorder,
+// Movements, Expiry alerts) hardcoded "kg" and a 50kg-bags helper for every
+// product — an egg item (tracked in pieces, grouped into Crates of
+// piecesPerUnit via Settings > Catalog) still showed "600 kg (12.00 bags)",
+// which is meaningless for a piece-count product. Mirrors the same
+// piecesPerUnit/uom logic already used on the Stock In/Out/Transfer form.
+function formatQtyForProduct(val: unknown, product?: { piecesPerUnit?: number; uom?: { symbol?: string; name?: string } }): string {
+  if (val == null) return "-";
+  const qty = parseFloat(String(val));
+  if (isNaN(qty)) return String(val);
+  const piecesPerUnit = product?.piecesPerUnit ?? 1;
+  if (piecesPerUnit > 1) {
+    const crates = qty / piecesPerUnit;
+    const cratesStr = Number.isInteger(crates) ? `${crates}` : crates.toFixed(2);
+    return `${qty} pieces (${cratesStr} crates)`;
+  }
+  const unitLabel = product?.uom?.symbol || product?.uom?.name;
+  if (unitLabel && unitLabel.toLowerCase() !== "kg") return `${qty} ${unitLabel}`;
   const bags = qty / 50;
   const bagsStr = Number.isInteger(bags) ? `${bags}` : bags.toFixed(2);
   return `${qty} kg (${bagsStr} bags)`;
@@ -599,8 +614,8 @@ function InventoryItemsTable({ rows, loading, onEdit, onDelete }: { rows: Record
           }
         },
         { key: "farm", label: "Farm", render: (row) => row.farm?.name ?? "—" },
-        { key: "quantityOnHand", label: "On hand", render: (row) => formatQtyWithBags(row.quantityOnHand) },
-        { key: "reorderLevel", label: "Reorder at", render: (row) => `${Number(row.reorderLevel ?? 0)} kg` },
+        { key: "quantityOnHand", label: "On hand", render: (row) => formatQtyForProduct(row.quantityOnHand, row.product) },
+        { key: "reorderLevel", label: "Reorder at", render: (row) => formatQtyForProduct(row.reorderLevel, row.product) },
         { key: "status", label: "Status", render: (row) => row.status ?? "-" },
         {
           key: "stockBatches", label: "Batches",
@@ -700,7 +715,11 @@ function SimpleRowsTable({ rows, loading }: { rows: Record<string, unknown>[]; l
   const HIDDEN = new Set(["id", "itemId", "companyId", "branchId", "deletedAt", "updatedAt"]);
   const keys = Object.keys(rows?.[0] ?? {}).filter((key) => !HIDDEN.has(key)).slice(0, 8);
   return <DataTable rows={rows} empty="No records found" columns={keys.map((key) => ({ key, label: key.replace(/([A-Z])/g, " $1"), render: (row: Record<string, unknown>) => {
-    if (key === "quantityOnHand") return formatQtyWithBags(row[key]);
+    // This generic fallback table's rows don't carry a resolvable product
+    // object (e.g. lowStockRows() returns product as a plain name string),
+    // so there's no unit info to key off here — falls back to the kg/bags
+    // default, same as before.
+    if (key === "quantityOnHand") return formatQtyForProduct(row[key]);
     return typeof row[key] === "object" && row[key] !== null ? JSON.stringify(row[key]).slice(0, 80) : String(row[key] ?? "-").slice(0, 90);
   } }))} />;
 }
@@ -721,7 +740,7 @@ function MovementsTable({ rows, loading }: { rows: Record<string, any>[]; loadin
             return p ? <span><span className="font-semibold">{p.sku}</span><span className="text-ink/60"> — {p.name}</span></span> : "-";
           }
         },
-        { key: "quantity", label: "Qty (kg / bags)", render: (row) => formatQtyWithBags(row.quantity) },
+        { key: "quantity", label: "Quantity", render: (row) => formatQtyForProduct(row.quantity, row.product) },
         {
           key: "warehouse", label: "Warehouse",
           render: (row) => {
@@ -761,7 +780,7 @@ function ExpiryAlertsTable({ rows, loading }: { rows: Record<string, any>[]; loa
             return <span className={cls}>{d}</span>;
           }
         },
-        { key: "quantityRemaining", label: "Qty remaining", render: (row) => formatQtyWithBags(row.stockBatch?.quantityRemaining) },
+        { key: "quantityRemaining", label: "Qty remaining", render: (row) => formatQtyForProduct(row.stockBatch?.quantityRemaining, row.product) },
       ]}
     />
   );

@@ -119,7 +119,11 @@ export class InventoryService {
   }
 
   async listItems(user: AuthenticatedUser, query: InventoryQueryDto) {
-    const data = await this.prisma.inventoryItem.findMany({ where: this.itemWhere(user, query), include: { product: true, warehouse: true, farm: true, productionSite: true, stockBatches: { where: { deletedAt: null }, orderBy: { expiryDate: "asc" }, take: 10 } }, orderBy: { createdAt: "desc" }, take: 200 });
+    // product.uom is needed here (not just the product's own scalar columns,
+    // which `product: true` already covers) so the Items table can show
+    // quantityOnHand/reorderLevel in the product's real unit — see
+    // formatQtyForProduct on the frontend.
+    const data = await this.prisma.inventoryItem.findMany({ where: this.itemWhere(user, query), include: { product: { include: { uom: { select: { symbol: true, name: true } } } }, warehouse: true, farm: true, productionSite: true, stockBatches: { where: { deletedAt: null }, orderBy: { expiryDate: "asc" }, take: 10 } }, orderBy: { createdAt: "desc" }, take: 200 });
     return { data };
   }
 
@@ -456,7 +460,7 @@ export class InventoryService {
   }
 
   async movements(user: AuthenticatedUser, query: InventoryQueryDto) {
-    return { data: await this.prisma.stockMovement.findMany({ where: this.movementWhere(user, query), include: { product: true, warehouse: true, fromWarehouse: true, toWarehouse: true, stockBatch: true }, orderBy: { movementDate: "desc" }, take: 300 }) };
+    return { data: await this.prisma.stockMovement.findMany({ where: this.movementWhere(user, query), include: { product: { include: { uom: { select: { symbol: true, name: true } } } }, warehouse: true, fromWarehouse: true, toWarehouse: true, stockBatch: true }, orderBy: { movementDate: "desc" }, take: 300 }) };
   }
 
   async lowStock(user: AuthenticatedUser) {
@@ -464,7 +468,7 @@ export class InventoryService {
   }
 
   async expiryAlerts(user: AuthenticatedUser, query: InventoryQueryDto) {
-    return { data: await this.prisma.stockExpiryAlert.findMany({ where: this.expiryWhere(user, query), include: { product: true, warehouse: true, stockBatch: true }, orderBy: { expiryDate: "asc" }, take: 200 }) };
+    return { data: await this.prisma.stockExpiryAlert.findMany({ where: this.expiryWhere(user, query), include: { product: { include: { uom: { select: { symbol: true, name: true } } } }, warehouse: true, stockBatch: true }, orderBy: { expiryDate: "asc" }, take: 200 }) };
   }
 
   async valuation(user: AuthenticatedUser, query: InventoryQueryDto) {
