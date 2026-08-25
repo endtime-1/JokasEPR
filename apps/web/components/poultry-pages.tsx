@@ -1660,6 +1660,12 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
       if (pen) pre.poultryHouseId = pen.poultryHouseId;
     }
     for (const field of recordFields(type, true)) pre[field.name] = String(row[field.name] ?? field.defaultValue ?? "");
+    // "Bags" isn't a real stored field (feed records only store quantityKg)
+    // — recordFields' generic row[field.name] lookup can't find it, so
+    // editing a feed record left this blank instead of showing the record's
+    // actual quantity. Convert back from the real value the same way the
+    // create form converts forward.
+    if (type === "feed" && row.quantityKg != null) pre.bags = String(Number(row.quantityKg) / 50);
     setForm(pre);
     setEditingId(row.id);
     setSubmitError("");
@@ -1700,7 +1706,7 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
     try {
       let response: { warning?: string } | undefined;
       if (editingId) {
-        const payload = buildRecordPayload(type, form, options);
+        const payload = buildCorrectionPayload(type, form, options);
         response = await apiFetch(`/poultry/records/${type}/${editingId}`, { method: "PATCH", body: JSON.stringify(payload) });
         setEditingId(null);
       } else {
@@ -2066,6 +2072,39 @@ function buildRecordPayload(type: string, form: Record<string, string>, options:
     payload.eggWarehouseId = merged.eggWarehouseId || undefined;
   }
 
+  return payload;
+}
+
+// Mirrors PoultryService.updateRecord's own CORRECTABLE map exactly — a
+// correction is a narrow, per-type set of fields. buildRecordPayload above
+// is CREATE-shaped: it always carries flockBatchId, recordDate (for types
+// that use it), and product/warehouse fields for "eggs" — none of which
+// UpdatePoultryRecordDto declares. The backend's ValidationPipe runs with
+// forbidNonWhitelisted:true, so sending any of them on a PATCH correction
+// was rejected outright ("property flockBatchId should not exist") — every
+// "Correct record" save through this form failed, for every record type.
+const CORRECTABLE_FIELDS: Record<string, string[]> = {
+  daily: ["openingBirdCount", "notes"],
+  mortality: ["birdCount", "reason", "notes"],
+  feed: ["quantityKg", "costAmount", "notes"],
+  eggs: ["goodEggs", "crackedEggs", "dirtyEggs", "brokenEggs", "rejectedEggs", "notes"],
+  weights: ["sampleSize", "averageWeightKg", "notes"],
+  medications: ["notes"],
+  vaccinations: ["notes"],
+  health: ["observation", "recommendation", "notes"],
+  costs: ["amount", "description", "notes"]
+};
+
+function buildCorrectionPayload(type: string, form: Record<string, string>, options: PoultryOptions) {
+  // Reuses buildRecordPayload's existing bags→quantityKg / numeric-coercion
+  // logic rather than duplicating it, then keeps only what this type's
+  // correction endpoint actually accepts.
+  const full = buildRecordPayload(type, form, options);
+  const allowed = CORRECTABLE_FIELDS[type] ?? [];
+  const payload: Record<string, unknown> = {};
+  for (const key of allowed) {
+    if (full[key] !== undefined) payload[key] = full[key];
+  }
   return payload;
 }
 
