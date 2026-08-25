@@ -1148,7 +1148,6 @@ function BatchRecordSection({ batchId, type, label, cols, endpoint, options }: {
 
   useEffect(() => {
     if (open) load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [houseFilter, penFilter]);
 
   function openAdd() {
