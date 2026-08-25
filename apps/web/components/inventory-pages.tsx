@@ -17,6 +17,8 @@ type Option = {
   name: string;
   product?: { sku: string; name: string };
   warehouse?: { code: string; name: string };
+  piecesPerUnit?: number;
+  uom?: { symbol?: string; name?: string };
 };
 
 type InventoryOptions = {
@@ -258,27 +260,81 @@ export function StockOperationPage({ mode }: { mode: "stock-in" | "stock-out" | 
             <SelectField label="To warehouse" value={form.toWarehouseId || options.warehouses[1]?.id || ""} options={options.warehouses} onChange={(value) => setForm({ ...form, toWarehouseId: value })} />
           </>
         ) : <SelectField label="Warehouse" value={form.warehouseId || options.warehouses[0]?.id || ""} options={options.warehouses} onChange={(value) => setForm({ ...form, warehouseId: value })} />}
-        <SelectField label="Product" value={form.productId || options.products[0]?.id || ""} options={options.products} onChange={(value) => setForm({ ...form, productId: value })} />
+        <SelectField
+          label="Product"
+          value={form.productId || options.products[0]?.id || ""}
+          options={options.products}
+          onChange={(value) => setForm({ ...form, productId: value, bags: "", quantity: "" })}
+        />
         {mode === "stock-in" ? <FormField label="Batch number"><input className={inputClass} value={form.batchNumber} onChange={(event) => setForm({ ...form, batchNumber: event.target.value })} required /></FormField> : null}
-        {mode !== "adjustments" && (
-          <FormField label="Bags (50 kg each)">
-            <input
-              className={inputClass}
-              type="number"
-              min="0.5"
-              step="0.5"
-              placeholder="Enter bags to auto-fill kg"
-              value={form.bags}
-              onChange={(event) => {
-                const bags = event.target.value;
-                setForm({ ...form, bags, quantity: bags ? String(Number(bags) * 50) : "" });
-              }}
-            />
-          </FormField>
-        )}
-        <FormField label={form.bags && mode !== "adjustments" ? `Quantity kg — ${form.bags} bag${Number(form.bags) !== 1 ? "s" : ""} × 50` : "Quantity kg"}>
-          <input className={inputClass} type="number" min="0.001" step="0.001" value={form.quantity} onChange={(event) => setForm({ ...form, bags: "", quantity: event.target.value })} required />
-        </FormField>
+        {/* (2026-08-25) Quantity used to be hardcoded as kg with a "Bags (50kg)"
+            helper for every product — selecting Eggs (tracked in Crates of 30,
+            via the same piecesPerUnit set on Settings > Catalog) still showed
+            "Bags (50 kg each)", which makes no sense for a piece-count product.
+            Picks the right helper (or none) from the selected product's own
+            piecesPerUnit/UOM instead of assuming kg. */}
+        {(() => {
+          const selectedProduct = options.products.find((p) => p.id === (form.productId || options.products[0]?.id));
+          const piecesPerUnit = selectedProduct?.piecesPerUnit ?? 1;
+          const unitLabel = selectedProduct?.uom?.symbol || selectedProduct?.uom?.name || "units";
+          const isCrateLike = piecesPerUnit > 1;
+          const isKg = !isCrateLike && unitLabel.toLowerCase() === "kg";
+          if (isCrateLike) {
+            return (
+              <>
+                {mode !== "adjustments" && (
+                  <FormField label={`Crates (1 = ${piecesPerUnit} pieces)`}>
+                    <input
+                      className={inputClass}
+                      type="number"
+                      min="1"
+                      step="1"
+                      placeholder="Enter crates to auto-fill pieces"
+                      value={form.bags}
+                      onChange={(event) => {
+                        const crates = event.target.value;
+                        setForm({ ...form, bags: crates, quantity: crates ? String(Number(crates) * piecesPerUnit) : "" });
+                      }}
+                    />
+                  </FormField>
+                )}
+                <FormField label={form.bags && mode !== "adjustments" ? `Quantity (pieces) — ${form.bags} crate${Number(form.bags) !== 1 ? "s" : ""} × ${piecesPerUnit}` : "Quantity (pieces)"}>
+                  <input className={inputClass} type="number" min="1" step="1" value={form.quantity} onChange={(event) => setForm({ ...form, bags: "", quantity: event.target.value })} required />
+                </FormField>
+              </>
+            );
+          }
+          if (isKg) {
+            return (
+              <>
+                {mode !== "adjustments" && (
+                  <FormField label="Bags (50 kg each)">
+                    <input
+                      className={inputClass}
+                      type="number"
+                      min="0.5"
+                      step="0.5"
+                      placeholder="Enter bags to auto-fill kg"
+                      value={form.bags}
+                      onChange={(event) => {
+                        const bags = event.target.value;
+                        setForm({ ...form, bags, quantity: bags ? String(Number(bags) * 50) : "" });
+                      }}
+                    />
+                  </FormField>
+                )}
+                <FormField label={form.bags && mode !== "adjustments" ? `Quantity kg — ${form.bags} bag${Number(form.bags) !== 1 ? "s" : ""} × 50` : "Quantity kg"}>
+                  <input className={inputClass} type="number" min="0.001" step="0.001" value={form.quantity} onChange={(event) => setForm({ ...form, bags: "", quantity: event.target.value })} required />
+                </FormField>
+              </>
+            );
+          }
+          return (
+            <FormField label={`Quantity (${unitLabel})`}>
+              <input className={inputClass} type="number" min="0.001" step="0.001" value={form.quantity} onChange={(event) => setForm({ ...form, quantity: event.target.value })} required />
+            </FormField>
+          );
+        })()}
         {mode === "stock-in" ? <FormField label="Unit cost"><input className={inputClass} type="number" min="0" step="0.01" value={form.unitCost} onChange={(event) => setForm({ ...form, unitCost: event.target.value })} required /></FormField> : null}
         {mode === "stock-in" ? <FormField label="Expiry date"><input className={inputClass} type="date" value={form.expiryDate} onChange={(event) => setForm({ ...form, expiryDate: event.target.value })} /></FormField> : null}
         {mode === "stock-out" ? <FormField label="Movement type"><select className={inputClass} value={form.movementType} onChange={(event) => setForm({ ...form, movementType: event.target.value })}><option>ADJUSTMENT_OUT</option><option>SALE_DISPATCH</option><option>PRODUCTION_INPUT</option><option>WASTE</option></select></FormField> : null}
