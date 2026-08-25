@@ -1528,8 +1528,16 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
     // showed batch two's (and every other batch's) records right alongside
     // it. Filters to whichever batch is currently selected in that same
     // dropdown, same as the batch-detail page's own Records tab does.
+    //
+    // (2026-08-25) Same bug, one level down: House and Pen are selectable
+    // right below Flock batch, but the list ignored both — picking a house
+    // to record against didn't narrow what showed below it, so records for
+    // every house in the batch stayed mixed together. Leaving House/Pen on
+    // "all" (empty) still shows everything, same as before.
     const params = new URLSearchParams({ take: "200" });
     if (form.flockBatchId) params.set("flockBatchId", form.flockBatchId);
+    if (form.poultryHouseId) params.set("poultryHouseId", form.poultryHouseId);
+    if (form.penId) params.set("penId", form.penId);
     const response = await apiFetch<{ data: Record<string, any>[]; meta?: any }>(`/poultry/records/${type}?${params}`);
     const data = response.data;
     if (!Array.isArray(data)) return;
@@ -1549,7 +1557,7 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
 
   useEffect(() => {
     loadRecords();
-  }, [type, form.flockBatchId]);
+  }, [type, form.flockBatchId, form.poultryHouseId, form.penId]);
 
   // Reload records after API recovery if the table is empty (mounted during outage).
   useEffect(() => {
@@ -1765,7 +1773,7 @@ function GenericRecordForm({ options, optionsLoading = false, form, setForm, sub
         </select>
       </FormField>
 
-      <FormField label="House">
+      <FormField label="House" hint="Also filters the records list below — leave unselected to see every house">
         <select
           name="poultryHouseId"
           className={inputClass}
@@ -1777,7 +1785,7 @@ function GenericRecordForm({ options, optionsLoading = false, form, setForm, sub
         </select>
       </FormField>
 
-      <FormField label="Pen (optional)">
+      <FormField label="Pen (optional)" hint="Also filters the records list below to this pen">
         <select
           name="penId"
           className={inputClass}

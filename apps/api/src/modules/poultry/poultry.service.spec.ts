@@ -596,6 +596,24 @@ describe("PoultryService — a zero-farm user sees nothing by default, not every
   });
 });
 
+describe("PoultryService.recordWhere — penId query param actually filters, not just poultryHouseId (2026-08-25)", () => {
+  it("passes penId through to the Prisma where for a non-transfer record type", () => {
+    const service = makeService();
+    const recordWhere = (service as unknown as { recordWhere: (u: AuthenticatedUser, q: Record<string, unknown>, t?: string) => Record<string, unknown> }).recordWhere.bind(service);
+    const where = recordWhere(makeUser({ farmIds: ["farm-1"] }), { poultryHouseId: "house-1", penId: "pen-1" }, "daily");
+    expect(where.poultryHouseId).toBe("house-1");
+    expect(where.penId).toBe("pen-1");
+  });
+
+  it("does not add a penId filter for transfers — they use fromPenId/toPenId instead", () => {
+    const service = makeService();
+    const recordWhere = (service as unknown as { recordWhere: (u: AuthenticatedUser, q: Record<string, unknown>, t?: string) => Record<string, unknown> }).recordWhere.bind(service);
+    const where = recordWhere(makeUser({ farmIds: ["farm-1"] }), { penId: "pen-1" }, "transfers");
+    expect(where.penId).toBeUndefined();
+    expect(where.poultryHouseId).toBeUndefined();
+  });
+});
+
 describe("PoultryService.createFeed / consumeInventoryTx — floor-guarded decrement, visible skip (H4)", () => {
   beforeEach(() => jest.clearAllMocks());
 

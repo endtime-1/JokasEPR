@@ -2022,6 +2022,7 @@ export class PoultryService {
       deletedAt: null,
       ...farmFilter,
       ...(type !== "transfers" ? { poultryHouseId: query.poultryHouseId } : {}),
+      ...(type !== "transfers" ? { penId: query.penId } : {}),
       flockBatchId: query.flockBatchId,
       ...dateRange
     };
