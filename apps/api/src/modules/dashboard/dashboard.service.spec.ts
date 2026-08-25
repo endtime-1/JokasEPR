@@ -18,7 +18,7 @@ describe("DashboardService", () => {
     stockBatch: { findMany: jest.Mock };
     productProfitability: { findMany: jest.Mock };
     salesOrder: { aggregate: jest.Mock; count: jest.Mock; findMany: jest.Mock };
-    flockBatch: { aggregate: jest.Mock; count: jest.Mock };
+    flockBatch: { aggregate: jest.Mock; count: jest.Mock; findMany: jest.Mock };
     stockExpiryAlert: { count: jest.Mock };
     employee: { findFirst: jest.Mock };
     farm: { count: jest.Mock; findMany: jest.Mock };
@@ -47,7 +47,7 @@ describe("DashboardService", () => {
       stockBatch: { findMany: jest.fn() },
       productProfitability: { findMany: jest.fn() },
       salesOrder: { aggregate: jest.fn().mockResolvedValue({ _sum: { totalAmount: 0, balanceDue: 0 } }), count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue([]) },
-      flockBatch: { aggregate: jest.fn().mockResolvedValue({ _sum: { openingBirdCount: 0 } }), count: jest.fn().mockResolvedValue(0) },
+      flockBatch: { aggregate: jest.fn().mockResolvedValue({ _sum: { openingBirdCount: 0 } }), count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue([]) },
       stockExpiryAlert: { count: jest.fn().mockResolvedValue(0) },
       employee: { findFirst: jest.fn().mockResolvedValue(null) },
       farm: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue([]) },
@@ -167,7 +167,7 @@ describe("DashboardService", () => {
       expect(salesWhere.branchId).toEqual({ in: ["branch-1"] });
       expect(salesWhere.warehouseId).toEqual({ in: ["wh-1"] });
 
-      const flockWhere = prisma.flockBatch.aggregate.mock.calls[0][0].where;
+      const flockWhere = prisma.flockBatch.findMany.mock.calls[0][0].where;
       expect(flockWhere.farmId).toEqual({ in: ["farm-1"] });
     });
 
@@ -225,7 +225,12 @@ describe("DashboardService", () => {
     beforeEach(() => {
       prisma.salesOrder.aggregate.mockResolvedValue({ _sum: { totalAmount: 5000, balanceDue: 0 } });
       prisma.salesOrder.count.mockResolvedValue(7);
-      prisma.flockBatch.aggregate.mockResolvedValue({ _sum: { openingBirdCount: 1200 } });
+      // A single batch with no mortality/transfers yet — openingBirdCount and
+      // currentLiveBirds are the same number here, so this keeps every
+      // existing assertion below valid while exercising the new query shape.
+      prisma.flockBatch.findMany.mockResolvedValue([
+        { openingBirdCount: 1200, mortalityRecords: [], poultryTransferRecords: [] }
+      ]);
     });
 
     it("omits revenue/orders and birds (undefined, not a fake zero) when the caller holds only the base permission", async () => {
@@ -261,6 +266,59 @@ describe("DashboardService", () => {
 
       expect(result.data.totalRevenue).toBe(5000);
       expect(result.data.totalBirds).toBe(1200);
+    });
+  });
+
+  describe("summary/executive — totalBirds reflects live mortality/transfers, not each batch's static opening count (2026-08-26)", () => {
+    it("subtracts mortality and outgoing transfers from openingBirdCount instead of summing raw opening counts", async () => {
+      prisma.flockBatch.findMany.mockResolvedValue([
+        {
+          openingBirdCount: 5000,
+          mortalityRecords: [{ birdCount: 40 }, { birdCount: 10 }],
+          poultryTransferRecords: [{ birdCount: 200, isFullBatchRelocation: false, fromFarmId: "farm-1", toFarmId: "farm-2", status: "COMPLETED" }]
+        },
+        {
+          openingBirdCount: 5000,
+          mortalityRecords: [],
+          poultryTransferRecords: []
+        }
+      ]);
+
+      const result = await service.summary(makeUser({ permissions: ["poultry.read"] }));
+
+      // Old behavior: 5000 + 5000 = 10000, forever, regardless of deaths.
+      // Correct: (5000 - 40 - 10 - 200) + 5000 = 9750.
+      expect(result.data.totalBirds).toBe(9750);
+    });
+
+    it("does not subtract a cancelled transfer or a whole-batch relocation, matching PoultryService.currentLiveBirds", async () => {
+      prisma.flockBatch.findMany.mockResolvedValue([
+        {
+          openingBirdCount: 1000,
+          mortalityRecords: [],
+          poultryTransferRecords: [
+            { birdCount: 300, isFullBatchRelocation: false, fromFarmId: "farm-1", toFarmId: "farm-2", status: "CANCELLED" },
+            { birdCount: 400, isFullBatchRelocation: true, fromFarmId: "farm-1", toFarmId: "farm-2", status: "COMPLETED" },
+            { birdCount: 100, isFullBatchRelocation: false, fromFarmId: "farm-1", toFarmId: "farm-1", status: "COMPLETED" }
+          ]
+        }
+      ]);
+
+      const result = await service.summary(makeUser({ permissions: ["poultry.read"] }));
+
+      expect(result.data.totalBirds).toBe(1000);
+    });
+
+    it("floors a single batch at 0 rather than letting it drag the company-wide total negative", async () => {
+      prisma.flockBatch.findMany.mockResolvedValue([
+        { openingBirdCount: 100, mortalityRecords: [{ birdCount: 150 }], poultryTransferRecords: [] },
+        { openingBirdCount: 500, mortalityRecords: [], poultryTransferRecords: [] }
+      ]);
+
+      const result = await service.summary(makeUser({ permissions: ["poultry.read"] }));
+
+      // max(0, 100 - 150) + 500 = 0 + 500 = 500, not -50 + 500 = 450.
+      expect(result.data.totalBirds).toBe(500);
     });
   });
 

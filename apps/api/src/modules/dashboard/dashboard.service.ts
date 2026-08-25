@@ -103,7 +103,7 @@ export class DashboardService {
     const [salesAgg, openOrders, totalBirds, pendingAlerts] = await Promise.all([
       this.prisma.salesOrder.aggregate({ where: { companyId, deletedAt: null, status: { not: "CANCELLED" }, createdAt: { gte: monthStart }, ...branchF, ...warehouseF }, _sum: { totalAmount: true } }),
       this.prisma.salesOrder.count({ where: { companyId, deletedAt: null, status: { in: ["DRAFT", "PENDING_STOCK_APPROVAL", "APPROVED"] }, ...branchF, ...warehouseF } }),
-      this.prisma.flockBatch.aggregate({ where: { companyId, status: "ACTIVE", deletedAt: null, ...branchF, ...farmF }, _sum: { openingBirdCount: true } }),
+      this.currentLiveBirdsTotal(companyId, { ...branchF, ...farmF }),
       this.prisma.stockExpiryAlert.count({ where: { companyId, deletedAt: null, daysToExpiry: { lte: 30 }, ...branchF, ...warehouseF, ...siteF } }),
     ]);
 
@@ -124,7 +124,7 @@ export class DashboardService {
       data: {
         totalRevenue: canSeeSales ? Number(salesAgg._sum.totalAmount ?? 0) : undefined,
         openOrders: canSeeSales ? openOrders : undefined,
-        totalBirds: canSeePoultry ? (totalBirds._sum.openingBirdCount ?? 0) : undefined,
+        totalBirds: canSeePoultry ? totalBirds : undefined,
         pendingAlerts,
       },
     };
@@ -432,8 +432,7 @@ export class DashboardService {
       //
       // High (DB stability audit, 2026-08-16): each query below is now
       // gated through dashboardQueryLimit — see the field comment for why.
-      this.dashboardQueryLimit.run(() => this.prisma.flockBatch.aggregate({ where: { companyId: cid, status: "ACTIVE", deletedAt: null, ...farmF }, _sum: { openingBirdCount: true } })
-        .then(r => Number(r._sum.openingBirdCount ?? 0))),
+      this.dashboardQueryLimit.run(() => this.currentLiveBirdsTotal(cid, farmF)),
 
       this.dashboardQueryLimit.run(() => this.prisma.flockBatch.count({ where: { companyId: cid, status: "ACTIVE", deletedAt: null, ...farmF } })),
 
@@ -726,6 +725,33 @@ export class DashboardService {
     const data = Array.from(grouped, ([label, value]) => ({ label, value: Math.round(value * 100) / 100 }))
       .sort((a, b) => b.value - a.value);
     return [{ name: "gross_profit", data }];
+  }
+
+  // (2026-08-26) "Total birds" summed each active batch's static
+  // openingBirdCount — the number typed in once when the batch was created —
+  // and never subtracted mortality, culling, or outgoing transfers since
+  // then. Two batches created with 5,000 birds each showed "10,000 total
+  // birds" forever, no matter how many died. Mirrors
+  // PoultryService.currentLiveBirds() exactly (same per-batch floor at 0,
+  // same exclusion of cancelled transfers and whole-batch relocations) so
+  // this stays consistent with what the Poultry module's own dashboard
+  // shows for the same batches.
+  private async currentLiveBirdsTotal(companyId: string, where: Record<string, unknown>) {
+    const batches = await this.prisma.flockBatch.findMany({
+      where: { companyId, status: "ACTIVE", deletedAt: null, ...where },
+      select: {
+        openingBirdCount: true,
+        mortalityRecords: { where: { deletedAt: null }, select: { birdCount: true } },
+        poultryTransferRecords: { where: { deletedAt: null }, select: { birdCount: true, isFullBatchRelocation: true, fromFarmId: true, toFarmId: true, status: true } }
+      }
+    });
+    return batches.reduce((sum, batch) => {
+      const mortalityTotal = batch.mortalityRecords.reduce((s, r) => s + r.birdCount, 0);
+      const outgoingTotal = batch.poultryTransferRecords
+        .filter((t) => !t.isFullBatchRelocation && t.fromFarmId !== t.toFarmId && t.status !== "CANCELLED")
+        .reduce((s, t) => s + t.birdCount, 0);
+      return sum + Math.max(0, batch.openingBirdCount - mortalityTotal - outgoingTotal);
+    }, 0);
   }
 
   private liveFarmFilter(user: AuthenticatedUser, query: DashboardQueryDto) {
