@@ -8,7 +8,7 @@ import { AiChatDto } from "./dto/ai-chat.dto";
 
 // ── Provider types ───────────────────────────────────────────────────────────
 
-type Provider = "anthropic" | "gemini" | "groq" | "nvidia" | "openrouter";
+type Provider = "anthropic" | "gemini" | "groq" | "nvidia" | "openrouter" | "openai";
 
 type AiMessageParam = { role: "user" | "assistant"; content: string };
 
@@ -63,6 +63,7 @@ export class AiService {
 
   private detectProvider(model: string): Provider {
     if (model.startsWith("gemini")) return "gemini";
+    if (model.startsWith("gpt-") || model.startsWith("chatgpt") || /^o[134](-|$)/.test(model)) return "openai";
     if (model.includes("/")) {
       // org/model format — prefer OpenRouter if key is present, else NVIDIA NIM
       return this.config.get("OPENROUTER_API_KEY") ? "openrouter" : "nvidia";
@@ -78,6 +79,7 @@ export class AiService {
       case "anthropic":  return this.config.get("ANTHROPIC_API_KEY") || this.config.get("AI_API_KEY") || undefined;
       case "gemini":     return this.config.get("GEMINI_API_KEY") || undefined;
       case "groq":       return this.config.get("GROQ_API_KEY") || undefined;
+      case "openai":     return this.config.get("OPENAI_API_KEY") || undefined;
     }
   }
 
@@ -180,6 +182,7 @@ export class AiService {
       case "anthropic":  return this.callAnthropic(key, model, systemPrompt, messages, maxTokens);
       case "gemini":     return this.callGemini(key, model, systemPrompt, messages, maxTokens);
       case "groq":       return this.callGroq(key, model, systemPrompt, messages, maxTokens);
+      case "openai":     return this.callOpenAi(key, model, systemPrompt, messages, maxTokens);
     }
   }
 
@@ -299,6 +302,30 @@ export class AiService {
     if (!res.ok) {
       this.logger.warn(`NVIDIA NIM ${res.status}: ${await res.text().catch(() => res.statusText)}`);
       throw new ForbiddenException("NVIDIA NIM API request failed.");
+    }
+    const json = await res.json() as any;
+    return {
+      reply: json.choices?.[0]?.message?.content ?? "No response.",
+      inputTokens: json.usage?.prompt_tokens ?? 0,
+      outputTokens: json.usage?.completion_tokens ?? 0,
+    };
+  }
+
+  // ── OpenAI ───────────────────────────────────────────────────────────────────
+
+  private async callOpenAi(key: string, model: string, system: string, messages: AiMessageParam[], maxTokens: number) {
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "content-type": "application/json", "Authorization": `Bearer ${key}` },
+      body: JSON.stringify({
+        model, max_tokens: maxTokens,
+        messages: [{ role: "system", content: system }, ...messages],
+      }),
+      signal: AbortSignal.timeout(AI_TIMEOUT_MS),
+    });
+    if (!res.ok) {
+      this.logger.warn(`OpenAI ${res.status}: ${await res.text().catch(() => res.statusText)}`);
+      throw new ForbiddenException("OpenAI API request failed.");
     }
     const json = await res.json() as any;
     return {
@@ -447,7 +474,7 @@ export class AiService {
       data: available.map((id) => ({
         id,
         provider: this.detectProvider(id),
-        label: id.replace(/^claude-/, "Claude ").replace(/^gemini-/, "Gemini ").replace(/-/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()),
+        label: id.replace(/^claude-/, "Claude ").replace(/^gemini-/, "Gemini ").replace(/^gpt-/, "GPT ").replace(/-/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()),
         isDefault: id === defaultModel,
       })),
     };

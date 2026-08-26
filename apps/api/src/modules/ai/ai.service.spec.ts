@@ -110,3 +110,46 @@ describe("AiService.feedAnalysis — scoped to the user's assigned farm (H-BACK-
     ).resolves.toBeDefined();
   });
 });
+
+// (2026-08-26) OpenAI wasn't a recognized provider at all — a configured
+// OPENAI_API_KEY was silently ignored, since detectProvider() only ever
+// resolved to anthropic/gemini/groq/nvidia/openrouter, and keyFor() had no
+// "openai" case for it to fall into. Any gpt-*/o1/o3/o4 model would have been
+// misrouted to Anthropic and failed.
+describe("AiService — OpenAI is a recognized provider (2026-08-26)", () => {
+  function detectProvider(service: AiService, model: string) {
+    return (service as unknown as { detectProvider: (m: string) => string }).detectProvider(model);
+  }
+  function keyFor(service: AiService, provider: string) {
+    return (service as unknown as { keyFor: (p: string) => string | undefined }).keyFor(provider);
+  }
+
+  beforeEach(() => jest.clearAllMocks());
+
+  it("routes gpt-* models to the openai provider", () => {
+    const service = makeService();
+    expect(detectProvider(service, "gpt-4o")).toBe("openai");
+    expect(detectProvider(service, "gpt-4o-mini")).toBe("openai");
+    expect(detectProvider(service, "gpt-3.5-turbo")).toBe("openai");
+  });
+
+  it("routes o1/o3/o4 reasoning models to the openai provider, without misrouting llama/mixtral/qwen (groq)", () => {
+    const service = makeService();
+    expect(detectProvider(service, "o1")).toBe("openai");
+    expect(detectProvider(service, "o1-mini")).toBe("openai");
+    expect(detectProvider(service, "o3-mini")).toBe("openai");
+    expect(detectProvider(service, "llama3-70b")).toBe("groq");
+  });
+
+  it("still routes claude/gemini models correctly (no regression from adding openai)", () => {
+    const service = makeService();
+    expect(detectProvider(service, "claude-sonnet-4-6")).toBe("anthropic");
+    expect(detectProvider(service, "gemini-2.0-flash")).toBe("gemini");
+  });
+
+  it("reads OPENAI_API_KEY for the openai provider", () => {
+    mockConfig.get.mockImplementation((key: string) => (key === "OPENAI_API_KEY" ? "sk-test-key" : undefined));
+    const service = makeService();
+    expect(keyFor(service, "openai")).toBe("sk-test-key");
+  });
+});
