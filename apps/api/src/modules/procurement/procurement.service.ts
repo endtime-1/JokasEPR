@@ -1289,8 +1289,13 @@ export class ProcurementService {
   // company, never that the *user* had access to it — a PROCUREMENT_MANAGE
   // holder not assigned to a warehouse could still receive goods into and
   // post real stock for it.
+  // (2026-08-26) Missing the "empty array means unrestricted" check used
+  // elsewhere in this codebase — a user with no explicit warehouse
+  // restrictions (the normal, common case) was blocked from every
+  // warehouse-scoped write, since an empty array can never .includes()
+  // anything.
   private assertWarehouseAccess(user: AuthenticatedUser, warehouseId: string) {
-    if (!user.hasGlobalAccess && !user.warehouseIds.includes(warehouseId)) {
+    if (!user.hasGlobalAccess && user.warehouseIds.length > 0 && !user.warehouseIds.includes(warehouseId)) {
       throw new ForbiddenException("You do not have access to this warehouse.");
     }
   }

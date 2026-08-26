@@ -1689,14 +1689,17 @@ export class FeedProductionService {
     }
   }
 
+  // (2026-08-26) Same empty-array-means-unrestricted gap as the sibling
+  // assertBranchAccess/assertProductionSiteAccess just above already had
+  // fixed — these two were missed in that pass.
   private assertWarehouseAccess(user: AuthenticatedUser, warehouseId: string) {
-    if (!user.hasGlobalAccess && !user.warehouseIds.includes(warehouseId)) {
+    if (!user.hasGlobalAccess && user.warehouseIds.length > 0 && !user.warehouseIds.includes(warehouseId)) {
       throw new ForbiddenException("You do not have access to this warehouse.");
     }
   }
 
   private assertFarmAccess(user: AuthenticatedUser, farmId: string) {
-    if (!user.hasGlobalAccess && !user.farmIds.includes(farmId)) {
+    if (!user.hasGlobalAccess && user.farmIds.length > 0 && !user.farmIds.includes(farmId)) {
       throw new ForbiddenException("You do not have access to this farm.");
     }
   }

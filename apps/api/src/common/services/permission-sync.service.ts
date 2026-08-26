@@ -54,7 +54,7 @@ const ROLE_PERMISSION_MAP: Record<string, readonly string[]> = {
   "General Manager": ALL_KEYS.filter((k) => k !== "settings.manage"),
 
   // ── Manager-level roles ──────────────────────────────────────────────────────
-  "Farm Manager": ["platform.read", "inventory.read", "poultry.read", "poultry.manage", "poultry.record", "health.read", "health.manage", "maintenance.read", "maintenance.manage"],
+  "Farm Manager": ["platform.read", "inventory.read", "inventory.manage", "poultry.read", "poultry.manage", "poultry.record", "health.read", "health.manage", "maintenance.read", "maintenance.manage"],
   "Feed Mill Manager": ["platform.read", "inventory.read", "inventory.manage", "feed.read", "feed.manage", "market-planning.read", "quality.read", "maintenance.read", "maintenance.manage", "reports.export", "ai.read", "alerts.read", "alerts.manage"],
   "Feed Production Manager": ["platform.read", "inventory.read", "inventory.manage", "feed.read", "feed.manage", "market-planning.read", "quality.read", "maintenance.read", "maintenance.manage", "reports.export", "ai.read", "alerts.read", "alerts.manage"],
   "Marketing Manager": ["platform.read", "inventory.read", "sales.read", "market-planning.read", "market-planning.manage", "reports.export", "ai.read", "alerts.read"],

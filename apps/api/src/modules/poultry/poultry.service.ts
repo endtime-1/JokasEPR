@@ -2048,14 +2048,19 @@ export class PoultryService {
     return model;
   }
 
+  // (2026-08-26) Missing the "empty array means unrestricted" check every
+  // other scope filter in this file already uses (e.g. batchWhere) — a user
+  // with no explicit farm/warehouse restrictions (the normal, common case)
+  // was blocked from every farm/warehouse-scoped write, since an empty
+  // array can never .includes() anything.
   private assertFarmAccess(user: AuthenticatedUser, farmId: string) {
-    if (!user.hasGlobalAccess && !user.farmIds.includes(farmId)) {
+    if (!user.hasGlobalAccess && user.farmIds.length > 0 && !user.farmIds.includes(farmId)) {
       throw new ForbiddenException("You do not have access to this farm.");
     }
   }
 
   private assertWarehouseAccess(user: AuthenticatedUser, warehouseId: string) {
-    if (!user.hasGlobalAccess && !user.warehouseIds.includes(warehouseId)) {
+    if (!user.hasGlobalAccess && user.warehouseIds.length > 0 && !user.warehouseIds.includes(warehouseId)) {
       throw new ForbiddenException("You do not have access to this warehouse.");
     }
   }

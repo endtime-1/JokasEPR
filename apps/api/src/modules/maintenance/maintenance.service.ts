@@ -709,16 +709,20 @@ export class MaintenanceService {
     return query.startDate || query.endDate ? { [field]: { gte: query.startDate ? new Date(query.startDate) : undefined, lte: query.endDate ? new Date(query.endDate) : undefined } } : {};
   }
 
+  // (2026-08-26) Missing the "empty array means unrestricted" check used
+  // elsewhere in this codebase — a user with no explicit restriction on a
+  // given dimension (the normal, common case) was blocked from every scoped
+  // write, since an empty array can never .includes() anything.
   private assertScopeAccess(user: AuthenticatedUser, scope: { branchId?: string | null; farmId?: string | null; warehouseId?: string | null; productionSiteId?: string | null }) {
     if (user.hasGlobalAccess) return;
-    if (scope.branchId && !user.branchIds.includes(scope.branchId)) throw new ForbiddenException("You do not have access to this branch.");
-    if (scope.farmId && !user.farmIds.includes(scope.farmId)) throw new ForbiddenException("You do not have access to this farm.");
-    if (scope.warehouseId && !user.warehouseIds.includes(scope.warehouseId)) throw new ForbiddenException("You do not have access to this warehouse.");
-    if (scope.productionSiteId && !user.productionSiteIds.includes(scope.productionSiteId)) throw new ForbiddenException("You do not have access to this production site.");
+    if (scope.branchId && user.branchIds.length > 0 && !user.branchIds.includes(scope.branchId)) throw new ForbiddenException("You do not have access to this branch.");
+    if (scope.farmId && user.farmIds.length > 0 && !user.farmIds.includes(scope.farmId)) throw new ForbiddenException("You do not have access to this farm.");
+    if (scope.warehouseId && user.warehouseIds.length > 0 && !user.warehouseIds.includes(scope.warehouseId)) throw new ForbiddenException("You do not have access to this warehouse.");
+    if (scope.productionSiteId && user.productionSiteIds.length > 0 && !user.productionSiteIds.includes(scope.productionSiteId)) throw new ForbiddenException("You do not have access to this production site.");
   }
 
   private assertWarehouseAccess(user: AuthenticatedUser, warehouseId: string) {
-    if (!user.hasGlobalAccess && !user.warehouseIds.includes(warehouseId)) throw new ForbiddenException("You do not have access to this warehouse.");
+    if (!user.hasGlobalAccess && user.warehouseIds.length > 0 && !user.warehouseIds.includes(warehouseId)) throw new ForbiddenException("You do not have access to this warehouse.");
   }
 
   private sum<T extends Record<string, unknown>>(rows: T[], key: keyof T) {

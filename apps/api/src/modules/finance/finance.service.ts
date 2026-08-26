@@ -1208,8 +1208,12 @@ export class FinanceService {
     return { OR: [{ branchId: null }, { branchId: { in: user.branchIds } }] };
   }
 
+  // (2026-08-26) Missing the "empty array means unrestricted" check used
+  // elsewhere in this codebase — a user with no explicit branch restriction
+  // (the normal, common case) was blocked from every branch-scoped write,
+  // since an empty array can never .includes() anything.
   private assertBranchAccess(user: AuthenticatedUser, branchId?: string | null) {
-    if (!branchId || user.hasGlobalAccess) return;
+    if (!branchId || user.hasGlobalAccess || user.branchIds.length === 0) return;
     if (!user.branchIds.includes(branchId)) throw new ForbiddenException("You do not have access to this branch.");
   }
 

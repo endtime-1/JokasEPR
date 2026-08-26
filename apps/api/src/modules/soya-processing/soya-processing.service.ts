@@ -824,12 +824,16 @@ export class SoyaProcessingService {
     return batch;
   }
 
+  // (2026-08-26) Missing the "empty array means unrestricted" check used
+  // elsewhere in this codebase — a user with no explicit production
+  // site/warehouse restrictions (the normal, common case) was blocked from
+  // every scoped write, since an empty array can never .includes() anything.
   private assertProductionSiteAccess(user: AuthenticatedUser, productionSiteId: string) {
-    if (!user.hasGlobalAccess && !user.productionSiteIds.includes(productionSiteId)) throw new ForbiddenException("You do not have access to this production site.");
+    if (!user.hasGlobalAccess && user.productionSiteIds.length > 0 && !user.productionSiteIds.includes(productionSiteId)) throw new ForbiddenException("You do not have access to this production site.");
   }
 
   private assertWarehouseAccess(user: AuthenticatedUser, warehouseId: string) {
-    if (!user.hasGlobalAccess && !user.warehouseIds.includes(warehouseId)) throw new ForbiddenException("You do not have access to this warehouse.");
+    if (!user.hasGlobalAccess && user.warehouseIds.length > 0 && !user.warehouseIds.includes(warehouseId)) throw new ForbiddenException("You do not have access to this warehouse.");
   }
 
   private async writeAudit(user: AuthenticatedUser, action: "CREATE" | "UPDATE" | "DELETE" | "TRANSFER" | "APPROVE" | "REJECT", entityType: string, entityId: string, summary: string, context: RequestContext, scope: { branchId?: string; warehouseId?: string; productionSiteId?: string }) {

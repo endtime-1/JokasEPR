@@ -380,7 +380,7 @@ export class AiService {
     // (a shared report, a colleague, browser history), sidestepping the
     // farm-level restriction enforced everywhere else. Same check
     // poultry.service.ts's assertFarmAccess uses.
-    if (!user.hasGlobalAccess && !user.farmIds.includes(batch.farmId)) {
+    if (!user.hasGlobalAccess && user.farmIds.length > 0 && !user.farmIds.includes(batch.farmId)) {
       throw new ForbiddenException("You do not have access to this farm.");
     }
 

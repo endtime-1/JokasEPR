@@ -596,12 +596,16 @@ export class QrService {
     return resolved;
   }
 
+  // (2026-08-26) Missing the "empty array means unrestricted" check used
+  // elsewhere in this codebase — a user with no explicit restriction on a
+  // given dimension (the normal, common case) was blocked from every scoped
+  // QR lookup, since an empty array can never .includes() anything.
   private assertLocationAccess(user: AuthenticatedUser, entity: ResolvedEntity) {
     if (user.hasGlobalAccess) return;
-    if (entity.branchId && !user.branchIds.includes(entity.branchId)) throw new ForbiddenException("You cannot access this branch QR data.");
-    if (entity.farmId && !user.farmIds.includes(entity.farmId)) throw new ForbiddenException("You cannot access this farm QR data.");
-    if (entity.warehouseId && !user.warehouseIds.includes(entity.warehouseId)) throw new ForbiddenException("You cannot access this warehouse QR data.");
-    if (entity.productionSiteId && !user.productionSiteIds.includes(entity.productionSiteId)) throw new ForbiddenException("You cannot access this production site QR data.");
+    if (entity.branchId && user.branchIds.length > 0 && !user.branchIds.includes(entity.branchId)) throw new ForbiddenException("You cannot access this branch QR data.");
+    if (entity.farmId && user.farmIds.length > 0 && !user.farmIds.includes(entity.farmId)) throw new ForbiddenException("You cannot access this farm QR data.");
+    if (entity.warehouseId && user.warehouseIds.length > 0 && !user.warehouseIds.includes(entity.warehouseId)) throw new ForbiddenException("You cannot access this warehouse QR data.");
+    if (entity.productionSiteId && user.productionSiteIds.length > 0 && !user.productionSiteIds.includes(entity.productionSiteId)) throw new ForbiddenException("You cannot access this production site QR data.");
   }
 
   private createToken(): string {

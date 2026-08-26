@@ -481,12 +481,12 @@ export class InventoryService {
   }
 
   async farmView(user: AuthenticatedUser, farmId: string) {
-    if (!user.hasGlobalAccess && !user.farmIds.includes(farmId)) throw new ForbiddenException("You do not have access to this farm.");
+    if (!user.hasGlobalAccess && user.farmIds.length > 0 && !user.farmIds.includes(farmId)) throw new ForbiddenException("You do not have access to this farm.");
     return this.listItems(user, { farmId });
   }
 
   async productionSiteView(user: AuthenticatedUser, productionSiteId: string) {
-    if (!user.hasGlobalAccess && !user.productionSiteIds.includes(productionSiteId)) throw new ForbiddenException("You do not have access to this production site.");
+    if (!user.hasGlobalAccess && user.productionSiteIds.length > 0 && !user.productionSiteIds.includes(productionSiteId)) throw new ForbiddenException("You do not have access to this production site.");
     return this.listItems(user, { productionSiteId });
   }
 
@@ -788,8 +788,13 @@ export class InventoryService {
     return product;
   }
 
+  // (2026-08-26) Missing the same "empty array means unrestricted" check
+  // every other scope guard in this codebase uses — a user with no explicit
+  // warehouse restrictions (the normal, common case) was blocked from every
+  // warehouse-scoped write (Stock In, Stock Out, transfers, adjustments...)
+  // because an empty array can never .includes() anything.
   private assertWarehouseAccess(user: AuthenticatedUser, warehouseId: string) {
-    if (!user.hasGlobalAccess && !user.warehouseIds.includes(warehouseId)) throw new ForbiddenException("You do not have access to this warehouse.");
+    if (!user.hasGlobalAccess && user.warehouseIds.length > 0 && !user.warehouseIds.includes(warehouseId)) throw new ForbiddenException("You do not have access to this warehouse.");
   }
 
 

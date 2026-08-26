@@ -1294,12 +1294,17 @@ export class SalesService {
     return { companyId: user.companyId, customerId: query.customerId, ...(this.dateRange(query, "entryDate")), ...this.branchScope(user, query) };
   }
 
+  // (2026-08-26) Missing the "empty array means unrestricted" check used
+  // elsewhere in this codebase — a user with no explicit branch/warehouse
+  // restrictions (the normal, common case) was blocked from every
+  // branch/warehouse-scoped write, since an empty array can never
+  // .includes() anything.
   private assertBranchAccess(user: AuthenticatedUser, branchId: string) {
-    if (!user.hasGlobalAccess && !user.branchIds.includes(branchId)) throw new ForbiddenException("You do not have access to this branch.");
+    if (!user.hasGlobalAccess && user.branchIds.length > 0 && !user.branchIds.includes(branchId)) throw new ForbiddenException("You do not have access to this branch.");
   }
 
   private assertWarehouseAccess(user: AuthenticatedUser, warehouseId: string) {
-    if (!user.hasGlobalAccess && !user.warehouseIds.includes(warehouseId)) throw new ForbiddenException("You do not have access to this warehouse.");
+    if (!user.hasGlobalAccess && user.warehouseIds.length > 0 && !user.warehouseIds.includes(warehouseId)) throw new ForbiddenException("You do not have access to this warehouse.");
   }
 
   private daysFromNow(days: number) {
