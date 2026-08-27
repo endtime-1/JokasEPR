@@ -13,6 +13,7 @@ import {
   Trash2
 } from "lucide-react";
 import { apiFetch, ApiEnvelope, getCachedFirst } from "../../../lib/api";
+import { useLatestRequest } from "../../../lib/use-latest-request";
 
 type Message = {
   id: string;
@@ -284,17 +285,28 @@ export default function AiAssistantPage() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
+  const latestSessionLoad = useLatestRequest();
+
   async function loadSession(id: string) {
     setLoadingSession(true);
     setError("");
+    latestSessionLoad.start(id);
     try {
       const res = await apiFetch<ApiEnvelope<SessionDetail>>(`/ai/sessions/${id}`);
+      // (2026-08-27) Clicking between conversations quickly could let an
+      // older, slower request resolve after a newer one — briefly showing
+      // the right conversation, then silently reverting to whichever
+      // response landed last (or, if that older request had failed or was
+      // for a since-deleted session, flashing back to the empty "ask a
+      // business question" state). Only apply the response that matches
+      // the most recently clicked conversation.
+      if (!latestSessionLoad.isCurrent(id)) return;
       setActiveSessionId(id);
       setMessages((res.data?.messages ?? []) as Message[]);
     } catch {
-      setError("Failed to load session.");
+      if (latestSessionLoad.isCurrent(id)) setError("Failed to load session.");
     } finally {
-      setLoadingSession(false);
+      if (latestSessionLoad.isCurrent(id)) setLoadingSession(false);
     }
   }
 

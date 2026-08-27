@@ -12,6 +12,7 @@ import {
 import { DataTable } from "../../../components/data-table";
 import { FormField } from "../../../components/form-field";
 import { ApiEnvelope, apiFetch, downloadReport, getCachedFirst } from "../../../lib/api";
+import { useLatestRequest } from "../../../lib/use-latest-request";
 
 type ReportDefinition = {
   id: string;
@@ -117,21 +118,34 @@ export default function ReportsPage() {
   );
   const activeReport = catalog.find((r) => r.id === activeId);
 
+  const latestReportRequest = useLatestRequest();
+
   async function run(event?: FormEvent<HTMLFormElement>) {
     event?.preventDefault();
     if (!activeId) return;
     setLoading(true);
     setLoadError(null);
+    // (2026-08-27) Clicking a different report in the catalog before the
+    // previous one finished loading had no guard: an older, slower
+    // request could resolve after a newer one and leave the wrong
+    // report's data on screen (or leave the newer click looking like it
+    // silently did nothing), only correcting itself once something else
+    // triggered another run(). Only apply the response for the most
+    // recently requested report + filter combination.
+    const key = `${activeId}${queryString(filters)}`;
+    latestReportRequest.start(key);
     try {
       const res = await apiFetch<ApiEnvelope<ReportResult>>(
         `/reports/${activeId}${queryString(filters)}`
       );
+      if (!latestReportRequest.isCurrent(key)) return;
       setResult(res.data);
     } catch (err: unknown) {
+      if (!latestReportRequest.isCurrent(key)) return;
       const msg = err instanceof Error ? err.message : "Failed to run report.";
       setLoadError(msg);
     } finally {
-      setLoading(false);
+      if (latestReportRequest.isCurrent(key)) setLoading(false);
     }
   }
 
