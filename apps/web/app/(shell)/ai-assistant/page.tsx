@@ -357,6 +357,16 @@ export default function AiAssistantPage() {
         })
       });
 
+      // (2026-08-27) A slow AI response could get its connection cut by an
+      // infrastructure timeout after the success status went out but before
+      // the body finished — res.data was then undefined, and reading
+      // res.data.reply crashed with a raw, unhelpful TypeError. Surface a
+      // real message instead so the error banner actually explains what
+      // happened.
+      if (!res?.data?.reply) {
+        throw new Error("The assistant didn't respond in time. Please try again.");
+      }
+
       const aiMsg: Message = {
         id: `tmp-ai-${Date.now()}`,
         role: "assistant",
