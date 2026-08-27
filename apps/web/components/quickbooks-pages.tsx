@@ -9,6 +9,7 @@ import {
 import { apiFetch, getCachedFirst, hasCached } from "../lib/api";
 import { ConfirmModal, EmptyState, StatusBadge } from "./ui";
 import { useApiRecovery } from "../lib/use-api-recovery";
+import { useLatestRequest } from "../lib/use-latest-request";
 
 // ─── Shared Styles ────────────────────────────────────────────────────────────
 
@@ -244,12 +245,16 @@ export function QuickBooksSyncLogsPage() {
   const [filter, setFilter] = useState({ operation: "", result: "" });
   const [selected, setSelected] = useState<SyncLog | null>(null);
 
+  const latestRequest = useLatestRequest();
+
   function load() {
     const params = new URLSearchParams({ limit: "100", ...(filter.operation && { operation: filter.operation }), ...(filter.result && { result: filter.result }) });
+    const key = params.toString();
+    latestRequest.start(key);
     apiFetch<{ data: SyncLog[] }>(`/quickbooks/logs?${params}`)
-      .then((r) => { const fresh = r.data ?? []; setLogs((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
+      .then((r) => { if (!latestRequest.isCurrent(key)) return; const fresh = r.data ?? []; setLogs((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
       .catch(() => undefined)
-      .finally(() => setLoading(false));
+      .finally(() => { if (latestRequest.isCurrent(key)) setLoading(false); });
   }
 
   useEffect(() => { load(); }, [filter]);
@@ -347,12 +352,16 @@ export function QuickBooksWebhookEventsPage() {
   const [loading, setLoading] = useState(!hasCached("/quickbooks/webhook-events"));
   const [statusFilter, setStatusFilter] = useState("");
 
+  const latestRequest = useLatestRequest();
+
   function load() {
     const params = new URLSearchParams({ limit: "100", ...(statusFilter && { status: statusFilter }) });
+    const key = params.toString();
+    latestRequest.start(key);
     apiFetch<{ data: WebhookEvent[] }>(`/quickbooks/webhook-events?${params}`)
-      .then((r) => { const fresh = r.data ?? []; setEvents((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
+      .then((r) => { if (!latestRequest.isCurrent(key)) return; const fresh = r.data ?? []; setEvents((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
       .catch(() => undefined)
-      .finally(() => setLoading(false));
+      .finally(() => { if (latestRequest.isCurrent(key)) setLoading(false); });
   }
 
   useEffect(() => { load(); }, [statusFilter]);

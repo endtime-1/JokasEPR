@@ -12,6 +12,7 @@ import { ApiEnvelope, apiFetch, downloadReport, getCached, getCachedFirst, hasCa
 import { DataTable } from "./data-table";
 import { ConfirmModal, EmptyState, Modal, StatusBadge } from "./ui";
 import { useApiRecovery } from "../lib/use-api-recovery";
+import { useLatestRequest } from "../lib/use-latest-request";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -510,10 +511,14 @@ export function CustomersPage({ create = false }: { create?: boolean }) {
   const [deleteError, setDeleteError] = useState("");
   const [deleting, setDeleting] = useState(false);
 
+  const latestRequest = useLatestRequest();
+
   async function load() {
     const p = new URLSearchParams();
     if (search) p.set("search", search);
-    apiFetch<ApiEnvelope<Customer[]>>(`/sales/customers?${p}`).then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); }).catch(() => undefined).finally(() => setLoading(false));
+    const key = p.toString();
+    latestRequest.start(key);
+    apiFetch<ApiEnvelope<Customer[]>>(`/sales/customers?${p}`).then((r) => { if (!latestRequest.isCurrent(key)) return; const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); }).catch(() => undefined).finally(() => { if (latestRequest.isCurrent(key)) setLoading(false); });
   }
 
   useEffect(() => { void load(); }, [search]);
@@ -919,10 +924,14 @@ export function OrdersPage({ create = false }: { create?: boolean }) {
     return () => { cancelled = true; };
   }, [effectiveCustomerId]);
 
+  const latestOrdersRequest = useLatestRequest();
+
   async function load() {
     const p = new URLSearchParams();
     if (status) p.set("status", status);
-    apiFetch<ApiEnvelope<SalesOrder[]>>(`/sales/orders?${p}`).then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); }).catch(() => undefined).finally(() => setLoading(false));
+    const key = p.toString();
+    latestOrdersRequest.start(key);
+    apiFetch<ApiEnvelope<SalesOrder[]>>(`/sales/orders?${p}`).then((r) => { if (!latestOrdersRequest.isCurrent(key)) return; const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); }).catch(() => undefined).finally(() => { if (latestOrdersRequest.isCurrent(key)) setLoading(false); });
   }
 
   useEffect(() => { void load(); }, [status]);

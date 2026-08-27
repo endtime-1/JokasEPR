@@ -9,6 +9,7 @@ import { FormField } from "./form-field";
 import { ConfirmModal, Modal } from "./ui";
 import { ApiEnvelope, apiFetch, downloadReport, hasCached, getCached, getCachedFirst, invalidateCache } from "../lib/api";
 import { useApiRecovery } from "../lib/use-api-recovery";
+import { useLatestRequest } from "../lib/use-latest-request";
 
 type Option = {
   id: string;
@@ -366,12 +367,14 @@ export function InventoryListPage({ title, endpoint, subtitle }: { title: string
   const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>(endpoint)?.data ?? []);
   const [loading, setLoading] = useState(!hasCached(endpoint));
   const [loadError, setLoadError] = useState("");
+  const latestRequest = useLatestRequest();
   function load() {
     setLoadError("");
+    latestRequest.start(endpoint);
     apiFetch<ApiEnvelope<Record<string, unknown>[]>>(endpoint)
-      .then((response) => { const fresh = response.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
-      .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
-      .finally(() => setLoading(false));
+      .then((response) => { if (!latestRequest.isCurrent(endpoint)) return; const fresh = response.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
+      .catch((err: any) => { if (latestRequest.isCurrent(endpoint)) setLoadError(err?.message ?? "Failed to load."); })
+      .finally(() => { if (latestRequest.isCurrent(endpoint)) setLoading(false); });
   }
   useEffect(() => { load(); }, [endpoint]);
   useApiRecovery(rows.length === 0, load);

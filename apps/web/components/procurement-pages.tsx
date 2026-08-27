@@ -14,6 +14,7 @@ import { DataTable } from "./data-table";
 import { ConfirmModal, LockedNote, Modal, StatusBadge } from "./ui";
 import { useAuth } from "./auth-context";
 import { useApiRecovery } from "../lib/use-api-recovery";
+import { useLatestRequest } from "../lib/use-latest-request";
 
 // RejectPurchaseRequestDto/RejectPurchaseOrderDto/QualityFailGRNDto all
 // require a non-empty reason/qualityNotes string server-side — used by the
@@ -535,14 +536,17 @@ export function SuppliersPage() {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
 
+  const latestRequest = useLatestRequest();
+
   function load() {
     setLoading(true);
     setLoadError("");
     const q = search ? `?search=${encodeURIComponent(search)}` : "";
+    latestRequest.start(q);
     apiFetch<ApiEnvelope<Supplier[]>>(`/procurement/suppliers${q}`)
-      .then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
-      .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
-      .finally(() => setLoading(false));
+      .then((r) => { if (!latestRequest.isCurrent(q)) return; const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
+      .catch((err: any) => { if (latestRequest.isCurrent(q)) setLoadError(err?.message ?? "Failed to load."); })
+      .finally(() => { if (latestRequest.isCurrent(q)) setLoading(false); });
   }
   useEffect(() => { load(); }, [search]);
   useApiRecovery(rows.length === 0, load);
@@ -1339,13 +1343,16 @@ export function PurchaseRequestsPage() {
   const [rejectId, setRejectId] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState(false);
 
+  const latestRequest = useLatestRequest();
+
   function load() {
     setLoadError("");
     const q = statusFilter ? `?status=${statusFilter}` : "";
+    latestRequest.start(q);
     apiFetch<ApiEnvelope<PurchaseRequest[]>>(`/procurement/purchase-requests${q}`)
-      .then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
-      .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
-      .finally(() => setLoading(false));
+      .then((r) => { if (!latestRequest.isCurrent(q)) return; const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
+      .catch((err: any) => { if (latestRequest.isCurrent(q)) setLoadError(err?.message ?? "Failed to load."); })
+      .finally(() => { if (latestRequest.isCurrent(q)) setLoading(false); });
   }
   useEffect(() => { load(); }, [statusFilter]);
   useApiRecovery(rows.length === 0, load);
@@ -1661,13 +1668,16 @@ export function PurchaseOrdersPage() {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
 
+  const latestRequest = useLatestRequest();
+
   function load() {
     setLoadError("");
     const q = statusFilter ? `?status=${statusFilter}` : "";
+    latestRequest.start(q);
     apiFetch<ApiEnvelope<PurchaseOrder[]>>(`/procurement/purchase-orders${q}`)
-      .then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
-      .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
-      .finally(() => setLoading(false));
+      .then((r) => { if (!latestRequest.isCurrent(q)) return; const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
+      .catch((err: any) => { if (latestRequest.isCurrent(q)) setLoadError(err?.message ?? "Failed to load."); })
+      .finally(() => { if (latestRequest.isCurrent(q)) setLoading(false); });
   }
   useEffect(() => { load(); }, [statusFilter]);
   useApiRecovery(rows.length === 0, load);
@@ -2499,13 +2509,16 @@ export function GRNsPage() {
   const [failId, setFailId] = useState<string | null>(null);
   const [failing, setFailing] = useState(false);
 
+  const latestRequest = useLatestRequest();
+
   function load() {
     setLoadError("");
     const q = statusFilter ? `?status=${statusFilter}` : "";
+    latestRequest.start(q);
     apiFetch<ApiEnvelope<GRN[]>>(`/procurement/grns${q}`)
-      .then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
-      .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
-      .finally(() => setLoading(false));
+      .then((r) => { if (!latestRequest.isCurrent(q)) return; const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
+      .catch((err: any) => { if (latestRequest.isCurrent(q)) setLoadError(err?.message ?? "Failed to load."); })
+      .finally(() => { if (latestRequest.isCurrent(q)) setLoading(false); });
   }
   useEffect(() => { load(); }, [statusFilter]);
   useApiRecovery(rows.length === 0, load);
@@ -2859,13 +2872,16 @@ export function SupplierInvoicesPage() {
 
   const [loadError, setLoadError] = useState("");
 
+  const latestRequest = useLatestRequest();
+
   function load() {
     setLoadError("");
     const q = statusFilter ? `?status=${statusFilter}` : "";
+    latestRequest.start(q);
     apiFetch<ApiEnvelope<SupplierInvoice[]>>(`/procurement/invoices${q}`)
-      .then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
-      .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
-      .finally(() => setLoading(false));
+      .then((r) => { if (!latestRequest.isCurrent(q)) return; const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
+      .catch((err: any) => { if (latestRequest.isCurrent(q)) setLoadError(err?.message ?? "Failed to load."); })
+      .finally(() => { if (latestRequest.isCurrent(q)) setLoading(false); });
   }
   useEffect(() => { load(); }, [statusFilter]);
   useApiRecovery(rows.length === 0, load);

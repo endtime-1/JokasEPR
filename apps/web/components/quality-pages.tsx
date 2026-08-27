@@ -12,6 +12,7 @@ import { ApiEnvelope, apiFetch, getCached, getCachedFirst, hasCached, invalidate
 import { DataTable } from "./data-table";
 import { ConfirmModal, LockedNote, Modal, StatusBadge } from "./ui";
 import { useApiRecovery } from "../lib/use-api-recovery";
+import { useLatestRequest } from "../lib/use-latest-request";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -386,11 +387,15 @@ export function QualityTemplatesPage() {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
 
+  const latestRequest = useLatestRequest();
+
   function load() {
     setLoadError("");
     const p = new URLSearchParams();
     if (checkType) p.set("checkType", checkType);
-    apiFetch<ApiEnvelope<Template[]>>(`/quality/templates?${p}`).then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); }).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
+    const key = p.toString();
+    latestRequest.start(key);
+    apiFetch<ApiEnvelope<Template[]>>(`/quality/templates?${p}`).then((r) => { if (!latestRequest.isCurrent(key)) return; const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); }).catch((err: any) => { if (latestRequest.isCurrent(key)) setLoadError(err?.message ?? "Failed to load."); }).finally(() => { if (latestRequest.isCurrent(key)) setLoading(false); });
   }
 
   useEffect(() => { load(); }, [checkType]);
@@ -618,14 +623,18 @@ export function QualityChecksPage({ filterType }: { filterType?: string }) {
   const [loading, setLoading] = useState(!hasCached("/quality/checks"));
   const [loadError, setLoadError] = useState("");
 
+  const latestRequest = useLatestRequest();
+
   function load() {
     setLoadError("");
     const p = new URLSearchParams();
     if (checkType) p.set("checkType", checkType);
     if (status) p.set("status", status);
     if (decision) p.set("decision", decision);
+    const key = p.toString();
+    latestRequest.start(key);
     apiFetch<ApiEnvelope<{ total: number; items: QualityCheck[] }>>(`/quality/checks?${p}`)
-      .then((r) => { const fresh = r.data ?? { total: 0, items: [] }; setData((prev) => fresh.items.length === 0 && prev.items.length > 0 ? prev : fresh); }).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
+      .then((r) => { if (!latestRequest.isCurrent(key)) return; const fresh = r.data ?? { total: 0, items: [] }; setData((prev) => fresh.items.length === 0 && prev.items.length > 0 ? prev : fresh); }).catch((err: any) => { if (latestRequest.isCurrent(key)) setLoadError(err?.message ?? "Failed to load."); }).finally(() => { if (latestRequest.isCurrent(key)) setLoading(false); });
   }
 
   useEffect(() => { load(); }, [checkType, status, decision]);
@@ -1554,11 +1563,15 @@ export function CorrectiveActionsPage() {
   const [checks, setChecks] = useState<{ id: string; reference: string; checkType: string; batchNumber?: string }[]>([]);
   const [rejectedBatches, setRejectedBatches] = useState<{ id: string; reference: string; batchNumber?: string }[]>([]);
 
+  const latestRequest = useLatestRequest();
+
   function load() {
     setLoadError("");
     const p = new URLSearchParams();
     if (status) p.set("status", status);
-    apiFetch<ApiEnvelope<CorrectiveAction[]>>(`/quality/corrective-actions?${p}`).then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); }).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
+    const key = p.toString();
+    latestRequest.start(key);
+    apiFetch<ApiEnvelope<CorrectiveAction[]>>(`/quality/corrective-actions?${p}`).then((r) => { if (!latestRequest.isCurrent(key)) return; const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); }).catch((err: any) => { if (latestRequest.isCurrent(key)) setLoadError(err?.message ?? "Failed to load."); }).finally(() => { if (latestRequest.isCurrent(key)) setLoading(false); });
   }
 
   function loadPickers() {

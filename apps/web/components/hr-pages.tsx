@@ -8,6 +8,7 @@ import { ApiEnvelope, apiFetch, getCached, getCachedFirst, hasCached } from "../
 import { DataTable } from "./data-table";
 import { StatusBadge, EmptyState, ConfirmModal } from "./ui";
 import { useApiRecovery } from "../lib/use-api-recovery";
+import { useLatestRequest } from "../lib/use-latest-request";
 
 // â"€â"€â"€ Helpers â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
@@ -1141,9 +1142,12 @@ export function AttendancePage() {
   const [showForm, setShowForm] = useState(false);
   const [loadError, setLoadError] = useState("");
 
+  const latestRequest = useLatestRequest();
+
   function load() {
     setLoadError("");
-    apiFetch<ApiEnvelope<AttendanceRow[]>>(`/hr/attendance?dateFrom=${dateFilter}&dateTo=${dateFilter}`).then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); }).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
+    latestRequest.start(dateFilter);
+    apiFetch<ApiEnvelope<AttendanceRow[]>>(`/hr/attendance?dateFrom=${dateFilter}&dateTo=${dateFilter}`).then((r) => { if (!latestRequest.isCurrent(dateFilter)) return; const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); }).catch((err: any) => { if (latestRequest.isCurrent(dateFilter)) setLoadError(err?.message ?? "Failed to load."); }).finally(() => { if (latestRequest.isCurrent(dateFilter)) setLoading(false); });
   }
 
   useEffect(() => { load(); }, [dateFilter]);
@@ -1378,12 +1382,16 @@ export function TaskBoardPage() {
   const [moveError, setMoveError] = useState("");
   const [loadError, setLoadError] = useState("");
 
+  const latestRequest = useLatestRequest();
+
   function load() {
     setLoadError("");
     const params = new URLSearchParams();
     if (status) params.set("status", status);
     if (priority) params.set("priority", priority);
-    apiFetch<ApiEnvelope<Task[]>>(`/hr/tasks?${params}`).then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); }).catch((err: any) => setLoadError(err?.message ?? "Failed to load."));
+    const key = params.toString();
+    latestRequest.start(key);
+    apiFetch<ApiEnvelope<Task[]>>(`/hr/tasks?${params}`).then((r) => { if (!latestRequest.isCurrent(key)) return; const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); }).catch((err: any) => { if (latestRequest.isCurrent(key)) setLoadError(err?.message ?? "Failed to load."); });
   }
 
   useEffect(() => { load(); }, [status, priority]);
@@ -2152,11 +2160,15 @@ export function LeaveRequestsPage() {
   const [confirmCancelId, setConfirmCancelId] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
 
+  const latestRequest = useLatestRequest();
+
   function load() {
     setLoadError("");
     const params = new URLSearchParams();
     if (statusFilter) params.set("status", statusFilter);
-    apiFetch<ApiEnvelope<LeaveRow[]>>(`/hr/leave-requests?${params}`).then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); }).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
+    const key = params.toString();
+    latestRequest.start(key);
+    apiFetch<ApiEnvelope<LeaveRow[]>>(`/hr/leave-requests?${params}`).then((r) => { if (!latestRequest.isCurrent(key)) return; const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); }).catch((err: any) => { if (latestRequest.isCurrent(key)) setLoadError(err?.message ?? "Failed to load."); }).finally(() => { if (latestRequest.isCurrent(key)) setLoading(false); });
   }
 
   useEffect(() => { load(); }, [statusFilter]);
@@ -2614,14 +2626,18 @@ export function LeaveBalancePage() {
   const [initSaving, setInitSaving] = useState(false);
   const [initResult, setInitResult] = useState("");
 
+  const latestRequest = useLatestRequest();
+
   function load() {
     setLoadError("");
     const params = new URLSearchParams({ period: yearFilter });
     if (employeeFilter) params.set("employeeId", employeeFilter);
+    const key = params.toString();
+    latestRequest.start(key);
     apiFetch<ApiEnvelope<LeaveBalance[]>>(`/hr/leave-balance?${params}`)
-      .then((r) => { const fresh = r.data ?? []; setRows(prev => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
-      .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
-      .finally(() => setLoading(false));
+      .then((r) => { if (!latestRequest.isCurrent(key)) return; const fresh = r.data ?? []; setRows(prev => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
+      .catch((err: any) => { if (latestRequest.isCurrent(key)) setLoadError(err?.message ?? "Failed to load."); })
+      .finally(() => { if (latestRequest.isCurrent(key)) setLoading(false); });
   }
   useEffect(() => { load(); }, [yearFilter, employeeFilter]);
   useApiRecovery(rows.length === 0, load);
@@ -2718,12 +2734,15 @@ export function PublicHolidaysPage() {
   const [deleting, setDeleting] = useState(false);
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm(p => ({ ...p, [k]: e.target.value }));
 
+  const latestRequest = useLatestRequest();
+
   function load() {
     setLoadError("");
+    latestRequest.start(yearFilter);
     apiFetch<ApiEnvelope<PublicHoliday[]>>(`/hr/public-holidays?period=${yearFilter}`)
-      .then((r) => { const fresh = r.data ?? []; setRows(prev => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
-      .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
-      .finally(() => setLoading(false));
+      .then((r) => { if (!latestRequest.isCurrent(yearFilter)) return; const fresh = r.data ?? []; setRows(prev => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
+      .catch((err: any) => { if (latestRequest.isCurrent(yearFilter)) setLoadError(err?.message ?? "Failed to load."); })
+      .finally(() => { if (latestRequest.isCurrent(yearFilter)) setLoading(false); });
   }
   useEffect(() => { load(); }, [yearFilter]);
   useApiRecovery(rows.length === 0, load);
@@ -2988,13 +3007,16 @@ export function GrievancesPage() {
   const [deleting, setDeleting] = useState(false);
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setForm(p => ({ ...p, [k]: e.target.value }));
 
+  const latestRequest = useLatestRequest();
+
   function load() {
     setLoadError("");
     const params = statusFilter ? `?status=${statusFilter}` : "";
+    latestRequest.start(params);
     apiFetch<ApiEnvelope<GrievanceRecord[]>>(`/hr/grievances${params}`)
-      .then(r => { const fresh = r.data ?? []; setRows(prev => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
-      .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
-      .finally(() => setLoading(false));
+      .then(r => { if (!latestRequest.isCurrent(params)) return; const fresh = r.data ?? []; setRows(prev => fresh.length === 0 && prev.length > 0 ? prev : fresh); })
+      .catch((err: any) => { if (latestRequest.isCurrent(params)) setLoadError(err?.message ?? "Failed to load."); })
+      .finally(() => { if (latestRequest.isCurrent(params)) setLoading(false); });
   }
   useEffect(() => { load(); }, [statusFilter]);
   useApiRecovery(rows.length === 0, load);

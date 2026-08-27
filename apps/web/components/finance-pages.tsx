@@ -10,6 +10,7 @@ import { ApiEnvelope, apiFetch, getCached, getCachedFirst, hasCached, invalidate
 import { Badge, ConfirmModal, EmptyState, Modal, StatusBadge } from "./ui";
 import { useAuth } from "./auth-context";
 import { useApiRecovery } from "../lib/use-api-recovery";
+import { useLatestRequest } from "../lib/use-latest-request";
 
 // ─── Shared Types ────────────────────────────────────────────────────────────
 
@@ -677,6 +678,8 @@ export function ExpenseListPage() {
   const [rejecting, setRejecting] = useState(false);
   const [loadError, setLoadError] = useState("");
 
+  const latestRequest = useLatestRequest();
+
   function load(p = page) {
     setLoadError("");
     const params = new URLSearchParams();
@@ -685,10 +688,15 @@ export function ExpenseListPage() {
     if (endDate) params.set("endDate", endDate);
     params.set("page", String(p));
     params.set("pageSize", String(EXPENSE_PAGE_SIZE));
+    const key = params.toString();
+    latestRequest.start(key);
     apiFetch<{ data: Record<string, unknown>[]; meta?: { total: number } }>(`/finance/expenses?${params}`)
-      .then((r) => { const fresh = r.data ?? []; setExpenses((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); setTotal(r.meta?.total ?? fresh.length); })
-      .catch((err: any) => setLoadError(err?.message ?? "Failed to load expenses."))
-      .finally(() => setLoading(false));
+      .then((r) => {
+        if (!latestRequest.isCurrent(key)) return;
+        const fresh = r.data ?? []; setExpenses((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); setTotal(r.meta?.total ?? fresh.length);
+      })
+      .catch((err: any) => { if (latestRequest.isCurrent(key)) setLoadError(err?.message ?? "Failed to load expenses."); })
+      .finally(() => { if (latestRequest.isCurrent(key)) setLoading(false); });
   }
 
   useEffect(() => { setPage(1); load(1); }, [status, startDate, endDate]);
