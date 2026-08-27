@@ -1125,19 +1125,28 @@ function BatchRecordSection({ batchId, type, label, cols, endpoint, options }: {
     return options.pens.filter((p) => p.poultryHouseId === houseFilter);
   }, [options.pens, houseFilter]);
 
+  // (2026-08-27) Same out-of-order-response race as the standalone records
+  // page's load(): changing houseFilter/penFilter quickly can let an older
+  // request's response land after a newer one and silently overwrite it.
+  const latestRequestKeyRef = useRef<string | null>(null);
+
   async function load() {
     setLoading(true);
     setLoadError("");
+    const params = new URLSearchParams({ flockBatchId: batchId, take: "200" });
+    if (houseFilter) params.set("poultryHouseId", houseFilter);
+    if (penFilter) params.set("penId", penFilter);
+    const queryKey = `${type}|${params}`;
+    latestRequestKeyRef.current = queryKey;
     try {
-      const params = new URLSearchParams({ flockBatchId: batchId, take: "200" });
-      if (houseFilter) params.set("poultryHouseId", houseFilter);
-      if (penFilter) params.set("penId", penFilter);
       const res = await apiFetch<{ data: Record<string, any>[]; meta: any }>(`/poultry/records/${type}?${params}`);
+      if (latestRequestKeyRef.current !== queryKey) return;
       if (Array.isArray(res.data)) setRows(res.data);
     } catch (err: any) {
+      if (latestRequestKeyRef.current !== queryKey) return;
       setLoadError(err?.message ?? "Failed to load records.");
     } finally {
-      setLoading(false);
+      if (latestRequestKeyRef.current === queryKey) setLoading(false);
     }
   }
 
@@ -1582,6 +1591,15 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
   // a changed query is always trusted, even when it comes back empty; only a
   // retry of the SAME query gets the anti-flicker protection.
   const lastLoadedQueryRef = useRef<string | null>(null);
+  // (2026-08-27) load() is async and re-fires on every filter change; if the
+  // user picks a new batch/house/pen quickly, an earlier request can still
+  // be in flight when a later one starts. Without tracking which request is
+  // the newest, an older response resolving AFTER a newer one would
+  // overwrite the correct, just-shown data with stale (or empty) data —
+  // "records disappearing" whenever filters were changed faster than the
+  // network round-trip. Only the most recently STARTED request is allowed
+  // to update state; any response for a superseded request is discarded.
+  const latestRequestKeyRef = useRef<string | null>(null);
 
   async function load() {
     const params = new URLSearchParams({ take: "200" });
@@ -1589,7 +1607,9 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
     if (form.poultryHouseId) params.set("poultryHouseId", form.poultryHouseId);
     if (form.penId) params.set("penId", form.penId);
     const queryKey = `${type}|${params}`;
+    latestRequestKeyRef.current = queryKey;
     const response = await apiFetch<{ data: Record<string, any>[]; meta?: any }>(`/poultry/records/${type}?${params}`);
+    if (latestRequestKeyRef.current !== queryKey) return;
     const data = response.data;
     if (!Array.isArray(data)) return;
     const isSameQueryAsShown = lastLoadedQueryRef.current === queryKey;
