@@ -755,17 +755,26 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
 
   const [loadError, setLoadError] = useState("");
 
+  // (2026-08-27) Toggling between view/costing mode quickly can let an
+  // older request's response resolve after a newer one and overwrite it —
+  // same out-of-order-response race fixed in Poultry Records.
+  const latestFormulaLoadRef = useRef("");
+
   async function load() {
     setLoadError("");
+    const loadKey = `${params.id}|${mode}`;
+    latestFormulaLoadRef.current = loadKey;
     try {
       const response = await apiFetch<ApiEnvelope<FormulaRow>>(`/feed-production/formulas/${params.id}`);
+      if (latestFormulaLoadRef.current !== loadKey) return;
       setFormula(response.data);
       if (mode === "costing") {
         const cost = await apiFetch<ApiEnvelope<FormulaRow["costing"]>>(`/feed-production/formulas/${params.id}/costing`);
+        if (latestFormulaLoadRef.current !== loadKey) return;
         setCosting(cost.data);
       }
     } finally {
-      setLoading(false);
+      if (latestFormulaLoadRef.current === loadKey) setLoading(false);
     }
   }
 
@@ -3190,22 +3199,34 @@ export function HiproPredictivePage() {
   // Individual mode: ingredientId → formulaId → bags string (per-ingredient spot checks)
   const [indivBags, setIndivBags] = useState<Record<string, Record<string, string>>>({});
 
+  // (2026-08-27) Changing the warehouse filter quickly can let an older
+  // request's response resolve after a newer one and overwrite it with
+  // stale data — same out-of-order-response race fixed in Poultry Records.
+  const latestLoadRef = useRef<string>("");
+
   function loadData(wh: string) {
     setLoading(true);
     setFetchError(null);
+    latestLoadRef.current = wh;
     const path = wh
       ? `/feed-production/hipro-predictive?warehouseId=${wh}`
       : `/feed-production/hipro-predictive`;
     apiFetch<ApiEnvelope<HiproPredictiveData>>(path)
       .then((r) => {
+        if (latestLoadRef.current !== wh) return;
         const d = r.data ?? null;
         setData(d);
         if (d && d.ingredientView.length > 0) {
           setActiveIngId((prev) => prev ?? d.ingredientView[0].ingredientId);
         }
       })
-      .catch((e: unknown) => setFetchError((e as Error)?.message ?? "Failed to load data"))
-      .finally(() => setLoading(false));
+      .catch((e: unknown) => {
+        if (latestLoadRef.current !== wh) return;
+        setFetchError((e as Error)?.message ?? "Failed to load data");
+      })
+      .finally(() => {
+        if (latestLoadRef.current === wh) setLoading(false);
+      });
   }
 
   useEffect(() => { loadData(warehouseId); }, [warehouseId]);
