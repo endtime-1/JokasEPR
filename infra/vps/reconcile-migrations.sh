@@ -56,16 +56,23 @@ ROLLED=$($DB -N -e "SELECT migration_name FROM \`_prisma_migrations\` WHERE roll
 if [ -z "$APPLIED" ] && [ -z "$ROLLED" ]; then
   echo "==> Nothing to reconcile — all rows already have real checksums."
 else
+  # Genuinely-applied migrations with placeholder checksums: re-record via Prisma.
   while IFS= read -r m; do [ -z "$m" ] && continue
     echo "  [applied]     $m"
     $DB -e "DELETE FROM \`_prisma_migrations\` WHERE migration_name='$m' AND checksum='';"
-    prisma migrate resolve --applied "$m"
+    prisma migrate resolve --applied "$m" || echo "  [warn] resolve --applied failed for $m — continuing"
     sleep 1
   done <<< "$APPLIED"
+  # Migrations the old Hostinger pipeline marked rolled_back_at (superseded /
+  # never-run). `prisma migrate deploy` RE-RUNS rolled-back migrations, so we
+  # can't leave them that way — and their .sql is broken (that's why they were
+  # skipped). Mark them --applied instead: Prisma then skips them permanently,
+  # and the schema is already correct via the recovery migration that replaced
+  # them (this mirrors the net effect the live Hostinger DB has had for weeks).
   while IFS= read -r m; do [ -z "$m" ] && continue
-    echo "  [rolled-back] $m"
+    echo "  [superseded]  $m  (marking applied so migrate deploy skips it)"
     $DB -e "DELETE FROM \`_prisma_migrations\` WHERE migration_name='$m' AND checksum='';"
-    prisma migrate resolve --rolled-back "$m"
+    prisma migrate resolve --applied "$m" || echo "  [warn] resolve --applied failed for $m — continuing"
     sleep 1
   done <<< "$ROLLED"
 fi
