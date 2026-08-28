@@ -67,15 +67,18 @@ corepack prepare pnpm@11.9.0 --activate
 npm install -g pm2@latest
 log "pnpm: $(pnpm -v)  pm2: $(pm2 -v)"
 
-# ─── 4. MySQL 8 ───────────────────────────────────────────────────────────
-if ! command -v mysqld >/dev/null && ! dpkg -l | grep -q mysql-server; then
-  log "Installing MySQL server"
-  apt-get install -y mysql-server
+# ─── 4. MariaDB ───────────────────────────────────────────────────────────
+# MariaDB, NOT MySQL 8: the app's schema + every migration was built and run
+# against Hostinger's MariaDB. MySQL 8 rejects some of that schema on import
+# ("key too long", stricter defaults). Prisma's `mysql` provider drives both.
+if ! command -v mariadbd >/dev/null && ! dpkg -l | grep -q mariadb-server; then
+  log "Installing MariaDB server"
+  apt-get install -y mariadb-server
 fi
-systemctl enable --now mysql
+systemctl enable --now mariadb
 
 log "Creating database '${DB_NAME}' and user '${DB_USER}'"
-mysql --protocol=socket <<SQL
+mariadb --protocol=socket <<SQL
 CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';
 ALTER USER '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';
@@ -84,10 +87,11 @@ FLUSH PRIVILEGES;
 SQL
 
 # Sane defaults for a single-app box: bind to localhost only, bigger packet
-# for mysqldump/import, connection ceiling well above Prisma's pool.
-# innodb_buffer_pool_size kept modest so MySQL + 3 Node processes + builds
+# for dump/import, connection ceiling well above Prisma's pool.
+# innodb_buffer_pool_size kept modest so MariaDB + 3 Node processes + builds
 # all fit in 4 GB (KVM 1). Bump to 1G–2G if you move to KVM 2 (8 GB).
-cat > /etc/mysql/mysql.conf.d/zz-jokas.cnf <<'CNF'
+mkdir -p /etc/mysql/mariadb.conf.d
+cat > /etc/mysql/mariadb.conf.d/99-jokas.cnf <<'CNF'
 [mysqld]
 bind-address            = 127.0.0.1
 max_connections         = 150
@@ -95,7 +99,7 @@ max_allowed_packet      = 256M
 innodb_buffer_pool_size = 512M
 wait_timeout            = 28800
 CNF
-systemctl restart mysql
+systemctl restart mariadb
 
 # ─── 5. nginx + certbot ───────────────────────────────────────────────────
 log "Installing nginx + certbot"
