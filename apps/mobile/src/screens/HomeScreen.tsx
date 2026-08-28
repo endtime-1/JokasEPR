@@ -96,9 +96,15 @@ export function HomeScreen() {
   useFocusEffect(useCallback(() => { void loadDuties(); }, []));
 
   function navigate(screen: string) {
-    if (screen === "Dashboard") navigation.navigate("MoreTab", { screen });
-    else if (screen === "TaskList") navigation.navigate("TasksTab", { screen });
-    else navigation.navigate("RecordsTab", { screen });
+    // (2026-08-28) Jumping straight to a nested screen in another tab
+    // without `initial: false` makes React Navigation treat it as that
+    // tab's ROOT screen, discarding the tab's own home screen underneath
+    // it — so there was nothing to go "back" to and the header back
+    // arrow never appeared. `initial: false` pushes it on top of the
+    // tab's normal stack instead, so back navigation works as expected.
+    if (screen === "Dashboard") navigation.navigate("MoreTab", { screen, initial: false });
+    else if (screen === "TaskList") navigation.navigate("TasksTab", { screen, initial: false });
+    else navigation.navigate("RecordsTab", { screen, initial: false });
   }
 
   const allDone = dutySummary ? dutySummary.pending === 0 && dutySummary.total > 0 : false;

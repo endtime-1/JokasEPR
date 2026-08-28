@@ -52,14 +52,19 @@ export function DailyPoultryScreen() {
   const [errors, setErrors] = useState<Err>({});
   const [crates, setCrates] = useState("");
 
-  const { data: rawFarms } = useLookup("farms", async () => { const r = await fetchFarms(); return (r.data as any[]) ?? []; });
+  // (2026-08-28) useLookup's `error` was being discarded here — a failed
+  // fetch (permission issue, network error, etc.) just left the dropdown
+  // silently empty with nothing to explain why, indistinguishable from
+  // "there's genuinely nothing to pick." Wired into SelectField below so a
+  // real failure shows a real message instead of a mysterious blank list.
+  const { data: rawFarms, error: farmsError, loading: farmsLoading } = useLookup("farms", async () => { const r = await fetchFarms(); return (r.data as any[]) ?? []; });
   const farms: SelectOption[] = useMemo(() => {
     const all = rawFarms ?? [];
     const assigned = (user?.hasGlobalAccess || !user?.farmIds?.length) ? all : all.filter((f: any) => user?.farmIds?.includes(f.id));
     return assigned.map((f: any) => ({ label: f.name, value: f.id }));
   }, [rawFarms, user]);
 
-  const { data: rawBatches } = useLookup(
+  const { data: rawBatches, error: batchesError, loading: batchesLoading } = useLookup(
     `flockBatches:${form.farmId}`,
     async () => { const r = await fetchFlockBatches(form.farmId); return (r.data as any[]) ?? []; },
     !form.farmId
@@ -79,7 +84,7 @@ export function DailyPoultryScreen() {
   // Optional — matching the dedicated Feed Consumption / Egg Collection
   // screens' own "deduct from stock (optional)" convention: the count is
   // recorded either way, these just also move real stock when given.
-  const { data: rawWarehouses } = useLookup("warehouses", async () => { const r = await fetchWarehouses(); return (r.data as any[]) ?? []; });
+  const { data: rawWarehouses, error: warehousesError, loading: warehousesLoading } = useLookup("warehouses", async () => { const r = await fetchWarehouses(); return (r.data as any[]) ?? []; });
   const warehouses: SelectOption[] = useMemo(() => (rawWarehouses ?? []).map((w: any) => ({ label: w.name, value: w.id })), [rawWarehouses]);
   const { data: rawFeedProducts } = useLookup("feedProducts", async () => { const r = await fetchFeedProducts(); return (r.data as any[]) ?? []; });
   const feedProducts: SelectOption[] = useMemo(() => (rawFeedProducts ?? []).map((p: any) => ({ label: `${p.sku} — ${p.name}`, value: p.id })), [rawFeedProducts]);
@@ -186,8 +191,8 @@ export function DailyPoultryScreen() {
       </View>
 
       <FormCard label="FLOCK / BATCH">
-        <SelectField label="Farm" value={form.farmId} options={farms} onChange={set("farmId")} error={errors.farmId} required placeholder="Select farm…" />
-        <SelectField label="Flock Batch" value={form.flockBatchId} options={batches} onChange={set("flockBatchId")} error={errors.flockBatchId} required placeholder={form.farmId ? "Select batch…" : "Select farm first"} />
+        <SelectField label="Farm" value={form.farmId} options={farms} onChange={set("farmId")} error={errors.farmId ?? farmsError ?? undefined} loading={farmsLoading} required placeholder="Select farm…" />
+        <SelectField label="Flock Batch" value={form.flockBatchId} options={batches} onChange={set("flockBatchId")} error={errors.flockBatchId ?? batchesError ?? undefined} loading={batchesLoading} required placeholder={form.farmId ? "Select batch…" : "Select farm first"} />
         {pens.length > 0 && <SelectField label="Pen (optional)" value={form.penId} options={pens} onChange={set("penId")} placeholder="All pens" />}
         <DateField label="Record Date" required value={form.recordDate} onChangeText={set("recordDate")} error={errors.recordDate} />
       </FormCard>
@@ -218,14 +223,14 @@ export function DailyPoultryScreen() {
 
       {Number(form.feedConsumedKg) > 0 && (
         <FormCard label="DEDUCT FEED FROM STOCK (OPTIONAL)">
-          <SelectField label="Warehouse" value={form.feedWarehouseId} options={warehouses} onChange={set("feedWarehouseId")} placeholder="No warehouse selected" />
+          <SelectField label="Warehouse" value={form.feedWarehouseId} options={warehouses} onChange={set("feedWarehouseId")} error={warehousesError ?? undefined} loading={warehousesLoading} placeholder="No warehouse selected" />
           <SelectField label="Feed Product" value={form.feedProductId} options={feedProducts} onChange={set("feedProductId")} placeholder="No product selected" />
         </FormCard>
       )}
 
       {Number(form.totalEggs) > 0 && (
         <FormCard label="ADD EGGS TO STOCK (OPTIONAL)">
-          <SelectField label="Warehouse" value={form.eggWarehouseId} options={warehouses} onChange={set("eggWarehouseId")} placeholder="No warehouse selected" />
+          <SelectField label="Warehouse" value={form.eggWarehouseId} options={warehouses} onChange={set("eggWarehouseId")} error={warehousesError ?? undefined} loading={warehousesLoading} placeholder="No warehouse selected" />
           <SelectField label="Egg Product" value={form.eggProductId} options={eggProducts} onChange={set("eggProductId")} placeholder="No inventory item selected" />
         </FormCard>
       )}
