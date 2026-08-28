@@ -22,9 +22,14 @@ const nextConfig = {
   },
   // Exclude build-only packages from standalone trace to reduce memory and bundle size.
   // These are compiler/bundler tools never needed at runtime.
+  // NOTE: do NOT exclude all of node_modules/@swc — @swc/helpers is a RUNTIME
+  // dependency of Next's compiled output. Only @swc/core (the compiler) is
+  // build-only. Excluding the whole scope broke the standalone server with
+  // "Cannot find module '@swc/helpers/_/_interop_require_default'".
   outputFileTracingExcludes: {
     "*": [
-      "node_modules/@swc/**",
+      "node_modules/@swc/core*/**",
+      "node_modules/@swc/cli/**",
       "node_modules/webpack/**",
       "node_modules/next/dist/compiled/webpack/**",
       "node_modules/rollup/**",

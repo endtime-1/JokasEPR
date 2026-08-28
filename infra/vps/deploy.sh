@@ -46,6 +46,18 @@ for app in web storefront; do
   rm -rf "$sa/.next/static"
   cp -r "apps/$app/.next/static" "$sa/.next/static"
   [ -d "apps/$app/public" ] && { rm -rf "$sa/public"; cp -r "apps/$app/public" "$sa/public"; } || true
+
+  # Safety net: @swc/helpers is a RUNTIME dep of Next's compiled output. If the
+  # standalone file-trace still missed it, copy the exact version Next resolves.
+  root_sa="apps/$app/.next/standalone"
+  if [ ! -d "$root_sa/node_modules/@swc/helpers" ]; then
+    src=$(cd "apps/$app" && node -p "require('path').dirname(require.resolve('@swc/helpers/package.json'))" 2>/dev/null || true)
+    if [ -n "${src:-}" ] && [ -d "$src" ]; then
+      mkdir -p "$root_sa/node_modules/@swc/helpers"
+      cp -r "$src/." "$root_sa/node_modules/@swc/helpers/"
+      echo "[deploy] patched @swc/helpers into $app standalone (from $src)"
+    fi
+  fi
 done
 
 # ─── Uploads: keep user files OUTSIDE the repo, symlink them in ─────────────
