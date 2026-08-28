@@ -34,7 +34,7 @@ printf '[client]\nhost=%s\nport=%s\nuser=%s\npassword=%s\n' \
 trap 'rm -f "$CNF"' EXIT
 
 echo "[$(date -Is)] dumping database $DB_NAME"
-mysqldump --defaults-file="$CNF" --single-transaction --routines --triggers \
+mariadb-dump --defaults-file="$CNF" --single-transaction --routines --triggers \
   "$DB_NAME" | gzip > "$BACKUP_DIR/db-$STAMP.sql.gz"
 
 echo "[$(date -Is)] archiving uploads"
