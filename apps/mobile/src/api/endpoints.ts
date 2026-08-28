@@ -32,6 +32,22 @@ export const fetchFlockBatches = (farmId?: string) =>
 export const submitDailyPoultryRecord = (payload: SubmitDailyPoultryRecord) =>
   apiFetch<ApiEnvelope<unknown>>("/poultry/daily-records", { method: "POST", body: JSON.stringify(payload) });
 
+export type DailyPoultryRecordRow = {
+  id: string;
+  recordDate: string;
+  openingBirdCount: number | null;
+  mortalityCount: number;
+  culledCount: number;
+  feedConsumedKg: string | number;
+  totalEggs: number;
+  notes: string | null;
+};
+
+export const fetchDailyPoultryRecords = (flockBatchId: string) =>
+  apiFetch<ApiEnvelope<DailyPoultryRecordRow[]>>(
+    `/poultry/records/daily?flockBatchId=${encodeURIComponent(flockBatchId)}&take=20`
+  );
+
 export const submitMortality = (payload: SubmitMortalityRecord) =>
   apiFetch<ApiEnvelope<unknown>>("/poultry/mortality-records", { method: "POST", body: JSON.stringify(payload) });
 

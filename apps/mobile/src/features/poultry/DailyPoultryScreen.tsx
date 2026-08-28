@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, StyleSheet, Text, View } from "react-native";
+import { Alert, Modal, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { ScreenWrapper } from "../../components/ScreenWrapper";
@@ -10,10 +10,10 @@ import { DateField } from "../../components/DateField";
 import { SelectField, SelectOption } from "../../components/SelectField";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
-import { fetchFlockBatches, fetchFarms, fetchPoultryOptions, fetchWarehouses, fetchFeedProducts, fetchProducts } from "../../api/endpoints";
+import { fetchFlockBatches, fetchFarms, fetchPoultryOptions, fetchWarehouses, fetchFeedProducts, fetchProducts, fetchDailyPoultryRecords, DailyPoultryRecordRow } from "../../api/endpoints";
 import { apiFetch } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
-import { colors, font, spacing } from "../../constants/theme";
+import { colors, font, radius, spacing } from "../../constants/theme";
 
 type Form = {
   farmId: string;
@@ -90,6 +90,16 @@ export function DailyPoultryScreen() {
   const feedProducts: SelectOption[] = useMemo(() => (rawFeedProducts ?? []).map((p: any) => ({ label: `${p.sku} — ${p.name}`, value: p.id })), [rawFeedProducts]);
   const { data: rawEggProducts } = useLookup("products", async () => { const r = await fetchProducts(); return (r.data as any[]) ?? []; });
   const eggProducts: SelectOption[] = useMemo(() => (rawEggProducts ?? []).map((p: any) => ({ label: `${p.sku} — ${p.name}`, value: p.id })), [rawEggProducts]);
+
+  // (2026-08-28) This screen was create-only — no way to see a record you'd
+  // already entered without going back to web. Recent Records below lets
+  // you tap a past entry to view it, for the selected batch.
+  const { data: recentRecords, loading: recordsLoading, error: recordsError } = useLookup(
+    `dailyRecords:${form.flockBatchId}`,
+    async () => { const r = await fetchDailyPoultryRecords(form.flockBatchId); return r.data ?? []; },
+    !form.flockBatchId
+  );
+  const [viewRecord, setViewRecord] = useState<DailyPoultryRecordRow | null>(null);
 
   const set = (k: keyof Form) => (v: string) => {
     setForm((f) => ({ ...f, [k]: v }));
@@ -197,6 +207,37 @@ export function DailyPoultryScreen() {
         <DateField label="Record Date" required value={form.recordDate} onChangeText={set("recordDate")} error={errors.recordDate} />
       </FormCard>
 
+      {form.flockBatchId && (
+        <FormCard label="RECENT RECORDS">
+          {recordsError ? (
+            <Text style={styles.recordsMsg}>{recordsError}</Text>
+          ) : recordsLoading && !recentRecords ? (
+            <Text style={styles.recordsMsg}>Loading…</Text>
+          ) : !recentRecords || recentRecords.length === 0 ? (
+            <Text style={styles.recordsMsg}>No records yet for this batch.</Text>
+          ) : (
+            recentRecords.map((r, idx) => (
+              <TouchableOpacity
+                key={r.id}
+                style={[styles.recordRow, idx > 0 && styles.recordRowDivider]}
+                onPress={() => setViewRecord(r)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.recordRowText}>
+                  <Text style={styles.recordDate}>{new Date(r.recordDate).toLocaleDateString()}</Text>
+                  <Text style={styles.recordStats}>
+                    {r.openingBirdCount != null ? `${r.openingBirdCount.toLocaleString()} birds` : "— birds"}
+                    {r.mortalityCount > 0 ? ` · ${r.mortalityCount} dead` : ""}
+                    {r.totalEggs > 0 ? ` · ${r.totalEggs} eggs` : ""}
+                  </Text>
+                </View>
+                <MaterialCommunityIcons name="chevron-right" size={20} color={colors.inkLight} />
+              </TouchableOpacity>
+            ))
+          )}
+        </FormCard>
+      )}
+
       <FormCard label="RECORD DATA">
         <View style={styles.row}>
           <View style={styles.half}>
@@ -238,6 +279,33 @@ export function DailyPoultryScreen() {
       <FormCard label="NOTES">
         <FormField label="Notes" value={form.notes} onChangeText={set("notes")} placeholder="Optional notes…" multiline numberOfLines={3} style={{ minHeight: 80, textAlignVertical: "top" } as any} />
       </FormCard>
+
+      <Modal visible={!!viewRecord} transparent animationType="slide" statusBarTranslucent onRequestClose={() => setViewRecord(null)}>
+        <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={() => setViewRecord(null)}>
+          <View style={styles.sheet} onStartShouldSetResponder={() => true}>
+            <View style={styles.sheetHandle} />
+            {viewRecord && (
+              <>
+                <Text style={styles.sheetTitle}>{new Date(viewRecord.recordDate).toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</Text>
+                <View style={styles.detailRow}><Text style={styles.detailLabel}>Opening count</Text><Text style={styles.detailValue}>{viewRecord.openingBirdCount != null ? viewRecord.openingBirdCount.toLocaleString() : "—"}</Text></View>
+                <View style={styles.detailRow}><Text style={styles.detailLabel}>Mortality</Text><Text style={styles.detailValue}>{viewRecord.mortalityCount}</Text></View>
+                <View style={styles.detailRow}><Text style={styles.detailLabel}>Culled</Text><Text style={styles.detailValue}>{viewRecord.culledCount}</Text></View>
+                <View style={styles.detailRow}><Text style={styles.detailLabel}>Feed consumed</Text><Text style={styles.detailValue}>{Number(viewRecord.feedConsumedKg).toLocaleString()} kg</Text></View>
+                <View style={styles.detailRow}><Text style={styles.detailLabel}>Total eggs</Text><Text style={styles.detailValue}>{viewRecord.totalEggs}</Text></View>
+                {viewRecord.notes ? (
+                  <View style={styles.detailNotes}>
+                    <Text style={styles.detailLabel}>Notes</Text>
+                    <Text style={styles.detailNotesText}>{viewRecord.notes}</Text>
+                  </View>
+                ) : null}
+                <TouchableOpacity style={styles.closeBtn} onPress={() => setViewRecord(null)} activeOpacity={0.8}>
+                  <Text style={styles.closeBtnText}>Close</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </ScreenWrapper>
   );
 }
@@ -254,4 +322,45 @@ const styles = StyleSheet.create({
   sub:   { fontSize: font.size.sm, color: colors.inkMid, fontFamily: font.family.regular },
   row: { flexDirection: "row", gap: spacing.md },
   half: { flex: 1 },
+
+  recordsMsg: { fontSize: font.size.sm, color: colors.inkLight, paddingVertical: spacing.sm },
+  recordRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: spacing.md,
+    gap: spacing.md,
+  },
+  recordRowDivider: { borderTopWidth: 1, borderTopColor: colors.border },
+  recordRowText: { flex: 1, gap: 2 },
+  recordDate:  { fontSize: font.size.md - 1, fontFamily: font.family.bold, color: colors.ink },
+  recordStats: { fontSize: font.size.xs, color: colors.inkLight, fontFamily: font.family.regular },
+
+  overlay: { flex: 1, backgroundColor: colors.overlay, justifyContent: "flex-end" },
+  sheet: {
+    backgroundColor: colors.bgCard,
+    borderTopLeftRadius: radius.xxl,
+    borderTopRightRadius: radius.xxl,
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xxl,
+  },
+  sheetHandle: {
+    width: 40, height: 4, backgroundColor: colors.border, borderRadius: radius.full,
+    alignSelf: "center", marginBottom: spacing.lg,
+  },
+  sheetTitle: { fontSize: font.size.lg, fontFamily: font.family.bold, color: colors.ink, marginBottom: spacing.md },
+  detailRow: {
+    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+    paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.border,
+  },
+  detailLabel: { fontSize: font.size.sm, color: colors.inkMid, fontFamily: font.family.regular },
+  detailValue: { fontSize: font.size.sm, color: colors.ink, fontFamily: font.family.bold },
+  detailNotes: { paddingTop: spacing.md, gap: 4 },
+  detailNotesText: { fontSize: font.size.sm, color: colors.ink, fontFamily: font.family.regular, lineHeight: 20 },
+  closeBtn: {
+    marginTop: spacing.lg, backgroundColor: colors.brand, borderRadius: radius.md,
+    paddingVertical: spacing.md, alignItems: "center",
+  },
+  closeBtnText: { color: "#fff", fontSize: font.size.md, fontFamily: font.family.bold },
 });
