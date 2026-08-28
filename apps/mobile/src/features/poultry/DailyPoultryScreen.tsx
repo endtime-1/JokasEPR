@@ -69,8 +69,15 @@ export function DailyPoultryScreen() {
     async () => { const r = await fetchFlockBatches(form.farmId); return (r.data as any[]) ?? []; },
     !form.farmId
   );
+  // (2026-08-28) Was ACTIVE-only, silently hiding every batch in any other
+  // status (PLANNED, TRANSFERRED, etc.) with no explanation — showed as an
+  // unexplained "No options available" for a farm whose batch genuinely
+  // existed and was visible/usable on web. Web's own batch picker applies
+  // no status filter at all and lets the backend be the authority on
+  // whether a record can be saved against a given batch; matching that
+  // here instead of a stricter, inconsistent client-side guess.
   const batches: SelectOption[] = useMemo(
-    () => (rawBatches ?? []).filter((b: any) => !b.status || b.status === "ACTIVE").map((b: any) => ({ label: `${b.code} — ${b.name}`, value: b.id })),
+    () => (rawBatches ?? []).map((b: any) => ({ label: `${b.code} — ${b.name}`, value: b.id })),
     [rawBatches]
   );
 

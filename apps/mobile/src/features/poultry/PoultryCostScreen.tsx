@@ -48,7 +48,9 @@ export function PoultryCostScreen() {
     !farmId
   );
   const batches: SelectOption[] = useMemo(
-    () => (rawBatches ?? []).filter((b: any) => !b.status || b.status === "ACTIVE").map((b: any) => ({ label: `${b.code} — ${b.name}`, value: b.id })),
+    // (2026-08-28) Matches web's batch picker, which applies no status
+    // filter — see DailyPoultryScreen's own note on this same change.
+    () => (rawBatches ?? []).map((b: any) => ({ label: `${b.code} — ${b.name}`, value: b.id })),
     [rawBatches]
   );
 
