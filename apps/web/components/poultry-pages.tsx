@@ -51,6 +51,12 @@ type PoultryOptions = {
   batches: (Option & { birdType: string })[];
   warehouses: Option[];
   products: Option[];
+  feedWarehouses: Option[];
+  feedProducts: Option[];
+};
+
+const EMPTY_POULTRY_OPTIONS: PoultryOptions = {
+  farms: [], houses: [], pens: [], batches: [], warehouses: [], products: [], feedWarehouses: [], feedProducts: []
 };
 
 type BatchRow = {
@@ -76,7 +82,7 @@ const inputClass = "min-h-11 rounded-md border border-line px-3";
 
 function usePoultryOptions() {
   const [options, setOptions] = useState<PoultryOptions>(() =>
-    getCached<ApiEnvelope<PoultryOptions>>("/poultry/options")?.data ?? { farms: [], houses: [], pens: [], batches: [], warehouses: [], products: [] }
+    getCached<ApiEnvelope<PoultryOptions>>("/poultry/options")?.data ?? EMPTY_POULTRY_OPTIONS
   );
   const [optionsError, setOptionsError] = useState("");
   const [optionsLoading, setOptionsLoading] = useState(true);
@@ -93,7 +99,7 @@ function usePoultryOptions() {
     setOptionsLoading(true);
     apiFetch<ApiEnvelope<PoultryOptions>>("/poultry/options")
       .then((response) => {
-        const fresh = response.data ?? { farms: [], houses: [], pens: [], batches: [], warehouses: [], products: [] };
+        const fresh = response.data ?? EMPTY_POULTRY_OPTIONS;
         setOptions((prev) =>
           // Guard: if the server returned empty batches but we already have batches in
           // state, keep the existing data unless the user explicitly triggered a refresh.
@@ -2450,6 +2456,222 @@ export function PoultryTransferPage() {
         variant="danger"
         loading={confirmingDelete}
       />
+    </>
+  );
+}
+
+// ─── Feed Store (Poultry Supervisor) ─────────────────────────────────────────
+
+type FeedStockLine = {
+  warehouse: string | null;
+  farm: string | null;
+  product: string | null;
+  onHandKg: number;
+  receivedKg: number;
+  consumedKg: number;
+  varianceKg: number;
+};
+type FeedReceiptRow = Record<string, any>;
+
+const SOURCE_LABELS: Record<string, string> = { SUPPLIER: "Supplier", FEED_MILL: "Feed mill", OTHER: "Other" };
+const todayISO = () => new Date().toISOString().slice(0, 10);
+
+export function PoultryFeedStorePage() {
+  const { options, optionsError, optionsLoading } = usePoultryOptions();
+  const feedWarehouses = options.feedWarehouses ?? [];
+  const feedProducts = options.feedProducts ?? [];
+
+  const [farmId, setFarmId] = useState("");
+  const selectedFarmId = farmId || options.farms[0]?.id || "";
+  const farmStores = useMemo(
+    () => feedWarehouses.filter((w) => !selectedFarmId || w.farmId === selectedFarmId),
+    [feedWarehouses, selectedFarmId]
+  );
+
+  const [stock, setStock] = useState<{ lines: FeedStockLine[]; totals: Record<string, number> } | null>(null);
+  const [receipts, setReceipts] = useState<FeedReceiptRow[]>([]);
+  const [loadError, setLoadError] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  const [form, setForm] = useState({
+    warehouseId: "", feedProductId: "", receiptDate: todayISO(), quantityKg: "",
+    sourceType: "SUPPLIER", supplierName: "", billReference: "", unitCost: "", notes: ""
+  });
+  const [saving, setSaving] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+  const [submitOk, setSubmitOk] = useState("");
+
+  // Default the warehouse to the farm's (usually only) feed store.
+  useEffect(() => {
+    setForm((prev) => ({ ...prev, warehouseId: farmStores.find((w) => w.id === prev.warehouseId) ? prev.warehouseId : (farmStores[0]?.id ?? "") }));
+  }, [farmStores]);
+
+  function reload() {
+    if (!selectedFarmId) { setLoading(false); return; }
+    setLoading(true);
+    setLoadError("");
+    const q = `?farmId=${encodeURIComponent(selectedFarmId)}`;
+    Promise.all([
+      apiFetch<ApiEnvelope<{ lines: FeedStockLine[]; totals: Record<string, number> }>>(`/poultry/feed-stock${q}`),
+      apiFetch<ApiEnvelope<FeedReceiptRow[]>>(`/poultry/feed-receipts${q}`),
+    ])
+      .then(([s, r]) => { setStock(s.data); setReceipts(Array.isArray(r.data) ? r.data : []); })
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load feed store data."))
+      .finally(() => setLoading(false));
+  }
+  useEffect(() => { reload(); }, [selectedFarmId]);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (saving) return;
+    setSubmitError(""); setSubmitOk(""); setSaving(true);
+    try {
+      const payload: Record<string, unknown> = {
+        farmId: selectedFarmId,
+        warehouseId: form.warehouseId,
+        feedProductId: form.feedProductId,
+        receiptDate: form.receiptDate,
+        quantityKg: Number(form.quantityKg),
+        sourceType: form.sourceType,
+      };
+      if (form.sourceType === "SUPPLIER" && form.supplierName) payload.supplierName = form.supplierName;
+      if (form.billReference) payload.billReference = form.billReference;
+      if (form.unitCost) payload.unitCost = Number(form.unitCost);
+      if (form.notes) payload.notes = form.notes;
+      await apiFetch("/poultry/feed-receipts", { method: "POST", body: JSON.stringify(payload) });
+      setSubmitOk("Feed receipt recorded — the feed store stock has been updated.");
+      setForm((prev) => ({ ...prev, quantityKg: "", billReference: "", unitCost: "", notes: "" }));
+      reload();
+    } catch (err: any) {
+      setSubmitError(err?.message ?? "Failed to record the feed receipt.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const stockColumns = [
+    { key: "product", label: "Feed product", render: (r: FeedStockLine) => r.product ?? "—" },
+    { key: "onHandKg", label: "On hand (kg)", render: (r: FeedStockLine) => r.onHandKg.toLocaleString() },
+    { key: "receivedKg", label: "Received (period)", render: (r: FeedStockLine) => r.receivedKg.toLocaleString() },
+    { key: "consumedKg", label: "Fed to birds (period)", render: (r: FeedStockLine) => r.consumedKg.toLocaleString() },
+    { key: "varianceKg", label: "Variance", render: (r: FeedStockLine) => (
+      <span className={Math.abs(r.varianceKg) > 0.01 ? "font-semibold text-amber-600" : "text-ink/50"}>{r.varianceKg.toLocaleString()}</span>
+    ) },
+  ];
+  const receiptColumns = [
+    { key: "receiptDate", label: "Date", render: (r: FeedReceiptRow) => formatCell("receiptDate", r.receiptDate) },
+    { key: "feedProduct", label: "Feed", render: (r: FeedReceiptRow) => r.feedProduct?.name ?? "—" },
+    { key: "quantityKg", label: "Qty (kg)", render: (r: FeedReceiptRow) => Number(r.quantityKg).toLocaleString() },
+    { key: "sourceType", label: "Source", render: (r: FeedReceiptRow) => SOURCE_LABELS[r.sourceType] ?? r.sourceType },
+    { key: "supplierName", label: "Supplier", render: (r: FeedReceiptRow) => r.supplierName ?? "—" },
+    { key: "billReference", label: "Waybill / bill #", render: (r: FeedReceiptRow) => r.billReference ?? "—" },
+    { key: "status", label: "Status", render: (r: FeedReceiptRow) => <StatusBadge status={r.status ?? "SUBMITTED"} /> },
+  ];
+
+  return (
+    <>
+      <PageHeader title="Feed Store" subtitle="Record feed arriving at the farm feed store and reconcile it against what the birds have been fed." />
+
+      {optionsError && <p className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{optionsError}</p>}
+
+      <div className="mb-6 flex flex-wrap items-end gap-3">
+        <label className="grid gap-1.5 text-sm font-semibold text-ink">
+          <span>Farm</span>
+          <select className={inputClass} value={selectedFarmId} onChange={(e) => setFarmId(e.target.value)}>
+            {options.farms.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+          </select>
+        </label>
+      </div>
+
+      {!optionsLoading && farmStores.length === 0 && selectedFarmId && (
+        <p className="mb-6 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          This farm has no feed store yet. Create a warehouse of type <strong>FEED_STORE</strong> on this farm (Inventory → Warehouses) before recording feed receipts.
+        </p>
+      )}
+
+      {/* ── Feed on hand ─────────────────────────────────────────────────── */}
+      <section className="mb-8">
+        <h3 className="mb-3 text-lg font-semibold">Feed on hand</h3>
+        {loadError && <p className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{loadError}</p>}
+        <DataTable<FeedStockLine>
+          columns={stockColumns as never}
+          rows={stock?.lines ?? []}
+          loading={loading}
+          empty="No feed stock recorded for this farm's feed store yet."
+        />
+        {stock && stock.lines.length > 0 && (
+          <p className="mt-2 text-sm text-ink/60">
+            Total on hand: <strong>{(stock.totals.onHandKg ?? 0).toLocaleString()} kg</strong>
+            {" · "}received: {(stock.totals.receivedKg ?? 0).toLocaleString()} kg
+            {" · "}fed to birds: {(stock.totals.consumedKg ?? 0).toLocaleString()} kg
+          </p>
+        )}
+      </section>
+
+      {/* ── Record a receipt ────────────────────────────────────────────── */}
+      <section className="mb-8">
+        <h3 className="mb-3 text-lg font-semibold">Record a feed receipt</h3>
+        <form onSubmit={submit} className="grid gap-4 rounded-lg border border-line bg-white p-4 sm:grid-cols-2 lg:grid-cols-3">
+          <FormField label="Feed store" required>
+            <select className={inputClass} value={form.warehouseId} onChange={(e) => setForm({ ...form, warehouseId: e.target.value })} required>
+              <option value="">Select…</option>
+              {farmStores.map((w) => <option key={w.id} value={w.id}>{w.name}{w.code ? ` (${w.code})` : ""}</option>)}
+            </select>
+          </FormField>
+          <FormField label="Feed product" required>
+            <select className={inputClass} value={form.feedProductId} onChange={(e) => setForm({ ...form, feedProductId: e.target.value })} required>
+              <option value="">Select…</option>
+              {feedProducts.map((p) => <option key={p.id} value={p.id}>{p.name}{p.sku ? ` (${p.sku})` : ""}</option>)}
+            </select>
+          </FormField>
+          <FormField label="Quantity received (kg)" required>
+            <input type="number" min={0.001} step="any" className={inputClass} value={form.quantityKg} onChange={(e) => setForm({ ...form, quantityKg: e.target.value })} required />
+          </FormField>
+          <FormField label="Date received" required>
+            <input type="date" className={inputClass} value={form.receiptDate} onChange={(e) => setForm({ ...form, receiptDate: e.target.value })} required />
+          </FormField>
+          <FormField label="Source" required>
+            <select className={inputClass} value={form.sourceType} onChange={(e) => setForm({ ...form, sourceType: e.target.value })} required>
+              <option value="SUPPLIER">Supplier</option>
+              <option value="FEED_MILL">Feed mill</option>
+              <option value="OTHER">Other</option>
+            </select>
+          </FormField>
+          {form.sourceType === "SUPPLIER" && (
+            <FormField label="Supplier name">
+              <input className={inputClass} value={form.supplierName} onChange={(e) => setForm({ ...form, supplierName: e.target.value })} />
+            </FormField>
+          )}
+          <FormField label="Waybill / delivery note #" hint="The stock bill for this delivery">
+            <input className={inputClass} value={form.billReference} onChange={(e) => setForm({ ...form, billReference: e.target.value })} />
+          </FormField>
+          <FormField label="Unit cost (per kg)" hint="Optional">
+            <input type="number" min={0} step="any" className={inputClass} value={form.unitCost} onChange={(e) => setForm({ ...form, unitCost: e.target.value })} />
+          </FormField>
+          <FormField label="Notes">
+            <input className={inputClass} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+          </FormField>
+          <div className="sm:col-span-2 lg:col-span-3">
+            {submitError && <p className="mb-2 text-sm font-medium text-red-600">{submitError}</p>}
+            {submitOk && <p className="mb-2 text-sm font-medium text-green-700">{submitOk}</p>}
+            <button type="submit" disabled={saving || !selectedFarmId} className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-50">
+              <Plus aria-hidden className="h-4 w-4" /> {saving ? "Saving…" : "Record receipt"}
+            </button>
+          </div>
+        </form>
+      </section>
+
+      {/* ── Recent receipts ─────────────────────────────────────────────── */}
+      <section>
+        <h3 className="mb-3 text-lg font-semibold">Recent receipts</h3>
+        <DataTable<FeedReceiptRow>
+          columns={receiptColumns as never}
+          rows={receipts}
+          loading={loading}
+          empty="No feed receipts recorded for this farm yet."
+          searchPlaceholder="Search receipts…"
+        />
+      </section>
     </>
   );
 }

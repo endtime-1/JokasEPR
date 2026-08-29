@@ -5,6 +5,7 @@ const DATE_COLS = new Set([
   "observationDate",
   "costDate",
   "transferDate",
+  "receiptDate",
 ]);
 
 export function formatDate(value: unknown): string {

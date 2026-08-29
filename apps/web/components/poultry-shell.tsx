@@ -19,6 +19,7 @@ const NAV_GROUPS = [
       { href: "/poultry/daily-records", label: "Daily Records" },
       { href: "/poultry/egg-production", label: "Egg Production" },
       { href: "/poultry/feed-consumption", label: "Feed" },
+      { href: "/poultry/feed-store", label: "Feed Store" },
       { href: "/poultry/bird-weight", label: "Bird Weight" },
       { href: "/poultry/mortality", label: "Mortality" }
     ]
