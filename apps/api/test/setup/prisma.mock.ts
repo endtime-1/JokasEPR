@@ -46,6 +46,8 @@ export function createPrismaMock() {
     mortalityRecord: modelMock(),
     eggProductionRecord: modelMock(),
     feedConsumptionRecord: modelMock(),
+    feedReceiptRecord: modelMock(),
+    feedInternalTransfer: modelMock(),
     medicationRecord: modelMock(),
     vaccinationRecord: modelMock(),
     inventoryItem: modelMock(),

@@ -21,6 +21,9 @@ import {
   CreatePoultryHouseDto,
   CreatePoultryTransferDto,
   CreateVaccinationRecordDto,
+  CreateFeedReceiptDto,
+  UpdateFeedReceiptDto,
+  FeedStockQueryDto,
   PoultryQueryDto,
   UpdateBatchStatusDto,
   UpdateFlockBatchDto,
@@ -183,7 +186,7 @@ export class PoultryService {
     const cacheKey = `poultry:opts:${user.companyId}:${user.hasGlobalAccess ? "g" : user.id}`;
     const cached = this.lookupCache.get<object>(cacheKey);
     if (cached) return cached;
-    const [farms, houses, pens, batches, warehouses, products] = await Promise.all([
+    const [farms, houses, pens, batches, warehouses, products, feedWarehouses, feedProducts] = await Promise.all([
       this.prisma.farm.findMany({ where: this.farmWhere(user), select: { id: true, code: true, name: true, branchId: true }, orderBy: { name: "asc" } }),
       this.prisma.poultryHouse.findMany({ where: this.houseWhere(user), select: { id: true, code: true, name: true, farmId: true }, orderBy: { name: "asc" } }),
       this.prisma.pen.findMany({ where: { companyId: user.companyId, deletedAt: null, isActive: true }, select: { id: true, code: true, name: true, penNumber: true, poultryHouseId: true, farmId: true, capacity: true }, orderBy: [{ poultryHouseId: "asc" }, { penNumber: "asc" }] }),
@@ -195,9 +198,13 @@ export class PoultryService {
       // alongside egg products with nothing to do with poultry output.
       // Matches the rawMaterials/finishedProducts split already used
       // correctly in feed-production.service.ts and market-planning.service.ts.
-      this.prisma.product.findMany({ where: { companyId: user.companyId, deletedAt: null, type: "FINISHED_GOOD" }, select: { id: true, sku: true, name: true }, orderBy: { name: "asc" } })
+      this.prisma.product.findMany({ where: { companyId: user.companyId, deletedAt: null, type: "FINISHED_GOOD" }, select: { id: true, sku: true, name: true }, orderBy: { name: "asc" } }),
+      // Feed-store warehouses (farm-scoped) + feed products — for the
+      // supervisor's feed-receipt form.
+      this.prisma.warehouse.findMany({ where: { companyId: user.companyId, deletedAt: null, status: "ACTIVE", type: "FEED_STORE", ...(user.hasGlobalAccess ? {} : { farmId: { in: user.farmIds } }) }, select: { id: true, code: true, name: true, farmId: true }, orderBy: { name: "asc" } }),
+      this.prisma.product.findMany({ where: { companyId: user.companyId, deletedAt: null, type: { in: ["RAW_MATERIAL", "SEMI_FINISHED", "FINISHED_GOOD", "CONSUMABLE"] } }, select: { id: true, sku: true, name: true }, orderBy: { name: "asc" } })
     ]);
-    const result = { data: { farms, houses, pens, batches, warehouses, products } };
+    const result = { data: { farms, houses, pens, batches, warehouses, products, feedWarehouses, feedProducts } };
     // Only cache when batches exist — an empty-batches response can be transient (DB
     // warmup, first request during cold-start) and caching it would serve stale empty
     // data for the full 45-second TTL, causing "No flock batches found" to flash.
@@ -2299,6 +2306,292 @@ export class PoultryService {
 
   private async findCostByIdempotencyKey(companyId: string, idempotencyKey: string) {
     return this.prisma.poultryCostRecord.findFirst({ where: { companyId, idempotencyKey, deletedAt: null } });
+  }
+
+  // ─── Poultry Supervisor: feed received into a farm's feed store ────────────
+  //
+  // A FeedReceiptRecord is the supervisor logging "feed arrived at this farm".
+  // Creating one credits the FEED_STORE warehouse (InventoryItem + a StockBatch
+  // lot + a StockMovement). Feeding the birds later (createFeed) draws it back
+  // down through the existing consumeInventoryTx FIFO path — no separate ledger.
+
+  private async findFeedReceiptByIdempotencyKey(companyId: string, idempotencyKey: string) {
+    return this.prisma.feedReceiptRecord.findFirst({ where: { companyId, idempotencyKey, deletedAt: null } });
+  }
+
+  private async assertFeedStoreWarehouse(companyId: string, warehouseId: string, farmId: string) {
+    const wh = await this.prisma.warehouse.findFirst({
+      where: { id: warehouseId, companyId, deletedAt: null },
+      select: { id: true, type: true, farmId: true, status: true },
+    });
+    if (!wh) throw new BadRequestException("Warehouse not found.");
+    if (wh.status !== "ACTIVE") throw new BadRequestException("That warehouse is not active.");
+    if (wh.type !== "FEED_STORE") throw new BadRequestException("Feed can only be received into a FEED_STORE warehouse.");
+    if (wh.farmId !== farmId) throw new BadRequestException("That feed store does not belong to the selected farm.");
+  }
+
+  async createFeedReceipt(user: AuthenticatedUser, dto: CreateFeedReceiptDto, context: RequestContext) {
+    this.assertFarmAccess(user, dto.farmId);
+    this.assertWarehouseAccess(user, dto.warehouseId);
+    await this.assertFeedStoreWarehouse(user.companyId, dto.warehouseId, dto.farmId);
+
+    const farm = await this.prisma.farm.findFirst({ where: { id: dto.farmId, companyId: user.companyId, deletedAt: null }, select: { id: true, branchId: true } });
+    if (!farm) throw new BadRequestException("Farm not found.");
+    const product = await this.prisma.product.findFirst({ where: { id: dto.feedProductId, companyId: user.companyId, deletedAt: null }, select: { id: true, uomId: true, name: true } });
+    if (!product) throw new BadRequestException("Feed product not found.");
+
+    if (dto.feedInternalTransferId) {
+      const t = await this.prisma.feedInternalTransfer.findFirst({ where: { id: dto.feedInternalTransferId, companyId: user.companyId, deletedAt: null }, select: { id: true } });
+      if (!t) throw new BadRequestException("Linked feed transfer not found.");
+    }
+
+    if (dto.idempotencyKey) {
+      const existing = await this.findFeedReceiptByIdempotencyKey(user.companyId, dto.idempotencyKey);
+      if (existing) return { data: existing };
+    }
+
+    const sourceType = dto.sourceType ?? "SUPPLIER";
+    const movementType = sourceType === "FEED_MILL" ? "TRANSFER" : sourceType === "OTHER" ? "ADJUSTMENT_IN" : "PURCHASE_RECEIPT";
+
+    let data;
+    try {
+      data = await withDbRetry(() => this.prisma.$transaction(async (tx) => {
+        const record = await tx.feedReceiptRecord.create({
+          data: {
+            companyId: user.companyId,
+            branchId: farm.branchId,
+            farmId: dto.farmId,
+            warehouseId: dto.warehouseId,
+            feedProductId: dto.feedProductId,
+            receiptDate: new Date(dto.receiptDate),
+            quantityKg: dto.quantityKg,
+            sourceType,
+            supplierName: dto.supplierName,
+            feedInternalTransferId: dto.feedInternalTransferId,
+            billReference: dto.billReference,
+            unitCost: dto.unitCost,
+            totalCost: dto.totalCost ?? (dto.unitCost != null ? Math.round(dto.unitCost * dto.quantityKg * 10000) / 10000 : undefined),
+            notes: dto.notes,
+            status: dto.status ?? "SUBMITTED",
+            idempotencyKey: dto.idempotencyKey,
+            createdById: user.id,
+          },
+        });
+        await this.creditFeedInventoryTx(tx, user, farm.branchId, dto.farmId, dto.warehouseId, product, dto.quantityKg, movementType, record.id, `Feed receipt${dto.billReference ? ` (${dto.billReference})` : ""} for ${product.name}`);
+        return record;
+      }), { label: "PoultryService.createFeedReceipt" });
+    } catch (err: unknown) {
+      if (dto.idempotencyKey && (err as { code?: string })?.code === "P2002") {
+        const existing = await this.findFeedReceiptByIdempotencyKey(user.companyId, dto.idempotencyKey);
+        if (existing) return { data: existing };
+      }
+      throw err;
+    }
+
+    await this.writeAudit(user, "CREATE", "FeedReceiptRecord", data.id, `Recorded feed receipt: ${dto.quantityKg} kg`, context, dto.farmId);
+    return { data };
+  }
+
+  private async creditFeedInventoryTx(
+    tx: Prisma.TransactionClient,
+    user: AuthenticatedUser,
+    branchId: string,
+    farmId: string,
+    warehouseId: string,
+    product: { id: string; uomId: string },
+    quantityKg: number,
+    movementType: Prisma.StockMovementCreateInput["movementType"],
+    receiptId: string,
+    notes: string
+  ) {
+    // Lock InventoryItem then StockBatch — same order as consumeInventoryTx.
+    const item = await tx.inventoryItem.upsert({
+      where: { companyId_warehouseId_productId: { companyId: user.companyId, warehouseId, productId: product.id } },
+      update: { quantityOnHand: { increment: quantityKg }, updatedById: user.id },
+      create: { companyId: user.companyId, branchId, warehouseId, farmId, productId: product.id, uomId: product.uomId, quantityOnHand: quantityKg, createdById: user.id },
+    });
+    await tx.stockBatch.create({
+      data: {
+        companyId: user.companyId,
+        branchId,
+        farmId,
+        warehouseId,
+        productId: product.id,
+        inventoryItemId: item.id,
+        uomId: product.uomId,
+        batchNumber: `FRC-${receiptId.slice(0, 8).toUpperCase()}`,
+        quantityReceived: quantityKg,
+        quantityRemaining: quantityKg,
+        manufactureDate: new Date(),
+        createdById: user.id,
+      },
+    });
+    await tx.stockMovement.create({
+      data: { companyId: user.companyId, branchId, productId: product.id, inventoryItemId: item.id, toWarehouseId: warehouseId, warehouseId, farmId, uomId: product.uomId, movementType, quantity: quantityKg, referenceType: "FeedReceiptRecord", referenceId: receiptId, notes, createdById: user.id },
+    });
+  }
+
+  async listFeedReceipts(user: AuthenticatedUser, query: FeedStockQueryDto) {
+    const where: Prisma.FeedReceiptRecordWhereInput = {
+      companyId: user.companyId,
+      deletedAt: null,
+      ...(user.hasGlobalAccess
+        ? (query.farmId ? { farmId: query.farmId } : {})
+        : { farmId: query.farmId && user.farmIds.includes(query.farmId) ? query.farmId : { in: user.farmIds } }),
+      ...(query.feedProductId ? { feedProductId: query.feedProductId } : {}),
+      ...((query.startDate || query.endDate)
+        ? { receiptDate: { ...(query.startDate ? { gte: new Date(query.startDate) } : {}), ...(query.endDate ? { lte: new Date(query.endDate) } : {}) } }
+        : {}),
+    };
+    const rows = await this.prisma.feedReceiptRecord.findMany({
+      where,
+      orderBy: { receiptDate: "desc" },
+      take: 200,
+      include: {
+        farm: { select: { name: true, code: true } },
+        warehouse: { select: { name: true, code: true } },
+        feedProduct: { select: { name: true, sku: true } },
+      },
+    });
+    return { data: rows };
+  }
+
+  // "Account for stock received": for the FEED_STORE warehouses the user can
+  // see, the current on-hand plus received / consumed totals over the window.
+  async feedStock(user: AuthenticatedUser, query: FeedStockQueryDto) {
+    const farmFilter = user.hasGlobalAccess
+      ? (query.farmId ? { farmId: query.farmId } : {})
+      : { farmId: query.farmId && user.farmIds.includes(query.farmId) ? query.farmId : { in: user.farmIds } };
+
+    const warehouses = await this.prisma.warehouse.findMany({
+      where: { companyId: user.companyId, deletedAt: null, status: "ACTIVE", type: "FEED_STORE", ...farmFilter },
+      select: { id: true, name: true, code: true, farmId: true, farm: { select: { name: true } } },
+    });
+    const warehouseIds = warehouses.map((w) => w.id);
+
+    const dateWindow = (field: string) =>
+      (query.startDate || query.endDate)
+        ? { [field]: { ...(query.startDate ? { gte: new Date(query.startDate) } : {}), ...(query.endDate ? { lte: new Date(query.endDate) } : {}) } }
+        : {};
+
+    const [onHand, receivedAgg, consumedAgg] = await Promise.all([
+      warehouseIds.length
+        ? this.prisma.inventoryItem.findMany({
+            where: { companyId: user.companyId, deletedAt: null, warehouseId: { in: warehouseIds } },
+            select: { warehouseId: true, productId: true, quantityOnHand: true, product: { select: { name: true, sku: true } } },
+          })
+        : Promise.resolve([]),
+      this.prisma.feedReceiptRecord.groupBy({
+        by: ["warehouseId", "feedProductId"],
+        where: { companyId: user.companyId, deletedAt: null, warehouseId: { in: warehouseIds }, ...(query.feedProductId ? { feedProductId: query.feedProductId } : {}), ...dateWindow("receiptDate") },
+        _sum: { quantityKg: true },
+      }),
+      this.prisma.feedConsumptionRecord.groupBy({
+        by: ["warehouseId", "feedProductId"],
+        where: { companyId: user.companyId, deletedAt: null, warehouseId: { in: warehouseIds }, ...(query.feedProductId ? { feedProductId: query.feedProductId } : {}), ...dateWindow("recordDate") },
+        _sum: { quantityKg: true },
+      }),
+    ]);
+
+    const key = (w: string, p: string) => `${w}::${p}`;
+    const receivedMap = new Map(receivedAgg.map((r) => [key(r.warehouseId, r.feedProductId ?? ""), Number(r._sum.quantityKg ?? 0)]));
+    const consumedMap = new Map(consumedAgg.map((r) => [key(r.warehouseId ?? "", r.feedProductId ?? ""), Number(r._sum.quantityKg ?? 0)]));
+    const whById = new Map(warehouses.map((w) => [w.id, w]));
+
+    const lines = onHand.map((it) => {
+      const wh = whById.get(it.warehouseId!);
+      const received = receivedMap.get(key(it.warehouseId!, it.productId)) ?? 0;
+      const consumed = consumedMap.get(key(it.warehouseId!, it.productId)) ?? 0;
+      return {
+        warehouseId: it.warehouseId,
+        warehouse: wh ? `${wh.name} (${wh.code})` : null,
+        farmId: wh?.farmId ?? null,
+        farm: wh?.farm?.name ?? null,
+        productId: it.productId,
+        product: it.product ? `${it.product.name}${it.product.sku ? ` (${it.product.sku})` : ""}` : null,
+        onHandKg: Number(it.quantityOnHand),
+        receivedKg: Math.round(received * 10000) / 10000,
+        consumedKg: Math.round(consumed * 10000) / 10000,
+        varianceKg: Math.round((received - consumed - Number(it.quantityOnHand)) * 10000) / 10000,
+      };
+    });
+
+    return {
+      data: {
+        window: { startDate: query.startDate ?? null, endDate: query.endDate ?? null },
+        warehouses: warehouses.map((w) => ({ id: w.id, name: w.name, code: w.code, farmId: w.farmId, farm: w.farm?.name ?? null })),
+        lines,
+        totals: {
+          onHandKg: Math.round(lines.reduce((s, l) => s + l.onHandKg, 0) * 10000) / 10000,
+          receivedKg: Math.round(lines.reduce((s, l) => s + l.receivedKg, 0) * 10000) / 10000,
+          consumedKg: Math.round(lines.reduce((s, l) => s + l.consumedKg, 0) * 10000) / 10000,
+        },
+      },
+    };
+  }
+
+  async updateFeedReceipt(user: AuthenticatedUser, id: string, dto: UpdateFeedReceiptDto, context: RequestContext) {
+    const existing = await this.prisma.feedReceiptRecord.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!existing) throw new NotFoundException("Feed receipt not found.");
+    this.assertFarmAccess(user, existing.farmId);
+    if (dto.feedInternalTransferId) {
+      const t = await this.prisma.feedInternalTransfer.findFirst({ where: { id: dto.feedInternalTransferId, companyId: user.companyId, deletedAt: null }, select: { id: true } });
+      if (!t) throw new BadRequestException("Linked feed transfer not found.");
+    }
+    const data = await this.prisma.feedReceiptRecord.update({
+      where: { id },
+      data: {
+        ...(dto.receiptDate ? { receiptDate: new Date(dto.receiptDate) } : {}),
+        ...(dto.sourceType ? { sourceType: dto.sourceType } : {}),
+        ...(dto.supplierName !== undefined ? { supplierName: dto.supplierName } : {}),
+        ...(dto.feedInternalTransferId !== undefined ? { feedInternalTransferId: dto.feedInternalTransferId } : {}),
+        ...(dto.billReference !== undefined ? { billReference: dto.billReference } : {}),
+        ...(dto.unitCost !== undefined ? { unitCost: dto.unitCost } : {}),
+        ...(dto.totalCost !== undefined ? { totalCost: dto.totalCost } : {}),
+        ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
+        updatedById: user.id,
+      },
+    });
+    await this.writeAudit(user, "UPDATE", "FeedReceiptRecord", id, "Updated feed receipt details", context, existing.farmId);
+    return { data };
+  }
+
+  async deleteFeedReceipt(user: AuthenticatedUser, id: string, context: RequestContext) {
+    const existing = await this.prisma.feedReceiptRecord.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!existing) throw new NotFoundException("Feed receipt not found.");
+    this.assertFarmAccess(user, existing.farmId);
+
+    await withDbRetry(() => this.prisma.$transaction(async (tx) => {
+      const qty = Number(existing.quantityKg);
+      // Reverse the credit: pull the lot this receipt opened, and the aggregate.
+      // Floor-guarded — if the feed has already been (partly) consumed there is
+      // less to take back; a bare-negative would silently corrupt stock.
+      const lot = await tx.stockBatch.findFirst({
+        where: { companyId: user.companyId, warehouseId: existing.warehouseId, productId: existing.feedProductId, batchNumber: `FRC-${id.slice(0, 8).toUpperCase()}`, deletedAt: null },
+      });
+      if (lot) {
+        const take = Math.min(Number(lot.quantityRemaining), qty);
+        if (take > 0) {
+          const g = await tx.stockBatch.updateMany({ where: { id: lot.id, quantityRemaining: { gte: take } }, data: { quantityRemaining: { decrement: take } } });
+          if (g.count === 0) throw new BadRequestException("Feed stock changed concurrently — retry the delete.");
+        }
+        if (take < qty) {
+          throw new BadRequestException(`This receipt's feed has already been partly used — only ${take.toFixed(2)} of ${qty.toFixed(2)} kg is still on hand. Record a stock adjustment instead of deleting.`);
+        }
+      }
+      const item = await tx.inventoryItem.findFirst({ where: { companyId: user.companyId, warehouseId: existing.warehouseId, productId: existing.feedProductId, deletedAt: null } });
+      if (item) {
+        const g = await tx.inventoryItem.updateMany({ where: { id: item.id, quantityOnHand: { gte: qty } }, data: { quantityOnHand: { decrement: qty }, updatedById: user.id } });
+        if (g.count === 0) throw new BadRequestException("Feed stock on hand is lower than this receipt — record a stock adjustment instead of deleting.");
+        await tx.stockMovement.create({
+          data: { companyId: user.companyId, branchId: existing.branchId, productId: existing.feedProductId, inventoryItemId: item.id, fromWarehouseId: existing.warehouseId, warehouseId: existing.warehouseId, farmId: existing.farmId, uomId: item.uomId, movementType: "ADJUSTMENT_OUT", quantity: qty, referenceType: "FeedReceiptRecord", referenceId: id, notes: "Reversal — feed receipt deleted", createdById: user.id },
+        });
+      }
+      await tx.feedReceiptRecord.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    }), { label: "PoultryService.deleteFeedReceipt" });
+
+    await this.writeAudit(user, "DELETE", "FeedReceiptRecord", id, "Deleted feed receipt (reversed stock credit)", context, existing.farmId);
+    return { data: { id } };
   }
 
   private async writeAudit(user: AuthenticatedUser, action: "CREATE" | "UPDATE" | "DELETE" | "TRANSFER" | "APPROVE", entityType: string, entityId: string, summary: string, context: RequestContext, farmId?: string) {

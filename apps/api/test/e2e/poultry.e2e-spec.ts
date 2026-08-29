@@ -232,6 +232,98 @@ describe("Poultry Module (e2e)", () => {
     });
   });
 
+  describe("Feed store — receipts & stock (Poultry Supervisor)", () => {
+    // Valid v4/variant-8 UUIDs (see the BATCH_ID comment at the top of the file).
+    const FARM_UUID = "3a000000-0000-4000-8000-000000000001";
+    const WAREHOUSE_ID = "77770000-0000-4000-8000-000000000001";
+    const PRODUCT_ID = "66660000-0000-4000-8000-000000000001";
+
+    function supervisorToken(extra: string[] = []) {
+      const permissions = [PERMISSIONS.POULTRY_READ, PERMISSIONS.POULTRY_SUPERVISE, PERMISSIONS.INVENTORY_READ, ...extra];
+      prisma.user.findFirst.mockResolvedValue(
+        makeDbUser({
+          roles: [{ role: { permissions: permissions.map((key) => ({ key })) } }],
+          farmAccesses: [{ farmId: FARM_UUID }],
+          // Farm-scoped, not warehouse-scoped — access is constrained by the
+          // farm check + "feed store must belong to that farm" check instead.
+          warehouseAccesses: [],
+        })
+      );
+      return makeAccessToken({
+        id: TEST_USER_ID,
+        companyId: TEST_COMPANY_ID,
+        permissions,
+        roles: ["Poultry Supervisor"],
+        farmIds: [FARM_UUID],
+        warehouseIds: [],
+        branchIds: [TEST_BRANCH_ID],
+        productionSiteIds: [],
+        hasGlobalAccess: false,
+      } as Parameters<typeof makeAccessToken>[0]);
+    }
+
+    it("403 — feed receipt without poultry.supervise", async () => {
+      await request(app.getHttpServer())
+        .post("/api/v1/poultry/feed-receipts")
+        .set("Authorization", `Bearer ${poultryToken()}`)
+        .send({ farmId: FARM_UUID, warehouseId: WAREHOUSE_ID, feedProductId: PRODUCT_ID, receiptDate: "2026-08-29", quantityKg: 500 })
+        .expect(403);
+    });
+
+    it("400 — rejects zero/negative quantity", async () => {
+      await request(app.getHttpServer())
+        .post("/api/v1/poultry/feed-receipts")
+        .set("Authorization", `Bearer ${supervisorToken()}`)
+        .send({ farmId: FARM_UUID, warehouseId: WAREHOUSE_ID, feedProductId: PRODUCT_ID, receiptDate: "2026-08-29", quantityKg: 0 })
+        .expect(400);
+    });
+
+    it("400 — rejects a non-FEED_STORE warehouse", async () => {
+      prisma.warehouse.findFirst.mockResolvedValue({ id: WAREHOUSE_ID, type: "GENERAL", farmId: FARM_UUID, status: "ACTIVE" });
+      const res = await request(app.getHttpServer())
+        .post("/api/v1/poultry/feed-receipts")
+        .set("Authorization", `Bearer ${supervisorToken()}`)
+        .send({ farmId: FARM_UUID, warehouseId: WAREHOUSE_ID, feedProductId: PRODUCT_ID, receiptDate: "2026-08-29", quantityKg: 500 });
+      expect(res.status).toBe(400);
+      expect(String(res.body.message)).toMatch(/FEED_STORE/i);
+    });
+
+    it("creates a feed receipt and credits the feed store", async () => {
+      prisma.warehouse.findFirst.mockResolvedValue({ id: WAREHOUSE_ID, type: "FEED_STORE", farmId: FARM_UUID, status: "ACTIVE" });
+      prisma.farm.findFirst.mockResolvedValue({ id: FARM_UUID, branchId: TEST_BRANCH_ID });
+      prisma.product.findFirst.mockResolvedValue({ id: PRODUCT_ID, uomId: "uom-1", name: "Layer Mash" });
+      prisma.feedReceiptRecord.create.mockResolvedValue({ id: "frc-1", farmId: FARM_UUID, quantityKg: 500 });
+      prisma.inventoryItem.upsert.mockResolvedValue({ id: "inv-1", uomId: "uom-1", branchId: TEST_BRANCH_ID });
+      prisma.stockBatch.create.mockResolvedValue({ id: "lot-1" });
+      prisma.stockMovement.create.mockResolvedValue({ id: "mv-1" });
+
+      const res = await request(app.getHttpServer())
+        .post("/api/v1/poultry/feed-receipts")
+        .set("Authorization", `Bearer ${supervisorToken()}`)
+        .send({ farmId: FARM_UUID, warehouseId: WAREHOUSE_ID, feedProductId: PRODUCT_ID, receiptDate: "2026-08-29", quantityKg: 500, sourceType: "SUPPLIER", billReference: "WB-1029" });
+
+      expect([200, 201]).toContain(res.status);
+      expect(prisma.feedReceiptRecord.create).toHaveBeenCalled();
+      expect(prisma.inventoryItem.upsert).toHaveBeenCalled();
+      expect(prisma.stockBatch.create).toHaveBeenCalled();
+    });
+
+    it("GET /feed-stock returns a reconciliation shape", async () => {
+      prisma.warehouse.findMany.mockResolvedValue([{ id: WAREHOUSE_ID, name: "Feed Store", code: "FS1", farmId: FARM_UUID, farm: { name: "Farm A" } }]);
+      prisma.inventoryItem.findMany.mockResolvedValue([{ warehouseId: WAREHOUSE_ID, productId: PRODUCT_ID, quantityOnHand: 300, product: { name: "Layer Mash", sku: "LM1" } }]);
+      prisma.feedReceiptRecord.groupBy.mockResolvedValue([{ warehouseId: WAREHOUSE_ID, feedProductId: PRODUCT_ID, _sum: { quantityKg: 500 } }]);
+      prisma.feedConsumptionRecord.groupBy.mockResolvedValue([{ warehouseId: WAREHOUSE_ID, feedProductId: PRODUCT_ID, _sum: { quantityKg: 200 } }]);
+
+      const res = await request(app.getHttpServer())
+        .get("/api/v1/poultry/feed-stock")
+        .set("Authorization", `Bearer ${supervisorToken()}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.lines[0]).toMatchObject({ onHandKg: 300, receivedKg: 500, consumedKg: 200 });
+      expect(res.body.data.totals.onHandKg).toBe(300);
+    });
+  });
+
   describe("Form validation", () => {
     it("400 — rejects non-date recordDate", async () => {
       await request(app.getHttpServer())

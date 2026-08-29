@@ -1,4 +1,4 @@
-import { BirdType, FlockBatchStatus, PoultryCostType, PoultryHealthSeverity, PoultryRecordStatus, PoultryTransferStatus } from "@prisma/client";
+import { BirdType, FeedReceiptSource, FlockBatchStatus, PoultryCostType, PoultryHealthSeverity, PoultryRecordStatus, PoultryTransferStatus } from "@prisma/client";
 import { Type } from "class-transformer";
 import { IsArray, IsBoolean, IsDateString, IsEnum, IsInt, IsNumber, IsOptional, IsString, IsUUID, MaxLength, Min, ValidateIf, ValidateNested } from "class-validator";
 
@@ -639,4 +639,87 @@ export class UpdatePoultryRecordDto {
   @IsOptional() @IsInt() @Min(1) sampleSize?: number;
   @IsOptional() @IsNumber() @Min(0.001) averageWeightKg?: number;
   @IsOptional() @IsString() notes?: string;
+}
+
+// ─── Poultry Supervisor: feed received into a farm's feed store ──────────────
+
+export class CreateFeedReceiptDto {
+  @IsUUID()
+  farmId!: string;
+
+  @IsUUID()
+  warehouseId!: string;
+
+  @IsUUID()
+  feedProductId!: string;
+
+  @IsDateString()
+  receiptDate!: string;
+
+  @IsNumber()
+  @Min(0.001)
+  quantityKg!: number;
+
+  @IsOptional()
+  @IsEnum(FeedReceiptSource)
+  sourceType?: FeedReceiptSource;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(191)
+  supplierName?: string;
+
+  // Set when the feed came from the feed mill (links the receipt to the transfer).
+  @IsOptional()
+  @IsUUID()
+  feedInternalTransferId?: string;
+
+  // Waybill / delivery-note / invoice number for the delivery.
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  billReference?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  unitCost?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  totalCost?: number;
+
+  @IsOptional()
+  @IsEnum(PoultryRecordStatus)
+  status?: PoultryRecordStatus;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  idempotencyKey?: string;
+}
+
+// Quantity/warehouse/product are NOT editable — they drove a posted inventory
+// credit that a hand-edit would desync. Delete + re-create to fix those.
+export class UpdateFeedReceiptDto {
+  @IsOptional() @IsDateString() receiptDate?: string;
+  @IsOptional() @IsEnum(FeedReceiptSource) sourceType?: FeedReceiptSource;
+  @IsOptional() @IsString() @MaxLength(191) supplierName?: string;
+  @IsOptional() @IsUUID() feedInternalTransferId?: string;
+  @IsOptional() @IsString() @MaxLength(100) billReference?: string;
+  @IsOptional() @IsNumber() @Min(0) unitCost?: number;
+  @IsOptional() @IsNumber() @Min(0) totalCost?: number;
+  @IsOptional() @IsString() notes?: string;
+}
+
+export class FeedStockQueryDto {
+  @IsOptional() @IsUUID() farmId?: string;
+  @IsOptional() @IsUUID() feedProductId?: string;
+  @IsOptional() @IsDateString() startDate?: string;
+  @IsOptional() @IsDateString() endDate?: string;
 }

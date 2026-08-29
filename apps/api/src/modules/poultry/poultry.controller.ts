@@ -19,6 +19,9 @@ import {
   CreatePoultryHouseDto,
   CreatePoultryTransferDto,
   CreateVaccinationRecordDto,
+  CreateFeedReceiptDto,
+  UpdateFeedReceiptDto,
+  FeedStockQueryDto,
   PoultryQueryDto,
   PoultryRecordType,
   UpdateBatchStatusDto,
@@ -192,6 +195,38 @@ export class PoultryController {
   @RequirePermissions(PERMISSIONS.POULTRY_RECORD)
   createEggs(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateEggProductionRecordDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.poultryService.createEggs(user, dto, { ipAddress, userAgent });
+  }
+
+  // ─── Feed store: receipts + stock reconciliation (Poultry Supervisor) ──────
+
+  @Get("feed-receipts")
+  @RequirePermissions(PERMISSIONS.POULTRY_SUPERVISE)
+  feedReceipts(@CurrentUser() user: AuthenticatedUser, @Query() query: FeedStockQueryDto) {
+    return this.poultryService.listFeedReceipts(user, query);
+  }
+
+  @Post("feed-receipts")
+  @RequirePermissions(PERMISSIONS.POULTRY_SUPERVISE)
+  createFeedReceipt(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateFeedReceiptDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.poultryService.createFeedReceipt(user, dto, { ipAddress, userAgent });
+  }
+
+  @Patch("feed-receipts/:id")
+  @RequirePermissions(PERMISSIONS.POULTRY_SUPERVISE)
+  updateFeedReceipt(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateFeedReceiptDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.poultryService.updateFeedReceipt(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Delete("feed-receipts/:id")
+  @RequirePermissions(PERMISSIONS.POULTRY_SUPERVISE)
+  deleteFeedReceipt(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.poultryService.deleteFeedReceipt(user, id, { ipAddress, userAgent });
+  }
+
+  @Get("feed-stock")
+  @RequirePermissions(PERMISSIONS.POULTRY_SUPERVISE)
+  feedStock(@CurrentUser() user: AuthenticatedUser, @Query() query: FeedStockQueryDto) {
+    return this.poultryService.feedStock(user, query);
   }
 
   @Post("bird-weight-records")
