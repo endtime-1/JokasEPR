@@ -252,10 +252,17 @@ export type PoultryOptions = {
     houses:  { id: string; code: string; name: string; farmId: string }[];
     pens:    { id: string; code: string; name: string; penNumber: number; poultryHouseId: string; farmId: string; capacity: number | null }[];
     batches: { id: string; code: string; name: string; farmId: string; birdType: string }[];
+    feedWarehouses?: { id: string; code: string; name: string; farmId: string }[];
+    feedProducts?:   { id: string; sku: string; name: string }[];
   };
 };
 export const fetchPoultryOptions = () =>
   apiFetch<PoultryOptions>("/poultry/options");
+
+export const fetchFeedStock = (farmId: string) =>
+  apiFetch<ApiEnvelope<{ lines: { product: string | null; onHandKg: number; receivedKg: number; consumedKg: number; varianceKg: number }[]; totals: Record<string, number> }>>(
+    `/poultry/feed-stock?farmId=${encodeURIComponent(farmId)}`
+  );
 
 export const submitHealthObservation = (payload: Record<string, unknown>) =>
   apiFetch<ApiEnvelope<unknown>>("/poultry/health-observations", { method: "POST", body: JSON.stringify(payload) });

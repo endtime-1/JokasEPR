@@ -24,6 +24,7 @@ export type RecordsStackParams = {
   Mortality: undefined;
   EggCollection: undefined;
   FeedConsumption: undefined;
+  FeedReceipt: undefined;
   Medication: undefined;
   Vaccination: undefined;
   StockMovement: undefined;

@@ -13,6 +13,7 @@ import { DailyPoultryScreen } from "../features/poultry/DailyPoultryScreen";
 import { MortalityScreen } from "../features/poultry/MortalityScreen";
 import { EggCollectionScreen } from "../features/poultry/EggCollectionScreen";
 import { FeedConsumptionScreen } from "../features/poultry/FeedConsumptionScreen";
+import { FeedReceiptScreen } from "../features/poultry/FeedReceiptScreen";
 import { MedicationScreen } from "../features/poultry/MedicationScreen";
 import { VaccinationScreen } from "../features/poultry/VaccinationScreen";
 import { StockMovementScreen } from "../features/inventory/StockMovementScreen";
@@ -271,6 +272,7 @@ function RecordsNavigator() {
       <RecordsStack.Screen name="Mortality"       component={MortalityScreen}       options={{ title: "Mortality Entry" }} />
       <RecordsStack.Screen name="EggCollection"   component={EggCollectionScreen}   options={{ title: "Egg Collection"  }} />
       <RecordsStack.Screen name="FeedConsumption" component={FeedConsumptionScreen} options={{ title: "Feed Record"     }} />
+      <RecordsStack.Screen name="FeedReceipt"     component={FeedReceiptScreen}     options={{ title: "Feed Store Receipt" }} />
       <RecordsStack.Screen name="Medication"      component={MedicationScreen}      options={{ title: "Medication"      }} />
       <RecordsStack.Screen name="Vaccination"     component={VaccinationScreen}     options={{ title: "Vaccination"     }} />
       <RecordsStack.Screen name="StockMovement"   component={P.StockMovement}   options={{ title: "Stock Movement"  }} />
