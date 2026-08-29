@@ -35,6 +35,10 @@ export function middleware(request: NextRequest) {
   if (PUBLIC_PREFIXES.some((prefix) => pathname.startsWith(prefix))) {
     const requestHeaders = new Headers(request.headers);
     requestHeaders.set("x-nonce", nonce);
+    // Next.js reads the nonce from the CSP on the REQUEST headers to tag its own
+    // framework/hydration <script> tags. Without this, 'strict-dynamic' blocks
+    // every script because none carry the nonce. (Next.js official CSP pattern.)
+    requestHeaders.set("Content-Security-Policy", csp);
     const response = NextResponse.next({ request: { headers: requestHeaders } });
     response.headers.set("Content-Security-Policy", csp);
     return response;
@@ -54,6 +58,7 @@ export function middleware(request: NextRequest) {
 
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-nonce", nonce);
+  requestHeaders.set("Content-Security-Policy", csp);
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set("Content-Security-Policy", csp);
   return response;
