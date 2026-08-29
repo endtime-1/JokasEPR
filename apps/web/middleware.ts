@@ -3,44 +3,35 @@ import type { NextRequest } from "next/server";
 
 const PUBLIC_PREFIXES = ["/login", "/setup", "/_next", "/favicon.ico", "/api/", "/brand/", "/storefront"];
 
-// (M11) script-src previously carried 'unsafe-inline', which lets ANY inline
-// <script> execute — the exact primitive a reflected/stored-XSS payload needs.
-// A per-request nonce lets Next.js's own hydration scripts keep running while
-// an attacker-injected inline script (which can't know the nonce in advance)
-// gets blocked by the browser. style-src keeps 'unsafe-inline' deliberately:
-// this app uses React inline `style={{...}}` in ~15 files, and CSP has no
-// reliable nonce/hash equivalent for the style="" HTML attribute (only for
-// <style> elements) across the browsers we need to support.
-function buildCsp(nonce: string) {
-  return [
-    "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
-    "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: blob:",
-    "font-src 'self'",
-    "connect-src 'self'",
-    "object-src 'none'",
-    "base-uri 'self'",
-    "form-action 'self'",
-    "frame-ancestors 'none'",
-  ].join("; ");
-}
+// (M11) A per-request nonce + 'strict-dynamic' was tried here to block inline
+// XSS payloads while letting Next's own hydration scripts run. It does NOT work
+// with this app's Next.js 15.5 `output: "standalone"` build — Next never tags
+// its framework/hydration <script> tags with the nonce (verified live on the
+// VPS 2026-08-29), so 'strict-dynamic' blocked every script and the app
+// rendered as a dead shell. Reverted to 'unsafe-inline' for script-src — the
+// pre-M11 state it shipped with for months.
+// TODO: revisit — force dynamic rendering on the authed pages, move CSP into
+// next.config headers with static hashes, or wait for a Next.js fix.
+// style-src keeps 'unsafe-inline' for React inline `style={{...}}`.
+const CSP = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "font-src 'self'",
+  "connect-src 'self'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+].join("; ");
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
-  const csp = buildCsp(nonce);
-
   if (PUBLIC_PREFIXES.some((prefix) => pathname.startsWith(prefix))) {
-    const requestHeaders = new Headers(request.headers);
-    requestHeaders.set("x-nonce", nonce);
-    // Next.js reads the nonce from the CSP on the REQUEST headers to tag its own
-    // framework/hydration <script> tags. Without this, 'strict-dynamic' blocks
-    // every script because none carry the nonce. (Next.js official CSP pattern.)
-    requestHeaders.set("Content-Security-Policy", csp);
-    const response = NextResponse.next({ request: { headers: requestHeaders } });
-    response.headers.set("Content-Security-Policy", csp);
+    const response = NextResponse.next();
+    response.headers.set("Content-Security-Policy", CSP);
     return response;
   }
 
@@ -50,17 +41,13 @@ export function middleware(request: NextRequest) {
   const hasSession = request.cookies.has("jokas_at") || request.cookies.has("jokas_rt");
 
   if (!hasSession) {
-    const loginUrl = new URL("/login", request.url);
-    const response = NextResponse.redirect(loginUrl);
-    response.headers.set("Content-Security-Policy", csp);
+    const response = NextResponse.redirect(new URL("/login", request.url));
+    response.headers.set("Content-Security-Policy", CSP);
     return response;
   }
 
-  const requestHeaders = new Headers(request.headers);
-  requestHeaders.set("x-nonce", nonce);
-  requestHeaders.set("Content-Security-Policy", csp);
-  const response = NextResponse.next({ request: { headers: requestHeaders } });
-  response.headers.set("Content-Security-Policy", csp);
+  const response = NextResponse.next();
+  response.headers.set("Content-Security-Policy", CSP);
   return response;
 }
 
