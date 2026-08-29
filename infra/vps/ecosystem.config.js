@@ -51,6 +51,11 @@ module.exports = {
         NODE_ENV: "production",
         PORT: "3000",
         HOSTNAME: "127.0.0.1",
+        // The /api/auth/* and /api/setup* route handlers proxy to NestJS.
+        // Point them straight at the local API instead of round-tripping
+        // out through the public HTTPS URL.
+        API_INTERNAL_URL: "http://127.0.0.1:4001/api/v1",
+        API_PORT: "4001",
       },
     },
     {
