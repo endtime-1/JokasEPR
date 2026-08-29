@@ -243,6 +243,12 @@ enum PoultryRecordStatus {
   REJECTED
 }
 
+enum FeedReceiptSource {
+  SUPPLIER
+  FEED_MILL
+  OTHER
+}
+
 enum PoultryTransferStatus {
   PENDING
   APPROVED
@@ -666,6 +672,7 @@ model Company {
   dailyPoultryRecords        DailyPoultryRecord[]
   mortalityRecords           MortalityRecord[]
   feedConsumptionRecords     FeedConsumptionRecord[]
+  feedReceiptRecords         FeedReceiptRecord[]
   eggProductionRecords       EggProductionRecord[]
   birdWeightRecords          BirdWeightRecord[]
   medicationRecords          MedicationRecord[]
@@ -835,6 +842,7 @@ model Branch {
   dailyPoultryRecords       DailyPoultryRecord[]
   mortalityRecords          MortalityRecord[]
   feedConsumptionRecords    FeedConsumptionRecord[]
+  feedReceiptRecords        FeedReceiptRecord[]
   eggProductionRecords      EggProductionRecord[]
   birdWeightRecords         BirdWeightRecord[]
   medicationRecords         MedicationRecord[]
@@ -947,6 +955,7 @@ model Farm {
   dailyPoultryRecords         DailyPoultryRecord[]
   mortalityRecords            MortalityRecord[]
   feedConsumptionRecords      FeedConsumptionRecord[]
+  feedReceiptRecords          FeedReceiptRecord[]
   eggProductionRecords        EggProductionRecord[]
   birdWeightRecords           BirdWeightRecord[]
   medicationRecords           MedicationRecord[]
@@ -1132,6 +1141,7 @@ model Warehouse {
   dashboardAlerts           DashboardAlert[]
   aiAlerts                  AiAlert[]
   feedConsumptionRecords    FeedConsumptionRecord[]
+  feedReceiptRecords        FeedReceiptRecord[]
   finishedFeedStocks        FinishedFeedStock[]
   feedInternalTransfersFrom FeedInternalTransfer[]    @relation("FeedTransferFromWarehouse")
   soyaBeanIntakes           SoyaBeanIntake[]
@@ -1458,22 +1468,22 @@ model UserProductionSiteAccess {
 }
 
 model Product {
-  id          String        @id @default(uuid())
-  companyId   String
-  branchId    String?
-  categoryId  String?
-  uomId       String
-  name        String
-  sku         String
-  description String?
-  type        ProductType   @default(FINISHED_GOOD)
-  status      ProductStatus @default(ACTIVE)
+  id            String        @id @default(uuid())
+  companyId     String
+  branchId      String?
+  categoryId    String?
+  uomId         String
+  name          String
+  sku           String
+  description   String?
+  type          ProductType   @default(FINISHED_GOOD)
+  status        ProductStatus @default(ACTIVE)
   // How many individual pieces make up one of this product's stock unit —
   // e.g. 30 for an egg product measured in Crates. Defaults to 1 (no
   // conversion) so every existing product is unaffected. Used when a
   // per-piece count (egg collection, etc.) is credited to inventory: the
   // stock quantity is the piece count divided by this, not the raw count.
-  piecesPerUnit Int         @default(1)
+  piecesPerUnit Int           @default(1)
 
   // Storefront / public listing
   isPublic           Boolean   @default(false)
@@ -1506,6 +1516,7 @@ model Product {
   stockMovements              StockMovement[]
   dashboardMetricSnapshots    DashboardMetricSnapshot[]
   feedConsumptionRecords      FeedConsumptionRecord[]
+  feedReceiptRecords          FeedReceiptRecord[]
   feedFormulaIngredients      FeedFormulaIngredient[]
   feedFormulaFinishedProducts FeedFormula[]             @relation("FeedFormulaFinishedProduct")
   feedProductionOrderProducts FeedProductionOrder[]
@@ -2313,10 +2324,10 @@ model Invoice {
   qbLastSyncAt DateTime?
   qbSyncError  String?      @db.Text
 
-  company    Company             @relation(fields: [companyId], references: [id])
-  branch     Branch              @relation(fields: [branchId], references: [id])
-  customer   Customer            @relation(fields: [customerId], references: [id])
-  salesOrder SalesOrder?         @relation(fields: [salesOrderId], references: [id])
+  company          Company             @relation(fields: [companyId], references: [id])
+  branch           Branch              @relation(fields: [branchId], references: [id])
+  customer         Customer            @relation(fields: [customerId], references: [id])
+  salesOrder       SalesOrder?         @relation(fields: [salesOrderId], references: [id])
   payments         Payment[]
   receipts         Receipt[]
   statements       CustomerStatement[]
@@ -2514,23 +2525,23 @@ model SalesCommission {
 }
 
 model ProspectVisit {
-  id           String               @id @default(uuid())
-  companyId    String
-  branchId     String?
-  repId        String
-  prospectName String
-  phone        String?
-  address      String?
-  latitude     Decimal?             @db.Decimal(10, 7)
-  longitude    Decimal?             @db.Decimal(10, 7)
-  visitType    ProspectVisitType    @default(COLD_CALL)
-  outcome      ProspectVisitOutcome @default(INTERESTED)
-  notes        String?
-  visitedAt    DateTime             @default(now())
-  idempotencyKey String?            @db.VarChar(100)
-  createdAt    DateTime             @default(now())
-  updatedAt    DateTime             @updatedAt
-  deletedAt    DateTime?
+  id             String               @id @default(uuid())
+  companyId      String
+  branchId       String?
+  repId          String
+  prospectName   String
+  phone          String?
+  address        String?
+  latitude       Decimal?             @db.Decimal(10, 7)
+  longitude      Decimal?             @db.Decimal(10, 7)
+  visitType      ProspectVisitType    @default(COLD_CALL)
+  outcome        ProspectVisitOutcome @default(INTERESTED)
+  notes          String?
+  visitedAt      DateTime             @default(now())
+  idempotencyKey String?              @db.VarChar(100)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  deletedAt      DateTime?
 
   company Company @relation(fields: [companyId], references: [id])
 
@@ -3403,17 +3414,17 @@ model VaccinationRecord {
 }
 
 model PoultryTransferRecord {
-  id                 String                @id @default(uuid())
-  companyId          String
-  branchId           String
-  flockBatchId       String
-  fromFarmId         String
-  fromPoultryHouseId String
-  fromPenId          String?
-  toFarmId           String
-  toPoultryHouseId   String
-  toPenId            String?
-  birdCount          Int
+  id                    String                @id @default(uuid())
+  companyId             String
+  branchId              String
+  flockBatchId          String
+  fromFarmId            String
+  fromPoultryHouseId    String
+  fromPenId             String?
+  toFarmId              String
+  toPoultryHouseId      String
+  toPenId               String?
+  birdCount             Int
   // True only for a batch-level transfer that moved every remaining live
   // bird (the FlockBatch's own farmId/poultryHouseId gets reassigned to
   // match — see createTransfer). Such a transfer doesn't reduce the
@@ -3422,18 +3433,18 @@ model PoultryTransferRecord {
   // it. Live-bird calculations must exclude relocation transfers from
   // "birds that left the batch," or a batch that simply moved would
   // wrongly appear to have lost its entire flock.
-  isFullBatchRelocation Boolean            @default(false)
-  transferDate       DateTime
-  status             PoultryTransferStatus @default(PENDING)
-  reason             String?
-  notes              String?
-  approvedById       String?
-  approvedAt         DateTime?
-  createdById        String?
-  updatedById        String?
-  createdAt          DateTime              @default(now())
-  updatedAt          DateTime              @updatedAt
-  deletedAt          DateTime?
+  isFullBatchRelocation Boolean               @default(false)
+  transferDate          DateTime
+  status                PoultryTransferStatus @default(PENDING)
+  reason                String?
+  notes                 String?
+  approvedById          String?
+  approvedAt            DateTime?
+  createdById           String?
+  updatedById           String?
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+  deletedAt             DateTime?
 
   company          Company      @relation(fields: [companyId], references: [id])
   branch           Branch       @relation(fields: [branchId], references: [id])
@@ -3537,6 +3548,55 @@ model PoultryCostRecord {
   @@index([companyId, costType])
   @@index([companyId, status])
   @@index([companyId, costDate])
+  @@index([deletedAt])
+}
+
+// Feed arriving at a farm's feed store (WarehouseType FEED_STORE). The Poultry
+// Supervisor records these; creating one credits inventory (upserts the
+// InventoryItem, opens a StockBatch lot, writes a PURCHASE_RECEIPT/TRANSFER
+// StockMovement). Feeding the birds (FeedConsumptionRecord) draws it back down
+// via the existing consumeInventoryTx FIFO path — no separate "issued to pen".
+model FeedReceiptRecord {
+  id                     String              @id @default(uuid())
+  companyId              String
+  branchId               String
+  farmId                 String
+  warehouseId            String
+  feedProductId          String
+  receiptDate            DateTime
+  quantityKg             Decimal             @db.Decimal(18, 4)
+  sourceType             FeedReceiptSource   @default(SUPPLIER)
+  supplierName           String?
+  feedInternalTransferId String?
+  billReference          String?             @db.VarChar(100)
+  unitCost               Decimal?            @db.Decimal(18, 4)
+  totalCost              Decimal?            @db.Decimal(18, 4)
+  notes                  String?
+  status                 PoultryRecordStatus @default(SUBMITTED)
+  idempotencyKey         String?             @db.VarChar(100)
+  createdById            String?
+  updatedById            String?
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
+  deletedAt              DateTime?
+
+  company              Company               @relation(fields: [companyId], references: [id])
+  branch               Branch                @relation(fields: [branchId], references: [id])
+  farm                 Farm                  @relation(fields: [farmId], references: [id])
+  warehouse            Warehouse             @relation(fields: [warehouseId], references: [id])
+  feedProduct          Product               @relation(fields: [feedProductId], references: [id])
+  feedInternalTransfer FeedInternalTransfer? @relation(fields: [feedInternalTransferId], references: [id])
+
+  @@unique([companyId, idempotencyKey])
+  @@index([companyId])
+  @@index([branchId])
+  @@index([farmId])
+  @@index([warehouseId])
+  @@index([feedProductId])
+  @@index([feedInternalTransferId])
+  @@index([companyId, status])
+  @@index([companyId, receiptDate])
+  @@index([companyId, farmId, receiptDate])
   @@index([deletedAt])
 }
 
@@ -3957,6 +4017,7 @@ model FeedInternalTransfer {
   fromWarehouse   Warehouse           @relation("FeedTransferFromWarehouse", fields: [fromWarehouseId], references: [id])
   toFarm          Farm?               @relation(fields: [toFarmId], references: [id])
   toPoultryHouse  PoultryHouse?       @relation(fields: [toPoultryHouseId], references: [id])
+  feedReceipts    FeedReceiptRecord[]
 
   @@index([companyId])
   @@index([branchId])

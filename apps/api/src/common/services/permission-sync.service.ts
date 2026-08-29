@@ -11,6 +11,7 @@ const PERMISSIONS = [
   ["poultry.read", "Poultry", "View poultry houses and poultry operations"],
   ["poultry.manage", "Poultry", "Manage poultry houses and poultry operations"],
   ["poultry.record", "Poultry", "Submit daily poultry operating records"],
+  ["poultry.supervise", "Poultry", "Record farm feed-store receipts and reconcile feed stock"],
   ["feed.read", "Feed Production", "View feed production records"],
   ["feed.manage", "Feed Production", "Manage feed production records"],
   ["soya.read", "Soya Processing", "View soya processing records"],
@@ -44,6 +45,14 @@ const PERMISSIONS = [
 
 const ALL_KEYS = PERMISSIONS.map(([key]) => key);
 
+// System roles that must exist for every company. Added here (not only in
+// setup.service.ts) so a NEW system role rolls out to companies that were
+// created before it existed — created once, idempotently, then picked up by
+// the permission sync below like any other role. Never removes roles.
+const ENSURE_SYSTEM_ROLES: ReadonlyArray<readonly [string, string]> = [
+  ["Poultry Supervisor", "Records farm feed-store receipts and pen-level poultry operations"],
+];
+
 const ROLE_PERMISSION_MAP: Record<string, readonly string[]> = {
   // ── Core roles ──────────────────────────────────────────────────────────────
   "Super Admin": ALL_KEYS,
@@ -54,7 +63,7 @@ const ROLE_PERMISSION_MAP: Record<string, readonly string[]> = {
   "General Manager": ALL_KEYS.filter((k) => k !== "settings.manage"),
 
   // ── Manager-level roles ──────────────────────────────────────────────────────
-  "Farm Manager": ["platform.read", "inventory.read", "inventory.manage", "poultry.read", "poultry.manage", "poultry.record", "health.read", "health.manage", "maintenance.read", "maintenance.manage"],
+  "Farm Manager": ["platform.read", "inventory.read", "inventory.manage", "poultry.read", "poultry.manage", "poultry.record", "poultry.supervise", "health.read", "health.manage", "maintenance.read", "maintenance.manage"],
   "Feed Mill Manager": ["platform.read", "inventory.read", "inventory.manage", "feed.read", "feed.manage", "market-planning.read", "quality.read", "maintenance.read", "maintenance.manage", "reports.export", "ai.read", "alerts.read", "alerts.manage"],
   "Feed Production Manager": ["platform.read", "inventory.read", "inventory.manage", "feed.read", "feed.manage", "market-planning.read", "quality.read", "maintenance.read", "maintenance.manage", "reports.export", "ai.read", "alerts.read", "alerts.manage"],
   "Marketing Manager": ["platform.read", "inventory.read", "sales.read", "market-planning.read", "market-planning.manage", "reports.export", "ai.read", "alerts.read"],
@@ -77,6 +86,12 @@ const ROLE_PERMISSION_MAP: Record<string, readonly string[]> = {
   "Vet/Health Officer": ["platform.read", "poultry.read", "poultry.record", "health.read", "health.manage", "reports.export", "ai.read", "alerts.read"],
   "Vet Officer": ["platform.read", "poultry.read", "poultry.record", "health.read", "health.manage", "reports.export", "ai.read", "alerts.read"],
   "Health Officer": ["platform.read", "poultry.read", "poultry.record", "health.read", "health.manage", "reports.export", "ai.read", "alerts.read"],
+
+  // ── Supervisor-level roles ───────────────────────────────────────────────────
+  // Poultry Supervisor: works in the pens/houses. Records feed received into the
+  // farm feed store, records feeding/mortality/eggs (which draw feed stock down
+  // automatically), and reconciles feed on hand. Sits alongside Workers.
+  "Poultry Supervisor": ["platform.read", "poultry.read", "poultry.record", "poultry.supervise", "health.read", "inventory.read", "feed.read", "reports.export", "alerts.read"],
 
   // ── Worker-level roles ───────────────────────────────────────────────────────
   "Worker": ["platform.read", "poultry.read", "poultry.record", "inventory.read"],
@@ -118,6 +133,19 @@ export class PermissionSyncService implements OnApplicationBootstrap {
         )
       );
       const permByKey = new Map(upserted.map((p) => [p.key, p]));
+
+      for (const [name, description] of ENSURE_SYSTEM_ROLES) {
+        const existing = await this.prisma.role.findFirst({
+          where: { companyId: company.id, name },
+          select: { id: true },
+        });
+        if (!existing) {
+          await this.prisma.role.create({
+            data: { companyId: company.id, name, description, level: "OFFICER", isSystem: true },
+          });
+          this.logger.log(`  created missing system role "${name}"`);
+        }
+      }
 
       const roles = await this.prisma.role.findMany({
         where: { companyId: company.id },
