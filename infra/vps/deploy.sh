@@ -61,9 +61,13 @@ for app in web storefront; do
 done
 
 # ─── Uploads: keep user files OUTSIDE the repo, symlink them in ─────────────
+# UploadsController reads from `process.cwd()/uploads`, and PM2 runs the API
+# with cwd = repo root — so the symlink that matters is <root>/uploads.
+# apps/api/uploads is kept too (matches the dev/Hostinger layout).
 log "Wire uploads directory"
 mkdir -p "$SHARED_UPLOADS"
-rm -rf apps/api/uploads
+rm -rf uploads apps/api/uploads
+ln -s "$SHARED_UPLOADS" uploads
 ln -s "$SHARED_UPLOADS" apps/api/uploads
 
 # ─── Database migrations ──────────────────────────────────────────────────
