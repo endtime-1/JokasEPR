@@ -186,7 +186,7 @@ export class PoultryService {
     const cacheKey = `poultry:opts:${user.companyId}:${user.hasGlobalAccess ? "g" : user.id}`;
     const cached = this.lookupCache.get<object>(cacheKey);
     if (cached) return cached;
-    const [farms, houses, pens, batches, warehouses, products, feedWarehouses, feedProducts] = await Promise.all([
+    const [farms, houses, pens, batches, warehouses, products, feedWarehouses, feedProducts, eggWarehouses] = await Promise.all([
       this.prisma.farm.findMany({ where: this.farmWhere(user), select: { id: true, code: true, name: true, branchId: true }, orderBy: { name: "asc" } }),
       this.prisma.poultryHouse.findMany({ where: this.houseWhere(user), select: { id: true, code: true, name: true, farmId: true }, orderBy: { name: "asc" } }),
       this.prisma.pen.findMany({ where: { companyId: user.companyId, deletedAt: null, isActive: true }, select: { id: true, code: true, name: true, penNumber: true, poultryHouseId: true, farmId: true, capacity: true }, orderBy: [{ poultryHouseId: "asc" }, { penNumber: "asc" }] }),
@@ -202,9 +202,13 @@ export class PoultryService {
       // Feed-store warehouses (farm-scoped) + feed products — for the
       // supervisor's feed-receipt form.
       this.prisma.warehouse.findMany({ where: { companyId: user.companyId, deletedAt: null, status: "ACTIVE", type: "FEED_STORE", ...(user.hasGlobalAccess ? {} : { farmId: { in: user.farmIds } }) }, select: { id: true, code: true, name: true, farmId: true }, orderBy: { name: "asc" } }),
-      this.prisma.product.findMany({ where: { companyId: user.companyId, deletedAt: null, type: { in: ["RAW_MATERIAL", "SEMI_FINISHED", "FINISHED_GOOD", "CONSUMABLE"] } }, select: { id: true, sku: true, name: true }, orderBy: { name: "asc" } })
+      this.prisma.product.findMany({ where: { companyId: user.companyId, deletedAt: null, type: { in: ["RAW_MATERIAL", "SEMI_FINISHED", "FINISHED_GOOD", "CONSUMABLE"] } }, select: { id: true, sku: true, name: true }, orderBy: { name: "asc" } }),
+      // Egg-store warehouses (farm-scoped) — the default destination the egg
+      // collection form pre-selects so a day's eggs land in the farm's egg
+      // store, ready to be dispatched onward via a staged stock transfer.
+      this.prisma.warehouse.findMany({ where: { companyId: user.companyId, deletedAt: null, status: "ACTIVE", type: "EGG_STORE", ...(user.hasGlobalAccess ? {} : { farmId: { in: user.farmIds } }) }, select: { id: true, code: true, name: true, farmId: true }, orderBy: { name: "asc" } })
     ]);
-    const result = { data: { farms, houses, pens, batches, warehouses, products, feedWarehouses, feedProducts } };
+    const result = { data: { farms, houses, pens, batches, warehouses, products, feedWarehouses, feedProducts, eggWarehouses } };
     // Only cache when batches exist — an empty-batches response can be transient (DB
     // warmup, first request during cold-start) and caching it would serve stale empty
     // data for the full 45-second TTL, causing "No flock batches found" to flash.

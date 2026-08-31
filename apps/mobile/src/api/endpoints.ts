@@ -254,6 +254,7 @@ export type PoultryOptions = {
     batches: { id: string; code: string; name: string; farmId: string; birdType: string }[];
     feedWarehouses?: { id: string; code: string; name: string; farmId: string }[];
     feedProducts?:   { id: string; sku: string; name: string }[];
+    eggWarehouses?:  { id: string; code: string; name: string; farmId: string }[];
   };
 };
 export const fetchPoultryOptions = () =>

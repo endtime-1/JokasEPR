@@ -430,6 +430,7 @@ export default function PlatformPage() {
                 <option value="FARM_STORE">Farm store</option>
                 <option value="FEED_STORE">Feed store</option>
                 <option value="SOYA_STORE">Soya store</option>
+                <option value="EGG_STORE">Egg store</option>
                 <option value="COLD_STORAGE">Cold storage</option>
               </select>
             </FormField>

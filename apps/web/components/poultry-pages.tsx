@@ -53,10 +53,11 @@ type PoultryOptions = {
   products: Option[];
   feedWarehouses: Option[];
   feedProducts: Option[];
+  eggWarehouses: Option[];
 };
 
 const EMPTY_POULTRY_OPTIONS: PoultryOptions = {
-  farms: [], houses: [], pens: [], batches: [], warehouses: [], products: [], feedWarehouses: [], feedProducts: []
+  farms: [], houses: [], pens: [], batches: [], warehouses: [], products: [], feedWarehouses: [], feedProducts: [], eggWarehouses: []
 };
 
 type BatchRow = {
