@@ -113,6 +113,7 @@ export type ApprovalsStackParams = {
   ExpenseApprovalDetail: { expenseId: string };
   PayrollApprovalList: undefined;
   ProcurementApprovalList: undefined;
+  TransferApprovals: undefined;
   PurchaseOrderDetail: { poId: string };
 };
 

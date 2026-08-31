@@ -87,10 +87,10 @@ export function StockTransferScreen() {
     sendIdempotencyKeyInBody: true,
     onSuccess: (queued) =>
       Alert.alert(
-        queued ? "Saved Offline" : "Transfer Complete",
+        queued ? "Saved Offline" : "Transfer Requested",
         queued
-          ? `The transfer of ${qtyNum} units was saved on this device and will sync automatically once you're back online.`
-          : `${qtyNum} units have been transferred successfully.`,
+          ? `The transfer request for ${qtyNum} units was saved on this device and will sync automatically once you're back online.`
+          : `Requested a transfer of ${qtyNum} units. Stock stays in the source warehouse until a manager approves it, then the receiving warehouse confirms what arrived.`,
         [{ text: "OK", onPress: () => navigation.goBack() }]
       ),
   });
@@ -107,14 +107,14 @@ export function StockTransferScreen() {
   }
 
   return (
-    <ScreenWrapper footer={<FormFooter saveLabel="Transfer Stock" onSave={handleSubmit} loading={loading} />}>
+    <ScreenWrapper footer={<FormFooter saveLabel="Request Transfer" onSave={handleSubmit} loading={loading} />}>
       <View style={styles.pageHeader}>
         <View style={styles.pageIconWrap}>
           <MaterialCommunityIcons name="transfer" size={22} color={colors.brand} />
         </View>
         <View>
           <Text style={styles.title}>Stock Transfer</Text>
-          <Text style={styles.sub}>Move stock between warehouses</Text>
+          <Text style={styles.sub}>Request a move — approval then receipt</Text>
         </View>
       </View>
 

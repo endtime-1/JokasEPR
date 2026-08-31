@@ -457,6 +457,42 @@ export const submitStockAdjustment = (payload: Record<string, unknown>) =>
 export const submitStockTransfer = (payload: Record<string, unknown>) =>
   apiFetch<ApiEnvelope<unknown>>("/inventory/transfers", { method: "POST", body: JSON.stringify(payload) });
 
+// ── Staged stock transfers ──────────────────────────────────────────────────
+export type StagedTransfer = {
+  id: string;
+  transferNumber: string;
+  status: "DRAFT" | "PENDING_APPROVAL" | "APPROVED" | "IN_TRANSIT" | "REJECTED" | "COMPLETED" | "CANCELLED";
+  quantity: number;
+  receivedQuantity: number | null;
+  createdAt: string;
+  requestedById: string | null;
+  product: { sku: string; name: string } | null;
+  fromWarehouse: { code: string; name: string; branch: { name: string } | null } | null;
+  toWarehouse: { code: string; name: string; branch: { name: string } | null } | null;
+  discrepancies: { id: string; status: string; differenceQuantity: number }[];
+};
+
+export const fetchStagedTransfers = (params?: { status?: string; direction?: "incoming" | "outgoing"; take?: number }) => {
+  const q = new URLSearchParams();
+  if (params?.status) q.set("status", params.status);
+  if (params?.direction) q.set("direction", params.direction);
+  if (params?.take) q.set("take", String(params.take));
+  const qs = q.toString();
+  return apiFetch<ApiEnvelope<StagedTransfer[]>>(`/inventory/transfers${qs ? `?${qs}` : ""}`);
+};
+
+export const approveStagedTransfer = (id: string, payload?: { notes?: string }) =>
+  apiFetch<ApiEnvelope<unknown>>(`/inventory/transfers/${id}/approve`, { method: "PATCH", body: JSON.stringify(payload ?? {}) });
+
+export const rejectStagedTransfer = (id: string, payload: { rejectionReason: string }) =>
+  apiFetch<ApiEnvelope<unknown>>(`/inventory/transfers/${id}/reject`, { method: "PATCH", body: JSON.stringify(payload) });
+
+export const receiveStagedTransfer = (id: string, payload: { receivedQuantity: number; notes?: string }) =>
+  apiFetch<ApiEnvelope<unknown>>(`/inventory/transfers/${id}/receive`, { method: "PATCH", body: JSON.stringify(payload) });
+
+export const cancelStagedTransfer = (id: string) =>
+  apiFetch<ApiEnvelope<unknown>>(`/inventory/transfers/${id}/cancel`, { method: "PATCH", body: JSON.stringify({}) });
+
 // Returns all recent POs; screen filters to open statuses client-side
 export const fetchOpenPurchaseOrders = () =>
   apiFetch<ApiEnvelope<PurchaseOrderListItem[]>>("/procurement/purchase-orders");

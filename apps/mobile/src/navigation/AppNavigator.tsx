@@ -34,6 +34,7 @@ import { GrnCreateScreen } from "../features/procurement/GrnCreateScreen";
 import { StockAdjustmentScreen } from "../features/inventory/StockAdjustmentScreen";
 import { StockAlertsScreen } from "../features/inventory/StockAlertsScreen";
 import { StockTransferScreen } from "../features/inventory/StockTransferScreen";
+import { TransferApprovalsScreen } from "../features/inventory/TransferApprovalsScreen";
 import { BreakdownReportScreen } from "../features/maintenance/BreakdownReportScreen";
 import { MaintenanceTasksScreen } from "../features/maintenance/MaintenanceTasksScreen";
 import { MaintenanceLogScreen } from "../features/maintenance/MaintenanceLogScreen";
@@ -201,6 +202,7 @@ const P = {
   StockMovement:        protect(StockMovementScreen,             [], "inventory.manage"),
   StockAdjustment:      protect(StockAdjustmentScreen,          [], "inventory.manage"),
   StockTransfer:        protect(StockTransferScreen,             [], "inventory.manage"),
+  TransferApprovals:    protect(TransferApprovalsScreen,          [], "inventory.manage"),
   StockLevels:          protect(StockLevelsScreen,               [], "inventory.read"),
   PaymentCollect:       protect(PaymentCollectScreen,            [], "finance.manage"),
   IncomeEntry:          protect(IncomeEntryScreen,               [], "finance.manage"),
@@ -365,6 +367,7 @@ function ApprovalsNavigator() {
       <ApprovalsStack.Screen name="ExpenseApprovalDetail"  component={ExpenseApprovalDetailScreen}   options={{ title: "Expense Detail"       }} />
       <ApprovalsStack.Screen name="PayrollApprovalList"    component={PayrollApprovalScreen}         options={{ title: "Payroll Runs"         }} />
       <ApprovalsStack.Screen name="ProcurementApprovalList" component={ProcurementApprovalListScreen} options={{ title: "Procurement Approvals" }} />
+      <ApprovalsStack.Screen name="TransferApprovals"      component={P.TransferApprovals}           options={{ title: "Transfer Approvals"   }} />
       <ApprovalsStack.Screen name="PurchaseOrderDetail"    component={PurchaseOrderDetailScreen}     options={{ title: "Purchase Order"       }} />
     </ApprovalsStack.Navigator>
     </ErrorBoundary>

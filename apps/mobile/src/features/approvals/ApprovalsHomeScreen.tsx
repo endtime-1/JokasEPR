@@ -5,7 +5,7 @@ import { useNavigation } from "@react-navigation/native";
 import { SyncBanner } from "../../components/SyncBanner";
 import { Icon, type IconName } from "../../components/Icon";
 import { SkeletonList } from "../../components/SkeletonLoader";
-import { fetchPendingExpenses, fetchPayrollRuns, fetchPurchaseRequests } from "../../api/endpoints";
+import { fetchPendingExpenses, fetchPayrollRuns, fetchPurchaseRequests, fetchStagedTransfers } from "../../api/endpoints";
 import { colors, font, radius, shadow, spacing } from "../../constants/theme";
 
 type ApprovalCard = {
@@ -21,21 +21,26 @@ export function ApprovalsHomeScreen() {
   const navigation = useNavigation<any>();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [counts, setCounts] = useState({ expenses: 0, payroll: 0, purchaseRequests: 0 });
+  const [counts, setCounts] = useState({ expenses: 0, payroll: 0, purchaseRequests: 0, transfers: 0 });
 
   const load = useCallback(async (isRefresh = false) => {
     if (!isRefresh) setLoading(true);
     else setRefreshing(true);
     try {
-      const [expRes, payRes, prRes] = await Promise.allSettled([
+      const [expRes, payRes, prRes, trApproveRes, trReceiveRes] = await Promise.allSettled([
         fetchPendingExpenses(),
         fetchPayrollRuns(),
         fetchPurchaseRequests("PENDING"),
+        fetchStagedTransfers({ status: "PENDING_APPROVAL", take: 100 }),
+        fetchStagedTransfers({ status: "IN_TRANSIT", direction: "incoming", take: 100 }),
       ]);
+      const trApprove = trApproveRes.status === "fulfilled" ? (trApproveRes.value.data ?? []).length : 0;
+      const trReceive = trReceiveRes.status === "fulfilled" ? (trReceiveRes.value.data ?? []).length : 0;
       setCounts({
         expenses:         expRes.status === "fulfilled" ? ((expRes.value.data as any) ?? []).length : 0,
         payroll:          payRes.status === "fulfilled" ? ((payRes.value.data as any) ?? []).filter((r: any) => r.status === "PENDING_APPROVAL").length : 0,
         purchaseRequests: prRes.status === "fulfilled"  ? ((prRes.value.data as any) ?? []).length : 0,
+        transfers:        trApprove + trReceive,
       });
     } finally {
       setLoading(false);
@@ -45,7 +50,7 @@ export function ApprovalsHomeScreen() {
 
   useEffect(() => { load(); }, [load]);
 
-  const totalPending = counts.expenses + counts.payroll + counts.purchaseRequests;
+  const totalPending = counts.expenses + counts.payroll + counts.purchaseRequests + counts.transfers;
 
   const cards: ApprovalCard[] = [
     {
@@ -71,6 +76,14 @@ export function ApprovalsHomeScreen() {
       subtitle: "Purchase requests & orders pending",
       count: counts.purchaseRequests,
       screen: "ProcurementApprovalList",
+    },
+    {
+      icon: "transfer",
+      color: "#0891b2",
+      title: "Transfer Approvals",
+      subtitle: "Stock transfers to approve or receive",
+      count: counts.transfers,
+      screen: "TransferApprovals",
     },
   ];
 
