@@ -6,6 +6,7 @@ import { withDbRetry } from "../../common/db-retry";
 import { validateEnumFilter } from "../../common/utils/validate-enum-filter";
 import { AuditService } from "../audit/audit.service";
 import { LookupCacheService } from "../../common/services/lookup-cache.service";
+import { WarehousePurposeService } from "../../common/services/warehouse-purpose.service";
 import { PrismaService } from "../prisma/prisma.service";
 import {
   AddFeedFormulaIngredientDto,
@@ -49,7 +50,8 @@ export class FeedProductionService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
-    private readonly lookupCache: LookupCacheService
+    private readonly lookupCache: LookupCacheService,
+    private readonly warehousePurpose: WarehousePurposeService
   ) {}
 
   async dashboard(user: AuthenticatedUser) {
@@ -187,7 +189,13 @@ export class FeedProductionService {
       })
     ]);
 
-    const result = { data: { branches, productionSites, warehouses, farms, poultryHouses, rawMaterials, finishedFeeds, formulas, batches } };
+    // Every warehouse picker in this module is feed-related (raw materials,
+    // finished feed, feed sales, feed transfers) — when purpose enforcement is
+    // on, narrow the list to Feed Store / General so the wrong warehouse can't
+    // be picked. Off: unchanged.
+    const scopedWarehouses = await this.warehousePurpose.filterForOperation(user.companyId, warehouses, "feed-production.raw-materials");
+
+    const result = { data: { branches, productionSites, warehouses: scopedWarehouses, farms, poultryHouses, rawMaterials, finishedFeeds, formulas, batches } };
     this.lookupCache.set(cacheKey, result);
     return result;
   }
@@ -522,6 +530,13 @@ export class FeedProductionService {
     }
     this.assertWarehouseAccess(user, dto.rawMaterialWarehouseId);
     this.assertWarehouseAccess(user, dto.finishedWarehouseId);
+    const [rawWh, finWh] = await Promise.all([
+      this.prisma.warehouse.findFirst({ where: { id: dto.rawMaterialWarehouseId, companyId: user.companyId, deletedAt: null }, select: { id: true, type: true, name: true, code: true, branchId: true } }),
+      this.prisma.warehouse.findFirst({ where: { id: dto.finishedWarehouseId, companyId: user.companyId, deletedAt: null }, select: { id: true, type: true, name: true, code: true, branchId: true } }),
+    ]);
+    if (!rawWh || !finWh) throw new NotFoundException("Warehouse not found.");
+    await this.warehousePurpose.assert(user, rawWh, "feed-production.raw-materials", { overrideReason: dto.purposeOverrideReason, context });
+    await this.warehousePurpose.assert(user, finWh, "feed-production.finished", { overrideReason: dto.purposeOverrideReason, context });
     const order = await this.getOrderForBatch(user, dto.productionOrderId);
     const formula = order.formula;
     const inputQuantityKg = dto.producedQuantityKg + (dto.wastageKg ?? 0);

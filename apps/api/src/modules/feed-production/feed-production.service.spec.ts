@@ -21,6 +21,7 @@ const mockPrisma = {
   feedProductionBatch: { aggregate: jest.fn(), findFirst: jest.fn() },
   feedProductionCost: { findFirst: jest.fn() },
   feedFormula: { findFirst: jest.fn(), create: jest.fn() },
+  warehouse: { findFirst: jest.fn() },
   inventoryItem: { findMany: jest.fn() },
   feedQualityCheck: { findFirst: jest.fn() },
   product: { findFirst: jest.fn() },
@@ -30,9 +31,16 @@ const mockPrisma = {
 
 const mockAudit = { write: jest.fn().mockResolvedValue(undefined) };
 const mockLookupCache = { get: jest.fn().mockReturnValue(null), set: jest.fn(), invalidate: jest.fn() };
+// Purpose enforcement defaults off — assert()/filterForOperation() are no-ops.
+const mockWarehousePurpose = {
+  isEnforced: jest.fn().mockResolvedValue(false),
+  assert: jest.fn().mockResolvedValue(undefined),
+  filterForOperation: jest.fn().mockImplementation((_c: string, list: unknown[]) => Promise.resolve(list)),
+  invalidate: jest.fn()
+};
 
 function makeService() {
-  return new FeedProductionService(mockPrisma as never, mockAudit as never, mockLookupCache as never);
+  return new FeedProductionService(mockPrisma as never, mockAudit as never, mockLookupCache as never, mockWarehousePurpose as never);
 }
 
 function makeUser(overrides: Partial<AuthenticatedUser> = {}): AuthenticatedUser {
@@ -162,6 +170,9 @@ describe("FeedProductionService.createBatch — per-lot floor guard + full-consu
       formula: { id: "formula-1", targetBatchKg: 100, ingredients: [{ ingredientId: "ing-1", quantityKg: 50, unitCost: 2, ingredient: { name: "Maize", sku: "MZ-1" } }] }
     });
     mockPrisma.feedProductionBatch.aggregate.mockResolvedValue({ _sum: { producedQuantityKg: 0 } });
+    mockPrisma.warehouse.findFirst.mockImplementation(({ where }: any) =>
+      Promise.resolve({ id: where.id, type: "GENERAL", name: where.id, code: where.id, branchId: "branch-1" })
+    );
     mockPrisma.feedFormula.findFirst.mockResolvedValue({
       id: "formula-1", targetBatchKg: 100, ingredients: [{ ingredientId: "ing-1", quantityKg: 50, unitCost: 2, ingredient: { name: "Maize", sku: "MZ-1" } }]
     });

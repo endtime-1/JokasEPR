@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable } from "@nestjs/common";
-import { AuthenticatedUser } from "@jokas/shared";
+import { AuthenticatedUser, requiredParentForWarehouseType } from "@jokas/shared";
 import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
 import {
@@ -46,7 +46,8 @@ const DEFAULT_SETTINGS: Record<string, unknown> = {
     enforceFarmScope: true,
     enforceWarehouseScope: true,
     enforceProductionSiteScope: true,
-    requireMfaForAdmins: false
+    requireMfaForAdmins: false,
+    enforceWarehousePurpose: false
   }
 };
 
@@ -163,9 +164,22 @@ export class SettingsService {
     return { data: row };
   }
 
+  // A purpose warehouse belongs somewhere: Feed/Soya stores to a production
+  // site, Egg/Farm stores to a farm. General and Cold Storage are branch-only.
+  private assertWarehouseParentForType(dto: { type?: string | null; farmId?: string | null; productionSiteId?: string | null }) {
+    const need = requiredParentForWarehouseType(dto.type ?? "GENERAL");
+    if (need === "productionSite" && !dto.productionSiteId) {
+      throw new BadRequestException("A Feed Store or Soya Store must be linked to a production site (the mill or plant it belongs to).");
+    }
+    if (need === "farm" && !dto.farmId) {
+      throw new BadRequestException("An Egg Store or Farm Store must be linked to a farm.");
+    }
+  }
+
   async createWarehouse(user: AuthenticatedUser, dto: CreateWarehouseSettingDto, ctx: RequestContext) {
     this.requireSettings(user);
     await this.requireBranch(user.companyId, dto.branchId);
+    this.assertWarehouseParentForType(dto);
     const code = dto.code.toUpperCase();
     const softDeleted = await this.prisma.warehouse.findFirst({ where: { companyId: user.companyId, code, deletedAt: { not: null } } });
     const row = softDeleted
@@ -279,6 +293,7 @@ export class SettingsService {
     const existing = await this.prisma.warehouse.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
     if (!existing) throw new BadRequestException("Warehouse not found.");
     await this.requireBranch(user.companyId, dto.branchId);
+    this.assertWarehouseParentForType(dto);
     const row = await this.prisma.warehouse.update({ where: { id }, data: { branchId: dto.branchId, farmId: dto.farmId ?? null, productionSiteId: dto.productionSiteId ?? null, name: dto.name, code: dto.code.toUpperCase(), location: dto.location ?? null, type: dto.type ?? "GENERAL", updatedById: user.id } });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "UPDATE", entityType: "Warehouse", entityId: row.id, summary: `Updated warehouse ${row.code}`, branchId: row.branchId, warehouseId: row.id, ...ctx });
     return { data: row };

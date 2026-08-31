@@ -230,6 +230,13 @@ export class CreateFeedProductionBatchDto {
   @IsString()
   @MaxLength(100)
   idempotencyKey?: string;
+
+  // Manager override: proceed even though a chosen warehouse's type doesn't
+  // fit the operation (only consulted when enforceWarehousePurpose is on).
+  @IsOptional()
+  @IsString()
+  @MaxLength(240)
+  purposeOverrideReason?: string;
 }
 
 export class CreateFeedQualityCheckDto {

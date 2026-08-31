@@ -143,6 +143,10 @@ export class UserAccessSettingsDto {
   @IsBoolean() enforceWarehouseScope!: boolean;
   @IsBoolean() enforceProductionSiteScope!: boolean;
   @IsBoolean() requireMfaForAdmins!: boolean;
+  // When on, inventory operations must use a warehouse whose type fits the
+  // operation (feed production → Feed Store, egg collection → Egg Store, …).
+  // Optional for back-compat with clients that predate it; defaults to false.
+  @IsOptional() @IsBoolean() enforceWarehousePurpose?: boolean;
 }
 
 export class DomainListSettingsDto {
