@@ -6596,7 +6596,7 @@ model AiChatSession {
   id        String   @id @default(uuid())
   companyId String
   userId    String
-  title     String?
+  title     String?  @db.VarChar(300)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -6612,7 +6612,7 @@ model AiChatMessage {
   id        String   @id @default(uuid())
   sessionId String
   role      String
-  content   String
+  content   String   @db.LongText
   createdAt DateTime @default(now())
 
   session AiChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)

@@ -91,6 +91,13 @@ SQL
 # innodb_buffer_pool_size kept modest so MariaDB + 3 Node processes + builds
 # all fit in 4 GB (KVM 1). Bump to 1G–2G if you move to KVM 2 (8 GB).
 mkdir -p /etc/mysql/mariadb.conf.d
+# sql_mode: the app was built + run for months against Hostinger's lenient
+# MariaDB. Modern MariaDB defaults to STRICT_TRANS_TABLES, which turns silent
+# truncations / out-of-range enum values into hard errors (1265) — several
+# columns in the imported schema are undersized (AI chat content, some
+# notification enums) and every write to them 500'd on the VPS. Match the
+# environment the app expects; widen the genuinely-oversized columns via
+# proper migrations separately.
 cat > /etc/mysql/mariadb.conf.d/99-jokas.cnf <<'CNF'
 [mysqld]
 bind-address            = 127.0.0.1
@@ -98,6 +105,7 @@ max_connections         = 150
 max_allowed_packet      = 256M
 innodb_buffer_pool_size = 512M
 wait_timeout            = 28800
+sql_mode                = "NO_ENGINE_SUBSTITUTION"
 CNF
 systemctl restart mariadb
 
