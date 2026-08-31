@@ -41,9 +41,16 @@ export function middleware(request: NextRequest) {
   const hasSession = request.cookies.has("jokas_at") || request.cookies.has("jokas_rt");
 
   if (!hasSession) {
-    const response = NextResponse.redirect(new URL("/login", request.url));
-    response.headers.set("Content-Security-Policy", CSP);
-    return response;
+    // Relative Location — the browser resolves it against the real request URL.
+    // `NextResponse.redirect(new URL("/login", request.url))` broke behind the
+    // nginx reverse proxy: the standalone server's `request.url` reports its own
+    // localhost:3000 bind address, not jokasfarms.com, so logged-out visitors
+    // were bounced to https://localhost:3000/login. A relative redirect needs no
+    // host detection at all.
+    return new NextResponse(null, {
+      status: 307,
+      headers: { Location: "/login", "Content-Security-Policy": CSP },
+    });
   }
 
   const response = NextResponse.next();
