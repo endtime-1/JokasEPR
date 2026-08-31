@@ -46,6 +46,7 @@ enum WarehouseType {
   FARM_STORE
   FEED_STORE
   SOYA_STORE
+  EGG_STORE
 }
 
 enum UserStatus {
@@ -439,9 +440,21 @@ enum StockWorkflowStatus {
   DRAFT
   PENDING_APPROVAL
   APPROVED
+  IN_TRANSIT
   REJECTED
   COMPLETED
   CANCELLED
+}
+
+enum TransferDiscrepancyStatus {
+  PENDING_REVIEW
+  RESOLVED
+}
+
+enum TransferDiscrepancyResolution {
+  WRITE_OFF
+  RECOVERED
+  SOURCE_MISCOUNT
 }
 
 enum StockAdjustmentType {
@@ -704,6 +717,7 @@ model Company {
   warehouseLocations         WarehouseLocation[]
   stockAdjustments           StockAdjustment[]
   stockTransfers             StockTransfer[]
+  transferDiscrepancies      TransferDiscrepancy[]
   stockReorderLevels         StockReorderLevel[]
   stockExpiryAlerts          StockExpiryAlert[]
   inventoryValuations        InventoryValuation[]
@@ -873,6 +887,7 @@ model Branch {
   warehouseLocations        WarehouseLocation[]
   stockAdjustments          StockAdjustment[]
   stockTransfers            StockTransfer[]
+  transferDiscrepancies     TransferDiscrepancy[]
   stockReorderLevels        StockReorderLevel[]
   stockExpiryAlerts         StockExpiryAlert[]
   inventoryValuations       InventoryValuation[]
@@ -1867,10 +1882,19 @@ model StockTransfer {
   quantity             Decimal             @db.Decimal(18, 4)
   unitCost             Decimal?            @db.Decimal(18, 4)
   barcode              String?
-  status               StockWorkflowStatus @default(COMPLETED)
+  status               StockWorkflowStatus @default(PENDING_APPROVAL)
   requestedById        String?
   approvedById         String?
   approvedAt           DateTime?
+  // Lots + costs drawn from the source at approval time:
+  // [{ batchId, quantity, unitCost }]. Drives the destination credit and any
+  // discrepancy write-off so both value identically to what actually left.
+  dispatchedLots       Json?
+  receivedQuantity     Decimal?            @db.Decimal(18, 4)
+  receivedById         String?
+  receivedAt           DateTime?
+  rejectionReason      String?             @db.Text
+  notes                String?             @db.Text
   idempotencyKey       String?             @db.VarChar(100)
   createdById          String?
   updatedById          String?
@@ -1879,14 +1903,15 @@ model StockTransfer {
   updatedAt            DateTime            @updatedAt
   deletedAt            DateTime?
 
-  company            Company         @relation(fields: [companyId], references: [id])
-  branch             Branch          @relation(fields: [branchId], references: [id])
-  product            Product         @relation(fields: [productId], references: [id])
-  stockBatch         StockBatch?     @relation(fields: [stockBatchId], references: [id])
-  fromWarehouse      Warehouse       @relation("StockTransferFromWarehouse", fields: [fromWarehouseId], references: [id])
-  toWarehouse        Warehouse       @relation("StockTransferToWarehouse", fields: [toWarehouseId], references: [id])
-  fromProductionSite ProductionSite? @relation("StockTransferFromProductionSite", fields: [fromProductionSiteId], references: [id])
-  toProductionSite   ProductionSite? @relation("StockTransferToProductionSite", fields: [toProductionSiteId], references: [id])
+  company            Company               @relation(fields: [companyId], references: [id])
+  branch             Branch                @relation(fields: [branchId], references: [id])
+  product            Product               @relation(fields: [productId], references: [id])
+  stockBatch         StockBatch?           @relation(fields: [stockBatchId], references: [id])
+  fromWarehouse      Warehouse             @relation("StockTransferFromWarehouse", fields: [fromWarehouseId], references: [id])
+  toWarehouse        Warehouse             @relation("StockTransferToWarehouse", fields: [toWarehouseId], references: [id])
+  fromProductionSite ProductionSite?       @relation("StockTransferFromProductionSite", fields: [fromProductionSiteId], references: [id])
+  toProductionSite   ProductionSite?       @relation("StockTransferToProductionSite", fields: [toProductionSiteId], references: [id])
+  discrepancies      TransferDiscrepancy[]
 
   @@unique([companyId, transferNumber])
   @@unique([companyId, idempotencyKey])
@@ -1900,6 +1925,39 @@ model StockTransfer {
   @@index([toProductionSiteId])
   @@index([companyId, status])
   @@index([transferDate])
+  @@index([deletedAt])
+}
+
+// Opened when a transfer is received with a quantity different from what was
+// dispatched. The destination is already credited the actual amount; this row
+// holds the unaccounted difference until a manager resolves it.
+model TransferDiscrepancy {
+  id                 String                         @id @default(uuid())
+  companyId          String
+  branchId           String
+  stockTransferId    String
+  expectedQuantity   Decimal                        @db.Decimal(18, 4)
+  receivedQuantity   Decimal                        @db.Decimal(18, 4)
+  differenceQuantity Decimal                        @db.Decimal(18, 4)
+  status             TransferDiscrepancyStatus      @default(PENDING_REVIEW)
+  resolution         TransferDiscrepancyResolution?
+  reason             String?                        @db.Text
+  notes              String?                        @db.Text
+  reportedById       String?
+  resolvedById       String?
+  resolvedAt         DateTime?
+  createdAt          DateTime                       @default(now())
+  updatedAt          DateTime                       @updatedAt
+  deletedAt          DateTime?
+
+  company       Company       @relation(fields: [companyId], references: [id])
+  branch        Branch        @relation(fields: [branchId], references: [id])
+  stockTransfer StockTransfer @relation(fields: [stockTransferId], references: [id])
+
+  @@index([companyId])
+  @@index([branchId])
+  @@index([companyId, status])
+  @@index([stockTransferId])
   @@index([deletedAt])
 }
 
