@@ -220,6 +220,13 @@ class FlockRecordDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  // Manager override for a warehouse-purpose mismatch (only consulted when
+  // enforceWarehousePurpose is on).
+  @IsOptional()
+  @IsString()
+  @MaxLength(240)
+  purposeOverrideReason?: string;
 }
 
 export class CreateDailyPoultryRecordDto extends FlockRecordDto {
@@ -441,6 +448,11 @@ export class CreateMedicationRecordDto {
   @IsString()
   @MaxLength(100)
   idempotencyKey?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(240)
+  purposeOverrideReason?: string;
 }
 
 export class CreateVaccinationRecordDto {
@@ -490,6 +502,11 @@ export class CreateVaccinationRecordDto {
   @IsString()
   @MaxLength(100)
   idempotencyKey?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(240)
+  purposeOverrideReason?: string;
 }
 
 export class CreateHealthObservationDto {

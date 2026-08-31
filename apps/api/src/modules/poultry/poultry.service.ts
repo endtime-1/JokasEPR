@@ -1,9 +1,10 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
-import { AuthenticatedUser } from "@jokas/shared";
+import { AuthenticatedUser, WarehouseOperation } from "@jokas/shared";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
 import { LookupCacheService } from "../../common/services/lookup-cache.service";
+import { WarehousePurposeService } from "../../common/services/warehouse-purpose.service";
 import { startOfTodayAccra } from "../../common/utils/timezone";
 import { nextRef } from "../../common/next-ref";
 import { withDbRetry } from "../../common/db-retry";
@@ -67,8 +68,27 @@ export class PoultryService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
-    private readonly lookupCache: LookupCacheService
+    private readonly lookupCache: LookupCacheService,
+    private readonly warehousePurpose: WarehousePurposeService
   ) {}
+
+  // Guard a poultry record's optional warehouse against the operation's
+  // allowed types (no-op unless the company turned enforcement on).
+  private async assertWarehousePurposeIfSet(
+    user: AuthenticatedUser,
+    warehouseId: string | undefined | null,
+    op: WarehouseOperation,
+    overrideReason?: string,
+    context?: { ipAddress?: string; userAgent?: string }
+  ) {
+    if (!warehouseId) return;
+    const wh = await this.prisma.warehouse.findFirst({
+      where: { id: warehouseId, companyId: user.companyId, deletedAt: null },
+      select: { id: true, type: true, name: true, code: true, branchId: true },
+    });
+    if (!wh) return;
+    await this.warehousePurpose.assert(user, wh, op, { overrideReason, context });
+  }
 
   async dashboard(user: AuthenticatedUser) {
     const todayStart = startOfTodayAccra(); // (M20) was server-local midnight
@@ -764,6 +784,8 @@ export class PoultryService {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
     if (dto.feedWarehouseId) this.assertWarehouseAccess(user, dto.feedWarehouseId);
     if (dto.eggWarehouseId) this.assertWarehouseAccess(user, dto.eggWarehouseId);
+    await this.assertWarehousePurposeIfSet(user, dto.feedWarehouseId, "feed.consumption", dto.purposeOverrideReason, context);
+    await this.assertWarehousePurposeIfSet(user, dto.eggWarehouseId, "egg.collection", dto.purposeOverrideReason, context);
     const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
     const recordDate = new Date(dto.recordDate);
     const payload = { openingBirdCount: dto.openingBirdCount, mortalityCount: dto.mortalityCount, culledCount: dto.culledCount, feedConsumedKg: dto.feedConsumedKg, totalEggs: dto.totalEggs, notes: dto.notes, status: dto.status ?? "SUBMITTED" };
@@ -892,6 +914,7 @@ export class PoultryService {
   async createFeed(user: AuthenticatedUser, dto: CreateFeedConsumptionRecordDto, context: RequestContext) {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
     if (dto.warehouseId) this.assertWarehouseAccess(user, dto.warehouseId);
+    await this.assertWarehousePurposeIfSet(user, dto.warehouseId, "feed.consumption", dto.purposeOverrideReason, context);
     const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
     // Mobile parity audit (2026-08-17): a mobile offline-queue resend (or a
     // client retry after a dropped response) carrying the same
@@ -942,6 +965,7 @@ export class PoultryService {
     // this credited inventory to dto.warehouseId with no access check, letting
     // a user credit egg output to a warehouse outside their assignment.
     if (dto.warehouseId) this.assertWarehouseAccess(user, dto.warehouseId);
+    await this.assertWarehousePurposeIfSet(user, dto.warehouseId, "egg.collection", dto.purposeOverrideReason, context);
     // H-BUG-2 (2026-08-13): a batch inside an active medication withdrawal
     // window shouldn't have its eggs credited to sellable stock — residue
     // hasn't cleared yet. The raw count can still be logged for
@@ -1037,6 +1061,7 @@ export class PoultryService {
   async createMedication(user: AuthenticatedUser, dto: CreateMedicationRecordDto, context: RequestContext) {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
     if (dto.warehouseId) this.assertWarehouseAccess(user, dto.warehouseId);
+    await this.assertWarehousePurposeIfSet(user, dto.warehouseId, "poultry.health-supplies", dto.purposeOverrideReason, context);
     const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
     // Mobile parity audit (2026-08-17): a mobile offline-queue resend (or a
     // client retry after a dropped response) carrying the same
@@ -1075,6 +1100,7 @@ export class PoultryService {
   async createVaccination(user: AuthenticatedUser, dto: CreateVaccinationRecordDto, context: RequestContext) {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
     if (dto.warehouseId) this.assertWarehouseAccess(user, dto.warehouseId);
+    await this.assertWarehousePurposeIfSet(user, dto.warehouseId, "poultry.health-supplies", dto.purposeOverrideReason, context);
     const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
     // Mobile parity audit (2026-08-17): a mobile offline-queue resend (or a
     // client retry after a dropped response) carrying the same

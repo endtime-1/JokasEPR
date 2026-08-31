@@ -37,6 +37,7 @@ const mockPrisma = {
   pen: { findFirst: jest.fn(), findMany: jest.fn(), update: jest.fn(), create: jest.fn(), count: jest.fn().mockResolvedValue(0) },
   flockBatch: { findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn() },
   systemSetting: { findFirst: jest.fn().mockResolvedValue(null) },
+  warehouse: { findFirst: jest.fn().mockResolvedValue({ id: "wh-1", type: "GENERAL", name: "WH", code: "WH", branchId: "b-1" }) },
   batchPenAllocation: { findFirst: jest.fn() },
   poultryTransferRecord: { findFirst: jest.fn(), count: jest.fn().mockResolvedValue(0), aggregate: jest.fn().mockResolvedValue({ _sum: { birdCount: 0 } }), findMany: jest.fn().mockResolvedValue([]) },
   feedConsumptionRecord: { findFirst: jest.fn(), count: jest.fn().mockResolvedValue(0), aggregate: jest.fn().mockResolvedValue({ _sum: { quantityKg: 0 } }) },
@@ -52,8 +53,20 @@ const mockPrisma = {
 };
 const mockAudit = { write: jest.fn().mockResolvedValue(undefined) };
 
+const mockWarehousePurpose = {
+  isEnforced: jest.fn().mockResolvedValue(false),
+  assert: jest.fn().mockResolvedValue(undefined),
+  filterForOperation: jest.fn().mockImplementation((_c: string, list: unknown[]) => Promise.resolve(list)),
+  invalidate: jest.fn()
+};
+
 function makeService() {
-  return new PoultryService(mockPrisma as never, mockAudit as never, { get: jest.fn().mockReturnValue(null), set: jest.fn(), invalidate: jest.fn() } as never);
+  return new PoultryService(
+    mockPrisma as never,
+    mockAudit as never,
+    { get: jest.fn().mockReturnValue(null), set: jest.fn(), invalidate: jest.fn() } as never,
+    mockWarehousePurpose as never
+  );
 }
 
 function makeUser(overrides: Partial<AuthenticatedUser> = {}): AuthenticatedUser {
