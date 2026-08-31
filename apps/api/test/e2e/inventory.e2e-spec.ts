@@ -248,6 +248,137 @@ describe("Inventory Module (e2e)", () => {
     });
   });
 
+  describe("Staged stock transfers", () => {
+    const SRC = "d1111111-1111-4111-8111-111111111111";
+    const DST = "d2222222-2222-4222-8222-222222222222";
+    const PROD = "d3333333-3333-4333-8333-333333333333";
+
+    function stagedToken(write = true, extra: string[] = []) {
+      const perms = write ? [PERMISSIONS.INVENTORY_READ, PERMISSIONS.INVENTORY_MANAGE, ...extra] : [PERMISSIONS.INVENTORY_READ];
+      prisma.user.findFirst.mockResolvedValue(makeDbUser({
+        roles: [{ role: { permissions: perms.map((key) => ({ key })) } }],
+        warehouseAccesses: [{ warehouseId: SRC }, { warehouseId: DST }],
+      }));
+      return makeAccessToken({
+        id: TEST_USER_ID, companyId: TEST_COMPANY_ID, permissions: perms, roles: ["Stock Manager"],
+        farmIds: [], warehouseIds: [SRC, DST], branchIds: [TEST_BRANCH_ID], productionSiteIds: [], hasGlobalAccess: false,
+      } as Parameters<typeof makeAccessToken>[0]);
+    }
+    function stubPrereqs() {
+      prisma.inventoryItem.findFirst.mockResolvedValue({ id: "src-item", companyId: TEST_COMPANY_ID, branchId: TEST_BRANCH_ID, warehouseId: SRC, productionSiteId: null, productId: PROD, uomId: "uom-1", quantityOnHand: 500 });
+      prisma.warehouse.findFirst.mockResolvedValue({ id: DST, companyId: TEST_COMPANY_ID, branchId: TEST_BRANCH_ID, farmId: null, productionSiteId: null });
+      prisma.product.findFirst.mockResolvedValue({ id: PROD, companyId: TEST_COMPANY_ID, sku: "EGG", name: "Eggs", uomId: "uom-1" });
+      prisma.stockReservation.findMany.mockResolvedValue([]);
+      prisma.$queryRaw.mockResolvedValue([{ seq: 1 }]); // nextRef() reads rows[0].seq
+      // Earlier tests in this file call prisma.$transaction.mockResolvedValue(...)
+      // which permanently replaces the interactive-callback implementation
+      // (jest.clearAllMocks() clears calls, not implementations). Restore it so
+      // our transaction callbacks actually run and we can assert on the writes.
+      prisma.$transaction.mockImplementation((arg: unknown) => {
+        if (Array.isArray(arg)) return Promise.all(arg);
+        if (typeof arg === "function") return (arg as (tx: typeof prisma) => Promise<unknown>)(prisma);
+        return Promise.resolve(null);
+      });
+    }
+
+    it("POST — a plain request lands as PENDING_APPROVAL and moves no stock", async () => {
+      stubPrereqs();
+      prisma.stockTransfer.findFirst.mockResolvedValue(null);
+      prisma.stockTransfer.create.mockResolvedValue({ id: "t-1", transferNumber: "STR-1", status: "PENDING_APPROVAL" });
+
+      const res = await request(app.getHttpServer())
+        .post("/api/v1/inventory/transfers")
+        .set("Authorization", `Bearer ${stagedToken()}`)
+        .send({ fromWarehouseId: SRC, toWarehouseId: DST, productId: PROD, quantity: 200 });
+
+      expect([200, 201]).toContain(res.status);
+      expect(prisma.stockTransfer.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ status: "PENDING_APPROVAL" }) })
+      );
+      expect(prisma.stockBatch.updateMany).not.toHaveBeenCalled();
+    });
+
+    it("PATCH approve — consumes source stock and goes IN_TRANSIT", async () => {
+      stubPrereqs();
+      prisma.stockTransfer.findFirst.mockResolvedValue({ id: "t-1", companyId: TEST_COMPANY_ID, branchId: TEST_BRANCH_ID, status: "PENDING_APPROVAL", fromWarehouseId: SRC, toWarehouseId: DST, productId: PROD, quantity: 200, transferNumber: "STR-1", requestedById: "someone-else" });
+      prisma.stockTransfer.updateMany.mockResolvedValue({ count: 1 });
+      prisma.stockTransfer.update.mockResolvedValue({ id: "t-1" });
+      prisma.stockTransfer.findUniqueOrThrow.mockResolvedValue({ id: "t-1", status: "IN_TRANSIT" });
+      prisma.stockBatch.findMany.mockResolvedValue([{ id: "lot-1", quantityRemaining: 500, unitCost: 2, expiryDate: null, createdAt: new Date() }]);
+      prisma.stockBatch.updateMany.mockResolvedValue({ count: 1 });
+      prisma.inventoryItem.updateMany.mockResolvedValue({ count: 1 });
+      prisma.stockMovement.create.mockResolvedValue({ id: "mv" });
+
+      const res = await request(app.getHttpServer())
+        .patch("/api/v1/inventory/transfers/t-1/approve")
+        .set("Authorization", `Bearer ${stagedToken()}`)
+        .send({});
+      expect(res.status).toBe(200);
+      expect(prisma.stockBatch.updateMany).toHaveBeenCalled();
+      expect(prisma.stockTransfer.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ status: "PENDING_APPROVAL" }), data: expect.objectContaining({ status: "IN_TRANSIT" }) })
+      );
+    });
+
+    it("PATCH approve — the requester cannot approve their own transfer", async () => {
+      stubPrereqs();
+      prisma.stockTransfer.findFirst.mockResolvedValue({ id: "t-1", companyId: TEST_COMPANY_ID, branchId: TEST_BRANCH_ID, status: "PENDING_APPROVAL", fromWarehouseId: SRC, toWarehouseId: DST, productId: PROD, quantity: 200, transferNumber: "STR-1", requestedById: TEST_USER_ID });
+      await request(app.getHttpServer())
+        .patch("/api/v1/inventory/transfers/t-1/approve")
+        .set("Authorization", `Bearer ${stagedToken()}`)
+        .send({})
+        .expect(403);
+    });
+
+    it("PATCH receive — matching quantity completes with no discrepancy", async () => {
+      stubPrereqs();
+      prisma.stockTransfer.findFirst.mockResolvedValue({ id: "t-1", companyId: TEST_COMPANY_ID, branchId: TEST_BRANCH_ID, status: "IN_TRANSIT", fromWarehouseId: SRC, toWarehouseId: DST, productId: PROD, quantity: 200, unitCost: 2, transferNumber: "STR-1" });
+      prisma.stockTransfer.updateMany.mockResolvedValue({ count: 1 });
+      prisma.stockTransfer.findUniqueOrThrow.mockResolvedValue({ id: "t-1", status: "COMPLETED" });
+      prisma.inventoryItem.upsert.mockResolvedValue({ id: "dst-item" });
+      prisma.stockBatch.create.mockResolvedValue({ id: "lot-dst" });
+      prisma.stockMovement.create.mockResolvedValue({ id: "mv" });
+
+      const res = await request(app.getHttpServer())
+        .patch("/api/v1/inventory/transfers/t-1/receive")
+        .set("Authorization", `Bearer ${stagedToken()}`)
+        .send({ receivedQuantity: 200 });
+
+      expect(res.status).toBe(200);
+      expect(prisma.inventoryItem.upsert).toHaveBeenCalled();
+      expect(prisma.transferDiscrepancy.create).not.toHaveBeenCalled();
+    });
+
+    it("PATCH receive — short quantity opens a discrepancy", async () => {
+      stubPrereqs();
+      prisma.stockTransfer.findFirst.mockResolvedValue({ id: "t-1", companyId: TEST_COMPANY_ID, branchId: TEST_BRANCH_ID, status: "IN_TRANSIT", fromWarehouseId: SRC, toWarehouseId: DST, productId: PROD, quantity: 200, unitCost: 2, transferNumber: "STR-1" });
+      prisma.stockTransfer.updateMany.mockResolvedValue({ count: 1 });
+      prisma.stockTransfer.findUniqueOrThrow.mockResolvedValue({ id: "t-1", status: "COMPLETED" });
+      prisma.inventoryItem.upsert.mockResolvedValue({ id: "dst-item" });
+      prisma.stockBatch.create.mockResolvedValue({ id: "lot-dst" });
+      prisma.stockMovement.create.mockResolvedValue({ id: "mv" });
+      prisma.transferDiscrepancy.create.mockResolvedValue({ id: "disc-1" });
+
+      const res = await request(app.getHttpServer())
+        .patch("/api/v1/inventory/transfers/t-1/receive")
+        .set("Authorization", `Bearer ${stagedToken()}`)
+        .send({ receivedQuantity: 190 });
+
+      expect(res.status).toBe(200);
+      expect(prisma.transferDiscrepancy.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ differenceQuantity: 10 }) })
+      );
+    });
+
+    it("PATCH approve — read-only user is rejected", async () => {
+      await request(app.getHttpServer())
+        .patch("/api/v1/inventory/transfers/t-1/approve")
+        .set("Authorization", `Bearer ${stagedToken(false)}`)
+        .send({})
+        .expect(403);
+    });
+  });
+
   describe("GET /api/v1/inventory/items", () => {
     it("200 — returns items for user's warehouses only", async () => {
       prisma.inventoryItem.findMany.mockResolvedValue([makeDbInventoryItem()]);

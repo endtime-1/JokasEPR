@@ -1,4 +1,5 @@
-import { InventoryItemStatus, RecordStatus, StockAdjustmentType, StockMovementType, StockReservationStatus, StockWorkflowStatus } from "@prisma/client";
+import { InventoryItemStatus, RecordStatus, StockAdjustmentType, StockMovementType, StockReservationStatus, StockWorkflowStatus, TransferDiscrepancyResolution } from "@prisma/client";
+import { Type } from "class-transformer";
 import { IsBoolean, IsDateString, IsEnum, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, MaxLength, Min } from "class-validator";
 
 export class InventoryQueryDto {
@@ -158,6 +159,73 @@ export class StockTransferDto {
   @IsString()
   @MaxLength(100)
   idempotencyKey?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  notes?: string;
+
+  // Global-access users only: collapses request → approve → receive into one
+  // instant transfer (the pre-staged behaviour). Written to the audit log as
+  // self-approved.
+  @IsOptional()
+  @IsBoolean()
+  autoApprove?: boolean;
+}
+
+export class ApproveTransferDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  notes?: string;
+}
+
+export class RejectTransferDto {
+  @IsString()
+  @MaxLength(500)
+  rejectionReason!: string;
+}
+
+export class ReceiveTransferDto {
+  @IsNumber()
+  @Min(0)
+  receivedQuantity!: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  notes?: string;
+}
+
+export class ResolveDiscrepancyDto {
+  @IsEnum(TransferDiscrepancyResolution)
+  resolution!: TransferDiscrepancyResolution;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  notes?: string;
+}
+
+export class TransferQueryDto {
+  @IsOptional()
+  @IsEnum(StockWorkflowStatus)
+  status?: StockWorkflowStatus;
+
+  @IsOptional()
+  @IsUUID()
+  warehouseId?: string;
+
+  // "incoming" = this warehouse/user is the destination; "outgoing" = source.
+  @IsOptional()
+  @IsIn(["incoming", "outgoing"])
+  direction?: "incoming" | "outgoing";
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Type(() => Number)
+  take?: number;
 }
 
 export class StockAdjustmentDto {

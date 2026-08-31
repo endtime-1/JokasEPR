@@ -7,18 +7,23 @@ import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { PermissionsGuard } from "../../common/guards/permissions.guard";
 import {
   ApproveStockDto,
+  ApproveTransferDto,
   CreateInventoryItemDto,
   CreateWarehouseLocationDto,
   InventoryQueryDto,
   MobileStockMovementDto,
+  ReceiveTransferDto,
   RefreshAlertsDto,
+  RejectTransferDto,
   ReleaseReservationDto,
+  ResolveDiscrepancyDto,
   SetReorderLevelDto,
   StockAdjustmentDto,
   StockInDto,
   StockOutDto,
   StockReservationDto,
   StockTransferDto,
+  TransferQueryDto,
   UpdateInventoryItemDto,
   UpdateWarehouseLocationDto
 } from "./dto/inventory.dto";
@@ -89,10 +94,52 @@ export class InventoryController {
     return this.inventoryService.stockOut(user, dto, { ipAddress, userAgent });
   }
 
+  @Get("transfers")
+  @RequirePermissions(PERMISSIONS.INVENTORY_READ)
+  listTransfers(@CurrentUser() user: AuthenticatedUser, @Query() query: TransferQueryDto) {
+    return this.inventoryService.listTransfers(user, query);
+  }
+
   @Post("transfers")
   @RequirePermissions(PERMISSIONS.INVENTORY_MANAGE)
   transfer(@CurrentUser() user: AuthenticatedUser, @Body() dto: StockTransferDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.inventoryService.transfer(user, dto, { ipAddress, userAgent });
+  }
+
+  @Patch("transfers/:id/approve")
+  @RequirePermissions(PERMISSIONS.INVENTORY_MANAGE)
+  approveTransfer(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: ApproveTransferDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.inventoryService.approveTransfer(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Patch("transfers/:id/reject")
+  @RequirePermissions(PERMISSIONS.INVENTORY_MANAGE)
+  rejectTransfer(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: RejectTransferDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.inventoryService.rejectTransfer(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Patch("transfers/:id/receive")
+  @RequirePermissions(PERMISSIONS.INVENTORY_MANAGE)
+  receiveTransfer(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: ReceiveTransferDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.inventoryService.receiveTransfer(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Patch("transfers/:id/cancel")
+  @RequirePermissions(PERMISSIONS.INVENTORY_MANAGE)
+  cancelTransfer(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.inventoryService.cancelTransfer(user, id, { ipAddress, userAgent });
+  }
+
+  @Get("transfer-discrepancies")
+  @RequirePermissions(PERMISSIONS.INVENTORY_READ)
+  listDiscrepancies(@CurrentUser() user: AuthenticatedUser) {
+    return this.inventoryService.listDiscrepancies(user);
+  }
+
+  @Patch("transfer-discrepancies/:id/resolve")
+  @RequirePermissions(PERMISSIONS.INVENTORY_MANAGE)
+  resolveDiscrepancy(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: ResolveDiscrepancyDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.inventoryService.resolveDiscrepancy(user, id, dto, { ipAddress, userAgent });
   }
 
   @Post("adjustments")

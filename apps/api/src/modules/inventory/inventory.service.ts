@@ -9,18 +9,23 @@ import { startOfTodayAccra } from "../../common/utils/timezone";
 import { withDbRetry } from "../../common/db-retry";
 import {
   ApproveStockDto,
+  ApproveTransferDto,
   CreateInventoryItemDto,
   CreateWarehouseLocationDto,
   InventoryQueryDto,
   MobileStockMovementDto,
+  ReceiveTransferDto,
   RefreshAlertsDto,
+  RejectTransferDto,
   ReleaseReservationDto,
+  ResolveDiscrepancyDto,
   SetReorderLevelDto,
   StockAdjustmentDto,
   StockInDto,
   StockOutDto,
   StockReservationDto,
   StockTransferDto,
+  TransferQueryDto,
   UpdateInventoryItemDto,
   UpdateWarehouseLocationDto
 } from "./dto/inventory.dto";
@@ -222,46 +227,256 @@ export class InventoryService {
     return { data: { itemId: item.id, issued } };
   }
 
+  // ─── Staged stock transfers ──────────────────────────────────────────────
+  // request → approve (stock leaves source, held IN_TRANSIT) → receive
+  // (destination confirms actual qty; a mismatch opens a TransferDiscrepancy).
+  // A global-access user may pass autoApprove:true to collapse the whole chain
+  // into one instant move (the pre-staged behaviour).
+
   async transfer(user: AuthenticatedUser, dto: StockTransferDto, context: RequestContext) {
     this.assertWarehouseAccess(user, dto.fromWarehouseId);
     this.assertWarehouseAccess(user, dto.toWarehouseId);
     if (dto.fromWarehouseId === dto.toWarehouseId) throw new BadRequestException("Source and destination warehouses must be different.");
     const [sourceItem, toWarehouse, product] = await Promise.all([this.requireItem(user.companyId, dto.fromWarehouseId, dto.productId), this.getWarehouse(user.companyId, dto.toWarehouseId), this.getProduct(user.companyId, dto.productId)]);
     await this.assertAvailable(user, sourceItem, dto.quantity, false);
-    // Mobile parity audit (2026-08-17): mirrors the sales/finance
-    // idempotencyKey pattern — a mobile offline-queue resend carrying the
-    // same idempotencyKey replays the original transfer instead of creating
-    // a second one.
+    // Mobile parity audit (2026-08-17): a mobile offline-queue resend carrying
+    // the same idempotencyKey replays the original transfer, not a second one.
     if (dto.idempotencyKey) {
       const existing = await this.findStockTransferByIdempotencyKey(user.companyId, dto.idempotencyKey);
       if (existing) return { data: existing };
     }
+    const instant = dto.autoApprove === true && user.hasGlobalAccess;
     const transferNumber = await nextRef(this.prisma, user.companyId, "STR");
     let data;
     try {
-      data = await this.prisma.$transaction(async (tx) => {
-        const transfer = await tx.stockTransfer.create({ data: { companyId: user.companyId, branchId: sourceItem.branchId, productId: dto.productId, stockBatchId: dto.stockBatchId, transferNumber, fromWarehouseId: dto.fromWarehouseId, toWarehouseId: dto.toWarehouseId, fromProductionSiteId: sourceItem.productionSiteId, toProductionSiteId: toWarehouse.productionSiteId, quantity: dto.quantity, barcode: dto.barcode, status: "COMPLETED", idempotencyKey: dto.idempotencyKey, requestedById: user.id, approvedById: user.id, approvedAt: new Date(), createdById: user.id } });
-        const consumed = await this.consumeFifoTx(tx, user, sourceItem, dto.quantity, "TRANSFER", "StockTransfer", transfer.id, `Transfer ${transferNumber}`);
-        const destination = await tx.inventoryItem.upsert({ where: { companyId_warehouseId_productId: { companyId: user.companyId, warehouseId: dto.toWarehouseId, productId: dto.productId } }, update: { quantityOnHand: { increment: dto.quantity }, updatedById: user.id }, create: { companyId: user.companyId, branchId: toWarehouse.branchId, warehouseId: toWarehouse.id, farmId: toWarehouse.farmId, productionSiteId: toWarehouse.productionSiteId, productId: dto.productId, uomId: product.uomId, quantityOnHand: dto.quantity, createdById: user.id } });
-        await tx.stockBatch.create({ data: { companyId: user.companyId, branchId: toWarehouse.branchId, farmId: toWarehouse.farmId, warehouseId: toWarehouse.id, productionSiteId: toWarehouse.productionSiteId, productId: dto.productId, inventoryItemId: destination.id, uomId: product.uomId, batchNumber: `${transferNumber}-${product.sku}`, quantityReceived: dto.quantity, quantityRemaining: dto.quantity, unitCost: consumed.unitCost, createdById: user.id } });
-        await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: toWarehouse.branchId, productId: dto.productId, inventoryItemId: destination.id, toWarehouseId: dto.toWarehouseId, warehouseId: dto.toWarehouseId, productionSiteId: toWarehouse.productionSiteId, uomId: product.uomId, movementType: "TRANSFER", quantity: dto.quantity, unitCost: consumed.unitCost, referenceType: "StockTransfer", referenceId: transfer.id, notes: `Transfer received ${transferNumber}`, createdById: user.id } });
+      data = await withDbRetry(() => this.prisma.$transaction(async (tx) => {
+        const transfer = await tx.stockTransfer.create({ data: {
+          companyId: user.companyId, branchId: sourceItem.branchId, productId: dto.productId, stockBatchId: dto.stockBatchId,
+          transferNumber, fromWarehouseId: dto.fromWarehouseId, toWarehouseId: dto.toWarehouseId,
+          fromProductionSiteId: sourceItem.productionSiteId, toProductionSiteId: toWarehouse.productionSiteId,
+          quantity: dto.quantity, barcode: dto.barcode, notes: dto.notes,
+          status: instant ? "COMPLETED" : "PENDING_APPROVAL",
+          idempotencyKey: dto.idempotencyKey, requestedById: user.id, createdById: user.id,
+          ...(instant ? { approvedById: user.id, approvedAt: new Date(), receivedById: user.id, receivedAt: new Date(), receivedQuantity: dto.quantity } : {}),
+        } });
+        if (instant) {
+          const consumed = await this.consumeFifoTx(tx, user, sourceItem, dto.quantity, "TRANSFER", "StockTransfer", transfer.id, `Transfer ${transferNumber}`);
+          await tx.stockTransfer.update({ where: { id: transfer.id }, data: { dispatchedLots: consumed.issued as unknown as Prisma.InputJsonValue, unitCost: consumed.unitCost } });
+          await this.creditTransferDestinationTx(tx, user, { toWarehouse, product, quantity: dto.quantity, unitCost: consumed.unitCost, transferId: transfer.id, transferNumber });
+        }
         return transfer;
-      });
-    } catch (err: any) {
-      // Mobile parity audit (2026-08-17): checked first because it's a
-      // legitimate replay, not a genuine conflict — only fall through to the
-      // generic "concurrent transfer" conflict below when no idempotencyKey
-      // was supplied, or none matches (a real P2002 on some other unique
-      // constraint, e.g. transferNumber).
-      if (dto.idempotencyKey && err?.code === "P2002") {
+      }), { label: "InventoryService.transfer" });
+    } catch (err: unknown) {
+      const code = (err as { code?: string })?.code;
+      if (dto.idempotencyKey && code === "P2002") {
         const existing = await this.findStockTransferByIdempotencyKey(user.companyId, dto.idempotencyKey);
         if (existing) return { data: existing };
       }
-      if (err?.code === "P2002") throw new ConflictException("A concurrent transfer was processed at the same time. Please try again.");
+      if (code === "P2002") throw new ConflictException("A concurrent transfer was processed at the same time. Please try again.");
       throw err;
     }
-    await this.writeAudit(user, "TRANSFER", "StockTransfer", data.id, `Transferred ${product.sku}`, context, { branchId: sourceItem.branchId, warehouseId: sourceItem.warehouseId });
+    await this.writeAudit(user, instant ? "TRANSFER" : "CREATE", "StockTransfer", data.id, instant ? `Transferred ${product.sku} (auto-approved)` : `Requested transfer of ${product.sku}`, context, { branchId: sourceItem.branchId, warehouseId: sourceItem.warehouseId });
     return { data };
+  }
+
+  async approveTransfer(user: AuthenticatedUser, id: string, dto: ApproveTransferDto, context: RequestContext) {
+    if (!user.permissions.includes("inventory.manage")) throw new ForbiddenException("You cannot approve stock transfers.");
+    const transfer = await this.prisma.stockTransfer.findFirst({ where: { companyId: user.companyId, id, deletedAt: null } });
+    if (!transfer) throw new NotFoundException("Stock transfer was not found.");
+    this.assertWarehouseAccess(user, transfer.fromWarehouseId);
+    if (transfer.status !== "PENDING_APPROVAL") throw new BadRequestException(`This transfer is ${transfer.status.toLowerCase().replace(/_/g, " ")} — only pending transfers can be approved.`);
+    if (transfer.requestedById === user.id && !user.hasGlobalAccess) throw new ForbiddenException("A transfer must be approved by someone other than the person who requested it.");
+    const sourceItem = await this.requireItem(user.companyId, transfer.fromWarehouseId, transfer.productId);
+
+    const data = await withDbRetry(() => this.prisma.$transaction(async (tx) => {
+      // Claim the row first — a guarded updateMany so two concurrent approvals
+      // can't both consume the source stock.
+      const claimed = await tx.stockTransfer.updateMany({
+        where: { id, status: "PENDING_APPROVAL" },
+        data: { status: "IN_TRANSIT", approvedById: user.id, approvedAt: new Date(), updatedById: user.id },
+      });
+      if (claimed.count === 0) throw new BadRequestException("This transfer has already been processed.");
+      const consumed = await this.consumeFifoTx(tx, user, sourceItem, Number(transfer.quantity), "TRANSFER", "StockTransfer", id, `Transfer ${transfer.transferNumber} dispatched`);
+      await tx.stockTransfer.update({ where: { id }, data: { dispatchedLots: consumed.issued as unknown as Prisma.InputJsonValue, unitCost: consumed.unitCost, ...(dto.notes ? { notes: dto.notes } : {}) } });
+      return tx.stockTransfer.findUniqueOrThrow({ where: { id } });
+    }), { label: "InventoryService.approveTransfer" });
+
+    await this.writeAudit(user, "APPROVE", "StockTransfer", id, `Approved transfer ${transfer.transferNumber} — dispatched, in transit`, context, { branchId: transfer.branchId, warehouseId: transfer.fromWarehouseId });
+    return { data };
+  }
+
+  async rejectTransfer(user: AuthenticatedUser, id: string, dto: RejectTransferDto, context: RequestContext) {
+    if (!user.permissions.includes("inventory.manage")) throw new ForbiddenException("You cannot reject stock transfers.");
+    const transfer = await this.prisma.stockTransfer.findFirst({ where: { companyId: user.companyId, id, deletedAt: null } });
+    if (!transfer) throw new NotFoundException("Stock transfer was not found.");
+    this.assertWarehouseAccess(user, transfer.fromWarehouseId);
+    if (transfer.status !== "PENDING_APPROVAL") throw new BadRequestException(`This transfer is ${transfer.status.toLowerCase().replace(/_/g, " ")} — only pending transfers can be rejected.`);
+    const claimed = await this.prisma.stockTransfer.updateMany({
+      where: { companyId: user.companyId, id, status: "PENDING_APPROVAL" },
+      data: { status: "REJECTED", rejectionReason: dto.rejectionReason, approvedById: user.id, approvedAt: new Date(), updatedById: user.id },
+    });
+    if (claimed.count === 0) throw new BadRequestException("This transfer has already been processed.");
+    await this.writeAudit(user, "REJECT", "StockTransfer", id, `Rejected transfer ${transfer.transferNumber}`, context, { branchId: transfer.branchId, warehouseId: transfer.fromWarehouseId });
+    return { data: await this.prisma.stockTransfer.findUniqueOrThrow({ where: { id } }) };
+  }
+
+  async receiveTransfer(user: AuthenticatedUser, id: string, dto: ReceiveTransferDto, context: RequestContext) {
+    const transfer = await this.prisma.stockTransfer.findFirst({ where: { companyId: user.companyId, id, deletedAt: null } });
+    if (!transfer) throw new NotFoundException("Stock transfer was not found.");
+    this.assertWarehouseAccess(user, transfer.toWarehouseId);
+    if (transfer.status !== "IN_TRANSIT") throw new BadRequestException(`This transfer is ${transfer.status.toLowerCase().replace(/_/g, " ")} — only in-transit transfers can be received.`);
+    const dispatched = Number(transfer.quantity);
+    if (dto.receivedQuantity > dispatched * 1.5) throw new BadRequestException(`Received quantity (${dto.receivedQuantity}) is far more than was dispatched (${dispatched}). Re-check the count.`);
+    const [toWarehouse, product] = await Promise.all([this.getWarehouse(user.companyId, transfer.toWarehouseId), this.getProduct(user.companyId, transfer.productId)]);
+    const unitCost = Number(transfer.unitCost ?? 0);
+    const difference = Math.round((dispatched - dto.receivedQuantity) * 10000) / 10000;
+
+    const data = await withDbRetry(() => this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.stockTransfer.updateMany({
+        where: { id, status: "IN_TRANSIT" },
+        data: { status: "COMPLETED", receivedById: user.id, receivedAt: new Date(), receivedQuantity: dto.receivedQuantity, updatedById: user.id, ...(dto.notes ? { notes: dto.notes } : {}) },
+      });
+      if (claimed.count === 0) throw new BadRequestException("This transfer has already been received.");
+      if (dto.receivedQuantity > 0) {
+        await this.creditTransferDestinationTx(tx, user, { toWarehouse, product, quantity: dto.receivedQuantity, unitCost, transferId: id, transferNumber: transfer.transferNumber });
+      }
+      if (difference !== 0) {
+        await tx.transferDiscrepancy.create({ data: {
+          companyId: user.companyId, branchId: transfer.branchId, stockTransferId: id,
+          expectedQuantity: dispatched, receivedQuantity: dto.receivedQuantity, differenceQuantity: difference,
+          reason: difference > 0 ? "Short receipt" : "Over receipt", reportedById: user.id,
+        } });
+      }
+      return tx.stockTransfer.findUniqueOrThrow({ where: { id } });
+    }), { label: "InventoryService.receiveTransfer" });
+
+    await this.writeAudit(user, "TRANSFER", "StockTransfer", id, `Received transfer ${transfer.transferNumber} — ${dto.receivedQuantity} of ${dispatched}${difference !== 0 ? " (discrepancy logged)" : ""}`, context, { branchId: transfer.branchId, warehouseId: transfer.toWarehouseId });
+    return { data };
+  }
+
+  async cancelTransfer(user: AuthenticatedUser, id: string, context: RequestContext) {
+    const transfer = await this.prisma.stockTransfer.findFirst({ where: { companyId: user.companyId, id, deletedAt: null } });
+    if (!transfer) throw new NotFoundException("Stock transfer was not found.");
+    this.assertWarehouseAccess(user, transfer.fromWarehouseId);
+    if (!["DRAFT", "PENDING_APPROVAL"].includes(transfer.status)) throw new BadRequestException("Only a draft or pending transfer can be cancelled — once stock is in transit it must be received.");
+    const claimed = await this.prisma.stockTransfer.updateMany({
+      where: { companyId: user.companyId, id, status: { in: ["DRAFT", "PENDING_APPROVAL"] } },
+      data: { status: "CANCELLED", updatedById: user.id },
+    });
+    if (claimed.count === 0) throw new BadRequestException("This transfer can no longer be cancelled.");
+    await this.writeAudit(user, "REJECT", "StockTransfer", id, `Cancelled transfer ${transfer.transferNumber}`, context, { branchId: transfer.branchId, warehouseId: transfer.fromWarehouseId });
+    return { data: await this.prisma.stockTransfer.findUniqueOrThrow({ where: { id } }) };
+  }
+
+  async listTransfers(user: AuthenticatedUser, query: TransferQueryDto) {
+    const scope: Prisma.StockTransferWhereInput = { companyId: user.companyId, deletedAt: null };
+    if (query.status) scope.status = query.status;
+    const whId = query.warehouseId;
+    if (query.direction === "incoming") scope.toWarehouseId = whId ?? undefined;
+    else if (query.direction === "outgoing") scope.fromWarehouseId = whId ?? undefined;
+    else if (whId) scope.OR = [{ fromWarehouseId: whId }, { toWarehouseId: whId }];
+    if (!user.hasGlobalAccess && user.warehouseIds.length > 0) {
+      scope.AND = [{ OR: [{ fromWarehouseId: { in: user.warehouseIds } }, { toWarehouseId: { in: user.warehouseIds } }] }];
+    }
+    const data = await this.prisma.stockTransfer.findMany({
+      where: scope,
+      orderBy: { createdAt: "desc" },
+      take: Math.min(query.take ?? 100, 300),
+      include: {
+        product: { select: { sku: true, name: true } },
+        fromWarehouse: { select: { code: true, name: true, branch: { select: { name: true } } } },
+        toWarehouse: { select: { code: true, name: true, branch: { select: { name: true } } } },
+        discrepancies: { where: { deletedAt: null }, select: { id: true, status: true, differenceQuantity: true } },
+      },
+    });
+    return { data };
+  }
+
+  async listDiscrepancies(user: AuthenticatedUser) {
+    const data = await this.prisma.transferDiscrepancy.findMany({
+      where: { companyId: user.companyId, deletedAt: null, status: "PENDING_REVIEW" },
+      orderBy: { createdAt: "desc" },
+      take: 200,
+      include: {
+        stockTransfer: {
+          select: {
+            transferNumber: true, quantity: true, transferDate: true,
+            product: { select: { sku: true, name: true } },
+            fromWarehouse: { select: { code: true, name: true } },
+            toWarehouse: { select: { code: true, name: true } },
+          },
+        },
+      },
+    });
+    return { data };
+  }
+
+  async resolveDiscrepancy(user: AuthenticatedUser, id: string, dto: ResolveDiscrepancyDto, context: RequestContext) {
+    if (!user.permissions.includes("inventory.manage")) throw new ForbiddenException("You cannot resolve transfer discrepancies.");
+    const disc = await this.prisma.transferDiscrepancy.findFirst({ where: { companyId: user.companyId, id, deletedAt: null }, include: { stockTransfer: true } });
+    if (!disc) throw new NotFoundException("Discrepancy was not found.");
+    if (disc.status !== "PENDING_REVIEW") throw new BadRequestException("This discrepancy has already been resolved.");
+    const diff = Number(disc.differenceQuantity); // >0 short, <0 over
+    const transfer = disc.stockTransfer;
+
+    if ((dto.resolution === "WRITE_OFF" || dto.resolution === "RECOVERED") && diff <= 0) {
+      throw new BadRequestException("Write-off and recovered only apply to a shortfall. Use 'source miscount' for an over-receipt.");
+    }
+    const [toWarehouse, product] = await Promise.all([this.getWarehouse(user.companyId, transfer.toWarehouseId), this.getProduct(user.companyId, transfer.productId)]);
+
+    const data = await withDbRetry(() => this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.transferDiscrepancy.updateMany({
+        where: { id, status: "PENDING_REVIEW" },
+        data: { status: "RESOLVED", resolution: dto.resolution, resolvedById: user.id, resolvedAt: new Date(), ...(dto.notes ? { notes: dto.notes } : {}) },
+      });
+      if (claimed.count === 0) throw new BadRequestException("This discrepancy has already been resolved.");
+      if (dto.resolution === "WRITE_OFF") {
+        // The shortfall is a real loss — record it as a WASTE movement against
+        // the source. Stock is already gone (consumed at approval); this is a
+        // ledger entry so the loss is attributed, not an InventoryItem change.
+        await tx.stockMovement.create({ data: {
+          companyId: user.companyId, branchId: transfer.branchId, productId: transfer.productId,
+          fromWarehouseId: transfer.fromWarehouseId, warehouseId: transfer.fromWarehouseId,
+          uomId: product.uomId, movementType: "WASTE", quantity: diff, unitCost: Number(transfer.unitCost ?? 0),
+          referenceType: "TransferDiscrepancy", referenceId: id, notes: `Transfer ${transfer.transferNumber} shortfall written off`, createdById: user.id,
+        } });
+      } else if (dto.resolution === "RECOVERED") {
+        // The missing units turned up — credit them to the destination too.
+        await this.creditTransferDestinationTx(tx, user, { toWarehouse, product, quantity: diff, unitCost: Number(transfer.unitCost ?? 0), transferId: transfer.id, transferNumber: `${transfer.transferNumber}-REC` });
+      }
+      // SOURCE_MISCOUNT: no stock effect — a separate stock count corrects the
+      // source; this just records the explanation.
+      return tx.transferDiscrepancy.findUniqueOrThrow({ where: { id } });
+    }), { label: "InventoryService.resolveDiscrepancy" });
+
+    await this.writeAudit(user, "APPROVE", "TransferDiscrepancy", id, `Resolved transfer discrepancy (${dto.resolution.toLowerCase().replace(/_/g, " ")})`, context, { branchId: transfer.branchId, warehouseId: transfer.toWarehouseId });
+    return { data };
+  }
+
+  // Shared destination credit: upsert the InventoryItem, open a lot, write the
+  // TRANSFER-in movement. Used by the instant path, receiveTransfer, and a
+  // RECOVERED discrepancy resolution.
+  private async creditTransferDestinationTx(
+    tx: Prisma.TransactionClient,
+    user: AuthenticatedUser,
+    p: { toWarehouse: { id: string; branchId: string; farmId: string | null; productionSiteId: string | null }; product: { id: string; sku: string; uomId: string }; quantity: number; unitCost: number; transferId: string; transferNumber: string }
+  ) {
+    const destination = await tx.inventoryItem.upsert({
+      where: { companyId_warehouseId_productId: { companyId: user.companyId, warehouseId: p.toWarehouse.id, productId: p.product.id } },
+      update: { quantityOnHand: { increment: p.quantity }, updatedById: user.id },
+      create: { companyId: user.companyId, branchId: p.toWarehouse.branchId, warehouseId: p.toWarehouse.id, farmId: p.toWarehouse.farmId, productionSiteId: p.toWarehouse.productionSiteId, productId: p.product.id, uomId: p.product.uomId, quantityOnHand: p.quantity, createdById: user.id },
+    });
+    await tx.stockBatch.create({ data: {
+      companyId: user.companyId, branchId: p.toWarehouse.branchId, farmId: p.toWarehouse.farmId, warehouseId: p.toWarehouse.id, productionSiteId: p.toWarehouse.productionSiteId,
+      productId: p.product.id, inventoryItemId: destination.id, uomId: p.product.uomId,
+      batchNumber: `${p.transferNumber}-${p.product.sku}`.slice(0, 60), quantityReceived: p.quantity, quantityRemaining: p.quantity, unitCost: p.unitCost, createdById: user.id,
+    } });
+    await tx.stockMovement.create({ data: {
+      companyId: user.companyId, branchId: p.toWarehouse.branchId, productId: p.product.id, inventoryItemId: destination.id,
+      toWarehouseId: p.toWarehouse.id, warehouseId: p.toWarehouse.id, productionSiteId: p.toWarehouse.productionSiteId,
+      uomId: p.product.uomId, movementType: "TRANSFER", quantity: p.quantity, unitCost: p.unitCost,
+      referenceType: "StockTransfer", referenceId: p.transferId, notes: `Transfer received ${p.transferNumber}`, createdById: user.id,
+    } });
   }
 
   private async findStockTransferByIdempotencyKey(companyId: string, idempotencyKey: string) {
