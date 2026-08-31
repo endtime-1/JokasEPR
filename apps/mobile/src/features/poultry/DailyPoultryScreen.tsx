@@ -10,7 +10,7 @@ import { DateField } from "../../components/DateField";
 import { SelectField, SelectOption } from "../../components/SelectField";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
-import { fetchFlockBatches, fetchFarms, fetchPoultryOptions, fetchWarehouses, fetchFeedProducts, fetchProducts, fetchDailyPoultryRecords, DailyPoultryRecordRow } from "../../api/endpoints";
+import { fetchFlockBatches, fetchFarms, fetchPoultryOptions, fetchWarehouses, fetchFeedProducts, fetchProducts, fetchDailyPoultryRecords, pensForBatch, DailyPoultryRecordRow } from "../../api/endpoints";
 import { apiFetch } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
 import { colors, font, radius, spacing } from "../../constants/theme";
@@ -84,8 +84,8 @@ export function DailyPoultryScreen() {
   const { data: opts } = useLookup("poultry-options", fetchPoultryOptions);
   const selectedBatch = useMemo(() => (rawBatches ?? []).find((b: any) => b.id === form.flockBatchId), [rawBatches, form.flockBatchId]);
   const pens: SelectOption[] = useMemo(
-    () => (opts?.data.pens ?? []).filter((p) => p.farmId === (selectedBatch as any)?.farmId).map((p) => ({ label: `Pen ${p.penNumber} — ${p.name}`, value: p.id })),
-    [opts, selectedBatch]
+    () => pensForBatch(opts?.data, form.flockBatchId).map((p) => ({ label: `Pen ${p.penNumber} — ${p.name}`, value: p.id })),
+    [opts, form.flockBatchId]
   );
 
   // Optional — matching the dedicated Feed Consumption / Egg Collection

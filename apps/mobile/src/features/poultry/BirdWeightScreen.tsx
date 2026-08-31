@@ -10,7 +10,7 @@ import { DateField } from "../../components/DateField";
 import { SelectField, SelectOption } from "../../components/SelectField";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
-import { fetchPoultryOptions } from "../../api/endpoints";
+import { fetchPoultryOptions, pensForBatch } from "../../api/endpoints";
 import { colors, font, radius, spacing } from "../../constants/theme";
 
 // Approximate target weights (kg) by bird type and age (weeks)
@@ -60,10 +60,8 @@ export function BirdWeightScreen() {
   );
 
   const penOptions: SelectOption[] = useMemo(
-    () => (opts?.pens ?? [])
-      .filter((p) => !selectedBatch || p.farmId === selectedBatch.farmId)
-      .map((p) => ({ label: `${p.name ?? `Pen ${p.penNumber}`} (${p.code})`, value: p.id })),
-    [opts, selectedBatch]
+    () => pensForBatch(opts, flockBatchId).map((p) => ({ label: `${p.name ?? `Pen ${p.penNumber}`} (${p.code})`, value: p.id })),
+    [opts, flockBatchId]
   );
 
   const avgNum = parseFloat(avgWeightKg) || 0;

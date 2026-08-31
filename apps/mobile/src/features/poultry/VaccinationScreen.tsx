@@ -10,7 +10,7 @@ import { DateField } from "../../components/DateField";
 import { SelectField, SelectOption } from "../../components/SelectField";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
-import { fetchFlockBatches, fetchFarms, fetchWarehouses, fetchProducts, fetchPoultryOptions } from "../../api/endpoints";
+import { fetchFlockBatches, fetchFarms, fetchWarehouses, fetchProducts, fetchPoultryOptions, pensForBatch } from "../../api/endpoints";
 import { useAuth } from "../../auth/AuthContext";
 import { colors, font, spacing } from "../../constants/theme";
 
@@ -62,8 +62,8 @@ export function VaccinationScreen() {
   const { data: opts } = useLookup("poultry-options", fetchPoultryOptions);
   const selectedBatch = useMemo(() => (rawBatches ?? []).find((b: any) => b.id === batchId), [rawBatches, batchId]);
   const pens: SelectOption[] = useMemo(
-    () => (opts?.data.pens ?? []).filter((p) => p.farmId === (selectedBatch as any)?.farmId).map((p) => ({ label: `Pen ${p.penNumber} — ${p.name}`, value: p.id })),
-    [opts, selectedBatch]
+    () => pensForBatch(opts?.data, batchId).map((p) => ({ label: `Pen ${p.penNumber} — ${p.name}`, value: p.id })),
+    [opts, batchId]
   );
 
   const { data: rawWarehouses } = useLookup("warehouses", async () => { const r = await fetchWarehouses(); return (r.data as any[]) ?? []; });

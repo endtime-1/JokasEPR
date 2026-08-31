@@ -251,14 +251,40 @@ export type PoultryOptions = {
     farms:   { id: string; code: string; name: string; branchId: string }[];
     houses:  { id: string; code: string; name: string; farmId: string }[];
     pens:    { id: string; code: string; name: string; penNumber: number; poultryHouseId: string; farmId: string; capacity: number | null }[];
-    batches: { id: string; code: string; name: string; farmId: string; birdType: string }[];
+    batches: { id: string; code: string; name: string; farmId: string; birdType: string; poultryHouseId?: string | null }[];
     feedWarehouses?: { id: string; code: string; name: string; farmId: string }[];
     feedProducts?:   { id: string; sku: string; name: string }[];
     eggWarehouses?:  { id: string; code: string; name: string; farmId: string }[];
+    // Batch ↔ house ↔ pen placement (BatchPenAllocation) — narrows the House
+    // and Pen pickers on record screens to where a batch's birds actually are.
+    allocations?:    { flockBatchId: string; poultryHouseId: string; penId: string }[];
   };
 };
 export const fetchPoultryOptions = () =>
   apiFetch<PoultryOptions>("/poultry/options");
+
+type PoultryOptData = PoultryOptions["data"];
+
+// A batch with no allocations yet (freshly created, or legacy data) falls back
+// to "all", so a record screen never locks the user out.
+export function housesForBatch(opts: PoultryOptData | null | undefined, batchId: string) {
+  const houses = opts?.houses ?? [];
+  if (!opts || !batchId) return houses;
+  const houseIds = new Set((opts.allocations ?? []).filter((a) => a.flockBatchId === batchId).map((a) => a.poultryHouseId));
+  const batch = opts.batches.find((b) => b.id === batchId);
+  if (batch?.poultryHouseId) houseIds.add(batch.poultryHouseId);
+  if (houseIds.size === 0) return houses;
+  return houses.filter((h) => houseIds.has(h.id));
+}
+export function pensForBatch(opts: PoultryOptData | null | undefined, batchId: string, houseId?: string) {
+  const all = opts?.pens ?? [];
+  if (!batchId && !houseId) return [];
+  const scoped = houseId ? all.filter((p) => p.poultryHouseId === houseId) : all;
+  if (!opts || !batchId) return scoped;
+  const penIds = new Set((opts.allocations ?? []).filter((a) => a.flockBatchId === batchId).map((a) => a.penId));
+  if (penIds.size === 0) return scoped;
+  return scoped.filter((p) => penIds.has(p.id));
+}
 
 export const fetchFeedStock = (farmId: string) =>
   apiFetch<ApiEnvelope<{ lines: { product: string | null; onHandKg: number; receivedKg: number; consumedKg: number; varianceKg: number }[]; totals: Record<string, number> }>>(

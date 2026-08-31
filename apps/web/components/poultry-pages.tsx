@@ -44,6 +44,8 @@ type PenOption = {
   capacity?: number;
 };
 
+type BatchAllocation = { flockBatchId: string; poultryHouseId: string; penId: string };
+
 type PoultryOptions = {
   farms: Option[];
   houses: Option[];
@@ -54,11 +56,40 @@ type PoultryOptions = {
   feedWarehouses: Option[];
   feedProducts: Option[];
   eggWarehouses: Option[];
+  allocations: BatchAllocation[];
 };
 
 const EMPTY_POULTRY_OPTIONS: PoultryOptions = {
-  farms: [], houses: [], pens: [], batches: [], warehouses: [], products: [], feedWarehouses: [], feedProducts: [], eggWarehouses: []
+  farms: [], houses: [], pens: [], batches: [], warehouses: [], products: [], feedWarehouses: [], feedProducts: [], eggWarehouses: [], allocations: []
 };
+
+// A batch's birds live in specific pens/houses (BatchPenAllocation). These
+// narrow the House/Pen pickers to just those — and the reverse, House → the
+// batches kept in it. A batch with no allocations yet (freshly created, or
+// legacy data) falls back to "all", so nothing gets locked out.
+function housesForBatch(options: PoultryOptions, batchId: string): Option[] {
+  if (!batchId) return options.houses;
+  const houseIds = new Set(options.allocations.filter((a) => a.flockBatchId === batchId).map((a) => a.poultryHouseId));
+  const batch = options.batches.find((b) => b.id === batchId);
+  if (batch?.poultryHouseId) houseIds.add(batch.poultryHouseId);
+  if (houseIds.size === 0) return options.houses;
+  return options.houses.filter((h) => houseIds.has(h.id));
+}
+function pensForBatch(options: PoultryOptions, batchId: string, houseId?: string): PenOption[] {
+  if (!batchId && !houseId) return [];
+  const scoped = houseId ? options.pens.filter((p) => p.poultryHouseId === houseId) : options.pens;
+  if (!batchId) return scoped;
+  const penIds = new Set(options.allocations.filter((a) => a.flockBatchId === batchId).map((a) => a.penId));
+  if (penIds.size === 0) return scoped;
+  return scoped.filter((p) => penIds.has(p.id));
+}
+function batchesForHouse(options: PoultryOptions, houseId: string) {
+  if (!houseId) return options.batches;
+  const batchIds = new Set(options.allocations.filter((a) => a.poultryHouseId === houseId).map((a) => a.flockBatchId));
+  for (const b of options.batches) if (b.poultryHouseId === houseId) batchIds.add(b.id);
+  if (batchIds.size === 0) return options.batches;
+  return options.batches.filter((b) => batchIds.has(b.id));
+}
 
 type BatchRow = {
   id: string;
@@ -1123,14 +1154,12 @@ function BatchRecordSection({ batchId, type, label, cols, endpoint, options }: {
   // records page's own House/Pen filter.
   const [houseFilter, setHouseFilter] = useState("");
   const [penFilter, setPenFilter] = useState("");
-  const housesWithPens = useMemo(() => {
-    const houseIds = new Set(options.pens.map((p) => p.poultryHouseId));
-    return options.houses.filter((h) => houseIds.has(h.id));
-  }, [options.houses, options.pens]);
+  // Only the houses/pens this batch's birds are actually in (BatchPenAllocation).
+  const housesWithPens = useMemo(() => housesForBatch(options, batchId), [options, batchId]);
   const pensInHouse = useMemo(() => {
     if (!houseFilter) return [];
-    return options.pens.filter((p) => p.poultryHouseId === houseFilter);
-  }, [options.pens, houseFilter]);
+    return pensForBatch(options, batchId, houseFilter);
+  }, [options, batchId, houseFilter]);
 
   // (2026-08-27) Same out-of-order-response race as the standalone records
   // page's load(): changing houseFilter/penFilter quickly can let an older
@@ -1821,17 +1850,26 @@ function GenericRecordForm({ options, optionsLoading = false, form, setForm, sub
     setForm({ ...form, [pieceField]: v ? String(n * EGGS_PER_CRATE) : "" });
   }
 
-  // Houses that actually have at least one pen
+  // Batch chosen → just its houses (BatchPenAllocation); otherwise every house
+  // that has at least one pen.
   const housesWithPens = useMemo(() => {
+    if (form.flockBatchId) return housesForBatch(options, form.flockBatchId);
     const houseIds = new Set(options.pens.map((p) => p.poultryHouseId));
     return options.houses.filter((h) => houseIds.has(h.id));
-  }, [options.houses, options.pens]);
+  }, [options, form.flockBatchId]);
 
-  // Pens filtered to the selected house — empty until a house is chosen
+  // The reverse: a house chosen with no batch yet narrows the batch list.
+  const batchChoices = useMemo(
+    () => (form.poultryHouseId && !form.flockBatchId ? batchesForHouse(options, form.poultryHouseId) : options.batches),
+    [options, form.poultryHouseId, form.flockBatchId]
+  );
+
+  // Pens filtered to the selected house — and, if a batch is chosen, to that
+  // batch's allocated pens. Empty until a house is chosen.
   const pensInHouse = useMemo(() => {
     if (!form.poultryHouseId) return [];
-    return options.pens.filter((p) => p.poultryHouseId === form.poultryHouseId);
-  }, [options.pens, form.poultryHouseId]);
+    return pensForBatch(options, form.flockBatchId, form.poultryHouseId);
+  }, [options, form.flockBatchId, form.poultryHouseId]);
 
   return (
     <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-4">
@@ -1850,7 +1888,7 @@ function GenericRecordForm({ options, optionsLoading = false, form, setForm, sub
               ? <option value="">— No batches found — create one first —</option>
               : <>
                   <option value="">— select a batch —</option>
-                  {options.batches.map((b) => <option key={b.id} value={b.id}>{b.code} — {b.name}</option>)}
+                  {batchChoices.map((b) => <option key={b.id} value={b.id}>{b.code} — {b.name}</option>)}
                 </>
           }
         </select>

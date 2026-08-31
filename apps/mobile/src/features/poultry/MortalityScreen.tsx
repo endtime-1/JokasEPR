@@ -10,7 +10,7 @@ import { DateField } from "../../components/DateField";
 import { SelectField, SelectOption } from "../../components/SelectField";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
-import { fetchFlockBatches, fetchFarms, fetchPoultryOptions } from "../../api/endpoints";
+import { fetchFlockBatches, fetchFarms, fetchPoultryOptions, pensForBatch } from "../../api/endpoints";
 import { useAuth } from "../../auth/AuthContext";
 import { colors, font, spacing } from "../../constants/theme";
 
@@ -55,9 +55,11 @@ export function MortalityScreen() {
   const [penId, setPenId] = useState("");
   const { data: opts } = useLookup("poultry-options", fetchPoultryOptions);
   const selectedBatch = useMemo(() => (rawBatches ?? []).find((b: any) => b.id === batchId), [rawBatches, batchId]);
+  // Only the pens this batch's birds are allocated to (falls back to all the
+  // farm's pens if the batch has no allocations recorded yet).
   const pens: SelectOption[] = useMemo(
-    () => (opts?.data.pens ?? []).filter((p) => p.farmId === (selectedBatch as any)?.farmId).map((p) => ({ label: `Pen ${p.penNumber} — ${p.name}`, value: p.id })),
-    [opts, selectedBatch]
+    () => pensForBatch(opts?.data, batchId).map((p) => ({ label: `Pen ${p.penNumber} — ${p.name}`, value: p.id })),
+    [opts, batchId]
   );
 
   function validate() {

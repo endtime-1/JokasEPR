@@ -186,11 +186,11 @@ export class PoultryService {
     const cacheKey = `poultry:opts:${user.companyId}:${user.hasGlobalAccess ? "g" : user.id}`;
     const cached = this.lookupCache.get<object>(cacheKey);
     if (cached) return cached;
-    const [farms, houses, pens, batches, warehouses, products, feedWarehouses, feedProducts, eggWarehouses] = await Promise.all([
+    const [farms, houses, pens, batches, warehouses, products, feedWarehouses, feedProducts, eggWarehouses, allocations] = await Promise.all([
       this.prisma.farm.findMany({ where: this.farmWhere(user), select: { id: true, code: true, name: true, branchId: true }, orderBy: { name: "asc" } }),
       this.prisma.poultryHouse.findMany({ where: this.houseWhere(user), select: { id: true, code: true, name: true, farmId: true }, orderBy: { name: "asc" } }),
       this.prisma.pen.findMany({ where: { companyId: user.companyId, deletedAt: null, isActive: true }, select: { id: true, code: true, name: true, penNumber: true, poultryHouseId: true, farmId: true, capacity: true }, orderBy: [{ poultryHouseId: "asc" }, { penNumber: "asc" }] }),
-      this.prisma.flockBatch.findMany({ where: this.batchWhere(user), select: { id: true, code: true, name: true, farmId: true, birdType: true }, orderBy: { createdAt: "desc" } }),
+      this.prisma.flockBatch.findMany({ where: this.batchWhere(user), select: { id: true, code: true, name: true, farmId: true, birdType: true, poultryHouseId: true }, orderBy: { createdAt: "desc" } }),
       this.prisma.warehouse.findMany({ where: { companyId: user.companyId, deletedAt: null, status: "ACTIVE" }, select: { id: true, code: true, name: true }, orderBy: { name: "asc" } }),
       // (readiness review 2026-08-24) Was unfiltered by type — this feeds the
       // egg-stock product picker (createEggs's eggProductId/secondsProductId),
@@ -206,9 +206,24 @@ export class PoultryService {
       // Egg-store warehouses (farm-scoped) — the default destination the egg
       // collection form pre-selects so a day's eggs land in the farm's egg
       // store, ready to be dispatched onward via a staged stock transfer.
-      this.prisma.warehouse.findMany({ where: { companyId: user.companyId, deletedAt: null, status: "ACTIVE", type: "EGG_STORE", ...(user.hasGlobalAccess ? {} : { farmId: { in: user.farmIds } }) }, select: { id: true, code: true, name: true, farmId: true }, orderBy: { name: "asc" } })
+      this.prisma.warehouse.findMany({ where: { companyId: user.companyId, deletedAt: null, status: "ACTIVE", type: "EGG_STORE", ...(user.hasGlobalAccess ? {} : { farmId: { in: user.farmIds } }) }, select: { id: true, code: true, name: true, farmId: true }, orderBy: { name: "asc" } }),
+      // Batch ↔ house ↔ pen placement map — lets the record screens narrow the
+      // House and Pen pickers to where a batch's birds actually are (and the
+      // reverse: House → the batches kept in it). Scoped to open batches; a
+      // closed/sold/culled batch takes no more records. resolvePenHouseId()
+      // already rejects a record for a pen not allocated to the batch — this
+      // just keeps the UI from offering the wrong one in the first place.
+      this.prisma.batchPenAllocation.findMany({
+        where: {
+          companyId: user.companyId,
+          birdCount: { gt: 0 },
+          flockBatch: { deletedAt: null, status: { notIn: ["CLOSED", "SOLD", "CULLED"] } },
+          ...(user.hasGlobalAccess ? {} : { farmId: { in: user.farmIds } }),
+        },
+        select: { flockBatchId: true, poultryHouseId: true, penId: true },
+      })
     ]);
-    const result = { data: { farms, houses, pens, batches, warehouses, products, feedWarehouses, feedProducts, eggWarehouses } };
+    const result = { data: { farms, houses, pens, batches, warehouses, products, feedWarehouses, feedProducts, eggWarehouses, allocations } };
     // Only cache when batches exist — an empty-batches response can be transient (DB
     // warmup, first request during cold-start) and caching it would serve stale empty
     // data for the full 45-second TTL, causing "No flock batches found" to flash.
