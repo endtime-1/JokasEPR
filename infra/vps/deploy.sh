@@ -78,8 +78,18 @@ log "Apply database migrations"
 pnpm --filter @jokas/db exec prisma migrate deploy
 
 # ─── (Re)start under PM2 ──────────────────────────────────────────────────
-log "Reload PM2 processes"
-pm2 startOrReload infra/vps/ecosystem.config.js --update-env
+# Hard delete + start, not startOrReload: after a VPS reboot, PM2's
+# systemd-resurrected process list can lose the real PIDs, so `reload`
+# silently "restarts" a ghost while the real process keeps running stale
+# code/env. delete+start guarantees the new build actually takes over.
+# Also SIGKILL any orphaned app process the delete missed.
+log "Restart PM2 processes (clean)"
+pm2 delete jokas-api jokas-web jokas-storefront 2>/dev/null || true
+pkill -f "apps/api/dist/main.js" 2>/dev/null || true
+pkill -f ".next/standalone/apps/web/server.js" 2>/dev/null || true
+pkill -f ".next/standalone/apps/storefront/server.js" 2>/dev/null || true
+sleep 1
+pm2 start infra/vps/ecosystem.config.js --update-env
 pm2 save
 
 log "Done. Status:"
