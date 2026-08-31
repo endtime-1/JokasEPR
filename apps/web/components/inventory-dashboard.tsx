@@ -63,6 +63,9 @@ type DashboardData = {
   lowStockCount: number;
   expiryAlertCount: number;
   pendingApprovals: number;
+  transfersPendingApproval?: number;
+  transfersInTransit?: number;
+  transferDiscrepancies?: number;
   movementsToday: number;
   recentMovements: MovementRow[];
   lowStock: LowStockRow[];
@@ -149,7 +152,10 @@ function KpiCard({
 }
 
 function AlertBanners({ data }: { data: DashboardData }) {
-  const hasAlerts = data.lowStockCount > 0 || data.expiryAlertCount > 0 || data.pendingApprovals > 0;
+  const transfersPending = data.transfersPendingApproval ?? 0;
+  const transfersInTransit = data.transfersInTransit ?? 0;
+  const transferDiscrepancies = data.transferDiscrepancies ?? 0;
+  const hasAlerts = data.lowStockCount > 0 || data.expiryAlertCount > 0 || data.pendingApprovals > 0 || transfersPending > 0 || transfersInTransit > 0 || transferDiscrepancies > 0;
   if (!hasAlerts) return null;
   return (
     <section className="mb-6 overflow-hidden rounded-2xl border border-amber-200 border-l-[3px] border-l-amber-500 bg-white shadow-card">
@@ -170,6 +176,45 @@ function AlertBanners({ data }: { data: DashboardData }) {
             </div>
             <Link href="/inventory/adjustments" className="flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 transition hover:bg-amber-100">
               Review <ArrowRight className="h-3 w-3" />
+            </Link>
+          </div>
+        )}
+        {transferDiscrepancies > 0 && (
+          <div className="flex items-center justify-between px-4 py-2.5">
+            <div className="flex items-center gap-2.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+              <span className="text-sm text-ink/70">
+                <span className="font-bold text-ink">{transferDiscrepancies}</span> transfer discrepanc{transferDiscrepancies > 1 ? "ies" : "y"} awaiting a manager's review
+              </span>
+            </div>
+            <Link href="/inventory/transfers" className="flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 transition hover:bg-amber-100">
+              Resolve <ArrowRight className="h-3 w-3" />
+            </Link>
+          </div>
+        )}
+        {transfersPending > 0 && (
+          <div className="flex items-center justify-between px-4 py-2.5">
+            <div className="flex items-center gap-2.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+              <span className="text-sm text-ink/70">
+                <span className="font-bold text-ink">{transfersPending}</span> stock transfer{transfersPending > 1 ? "s" : ""} awaiting approval
+              </span>
+            </div>
+            <Link href="/inventory/transfers" className="flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 transition hover:bg-amber-100">
+              Approve <ArrowRight className="h-3 w-3" />
+            </Link>
+          </div>
+        )}
+        {transfersInTransit > 0 && (
+          <div className="flex items-center justify-between px-4 py-2.5">
+            <div className="flex items-center gap-2.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-sky-500" />
+              <span className="text-sm text-ink/70">
+                <span className="font-bold text-ink">{transfersInTransit}</span> transfer{transfersInTransit > 1 ? "s" : ""} in transit — awaiting the receiving warehouse's confirmation
+              </span>
+            </div>
+            <Link href="/inventory/transfers" className="flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 transition hover:bg-amber-100">
+              Receive <ArrowRight className="h-3 w-3" />
             </Link>
           </div>
         )}

@@ -359,7 +359,160 @@ export function StockOperationPage({ mode }: { mode: "stock-in" | "stock-out" | 
         <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:col-span-4">{submitting ? "Submitting…" : `Submit ${title.toLowerCase()}`}</button>
         {submitError && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 md:col-span-4">{submitError}</p>}
       </form>
+      {mode === "transfers" && <StagedTransfersPanel />}
     </InventoryShell>
+  );
+}
+
+const TRANSFER_STATUS_STYLES: Record<string, string> = {
+  DRAFT: "bg-slate-100 text-slate-700",
+  PENDING_APPROVAL: "bg-amber-100 text-amber-800",
+  IN_TRANSIT: "bg-sky-100 text-sky-800",
+  COMPLETED: "bg-emerald-100 text-emerald-800",
+  REJECTED: "bg-red-100 text-red-700",
+  CANCELLED: "bg-slate-100 text-slate-500",
+};
+
+function warehouseLabel(w?: { code?: string; name?: string; branch?: { name?: string } | null }) {
+  if (!w) return "-";
+  const base = w.code ? `${w.name} (${w.code})` : (w.name ?? "-");
+  return w.branch?.name ? `${base} · ${w.branch.name}` : base;
+}
+
+// Staged stock transfers: request → approve (stock leaves source, held in
+// transit) → receive (destination confirms the actual quantity; a mismatch
+// opens a discrepancy for a manager to review). Actions call the API and let
+// it enforce permissions — a 403 surfaces as an inline error.
+function StagedTransfersPanel() {
+  const [transfers, setTransfers] = useState<Record<string, any>[]>([]);
+  const [discrepancies, setDiscrepancies] = useState<Record<string, any>[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [actionError, setActionError] = useState("");
+  const [busyId, setBusyId] = useState("");
+
+  function load() {
+    setLoadError("");
+    Promise.all([
+      apiFetch<ApiEnvelope<Record<string, any>[]>>("/inventory/transfers?take=100"),
+      apiFetch<ApiEnvelope<Record<string, any>[]>>("/inventory/transfer-discrepancies"),
+    ])
+      .then(([t, d]) => { setTransfers(t.data ?? []); setDiscrepancies(d.data ?? []); })
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load transfers."))
+      .finally(() => setLoading(false));
+  }
+  useEffect(() => { load(); }, []);
+  useApiRecovery(transfers.length === 0, load);
+
+  async function act(id: string, run: () => Promise<unknown>) {
+    setBusyId(id);
+    setActionError("");
+    try {
+      await run();
+      invalidateCache("/inventory/movements");
+      load();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Action failed.");
+    } finally {
+      setBusyId("");
+    }
+  }
+  const approve = (row: Record<string, any>) => act(row.id, () => apiFetch(`/inventory/transfers/${row.id}/approve`, { method: "PATCH", body: JSON.stringify({}) }));
+  const cancel = (row: Record<string, any>) => act(row.id, () => apiFetch(`/inventory/transfers/${row.id}/cancel`, { method: "PATCH", body: JSON.stringify({}) }));
+  const reject = (row: Record<string, any>) => {
+    const rejectionReason = window.prompt("Reason for rejecting this transfer?");
+    if (!rejectionReason) return;
+    return act(row.id, () => apiFetch(`/inventory/transfers/${row.id}/reject`, { method: "PATCH", body: JSON.stringify({ rejectionReason }) }));
+  };
+  const receive = (row: Record<string, any>) => {
+    const dispatched = Number(row.quantity ?? 0);
+    const answer = window.prompt(`Quantity actually received (dispatched: ${dispatched})`, String(dispatched));
+    if (answer === null) return;
+    const receivedQuantity = Number(answer);
+    if (!Number.isFinite(receivedQuantity) || receivedQuantity < 0) { setActionError("Enter a valid received quantity."); return; }
+    return act(row.id, () => apiFetch(`/inventory/transfers/${row.id}/receive`, { method: "PATCH", body: JSON.stringify({ receivedQuantity }) }));
+  };
+  const resolve = (row: Record<string, any>, resolution: string) => {
+    if (!resolution) return;
+    return act(row.id, () => apiFetch(`/inventory/transfer-discrepancies/${row.id}/resolve`, { method: "PATCH", body: JSON.stringify({ resolution }) }));
+  };
+
+  return (
+    <div className="mt-6 space-y-6">
+      {loadError && (
+        <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <span>{loadError}</span>
+          <button type="button" className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold hover:bg-red-50" onClick={load}>Retry</button>
+        </div>
+      )}
+      {actionError && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{actionError}</p>}
+
+      {discrepancies.length > 0 && (
+        <div>
+          <h3 className="mb-2 text-sm font-semibold text-ink">Discrepancies needing review ({discrepancies.length})</h3>
+          <DataTable
+            rows={discrepancies}
+            empty="No discrepancies"
+            columns={[
+              { key: "stockTransfer", label: "Transfer", render: (row: Record<string, any>) => row.stockTransfer?.transferNumber ?? "-" },
+              { key: "product", label: "Product", render: (row: Record<string, any>) => row.stockTransfer?.product ? `${row.stockTransfer.product.sku} — ${row.stockTransfer.product.name}` : "-" },
+              { key: "route", label: "Route", render: (row: Record<string, any>) => `${warehouseLabel(row.stockTransfer?.fromWarehouse)} → ${warehouseLabel(row.stockTransfer?.toWarehouse)}` },
+              { key: "expectedQuantity", label: "Expected", render: (row: Record<string, any>) => String(row.expectedQuantity ?? "-") },
+              { key: "receivedQuantity", label: "Received", render: (row: Record<string, any>) => String(row.receivedQuantity ?? "-") },
+              { key: "differenceQuantity", label: "Difference", render: (row: Record<string, any>) => { const d = Number(row.differenceQuantity); return <span className={d > 0 ? "font-semibold text-red-600" : "font-semibold text-amber-600"}>{d > 0 ? `${d} short` : `${Math.abs(d)} over`}</span>; } },
+              { key: "actions", label: "Resolve as", render: (row: Record<string, any>) => (
+                <select className={inputClass} defaultValue="" disabled={busyId === row.id} onChange={(e) => { resolve(row, e.target.value); e.target.value = ""; }}>
+                  <option value="" disabled>Choose…</option>
+                  <option value="WRITE_OFF">Write off the loss</option>
+                  <option value="RECOVERED">Units recovered</option>
+                  <option value="SOURCE_MISCOUNT">Source miscount</option>
+                </select>
+              ) },
+            ]}
+          />
+        </div>
+      )}
+
+      <div>
+        <h3 className="mb-2 text-sm font-semibold text-ink">Transfers</h3>
+        <DataTable
+          rows={transfers}
+          loading={loading}
+          empty="No transfers yet"
+          columns={[
+            { key: "createdAt", label: "Date", render: (row: Record<string, any>) => row.createdAt ? new Date(row.createdAt).toLocaleDateString() : "-" },
+            { key: "transferNumber", label: "Ref", render: (row: Record<string, any>) => row.transferNumber ?? "-" },
+            { key: "product", label: "Product", render: (row: Record<string, any>) => row.product ? <span><span className="font-semibold">{row.product.sku}</span><span className="text-ink/60"> — {row.product.name}</span></span> : "-" },
+            { key: "quantity", label: "Qty", render: (row: Record<string, any>) => formatQtyForProduct(row.quantity, row.product) },
+            { key: "route", label: "Route", render: (row: Record<string, any>) => `${warehouseLabel(row.fromWarehouse)} → ${warehouseLabel(row.toWarehouse)}` },
+            { key: "status", label: "Status", render: (row: Record<string, any>) => {
+              const s = String(row.status ?? "");
+              const disc = (row.discrepancies ?? []).some((d: Record<string, any>) => d.status === "PENDING_REVIEW");
+              return (
+                <span className="inline-flex items-center gap-1">
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${TRANSFER_STATUS_STYLES[s] ?? "bg-slate-100 text-slate-700"}`}>{s.replace(/_/g, " ").toLowerCase()}</span>
+                  {disc && <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">discrepancy</span>}
+                </span>
+              );
+            } },
+            { key: "actions", label: "Actions", render: (row: Record<string, any>) => {
+              const s = String(row.status ?? "");
+              const busy = busyId === row.id;
+              const btn = "rounded-md border px-2 py-1 text-xs font-semibold disabled:opacity-50";
+              if (s === "PENDING_APPROVAL") return (
+                <span className="flex gap-1">
+                  <button type="button" disabled={busy} className={`${btn} border-emerald-300 text-emerald-700 hover:bg-emerald-50`} onClick={() => approve(row)}>Approve</button>
+                  <button type="button" disabled={busy} className={`${btn} border-red-300 text-red-700 hover:bg-red-50`} onClick={() => reject(row)}>Reject</button>
+                  <button type="button" disabled={busy} className={`${btn} border-slate-300 text-slate-600 hover:bg-slate-50`} onClick={() => cancel(row)}>Cancel</button>
+                </span>
+              );
+              if (s === "IN_TRANSIT") return <button type="button" disabled={busy} className={`${btn} border-sky-300 text-sky-700 hover:bg-sky-50`} onClick={() => receive(row)}>Receive</button>;
+              return <span className="text-ink/40">—</span>;
+            } },
+          ]}
+        />
+      </div>
+    </div>
   );
 }
 

@@ -46,7 +46,7 @@ export class InventoryService {
   async dashboard(user: AuthenticatedUser) {
     const sevenDaysAgo = new Date(Date.now() - 7 * 86400000);
     const todayStart = startOfTodayAccra(); // (M20) was server-local midnight
-    const [skuGroups, itemCount, totalQty, movements, lowStock, expiryAlerts, valuation, pendingApprovals, weekMovements, adjustmentStats, movementsToday] = await Promise.all([
+    const [skuGroups, itemCount, totalQty, movements, lowStock, expiryAlerts, valuation, pendingApprovals, weekMovements, adjustmentStats, movementsToday, transfersPendingApproval, transfersInTransit, transferDiscrepancies] = await Promise.all([
       this.prisma.inventoryItem.groupBy({ by: ["productId"], where: this.itemWhere(user, {}) }),
       this.prisma.inventoryItem.count({ where: this.itemWhere(user, {}) }),
       this.prisma.inventoryItem.aggregate({ where: this.itemWhere(user, {}), _sum: { quantityOnHand: true } }),
@@ -57,7 +57,10 @@ export class InventoryService {
       this.prisma.stockApproval.count({ where: { companyId: user.companyId, status: "PENDING_APPROVAL", deletedAt: null } }),
       this.prisma.stockMovement.findMany({ where: { ...this.movementWhere(user, {}), movementDate: { gte: sevenDaysAgo } }, select: { movementDate: true, movementType: true }, orderBy: { movementDate: "asc" } }),
       this.prisma.stockAdjustment.groupBy({ by: ["status"], where: { companyId: user.companyId, deletedAt: null }, _count: { status: true } }),
-      this.prisma.stockMovement.count({ where: { ...this.movementWhere(user, {}), movementDate: { gte: todayStart } } })
+      this.prisma.stockMovement.count({ where: { ...this.movementWhere(user, {}), movementDate: { gte: todayStart } } }),
+      this.prisma.stockTransfer.count({ where: { companyId: user.companyId, deletedAt: null, status: "PENDING_APPROVAL" } }),
+      this.prisma.stockTransfer.count({ where: { companyId: user.companyId, deletedAt: null, status: "IN_TRANSIT" } }),
+      this.prisma.transferDiscrepancy.count({ where: { companyId: user.companyId, deletedAt: null, status: "PENDING_REVIEW" } })
     ]);
     return {
       data: {
@@ -68,6 +71,9 @@ export class InventoryService {
         lowStockCount: lowStock.length,
         expiryAlertCount: expiryAlerts.length,
         pendingApprovals,
+        transfersPendingApproval,
+        transfersInTransit,
+        transferDiscrepancies,
         movementsToday,
         recentMovements: movements,
         lowStock: lowStock.slice(0, 8),
