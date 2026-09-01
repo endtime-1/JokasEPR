@@ -152,6 +152,9 @@ export class UserAccessSettingsDto {
   // operation turns this off so one person can run production end to end.
   // Optional for back-compat with clients that predate it; defaults to true.
   @IsOptional() @IsBoolean() requireSeparateProductionApprover?: boolean;
+  // Same idea for procurement: the person who raised a purchase request /
+  // purchase order can't also approve it. Defaults to true.
+  @IsOptional() @IsBoolean() requireSeparateProcurementApprover?: boolean;
 }
 
 export class DomainListSettingsDto {

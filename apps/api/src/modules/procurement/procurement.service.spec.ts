@@ -21,6 +21,7 @@ const mockPrisma = {
   supplier: { findFirst: jest.fn().mockResolvedValue({ id: "sup-1", companyId: "company-1", name: "Acme Supplies", status: "ACTIVE" }), update: jest.fn().mockResolvedValue({}) },
   expenseCategory: { findFirst: jest.fn().mockResolvedValue({ id: "cat-procurement" }), create: jest.fn() },
   expense: { create: jest.fn().mockResolvedValue({}) },
+  systemSetting: { findFirst: jest.fn().mockResolvedValue(null) },
   $transaction: jest.fn().mockImplementation((cb: (tx: unknown) => Promise<unknown>) => cb(mockPrisma))
 };
 
@@ -580,6 +581,17 @@ describe("ProcurementService", () => {
         service.approvePurchaseRequest(makeUser({ id: "user-1" }), "pr-1", {} as never, {})
       ).rejects.toThrow(ForbiddenException);
       expect(mockPrisma.purchaseRequest.updateMany).not.toHaveBeenCalled();
+    });
+
+    it("lets the creator approve when 'require a separate procurement approver' is turned off", async () => {
+      mockPrisma.systemSetting.findFirst.mockResolvedValue({ value: { requireSeparateProcurementApprover: false } });
+      mockPrisma.purchaseOrder.findFirst.mockResolvedValue({ id: "po-1", companyId: "company-1", status: "PENDING_APPROVAL", createdById: "user-1" });
+      mockPrisma.purchaseOrder.updateMany.mockResolvedValue({ count: 1 });
+      mockPrisma.purchaseOrder.findUniqueOrThrow.mockResolvedValue({ id: "po-1", status: "APPROVED" });
+
+      await expect(
+        service.approvePurchaseOrder(makeUser({ id: "user-1" }), "po-1", {} as never, {})
+      ).resolves.toBeDefined();
     });
   });
 

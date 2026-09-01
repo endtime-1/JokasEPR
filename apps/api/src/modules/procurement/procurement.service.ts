@@ -348,7 +348,11 @@ export class ProcurementService {
     const row = await this.prisma.purchaseRequest.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
     if (!row) throw new NotFoundException("Purchase Request not found");
     if (row.status !== "SUBMITTED") throw new BadRequestException("Only SUBMITTED requests can be approved");
-    if (row.createdById === user.id) throw new ForbiddenException("You cannot approve a purchase request you created yourself.");
+    if (row.createdById === user.id && (await this.requiresSeparateApprover(user.companyId))) {
+      throw new ForbiddenException(
+        "You cannot approve a purchase request you created yourself. If one person runs procurement here, an admin can turn off \"require a separate procurement approver\" under Settings → User Access."
+      );
+    }
 
     const updated = await this.prisma.$transaction(async (tx) => {
       const advanced = await tx.purchaseRequest.updateMany({
@@ -576,7 +580,11 @@ export class ProcurementService {
     const row = await this.prisma.purchaseOrder.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
     if (!row) throw new NotFoundException("Purchase Order not found");
     if (row.status !== "PENDING_APPROVAL") throw new BadRequestException("Only PENDING_APPROVAL orders can be approved");
-    if (row.createdById === user.id) throw new ForbiddenException("You cannot approve a purchase order you created yourself.");
+    if (row.createdById === user.id && (await this.requiresSeparateApprover(user.companyId))) {
+      throw new ForbiddenException(
+        "You cannot approve a purchase order you created yourself. If one person runs procurement here, an admin can turn off \"require a separate procurement approver\" under Settings → User Access."
+      );
+    }
 
     const updated = await this.prisma.$transaction(async (tx) => {
       const advanced = await tx.purchaseOrder.updateMany({
@@ -1310,6 +1318,19 @@ export class ProcurementService {
   // have no branch attached left visible rather than guessed at.
   private branchRestricted(user: AuthenticatedUser) {
     return !user.hasGlobalAccess && user.branchIds.length > 0;
+  }
+
+  // Segregation-of-duties toggle for purchase request / purchase order
+  // approval. Default ON (a different person must approve). A one-person
+  // procurement setup turns it off under Settings → User Access. Mirrors
+  // FeedProductionService.requiresSeparateApprover.
+  private async requiresSeparateApprover(companyId: string): Promise<boolean> {
+    const row = await this.prisma.systemSetting.findFirst({
+      where: { companyId, key: "user-access.settings", deletedAt: null },
+      select: { value: true }
+    });
+    const value = (row?.value ?? {}) as { requireSeparateProcurementApprover?: boolean };
+    return value.requireSeparateProcurementApprover !== false;
   }
 }
 

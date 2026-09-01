@@ -100,6 +100,8 @@ export function createPrismaMock() {
     notificationSetting: modelMock(),
     procurementOrder: modelMock(),
     purchaseRequest: modelMock(),
+    purchaseOrder: modelMock(),
+    purchaseApproval: modelMock(),
     supplier: modelMock(),
     maintenanceRequest: modelMock(),
     hrTask: modelMock(),
