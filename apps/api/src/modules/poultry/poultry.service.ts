@@ -800,6 +800,22 @@ export class PoultryService {
     if (mortalityDelta < 0 || culledDelta < 0 || feedDelta < 0 || eggsDelta < 0) {
       throw new BadRequestException("Today's mortality, culled, feed, or egg numbers can't be reduced from this screen — use the Mortality, Feed, or Egg Production screens to correct an entry already recorded.");
     }
+    // (2026-09-01) Daily Entry is now the single daily path. If a figure for
+    // this batch+day was already logged through a dedicated screen, block
+    // instead of warning — the two paths would otherwise double-count. The
+    // overlap helpers only match non-"Daily record" entries, so re-opening
+    // today's own Daily Entry to top up a number is unaffected.
+    const blocked: string[] = [];
+    if (mortalityDelta > 0 && (await this.dedicatedMortalityOverlapWarning(user.companyId, batch.id, recordDate, false))) blocked.push("mortality");
+    if (culledDelta > 0 && (await this.dedicatedMortalityOverlapWarning(user.companyId, batch.id, recordDate, true))) blocked.push("culls");
+    if (feedDelta > 0 && (await this.dedicatedFeedOverlapWarning(user.companyId, batch.id, recordDate))) blocked.push("feed");
+    if (eggsDelta > 0 && (await this.dedicatedEggsOverlapWarning(user.companyId, batch.id, recordDate))) blocked.push("eggs");
+    if (blocked.length) {
+      const list = blocked.join(", ");
+      throw new BadRequestException(
+        `${list} for this batch on ${dto.recordDate} ${blocked.length > 1 ? "were" : "was"} already recorded on the dedicated screen. Leave ${blocked.length > 1 ? "those fields" : "that field"} blank here, or edit the existing entry under Records & Corrections.`,
+      );
+    }
     // (2026-08-18) A feed/egg delta always creates a real FeedConsumptionRecord/
     // EggProductionRecord now, same as mortality/culled always create a real
     // MortalityRecord — previously the delta only ever moved inventory (via
@@ -865,13 +881,8 @@ export class PoultryService {
       return row;
     }), { label: "PoultryService.upsertDailyRecord" });
     await this.writeAudit(user, "CREATE", "DailyPoultryRecord", record.id, "Submitted daily poultry record", context, batch.farmId);
-    const overlapWarnings = (await Promise.all([
-      mortalityDelta > 0 ? this.dedicatedMortalityOverlapWarning(user.companyId, batch.id, recordDate, false) : Promise.resolve(undefined),
-      culledDelta > 0 ? this.dedicatedMortalityOverlapWarning(user.companyId, batch.id, recordDate, true) : Promise.resolve(undefined),
-      feedDelta > 0 ? this.dedicatedFeedOverlapWarning(user.companyId, batch.id, recordDate) : Promise.resolve(undefined),
-      eggsDelta > 0 ? this.dedicatedEggsOverlapWarning(user.companyId, batch.id, recordDate) : Promise.resolve(undefined)
-    ])).filter((w): w is string => !!w);
-    return { data: record, warning: overlapWarnings.join(" ") || undefined };
+    // Any dedicated-screen overlap for these figures was already blocked above.
+    return { data: record };
   }
 
   async createMortality(user: AuthenticatedUser, dto: CreateMortalityRecordDto, context: RequestContext) {

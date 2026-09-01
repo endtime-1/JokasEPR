@@ -1930,7 +1930,7 @@ describe("PoultryService — same-day cross-screen duplicate-entry warning (2026
     expect(result.warning).toBeUndefined();
   });
 
-  it("createDailyRecord warns when the dedicated Mortality screen already logged an entry for the same day", async () => {
+  it("createDailyRecord BLOCKS when the dedicated Mortality screen already logged an entry for the same day (Option A, 2026-09-01)", async () => {
     mockPrisma.flockBatch.findFirst.mockResolvedValue(flockBatch);
     mockPrisma.dailyPoultryRecord.findFirst.mockResolvedValue(null);
     mockTx.dailyPoultryRecord.create.mockResolvedValue({ id: "daily-1" });
@@ -1939,18 +1939,17 @@ describe("PoultryService — same-day cross-screen duplicate-entry warning (2026
     mockPrisma.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 6 } });
 
     const service = makeService();
-    const result = await service.createDailyRecord(
-      makeUser({ farmIds: ["farm-1"] }),
-      { flockBatchId: "batch-1", recordDate: "2026-08-18", mortalityCount: 5, culledCount: 0, feedConsumedKg: 0, totalEggs: 0 } as never,
-      {}
-    );
-
-    expect(result.warning).toMatch(/already logged today via the dedicated Mortality screen/);
-    // Still recorded — this is advisory, not blocking.
-    expect(mockTx.mortalityRecord.create).toHaveBeenCalled();
+    await expect(
+      service.createDailyRecord(
+        makeUser({ farmIds: ["farm-1"] }),
+        { flockBatchId: "batch-1", recordDate: "2026-08-18", mortalityCount: 5, culledCount: 0, feedConsumedKg: 0, totalEggs: 0 } as never,
+        {}
+      )
+    ).rejects.toThrow(/already recorded on the dedicated screen/);
+    expect(mockTx.mortalityRecord.create).not.toHaveBeenCalled();
   });
 
-  it("createDailyRecord returns no warning when nothing else was logged that day", async () => {
+  it("createDailyRecord succeeds when nothing else was logged that day", async () => {
     mockPrisma.flockBatch.findFirst.mockResolvedValue(flockBatch);
     mockPrisma.dailyPoultryRecord.findFirst.mockResolvedValue(null);
     mockTx.dailyPoultryRecord.create.mockResolvedValue({ id: "daily-1" });
@@ -1964,7 +1963,7 @@ describe("PoultryService — same-day cross-screen duplicate-entry warning (2026
       {}
     );
 
-    expect(result.warning).toBeUndefined();
+    expect(result.data).toBeDefined();
   });
 });
 

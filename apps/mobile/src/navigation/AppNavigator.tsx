@@ -270,7 +270,7 @@ function RecordsNavigator() {
     <ErrorBoundary>
     <RecordsStack.Navigator screenOptions={stackOpts}>
       <RecordsStack.Screen name="RecordsHome"     component={RecordsHomeScreen}     options={{ title: "Records"         }} />
-      <RecordsStack.Screen name="DailyPoultry"    component={DailyPoultryScreen}    options={{ title: "Daily Record"    }} />
+      <RecordsStack.Screen name="DailyPoultry"    component={DailyPoultryScreen}    options={{ title: "Daily Entry"     }} />
       <RecordsStack.Screen name="Mortality"       component={MortalityScreen}       options={{ title: "Mortality Entry" }} />
       <RecordsStack.Screen name="EggCollection"   component={EggCollectionScreen}   options={{ title: "Egg Collection"  }} />
       <RecordsStack.Screen name="FeedConsumption" component={FeedConsumptionScreen} options={{ title: "Feed Record"     }} />

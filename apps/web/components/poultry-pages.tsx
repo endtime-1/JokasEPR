@@ -1606,6 +1606,12 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
     return [];
   });
   const [form, setForm] = useState<Record<string, string>>(() => makeFormDefaults(type));
+  // Deep-link from the dashboard "Log today" button — preselect the batch.
+  useEffect(() => {
+    if (type !== "daily" || typeof window === "undefined") return;
+    const b = new URLSearchParams(window.location.search).get("batch");
+    if (b) setForm((f) => (f.flockBatchId ? f : { ...f, flockBatchId: b }));
+  }, [type]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState("");
   const [submitWarning, setSubmitWarning] = useState("");

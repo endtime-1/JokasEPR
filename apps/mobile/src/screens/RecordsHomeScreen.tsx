@@ -28,7 +28,7 @@ const GROUPS: Group[] = [
     title: "Poultry Operations",
     icon: "bird",
     items: [
-      { icon: "clipboard-list",   label: "Daily Poultry Record",  desc: "Population counts & performance metrics",     screen: "DailyPoultry",     roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#10B981" },
+      { icon: "clipboard-list",   label: "Daily Entry",           desc: "Log the day — mortality, feed, eggs, in one form",  screen: "DailyPoultry",     roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#10B981" },
       { icon: "arrow-down-bold",  label: "Mortality Entry",        desc: "Record bird deaths and culling events",        screen: "Mortality",        roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#EF4444" },
       { icon: "egg",              label: "Egg Collection",         desc: "Daily egg counts by grade",                   screen: "EggCollection",    roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#D97706" },
       { icon: "barley",           label: "Feed Consumption",       desc: "Feed dispensed to flocks",                    screen: "FeedConsumption",  roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#10B981" },

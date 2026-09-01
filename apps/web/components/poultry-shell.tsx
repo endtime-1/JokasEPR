@@ -16,12 +16,20 @@ const NAV_GROUPS = [
   {
     label: "Operations",
     items: [
-      { href: "/poultry/daily-records", label: "Daily Records" },
-      { href: "/poultry/egg-production", label: "Egg Production" },
-      { href: "/poultry/feed-consumption", label: "Feed" },
-      { href: "/poultry/feed-store", label: "Feed Store" },
-      { href: "/poultry/bird-weight", label: "Bird Weight" },
-      { href: "/poultry/mortality", label: "Mortality" }
+      { href: "/poultry/daily-records", label: "Daily Entry" },
+      { href: "/poultry/feed-store", label: "Feed Store" }
+    ]
+  },
+  {
+    // Single-type entry and corrections. Day-to-day logging goes through
+    // Daily Entry (and the Records tab on a batch); these are for reviewing
+    // or fixing a specific record.
+    label: "Records & Corrections",
+    items: [
+      { href: "/poultry/egg-production", label: "Egg records" },
+      { href: "/poultry/feed-consumption", label: "Feed records" },
+      { href: "/poultry/bird-weight", label: "Weight records" },
+      { href: "/poultry/mortality", label: "Mortality records" }
     ]
   },
   {

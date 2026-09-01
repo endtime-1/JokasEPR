@@ -168,11 +168,11 @@ function AlertBanner({ alerts }: { alerts: AlertData }) {
             <div className="flex items-center gap-2.5">
               <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
               <span className="text-sm text-ink/70">
-                <span className="font-bold text-ink">{b.code}</span> — no daily record submitted today
+                <span className="font-bold text-ink">{b.code}</span> — no entry logged today
               </span>
             </div>
-            <Link href="/poultry/daily-records" className="flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 transition hover:bg-amber-100">
-              Record now <ArrowRight className="h-3 w-3" />
+            <Link href={`/poultry/daily-records?batch=${b.id}`} className="flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 transition hover:bg-amber-100">
+              Log today <ArrowRight className="h-3 w-3" />
             </Link>
           </div>
         ))}
@@ -389,7 +389,7 @@ function HouseOccupancyGrid({ houses }: { houses: HouseData[] }) {
 
 function QuickActions() {
   const actions = [
-    { href: "/poultry/daily-records", label: "Daily Record", icon: CircleCheckBig, color: "text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100" },
+    { href: "/poultry/daily-records", label: "Daily Entry", icon: CircleCheckBig, color: "text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100" },
     { href: "/poultry/egg-production", label: "Egg Production", icon: Egg, color: "text-amber-700 bg-amber-50 border-amber-200 hover:bg-amber-100" },
     { href: "/poultry/feed-consumption", label: "Feed Intake", icon: Wheat, color: "text-blue-700 bg-blue-50 border-blue-200 hover:bg-blue-100" },
     { href: "/poultry/mortality", label: "Mortality", icon: Skull, color: "text-red-700 bg-red-50 border-red-200 hover:bg-red-100" },
