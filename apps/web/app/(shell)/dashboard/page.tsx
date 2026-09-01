@@ -24,6 +24,7 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../../components/auth-context";
+import { ExecutiveOverview } from "../../../components/executive-overview";
 import { Skeleton, SkeletonCard } from "../../../components/ui";
 import { ApiEnvelope, apiFetch, getCachedFirst, hasCached } from "../../../lib/api";
 
@@ -978,14 +979,21 @@ export default function DashboardPage() {
         <DashboardSkeleton />
       ) : (
         <>
-          <section
-            className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"
-            aria-label="Summary metrics"
-          >
-            {(dashboard?.summary ?? []).map((card, i) => (
-              <SummaryCard key={card.key} card={card} index={i} />
-            ))}
-          </section>
+          <ExecutiveOverview summary={dashboard?.summary ?? []} charts={dashboard?.charts ?? {}} />
+
+          <details className="mt-6 app-card overflow-hidden">
+            <summary className="cursor-pointer px-5 py-3 text-sm font-semibold text-ink transition hover:bg-field">
+              All metrics
+            </summary>
+            <section
+              className="grid gap-4 border-t border-line p-5 md:grid-cols-2 xl:grid-cols-4"
+              aria-label="Summary metrics"
+            >
+              {(dashboard?.summary ?? []).map((card, i) => (
+                <SummaryCard key={card.key} card={card} index={i} />
+              ))}
+            </section>
+          </details>
 
           <div className="mt-6">
             <FarmOperationsToday data={farmOps} loading={farmOpsLoading} />
