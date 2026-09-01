@@ -1334,6 +1334,7 @@ type PurchaseRequest = {
 };
 
 export function PurchaseRequestsPage() {
+  const router = useRouter();
   const [rows, setRows] = useState<PurchaseRequest[]>(() => getCachedFirst<ApiEnvelope<PurchaseRequest[]>>("/procurement/purchase-requests")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/procurement/purchase-requests"));
   const [statusFilter, setStatusFilter] = useState("");
@@ -1465,6 +1466,19 @@ export function PurchaseRequestsPage() {
                           Reject
                         </button>
                       </>
+                    )}
+                    {r.status === "APPROVED" && (
+                      <button
+                        onClick={() => router.push(`/procurement/purchase-orders/create?fromRequest=${r.id}`)}
+                        className="rounded-md bg-indigo-600 px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90"
+                      >
+                        Create PO
+                      </button>
+                    )}
+                    {r.status === "CONVERTED_TO_PO" && (
+                      <Link href="/procurement/purchase-orders" className="rounded-md border border-line px-2.5 py-1 text-xs font-semibold text-ink/60 hover:bg-field">
+                        View PO
+                      </Link>
                     )}
                   </div>
                 ),
@@ -1993,7 +2007,7 @@ export function PurchaseOrdersPage() {
 
 // ─── Create Purchase Order ────────────────────────────────────────────────────
 
-type POItem = { productName: string; quantity: string; uomCode: string; unitCost: string };
+type POItem = { productId?: string; productName: string; quantity: string; uomCode: string; unitCost: string };
 
 export function CreatePurchaseOrderPage() {
   const router = useRouter();
@@ -2005,6 +2019,33 @@ export function CreatePurchaseOrderPage() {
   const [items, setItems] = useState<POItem[]>([{ productName: "", quantity: "1", uomCode: "PCS", unitCost: "" }]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [fromRequest, setFromRequest] = useState<{ id: string; reference: string } | null>(null);
+
+  // Pre-load the line items when opened from an approved purchase request
+  // (Purchase Requests → "Create PO"). Submitting then also flips that
+  // request to CONVERTED_TO_PO on the server.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const prId = new URLSearchParams(window.location.search).get("fromRequest");
+    if (!prId) return;
+    apiFetch<ApiEnvelope<{ id: string; reference: string; notes?: string; items?: Array<{ productId?: string; productName: string; quantity: string | number; uomCode?: string; estimatedUnitCost?: string | number }> }>>(`/procurement/purchase-requests/${prId}`)
+      .then((r) => {
+        const pr = r.data;
+        if (!pr) return;
+        setFromRequest({ id: pr.id, reference: pr.reference });
+        if (pr.items?.length) {
+          setItems(pr.items.map((it) => ({
+            productId: it.productId ?? undefined,
+            productName: it.productName,
+            quantity: String(Number(it.quantity) || 1),
+            uomCode: it.uomCode || "PCS",
+            unitCost: it.estimatedUnitCost != null ? String(Number(it.estimatedUnitCost)) : "",
+          })));
+        }
+        setForm((f) => ({ ...f, notes: pr.notes ?? f.notes }));
+      })
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : "Failed to load the purchase request"));
+  }, []);
 
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm((p) => ({ ...p, [k]: e.target.value }));
@@ -2027,10 +2068,12 @@ export function CreatePurchaseOrderPage() {
         method: "POST",
         body: JSON.stringify({
           supplierId: form.supplierId,
+          purchaseRequestId: fromRequest?.id,
           expectedDelivery: form.expectedDelivery || undefined,
           paymentTermsDays: form.paymentTermsDays ? Number(form.paymentTermsDays) : undefined,
           notes: form.notes || undefined,
           items: items.map((it) => ({
+            productId: it.productId || undefined,
             productName: it.productName,
             quantity: Number(it.quantity),
             uomCode: it.uomCode || undefined,
@@ -2052,10 +2095,15 @@ export function CreatePurchaseOrderPage() {
         <PageHero
           kicker="Procurement"
           title="New Purchase Order"
-          subtitle="Create a formal order for a supplier"
+          subtitle={fromRequest ? `From approved purchase request ${fromRequest.reference}` : "Create a formal order for a supplier"}
           actions={<Link href="/procurement/purchase-orders" className="app-button-secondary">Cancel</Link>}
         />
         <ProcurementNav />
+        {fromRequest && (
+          <div className="rounded-xl border-l-[3px] border-indigo-400 bg-indigo-50 px-4 py-3 text-sm font-medium text-indigo-800">
+            Line items came from purchase request <strong>{fromRequest.reference}</strong>. Pick a supplier and confirm the unit costs — submitting marks the request as converted.
+          </div>
+        )}
         {optionsError && (
           <div className="rounded-xl border-l-[3px] border-red-400 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">
             {optionsError}
