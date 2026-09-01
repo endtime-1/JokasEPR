@@ -4101,6 +4101,11 @@ model FeedExternalSale {
   totalValue        Decimal   @db.Decimal(18, 4)
   customerName      String?
   saleDate          DateTime  @default(now())
+  // The cash sale booked in the Sales module for this dispatch (paid
+  // invoice + revenue). Loose reference — no FK relation, same as
+  // StockMovement.referenceId elsewhere.
+  salesOrderId      String?
+  invoiceId         String?
   createdById       String?
   deletedAt         DateTime?
   createdAt         DateTime  @default(now())

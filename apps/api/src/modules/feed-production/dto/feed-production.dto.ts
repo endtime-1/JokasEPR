@@ -3,6 +3,7 @@ import {
   FeedProductionOrderStatus,
   FeedQualityCheckStatus,
   FeedType,
+  PaymentMethod,
   ProductStatus
 } from "@prisma/client";
 import { Type } from "class-transformer";
@@ -350,6 +351,12 @@ export class RecordExternalFeedSaleDto {
   @IsString()
   @MaxLength(160)
   customerName?: string;
+
+  // How the buyer paid. The sale is booked as settled either way (cash and
+  // carry — no receivable); this only sets the payment/revenue method.
+  @IsOptional()
+  @IsEnum(PaymentMethod)
+  paymentMethod?: PaymentMethod;
 }
 
 export class HiproPredictiveQueryDto {

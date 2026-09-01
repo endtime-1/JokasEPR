@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { AuthenticatedUser } from "@jokas/shared";
-import { Prisma } from "@prisma/client";
+import { PaymentMethod, Prisma } from "@prisma/client";
 import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { nextRef } from "../../common/next-ref";
@@ -620,6 +620,147 @@ export class SalesService {
         createdById: user.id
       }
     });
+  }
+
+  // Get-or-create the per-branch "walk-in / cash sales" customer that direct
+  // over-the-counter sales (e.g. feed sold straight off the mill floor) are
+  // booked against — they have no real customer record and no receivable.
+  private async ensureCashCustomerTx(tx: Prisma.TransactionClient, companyId: string, branchId: string, userId: string) {
+    const code = `WALK-IN-${branchId}`.slice(0, 40).toUpperCase();
+    const existing = await tx.customer.findFirst({ where: { companyId, code, deletedAt: null } });
+    if (existing) return existing;
+    try {
+      return await tx.customer.create({
+        data: { companyId, branchId, code, name: "Walk-in / Cash Sales", status: "ACTIVE", createdById: userId }
+      });
+    } catch (err: unknown) {
+      // Concurrent first sale created it between our findFirst and create.
+      if ((err as { code?: string })?.code === "P2002") {
+        const row = await tx.customer.findFirst({ where: { companyId, code, deletedAt: null } });
+        if (row) return row;
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Books the financial side of a cash-and-carry dispatch whose stock has
+   * ALREADY been moved by the caller (e.g. FeedProductionService's external
+   * feed sale, which runs its own finished-goods decrement). Creates a
+   * FULFILLED sales order, a PAID invoice, a settled payment + receipt, and a
+   * Finance revenue entry — no accounts-receivable, no FIFO consumption.
+   * Runs inside the caller's transaction so the money records commit or roll
+   * back together with the stock movement.
+   */
+  async recordCashSaleForExternalDispatch(
+    tx: Prisma.TransactionClient,
+    user: AuthenticatedUser,
+    input: {
+      branchId: string;
+      warehouseId: string;
+      productId: string;
+      productName: string;
+      quantity: number;
+      unitPrice: number;
+      customerName?: string;
+      paymentMethod?: PaymentMethod;
+      saleDate?: Date;
+      sourceLabel: string;
+    }
+  ): Promise<{ salesOrderId: string; invoiceId: string; paymentId: string; revenueId: string }> {
+    const total = Number((input.quantity * input.unitPrice).toFixed(4));
+    const when = input.saleDate ?? new Date();
+    const method = input.paymentMethod ?? "CASH";
+    const customer = await this.ensureCashCustomerTx(tx, user.companyId, input.branchId, user.id);
+    const note = `Cash sale — ${input.sourceLabel}${input.customerName ? ` (${input.customerName})` : ""}`.slice(0, 240);
+
+    const order = await tx.salesOrder.create({
+      data: {
+        companyId: user.companyId,
+        branchId: input.branchId,
+        customerId: customer.id,
+        warehouseId: input.warehouseId,
+        orderNumber: await nextRef(tx, user.companyId, "SO"),
+        orderDate: when,
+        status: "FULFILLED",
+        subtotal: total,
+        totalAmount: total,
+        paidAmount: total,
+        balanceDue: 0,
+        salespersonId: user.id,
+        stockApprovedById: user.id,
+        stockApprovedAt: when,
+        notes: note,
+        createdById: user.id,
+        items: {
+          create: [{ companyId: user.companyId, productId: input.productId, quantity: input.quantity, unitPrice: input.unitPrice, discountAmount: 0, lineTotal: total }]
+        }
+      }
+    });
+    const invoice = await tx.invoice.create({
+      data: {
+        companyId: user.companyId,
+        branchId: input.branchId,
+        customerId: customer.id,
+        salesOrderId: order.id,
+        invoiceNumber: await nextRef(tx, user.companyId, "INV"),
+        invoiceDate: when,
+        dueDate: when,
+        status: "PAID",
+        subtotal: total,
+        totalAmount: total,
+        paidAmount: total,
+        balanceDue: 0,
+        createdById: user.id
+      }
+    });
+    const payment = await tx.payment.create({
+      data: {
+        companyId: user.companyId,
+        branchId: input.branchId,
+        customerId: customer.id,
+        invoiceId: invoice.id,
+        paymentNumber: await nextRef(tx, user.companyId, "PAY"),
+        paymentDate: when,
+        amount: total,
+        method,
+        status: "POSTED",
+        reference: input.sourceLabel.slice(0, 190),
+        receivedById: user.id,
+        createdById: user.id
+      }
+    });
+    await tx.receipt.create({
+      data: {
+        companyId: user.companyId,
+        branchId: input.branchId,
+        customerId: customer.id,
+        invoiceId: invoice.id,
+        paymentId: payment.id,
+        receiptNumber: await nextRef(tx, user.companyId, "RCT"),
+        receiptDate: when,
+        amount: total,
+        issuedById: user.id,
+        createdById: user.id
+      }
+    });
+    const revenue = await tx.revenue.create({
+      data: {
+        companyId: user.companyId,
+        reference: await nextRef(tx, user.companyId, "REV"),
+        source: "PRODUCT_SALES",
+        description: note,
+        amount: total,
+        revenueDate: when,
+        paymentMethod: method as never,
+        customerName: input.customerName ?? "Walk-in / Cash Sales",
+        invoiceRef: invoice.invoiceNumber,
+        branchId: input.branchId,
+        createdById: user.id
+      }
+    });
+
+    return { salesOrderId: order.id, invoiceId: invoice.id, paymentId: payment.id, revenueId: revenue.id };
   }
 
   private async findPaymentByIdempotencyKey(companyId: string, idempotencyKey: string) {

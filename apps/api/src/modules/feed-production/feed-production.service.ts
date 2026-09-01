@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { AuthenticatedUser } from "@jokas/shared";
-import { Prisma, FeedProductionOrderStatus } from "@prisma/client";
+import { Prisma, FeedProductionOrderStatus, PaymentMethod } from "@prisma/client";
 import { nextRef } from "../../common/next-ref";
 import { withDbRetry } from "../../common/db-retry";
 import { validateEnumFilter } from "../../common/utils/validate-enum-filter";
@@ -8,6 +8,7 @@ import { AuditService } from "../audit/audit.service";
 import { LookupCacheService } from "../../common/services/lookup-cache.service";
 import { WarehousePurposeService } from "../../common/services/warehouse-purpose.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { SalesService } from "../sales/sales.service";
 import {
   AddFeedFormulaIngredientDto,
   CreateFeedFormulaDto,
@@ -51,7 +52,8 @@ export class FeedProductionService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly lookupCache: LookupCacheService,
-    private readonly warehousePurpose: WarehousePurposeService
+    private readonly warehousePurpose: WarehousePurposeService,
+    private readonly sales: SalesService
   ) {}
 
   async dashboard(user: AuthenticatedUser) {
@@ -1082,13 +1084,14 @@ export class FeedProductionService {
   async recordExternalSale(user: AuthenticatedUser, dto: RecordExternalFeedSaleDto, context: RequestContext) {
     this.assertWarehouseAccess(user, dto.fromWarehouseId);
     const batch = await this.requireBatch(user, dto.productionBatchId);
+    const product = await this.getProduct(user.companyId, batch.finishedProductId);
     const data = await this.moveFinishedFeed(user, {
       batch,
       fromWarehouseId: dto.fromWarehouseId,
       quantityKg: dto.quantityKg,
       movementType: "SALE_DISPATCH",
       referenceType: "FeedExternalSale",
-      transferData: { customerName: dto.customerName, unitPrice: dto.unitPrice },
+      transferData: { customerName: dto.customerName, unitPrice: dto.unitPrice, paymentMethod: dto.paymentMethod, productName: product.name },
       context
     });
     return { data };
@@ -1479,6 +1482,23 @@ export class FeedProductionService {
 
       // M4: create a persisted FeedExternalSale record (was previously a dangling randomUUID)
       const unitPrice = input.transferData.unitPrice as number;
+      // The dispatch is a cash-and-carry sale: book it in the Sales module
+      // (FULFILLED order + PAID invoice + settled payment + Finance revenue)
+      // so it actually shows up in Sales and the P&L, instead of being a
+      // ledger-blind FeedExternalSale row. Stock is already moved above, so
+      // this only creates the money records — inside the same transaction.
+      const cashSale = await this.sales.recordCashSaleForExternalDispatch(tx, user, {
+        branchId: input.batch.branchId,
+        warehouseId: input.fromWarehouseId,
+        productId: input.batch.finishedProductId,
+        productName: (input.transferData.productName as string) ?? "Finished feed",
+        quantity: input.quantityKg,
+        unitPrice,
+        customerName: input.transferData.customerName as string | undefined,
+        paymentMethod: input.transferData.paymentMethod as PaymentMethod | undefined,
+        saleDate: new Date(),
+        sourceLabel: `feed batch ${input.batch.batchNumber}`
+      });
       const sale = await tx.feedExternalSale.create({
         data: {
           companyId: user.companyId,
@@ -1490,6 +1510,8 @@ export class FeedProductionService {
           unitPrice,
           totalValue: input.quantityKg * unitPrice,
           customerName: input.transferData.customerName as string | undefined,
+          salesOrderId: cashSale.salesOrderId,
+          invoiceId: cashSale.invoiceId,
           createdById: user.id
         }
       });

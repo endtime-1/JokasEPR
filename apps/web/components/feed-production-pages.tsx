@@ -1911,7 +1911,7 @@ export function FeedBatchDetailsPage() {
   const [qcErr, setQcErr] = useState("");
 
   // External sale form
-  const [saleForm, setSaleForm] = useState({ fromWarehouseId: "", quantityKg: "", unitPrice: "", customerName: "" });
+  const [saleForm, setSaleForm] = useState({ fromWarehouseId: "", quantityKg: "", unitPrice: "", customerName: "", paymentMethod: "CASH" });
   const [submittingSale, setSubmittingSale] = useState(false);
   const [saleErr, setSaleErr] = useState("");
 
@@ -1964,9 +1964,10 @@ export function FeedBatchDetailsPage() {
           quantityKg: Number(saleForm.quantityKg),
           unitPrice: Number(saleForm.unitPrice),
           customerName: saleForm.customerName || undefined,
+          paymentMethod: saleForm.paymentMethod || undefined,
         }),
       });
-      setSaleForm({ fromWarehouseId: "", quantityKg: "", unitPrice: "", customerName: "" });
+      setSaleForm({ fromWarehouseId: "", quantityKg: "", unitPrice: "", customerName: "", paymentMethod: "CASH" });
       await load();
     } catch (e: unknown) {
       setSaleErr((e as Error)?.message ?? "Sale recording failed.");
@@ -2199,10 +2200,23 @@ export function FeedBatchDetailsPage() {
                 onChange={(e) => setSaleForm((f) => ({ ...f, customerName: e.target.value }))}
               />
             </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-ink/55">Payment method</label>
+              <select
+                className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                value={saleForm.paymentMethod}
+                onChange={(e) => setSaleForm((f) => ({ ...f, paymentMethod: e.target.value }))}
+              >
+                <option value="CASH">Cash</option>
+                <option value="MOBILE_MONEY">Mobile money</option>
+                <option value="BANK_TRANSFER">Bank transfer</option>
+                <option value="CHEQUE">Cheque</option>
+              </select>
+            </div>
           </div>
           {saleForm.quantityKg && saleForm.unitPrice && (
             <p className="mt-2 text-xs text-ink/50">
-              Sale value: <strong>{money(Number(saleForm.quantityKg) * Number(saleForm.unitPrice))}</strong>
+              Sale value: <strong>{money(Number(saleForm.quantityKg) * Number(saleForm.unitPrice))}</strong> — booked as a paid cash sale (invoice + revenue) in Sales.
             </p>
           )}
           <button type="submit" disabled={submittingSale} className="mt-4 inline-flex min-h-9 items-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-white transition hover:bg-brand/90 disabled:opacity-50">

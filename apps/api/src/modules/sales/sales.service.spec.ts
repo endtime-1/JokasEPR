@@ -7,9 +7,10 @@ jest.mock("../../common/next-ref", () => ({ nextRef: jest.fn().mockResolvedValue
 const mockTx = {
   payment: { create: jest.fn() },
   invoice: { updateMany: jest.fn(), findUniqueOrThrow: jest.fn(), update: jest.fn(), create: jest.fn(), findFirst: jest.fn() },
-  salesOrder: { update: jest.fn() },
+  revenue: { create: jest.fn() },
+  salesOrder: { update: jest.fn(), create: jest.fn() },
   deliveryNote: { create: jest.fn() },
-  customer: { findUniqueOrThrow: jest.fn() },
+  customer: { findUniqueOrThrow: jest.fn(), findFirst: jest.fn(), create: jest.fn() },
   customerCreditLimit: { upsert: jest.fn(), update: jest.fn(), findUniqueOrThrow: jest.fn().mockResolvedValue({ id: "cl-1", companyId: "company-1", creditLimit: 0, currentBalance: 0 }) },
   customerStatement: { create: jest.fn() },
   receipt: { create: jest.fn() },
@@ -947,5 +948,60 @@ describe("SalesService — Customer / CustomerGroup / PriceList edit & delete", 
       const service = makeService();
       await expect(service.deletePriceList(makeUser(), "missing", {})).rejects.toThrow(NotFoundException);
     });
+  });
+});
+
+describe("SalesService.recordCashSaleForExternalDispatch — books a settled cash sale for an already-dispatched item", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  function stub() {
+    mockTx.customer.findFirst.mockResolvedValue(null);
+    mockTx.customer.create.mockResolvedValue({ id: "cash-cust-1", branchId: "branch-1" });
+    mockTx.salesOrder.create.mockResolvedValue({ id: "so-1", orderNumber: "SO-1" });
+    mockTx.invoice.create.mockResolvedValue({ id: "inv-1", invoiceNumber: "INV-1" });
+    mockTx.payment.create.mockResolvedValue({ id: "pay-1" });
+    mockTx.receipt.create.mockResolvedValue({ id: "rct-1" });
+    mockTx.revenue.create.mockResolvedValue({ id: "rev-1" });
+  }
+
+  const input = {
+    branchId: "branch-1", warehouseId: "wh-1", productId: "prod-1", productName: "Broiler Finisher",
+    quantity: 500, unitPrice: 6, customerName: "Kojo Farms", sourceLabel: "feed batch FB-2026-0001"
+  };
+
+  it("creates a FULFILLED order, a PAID zero-balance invoice, a settled payment + receipt, and a PRODUCT_SALES revenue entry", async () => {
+    stub();
+    const service = makeService();
+    const result = await (service as unknown as {
+      recordCashSaleForExternalDispatch: (tx: typeof mockTx, user: AuthenticatedUser, i: typeof input) => Promise<Record<string, string>>;
+    }).recordCashSaleForExternalDispatch(mockTx, makeUser(), input);
+
+    expect(mockTx.salesOrder.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "FULFILLED", totalAmount: 3000, paidAmount: 3000, balanceDue: 0 }) })
+    );
+    expect(mockTx.invoice.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "PAID", balanceDue: 0 }) })
+    );
+    expect(mockTx.payment.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ amount: 3000, method: "CASH" }) })
+    );
+    expect(mockTx.revenue.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ source: "PRODUCT_SALES", amount: 3000, invoiceRef: "INV-1" }) })
+    );
+    expect(result).toEqual({ salesOrderId: "so-1", invoiceId: "inv-1", paymentId: "pay-1", revenueId: "rev-1" });
+  });
+
+  it("reuses an existing walk-in customer instead of creating a duplicate", async () => {
+    stub();
+    mockTx.customer.findFirst.mockResolvedValue({ id: "cash-cust-existing", branchId: "branch-1" });
+    const service = makeService();
+    await (service as unknown as {
+      recordCashSaleForExternalDispatch: (tx: typeof mockTx, user: AuthenticatedUser, i: typeof input) => Promise<unknown>;
+    }).recordCashSaleForExternalDispatch(mockTx, makeUser(), input);
+
+    expect(mockTx.customer.create).not.toHaveBeenCalled();
+    expect(mockTx.salesOrder.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ customerId: "cash-cust-existing" }) })
+    );
   });
 });

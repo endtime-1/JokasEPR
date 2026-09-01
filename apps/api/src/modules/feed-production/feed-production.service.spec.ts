@@ -5,11 +5,12 @@ jest.mock("../../common/next-ref", () => ({ nextRef: jest.fn().mockResolvedValue
 
 const mockTx = {
   feedProductionBatch: { create: jest.fn(), update: jest.fn(), aggregate: jest.fn().mockResolvedValue({ _sum: { producedQuantityKg: 0 } }) },
-  inventoryItem: { updateMany: jest.fn(), upsert: jest.fn() },
+  inventoryItem: { updateMany: jest.fn(), upsert: jest.fn(), findFirst: jest.fn() },
   stockBatch: { findMany: jest.fn(), updateMany: jest.fn(), create: jest.fn() },
   feedRawMaterialUsage: { create: jest.fn() },
   stockMovement: { create: jest.fn() },
-  finishedFeedStock: { create: jest.fn() },
+  finishedFeedStock: { create: jest.fn(), findFirst: jest.fn(), updateMany: jest.fn() },
+  feedExternalSale: { create: jest.fn() },
   feedProductionCost: { create: jest.fn() },
   feedProductionOrder: { update: jest.fn() },
   feedQualityCheck: { update: jest.fn() },
@@ -36,6 +37,9 @@ const mockPrisma = {
 
 const mockAudit = { write: jest.fn().mockResolvedValue(undefined) };
 const mockLookupCache = { get: jest.fn().mockReturnValue(null), set: jest.fn(), invalidate: jest.fn() };
+const mockSales = {
+  recordCashSaleForExternalDispatch: jest.fn().mockResolvedValue({ salesOrderId: "so-1", invoiceId: "inv-1", paymentId: "pay-1", revenueId: "rev-1" })
+};
 // Purpose enforcement defaults off — assert()/filterForOperation() are no-ops.
 const mockWarehousePurpose = {
   isEnforced: jest.fn().mockResolvedValue(false),
@@ -45,7 +49,7 @@ const mockWarehousePurpose = {
 };
 
 function makeService() {
-  return new FeedProductionService(mockPrisma as never, mockAudit as never, mockLookupCache as never, mockWarehousePurpose as never);
+  return new FeedProductionService(mockPrisma as never, mockAudit as never, mockLookupCache as never, mockWarehousePurpose as never, mockSales as never);
 }
 
 function makeUser(overrides: Partial<AuthenticatedUser> = {}): AuthenticatedUser {
@@ -376,6 +380,41 @@ describe("FeedProductionService.createBatch — expected sales value from price 
     expect(mockTx.feedProductionCost.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ expectedSalesValue: 500 }) })
     );
+  });
+});
+
+describe("FeedProductionService.recordExternalSale — books a cash sale in Sales/Finance", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("routes an external feed sale through SalesService.recordCashSaleForExternalDispatch and stamps the FeedExternalSale with the generated order/invoice", async () => {
+    mockPrisma.feedProductionBatch.findFirst.mockResolvedValue({
+      id: "batch-1", companyId: "company-1", branchId: "branch-1", productionSiteId: "site-1",
+      finishedProductId: "finished-1", batchNumber: "FB-2026-0001", status: "APPROVED"
+    });
+    mockPrisma.product.findFirst.mockResolvedValue({ id: "finished-1", name: "Broiler Finisher", branchId: "branch-1" });
+    mockTx.finishedFeedStock.findFirst.mockResolvedValue({ id: "ffs-1", quantityKg: 1000, unitCost: 2 });
+    mockTx.finishedFeedStock.updateMany.mockResolvedValue({ count: 1 });
+    mockTx.inventoryItem.findFirst.mockResolvedValue({ id: "inv-fin-1", uomId: "uom-1", quantityOnHand: 1000 });
+    mockTx.inventoryItem.updateMany.mockResolvedValue({ count: 1 });
+    mockTx.feedExternalSale.create.mockImplementation(({ data }: any) => Promise.resolve({ id: "fes-1", ...data }));
+    mockTx.stockMovement.create.mockResolvedValue({});
+
+    const service = makeService();
+    const result = await service.recordExternalSale(
+      makeUser({ warehouseIds: ["wh-fin"] }),
+      { productionBatchId: "batch-1", fromWarehouseId: "wh-fin", quantityKg: 500, unitPrice: 6, customerName: "Kojo Farms" } as never,
+      {}
+    );
+
+    expect(mockSales.recordCashSaleForExternalDispatch).toHaveBeenCalledWith(
+      mockTx,
+      expect.objectContaining({ id: "user-1" }),
+      expect.objectContaining({ productId: "finished-1", quantity: 500, unitPrice: 6, customerName: "Kojo Farms", branchId: "branch-1" })
+    );
+    expect(mockTx.feedExternalSale.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ salesOrderId: "so-1", invoiceId: "inv-1" }) })
+    );
+    expect((result.data as { salesOrderId?: string }).salesOrderId).toBe("so-1");
   });
 });
 
