@@ -35,9 +35,10 @@ const mockPrisma = {
   product: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
   salesOrderItem: { findFirst: jest.fn(), groupBy: jest.fn().mockResolvedValue([]), aggregate: jest.fn() },
   salesOrder: { findFirst: jest.fn(), create: jest.fn(), groupBy: jest.fn().mockResolvedValue([]), count: jest.fn() },
-  inventoryItem: { findFirst: jest.fn().mockResolvedValue(null) },
+  inventoryItem: { findFirst: jest.fn().mockResolvedValue(null), findMany: jest.fn().mockResolvedValue([]) },
   salesReturn: { aggregate: jest.fn(), create: jest.fn(), findFirst: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
   prospectVisit: { create: jest.fn(), findFirst: jest.fn() },
+  purchaseRequest: { create: jest.fn() },
   $transaction: jest.fn().mockImplementation((cb: (tx: typeof mockTx) => Promise<unknown>) => cb(mockTx))
 };
 
@@ -1002,6 +1003,120 @@ describe("SalesService.recordCashSaleForExternalDispatch — books a settled cas
     expect(mockTx.customer.create).not.toHaveBeenCalled();
     expect(mockTx.salesOrder.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ customerId: "cash-cust-existing" }) })
+    );
+  });
+});
+
+describe("SalesService.orderShortage / raiseShortagePurchaseRequest — actionable stock-shortage path", () => {
+  function orderRow(overrides: Record<string, unknown> = {}) {
+    return {
+      id: "so-1", orderNumber: "SO-001", branchId: "branch-1", warehouseId: "wh-1",
+      warehouse: { id: "wh-1", name: "Central Warehouse" },
+      items: [{ productId: "prod-1", quantity: 50, unitPrice: 10 }],
+      ...overrides
+    };
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPrisma.salesOrder.findFirst.mockResolvedValue(orderRow());
+    mockPrisma.product.findMany.mockResolvedValue([{ id: "prod-1", name: "Layer Feed 50kg", sku: "LF-50", uom: { symbol: "BAG" } }]);
+  });
+
+  describe("orderShortage", () => {
+    it("reports the exact shortfall per item instead of a flat yes/no", async () => {
+      mockPrisma.inventoryItem.findMany.mockResolvedValue([{ productId: "prod-1", quantityOnHand: 20 }]);
+
+      const service = makeService();
+      const result = await service.orderShortage(makeUser({ warehouseIds: ["wh-1"] }), "so-1");
+
+      expect(result.data.canApprove).toBe(false);
+      expect(result.data.shortages).toEqual([
+        expect.objectContaining({ productId: "prod-1", ordered: 50, available: 20, shortBy: 30, unitPrice: 10 })
+      ]);
+    });
+
+    it("treats a product with no InventoryItem row at all as 0 on hand, not a different error class", async () => {
+      mockPrisma.inventoryItem.findMany.mockResolvedValue([]); // no row for prod-1 in this warehouse
+
+      const service = makeService();
+      const result = await service.orderShortage(makeUser({ warehouseIds: ["wh-1"] }), "so-1");
+
+      expect(result.data.shortages[0]).toEqual(expect.objectContaining({ available: 0, shortBy: 50 }));
+    });
+
+    it("reports no shortage when stock fully covers the order", async () => {
+      mockPrisma.inventoryItem.findMany.mockResolvedValue([{ productId: "prod-1", quantityOnHand: 100 }]);
+
+      const service = makeService();
+      const result = await service.orderShortage(makeUser({ warehouseIds: ["wh-1"] }), "so-1");
+
+      expect(result.data.canApprove).toBe(true);
+      expect(result.data.shortages).toEqual([]);
+    });
+  });
+
+  describe("raiseShortagePurchaseRequest", () => {
+    it("creates a purchase request for exactly the shortfall, linked back to the sales order", async () => {
+      mockPrisma.inventoryItem.findMany.mockResolvedValue([{ productId: "prod-1", quantityOnHand: 20 }]);
+      mockPrisma.purchaseRequest.create.mockResolvedValue({ id: "pr-1", reference: "PR-REF-001" });
+
+      const service = makeService();
+      const result = await service.raiseShortagePurchaseRequest(makeUser({ warehouseIds: ["wh-1"] }), "so-1", {}, {});
+
+      expect(mockPrisma.purchaseRequest.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            salesOrderId: "so-1",
+            title: "Stock shortage — Sales Order SO-001",
+            totalEstimate: 300, // 30 short × GHS 10
+            items: { create: [expect.objectContaining({ productId: "prod-1", quantity: 30, uomCode: "BAG" })] }
+          })
+        })
+      );
+      expect(result.data.id).toBe("pr-1");
+    });
+
+    it("refuses when the order has no shortage — nothing to request", async () => {
+      mockPrisma.inventoryItem.findMany.mockResolvedValue([{ productId: "prod-1", quantityOnHand: 100 }]);
+
+      const service = makeService();
+      await expect(
+        service.raiseShortagePurchaseRequest(makeUser({ warehouseIds: ["wh-1"] }), "so-1", {}, {})
+      ).rejects.toThrow(/no stock shortage/);
+      expect(mockPrisma.purchaseRequest.create).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe("SalesService.approveStockRelease — named, actionable shortage message", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPrisma.salesOrder.findFirst.mockResolvedValue({
+      id: "so-1", companyId: "company-1", branchId: "branch-1", customerId: "cust-1", warehouseId: "wh-1",
+      warehouse: { id: "wh-1", name: "Central Warehouse" },
+      orderNumber: "SO-001", status: "PENDING_STOCK_APPROVAL", totalAmount: 500,
+      items: [{ productId: "prod-1", quantity: 50 }],
+      invoices: []
+    });
+    mockPrisma.product.findMany.mockResolvedValue([{ id: "prod-1", name: "Layer Feed 50kg", sku: "LF-50" }]);
+  });
+
+  it("names the product, warehouse, and exact shortfall when there is no InventoryItem row at all", async () => {
+    mockTx.inventoryItem.findFirst.mockResolvedValue(null);
+
+    const service = makeService();
+    await expect(service.approveStockRelease(makeUser({ warehouseIds: ["wh-1"] }), "so-1", {})).rejects.toThrow(
+      /Layer Feed 50kg \(LF-50\)" from Central Warehouse — need 50, have 0/
+    );
+  });
+
+  it("names the same detail when the item exists but doesn't have enough on hand", async () => {
+    mockTx.inventoryItem.findFirst.mockResolvedValue({ id: "inv-1", productId: "prod-1", quantityOnHand: 12 });
+
+    const service = makeService();
+    await expect(service.approveStockRelease(makeUser({ warehouseIds: ["wh-1"] }), "so-1", {})).rejects.toThrow(
+      /need 50, have 12/
     );
   });
 });

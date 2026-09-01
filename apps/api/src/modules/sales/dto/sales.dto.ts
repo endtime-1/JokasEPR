@@ -326,6 +326,17 @@ export class CreateSalesReturnDto {
   reason!: string;
 }
 
+export class RaiseShortagePurchaseRequestDto {
+  @IsOptional()
+  @IsDateString()
+  requiredDate?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  notes?: string;
+}
+
 export class CreateProspectVisitDto {
   @IsString() @MaxLength(160) prospectName!: string;
   @IsOptional() @IsString() @MaxLength(30) phone?: string;

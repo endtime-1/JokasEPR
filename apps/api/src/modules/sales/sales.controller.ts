@@ -6,7 +6,7 @@ import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { RequirePermissions } from "../../common/decorators/permissions.decorator";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { PermissionsGuard } from "../../common/guards/permissions.guard";
-import { CreateCustomerDto, CreateCustomerGroupDto, CreatePaymentDto, CreatePriceListDto, CreateProspectVisitDto, CreateSalesOrderDto, CreateSalesReturnDto, ProspectVisitQueryDto, SalesQueryDto, UpdateCustomerDto, UpdateCustomerGroupDto, UpdatePriceListDto } from "./dto/sales.dto";
+import { CreateCustomerDto, CreateCustomerGroupDto, CreatePaymentDto, CreatePriceListDto, CreateProspectVisitDto, CreateSalesOrderDto, CreateSalesReturnDto, ProspectVisitQueryDto, RaiseShortagePurchaseRequestDto, SalesQueryDto, UpdateCustomerDto, UpdateCustomerGroupDto, UpdatePriceListDto } from "./dto/sales.dto";
 import { SalesService } from "./sales.service";
 
 @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -120,6 +120,18 @@ export class SalesController {
   @RequirePermissions(PERMISSIONS.INVENTORY_MANAGE)
   approveStockRelease(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.salesService.approveStockRelease(user, id, { ipAddress, userAgent });
+  }
+
+  @Get("orders/:id/shortage")
+  @RequirePermissions(PERMISSIONS.INVENTORY_MANAGE)
+  orderShortage(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
+    return this.salesService.orderShortage(user, id);
+  }
+
+  @Post("orders/:id/raise-purchase-request")
+  @RequirePermissions(PERMISSIONS.INVENTORY_MANAGE)
+  raiseShortagePurchaseRequest(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: RaiseShortagePurchaseRequestDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.salesService.raiseShortagePurchaseRequest(user, id, dto, { ipAddress, userAgent });
   }
 
   @Get("invoices")

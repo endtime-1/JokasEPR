@@ -913,6 +913,13 @@ export function OrdersPage({ create = false }: { create?: boolean }) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(!hasCached("/sales/orders"));
   const [customerCredit, setCustomerCredit] = useState<{ creditLimit: number; currentBalance: number } | null>(null);
+  const [shortage, setShortage] = useState<{
+    orderId: string;
+    orderNumber: string;
+    shortages: Array<{ productId: string; product?: { name: string; sku: string } | null; ordered: number; available: number; shortBy: number }>;
+  } | null>(null);
+  const [raising, setRaising] = useState(false);
+  const [raiseMsg, setRaiseMsg] = useState("");
 
   const effectiveCustomerId = form.customerId || opts.customers[0]?.id || "";
   useEffect(() => {
@@ -978,10 +985,31 @@ export function OrdersPage({ create = false }: { create?: boolean }) {
   }
 
   async function approve(id: string) {
+    setError(""); setRaiseMsg(""); setShortage(null);
     try {
       await apiFetch(`/sales/orders/${id}/approve-stock-release`, { method: "PATCH" });
       await load();
-    } catch (e2: unknown) { setError(e2 instanceof Error ? e2.message : "Approval failed"); }
+    } catch (e2: unknown) {
+      setError(e2 instanceof Error ? e2.message : "Approval failed");
+      // If it failed on stock, pull the per-item shortage so the storekeeper
+      // can act on it (stock in, or raise a purchase request) instead of
+      // just seeing an error.
+      try {
+        const r = await apiFetch<ApiEnvelope<{ orderId: string; orderNumber: string; shortages: NonNullable<typeof shortage>["shortages"] }>>(`/sales/orders/${id}/shortage`);
+        if (r.data?.shortages?.length) setShortage(r.data);
+      } catch { /* leave the plain error */ }
+    }
+  }
+
+  async function raiseShortagePR() {
+    if (!shortage) return;
+    setRaising(true); setError("");
+    try {
+      const r = await apiFetch<ApiEnvelope<{ reference: string }>>(`/sales/orders/${shortage.orderId}/raise-purchase-request`, { method: "POST", body: JSON.stringify({}) });
+      setRaiseMsg(`Purchase request ${r.data?.reference ?? ""} created — procurement can now action it.`);
+      setShortage(null);
+    } catch (e2: unknown) { setError(e2 instanceof Error ? e2.message : "Failed to raise purchase request"); }
+    finally { setRaising(false); }
   }
 
   if (create) {
@@ -1117,6 +1145,42 @@ export function OrdersPage({ create = false }: { create?: boolean }) {
       <SalesNav />
 
       {error && <div className="mb-5 app-alert-warning">{error}</div>}
+      {raiseMsg && <div className="mb-5 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">{raiseMsg}</div>}
+
+      {shortage && (
+        <div className="mb-5 rounded-2xl border border-amber-300 bg-amber-50/70 p-5">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h3 className="text-sm font-bold text-amber-900">Stock shortage — {shortage.orderNumber} can&rsquo;t be released</h3>
+            <button onClick={() => setShortage(null)} className="text-xs font-semibold text-amber-700 hover:underline">Dismiss</button>
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs uppercase tracking-wide text-amber-700/80">
+                <th className="pb-1.5 font-semibold">Product</th>
+                <th className="pb-1.5 text-right font-semibold">Ordered</th>
+                <th className="pb-1.5 text-right font-semibold">In stock</th>
+                <th className="pb-1.5 text-right font-semibold">Short by</th>
+              </tr>
+            </thead>
+            <tbody>
+              {shortage.shortages.map((s) => (
+                <tr key={s.productId} className="border-t border-amber-200">
+                  <td className="py-1.5 text-ink">{s.product?.name ?? s.productId}{s.product?.sku ? ` (${s.product.sku})` : ""}</td>
+                  <td className="py-1.5 text-right tabular-nums">{s.ordered}</td>
+                  <td className="py-1.5 text-right tabular-nums">{s.available}</td>
+                  <td className="py-1.5 text-right font-bold tabular-nums text-amber-900">{s.shortBy}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <button onClick={() => void raiseShortagePR()} disabled={raising} className="rounded-lg bg-amber-600 px-3.5 py-1.5 text-xs font-bold text-white transition hover:bg-amber-700 disabled:opacity-50">
+              {raising ? "Raising…" : "Raise purchase request"}
+            </button>
+            <span className="text-xs text-amber-700">Creates a draft purchase request for procurement, or stock the items in and approve again.</span>
+          </div>
+        </div>
+      )}
 
       <div className="mb-5">
         <select value={status} onChange={(e) => setStatus(e.target.value)} className={selectCls}>

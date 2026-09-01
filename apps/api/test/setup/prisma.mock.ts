@@ -99,6 +99,7 @@ export function createPrismaMock() {
     notification: modelMock(),
     notificationSetting: modelMock(),
     procurementOrder: modelMock(),
+    purchaseRequest: modelMock(),
     supplier: modelMock(),
     maintenanceRequest: modelMock(),
     hrTask: modelMock(),

@@ -15,6 +15,7 @@ import {
   CreateSalesOrderItemDto,
   CreateSalesReturnDto,
   ProspectVisitQueryDto,
+  RaiseShortagePurchaseRequestDto,
   SalesQueryDto,
   UpdateCustomerDto,
   UpdateCustomerGroupDto,
@@ -432,6 +433,16 @@ export class SalesService {
     this.assertWarehouseAccess(user, order.warehouseId);
     if (!["PENDING_STOCK_APPROVAL", "APPROVED"].includes(order.status)) throw new BadRequestException("Only pending sales orders can be released.");
 
+    // Named, actionable shortage message — previously a flat "Inventory item
+    // was not found for one or more sales order items" whether the product
+    // simply had 0 on hand or had never been stocked into this warehouse at
+    // all, with no indication of which item or by how much. orderShortage()
+    // below surfaces the same numbers proactively, before an approval is
+    // even attempted.
+    const productIds = order.items.map((item) => item.productId);
+    const products = await this.prisma.product.findMany({ where: { id: { in: productIds } }, select: { id: true, name: true, sku: true } });
+    const productMap = new Map(products.map((p) => [p.id, p]));
+
     // High (DB stability audit, 2026-08-16): this locks StockBatch then
     // InventoryItem via consumeFifoTx, while Poultry/Soya/Market-Planning/
     // Feed-Production lock the opposite order for the same tables — a
@@ -442,7 +453,14 @@ export class SalesService {
     const data = await withDbRetry(() => this.prisma.$transaction(async (tx) => {
       for (const item of order.items) {
         const inventoryItem = await tx.inventoryItem.findFirst({ where: { companyId: user.companyId, warehouseId: order.warehouseId, productId: item.productId, deletedAt: null } });
-        if (!inventoryItem) throw new BadRequestException("Inventory item was not found for one or more sales order items.");
+        const onHand = inventoryItem ? Number(inventoryItem.quantityOnHand) : 0;
+        if (!inventoryItem || onHand < Number(item.quantity)) {
+          const product = productMap.get(item.productId);
+          const label = product ? `${product.name} (${product.sku})` : item.productId;
+          throw new BadRequestException(
+            `Not enough stock to release "${label}" from ${order.warehouse.name} — need ${Number(item.quantity)}, have ${onHand}. Stock it in, or raise a purchase request for the shortfall from this order.`
+          );
+        }
         await this.consumeFifoTx(tx, user, inventoryItem, Number(item.quantity), "SalesOrder", order.id, `Sales release ${order.orderNumber}`);
       }
 
@@ -483,6 +501,83 @@ export class SalesService {
 
     await this.writeAudit(user, "APPROVE", "SalesOrder", order.id, `Approved stock release for ${order.orderNumber}`, context, { branchId: order.branchId, warehouseId: order.warehouseId });
     return { data };
+  }
+
+  // What actually blocks approve-stock-release, laid out per line so the UI
+  // can show it before (or instead of) a failed approval attempt, and so
+  // raiseShortagePurchaseRequest below knows exactly what to request.
+  async orderShortage(user: AuthenticatedUser, id: string) {
+    const order = await this.prisma.salesOrder.findFirst({
+      where: { companyId: user.companyId, id, deletedAt: null },
+      include: { items: true, warehouse: { select: { id: true, name: true } } }
+    });
+    if (!order) throw new NotFoundException("Sales order was not found.");
+    this.assertWarehouseAccess(user, order.warehouseId);
+
+    const productIds = order.items.map((item) => item.productId);
+    const [products, inventoryItems] = await Promise.all([
+      this.prisma.product.findMany({ where: { id: { in: productIds } }, select: { id: true, name: true, sku: true, uom: { select: { symbol: true } } } }),
+      this.prisma.inventoryItem.findMany({ where: { companyId: user.companyId, warehouseId: order.warehouseId, productId: { in: productIds }, deletedAt: null }, select: { productId: true, quantityOnHand: true } })
+    ]);
+    const productMap = new Map(products.map((p) => [p.id, p]));
+    const stockMap = new Map(inventoryItems.map((i) => [i.productId, Number(i.quantityOnHand)]));
+
+    const shortages = order.items
+      .map((item) => {
+        const available = stockMap.get(item.productId) ?? 0;
+        const ordered = Number(item.quantity);
+        return {
+          productId: item.productId,
+          product: productMap.get(item.productId) ?? null,
+          ordered,
+          available,
+          shortBy: Math.max(0, ordered - available),
+          unitPrice: Number(item.unitPrice)
+        };
+      })
+      .filter((row) => row.shortBy > 0);
+
+    return { data: { orderId: order.id, orderNumber: order.orderNumber, warehouse: order.warehouse, canApprove: shortages.length === 0, shortages } };
+  }
+
+  async raiseShortagePurchaseRequest(user: AuthenticatedUser, id: string, dto: RaiseShortagePurchaseRequestDto, context: RequestContext) {
+    const { data: shortage } = await this.orderShortage(user, id);
+    if (!shortage.shortages.length) {
+      throw new BadRequestException("This order has no stock shortage — nothing to raise a purchase request for.");
+    }
+    const order = await this.prisma.salesOrder.findFirst({ where: { companyId: user.companyId, id }, select: { id: true, orderNumber: true, branchId: true } });
+    if (!order) throw new NotFoundException("Sales order was not found.");
+
+    const reference = await nextRef(this.prisma, user.companyId, "PR");
+    const items = shortage.shortages.map((row, index) => ({
+      productId: row.productId,
+      productName: row.product?.name ?? row.productId,
+      quantity: row.shortBy,
+      uomCode: row.product?.uom?.symbol ?? "UNIT",
+      estimatedUnitCost: row.unitPrice || undefined,
+      description: `Shortfall for sales order ${order.orderNumber} — ordered ${row.ordered}, in stock ${row.available}`,
+      sequence: index + 1
+    }));
+    const totalEstimate = shortage.shortages.reduce((sum, row) => sum + row.shortBy * row.unitPrice, 0);
+
+    const row = await this.prisma.purchaseRequest.create({
+      data: {
+        companyId: user.companyId,
+        reference,
+        title: `Stock shortage — Sales Order ${order.orderNumber}`,
+        salesOrderId: order.id,
+        requestedById: user.id,
+        branchId: order.branchId,
+        requiredDate: dto.requiredDate ? new Date(dto.requiredDate) : undefined,
+        totalEstimate,
+        notes: dto.notes ?? `Raised from sales order ${order.orderNumber}'s stock shortage.`,
+        createdById: user.id,
+        items: { create: items }
+      } as Prisma.PurchaseRequestUncheckedCreateInput,
+      include: { items: true }
+    });
+    await this.writeAudit(user, "CREATE", "PurchaseRequest", row.id, `Raised purchase request ${reference} for sales order ${order.orderNumber} shortage`, context, { branchId: order.branchId ?? undefined });
+    return { data: row };
   }
 
   async listInvoices(user: AuthenticatedUser, query: SalesQueryDto) {

@@ -5624,6 +5624,10 @@ model PurchaseRequest {
   marketTargetId              String?
   materialRequirementPlanId   String?
   procurementRecommendationId String?
+  // Loose reference (no relation, same convention as the two above) — set
+  // when this request was raised directly from a sales order that couldn't
+  // be stock-released for lack of inventory.
+  salesOrderId                String?
   requestedById               String
   branchId                    String?
   requiredDate                DateTime?
@@ -5654,6 +5658,7 @@ model PurchaseRequest {
   @@index([marketTargetId])
   @@index([materialRequirementPlanId])
   @@index([procurementRecommendationId])
+  @@index([salesOrderId])
   @@index([requestedById])
   @@index([deletedAt])
 }
