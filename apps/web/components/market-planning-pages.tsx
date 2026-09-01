@@ -913,6 +913,7 @@ export function InventoryAvailabilityCheckPage() {
 export function ProcurementRecommendationPage({ convert = false }: { convert?: boolean }) {
   const [rows, setRows] = useState<RecommendationRow[]>(() => getCachedFirst<ApiEnvelope<RecommendationRow[]>>("/market-planning/recommendations")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/market-planning/recommendations"));
+  const [mrps, setMrps] = useState<MrpRow[]>(() => getCachedFirst<ApiEnvelope<MrpRow[]>>("/market-planning/mrp")?.data ?? []);
   const [mrpId, setMrpId] = useState("");
   const [recommendationId, setRecommendationId] = useState("");
   const [message, setMessage] = useState("");
@@ -928,7 +929,10 @@ export function ProcurementRecommendationPage({ convert = false }: { convert?: b
     const fresh = res.data ?? [];
     setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh);
   }
-  useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false)); }, []);
+  function loadMrps() {
+    apiFetch<ApiEnvelope<MrpRow[]>>("/market-planning/mrp").then((res) => setMrps(res.data ?? [])).catch(() => undefined);
+  }
+  useEffect(() => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false)); if (!convert) loadMrps(); }, [convert]);
   useApiRecovery(rows.length === 0, () => { load().catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false)); });
   async function generate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -984,8 +988,9 @@ export function ProcurementRecommendationPage({ convert = false }: { convert?: b
         </form>
       ) : (
         <form onSubmit={generate} className="app-card mb-6 flex flex-wrap items-end gap-4 p-5">
-          <label className="grid min-w-80 gap-1 text-sm font-semibold">MRP ID<input required className={inputClass} value={mrpId} onChange={(e) => setMrpId(e.target.value)} placeholder="Paste MRP ID from details or API result" /></label>
+          <label className="grid min-w-80 gap-1 text-sm font-semibold">MRP run<select required className={inputClass} value={mrpId} onChange={(e) => setMrpId(e.target.value)}><option value="">Select an MRP run</option>{mrps.map((m) => <option key={m.id} value={m.id}>{m.mrpNumber} — {new Date(m.createdAt).toLocaleDateString("en-GH")} · shortage {number(m.totalShortageKg)} kg</option>)}</select></label>
           <button disabled={acting} className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60" type="submit"><ShoppingCart className="h-4 w-4" /> {acting ? "Generating…" : "Generate recommendations"}</button>
+          {mrps.length === 0 && <span className="text-sm text-ink/50">No MRP runs yet — run one under Material Requirement Planning first.</span>}
         </form>
       )}
       {actionError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{actionError}</p>}
@@ -1008,7 +1013,7 @@ export function ProductionExecutionPage() {
   const { options, optionsError } = useOptions();
   const [plans, setPlans] = useState<PlanRow[]>(() => getCachedFirst<ApiEnvelope<PlanRow[]>>("/market-planning/production-plans")?.data ?? []);
   const [plan, setPlan] = useState<PlanRow | null>(null);
-  const [form, setForm] = useState({ planId: "", productionPlanItemId: "", rawMaterialWarehouseId: "", finishedGoodsWarehouseId: "", producedQuantityKg: "1000", wastageKg: "0" });
+  const [form, setForm] = useState({ planId: "", productionPlanItemId: "", rawMaterialWarehouseId: "", finishedGoodsWarehouseId: "", producedQuantityKg: "", wastageKg: "0" });
   const [message, setMessage] = useState("");
   const [loadError, setLoadError] = useState("");
   const [submitError, setSubmitError] = useState("");
@@ -1018,12 +1023,25 @@ export function ProductionExecutionPage() {
   }
   useEffect(() => { loadPlans(); }, []);
   useApiRecovery(plans.length === 0, loadPlans);
+  // Remaining kg to produce for a plan item = planned − already produced.
+  function remainingKg(item: PlanItem) {
+    return Math.max(0, Number(item.plannedQuantityKg ?? 0) - Number(item.producedQuantityKg ?? 0));
+  }
+  // Picking a plan item auto-fills Produced kg with what's left on that item —
+  // still editable for a partial run.
+  function selectPlanItem(itemId: string, planItems?: PlanItem[]) {
+    const item = (planItems ?? plan?.items)?.find((x) => x.id === itemId);
+    setForm((f) => ({ ...f, productionPlanItemId: itemId, producedQuantityKg: item ? String(remainingKg(item)) : "" }));
+  }
   async function selectPlan(planId: string) {
-    setForm({ ...form, planId, productionPlanItemId: "" });
+    setForm((f) => ({ ...f, planId, productionPlanItemId: "", producedQuantityKg: "" }));
     if (!planId) return setPlan(null);
     const res = await apiFetch<ApiEnvelope<PlanRow>>(`/market-planning/production-plans/${planId}`);
     setPlan(res.data);
+    // If the plan has exactly one item, select it and fill the quantity now.
+    if (res.data.items?.length === 1) selectPlanItem(res.data.items[0].id, res.data.items);
   }
+  const selectedItem = plan?.items?.find((x) => x.id === form.productionPlanItemId) ?? null;
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitting(true);
@@ -1048,10 +1066,16 @@ export function ProductionExecutionPage() {
       {(loadError || optionsError) && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{loadError || optionsError}</p>}
       <form onSubmit={submit} className="app-card grid gap-4 p-5 md:grid-cols-2">
         <label className="grid gap-1 text-sm font-semibold">Production plan<select required className={inputClass} value={form.planId} onChange={(e) => selectPlan(e.target.value)}><option value="">Select plan</option>{plans.map((x) => <option key={x.id} value={x.id}>{x.planNumber}</option>)}</select></label>
-        <label className="grid gap-1 text-sm font-semibold">Plan item<select required className={inputClass} value={form.productionPlanItemId} onChange={(e) => setForm({ ...form, productionPlanItemId: e.target.value })}><option value="">Select item</option>{plan?.items?.map((x) => <option key={x.id} value={x.id}>{x.product?.name ?? x.productId} - {number(x.plannedQuantityKg)} kg</option>)}</select></label>
+        <label className="grid gap-1 text-sm font-semibold">Plan item<select required className={inputClass} value={form.productionPlanItemId} onChange={(e) => selectPlanItem(e.target.value)}><option value="">Select item</option>{plan?.items?.map((x) => <option key={x.id} value={x.id}>{x.product?.name ?? x.productId} - {number(x.plannedQuantityKg)} kg</option>)}</select></label>
         <label className="grid gap-1 text-sm font-semibold">Raw material warehouse<select required className={inputClass} value={form.rawMaterialWarehouseId} onChange={(e) => setForm({ ...form, rawMaterialWarehouseId: e.target.value })}><option value="">Select warehouse</option>{options.warehouses.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
         <label className="grid gap-1 text-sm font-semibold">Finished goods warehouse<select required className={inputClass} value={form.finishedGoodsWarehouseId} onChange={(e) => setForm({ ...form, finishedGoodsWarehouseId: e.target.value })}><option value="">Select warehouse</option>{options.warehouses.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
-        <label className="grid gap-1 text-sm font-semibold">Produced kg<input className={inputClass} type="number" min="0" step="0.01" value={form.producedQuantityKg} onChange={(e) => setForm({ ...form, producedQuantityKg: e.target.value })} /></label>
+        <label className="grid gap-1 text-sm font-semibold">Produced kg<input required className={inputClass} type="number" min="0" step="0.01" value={form.producedQuantityKg} onChange={(e) => setForm({ ...form, producedQuantityKg: e.target.value })} placeholder="Select a plan item" />
+          {selectedItem && (
+            <span className="text-xs font-normal text-ink/50">
+              Planned {number(selectedItem.plannedQuantityKg)} kg · already produced {number(selectedItem.producedQuantityKg)} kg · {number(remainingKg(selectedItem))} kg left — edit for a partial run
+            </span>
+          )}
+        </label>
         <label className="grid gap-1 text-sm font-semibold">Wastage kg<input className={inputClass} type="number" min="0" step="0.01" value={form.wastageKg} onChange={(e) => setForm({ ...form, wastageKg: e.target.value })} /></label>
         <div className="flex items-center gap-3 md:col-span-2"><button disabled={submitting} className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60" type="submit"><Factory className="h-4 w-4" /> {submitting ? "Posting…" : "Post execution"}</button>{message && <span className="text-sm font-semibold text-emerald-700">{message}</span>}</div>
         {submitError && <p className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-700 md:col-span-2">{submitError}</p>}
