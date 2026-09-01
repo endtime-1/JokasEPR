@@ -76,6 +76,11 @@ export class CreateSoyaBeanIntakeDto {
   @IsString()
   @MaxLength(100)
   idempotencyKey?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(240)
+  purposeOverrideReason?: string;
 }
 
 export class CreateSoyaProcessingBatchDto {
@@ -163,6 +168,11 @@ export class CreateSoyaProcessingBatchDto {
   @IsString()
   @MaxLength(100)
   idempotencyKey?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(240)
+  purposeOverrideReason?: string;
 }
 
 export class CreateSoyaQualityCheckDto {

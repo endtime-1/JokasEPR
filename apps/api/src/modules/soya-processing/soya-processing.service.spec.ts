@@ -19,6 +19,7 @@ const mockTx = {
 const mockPrisma = {
   productionSite: { findFirst: jest.fn() },
   product: { findFirst: jest.fn() },
+  warehouse: { findFirst: jest.fn().mockResolvedValue({ id: "wh", type: "GENERAL", name: "WH", code: "WH", branchId: "b" }) },
   inventoryItem: { findFirst: jest.fn() },
   soyaBeanIntake: { findFirst: jest.fn(), update: jest.fn() },
   soyaProcessingBatch: { findFirst: jest.fn(), update: jest.fn() },
@@ -29,9 +30,15 @@ const mockPrisma = {
   $transaction: jest.fn().mockImplementation((cb: (tx: typeof mockTx) => Promise<unknown>) => cb(mockTx))
 };
 const mockAudit = { write: jest.fn().mockResolvedValue(undefined) };
+const mockWarehousePurpose = {
+  isEnforced: jest.fn().mockResolvedValue(false),
+  assert: jest.fn().mockResolvedValue(undefined),
+  filterForOperation: jest.fn().mockImplementation((_c: string, list: unknown[]) => Promise.resolve(list)),
+  invalidate: jest.fn()
+};
 
 function makeService() {
-  return new SoyaProcessingService(mockPrisma as never, mockAudit as never, {} as never);
+  return new SoyaProcessingService(mockPrisma as never, mockAudit as never, {} as never, mockWarehousePurpose as never);
 }
 
 function makeUser(overrides: Partial<AuthenticatedUser> = {}): AuthenticatedUser {
@@ -54,7 +61,7 @@ function makeDto(overrides: Record<string, unknown> = {}) {
 
 describe("SoyaProcessingService", () => {
   it("is defined", () => {
-    const service = new SoyaProcessingService({} as never, {} as never, {} as never);
+    const service = new SoyaProcessingService({} as never, {} as never, {} as never, {} as never);
     expect(service).toBeDefined();
   });
 });

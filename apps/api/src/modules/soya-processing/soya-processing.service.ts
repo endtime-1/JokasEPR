@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { LookupCacheService } from "../../common/services/lookup-cache.service";
+import { WarehousePurposeService } from "../../common/services/warehouse-purpose.service";
 import { nextRef } from "../../common/next-ref";
 import { withDbRetry } from "../../common/db-retry";
 import {
@@ -31,8 +32,24 @@ export class SoyaProcessingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
-    private readonly lookupCache: LookupCacheService
+    private readonly lookupCache: LookupCacheService,
+    private readonly warehousePurpose: WarehousePurposeService
   ) {}
+
+  private async assertSoyaWarehousePurpose(
+    user: AuthenticatedUser,
+    warehouseId: string,
+    op: "soya.bean-intake" | "soya.output",
+    overrideReason?: string,
+    context?: RequestContext
+  ) {
+    const wh = await this.prisma.warehouse.findFirst({
+      where: { id: warehouseId, companyId: user.companyId, deletedAt: null },
+      select: { id: true, type: true, name: true, code: true, branchId: true },
+    });
+    if (!wh) return;
+    await this.warehousePurpose.assert(user, wh, op, { overrideReason, context });
+  }
 
   async dashboard(user: AuthenticatedUser) {
     const sevenDaysAgo = new Date(Date.now() - 7 * 86400000);
@@ -114,7 +131,10 @@ export class SoyaProcessingService {
       this.prisma.soyaBeanIntake.findMany({ where: this.intakeWhere(user, {}), select: { id: true, receiptNumber: true, supplierName: true, quantityKg: true }, orderBy: { receivedAt: "desc" }, take: 50 }),
       this.prisma.soyaProcessingBatch.findMany({ where: this.batchWhere(user, {}), select: { id: true, batchNumber: true, status: true }, orderBy: { processingDate: "desc" }, take: 50 })
     ]);
-    const result = { data: { productionSites, warehouses, products, intakes, batches } };
+    // Every warehouse picker in this module is soya (beans in, oil/cake out) —
+    // narrow to Soya Store / General when purpose enforcement is on.
+    const scopedWarehouses = await this.warehousePurpose.filterForOperation(user.companyId, warehouses, "soya.bean-intake");
+    const result = { data: { productionSites, warehouses: scopedWarehouses, products, intakes, batches } };
     this.lookupCache.set(cacheKey, result);
     return result;
   }
@@ -140,6 +160,7 @@ export class SoyaProcessingService {
   async createIntake(user: AuthenticatedUser, dto: CreateSoyaBeanIntakeDto, context: RequestContext) {
     this.assertProductionSiteAccess(user, dto.productionSiteId);
     this.assertWarehouseAccess(user, dto.warehouseId);
+    await this.assertSoyaWarehousePurpose(user, dto.warehouseId, "soya.bean-intake", dto.purposeOverrideReason, context);
     // Mobile parity audit (2026-08-17): mirrors createBatch's idempotencyKey
     // handling below — a mobile offline-queue resend (or a client retry
     // after a dropped response) carrying the same idempotencyKey replays the
@@ -293,6 +314,9 @@ export class SoyaProcessingService {
     this.assertWarehouseAccess(user, dto.rawWarehouseId);
     this.assertWarehouseAccess(user, dto.oilWarehouseId);
     this.assertWarehouseAccess(user, dto.cakeWarehouseId);
+    await this.assertSoyaWarehousePurpose(user, dto.rawWarehouseId, "soya.bean-intake", dto.purposeOverrideReason, context);
+    await this.assertSoyaWarehousePurpose(user, dto.oilWarehouseId, "soya.output", dto.purposeOverrideReason, context);
+    await this.assertSoyaWarehousePurpose(user, dto.cakeWarehouseId, "soya.output", dto.purposeOverrideReason, context);
     const site = await this.getProductionSite(user.companyId, dto.productionSiteId);
     const [beanProduct, oilProduct, cakeProduct] = await Promise.all([this.getProduct(user.companyId, dto.beanProductId), this.getProduct(user.companyId, dto.oilProductId), this.getProduct(user.companyId, dto.cakeProductId)]);
     const beanInventory = await this.getInventory(user.companyId, dto.rawWarehouseId, dto.beanProductId);

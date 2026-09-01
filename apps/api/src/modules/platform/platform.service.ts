@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import { AuthenticatedUser } from "@jokas/shared";
+import { AuthenticatedUser, requiredParentForWarehouseType } from "@jokas/shared";
 import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateBranchDto } from "./dto/create-branch.dto";
@@ -254,11 +254,22 @@ export class PlatformService {
     return { data };
   }
 
+  private assertWarehouseParentForType(type: string, farmId?: string | null, productionSiteId?: string | null) {
+    const need = requiredParentForWarehouseType(type);
+    if (need === "productionSite" && !productionSiteId) {
+      throw new BadRequestException("A Feed Store or Soya Store must be linked to a production site.");
+    }
+    if (need === "farm" && !farmId) {
+      throw new BadRequestException("An Egg Store or Farm Store must be linked to a farm.");
+    }
+  }
+
   async createWarehouse(user: AuthenticatedUser, dto: CreateWarehouseDto, context: RequestContext) {
     const branchId = dto.branchId ?? (await this.getDefaultBranchId(user));
     this.assertAssigned(user, branchId, user.branchIds, "branch");
     this.assertAssigned(user, dto.farmId, user.farmIds, "farm");
     this.assertAssigned(user, dto.productionSiteId, user.productionSiteIds, "production site");
+    this.assertWarehouseParentForType(dto.type ?? "GENERAL", dto.farmId, dto.productionSiteId);
     const warehouse = await this.prisma.warehouse.create({
       data: {
         companyId: user.companyId,
@@ -295,6 +306,11 @@ export class PlatformService {
     if (dto.branchId !== undefined) this.assertAssigned(user, dto.branchId, user.branchIds, "branch");
     if (dto.farmId !== undefined) this.assertAssigned(user, dto.farmId, user.farmIds, "farm");
     if (dto.productionSiteId !== undefined) this.assertAssigned(user, dto.productionSiteId, user.productionSiteIds, "production site");
+    this.assertWarehouseParentForType(
+      dto.type ?? existing.type,
+      dto.farmId !== undefined ? dto.farmId : existing.farmId,
+      dto.productionSiteId !== undefined ? dto.productionSiteId : existing.productionSiteId,
+    );
     const warehouse = await this.prisma.warehouse.update({
       where: { id: warehouseId },
       data: {
