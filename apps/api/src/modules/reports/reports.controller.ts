@@ -6,7 +6,7 @@ import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { RequirePermissions } from "../../common/decorators/permissions.decorator";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { PermissionsGuard } from "../../common/guards/permissions.guard";
-import { ReportExportQueryDto, ReportQueryDto } from "./dto/report-query.dto";
+import { DocumentReportQueryDto, DocumentReportRunDto, ReportExportQueryDto, ReportQueryDto, ScopeTreeQueryDto } from "./dto/report-query.dto";
 import { ReportsService } from "./reports.service";
 
 @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -24,6 +24,45 @@ export class ReportsController {
   @RequirePermissions(PERMISSIONS.PLATFORM_READ)
   options(@CurrentUser() user: AuthenticatedUser) {
     return this.reportsService.options(user);
+  }
+
+  // ── Report navigator: scope tree + document reports ──────────────────────
+  // Declared before @Get(":id") so "scope-tree" / "documents" aren't captured
+  // as a report id.
+  @Get("scope-tree")
+  @RequirePermissions(PERMISSIONS.PLATFORM_READ)
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  scopeTree(@CurrentUser() user: AuthenticatedUser, @Query() query: ScopeTreeQueryDto) {
+    return this.reportsService.scopeTree(user, query.module);
+  }
+
+  @Get("documents")
+  @RequirePermissions(PERMISSIONS.PLATFORM_READ)
+  documentCatalog(@CurrentUser() user: AuthenticatedUser, @Query() query: DocumentReportQueryDto) {
+    return this.reportsService.documentCatalog(user, query.module, query.scopeType);
+  }
+
+  @Get("documents/:id")
+  @RequirePermissions(PERMISSIONS.PLATFORM_READ)
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  runDocument(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Query() query: DocumentReportRunDto) {
+    return this.reportsService.runDocument(id, user, query);
+  }
+
+  @Get("documents/:id/export.pdf")
+  @RequirePermissions(PERMISSIONS.REPORTS_EXPORT)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  async documentPdf(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Query() query: DocumentReportRunDto, @Res() response: Response, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    const body = await this.reportsService.exportDocument(id, "pdf", user, query, { ipAddress, userAgent });
+    this.send(response, "application/pdf", `${id}.pdf`, body);
+  }
+
+  @Get("documents/:id/export.csv")
+  @RequirePermissions(PERMISSIONS.REPORTS_EXPORT)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  async documentCsv(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Query() query: DocumentReportRunDto, @Res() response: Response, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    const body = await this.reportsService.exportDocument(id, "csv", user, query, { ipAddress, userAgent });
+    this.send(response, "text/csv", `${id}.csv`, body);
   }
 
   // Medium (DB stability audit, 2026-08-16): this comment previously said

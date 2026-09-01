@@ -4,7 +4,8 @@ import { Prisma } from "@prisma/client";
 import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { sanitizeFormulaCell } from "../../common/utils/csv";
-import { ReportQueryDto } from "./dto/report-query.dto";
+import { ReportQueryDto, DocumentReportRunDto } from "./dto/report-query.dto";
+import { DOCUMENT_REPORTS, DocumentReport, DocumentReportDefinition } from "./report-documents";
 
 type RequestContext = {
   ipAddress?: string;
@@ -258,6 +259,176 @@ export class ReportsService {
     if (format === "xls") return this.excel(result);
     if (format === "html") return this.html(result);
     return this.csv(result);
+  }
+
+  // ── Scope tree — the drill hierarchy for a module, scoped to the user ─────
+  async scopeTree(user: AuthenticatedUser, module: string) {
+    if (module === "poultry") return this.poultryScopeTree(user);
+    throw new NotFoundException(`No report scope tree for module "${module}" yet.`);
+  }
+
+  private async poultryScopeTree(user: AuthenticatedUser) {
+    const scopeFarms = user.hasGlobalAccess || user.farmIds.length === 0 ? {} : { id: { in: user.farmIds } };
+    const [branches, farms, houses, allocations, batches] = await Promise.all([
+      this.prisma.branch.findMany({ where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess || user.branchIds.length === 0 ? {} : { id: { in: user.branchIds } }) }, select: { id: true, name: true, code: true } }),
+      this.prisma.farm.findMany({ where: { companyId: user.companyId, deletedAt: null, ...scopeFarms }, select: { id: true, name: true, code: true, branchId: true } }),
+      this.prisma.poultryHouse.findMany({ where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess || user.farmIds.length === 0 ? {} : { farmId: { in: user.farmIds } }) }, select: { id: true, name: true, code: true, farmId: true } }),
+      this.prisma.batchPenAllocation.findMany({ where: { companyId: user.companyId, ...(user.hasGlobalAccess || user.farmIds.length === 0 ? {} : { farmId: { in: user.farmIds } }) }, select: { flockBatchId: true, poultryHouseId: true } }),
+      this.prisma.flockBatch.findMany({ where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess || user.farmIds.length === 0 ? {} : { farmId: { in: user.farmIds } }) }, select: { id: true, code: true, name: true, status: true, birdType: true, farmId: true, poultryHouseId: true }, orderBy: { startDate: "desc" } }),
+    ]);
+
+    // batch → set of houses it occupies (allocations + its own primary house)
+    const batchHouses = new Map<string, Set<string>>();
+    for (const a of allocations) {
+      if (!batchHouses.has(a.flockBatchId)) batchHouses.set(a.flockBatchId, new Set());
+      batchHouses.get(a.flockBatchId)!.add(a.poultryHouseId);
+    }
+    for (const b of batches) if (b.poultryHouseId) (batchHouses.get(b.id) ?? batchHouses.set(b.id, new Set()).get(b.id)!).add(b.poultryHouseId);
+
+    const batchNode = (b: (typeof batches)[number]) => ({
+      type: "batch", id: b.id, label: `${b.code} — ${b.name}`,
+      meta: { status: b.status, birdType: b.birdType },
+      children: [],
+    });
+
+    const root = {
+      type: "company", id: user.companyId, label: "Company",
+      children: branches.map((br) => ({
+        type: "branch", id: br.id, label: br.name,
+        children: farms.filter((f) => f.branchId === br.id).map((f) => ({
+          type: "farm", id: f.id, label: f.name,
+          children: houses.filter((h) => h.farmId === f.id).map((h) => ({
+            type: "house", id: h.id, label: h.name,
+            children: batches.filter((b) => batchHouses.get(b.id)?.has(h.id)).map(batchNode),
+          })).concat(
+            // batches on this farm with no house/allocation yet — surface them at farm level
+            batches.filter((b) => b.farmId === f.id && (batchHouses.get(b.id)?.size ?? 0) === 0).map(batchNode) as never[],
+          ),
+        })),
+      })),
+    };
+    return { data: { module: "poultry", levels: ["company", "branch", "farm", "house", "batch"], root } };
+  }
+
+  // ── Document reports ────────────────────────────────────────────────────
+  documentCatalog(user: AuthenticatedUser, module: string, scopeType?: string) {
+    return {
+      data: DOCUMENT_REPORTS.filter(
+        (d) => d.module === module && (!scopeType || d.scopeType === scopeType) && this.canViewDocument(user, d),
+      ).map((d) => ({ id: d.id, module: d.module, label: d.label, description: d.description, scopeType: d.scopeType })),
+    };
+  }
+
+  async runDocument(id: string, user: AuthenticatedUser, dto: DocumentReportRunDto): Promise<{ data: DocumentReport }> {
+    const def = DOCUMENT_REPORTS.find((d) => d.id === id);
+    if (!def) throw new NotFoundException("Report was not found.");
+    if (!this.canViewDocument(user, def)) throw new ForbiddenException("You do not have permission to view this report.");
+    if (dto.scopeType !== def.scopeType) throw new NotFoundException(`This report runs on a "${def.scopeType}", not a "${dto.scopeType}".`);
+    const range = { start: dto.startDate ? new Date(dto.startDate) : undefined, end: dto.endDate ? new Date(`${dto.endDate}T23:59:59.999Z`) : undefined };
+    const built = await def.run({ prisma: this.prisma, user, scopeType: dto.scopeType, scopeId: dto.scopeId, range });
+    return {
+      data: {
+        id: def.id,
+        title: def.label,
+        subtitle: built.subtitle,
+        scope: { type: def.scopeType, id: dto.scopeId, label: built.scopeLabel },
+        generatedAt: new Date().toISOString(),
+        sections: built.sections,
+      },
+    };
+  }
+
+  async exportDocument(id: string, format: "pdf" | "csv", user: AuthenticatedUser, dto: DocumentReportRunDto, context: RequestContext) {
+    const report = (await this.runDocument(id, user, dto)).data;
+    await this.audit.write({
+      companyId: user.companyId, actorUserId: user.id, action: "EXPORT",
+      entityType: "Report", entityId: id,
+      summary: `Exported ${report.title} (${report.scope.label}) as ${format.toUpperCase()}`,
+      ipAddress: context.ipAddress, userAgent: context.userAgent,
+    });
+    return format === "pdf" ? this.documentPdf(report) : this.documentCsv(report);
+  }
+
+  private canViewDocument(user: AuthenticatedUser, def: DocumentReportDefinition) {
+    return user.hasGlobalAccess || user.permissions.includes(def.permission) || user.permissions.includes(PERMISSIONS.REPORTS_EXPORT);
+  }
+
+  private documentCsv(report: DocumentReport): string {
+    const lines: string[] = [`"${report.title}","${report.scope.label}","${report.generatedAt}"`, ""];
+    const block = (title: string, head: string[], cols: string[], data: Record<string, unknown>[]) => {
+      lines.push(`"${title}"`);
+      lines.push(head.map((h) => `"${sanitizeFormulaCell(String(h))}"`).join(","));
+      for (const row of data) lines.push(cols.map((k) => `"${sanitizeFormulaCell(String(row[k] ?? ""))}"`).join(","));
+      lines.push("");
+    };
+    for (const s of report.sections) {
+      if (s.type === "table") {
+        block(s.title, s.columns.map((c) => c.label), s.columns.map((c) => c.key), s.rows);
+      } else if (s.type === "line-chart" || s.type === "bar-chart") {
+        block(s.title, [s.xKey, ...s.series.map((se) => se.name)], [s.xKey, ...s.series.map((se) => se.key)], s.data);
+      } else if (s.type === "kpis") {
+        lines.push('"KPIs"');
+        for (const i of s.items) lines.push(`"${sanitizeFormulaCell(i.label)}","${sanitizeFormulaCell(i.value)}"`);
+        lines.push("");
+      } else if (s.type === "timeline") {
+        lines.push(`"${s.title}"`);
+        for (const e of s.events) lines.push(`"${e.date}","${sanitizeFormulaCell(e.label)}"`);
+        lines.push("");
+      }
+    }
+    return lines.join("\n");
+  }
+
+  private async documentPdf(report: DocumentReport): Promise<Buffer> {
+    const { default: PDFDocument } = await import("pdfkit");
+    const doc = new PDFDocument({ margin: 48, size: "A4" });
+    const chunks: Buffer[] = [];
+    doc.on("data", (c: Buffer) => chunks.push(c));
+    const done = new Promise<Buffer>((resolve) => doc.on("end", () => resolve(Buffer.concat(chunks))));
+
+    doc.fontSize(18).font("Helvetica-Bold").text(report.title);
+    doc.fontSize(11).font("Helvetica").fillColor("#555").text(`${report.scope.label} — ${report.subtitle}`);
+    doc.fontSize(8).fillColor("#999").text(`Generated ${new Date(report.generatedAt).toLocaleString("en-GH")}`);
+    doc.fillColor("#000").moveDown(0.8);
+
+    for (const s of report.sections) {
+      if (s.type === "header") {
+        for (const f of s.fields) doc.fontSize(9).font("Helvetica-Bold").text(`${f.label}: `, { continued: true }).font("Helvetica").text(f.value);
+        doc.moveDown(0.5);
+      } else if (s.type === "narrative") {
+        doc.moveDown(0.3).fontSize(10).font("Helvetica-Oblique").fillColor("#333").text(s.text).fillColor("#000");
+      } else if (s.type === "kpis") {
+        doc.moveDown(0.4).fontSize(11).font("Helvetica-Bold").text("Summary");
+        doc.font("Helvetica").fontSize(9);
+        for (const i of s.items) doc.text(`${i.label}: ${i.value}`);
+      } else if (s.type === "table") {
+        this.pdfTable(doc, s.title, s.columns.map((c) => c.label), s.rows.map((r) => s.columns.map((c) => String(r[c.key] ?? ""))));
+      } else if (s.type === "line-chart" || s.type === "bar-chart") {
+        // Charts render on the web; in the PDF we tabulate the same data so
+        // the numbers travel with the document.
+        const head = [s.xKey, ...s.series.map((se) => se.name)];
+        this.pdfTable(doc, s.title, head, s.data.map((row) => [String(row[s.xKey] ?? ""), ...s.series.map((se) => String(row[se.key] ?? ""))]));
+      } else if (s.type === "timeline") {
+        this.pdfTable(doc, s.title, ["Date", "Event"], s.events.map((e) => [e.date, e.label]));
+      }
+    }
+    doc.end();
+    return done;
+  }
+
+  private pdfTable(doc: PDFKit.PDFDocument, title: string, head: string[], rows: string[][]) {
+    if (doc.y > 720) doc.addPage();
+    doc.moveDown(0.5).fontSize(11).font("Helvetica-Bold").fillColor("#000").text(title);
+    doc.fontSize(8).font("Helvetica");
+    const preview = rows.slice(0, 40);
+    doc.font("Helvetica-Bold").text(head.join("   |   "));
+    doc.font("Helvetica");
+    for (const r of preview) {
+      if (doc.y > 780) doc.addPage();
+      doc.text(r.join("   |   "));
+    }
+    if (rows.length > preview.length) doc.fillColor("#999").text(`… ${rows.length - preview.length} more rows`).fillColor("#000");
+    doc.moveDown(0.3);
   }
 
   private getDefinition(id: string, user: AuthenticatedUser) {

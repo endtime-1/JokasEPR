@@ -190,6 +190,57 @@ describe("ReportsService — totals() uses the latest row for balance columns in
   });
 });
 
+describe("ReportsService.runDocument — poultry batch lifecycle", () => {
+  function makeUser(overrides: Partial<Parameters<ReportsService["catalog"]>[0]> = {}) {
+    return {
+      id: "u-1", companyId: "co-1", email: "u@x.com", fullName: "U",
+      roles: [], permissions: [PERMISSIONS.POULTRY_READ], branchIds: [], farmIds: [], warehouseIds: [], productionSiteIds: [],
+      hasGlobalAccess: false, ...overrides,
+    };
+  }
+
+  const batch = {
+    id: "b-1", code: "FB-1", name: "Flock 1", birdType: "BROILERS", status: "ACTIVE",
+    openingBirdCount: 1000, startDate: new Date(Date.now() - 21 * 86400000), farmId: "f-1",
+    farm: { name: "Adenta", code: "ADN" }, poultryHouse: { name: "House 1", code: "H1" },
+    dailyRecords: [],
+    mortalityRecords: [
+      { recordDate: new Date(Date.now() - 20 * 86400000), birdCount: 10, isCulling: false },
+      { recordDate: new Date(Date.now() - 10 * 86400000), birdCount: 40, isCulling: false },
+      { recordDate: new Date(Date.now() - 5 * 86400000), birdCount: 5, isCulling: true },
+    ],
+    feedConsumptionRecords: [{ recordDate: new Date(Date.now() - 10 * 86400000), quantityKg: 300 }],
+    eggProductionRecords: [],
+    birdWeightRecords: [{ recordDate: new Date(Date.now() - 2 * 86400000), averageWeightKg: 1.6 }],
+    medicationRecords: [{ startDate: new Date(Date.now() - 8 * 86400000), medicationName: "Amoxi" }],
+    vaccinationRecords: [],
+    healthObservations: [],
+    poultryTransferRecords: [],
+    costRecords: [{ costDate: new Date(Date.now() - 9 * 86400000), costType: "FEED", amount: 900 }],
+  };
+
+  it("computes mortality %, alive count and a bird-survival curve", async () => {
+    const mockPrisma = { flockBatch: { findFirst: jest.fn().mockResolvedValue(batch) } };
+    const service = new ReportsService(mockPrisma as never, {} as never);
+
+    const { data } = await service.runDocument("poultry.batch-lifecycle", makeUser() as never, { scopeType: "batch", scopeId: "b-1" } as never);
+
+    expect(data.scope.label).toBe("FB-1 — Flock 1");
+    const kpis = data.sections.find((s) => s.type === "kpis") as { items: { label: string; value: string }[] };
+    expect(kpis.items.find((i) => i.label === "Live birds")?.value).toBe("945"); // 1000 - 50 deaths - 5 culls
+    expect(kpis.items.find((i) => i.label === "Mortality")?.value).toBe("5%");
+    const curve = data.sections.find((s) => s.type === "line-chart" && s.title === "Bird survival") as { data: Record<string, number>[] };
+    expect(curve.data.at(-1)?.cumulativeMortality).toBe(50);
+  });
+
+  it("rejects a scopeType mismatch", async () => {
+    const service = new ReportsService({ flockBatch: { findFirst: jest.fn() } } as never, {} as never);
+    await expect(
+      service.runDocument("poultry.batch-lifecycle", makeUser() as never, { scopeType: "farm", scopeId: "f-1" } as never),
+    ).rejects.toThrow(/runs on a "batch"/);
+  });
+});
+
 describe("ReportsService — CSV/XLS formula-injection neutralization (M12)", () => {
   function makeReportResult(cellValue: unknown) {
     return {

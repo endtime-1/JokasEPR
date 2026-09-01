@@ -42,6 +42,39 @@ export class ReportQueryDto {
   supplierId?: string;
 }
 
+export class ScopeTreeQueryDto {
+  @IsIn(["poultry", "feed", "soya", "inventory", "sales"])
+  module!: "poultry" | "feed" | "soya" | "inventory" | "sales";
+}
+
+export class DocumentReportQueryDto {
+  @IsIn(["poultry", "feed", "soya", "inventory", "sales"])
+  module!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  scopeType?: string;
+}
+
+export class DocumentReportRunDto {
+  // Which node in the scope tree the report is being run for.
+  @IsString()
+  @MaxLength(40)
+  scopeType!: string;
+
+  @IsUUID()
+  scopeId!: string;
+
+  @IsOptional()
+  @IsDateString()
+  startDate?: string;
+
+  @IsOptional()
+  @IsDateString()
+  endDate?: string;
+}
+
 export class ReportExportQueryDto extends ReportQueryDto {
   @IsOptional()
   @IsIn(["pdf", "xls", "csv", "html"])
