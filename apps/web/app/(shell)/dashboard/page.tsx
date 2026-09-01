@@ -835,6 +835,22 @@ export default function DashboardPage() {
                 Refresh
               </button>
             </div>
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href="/dashboard/poultry"
+                className="flex items-center gap-1.5 rounded-lg border border-brand/30 bg-brand/5 px-3 py-1.5 text-xs font-semibold text-brand transition hover:bg-brand/10"
+              >
+                Poultry Executive
+                <ArrowRight aria-hidden className="h-3.5 w-3.5" />
+              </Link>
+              <Link
+                href="/reports"
+                className="flex items-center gap-1.5 rounded-lg border border-line bg-white/80 px-3 py-1.5 text-xs font-semibold text-ink/70 transition hover:bg-white hover:text-ink"
+              >
+                Reports
+                <ArrowRight aria-hidden className="h-3.5 w-3.5" />
+              </Link>
+            </div>
           </div>
         </div>
       </div>
