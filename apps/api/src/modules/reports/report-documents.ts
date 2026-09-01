@@ -930,12 +930,319 @@ const machineHistory: DocumentReportDefinition = {
   },
 };
 
+// ── Poultry: farm / house rollup ──────────────────────────────────────────
+function poultryRollup(level: "farm" | "house"): DocumentReportDefinition {
+  const key = level === "farm" ? "farmId" : "poultryHouseId";
+  return {
+    id: `poultry.${level}-summary`,
+    module: "poultry",
+    label: level === "farm" ? "Farm summary" : "House summary",
+    description: `Production, mortality, feed and flock comparison for the ${level}, last 90 days.`,
+    scopeType: level,
+    permission: "poultry.read",
+    async run({ prisma, user, scopeId }) {
+      const since = new Date(Date.now() - 90 * 86400000);
+      const scope = level === "farm"
+        ? await prisma.farm.findFirst({ where: { id: scopeId, companyId: user.companyId, deletedAt: null }, select: { id: true, name: true, code: true, branch: { select: { name: true } } } })
+        : await prisma.poultryHouse.findFirst({ where: { id: scopeId, companyId: user.companyId, deletedAt: null }, select: { id: true, name: true, code: true, farm: { select: { name: true } } } });
+      if (!scope) throw new Error(`${level} was not found.`);
+
+      const [batches, eggs, mort, feed, pens] = await Promise.all([
+        prisma.flockBatch.findMany({ where: { companyId: user.companyId, deletedAt: null, [key]: scopeId }, select: { id: true, code: true, name: true, birdType: true, status: true, openingBirdCount: true, startDate: true } }),
+        prisma.eggProductionRecord.groupBy({ by: ["recordDate"], where: { companyId: user.companyId, deletedAt: null, [key]: scopeId, recordDate: { gte: since } }, _sum: { goodEggs: true, crackedEggs: true, dirtyEggs: true, brokenEggs: true, rejectedEggs: true }, orderBy: { recordDate: "asc" } }),
+        prisma.mortalityRecord.groupBy({ by: ["recordDate"], where: { companyId: user.companyId, deletedAt: null, [key]: scopeId, recordDate: { gte: since }, isCulling: false }, _sum: { birdCount: true }, orderBy: { recordDate: "asc" } }),
+        prisma.feedConsumptionRecord.groupBy({ by: ["recordDate"], where: { companyId: user.companyId, deletedAt: null, [key]: scopeId, recordDate: { gte: since } }, _sum: { quantityKg: true }, orderBy: { recordDate: "asc" } }),
+        level === "house" ? prisma.pen.findMany({ where: { companyId: user.companyId, deletedAt: null, poultryHouseId: scopeId }, orderBy: { penNumber: "asc" }, select: { penNumber: true, name: true, capacity: true, batchAllocations: { where: { flockBatch: { status: "ACTIVE", deletedAt: null } }, select: { birdCount: true, flockBatch: { select: { code: true } } } } } }) : Promise.resolve([]),
+      ]);
+
+      const active = batches.filter((b) => b.status === "ACTIVE");
+      const placed = active.reduce((s, b) => s + num(b.openingBirdCount), 0);
+      // mortality by batch across all time (for the comparison bar)
+      const batchDeaths = await prisma.mortalityRecord.groupBy({ by: ["flockBatchId"], where: { companyId: user.companyId, deletedAt: null, [key]: scopeId, isCulling: false }, _sum: { birdCount: true } });
+      const deathsByBatch = new Map(batchDeaths.map((d) => [d.flockBatchId, num(d._sum.birdCount)]));
+      const periodEggs = eggs.reduce((s, e) => s + num(e._sum.goodEggs) + num(e._sum.crackedEggs) + num(e._sum.dirtyEggs) + num(e._sum.brokenEggs) + num(e._sum.rejectedEggs), 0);
+      const periodDeaths = mort.reduce((s, m) => s + num(m._sum.birdCount), 0);
+      const periodFeed = feed.reduce((s, f) => s + num(f._sum.quantityKg), 0);
+
+      const dailyMap = new Map<string, { date: string; eggs: number; deaths: number; feed: number }>();
+      const t = (d: Date) => { const k = dayKey(d); if (!dailyMap.has(k)) dailyMap.set(k, { date: k, eggs: 0, deaths: 0, feed: 0 }); return dailyMap.get(k)!; };
+      for (const e of eggs) t(e.recordDate).eggs += num(e._sum.goodEggs) + num(e._sum.crackedEggs) + num(e._sum.dirtyEggs) + num(e._sum.brokenEggs) + num(e._sum.rejectedEggs);
+      for (const m of mort) t(m.recordDate).deaths += num(m._sum.birdCount);
+      for (const f of feed) t(f.recordDate).feed += num(f._sum.quantityKg);
+      const daily = [...dailyMap.values()].sort((a, b) => a.date.localeCompare(b.date));
+
+      const sections: ReportSection[] = [
+        {
+          type: "header",
+          fields: [
+            { label: level === "farm" ? "Farm" : "House", value: `${scope.name} (${scope.code})` },
+            { label: level === "farm" ? "Branch" : "Farm", value: (level === "farm" ? (scope as { branch?: { name: string } }).branch?.name : (scope as { farm?: { name: string } }).farm?.name) ?? "—" },
+            { label: "Active batches", value: String(active.length) },
+            { label: "Total batches (all time)", value: String(batches.length) },
+            { label: "Birds placed (active)", value: placed.toLocaleString() },
+          ],
+        },
+        {
+          type: "kpis",
+          items: [
+            { label: "Birds placed", value: placed.toLocaleString(), tone: "neutral" },
+            { label: "Eggs (90 d)", value: periodEggs.toLocaleString(), tone: "neutral" },
+            { label: "Deaths (90 d)", value: periodDeaths.toLocaleString(), tone: periodDeaths > placed * 0.05 ? "critical" : "good" },
+            { label: "Feed used (90 d)", value: `${round(periodFeed, 0).toLocaleString()} kg`, tone: "neutral" },
+          ],
+        },
+        {
+          type: "line-chart",
+          title: "Eggs & mortality per day (90 d)",
+          xKey: "date",
+          series: [{ name: "Eggs", key: "eggs", color: "#3C6E9F" }, { name: "Deaths", key: "deaths", color: "#9A4526" }],
+          data: daily.map((d) => ({ date: d.date, eggs: d.eggs, deaths: d.deaths })),
+        },
+        {
+          type: "bar-chart",
+          title: "Flock comparison — mortality %",
+          xKey: "batch",
+          series: [{ name: "Mortality %", key: "mortalityPct", color: "#9A4526" }],
+          data: batches.map((b) => ({ batch: b.code, mortalityPct: num(b.openingBirdCount) > 0 ? round((deathsByBatch.get(b.id) ?? 0) / num(b.openingBirdCount) * 100, 1) : 0 })),
+        },
+        {
+          type: "table",
+          title: "Batches",
+          columns: [
+            { key: "code", label: "Batch", type: "text" },
+            { key: "birdType", label: "Type", type: "text" },
+            { key: "placed", label: "Placed", type: "number" },
+            { key: "deaths", label: "Deaths", type: "number" },
+            { key: "mortalityPct", label: "Mortality %", type: "percent" },
+            { key: "started", label: "Started", type: "date" },
+            { key: "status", label: "Status", type: "text" },
+          ],
+          rows: batches.map((b) => ({
+            code: b.code, birdType: b.birdType, placed: num(b.openingBirdCount),
+            deaths: deathsByBatch.get(b.id) ?? 0,
+            mortalityPct: num(b.openingBirdCount) > 0 ? round((deathsByBatch.get(b.id) ?? 0) / num(b.openingBirdCount) * 100, 2) : 0,
+            started: dayKey(b.startDate), status: b.status,
+          })),
+        },
+        ...(level === "house"
+          ? [{
+              type: "table" as const,
+              title: "Pens",
+              columns: [
+                { key: "pen", label: "Pen", type: "text" as const },
+                { key: "capacity", label: "Capacity", type: "number" as const },
+                { key: "birds", label: "Birds", type: "number" as const },
+                { key: "batch", label: "Batch", type: "text" as const },
+              ],
+              rows: (pens as { penNumber: number; name: string | null; capacity: number | null; batchAllocations: { birdCount: number; flockBatch: { code: string } }[] }[]).map((p) => ({
+                pen: p.name ?? `Pen ${p.penNumber}`,
+                capacity: p.capacity ?? "",
+                birds: p.batchAllocations.reduce((s, a) => s + num(a.birdCount), 0),
+                batch: p.batchAllocations.map((a) => a.flockBatch.code).join(", ") || "—",
+              })),
+            }]
+          : []),
+        {
+          type: "narrative",
+          text: `${active.length} active batch${active.length !== 1 ? "es" : ""}, ${placed.toLocaleString()} birds placed. Over the last 90 days: ${periodEggs.toLocaleString()} eggs, ${periodDeaths.toLocaleString()} deaths, ${round(periodFeed, 0).toLocaleString()} kg feed.`,
+        },
+      ];
+      return {
+        subtitle: (level === "farm" ? (scope as { branch?: { name: string } }).branch?.name : (scope as { farm?: { name: string } }).farm?.name) ?? "",
+        scopeLabel: `${scope.name} (${scope.code})`,
+        sections,
+      };
+    },
+  };
+}
+
+// ── Production-site rollup (feed / soya) ──────────────────────────────────
+function siteRollup(module: "feed" | "soya"): DocumentReportDefinition {
+  return {
+    id: `${module}.site-summary`,
+    module,
+    label: module === "feed" ? "Mill summary" : "Plant summary",
+    description: `Output, wastage and cost for the ${module === "feed" ? "mill" : "plant"}, last 90 days.`,
+    scopeType: "productionSite",
+    permission: module === "feed" ? "feed.read" : "soya.read",
+    async run({ prisma, user, scopeId }) {
+      const since = new Date(Date.now() - 90 * 86400000);
+      const site = await prisma.productionSite.findFirst({ where: { id: scopeId, companyId: user.companyId, deletedAt: null }, select: { id: true, name: true, code: true, branch: { select: { name: true } } } });
+      if (!site) throw new Error("Production site was not found.");
+
+      if (module === "feed") {
+        const [batches, costs, usage] = await Promise.all([
+          prisma.feedProductionBatch.findMany({ where: { companyId: user.companyId, deletedAt: null, productionSiteId: scopeId, productionDate: { gte: since } }, orderBy: { productionDate: "asc" }, select: { batchNumber: true, productionDate: true, producedQuantityKg: true, wastageKg: true, status: true, finishedProduct: { select: { name: true } } } }),
+          prisma.feedProductionCost.aggregate({ where: { companyId: user.companyId, deletedAt: null, productionSiteId: scopeId }, _sum: { rawMaterialCost: true, laborCost: true, packagingCost: true, overheadCost: true } }),
+          prisma.feedRawMaterialUsage.aggregate({ where: { companyId: user.companyId, deletedAt: null, productionSiteId: scopeId }, _sum: { quantityKg: true, wastageKg: true } }),
+        ]);
+        const produced = batches.reduce((s, b) => s + num(b.producedQuantityKg), 0);
+        const wastage = batches.reduce((s, b) => s + num(b.wastageKg), 0);
+        const totalCost = num(costs._sum.rawMaterialCost) + num(costs._sum.laborCost) + num(costs._sum.packagingCost) + num(costs._sum.overheadCost);
+        const sections: ReportSection[] = [
+          { type: "header", fields: [{ label: "Mill", value: `${site.name} (${site.code})` }, { label: "Branch", value: site.branch?.name ?? "—" }, { label: "Batches (90 d)", value: String(batches.length) }, { label: "Produced (90 d)", value: `${round(produced, 0).toLocaleString()} kg` }] },
+          { type: "kpis", items: [
+            { label: "Produced", value: `${round(produced, 0).toLocaleString()} kg`, tone: "neutral" },
+            { label: "Wastage", value: `${produced + wastage > 0 ? round(wastage / (produced + wastage) * 100, 1) : 0}%`, tone: "warning" },
+            { label: "Total cost", value: `GHS ${round(totalCost, 0).toLocaleString()}`, tone: "warning" },
+            { label: "Cost / kg", value: `GHS ${produced > 0 ? round(totalCost / produced, 3) : 0}`, tone: "neutral" },
+          ] },
+          { type: "bar-chart", title: "Production per batch (kg)", xKey: "batch", series: [{ name: "Produced", key: "produced" }, { name: "Wastage", key: "wastage", color: "#9A4526" }], data: batches.map((b) => ({ batch: b.batchNumber, produced: round(num(b.producedQuantityKg), 0), wastage: round(num(b.wastageKg), 0) })) },
+          { type: "table", title: "Batches", columns: [{ key: "batch", label: "Batch", type: "text" }, { key: "product", label: "Product", type: "text" }, { key: "produced", label: "Produced (kg)", type: "number" }, { key: "date", label: "Date", type: "date" }, { key: "status", label: "Status", type: "text" }], rows: batches.map((b) => ({ batch: b.batchNumber, product: b.finishedProduct?.name ?? "—", produced: round(num(b.producedQuantityKg), 1), date: dayKey(b.productionDate), status: b.status })) },
+        ];
+        return { subtitle: site.branch?.name ?? "", scopeLabel: `${site.name} (${site.code})`, sections };
+      }
+
+      const [batches, oil, cake, waste] = await Promise.all([
+        prisma.soyaProcessingBatch.findMany({ where: { companyId: user.companyId, deletedAt: null, productionSiteId: scopeId, processingDate: { gte: since } }, orderBy: { processingDate: "asc" }, select: { batchNumber: true, processingDate: true, beansUsedKg: true, status: true } }),
+        prisma.soyaOilOutput.aggregate({ where: { companyId: user.companyId, deletedAt: null, productionSiteId: scopeId }, _sum: { quantityLitres: true } }),
+        prisma.soyaCakeOutput.aggregate({ where: { companyId: user.companyId, deletedAt: null, productionSiteId: scopeId }, _sum: { quantityKg: true } }),
+        prisma.soyaWasteRecord.aggregate({ where: { companyId: user.companyId, deletedAt: null, productionSiteId: scopeId }, _sum: { quantityKg: true } }),
+      ]);
+      const beans = batches.reduce((s, b) => s + num(b.beansUsedKg), 0);
+      const oilL = num(oil._sum.quantityLitres);
+      const cakeKg = num(cake._sum.quantityKg);
+      const sections: ReportSection[] = [
+        { type: "header", fields: [{ label: "Plant", value: `${site.name} (${site.code})` }, { label: "Branch", value: site.branch?.name ?? "—" }, { label: "Batches (90 d)", value: String(batches.length) }, { label: "Beans used (90 d)", value: `${round(beans, 0).toLocaleString()} kg` }] },
+        { type: "kpis", items: [
+          { label: "Beans in", value: `${round(beans, 0).toLocaleString()} kg`, tone: "neutral" },
+          { label: "Oil out", value: `${round(oilL, 0).toLocaleString()} L`, tone: "good" },
+          { label: "Cake out", value: `${round(cakeKg, 0).toLocaleString()} kg`, tone: "good" },
+          { label: "Oil yield", value: `${beans > 0 ? round(oilL / beans * 100, 1) : 0}%`, tone: "neutral" },
+          { label: "Waste", value: `${round(num(waste._sum.quantityKg), 0).toLocaleString()} kg`, tone: "warning" },
+        ] },
+        { type: "bar-chart", title: "Beans processed per batch (kg)", xKey: "batch", series: [{ name: "Beans", key: "beans" }], data: batches.map((b) => ({ batch: b.batchNumber, beans: round(num(b.beansUsedKg), 0) })) },
+        { type: "table", title: "Batches", columns: [{ key: "batch", label: "Batch", type: "text" }, { key: "beans", label: "Beans (kg)", type: "number" }, { key: "date", label: "Date", type: "date" }, { key: "status", label: "Status", type: "text" }], rows: batches.map((b) => ({ batch: b.batchNumber, beans: round(num(b.beansUsedKg), 1), date: dayKey(b.processingDate), status: b.status })) },
+      ];
+      return { subtitle: site.branch?.name ?? "", scopeLabel: `${site.name} (${site.code})`, sections };
+    },
+  };
+}
+
+// ── Inventory: warehouse rollup ──────────────────────────────────────────
+const inventoryWarehouseSummary: DocumentReportDefinition = {
+  id: "inventory.warehouse-summary",
+  module: "inventory",
+  label: "Warehouse summary",
+  description: "Stock on hand, valuation, low-stock and expiring lines, and 90-day movement volume.",
+  scopeType: "warehouse",
+  permission: "inventory.read",
+  async run({ prisma, user, scopeId }) {
+    const since = new Date(Date.now() - 90 * 86400000);
+    const wh = await prisma.warehouse.findFirst({ where: { id: scopeId, companyId: user.companyId, deletedAt: null }, select: { id: true, name: true, code: true, type: true, branch: { select: { name: true } } } });
+    if (!wh) throw new Error("Warehouse was not found.");
+
+    const [items, batchesAgg, moveGroups, expiring, reorderRows] = await Promise.all([
+      prisma.inventoryItem.findMany({ where: { companyId: user.companyId, deletedAt: null, warehouseId: scopeId }, select: { productId: true, quantityOnHand: true, reorderLevel: true, product: { select: { name: true, sku: true } } } }),
+      prisma.stockBatch.findMany({ where: { companyId: user.companyId, deletedAt: null, warehouseId: scopeId }, select: { productId: true, quantityRemaining: true, unitCost: true } }),
+      prisma.stockMovement.groupBy({ by: ["movementType"], where: { companyId: user.companyId, deletedAt: null, warehouseId: scopeId, movementDate: { gte: since } }, _sum: { quantity: true } }),
+      prisma.stockExpiryAlert.findMany({ where: { companyId: user.companyId, warehouseId: scopeId }, select: { daysToExpiry: true, expiryDate: true, product: { select: { name: true, sku: true } }, stockBatch: { select: { batchNumber: true, quantityRemaining: true } } }, orderBy: { expiryDate: "asc" }, take: 30 }),
+      prisma.inventoryItem.findMany({ where: { companyId: user.companyId, deletedAt: null, warehouseId: scopeId }, select: { quantityOnHand: true, reorderLevel: true, product: { select: { name: true, sku: true } } } }),
+    ]);
+    const valByProduct = new Map<string, number>();
+    for (const b of batchesAgg) valByProduct.set(b.productId, (valByProduct.get(b.productId) ?? 0) + num(b.quantityRemaining) * num(b.unitCost));
+    const totalValue = [...valByProduct.values()].reduce((s, v) => s + v, 0);
+    const totalQty = items.reduce((s, i) => s + num(i.quantityOnHand), 0);
+    const low = reorderRows.filter((i) => num(i.quantityOnHand) <= num(i.reorderLevel));
+
+    const sections: ReportSection[] = [
+      { type: "header", fields: [{ label: "Warehouse", value: `${wh.name} (${wh.code})` }, { label: "Type", value: String(wh.type).replace(/_/g, " ") }, { label: "Branch", value: wh.branch?.name ?? "—" }, { label: "SKUs", value: String(items.length) }] },
+      { type: "kpis", items: [
+        { label: "Lines", value: String(items.length), tone: "neutral" },
+        { label: "Total quantity", value: round(totalQty, 0).toLocaleString(), tone: "neutral" },
+        { label: "Valuation", value: `GHS ${round(totalValue, 0).toLocaleString()}`, tone: "neutral" },
+        { label: "Low stock", value: String(low.length), tone: low.length > 0 ? "critical" : "good" },
+        { label: "Expiring soon", value: String(expiring.length), tone: expiring.length > 0 ? "warning" : "good" },
+      ] },
+      { type: "bar-chart", title: "Movement volume by type (90 d)", xKey: "type", series: [{ name: "Quantity", key: "qty" }], data: moveGroups.map((g) => ({ type: String(g.movementType).replace(/_/g, " "), qty: round(num(g._sum.quantity), 0) })) },
+      {
+        type: "table", title: "Stock by product",
+        columns: [{ key: "sku", label: "SKU", type: "text" }, { key: "product", label: "Product", type: "text" }, { key: "qty", label: "On hand", type: "number" }, { key: "reorder", label: "Reorder", type: "number" }, { key: "value", label: "Value", type: "money" }],
+        rows: items
+          .map((i) => ({ sku: i.product?.sku ?? "", product: i.product?.name ?? "", qty: round(num(i.quantityOnHand), 2), reorder: round(num(i.reorderLevel), 2), value: round(valByProduct.get(i.productId) ?? 0, 2) }))
+          .sort((a, b) => b.value - a.value)
+          .slice(0, 60),
+      },
+      ...(low.length
+        ? [{ type: "table" as const, title: "Low stock", columns: [{ key: "sku", label: "SKU", type: "text" as const }, { key: "product", label: "Product", type: "text" as const }, { key: "qty", label: "On hand", type: "number" as const }, { key: "reorder", label: "Reorder", type: "number" as const }], rows: low.map((i) => ({ sku: i.product?.sku ?? "", product: i.product?.name ?? "", qty: round(num(i.quantityOnHand), 2), reorder: round(num(i.reorderLevel), 2) })) }]
+        : []),
+      ...(expiring.length
+        ? [{ type: "table" as const, title: "Expiring soon", columns: [{ key: "product", label: "Product", type: "text" as const }, { key: "batch", label: "Lot", type: "text" as const }, { key: "remaining", label: "Remaining", type: "number" as const }, { key: "days", label: "Days left", type: "number" as const }, { key: "expiry", label: "Expiry", type: "date" as const }], rows: expiring.map((e) => ({ product: `${e.product?.name ?? ""} (${e.product?.sku ?? ""})`, batch: e.stockBatch?.batchNumber ?? "—", remaining: round(num(e.stockBatch?.quantityRemaining), 2), days: e.daysToExpiry, expiry: e.expiryDate ? dayKey(e.expiryDate) : "" })) }]
+        : []),
+    ];
+    return { subtitle: `${wh.branch?.name ?? ""} · ${String(wh.type).replace(/_/g, " ")}`, scopeLabel: `${wh.name} (${wh.code})`, sections };
+  },
+};
+
+// ── Sales: branch rollup ─────────────────────────────────────────────────
+const salesBranchSummary: DocumentReportDefinition = {
+  id: "sales.branch-summary",
+  module: "sales",
+  label: "Branch sales summary",
+  description: "Sales, collections and outstanding debt for the branch, last 90 days.",
+  scopeType: "branch",
+  permission: "sales.read",
+  async run({ prisma, user, scopeId }) {
+    const since = new Date(Date.now() - 90 * 86400000);
+    const branch = await prisma.branch.findFirst({ where: { id: scopeId, companyId: user.companyId, deletedAt: null }, select: { id: true, name: true, code: true } });
+    if (!branch) throw new Error("Branch was not found.");
+
+    const [orders, invoices, paidAgg] = await Promise.all([
+      prisma.salesOrder.findMany({ where: { companyId: user.companyId, deletedAt: null, branchId: scopeId, orderDate: { gte: since } }, orderBy: { orderDate: "asc" }, select: { orderDate: true, totalAmount: true } }),
+      prisma.invoice.findMany({ where: { companyId: user.companyId, deletedAt: null, branchId: scopeId }, select: { balanceDue: true, totalAmount: true, paidAmount: true, dueDate: true, invoiceDate: true, customer: { select: { name: true, code: true } } } }),
+      Promise.resolve(null),
+    ]);
+    void paidAgg;
+    const sales = orders.reduce((s, o) => s + num(o.totalAmount), 0);
+    // Collections in the period ≈ paidAmount on invoices dated in the window.
+    const collected = invoices.filter((i) => i.invoiceDate && new Date(i.invoiceDate) >= since).reduce((s, i) => s + num(i.paidAmount), 0);
+    const outstanding = invoices.reduce((s, i) => s + num(i.balanceDue), 0);
+    const overdue = invoices.filter((i) => num(i.balanceDue) > 0 && i.dueDate && new Date(i.dueDate) < new Date());
+
+    const dailyMap = new Map<string, number>();
+    for (const o of orders) dailyMap.set(dayKey(o.orderDate), (dailyMap.get(dayKey(o.orderDate)) ?? 0) + num(o.totalAmount));
+
+    const sections: ReportSection[] = [
+      { type: "header", fields: [{ label: "Branch", value: `${branch.name} (${branch.code})` }, { label: "Orders (90 d)", value: String(orders.length) }, { label: "Sales (90 d)", value: `GHS ${round(sales, 0).toLocaleString()}` }, { label: "Outstanding", value: `GHS ${round(outstanding, 0).toLocaleString()}` }] },
+      { type: "kpis", items: [
+        { label: "Sales (90 d)", value: `GHS ${round(sales, 0).toLocaleString()}`, tone: "good" },
+        { label: "Collected (90 d)", value: `GHS ${round(collected, 0).toLocaleString()}`, tone: "neutral" },
+        { label: "Outstanding", value: `GHS ${round(outstanding, 0).toLocaleString()}`, tone: outstanding > 0 ? "warning" : "good" },
+        { label: "Overdue invoices", value: String(overdue.length), tone: overdue.length > 0 ? "critical" : "good" },
+      ] },
+      { type: "line-chart", title: "Sales per day (90 d)", xKey: "date", series: [{ name: "Sales", key: "sales", color: "#2F6F6A" }], data: [...dailyMap.entries()].sort().map(([date, v]) => ({ date, sales: round(v, 0) })) },
+      {
+        type: "table", title: "Top debtors",
+        columns: [{ key: "customer", label: "Customer", type: "text" }, { key: "balance", label: "Balance due", type: "money" }],
+        rows: Object.values(
+          invoices.reduce((acc, i) => {
+            const name = i.customer?.name ?? "—";
+            acc[name] = { customer: name, balance: (acc[name]?.balance ?? 0) + num(i.balanceDue) };
+            return acc;
+          }, {} as Record<string, { customer: string; balance: number }>),
+        )
+          .filter((r) => r.balance > 0)
+          .sort((a, b) => b.balance - a.balance)
+          .slice(0, 20)
+          .map((r) => ({ customer: r.customer, balance: round(r.balance, 2) })),
+      },
+    ];
+    return { subtitle: branch.code, scopeLabel: `${branch.name} (${branch.code})`, sections };
+  },
+};
+
 export const DOCUMENT_REPORTS: DocumentReportDefinition[] = [
   poultryBatchLifecycle,
+  poultryRollup("farm"),
+  poultryRollup("house"),
   feedProductionBatch,
+  siteRollup("feed"),
   soyaProcessingBatch,
+  siteRollup("soya"),
   inventoryStockCard,
+  inventoryWarehouseSummary,
   customerStatement,
+  salesBranchSummary,
   purchaseOrderLifecycle,
   employeeRecord,
   machineHistory,
