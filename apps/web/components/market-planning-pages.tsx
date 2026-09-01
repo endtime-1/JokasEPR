@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { CircleCheckBig, ClipboardList, Factory, PackageCheck, Pencil, Plus, RefreshCw, ShoppingCart, Trash2, TrendingUp } from "lucide-react";
+import { CircleCheckBig, ClipboardList, Factory, PackageCheck, Pencil, Plus, RefreshCw, SendHorizontal, ShoppingCart, Trash2, TrendingUp } from "lucide-react";
 import { DataTable } from "./data-table";
 import { ConfirmModal, LockedNote } from "./ui";
 import { ApiEnvelope, apiFetch, getCached, getCachedFirst, hasCached, invalidateCache } from "../lib/api";
@@ -426,6 +426,8 @@ export function MarketTargetDetailsPage() {
   const [deletePlanError, setDeletePlanError] = useState("");
   const [approveError, setApproveError] = useState("");
   const [approving, setApproving] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   async function load() {
     setLoadError("");
@@ -448,6 +450,20 @@ export function MarketTargetDetailsPage() {
       setDeletePlanError(err?.message ?? "Failed to delete production plan.");
     } finally {
       setDeletingPlan(false);
+    }
+  }
+
+  async function submitForApproval() {
+    setSubmitting(true);
+    setSubmitError("");
+    try {
+      await apiFetch(`/market-planning/targets/${params.id}/submit`, { method: "PATCH" });
+      invalidateCache("/market-planning/targets", true);
+      await load();
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Failed to submit target for approval.");
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -518,6 +534,11 @@ export function MarketTargetDetailsPage() {
       <div className="mb-1 flex flex-wrap items-start justify-between gap-3">
         <Header title={target?.targetNumber ?? "Market Target"} subtitle={target?.title ?? "Target details, production plan, MRP, recommendations, and approval trail."} />
         <div className="flex gap-2">
+          {target?.status === "DRAFT" && (
+            <button type="button" onClick={submitForApproval} disabled={submitting} className="inline-flex min-h-10 items-center gap-2 rounded-md bg-brand px-3 text-sm font-semibold text-white disabled:opacity-60">
+              <SendHorizontal className="h-4 w-4" /> {submitting ? "Submitting…" : "Submit for approval"}
+            </button>
+          )}
           {canEdit && (
             <button type="button" onClick={startEdit} className="inline-flex min-h-10 items-center gap-2 rounded-md border border-line px-3 text-sm font-semibold hover:bg-field">
               <Pencil className="h-4 w-4" /> Edit
@@ -557,13 +578,26 @@ export function MarketTargetDetailsPage() {
         <Card label="Items" value={number(target?.items?.length)} icon={ClipboardList} />
         <Card label="Plans" value={number(target?.productionPlans?.length)} icon={Factory} />
       </section>
-      <form onSubmit={approveTarget} className="app-card mb-6 grid gap-4 p-5 md:grid-cols-3">
-        <label className="grid gap-1 text-sm font-semibold">Production site<select required className={inputClass} value={approve.productionSiteId} onChange={(e) => setApprove({ ...approve, productionSiteId: e.target.value })}><option value="">Select</option>{options.productionSites.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
-        <label className="grid gap-1 text-sm font-semibold">Central warehouse<select required className={inputClass} value={approve.centralWarehouseId} onChange={(e) => setApprove({ ...approve, centralWarehouseId: e.target.value })}><option value="">Select</option>{options.warehouses.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
-        <label className="grid gap-1 text-sm font-semibold">Notes<input className={inputClass} value={approve.notes} onChange={(e) => setApprove({ ...approve, notes: e.target.value })} /></label>
-        <button disabled={approving} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:w-fit" type="submit"><CircleCheckBig className="h-4 w-4" /> {approving ? "Approving…" : "Approve and plan"}</button>
-        {approveError && <p className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-700 md:col-span-3">{approveError}</p>}
-      </form>
+      {submitError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{submitError}</p>}
+      {target?.status === "DRAFT" && (
+        <div className="app-card mb-6 flex items-start gap-3 p-5 text-sm">
+          <SendHorizontal className="mt-0.5 h-4 w-4 shrink-0 text-ink/40" />
+          <p className="text-ink/70">
+            This target is a <strong>draft</strong>. Review the items below, then use <strong>Submit for approval</strong> above.
+            Once submitted, a manager approves it here and it becomes a feed production plan.
+          </p>
+        </div>
+      )}
+      {target?.status === "SUBMITTED" && (
+        <form onSubmit={approveTarget} className="app-card mb-6 grid gap-4 p-5 md:grid-cols-3">
+          <p className="text-sm font-semibold text-ink md:col-span-3">Approve this target and generate its production plan</p>
+          <label className="grid gap-1 text-sm font-semibold">Production site<select required className={inputClass} value={approve.productionSiteId} onChange={(e) => setApprove({ ...approve, productionSiteId: e.target.value })}><option value="">Select</option>{options.productionSites.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
+          <label className="grid gap-1 text-sm font-semibold">Central warehouse<select required className={inputClass} value={approve.centralWarehouseId} onChange={(e) => setApprove({ ...approve, centralWarehouseId: e.target.value })}><option value="">Select</option>{options.warehouses.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
+          <label className="grid gap-1 text-sm font-semibold">Notes<input className={inputClass} value={approve.notes} onChange={(e) => setApprove({ ...approve, notes: e.target.value })} /></label>
+          <button disabled={approving} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:w-fit" type="submit"><CircleCheckBig className="h-4 w-4" /> {approving ? "Approving…" : "Approve and plan"}</button>
+          {approveError && <p className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-700 md:col-span-3">{approveError}</p>}
+        </form>
+      )}
       <section className="grid gap-6 xl:grid-cols-2">
         <div><h3 className="mb-3 text-lg font-semibold">Target items</h3><DataTable<TargetItem> rows={target?.items ?? []} empty="No target items." columns={[{ key: "productId", label: "Product", render: (row) => row.product?.name ?? row.productId }, { key: "baseQuantity", label: "Base bags", render: (row) => number(row.baseQuantity) }, { key: "adjustmentPercent", label: "Adjustment %", render: (row) => number(row.adjustmentPercent) }, { key: "targetQuantityKg", label: "Target kg", render: (row) => number(row.targetQuantityKg) }, { key: "approvalStatus", label: "Status" }]} /></div>
         <div>
