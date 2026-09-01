@@ -17,15 +17,20 @@ const mockTx = {
 };
 
 const mockPrisma = {
-  feedProductionOrder: { findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn() },
+  feedProductionOrder: { findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn(), update: jest.fn() },
   feedProductionBatch: { aggregate: jest.fn(), findFirst: jest.fn() },
   feedProductionCost: { findFirst: jest.fn() },
   feedFormula: { findFirst: jest.fn(), create: jest.fn() },
+  feedFormulaVersion: { findFirst: jest.fn().mockResolvedValue(null) },
   warehouse: { findFirst: jest.fn() },
   inventoryItem: { findMany: jest.fn() },
   feedQualityCheck: { findFirst: jest.fn() },
   product: { findFirst: jest.fn() },
   branch: { findMany: jest.fn() },
+  marketTarget: { findFirst: jest.fn().mockResolvedValue(null) },
+  priceList: { findFirst: jest.fn().mockResolvedValue(null) },
+  productionSite: { findFirst: jest.fn() },
+  systemSetting: { findFirst: jest.fn().mockResolvedValue(null) },
   $transaction: jest.fn().mockImplementation((cb: (tx: typeof mockTx) => Promise<unknown>) => cb(mockTx))
 };
 
@@ -284,6 +289,93 @@ describe("FeedProductionService.createBatch — per-lot floor guard + full-consu
     const result = await service.createBatch(makeUser({ warehouseIds: ["wh-raw", "wh-fin"] }), { ...dto, idempotencyKey: "key-1" } as never, {});
 
     expect(result.data.id).toBe("batch-existing");
+  });
+});
+
+describe("FeedProductionService.approveOrder — separate-approver toggle", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const order = {
+    id: "order-1", orderNumber: "FPO-1", createdById: "user-1", status: "DRAFT",
+    branchId: "branch-1", productionSiteId: "site-1"
+  };
+
+  it("blocks the creator from approving their own order when the setting is on (default)", async () => {
+    mockPrisma.feedProductionOrder.findFirst.mockResolvedValue(order);
+    mockPrisma.systemSetting.findFirst.mockResolvedValue(null); // no row → default ON
+
+    const service = makeService();
+    await expect(
+      service.approveOrder(makeUser({ id: "user-1" }), "order-1", {})
+    ).rejects.toThrow(/separate production approver|different manager/i);
+    expect(mockPrisma.feedProductionOrder.update).not.toHaveBeenCalled();
+  });
+
+  it("lets the creator approve their own order when the setting is turned off", async () => {
+    mockPrisma.feedProductionOrder.findFirst.mockResolvedValue(order);
+    mockPrisma.systemSetting.findFirst.mockResolvedValue({ value: { requireSeparateProductionApprover: false } });
+    mockPrisma.feedProductionOrder.update.mockResolvedValue({ ...order, status: "APPROVED" });
+
+    const service = makeService();
+    const result = await service.approveOrder(makeUser({ id: "user-1" }), "order-1", {});
+    expect(result.data.status).toBe("APPROVED");
+  });
+
+  it("always lets a different manager approve", async () => {
+    mockPrisma.feedProductionOrder.findFirst.mockResolvedValue(order);
+    mockPrisma.systemSetting.findFirst.mockResolvedValue(null);
+    mockPrisma.feedProductionOrder.update.mockResolvedValue({ ...order, status: "APPROVED" });
+
+    const service = makeService();
+    const result = await service.approveOrder(makeUser({ id: "user-2" }), "order-1", {});
+    expect(result.data.status).toBe("APPROVED");
+  });
+});
+
+describe("FeedProductionService.createBatch — expected sales value from price list", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("derives expectedSalesValue from the finished feed's active price-list entry when the DTO omits it", async () => {
+    mockPrisma.feedProductionOrder.findFirst.mockResolvedValue({
+      id: "order-1", branchId: "branch-1", productionSiteId: "site-1", status: "APPROVED",
+      plannedQuantityKg: 1000, finishedProductId: "finished-1", finishedProduct: { id: "finished-1", uomId: "uom-1" },
+      formula: { id: "formula-1", targetBatchKg: 100, ingredients: [{ ingredientId: "ing-1", quantityKg: 50, unitCost: 2, ingredient: { name: "Maize", sku: "MZ-1" } }] }
+    });
+    mockPrisma.feedProductionBatch.aggregate.mockResolvedValue({ _sum: { producedQuantityKg: 0 } });
+    mockPrisma.warehouse.findFirst.mockImplementation(({ where }: any) =>
+      Promise.resolve({ id: where.id, type: "GENERAL", name: where.id, code: where.id, branchId: "branch-1" })
+    );
+    mockPrisma.feedFormula.findFirst.mockResolvedValue({
+      id: "formula-1", targetBatchKg: 100, ingredients: [{ ingredientId: "ing-1", quantityKg: 50, unitCost: 2, ingredient: { name: "Maize", sku: "MZ-1" } }]
+    });
+    mockPrisma.inventoryItem.findMany
+      .mockResolvedValueOnce([{ productId: "ing-1", quantityOnHand: 500 }])
+      .mockResolvedValueOnce([{ id: "inv-1", productId: "ing-1", uomId: "uom-1" }]);
+    mockPrisma.priceList.findFirst.mockResolvedValue({ unitPrice: 5 });
+
+    mockTx.feedProductionBatch.create.mockResolvedValue({ id: "batch-1", batchNumber: "FB-TEST-1" });
+    mockTx.inventoryItem.updateMany.mockResolvedValue({ count: 1 });
+    mockTx.inventoryItem.upsert.mockResolvedValue({ id: "finished-inv-1" });
+    mockTx.stockBatch.findMany.mockResolvedValue([{ id: "lot-a", quantityRemaining: 50 }]);
+    mockTx.stockBatch.updateMany.mockResolvedValue({ count: 1 });
+    mockTx.stockBatch.create.mockResolvedValue({ id: "sb-finished-1" });
+    mockTx.finishedFeedStock.create.mockResolvedValue({});
+    mockTx.stockMovement.create.mockResolvedValue({});
+    mockTx.feedProductionCost.create.mockResolvedValue({});
+    mockTx.feedProductionOrder.update.mockResolvedValue({});
+    mockTx.feedRawMaterialUsage.create.mockResolvedValue({});
+
+    const service = makeService();
+    await service.createBatch(
+      makeUser({ warehouseIds: ["wh-raw", "wh-fin"] }),
+      { productionOrderId: "order-1", rawMaterialWarehouseId: "wh-raw", finishedWarehouseId: "wh-fin", producedQuantityKg: 100, batchNumber: "FB-TEST-1" } as never,
+      {}
+    );
+
+    // 100 kg × GHS 5 = GHS 500
+    expect(mockTx.feedProductionCost.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ expectedSalesValue: 500 }) })
+    );
   });
 });
 

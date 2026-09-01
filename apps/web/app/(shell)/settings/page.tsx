@@ -30,6 +30,7 @@ type SettingsMap = {
     enforceProductionSiteScope: boolean;
     requireMfaForAdmins: boolean;
     enforceWarehousePurpose?: boolean;
+    requireSeparateProductionApprover?: boolean;
   };
 };
 
@@ -73,7 +74,8 @@ const DEFAULT_SETTINGS: SettingsMap = {
     enforceWarehouseScope: false,
     enforceProductionSiteScope: false,
     requireMfaForAdmins: false,
-    enforceWarehousePurpose: false
+    enforceWarehousePurpose: false,
+    requireSeparateProductionApprover: true
   }
 };
 
@@ -506,11 +508,13 @@ export default function SettingsPage() {
 
           <SettingCard title="User Access & Domain Types" icon={ShieldCheck}>
             <div className="grid gap-3">
-              {(["enforceBranchScope", "enforceFarmScope", "enforceWarehouseScope", "enforceProductionSiteScope", "requireMfaForAdmins", "enforceWarehousePurpose"] as const).map((key) => (
+              {(["enforceBranchScope", "enforceFarmScope", "enforceWarehouseScope", "enforceProductionSiteScope", "requireMfaForAdmins", "enforceWarehousePurpose", "requireSeparateProductionApprover"] as const).map((key) => (
                 <label key={key} className="flex items-center gap-2 text-sm">
                   <input type="checkbox" checked={settings["user-access.settings"][key] ?? false} onChange={(e) => updateSetting("user-access.settings", { ...settings["user-access.settings"], [key]: e.target.checked })} />
                   {key === "enforceWarehousePurpose"
                     ? "Enforce warehouse purpose (feed production → Feed Store, egg collection → Egg Store, …)"
+                    : key === "requireSeparateProductionApprover"
+                    ? "Require a separate production approver (the person who creates a feed production order can't also approve it — turn off for a single-operator mill)"
                     : key.replace(/([A-Z])/g, " $1")}
                 </label>
               ))}

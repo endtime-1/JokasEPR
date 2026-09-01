@@ -34,6 +34,7 @@ type FeedOptions = {
   finishedFeeds: Option[];
   formulas: Option[];
   batches: Array<Option & { batchNumber: string; status: string }>;
+  marketTargets: Option[];
 };
 
 type FormulaRow = {
@@ -104,6 +105,7 @@ type OrderFormState = {
   plannedQuantityKg: string;
   scheduledDate: string;
   rawMaterialWarehouseId: string;
+  marketTargetId: string;
   notes: string;
 };
 
@@ -111,7 +113,7 @@ const inputClass = "min-h-11 rounded-md border border-line px-3";
 const today = () => new Date().toISOString().slice(0, 10);
 
 function useFeedOptions() {
-  const [options, setOptions] = useState<FeedOptions>(() => getCached<ApiEnvelope<FeedOptions>>("/feed-production/options")?.data ?? { branches: [], productionSites: [], warehouses: [], farms: [], poultryHouses: [], rawMaterials: [], finishedFeeds: [], formulas: [], batches: [] });
+  const [options, setOptions] = useState<FeedOptions>(() => getCached<ApiEnvelope<FeedOptions>>("/feed-production/options")?.data ?? { branches: [], productionSites: [], warehouses: [], farms: [], poultryHouses: [], rawMaterials: [], finishedFeeds: [], formulas: [], batches: [], marketTargets: [] });
   const [optionsError, setOptionsError] = useState("");
   const [_feedOptKey, _setFeedOptKey] = useState(0);
   const forceAccept = useRef(false);
@@ -1276,7 +1278,7 @@ export function FeedProductionOrdersPage({ create = false }: { create?: boolean 
   const { options, optionsError } = useFeedOptions();
   const [rows, setRows] = useState<OrderRow[]>(() => getCachedFirst<ApiEnvelope<OrderRow[]>>("/feed-production/orders")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/feed-production/orders"));
-  const [form, setForm] = useState<OrderFormState>({ productionSiteId: "", formulaId: "", plannedQuantityKg: "", scheduledDate: today(), rawMaterialWarehouseId: "", notes: "" });
+  const [form, setForm] = useState<OrderFormState>({ productionSiteId: "", formulaId: "", plannedQuantityKg: "", scheduledDate: today(), rawMaterialWarehouseId: "", marketTargetId: "", notes: "" });
   const [submitErr, setSubmitErr] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [actionErr, setActionErr] = useState("");
@@ -1319,6 +1321,7 @@ export function FeedProductionOrdersPage({ create = false }: { create?: boolean 
           plannedQuantityKg: Number(form.plannedQuantityKg),
           scheduledDate: form.scheduledDate,
           rawMaterialWarehouseId: form.rawMaterialWarehouseId || options.warehouses[0]?.id,
+          marketTargetId: form.marketTargetId || undefined,
           notes: form.notes || undefined
         })
       });
@@ -1500,8 +1503,20 @@ function OrderForm({ options, form, setForm, submit, submitting }: { options: Fe
         <FormField label="Planned quantity (kg) *"><input className={inputClass} type="number" min="0.001" step="0.001" value={form.plannedQuantityKg} onChange={(event) => setForm({ ...form, plannedQuantityKg: event.target.value })} required /></FormField>
         <FormField label="Scheduled date *"><input className={inputClass} type="date" value={form.scheduledDate} onChange={(event) => setForm({ ...form, scheduledDate: event.target.value })} required /></FormField>
         <FormField label="Notes"><input className={inputClass} placeholder="Optional notes…" value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} /></FormField>
+        {options.marketTargets.length > 0 && (
+          <FormField label="Market demand target">
+            <select className={inputClass} value={form.marketTargetId} onChange={(event) => setForm({ ...form, marketTargetId: event.target.value })}>
+              <option value="">— not linked to a target —</option>
+              {options.marketTargets.map((target) => <option key={target.id} value={target.id}>{target.name}</option>)}
+            </select>
+          </FormField>
+        )}
       </div>
-      <p className="mb-4 mt-3 text-xs text-ink/45">Orders are created as DRAFT. Use the Approve action on the orders list to advance the workflow.</p>
+      <p className="mb-4 mt-3 text-xs text-ink/45">
+        Orders are created as DRAFT. A different manager approves it on the orders list before you can post a batch
+        (a single-operator operation can turn that off under Settings → User Access). Linking a market demand target
+        lets Market Planning&rsquo;s target-vs-actual report count whatever you produce against this order.
+      </p>
       <div className="flex items-center justify-between gap-4">
         <Link href="/feed-production/orders" className="app-button-secondary">Cancel</Link>
         <button type="submit" disabled={submitting} className="app-button-primary min-w-[160px]">
@@ -1633,6 +1648,8 @@ export function FeedBatchCreatePage() {
   const { options, optionsError } = useFeedOptions();
   const router = useRouter();
   const [approvedOrders, setApprovedOrders] = useState<ApprovedOrder[]>(() => getCachedFirst<ApiEnvelope<ApprovedOrder[]>>("/feed-production/orders?status=APPROVED")?.data ?? []);
+  const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
+  const [anyOrders, setAnyOrders] = useState(true);
   const [form, setForm] = useState({
     productionOrderId: "",
     rawMaterialWarehouseId: "",
@@ -1652,6 +1669,15 @@ export function FeedBatchCreatePage() {
   function loadApprovedOrders() {
     apiFetch<ApiEnvelope<ApprovedOrder[]>>("/feed-production/orders?status=APPROVED")
       .then((res) => setApprovedOrders(res.data ?? []))
+      .catch(() => undefined);
+    // Also pull every order so an empty "approved" list can explain itself:
+    // are there orders waiting for approval, or none created yet at all?
+    apiFetch<ApiEnvelope<ApprovedOrder[]>>("/feed-production/orders")
+      .then((res) => {
+        const all = res.data ?? [];
+        setAnyOrders(all.length > 0);
+        setPendingApprovalCount(all.filter((o) => o.status === "DRAFT" || o.status === "PENDING_STOCK_APPROVAL").length);
+      })
       .catch(() => undefined);
   }
 
@@ -1740,7 +1766,15 @@ export function FeedBatchCreatePage() {
                 ))}
               </select>
               {approvedOrders.length === 0 && (
-                <p className="mt-1.5 text-xs text-amber-600">No approved orders found. Approve an order first.</p>
+                <p className="mt-1.5 text-xs text-amber-600">
+                  {!anyOrders ? (
+                    <>No production orders yet. <Link href="/feed-production/orders" className="font-semibold underline">Create one</Link> (you&rsquo;ll need an ACTIVE formula with ingredients and a finished feed product first).</>
+                  ) : pendingApprovalCount > 0 ? (
+                    <>{pendingApprovalCount} order{pendingApprovalCount === 1 ? "" : "s"} awaiting approval. A different manager must approve on the <Link href="/feed-production/orders" className="font-semibold underline">orders list</Link> before you can post a batch — or an admin can turn off &ldquo;require a separate production approver&rdquo; under Settings &rarr; User Access.</>
+                  ) : (
+                    <>No approved orders. <Link href="/feed-production/orders" className="font-semibold underline">Approve an order</Link> first.</>
+                  )}
+                </p>
               )}
             </div>
             {selectedOrder && (
@@ -1830,7 +1864,7 @@ export function FeedBatchCreatePage() {
                   {field === "laborCost" ? "Labor cost (GHS)" : field === "packagingCost" ? "Packaging cost (GHS)" : field === "overheadCost" ? "Overhead cost (GHS)" : "Expected sales value (GHS)"}
                 </label>
                 <input
-                  type="number" min="0" step="0.01" placeholder="0.00"
+                  type="number" min="0" step="0.01" placeholder={field === "expectedSalesValue" ? "auto from price list" : "0.00"}
                   className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-right text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
                   value={form[field]}
                   onChange={(e) => setForm((f) => ({ ...f, [field]: e.target.value }))}
@@ -1838,6 +1872,7 @@ export function FeedBatchCreatePage() {
               </div>
             ))}
           </div>
+          <p className="mt-3 text-xs text-ink/45">Leave <span className="font-medium">Expected sales value</span> blank to use the finished feed&rsquo;s active price-list entry &times; kg produced.</p>
         </div>
 
         <div className="flex items-center justify-between gap-4 pb-8">

@@ -130,7 +130,7 @@ export class FeedProductionService {
     const cached = this.lookupCache.get<object>(cacheKey);
     if (cached) return cached;
 
-    const [branches, productionSites, warehouses, farms, poultryHouses, rawMaterials, finishedFeeds, formulas, batches] = await Promise.all([
+    const [branches, productionSites, warehouses, farms, poultryHouses, rawMaterials, finishedFeeds, formulas, batches, marketTargets] = await Promise.all([
       // (readiness review 2026-08-24) Was missing entirely — the Create
       // Formula form had no way to offer a branch picker, so createFormula's
       // auto-default (single-branch companies only) was the only path
@@ -186,6 +186,14 @@ export class FeedProductionService {
         select: { id: true, batchNumber: true, finishedProductId: true, producedQuantityKg: true, status: true },
         orderBy: { productionDate: "desc" },
         take: 50
+      }),
+      // For the optional "produce for a market demand target" link on the
+      // order form — only targets that are live enough to produce against.
+      this.prisma.marketTarget.findMany({
+        where: { companyId: user.companyId, deletedAt: null, status: "APPROVED", ...(user.hasGlobalAccess || user.branchIds.length === 0 ? {} : { OR: [{ branchId: null }, { branchId: { in: user.branchIds } }] }) },
+        select: { id: true, targetNumber: true, title: true },
+        orderBy: { periodStart: "desc" },
+        take: 100
       })
     ]);
 
@@ -195,7 +203,12 @@ export class FeedProductionService {
     // be picked. Off: unchanged.
     const scopedWarehouses = await this.warehousePurpose.filterForOperation(user.companyId, warehouses, "feed-production.raw-materials");
 
-    const result = { data: { branches, productionSites, warehouses: scopedWarehouses, farms, poultryHouses, rawMaterials, finishedFeeds, formulas, batches } };
+    const result = {
+      data: {
+        branches, productionSites, warehouses: scopedWarehouses, farms, poultryHouses, rawMaterials, finishedFeeds, formulas, batches,
+        marketTargets: marketTargets.map((t) => ({ id: t.id, name: `${t.targetNumber} · ${t.title}` }))
+      }
+    };
     this.lookupCache.set(cacheKey, result);
     return result;
   }
@@ -426,6 +439,13 @@ export class FeedProductionService {
     if (site.branchId !== formula.branchId) {
       throw new BadRequestException("Production site and formula must belong to the same branch.");
     }
+    if (dto.marketTargetId) {
+      const target = await this.prisma.marketTarget.findFirst({
+        where: { id: dto.marketTargetId, companyId: user.companyId, deletedAt: null },
+        select: { id: true }
+      });
+      if (!target) throw new BadRequestException("The linked market target was not found.");
+    }
 
     const latestVersion = await this.prisma.feedFormulaVersion.findFirst({
       where: { companyId: user.companyId, formulaId: formula.id, status: "ACTIVE" },
@@ -440,13 +460,14 @@ export class FeedProductionService {
         formulaId: formula.id,
         formulaVersionId: latestVersion?.id,
         finishedProductId: formula.finishedProductId,
+        marketTargetId: dto.marketTargetId,
         orderNumber,
         plannedQuantityKg: dto.plannedQuantityKg,
         scheduledDate: new Date(dto.scheduledDate),
         status: "DRAFT",
         notes: dto.notes,
         createdById: user.id
-      }
+      } as Prisma.FeedProductionOrderUncheckedCreateInput
     });
 
     // M6: check raw material availability and flag the order if stock is insufficient
@@ -466,9 +487,15 @@ export class FeedProductionService {
 
   async approveOrder(user: AuthenticatedUser, id: string, context: RequestContext) {
     const order = await this.requireOrder(user, id);
-    // M1: block self-approval — committing production stock should require segregation of duties
-    if (order.createdById === user.id) {
-      throw new ForbiddenException("You cannot approve a production order you created. A different manager must approve it.");
+    // M1: block self-approval — committing production stock should require
+    // segregation of duties. A single-operator operation turns this off under
+    // Settings → User Access ("require a separate production approver"), which
+    // is the only way one person can run production end to end.
+    if (order.createdById === user.id && (await this.requiresSeparateApprover(user.companyId))) {
+      throw new ForbiddenException(
+        "You cannot approve a production order you created — a different manager must approve it. " +
+          "If you run production single-handed, an admin can turn off \"require a separate production approver\" under Settings → User Access."
+      );
     }
     if (!["DRAFT", "PENDING_STOCK_APPROVAL"].includes(order.status)) {
       throw new BadRequestException(`Order cannot be approved from status "${order.status}".`);
@@ -575,6 +602,12 @@ export class FeedProductionService {
     const rawMaterialCost = ingredientPlan.ingredients.reduce((sum, ingredient) => sum + ingredient.quantityKg * ingredient.unitCost, 0);
     const totalCost = rawMaterialCost + (dto.laborCost ?? 0) + (dto.packagingCost ?? 0) + (dto.overheadCost ?? 0);
     const unitCost = totalCost / Math.max(dto.producedQuantityKg, 1);
+    // Expected sales value drives the profitability margin. If the producer
+    // didn't type one in, derive it from the finished feed's active price
+    // list entry rather than defaulting to zero (which reads as a 0% margin).
+    const expectedSalesValue =
+      dto.expectedSalesValue ??
+      (await this.priceListValue(user.companyId, order.finishedProductId, order.branchId, dto.producedQuantityKg));
 
     // Lock order (DB stability audit, 2026-08-16): the raw-material
     // consumption loop below now locks StockBatch lots before InventoryItem,
@@ -613,6 +646,8 @@ export class FeedProductionService {
           productionSiteId: order.productionSiteId,
           productionOrderId: order.id,
           finishedProductId: order.finishedProductId,
+          marketTargetId: order.marketTargetId,
+          productionPlanId: order.productionPlanId,
           batchNumber,
           producedQuantityKg: dto.producedQuantityKg,
           wastageKg: dto.wastageKg ?? 0,
@@ -620,7 +655,7 @@ export class FeedProductionService {
           status: "POSTED",
           idempotencyKey: dto.idempotencyKey,
           createdById: user.id
-        }
+        } as Prisma.FeedProductionBatchUncheckedCreateInput
       });
 
       for (const ingredient of ingredientPlan.ingredients) {
@@ -781,7 +816,7 @@ export class FeedProductionService {
           laborCost: dto.laborCost ?? 0,
           packagingCost: dto.packagingCost ?? 0,
           overheadCost: dto.overheadCost ?? 0,
-          expectedSalesValue: dto.expectedSalesValue ?? 0,
+          expectedSalesValue,
           createdById: user.id
         }
       });
@@ -800,7 +835,7 @@ export class FeedProductionService {
     this.lookupCache.invalidate(`feed:opts:${user.companyId}:`);
 
     await this.writeAudit(user, "CREATE", "FeedProductionBatch", data.id, `Posted feed production batch ${batchNumber}`, context, { branchId: order.branchId, warehouseId: dto.finishedWarehouseId, productionSiteId: order.productionSiteId });
-    return { data: { ...data, costing: { rawMaterialCost, totalCost, unitCost, margin: this.margin(dto.expectedSalesValue ?? 0, totalCost) } } };
+    return { data: { ...data, costing: { rawMaterialCost, totalCost, unitCost, expectedSalesValue, margin: this.margin(expectedSalesValue, totalCost) } } };
   }
 
   private async findBatchByIdempotencyKey(companyId: string, idempotencyKey: string) {
@@ -1518,6 +1553,41 @@ export class FeedProductionService {
       return 0;
     }
     return Number((((expectedSalesValue - totalCost) / expectedSalesValue) * 100).toFixed(2));
+  }
+
+  // Segregation-of-duties toggle. Default ON (a separate manager must approve).
+  // A single-operator operation turns it off under Settings → User Access.
+  private async requiresSeparateApprover(companyId: string): Promise<boolean> {
+    const row = await this.prisma.systemSetting.findFirst({
+      where: { companyId, key: "user-access.settings", deletedAt: null },
+      select: { value: true }
+    });
+    const value = (row?.value ?? {}) as { requireSeparateProductionApprover?: boolean };
+    return value.requireSeparateProductionApprover !== false;
+  }
+
+  // The active price-list value for a finished feed product, in company
+  // currency, for the given quantity. Branch-specific entries win over
+  // company-wide ones; returns 0 when nothing is priced.
+  private async priceListValue(companyId: string, productId: string, branchId: string | null, quantityKg: number): Promise<number> {
+    if (quantityKg <= 0) return 0;
+    const now = new Date();
+    const price = await this.prisma.priceList.findFirst({
+      where: {
+        companyId,
+        productId,
+        status: "ACTIVE",
+        deletedAt: null,
+        validFrom: { lte: now },
+        AND: [
+          { OR: [{ validTo: null }, { validTo: { gte: now } }] },
+          ...(branchId ? [{ OR: [{ branchId: null }, { branchId }] }] : [{ branchId: null }])
+        ]
+      },
+      orderBy: [{ branchId: "desc" }, { validFrom: "desc" }],
+      select: { unitPrice: true }
+    });
+    return price ? Number(price.unitPrice) * quantityKg : 0;
   }
 
   private async getProduct(companyId: string, productId: string) {

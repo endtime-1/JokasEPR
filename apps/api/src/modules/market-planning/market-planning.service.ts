@@ -772,6 +772,7 @@ export class MarketPlanningService {
     const totalCost = rawMaterialCost + (dto.laborCost ?? 0) + (dto.packagingCost ?? 0) + (dto.overheadCost ?? 0);
     const unitCost = totalCost / Math.max(dto.producedQuantityKg, 1);
     const product = await this.getProduct(user.companyId, planItem.productId);
+    const expectedSalesValue = await this.priceListValue(user.companyId, planItem.productId, plan.branchId, dto.producedQuantityKg);
 
     // Lock order (DB stability audit, 2026-08-16): consumeInventoryTx now
     // locks StockBatch lots before InventoryItem, matching
@@ -949,7 +950,7 @@ export class MarketPlanningService {
           laborCost: dto.laborCost ?? 0,
           packagingCost: dto.packagingCost ?? 0,
           overheadCost: dto.overheadCost ?? 0,
-          expectedSalesValue: 0,
+          expectedSalesValue,
           createdById: user.id
         }
       });
@@ -1286,6 +1287,31 @@ export class MarketPlanningService {
     const product = await this.prisma.product.findFirst({ where: { id: productId, companyId, deletedAt: null }, select: { id: true, sku: true, name: true, uomId: true, branchId: true } });
     if (!product) throw new NotFoundException("Product was not found.");
     return product;
+  }
+
+  // The active price-list value for a product, in company currency, for a
+  // given quantity — branch-specific entries win over company-wide ones.
+  // Mirrors FeedProductionService.priceListValue so a market-led batch and a
+  // shop-floor batch value their output the same way.
+  private async priceListValue(companyId: string, productId: string, branchId: string | null, quantityKg: number): Promise<number> {
+    if (quantityKg <= 0) return 0;
+    const now = new Date();
+    const price = await this.prisma.priceList.findFirst({
+      where: {
+        companyId,
+        productId,
+        status: "ACTIVE",
+        deletedAt: null,
+        validFrom: { lte: now },
+        AND: [
+          { OR: [{ validTo: null }, { validTo: { gte: now } }] },
+          ...(branchId ? [{ OR: [{ branchId: null }, { branchId }] }] : [{ branchId: null }])
+        ]
+      },
+      orderBy: [{ branchId: "desc" }, { validFrom: "desc" }],
+      select: { unitPrice: true }
+    });
+    return price ? Number(price.unitPrice) * quantityKg : 0;
   }
 
   private async productMap(companyId: string, productIds: string[]) {

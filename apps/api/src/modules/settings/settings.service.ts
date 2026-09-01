@@ -47,7 +47,8 @@ const DEFAULT_SETTINGS: Record<string, unknown> = {
     enforceWarehouseScope: true,
     enforceProductionSiteScope: true,
     requireMfaForAdmins: false,
-    enforceWarehousePurpose: false
+    enforceWarehousePurpose: false,
+    requireSeparateProductionApprover: true
   }
 };
 

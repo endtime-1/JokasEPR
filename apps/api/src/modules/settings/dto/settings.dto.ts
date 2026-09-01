@@ -147,6 +147,11 @@ export class UserAccessSettingsDto {
   // operation (feed production → Feed Store, egg collection → Egg Store, …).
   // Optional for back-compat with clients that predate it; defaults to false.
   @IsOptional() @IsBoolean() enforceWarehousePurpose?: boolean;
+  // When on (the default), the person who created a feed production order
+  // cannot also approve it — a different manager must. A single-operator
+  // operation turns this off so one person can run production end to end.
+  // Optional for back-compat with clients that predate it; defaults to true.
+  @IsOptional() @IsBoolean() requireSeparateProductionApprover?: boolean;
 }
 
 export class DomainListSettingsDto {

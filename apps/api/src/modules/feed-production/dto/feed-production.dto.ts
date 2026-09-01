@@ -158,6 +158,13 @@ export class CreateFeedProductionOrderDto {
   @IsUUID()
   rawMaterialWarehouseId?: string;
 
+  // Optional link to a Market Planning demand target. When set, the batch
+  // posted against this order inherits it, so the "target vs actual" report
+  // counts this production run whichever screen it was started from.
+  @IsOptional()
+  @IsUUID()
+  marketTargetId?: string;
+
   @IsOptional()
   @IsString()
   notes?: string;
