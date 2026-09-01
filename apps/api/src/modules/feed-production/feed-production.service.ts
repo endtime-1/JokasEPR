@@ -823,6 +823,30 @@ export class FeedProductionService {
         }
       });
       await tx.feedProductionOrder.update({ where: { id: order.id }, data: { status: "COMPLETED", updatedById: user.id } });
+
+      // Market-led orders (opened by MarketPlanningService.approveTarget) can
+      // be posted from here — the normal Feed Mill screen — just as well as
+      // from Market Planning's own "Production Execution" shortcut. Either
+      // way, the plan item this order was opened for needs to see the
+      // progress, or Market Planning would show 0% produced forever for
+      // anything the mill posted through its own Orders page.
+      if (order.productionPlanItemId) {
+        const planItem = await tx.productionPlanItem.findUnique({
+          where: { id: order.productionPlanItemId },
+          select: { id: true, productionPlanId: true, plannedQuantityKg: true, producedQuantityKg: true }
+        });
+        if (planItem) {
+          const newProducedKg = Number(planItem.producedQuantityKg) + dto.producedQuantityKg;
+          await tx.productionPlanItem.update({
+            where: { id: planItem.id },
+            data: { producedQuantityKg: newProducedKg, status: newProducedKg >= Number(planItem.plannedQuantityKg) ? "COMPLETED" : "IN_PROGRESS", updatedById: user.id }
+          });
+          const remaining = await tx.productionPlanItem.count({
+            where: { companyId: user.companyId, productionPlanId: planItem.productionPlanId, deletedAt: null, status: { not: "COMPLETED" } }
+          });
+          await tx.productionPlan.update({ where: { id: planItem.productionPlanId }, data: { status: remaining === 0 ? "COMPLETED" : "IN_PROGRESS", updatedById: user.id } });
+        }
+      }
       return batch;
       }), { label: "FeedProductionService.postProduction" });
     } catch (err: unknown) {

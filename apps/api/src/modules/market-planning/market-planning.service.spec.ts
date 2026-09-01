@@ -146,7 +146,8 @@ describe("MarketPlanningService.submitTarget / approveTarget — status-guarded,
     marketTarget: { updateMany: jest.fn() },
     marketTargetItem: { updateMany: jest.fn() },
     productionPlan: { create: jest.fn() },
-    productionPlanItem: { createMany: jest.fn() }
+    productionPlanItem: { create: jest.fn() },
+    feedProductionOrder: { create: jest.fn() }
   };
 
   const mockPrisma = {
@@ -201,7 +202,8 @@ describe("MarketPlanningService.submitTarget / approveTarget — status-guarded,
       mockApproveTx.marketTarget.updateMany.mockResolvedValue({ count: 1 });
       mockApproveTx.marketTargetItem.updateMany.mockResolvedValue({ count: 1 });
       mockApproveTx.productionPlan.create.mockResolvedValue({ id: "pp-1" });
-      mockApproveTx.productionPlanItem.createMany.mockResolvedValue({ count: 1 });
+      mockApproveTx.productionPlanItem.create.mockResolvedValue({ id: "ppi-1", formulaId: "formula-1", formulaVersionId: null, productId: "prod-1", plannedQuantityKg: 100 });
+      mockApproveTx.feedProductionOrder.create.mockResolvedValue({ id: "fpo-1" });
     });
 
     it("issues the status transition as a guarded updateMany scoped to SUBMITTED", async () => {
@@ -214,6 +216,27 @@ describe("MarketPlanningService.submitTarget / approveTarget — status-guarded,
       expect(mockApproveTx.productionPlan.create).toHaveBeenCalled();
     });
 
+    it("opens a Feed Mill production order for each plan item, so approving a target surfaces there — not just inside Market Planning", async () => {
+      const service = makeService();
+      await service.approveTarget(makeUser(), "mt-1", { productionSiteId: "site-1", centralWarehouseId: "wh-1" } as never, {});
+
+      expect(mockApproveTx.feedProductionOrder.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: "APPROVED", marketTargetId: "mt-1", productionPlanId: "pp-1", productionPlanItemId: "ppi-1", formulaId: "formula-1"
+          })
+        })
+      );
+    });
+
+    it("skips opening an order for a plan item with no resolved formula — nothing millable to order yet", async () => {
+      mockApproveTx.productionPlanItem.create.mockResolvedValue({ id: "ppi-1", formulaId: null, formulaVersionId: null, productId: "prod-1", plannedQuantityKg: 100 });
+      const service = makeService();
+      await service.approveTarget(makeUser(), "mt-1", { productionSiteId: "site-1", centralWarehouseId: "wh-1" } as never, {});
+
+      expect(mockApproveTx.feedProductionOrder.create).not.toHaveBeenCalled();
+    });
+
     it("rejects a double-click/retry that races the guard — no second production plan is created", async () => {
       // Simulates the exact bug: the target was already approved (by the
       // first click/request) by the time this second one's guarded update runs.
@@ -224,7 +247,8 @@ describe("MarketPlanningService.submitTarget / approveTarget — status-guarded,
         service.approveTarget(makeUser(), "mt-1", { productionSiteId: "site-1", centralWarehouseId: "wh-1" } as never, {})
       ).rejects.toThrow(BadRequestException);
       expect(mockApproveTx.productionPlan.create).not.toHaveBeenCalled();
-      expect(mockApproveTx.productionPlanItem.createMany).not.toHaveBeenCalled();
+      expect(mockApproveTx.productionPlanItem.create).not.toHaveBeenCalled();
+      expect(mockApproveTx.feedProductionOrder.create).not.toHaveBeenCalled();
     });
   });
 });

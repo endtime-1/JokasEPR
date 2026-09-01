@@ -430,19 +430,60 @@ export class MarketPlanningService {
           createdById: user.id
         }
       });
-      await tx.productionPlanItem.createMany({
-        data: items.map((item) => ({
-          companyId: user.companyId,
-          productionPlanId: created.id,
-          marketTargetItemId: item.id,
-          productId: item.productId,
-          formulaId: item.formulaId,
-          formulaVersionId: item.formulaVersionId,
-          plannedQuantityKg: item.targetQuantityKg,
-          status: "APPROVED",
-          createdById: user.id
-        }))
-      });
+      // Created one at a time (not createMany) so each plan item's id is
+      // available immediately below to open its Feed Mill order against.
+      const planItems = [];
+      for (const item of items) {
+        planItems.push(
+          await tx.productionPlanItem.create({
+            data: {
+              companyId: user.companyId,
+              productionPlanId: created.id,
+              marketTargetItemId: item.id,
+              productId: item.productId,
+              formulaId: item.formulaId,
+              formulaVersionId: item.formulaVersionId,
+              plannedQuantityKg: item.targetQuantityKg,
+              status: "APPROVED",
+              createdById: user.id
+            }
+          })
+        );
+      }
+      // The gap this closes: approving a target used to only create records
+      // inside Market Planning — Feed Mill (where production actually
+      // happens) had no idea the plan existed until someone separately used
+      // the "Production Execution" shortcut. Opening a normal, APPROVED
+      // FeedProductionOrder per plan item here means it shows up in Feed
+      // Mill → Orders like any other approved order, ready for "Post batch".
+      // createBatch already carries marketTargetId/productionPlanId onto the
+      // resulting batch, so target-vs-actual counts it either way it's
+      // produced. createProductionExecution (below) reuses this same order
+      // instead of minting a second one for the same plan item.
+      for (const item of planItems) {
+        if (!item.formulaId) continue; // no formula resolved — nothing millable to order yet
+        await tx.feedProductionOrder.create({
+          data: {
+            companyId: user.companyId,
+            branchId,
+            productionSiteId: site.id,
+            formulaId: item.formulaId,
+            formulaVersionId: item.formulaVersionId ?? undefined,
+            finishedProductId: item.productId,
+            marketTargetId: id,
+            productionPlanId: created.id,
+            productionPlanItemId: item.id,
+            orderNumber: await nextRef(tx, user.companyId, "FPO"),
+            plannedQuantityKg: item.plannedQuantityKg,
+            scheduledDate: dto.plannedStartDate ? new Date(dto.plannedStartDate) : new Date(),
+            status: "APPROVED",
+            approvedById: user.id,
+            approvedAt: new Date(),
+            notes: `Market-led — target ${target.targetNumber}`,
+            createdById: user.id
+          }
+        });
+      }
       return created;
     });
     await this.writeAudit(user, "APPROVE", "MarketTarget", id, `Approved market target ${target.targetNumber} into production plan ${planNumber}`, context, { branchId, productionSiteId: site.id, warehouseId: warehouse.id });
@@ -763,8 +804,28 @@ export class MarketPlanningService {
     const shortages = ingredientPlan.filter((item) => item.shortageKg > 0);
     if (shortages.length) throw new BadRequestException({ message: "Raw material stock is not sufficient for this production execution.", shortages });
 
+    // Reuse the order approveTarget already opened for this plan item (Feed
+    // Mill → Orders shows it) instead of minting a second one every time
+    // this screen is used — two orders for one plan item was exactly the
+    // "logic is mixing" complaint. Falls back to creating one for plan
+    // items that predate that order (or were never approved through
+    // approveTarget).
+    const existingOrder = await this.prisma.feedProductionOrder.findFirst({
+      where: { companyId: user.companyId, productionPlanItemId: planItem.id, deletedAt: null, status: { in: ["APPROVED", "IN_PROGRESS", "COMPLETED"] } },
+      orderBy: { createdAt: "asc" }
+    });
+    if (existingOrder) {
+      const produced = await this.prisma.feedProductionBatch.aggregate({
+        where: { companyId: user.companyId, productionOrderId: existingOrder.id, deletedAt: null },
+        _sum: { producedQuantityKg: true }
+      });
+      const alreadyProducedKg = num(produced._sum.producedQuantityKg);
+      if (alreadyProducedKg + dto.producedQuantityKg > num(existingOrder.plannedQuantityKg)) {
+        throw new BadRequestException(`This would exceed the plan item's planned quantity of ${num(existingOrder.plannedQuantityKg)} kg. Already produced: ${alreadyProducedKg} kg.`);
+      }
+    }
     const [orderNumber, batchNumber, executionRef] = await Promise.all([
-      nextRef(this.prisma, user.companyId, "FPO"),
+      existingOrder ? Promise.resolve(existingOrder.orderNumber) : nextRef(this.prisma, user.companyId, "FPO"),
       nextRef(this.prisma, user.companyId, "FB"),
       nextRef(this.prisma, user.companyId, "PE"),
     ]);
@@ -783,7 +844,7 @@ export class MarketPlanningService {
     let result;
     try {
       result = await withDbRetry(() => this.prisma.$transaction(async (tx) => {
-      const order = await tx.feedProductionOrder.create({
+      const order = existingOrder ?? (await tx.feedProductionOrder.create({
         data: {
           companyId: user.companyId,
           branchId: plan.branchId,
@@ -794,14 +855,13 @@ export class MarketPlanningService {
           plannedQuantityKg: planItem.plannedQuantityKg,
           scheduledDate: new Date(),
           status: "APPROVED",
-          rawMaterialWarehouseId: dto.rawMaterialWarehouseId,
           marketTargetId: plan.marketTargetId,
           productionPlanId: plan.id,
           productionPlanItemId: planItem.id,
           notes: `Generated from market-led production execution ${executionRef}`,
           createdById: user.id
-        } as Prisma.FeedProductionOrderUncheckedCreateInput
-      });
+        }
+      }));
       const execution = await tx.productionExecution.create({
         data: {
           companyId: user.companyId,
@@ -966,7 +1026,11 @@ export class MarketPlanningService {
         }
       });
       const remaining = await tx.productionPlanItem.count({ where: { companyId: user.companyId, productionPlanId: plan.id, deletedAt: null, status: { not: "COMPLETED" } } });
-      await tx.productionPlan.update({ where: { id: plan.id }, data: { status: remaining <= 1 ? "COMPLETED" : "IN_PROGRESS", updatedById: user.id } });
+      // Fixed off-by-one: this used to be `remaining <= 1`, which marked the
+      // whole plan COMPLETED as soon as only ONE item was still incomplete —
+      // wrongly closing out a multi-item plan whose last item was still
+      // in-progress. 0 incomplete items left is the actual completion point.
+      await tx.productionPlan.update({ where: { id: plan.id }, data: { status: remaining === 0 ? "COMPLETED" : "IN_PROGRESS", updatedById: user.id } });
       return { execution, order, batch, costing: { rawMaterialCost, totalCost, unitCost } };
       }), { label: "MarketPlanningService.executeProduction" });
     } catch (err: unknown) {

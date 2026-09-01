@@ -56,6 +56,7 @@ type OrderRow = {
   plannedQuantityKg: string | number;
   scheduledDate: string;
   status: string;
+  marketTargetId?: string | null;
   productionSite?: { name: string; code: string };
   formula?: { name: string; code: string; feedType: string };
   finishedProduct?: { name: string; sku: string };
@@ -1537,7 +1538,16 @@ function OrderTable({ rows, loading, onApprove, onEdit, onCancel }: { rows: Orde
 
   return (
     <DataTable rows={rows} loading={loading} empty="No feed production orders found" columns={[
-      { key: "order", label: "Order #", render: (row) => <span className="font-mono text-xs font-semibold">{row.orderNumber}</span> },
+      {
+        key: "order", label: "Order #", render: (row) => (
+          <span className="inline-flex items-center gap-1.5">
+            <span className="font-mono text-xs font-semibold">{row.orderNumber}</span>
+            {row.marketTargetId && (
+              <span title="Opened from an approved market target" className="rounded-full bg-brand/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-brand">Market-led</span>
+            )}
+          </span>
+        )
+      },
       { key: "site", label: "Site", render: (row) => row.productionSite?.name ?? "-" },
       { key: "formula", label: "Formula", render: (row) => row.formula?.name ?? "-" },
       { key: "planned", label: "Planned kg", render: (row) => number(row.plannedQuantityKg) },

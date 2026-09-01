@@ -14,6 +14,8 @@ const mockTx = {
   feedProductionCost: { create: jest.fn() },
   feedProductionOrder: { update: jest.fn() },
   feedQualityCheck: { update: jest.fn() },
+  productionPlanItem: { findUnique: jest.fn(), update: jest.fn(), count: jest.fn() },
+  productionPlan: { update: jest.fn() },
   $queryRaw: jest.fn().mockResolvedValue([])
 };
 
@@ -380,6 +382,90 @@ describe("FeedProductionService.createBatch — expected sales value from price 
     expect(mockTx.feedProductionCost.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ expectedSalesValue: 500 }) })
     );
+  });
+});
+
+describe("FeedProductionService.createBatch — posting against a market-led order updates its production plan item", () => {
+  function mockHappyPathWithPlanItem() {
+    mockPrisma.feedProductionOrder.findFirst.mockResolvedValue({
+      id: "order-1", branchId: "branch-1", productionSiteId: "site-1", status: "APPROVED",
+      plannedQuantityKg: 1000, finishedProductId: "finished-1", finishedProduct: { id: "finished-1", uomId: "uom-1" },
+      marketTargetId: "mt-1", productionPlanId: "pp-1", productionPlanItemId: "ppi-1",
+      formula: { id: "formula-1", targetBatchKg: 100, ingredients: [{ ingredientId: "ing-1", quantityKg: 50, unitCost: 2, ingredient: { name: "Maize", sku: "MZ-1" } }] }
+    });
+    mockPrisma.feedProductionBatch.aggregate.mockResolvedValue({ _sum: { producedQuantityKg: 0 } });
+    mockPrisma.warehouse.findFirst.mockImplementation(({ where }: any) => Promise.resolve({ id: where.id, type: "GENERAL", name: where.id, code: where.id, branchId: "branch-1" }));
+    mockPrisma.feedFormula.findFirst.mockResolvedValue({
+      id: "formula-1", targetBatchKg: 100, ingredients: [{ ingredientId: "ing-1", quantityKg: 50, unitCost: 2, ingredient: { name: "Maize", sku: "MZ-1" } }]
+    });
+    mockPrisma.inventoryItem.findMany
+      .mockResolvedValueOnce([{ productId: "ing-1", quantityOnHand: 500 }])
+      .mockResolvedValueOnce([{ id: "inv-1", productId: "ing-1", uomId: "uom-1" }]);
+
+    mockTx.feedProductionBatch.create.mockResolvedValue({ id: "batch-1", batchNumber: "FB-TEST-1" });
+    mockTx.inventoryItem.updateMany.mockResolvedValue({ count: 1 });
+    mockTx.inventoryItem.upsert.mockResolvedValue({ id: "finished-inv-1" });
+    mockTx.stockBatch.findMany.mockResolvedValue([{ id: "lot-a", quantityRemaining: 50 }]);
+    mockTx.stockBatch.updateMany.mockResolvedValue({ count: 1 });
+    mockTx.stockBatch.create.mockResolvedValue({ id: "sb-finished-1" });
+    mockTx.finishedFeedStock.create.mockResolvedValue({});
+    mockTx.stockMovement.create.mockResolvedValue({});
+    mockTx.feedProductionCost.create.mockResolvedValue({});
+    mockTx.feedProductionOrder.update.mockResolvedValue({});
+    mockTx.feedRawMaterialUsage.create.mockResolvedValue({});
+  }
+
+  const dto = { productionOrderId: "order-1", rawMaterialWarehouseId: "wh-raw", finishedWarehouseId: "wh-fin", producedQuantityKg: 100, batchNumber: "FB-TEST-1" };
+
+  beforeEach(() => { jest.clearAllMocks(); mockHappyPathWithPlanItem(); });
+
+  it("advances the linked ProductionPlanItem's producedQuantityKg and flips it IN_PROGRESS when partially produced", async () => {
+    mockTx.productionPlanItem.findUnique.mockResolvedValue({ id: "ppi-1", productionPlanId: "pp-1", plannedQuantityKg: 1000, producedQuantityKg: 0 });
+    mockTx.productionPlanItem.count.mockResolvedValue(1);
+
+    const service = makeService();
+    await service.createBatch(makeUser({ warehouseIds: ["wh-raw", "wh-fin"] }), dto as never, {});
+
+    expect(mockTx.productionPlanItem.update).toHaveBeenCalledWith({
+      where: { id: "ppi-1" },
+      data: { producedQuantityKg: 100, status: "IN_PROGRESS", updatedById: "user-1" }
+    });
+    expect(mockTx.productionPlan.update).toHaveBeenCalledWith({
+      where: { id: "pp-1" },
+      data: { status: "IN_PROGRESS", updatedById: "user-1" }
+    });
+  });
+
+  it("marks the plan item and plan COMPLETED once the full planned quantity has been produced", async () => {
+    mockTx.productionPlanItem.findUnique.mockResolvedValue({ id: "ppi-1", productionPlanId: "pp-1", plannedQuantityKg: 100, producedQuantityKg: 0 });
+    mockTx.productionPlanItem.count.mockResolvedValue(0);
+
+    const service = makeService();
+    await service.createBatch(makeUser({ warehouseIds: ["wh-raw", "wh-fin"] }), dto as never, {});
+
+    expect(mockTx.productionPlanItem.update).toHaveBeenCalledWith({
+      where: { id: "ppi-1" },
+      data: { producedQuantityKg: 100, status: "COMPLETED", updatedById: "user-1" }
+    });
+    expect(mockTx.productionPlan.update).toHaveBeenCalledWith({
+      where: { id: "pp-1" },
+      data: { status: "COMPLETED", updatedById: "user-1" }
+    });
+  });
+
+  it("does not touch production-plan tables for an order with no productionPlanItemId (the ordinary, non-market-led case)", async () => {
+    mockPrisma.feedProductionOrder.findFirst.mockResolvedValue({
+      id: "order-1", branchId: "branch-1", productionSiteId: "site-1", status: "APPROVED",
+      plannedQuantityKg: 1000, finishedProductId: "finished-1", finishedProduct: { id: "finished-1", uomId: "uom-1" },
+      formula: { id: "formula-1", targetBatchKg: 100, ingredients: [{ ingredientId: "ing-1", quantityKg: 50, unitCost: 2, ingredient: { name: "Maize", sku: "MZ-1" } }] }
+    });
+
+    const service = makeService();
+    await service.createBatch(makeUser({ warehouseIds: ["wh-raw", "wh-fin"] }), dto as never, {});
+
+    expect(mockTx.productionPlanItem.findUnique).not.toHaveBeenCalled();
+    expect(mockTx.productionPlanItem.update).not.toHaveBeenCalled();
+    expect(mockTx.productionPlan.update).not.toHaveBeenCalled();
   });
 });
 
