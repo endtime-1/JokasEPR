@@ -268,6 +268,9 @@ export class ReportsService {
     if (module === "soya") return this.productionScopeTree(user, "soya");
     if (module === "inventory") return this.inventoryScopeTree(user);
     if (module === "sales") return this.salesScopeTree(user);
+    if (module === "procurement") return this.procurementScopeTree(user);
+    if (module === "hr") return this.hrScopeTree(user);
+    if (module === "maintenance") return this.maintenanceScopeTree(user);
     throw new NotFoundException(`No report scope tree for module "${module}" yet.`);
   }
 
@@ -326,6 +329,58 @@ export class ReportsService {
       })),
     };
     return { data: { module: "inventory", levels: ["company", "branch", "warehouse", "inventoryItem"], root } };
+  }
+
+  private async procurementScopeTree(user: AuthenticatedUser) {
+    // PurchaseOrder/Supplier are company-scoped (no branch) — tree is
+    // company → supplier → PO.
+    const [suppliers, orders] = await Promise.all([
+      this.prisma.supplier.findMany({ where: { companyId: user.companyId, deletedAt: null }, select: { id: true, name: true, code: true }, orderBy: { name: "asc" }, take: 1000 }),
+      this.prisma.purchaseOrder.findMany({ where: { companyId: user.companyId, deletedAt: null }, select: { id: true, reference: true, status: true, supplierId: true }, orderBy: { orderDate: "desc" }, take: 800 }),
+    ]);
+    const root = {
+      type: "company", id: user.companyId, label: "Company",
+      children: suppliers.map((s) => ({
+        type: "supplier", id: s.id, label: s.code ? `${s.name} (${s.code})` : s.name,
+        children: orders.filter((o) => o.supplierId === s.id).map((o) => ({ type: "purchaseOrder", id: o.id, label: o.reference, meta: { status: o.status }, children: [] })),
+      })),
+    };
+    return { data: { module: "procurement", levels: ["company", "supplier", "purchaseOrder"], root } };
+  }
+
+  private async hrScopeTree(user: AuthenticatedUser) {
+    const [branches, employees] = await Promise.all([
+      this.prisma.branch.findMany({ where: this.branchWhere(user), select: { id: true, name: true } }),
+      this.prisma.employee.findMany({ where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess || user.branchIds.length === 0 ? {} : { branchId: { in: user.branchIds } }) }, select: { id: true, code: true, fullName: true, status: true, branchId: true }, orderBy: { fullName: "asc" }, take: 2000 }),
+    ]);
+    const root = {
+      type: "company", id: user.companyId, label: "Company",
+      children: [
+        ...branches.map((br) => ({
+          type: "branch", id: br.id, label: br.name,
+          children: employees.filter((e) => e.branchId === br.id).map((e) => ({ type: "employee", id: e.id, label: `${e.fullName} (${e.code})`, meta: { status: e.status }, children: [] })),
+        })),
+        ...(employees.some((e) => !e.branchId)
+          ? [{ type: "branch", id: "_none", label: "Unassigned", children: employees.filter((e) => !e.branchId).map((e) => ({ type: "employee", id: e.id, label: `${e.fullName} (${e.code})`, meta: { status: e.status }, children: [] })) }]
+          : []),
+      ],
+    };
+    return { data: { module: "hr", levels: ["company", "branch", "employee"], root } };
+  }
+
+  private async maintenanceScopeTree(user: AuthenticatedUser) {
+    const [branches, machines] = await Promise.all([
+      this.prisma.branch.findMany({ where: this.branchWhere(user), select: { id: true, name: true } }),
+      this.prisma.machine.findMany({ where: { companyId: user.companyId, deletedAt: null }, select: { id: true, code: true, name: true, status: true, branchId: true }, orderBy: { name: "asc" }, take: 2000 }),
+    ]);
+    const root = {
+      type: "company", id: user.companyId, label: "Company",
+      children: branches.map((br) => ({
+        type: "branch", id: br.id, label: br.name,
+        children: machines.filter((m) => m.branchId === br.id).map((m) => ({ type: "machine", id: m.id, label: `${m.name} (${m.code})`, meta: { status: m.status }, children: [] })),
+      })),
+    };
+    return { data: { module: "maintenance", levels: ["company", "branch", "machine"], root } };
   }
 
   private async salesScopeTree(user: AuthenticatedUser) {

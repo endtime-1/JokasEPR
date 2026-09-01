@@ -52,7 +52,7 @@ export type DocumentReportContext = {
 
 export type DocumentReportDefinition = {
   id: string;
-  module: "poultry" | "feed" | "soya" | "inventory" | "sales";
+  module: "poultry" | "feed" | "soya" | "inventory" | "sales" | "procurement" | "hr" | "maintenance";
   label: string;
   description: string;
   /** Scope-tree node type this report runs against. */
@@ -689,10 +689,254 @@ const customerStatement: DocumentReportDefinition = {
   },
 };
 
+// ── Procurement: purchase-order lifecycle ─────────────────────────────────
+const purchaseOrderLifecycle: DocumentReportDefinition = {
+  id: "procurement.purchase-order",
+  module: "procurement",
+  label: "Purchase order",
+  description: "One PO from order to receipt to invoice to payment, with line items and fulfilment.",
+  scopeType: "purchaseOrder",
+  permission: "procurement.read",
+  async run({ prisma, user, scopeId }) {
+    const po = await prisma.purchaseOrder.findFirst({
+      where: { id: scopeId, companyId: user.companyId, deletedAt: null },
+      include: {
+        supplier: { select: { name: true, code: true } },
+        items: { orderBy: { sequence: "asc" } },
+        grnRecords: { select: { reference: true, receivedDate: true, postedAt: true } },
+        invoices: { select: { invoiceNumber: true, invoiceDate: true, totalAmount: true, paidAmount: true, balanceDue: true, status: true } },
+      },
+    });
+    if (!po) throw new Error("Purchase order was not found.");
+
+    const ordered = num(po.totalAmount);
+    const orderedQty = po.items.reduce((s, i) => s + num(i.quantity), 0);
+    const receivedQty = po.items.reduce((s, i) => s + num(i.receivedQty), 0);
+    const fulfilment = orderedQty > 0 ? round((receivedQty / orderedQty) * 100, 1) : 0;
+    const invoiced = po.invoices.reduce((s, i) => s + num(i.totalAmount), 0);
+    const paid = po.invoices.reduce((s, i) => s + num(i.paidAmount), 0);
+
+    const sections: ReportSection[] = [
+      {
+        type: "header",
+        fields: [
+          { label: "PO", value: po.reference },
+          { label: "Supplier", value: po.supplier ? `${po.supplier.name} (${po.supplier.code})` : "—" },
+          { label: "Order date", value: dayKey(po.orderDate) },
+          { label: "Total", value: `${po.currency} ${round(ordered, 2).toLocaleString()}` },
+          { label: "Status", value: po.status },
+        ],
+      },
+      {
+        type: "kpis",
+        items: [
+          { label: "Ordered", value: `${po.currency} ${round(ordered, 0).toLocaleString()}`, tone: "neutral" },
+          { label: "Fulfilment", value: `${fulfilment}%`, tone: fulfilment >= 100 ? "good" : "warning" },
+          { label: "Invoiced", value: `${po.currency} ${round(invoiced, 0).toLocaleString()}`, tone: "neutral" },
+          { label: "Paid", value: `${po.currency} ${round(paid, 0).toLocaleString()}`, tone: paid >= invoiced ? "good" : "warning" },
+          { label: "Outstanding", value: `${po.currency} ${round(invoiced - paid, 0).toLocaleString()}`, tone: invoiced - paid > 0 ? "warning" : "good" },
+        ],
+      },
+      {
+        type: "table",
+        title: "Line items",
+        columns: [
+          { key: "product", label: "Item", type: "text" },
+          { key: "quantity", label: "Ordered", type: "number" },
+          { key: "received", label: "Received", type: "number" },
+          { key: "unitCost", label: "Unit cost", type: "money" },
+          { key: "lineTotal", label: "Line total", type: "money" },
+        ],
+        rows: po.items.map((i) => ({
+          product: i.productName,
+          quantity: round(num(i.quantity), 2),
+          received: round(num(i.receivedQty), 2),
+          unitCost: round(num(i.unitCost), 2),
+          lineTotal: round(num(i.lineTotal), 2),
+        })),
+      },
+      {
+        type: "timeline",
+        title: "Lifecycle",
+        events: [
+          { date: dayKey(po.orderDate), label: `Ordered — ${po.currency} ${round(ordered, 2).toLocaleString()}`, kind: "order" },
+          ...po.grnRecords.map((g) => ({ date: dayKey(g.receivedDate), label: `Goods received — ${g.reference}${g.postedAt ? " (posted)" : ""}`, kind: "receipt" })),
+          ...po.invoices.map((inv) => ({ date: dayKey(inv.invoiceDate), label: `Invoice ${inv.invoiceNumber} — ${po.currency} ${round(num(inv.totalAmount), 2).toLocaleString()} (${inv.status})`, kind: "invoice" })),
+        ].sort((a, b) => a.date.localeCompare(b.date)),
+      },
+      { type: "narrative", text: `${fulfilment}% received; ${po.currency} ${round(invoiced - paid, 2).toLocaleString()} still owed to ${po.supplier?.name ?? "the supplier"}.` },
+    ];
+    return { subtitle: po.supplier?.name ?? "", scopeLabel: po.reference, sections };
+  },
+};
+
+// ── HR: employee record ──────────────────────────────────────────────────
+const employeeRecord: DocumentReportDefinition = {
+  id: "hr.employee-record",
+  module: "hr",
+  label: "Employee record",
+  description: "One employee — attendance, payroll history, leave and disciplinary.",
+  scopeType: "employee",
+  permission: "hr.read",
+  async run({ prisma, user, scopeId }) {
+    const emp = await prisma.employee.findFirst({
+      where: { id: scopeId, companyId: user.companyId, deletedAt: null },
+      select: { id: true, code: true, fullName: true, phone: true, email: true, startDate: true, status: true, branch: { select: { name: true } } },
+    });
+    if (!emp) throw new Error("Employee was not found.");
+
+    const since = new Date(Date.now() - 180 * 86400000);
+    const [attendance, payroll, leave, disciplinary] = await Promise.all([
+      prisma.attendanceRecord.findMany({ where: { companyId: user.companyId, employeeId: scopeId, date: { gte: since } }, orderBy: { date: "asc" }, select: { date: true, hoursWorked: true, overtimeHours: true, checkInTime: true } }),
+      prisma.payrollRecord.findMany({ where: { companyId: user.companyId, employeeId: scopeId, deletedAt: null }, orderBy: { periodEnd: "asc" }, select: { period: true, grossPay: true, netPay: true, deductions: true, status: true, paymentDate: true } }),
+      prisma.leaveRequest.findMany({ where: { companyId: user.companyId, employeeId: scopeId }, orderBy: { startDate: "desc" }, take: 20, select: { reference: true, startDate: true, endDate: true, daysRequested: true, status: true } }),
+      prisma.disciplinaryRecord.findMany({ where: { companyId: user.companyId, employeeId: scopeId, deletedAt: null }, orderBy: { incidentDate: "desc" }, take: 20, select: { reference: true, incidentDate: true, category: true, actionTaken: true } }),
+    ]);
+
+    const daysAttended = attendance.filter((a) => a.checkInTime).length;
+    const totalHours = attendance.reduce((s, a) => s + num(a.hoursWorked), 0);
+    const otHours = attendance.reduce((s, a) => s + num(a.overtimeHours), 0);
+    const lastPay = payroll.filter((p) => p.status === "PAID").at(-1);
+    const tenureYears = round((Date.now() - new Date(emp.startDate).getTime()) / (365 * 86400000), 1);
+
+    const sections: ReportSection[] = [
+      {
+        type: "header",
+        fields: [
+          { label: "Employee", value: `${emp.fullName} (${emp.code})` },
+          { label: "Branch", value: emp.branch?.name ?? "—" },
+          { label: "Phone / email", value: `${emp.phone ?? "—"} · ${emp.email ?? "—"}` },
+          { label: "Started", value: `${dayKey(emp.startDate)} (${tenureYears} yrs)` },
+          { label: "Status", value: emp.status },
+        ],
+      },
+      {
+        type: "kpis",
+        items: [
+          { label: "Days attended (6 mo)", value: String(daysAttended), tone: "neutral" },
+          { label: "Hours worked (6 mo)", value: round(totalHours, 0).toLocaleString(), tone: "neutral" },
+          { label: "Overtime hours", value: round(otHours, 0).toLocaleString(), tone: "neutral" },
+          { label: "Last net pay", value: lastPay ? `GHS ${round(num(lastPay.netPay), 0).toLocaleString()}` : "—", tone: "neutral" },
+          { label: "Open disciplinary", value: String(disciplinary.length), tone: disciplinary.length > 0 ? "warning" : "good" },
+        ],
+      },
+      {
+        type: "bar-chart",
+        title: "Net pay by period",
+        xKey: "period",
+        series: [{ name: "Net pay", key: "netPay", color: "#2F6F6A" }],
+        data: payroll.filter((p) => p.status === "PAID").map((p) => ({ period: p.period, netPay: round(num(p.netPay), 0) })),
+      },
+      {
+        type: "table",
+        title: "Leave",
+        columns: [
+          { key: "reference", label: "Ref", type: "text" },
+          { key: "start", label: "From", type: "date" },
+          { key: "end", label: "To", type: "date" },
+          { key: "days", label: "Days", type: "number" },
+          { key: "status", label: "Status", type: "text" },
+        ],
+        rows: leave.map((l) => ({ reference: l.reference, start: dayKey(l.startDate), end: dayKey(l.endDate), days: l.daysRequested, status: l.status })),
+      },
+      {
+        type: "table",
+        title: "Disciplinary",
+        columns: [
+          { key: "reference", label: "Ref", type: "text" },
+          { key: "date", label: "Date", type: "date" },
+          { key: "category", label: "Category", type: "text" },
+          { key: "action", label: "Action taken", type: "text" },
+        ],
+        rows: disciplinary.map((d) => ({ reference: d.reference, date: dayKey(d.incidentDate), category: d.category, action: d.actionTaken })),
+      },
+    ];
+    return { subtitle: emp.branch?.name ?? "", scopeLabel: `${emp.fullName} (${emp.code})`, sections };
+  },
+};
+
+// ── Maintenance: machine history ─────────────────────────────────────────
+const machineHistory: DocumentReportDefinition = {
+  id: "maintenance.machine-history",
+  module: "maintenance",
+  label: "Machine history",
+  description: "One machine — breakdowns, downtime, service log, spare-part usage and cost.",
+  scopeType: "machine",
+  permission: "maintenance.read",
+  async run({ prisma, user, scopeId }) {
+    const machine = await prisma.machine.findFirst({
+      where: { id: scopeId, companyId: user.companyId, deletedAt: null },
+      select: { id: true, code: true, name: true, machineType: true, status: true, manufacturer: true, modelNumber: true, branch: { select: { name: true } } },
+    });
+    if (!machine) throw new Error("Machine was not found.");
+
+    const [breakdowns, maintenance, downtime, parts, costs] = await Promise.all([
+      prisma.breakdownRecord.findMany({ where: { companyId: user.companyId, machineId: scopeId, deletedAt: null }, orderBy: { reportedAt: "asc" }, select: { breakdownNumber: true, reportedAt: true, severity: true, status: true, description: true } }),
+      prisma.maintenanceRecord.findMany({ where: { companyId: user.companyId, machineId: scopeId, deletedAt: null }, orderBy: { maintenanceDate: "asc" }, select: { recordNumber: true, maintenanceDate: true, maintenanceType: true, status: true } }),
+      prisma.machineDowntimeRecord.findMany({ where: { companyId: user.companyId, machineId: scopeId, deletedAt: null }, orderBy: { startAt: "asc" }, select: { startAt: true, durationHours: true, reason: true } }),
+      prisma.sparePartUsage.findMany({ where: { companyId: user.companyId, machineId: scopeId, deletedAt: null }, orderBy: { usedAt: "asc" }, select: { usedAt: true, quantity: true, totalCost: true, product: { select: { name: true, sku: true } } } }),
+      prisma.maintenanceCost.findMany({ where: { companyId: user.companyId, machineId: scopeId, deletedAt: null }, select: { costDate: true, amount: true } }),
+    ]);
+
+    const totalDowntimeH = downtime.reduce((s, d) => s + num(d.durationHours), 0);
+    const partsCost = parts.reduce((s, p) => s + num(p.totalCost), 0);
+    const otherCost = costs.reduce((s, c) => s + num(c.amount), 0);
+    const openBreakdowns = breakdowns.filter((b) => !["RESOLVED", "CLOSED"].includes(b.status)).length;
+
+    const sections: ReportSection[] = [
+      {
+        type: "header",
+        fields: [
+          { label: "Machine", value: `${machine.name} (${machine.code})` },
+          { label: "Type", value: String(machine.machineType).replace(/_/g, " ") },
+          { label: "Make / model", value: `${machine.manufacturer ?? "—"} ${machine.modelNumber ?? ""}`.trim() },
+          { label: "Branch", value: machine.branch?.name ?? "—" },
+          { label: "Status", value: machine.status },
+        ],
+      },
+      {
+        type: "kpis",
+        items: [
+          { label: "Breakdowns", value: String(breakdowns.length), tone: "neutral" },
+          { label: "Open breakdowns", value: String(openBreakdowns), tone: openBreakdowns > 0 ? "critical" : "good" },
+          { label: "Downtime (hrs)", value: round(totalDowntimeH, 1).toLocaleString(), tone: totalDowntimeH > 0 ? "warning" : "good" },
+          { label: "Services logged", value: String(maintenance.length), tone: "neutral" },
+          { label: "Parts cost", value: `GHS ${round(partsCost, 0).toLocaleString()}`, tone: "warning" },
+          { label: "Other cost", value: `GHS ${round(otherCost, 0).toLocaleString()}`, tone: "warning" },
+        ],
+      },
+      {
+        type: "timeline",
+        title: "Events",
+        events: [
+          ...breakdowns.map((b) => ({ date: dayKey(b.reportedAt), label: `Breakdown (${b.severity}) — ${b.description}`.slice(0, 120), kind: "breakdown" })),
+          ...maintenance.map((m) => ({ date: dayKey(m.maintenanceDate), label: `Service — ${String(m.maintenanceType).replace(/_/g, " ")} (${m.status})`, kind: "service" })),
+        ].sort((a, b) => a.date.localeCompare(b.date)),
+      },
+      {
+        type: "table",
+        title: "Spare parts used",
+        columns: [
+          { key: "date", label: "Date", type: "date" },
+          { key: "part", label: "Part", type: "text" },
+          { key: "qty", label: "Qty", type: "number" },
+          { key: "cost", label: "Cost", type: "money" },
+        ],
+        rows: parts.map((p) => ({ date: dayKey(p.usedAt), part: p.product ? `${p.product.name} (${p.product.sku})` : "—", qty: round(num(p.quantity), 2), cost: round(num(p.totalCost), 2) })),
+      },
+      { type: "narrative", text: `${breakdowns.length} breakdowns and ${round(totalDowntimeH, 1)} hours of downtime; total maintenance cost GHS ${round(partsCost + otherCost, 0).toLocaleString()}.` },
+    ];
+    return { subtitle: machine.branch?.name ?? "", scopeLabel: `${machine.name} (${machine.code})`, sections };
+  },
+};
+
 export const DOCUMENT_REPORTS: DocumentReportDefinition[] = [
   poultryBatchLifecycle,
   feedProductionBatch,
   soyaProcessingBatch,
   inventoryStockCard,
   customerStatement,
+  purchaseOrderLifecycle,
+  employeeRecord,
+  machineHistory,
 ];

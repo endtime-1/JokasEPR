@@ -43,12 +43,12 @@ export class ReportQueryDto {
 }
 
 export class ScopeTreeQueryDto {
-  @IsIn(["poultry", "feed", "soya", "inventory", "sales"])
-  module!: "poultry" | "feed" | "soya" | "inventory" | "sales";
+  @IsIn(["poultry", "feed", "soya", "inventory", "sales", "procurement", "hr", "maintenance"])
+  module!: "poultry" | "feed" | "soya" | "inventory" | "sales" | "procurement" | "hr" | "maintenance";
 }
 
 export class DocumentReportQueryDto {
-  @IsIn(["poultry", "feed", "soya", "inventory", "sales"])
+  @IsIn(["poultry", "feed", "soya", "inventory", "sales", "procurement", "hr", "maintenance"])
   module!: string;
 
   @IsOptional()

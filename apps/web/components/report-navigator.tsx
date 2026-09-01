@@ -55,6 +55,9 @@ const MODULES = [
   { key: "soya", label: "Soya" },
   { key: "inventory", label: "Inventory" },
   { key: "sales", label: "Sales" },
+  { key: "procurement", label: "Procurement" },
+  { key: "hr", label: "HR" },
+  { key: "maintenance", label: "Maintenance" },
 ] as const;
 
 const TONE: Record<string, string> = {
