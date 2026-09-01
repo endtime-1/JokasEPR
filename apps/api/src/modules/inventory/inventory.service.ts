@@ -13,6 +13,7 @@ import {
   CreateInventoryItemDto,
   CreateWarehouseLocationDto,
   InventoryQueryDto,
+  MergeWarehouseDto,
   MobileStockMovementDto,
   ReceiveTransferDto,
   RefreshAlertsDto,
@@ -1025,5 +1026,140 @@ export class InventoryService {
 
   private async writeAudit(user: AuthenticatedUser, action: "CREATE" | "UPDATE" | "DELETE" | "TRANSFER" | "APPROVE" | "REJECT", entityType: string, entityId: string, summary: string, context: RequestContext, scope: { branchId?: string; warehouseId?: string }) {
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action, entityType, entityId, summary, branchId: scope.branchId, warehouseId: scope.warehouseId, ipAddress: context.ipAddress, userAgent: context.userAgent });
+  }
+
+  // ─── Warehouse de-duplication ───────────────────────────────────────────
+  // Shows, per branch, where more than one warehouse shares a type (usually
+  // GENERAL) so the manager can see the duplication and merge it away.
+  async warehouseOverlap(user: AuthenticatedUser) {
+    const scope = !user.hasGlobalAccess && user.warehouseIds.length > 0 ? { id: { in: user.warehouseIds } } : {};
+    const [warehouses, itemGroups] = await Promise.all([
+      this.prisma.warehouse.findMany({
+        where: { companyId: user.companyId, deletedAt: null, ...scope },
+        select: { id: true, code: true, name: true, type: true, branchId: true, farmId: true, productionSiteId: true, branch: { select: { name: true } } },
+        orderBy: [{ branchId: "asc" }, { name: "asc" }],
+      }),
+      this.prisma.inventoryItem.groupBy({
+        by: ["warehouseId"],
+        where: { companyId: user.companyId, deletedAt: null },
+        _count: { _all: true },
+        _sum: { quantityOnHand: true },
+      }),
+    ]);
+    const stats = new Map(itemGroups.map((g) => [g.warehouseId, g]));
+    const rows = warehouses.map((w) => ({
+      id: w.id, code: w.code, name: w.name, type: w.type, branchId: w.branchId,
+      branchName: w.branch?.name ?? "",
+      hasParent: !!(w.farmId || w.productionSiteId),
+      itemCount: stats.get(w.id)?._count._all ?? 0,
+      quantityOnHand: Number(stats.get(w.id)?._sum.quantityOnHand ?? 0),
+    }));
+    const byBranch = new Map<string, typeof rows>();
+    for (const r of rows) {
+      if (!byBranch.has(r.branchId)) byBranch.set(r.branchId, []);
+      byBranch.get(r.branchId)!.push(r);
+    }
+    const groups = [...byBranch.values()].map((whs) => {
+      const counts = new Map<string, number>();
+      for (const w of whs) counts.set(w.type, (counts.get(w.type) ?? 0) + 1);
+      const duplicatedTypes = [...counts.entries()].filter(([, n]) => n > 1).map(([t]) => t);
+      return {
+        branchId: whs[0].branchId,
+        branchName: whs[0].branchName,
+        warehouses: whs,
+        duplicatedTypes,
+        hasOverlap: duplicatedTypes.length > 0,
+      };
+    });
+    return { data: groups.sort((a, b) => Number(b.hasOverlap) - Number(a.hasOverlap) || a.branchName.localeCompare(b.branchName)) };
+  }
+
+  // Move every stock record from `sourceId` into `targetWarehouseId` and retire
+  // the source. Refuses if the source still carries operational records this
+  // tool doesn't relocate (feed/soya/sales/machines) — those must be reassigned
+  // first — or an in-flight transfer / active reservation.
+  async mergeWarehouse(user: AuthenticatedUser, sourceId: string, dto: MergeWarehouseDto, context: RequestContext) {
+    if (!user.hasGlobalAccess && !user.permissions.includes("inventory.manage")) throw new ForbiddenException("You cannot merge warehouses.");
+    if (sourceId === dto.targetWarehouseId) throw new BadRequestException("Source and target must be different warehouses.");
+    const [source, target] = await Promise.all([
+      this.prisma.warehouse.findFirst({ where: { id: sourceId, companyId: user.companyId, deletedAt: null } }),
+      this.prisma.warehouse.findFirst({ where: { id: dto.targetWarehouseId, companyId: user.companyId, deletedAt: null } }),
+    ]);
+    if (!source || !target) throw new NotFoundException("Warehouse not found.");
+    this.assertWarehouseAccess(user, sourceId);
+    this.assertWarehouseAccess(user, dto.targetWarehouseId);
+    if (source.branchId !== target.branchId) throw new BadRequestException("Those warehouses are in different branches — merging would move stock between branches. Use a stock transfer instead.");
+
+    const [openTransfers, activeReservations, feedCons, feedRcpt, finFeed, soyaIn, soyaOil, soyaCake, salesOrders, deliveryNotes, grns, machines, equipment] = await Promise.all([
+      this.prisma.stockTransfer.count({ where: { companyId: user.companyId, deletedAt: null, status: { notIn: ["COMPLETED", "CANCELLED", "REJECTED"] }, OR: [{ fromWarehouseId: sourceId }, { toWarehouseId: sourceId }] } }),
+      this.prisma.stockReservation.count({ where: { companyId: user.companyId, warehouseId: sourceId, status: "ACTIVE" } }),
+      this.prisma.feedConsumptionRecord.count({ where: { companyId: user.companyId, warehouseId: sourceId, deletedAt: null } }),
+      this.prisma.feedReceiptRecord.count({ where: { companyId: user.companyId, warehouseId: sourceId, deletedAt: null } }),
+      this.prisma.finishedFeedStock.count({ where: { companyId: user.companyId, warehouseId: sourceId } }),
+      this.prisma.soyaBeanIntake.count({ where: { companyId: user.companyId, warehouseId: sourceId, deletedAt: null } }),
+      this.prisma.soyaOilOutput.count({ where: { companyId: user.companyId, warehouseId: sourceId } }),
+      this.prisma.soyaCakeOutput.count({ where: { companyId: user.companyId, warehouseId: sourceId } }),
+      this.prisma.salesOrder.count({ where: { companyId: user.companyId, warehouseId: sourceId, deletedAt: null } }),
+      this.prisma.deliveryNote.count({ where: { companyId: user.companyId, warehouseId: sourceId } }),
+      this.prisma.goodsReceivedNote.count({ where: { companyId: user.companyId, warehouseId: sourceId } }),
+      this.prisma.machine.count({ where: { companyId: user.companyId, warehouseId: sourceId, deletedAt: null } }),
+      this.prisma.equipment.count({ where: { companyId: user.companyId, warehouseId: sourceId, deletedAt: null } }),
+    ]);
+    const blockers: string[] = [];
+    if (openTransfers) blockers.push(`${openTransfers} in-flight transfer(s)`);
+    if (activeReservations) blockers.push(`${activeReservations} active reservation(s)`);
+    if (feedCons) blockers.push(`${feedCons} feed-consumption record(s)`);
+    if (feedRcpt) blockers.push(`${feedRcpt} feed-receipt record(s)`);
+    if (finFeed) blockers.push(`${finFeed} finished-feed stock record(s)`);
+    if (soyaIn + soyaOil + soyaCake) blockers.push(`${soyaIn + soyaOil + soyaCake} soya record(s)`);
+    if (salesOrders) blockers.push(`${salesOrders} sales order(s)`);
+    if (deliveryNotes) blockers.push(`${deliveryNotes} delivery note(s)`);
+    if (grns) blockers.push(`${grns} goods-received note(s)`);
+    if (machines + equipment) blockers.push(`${machines + equipment} machine/equipment record(s)`);
+    if (blockers.length) {
+      throw new BadRequestException(`"${source.name}" can't be merged yet — it still has ${blockers.join(", ")}. Reassign or close those first, then merge.`);
+    }
+
+    const result = await withDbRetry(() => this.prisma.$transaction(async (tx) => {
+      const srcItems = await tx.inventoryItem.findMany({ where: { companyId: user.companyId, warehouseId: sourceId, deletedAt: null } });
+      let mergedItems = 0;
+      let movedItems = 0;
+      for (const it of srcItems) {
+        const dup = await tx.inventoryItem.findFirst({ where: { companyId: user.companyId, warehouseId: target.id, productId: it.productId, deletedAt: null } });
+        if (dup) {
+          await tx.inventoryItem.update({ where: { id: dup.id }, data: { quantityOnHand: { increment: it.quantityOnHand }, updatedById: user.id } });
+          await tx.stockBatch.updateMany({ where: { inventoryItemId: it.id }, data: { inventoryItemId: dup.id, warehouseId: target.id, branchId: target.branchId } });
+          await tx.stockMovement.updateMany({ where: { inventoryItemId: it.id }, data: { inventoryItemId: dup.id } });
+          await tx.inventoryItem.update({ where: { id: it.id }, data: { quantityOnHand: 0, deletedAt: new Date(), updatedById: user.id } });
+          mergedItems++;
+        } else {
+          await tx.inventoryItem.update({ where: { id: it.id }, data: { warehouseId: target.id, branchId: target.branchId, farmId: target.farmId, productionSiteId: target.productionSiteId, updatedById: user.id } });
+          movedItems++;
+        }
+      }
+      const b = await tx.stockBatch.updateMany({ where: { companyId: user.companyId, warehouseId: sourceId }, data: { warehouseId: target.id, branchId: target.branchId } });
+      const m1 = await tx.stockMovement.updateMany({ where: { companyId: user.companyId, warehouseId: sourceId }, data: { warehouseId: target.id } });
+      const m2 = await tx.stockMovement.updateMany({ where: { companyId: user.companyId, fromWarehouseId: sourceId }, data: { fromWarehouseId: target.id } });
+      const m3 = await tx.stockMovement.updateMany({ where: { companyId: user.companyId, toWarehouseId: sourceId }, data: { toWarehouseId: target.id } });
+      await tx.stockReorderLevel.updateMany({ where: { companyId: user.companyId, warehouseId: sourceId }, data: { warehouseId: target.id } });
+      await tx.stockExpiryAlert.updateMany({ where: { companyId: user.companyId, warehouseId: sourceId }, data: { warehouseId: target.id } });
+      await tx.stockAdjustment.updateMany({ where: { companyId: user.companyId, warehouseId: sourceId }, data: { warehouseId: target.id } });
+      await tx.stockReservation.updateMany({ where: { companyId: user.companyId, warehouseId: sourceId }, data: { warehouseId: target.id } });
+      await tx.warehouseLocation.updateMany({ where: { companyId: user.companyId, warehouseId: sourceId }, data: { warehouseId: target.id } });
+      await tx.inventoryValuation.updateMany({ where: { companyId: user.companyId, warehouseId: sourceId }, data: { warehouseId: target.id } });
+      // UserWarehouseAccess PK is [userId, warehouseId] — drop where the user
+      // already has the target, otherwise re-point.
+      const access = await tx.userWarehouseAccess.findMany({ where: { warehouseId: sourceId } });
+      for (const a of access) {
+        const dup = await tx.userWarehouseAccess.findUnique({ where: { userId_warehouseId: { userId: a.userId, warehouseId: target.id } } });
+        if (dup) await tx.userWarehouseAccess.delete({ where: { userId_warehouseId: { userId: a.userId, warehouseId: sourceId } } });
+        else await tx.userWarehouseAccess.update({ where: { userId_warehouseId: { userId: a.userId, warehouseId: sourceId } }, data: { warehouseId: target.id } });
+      }
+      await tx.warehouse.update({ where: { id: sourceId }, data: { deletedAt: new Date(), code: `${source.code}__merged_${sourceId}`.slice(0, 60), updatedById: user.id } });
+      return { movedItems, mergedItems, movedBatches: b.count, movedMovements: m1.count + m2.count + m3.count };
+    }), { label: "InventoryService.mergeWarehouse" });
+
+    await this.writeAudit(user, "DELETE", "Warehouse", sourceId, `Merged warehouse ${source.code} into ${target.code} — ${dto.reason}`, context, { branchId: source.branchId, warehouseId: target.id });
+    return { data: { source: source.code, target: target.code, ...result } };
   }
 }

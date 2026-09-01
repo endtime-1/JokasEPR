@@ -228,6 +228,16 @@ export class TransferQueryDto {
   take?: number;
 }
 
+export class MergeWarehouseDto {
+  @IsUUID()
+  targetWarehouseId!: string;
+
+  // Required acknowledgement — the source warehouse is retired by this action.
+  @IsString()
+  @MaxLength(240)
+  reason!: string;
+}
+
 export class StockAdjustmentDto {
   @IsUUID()
   warehouseId!: string;

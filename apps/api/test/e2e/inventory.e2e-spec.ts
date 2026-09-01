@@ -379,6 +379,88 @@ describe("Inventory Module (e2e)", () => {
     });
   });
 
+  describe("Warehouse merge", () => {
+    const SRC = "e1111111-1111-4111-8111-111111111111";
+    const DST = "e2222222-2222-4222-8222-222222222222";
+
+    function mergeToken() {
+      const perms = [PERMISSIONS.INVENTORY_READ, PERMISSIONS.INVENTORY_MANAGE];
+      prisma.user.findFirst.mockResolvedValue(
+        makeDbUser({
+          roles: [{ role: { permissions: perms.map((key) => ({ key })) } }],
+          warehouseAccesses: [{ warehouseId: SRC }, { warehouseId: DST }],
+        })
+      );
+      return makeAccessToken({
+        id: TEST_USER_ID, companyId: TEST_COMPANY_ID, permissions: perms, roles: ["Stock Manager"],
+        farmIds: [], warehouseIds: [SRC, DST], branchIds: [TEST_BRANCH_ID], productionSiteIds: [], hasGlobalAccess: false,
+      } as Parameters<typeof makeAccessToken>[0]);
+    }
+
+    it("GET warehouse-overlap — groups by branch and flags duplicated types", async () => {
+      prisma.warehouse.findMany.mockResolvedValue([
+        { id: SRC, code: "GEN1", name: "General 1", type: "GENERAL", branchId: TEST_BRANCH_ID, farmId: null, productionSiteId: null, branch: { name: "Main" } },
+        { id: DST, code: "GEN2", name: "General 2", type: "GENERAL", branchId: TEST_BRANCH_ID, farmId: null, productionSiteId: null, branch: { name: "Main" } },
+      ]);
+      prisma.inventoryItem.groupBy.mockResolvedValue([{ warehouseId: SRC, _count: { _all: 3 }, _sum: { quantityOnHand: 40 } }]);
+
+      const res = await request(app.getHttpServer())
+        .get("/api/v1/inventory/warehouse-overlap")
+        .set("Authorization", `Bearer ${mergeToken()}`)
+        .expect(200);
+
+      expect(res.body.data[0].hasOverlap).toBe(true);
+      expect(res.body.data[0].duplicatedTypes).toContain("GENERAL");
+    });
+
+    it("POST merge — refuses when the source still has operational records", async () => {
+      prisma.warehouse.findFirst
+        .mockResolvedValueOnce({ id: SRC, code: "GEN1", name: "General 1", branchId: TEST_BRANCH_ID, farmId: null, productionSiteId: null })
+        .mockResolvedValueOnce({ id: DST, code: "GEN2", name: "General 2", branchId: TEST_BRANCH_ID, farmId: null, productionSiteId: null });
+      prisma.feedConsumptionRecord.count.mockResolvedValue(2);
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/v1/inventory/warehouses/${SRC}/merge`)
+        .set("Authorization", `Bearer ${mergeToken()}`)
+        .send({ targetWarehouseId: DST, reason: "dedupe" });
+
+      expect(res.status).toBe(400);
+      expect(res.body.message).toMatch(/feed-consumption/);
+    });
+
+    it("POST merge — moves items and retires the source when clear", async () => {
+      prisma.warehouse.findFirst
+        .mockResolvedValueOnce({ id: SRC, code: "GEN1", name: "General 1", branchId: TEST_BRANCH_ID, farmId: null, productionSiteId: null })
+        .mockResolvedValueOnce({ id: DST, code: "GEN2", name: "General 2", branchId: TEST_BRANCH_ID, farmId: null, productionSiteId: null });
+      // clearAllMocks() clears calls, not mockResolvedValue — reset what the
+      // prior "refuses" test set, and restore the $transaction callback impl.
+      for (const m of [prisma.feedConsumptionRecord, prisma.feedReceiptRecord, prisma.finishedFeedStock, prisma.soyaBeanIntake, prisma.soyaOilOutput, prisma.soyaCakeOutput, prisma.salesOrder, prisma.deliveryNote, prisma.goodsReceivedNote, prisma.machine, prisma.equipment, prisma.stockReservation]) {
+        m.count.mockResolvedValue(0);
+      }
+      prisma.$transaction.mockImplementation((arg: unknown) =>
+        typeof arg === "function" ? (arg as (tx: typeof prisma) => Promise<unknown>)(prisma) : Promise.resolve(null)
+      );
+      prisma.inventoryItem.findMany.mockResolvedValue([{ id: "it-1", productId: "p-1", quantityOnHand: 10 }]);
+      prisma.inventoryItem.findFirst.mockResolvedValue(null); // no dup at target
+      prisma.inventoryItem.update.mockResolvedValue({});
+      prisma.stockBatch.updateMany.mockResolvedValue({ count: 2 });
+      prisma.stockMovement.updateMany.mockResolvedValue({ count: 5 });
+      prisma.userWarehouseAccess.findMany.mockResolvedValue([]);
+      prisma.warehouse.update.mockResolvedValue({});
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/v1/inventory/warehouses/${SRC}/merge`)
+        .set("Authorization", `Bearer ${mergeToken()}`)
+        .send({ targetWarehouseId: DST, reason: "dedupe" });
+
+      expect(res.status).toBe(201);
+      expect(res.body.data.movedItems).toBe(1);
+      expect(prisma.warehouse.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ deletedAt: expect.any(Date) }) })
+      );
+    });
+  });
+
   describe("GET /api/v1/inventory/items", () => {
     it("200 — returns items for user's warehouses only", async () => {
       prisma.inventoryItem.findMany.mockResolvedValue([makeDbInventoryItem()]);

@@ -585,6 +585,111 @@ export function ScopedInventoryViewPage({ scope }: { scope: "warehouses" | "farm
   );
 }
 
+type OverlapWh = { id: string; code: string; name: string; type: string; branchId: string; branchName: string; hasParent: boolean; itemCount: number; quantityOnHand: number };
+type OverlapGroup = { branchId: string; branchName: string; warehouses: OverlapWh[]; duplicatedTypes: string[]; hasOverlap: boolean };
+
+// The overlap report + the merge tool. Merge moves every stock record from a
+// source warehouse into a target and retires the source; it refuses if the
+// source still carries feed/soya/sales/machine records (reassign those first).
+export function WarehouseCleanupPage() {
+  const [groups, setGroups] = useState<OverlapGroup[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [merge, setMerge] = useState<{ branchId: string; sourceId: string; targetId: string; reason: string } | null>(null);
+  const [merging, setMerging] = useState(false);
+  const [mergeError, setMergeError] = useState("");
+  const [mergeResult, setMergeResult] = useState("");
+
+  function load() {
+    setLoadError("");
+    apiFetch<ApiEnvelope<OverlapGroup[]>>("/inventory/warehouse-overlap")
+      .then((r) => setGroups(r.data ?? []))
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
+      .finally(() => setLoading(false));
+  }
+  useEffect(() => { load(); }, []);
+
+  async function runMerge() {
+    if (!merge || !merge.sourceId || !merge.targetId || !merge.reason.trim()) { setMergeError("Pick a source, a target, and give a reason."); return; }
+    if (merge.sourceId === merge.targetId) { setMergeError("Source and target must be different."); return; }
+    setMerging(true); setMergeError(""); setMergeResult("");
+    try {
+      const r = await apiFetch<ApiEnvelope<{ source: string; target: string; movedItems: number; mergedItems: number; movedBatches: number; movedMovements: number }>>(
+        `/inventory/warehouses/${merge.sourceId}/merge`,
+        { method: "POST", body: JSON.stringify({ targetWarehouseId: merge.targetId, reason: merge.reason.trim() }) }
+      );
+      const d = r.data;
+      setMergeResult(`Merged ${d.source} into ${d.target}: ${d.movedItems} items moved, ${d.mergedItems} combined, ${d.movedBatches} batches, ${d.movedMovements} movements re-pointed.`);
+      setMerge(null);
+      setLoading(true); load();
+    } catch (err) {
+      setMergeError(err instanceof Error ? err.message : "Merge failed.");
+    } finally {
+      setMerging(false);
+    }
+  }
+
+  return (
+    <InventoryShell>
+      <PageHeader title="Warehouse Cleanup" subtitle="Find duplicate warehouses within a branch and merge them into one." />
+      {loadError && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <span>{loadError}</span>
+          <button type="button" className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold hover:bg-red-50" onClick={load}>Retry</button>
+        </div>
+      )}
+      {mergeResult && <p className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-800">{mergeResult}</p>}
+      {loading ? <p className="text-sm text-ink/50">Loading…</p> : groups.length === 0 ? <p className="text-sm text-ink/50">No warehouses found.</p> : (
+        <div className="space-y-5">
+          {groups.map((g) => (
+            <div key={g.branchId} className={`rounded-md border bg-white shadow-panel ${g.hasOverlap ? "border-amber-300" : "border-line"}`}>
+              <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
+                <span className="text-sm font-semibold">{g.branchName || "—"}</span>
+                {g.hasOverlap
+                  ? <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">duplicate {g.duplicatedTypes.map((t) => t.replace(/_/g, " ").toLowerCase()).join(", ")}</span>
+                  : <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">no overlap</span>}
+              </div>
+              <DataTable
+                rows={g.warehouses as unknown as Record<string, unknown>[]}
+                empty="No warehouses"
+                columns={[
+                  { key: "code", label: "Code", render: (w: Record<string, any>) => w.code },
+                  { key: "name", label: "Name", render: (w: Record<string, any>) => w.name },
+                  { key: "type", label: "Type", render: (w: Record<string, any>) => String(w.type).replace(/_/g, " ").toLowerCase() },
+                  { key: "itemCount", label: "Items", render: (w: Record<string, any>) => w.itemCount },
+                  { key: "quantityOnHand", label: "On hand", render: (w: Record<string, any>) => Number(w.quantityOnHand).toLocaleString() },
+                ]}
+              />
+              {g.warehouses.length > 1 && (
+                <div className="border-t border-line px-4 py-3">
+                  <button type="button" className="rounded-md border border-line px-3 py-1 text-xs font-semibold hover:bg-field" onClick={() => { setMerge({ branchId: g.branchId, sourceId: "", targetId: "", reason: "" }); setMergeError(""); }}>
+                    Merge two of these…
+                  </button>
+                  {merge?.branchId === g.branchId && (
+                    <div className="mt-3 grid gap-2 rounded-md border border-line bg-field p-3 md:grid-cols-[1fr_1fr_1fr_auto]">
+                      <select className={inputClass} value={merge.sourceId} onChange={(e) => setMerge({ ...merge, sourceId: e.target.value })}>
+                        <option value="">Merge from (retired)…</option>
+                        {g.warehouses.map((w) => <option key={w.id} value={w.id}>{w.code} — {w.name}</option>)}
+                      </select>
+                      <select className={inputClass} value={merge.targetId} onChange={(e) => setMerge({ ...merge, targetId: e.target.value })}>
+                        <option value="">Into (kept)…</option>
+                        {g.warehouses.filter((w) => w.id !== merge.sourceId).map((w) => <option key={w.id} value={w.id}>{w.code} — {w.name}</option>)}
+                      </select>
+                      <input className={inputClass} placeholder="Reason" value={merge.reason} onChange={(e) => setMerge({ ...merge, reason: e.target.value })} />
+                      <button type="button" disabled={merging} className="rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60" onClick={runMerge}>{merging ? "Merging…" : "Merge"}</button>
+                    </div>
+                  )}
+                  {merge?.branchId === g.branchId && mergeError && <p className="mt-2 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{mergeError}</p>}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </InventoryShell>
+  );
+}
+
 export function InventoryReportsPage() {
   return (
     <InventoryShell>

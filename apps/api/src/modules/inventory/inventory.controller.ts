@@ -11,6 +11,7 @@ import {
   CreateInventoryItemDto,
   CreateWarehouseLocationDto,
   InventoryQueryDto,
+  MergeWarehouseDto,
   MobileStockMovementDto,
   ReceiveTransferDto,
   RefreshAlertsDto,
@@ -140,6 +141,18 @@ export class InventoryController {
   @RequirePermissions(PERMISSIONS.INVENTORY_MANAGE)
   resolveDiscrepancy(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: ResolveDiscrepancyDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.inventoryService.resolveDiscrepancy(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Get("warehouse-overlap")
+  @RequirePermissions(PERMISSIONS.INVENTORY_READ)
+  warehouseOverlap(@CurrentUser() user: AuthenticatedUser) {
+    return this.inventoryService.warehouseOverlap(user);
+  }
+
+  @Post("warehouses/:id/merge")
+  @RequirePermissions(PERMISSIONS.INVENTORY_MANAGE)
+  mergeWarehouse(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: MergeWarehouseDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.inventoryService.mergeWarehouse(user, id, dto, { ipAddress, userAgent });
   }
 
   @Post("adjustments")
