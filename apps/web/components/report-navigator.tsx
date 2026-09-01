@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { ChevronDown, ChevronRight, Download, FileText, Loader2 } from "lucide-react";
 import {
   Bar,
@@ -70,7 +71,9 @@ const EVENT_KIND: Record<string, string> = {
 };
 
 export function ReportNavigatorPage() {
-  const [module, setModule] = useState<string>("poultry");
+  const params = useSearchParams();
+  const initialModule = MODULES.some((m) => m.key === params.get("module")) ? params.get("module")! : "poultry";
+  const [module, setModule] = useState<string>(initialModule);
   const [tree, setTree] = useState<ScopeTree | null>(null);
   const [treeError, setTreeError] = useState("");
   const [selected, setSelected] = useState<ScopeNode | null>(null);

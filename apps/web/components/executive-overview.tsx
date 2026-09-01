@@ -53,7 +53,7 @@ export function ExecutiveOverview({ summary, charts }: { summary: Card[]; charts
       ],
     },
     {
-      key: "feed", label: "Feed Mill", icon: Wheat, href: "/feed-production", spark: spark(charts, "feedProductionTrend"),
+      key: "feed", label: "Feed Mill", icon: Wheat, href: "/dashboard/feed", spark: spark(charts, "feedProductionTrend"),
       lines: [
         { label: "produced this wk", value: `${fmt(v("feedProducedThisWeek"))} kg` },
         { label: "consumed today", value: `${fmt(v("feedConsumedToday"))} kg` },
@@ -61,7 +61,7 @@ export function ExecutiveOverview({ summary, charts }: { summary: Card[]; charts
       ],
     },
     {
-      key: "soya", label: "Soya", icon: Factory, href: "/soya-processing", spark: spark(charts, "soyaProductionTrend"),
+      key: "soya", label: "Soya", icon: Factory, href: "/dashboard/soya", spark: spark(charts, "soyaProductionTrend"),
       lines: [
         { label: "beans processed", value: `${fmt(v("soyaBeansProcessedThisWeek"))} kg` },
         { label: "oil produced", value: `${fmt(v("soyaOilProduced"))} L` },
@@ -69,14 +69,14 @@ export function ExecutiveOverview({ summary, charts }: { summary: Card[]; charts
       ],
     },
     {
-      key: "inventory", label: "Inventory", icon: Boxes, href: "/inventory", spark: [],
+      key: "inventory", label: "Inventory", icon: Boxes, href: "/dashboard/inventory", spark: [],
       lines: [
         { label: "stock value", value: fmt(v("currentInventoryValue"), "GHS") },
         { label: "low stock", value: fmt(v("lowStockAlerts")), tone: v("lowStockAlerts") > 0 ? "critical" : undefined },
       ],
     },
     {
-      key: "finance", label: "Sales & Finance", icon: Landmark, href: "/sales", spark: spark(charts, "salesTrend"),
+      key: "finance", label: "Sales & Finance", icon: Landmark, href: "/dashboard/finance", spark: spark(charts, "salesTrend"),
       lines: [
         { label: "sales this month", value: fmt(v("salesThisMonth"), "GHS") },
         { label: "debtors", value: fmt(v("outstandingCustomerDebt"), "GHS"), tone: v("outstandingCustomerDebt") > 0 ? "warning" : undefined },
