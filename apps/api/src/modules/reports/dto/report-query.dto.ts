@@ -40,6 +40,19 @@ export class ReportQueryDto {
   @IsOptional()
   @IsUUID()
   supplierId?: string;
+
+  // Poultry sub-farm filters — house / pen / batch.
+  @IsOptional()
+  @IsUUID()
+  poultryHouseId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  penId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  flockBatchId?: string;
 }
 
 export class ScopeTreeQueryDto {

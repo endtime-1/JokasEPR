@@ -41,6 +41,7 @@ type Option = {
   name: string;
 };
 
+type ScopedOption = Option & { farmId?: string; poultryHouseId?: string; status?: string };
 type ReportOptions = {
   companies: Option[];
   branches: Option[];
@@ -50,6 +51,9 @@ type ReportOptions = {
   products: Option[];
   customers: Option[];
   suppliers: Option[];
+  poultryHouses: ScopedOption[];
+  pens: ScopedOption[];
+  flockBatches: ScopedOption[];
 };
 
 const emptyOptions: ReportOptions = {
@@ -60,7 +64,10 @@ const emptyOptions: ReportOptions = {
   productionSites: [],
   products: [],
   customers: [],
-  suppliers: []
+  suppliers: [],
+  poultryHouses: [],
+  pens: [],
+  flockBatches: []
 };
 
 const controlClass =
@@ -82,7 +89,10 @@ export default function ReportsPage() {
     productionSiteId: "",
     productId: "",
     customerId: "",
-    supplierId: ""
+    supplierId: "",
+    poultryHouseId: "",
+    penId: "",
+    flockBatchId: ""
   });
   const [result, setResult] = useState<ReportResult | null>(() => {
     const id = initialReportCatalog()[0]?.id ?? "";
@@ -350,6 +360,34 @@ export default function ReportsPage() {
                 options={options.suppliers}
                 onChange={(v) => setFilters({ ...filters, supplierId: v })}
               />
+              {activeReport?.category === "Poultry" && (
+                <>
+                  <SelectField
+                    label="House"
+                    value={filters.poultryHouseId}
+                    options={options.poultryHouses.filter((h) => !filters.farmId || h.farmId === filters.farmId)}
+                    onChange={(v) => setFilters({ ...filters, poultryHouseId: v, penId: "" })}
+                  />
+                  <SelectField
+                    label="Pen"
+                    value={filters.penId}
+                    options={options.pens.filter(
+                      (p) =>
+                        (!filters.poultryHouseId || p.poultryHouseId === filters.poultryHouseId) &&
+                        (!filters.farmId || p.farmId === filters.farmId)
+                    )}
+                    onChange={(v) => setFilters({ ...filters, penId: v })}
+                  />
+                  <SelectField
+                    label="Flock batch"
+                    value={filters.flockBatchId}
+                    options={options.flockBatches
+                      .filter((b) => !filters.farmId || b.farmId === filters.farmId)
+                      .map((b) => ({ ...b, name: b.status && b.status !== "ACTIVE" ? `${b.name} (${b.status.toLowerCase()})` : b.name }))}
+                    onChange={(v) => setFilters({ ...filters, flockBatchId: v })}
+                  />
+                </>
+              )}
               <button
                 type="submit"
                 className="app-button-primary md:col-span-2"

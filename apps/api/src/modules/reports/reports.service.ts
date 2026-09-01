@@ -161,14 +161,14 @@ const REPORTS: ReportDefinition[] = [
 ];
 
 const MODEL_FIELDS: Record<string, string[]> = {
-  dailyPoultryRecord: ["companyId", "branchId", "farmId", "poultryHouseId", "flockBatchId", "deletedAt"],
+  dailyPoultryRecord: ["companyId", "branchId", "farmId", "poultryHouseId", "penId", "flockBatchId", "deletedAt"],
   flockBatch: ["companyId", "branchId", "farmId", "poultryHouseId", "deletedAt"],
-  mortalityRecord: ["companyId", "branchId", "farmId", "poultryHouseId", "flockBatchId", "deletedAt"],
-  eggProductionRecord: ["companyId", "branchId", "farmId", "poultryHouseId", "flockBatchId", "deletedAt"],
-  feedConsumptionRecord: ["companyId", "branchId", "farmId", "poultryHouseId", "flockBatchId", "feedProductId", "deletedAt"],
-  vaccinationRecord: ["companyId", "branchId", "farmId", "poultryHouseId", "flockBatchId", "deletedAt"],
-  medicationRecord: ["companyId", "branchId", "farmId", "poultryHouseId", "flockBatchId", "deletedAt"],
-  poultryCostRecord: ["companyId", "branchId", "farmId", "poultryHouseId", "flockBatchId", "deletedAt"],
+  mortalityRecord: ["companyId", "branchId", "farmId", "poultryHouseId", "penId", "flockBatchId", "deletedAt"],
+  eggProductionRecord: ["companyId", "branchId", "farmId", "poultryHouseId", "penId", "flockBatchId", "deletedAt"],
+  feedConsumptionRecord: ["companyId", "branchId", "farmId", "poultryHouseId", "penId", "flockBatchId", "feedProductId", "deletedAt"],
+  vaccinationRecord: ["companyId", "branchId", "farmId", "poultryHouseId", "penId", "flockBatchId", "deletedAt"],
+  medicationRecord: ["companyId", "branchId", "farmId", "poultryHouseId", "penId", "flockBatchId", "deletedAt"],
+  poultryCostRecord: ["companyId", "branchId", "farmId", "poultryHouseId", "penId", "flockBatchId", "deletedAt"],
   feedProductionBatch: ["companyId", "branchId", "productionSiteId", "finishedProductId", "deletedAt"],
   feedFormulaVersion: ["companyId", "formulaId"],
   feedRawMaterialUsage: ["companyId", "branchId", "productionSiteId", "rawMaterialId", "deletedAt"],
@@ -207,7 +207,8 @@ export class ReportsService {
   }
 
   async options(user: AuthenticatedUser) {
-    const [companies, branches, farms, warehouses, productionSites, products, customers, suppliers] = await Promise.all([
+    const farmScope = user.hasGlobalAccess || user.farmIds.length === 0 ? {} : { farmId: { in: user.farmIds } };
+    const [companies, branches, farms, warehouses, productionSites, products, customers, suppliers, poultryHouses, pens, flockBatches] = await Promise.all([
       this.prisma.company.findMany({ where: { id: user.companyId, deletedAt: null }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
       this.prisma.branch.findMany({ where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess || user.branchIds.length === 0 ? {} : { id: { in: user.branchIds } }) }, select: { id: true, code: true, name: true }, orderBy: { name: "asc" } }),
       this.prisma.farm.findMany({ where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess || user.farmIds.length === 0 ? {} : { id: { in: user.farmIds } }) }, select: { id: true, code: true, name: true, branchId: true }, orderBy: { name: "asc" } }),
@@ -215,9 +216,12 @@ export class ReportsService {
       this.prisma.productionSite.findMany({ where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess || user.productionSiteIds.length === 0 ? {} : { id: { in: user.productionSiteIds } }) }, select: { id: true, code: true, name: true, branchId: true }, orderBy: { name: "asc" } }),
       this.prisma.product.findMany({ where: { companyId: user.companyId, deletedAt: null }, select: { id: true, sku: true, name: true }, orderBy: { name: "asc" }, take: 250 }),
       this.prisma.customer.findMany({ where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess || user.branchIds.length === 0 ? {} : { branchId: { in: user.branchIds } }) }, select: { id: true, code: true, name: true }, orderBy: { name: "asc" }, take: 250 }),
-      this.prisma.supplier.findMany({ where: { companyId: user.companyId, deletedAt: null }, select: { id: true, code: true, name: true }, orderBy: { name: "asc" }, take: 250 })
+      this.prisma.supplier.findMany({ where: { companyId: user.companyId, deletedAt: null }, select: { id: true, code: true, name: true }, orderBy: { name: "asc" }, take: 250 }),
+      this.prisma.poultryHouse.findMany({ where: { companyId: user.companyId, deletedAt: null, ...farmScope }, select: { id: true, code: true, name: true, farmId: true }, orderBy: { name: "asc" } }),
+      this.prisma.pen.findMany({ where: { companyId: user.companyId, deletedAt: null, ...farmScope }, select: { id: true, code: true, name: true, penNumber: true, poultryHouseId: true, farmId: true }, orderBy: [{ poultryHouseId: "asc" }, { penNumber: "asc" }] }),
+      this.prisma.flockBatch.findMany({ where: { companyId: user.companyId, deletedAt: null, ...farmScope }, select: { id: true, code: true, name: true, farmId: true, poultryHouseId: true, status: true }, orderBy: { startDate: "desc" }, take: 400 })
     ]);
-    return { data: { companies, branches, farms, warehouses, productionSites, products, customers, suppliers } };
+    return { data: { companies, branches, farms, warehouses, productionSites, products, customers, suppliers, poultryHouses, pens, flockBatches } };
   }
 
   private static readonly ROW_CAP = 1000;
@@ -616,6 +620,11 @@ export class ReportsService {
     if (definition.productField && query.productId && fields.includes(definition.productField)) where[definition.productField] = query.productId;
     if (definition.customerField && query.customerId && fields.includes(definition.customerField)) where[definition.customerField] = query.customerId;
     if (definition.supplierField && query.supplierId && fields.includes(definition.supplierField)) where[definition.supplierField] = query.supplierId;
+    // Poultry sub-farm filters — already gated by the farm scope above, so no
+    // extra access check needed; only applied when the model carries the field.
+    for (const f of ["poultryHouseId", "penId", "flockBatchId"] as const) {
+      if (query[f] && fields.includes(f)) where[f] = query[f];
+    }
     if (definition.dateField && (query.startDate || query.endDate)) {
       where[definition.dateField] = {
         gte: query.startDate ? new Date(query.startDate) : undefined,
