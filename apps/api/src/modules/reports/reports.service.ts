@@ -264,7 +264,85 @@ export class ReportsService {
   // ── Scope tree — the drill hierarchy for a module, scoped to the user ─────
   async scopeTree(user: AuthenticatedUser, module: string) {
     if (module === "poultry") return this.poultryScopeTree(user);
+    if (module === "feed") return this.productionScopeTree(user, "feed");
+    if (module === "soya") return this.productionScopeTree(user, "soya");
+    if (module === "inventory") return this.inventoryScopeTree(user);
+    if (module === "sales") return this.salesScopeTree(user);
     throw new NotFoundException(`No report scope tree for module "${module}" yet.`);
+  }
+
+  private branchWhere(user: AuthenticatedUser) {
+    return { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess || user.branchIds.length === 0 ? {} : { id: { in: user.branchIds } }) };
+  }
+
+  private async productionScopeTree(user: AuthenticatedUser, kind: "feed" | "soya") {
+    const siteType = kind === "feed" ? "FEED_PRODUCTION" : "SOYA_PROCESSING";
+    const siteScope = user.hasGlobalAccess || user.productionSiteIds.length === 0 ? {} : { id: { in: user.productionSiteIds } };
+    const [branches, sites, batches] = await Promise.all([
+      this.prisma.branch.findMany({ where: this.branchWhere(user), select: { id: true, name: true } }),
+      this.prisma.productionSite.findMany({ where: { companyId: user.companyId, deletedAt: null, type: { in: [siteType, "MIXED"] }, ...siteScope }, select: { id: true, name: true, branchId: true } }),
+      kind === "feed"
+        ? this.prisma.feedProductionBatch.findMany({ where: { companyId: user.companyId, deletedAt: null }, select: { id: true, batchNumber: true, status: true, productionSiteId: true }, orderBy: { productionDate: "desc" }, take: 500 })
+        : this.prisma.soyaProcessingBatch.findMany({ where: { companyId: user.companyId, deletedAt: null }, select: { id: true, batchNumber: true, status: true, productionSiteId: true }, orderBy: { processingDate: "desc" }, take: 500 }),
+    ]);
+    const leafType = kind === "feed" ? "feedBatch" : "soyaBatch";
+    const root = {
+      type: "company", id: user.companyId, label: "Company",
+      children: branches.map((br) => ({
+        type: "branch", id: br.id, label: br.name,
+        children: sites.filter((s) => s.branchId === br.id).map((s) => ({
+          type: "productionSite", id: s.id, label: s.name,
+          children: batches.filter((b) => b.productionSiteId === s.id).map((b) => ({
+            type: leafType, id: b.id, label: b.batchNumber, meta: { status: b.status }, children: [],
+          })),
+        })),
+      })),
+    };
+    return { data: { module: kind, levels: ["company", "branch", "productionSite", leafType], root } };
+  }
+
+  private async inventoryScopeTree(user: AuthenticatedUser) {
+    const whScope = user.hasGlobalAccess || user.warehouseIds.length === 0 ? {} : { id: { in: user.warehouseIds } };
+    const [branches, warehouses, items] = await Promise.all([
+      this.prisma.branch.findMany({ where: this.branchWhere(user), select: { id: true, name: true } }),
+      this.prisma.warehouse.findMany({ where: { companyId: user.companyId, deletedAt: null, ...whScope }, select: { id: true, name: true, code: true, branchId: true } }),
+      this.prisma.inventoryItem.findMany({
+        where: { companyId: user.companyId, deletedAt: null },
+        select: { id: true, warehouseId: true, product: { select: { name: true, sku: true } } },
+        orderBy: { product: { name: "asc" } },
+        take: 3000,
+      }),
+    ]);
+    const root = {
+      type: "company", id: user.companyId, label: "Company",
+      children: branches.map((br) => ({
+        type: "branch", id: br.id, label: br.name,
+        children: warehouses.filter((w) => w.branchId === br.id).map((w) => ({
+          type: "warehouse", id: w.id, label: `${w.name} (${w.code})`,
+          children: items.filter((it) => it.warehouseId === w.id).map((it) => ({
+            type: "inventoryItem", id: it.id, label: `${it.product?.sku ?? ""} — ${it.product?.name ?? ""}`.trim(), children: [],
+          })),
+        })),
+      })),
+    };
+    return { data: { module: "inventory", levels: ["company", "branch", "warehouse", "inventoryItem"], root } };
+  }
+
+  private async salesScopeTree(user: AuthenticatedUser) {
+    const [branches, customers] = await Promise.all([
+      this.prisma.branch.findMany({ where: this.branchWhere(user), select: { id: true, name: true } }),
+      this.prisma.customer.findMany({ where: { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess || user.branchIds.length === 0 ? {} : { branchId: { in: user.branchIds } }) }, select: { id: true, name: true, code: true, branchId: true }, orderBy: { name: "asc" }, take: 1000 }),
+    ]);
+    const root = {
+      type: "company", id: user.companyId, label: "Company",
+      children: branches.map((br) => ({
+        type: "branch", id: br.id, label: br.name,
+        children: customers.filter((c) => c.branchId === br.id).map((c) => ({
+          type: "customer", id: c.id, label: c.code ? `${c.name} (${c.code})` : c.name, children: [],
+        })),
+      })),
+    };
+    return { data: { module: "sales", levels: ["company", "branch", "customer"], root } };
   }
 
   private async poultryScopeTree(user: AuthenticatedUser) {

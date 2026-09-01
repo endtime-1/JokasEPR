@@ -241,6 +241,58 @@ describe("ReportsService.runDocument — poultry batch lifecycle", () => {
   });
 });
 
+describe("ReportsService.runDocument — other modules", () => {
+  function makeUser(perms: string[]) {
+    return {
+      id: "u-1", companyId: "co-1", email: "u@x.com", fullName: "U",
+      roles: [], permissions: perms, branchIds: [], farmIds: [], warehouseIds: [], productionSiteIds: [],
+      hasGlobalAccess: false,
+    };
+  }
+
+  it("feed.production-batch computes wastage % and cost/kg", async () => {
+    const mockPrisma = {
+      feedProductionBatch: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: "fb-1", batchNumber: "FB-1", status: "COMPLETED", producedQuantityKg: 900, wastageKg: 100, productionDate: new Date(),
+          productionSite: { name: "Mill", code: "M1" }, finishedProduct: { name: "Layer Mash", sku: "LM" },
+          productionOrder: { plannedQuantityKg: 1000, formula: { name: "Layer v3", code: "LV3" } },
+          rawMaterialUsages: [{ quantityKg: 500, unitCost: 2, rawMaterial: { name: "Maize", sku: "MZ" } }],
+          qualityChecks: [], finishedFeedStocks: [], internalTransfers: [],
+          costs: [{ rawMaterialCost: 1000, laborCost: 200, packagingCost: 100, overheadCost: 100 }],
+        }),
+      },
+    };
+    const service = new ReportsService(mockPrisma as never, {} as never);
+    const { data } = await service.runDocument("feed.production-batch", makeUser(["feed.read"]) as never, { scopeType: "feedBatch", scopeId: "fb-1" } as never);
+    const kpis = data.sections.find((s) => s.type === "kpis") as { items: { label: string; value: string }[] };
+    expect(kpis.items.find((i) => i.label === "Wastage")?.value).toBe("10%");
+    expect(kpis.items.find((i) => i.label === "Cost / kg")?.value).toBe("GHS 1.556"); // 1400 / 900
+  });
+
+  it("inventory.stock-card builds a running balance from movements", async () => {
+    const mockPrisma = {
+      inventoryItem: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: "ii-1", productId: "p-1", warehouseId: "w-1", quantityOnHand: 30, reorderLevel: 10,
+          product: { name: "Maize", sku: "MZ" }, warehouse: { name: "Store", code: "S1" },
+        }),
+      },
+      stockMovement: {
+        findMany: jest.fn().mockResolvedValue([
+          { movementDate: new Date("2026-01-01"), movementType: "PURCHASE_RECEIPT", quantity: 50, unitCost: 2, toWarehouseId: "w-1" },
+          { movementDate: new Date("2026-01-05"), movementType: "PRODUCTION_INPUT", quantity: 20, unitCost: 2, fromWarehouseId: "w-1" },
+        ]),
+      },
+      stockBatch: { findMany: jest.fn().mockResolvedValue([{ batchNumber: "L1", quantityRemaining: 30, unitCost: 2, expiryDate: null, status: "AVAILABLE", createdAt: new Date("2026-01-01") }]) },
+    };
+    const service = new ReportsService(mockPrisma as never, {} as never);
+    const { data } = await service.runDocument("inventory.stock-card", makeUser(["inventory.read"]) as never, { scopeType: "inventoryItem", scopeId: "ii-1" } as never);
+    const bal = data.sections.find((s) => s.type === "line-chart" && s.title === "Running balance") as { data: Record<string, number>[] };
+    expect(bal.data.map((d) => d.balance)).toEqual([50, 30]);
+  });
+});
+
 describe("ReportsService — CSV/XLS formula-injection neutralization (M12)", () => {
   function makeReportResult(cellValue: unknown) {
     return {

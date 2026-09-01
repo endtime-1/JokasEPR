@@ -48,7 +48,13 @@ type DocumentReport = {
   sections: Section[];
 };
 
-const MODULES = [{ key: "poultry", label: "Poultry" }] as const;
+const MODULES = [
+  { key: "poultry", label: "Poultry" },
+  { key: "feed", label: "Feed Mill" },
+  { key: "soya", label: "Soya" },
+  { key: "inventory", label: "Inventory" },
+  { key: "sales", label: "Sales" },
+] as const;
 
 const TONE: Record<string, string> = {
   good: "text-emerald-700",
