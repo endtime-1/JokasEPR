@@ -352,10 +352,38 @@ export async function downloadReport(path: string, filename: string): Promise<vo
     throw new Error(extractErrorMessage(await response.text()));
   }
   const blob = await response.blob();
+  triggerDownload(blob, filename);
+}
+
+function triggerDownload(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
   anchor.download = filename;
   anchor.click();
   URL.revokeObjectURL(url);
+}
+
+function csvCell(value: unknown): string {
+  if (value == null) return "";
+  const s = value instanceof Date ? value.toISOString() : String(value);
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+/**
+ * Download the rows currently on screen as a CSV — no server round-trip, so
+ * it always matches exactly what the user is looking at (current filter and
+ * all). `columns` is [{ key, label }]; `pick` optionally maps a row to the
+ * raw value for a column (defaults to row[key]).
+ */
+export function downloadRowsAsCsv<T extends Record<string, unknown>>(
+  filename: string,
+  columns: { key: string; label: string }[],
+  rows: T[],
+  pick?: (row: T, key: string) => unknown
+): void {
+  const header = columns.map((c) => csvCell(c.label)).join(",");
+  const body = rows.map((row) => columns.map((c) => csvCell(pick ? pick(row, c.key) : row[c.key])).join(",")).join("\r\n");
+  const csv = `﻿${header}\r\n${body}\r\n`; // BOM so Excel reads UTF-8
+  triggerDownload(new Blob([csv], { type: "text/csv;charset=utf-8" }), filename);
 }
