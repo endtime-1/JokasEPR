@@ -17,6 +17,30 @@ type Column<T> = {
   csv?: (row: T) => string | number | null | undefined;
 };
 
+const dateMs = (v: unknown): number => {
+  if (v == null) return 0;
+  const t = Date.parse(String(v));
+  return Number.isNaN(t) ? 0 : t;
+};
+
+// The row's real date column, for ordering a CSV export newest-first. A
+// business date ("recordDate", "orderDate", "paymentDate", …) is preferred
+// over the audit "createdAt"; a column only qualifies if its first non-empty
+// value actually parses as a date.
+function detectDateKey(cols: { key: string }[], rows: Record<string, unknown>[]): string | null {
+  const looksDate = (k: string) => /date$/i.test(k) || /(^|[a-z])at$/i.test(k) || k.toLowerCase().includes("date");
+  const candidates = cols.map((c) => c.key).filter(looksDate);
+  const ordered = [
+    ...candidates.filter((k) => !/^(created|updated|deleted)at$/i.test(k)),
+    ...candidates.filter((k) => /^(created|updated|deleted)at$/i.test(k)),
+  ];
+  for (const key of ordered) {
+    const sample = rows.find((r) => r[key] != null);
+    if (sample && !Number.isNaN(Date.parse(String(sample[key])))) return key;
+  }
+  return null;
+}
+
 // Best-effort plain text of a rendered cell, for CSV export.
 function nodeToText(node: React.ReactNode): string {
   if (node == null || typeof node === "boolean") return "";
@@ -134,10 +158,17 @@ export function DataTable<T extends Record<string, unknown>>({
 
   function handleExport() {
     const exportCols = columns.filter((c) => c.key !== "actions" && c.key !== "_actions" && !c.key.startsWith("_"));
+    // Always hand the CSV back newest-first by date, regardless of how the
+    // table happens to be sorted on screen. Find the row's real date field
+    // (a business date beats createdAt) and order by its raw value.
+    const dateKey = detectDateKey(exportCols, sorted as Record<string, unknown>[]);
+    const ordered = dateKey
+      ? [...(sorted as Record<string, unknown>[])].sort((a, b) => dateMs(b[dateKey]) - dateMs(a[dateKey]))
+      : (sorted as Record<string, unknown>[]);
     downloadRowsAsCsv(
       `${csvFilename || "records"}-${new Date().toISOString().slice(0, 10)}.csv`,
       exportCols.map((c) => ({ key: c.key, label: c.label || c.key })),
-      sorted as Record<string, unknown>[],
+      ordered,
       (row, key) => {
         const col = exportCols.find((c) => c.key === key)!;
         if (col.csv) return col.csv(row as T);
