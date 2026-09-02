@@ -271,6 +271,29 @@ export class CreateSalesOrderDto {
   idempotencyKey?: string;
 }
 
+export class UpdateSalesOrderDto {
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  discountAmount?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  taxAmount?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  notes?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateSalesOrderItemDto)
+  items?: CreateSalesOrderItemDto[];
+}
+
 export class CreateSalesQuoteDto {
   @IsUUID()
   customerId!: string;

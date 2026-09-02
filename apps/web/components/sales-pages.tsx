@@ -967,6 +967,46 @@ export function OrdersPage({ create = false }: { create?: boolean }) {
   } | null>(null);
   const [raising, setRaising] = useState(false);
   const [raiseMsg, setRaiseMsg] = useState("");
+  const [editId, setEditId] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!create) return;
+    const id = new URLSearchParams(window.location.search).get("edit");
+    if (id) setEditId(id);
+  }, [create]);
+
+  useEffect(() => {
+    if (!editId) return;
+    let cancelled = false;
+    apiFetch<ApiEnvelope<{
+      customerId?: string; warehouseId?: string; notes?: string | null;
+      discountAmount?: number; taxAmount?: number;
+      customer?: { id?: string }; warehouse?: { id?: string };
+      items?: Array<{ productId: string; quantity: number; unitPrice: number; discountAmount: number }>;
+    }>>(`/sales/orders/${editId}`)
+      .then((r) => {
+        if (cancelled || !r.data) return;
+        const o = r.data;
+        setForm({
+          customerId: o.customer?.id ?? o.customerId ?? "",
+          warehouseId: o.warehouse?.id ?? o.warehouseId ?? "",
+          notes: o.notes ?? "",
+          discountAmount: String(Number(o.discountAmount ?? 0) || ""),
+          taxAmount: String(Number(o.taxAmount ?? 0) || ""),
+        });
+        if (o.items?.length) {
+          setItems(o.items.map((it) => ({
+            productId: it.productId,
+            quantity: String(Number(it.quantity)),
+            unitPrice: String(Number(it.unitPrice)),
+            discountAmount: String(Number(it.discountAmount ?? 0)),
+          })));
+        }
+      })
+      .catch((e2) => { if (!cancelled) setError(e2 instanceof Error ? e2.message : "Could not load order"); });
+    return () => { cancelled = true; };
+  }, [editId]);
 
   const effectiveCustomerId = form.customerId || opts.customers[0]?.id || "";
   useEffect(() => {
@@ -1008,27 +1048,44 @@ export function OrdersPage({ create = false }: { create?: boolean }) {
 
   async function submit(e: FormEvent) {
     e.preventDefault(); setSaving(true); setError("");
+    const lineItems = items.filter((it) => it.productId && it.quantity && it.unitPrice).map((it) => ({
+      productId: it.productId,
+      quantity: Number(it.quantity),
+      unitPrice: Number(it.unitPrice),
+      discountAmount: Number(it.discountAmount || 0),
+    }));
     try {
-      const r = await apiFetch<ApiEnvelope<{ id: string }>>("/sales/orders", {
-        method: "POST",
-        body: JSON.stringify({
-          customerId: effectiveCustomerId,
-          warehouseId: form.warehouseId || opts.warehouses[0]?.id,
-          discountAmount: discount,
-          taxAmount: tax,
-          notes: form.notes,
-          items: items.filter((it) => it.productId && it.quantity && it.unitPrice).map((it) => ({
-            productId: it.productId,
-            quantity: Number(it.quantity),
-            unitPrice: Number(it.unitPrice),
-            discountAmount: Number(it.discountAmount || 0),
-          })),
-        }),
-      });
+      if (editId) {
+        await apiFetch<ApiEnvelope<{ id: string }>>(`/sales/orders/${editId}`, {
+          method: "PATCH",
+          body: JSON.stringify({ discountAmount: discount, taxAmount: tax, notes: form.notes, items: lineItems }),
+        });
+      } else {
+        await apiFetch<ApiEnvelope<{ id: string }>>("/sales/orders", {
+          method: "POST",
+          body: JSON.stringify({
+            customerId: effectiveCustomerId,
+            warehouseId: form.warehouseId || opts.warehouses[0]?.id,
+            discountAmount: discount,
+            taxAmount: tax,
+            notes: form.notes,
+            items: lineItems,
+          }),
+        });
+      }
       router.push("/sales/orders");
-      void r;
     } catch (e2: unknown) { setError(e2 instanceof Error ? e2.message : "Failed"); }
     finally { setSaving(false); }
+  }
+
+  async function cancelOrder(id: string) {
+    if (!window.confirm("Cancel this sales order? This cannot be undone.")) return;
+    setError(""); setRaiseMsg(""); setShortage(null); setBusyId(id);
+    try {
+      await apiFetch(`/sales/orders/${id}/cancel`, { method: "PATCH" });
+      await load();
+    } catch (e2: unknown) { setError(e2 instanceof Error ? e2.message : "Cancel failed"); }
+    finally { setBusyId(null); }
   }
 
   async function approve(id: string) {
@@ -1065,8 +1122,8 @@ export function OrdersPage({ create = false }: { create?: boolean }) {
         <div className="mx-auto max-w-3xl">
           <PageHero
             kicker="Commercial · Sales"
-            title="New Sales Order"
-            subtitle="Create a sales order with one or more line items. Stock release requires storekeeper approval."
+            title={editId ? "Edit Sales Order" : "New Sales Order"}
+            subtitle={editId ? "Adjust line items, discount, tax or notes. Only orders still awaiting stock approval can be edited." : "Create a sales order with one or more line items. Stock release requires storekeeper approval."}
             actions={<Link href="/sales/orders" className="app-button-secondary text-xs">← Back</Link>}
           />
           {optionsError && <div className="mb-5 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{optionsError}</div>}
@@ -1077,7 +1134,7 @@ export function OrdersPage({ create = false }: { create?: boolean }) {
               <h2 className="mb-4 text-sm font-semibold text-ink">Order Details</h2>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div><FormLabel>Customer *</FormLabel>
-                  <select required value={effectiveCustomerId} onChange={f("customerId")} className={inputCls}>
+                  <select required disabled={!!editId} value={effectiveCustomerId} onChange={f("customerId")} className={`${inputCls} disabled:bg-field/60 disabled:text-ink/50`}>
                     <option value="">— Select customer —</option>
                     {opts.customers.map((c) => <option key={c.id} value={c.id}>{c.code} {c.name}</option>)}
                   </select>
@@ -1094,7 +1151,7 @@ export function OrdersPage({ create = false }: { create?: boolean }) {
                   })()}
                 </div>
                 <div><FormLabel>Warehouse *</FormLabel>
-                  <select required value={form.warehouseId || opts.warehouses[0]?.id || ""} onChange={f("warehouseId")} className={inputCls}>
+                  <select required disabled={!!editId} value={form.warehouseId || opts.warehouses[0]?.id || ""} onChange={f("warehouseId")} className={`${inputCls} disabled:bg-field/60 disabled:text-ink/50`}>
                     <option value="">— Select warehouse —</option>
                     {opts.warehouses.map((w) => <option key={w.id} value={w.id}>{w.code} {w.name}</option>)}
                   </select>
@@ -1171,7 +1228,7 @@ export function OrdersPage({ create = false }: { create?: boolean }) {
             </div>
 
             <button type="submit" disabled={saving} className="app-button-primary disabled:opacity-50">
-              {saving ? "Submitting…" : "Submit Sales Order"}
+              {saving ? "Saving…" : editId ? "Save Changes" : "Submit Sales Order"}
             </button>
           </form>
         </div>
@@ -1248,7 +1305,13 @@ export function OrdersPage({ create = false }: { create?: boolean }) {
             { key: "balanceDue",  label: "Balance",   render: (r) => money(r.balanceDue) },
             { key: "orderDate",   label: "Date",      render: (r) => fmt(r.orderDate as string) },
             { key: "actions",     label: "",          render: (r) => r.status === "PENDING_STOCK_APPROVAL"
-              ? <button onClick={() => void approve(r.id as string)} className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-bold text-amber-800 hover:bg-amber-100 transition">Approve Stock</button>
+              ? (
+                <div className="flex flex-wrap items-center justify-end gap-1.5">
+                  <button onClick={() => void approve(r.id as string)} className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-bold text-amber-800 hover:bg-amber-100 transition">Approve Stock</button>
+                  <Link href={`/sales/orders/create?edit=${r.id as string}`} className="rounded-lg border border-line bg-white px-3 py-1 text-xs font-bold text-ink hover:bg-field transition">Edit</Link>
+                  <button onClick={() => void cancelOrder(r.id as string)} disabled={busyId === r.id} className="rounded-lg border border-red-200 bg-white px-3 py-1 text-xs font-bold text-red-600 hover:bg-red-50 transition disabled:opacity-50">Cancel</button>
+                </div>
+              )
               : null
             },
           ]}
@@ -1474,6 +1537,19 @@ export function PaymentsPage() {
 
   useEffect(() => { void load(); }, []);
   useApiRecovery(rows.length === 0, () => void load());
+
+  // Deep-link from the Invoices list "Record payment" action — open the
+  // form pre-scoped to that invoice/customer.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const p = new URLSearchParams(window.location.search);
+    const invoiceId = p.get("invoiceId");
+    const customerId = p.get("customerId");
+    if (invoiceId || customerId) {
+      setForm((prev) => ({ ...prev, invoiceId: invoiceId ?? prev.invoiceId, customerId: customerId ?? prev.customerId }));
+      setShowForm(true);
+    }
+  }, []);
 
   const f = (k: string) => (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm((p) => ({ ...p, [k]: e.target.value }));
 
@@ -1708,6 +1784,11 @@ function colsForEndpoint(endpoint: string): ColDef[] {
     { key: "balanceDue",    label: "Balance",   render: (r) => money(r.balanceDue) },
     { key: "invoiceDate",   label: "Date",      render: (r) => fmt(r.invoiceDate as string) },
     { key: "dueDate",       label: "Due",       render: (r) => fmt(r.dueDate as string) },
+    {
+      key: "actions", label: "", render: (r) => Number(r.balanceDue) > 0
+        ? <Link href={`/sales/payments?invoiceId=${r.id}&customerId=${(r.customer as { id?: string } | undefined)?.id ?? r.customerId ?? ""}`} className="rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-bold text-indigo-700 hover:bg-indigo-100 transition">Record payment</Link>
+        : null
+    },
   ];
   if (endpoint.includes("receipts")) return [
     { key: "receiptNumber", label: "Receipt No." },
@@ -1779,7 +1860,7 @@ export function SalesListPage({ title, endpoint, subtitle }: { title: string; en
         subtitle={subtitle}
         actions={
           title === "Invoices"
-            ? <Link href="/sales/payments" className="app-button-primary"><Plus className="h-4 w-4" /> Record Payment</Link>
+            ? <Link href="/sales/payments" className="app-button-secondary text-xs">Payments →</Link>
             : undefined
         }
       />
@@ -2037,6 +2118,7 @@ export function PriceListsPage() {
         subtitle="Manage product pricing for customer groups, branches, or company-wide."
         actions={<button onClick={() => setShowForm((v) => !v)} className="app-button-primary"><DollarSign className="h-4 w-4" /> {showForm ? "Cancel" : "New Price"}</button>}
       />
+      <SalesNav />
       {showForm && (
         <form onSubmit={submit} className="mb-6 grid gap-4 rounded-xl border border-line bg-white p-5 shadow-panel md:grid-cols-3">
           <div>

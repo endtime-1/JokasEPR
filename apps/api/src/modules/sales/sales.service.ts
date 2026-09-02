@@ -20,6 +20,7 @@ import {
   ProspectVisitQueryDto,
   RaiseShortagePurchaseRequestDto,
   SalesQueryDto,
+  UpdateSalesOrderDto,
   UpdateSalesQuoteDto,
   UpdateCustomerDto,
   UpdateCustomerGroupDto,
@@ -447,6 +448,77 @@ export class SalesService {
     );
 
     return { data };
+  }
+
+  async getOrder(user: AuthenticatedUser, id: string) {
+    const data = await this.prisma.salesOrder.findFirst({
+      where: { companyId: user.companyId, id, deletedAt: null },
+      include: { customer: true, warehouse: true, items: { include: { product: true } }, invoices: true, deliveryNotes: true }
+    });
+    if (!data) throw new NotFoundException("Sales order was not found.");
+    this.assertBranchAccess(user, data.branchId);
+    return { data };
+  }
+
+  async updateSalesOrder(user: AuthenticatedUser, id: string, dto: UpdateSalesOrderDto, context: RequestContext) {
+    const order = await this.prisma.salesOrder.findFirst({
+      where: { companyId: user.companyId, id, deletedAt: null },
+      include: { items: true, invoices: true }
+    });
+    if (!order) throw new NotFoundException("Sales order was not found.");
+    this.assertBranchAccess(user, order.branchId);
+    if (order.status !== "PENDING_STOCK_APPROVAL") {
+      throw new BadRequestException(`Only a pending sales order can be edited — this one is ${order.status.toLowerCase()}.`);
+    }
+    if (order.invoices.length) throw new BadRequestException("This order already has an invoice — it can't be edited.");
+
+    if (dto.items) {
+      if (!dto.items.length) throw new BadRequestException("A sales order must contain at least one item.");
+      const overDiscounted = dto.items.find((it) => (it.discountAmount ?? 0) > it.quantity * it.unitPrice);
+      if (overDiscounted) throw new BadRequestException("A line's discount cannot exceed that line's own total.");
+      const productIds = [...new Set(dto.items.map((it) => it.productId))];
+      const owned = await this.prisma.product.findMany({ where: { companyId: user.companyId, id: { in: productIds }, deletedAt: null }, select: { id: true } });
+      if (owned.length !== productIds.length) throw new NotFoundException("One or more products were not found.");
+    }
+
+    const subtotal = dto.items ? dto.items.reduce((s, it) => s + this.lineTotal(it), 0) : Number(order.subtotal);
+    const discountAmount = dto.discountAmount ?? Number(order.discountAmount);
+    const taxAmount = dto.taxAmount ?? Number(order.taxAmount);
+    const totalAmount = subtotal - discountAmount + taxAmount;
+    if (totalAmount < 0) throw new BadRequestException("Sales order total cannot be negative.");
+    await this.assertCreditLimit(order.customerId, totalAmount);
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      if (dto.items) {
+        await tx.salesOrderItem.deleteMany({ where: { salesOrderId: id } });
+        await tx.salesOrderItem.createMany({
+          data: dto.items.map((it) => ({ companyId: user.companyId, salesOrderId: id, productId: it.productId, quantity: it.quantity, unitPrice: it.unitPrice, discountAmount: it.discountAmount ?? 0, lineTotal: this.lineTotal(it) }))
+        });
+      }
+      return tx.salesOrder.update({
+        where: { id },
+        data: {
+          subtotal, discountAmount, taxAmount, totalAmount, balanceDue: totalAmount,
+          ...(dto.notes !== undefined && { notes: dto.notes }),
+          updatedById: user.id
+        },
+        include: { items: { include: { product: true } }, customer: true, warehouse: true }
+      });
+    });
+    await this.writeAudit(user, "UPDATE", "SalesOrder", id, `Edited sales order ${order.orderNumber}`, context, { branchId: order.branchId, warehouseId: order.warehouseId });
+    return { data: updated };
+  }
+
+  async cancelSalesOrder(user: AuthenticatedUser, id: string, context: RequestContext) {
+    const order = await this.prisma.salesOrder.findFirst({ where: { companyId: user.companyId, id, deletedAt: null } });
+    if (!order) throw new NotFoundException("Sales order was not found.");
+    this.assertBranchAccess(user, order.branchId);
+    if (order.status !== "PENDING_STOCK_APPROVAL") {
+      throw new BadRequestException(`Only a pending sales order can be cancelled — this one is ${order.status.toLowerCase()}.`);
+    }
+    const updated = await this.prisma.salesOrder.update({ where: { id }, data: { status: "CANCELLED", updatedById: user.id } });
+    await this.writeAudit(user, "UPDATE", "SalesOrder", id, `Cancelled sales order ${order.orderNumber}`, context, { branchId: order.branchId });
+    return { data: updated };
   }
 
   async approveStockRelease(user: AuthenticatedUser, id: string, context: RequestContext) {

@@ -9,6 +9,7 @@ const mockTx = {
   invoice: { updateMany: jest.fn(), findUniqueOrThrow: jest.fn(), update: jest.fn(), create: jest.fn(), findFirst: jest.fn() },
   revenue: { create: jest.fn() },
   salesOrder: { update: jest.fn(), create: jest.fn() },
+  salesOrderItem: { deleteMany: jest.fn(), createMany: jest.fn() },
   deliveryNote: { create: jest.fn() },
   customer: { findUniqueOrThrow: jest.fn(), findFirst: jest.fn(), create: jest.fn() },
   customerCreditLimit: { upsert: jest.fn(), update: jest.fn(), findUniqueOrThrow: jest.fn().mockResolvedValue({ id: "cl-1", companyId: "company-1", creditLimit: 0, currentBalance: 0 }) },
@@ -34,7 +35,7 @@ const mockPrisma = {
   branch: { findMany: jest.fn().mockResolvedValue([]) },
   product: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
   salesOrderItem: { findFirst: jest.fn(), groupBy: jest.fn().mockResolvedValue([]), aggregate: jest.fn() },
-  salesOrder: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), create: jest.fn(), groupBy: jest.fn().mockResolvedValue([]), count: jest.fn(), aggregate: jest.fn().mockResolvedValue({ _count: 0, _sum: {} }) },
+  salesOrder: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), create: jest.fn(), update: jest.fn(), groupBy: jest.fn().mockResolvedValue([]), count: jest.fn(), aggregate: jest.fn().mockResolvedValue({ _count: 0, _sum: {} }) },
   inventoryItem: { findFirst: jest.fn().mockResolvedValue(null), findMany: jest.fn().mockResolvedValue([]) },
   salesReturn: { aggregate: jest.fn(), create: jest.fn(), findFirst: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
   prospectVisit: { create: jest.fn(), findFirst: jest.fn() },
@@ -951,6 +952,71 @@ describe("SalesService — Customer / CustomerGroup / PriceList edit & delete", 
 
       const service = makeService();
       await expect(service.deletePriceList(makeUser(), "missing", {})).rejects.toThrow(NotFoundException);
+    });
+  });
+});
+
+describe("SalesService — sales order edit & cancel", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  describe("updateSalesOrder", () => {
+    it("recomputes totals from the new line items and rewrites the item rows", async () => {
+      mockPrisma.salesOrder.findFirst.mockResolvedValue({
+        id: "so-1", companyId: "company-1", branchId: "branch-1", warehouseId: "wh-1", customerId: "cust-1",
+        orderNumber: "SO-001", status: "PENDING_STOCK_APPROVAL", subtotal: 100, discountAmount: 0, taxAmount: 0, items: [], invoices: []
+      });
+      mockPrisma.product.findMany.mockResolvedValue([{ id: "prod-1" }]);
+      mockTx.salesOrder.update.mockResolvedValue({ id: "so-1", totalAmount: 250 });
+
+      const service = makeService();
+      await service.updateSalesOrder(makeUser(), "so-1", { items: [{ productId: "prod-1", quantity: 5, unitPrice: 50 }] } as never, {});
+
+      expect(mockTx.salesOrderItem.deleteMany).toHaveBeenCalledWith({ where: { salesOrderId: "so-1" } });
+      expect(mockTx.salesOrder.update).toHaveBeenCalledWith(expect.objectContaining({
+        where: { id: "so-1" },
+        data: expect.objectContaining({ subtotal: 250, totalAmount: 250, balanceDue: 250 })
+      }));
+      expect(mockAudit.write).toHaveBeenCalledWith(expect.objectContaining({ action: "UPDATE", entityType: "SalesOrder" }));
+    });
+
+    it("rejects editing an order that is past pending stock approval", async () => {
+      mockPrisma.salesOrder.findFirst.mockResolvedValue({
+        id: "so-1", companyId: "company-1", branchId: "branch-1", status: "FULFILLED", items: [], invoices: []
+      });
+
+      const service = makeService();
+      await expect(service.updateSalesOrder(makeUser(), "so-1", { notes: "x" } as never, {})).rejects.toThrow(BadRequestException);
+      expect(mockTx.salesOrder.update).not.toHaveBeenCalled();
+    });
+
+    it("rejects editing once an invoice exists", async () => {
+      mockPrisma.salesOrder.findFirst.mockResolvedValue({
+        id: "so-1", companyId: "company-1", branchId: "branch-1", status: "PENDING_STOCK_APPROVAL", items: [], invoices: [{ id: "inv-1" }]
+      });
+
+      const service = makeService();
+      await expect(service.updateSalesOrder(makeUser(), "so-1", { notes: "x" } as never, {})).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe("cancelSalesOrder", () => {
+    it("soft-cancels a pending order", async () => {
+      mockPrisma.salesOrder.findFirst.mockResolvedValue({ id: "so-1", companyId: "company-1", branchId: "branch-1", orderNumber: "SO-001", status: "PENDING_STOCK_APPROVAL" });
+      mockPrisma.salesOrder.update.mockResolvedValue({ id: "so-1", status: "CANCELLED" });
+
+      const service = makeService();
+      const result = await service.cancelSalesOrder(makeUser(), "so-1", {});
+
+      expect(mockPrisma.salesOrder.update).toHaveBeenCalledWith({ where: { id: "so-1" }, data: { status: "CANCELLED", updatedById: "user-1" } });
+      expect(result.data.status).toBe("CANCELLED");
+    });
+
+    it("rejects cancelling an order that is already fulfilled", async () => {
+      mockPrisma.salesOrder.findFirst.mockResolvedValue({ id: "so-1", companyId: "company-1", branchId: "branch-1", status: "FULFILLED" });
+
+      const service = makeService();
+      await expect(service.cancelSalesOrder(makeUser(), "so-1", {})).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.salesOrder.update).not.toHaveBeenCalled();
     });
   });
 });

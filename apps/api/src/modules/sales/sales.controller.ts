@@ -6,7 +6,7 @@ import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { RequirePermissions } from "../../common/decorators/permissions.decorator";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { PermissionsGuard } from "../../common/guards/permissions.guard";
-import { ConvertSalesQuoteDto, CreateCustomerDto, CreateCustomerGroupDto, CreatePaymentDto, CreatePriceListDto, CreateProspectVisitDto, CreateSalesOrderDto, CreateSalesQuoteDto, CreateSalesReturnDto, DecideSalesQuoteDto, ProspectVisitQueryDto, RaiseShortagePurchaseRequestDto, SalesQueryDto, UpdateCustomerDto, UpdateCustomerGroupDto, UpdatePriceListDto, UpdateSalesQuoteDto } from "./dto/sales.dto";
+import { ConvertSalesQuoteDto, CreateCustomerDto, CreateCustomerGroupDto, CreatePaymentDto, CreatePriceListDto, CreateProspectVisitDto, CreateSalesOrderDto, CreateSalesQuoteDto, CreateSalesReturnDto, DecideSalesQuoteDto, ProspectVisitQueryDto, RaiseShortagePurchaseRequestDto, SalesQueryDto, UpdateCustomerDto, UpdateCustomerGroupDto, UpdatePriceListDto, UpdateSalesOrderDto, UpdateSalesQuoteDto } from "./dto/sales.dto";
 import { SalesService } from "./sales.service";
 
 @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -132,6 +132,24 @@ export class SalesController {
   @RequirePermissions(PERMISSIONS.INVENTORY_MANAGE)
   raiseShortagePurchaseRequest(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: RaiseShortagePurchaseRequestDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.salesService.raiseShortagePurchaseRequest(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Get("orders/:id")
+  @RequirePermissions(PERMISSIONS.SALES_READ)
+  order(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
+    return this.salesService.getOrder(user, id);
+  }
+
+  @Patch("orders/:id")
+  @RequirePermissions(PERMISSIONS.SALES_MANAGE)
+  updateOrder(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateSalesOrderDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.salesService.updateSalesOrder(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Patch("orders/:id/cancel")
+  @RequirePermissions(PERMISSIONS.SALES_MANAGE)
+  cancelOrder(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.salesService.cancelSalesOrder(user, id, { ipAddress, userAgent });
   }
 
   // ── Proforma / Quotations ────────────────────────────────────────────────
