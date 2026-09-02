@@ -501,6 +501,13 @@ enum SalesQuoteStatus {
   CONVERTED
 }
 
+// The physical form a finished feed product is sold in. Mash is
+// ready-to-feed; concentrate is blended with grain by the farmer.
+enum ProductFeedForm {
+  MASH
+  CONCENTRATE
+}
+
 enum ProspectVisitType {
   COLD_CALL
   REFERRAL
@@ -1505,6 +1512,9 @@ model Product {
   description   String?
   type          ProductType   @default(FINISHED_GOOD)
   status        ProductStatus @default(ACTIVE)
+  // For finished feed products only: Mash or Concentrate. Left null for
+  // everything else. Pickers group feed products by this.
+  feedForm      ProductFeedForm?
   // How many individual pieces make up one of this product's stock unit —
   // e.g. 30 for an egg product measured in Crates. Defaults to 1 (no
   // conversion) so every existing product is unaffected. Used when a

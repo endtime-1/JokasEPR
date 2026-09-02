@@ -573,6 +573,7 @@ export class SettingsService {
         description: dto.description,
         type: dto.type,
         piecesPerUnit: dto.piecesPerUnit ?? 1,
+        feedForm: dto.feedForm,
         status: ProductStatus.ACTIVE,
         createdById: user.id
       },
@@ -597,6 +598,7 @@ export class SettingsService {
     if (dto.description !== undefined) data.description = dto.description;
     if (dto.status) data.status = dto.status;
     if (dto.piecesPerUnit !== undefined) data.piecesPerUnit = dto.piecesPerUnit;
+    if (dto.feedForm !== undefined) data.feedForm = dto.feedForm || null;
     const row = await this.prisma.product.update({
       where: { id, companyId: user.companyId },
       data,

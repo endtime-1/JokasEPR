@@ -9,6 +9,7 @@ import { DataTable } from "./data-table";
 import { FormField } from "./form-field";
 import { EmptyState, StatusBadge } from "./ui";
 import { ApiEnvelope, apiFetch, downloadReport, getCached, getCachedFirst, hasCached } from "../lib/api";
+import { groupByFeedForm } from "../lib/feed";
 import { useApiRecovery } from "../lib/use-api-recovery";
 
 type Option = {
@@ -20,6 +21,7 @@ type Option = {
   sku?: string;
   name: string;
   feedType?: string;
+  feedForm?: "MASH" | "CONCENTRATE" | null;
   finishedProductId?: string;
   currentVersionNo?: number;
 };
@@ -112,6 +114,21 @@ type OrderFormState = {
 
 const inputClass = "min-h-11 rounded-md border border-line px-3";
 const today = () => new Date().toISOString().slice(0, 10);
+
+// Groups a finished-feed picker into Mash / Concentrate / Other so the form
+// (mash vs concentrate) is obvious without reading each name.
+function FeedFormOptions({ products }: { products: Option[] }) {
+  const { mash, concentrate, other } = groupByFeedForm(products);
+  const opt = (p: { id: string; sku?: string | null; name?: string | null }) => <option key={p.id} value={p.id}>{p.sku} — {p.name}</option>;
+  const grouped = mash.length > 0 || concentrate.length > 0;
+  return (
+    <>
+      {mash.length > 0 && <optgroup label="── Mash ──">{mash.map(opt)}</optgroup>}
+      {concentrate.length > 0 && <optgroup label="── Concentrate ──">{concentrate.map(opt)}</optgroup>}
+      {other.length > 0 && (grouped ? <optgroup label="── Other ──">{other.map(opt)}</optgroup> : other.map(opt))}
+    </>
+  );
+}
 
 function useFeedOptions() {
   const [options, setOptions] = useState<FeedOptions>(() => getCached<ApiEnvelope<FeedOptions>>("/feed-production/options")?.data ?? { branches: [], productionSites: [], warehouses: [], farms: [], poultryHouses: [], rawMaterials: [], finishedFeeds: [], formulas: [], batches: [], marketTargets: [] });
@@ -473,9 +490,7 @@ export function FormulaBuilderPage() {
                   onChange={(e) => setFinishedProductId(e.target.value)}
                 >
                   <option value="">Select finished product…</option>
-                  {options.finishedFeeds.map((p) => (
-                    <option key={p.id} value={p.id}>{p.sku} — {p.name}</option>
-                  ))}
+                  <FeedFormOptions products={options.finishedFeeds} />
                 </select>
               </div>
               {(options.branches ?? []).length > 1 && (

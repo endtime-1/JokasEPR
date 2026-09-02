@@ -32,6 +32,7 @@ type Product = {
   categoryId: string | null;
   uomId: string;
   piecesPerUnit: number;
+  feedForm: "MASH" | "CONCENTRATE" | null;
   category: { id: string; name: string; code: string } | null;
   uom: { id: string; name: string; symbol: string };
   createdAt: string;
@@ -57,6 +58,7 @@ type FormState = {
   description: string;
   status: ProductStatus;
   piecesPerUnit: string;
+  feedForm: "" | "MASH" | "CONCENTRATE";
 };
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -91,7 +93,8 @@ const EMPTY_FORM: FormState = {
   categoryId: "",
   description: "",
   status: "ACTIVE",
-  piecesPerUnit: "1"
+  piecesPerUnit: "1",
+  feedForm: ""
 };
 
 const inputCls =
@@ -234,7 +237,8 @@ export default function ProductCatalogPage() {
       categoryId: p.categoryId ?? "",
       description: p.description ?? "",
       status: p.status,
-      piecesPerUnit: String(p.piecesPerUnit ?? 1)
+      piecesPerUnit: String(p.piecesPerUnit ?? 1),
+      feedForm: p.feedForm ?? ""
     });
     setSaveError(null);
     setDrawerOpen(true);
@@ -252,7 +256,8 @@ export default function ProductCatalogPage() {
         uomId: form.uomId,
         description: form.description || undefined,
         categoryId: form.categoryId || undefined,
-        piecesPerUnit: Math.max(1, Number(form.piecesPerUnit) || 1)
+        piecesPerUnit: Math.max(1, Number(form.piecesPerUnit) || 1),
+        feedForm: form.feedForm || null
       };
       if (editing) {
         body.status = form.status;
@@ -603,6 +608,20 @@ export default function ProductCatalogPage() {
                       onChange={(e) => setForm({ ...form, piecesPerUnit: e.target.value })}
                     />
                     <p className="mt-1 text-[10px] text-ink/40">e.g. 30 if this product's unit is a Crate of 30 eggs. Leave at 1 if the unit already is a single piece.</p>
+                  </div>
+
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold text-ink/60">Feed form</label>
+                    <select
+                      className={inputCls}
+                      value={form.feedForm}
+                      onChange={(e) => setForm({ ...form, feedForm: e.target.value as FormState["feedForm"] })}
+                    >
+                      <option value="">— Not a feed / N/A —</option>
+                      <option value="MASH">Mash</option>
+                      <option value="CONCENTRATE">Concentrate</option>
+                    </select>
+                    <p className="mt-1 text-[10px] text-ink/40">For finished feed only — groups this product under Mash or Concentrate in order &amp; quote pickers.</p>
                   </div>
 
                   <div>

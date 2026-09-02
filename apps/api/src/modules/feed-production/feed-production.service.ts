@@ -170,7 +170,7 @@ export class FeedProductionService {
       }),
       this.prisma.product.findMany({
         where: { companyId: user.companyId, deletedAt: null, type: { in: ["RAW_MATERIAL", "SEMI_FINISHED", "CONSUMABLE"] } },
-        select: { id: true, branchId: true, sku: true, name: true, uomId: true },
+        select: { id: true, branchId: true, sku: true, name: true, uomId: true, feedForm: true },
         orderBy: { name: "asc" }
       }),
       this.prisma.product.findMany({

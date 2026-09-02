@@ -1,4 +1,4 @@
-import { FarmType, ProductionSiteType, ProductStatus, ProductType, WarehouseType } from "@prisma/client";
+import { FarmType, ProductFeedForm, ProductionSiteType, ProductStatus, ProductType, WarehouseType } from "@prisma/client";
 import { Type } from "class-transformer";
 import { IsArray, IsBoolean, IsEnum, IsInt, IsNumber, IsObject, IsOptional, IsString, IsUrl, IsUUID, Max, MaxLength, Min, ValidateNested } from "class-validator";
 
@@ -185,6 +185,7 @@ export class CreateProductDto {
   // e.g. 30 for a Crate-of-eggs product. Omit (or 1) for a product measured
   // in individual pieces already, where no conversion is needed.
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) piecesPerUnit?: number;
+  @IsOptional() @IsEnum(ProductFeedForm) feedForm?: ProductFeedForm;
 }
 
 export class UpdateProductDto {
@@ -197,6 +198,7 @@ export class UpdateProductDto {
   @IsOptional() @IsString() @MaxLength(500) description?: string;
   @IsOptional() @IsEnum(ProductStatus) status?: ProductStatus;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) piecesPerUnit?: number;
+  @IsOptional() @IsEnum(ProductFeedForm) feedForm?: ProductFeedForm;
 }
 
 export class ProductListQueryDto {

@@ -113,7 +113,7 @@ export class SalesService {
       // picker even though customers never buy raw ingredients directly.
       // Excludes RAW_MATERIAL only (not narrowed to FINISHED_GOOD alone) so
       // sellable SEMI_FINISHED/CONSUMABLE items (e.g. soya cake) still show.
-      this.prisma.product.findMany({ where: { companyId: user.companyId, deletedAt: null, status: "ACTIVE", type: { not: "RAW_MATERIAL" } }, select: { id: true, sku: true, name: true, uomId: true }, orderBy: { name: "asc" } }),
+      this.prisma.product.findMany({ where: { companyId: user.companyId, deletedAt: null, status: "ACTIVE", type: { not: "RAW_MATERIAL" } }, select: { id: true, sku: true, name: true, uomId: true, feedForm: true }, orderBy: { name: "asc" } }),
       this.prisma.customerGroup.findMany({ where: this.customerGroupWhere(user, {}), select: { id: true, code: true, name: true }, orderBy: { name: "asc" } }),
       this.prisma.customer.findMany({ where: this.customerWhere(user, {}), select: { id: true, code: true, name: true, customerGroupId: true }, orderBy: { name: "asc" } }),
       this.prisma.priceList.findMany({ where: this.priceListWhere(user, {}), include: { product: { select: { sku: true, name: true } }, customerGroup: { select: { code: true, name: true } } }, orderBy: { createdAt: "desc" }, take: 100 }),

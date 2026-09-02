@@ -9,6 +9,7 @@ import {
   RefreshCw, ShoppingCart, Trash2, TrendingUp, Users, Wallet,
 } from "lucide-react";
 import { ApiEnvelope, apiFetch, downloadReport, getCached, getCachedFirst, hasCached, invalidateCache } from "../lib/api";
+import { groupByFeedForm } from "../lib/feed";
 import { DataTable } from "./data-table";
 import { ConfirmModal, EmptyState, Modal, StatusBadge } from "./ui";
 import { useApiRecovery } from "../lib/use-api-recovery";
@@ -126,9 +127,24 @@ function FormLabel({ children }: { children: ReactNode }) {
   return <label className={labelCls}>{children}</label>;
 }
 
+// Feed products come in two forms (Mash / Concentrate); group the picker so
+// a salesperson can tell them apart at a glance instead of reading names.
+function ProductOptions({ products }: { products: Opt[] }) {
+  const { mash, concentrate, other } = groupByFeedForm(products);
+  const opt = (p: { id: string; sku?: string | null; name?: string | null }) => <option key={p.id} value={p.id}>{p.sku} {p.name}</option>;
+  const grouped = mash.length > 0 || concentrate.length > 0;
+  return (
+    <>
+      {mash.length > 0 && <optgroup label="── Mash ──">{mash.map(opt)}</optgroup>}
+      {concentrate.length > 0 && <optgroup label="── Concentrate ──">{concentrate.map(opt)}</optgroup>}
+      {other.length > 0 && (grouped ? <optgroup label="── Other ──">{other.map(opt)}</optgroup> : other.map(opt))}
+    </>
+  );
+}
+
 // ─── Options ──────────────────────────────────────────────────────────────────
 
-type Opt = { id: string; code?: string; sku?: string; name?: string; invoiceNumber?: string; balanceDue?: string | number; customerId?: string; product?: { sku: string; name: string }; customerGroup?: { code: string; name: string } };
+type Opt = { id: string; code?: string; sku?: string; name?: string; feedForm?: "MASH" | "CONCENTRATE" | null; invoiceNumber?: string; balanceDue?: string | number; customerId?: string; product?: { sku: string; name: string }; customerGroup?: { code: string; name: string } };
 
 type SalesOptions = {
   branches: Opt[];
@@ -1108,7 +1124,7 @@ export function OrdersPage({ create = false }: { create?: boolean }) {
                     <div><label className={labelCls}>Product</label>
                       <select value={it.productId} onChange={(e) => updateItem(i, "productId", e.target.value)} className={inputCls}>
                         <option value="">— Select product —</option>
-                        {opts.products.map((p) => <option key={p.id} value={p.id}>{p.sku} {p.name}</option>)}
+                        <ProductOptions products={opts.products} />
                       </select>
                     </div>
                     <div><label className={labelCls}>Qty</label>
@@ -1355,7 +1371,7 @@ export function QuotesPage({ create = false }: { create?: boolean }) {
                 <div key={i} className="grid grid-cols-[1fr_90px_100px_90px_80px_auto] items-end gap-3 rounded-xl bg-field/50 p-3">
                   <div><label className={labelCls}>Product</label>
                     <select value={it.productId} onChange={(e) => setItems((p) => p.map((x, idx) => idx === i ? { ...x, productId: e.target.value } : x))} className={inputCls}>
-                      <option value="">— Select —</option>{opts.products.map((pr) => <option key={pr.id} value={pr.id}>{pr.sku} {pr.name}</option>)}
+                      <option value="">— Select —</option><ProductOptions products={opts.products} />
                     </select>
                   </div>
                   <div><label className={labelCls}>Qty</label><input type="number" min={1} step="1" value={it.quantity} onChange={(e) => setItems((p) => p.map((x, idx) => idx === i ? { ...x, quantity: e.target.value } : x))} className={inputCls} /></div>
@@ -1636,7 +1652,7 @@ export function ReturnsPage() {
             <div><FormLabel>Product *</FormLabel>
               <select required value={form.productId} onChange={f("productId")} className={inputCls}>
                 <option value="">— Select —</option>
-                {opts.products.map((p) => <option key={p.id} value={p.id}>{p.sku} {p.name}</option>)}
+                <ProductOptions products={opts.products} />
               </select>
             </div>
             <div><FormLabel>Quantity *</FormLabel>
@@ -2027,7 +2043,7 @@ export function PriceListsPage() {
             <label className="mb-1 block text-xs font-bold text-ink/60">Product *</label>
             <select value={form.productId} onChange={f("productId")} className={selectCls} required>
               <option value="">— select product —</option>
-              {opts.products.map((p) => <option key={p.id} value={p.id}>{p.sku ?? p.code} — {p.name}</option>)}
+              <ProductOptions products={opts.products} />
             </select>
           </div>
           <div>
@@ -2103,7 +2119,7 @@ export function PriceListsPage() {
             <label className="mb-1 block text-xs font-bold text-ink/60">Product *</label>
             <select value={editForm.productId} onChange={ef("productId")} className={selectCls} required>
               <option value="">— select product —</option>
-              {opts.products.map((p) => <option key={p.id} value={p.id}>{p.sku ?? p.code} — {p.name}</option>)}
+              <ProductOptions products={opts.products} />
             </select>
           </div>
           <div>
