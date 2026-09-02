@@ -772,7 +772,7 @@ export function ExpenseListPage() {
         ]}
         rows={expenses}
         loading={loading}
-        empty="No expenses found."
+        empty="No expenses found." csvFilename="expenses"
         totalCount={total}
         serverPage={page}
         serverPageSize={EXPENSE_PAGE_SIZE}
@@ -972,7 +972,7 @@ export function RevenuePage() {
           { key: "paymentMethod", label: "Method", render: (r) => String(r.paymentMethod ?? "").replace(/_/g, " ") }
         ]}
         rows={revenues}
-        empty="No revenue records found."
+        empty="No revenue records found." csvFilename="revenue"
       />
     </>
   );
@@ -1055,7 +1055,7 @@ export function CustomerPaymentsPage() {
           { key: "paymentMethod", label: "Method", render: (r) => String(r.paymentMethod ?? "").replace(/_/g, " ") }
         ]}
         rows={payments}
-        empty="No customer payments recorded."
+        empty="No customer payments recorded." csvFilename="customer-payments"
       />
     </>
   );
@@ -1203,7 +1203,7 @@ export function SupplierPaymentsPage() {
           { key: "paymentMethod", label: "Method", render: (r) => String(r.paymentMethod ?? "").replace(/_/g, " ") }
         ]}
         rows={payments}
-        empty="No supplier payments recorded."
+        empty="No supplier payments recorded." csvFilename="supplier-payments"
       />
     </>
   );
@@ -1298,7 +1298,7 @@ export function PettyCashPage() {
           { key: "balance", label: "Balance", render: (r) => money(r.balance) }
         ]}
         rows={transactions}
-        empty="No petty cash transactions."
+        empty="No petty cash transactions." csvFilename="petty-cash"
       />
     </>
   );
@@ -1422,7 +1422,7 @@ export function PayrollPage() {
           }
         ]}
         rows={records}
-        empty="No payroll records found."
+        empty="No payroll records found." csvFilename="finance-payroll"
       />
     </>
   );
@@ -1730,7 +1730,7 @@ export function JournalEntriesPage() {
           }
         ]}
         rows={entries}
-        empty="No journal entries."
+        empty="No journal entries." csvFilename="journal-entries"
       />
     </>
   );

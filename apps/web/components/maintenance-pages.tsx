@@ -615,7 +615,7 @@ export function MachinesPage({ create = false }: { create?: boolean }) {
       <DataTable
         rows={rows}
         loading={loading}
-        empty="No machines found"
+        empty="No machines found" csvFilename="machines"
         columns={[
           { key: "code", label: "Code" },
           { key: "name", label: "Name", render: (row) => <Link href={`/maintenance/machines/${row.id}`} className="font-medium text-brand hover:underline">{String(row.name ?? "-")}</Link> },
@@ -889,7 +889,7 @@ export function EquipmentPage({ create = false }: { create?: boolean }) {
       <DataTable
         rows={rows}
         loading={loading}
-        empty="No equipment found"
+        empty="No equipment found" csvFilename="equipment"
         columns={[
           { key: "code", label: "Code" },
           { key: "name", label: "Name", render: (row) => <Link href={`/maintenance/equipment/${row.id}`} className="font-medium text-brand hover:underline">{String(row.name ?? "-")}</Link> },
@@ -1155,7 +1155,7 @@ export function AssignmentsPage() {
       <DataTable
         rows={rows}
         loading={loading}
-        empty="No technician assignments found"
+        empty="No technician assignments found" csvFilename="maintenance-assignments"
         columns={[
           { key: "technician", label: "Technician", render: (row) => String((row.technician as Record<string, unknown>)?.fullName ?? "—") },
           { key: "asset", label: "Asset", render: assetName },
@@ -1336,7 +1336,7 @@ export function DowntimePage() {
       <DataTable
         rows={rows}
         loading={loading}
-        empty="No downtime records found"
+        empty="No downtime records found" csvFilename="downtime-records"
         columns={[
           { key: "asset", label: "Asset", render: assetName },
           { key: "startAt", label: "Started", render: (row) => machineDate(row.startAt) },
@@ -1517,7 +1517,7 @@ export function RecordsPage() {
       <DataTable
         rows={rows}
         loading={loading}
-        empty="No work orders logged"
+        empty="No work orders logged" csvFilename="maintenance-work-orders"
         columns={[
           { key: "recordNumber", label: "Record #" },
           { key: "asset", label: "Asset", render: assetName },
@@ -1709,7 +1709,7 @@ export function DocumentsPage() {
       <DataTable
         rows={rows}
         loading={loading}
-        empty="No documents recorded"
+        empty="No documents recorded" csvFilename="asset-documents"
         columns={[
           { key: "asset", label: "Asset", render: (row) => String((row.machine as Record<string, unknown>)?.name ?? (row.equipment as Record<string, unknown>)?.name ?? "—") },
           { key: "documentType", label: "Type" },
@@ -1910,7 +1910,7 @@ export function SchedulePage() {
       <DataTable
         rows={rows}
         loading={loading}
-        empty="No maintenance schedules found"
+        empty="No maintenance schedules found" csvFilename="maintenance-schedules"
         columns={[
           { key: "scheduleNumber", label: "Schedule #" },
           { key: "asset", label: "Asset", render: assetName },
@@ -2052,7 +2052,7 @@ export function BreakdownPage() {
       <DataTable
         rows={rows}
         loading={loading}
-        empty="No breakdowns recorded"
+        empty="No breakdowns recorded" csvFilename="breakdowns"
         columns={[
           { key: "breakdownNumber", label: "Ref" },
           { key: "severity", label: "Severity", render: (row) => <SeverityBadge severity={String(row.severity ?? "")} /> },

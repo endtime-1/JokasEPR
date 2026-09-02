@@ -1537,7 +1537,7 @@ function OrderTable({ rows, loading, onApprove, onEdit, onCancel }: { rows: Orde
   }
 
   return (
-    <DataTable rows={rows} loading={loading} empty="No feed production orders found" columns={[
+    <DataTable rows={rows} loading={loading} empty="No feed production orders found" csvFilename="feed-production-orders" columns={[
       {
         key: "order", label: "Order #", render: (row) => (
           <span className="inline-flex items-center gap-1.5">
@@ -1630,6 +1630,7 @@ export function FeedBatchListPage() {
         rows={rows}
         loading={loading}
         empty="No production batches found"
+        csvFilename="feed-production-batches"
         columns={[
           { key: "batch", label: "Batch #", render: (r) => <Link className="font-semibold text-brand" href={`/feed-production/batches/${r.id}`}>{r.batchNumber}</Link> },
           { key: "product", label: "Product", render: (r) => r.finishedProduct?.name ?? "-" },
@@ -2323,6 +2324,7 @@ export function FeedRawMaterialUsagePage() {
         rows={rows}
         loading={loading}
         empty="No raw material usage records found"
+        csvFilename="feed-raw-material-usage"
         columns={[
           { key: "ingredient", label: "Ingredient", render: (r) => r.rawMaterial?.name ?? "-" },
           { key: "sku", label: "SKU", render: (r) => <span className="font-mono text-xs">{r.rawMaterial?.sku ?? "-"}</span> },
@@ -2435,6 +2437,7 @@ export function FeedQualityControlPage() {
         rows={rows}
         loading={loading}
         empty="No quality checks recorded"
+        csvFilename="feed-quality-checks"
         columns={[
           { key: "batch", label: "Batch", render: (r) => r.productionBatch?.batchNumber ?? "-" },
           { key: "status", label: "Status", render: (r) => <StatusBadge status={r.status} /> },
@@ -2501,6 +2504,7 @@ export function FinishedFeedInventoryPage() {
         rows={rows}
         loading={loading}
         empty="No finished feed stock found"
+        csvFilename="finished-feed-stock"
         columns={[
           { key: "batch", label: "Batch", render: (r) => r.productionBatch?.batchNumber ?? "-" },
           { key: "product", label: "Product", render: (r) => r.finishedProduct?.name ?? "-" },
@@ -2614,6 +2618,7 @@ export function InternalFeedTransferPage() {
         rows={rows}
         loading={loading}
         empty="No transfers recorded"
+        csvFilename="feed-internal-transfers"
         columns={[
           { key: "batch", label: "Batch", render: (r) => r.productionBatch?.batchNumber ?? "-" },
           { key: "from", label: "From warehouse", render: (r) => r.fromWarehouse?.name ?? "-" },
@@ -2855,6 +2860,7 @@ export function FeedPackagingRecordPage() {
         rows={rows}
         loading={loading}
         empty="No packaging records yet"
+        csvFilename="feed-packaging-records"
         columns={[
           { key: "batch", label: "Batch", render: (row) => row.productionBatch?.batchNumber ?? "-" },
           { key: "site", label: "Site", render: (row) => row.productionSite?.name ?? "-" },

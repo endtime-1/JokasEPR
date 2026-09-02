@@ -489,7 +489,7 @@ export function EmployeeListPage() {
           ]}
           rows={rows as Record<string, any>[]}
           loading={loading}
-          empty="No employees found"
+          empty="No employees found" csvFilename="employees"
         />
         <ConfirmModal
           open={!!confirmTarget}
@@ -1250,7 +1250,7 @@ export function AttendancePage() {
           ]}
           rows={rows as Record<string, any>[]}
           loading={loading}
-          empty="No attendance records for this date"
+          empty="No attendance records for this date" csvFilename="attendance"
         />
       </div>
     
@@ -2310,7 +2310,7 @@ export function LeaveRequestsPage() {
           ]}
           rows={rows as Record<string, any>[]}
           loading={loading}
-          empty="No leave requests"
+          empty="No leave requests" csvFilename="leave-requests"
         />
         <ConfirmModal
           open={!!confirmCancelId}
@@ -2965,7 +2965,7 @@ export function DisciplinaryPage() {
           ]}
           rows={rows as Record<string, any>[]}
           loading={loading}
-          empty="No disciplinary records found."
+          empty="No disciplinary records found." csvFilename="disciplinary-records"
         />
         <ConfirmModal
           open={!!confirmDeleteId}
@@ -3137,7 +3137,7 @@ export function GrievancesPage() {
           ]}
           rows={rows as Record<string, any>[]}
           loading={loading}
-          empty="No grievances found."
+          empty="No grievances found." csvFilename="grievances"
         />
         <ConfirmModal
           open={!!confirmCloseId}

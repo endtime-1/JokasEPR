@@ -6,7 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { ChevronDown, ChevronUp, Download, Home, Pencil, Plus, Trash2, X } from "lucide-react";
 import { DataTable } from "./data-table";
 import { FormField } from "./form-field";
-import { ApiEnvelope, apiFetch, downloadReport, downloadRowsAsCsv, getCached, getCachedFirst, hasCached } from "../lib/api";
+import { ApiEnvelope, apiFetch, downloadReport, getCached, getCachedFirst, hasCached } from "../lib/api";
 import { formatCell } from "../lib/format";
 import { useAuth } from "./auth-context";
 import { ConfirmModal, EmptyState, StatusBadge } from "./ui";
@@ -1819,22 +1819,14 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
       )}
       {recordsError && <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{recordsError}</p>}
       <GenericRecordForm options={options} optionsLoading={optionsLoading} form={form} setForm={setForm} submit={submit} type={type} isEditing={!!editingId} saving={saving} />
-      <div className="mt-6 mb-2 flex items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold text-ink/70">Records{rows.length ? ` (${rows.length})` : ""}</h3>
-        <button
-          type="button"
-          disabled={rows.length === 0}
-          onClick={() => {
-            const scope = options.batches.find((b: { id: string; code?: string }) => b.id === form.flockBatchId)?.code;
-            const name = `${type}-records${scope ? `-${scope}` : ""}-${new Date().toISOString().slice(0, 10)}.csv`;
-            downloadRowsAsCsv(name, recordDisplayColumns(rows), rows);
-          }}
-          className="inline-flex items-center gap-1.5 rounded-md border border-line px-3 py-1.5 text-xs font-semibold text-ink/70 transition hover:border-brand/40 hover:bg-brand/5 hover:text-brand disabled:opacity-40"
-        >
-          <Download className="h-3.5 w-3.5" /> Download CSV
-        </button>
-      </div>
-      <SimpleRecordTable rows={rows} loading={recordsLoading} onEdit={startEdit} onDelete={canManage ? setConfirmRow : undefined} />
+      <h3 className="mt-6 mb-2 text-sm font-semibold text-ink/70">Records{rows.length ? ` (${rows.length})` : ""}</h3>
+      <SimpleRecordTable
+        rows={rows}
+        loading={recordsLoading}
+        onEdit={startEdit}
+        onDelete={canManage ? setConfirmRow : undefined}
+        csvFilename={`${type}-records${options.batches.find((b) => b.id === form.flockBatchId)?.code ? `-${options.batches.find((b) => b.id === form.flockBatchId)!.code}` : ""}`}
+      />
       <ConfirmModal
         open={!!confirmRow}
         onClose={() => setConfirmRow(null)}
@@ -2211,7 +2203,7 @@ function recordDisplayColumns(rows: Record<string, any>[]): { key: string; label
     .map((key) => ({ key, label: EGG_PIECE_COLUMN_LABELS[key] ?? key.replace(/([A-Z])/g, " $1").trim() }));
 }
 
-function SimpleRecordTable({ rows, loading, onEdit, onDelete }: { rows: Record<string, any>[]; loading?: boolean; onEdit?: (row: Record<string, any>) => void; onDelete?: (row: Record<string, any>) => void }) {
+function SimpleRecordTable({ rows, loading, onEdit, onDelete, csvFilename }: { rows: Record<string, any>[]; loading?: boolean; onEdit?: (row: Record<string, any>) => void; onDelete?: (row: Record<string, any>) => void; csvFilename?: string }) {
   const keys = recordDisplayColumns(rows).map((c) => c.key);
   const columns = [
     ...keys.map((key) => ({ key, label: EGG_PIECE_COLUMN_LABELS[key] ?? key.replace(/([A-Z])/g, " $1"), render: (row: Record<string, any>) => formatCell(key, row[key], 80) })),
@@ -2230,7 +2222,7 @@ function SimpleRecordTable({ rows, loading, onEdit, onDelete }: { rows: Record<s
       </div>
     ) }] : [])
   ];
-  return <DataTable rows={rows} loading={loading} empty="No records found" columns={columns} />;
+  return <DataTable rows={rows} loading={loading} empty="No records found" columns={columns} csvFilename={csvFilename} />;
 }
 
 // ─── Transfers ────────────────────────────────────────────────────────────────

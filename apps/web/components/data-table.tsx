@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Search } from "lucide-react";
+import { isValidElement, useMemo, useState } from "react";
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, Search } from "lucide-react";
+import { downloadRowsAsCsv } from "../lib/api";
 
 type Column<T> = {
   key: string;
@@ -9,7 +10,32 @@ type Column<T> = {
   sortable?: boolean;
   searchable?: boolean;
   render?: (row: T) => React.ReactNode;
+  // Explicit value for a CSV export. Defaults to the plain text of render()
+  // (or row[key] when there's no render). Set this when render() produces
+  // something with no readable text — an icon, a chart — or when the export
+  // wants a different value than the cell shows.
+  csv?: (row: T) => string | number | null | undefined;
 };
+
+// Best-effort plain text of a rendered cell, for CSV export.
+function nodeToText(node: React.ReactNode): string {
+  if (node == null || typeof node === "boolean") return "";
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(nodeToText).join("");
+  if (isValidElement(node)) {
+    const props = node.props as Record<string, unknown>;
+    const fromChildren = nodeToText(props.children as React.ReactNode);
+    if (fromChildren) return fromChildren;
+    // Components that render text straight from a prop (StatusBadge → status,
+    // Badge/Pill → label) leave `children` empty — fall back to the prop.
+    for (const key of ["status", "label", "value", "title"]) {
+      const v = props[key];
+      if (typeof v === "string" || typeof v === "number") return String(v).replace(/_/g, " ");
+    }
+    return "";
+  }
+  return "";
+}
 
 export function DataTable<T extends Record<string, unknown>>({
   columns,
@@ -19,6 +45,7 @@ export function DataTable<T extends Record<string, unknown>>({
   pageSize = 25,
   actions,
   loading,
+  csvFilename,
   // Server-side pagination props — when provided, client-side filter/sort/page are disabled.
   totalCount,
   serverPage,
@@ -32,6 +59,12 @@ export function DataTable<T extends Record<string, unknown>>({
   pageSize?: number;
   actions?: React.ReactNode;
   loading?: boolean;
+  // A "Download CSV" button in the toolbar exports every row matching the
+  // current search (all pages, not just the one on screen). It's shown by
+  // default for any client-paged table with rows; pass a base name here for
+  // a nicer filename (".csv" and a date are appended), or `false` to hide it
+  // on tables where an export makes no sense.
+  csvFilename?: string | false;
   totalCount?: number;
   serverPage?: number;
   serverPageSize?: number;
@@ -97,6 +130,23 @@ export function DataTable<T extends Record<string, unknown>>({
     }
   }
 
+  const showCsv = csvFilename !== false && !isServerPaged;
+
+  function handleExport() {
+    const exportCols = columns.filter((c) => c.key !== "actions" && c.key !== "_actions" && !c.key.startsWith("_"));
+    downloadRowsAsCsv(
+      `${csvFilename || "records"}-${new Date().toISOString().slice(0, 10)}.csv`,
+      exportCols.map((c) => ({ key: c.key, label: c.label || c.key })),
+      sorted as Record<string, unknown>[],
+      (row, key) => {
+        const col = exportCols.find((c) => c.key === key)!;
+        if (col.csv) return col.csv(row as T);
+        if (col.render) return nodeToText(col.render(row as T));
+        return (row as Record<string, unknown>)[key] as string | number | undefined;
+      }
+    );
+  }
+
   const pageNumbers = Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
     const start = Math.max(0, Math.min(currentPage - 2, totalPages - 5));
     return start + i;
@@ -121,6 +171,16 @@ export function DataTable<T extends Record<string, unknown>>({
         </div>
         <div className="flex items-center gap-3">
           {actions}
+          {showCsv && sorted.length > 0 && (
+            <button
+              type="button"
+              onClick={handleExport}
+              title="Download these rows as a CSV"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-xs font-semibold text-ink/70 transition hover:border-brand/40 hover:bg-brand/5 hover:text-brand disabled:opacity-40"
+            >
+              <Download className="h-3.5 w-3.5" /> CSV
+            </button>
+          )}
           <span className="shrink-0 text-xs text-ink/45">
             {loading && rows.length === 0
               ? "Loading…"

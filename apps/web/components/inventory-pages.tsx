@@ -857,7 +857,7 @@ function InventoryItemsTable({ rows, loading, onEdit, onDelete }: { rows: Record
     <DataTable
       rows={rows}
       loading={loading}
-      empty="No inventory items found"
+      empty="No inventory items found" csvFilename="inventory-items"
       columns={[
         {
           key: "product", label: "Product",
@@ -990,7 +990,7 @@ function MovementsTable({ rows, loading }: { rows: Record<string, any>[]; loadin
     <DataTable
       rows={rows}
       loading={loading}
-      empty="No stock movements found"
+      empty="No stock movements found" csvFilename="stock-movements"
       columns={[
         { key: "movementDate", label: "Date", render: (row) => row.movementDate ? new Date(row.movementDate).toLocaleDateString() : "-" },
         { key: "movementType", label: "Type", render: (row) => String(row.movementType ?? "").replace(/_/g, " ") },
@@ -1021,7 +1021,7 @@ function ExpiryAlertsTable({ rows, loading }: { rows: Record<string, any>[]; loa
     <DataTable
       rows={rows}
       loading={loading}
-      empty="No expiry alerts found"
+      empty="No expiry alerts found" csvFilename="expiry-alerts"
       columns={[
         {
           key: "product", label: "Product",

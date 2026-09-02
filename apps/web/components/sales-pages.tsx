@@ -660,6 +660,7 @@ export function CustomersPage({ create = false }: { create?: boolean }) {
 
       <div className="overflow-hidden rounded-2xl border border-line bg-white shadow-card">
         <DataTable
+          csvFilename="customers"
           columns={[
             { key: "code",          label: "Code" },
             { key: "name",          label: "Name", render: (r) => <Link href={`/sales/customers/${r.id}`} className="font-medium text-brand hover:underline">{r.name as string}</Link> },
@@ -837,6 +838,7 @@ export function CustomerDetailsPage({ id }: { id: string }) {
             ]}
             rows={cust.salesOrders as Record<string, unknown>[]}
             empty="No orders"
+            csvFilename={`${cust.code ?? "customer"}-orders`}
           />
         </div>
       )}
@@ -854,6 +856,7 @@ export function CustomerDetailsPage({ id }: { id: string }) {
             ]}
             rows={cust.invoices as Record<string, unknown>[]}
             empty="No invoices"
+            csvFilename={`${cust.code ?? "customer"}-invoices`}
           />
         </div>
       )}
@@ -869,6 +872,7 @@ export function CustomerDetailsPage({ id }: { id: string }) {
             ]}
             rows={cust.payments as Record<string, unknown>[]}
             empty="No payments"
+            csvFilename={`${cust.code ?? "customer"}-payments`}
           />
         </div>
       )}
@@ -885,6 +889,7 @@ export function CustomerDetailsPage({ id }: { id: string }) {
             ]}
             rows={cust.statements as Record<string, unknown>[]}
             empty="No statement entries"
+            csvFilename={`${cust.code ?? "customer"}-statement`}
           />
         </div>
       )}
@@ -1191,6 +1196,7 @@ export function OrdersPage({ create = false }: { create?: boolean }) {
 
       <div className="overflow-hidden rounded-2xl border border-line bg-white shadow-card">
         <DataTable
+          csvFilename="sales-orders"
           columns={[
             { key: "orderNumber", label: "Order No." },
             { key: "customer",    label: "Customer",  render: (r) => (r.customer as { name: string } | undefined)?.name ?? "—" },
@@ -1318,6 +1324,7 @@ export function PaymentsPage() {
 
       <div className="overflow-hidden rounded-2xl border border-line bg-white shadow-card">
         <DataTable
+          csvFilename="sales-payments"
           columns={[
             { key: "paymentNumber", label: "Payment No." },
             { key: "customer",      label: "Customer",  render: (r) => (r.customer as { name: string } | undefined)?.name ?? "—" },
@@ -1437,6 +1444,7 @@ export function ReturnsPage() {
 
       <div className="overflow-hidden rounded-2xl border border-line bg-white shadow-card">
         <DataTable
+          csvFilename="sales-returns"
           columns={[
             { key: "returnNumber",  label: "Return No.",  render: (r) => String(r.returnNumber ?? r.id as string).slice(0, 12) },
             { key: "customer",      label: "Customer",    render: (r) => (r.customer as { name: string } | undefined)?.name ?? "—" },
@@ -1565,7 +1573,7 @@ export function SalesListPage({ title, endpoint, subtitle }: { title: string; en
       <div className="overflow-hidden rounded-2xl border border-line bg-white shadow-card">
         {loading
           ? <div className="flex h-40 items-center justify-center text-sm text-ink/45">Loading {title.toLowerCase()}…</div>
-          : <DataTable columns={cols} rows={rows} empty={`No ${title.toLowerCase()}`} />
+          : <DataTable columns={cols} rows={rows} empty={`No ${title.toLowerCase()}`} csvFilename={title.toLowerCase().replace(/\s+/g, "-")} />
         }
       </div>
     </>
@@ -1847,6 +1855,7 @@ export function PriceListsPage() {
       {deleteError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{deleteError}</p>}
 
       <DataTable
+        csvFilename="price-lists"
         columns={[
           { key: "name", label: "Name" },
           { key: "product", label: "Product", render: (r) => { const p = r.product as Record<string, unknown>; return p ? `${p.sku ?? p.code ?? ""} — ${p.name ?? ""}` : "—"; } },

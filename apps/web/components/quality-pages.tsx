@@ -1328,7 +1328,7 @@ export function RejectedBatchesPage() {
             { key: "cars", label: "CARs", render: (r) => (r.correctiveActions as Array<unknown>)?.length ?? 0 },
           ]}
           rows={rows as Record<string, unknown>[]}
-          empty="No rejected batches"
+          empty="No rejected batches" csvFilename="rejected-batches"
           loading={loading}
         />
       </div>
@@ -1374,7 +1374,7 @@ export function ApprovedBatchesPage() {
             { key: "createdAt", label: "Date", render: (r) => fmt(r.createdAt as string) },
           ]}
           rows={rows as Record<string, unknown>[]}
-          empty="No approved batches"
+          empty="No approved batches" csvFilename="approved-batches"
           loading={loading}
         />
       </div>
@@ -1510,7 +1510,7 @@ export function LabReportsPage() {
             ) },
           ]}
           rows={rows as Record<string, unknown>[]}
-          empty="No lab reports uploaded"
+          empty="No lab reports uploaded" csvFilename="lab-reports"
           loading={loading}
         />
       </div>

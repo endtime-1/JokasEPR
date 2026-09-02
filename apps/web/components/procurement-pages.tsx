@@ -694,6 +694,7 @@ export function SuppliersPage() {
             rows={rows as Record<string, unknown>[]}
             loading={loading}
             empty="No suppliers found"
+            csvFilename="suppliers"
           />
         </div>
       </div>
@@ -1487,6 +1488,7 @@ export function PurchaseRequestsPage() {
             rows={rows as Record<string, unknown>[]}
             loading={loading}
             empty="No purchase requests yet"
+            csvFilename="purchase-requests"
           />
         </div>
       </div>
@@ -1913,6 +1915,7 @@ export function PurchaseOrdersPage() {
             rows={rows as Record<string, unknown>[]}
             loading={loading}
             empty="No purchase orders yet"
+            csvFilename="purchase-orders"
           />
         </div>
         {deleteError && (
@@ -2687,6 +2690,7 @@ export function GRNsPage() {
             rows={rows as Record<string, unknown>[]}
             loading={loading}
             empty="No GRNs yet"
+            csvFilename="goods-received-notes"
           />
         </div>
       </div>
@@ -3057,6 +3061,7 @@ export function SupplierInvoicesPage() {
             rows={rows as Record<string, unknown>[]}
             loading={loading}
             empty="No invoices yet"
+            csvFilename="supplier-invoices"
           />
         </div>
       </div>
@@ -3222,6 +3227,7 @@ export function ProcurementPaymentsPage() {
             rows={rows as Record<string, unknown>[]}
             loading={loading}
             empty="No payments recorded yet"
+            csvFilename="procurement-payments"
           />
         </div>
       </div>
@@ -3402,6 +3408,7 @@ export function SupplierPerformancePage() {
             rows={rows as Record<string, unknown>[]}
             loading={loading}
             empty="No performance records yet"
+            csvFilename="supplier-performance"
           />
         </div>
       </div>
@@ -3537,6 +3544,7 @@ export function PriceHistoryPage() {
             rows={rows as Record<string, unknown>[]}
             loading={loading}
             empty="No price history yet"
+            csvFilename="supplier-price-history"
           />
         </div>
       </div>

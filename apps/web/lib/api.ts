@@ -384,6 +384,7 @@ export function downloadRowsAsCsv<T extends Record<string, unknown>>(
 ): void {
   const header = columns.map((c) => csvCell(c.label)).join(",");
   const body = rows.map((row) => columns.map((c) => csvCell(pick ? pick(row, c.key) : row[c.key])).join(",")).join("\r\n");
-  const csv = `﻿${header}\r\n${body}\r\n`; // BOM so Excel reads UTF-8
+  const BOM = String.fromCharCode(0xFEFF); // makes Excel read the file as UTF-8
+  const csv = `${BOM}${header}\r\n${body}\r\n`;
   triggerDownload(new Blob([csv], { type: "text/csv;charset=utf-8" }), filename);
 }
