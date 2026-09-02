@@ -6,7 +6,7 @@ import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { RequirePermissions } from "../../common/decorators/permissions.decorator";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { PermissionsGuard } from "../../common/guards/permissions.guard";
-import { CreateCustomerDto, CreateCustomerGroupDto, CreatePaymentDto, CreatePriceListDto, CreateProspectVisitDto, CreateSalesOrderDto, CreateSalesReturnDto, ProspectVisitQueryDto, RaiseShortagePurchaseRequestDto, SalesQueryDto, UpdateCustomerDto, UpdateCustomerGroupDto, UpdatePriceListDto } from "./dto/sales.dto";
+import { ConvertSalesQuoteDto, CreateCustomerDto, CreateCustomerGroupDto, CreatePaymentDto, CreatePriceListDto, CreateProspectVisitDto, CreateSalesOrderDto, CreateSalesQuoteDto, CreateSalesReturnDto, DecideSalesQuoteDto, ProspectVisitQueryDto, RaiseShortagePurchaseRequestDto, SalesQueryDto, UpdateCustomerDto, UpdateCustomerGroupDto, UpdatePriceListDto, UpdateSalesQuoteDto } from "./dto/sales.dto";
 import { SalesService } from "./sales.service";
 
 @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -132,6 +132,65 @@ export class SalesController {
   @RequirePermissions(PERMISSIONS.INVENTORY_MANAGE)
   raiseShortagePurchaseRequest(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: RaiseShortagePurchaseRequestDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.salesService.raiseShortagePurchaseRequest(user, id, dto, { ipAddress, userAgent });
+  }
+
+  // ── Proforma / Quotations ────────────────────────────────────────────────
+
+  @Get("quotes")
+  @RequirePermissions(PERMISSIONS.SALES_READ)
+  quotes(@CurrentUser() user: AuthenticatedUser, @Query() query: SalesQueryDto) {
+    return this.salesService.listQuotes(user, query);
+  }
+
+  @Post("quotes")
+  @RequirePermissions(PERMISSIONS.SALES_MANAGE)
+  createQuote(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateSalesQuoteDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.salesService.createQuote(user, dto, { ipAddress, userAgent });
+  }
+
+  @Get("quotes/:id")
+  @RequirePermissions(PERMISSIONS.SALES_READ)
+  quote(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
+    return this.salesService.getQuote(user, id);
+  }
+
+  @Get("quotes/:id/proforma.pdf")
+  @RequirePermissions(PERMISSIONS.SALES_READ)
+  async quotePdf(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Res() response: Response) {
+    const { buffer, filename } = await this.salesService.quotePdf(user, id);
+    response.setHeader("content-type", "application/pdf");
+    response.setHeader("content-disposition", `attachment; filename=${filename}`);
+    response.send(buffer);
+  }
+
+  @Patch("quotes/:id")
+  @RequirePermissions(PERMISSIONS.SALES_MANAGE)
+  updateQuote(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateSalesQuoteDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.salesService.updateQuote(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Delete("quotes/:id")
+  @RequirePermissions(PERMISSIONS.SALES_MANAGE)
+  deleteQuote(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.salesService.deleteQuote(user, id, { ipAddress, userAgent });
+  }
+
+  @Patch("quotes/:id/send")
+  @RequirePermissions(PERMISSIONS.SALES_MANAGE)
+  sendQuote(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.salesService.sendQuote(user, id, { ipAddress, userAgent });
+  }
+
+  @Patch("quotes/:id/decision")
+  @RequirePermissions(PERMISSIONS.SALES_MANAGE)
+  decideQuote(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: DecideSalesQuoteDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.salesService.decideQuote(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Post("quotes/:id/convert")
+  @RequirePermissions(PERMISSIONS.SALES_MANAGE)
+  convertQuote(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: ConvertSalesQuoteDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.salesService.convertQuoteToOrder(user, id, dto, { ipAddress, userAgent });
   }
 
   @Get("invoices")

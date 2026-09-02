@@ -79,6 +79,7 @@ const salesNavLinks = [
   { href: "/sales",               label: "Dashboard" },
   { href: "/sales/customers",     label: "Customers" },
   { href: "/sales/customer-groups", label: "Customer Groups" },
+  { href: "/sales/quotes",        label: "Quotes" },
   { href: "/sales/orders",        label: "Orders" },
   { href: "/sales/invoices",      label: "Invoices" },
   { href: "/sales/payments",      label: "Payments" },
@@ -225,6 +226,7 @@ export function SalesDashboardPage() {
   const today = new Date().toLocaleDateString("en-GH", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 
   const quickLinks = [
+    { href: "/sales/quotes/create",  label: "New Quote",       Icon: FileText,     cls: "border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100" },
     { href: "/sales/orders/create",  label: "New Order",       Icon: Plus,         cls: "border-brand/20 bg-brand/5 text-brand hover:bg-brand/10" },
     { href: "/sales/customers/create", label: "New Customer",  Icon: Users,        cls: "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100" },
     { href: "/sales/payments",       label: "Record Payment",  Icon: Wallet,       cls: "border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100" },
@@ -1239,6 +1241,195 @@ export function OrdersPage({ create = false }: { create?: boolean }) {
           loading={loading}
         />
       </div>
+    </>
+  );
+}
+
+// ─── Quotes (Proforma) ────────────────────────────────────────────────────────
+
+type QuoteRow = {
+  id: string; quoteNumber: string; quoteDate: string; validUntil?: string; status: string;
+  totalAmount: number; salesOrderId?: string | null;
+  customer?: { code: string; name: string };
+};
+
+export function QuotesPage({ create = false }: { create?: boolean }) {
+  const { opts, optionsError } = useSalesOptions();
+  const router = useRouter();
+  const [rows, setRows] = useState<QuoteRow[]>(() => getCachedFirst<ApiEnvelope<QuoteRow[]>>("/sales/quotes")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/sales/quotes"));
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [convertId, setConvertId] = useState<string | null>(null);
+  const [convertWh, setConvertWh] = useState("");
+
+  const [form, setForm] = useState({ customerId: "", validUntil: "", discountAmount: "", taxAmount: "", notes: "" });
+  const [items, setItems] = useState<OrderItem[]>([{ productId: "", quantity: "", unitPrice: "", discountAmount: "0" }]);
+  const [saving, setSaving] = useState(false);
+
+  function load() {
+    apiFetch<ApiEnvelope<QuoteRow[]>>("/sales/quotes")
+      .then((r) => setRows(r.data ?? []))
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : "Failed to load quotes"))
+      .finally(() => setLoading(false));
+  }
+  useEffect(() => { if (!create) load(); }, [create]);
+  useApiRecovery(!create && rows.length === 0, load);
+
+  const lineTotal = (it: OrderItem) => (Number(it.quantity) * Number(it.unitPrice)) - Number(it.discountAmount || 0);
+  const subtotal = items.reduce((s, it) => s + lineTotal(it), 0);
+  const total = subtotal - Number(form.discountAmount || 0) + Number(form.taxAmount || 0);
+
+  async function submitCreate(e: FormEvent) {
+    e.preventDefault(); setSaving(true); setError("");
+    try {
+      await apiFetch("/sales/quotes", {
+        method: "POST",
+        body: JSON.stringify({
+          customerId: form.customerId || opts.customers[0]?.id,
+          validUntil: form.validUntil || undefined,
+          discountAmount: Number(form.discountAmount) || 0,
+          taxAmount: Number(form.taxAmount) || 0,
+          notes: form.notes || undefined,
+          items: items.filter((it) => it.productId && it.quantity && it.unitPrice).map((it) => ({
+            productId: it.productId, quantity: Number(it.quantity), unitPrice: Number(it.unitPrice), discountAmount: Number(it.discountAmount || 0),
+          })),
+        }),
+      });
+      invalidateCache("/sales/quotes", true);
+      router.push("/sales/quotes");
+    } catch (e2: unknown) { setError(e2 instanceof Error ? e2.message : "Failed to save quote"); setSaving(false); }
+  }
+
+  async function act(id: string, path: string, body?: object) {
+    setBusy(id); setError("");
+    try {
+      await apiFetch(path, { method: path.endsWith("/convert") ? "POST" : "PATCH", body: JSON.stringify(body ?? {}) });
+      invalidateCache("/sales/quotes", true);
+      load();
+    } catch (e: unknown) { setError(e instanceof Error ? e.message : "Action failed"); }
+    finally { setBusy(null); }
+  }
+
+  async function doConvert() {
+    if (!convertId || !convertWh) return;
+    setBusy(convertId);
+    try {
+      const r = await apiFetch<ApiEnvelope<{ orderNumber: string }>>(`/sales/quotes/${convertId}/convert`, { method: "POST", body: JSON.stringify({ warehouseId: convertWh }) });
+      setConvertId(null); setConvertWh("");
+      invalidateCache("/sales/quotes", true); invalidateCache("/sales/orders", true);
+      router.push("/sales/orders");
+      void r;
+    } catch (e: unknown) { setError(e instanceof Error ? e.message : "Convert failed"); }
+    finally { setBusy(null); }
+  }
+
+  if (create) {
+    return (
+      <div className="mx-auto max-w-3xl">
+        <PageHero kicker="Commercial · Sales" title="New Quote" subtitle="A proforma / quotation to send a customer. Reserves no stock; converts to an order when they accept."
+          actions={<Link href="/sales/quotes" className="app-button-secondary text-xs">← Back</Link>} />
+        {(optionsError || error) && <div className="mb-5 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{optionsError || error}</div>}
+        <form onSubmit={submitCreate} className="space-y-5">
+          <div className="rounded-2xl border border-line bg-white p-6 shadow-card">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div><FormLabel>Customer *</FormLabel>
+                <select required value={form.customerId} onChange={(e) => setForm((p) => ({ ...p, customerId: e.target.value }))} className={inputCls}>
+                  <option value="">— Select customer —</option>
+                  {opts.customers.map((c) => <option key={c.id} value={c.id}>{c.code} {c.name}</option>)}
+                </select>
+              </div>
+              <div><FormLabel>Valid until</FormLabel><input type="date" value={form.validUntil} onChange={(e) => setForm((p) => ({ ...p, validUntil: e.target.value }))} className={inputCls} /></div>
+              <div><FormLabel>Discount (GHS)</FormLabel><input type="number" min={0} step="0.01" value={form.discountAmount} onChange={(e) => setForm((p) => ({ ...p, discountAmount: e.target.value }))} className={inputCls} /></div>
+              <div><FormLabel>Tax (GHS)</FormLabel><input type="number" min={0} step="0.01" value={form.taxAmount} onChange={(e) => setForm((p) => ({ ...p, taxAmount: e.target.value }))} className={inputCls} /></div>
+              <div className="sm:col-span-2"><FormLabel>Notes</FormLabel><textarea rows={2} value={form.notes} onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))} className={inputCls} /></div>
+            </div>
+          </div>
+          <div className="rounded-2xl border border-line bg-white p-6 shadow-card">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-ink">Line Items</h2>
+              <button type="button" onClick={() => setItems((p) => [...p, { productId: "", quantity: "", unitPrice: "", discountAmount: "0" }])} className="flex items-center gap-1 text-xs font-medium text-brand hover:underline"><Plus className="h-3.5 w-3.5" /> Add Item</button>
+            </div>
+            <div className="space-y-3">
+              {items.map((it, i) => (
+                <div key={i} className="grid grid-cols-[1fr_90px_100px_90px_80px_auto] items-end gap-3 rounded-xl bg-field/50 p-3">
+                  <div><label className={labelCls}>Product</label>
+                    <select value={it.productId} onChange={(e) => setItems((p) => p.map((x, idx) => idx === i ? { ...x, productId: e.target.value } : x))} className={inputCls}>
+                      <option value="">— Select —</option>{opts.products.map((pr) => <option key={pr.id} value={pr.id}>{pr.sku} {pr.name}</option>)}
+                    </select>
+                  </div>
+                  <div><label className={labelCls}>Qty</label><input type="number" min={1} step="1" value={it.quantity} onChange={(e) => setItems((p) => p.map((x, idx) => idx === i ? { ...x, quantity: e.target.value } : x))} className={inputCls} /></div>
+                  <div><label className={labelCls}>Unit Price</label><input type="number" min={0} step="0.01" value={it.unitPrice} onChange={(e) => setItems((p) => p.map((x, idx) => idx === i ? { ...x, unitPrice: e.target.value } : x))} className={inputCls} /></div>
+                  <div><label className={labelCls}>Discount</label><input type="number" min={0} step="0.01" value={it.discountAmount} onChange={(e) => setItems((p) => p.map((x, idx) => idx === i ? { ...x, discountAmount: e.target.value } : x))} className={inputCls} /></div>
+                  <div><label className={labelCls}>Line</label><p className="min-h-10 flex items-center px-1 text-sm font-semibold">{money(lineTotal(it))}</p></div>
+                  <div className="pb-1">{items.length > 1 && <button type="button" onClick={() => setItems((p) => p.filter((_, idx) => idx !== i))} className="text-xs text-red-500 hover:underline">Remove</button>}</div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-5 flex flex-col items-end gap-1 border-t border-line pt-4 text-sm">
+              <span className="text-ink/55">Subtotal <strong className="ml-6">{money(subtotal)}</strong></span>
+              <span className="border-t border-line pt-2 text-base font-bold text-ink">Total <strong className="ml-6 text-[18px] text-brand">{money(total)}</strong></span>
+            </div>
+          </div>
+          <button type="submit" disabled={saving} className="app-button-primary disabled:opacity-50">{saving ? "Saving…" : "Create Quote"}</button>
+        </form>
+      </div>
+    );
+  }
+
+  const selectCls = "rounded-xl border border-line bg-white px-3 py-2 text-sm text-ink outline-none focus:border-brand focus:ring-4 focus:ring-brand/10";
+
+  return (
+    <>
+      <PageHero kicker="Commercial · Sales" title="Quotes / Proforma" subtitle="Send a customer a proforma; convert it to a sales order when they accept."
+        actions={<Link href="/sales/quotes/create" className="app-button-primary"><Plus className="h-4 w-4" /> New Quote</Link>} />
+      <SalesNav />
+      {error && <div className="mb-5 app-alert-warning">{error}</div>}
+      <div className="overflow-hidden rounded-2xl border border-line bg-white shadow-card">
+        <DataTable
+          csvFilename="sales-quotes"
+          columns={[
+            { key: "quoteNumber", label: "Quote No." },
+            { key: "customer", label: "Customer", render: (r) => (r.customer as QuoteRow["customer"])?.name ?? "—" },
+            { key: "quoteDate", label: "Date", render: (r) => fmt(r.quoteDate as string) },
+            { key: "validUntil", label: "Valid Until", render: (r) => r.validUntil ? fmt(r.validUntil as string) : "—" },
+            { key: "totalAmount", label: "Total", render: (r) => money(r.totalAmount) },
+            { key: "status", label: "Status", render: (r) => <StatusBadge status={r.status as string} /> },
+            {
+              key: "actions", label: "", render: (r) => {
+                const q = r as unknown as QuoteRow;
+                const b = busy === q.id;
+                return (
+                  <div className="flex flex-wrap items-center gap-1">
+                    <button onClick={() => downloadReport(`/sales/quotes/${q.id}/proforma.pdf`, `proforma-${q.quoteNumber}.pdf`).catch((e: unknown) => setError(e instanceof Error ? e.message : "Download failed"))} className="rounded-lg border border-line px-2 py-1 text-xs font-semibold text-ink/70 hover:bg-field">PDF</button>
+                    {q.status === "DRAFT" && <button disabled={b} onClick={() => act(q.id, `/sales/quotes/${q.id}/send`)} className="rounded-lg bg-indigo-600 px-2 py-1 text-xs font-bold text-white disabled:opacity-50">Mark Sent</button>}
+                    {(q.status === "SENT" || q.status === "DRAFT") && <button disabled={b} onClick={() => act(q.id, `/sales/quotes/${q.id}/decision`, { decision: "ACCEPTED" })} className="rounded-lg bg-emerald-600 px-2 py-1 text-xs font-bold text-white disabled:opacity-50">Accepted</button>}
+                    {q.status === "SENT" && <button disabled={b} onClick={() => act(q.id, `/sales/quotes/${q.id}/decision`, { decision: "DECLINED" })} className="rounded-lg border border-red-200 px-2 py-1 text-xs font-bold text-red-600 disabled:opacity-50">Declined</button>}
+                    {["ACCEPTED", "SENT"].includes(q.status) && <button disabled={b} onClick={() => { setConvertId(q.id); setConvertWh(opts.warehouses[0]?.id ?? ""); }} className="rounded-lg bg-brand px-2 py-1 text-xs font-bold text-white disabled:opacity-50">Convert to Order</button>}
+                    {q.status === "CONVERTED" && q.salesOrderId && <Link href="/sales/orders" className="rounded-lg border border-line px-2 py-1 text-xs font-semibold text-ink/60 hover:bg-field">View Order</Link>}
+                    {["DRAFT", "DECLINED", "EXPIRED"].includes(q.status) && <button disabled={b} onClick={() => act(q.id, `/sales/quotes/${q.id}`)} title="Delete" className="rounded-lg p-1 text-ink/40 hover:bg-red-50 hover:text-red-600"><Trash2 className="h-3.5 w-3.5" /></button>}
+                  </div>
+                );
+              }
+            },
+          ]}
+          rows={rows as Record<string, unknown>[]}
+          empty="No quotes yet"
+          loading={loading}
+        />
+      </div>
+
+      <Modal open={!!convertId} onClose={() => setConvertId(null)} title="Convert quote to sales order">
+        <p className="mb-4 text-sm text-ink/60">Pick the warehouse the order will be released from. Credit limit and stock checks run at order time.</p>
+        <select value={convertWh} onChange={(e) => setConvertWh(e.target.value)} className={inputCls}>
+          <option value="">— Select warehouse —</option>
+          {opts.warehouses.map((w) => <option key={w.id} value={w.id}>{w.code} {w.name}</option>)}
+        </select>
+        <div className="mt-5 flex justify-end gap-2">
+          <button onClick={() => setConvertId(null)} className="app-button-secondary text-xs">Cancel</button>
+          <button disabled={!convertWh || !!busy} onClick={doConvert} className="app-button-primary text-xs disabled:opacity-50">Create Order</button>
+        </div>
+      </Modal>
     </>
   );
 }

@@ -492,6 +492,15 @@ enum SalesOrderStatus {
   CANCELLED
 }
 
+enum SalesQuoteStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  DECLINED
+  EXPIRED
+  CONVERTED
+}
+
 enum ProspectVisitType {
   COLD_CALL
   REFERRAL
@@ -728,6 +737,8 @@ model Company {
   priceLists                 PriceList[]
   salesOrders                SalesOrder[]
   salesOrderItems            SalesOrderItem[]
+  salesQuotes                SalesQuote[]
+  salesQuoteItems            SalesQuoteItem[]
   invoices                   Invoice[]
   payments                   Payment[]
   receipts                   Receipt[]
@@ -897,6 +908,7 @@ model Branch {
   customers                 Customer[]
   priceLists                PriceList[]
   salesOrders               SalesOrder[]
+  salesQuotes               SalesQuote[]
   invoices                  Invoice[]
   payments                  Payment[]
   receipts                  Receipt[]
@@ -1554,6 +1566,7 @@ model Product {
   sparePartUsages             SparePartUsage[]
   priceLists                  PriceList[]
   salesOrderItems             SalesOrderItem[]
+  salesQuoteItems             SalesQuoteItem[]
   salesReturns                SalesReturn[]
 
   @@unique([companyId, sku])
@@ -2194,6 +2207,7 @@ model Customer {
   customerGroup CustomerGroup?        @relation(fields: [customerGroupId], references: [id])
   creditLimits  CustomerCreditLimit[]
   salesOrders   SalesOrder[]
+  salesQuotes   SalesQuote[]
   invoices      Invoice[]
   payments      Payment[]
   receipts      Receipt[]
@@ -2353,6 +2367,66 @@ model SalesOrderItem {
   @@index([salesOrderId])
   @@index([productId])
   @@index([createdAt])
+}
+
+// A proforma / quotation sent to a customer before an order is confirmed.
+// Reserves no stock and touches no ledger; on acceptance it converts into a
+// real SalesOrder (which is where credit checks, stock release, and
+// invoicing happen).
+model SalesQuote {
+  id             String           @id @default(uuid())
+  companyId      String
+  branchId       String
+  customerId     String
+  quoteNumber    String
+  quoteDate      DateTime         @default(now())
+  validUntil     DateTime?
+  status         SalesQuoteStatus @default(DRAFT)
+  subtotal       Decimal          @default(0) @db.Decimal(18, 4)
+  discountAmount Decimal          @default(0) @db.Decimal(18, 4)
+  taxAmount      Decimal          @default(0) @db.Decimal(18, 4)
+  totalAmount    Decimal          @default(0) @db.Decimal(18, 4)
+  notes          String?
+  salesOrderId   String?
+  sentAt         DateTime?
+  decidedAt      DateTime?
+  createdById    String?
+  updatedById    String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  deletedAt      DateTime?
+
+  company  Company          @relation(fields: [companyId], references: [id])
+  branch   Branch           @relation(fields: [branchId], references: [id])
+  customer Customer         @relation(fields: [customerId], references: [id])
+  items    SalesQuoteItem[]
+
+  @@unique([companyId, quoteNumber])
+  @@index([companyId])
+  @@index([companyId, status])
+  @@index([customerId])
+  @@index([salesOrderId])
+  @@index([deletedAt])
+}
+
+model SalesQuoteItem {
+  id             String  @id @default(uuid())
+  companyId      String
+  salesQuoteId   String
+  productId      String
+  quantity       Decimal @db.Decimal(18, 4)
+  unitPrice      Decimal @db.Decimal(18, 4)
+  discountAmount Decimal @default(0) @db.Decimal(18, 4)
+  lineTotal      Decimal @db.Decimal(18, 4)
+  sequence       Int     @default(1)
+
+  company    Company    @relation(fields: [companyId], references: [id])
+  salesQuote SalesQuote @relation(fields: [salesQuoteId], references: [id], onDelete: Cascade)
+  product    Product    @relation(fields: [productId], references: [id])
+
+  @@index([companyId])
+  @@index([salesQuoteId])
+  @@index([productId])
 }
 
 model Invoice {

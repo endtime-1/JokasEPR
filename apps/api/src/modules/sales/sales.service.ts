@@ -10,13 +10,17 @@ import {
   CreateCustomerGroupDto,
   CreatePaymentDto,
   CreatePriceListDto,
+  ConvertSalesQuoteDto,
   CreateProspectVisitDto,
   CreateSalesOrderDto,
   CreateSalesOrderItemDto,
+  CreateSalesQuoteDto,
   CreateSalesReturnDto,
+  DecideSalesQuoteDto,
   ProspectVisitQueryDto,
   RaiseShortagePurchaseRequestDto,
   SalesQueryDto,
+  UpdateSalesQuoteDto,
   UpdateCustomerDto,
   UpdateCustomerGroupDto,
   UpdatePriceListDto
@@ -72,7 +76,7 @@ export class SalesService {
       this.prisma.invoice.count({ where: { ...this.invoiceWhere(user, query), status: { in: ["ISSUED", "PARTIALLY_PAID", "OVERDUE"] }, dueDate: { lt: now } } })
     ]);
 
-    const customersOverLimit = creditLimits.filter((c) => Number(c.currentBalance) > Number(c.creditLimit)).length;
+    const customersOverLimit = (creditLimits ?? []).filter((c) => Number(c.currentBalance) > Number(c.creditLimit)).length;
 
     return {
       data: {
@@ -83,15 +87,15 @@ export class SalesService {
         pendingStockApprovals: orders.filter((order) => order.status === "PENDING_STOCK_APPROVAL").length,
         fulfilledOrders: orders.filter((order) => order.status === "FULFILLED").length,
         today: {
-          ordersCount: todayOrders._count ?? 0,
-          ordersValue: Number(todayOrders._sum.totalAmount ?? 0),
-          revenueCollected: Number(todayPayments._sum.amount ?? 0),
-          invoicedValue: Number(todayInvoices._sum.totalAmount ?? 0)
+          ordersCount: todayOrders?._count ?? 0,
+          ordersValue: Number(todayOrders?._sum?.totalAmount ?? 0),
+          revenueCollected: Number(todayPayments?._sum?.amount ?? 0),
+          invoicedValue: Number(todayInvoices?._sum?.totalAmount ?? 0)
         },
         debtors: {
           totalOutstanding: Number(invoiceAgg._sum.balanceDue ?? 0),
           customersOverLimit,
-          overdueInvoices
+          overdueInvoices: overdueInvoices ?? 0
         },
         recentOrders: orders,
         topProducts,
@@ -599,6 +603,268 @@ export class SalesService {
     });
     await this.writeAudit(user, "CREATE", "PurchaseRequest", row.id, `Raised purchase request ${reference} for sales order ${order.orderNumber} shortage`, context, { branchId: order.branchId ?? undefined });
     return { data: row };
+  }
+
+  // ── Proforma / Quotations ──────────────────────────────────────────────────
+  // A quote reserves no stock and posts nothing to Finance. On acceptance it
+  // converts into a real SalesOrder — that's where credit limits, stock
+  // release, and invoicing kick in.
+
+  async listQuotes(user: AuthenticatedUser, query: SalesQueryDto) {
+    const data = await this.prisma.salesQuote.findMany({
+      where: {
+        companyId: user.companyId,
+        deletedAt: null,
+        customerId: query.customerId,
+        ...(query.status ? { status: query.status as never } : {}),
+        ...this.branchScope(user, query)
+      },
+      include: { customer: { select: { code: true, name: true } }, _count: { select: { items: true } } },
+      orderBy: { quoteDate: "desc" },
+      take: 200
+    });
+    return { data };
+  }
+
+  async getQuote(user: AuthenticatedUser, id: string) {
+    const quote = await this.prisma.salesQuote.findFirst({
+      where: { companyId: user.companyId, id, deletedAt: null },
+      include: {
+        customer: true,
+        branch: { select: { name: true, code: true } },
+        items: { include: { product: { select: { sku: true, name: true } } }, orderBy: { sequence: "asc" } }
+      }
+    });
+    if (!quote) throw new NotFoundException("Quote was not found.");
+    return { data: quote };
+  }
+
+  async createQuote(user: AuthenticatedUser, dto: CreateSalesQuoteDto, context: RequestContext) {
+    if (!dto.items.length) throw new BadRequestException("A quote must contain at least one item.");
+    const overDiscounted = dto.items.find((item) => (item.discountAmount ?? 0) > item.quantity * item.unitPrice);
+    if (overDiscounted) throw new BadRequestException("A line's discount cannot exceed that line's own total.");
+
+    const customer = await this.prisma.customer.findFirst({ where: { companyId: user.companyId, id: dto.customerId, deletedAt: null } });
+    if (!customer) throw new NotFoundException("Customer was not found.");
+    this.assertBranchAccess(user, customer.branchId);
+
+    const productIds = [...new Set(dto.items.map((item) => item.productId))];
+    const ownedProducts = await this.prisma.product.findMany({ where: { companyId: user.companyId, id: { in: productIds }, deletedAt: null }, select: { id: true } });
+    if (ownedProducts.length !== productIds.length) throw new NotFoundException("One or more products were not found.");
+
+    const subtotal = dto.items.reduce((sum, item) => sum + this.lineTotal(item), 0);
+    const discountAmount = dto.discountAmount ?? 0;
+    const taxAmount = dto.taxAmount ?? 0;
+    const totalAmount = subtotal - discountAmount + taxAmount;
+    if (totalAmount < 0) throw new BadRequestException("Quote total cannot be negative.");
+
+    const quoteNumber = await nextRef(this.prisma, user.companyId, "QT");
+    const data = await this.prisma.salesQuote.create({
+      data: {
+        companyId: user.companyId,
+        branchId: customer.branchId,
+        customerId: customer.id,
+        quoteNumber,
+        quoteDate: dto.quoteDate ? new Date(dto.quoteDate) : new Date(),
+        validUntil: dto.validUntil ? new Date(dto.validUntil) : this.daysFromNow(14),
+        status: "DRAFT",
+        subtotal,
+        discountAmount,
+        taxAmount,
+        totalAmount,
+        notes: dto.notes,
+        createdById: user.id,
+        items: {
+          create: dto.items.map((item, i) => ({
+            companyId: user.companyId,
+            productId: item.productId,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            discountAmount: item.discountAmount ?? 0,
+            lineTotal: this.lineTotal(item),
+            sequence: i + 1
+          }))
+        }
+      },
+      include: { items: true, customer: true }
+    });
+    await this.writeAudit(user, "CREATE", "SalesQuote", data.id, `Created quote ${quoteNumber}`, context, { branchId: customer.branchId });
+    return { data };
+  }
+
+  async updateQuote(user: AuthenticatedUser, id: string, dto: UpdateSalesQuoteDto, context: RequestContext) {
+    const quote = await this.prisma.salesQuote.findFirst({ where: { companyId: user.companyId, id, deletedAt: null }, include: { items: true } });
+    if (!quote) throw new NotFoundException("Quote was not found.");
+    if (quote.status !== "DRAFT") throw new BadRequestException(`Only a DRAFT quote can be edited — this one is ${quote.status.toLowerCase()}.`);
+
+    let itemData: { subtotal: number; totalAmount: number } | null = null;
+    if (dto.items) {
+      if (!dto.items.length) throw new BadRequestException("A quote must contain at least one item.");
+      const productIds = [...new Set(dto.items.map((i) => i.productId))];
+      const owned = await this.prisma.product.findMany({ where: { companyId: user.companyId, id: { in: productIds }, deletedAt: null }, select: { id: true } });
+      if (owned.length !== productIds.length) throw new NotFoundException("One or more products were not found.");
+      const subtotal = dto.items.reduce((s, i) => s + this.lineTotal(i), 0);
+      itemData = { subtotal, totalAmount: subtotal - (dto.discountAmount ?? Number(quote.discountAmount)) + (dto.taxAmount ?? Number(quote.taxAmount)) };
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      if (dto.items) {
+        await tx.salesQuoteItem.deleteMany({ where: { salesQuoteId: id } });
+        await tx.salesQuoteItem.createMany({
+          data: dto.items.map((item, i) => ({
+            companyId: user.companyId, salesQuoteId: id, productId: item.productId,
+            quantity: item.quantity, unitPrice: item.unitPrice, discountAmount: item.discountAmount ?? 0,
+            lineTotal: this.lineTotal(item), sequence: i + 1
+          }))
+        });
+      }
+      const discountAmount = dto.discountAmount ?? Number(quote.discountAmount);
+      const taxAmount = dto.taxAmount ?? Number(quote.taxAmount);
+      const subtotal = itemData ? itemData.subtotal : Number(quote.subtotal);
+      return tx.salesQuote.update({
+        where: { id },
+        data: {
+          ...(dto.validUntil !== undefined && { validUntil: new Date(dto.validUntil) }),
+          ...(dto.notes !== undefined && { notes: dto.notes }),
+          discountAmount, taxAmount,
+          subtotal,
+          totalAmount: subtotal - discountAmount + taxAmount,
+          updatedById: user.id
+        },
+        include: { items: true, customer: true }
+      });
+    });
+    await this.writeAudit(user, "UPDATE", "SalesQuote", id, `Edited quote ${quote.quoteNumber}`, context, { branchId: quote.branchId });
+    return { data: updated };
+  }
+
+  async sendQuote(user: AuthenticatedUser, id: string, context: RequestContext) {
+    const quote = await this.requireQuote(user, id);
+    if (!["DRAFT", "SENT"].includes(quote.status)) throw new BadRequestException(`A ${quote.status.toLowerCase()} quote cannot be marked as sent.`);
+    const data = await this.prisma.salesQuote.update({ where: { id }, data: { status: "SENT", sentAt: new Date(), updatedById: user.id } });
+    await this.writeAudit(user, "UPDATE", "SalesQuote", id, `Marked quote ${quote.quoteNumber} as sent`, context, { branchId: quote.branchId });
+    return { data };
+  }
+
+  async decideQuote(user: AuthenticatedUser, id: string, dto: DecideSalesQuoteDto, context: RequestContext) {
+    const quote = await this.requireQuote(user, id);
+    if (!["SENT", "DRAFT"].includes(quote.status)) throw new BadRequestException(`A ${quote.status.toLowerCase()} quote cannot be marked ${dto.decision.toLowerCase()}.`);
+    const data = await this.prisma.salesQuote.update({ where: { id }, data: { status: dto.decision, decidedAt: new Date(), updatedById: user.id } });
+    await this.writeAudit(user, "UPDATE", "SalesQuote", id, `Quote ${quote.quoteNumber} marked ${dto.decision.toLowerCase()}`, context, { branchId: quote.branchId });
+    return { data };
+  }
+
+  async convertQuoteToOrder(user: AuthenticatedUser, id: string, dto: ConvertSalesQuoteDto, context: RequestContext) {
+    const quote = await this.prisma.salesQuote.findFirst({
+      where: { companyId: user.companyId, id, deletedAt: null },
+      include: { items: true }
+    });
+    if (!quote) throw new NotFoundException("Quote was not found.");
+    if (quote.status === "CONVERTED") throw new BadRequestException("This quote has already been converted to an order.");
+    if (["DECLINED", "EXPIRED"].includes(quote.status)) throw new BadRequestException(`A ${quote.status.toLowerCase()} quote cannot be converted.`);
+
+    // Hand off to the normal order flow — credit limit, stock check, and the
+    // auto production-order / shortage alerts all belong at order time, not
+    // quote time.
+    const order = await this.createOrder(
+      user,
+      {
+        customerId: quote.customerId,
+        warehouseId: dto.warehouseId,
+        orderDate: dto.orderDate,
+        discountAmount: Number(quote.discountAmount),
+        taxAmount: Number(quote.taxAmount),
+        notes: `From quote ${quote.quoteNumber}${quote.notes ? ` — ${quote.notes}` : ""}`.slice(0, 500),
+        items: quote.items.map((it) => ({
+          productId: it.productId,
+          quantity: Number(it.quantity),
+          unitPrice: Number(it.unitPrice),
+          discountAmount: Number(it.discountAmount)
+        }))
+      },
+      context
+    );
+    await this.prisma.salesQuote.update({ where: { id }, data: { status: "CONVERTED", salesOrderId: order.data.id, decidedAt: quote.decidedAt ?? new Date(), updatedById: user.id } });
+    await this.writeAudit(user, "UPDATE", "SalesQuote", id, `Converted quote ${quote.quoteNumber} to sales order ${order.data.orderNumber}`, context, { branchId: quote.branchId });
+    return { data: order.data };
+  }
+
+  async deleteQuote(user: AuthenticatedUser, id: string, context: RequestContext) {
+    const quote = await this.requireQuote(user, id);
+    if (!["DRAFT", "DECLINED", "EXPIRED"].includes(quote.status)) {
+      throw new BadRequestException(`A ${quote.status.toLowerCase()} quote can't be deleted.`);
+    }
+    await this.prisma.salesQuote.update({ where: { id }, data: { quoteNumber: `${quote.quoteNumber}__deleted_${id}`.slice(0, 180), deletedAt: new Date(), updatedById: user.id } });
+    await this.writeAudit(user, "DELETE", "SalesQuote", id, `Deleted quote ${quote.quoteNumber}`, context, { branchId: quote.branchId });
+    return { data: { success: true } };
+  }
+
+  async quotePdf(user: AuthenticatedUser, id: string): Promise<{ buffer: Buffer; filename: string }> {
+    const { data: quote } = await this.getQuote(user, id);
+    const company = await this.prisma.company.findUnique({ where: { id: user.companyId }, select: { name: true, legalName: true } });
+    const { default: PDFDocument } = await import("pdfkit");
+    const doc = new PDFDocument({ margin: 48, size: "A4" });
+    const chunks: Buffer[] = [];
+    doc.on("data", (c: Buffer) => chunks.push(c));
+    const done = new Promise<Buffer>((resolve) => doc.on("end", () => resolve(Buffer.concat(chunks))));
+    const gh = (n: unknown) => `GHS ${Number(n ?? 0).toLocaleString("en-GH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+    doc.fontSize(20).font("Helvetica-Bold").text(company?.legalName || company?.name || "Proforma Invoice");
+    doc.fontSize(13).font("Helvetica-Bold").fillColor("#555").text("PROFORMA INVOICE");
+    doc.fillColor("#000").moveDown(0.6);
+
+    doc.fontSize(9).font("Helvetica-Bold").text("Quote No: ", { continued: true }).font("Helvetica").text(quote.quoteNumber);
+    doc.font("Helvetica-Bold").text("Date: ", { continued: true }).font("Helvetica").text(new Date(quote.quoteDate).toLocaleDateString("en-GH"));
+    if (quote.validUntil) doc.font("Helvetica-Bold").text("Valid until: ", { continued: true }).font("Helvetica").text(new Date(quote.validUntil).toLocaleDateString("en-GH"));
+    doc.font("Helvetica-Bold").text("Bill to: ", { continued: true }).font("Helvetica").text(`${quote.customer.name} (${quote.customer.code})`);
+    doc.moveDown(0.8);
+
+    this.pdfQuoteTable(doc, quote.items.map((it) => [
+      it.product?.name ?? it.productId,
+      String(Number(it.quantity)),
+      gh(it.unitPrice),
+      Number(it.discountAmount) ? gh(it.discountAmount) : "-",
+      gh(it.lineTotal)
+    ]));
+
+    doc.moveDown(0.6).fontSize(9);
+    const right = (label: string, val: string, bold = false) => {
+      doc.font(bold ? "Helvetica-Bold" : "Helvetica").text(`${label}   ${val}`, { align: "right" });
+    };
+    right("Subtotal", gh(quote.subtotal));
+    if (Number(quote.discountAmount)) right("Discount", `- ${gh(quote.discountAmount)}`);
+    if (Number(quote.taxAmount)) right("Tax", `+ ${gh(quote.taxAmount)}`);
+    right("Total", gh(quote.totalAmount), true);
+
+    if (quote.notes) doc.moveDown(1).fontSize(8).fillColor("#555").text(`Notes: ${quote.notes}`).fillColor("#000");
+    doc.moveDown(1.5).fontSize(7.5).fillColor("#999").text("This is a proforma invoice for quotation purposes only. It is not a demand for payment and reserves no stock.");
+
+    doc.end();
+    return { buffer: await done, filename: `proforma-${quote.quoteNumber}.pdf` };
+  }
+
+  private pdfQuoteTable(doc: PDFKit.PDFDocument, rows: string[][]) {
+    const head = ["Item", "Qty", "Unit Price", "Discount", "Line Total"];
+    const widths = [200, 45, 90, 80, 90];
+    const startX = doc.x;
+    let y = doc.y;
+    doc.fontSize(8.5).font("Helvetica-Bold");
+    head.forEach((h, i) => doc.text(h, startX + widths.slice(0, i).reduce((a, b) => a + b, 0), y, { width: widths[i] }));
+    y += 16;
+    doc.font("Helvetica");
+    for (const row of rows) {
+      row.forEach((cell, i) => doc.text(cell, startX + widths.slice(0, i).reduce((a, b) => a + b, 0), y, { width: widths[i] }));
+      y += 15;
+    }
+    doc.x = startX;
+    doc.y = y + 4;
+  }
+
+  private async requireQuote(user: AuthenticatedUser, id: string) {
+    const quote = await this.prisma.salesQuote.findFirst({ where: { companyId: user.companyId, id, deletedAt: null } });
+    if (!quote) throw new NotFoundException("Quote was not found.");
+    this.assertBranchAccess(user, quote.branchId);
+    return quote;
   }
 
   async listInvoices(user: AuthenticatedUser, query: SalesQueryDto) {

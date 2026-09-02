@@ -1,6 +1,6 @@
 import { CustomerStatus, PaymentMethod, ProspectVisitOutcome, ProspectVisitType } from "@prisma/client";
 import { Type } from "class-transformer";
-import { IsArray, IsDateString, IsEmail, IsEnum, IsNumber, IsOptional, IsString, IsUUID, MaxLength, Min, ValidateNested } from "class-validator";
+import { IsArray, IsDateString, IsEmail, IsEnum, IsIn, IsNumber, IsOptional, IsString, IsUUID, MaxLength, Min, ValidateNested } from "class-validator";
 
 export class SalesQueryDto {
   @IsOptional()
@@ -26,6 +26,11 @@ export class SalesQueryDto {
   @IsOptional()
   @IsDateString()
   endDate?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  status?: string;
 }
 
 export class CreateCustomerGroupDto {
@@ -264,6 +269,80 @@ export class CreateSalesOrderDto {
   @IsString()
   @MaxLength(100)
   idempotencyKey?: string;
+}
+
+export class CreateSalesQuoteDto {
+  @IsUUID()
+  customerId!: string;
+
+  @IsOptional()
+  @IsDateString()
+  quoteDate?: string;
+
+  @IsOptional()
+  @IsDateString()
+  validUntil?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  discountAmount?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  taxAmount?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  notes?: string;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateSalesOrderItemDto)
+  items!: CreateSalesOrderItemDto[];
+}
+
+export class UpdateSalesQuoteDto {
+  @IsOptional()
+  @IsDateString()
+  validUntil?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  discountAmount?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  taxAmount?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  notes?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateSalesOrderItemDto)
+  items?: CreateSalesOrderItemDto[];
+}
+
+export class DecideSalesQuoteDto {
+  @IsIn(["ACCEPTED", "DECLINED"])
+  decision!: "ACCEPTED" | "DECLINED";
+}
+
+export class ConvertSalesQuoteDto {
+  @IsUUID()
+  warehouseId!: string;
+
+  @IsOptional()
+  @IsDateString()
+  orderDate?: string;
 }
 
 export class CreatePaymentDto {

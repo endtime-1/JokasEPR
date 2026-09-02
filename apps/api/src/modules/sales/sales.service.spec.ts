@@ -39,6 +39,9 @@ const mockPrisma = {
   salesReturn: { aggregate: jest.fn(), create: jest.fn(), findFirst: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
   prospectVisit: { create: jest.fn(), findFirst: jest.fn() },
   purchaseRequest: { create: jest.fn() },
+  salesQuote: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), create: jest.fn(), update: jest.fn() },
+  salesQuoteItem: { deleteMany: jest.fn(), createMany: jest.fn() },
+  company: { findUnique: jest.fn().mockResolvedValue({ name: "Acme Farms" }) },
   $transaction: jest.fn().mockImplementation((cb: (tx: typeof mockTx) => Promise<unknown>) => cb(mockTx))
 };
 
@@ -1144,5 +1147,64 @@ describe("SalesService.dashboard — Today section + debtor counts", () => {
 
     expect(res.data.today).toEqual({ ordersCount: 4, ordersValue: 5200, revenueCollected: 800, invoicedValue: 1500 });
     expect(res.data.debtors).toEqual({ totalOutstanding: 12000, customersOverLimit: 2, overdueInvoices: 3 });
+  });
+});
+
+describe("SalesService — proforma quotes", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const quoteDto = {
+    customerId: "cust-1",
+    items: [
+      { productId: "prod-1", quantity: 10, unitPrice: 20 },
+      { productId: "prod-2", quantity: 5, unitPrice: 12, discountAmount: 10 },
+    ],
+    taxAmount: 15,
+  };
+
+  it("createQuote computes totals, reserves no stock and creates no order", async () => {
+    mockPrisma.customer.findFirst.mockResolvedValue({ id: "cust-1", branchId: "branch-1", status: "ACTIVE" });
+    mockPrisma.product.findMany.mockResolvedValue([{ id: "prod-1" }, { id: "prod-2" }]);
+    mockPrisma.salesQuote.create.mockImplementation(({ data }: any) => Promise.resolve({ id: "qt-1", ...data }));
+
+    const service = makeService();
+    const res = await service.createQuote(makeUser(), quoteDto as never, {});
+
+    // 10×20 = 200; 5×12 − 10 = 50; subtotal 250; + tax 15 = 265
+    expect(mockPrisma.salesQuote.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ subtotal: 250, taxAmount: 15, totalAmount: 265, status: "DRAFT" }) })
+    );
+    expect(mockPrisma.salesOrder.create).not.toHaveBeenCalled();
+    expect(mockPrisma.customerCreditLimit.findFirst).not.toHaveBeenCalled();
+    expect(res.data.id).toBe("qt-1");
+  });
+
+  it("createQuote rejects an empty item list", async () => {
+    const service = makeService();
+    await expect(service.createQuote(makeUser(), { customerId: "cust-1", items: [] } as never, {})).rejects.toThrow(/at least one item/);
+  });
+
+  it("updateQuote refuses a quote that isn't DRAFT", async () => {
+    mockPrisma.salesQuote.findFirst.mockResolvedValue({ id: "qt-1", status: "SENT", quoteNumber: "QT-1", branchId: "branch-1", items: [] });
+    const service = makeService();
+    await expect(service.updateQuote(makeUser(), "qt-1", { notes: "x" } as never, {})).rejects.toThrow(/DRAFT/);
+  });
+
+  it("sendQuote moves DRAFT -> SENT", async () => {
+    mockPrisma.salesQuote.findFirst.mockResolvedValue({ id: "qt-1", status: "DRAFT", quoteNumber: "QT-1", branchId: "branch-1" });
+    mockPrisma.salesQuote.update.mockResolvedValue({ id: "qt-1", status: "SENT" });
+    const service = makeService();
+    const res = await service.sendQuote(makeUser(), "qt-1", {});
+    expect(mockPrisma.salesQuote.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: "SENT" }) }));
+    expect(res.data.status).toBe("SENT");
+  });
+
+  it("convertQuoteToOrder refuses an already-converted or declined quote", async () => {
+    mockPrisma.salesQuote.findFirst.mockResolvedValue({ id: "qt-1", status: "CONVERTED", quoteNumber: "QT-1", branchId: "branch-1", items: [] });
+    const service = makeService();
+    await expect(service.convertQuoteToOrder(makeUser(), "qt-1", { warehouseId: "wh-1" } as never, {})).rejects.toThrow(/already been converted/);
+
+    mockPrisma.salesQuote.findFirst.mockResolvedValue({ id: "qt-1", status: "DECLINED", quoteNumber: "QT-1", branchId: "branch-1", items: [] });
+    await expect(service.convertQuoteToOrder(makeUser(), "qt-1", { warehouseId: "wh-1" } as never, {})).rejects.toThrow(/declined quote cannot be converted/);
   });
 });
