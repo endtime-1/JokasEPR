@@ -181,6 +181,8 @@ type DashData = {
   returnValue: number;
   pendingStockApprovals: number;
   fulfilledOrders: number;
+  today?: { ordersCount: number; ordersValue: number; revenueCollected: number; invoicedValue: number };
+  debtors?: { totalOutstanding: number; customersOverLimit: number; overdueInvoices: number };
   recentOrders: DashOrder[];
   topProducts: TopRow[];
   topCustomers: TopRow[];
@@ -305,6 +307,28 @@ export function SalesDashboardPage() {
           </div>
         </div>
       )}
+
+      {/* ── Today ── */}
+      <section className="mb-5">
+        <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-ink/45">Today</p>
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <KpiCard label="Orders placed"   value={String(data?.today?.ordersCount ?? 0)}        Icon={ShoppingCart} color="brand"   sub={money(data?.today?.ordersValue ?? 0)} />
+          <KpiCard label="Revenue collected" value={money(data?.today?.revenueCollected ?? 0)}  Icon={CircleCheck}  color="emerald" />
+          <KpiCard label="Invoiced today"  value={money(data?.today?.invoicedValue ?? 0)}       Icon={DollarSign}   color="blue" />
+          <KpiCard
+            label="Debtors"
+            value={money(data?.debtors?.totalOutstanding ?? outstanding)}
+            Icon={AlertTriangle}
+            color={(data?.debtors?.customersOverLimit ?? 0) > 0 || (data?.debtors?.overdueInvoices ?? 0) > 0 ? "red" : "blue"}
+            sub={
+              [
+                (data?.debtors?.overdueInvoices ?? 0) > 0 ? `${data!.debtors!.overdueInvoices} overdue` : null,
+                (data?.debtors?.customersOverLimit ?? 0) > 0 ? `${data!.debtors!.customersOverLimit} over limit` : null,
+              ].filter(Boolean).join(" · ") || undefined
+            }
+          />
+        </div>
+      </section>
 
       {/* ── KPI cards ── */}
       <section className="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

@@ -55,14 +55,24 @@ export class SalesService {
 
   async dashboard(user: AuthenticatedUser, query: SalesQueryDto) {
     const where = this.orderWhere(user, query);
-    const [orders, invoiceAgg, paymentAgg, returnAgg, topProducts, topCustomers] = await Promise.all([
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const now = new Date();
+    const [orders, invoiceAgg, paymentAgg, returnAgg, topProducts, topCustomers, todayOrders, todayPayments, todayInvoices, creditLimits, overdueInvoices] = await Promise.all([
       this.prisma.salesOrder.findMany({ where, include: { customer: true, warehouse: true }, orderBy: { orderDate: "desc" }, take: 12 }),
       this.prisma.invoice.aggregate({ where: this.invoiceWhere(user, query), _sum: { totalAmount: true, balanceDue: true } }),
       this.prisma.payment.aggregate({ where: this.paymentWhere(user, query), _sum: { amount: true } }),
       this.prisma.salesReturn.aggregate({ where: this.returnWhere(user, query), _sum: { totalAmount: true } }),
       this.salesByProduct(user, query),
-      this.salesByCustomer(user, query)
+      this.salesByCustomer(user, query),
+      this.prisma.salesOrder.aggregate({ where: { ...where, orderDate: { gte: startOfToday } }, _count: true, _sum: { totalAmount: true } }),
+      this.prisma.payment.aggregate({ where: { ...this.paymentWhere(user, query), paymentDate: { gte: startOfToday } }, _sum: { amount: true } }),
+      this.prisma.invoice.aggregate({ where: { ...this.invoiceWhere(user, query), invoiceDate: { gte: startOfToday } }, _sum: { totalAmount: true } }),
+      this.prisma.customerCreditLimit.findMany({ where: { companyId: user.companyId, deletedAt: null, creditLimit: { gt: 0 } }, select: { creditLimit: true, currentBalance: true } }),
+      this.prisma.invoice.count({ where: { ...this.invoiceWhere(user, query), status: { in: ["ISSUED", "PARTIALLY_PAID", "OVERDUE"] }, dueDate: { lt: now } } })
     ]);
+
+    const customersOverLimit = creditLimits.filter((c) => Number(c.currentBalance) > Number(c.creditLimit)).length;
 
     return {
       data: {
@@ -72,6 +82,17 @@ export class SalesService {
         returnValue: Number(returnAgg._sum.totalAmount ?? 0),
         pendingStockApprovals: orders.filter((order) => order.status === "PENDING_STOCK_APPROVAL").length,
         fulfilledOrders: orders.filter((order) => order.status === "FULFILLED").length,
+        today: {
+          ordersCount: todayOrders._count ?? 0,
+          ordersValue: Number(todayOrders._sum.totalAmount ?? 0),
+          revenueCollected: Number(todayPayments._sum.amount ?? 0),
+          invoicedValue: Number(todayInvoices._sum.totalAmount ?? 0)
+        },
+        debtors: {
+          totalOutstanding: Number(invoiceAgg._sum.balanceDue ?? 0),
+          customersOverLimit,
+          overdueInvoices
+        },
         recentOrders: orders,
         topProducts,
         topCustomers

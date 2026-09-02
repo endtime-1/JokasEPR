@@ -24,17 +24,17 @@ const mockTx = {
 const mockPrisma = {
   customer: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), count: jest.fn(), update: jest.fn() },
   customerGroup: { findFirst: jest.fn(), update: jest.fn() },
-  customerCreditLimit: { findFirst: jest.fn().mockResolvedValue(null) },
+  customerCreditLimit: { findFirst: jest.fn().mockResolvedValue(null), findMany: jest.fn().mockResolvedValue([]) },
   priceList: { findFirst: jest.fn(), update: jest.fn(), aggregate: jest.fn() },
-  invoice: { findFirst: jest.fn(), findUnique: jest.fn().mockResolvedValue(null), count: jest.fn() },
-  payment: { findFirst: jest.fn() },
+  invoice: { findFirst: jest.fn(), findUnique: jest.fn().mockResolvedValue(null), count: jest.fn().mockResolvedValue(0), aggregate: jest.fn().mockResolvedValue({ _sum: {} }) },
+  payment: { findFirst: jest.fn(), aggregate: jest.fn().mockResolvedValue({ _sum: {} }) },
   receipt: { findFirst: jest.fn() },
   revenue: { create: jest.fn().mockResolvedValue({}) },
   warehouse: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
   branch: { findMany: jest.fn().mockResolvedValue([]) },
   product: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
   salesOrderItem: { findFirst: jest.fn(), groupBy: jest.fn().mockResolvedValue([]), aggregate: jest.fn() },
-  salesOrder: { findFirst: jest.fn(), create: jest.fn(), groupBy: jest.fn().mockResolvedValue([]), count: jest.fn() },
+  salesOrder: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), create: jest.fn(), groupBy: jest.fn().mockResolvedValue([]), count: jest.fn(), aggregate: jest.fn().mockResolvedValue({ _count: 0, _sum: {} }) },
   inventoryItem: { findFirst: jest.fn().mockResolvedValue(null), findMany: jest.fn().mockResolvedValue([]) },
   salesReturn: { aggregate: jest.fn(), create: jest.fn(), findFirst: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
   prospectVisit: { create: jest.fn(), findFirst: jest.fn() },
@@ -1118,5 +1118,31 @@ describe("SalesService.approveStockRelease — named, actionable shortage messag
     await expect(service.approveStockRelease(makeUser({ warehouseIds: ["wh-1"] }), "so-1", {})).rejects.toThrow(
       /need 50, have 12/
     );
+  });
+});
+
+describe("SalesService.dashboard — Today section + debtor counts", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("returns today's order count/value, revenue collected, invoiced value, and debtor counts", async () => {
+    mockPrisma.salesOrder.findMany.mockResolvedValue([]);
+    mockPrisma.salesOrder.aggregate.mockResolvedValue({ _count: 4, _sum: { totalAmount: 5200 } });
+    mockPrisma.invoice.aggregate
+      .mockResolvedValueOnce({ _sum: { totalAmount: 90000, balanceDue: 12000 } }) // company-wide
+      .mockResolvedValueOnce({ _sum: { totalAmount: 1500 } });                     // invoiced today
+    mockPrisma.payment.aggregate.mockResolvedValue({ _sum: { amount: 800 } });
+    mockPrisma.salesReturn.aggregate.mockResolvedValue({ _sum: { totalAmount: 0 } });
+    mockPrisma.customerCreditLimit.findMany.mockResolvedValue([
+      { creditLimit: 1000, currentBalance: 1400 }, // over
+      { creditLimit: 500, currentBalance: 100 },   // fine
+      { creditLimit: 2000, currentBalance: 2001 }, // over
+    ]);
+    mockPrisma.invoice.count.mockResolvedValue(3); // overdue
+
+    const service = makeService();
+    const res = await service.dashboard(makeUser(), {} as never);
+
+    expect(res.data.today).toEqual({ ordersCount: 4, ordersValue: 5200, revenueCollected: 800, invoicedValue: 1500 });
+    expect(res.data.debtors).toEqual({ totalOutstanding: 12000, customersOverLimit: 2, overdueInvoices: 3 });
   });
 });
