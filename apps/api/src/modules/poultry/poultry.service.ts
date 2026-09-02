@@ -222,7 +222,35 @@ export class PoultryService {
       // Feed-store warehouses (farm-scoped) + feed products — for the
       // supervisor's feed-receipt form.
       this.prisma.warehouse.findMany({ where: { companyId: user.companyId, deletedAt: null, status: "ACTIVE", type: "FEED_STORE", ...(user.hasGlobalAccess ? {} : { farmId: { in: user.farmIds } }) }, select: { id: true, code: true, name: true, farmId: true }, orderBy: { name: "asc" } }),
-      this.prisma.product.findMany({ where: { companyId: user.companyId, deletedAt: null, type: { in: ["RAW_MATERIAL", "SEMI_FINISHED", "FINISHED_GOOD", "CONSUMABLE"] } }, select: { id: true, sku: true, name: true }, orderBy: { name: "asc" } }),
+      // Poultry only ever receives / consumes *finished feed* — never raw
+      // ingredients (maize, soya, premix…), eggs, birds or manure. This list
+      // was previously every product of every type, so the feed-receipt and
+      // feed-consumption pickers offered raw materials that have no business
+      // in a farm feed store. Narrow it to finished goods that are actually
+      // feed: an explicit feed form (Mash/Concentrate), a feed-formula output,
+      // or a name/SKU that reads as feed.
+      this.prisma.product.findMany({
+        where: {
+          companyId: user.companyId,
+          deletedAt: null,
+          type: "FINISHED_GOOD",
+          OR: [
+            { feedForm: { not: null } },
+            { feedFormulaFinishedProducts: { some: {} } },
+            { name: { contains: "feed" } },
+            { name: { contains: "mash" } },
+            { name: { contains: "concentrate" } },
+            { name: { contains: "pellet" } },
+            { name: { contains: "crumble" } },
+            { name: { contains: "starter" } },
+            { name: { contains: "grower" } },
+            { name: { contains: "finisher" } },
+            { sku: { startsWith: "FEED" } },
+          ],
+        },
+        select: { id: true, sku: true, name: true },
+        orderBy: { name: "asc" },
+      }),
       // Egg-store warehouses (farm-scoped) — the default destination the egg
       // collection form pre-selects so a day's eggs land in the farm's egg
       // store, ready to be dispatched onward via a staged stock transfer.

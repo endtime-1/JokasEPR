@@ -1122,6 +1122,8 @@ const BATCH_RECORD_TYPES: Array<{ type: string; label: string; cols: string[]; e
 function BatchRecordSection({ batchId, type, label, cols, endpoint, options }: { batchId: string; type: string; label: string; cols: string[]; endpoint: string; options: PoultryOptions }) {
   const { profile } = useAuth();
   const canManage = !!profile;
+  // Poultry consumes finished feed only — never raw ingredients or eggs/birds.
+  const feedPickerProducts = options.feedProducts?.length ? options.feedProducts : options.products;
   const [rows, setRows] = useState<Record<string, any>[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -1203,7 +1205,7 @@ function BatchRecordSection({ batchId, type, label, cols, endpoint, options }: {
       else if (f.kind === "select" && f.options?.length) defaults[f.name] = f.options[0];
     }
     if (type === "feed") {
-      defaults.feedProductId = options.products[0]?.id ?? "";
+      defaults.feedProductId = feedPickerProducts[0]?.id ?? "";
       defaults.warehouseId = options.warehouses[0]?.id ?? "";
     }
     if (["eggs", "medications", "vaccinations"].includes(type)) {
@@ -1344,7 +1346,7 @@ function BatchRecordSection({ batchId, type, label, cols, endpoint, options }: {
                       <label className="mb-0.5 block text-[10px] text-ink/60">Feed product</label>
                       <select className="w-full rounded border border-line bg-white px-2 py-1 text-xs" value={addForm.feedProductId ?? ""} onChange={(e) => setAddForm((f) => ({ ...f, feedProductId: e.target.value }))}>
                         <option value="">— none —</option>
-                        {options.products.map((p) => <option key={p.id} value={p.id}>{p.sku ?? p.code} — {p.name}</option>)}
+                        {feedPickerProducts.map((p) => <option key={p.id} value={p.id}>{p.sku ?? p.code} — {p.name}</option>)}
                       </select>
                     </div>
                     <div>
@@ -1404,7 +1406,7 @@ function BatchRecordSection({ batchId, type, label, cols, endpoint, options }: {
                       <label className="mb-0.5 block text-[10px] text-ink/60">Feed product (optional — deducts stock)</label>
                       <select className="w-full rounded border border-line bg-white px-2 py-1 text-xs" value={addForm.feedProductId ?? ""} onChange={(e) => setAddForm((f) => ({ ...f, feedProductId: e.target.value }))}>
                         <option value="">— none —</option>
-                        {options.products.map((p) => <option key={p.id} value={p.id}>{p.sku ?? p.code} — {p.name}</option>)}
+                        {feedPickerProducts.map((p) => <option key={p.id} value={p.id}>{p.sku ?? p.code} — {p.name}</option>)}
                       </select>
                     </div>
                     <div>
@@ -1852,6 +1854,8 @@ function GenericRecordForm({ options, optionsLoading = false, form, setForm, sub
   saving?: boolean;
 }) {
   const fields = recordFields(type, isEditing);
+  // Poultry consumes finished feed only — never raw ingredients or eggs/birds.
+  const feedPickerProducts = options.feedProducts?.length ? options.feedProducts : options.products;
   // Crates is a data-entry convenience only — the real field submitted
   // ("goodEggs" for type=eggs, "totalEggs" for type=daily) is still a raw
   // piece count, unchanged. Mirrors the mobile Egg Collection screen's own
@@ -1937,7 +1941,7 @@ function GenericRecordForm({ options, optionsLoading = false, form, setForm, sub
           <FormField label="Feed product">
             <select name="feedProductId" className={inputClass} value={form.feedProductId ?? ""} onChange={(e) => setForm({ ...form, feedProductId: e.target.value })}>
               <option value="">— select product —</option>
-              {options.products.map((p) => <option key={p.id} value={p.id}>{p.sku ?? p.code} — {p.name}</option>)}
+              {feedPickerProducts.map((p) => <option key={p.id} value={p.id}>{p.sku ?? p.code} — {p.name}</option>)}
             </select>
           </FormField>
           <FormField label="Warehouse">
@@ -1973,7 +1977,7 @@ function GenericRecordForm({ options, optionsLoading = false, form, setForm, sub
           <FormField label="Feed product (optional — deducts stock)">
             <select name="feedProductId" className={inputClass} value={form.feedProductId ?? ""} onChange={(e) => setForm({ ...form, feedProductId: e.target.value })}>
               <option value="">— none —</option>
-              {options.products.map((p) => <option key={p.id} value={p.id}>{p.sku ?? p.code} — {p.name}</option>)}
+              {feedPickerProducts.map((p) => <option key={p.id} value={p.id}>{p.sku ?? p.code} — {p.name}</option>)}
             </select>
           </FormField>
           <FormField label="Feed warehouse">

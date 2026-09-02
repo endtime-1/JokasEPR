@@ -10,7 +10,7 @@ import { DateField } from "../../components/DateField";
 import { SelectField, SelectOption } from "../../components/SelectField";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
-import { fetchFlockBatches, fetchFarms, fetchPoultryOptions, fetchWarehouses, fetchFeedProducts, fetchProducts, fetchDailyPoultryRecords, pensForBatch, DailyPoultryRecordRow } from "../../api/endpoints";
+import { fetchFlockBatches, fetchFarms, fetchPoultryOptions, fetchWarehouses, fetchProducts, fetchDailyPoultryRecords, pensForBatch, DailyPoultryRecordRow } from "../../api/endpoints";
 import { apiFetch } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
 import { colors, font, radius, spacing } from "../../constants/theme";
@@ -93,8 +93,9 @@ export function DailyPoultryScreen() {
   // recorded either way, these just also move real stock when given.
   const { data: rawWarehouses, error: warehousesError, loading: warehousesLoading } = useLookup("warehouses", async () => { const r = await fetchWarehouses(); return (r.data as any[]) ?? []; });
   const warehouses: SelectOption[] = useMemo(() => (rawWarehouses ?? []).map((w: any) => ({ label: w.name, value: w.id })), [rawWarehouses]);
-  const { data: rawFeedProducts } = useLookup("feedProducts", async () => { const r = await fetchFeedProducts(); return (r.data as any[]) ?? []; });
-  const feedProducts: SelectOption[] = useMemo(() => (rawFeedProducts ?? []).map((p: any) => ({ label: `${p.sku} — ${p.name}`, value: p.id })), [rawFeedProducts]);
+  // Finished feed only — poultry never consumes raw ingredients. The poultry
+  // options endpoint already narrows feedProducts to finished feed.
+  const feedProducts: SelectOption[] = useMemo(() => (opts?.data.feedProducts ?? []).map((p) => ({ label: p.sku ? `${p.sku} — ${p.name}` : p.name, value: p.id })), [opts]);
   const { data: rawEggProducts } = useLookup("products", async () => { const r = await fetchProducts(); return (r.data as any[]) ?? []; });
   const eggProducts: SelectOption[] = useMemo(() => (rawEggProducts ?? []).map((p: any) => ({ label: `${p.sku} — ${p.name}`, value: p.id })), [rawEggProducts]);
 

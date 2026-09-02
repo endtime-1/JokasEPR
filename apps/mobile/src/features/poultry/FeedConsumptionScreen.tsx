@@ -10,7 +10,7 @@ import { DateField } from "../../components/DateField";
 import { SelectField, SelectOption } from "../../components/SelectField";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
-import { fetchFlockBatches, fetchFarms, fetchWarehouses, fetchFeedProducts, fetchPoultryOptions, pensForBatch } from "../../api/endpoints";
+import { fetchFlockBatches, fetchFarms, fetchWarehouses, fetchPoultryOptions, pensForBatch } from "../../api/endpoints";
 import { useAuth } from "../../auth/AuthContext";
 import { colors, font, spacing } from "../../constants/theme";
 
@@ -75,10 +75,11 @@ export function FeedConsumptionScreen() {
     [rawWarehouses]
   );
 
-  const { data: rawProducts } = useLookup("feedProducts", async () => { const r = await fetchFeedProducts(); return (r.data as any[]) ?? []; });
+  // Finished feed only — poultry never consumes raw ingredients. The poultry
+  // options endpoint already narrows feedProducts to finished feed.
   const products: SelectOption[] = useMemo(
-    () => (rawProducts ?? []).map((p: any) => ({ label: `${p.sku} — ${p.name}`, value: p.id })),
-    [rawProducts]
+    () => (opts?.data.feedProducts ?? []).map((p) => ({ label: p.sku ? `${p.sku} — ${p.name}` : p.name, value: p.id })),
+    [opts]
   );
 
   // When g/bird is entered and bird count is known, auto-calculate total kg
