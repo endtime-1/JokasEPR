@@ -157,6 +157,14 @@ export class UserAccessSettingsDto {
   @IsOptional() @IsBoolean() requireSeparateProcurementApprover?: boolean;
 }
 
+export class SalesSettingsDto {
+  // When on, a confirmed sales order cannot have its stock released until
+  // the customer has paid at least part of the invoice. Off by default —
+  // the make-to-order flow issues the invoice at confirmation and leaves
+  // payment timing to the sales manager's discretion.
+  @IsOptional() @IsBoolean() requirePaymentBeforeRelease?: boolean;
+}
+
 export class DomainListSettingsDto {
   @IsArray()
   @IsString({ each: true })

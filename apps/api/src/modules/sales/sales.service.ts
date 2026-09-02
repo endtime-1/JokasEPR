@@ -521,6 +521,72 @@ export class SalesService {
     return { data: updated };
   }
 
+  // Step 1 of 2 — the sales side. Confirms a pending order and issues its
+  // invoice WITHOUT touching stock. The business is make-to-order: the
+  // customer orders first, then we source ingredients and produce against
+  // that confirmed order, so a stock check here would wrongly block the
+  // whole sale. Once confirmed the salesperson can send the invoice and
+  // take payment; the storekeeper releases stock later (step 2) when the
+  // goods are ready.
+  async confirmOrder(user: AuthenticatedUser, id: string, context: RequestContext) {
+    const order = await this.prisma.salesOrder.findFirst({
+      where: { companyId: user.companyId, id, deletedAt: null },
+      include: { items: true, customer: true, invoices: true }
+    });
+    if (!order) throw new NotFoundException("Sales order was not found.");
+    this.assertBranchAccess(user, order.branchId);
+    if (order.status === "APPROVED" || order.status === "FULFILLED") {
+      throw new BadRequestException("This order has already been confirmed.");
+    }
+    if (order.status !== "PENDING_STOCK_APPROVAL") {
+      throw new BadRequestException(`Only a pending order can be confirmed — this one is ${order.status.toLowerCase().replace(/_/g, " ")}.`);
+    }
+    if (!order.items.length) throw new BadRequestException("This order has no line items to invoice.");
+    await this.assertCreditLimit(order.customerId, Number(order.totalAmount));
+
+    const data = await withDbRetry(() => this.prisma.$transaction(async (tx) => {
+      const invoice = order.invoices[0] ?? (await tx.invoice.create({
+        data: {
+          companyId: user.companyId,
+          branchId: order.branchId,
+          customerId: order.customerId,
+          salesOrderId: order.id,
+          invoiceNumber: await nextRef(tx, user.companyId, "INV"),
+          invoiceDate: new Date(),
+          dueDate: this.daysFromNow(14),
+          status: "ISSUED",
+          subtotal: order.subtotal,
+          discountAmount: order.discountAmount,
+          taxAmount: order.taxAmount,
+          totalAmount: order.totalAmount,
+          balanceDue: order.totalAmount,
+          createdById: user.id
+        }
+      }));
+      if (!order.invoices.length) {
+        await this.addCustomerDebitTx(tx, order.customerId, order.branchId, invoice.id, Number(order.totalAmount), `Invoice ${invoice.invoiceNumber}`);
+      }
+      const updated = await tx.salesOrder.update({ where: { id: order.id }, data: { status: "APPROVED", updatedById: user.id } });
+      return { order: updated, invoice };
+    }), { label: "SalesOrder.confirmOrder" });
+
+    await this.writeAudit(user, "APPROVE", "SalesOrder", order.id, `Confirmed sales order ${order.orderNumber} and issued invoice`, context, { branchId: order.branchId });
+    return { data };
+  }
+
+  private async requirePaymentBeforeRelease(companyId: string): Promise<boolean> {
+    const row = await this.prisma.systemSetting.findFirst({
+      where: { companyId, key: "sales.settings", deletedAt: null },
+      select: { value: true }
+    });
+    const value = (row?.value ?? {}) as { requirePaymentBeforeRelease?: boolean };
+    return value.requirePaymentBeforeRelease === true;
+  }
+
+  // Step 2 of 2 — the store side. Consumes stock FIFO, cuts the delivery
+  // note and marks the order fulfilled. Only runs once the order has been
+  // confirmed (step 1). Optionally gated on the customer having paid, via
+  // the "require payment before release" company setting.
   async approveStockRelease(user: AuthenticatedUser, id: string, context: RequestContext) {
     const order = await this.prisma.salesOrder.findFirst({
       where: { companyId: user.companyId, id, deletedAt: null },
@@ -528,7 +594,21 @@ export class SalesService {
     });
     if (!order) throw new NotFoundException("Sales order was not found.");
     this.assertWarehouseAccess(user, order.warehouseId);
-    if (!["PENDING_STOCK_APPROVAL", "APPROVED"].includes(order.status)) throw new BadRequestException("Only pending sales orders can be released.");
+    if (order.status === "PENDING_STOCK_APPROVAL") {
+      throw new BadRequestException("Confirm this order first (that issues the invoice), then release stock once the goods are ready.");
+    }
+    if (order.status !== "APPROVED") throw new BadRequestException(`Only a confirmed order can be released — this one is ${order.status.toLowerCase().replace(/_/g, " ")}.`);
+
+    const existingInvoice = order.invoices[0];
+    if (existingInvoice && (await this.requirePaymentBeforeRelease(user.companyId))) {
+      const paid = Number(existingInvoice.totalAmount) - Number(existingInvoice.balanceDue);
+      if (paid <= 0) {
+        throw new BadRequestException(
+          `The customer hasn't paid invoice ${existingInvoice.invoiceNumber} yet — record their payment before releasing stock. ` +
+            "An admin can turn this off under Settings → Sales (\"require payment before releasing stock\")."
+        );
+      }
+    }
 
     // Named, actionable shortage message — previously a flat "Inventory item
     // was not found for one or more sales order items" whether the product
@@ -561,7 +641,10 @@ export class SalesService {
         await this.consumeFifoTx(tx, user, inventoryItem, Number(item.quantity), "SalesOrder", order.id, `Sales release ${order.orderNumber}`);
       }
 
-      const invoice = order.invoices[0] ?? (await tx.invoice.create({
+      // The invoice is normally already there from confirmOrder (step 1).
+      // The fallback create + customer debit only fires for an order that
+      // reached APPROVED some other way (e.g. a storefront admin status flip).
+      const invoice = existingInvoice ?? (await tx.invoice.create({
         data: {
           companyId: user.companyId,
           branchId: order.branchId,
@@ -592,7 +675,9 @@ export class SalesService {
         }
       });
       await tx.salesOrder.update({ where: { id: order.id }, data: { status: "FULFILLED", stockApprovedById: user.id, stockApprovedAt: new Date(), updatedById: user.id } });
-      await this.addCustomerDebitTx(tx, order.customerId, order.branchId, invoice.id, Number(order.totalAmount), `Invoice ${invoice.invoiceNumber}`);
+      if (!existingInvoice) {
+        await this.addCustomerDebitTx(tx, order.customerId, order.branchId, invoice.id, Number(order.totalAmount), `Invoice ${invoice.invoiceNumber}`);
+      }
       return { invoice, deliveryNote };
     }), { label: "SalesOrder.approveStockRelease" });
 

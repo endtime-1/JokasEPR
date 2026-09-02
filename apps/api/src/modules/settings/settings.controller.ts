@@ -22,6 +22,7 @@ import {
   PoultryPricingSettingsDto,
   ProductListQueryDto,
   TaxSettingsDto,
+  SalesSettingsDto,
   UpdateCompanyProfileDto,
   UpdateProductDto,
   UserAccessSettingsDto
@@ -211,6 +212,11 @@ export class SettingsController {
   @Put("system/user-access")
   updateUserAccess(@CurrentUser() user: AuthenticatedUser, @Body() dto: UserAccessSettingsDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.settings.updateUserAccess(user, dto, ctx(ipAddress, userAgent));
+  }
+
+  @Put("system/sales")
+  updateSales(@CurrentUser() user: AuthenticatedUser, @Body() dto: SalesSettingsDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.settings.updateSales(user, dto, ctx(ipAddress, userAgent));
   }
 
   @Put("system/poultry-types")

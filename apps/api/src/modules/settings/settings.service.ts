@@ -18,6 +18,7 @@ import {
   NumberingSettingsDto,
   PoultryPricingSettingsDto,
   ProductListQueryDto,
+  SalesSettingsDto,
   TaxSettingsDto,
   UpdateCompanyProfileDto,
   UpdateProductDto,
@@ -34,6 +35,7 @@ const DEFAULT_SETTINGS: Record<string, unknown> = {
   "poultry.pricing": { eggPricePerUnit: 1.2, broilerPricePerKg: 35 },
   "feed.types": { values: ["CHICK_MASH", "GROWER_MASH", "LAYER_MASH", "BROILER_STARTER", "BROILER_FINISHER", "BREEDER_FEED", "CONCENTRATE", "CUSTOM_FEED", "BROILER_STARTER_MASH", "BROILER_STARTER_CONCENTRATE", "BROILER_FINISHER_MASH", "BROILER_FINISHER_CONCENTRATE", "SUPER_CHICKS_CONCENTRATE", "SUPER_CHICKS_MASH", "CHICKS_STARTER_MASH", "CHICKS_STARTER_CONCENTRATE", "DEVELOPER_MASH", "DEVELOPER_CONCENTRATE", "PRE_LAY_MASH", "PRE_LAY_CONCENTRATE", "LAYER_1_MASH", "LAYER_1_CONCENTRATE", "LAYER_2_MASH", "LAYER_2_CONCENTRATE"] },
   "tax.settings": { enabled: false, taxName: "VAT", ratePercent: 0, taxIdLabel: "Tax ID" },
+  "sales.settings": { requirePaymentBeforeRelease: false },
   "numbering.settings": {
     invoice: { prefix: "INV", includeYear: true, padding: 4, nextNumber: 1 },
     productionBatch: { prefix: "BATCH", includeYear: true, padding: 4, nextNumber: 1 },
@@ -452,6 +454,10 @@ export class SettingsService {
 
   async updateUserAccess(user: AuthenticatedUser, dto: UserAccessSettingsDto, ctx: RequestContext) {
     return this.setSetting(user, "user-access.settings", dto, ctx, "Updated user access settings");
+  }
+
+  async updateSales(user: AuthenticatedUser, dto: SalesSettingsDto, ctx: RequestContext) {
+    return this.setSetting(user, "sales.settings", dto, ctx, "Updated sales settings");
   }
 
   async updatePoultryTypes(user: AuthenticatedUser, dto: DomainListSettingsDto, ctx: RequestContext) {

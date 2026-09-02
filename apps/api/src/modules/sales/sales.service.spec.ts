@@ -43,6 +43,7 @@ const mockPrisma = {
   salesQuote: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), create: jest.fn(), update: jest.fn() },
   salesQuoteItem: { deleteMany: jest.fn(), createMany: jest.fn() },
   company: { findUnique: jest.fn().mockResolvedValue({ name: "Acme Farms" }) },
+  systemSetting: { findFirst: jest.fn().mockResolvedValue(null) },
   $transaction: jest.fn().mockImplementation((cb: (tx: typeof mockTx) => Promise<unknown>) => cb(mockTx))
 };
 
@@ -632,10 +633,96 @@ describe("SalesService — sales returns require a second approver (C5)", () => 
   });
 });
 
+describe("SalesService — two-step confirm then release (make-to-order)", () => {
+  const pendingOrder = (o: Record<string, unknown> = {}) => ({
+    id: "so-1", companyId: "company-1", branchId: "branch-1", customerId: "cust-1", warehouseId: "wh-1",
+    orderNumber: "SO-001", status: "PENDING_STOCK_APPROVAL",
+    subtotal: 500, discountAmount: 0, taxAmount: 0, totalAmount: 500,
+    items: [{ productId: "prod-1", quantity: 10 }], invoices: [], ...o,
+  });
+  const user = () => makeUser({ warehouseIds: ["wh-1"] });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPrisma.customerCreditLimit.findFirst.mockResolvedValue(null);
+    mockPrisma.systemSetting.findFirst.mockResolvedValue(null);
+    mockTx.invoice.create.mockResolvedValue({ id: "inv-1", invoiceNumber: "INV-001", totalAmount: 500, balanceDue: 500 });
+    mockTx.salesOrder.update.mockResolvedValue({ id: "so-1", status: "APPROVED" });
+    mockTx.customer.findUniqueOrThrow.mockResolvedValue({ id: "cust-1", companyId: "company-1" });
+    mockTx.customerCreditLimit.upsert.mockResolvedValue({ id: "cl-1", companyId: "company-1", creditLimit: 0, currentBalance: 0 });
+    mockTx.customerCreditLimit.update.mockResolvedValue({ id: "cl-1", currentBalance: 500 });
+    mockTx.customerStatement.create.mockResolvedValue({});
+  });
+
+  describe("confirmOrder", () => {
+    it("issues the invoice and moves the order to APPROVED without any stock check", async () => {
+      mockPrisma.salesOrder.findFirst.mockResolvedValue(pendingOrder());
+
+      const service = makeService();
+      const result = await service.confirmOrder(user(), "so-1", {});
+
+      expect(mockTx.invoice.create).toHaveBeenCalled();
+      expect(mockTx.inventoryItem.findFirst).not.toHaveBeenCalled();
+      expect(mockTx.salesOrder.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: "APPROVED" }) }));
+      expect((result.data as { invoice: { invoiceNumber: string } }).invoice.invoiceNumber).toBe("INV-001");
+    });
+
+    it("rejects confirming an order that is already confirmed", async () => {
+      mockPrisma.salesOrder.findFirst.mockResolvedValue(pendingOrder({ status: "APPROVED" }));
+      const service = makeService();
+      await expect(service.confirmOrder(user(), "so-1", {})).rejects.toThrow(BadRequestException);
+    });
+
+    it("re-checks the customer credit limit at confirmation", async () => {
+      mockPrisma.salesOrder.findFirst.mockResolvedValue(pendingOrder());
+      mockPrisma.customerCreditLimit.findFirst.mockResolvedValue({ creditLimit: 400, currentBalance: 100 });
+      const service = makeService();
+      await expect(service.confirmOrder(user(), "so-1", {})).rejects.toThrow(/credit limit/);
+    });
+  });
+
+  describe("approveStockRelease flow guards", () => {
+    it("tells the user to confirm first when the order is still pending", async () => {
+      mockPrisma.salesOrder.findFirst.mockResolvedValue({ ...pendingOrder(), warehouse: { id: "wh-1", name: "WH" }, customer: {} });
+      const service = makeService();
+      await expect(service.approveStockRelease(user(), "so-1", {})).rejects.toThrow(/Confirm this order first/);
+    });
+
+    it("blocks release on an unpaid invoice when the company requires payment first", async () => {
+      mockPrisma.salesOrder.findFirst.mockResolvedValue({
+        ...pendingOrder({ status: "APPROVED" }),
+        warehouse: { id: "wh-1", name: "WH" }, customer: {},
+        invoices: [{ id: "inv-1", invoiceNumber: "INV-001", totalAmount: 500, balanceDue: 500 }],
+      });
+      mockPrisma.systemSetting.findFirst.mockResolvedValue({ value: { requirePaymentBeforeRelease: true } });
+      const service = makeService();
+      await expect(service.approveStockRelease(user(), "so-1", {})).rejects.toThrow(/hasn't paid/);
+    });
+
+    it("allows release on a part-paid invoice under the same setting", async () => {
+      mockPrisma.salesOrder.findFirst.mockResolvedValue({
+        ...pendingOrder({ status: "APPROVED" }),
+        warehouse: { id: "wh-1", name: "Central" }, customer: {},
+        invoices: [{ id: "inv-1", invoiceNumber: "INV-001", totalAmount: 500, balanceDue: 200 }],
+      });
+      mockPrisma.systemSetting.findFirst.mockResolvedValue({ value: { requirePaymentBeforeRelease: true } });
+      mockTx.inventoryItem.findFirst.mockResolvedValue({ id: "inv-item-1", branchId: "branch-1", warehouseId: "wh-1", farmId: null, productionSiteId: null, productId: "prod-1", uomId: "uom-1", quantityOnHand: 100 });
+      mockTx.stockBatch.findMany.mockResolvedValue([{ id: "b-1", quantityRemaining: 10, unitCost: 5, status: "AVAILABLE" }]);
+      mockTx.stockBatch.updateMany.mockResolvedValue({ count: 1 });
+      mockTx.inventoryItem.updateMany.mockResolvedValue({ count: 1 });
+      mockTx.stockMovement.create.mockResolvedValue({});
+      mockTx.deliveryNote.create.mockResolvedValue({ id: "dn-1" });
+      mockPrisma.product.findMany.mockResolvedValue([{ id: "prod-1", name: "P", sku: "P1" }]);
+      const service = makeService();
+      await expect(service.approveStockRelease(user(), "so-1", {})).resolves.toBeDefined();
+    });
+  });
+});
+
 describe("SalesService.approveStockRelease — atomic credit balance + re-checked limit at fulfillment (H6/H7)", () => {
   const order = (overrides: Record<string, unknown> = {}) => ({
     id: "so-1", companyId: "company-1", branchId: "branch-1", customerId: "cust-1", warehouseId: "wh-1",
-    orderNumber: "SO-001", status: "PENDING_STOCK_APPROVAL", totalAmount: 500,
+    orderNumber: "SO-001", status: "APPROVED", totalAmount: 500,
     items: [{ productId: "prod-1", quantity: 10 }],
     invoices: [],
     ...overrides
@@ -1164,7 +1251,7 @@ describe("SalesService.approveStockRelease — named, actionable shortage messag
     mockPrisma.salesOrder.findFirst.mockResolvedValue({
       id: "so-1", companyId: "company-1", branchId: "branch-1", customerId: "cust-1", warehouseId: "wh-1",
       warehouse: { id: "wh-1", name: "Central Warehouse" },
-      orderNumber: "SO-001", status: "PENDING_STOCK_APPROVAL", totalAmount: 500,
+      orderNumber: "SO-001", status: "APPROVED", totalAmount: 500,
       items: [{ productId: "prod-1", quantity: 50 }],
       invoices: []
     });

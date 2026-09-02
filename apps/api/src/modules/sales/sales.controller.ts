@@ -116,6 +116,12 @@ export class SalesController {
     return this.salesService.createOrder(user, dto, { ipAddress, userAgent });
   }
 
+  @Patch("orders/:id/confirm")
+  @RequirePermissions(PERMISSIONS.SALES_MANAGE)
+  confirmOrder(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.salesService.confirmOrder(user, id, { ipAddress, userAgent });
+  }
+
   @Patch("orders/:id/approve-stock-release")
   @RequirePermissions(PERMISSIONS.INVENTORY_MANAGE)
   approveStockRelease(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {

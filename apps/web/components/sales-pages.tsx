@@ -949,6 +949,16 @@ type SalesOrder = {
   items?: Array<{ product?: { sku: string; name: string }; quantity: number; unitPrice: number; lineTotal: number }>;
 };
 
+// The order lifecycle is make-to-order: Pending confirmation → (Sales confirms,
+// invoice issued) Confirmed · preparing → (Storekeeper releases stock) Fulfilled.
+const ORDER_STATUS_LABEL: Record<string, string> = {
+  PENDING_STOCK_APPROVAL: "Pending confirmation",
+  APPROVED: "Confirmed · preparing",
+  FULFILLED: "Fulfilled",
+  CANCELLED: "Cancelled",
+};
+const orderStatusLabel = (s: string) => ORDER_STATUS_LABEL[s] ?? s.replace(/_/g, " ");
+
 export function OrdersPage({ create = false }: { create?: boolean }) {
   const { opts, optionsError } = useSalesOptions();
   const router = useRouter();
@@ -1088,13 +1098,22 @@ export function OrdersPage({ create = false }: { create?: boolean }) {
     finally { setBusyId(null); }
   }
 
+  async function confirmOrder(id: string) {
+    setError(""); setRaiseMsg(""); setShortage(null); setBusyId(id);
+    try {
+      await apiFetch(`/sales/orders/${id}/confirm`, { method: "PATCH" });
+      await load();
+    } catch (e2: unknown) { setError(e2 instanceof Error ? e2.message : "Could not confirm the order"); }
+    finally { setBusyId(null); }
+  }
+
   async function approve(id: string) {
-    setError(""); setRaiseMsg(""); setShortage(null);
+    setError(""); setRaiseMsg(""); setShortage(null); setBusyId(id);
     try {
       await apiFetch(`/sales/orders/${id}/approve-stock-release`, { method: "PATCH" });
       await load();
     } catch (e2: unknown) {
-      setError(e2 instanceof Error ? e2.message : "Approval failed");
+      setError(e2 instanceof Error ? e2.message : "Stock release failed");
       // If it failed on stock, pull the per-item shortage so the storekeeper
       // can act on it (stock in, or raise a purchase request) instead of
       // just seeing an error.
@@ -1123,7 +1142,7 @@ export function OrdersPage({ create = false }: { create?: boolean }) {
           <PageHero
             kicker="Commercial · Sales"
             title={editId ? "Edit Sales Order" : "New Sales Order"}
-            subtitle={editId ? "Adjust line items, discount, tax or notes. Only orders still awaiting stock approval can be edited." : "Create a sales order with one or more line items. Stock release requires storekeeper approval."}
+            subtitle={editId ? "Adjust line items, discount, tax or notes. Only orders still pending confirmation can be edited." : "Create a sales order with one or more line items. It's confirmed and invoiced next — stock isn't needed yet."}
             actions={<Link href="/sales/orders" className="app-button-secondary text-xs">← Back</Link>}
           />
           {optionsError && <div className="mb-5 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{optionsError}</div>}
@@ -1243,7 +1262,7 @@ export function OrdersPage({ create = false }: { create?: boolean }) {
       <PageHero
         kicker="Commercial · Sales"
         title="Sales Orders"
-        subtitle="Orders capture commercial intent; storekeepers approve stock release before invoice and delivery note posting."
+        subtitle="Sales confirms an order to issue its invoice (no stock needed); the storekeeper releases stock and cuts the delivery note once the goods are ready."
         actions={<Link href="/sales/orders/create" className="app-button-primary"><Plus className="h-4 w-4" /> New Order</Link>}
       />
       <SalesNav />
@@ -1289,7 +1308,7 @@ export function OrdersPage({ create = false }: { create?: boolean }) {
       <div className="mb-5">
         <select value={status} onChange={(e) => setStatus(e.target.value)} className={selectCls}>
           <option value="">All Statuses</option>
-          {["PENDING_STOCK_APPROVAL", "APPROVED", "FULFILLED", "CANCELLED"].map((s) => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
+          {["PENDING_STOCK_APPROVAL", "APPROVED", "FULFILLED", "CANCELLED"].map((s) => <option key={s} value={s}>{orderStatusLabel(s)}</option>)}
         </select>
       </div>
 
@@ -1300,20 +1319,27 @@ export function OrdersPage({ create = false }: { create?: boolean }) {
             { key: "orderNumber", label: "Order No." },
             { key: "customer",    label: "Customer",  render: (r) => (r.customer as { name: string } | undefined)?.name ?? "—" },
             { key: "warehouse",   label: "Warehouse", render: (r) => (r.warehouse as { name: string } | undefined)?.name ?? "—" },
-            { key: "status",      label: "Status",    render: (r) => <StatusBadge status={r.status as string} /> },
+            { key: "status",      label: "Status",    render: (r) => <StatusBadge status={r.status as string} label={orderStatusLabel(r.status as string)} />, csv: (r) => orderStatusLabel(r.status as string) },
             { key: "totalAmount", label: "Total",     render: (r) => money(r.totalAmount) },
             { key: "balanceDue",  label: "Balance",   render: (r) => money(r.balanceDue) },
             { key: "orderDate",   label: "Date",      render: (r) => fmt(r.orderDate as string) },
-            { key: "actions",     label: "",          render: (r) => r.status === "PENDING_STOCK_APPROVAL"
-              ? (
-                <div className="flex flex-wrap items-center justify-end gap-1.5">
-                  <button onClick={() => void approve(r.id as string)} className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-bold text-amber-800 hover:bg-amber-100 transition">Approve Stock</button>
-                  <Link href={`/sales/orders/create?edit=${r.id as string}`} className="rounded-lg border border-line bg-white px-3 py-1 text-xs font-bold text-ink hover:bg-field transition">Edit</Link>
-                  <button onClick={() => void cancelOrder(r.id as string)} disabled={busyId === r.id} className="rounded-lg border border-red-200 bg-white px-3 py-1 text-xs font-bold text-red-600 hover:bg-red-50 transition disabled:opacity-50">Cancel</button>
-                </div>
-              )
-              : null
-            },
+            { key: "actions",     label: "",          render: (r) => {
+              if (r.status === "PENDING_STOCK_APPROVAL") {
+                return (
+                  <div className="flex flex-wrap items-center justify-end gap-1.5">
+                    <button onClick={() => void confirmOrder(r.id as string)} disabled={busyId === r.id} className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-800 hover:bg-emerald-100 transition disabled:opacity-50">Confirm order</button>
+                    <Link href={`/sales/orders/create?edit=${r.id as string}`} className="rounded-lg border border-line bg-white px-3 py-1 text-xs font-bold text-ink hover:bg-field transition">Edit</Link>
+                    <button onClick={() => void cancelOrder(r.id as string)} disabled={busyId === r.id} className="rounded-lg border border-red-200 bg-white px-3 py-1 text-xs font-bold text-red-600 hover:bg-red-50 transition disabled:opacity-50">Cancel</button>
+                  </div>
+                );
+              }
+              if (r.status === "APPROVED") {
+                return (
+                  <button onClick={() => void approve(r.id as string)} disabled={busyId === r.id} className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-bold text-amber-800 hover:bg-amber-100 transition disabled:opacity-50">Release stock</button>
+                );
+              }
+              return null;
+            } },
           ]}
           rows={rows as Record<string, unknown>[]}
           empty="No sales orders"

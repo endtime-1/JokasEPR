@@ -137,15 +137,19 @@ const statusVariants: Record<string, BadgeVariant> = {
 
 export function StatusBadge({
   status,
+  label,
   className
 }: {
   status: string;
+  // Optional display override — the colour still keys off `status`, but the
+  // text shown can differ (e.g. PENDING_STOCK_APPROVAL → "Pending confirmation").
+  label?: string;
   className?: string;
 }) {
   const variant = statusVariants[status.toUpperCase()] ?? "neutral";
   return (
     <Badge variant={variant} className={className}>
-      {status.replace(/_/g, " ")}
+      {label ?? status.replace(/_/g, " ")}
     </Badge>
   );
 }

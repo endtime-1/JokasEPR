@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState, type ReactNode } from "react";
-import { Bot, Building2, ChevronRight, Egg, HardDrive, Package, Pencil, Plus, Save, Settings, ShieldCheck, Trash2, X } from "lucide-react";
+import { Bot, Building2, ChevronRight, Egg, HardDrive, Package, Pencil, Plus, Receipt, Save, Settings, ShieldCheck, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { ApiEnvelope, apiFetch, getCachedFirst, hasCached } from "../../../lib/api";
 import { ConfirmModal } from "../../../components/ui";
@@ -32,6 +32,9 @@ type SettingsMap = {
     enforceWarehousePurpose?: boolean;
     requireSeparateProductionApprover?: boolean;
     requireSeparateProcurementApprover?: boolean;
+  };
+  "sales.settings": {
+    requirePaymentBeforeRelease?: boolean;
   };
 };
 
@@ -78,7 +81,8 @@ const DEFAULT_SETTINGS: SettingsMap = {
     enforceWarehousePurpose: false,
     requireSeparateProductionApprover: true,
     requireSeparateProcurementApprover: true
-  }
+  },
+  "sales.settings": { requirePaymentBeforeRelease: false }
 };
 
 const inputClass = "min-h-10 rounded-md border border-line bg-white px-3 text-sm outline-none focus:border-brand";
@@ -119,6 +123,7 @@ export default function SettingsPage() {
       "ai.settings": { ...DEFAULT_SETTINGS["ai.settings"], ...(cached["ai.settings"] ?? {}) },
       "backup.settings": { ...DEFAULT_SETTINGS["backup.settings"], ...(cached["backup.settings"] ?? {}) },
       "user-access.settings": { ...DEFAULT_SETTINGS["user-access.settings"], ...(cached["user-access.settings"] ?? {}) },
+      "sales.settings": { ...DEFAULT_SETTINGS["sales.settings"], ...(cached["sales.settings"] ?? {}) },
     };
   });
   const [notification, setNotification] = useState<any>(() => getCachedFirst<ApiEnvelope<any>>("/settings/notifications")?.data ?? {});
@@ -176,6 +181,7 @@ export default function SettingsPage() {
         "ai.settings": { ...DEFAULT_SETTINGS["ai.settings"], ...(api["ai.settings"] ?? {}) },
         "backup.settings": { ...DEFAULT_SETTINGS["backup.settings"], ...(api["backup.settings"] ?? {}) },
         "user-access.settings": { ...DEFAULT_SETTINGS["user-access.settings"], ...(api["user-access.settings"] ?? {}) },
+        "sales.settings": { ...DEFAULT_SETTINGS["sales.settings"], ...(api["sales.settings"] ?? {}) },
       });
     }
     if (notificationRes.status === "fulfilled") setNotification(notificationRes.value.data ?? {});
@@ -525,6 +531,16 @@ export default function SettingsPage() {
               <input className={inputClass} value={settings["poultry.types"].values.join(", ")} onChange={(e) => updateSetting("poultry.types", { values: parseList(e.target.value) })} />
               <input className={inputClass} value={settings["feed.types"].values.join(", ")} onChange={(e) => updateSetting("feed.types", { values: parseList(e.target.value) })} />
               <button className="app-button-primary w-max" onClick={() => save("access-types", async () => { await apiFetch("/settings/system/user-access", { method: "PUT", body: JSON.stringify(settings["user-access.settings"]) }); await apiFetch("/settings/system/poultry-types", { method: "PUT", body: JSON.stringify(settings["poultry.types"]) }); await apiFetch("/settings/system/feed-types", { method: "PUT", body: JSON.stringify(settings["feed.types"]) }); })}>Save access & types</button>
+            </div>
+          </SettingCard>
+
+          <SettingCard title="Sales" icon={Receipt}>
+            <div className="grid gap-3">
+              <label className="flex items-start gap-2 text-sm">
+                <input type="checkbox" className="mt-0.5" checked={settings["sales.settings"].requirePaymentBeforeRelease ?? false} onChange={(e) => updateSetting("sales.settings", { ...settings["sales.settings"], requirePaymentBeforeRelease: e.target.checked })} />
+                <span>Require customer payment before releasing stock (a confirmed order is invoiced immediately, but the storekeeper can&rsquo;t release stock until at least part of the invoice is paid)</span>
+              </label>
+              <button className="app-button-primary w-max" onClick={() => save("sales-settings", () => apiFetch("/settings/system/sales", { method: "PUT", body: JSON.stringify(settings["sales.settings"]) }), "Sales settings saved.")}>Save sales settings</button>
             </div>
           </SettingCard>
         </div>
