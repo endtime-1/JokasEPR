@@ -202,8 +202,8 @@ export function DailyPoultryScreen() {
           <MaterialCommunityIcons name="clipboard-list" size={22} color={colors.brand} />
         </View>
         <View>
-          <Text style={styles.title}>Daily Poultry Record</Text>
-          <Text style={styles.sub}>Record daily population and performance</Text>
+          <Text style={styles.title}>Daily Entry</Text>
+          <Text style={styles.sub}>Log the day — mortality, feed, eggs, in one form</Text>
         </View>
       </View>
 

@@ -21,7 +21,7 @@ type Action = {
 };
 
 const ALL_ACTIONS: Action[] = [
-  { id: "daily",       icon: "clipboard-list",           label: "Daily Record",    screen: "DailyPoultry",     roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#10B981", featured: true  },
+  { id: "daily",       icon: "clipboard-list",           label: "Daily Entry",     screen: "DailyPoultry",     roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#10B981", featured: true  },
   { id: "eggs",        icon: "egg",                      label: "Egg Collection",  screen: "EggCollection",    roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#D97706", featured: true  },
   { id: "feed",        icon: "barley",                   label: "Feed Record",     screen: "FeedConsumption",  roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#10B981", featured: true  },
   { id: "mortality",   icon: "arrow-down-bold",          label: "Mortality",       screen: "Mortality",        roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#EF4444", featured: true  },

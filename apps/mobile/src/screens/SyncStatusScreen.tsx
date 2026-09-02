@@ -35,7 +35,7 @@ function timeAgo(iso: string) {
 }
 
 const ENDPOINT_LABELS: Record<string, string> = {
-  "daily-records": "Daily Poultry Record",
+  "daily-records": "Daily Entry",
   "mortality-records": "Mortality Record",
   "egg-production-records": "Egg Production",
   "feed-consumption-records": "Feed Consumption",

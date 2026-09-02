@@ -813,7 +813,7 @@ export class PoultryService {
     if (blocked.length) {
       const list = blocked.join(", ");
       throw new BadRequestException(
-        `${list} for this batch on ${dto.recordDate} ${blocked.length > 1 ? "were" : "was"} already recorded on the dedicated screen. Leave ${blocked.length > 1 ? "those fields" : "that field"} blank here, or edit the existing entry under Records & Corrections.`,
+        `${list} for this batch on ${dto.recordDate} ${blocked.length > 1 ? "were" : "was"} already recorded on the dedicated ${blocked.length > 1 ? "screens" : "screen"}. Leave ${blocked.length > 1 ? "those fields" : "that field"} blank here, or edit the existing entry on that screen.`,
       );
     }
     // (2026-08-18) A feed/egg delta always creates a real FeedConsumptionRecord/
