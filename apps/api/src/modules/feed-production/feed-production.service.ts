@@ -822,7 +822,16 @@ export class FeedProductionService {
           createdById: user.id
         }
       });
-      await tx.feedProductionOrder.update({ where: { id: order.id }, data: { status: "COMPLETED", updatedById: user.id } });
+      // Posting a batch doesn't mean the order is finished — only that
+      // production has run against it. It's COMPLETED only once the planned
+      // quantity has actually been produced (cumulative), otherwise it stays
+      // IN_PROGRESS so the mill knows there's more to make. Same rule the
+      // linked production plan item follows below.
+      const cumulativeProducedKg = lockedAlreadyProducedKg + dto.producedQuantityKg;
+      await tx.feedProductionOrder.update({
+        where: { id: order.id },
+        data: { status: cumulativeProducedKg >= Number(order.plannedQuantityKg) ? "COMPLETED" : "IN_PROGRESS", updatedById: user.id }
+      });
 
       // Market-led orders (opened by MarketPlanningService.approveTarget) can
       // be posted from here — the normal Feed Mill screen — just as well as

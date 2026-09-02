@@ -434,15 +434,30 @@ describe("FeedProductionService.createBatch — posting against a market-led ord
       where: { id: "pp-1" },
       data: { status: "IN_PROGRESS", updatedById: "user-1" }
     });
+    // The order itself is IN_PROGRESS, not COMPLETED — only 100 of 1000 kg made.
+    expect(mockTx.feedProductionOrder.update).toHaveBeenCalledWith({
+      where: { id: "order-1" },
+      data: { status: "IN_PROGRESS", updatedById: "user-1" }
+    });
   });
 
-  it("marks the plan item and plan COMPLETED once the full planned quantity has been produced", async () => {
+  it("marks the order, plan item and plan COMPLETED once the full planned quantity has been produced", async () => {
+    mockPrisma.feedProductionOrder.findFirst.mockResolvedValue({
+      id: "order-1", branchId: "branch-1", productionSiteId: "site-1", status: "APPROVED",
+      plannedQuantityKg: 100, finishedProductId: "finished-1", finishedProduct: { id: "finished-1", uomId: "uom-1" },
+      marketTargetId: "mt-1", productionPlanId: "pp-1", productionPlanItemId: "ppi-1",
+      formula: { id: "formula-1", targetBatchKg: 100, ingredients: [{ ingredientId: "ing-1", quantityKg: 50, unitCost: 2, ingredient: { name: "Maize", sku: "MZ-1" } }] }
+    });
     mockTx.productionPlanItem.findUnique.mockResolvedValue({ id: "ppi-1", productionPlanId: "pp-1", plannedQuantityKg: 100, producedQuantityKg: 0 });
     mockTx.productionPlanItem.count.mockResolvedValue(0);
 
     const service = makeService();
     await service.createBatch(makeUser({ warehouseIds: ["wh-raw", "wh-fin"] }), dto as never, {});
 
+    expect(mockTx.feedProductionOrder.update).toHaveBeenCalledWith({
+      where: { id: "order-1" },
+      data: { status: "COMPLETED", updatedById: "user-1" }
+    });
     expect(mockTx.productionPlanItem.update).toHaveBeenCalledWith({
       where: { id: "ppi-1" },
       data: { producedQuantityKg: 100, status: "COMPLETED", updatedById: "user-1" }

@@ -1014,14 +1014,22 @@ export class MarketPlanningService {
           createdById: user.id
         }
       });
-      await tx.feedProductionOrder.update({ where: { id: order.id }, data: { status: "COMPLETED", updatedById: user.id } });
-      await tx.productionExecution.update({ where: { id: execution.id }, data: { status: "COMPLETED", feedProductionBatchId: batch.id, completedAt: new Date(), updatedById: user.id } });
+      // Executing against the plan doesn't mean it's done — the order is
+      // COMPLETED only once the planned quantity has actually been produced
+      // (cumulative across every execution / batch), otherwise IN_PROGRESS.
       const producedQuantityKg = num(planItem.producedQuantityKg) + dto.producedQuantityKg;
+      const planItemDone = producedQuantityKg >= num(planItem.plannedQuantityKg);
+      await tx.feedProductionOrder.update({
+        where: { id: order.id },
+        data: { status: planItemDone ? "COMPLETED" : "IN_PROGRESS", updatedById: user.id }
+      });
+      // The execution record itself represents one completed production run.
+      await tx.productionExecution.update({ where: { id: execution.id }, data: { status: "COMPLETED", feedProductionBatchId: batch.id, completedAt: new Date(), updatedById: user.id } });
       await tx.productionPlanItem.update({
         where: { id: planItem.id },
         data: {
           producedQuantityKg,
-          status: producedQuantityKg >= num(planItem.plannedQuantityKg) ? "COMPLETED" : "IN_PROGRESS",
+          status: planItemDone ? "COMPLETED" : "IN_PROGRESS",
           updatedById: user.id
         }
       });
