@@ -10,7 +10,7 @@ import { Button } from "../../components/Button";
 import { SyncBanner } from "../../components/SyncBanner";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
-import { fetchFlockBatches, fetchFarms, fetchWarehouses, fetchProducts, fetchPoultryOptions, pensForBatch } from "../../api/endpoints";
+import { fetchFlockBatches, fetchFarms, fetchWarehouses, fetchProducts, fetchPoultryOptions, pensForBatch, poultryStoreFor } from "../../api/endpoints";
 import { useAuth } from "../../auth/AuthContext";
 import { colors, font, radius, shadow, spacing } from "../../constants/theme";
 
@@ -77,15 +77,16 @@ export function EggCollectionScreen() {
   );
 
   // Eggs go into the flock's own farm's Egg Store — scope the picker to that
-  // farm and auto-select it, rather than listing every warehouse.
+  // farm and auto-select the right store, rather than listing every warehouse.
   const { data: rawWarehouses } = useLookup("warehouses", async () => { const r = await fetchWarehouses(); return (r.data as any[]) ?? []; });
   const warehouses: SelectOption[] = useMemo(() => {
-    const s = (opts?.data.eggWarehouses ?? []).filter((w) => !farmId || w.farmId === farmId);
+    const s = (opts?.data.warehouses ?? []).filter((w) => farmId && w.farmId === farmId);
     return s.length ? s.map((w) => ({ label: w.code ? `${w.name} (${w.code})` : w.name, value: w.id })) : (rawWarehouses ?? []).map((w: any) => ({ label: w.name, value: w.id }));
   }, [opts, farmId, rawWarehouses]);
   useEffect(() => {
-    setWarehouseId((prev) => (warehouses.find((w) => w.value === prev) ? prev : (warehouses[0]?.value ?? "")));
-  }, [warehouses]);
+    const auto = poultryStoreFor(opts?.data, "eggs", farmId);
+    setWarehouseId((prev) => auto || (warehouses.find((w) => w.value === prev) ? prev : (warehouses[0]?.value ?? "")));
+  }, [opts, farmId, warehouses]);
 
   const { data: rawProducts } = useLookup("products", async () => { const r = await fetchProducts(); return (r.data as any[]) ?? []; });
   const products: SelectOption[] = useMemo(

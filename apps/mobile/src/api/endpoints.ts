@@ -252,6 +252,7 @@ export type PoultryOptions = {
     houses:  { id: string; code: string; name: string; farmId: string }[];
     pens:    { id: string; code: string; name: string; penNumber: number; poultryHouseId: string; farmId: string; capacity: number | null }[];
     batches: { id: string; code: string; name: string; farmId: string; birdType: string; poultryHouseId?: string | null }[];
+    warehouses?:     { id: string; code: string; name: string; farmId: string | null; type: string }[];
     feedWarehouses?: { id: string; code: string; name: string; farmId: string }[];
     feedProducts?:   { id: string; sku: string; name: string }[];
     eggWarehouses?:  { id: string; code: string; name: string; farmId: string }[];
@@ -284,6 +285,35 @@ export function pensForBatch(opts: PoultryOptData | null | undefined, batchId: s
   const penIds = new Set((opts.allocations ?? []).filter((a) => a.flockBatchId === batchId).map((a) => a.penId));
   if (penIds.size === 0) return scoped;
   return scoped.filter((p) => penIds.has(p.id));
+}
+
+// The warehouse a poultry record should use for the flock's own farm:
+// feed → the farm's Feed Store, eggs → its Egg Store. Only ever returns a
+// warehouse that belongs to that farm; falls through store type → any store
+// on the farm → any warehouse on the farm → "" (nothing forced).
+export function poultryStoreFor(
+  opts: PoultryOptData | null | undefined,
+  purpose: "feed" | "eggs",
+  farmId: string
+): string {
+  if (!opts || !farmId) return "";
+  const all = opts.warehouses ?? [];
+  const onFarm = (w: { farmId: string | null }) => w.farmId === farmId;
+  const first = (...ids: (string | undefined)[]) => ids.find(Boolean) ?? "";
+  if (purpose === "feed") {
+    return first(
+      (opts.feedWarehouses ?? []).find((w) => w.farmId === farmId)?.id,
+      all.find((w) => w.type === "FEED_STORE" && onFarm(w))?.id,
+      all.find((w) => w.type === "FARM_STORE" && onFarm(w))?.id,
+      all.find(onFarm)?.id
+    );
+  }
+  return first(
+    (opts.eggWarehouses ?? []).find((w) => w.farmId === farmId)?.id,
+    all.find((w) => w.type === "EGG_STORE" && onFarm(w))?.id,
+    all.find((w) => w.type === "FARM_STORE" && onFarm(w))?.id,
+    all.find(onFarm)?.id
+  );
 }
 
 export const fetchFeedStock = (farmId: string) =>

@@ -10,7 +10,7 @@ import { DateField } from "../../components/DateField";
 import { SelectField, SelectOption } from "../../components/SelectField";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
-import { fetchFlockBatches, fetchFarms, fetchWarehouses, fetchPoultryOptions, pensForBatch } from "../../api/endpoints";
+import { fetchFlockBatches, fetchFarms, fetchWarehouses, fetchPoultryOptions, pensForBatch, poultryStoreFor } from "../../api/endpoints";
 import { useAuth } from "../../auth/AuthContext";
 import { colors, font, spacing } from "../../constants/theme";
 
@@ -70,17 +70,18 @@ export function FeedConsumptionScreen() {
   );
 
   // The feed comes out of the flock's own farm's Feed Store — scope the picker
-  // to that farm and auto-select it, instead of listing every warehouse.
+  // to that farm and auto-select the right store, instead of listing every
+  // warehouse. Falls back to the full list when the farm has none set up.
   const { data: rawWarehouses } = useLookup("warehouses", async () => { const r = await fetchWarehouses(); return (r.data as any[]) ?? []; });
-  const feedStores: SelectOption[] = useMemo(() => {
-    const scoped = (opts?.data.feedWarehouses ?? []).filter((w) => !farmId || w.farmId === farmId);
-    if (scoped.length) return scoped.map((w) => ({ label: w.code ? `${w.name} (${w.code})` : w.name, value: w.id }));
+  const warehouses: SelectOption[] = useMemo(() => {
+    const onFarm = (opts?.data.warehouses ?? []).filter((w) => farmId && w.farmId === farmId);
+    if (onFarm.length) return onFarm.map((w) => ({ label: w.code ? `${w.name} (${w.code})` : w.name, value: w.id }));
     return (rawWarehouses ?? []).map((w: any) => ({ label: w.name, value: w.id }));
   }, [opts, farmId, rawWarehouses]);
-  const warehouses = feedStores;
   useEffect(() => {
-    setWarehouseId((prev) => (feedStores.find((w) => w.value === prev) ? prev : (feedStores[0]?.value ?? "")));
-  }, [feedStores]);
+    const auto = poultryStoreFor(opts?.data, "feed", farmId);
+    setWarehouseId((prev) => auto || (warehouses.find((w) => w.value === prev) ? prev : (warehouses[0]?.value ?? "")));
+  }, [opts, farmId, warehouses]);
 
   // Finished feed only — poultry never consumes raw ingredients. The poultry
   // options endpoint already narrows feedProducts to finished feed.

@@ -37,22 +37,35 @@ type Option = {
 
 // The store a poultry record should draw from / deposit into, for the flock's
 // own farm: feed consumption → the farm's Feed Store, egg collection → its
-// Egg Store, anything else → any warehouse on that farm. Falls back to the
-// first warehouse when the farm has no matching store set up yet.
+// Egg Store. Only ever picks a warehouse that actually belongs to that farm —
+// a store on another farm or at head office is never auto-selected. Falls
+// through progressively: exact store type on the farm → any store type that
+// fits → any warehouse on the farm → (last resort) the first warehouse.
 function defaultWarehouse(purpose: "feed" | "eggs" | "other", farmId: string | undefined, options: PoultryOptions): string {
   const all = options.warehouses;
-  const onFarm = (w: Option) => !farmId || !w.farmId || w.farmId === farmId;
+  const onFarm = (w: Option) => !!farmId && w.farmId === farmId;
+  const first = (...cands: (Option | undefined)[]) => cands.find(Boolean)?.id ?? "";
+
   if (purpose === "feed") {
-    return options.feedWarehouses.find((w) => w.farmId === farmId)?.id
-      ?? all.find((w) => w.type === "FEED_STORE" && onFarm(w))?.id
-      ?? all.find(onFarm)?.id ?? all[0]?.id ?? "";
+    return first(
+      options.feedWarehouses.find((w) => w.farmId === farmId),
+      all.find((w) => w.type === "FEED_STORE" && onFarm(w)),
+      all.find((w) => w.type === "FARM_STORE" && onFarm(w)),
+      all.find(onFarm),
+      all[0]
+    );
   }
   if (purpose === "eggs") {
-    return options.eggWarehouses.find((w) => w.farmId === farmId)?.id
-      ?? all.find((w) => w.type === "EGG_STORE" && onFarm(w))?.id
-      ?? all.find(onFarm)?.id ?? all[0]?.id ?? "";
+    return first(
+      options.eggWarehouses.find((w) => w.farmId === farmId),
+      all.find((w) => w.type === "EGG_STORE" && onFarm(w)),
+      // an egg store is often set up as a plain Farm Store on the farm
+      all.find((w) => w.type === "FARM_STORE" && onFarm(w)),
+      all.find(onFarm),
+      all[0]
+    );
   }
-  return all.find(onFarm)?.id ?? all[0]?.id ?? "";
+  return first(all.find((w) => w.type === "FARM_STORE" && onFarm(w)), all.find(onFarm), all[0]);
 }
 
 type PenOption = {

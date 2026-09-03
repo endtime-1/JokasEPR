@@ -696,7 +696,16 @@ export function WarehouseDetailPage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
   const [range, setRange] = useState<{ startDate: string; endDate: string }>({ startDate: "", endDate: "" });
-  const key = `/inventory/warehouses/${id}?startDate=${range.startDate}&endDate=${range.endDate}`;
+  // Only send the date params when they're actually set — an empty string
+  // fails the API's @IsDateString() validation ("startDate must be a valid
+  // ISO 8601 date string").
+  const key = useMemo(() => {
+    const p = new URLSearchParams();
+    if (range.startDate) p.set("startDate", range.startDate);
+    if (range.endDate) p.set("endDate", range.endDate);
+    const qs = p.toString();
+    return `/inventory/warehouses/${id}${qs ? `?${qs}` : ""}`;
+  }, [id, range.startDate, range.endDate]);
   const [data, setData] = useState<WarehouseDetail | null>(() => getCachedFirst<ApiEnvelope<WarehouseDetail>>(`/inventory/warehouses/${id}`)?.data ?? null);
   const [loading, setLoading] = useState(!hasCached(`/inventory/warehouses/${id}`));
   const [loadError, setLoadError] = useState("");

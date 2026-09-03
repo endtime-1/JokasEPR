@@ -10,7 +10,7 @@ import { DateField } from "../../components/DateField";
 import { SelectField, SelectOption } from "../../components/SelectField";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
-import { fetchFlockBatches, fetchFarms, fetchPoultryOptions, fetchWarehouses, fetchProducts, fetchDailyPoultryRecords, pensForBatch, DailyPoultryRecordRow } from "../../api/endpoints";
+import { fetchFlockBatches, fetchFarms, fetchPoultryOptions, fetchWarehouses, fetchProducts, fetchDailyPoultryRecords, pensForBatch, poultryStoreFor, DailyPoultryRecordRow } from "../../api/endpoints";
 import { apiFetch } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
 import { colors, font, radius, spacing } from "../../constants/theme";
@@ -94,22 +94,23 @@ export function DailyPoultryScreen() {
   const { data: rawWarehouses, error: warehousesError, loading: warehousesLoading } = useLookup("warehouses", async () => { const r = await fetchWarehouses(); return (r.data as any[]) ?? []; });
   const allWarehouses: SelectOption[] = useMemo(() => (rawWarehouses ?? []).map((w: any) => ({ label: w.name, value: w.id })), [rawWarehouses]);
   // Feed goes out of the farm's Feed Store, eggs into its Egg Store — scope
-  // each picker to the selected farm and auto-select it.
-  const feedStores: SelectOption[] = useMemo(() => {
-    const s = (opts?.data.feedWarehouses ?? []).filter((w) => !form.farmId || w.farmId === form.farmId);
+  // each picker to the selected farm and auto-select the right store. Falls
+  // back to the full list when the farm has no store set up.
+  const onFarmStores: SelectOption[] = useMemo(() => {
+    const s = (opts?.data.warehouses ?? []).filter((w) => form.farmId && w.farmId === form.farmId);
     return s.length ? s.map((w) => ({ label: w.code ? `${w.name} (${w.code})` : w.name, value: w.id })) : allWarehouses;
   }, [opts, form.farmId, allWarehouses]);
-  const eggStores: SelectOption[] = useMemo(() => {
-    const s = (opts?.data.eggWarehouses ?? []).filter((w) => !form.farmId || w.farmId === form.farmId);
-    return s.length ? s.map((w) => ({ label: w.code ? `${w.name} (${w.code})` : w.name, value: w.id })) : allWarehouses;
-  }, [opts, form.farmId, allWarehouses]);
+  const feedStores = onFarmStores;
+  const eggStores = onFarmStores;
   useEffect(() => {
+    const autoFeed = poultryStoreFor(opts?.data, "feed", form.farmId);
+    const autoEgg = poultryStoreFor(opts?.data, "eggs", form.farmId);
     setForm((f) => ({
       ...f,
-      feedWarehouseId: feedStores.find((w) => w.value === f.feedWarehouseId) ? f.feedWarehouseId : (feedStores[0]?.value ?? ""),
-      eggWarehouseId: eggStores.find((w) => w.value === f.eggWarehouseId) ? f.eggWarehouseId : (eggStores[0]?.value ?? "")
+      feedWarehouseId: autoFeed || (feedStores.find((w) => w.value === f.feedWarehouseId) ? f.feedWarehouseId : (feedStores[0]?.value ?? "")),
+      eggWarehouseId: autoEgg || (eggStores.find((w) => w.value === f.eggWarehouseId) ? f.eggWarehouseId : (eggStores[0]?.value ?? ""))
     }));
-  }, [feedStores, eggStores]);
+  }, [opts, form.farmId, onFarmStores]);
   // Finished feed only — poultry never consumes raw ingredients. The poultry
   // options endpoint already narrows feedProducts to finished feed.
   const feedProducts: SelectOption[] = useMemo(() => (opts?.data.feedProducts ?? []).map((p) => ({ label: p.sku ? `${p.sku} — ${p.name}` : p.name, value: p.id })), [opts]);
