@@ -392,6 +392,14 @@ export class MarketPlanningService {
     const planNumber = await nextRef(this.prisma, user.companyId, "PP");
     const totalPlannedKg = items.reduce((sum, item) => sum + num(item.targetQuantityKg), 0);
 
+    // Audit M4: pre-allocate the Feed Mill order references outside the
+    // transaction so the transaction itself does no per-item nextRef
+    // round-trips. A rolled-back transaction leaves a small gap in the FPO
+    // sequence, which is fine — document numbers are allowed to skip.
+    const millableCount = items.filter((item) => item.formulaId).length;
+    const fpoRefs: string[] = [];
+    for (let i = 0; i < millableCount; i++) fpoRefs.push(await nextRef(this.prisma, user.companyId, "FPO"));
+
     const plan = await this.prisma.$transaction(async (tx) => {
       // C3: previously an unguarded update with no status check at all — a
       // double-click or retry on approveTarget re-approved an already-
@@ -430,58 +438,62 @@ export class MarketPlanningService {
           createdById: user.id
         }
       });
-      // Created one at a time (not createMany) so each plan item's id is
-      // available immediately below to open its Feed Mill order against.
-      const planItems = [];
-      for (const item of items) {
-        planItems.push(
-          await tx.productionPlanItem.create({
-            data: {
-              companyId: user.companyId,
-              productionPlanId: created.id,
-              marketTargetItemId: item.id,
-              productId: item.productId,
-              formulaId: item.formulaId,
-              formulaVersionId: item.formulaVersionId,
-              plannedQuantityKg: item.targetQuantityKg,
-              status: "APPROVED",
-              createdById: user.id
-            }
-          })
-        );
-      }
+      // Audit M4: was one round-trip per item for the plan items, then another
+      // per item for the Feed Mill orders, each with its own nextRef — a market
+      // target with a dozen lines held locks for 30+ sequential statements
+      // inside this transaction. Now: one createMany for the plan items, one
+      // findMany to recover their ids (MySQL createMany returns no rows), one
+      // createMany for the Feed Mill orders with references pre-allocated
+      // outside the transaction.
+      await tx.productionPlanItem.createMany({
+        data: items.map((item) => ({
+          companyId: user.companyId,
+          productionPlanId: created.id,
+          marketTargetItemId: item.id,
+          productId: item.productId,
+          formulaId: item.formulaId,
+          formulaVersionId: item.formulaVersionId,
+          plannedQuantityKg: item.targetQuantityKg,
+          status: "APPROVED" as const,
+          createdById: user.id
+        }))
+      });
+      const planItems = await tx.productionPlanItem.findMany({
+        where: { companyId: user.companyId, productionPlanId: created.id, deletedAt: null }
+      });
       // The gap this closes: approving a target used to only create records
-      // inside Market Planning — Feed Mill (where production actually
-      // happens) had no idea the plan existed until someone separately used
-      // the "Production Execution" shortcut. Opening a normal, APPROVED
-      // FeedProductionOrder per plan item here means it shows up in Feed
-      // Mill → Orders like any other approved order, ready for "Post batch".
+      // inside Market Planning — Feed Mill (where production actually happens)
+      // had no idea the plan existed until someone separately used the
+      // "Production Execution" shortcut. Opening a normal, APPROVED
+      // FeedProductionOrder per plan item here means it shows up in Feed Mill
+      // → Orders like any other approved order, ready for "Post batch".
       // createBatch already carries marketTargetId/productionPlanId onto the
       // resulting batch, so target-vs-actual counts it either way it's
       // produced. createProductionExecution (below) reuses this same order
       // instead of minting a second one for the same plan item.
-      for (const item of planItems) {
-        if (!item.formulaId) continue; // no formula resolved — nothing millable to order yet
-        await tx.feedProductionOrder.create({
-          data: {
+      const millableItems = planItems.filter((item) => item.formulaId);
+      if (millableItems.length) {
+        const scheduledDate = dto.plannedStartDate ? new Date(dto.plannedStartDate) : new Date();
+        await tx.feedProductionOrder.createMany({
+          data: millableItems.map((item, i) => ({
             companyId: user.companyId,
             branchId,
             productionSiteId: site.id,
-            formulaId: item.formulaId,
+            formulaId: item.formulaId as string,
             formulaVersionId: item.formulaVersionId ?? undefined,
             finishedProductId: item.productId,
             marketTargetId: id,
             productionPlanId: created.id,
             productionPlanItemId: item.id,
-            orderNumber: await nextRef(tx, user.companyId, "FPO"),
+            orderNumber: fpoRefs[i],
             plannedQuantityKg: item.plannedQuantityKg,
-            scheduledDate: dto.plannedStartDate ? new Date(dto.plannedStartDate) : new Date(),
-            status: "APPROVED",
+            scheduledDate,
+            status: "APPROVED" as const,
             approvedById: user.id,
             approvedAt: new Date(),
             notes: `Market-led — target ${target.targetNumber}`,
             createdById: user.id
-          }
+          }))
         });
       }
       return created;

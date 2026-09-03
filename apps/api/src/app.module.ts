@@ -3,6 +3,7 @@ import { APP_GUARD } from "@nestjs/core";
 import { ConfigModule } from "@nestjs/config";
 import { ScheduleModule } from "@nestjs/schedule";
 import { ThrottlerModule, ThrottlerGuard } from "@nestjs/throttler";
+import { JwtAuthGuard } from "./common/guards/jwt-auth.guard";
 import { CacheModule } from "./common/cache.module";
 import { DutyRemindersModule } from "./modules/duty-reminders/duty-reminders.module";
 import { validateEnvironment } from "./config/env.validation";
@@ -77,6 +78,10 @@ import { UploadsModule } from "./modules/uploads/uploads.module";
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
+    // Authenticate every request by default. A route reachable without a
+    // session must say so explicitly with @Public() — a controller that
+    // merely forgets @UseGuards is no longer silently public.
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
   ],
 })
 export class AppModule {}

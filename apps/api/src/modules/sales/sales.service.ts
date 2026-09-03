@@ -439,13 +439,9 @@ export class SalesService {
       );
     }
 
-    // Auto-generate draft production orders for all items (non-blocking —
-    // a failure here shouldn't fail the sales order that already succeeded,
-    // but silently swallowing it meant a real failure, e.g. an orderNumber
-    // collision, left production planning silently short with no trace).
-    void this.autoGenerateProductionOrders(user.companyId, customer.branchId, orderNumber, data.id, dto.items, user.id).catch((err) =>
-      this.logger.error(`Auto production-order generation failed for sales order ${orderNumber}: ${err instanceof Error ? err.message : err}`)
-    );
+    // NB: draft production orders are generated at confirmOrder (below), not
+    // here — a make-to-order shop shouldn't spin up production plans for an
+    // order the customer hasn't confirmed yet.
 
     return { data };
   }
@@ -571,6 +567,19 @@ export class SalesService {
     }), { label: "SalesOrder.confirmOrder" });
 
     await this.writeAudit(user, "APPROVE", "SalesOrder", order.id, `Confirmed sales order ${order.orderNumber} and issued invoice`, context, { branchId: order.branchId });
+
+    // Now that the customer has confirmed, draft the production orders for any
+    // feed line items (non-blocking — a failure here must not undo a confirmed
+    // order + issued invoice, but it's logged so a silent gap is visible).
+    void this.autoGenerateProductionOrders(
+      user.companyId,
+      order.branchId,
+      order.orderNumber,
+      order.id,
+      order.items.map((it) => ({ productId: it.productId, quantity: Number(it.quantity), unitPrice: Number(it.unitPrice), discountAmount: Number(it.discountAmount) })),
+      user.id
+    ).catch((err) => this.logger.error(`Auto production-order generation failed for sales order ${order.orderNumber}: ${err instanceof Error ? err.message : err}`));
+
     return { data };
   }
 
@@ -793,6 +802,7 @@ export class SalesService {
       }
     });
     if (!quote) throw new NotFoundException("Quote was not found.");
+    this.assertBranchAccess(user, quote.branchId);
     return { data: quote };
   }
 
@@ -863,6 +873,10 @@ export class SalesService {
       const subtotal = dto.items.reduce((s, i) => s + this.lineTotal(i), 0);
       itemData = { subtotal, totalAmount: subtotal - (dto.discountAmount ?? Number(quote.discountAmount)) + (dto.taxAmount ?? Number(quote.taxAmount)) };
     }
+    const projectedTotal = itemData
+      ? itemData.totalAmount
+      : Number(quote.subtotal) - (dto.discountAmount ?? Number(quote.discountAmount)) + (dto.taxAmount ?? Number(quote.taxAmount));
+    if (projectedTotal < 0) throw new BadRequestException("Quote total cannot be negative.");
 
     const updated = await this.prisma.$transaction(async (tx) => {
       if (dto.items) {
@@ -1105,6 +1119,13 @@ export class SalesService {
           createdById: user.id
         }
       });
+      // H21 + audit M2: the Finance Revenue mirror is written INSIDE this
+      // transaction now. It used to run post-commit with only a warn on
+      // failure, so a transient DB blip left the P&L permanently short of a
+      // real payment with no trace. It is a single insert — folding it in
+      // costs nothing and makes "payment recorded" and "revenue recognised"
+      // atomic. If it fails the whole payment rolls back and the user retries.
+      await this.createSalesRevenueTx(tx, user, customer.name, payment, invoice?.invoiceNumber);
       return { payment, receipt };
       });
     } catch (err: unknown) {
@@ -1121,41 +1142,32 @@ export class SalesService {
       throw err;
     }
     await this.writeAudit(user, "CREATE", "Payment", data.payment.id, `Recorded payment ${data.payment.paymentNumber}`, context, { branchId: customer.branchId });
-    // H21: P&L/Cash Flow reports are built entirely from finance's own
-    // Revenue/Expense (and CustomerPayment/SupplierPayment) tables, which
-    // only finance's own manual-entry endpoints ever wrote to — real sales
-    // revenue lived in Payment/Invoice and was never mirrored in, so those
-    // reports materially understated real revenue unless someone re-keyed
-    // every sale a second time as a finance entry. Mirrors payroll's own
-    // proven pattern (createPayrollExpense, awaited + logged, non-fatal to
-    // the payment itself) on the cash-received side, after the payment
-    // transaction has actually committed.
-    try {
-      await this.createSalesRevenue(user, customer, data.payment);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Unknown error";
-      this.logger.warn(`Failed to create Finance revenue entry for payment ${data.payment.id} (company ${user.companyId}): ${message}`);
-    }
     return { data };
   }
 
-  private async createSalesRevenue(user: AuthenticatedUser, customer: { name: string }, payment: { id: string; amount: Prisma.Decimal | number; paymentDate: Date; method: string; paymentNumber: string; invoiceId: string | null }) {
-    let invoiceRef: string | undefined;
-    if (payment.invoiceId) {
-      const invoice = await this.prisma.invoice.findUnique({ where: { id: payment.invoiceId }, select: { invoiceNumber: true } });
-      invoiceRef = invoice?.invoiceNumber;
-    }
-    await this.prisma.revenue.create({
+  // H21: P&L / Cash Flow reports are built from Finance's own Revenue/Expense
+  // tables. Real sales money lived only in Payment/Invoice and was never
+  // mirrored across, so those reports understated revenue unless every sale
+  // was re-keyed by hand. Written inside the payment transaction (audit M2)
+  // so the two can never diverge.
+  private async createSalesRevenueTx(
+    tx: Prisma.TransactionClient,
+    user: AuthenticatedUser,
+    customerName: string,
+    payment: { amount: Prisma.Decimal | number; paymentDate: Date; method: string; paymentNumber: string },
+    invoiceNumber?: string
+  ) {
+    await tx.revenue.create({
       data: {
         companyId: user.companyId,
-        reference: await nextRef(this.prisma, user.companyId, "REV"),
+        reference: await nextRef(tx, user.companyId, "REV"),
         source: "PRODUCT_SALES",
         description: `Sales payment ${payment.paymentNumber}`.slice(0, 240),
         amount: payment.amount,
         revenueDate: payment.paymentDate,
         paymentMethod: payment.method as never,
-        customerName: customer.name,
-        invoiceRef,
+        customerName,
+        invoiceRef: invoiceNumber,
         createdById: user.id
       }
     });

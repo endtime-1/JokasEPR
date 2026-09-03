@@ -4,6 +4,7 @@ import { existsSync } from "fs";
 import { join, resolve } from "path";
 import { AuthenticatedUser } from "@jokas/shared";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import { Public } from "../../common/decorators/public.decorator";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { PrismaService } from "../prisma/prisma.service";
 
@@ -17,6 +18,7 @@ export class UploadsController {
   constructor(private readonly prisma: PrismaService) {}
 
   // Product images are public — the storefront fetches them without auth
+  @Public()
   @Get("products/:filename")
   serveProductFile(@Param("filename") filename: string, @Res() res: Response) {
     this.send(res, "products", filename);

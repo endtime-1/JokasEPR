@@ -8,6 +8,7 @@ import { diskStorage } from "multer";
 import { extname, join } from "path";
 import { mkdirSync } from "fs";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import { Public } from "../../common/decorators/public.decorator";
 import { RequirePermissions } from "../../common/decorators/permissions.decorator";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { PermissionsGuard } from "../../common/guards/permissions.guard";
@@ -31,30 +32,35 @@ export class PublicController {
 
   /* ── Public storefront endpoints (no auth — rate-limited by IP) ── */
 
+  @Public()
   @UseGuards(StorefrontBrowseRateLimitGuard)
   @Get("products")
   products(@Query("category") category?: string) {
     return this.service.listProducts(category).then((data) => ({ data }));
   }
 
+  @Public()
   @UseGuards(StorefrontBrowseRateLimitGuard)
   @Get("products/:slug")
   product(@Param("slug") slug: string) {
     return this.service.getProduct(slug).then((data) => ({ data }));
   }
 
+  @Public()
   @UseGuards(StorefrontOrderRateLimitGuard)
   @Post("orders")
   placeOrder(@Body() dto: PlacePublicOrderDto) {
     return this.service.placeOrder(dto).then((data) => ({ data }));
   }
 
+  @Public()
   @UseGuards(StorefrontBrowseRateLimitGuard)
   @Get("orders/:ref")
   orderStatus(@Param("ref") ref: string) {
     return this.service.getOrderStatus(ref).then((data) => ({ data }));
   }
 
+  @Public()
   @UseGuards(StorefrontContactRateLimitGuard)
   @Post("contact")
   submitContact(@Body() dto: PublicContactDto) {

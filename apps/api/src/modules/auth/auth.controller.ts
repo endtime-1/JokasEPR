@@ -4,6 +4,7 @@ import { Throttle } from "@nestjs/throttler";
 import { Request, Response } from "express";
 import { AuthenticatedUser } from "@jokas/shared";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import { Public } from "../../common/decorators/public.decorator";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { LoginRateLimitGuard } from "../../common/guards/login-rate-limit.guard";
 import { AuthService } from "./auth.service";
@@ -21,6 +22,7 @@ export class AuthController {
   // LoginRateLimitGuard locks a single *account* after 5 failures. This adds a
   // per-*IP* ceiling on top so one host can't credential-stuff across many
   // different usernames without ever tripping an individual account's lockout.
+  @Public()
   @Post("login")
   @UseGuards(LoginRateLimitGuard)
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
@@ -44,6 +46,7 @@ export class AuthController {
     };
   }
 
+  @Public()
   @Post("refresh")
   async refresh(
     @Body() body: Partial<RefreshTokenDto>,
@@ -70,6 +73,7 @@ export class AuthController {
     };
   }
 
+  @Public()
   @Post("logout")
   async logout(
     @Body() body: Partial<RefreshTokenDto>,

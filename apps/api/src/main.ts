@@ -150,13 +150,18 @@ async function bootstrap() {
   Logger.log(`API listening on http://localhost:${port}/${prefix}/v${version}`, "Bootstrap");
 }
 
-// Prevent a stray unhandled promise rejection from crashing the NestJS process.
-// NestJS catches request-level errors via HttpExceptionFilter, but cron jobs or
-// background promises that throw without a try-catch reach here first.
-// Log and continue — the API stays up; the scheduler job is simply skipped.
+// An uncaught exception leaves the V8 heap in an undefined state (Node's own
+// guidance): a half-open transaction, a leaked handle, corrupted module state.
+// Log it and exit — PM2 (autorestart) brings a clean process back in under a
+// second, which is strictly safer than serving the next request from a
+// poisoned one.
 process.on("uncaughtException", (err) => {
-  process.stderr.write("[api] uncaughtException: " + (err?.stack || err) + "\n");
+  process.stderr.write("[api] uncaughtException (exiting for a clean restart): " + (err?.stack || err) + "\n");
+  process.exit(1);
 });
+// An unhandled rejection is usually a forgotten `await` or a background promise
+// (cron job) that threw. It hasn't corrupted the process the way a sync throw
+// does, so log and continue — the API stays up and that one job is skipped.
 process.on("unhandledRejection", (reason) => {
   const msg = reason instanceof Error ? reason.stack : String(reason);
   process.stderr.write("[api] unhandledRejection: " + msg + "\n");

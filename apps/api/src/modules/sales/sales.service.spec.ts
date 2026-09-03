@@ -176,28 +176,29 @@ describe("SalesService.createPayment — race-safe balance guard (C4)", () => {
     expect(result.data.payment.id).toBe("pay-winner");
   });
 
-  it("mirrors the payment into Finance's Revenue ledger so P&L/Cash Flow reports see real sales activity (H21)", async () => {
+  it("mirrors the payment into Finance's Revenue ledger, inside the payment transaction, so P&L/Cash Flow reports see real sales activity (H21 + audit M2)", async () => {
     mockPrisma.customer.findFirst.mockResolvedValue({ id: "cust-1", branchId: "branch-1", name: "Acme Ltd" });
     mockTx.payment.create.mockResolvedValue({ id: "pay-1", paymentNumber: "PAY-0001", amount: 100, paymentDate: new Date("2026-08-09"), method: "CASH", invoiceId: null });
 
     const service = makeService();
     await service.createPayment(makeUser(), { customerId: "cust-1", amount: 100, method: "CASH" } as never, {});
 
-    expect(mockPrisma.revenue.create).toHaveBeenCalledWith(
+    expect(mockTx.revenue.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ source: "PRODUCT_SALES", amount: 100, customerName: "Acme Ltd" })
       })
     );
   });
 
-  it("does not fail the payment itself when the Revenue mirror fails", async () => {
+  it("rolls the whole payment back when the Revenue mirror fails — money recorded and revenue recognised are atomic (audit M2)", async () => {
     mockPrisma.customer.findFirst.mockResolvedValue({ id: "cust-1", branchId: "branch-1", name: "Acme Ltd" });
-    mockPrisma.revenue.create.mockRejectedValueOnce(new Error("DB unavailable"));
+    mockTx.payment.create.mockResolvedValue({ id: "pay-1", paymentNumber: "PAY-0001", amount: 100, paymentDate: new Date(), method: "CASH", invoiceId: null });
+    mockTx.revenue.create.mockRejectedValueOnce(new Error("DB unavailable"));
 
     const service = makeService();
     await expect(
       service.createPayment(makeUser(), { customerId: "cust-1", amount: 100, method: "CASH" } as never, {})
-    ).resolves.toBeDefined();
+    ).rejects.toThrow("DB unavailable");
   });
 });
 

@@ -146,8 +146,8 @@ describe("MarketPlanningService.submitTarget / approveTarget — status-guarded,
     marketTarget: { updateMany: jest.fn() },
     marketTargetItem: { updateMany: jest.fn() },
     productionPlan: { create: jest.fn() },
-    productionPlanItem: { create: jest.fn() },
-    feedProductionOrder: { create: jest.fn() }
+    productionPlanItem: { create: jest.fn(), createMany: jest.fn(), findMany: jest.fn() },
+    feedProductionOrder: { create: jest.fn(), createMany: jest.fn() }
   };
 
   const mockPrisma = {
@@ -198,12 +198,13 @@ describe("MarketPlanningService.submitTarget / approveTarget — status-guarded,
       mockPrisma.marketTarget.findFirst.mockResolvedValue({ id: "mt-1", companyId: "company-1", status: "SUBMITTED", branchId: "branch-1", productionSiteId: "site-1", targetNumber: "MT-1" });
       mockPrisma.productionSite.findFirst.mockResolvedValue({ id: "site-1", branchId: "branch-1" });
       mockPrisma.warehouse.findFirst.mockResolvedValue({ id: "wh-1", branchId: "branch-1" });
-      mockPrisma.marketTargetItem.findMany.mockResolvedValue([{ id: "mti-1", productId: "prod-1", formulaId: null, formulaVersionId: null, targetQuantityKg: 100 }]);
+      mockPrisma.marketTargetItem.findMany.mockResolvedValue([{ id: "mti-1", productId: "prod-1", formulaId: "formula-1", formulaVersionId: null, targetQuantityKg: 100 }]);
       mockApproveTx.marketTarget.updateMany.mockResolvedValue({ count: 1 });
       mockApproveTx.marketTargetItem.updateMany.mockResolvedValue({ count: 1 });
       mockApproveTx.productionPlan.create.mockResolvedValue({ id: "pp-1" });
-      mockApproveTx.productionPlanItem.create.mockResolvedValue({ id: "ppi-1", formulaId: "formula-1", formulaVersionId: null, productId: "prod-1", plannedQuantityKg: 100 });
-      mockApproveTx.feedProductionOrder.create.mockResolvedValue({ id: "fpo-1" });
+      mockApproveTx.productionPlanItem.createMany.mockResolvedValue({ count: 1 });
+      mockApproveTx.productionPlanItem.findMany.mockResolvedValue([{ id: "ppi-1", formulaId: "formula-1", formulaVersionId: null, productId: "prod-1", plannedQuantityKg: 100 }]);
+      mockApproveTx.feedProductionOrder.createMany.mockResolvedValue({ count: 1 });
     });
 
     it("issues the status transition as a guarded updateMany scoped to SUBMITTED", async () => {
@@ -220,21 +221,24 @@ describe("MarketPlanningService.submitTarget / approveTarget — status-guarded,
       const service = makeService();
       await service.approveTarget(makeUser(), "mt-1", { productionSiteId: "site-1", centralWarehouseId: "wh-1" } as never, {});
 
-      expect(mockApproveTx.feedProductionOrder.create).toHaveBeenCalledWith(
+      expect(mockApproveTx.feedProductionOrder.createMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({
-            status: "APPROVED", marketTargetId: "mt-1", productionPlanId: "pp-1", productionPlanItemId: "ppi-1", formulaId: "formula-1"
-          })
+          data: expect.arrayContaining([
+            expect.objectContaining({
+              status: "APPROVED", marketTargetId: "mt-1", productionPlanId: "pp-1", productionPlanItemId: "ppi-1", formulaId: "formula-1"
+            })
+          ])
         })
       );
     });
 
     it("skips opening an order for a plan item with no resolved formula — nothing millable to order yet", async () => {
-      mockApproveTx.productionPlanItem.create.mockResolvedValue({ id: "ppi-1", formulaId: null, formulaVersionId: null, productId: "prod-1", plannedQuantityKg: 100 });
+      mockPrisma.marketTargetItem.findMany.mockResolvedValue([{ id: "mti-1", productId: "prod-1", formulaId: null, formulaVersionId: null, targetQuantityKg: 100 }]);
+      mockApproveTx.productionPlanItem.findMany.mockResolvedValue([{ id: "ppi-1", formulaId: null, formulaVersionId: null, productId: "prod-1", plannedQuantityKg: 100 }]);
       const service = makeService();
       await service.approveTarget(makeUser(), "mt-1", { productionSiteId: "site-1", centralWarehouseId: "wh-1" } as never, {});
 
-      expect(mockApproveTx.feedProductionOrder.create).not.toHaveBeenCalled();
+      expect(mockApproveTx.feedProductionOrder.createMany).not.toHaveBeenCalled();
     });
 
     it("rejects a double-click/retry that races the guard — no second production plan is created", async () => {
@@ -247,8 +251,8 @@ describe("MarketPlanningService.submitTarget / approveTarget — status-guarded,
         service.approveTarget(makeUser(), "mt-1", { productionSiteId: "site-1", centralWarehouseId: "wh-1" } as never, {})
       ).rejects.toThrow(BadRequestException);
       expect(mockApproveTx.productionPlan.create).not.toHaveBeenCalled();
-      expect(mockApproveTx.productionPlanItem.create).not.toHaveBeenCalled();
-      expect(mockApproveTx.feedProductionOrder.create).not.toHaveBeenCalled();
+      expect(mockApproveTx.productionPlanItem.createMany).not.toHaveBeenCalled();
+      expect(mockApproveTx.feedProductionOrder.createMany).not.toHaveBeenCalled();
     });
   });
 });

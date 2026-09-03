@@ -1,8 +1,10 @@
 import { Body, Controller, Get, Headers, Post } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
+import { Public } from "../../common/decorators/public.decorator";
 import { SetupDto } from "./dto/setup.dto";
 import { SetupService } from "./setup.service";
 
+@Public()
 @Controller("setup")
 export class SetupController {
   constructor(private readonly setupService: SetupService) {}

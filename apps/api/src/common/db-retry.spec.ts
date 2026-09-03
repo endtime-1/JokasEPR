@@ -19,10 +19,24 @@ describe("withDbRetry", () => {
     expect(fn).toHaveBeenCalledTimes(2);
   });
 
-  it("retries connection-level errors (P1001/P1008/P1017)", async () => {
-    for (const code of ["P1001", "P1008", "P1017"]) {
+  it("retries P1001 (connection never established) by default — nothing ran", async () => {
+    const fn = jest.fn().mockRejectedValueOnce(prismaError("P1001")).mockResolvedValueOnce("ok");
+    await expect(withDbRetry(fn, { baseDelayMs: 1 })).resolves.toBe("ok");
+    expect(fn).toHaveBeenCalledTimes(2);
+  });
+
+  it("does NOT retry ambiguous connection drops (P1008/P1017) by default — a committed tx would double-apply", async () => {
+    for (const code of ["P1008", "P1017"]) {
+      const fn = jest.fn().mockRejectedValue(prismaError(code));
+      await expect(withDbRetry(fn, { baseDelayMs: 1 })).rejects.toThrow(`Prisma error ${code}`);
+      expect(fn).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("retries P1008/P1017 only when the caller opts in via retryConnectionErrors", async () => {
+    for (const code of ["P1008", "P1017"]) {
       const fn = jest.fn().mockRejectedValueOnce(prismaError(code)).mockResolvedValueOnce("ok");
-      await expect(withDbRetry(fn, { baseDelayMs: 1 })).resolves.toBe("ok");
+      await expect(withDbRetry(fn, { baseDelayMs: 1, retryConnectionErrors: true })).resolves.toBe("ok");
       expect(fn).toHaveBeenCalledTimes(2);
     }
   });
