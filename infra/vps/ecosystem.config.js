@@ -51,8 +51,12 @@ module.exports = {
     {
       ...common,
       name: "jokas-web",
-      cwd: root,
-      script: "apps/web/.next/standalone/apps/web/server.js",
+      // Serve from the stable release dir, NOT apps/web/.next — `next build`
+      // wipes .next for 10-15 min every deploy, which used to 400 the whole
+      // site. deploy.sh rsyncs the verified build into /opt/jokas/live/web
+      // only at the very end. (Run `pm2 delete jokas-web` once when adopting.)
+      cwd: "/opt/jokas/live/web/apps/web",
+      script: "/opt/jokas/live/web/apps/web/server.js",
       max_memory_restart: "700M",
       env: {
         NODE_ENV: "production",
@@ -68,8 +72,8 @@ module.exports = {
     {
       ...common,
       name: "jokas-storefront",
-      cwd: root,
-      script: "apps/storefront/.next/standalone/apps/storefront/server.js",
+      cwd: "/opt/jokas/live/storefront/apps/storefront",
+      script: "/opt/jokas/live/storefront/apps/storefront/server.js",
       max_memory_restart: "400M",
       env: {
         NODE_ENV: "production",

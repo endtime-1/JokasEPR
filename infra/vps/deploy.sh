@@ -58,72 +58,57 @@ pnpm --filter @jokas/shared build
 pnpm --filter @jokas/db build
 pnpm --filter @jokas/api build
 
-# ─── Next.js builds — snapshot / restore so a failed rebuild can't break the
-#     site that's currently running ───────────────────────────────────────────
-# `next build` regenerates apps/<app>/.next/ (including .next/standalone/,
-# minus the static/ + public/ we copy in below) BEFORE it fails on a lint or
-# type error. The running PM2 process reads its assets straight off that
-# directory, so a failed rebuild used to leave every page throwing
-# "Loading chunk failed" even though PM2 was never restarted. Snapshot the
-# last-good trees first; on any failure in this section, put them back.
-NEXT_SNAPSHOT="/opt/jokas/shared/last-good-next"
-snapshot_next() {
-  rm -rf "$NEXT_SNAPSHOT"; mkdir -p "$NEXT_SNAPSHOT"
-  for a in web storefront; do
-    if [ -d "apps/$a/.next/standalone" ]; then
-      mkdir -p "$NEXT_SNAPSHOT/$a"
-      cp -a "apps/$a/.next/standalone" "$NEXT_SNAPSHOT/$a/standalone"
-      [ -d "apps/$a/.next/static" ] && cp -a "apps/$a/.next/static" "$NEXT_SNAPSHOT/$a/static"
-    fi
-  done
-}
-restore_next() {
-  echo -e "\n\033[1;31m==> Next.js build FAILED — restoring the previous build so the site stays up\033[0m"
-  for a in web storefront; do
-    if [ -d "$NEXT_SNAPSHOT/$a/standalone" ]; then
-      rm -rf "apps/$a/.next/standalone"; cp -a "$NEXT_SNAPSHOT/$a/standalone" "apps/$a/.next/standalone"
-      [ -d "$NEXT_SNAPSHOT/$a/static" ] && { rm -rf "apps/$a/.next/static"; cp -a "$NEXT_SNAPSHOT/$a/static" "apps/$a/.next/static"; }
-    fi
-  done
-  echo "==> Old build restored. Fix the error and re-run deploy.sh."
-}
+# ─── Next.js builds ──────────────────────────────────────────────────────────
+# `next build` deletes and recreates apps/<app>/.next/ at the start of a run
+# that then takes 10-15 min on this box. PM2 must NOT serve straight out of
+# apps/<app>/.next/ — during every build (and after any failed one) that
+# directory is incomplete and the whole site 400s on every chunk.
+#
+# Instead PM2 serves from a stable release dir ($LIVE_DIR/<app>), and we only
+# rsync the freshly built + verified standalone tree into it at the very end.
+# The build can churn for 15 min or fail outright; the running site is
+# untouched until the rsync + restart.  (ecosystem.config.js points PM2 at
+# $LIVE_DIR — run `pm2 delete jokas-web jokas-storefront` once when adopting
+# this so the new script path takes effect.)
+LIVE_DIR="/opt/jokas/live"
+mkdir -p "$LIVE_DIR"
 
-snapshot_next
-log "Build web + storefront (Next.js)"
+log "Build web + storefront (Next.js) — the live site keeps running"
 if ! ( pnpm --filter @jokas/web build && pnpm --filter @jokas/storefront build ); then
-  restore_next
+  echo -e "\n\033[1;31m==> Next.js build FAILED — the running site is untouched. Fix the error and re-run.\033[0m"
   exit 1
 fi
 
-# ─── Next.js standalone needs static/ + public/ copied in beside server.js ──
-log "Assemble Next.js standalone trees"
+log "Assemble standalone trees + verify"
 for app in web storefront; do
   sa="apps/$app/.next/standalone/apps/$app"
+  [ -f "$sa/server.js" ] || { echo "ERROR: $app build produced no server.js"; exit 1; }
   mkdir -p "$sa/.next"
   rm -rf "$sa/.next/static"
   cp -r "apps/$app/.next/static" "$sa/.next/static"
   [ -d "apps/$app/public" ] && { rm -rf "$sa/public"; cp -r "apps/$app/public" "$sa/public"; } || true
-
-  # Refuse to go further if the assembled tree is missing the files the
-  # running server serves — restarting into this state is what produced the
-  # site-wide "Loading chunk failed" errors.
-  if [ ! -f "$sa/server.js" ] || [ ! -d "$sa/.next/static/chunks" ]; then
-    echo "ERROR: $app standalone tree is incomplete (server.js or .next/static/chunks missing) — aborting before restart."
-    restore_next
+  if [ ! -d "$sa/.next/static/chunks" ] || [ ! -d "$sa/.next/static/css" ]; then
+    echo "ERROR: $app assembled tree is missing .next/static/chunks or /css — not swapping."
     exit 1
   fi
-
-  # Safety net: @swc/helpers is a RUNTIME dep of Next's compiled output. If the
-  # standalone file-trace still missed it, copy the exact version Next resolves.
+  # @swc/helpers is a RUNTIME dep of Next's compiled output.
   root_sa="apps/$app/.next/standalone"
   if [ ! -d "$root_sa/node_modules/@swc/helpers" ]; then
     src=$(cd "apps/$app" && node -p "require('path').dirname(require.resolve('@swc/helpers/package.json'))" 2>/dev/null || true)
     if [ -n "${src:-}" ] && [ -d "$src" ]; then
       mkdir -p "$root_sa/node_modules/@swc/helpers"
       cp -r "$src/." "$root_sa/node_modules/@swc/helpers/"
-      echo "[deploy] patched @swc/helpers into $app standalone (from $src)"
+      echo "[deploy] patched @swc/helpers into $app standalone"
     fi
   fi
+done
+
+log "Swap the verified build into the live release dir"
+for app in web storefront; do
+  mkdir -p "$LIVE_DIR/$app"
+  # --delete so removed chunks don't linger; the whole standalone/ tree
+  # (server.js + node_modules + .next/static + public) goes across.
+  rsync -a --delete "apps/$app/.next/standalone/" "$LIVE_DIR/$app/"
 done
 
 # ─── Uploads: keep user files OUTSIDE the repo, symlink them in ─────────────
@@ -152,8 +137,10 @@ pnpm --filter @jokas/db exec prisma migrate deploy
 log "Restart PM2 processes (clean)"
 pm2 delete jokas-api jokas-web jokas-storefront 2>/dev/null || true
 pkill -f "apps/api/dist/main.js" 2>/dev/null || true
-pkill -f ".next/standalone/apps/web/server.js" 2>/dev/null || true
-pkill -f ".next/standalone/apps/storefront/server.js" 2>/dev/null || true
+pkill -f "standalone/apps/web/server.js" 2>/dev/null || true
+pkill -f "standalone/apps/storefront/server.js" 2>/dev/null || true
+pkill -f "/opt/jokas/live/web/apps/web/server.js" 2>/dev/null || true
+pkill -f "/opt/jokas/live/storefront/apps/storefront/server.js" 2>/dev/null || true
 sleep 1
 pm2 start infra/vps/ecosystem.config.js --update-env
 pm2 save

@@ -17,8 +17,12 @@ const nextConfig = {
     ignoreBuildErrors: false
   },
   experimental: {
+    // Was cpus:1 / workerThreads:false to cap memory on Hostinger shared
+    // hosting. On the 4 GB VPS (with 4 GB swap) that just made the build take
+    // 10-15 min. Let Next use the box's cores; keep workerThreads off to stay
+    // conservative on peak RSS.
     workerThreads: false,
-    cpus: 1,
+    cpus: 2,
   },
   // Exclude build-only packages from standalone trace to reduce memory and bundle size.
   // These are compiler/bundler tools never needed at runtime.
