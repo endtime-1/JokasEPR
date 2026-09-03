@@ -1335,7 +1335,10 @@ export function OrdersPage({ create = false }: { create?: boolean }) {
               }
               if (r.status === "APPROVED") {
                 return (
-                  <button onClick={() => void approve(r.id as string)} disabled={busyId === r.id} className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-bold text-amber-800 hover:bg-amber-100 transition disabled:opacity-50">Release stock</button>
+                  <div className="flex flex-wrap items-center justify-end gap-1.5">
+                    <button onClick={() => void approve(r.id as string)} disabled={busyId === r.id} className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-bold text-amber-800 hover:bg-amber-100 transition disabled:opacity-50">Release stock</button>
+                    <button onClick={() => void cancelOrder(r.id as string)} disabled={busyId === r.id} className="rounded-lg border border-red-200 bg-white px-3 py-1 text-xs font-bold text-red-600 hover:bg-red-50 transition disabled:opacity-50">Cancel</button>
+                  </div>
                 );
               }
               return null;

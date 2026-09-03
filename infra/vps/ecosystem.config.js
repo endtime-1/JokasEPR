@@ -20,8 +20,13 @@ const common = {
   exec_mode: "fork",
   autorestart: true,
   watch: false,
-  max_restarts: 20,
-  restart_delay: 3000,
+  // Audit M5: 20 was low enough that a crash-loop (bad deploy, DB down on
+  // boot) exhausted it in ~60s and the process then stayed dead with no
+  // alert. Keep trying, but with exponential backoff so a genuinely broken
+  // build doesn't thrash the box.
+  max_restarts: 100,
+  min_uptime: 20000,
+  exp_backoff_restart_delay: 200,
   kill_timeout: 10000,
   time: true,
 };
@@ -33,9 +38,11 @@ module.exports = {
       name: "jokas-api",
       cwd: root,
       script: "apps/api/dist/main.js",
-      // Ceilings sized for KVM 1 (4 GB): api+web+storefront ≈ 1.4 GB max,
-      // leaving room for MySQL (~600 MB) + OS. Raise on KVM 2.
-      max_memory_restart: "550M",
+      // Ceilings for KVM 1 (4 GB): api 900 + web 700 + storefront 400 ≈ 2 GB,
+      // leaving ~2 GB for MariaDB + OS. Audit M5: the old 550 MB API ceiling
+      // could kill the process mid-request during a large report / PDF build
+      // (legitimate transient allocation), producing an intermittent 502.
+      max_memory_restart: "900M",
       env: {
         NODE_ENV: "production",
         API_PORT: "4001",
@@ -46,7 +53,7 @@ module.exports = {
       name: "jokas-web",
       cwd: root,
       script: "apps/web/.next/standalone/apps/web/server.js",
-      max_memory_restart: "500M",
+      max_memory_restart: "700M",
       env: {
         NODE_ENV: "production",
         PORT: "3000",
@@ -63,7 +70,7 @@ module.exports = {
       name: "jokas-storefront",
       cwd: root,
       script: "apps/storefront/.next/standalone/apps/storefront/server.js",
-      max_memory_restart: "350M",
+      max_memory_restart: "400M",
       env: {
         NODE_ENV: "production",
         PORT: "3002",

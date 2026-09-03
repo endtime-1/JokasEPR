@@ -2,7 +2,14 @@ name: Build & Deploy to Hostinger
 
 on:
   push:
-    branches: [main]
+    # Audit C1: production is deployed by hand from `vps-migration` (see
+    # infra/vps/deploy.sh), which is 50+ commits ahead of `main`. Nothing ran
+    # CI on it, so every manual deploy skipped the lint/typecheck/unit/e2e
+    # gate. Running the `build` job on `vps-migration` pushes restores that
+    # gate. The `deploy` job stays pinned to `main` (it `if:`s on
+    # `github.event_name == 'push'` AND the ref — see below), so this adds
+    # validation without changing where the auto-deploy points.
+    branches: [main, vps-migration]
   # H18: no trigger here ran quality checks before code merged to main — lint/
   # typecheck/unit/e2e only gated the deploy step, after the fact. A broken
   # push left main red until someone noticed. This runs the same `build` job
@@ -12,7 +19,7 @@ on:
   # repo's GitHub settings should also require this "build" check to pass
   # before merging, but that setting lives outside this file.
   pull_request:
-    branches: [main]
+    branches: [main, vps-migration]
   workflow_dispatch:
 
 # H-INFRA-6 (2026-08-11): neither job previously declared its own permissions,
@@ -239,7 +246,10 @@ jobs:
     # H18: only ever run for a real push to main — a pull_request event
     # (added above) must never reach this job or touch production, even
     # though it now shares the same `build` job for quality-gate validation.
-    if: github.event_name == 'push'
+    # Audit C1: `vps-migration` pushes now also run `build` for the CI gate,
+    # so this must additionally check the ref — that branch is deployed by
+    # hand (infra/vps/deploy.sh), never by this job.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     # H-INFRA-6: actions: read is needed to download the artifact `build`
     # uploaded; nothing else in this job (SSH/rsync to Hostinger) touches the

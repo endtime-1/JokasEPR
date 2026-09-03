@@ -10,6 +10,7 @@ const mockTx = {
   revenue: { create: jest.fn() },
   salesOrder: { update: jest.fn(), create: jest.fn() },
   salesOrderItem: { deleteMany: jest.fn(), createMany: jest.fn() },
+  feedProductionOrder: { updateMany: jest.fn() },
   deliveryNote: { create: jest.fn() },
   customer: { findUniqueOrThrow: jest.fn(), findFirst: jest.fn(), create: jest.fn() },
   customerCreditLimit: { upsert: jest.fn(), update: jest.fn(), findUniqueOrThrow: jest.fn().mockResolvedValue({ id: "cl-1", companyId: "company-1", creditLimit: 0, currentBalance: 0 }) },
@@ -1088,23 +1089,55 @@ describe("SalesService — sales order edit & cancel", () => {
   });
 
   describe("cancelSalesOrder", () => {
-    it("soft-cancels a pending order", async () => {
-      mockPrisma.salesOrder.findFirst.mockResolvedValue({ id: "so-1", companyId: "company-1", branchId: "branch-1", orderNumber: "SO-001", status: "PENDING_STOCK_APPROVAL" });
-      mockPrisma.salesOrder.update.mockResolvedValue({ id: "so-1", status: "CANCELLED" });
+    it("soft-cancels a pending order with no invoice to void", async () => {
+      mockPrisma.salesOrder.findFirst.mockResolvedValue({ id: "so-1", companyId: "company-1", branchId: "branch-1", customerId: "cust-1", orderNumber: "SO-001", status: "PENDING_STOCK_APPROVAL", invoices: [] });
+      mockTx.feedProductionOrder.updateMany.mockResolvedValue({ count: 0 });
+      mockTx.salesOrder.update.mockResolvedValue({ id: "so-1", status: "CANCELLED" });
 
       const service = makeService();
       const result = await service.cancelSalesOrder(makeUser(), "so-1", {});
 
-      expect(mockPrisma.salesOrder.update).toHaveBeenCalledWith({ where: { id: "so-1" }, data: { status: "CANCELLED", updatedById: "user-1" } });
+      expect(mockTx.salesOrder.update).toHaveBeenCalledWith({ where: { id: "so-1" }, data: { status: "CANCELLED", updatedById: "user-1" } });
+      expect(mockTx.invoice.update).not.toHaveBeenCalled();
       expect(result.data.status).toBe("CANCELLED");
     });
 
+    it("voids the unpaid invoice and reverses the receivable when cancelling a confirmed order", async () => {
+      mockPrisma.salesOrder.findFirst.mockResolvedValue({
+        id: "so-1", companyId: "company-1", branchId: "branch-1", customerId: "cust-1", orderNumber: "SO-001", status: "APPROVED",
+        invoices: [{ id: "inv-1", invoiceNumber: "INV-001", status: "ISSUED", totalAmount: 500, paidAmount: 0, payments: [] }]
+      });
+      mockTx.invoice.update.mockResolvedValue({});
+      mockTx.customer.findUniqueOrThrow.mockResolvedValue({ id: "cust-1", companyId: "company-1" });
+      mockTx.customerCreditLimit.upsert.mockResolvedValue({ id: "cl-1", companyId: "company-1", currentBalance: 500 });
+      mockTx.customerCreditLimit.findUniqueOrThrow.mockResolvedValue({ id: "cl-1", currentBalance: 0 });
+      mockTx.customerStatement.create.mockResolvedValue({});
+      mockTx.feedProductionOrder.updateMany.mockResolvedValue({ count: 1 });
+      mockTx.salesOrder.update.mockResolvedValue({ id: "so-1", status: "CANCELLED" });
+
+      const service = makeService();
+      await service.cancelSalesOrder(makeUser(), "so-1", {});
+
+      expect(mockTx.invoice.update).toHaveBeenCalledWith({ where: { id: "inv-1" }, data: expect.objectContaining({ status: "VOID", balanceDue: 0 }) });
+      expect(mockTx.customerStatement.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ entryType: "INVOICE_VOID", credit: 500 }) }));
+    });
+
+    it("refuses to cancel a confirmed order whose invoice has a payment against it", async () => {
+      mockPrisma.salesOrder.findFirst.mockResolvedValue({
+        id: "so-1", companyId: "company-1", branchId: "branch-1", customerId: "cust-1", status: "APPROVED",
+        invoices: [{ id: "inv-1", invoiceNumber: "INV-001", status: "PARTIALLY_PAID", totalAmount: 500, paidAmount: 200, payments: [{ id: "pay-1" }] }]
+      });
+
+      const service = makeService();
+      await expect(service.cancelSalesOrder(makeUser(), "so-1", {})).rejects.toThrow(/payments against it/);
+    });
+
     it("rejects cancelling an order that is already fulfilled", async () => {
-      mockPrisma.salesOrder.findFirst.mockResolvedValue({ id: "so-1", companyId: "company-1", branchId: "branch-1", status: "FULFILLED" });
+      mockPrisma.salesOrder.findFirst.mockResolvedValue({ id: "so-1", companyId: "company-1", branchId: "branch-1", status: "FULFILLED", invoices: [] });
 
       const service = makeService();
       await expect(service.cancelSalesOrder(makeUser(), "so-1", {})).rejects.toThrow(BadRequestException);
-      expect(mockPrisma.salesOrder.update).not.toHaveBeenCalled();
+      expect(mockTx.salesOrder.update).not.toHaveBeenCalled();
     });
   });
 });

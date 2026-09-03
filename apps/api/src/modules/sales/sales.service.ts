@@ -506,14 +506,64 @@ export class SalesService {
   }
 
   async cancelSalesOrder(user: AuthenticatedUser, id: string, context: RequestContext) {
-    const order = await this.prisma.salesOrder.findFirst({ where: { companyId: user.companyId, id, deletedAt: null } });
+    const order = await this.prisma.salesOrder.findFirst({
+      where: { companyId: user.companyId, id, deletedAt: null },
+      include: { invoices: { include: { payments: true } } }
+    });
     if (!order) throw new NotFoundException("Sales order was not found.");
     this.assertBranchAccess(user, order.branchId);
-    if (order.status !== "PENDING_STOCK_APPROVAL") {
-      throw new BadRequestException(`Only a pending sales order can be cancelled — this one is ${order.status.toLowerCase()}.`);
+    if (order.status === "FULFILLED") {
+      throw new BadRequestException("A fulfilled order can't be cancelled — record a sales return instead so the stock and refund are handled properly.");
     }
-    const updated = await this.prisma.salesOrder.update({ where: { id }, data: { status: "CANCELLED", updatedById: user.id } });
-    await this.writeAudit(user, "UPDATE", "SalesOrder", id, `Cancelled sales order ${order.orderNumber}`, context, { branchId: order.branchId });
+    if (order.status === "CANCELLED") {
+      throw new BadRequestException("This order is already cancelled.");
+    }
+    if (order.status !== "PENDING_STOCK_APPROVAL" && order.status !== "APPROVED") {
+      throw new BadRequestException(`Only a pending or confirmed order can be cancelled — this one is ${order.status.toLowerCase().replace(/_/g, " ")}.`);
+    }
+
+    // A confirmed order already has an issued invoice and a customer-account
+    // debit. If the customer has paid anything against it, cancellation is a
+    // refund and belongs in the returns flow — not here.
+    const paidInvoice = order.invoices.find((inv) => inv.payments.length > 0 || Number(inv.paidAmount) > 0);
+    if (paidInvoice) {
+      throw new BadRequestException(
+        `Invoice ${paidInvoice.invoiceNumber} has payments against it — cancel via a sales return / refund, not by cancelling the order.`
+      );
+    }
+
+    const updated = await withDbRetry(() => this.prisma.$transaction(async (tx) => {
+      // Void the unpaid invoice(s) and reverse the receivable they created.
+      for (const inv of order.invoices) {
+        if (inv.status === "VOID") continue;
+        await tx.invoice.update({ where: { id: inv.id }, data: { status: "VOID", balanceDue: 0, updatedById: user.id } });
+        const credit = await this.ensureCreditLimitTx(tx, order.customerId, order.branchId);
+        await tx.$executeRaw`UPDATE CustomerCreditLimit SET currentBalance = GREATEST(0, currentBalance - ${Number(inv.totalAmount)}) WHERE id = ${credit.id}`;
+        const refreshed = await tx.customerCreditLimit.findUniqueOrThrow({ where: { id: credit.id } });
+        await tx.customerStatement.create({
+          data: {
+            companyId: order.companyId, branchId: order.branchId, customerId: order.customerId, invoiceId: inv.id,
+            entryType: "INVOICE_VOID", debit: 0, credit: Number(inv.totalAmount), balance: Number(refreshed.currentBalance),
+            description: `Voided invoice ${inv.invoiceNumber} — sales order ${order.orderNumber} cancelled`
+          }
+        });
+      }
+      // Cancel any Feed Mill orders auto-opened for this sales order that
+      // haven't started production yet. They carry no salesOrderId column —
+      // the link is the sales order's uuid stamped into their notes by
+      // autoGenerateProductionOrders (uuids don't collide).
+      await tx.feedProductionOrder.updateMany({
+        where: {
+          companyId: order.companyId,
+          notes: { contains: order.id },
+          status: { in: ["DRAFT", "PENDING_STOCK_APPROVAL", "APPROVED"] }
+        },
+        data: { status: "CANCELLED", updatedById: user.id }
+      });
+      return tx.salesOrder.update({ where: { id }, data: { status: "CANCELLED", updatedById: user.id } });
+    }), { label: "SalesOrder.cancelSalesOrder" });
+
+    await this.writeAudit(user, "UPDATE", "SalesOrder", id, `Cancelled sales order ${order.orderNumber}${order.invoices.length ? " and voided its invoice" : ""}`, context, { branchId: order.branchId });
     return { data: updated };
   }
 

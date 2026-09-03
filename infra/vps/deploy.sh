@@ -21,6 +21,28 @@ log() { echo -e "\n\033[1;34m==>\033[0m $*"; }
 
 [ -f .env ] || { echo "ERROR: $REPO_DIR/.env missing — copy infra/vps/.env.production.template"; exit 1; }
 
+# ─── Audit C1: don't deploy code CI hasn't seen ───────────────────────────
+# This box deploys by hand off `vps-migration`, which bypasses the GitHub
+# quality gate. These checks make a blind deploy a deliberate act, not the
+# default: the tree must be clean and HEAD must exist on the remote (so the
+# `build` job — lint + typecheck + unit + e2e — has run on this exact commit).
+# Set ALLOW_DIRTY_DEPLOY=1 to override for an emergency hotfix.
+DEPLOY_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+DEPLOY_SHA="$(git rev-parse --short HEAD)"
+log "Deploying $DEPLOY_BRANCH @ $DEPLOY_SHA"
+if [ "${ALLOW_DIRTY_DEPLOY:-0}" != "1" ]; then
+  if [ -n "$(git status --porcelain)" ]; then
+    echo "ERROR: working tree has uncommitted changes — commit or stash them, or set ALLOW_DIRTY_DEPLOY=1."
+    git status --short
+    exit 1
+  fi
+  git fetch --quiet origin "$DEPLOY_BRANCH" || true
+  if ! git merge-base --is-ancestor HEAD "origin/$DEPLOY_BRANCH" 2>/dev/null; then
+    echo "ERROR: HEAD ($DEPLOY_SHA) is not on origin/$DEPLOY_BRANCH — push it so CI runs on it first, or set ALLOW_DIRTY_DEPLOY=1."
+    exit 1
+  fi
+fi
+
 # NEXT_PUBLIC_* are inlined at build time — export them for `next build`.
 set -a; . ./.env; set +a
 export NODE_OPTIONS="--max-old-space-size=4096"
