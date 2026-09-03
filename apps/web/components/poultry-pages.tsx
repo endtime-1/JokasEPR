@@ -46,12 +46,22 @@ function defaultWarehouse(purpose: "feed" | "eggs" | "other", farmId: string | u
   const onFarm = (w: Option) => !!farmId && w.farmId === farmId;
   const first = (...cands: (Option | undefined)[]) => cands.find(Boolean)?.id ?? "";
 
+  // A warehouse whose name clearly says "feed"/"egg", used only when there's
+  // exactly one — an unambiguous fallback for a farm that has no store
+  // properly linked to it yet.
+  const soleNamed = (re: RegExp) => {
+    const hits = all.filter((w) => re.test(w.name));
+    return hits.length === 1 ? hits[0] : undefined;
+  };
+
   if (purpose === "feed") {
     return first(
       options.feedWarehouses.find((w) => w.farmId === farmId),
       all.find((w) => w.type === "FEED_STORE" && onFarm(w)),
       all.find((w) => w.type === "FARM_STORE" && onFarm(w)),
+      all.find((w) => /\bfeed\b/i.test(w.name) && onFarm(w)),
       all.find(onFarm),
+      soleNamed(/\bfeed\b/i),
       all[0]
     );
   }
@@ -61,6 +71,8 @@ function defaultWarehouse(purpose: "feed" | "eggs" | "other", farmId: string | u
       all.find((w) => w.type === "EGG_STORE" && onFarm(w)),
       // an egg store is often set up as a plain Farm Store on the farm
       all.find((w) => w.type === "FARM_STORE" && onFarm(w)),
+      all.find((w) => /\begg/i.test(w.name) && onFarm(w)),
+      soleNamed(/\begg/i),
       all.find(onFarm),
       all[0]
     );
