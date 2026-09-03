@@ -53,12 +53,47 @@ pnpm install --frozen-lockfile
 log "Generate Prisma client"
 pnpm --filter @jokas/db prisma:generate
 
-log "Build shared + db + api + web + storefront"
+log "Build shared + db + api"
 pnpm --filter @jokas/shared build
 pnpm --filter @jokas/db build
 pnpm --filter @jokas/api build
-pnpm --filter @jokas/web build
-pnpm --filter @jokas/storefront build
+
+# ─── Next.js builds — snapshot / restore so a failed rebuild can't break the
+#     site that's currently running ───────────────────────────────────────────
+# `next build` regenerates apps/<app>/.next/ (including .next/standalone/,
+# minus the static/ + public/ we copy in below) BEFORE it fails on a lint or
+# type error. The running PM2 process reads its assets straight off that
+# directory, so a failed rebuild used to leave every page throwing
+# "Loading chunk failed" even though PM2 was never restarted. Snapshot the
+# last-good trees first; on any failure in this section, put them back.
+NEXT_SNAPSHOT="/opt/jokas/shared/last-good-next"
+snapshot_next() {
+  rm -rf "$NEXT_SNAPSHOT"; mkdir -p "$NEXT_SNAPSHOT"
+  for a in web storefront; do
+    if [ -d "apps/$a/.next/standalone" ]; then
+      mkdir -p "$NEXT_SNAPSHOT/$a"
+      cp -a "apps/$a/.next/standalone" "$NEXT_SNAPSHOT/$a/standalone"
+      [ -d "apps/$a/.next/static" ] && cp -a "apps/$a/.next/static" "$NEXT_SNAPSHOT/$a/static"
+    fi
+  done
+}
+restore_next() {
+  echo -e "\n\033[1;31m==> Next.js build FAILED — restoring the previous build so the site stays up\033[0m"
+  for a in web storefront; do
+    if [ -d "$NEXT_SNAPSHOT/$a/standalone" ]; then
+      rm -rf "apps/$a/.next/standalone"; cp -a "$NEXT_SNAPSHOT/$a/standalone" "apps/$a/.next/standalone"
+      [ -d "$NEXT_SNAPSHOT/$a/static" ] && { rm -rf "apps/$a/.next/static"; cp -a "$NEXT_SNAPSHOT/$a/static" "apps/$a/.next/static"; }
+    fi
+  done
+  echo "==> Old build restored. Fix the error and re-run deploy.sh."
+}
+
+snapshot_next
+log "Build web + storefront (Next.js)"
+if ! ( pnpm --filter @jokas/web build && pnpm --filter @jokas/storefront build ); then
+  restore_next
+  exit 1
+fi
 
 # ─── Next.js standalone needs static/ + public/ copied in beside server.js ──
 log "Assemble Next.js standalone trees"
@@ -68,6 +103,15 @@ for app in web storefront; do
   rm -rf "$sa/.next/static"
   cp -r "apps/$app/.next/static" "$sa/.next/static"
   [ -d "apps/$app/public" ] && { rm -rf "$sa/public"; cp -r "apps/$app/public" "$sa/public"; } || true
+
+  # Refuse to go further if the assembled tree is missing the files the
+  # running server serves — restarting into this state is what produced the
+  # site-wide "Loading chunk failed" errors.
+  if [ ! -f "$sa/server.js" ] || [ ! -d "$sa/.next/static/chunks" ]; then
+    echo "ERROR: $app standalone tree is incomplete (server.js or .next/static/chunks missing) — aborting before restart."
+    restore_next
+    exit 1
+  fi
 
   # Safety net: @swc/helpers is a RUNTIME dep of Next's compiled output. If the
   # standalone file-trace still missed it, copy the exact version Next resolves.
