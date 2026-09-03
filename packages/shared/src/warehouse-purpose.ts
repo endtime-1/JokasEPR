@@ -83,12 +83,19 @@ export function allowedTypeLabelsForOperation(op: WarehouseOperation): string {
 }
 
 /**
- * The parent a purpose warehouse must be tied to. Feed/soya belong to a
- * production site (the mill / plant); egg & farm stores belong to a farm.
+ * The parent a purpose warehouse must be tied to.
+ *  - A Feed Store can sit at the mill (production site) OR on a farm — farms
+ *    keep their own feed store that the poultry module feeds from — so it
+ *    only needs *one* of the two.
+ *  - A Soya Store belongs to the processing plant (production site).
+ *  - Egg & Farm stores belong to a farm.
  */
-export function requiredParentForWarehouseType(type: string): "productionSite" | "farm" | null {
+export function requiredParentForWarehouseType(
+  type: string,
+): "productionSite" | "farm" | "farmOrProductionSite" | null {
   switch (type) {
     case "FEED_STORE":
+      return "farmOrProductionSite";
     case "SOYA_STORE":
       return "productionSite";
     case "EGG_STORE":

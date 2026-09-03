@@ -257,7 +257,10 @@ export class PlatformService {
   private assertWarehouseParentForType(type: string, farmId?: string | null, productionSiteId?: string | null) {
     const need = requiredParentForWarehouseType(type);
     if (need === "productionSite" && !productionSiteId) {
-      throw new BadRequestException("A Feed Store or Soya Store must be linked to a production site.");
+      throw new BadRequestException("A Soya Store must be linked to a production site.");
+    }
+    if (need === "farmOrProductionSite" && !farmId && !productionSiteId) {
+      throw new BadRequestException("A Feed Store must be linked to a farm or a production site.");
     }
     if (need === "farm" && !farmId) {
       throw new BadRequestException("An Egg Store or Farm Store must be linked to a farm.");

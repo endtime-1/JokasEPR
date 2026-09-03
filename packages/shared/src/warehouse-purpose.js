@@ -67,6 +67,7 @@ function allowedTypeLabelsForOperation(op) {
 function requiredParentForWarehouseType(type) {
     switch (type) {
         case "FEED_STORE":
+            return "farmOrProductionSite";
         case "SOYA_STORE":
             return "productionSite";
         case "EGG_STORE":

@@ -622,10 +622,13 @@ function masterFields(resource: string, form: Record<string, string>, setForm: (
   if (resource === "warehouses") {
     const whType = form.type ?? "GENERAL";
     const needsFarm = whType === "EGG_STORE" || whType === "FARM_STORE";
-    const needsSite = whType === "FEED_STORE" || whType === "SOYA_STORE";
+    const needsSite = whType === "SOYA_STORE";
+    const feedStore = whType === "FEED_STORE";
+    const feedStoreLinked = feedStore && !form.farmId && !form.productionSiteId;
     base.push(<select key="type" className={inputClass} value={whType} onChange={(e) => set("type", e.target.value)}><option value="GENERAL">General</option><option value="FARM_STORE">Farm store</option><option value="FEED_STORE">Feed store</option><option value="SOYA_STORE">Soya store</option><option value="EGG_STORE">Egg store</option><option value="COLD_STORAGE">Cold storage</option></select>);
-    base.push(<Select key="farmId" value={form.farmId ?? ""} onChange={(v) => set("farmId", v)} options={options.farms ?? []} placeholder={needsFarm ? "Farm (required for this type)" : "Farm (optional)"} required={needsFarm} />);
-    base.push(<Select key="productionSiteId" value={form.productionSiteId ?? ""} onChange={(v) => set("productionSiteId", v)} options={options.productionSites ?? []} placeholder={needsSite ? "Production site — the mill / plant it belongs to (required)" : "Production site (optional)"} required={needsSite} emptyLabel="No production sites — add one under Production Sites first" />);
+    base.push(<Select key="farmId" value={form.farmId ?? ""} onChange={(v) => set("farmId", v)} options={options.farms ?? []} placeholder={needsFarm ? "Farm (required for this type)" : feedStore ? "Farm — for a farm feed store" : "Farm (optional)"} required={needsFarm} />);
+    base.push(<Select key="productionSiteId" value={form.productionSiteId ?? ""} onChange={(v) => set("productionSiteId", v)} options={options.productionSites ?? []} placeholder={needsSite ? "Production site — the plant it belongs to (required)" : feedStore ? "Production site — for the mill's feed store" : "Production site (optional)"} required={needsSite} emptyLabel="No production sites — add one under Production Sites first" />);
+    if (feedStoreLinked) base.push(<p key="feedhint" className="text-xs text-amber-600">Pick a farm (farm feed store) or a production site (the mill's store).</p>);
   }
   if (resource === "production-sites") base.push(<select key="type" className={inputClass} value={form.type ?? "FEED_PRODUCTION"} onChange={(e) => set("type", e.target.value)}><option value="FEED_PRODUCTION">Feed production</option><option value="SOYA_PROCESSING">Soya processing</option><option value="MIXED">Mixed</option></select>);
   if (resource === "units-of-measure") base.push(<input key="symbol" className={inputClass} placeholder="Symbol" value={form.symbol ?? ""} onChange={(e) => set("symbol", e.target.value)} required />);
