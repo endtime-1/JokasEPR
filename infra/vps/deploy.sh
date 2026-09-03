@@ -73,6 +73,14 @@ pnpm --filter @jokas/api build
 LIVE_DIR="/opt/jokas/live"
 mkdir -p "$LIVE_DIR"
 
+# Clean build. Since PM2 now serves from $LIVE_DIR, apps/<app>/.next is purely
+# a build scratch dir — and a killed/interrupted `next build` leaves partial
+# JSON manifests there that make the next run crash with
+# "SyntaxError: Unexpected end of JSON input" at "Collecting page data".
+log "Clean Next.js build dirs"
+rm -rf apps/web/.next apps/web/.next-new apps/storefront/.next apps/storefront/.next-new
+rm -rf apps/web/node_modules/.cache apps/storefront/node_modules/.cache
+
 log "Build web + storefront (Next.js) — the live site keeps running"
 if ! ( pnpm --filter @jokas/web build && pnpm --filter @jokas/storefront build ); then
   echo -e "\n\033[1;31m==> Next.js build FAILED — the running site is untouched. Fix the error and re-run.\033[0m"
