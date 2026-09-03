@@ -4,7 +4,13 @@ export const TEST_PASSWORD = "Admin@12345!";
 
 Object.assign(process.env, {
   NODE_ENV: "test",
-  DATABASE_URL: "postgresql://jokas_test:test_pass@localhost:5432/jokas_test",
+  // Placeholder only — the test suite uses a Prisma mock (see
+  // test/setup/prisma.mock.ts) and never opens a real connection. Kept as
+  // mysql:// to match schema.prisma's `provider = "mysql"` so it isn't
+  // mistaken for a sign that production runs Postgres (it does not — see
+  // infra/README.md; the infra/postgres + infra/docker + docker-compose*.yml
+  // files are abandoned scaffolding that nothing runs).
+  DATABASE_URL: "mysql://jokas_test:test_pass@localhost:3306/jokas_test",
   JWT_ACCESS_SECRET: TEST_ACCESS_SECRET,
   JWT_REFRESH_SECRET: TEST_REFRESH_SECRET,
   JWT_ACCESS_TTL: "15m",
