@@ -243,13 +243,13 @@ jobs:
   # / HOSTINGER_HOST are pre-existing repo secrets, reused as-is.
   deploy:
     needs: build
-    # H18: only ever run for a real push to main — a pull_request event
-    # (added above) must never reach this job or touch production, even
-    # though it now shares the same `build` job for quality-gate validation.
-    # Audit C1: `vps-migration` pushes now also run `build` for the CI gate,
-    # so this must additionally check the ref — that branch is deployed by
-    # hand (infra/vps/deploy.sh), never by this job.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Audit C1: this job SSH-rsyncs to the pre-VPS Hostinger box via the
+    # HOSTINGER_* secrets. Since the VPS migration, production is deployed by
+    # hand (infra/vps/deploy.sh) and this job is dead weight — it must NOT run
+    # automatically on a push. Kept in the file (and runnable via the manual
+    # "Run workflow" button) only so the SSH-rsync tooling isn't lost; delete
+    # the job entirely once you're sure it's never coming back.
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     # H-INFRA-6: actions: read is needed to download the artifact `build`
     # uploaded; nothing else in this job (SSH/rsync to Hostinger) touches the
