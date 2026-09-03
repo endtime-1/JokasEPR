@@ -1,5 +1,5 @@
-import { ScopedInventoryViewPage } from "../../../../components/inventory-pages";
+import { WarehousesOverviewPage } from "../../../../components/inventory-pages";
 
-export default function WarehouseStockViewPage() {
-  return <ScopedInventoryViewPage scope="warehouses" />;
+export default function Page() {
+  return <WarehousesOverviewPage />;
 }

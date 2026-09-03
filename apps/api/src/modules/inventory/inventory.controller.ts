@@ -239,10 +239,16 @@ export class InventoryController {
     return this.inventoryService.valuation(user, query);
   }
 
+  @Get("warehouses-overview")
+  @RequirePermissions(PERMISSIONS.INVENTORY_READ)
+  warehousesOverview(@CurrentUser() user: AuthenticatedUser) {
+    return this.inventoryService.warehousesOverview(user);
+  }
+
   @Get("warehouses/:warehouseId")
   @RequirePermissions(PERMISSIONS.INVENTORY_READ)
-  warehouseView(@CurrentUser() user: AuthenticatedUser, @Param("warehouseId") warehouseId: string) {
-    return this.inventoryService.warehouseView(user, warehouseId);
+  warehouseView(@CurrentUser() user: AuthenticatedUser, @Param("warehouseId") warehouseId: string, @Query() query: InventoryQueryDto) {
+    return this.inventoryService.warehouseView(user, warehouseId, query);
   }
 
   @Get("farms/:farmId")

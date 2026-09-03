@@ -697,9 +697,146 @@ export class InventoryService {
     return { data: await this.valuationRows(user, query) };
   }
 
-  async warehouseView(user: AuthenticatedUser, warehouseId: string) {
+  // Movement types that add stock TO a warehouse. Everything else (a TRANSFER
+  // leg is classified by which warehouse column it hit) is an issue.
+  private static readonly IN_MOVEMENT_TYPES = ["OPENING_BALANCE", "PURCHASE_RECEIPT", "PRODUCTION_OUTPUT", "ADJUSTMENT_IN", "RETURN_IN"];
+
+  private movementDirection(m: { movementType: string; fromWarehouseId: string | null; toWarehouseId: string | null }, warehouseId: string): "IN" | "OUT" {
+    if (m.movementType === "TRANSFER") return m.toWarehouseId === warehouseId ? "IN" : "OUT";
+    return InventoryService.IN_MOVEMENT_TYPES.includes(m.movementType) ? "IN" : "OUT";
+  }
+
+  // A single-warehouse monitor: what is in it now, what its stock is worth,
+  // what moved in and out today, and the recent movement log — all in one
+  // call so the Warehouse page doesn't have to stitch four endpoints together.
+  async warehouseView(user: AuthenticatedUser, warehouseId: string, query: InventoryQueryDto = {}) {
     this.assertWarehouseAccess(user, warehouseId);
-    return this.listItems(user, { warehouseId });
+    const warehouse = await this.prisma.warehouse.findFirst({
+      where: { companyId: user.companyId, id: warehouseId, deletedAt: null },
+      include: { branch: { select: { name: true, code: true } }, farm: { select: { name: true } }, productionSite: { select: { name: true } } }
+    });
+    if (!warehouse) throw new NotFoundException("Warehouse was not found.");
+
+    const todayStart = startOfTodayAccra();
+    const [items, valuationRows, todayMovements, recentMovements] = await Promise.all([
+      this.listItems(user, { warehouseId }),
+      this.valuationRows(user, { warehouseId }),
+      this.prisma.stockMovement.findMany({
+        where: { companyId: user.companyId, deletedAt: null, warehouseId, movementDate: { gte: todayStart } },
+        select: { movementType: true, quantity: true, fromWarehouseId: true, toWarehouseId: true }
+      }),
+      this.prisma.stockMovement.findMany({
+        where: {
+          companyId: user.companyId, deletedAt: null, warehouseId,
+          ...(query.startDate || query.endDate
+            ? { movementDate: { gte: query.startDate ? new Date(query.startDate) : undefined, lte: query.endDate ? new Date(query.endDate) : undefined } }
+            : {})
+        },
+        include: {
+          product: { select: { sku: true, name: true, piecesPerUnit: true, uom: { select: { symbol: true, name: true } } } },
+          fromWarehouse: { select: { name: true } },
+          toWarehouse: { select: { name: true } }
+        },
+        orderBy: { movementDate: "desc" },
+        take: 300
+      })
+    ]);
+
+    const totalValue = valuationRows.reduce((sum, r) => sum + r.totalValue, 0);
+    const totalQuantity = items.data.reduce((sum, it) => sum + Number(it.quantityOnHand), 0);
+    let inQty = 0;
+    let outQty = 0;
+    for (const m of todayMovements) {
+      if (this.movementDirection(m, warehouseId) === "IN") inQty += Number(m.quantity);
+      else outQty += Number(m.quantity);
+    }
+
+    return {
+      data: {
+        warehouse: {
+          id: warehouse.id, code: warehouse.code, name: warehouse.name, type: warehouse.type,
+          branch: warehouse.branch?.name ?? null, farm: warehouse.farm?.name ?? null, productionSite: warehouse.productionSite?.name ?? null
+        },
+        summary: {
+          itemCount: items.data.length,
+          totalQuantity: Number(totalQuantity.toFixed(2)),
+          totalValue: Number(totalValue.toFixed(2))
+        },
+        today: {
+          inQty: Number(inQty.toFixed(2)),
+          outQty: Number(outQty.toFixed(2)),
+          netQty: Number((inQty - outQty).toFixed(2)),
+          movementCount: todayMovements.length
+        },
+        items: items.data,
+        movements: recentMovements.map((m) => ({
+          id: m.id,
+          movementDate: m.movementDate,
+          movementType: m.movementType,
+          direction: this.movementDirection(m, warehouseId),
+          product: m.product,
+          quantity: Number(m.quantity),
+          unitCost: m.unitCost !== null ? Number(m.unitCost) : null,
+          counterparty: m.movementType === "TRANSFER"
+            ? (this.movementDirection(m, warehouseId) === "IN" ? m.fromWarehouse?.name ?? null : m.toWarehouse?.name ?? null)
+            : null,
+          referenceType: m.referenceType,
+          notes: m.notes
+        }))
+      }
+    };
+  }
+
+  // One row per warehouse the caller can see: item count, on-hand value, and
+  // today's in/out — the landing view that drills into warehouseView above.
+  async warehousesOverview(user: AuthenticatedUser) {
+    const warehouses = await this.prisma.warehouse.findMany({
+      where: {
+        companyId: user.companyId, deletedAt: null,
+        ...(user.hasGlobalAccess || user.warehouseIds.length === 0 ? {} : { id: { in: user.warehouseIds } })
+      },
+      include: { branch: { select: { name: true } } },
+      orderBy: [{ type: "asc" }, { name: "asc" }]
+    });
+    if (warehouses.length === 0) return { data: [] };
+    const ids = warehouses.map((w) => w.id);
+    const todayStart = startOfTodayAccra();
+    const [itemGroups, qtyGroups, lots, todayMovements] = await Promise.all([
+      this.prisma.inventoryItem.groupBy({ by: ["warehouseId"], where: { companyId: user.companyId, deletedAt: null, warehouseId: { in: ids } }, _count: { _all: true } }),
+      this.prisma.inventoryItem.groupBy({ by: ["warehouseId"], where: { companyId: user.companyId, deletedAt: null, warehouseId: { in: ids } }, _sum: { quantityOnHand: true } }),
+      // Value = Σ(remaining × unit cost) per lot — unit cost lives on the lot,
+      // so it can't come from a groupBy on quantity alone.
+      this.prisma.stockBatch.findMany({ where: { companyId: user.companyId, deletedAt: null, warehouseId: { in: ids }, quantityRemaining: { gt: 0 } }, select: { warehouseId: true, quantityRemaining: true, unitCost: true } }),
+      this.prisma.stockMovement.findMany({ where: { companyId: user.companyId, deletedAt: null, warehouseId: { in: ids }, movementDate: { gte: todayStart } }, select: { warehouseId: true, movementType: true, quantity: true, fromWarehouseId: true, toWarehouseId: true } })
+    ]);
+    const valueByWh = new Map<string, number>();
+    for (const b of lots) valueByWh.set(b.warehouseId, (valueByWh.get(b.warehouseId) ?? 0) + Number(b.quantityRemaining) * Number(b.unitCost ?? 0));
+    const itemCountByWh = new Map(itemGroups.map((g) => [g.warehouseId, g._count._all]));
+    const qtyByWh = new Map(qtyGroups.map((g) => [g.warehouseId, Number(g._sum.quantityOnHand ?? 0)]));
+    const todayByWh = new Map<string, { inQty: number; outQty: number; count: number }>();
+    for (const m of todayMovements) {
+      if (!m.warehouseId) continue;
+      const bucket = todayByWh.get(m.warehouseId) ?? { inQty: 0, outQty: 0, count: 0 };
+      const dir = this.movementDirection(m, m.warehouseId);
+      if (dir === "IN") bucket.inQty += Number(m.quantity);
+      else bucket.outQty += Number(m.quantity);
+      bucket.count += 1;
+      todayByWh.set(m.warehouseId, bucket);
+    }
+    return {
+      data: warehouses.map((w) => {
+        const t = todayByWh.get(w.id) ?? { inQty: 0, outQty: 0, count: 0 };
+        return {
+          id: w.id, code: w.code, name: w.name, type: w.type, branch: w.branch?.name ?? null,
+          itemCount: itemCountByWh.get(w.id) ?? 0,
+          totalQuantity: Number((qtyByWh.get(w.id) ?? 0).toFixed(2)),
+          totalValue: Number((valueByWh.get(w.id) ?? 0).toFixed(2)),
+          todayIn: Number(t.inQty.toFixed(2)),
+          todayOut: Number(t.outQty.toFixed(2)),
+          todayMovements: t.count
+        };
+      })
+    };
   }
 
   async farmView(user: AuthenticatedUser, farmId: string) {

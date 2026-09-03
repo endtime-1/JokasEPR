@@ -1,12 +1,14 @@
 ﻿"use client";
 
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Download, Pencil, Plus, Trash2 } from "lucide-react";
+import { useParams } from "next/navigation";
+import { ArrowDownLeft, ArrowUpRight, Download, Pencil, Plus, Trash2, Warehouse as WarehouseIcon } from "lucide-react";
 import { InventoryShell } from "./inventory-shell";
 import { DataTable } from "./data-table";
 import { FormField } from "./form-field";
-import { ConfirmModal, Modal } from "./ui";
+import { ConfirmModal, Modal, StatusBadge } from "./ui";
+import { formatDate } from "../lib/format";
 import { ApiEnvelope, apiFetch, downloadReport, hasCached, getCached, getCachedFirst, invalidateCache } from "../lib/api";
 import { useApiRecovery } from "../lib/use-api-recovery";
 import { useLatestRequest } from "../lib/use-latest-request";
@@ -549,13 +551,13 @@ export function InventoryListPage({ title, endpoint, subtitle }: { title: string
   );
 }
 
-export function ScopedInventoryViewPage({ scope }: { scope: "warehouses" | "farms" | "production-sites" }) {
+export function ScopedInventoryViewPage({ scope }: { scope: "farms" | "production-sites" }) {
   const { options } = useInventoryOptions();
   const [selectedId, setSelectedId] = useState("");
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState("");
-  const source = scope === "warehouses" ? options.warehouses : scope === "farms" ? options.farms : options.productionSites;
+  const source = scope === "farms" ? options.farms : options.productionSites;
   const id = selectedId || source[0]?.id || "";
   function loadRows() {
     if (!id) return;
@@ -570,7 +572,7 @@ export function ScopedInventoryViewPage({ scope }: { scope: "warehouses" | "farm
   useApiRecovery(!!id && rows.length === 0 && !loading, loadRows);
   return (
     <InventoryShell>
-      <PageHeader title={scope === "warehouses" ? "Warehouse Stock View" : scope === "farms" ? "Farm Stock View" : "Production Site Stock View"} subtitle="Scoped inventory balances for the selected operating location." />
+      <PageHeader title={scope === "farms" ? "Farm Stock View" : "Production Site Stock View"} subtitle="Scoped inventory balances for the selected operating location." />
       <div className="mb-6 max-w-md">
         <SelectField label="Scope" value={id} options={source} onChange={setSelectedId} />
       </div>
@@ -581,6 +583,210 @@ export function ScopedInventoryViewPage({ scope }: { scope: "warehouses" | "farm
         </div>
       )}
       <InventoryItemsTable rows={rows} loading={loading} />
+    </InventoryShell>
+  );
+}
+
+const WH_TYPE_LABEL: Record<string, string> = {
+  GENERAL: "General", COLD_STORAGE: "Cold Storage", FARM_STORE: "Farm Store",
+  FEED_STORE: "Feed Store", SOYA_STORE: "Soya Store", EGG_STORE: "Egg Store"
+};
+const whTypeLabel = (t?: string | null) => (t ? WH_TYPE_LABEL[t] ?? t.replace(/_/g, " ") : "—");
+const ghs = (n: unknown) => `GHS ${Number(n ?? 0).toLocaleString("en-GH", { maximumFractionDigits: 2 })}`;
+const qty = (n: unknown) => Number(n ?? 0).toLocaleString("en-GH", { maximumFractionDigits: 2 });
+
+type WarehouseOverviewRow = {
+  id: string; code: string; name: string; type: string; branch: string | null;
+  itemCount: number; totalQuantity: number; totalValue: number;
+  todayIn: number; todayOut: number; todayMovements: number;
+};
+
+// The landing view: one card per warehouse the user can see, with live totals
+// and today's in/out. Click through to the per-warehouse monitor.
+export function WarehousesOverviewPage() {
+  const [rows, setRows] = useState<WarehouseOverviewRow[]>(() => getCachedFirst<ApiEnvelope<WarehouseOverviewRow[]>>("/inventory/warehouses-overview")?.data ?? []);
+  const [loading, setLoading] = useState(!hasCached("/inventory/warehouses-overview"));
+  const [loadError, setLoadError] = useState("");
+
+  function load() {
+    setLoadError("");
+    apiFetch<ApiEnvelope<WarehouseOverviewRow[]>>("/inventory/warehouses-overview")
+      .then((r) => setRows(r.data ?? []))
+      .catch((e: any) => setLoadError(e?.message ?? "Failed to load warehouses."))
+      .finally(() => setLoading(false));
+  }
+  useEffect(() => { load(); }, []);
+  useApiRecovery(rows.length === 0 && !loading, load);
+
+  return (
+    <InventoryShell>
+      <PageHeader title="Warehouses" subtitle="Every store at a glance — what's in it, what it's worth, and what moved today. Open one to monitor it." />
+      {loadError && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <span>{loadError}</span>
+          <button type="button" className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold hover:bg-red-50" onClick={load}>Retry</button>
+        </div>
+      )}
+      {loading ? (
+        <p className="text-sm text-ink/50">Loading…</p>
+      ) : rows.length === 0 ? (
+        <p className="text-sm text-ink/50">No warehouses found.</p>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {rows.map((w) => (
+            <Link
+              key={w.id}
+              href={`/inventory/warehouses/${w.id}`}
+              className="group rounded-xl border border-line bg-white p-4 shadow-sm transition hover:border-brand/40 hover:shadow-md"
+            >
+              <div className="mb-3 flex items-start justify-between gap-2">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <WarehouseIcon className="h-4 w-4 text-brand" />
+                    <span className="font-semibold text-ink group-hover:text-brand">{w.name}</span>
+                  </div>
+                  <p className="mt-0.5 text-xs text-ink/55">{w.code}{w.branch ? ` · ${w.branch}` : ""}</p>
+                </div>
+                <span className="shrink-0 rounded-md bg-field px-2 py-0.5 text-[11px] font-semibold text-ink/70">{whTypeLabel(w.type)}</span>
+              </div>
+              <div className="flex items-baseline gap-4 text-sm">
+                <span><span className="font-bold text-ink">{w.itemCount}</span> <span className="text-ink/55">items</span></span>
+                <span className="font-semibold text-ink">{ghs(w.totalValue)}</span>
+              </div>
+              <div className="mt-2 flex items-center gap-3 text-xs">
+                <span className="inline-flex items-center gap-1 text-emerald-600"><ArrowDownLeft className="h-3.5 w-3.5" />{qty(w.todayIn)} in</span>
+                <span className="inline-flex items-center gap-1 text-amber-600"><ArrowUpRight className="h-3.5 w-3.5" />{qty(w.todayOut)} out</span>
+                <span className="text-ink/40">today</span>
+              </div>
+            </Link>
+          ))}
+        </div>
+      )}
+    </InventoryShell>
+  );
+}
+
+type WarehouseMovement = {
+  id: string; movementDate: string; movementType: string; direction: "IN" | "OUT";
+  product?: { sku: string; name: string; piecesPerUnit?: number; uom?: { symbol?: string; name?: string } } | null;
+  quantity: number; unitCost: number | null; counterparty: string | null;
+  referenceType: string | null; notes: string | null;
+};
+type WarehouseDetail = {
+  warehouse: { id: string; code: string; name: string; type: string; branch: string | null; farm: string | null; productionSite: string | null };
+  summary: { itemCount: number; totalQuantity: number; totalValue: number };
+  today: { inQty: number; outQty: number; netQty: number; movementCount: number };
+  items: Record<string, any>[];
+  movements: WarehouseMovement[];
+};
+
+function KpiCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div className="rounded-xl border border-line bg-white p-4 shadow-sm">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-ink/45">{label}</p>
+      <p className="mt-1 text-xl font-bold text-ink">{value}</p>
+      {sub && <p className="mt-0.5 text-xs text-ink/55">{sub}</p>}
+    </div>
+  );
+}
+
+// The per-warehouse monitor: on-hand items + the movement log for this store,
+// with a "today" strip so a day's collections/receipts read at a glance.
+export function WarehouseDetailPage() {
+  const params = useParams<{ id: string }>();
+  const id = params.id;
+  const [range, setRange] = useState<{ startDate: string; endDate: string }>({ startDate: "", endDate: "" });
+  const key = `/inventory/warehouses/${id}?startDate=${range.startDate}&endDate=${range.endDate}`;
+  const [data, setData] = useState<WarehouseDetail | null>(() => getCachedFirst<ApiEnvelope<WarehouseDetail>>(`/inventory/warehouses/${id}`)?.data ?? null);
+  const [loading, setLoading] = useState(!hasCached(`/inventory/warehouses/${id}`));
+  const [loadError, setLoadError] = useState("");
+  const [tab, setTab] = useState<"onhand" | "activity">("onhand");
+
+  function load() {
+    setLoadError("");
+    apiFetch<ApiEnvelope<WarehouseDetail>>(key)
+      .then((r) => setData(r.data ?? null))
+      .catch((e: any) => setLoadError(e?.message ?? "Failed to load warehouse."))
+      .finally(() => setLoading(false));
+  }
+  useEffect(() => { load(); }, [key]);
+  useApiRecovery(!data && !loading, load);
+
+  const movementRows = useMemo(() => (data?.movements ?? []).map((m) => ({ ...m })), [data]);
+
+  return (
+    <InventoryShell>
+      <div className="mb-5 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+        <div>
+          <Link href="/inventory/warehouses" className="text-xs font-semibold text-brand hover:underline">← All warehouses</Link>
+          <h2 className="mt-1 text-2xl font-semibold">{data?.warehouse.name ?? "Warehouse"}</h2>
+          <p className="text-sm text-ink/60">
+            {whTypeLabel(data?.warehouse.type)}
+            {data?.warehouse.code ? ` · ${data.warehouse.code}` : ""}
+            {data?.warehouse.branch ? ` · ${data.warehouse.branch}` : ""}
+            {data?.warehouse.farm ? ` · ${data.warehouse.farm}` : ""}
+          </p>
+        </div>
+      </div>
+
+      {loadError && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <span>{loadError}</span>
+          <button type="button" className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold hover:bg-red-50" onClick={load}>Retry</button>
+        </div>
+      )}
+
+      <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <KpiCard label="Items on hand" value={loading ? "…" : String(data?.summary.itemCount ?? 0)} sub={`${qty(data?.summary.totalQuantity)} total qty`} />
+        <KpiCard label="Stock value" value={loading ? "…" : ghs(data?.summary.totalValue)} sub="FIFO cost basis" />
+        <KpiCard label="Received today" value={loading ? "…" : qty(data?.today.inQty)} sub={`${data?.today.movementCount ?? 0} movements today`} />
+        <KpiCard label="Issued today" value={loading ? "…" : qty(data?.today.outQty)} sub={`net ${qty(data?.today.netQty)}`} />
+      </div>
+
+      <div className="mb-4 flex gap-1 border-b border-line">
+        {(["onhand", "activity"] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`-mb-px border-b-2 px-3 py-2 text-sm font-semibold transition ${tab === t ? "border-brand text-brand" : "border-transparent text-ink/55 hover:text-ink"}`}
+          >
+            {t === "onhand" ? "On hand" : "Activity"}
+          </button>
+        ))}
+      </div>
+
+      {tab === "onhand" ? (
+        <InventoryItemsTable rows={data?.items ?? []} loading={loading} />
+      ) : (
+        <>
+          <div className="mb-4 flex flex-wrap items-end gap-3">
+            <FormField label="From">
+              <input type="date" className={inputClass} value={range.startDate} onChange={(e) => setRange((r) => ({ ...r, startDate: e.target.value }))} />
+            </FormField>
+            <FormField label="To">
+              <input type="date" className={inputClass} value={range.endDate} onChange={(e) => setRange((r) => ({ ...r, endDate: e.target.value }))} />
+            </FormField>
+            {(range.startDate || range.endDate) && (
+              <button type="button" className="min-h-11 rounded-md border border-line px-3 text-sm font-semibold hover:bg-field" onClick={() => setRange({ startDate: "", endDate: "" })}>Clear</button>
+            )}
+          </div>
+          <DataTable
+            rows={movementRows as Record<string, any>[]}
+            loading={loading}
+            empty="No movements in this period"
+            csvFilename={`warehouse-${data?.warehouse.code ?? id}-activity`}
+            columns={[
+              { key: "movementDate", label: "Date", render: (r) => formatDate(r.movementDate) },
+              { key: "direction", label: "", render: (r) => <StatusBadge status={r.direction === "IN" ? "IN_STOCK" : "OUT_OF_STOCK"} label={r.direction === "IN" ? "In" : "Out"} />, csv: (r) => r.direction },
+              { key: "movementType", label: "Type", render: (r) => String(r.movementType).replace(/_/g, " ") },
+              { key: "product", label: "Product", render: (r) => r.product ? <span><span className="font-semibold">{r.product.sku}</span><span className="text-ink/60"> — {r.product.name}</span></span> : "—", csv: (r) => r.product ? `${r.product.sku} — ${r.product.name}` : "" },
+              { key: "quantity", label: "Qty", render: (r) => formatQtyForProduct(r.quantity, r.product) },
+              { key: "counterparty", label: "From / To", render: (r) => r.counterparty ?? "—" },
+              { key: "notes", label: "Note", render: (r) => r.notes ?? "—" },
+            ]}
+          />
+        </>
+      )}
     </InventoryShell>
   );
 }

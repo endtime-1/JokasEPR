@@ -15,15 +15,15 @@ const mockTx = {
 };
 
 const mockPrisma = {
-  inventoryItem: { findFirst: jest.fn(), findUniqueOrThrow: jest.fn(), update: jest.fn() },
+  inventoryItem: { findFirst: jest.fn(), findUniqueOrThrow: jest.fn(), update: jest.fn(), findMany: jest.fn().mockResolvedValue([]), groupBy: jest.fn().mockResolvedValue([]) },
   stockAdjustment: { findFirst: jest.fn(), update: jest.fn().mockResolvedValue({}) },
   stockApproval: { updateMany: jest.fn().mockResolvedValue({}) },
   stockReservation: { findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn(), update: jest.fn() },
-  stockBatch: { findFirst: jest.fn() },
+  stockBatch: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), groupBy: jest.fn().mockResolvedValue([]) },
   stockTransfer: { findFirst: jest.fn() },
-  stockMovement: { findFirst: jest.fn() },
+  stockMovement: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
   stockReorderLevel: { upsert: jest.fn().mockResolvedValue({}) },
-  warehouse: { findFirst: jest.fn() },
+  warehouse: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
   product: { findFirst: jest.fn() },
   warehouseLocation: { findFirst: jest.fn(), findMany: jest.fn(), update: jest.fn(), count: jest.fn() },
   $transaction: jest.fn().mockImplementation((cb: (tx: typeof mockTx) => Promise<unknown>) => cb(mockTx))
@@ -542,5 +542,65 @@ describe("InventoryService.createStockMovement — idempotencyKey dedup on the '
     expect(mockTx.stockMovement.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ idempotencyKey: "key-1" }) })
     );
+  });
+});
+
+describe("InventoryService.warehouseView — per-warehouse monitor", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("returns summary + today's in/out classified by movement type, and the recent movement log", async () => {
+    mockPrisma.warehouse.findFirst.mockResolvedValue({ id: "wh-1", code: "EGG-01", name: "Egg Store", type: "EGG_STORE", branch: { name: "Accra" }, farm: null, productionSite: null });
+    mockPrisma.inventoryItem.findMany.mockResolvedValue([
+      { id: "it-1", quantityOnHand: 600, warehouseId: "wh-1", product: { sku: "EGG", name: "Eggs" }, warehouse: { name: "Egg Store" }, stockBatches: [{ quantityRemaining: 600, unitCost: 1 }] }
+    ]);
+    mockPrisma.stockBatch.findMany.mockResolvedValue([{ warehouseId: "wh-1", quantityRemaining: 600, unitCost: 1 }]);
+    mockPrisma.stockMovement.findMany
+      // today's movements
+      .mockResolvedValueOnce([
+        { movementType: "PRODUCTION_OUTPUT", quantity: 200, fromWarehouseId: null, toWarehouseId: "wh-1" },
+        { movementType: "SALE_DISPATCH", quantity: 50, fromWarehouseId: "wh-1", toWarehouseId: null },
+        { movementType: "TRANSFER", quantity: 30, fromWarehouseId: "wh-1", toWarehouseId: "wh-2" }
+      ])
+      // recent movement log
+      .mockResolvedValueOnce([
+        { id: "m1", movementDate: new Date(), movementType: "PRODUCTION_OUTPUT", quantity: 200, unitCost: 1, fromWarehouseId: null, toWarehouseId: "wh-1", product: { sku: "EGG", name: "Eggs" }, fromWarehouse: null, toWarehouse: { name: "Egg Store" }, referenceType: "FeedProductionBatch", notes: null }
+      ]);
+
+    const service = makeService();
+    const { data } = await service.warehouseView(makeUser({ warehouseIds: ["wh-1"] }), "wh-1");
+
+    expect(data.warehouse.type).toBe("EGG_STORE");
+    expect(data.summary).toEqual(expect.objectContaining({ itemCount: 1, totalQuantity: 600, totalValue: 600 }));
+    // 200 in (production output), 50 + 30 out (sale + transfer-out)
+    expect(data.today).toEqual(expect.objectContaining({ inQty: 200, outQty: 80, netQty: 120, movementCount: 3 }));
+    expect(data.movements[0].direction).toBe("IN");
+  });
+
+  it("rejects a warehouse the caller has no access to", async () => {
+    const service = makeService();
+    await expect(
+      service.warehouseView(makeUser({ warehouseIds: ["wh-OTHER"], hasGlobalAccess: false }), "wh-1")
+    ).rejects.toThrow(/do not have access/);
+  });
+});
+
+describe("InventoryService.warehousesOverview", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("returns one row per visible warehouse with item count, value and today's in/out", async () => {
+    mockPrisma.warehouse.findMany.mockResolvedValue([{ id: "wh-1", code: "EGG-01", name: "Egg Store", type: "EGG_STORE", branch: { name: "Accra" } }]);
+    mockPrisma.inventoryItem.groupBy
+      .mockResolvedValueOnce([{ warehouseId: "wh-1", _count: { _all: 3 } }])
+      .mockResolvedValueOnce([{ warehouseId: "wh-1", _sum: { quantityOnHand: 900 } }]);
+    mockPrisma.stockBatch.findMany.mockResolvedValue([{ warehouseId: "wh-1", quantityRemaining: 900, unitCost: 2 }]);
+    mockPrisma.stockMovement.findMany.mockResolvedValue([
+      { warehouseId: "wh-1", movementType: "PURCHASE_RECEIPT", quantity: 100, fromWarehouseId: null, toWarehouseId: "wh-1" }
+    ]);
+
+    const service = makeService();
+    const { data } = await service.warehousesOverview(makeUser({ warehouseIds: ["wh-1"] }));
+
+    expect(data).toHaveLength(1);
+    expect(data[0]).toEqual(expect.objectContaining({ id: "wh-1", itemCount: 3, totalQuantity: 900, totalValue: 1800, todayIn: 100, todayOut: 0 }));
   });
 });
