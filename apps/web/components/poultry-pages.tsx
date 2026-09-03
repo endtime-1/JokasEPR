@@ -1917,7 +1917,6 @@ function GenericRecordForm({ options, optionsLoading = false, form, setForm, sub
     const d = warehouseDefaultsForBatch(form.flockBatchId);
     const missing = Object.entries(d).some(([k, v]) => v && !form[k]);
     if (missing) setForm({ ...form, ...d });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.flockBatchId, options.batches.length, options.warehouses.length]);
 
   // Batch chosen → just its houses (BatchPenAllocation); otherwise every house
