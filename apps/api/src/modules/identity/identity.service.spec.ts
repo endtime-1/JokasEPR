@@ -9,9 +9,16 @@ const mockPrisma = {
   farm: { count: jest.fn().mockResolvedValue(0) },
   warehouse: { count: jest.fn().mockResolvedValue(0) },
   productionSite: { count: jest.fn().mockResolvedValue(0) },
-  user: { findFirst: jest.fn(), findFirstOrThrow: jest.fn(), update: jest.fn(), findMany: jest.fn(), count: jest.fn() },
+  user: {
+    findFirst: jest.fn(),
+    findFirstOrThrow: jest.fn().mockResolvedValue({ branchAccesses: [{ branchId: "branch-1" }], farmAccesses: [], warehouseAccesses: [], productionSiteAccess: [] }),
+    update: jest.fn(),
+    findMany: jest.fn(),
+    count: jest.fn()
+  },
+  systemSetting: { findFirst: jest.fn().mockResolvedValue({ value: { enforceBranchScope: false, enforceWarehouseScope: false } }) },
   refreshToken: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
-  userRole: { deleteMany: jest.fn(), createMany: jest.fn(), count: jest.fn().mockResolvedValue(0) },
+  userRole: { deleteMany: jest.fn(), createMany: jest.fn(), findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0) },
   userBranchAccess: { deleteMany: jest.fn(), createMany: jest.fn() },
   userFarmAccess: { deleteMany: jest.fn(), createMany: jest.fn() },
   userWarehouseAccess: { deleteMany: jest.fn(), createMany: jest.fn() },
@@ -156,6 +163,54 @@ describe("IdentityService — privilege escalation guards", () => {
 
       await expect(
         service.assignUserAccess(actor, "target-1", { branchIds: ["branch-any"] }, {})
+      ).resolves.toBeDefined();
+    });
+  });
+
+  describe("scope enforcement for roled users (audit H3)", () => {
+    beforeEach(() => {
+      mockPrisma.systemSetting.findFirst.mockResolvedValue({ value: { enforceBranchScope: true, enforceWarehouseScope: true } });
+      mockPrisma.user.findFirst.mockResolvedValue({ id: "target-1", status: "ACTIVE" });
+    });
+
+    it("blocks assigning a non-global role to a user with no branch/warehouse/farm/site assignment", async () => {
+      mockPrisma.user.findFirstOrThrow.mockResolvedValue({ id: "target-1", roles: [], branchAccesses: [], farmAccesses: [], warehouseAccesses: [], productionSiteAccess: [] });
+      mockPrisma.role.findMany.mockResolvedValue([{ id: "role-officer", level: "OFFICER" }]);
+
+      const actor = makeUser({ hasGlobalAccess: true });
+      await expect(
+        service.assignUserRoles(actor, "target-1", { roleIds: ["role-officer"] }, {})
+      ).rejects.toThrow(/at least one branch/);
+    });
+
+    it("allows it when the user has at least one scope", async () => {
+      mockPrisma.user.findFirstOrThrow.mockResolvedValue({ id: "target-1", roles: [], branchAccesses: [{ branchId: "branch-1" }], farmAccesses: [], warehouseAccesses: [], productionSiteAccess: [] });
+      mockPrisma.role.findMany.mockResolvedValue([{ id: "role-officer", level: "OFFICER" }]);
+
+      const actor = makeUser({ hasGlobalAccess: true });
+      await expect(
+        service.assignUserRoles(actor, "target-1", { roleIds: ["role-officer"] }, {})
+      ).resolves.toBeDefined();
+    });
+
+    it("allows a company-wide role (Super Admin / CEO) with no scope", async () => {
+      mockPrisma.user.findFirstOrThrow.mockResolvedValue({ id: "target-1", roles: [], branchAccesses: [], farmAccesses: [], warehouseAccesses: [], productionSiteAccess: [] });
+      mockPrisma.role.findMany.mockResolvedValue([{ id: "role-ceo", level: "CEO" }]);
+
+      const actor = makeUser({ hasGlobalAccess: true });
+      await expect(
+        service.assignUserRoles(actor, "target-1", { roleIds: ["role-ceo"] }, {})
+      ).resolves.toBeDefined();
+    });
+
+    it("does nothing when scope enforcement is off", async () => {
+      mockPrisma.systemSetting.findFirst.mockResolvedValue({ value: { enforceBranchScope: false, enforceWarehouseScope: false } });
+      mockPrisma.user.findFirstOrThrow.mockResolvedValue({ id: "target-1", roles: [], branchAccesses: [], farmAccesses: [], warehouseAccesses: [], productionSiteAccess: [] });
+      mockPrisma.role.findMany.mockResolvedValue([{ id: "role-officer", level: "OFFICER" }]);
+
+      const actor = makeUser({ hasGlobalAccess: true });
+      await expect(
+        service.assignUserRoles(actor, "target-1", { roleIds: ["role-officer"] }, {})
       ).resolves.toBeDefined();
     });
   });

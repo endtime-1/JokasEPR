@@ -93,6 +93,7 @@ export class IdentityService {
     await this.assertActorCanAssignRoles(actor, dto.roleIds);
     await this.assertScopeIdsBelongToCompany(actor.companyId, access);
     this.assertActorHasScopeAccess(actor, access);
+    await this.assertScopedUserHasAssignments(actor.companyId, dto.roleIds, access);
     const passwordHash = await bcrypt.hash(dto.password, 12);
 
     const user = await this.prisma.$transaction(async (tx) => {
@@ -254,6 +255,21 @@ export class IdentityService {
   async assignUserRoles(actor: AuthenticatedUser, userId: string, dto: AssignUserRolesDto, context: RequestContext) {
     await this.getCompanyUser(actor.companyId, userId);
     await this.assertActorCanAssignRoles(actor, dto.roleIds);
+    const scoped = await this.prisma.user.findFirstOrThrow({
+      where: { id: userId, companyId: actor.companyId },
+      select: {
+        branchAccesses: { select: { branchId: true } },
+        farmAccesses: { select: { farmId: true } },
+        warehouseAccesses: { select: { warehouseId: true } },
+        productionSiteAccess: { select: { productionSiteId: true } }
+      }
+    });
+    await this.assertScopedUserHasAssignments(actor.companyId, dto.roleIds, {
+      branchIds: scoped.branchAccesses.map((a) => a.branchId),
+      farmIds: scoped.farmAccesses.map((a) => a.farmId),
+      warehouseIds: scoped.warehouseAccesses.map((a) => a.warehouseId),
+      productionSiteIds: scoped.productionSiteAccess.map((a) => a.productionSiteId)
+    });
 
     await this.prisma.$transaction([
       this.prisma.userRole.deleteMany({ where: { userId, companyId: actor.companyId } }),
@@ -321,6 +337,8 @@ export class IdentityService {
     };
     await this.assertScopeIdsBelongToCompany(actor.companyId, access);
     this.assertActorHasScopeAccess(actor, access);
+    const currentRoles = await this.prisma.userRole.findMany({ where: { userId, companyId: actor.companyId }, select: { roleId: true } });
+    await this.assertScopedUserHasAssignments(actor.companyId, currentRoles.map((r) => r.roleId), access);
 
     await this.prisma.$transaction([
       this.prisma.userBranchAccess.deleteMany({ where: { userId, companyId: actor.companyId } }),
@@ -493,6 +511,41 @@ export class IdentityService {
   // this, any identity.manage holder (a normal, non-Super-Admin permission)
   // could look up the Super Admin role's id via GET /identity/roles and
   // assign it to themselves or anyone else.
+  // Audit H3: the service-layer scope helpers (assertBranchAccess et al.)
+  // treat "no assignment" as "access to everything" — so a non-global user
+  // who was given a role but no branch/warehouse/farm/site ends up seeing
+  // every branch's data. When the company has turned on branch or warehouse
+  // scope enforcement, refuse to create/leave such a user: they need at
+  // least one scope, or an explicitly global role.
+  private async assertScopedUserHasAssignments(
+    companyId: string,
+    roleIds: string[],
+    access: { branchIds: string[]; farmIds: string[]; warehouseIds: string[]; productionSiteIds: string[] }
+  ) {
+    const hasAnyScope =
+      access.branchIds.length > 0 || access.farmIds.length > 0 || access.warehouseIds.length > 0 || access.productionSiteIds.length > 0;
+    if (hasAnyScope || roleIds.length === 0) return;
+
+    const setting = await this.prisma.systemSetting.findFirst({
+      where: { companyId, key: "user-access.settings", deletedAt: null },
+      select: { value: true }
+    });
+    const cfg = (setting?.value ?? {}) as { enforceBranchScope?: boolean; enforceWarehouseScope?: boolean };
+    // Defaults are true (see settings.service DEFAULT_SETTINGS).
+    if (cfg.enforceBranchScope === false && cfg.enforceWarehouseScope === false) return;
+
+    const roles = await this.prisma.role.findMany({
+      where: { companyId, id: { in: roleIds }, deletedAt: null },
+      select: { level: true }
+    });
+    const isGlobal = roles.some((r) => r.level === "SUPER_ADMIN" || r.level === "CEO");
+    if (isGlobal) return;
+
+    throw new BadRequestException(
+      "This company enforces branch/warehouse scope, so a user with a role must be assigned at least one branch, farm, warehouse or production site. Assign a scope, give them a company-wide role (Super Admin / CEO), or turn off scope enforcement in Settings → User Access."
+    );
+  }
+
   private async assertActorCanAssignRoles(actor: AuthenticatedUser, roleIds: string[]) {
     const roles = await this.prisma.role.findMany({
       where: { companyId: actor.companyId, id: { in: roleIds }, deletedAt: null },

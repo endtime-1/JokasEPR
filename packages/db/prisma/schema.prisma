@@ -1757,7 +1757,7 @@ model StockMovement {
   unitCost             Decimal?          @db.Decimal(18, 4)
   referenceType        String?
   referenceId          String?
-  notes                String?
+  notes                String? @db.VarChar(500)
   // Mobile parity audit (2026-08-17): only stamped on the "in" (single-row)
   // path of MobileStockMovementDto — the "out" path's FIFO consumption can
   // legitimately create several StockMovement rows for one submission (one
@@ -1857,7 +1857,7 @@ model StockAdjustment {
   adjustmentType   StockAdjustmentType
   quantity         Decimal             @db.Decimal(18, 4)
   unitCost         Decimal?            @db.Decimal(18, 4)
-  reason           String
+  reason           String @db.VarChar(500)
   status           StockWorkflowStatus @default(PENDING_APPROVAL)
   movementId       String?
   requestedById    String?
@@ -2146,7 +2146,7 @@ model StockApproval {
   requestedById  String?
   approvedById   String?
   approvedAt     DateTime?
-  notes          String?
+  notes          String? @db.VarChar(500)
   createdAt      DateTime            @default(now())
   updatedAt      DateTime            @updatedAt
   deletedAt      DateTime?
@@ -2315,7 +2315,7 @@ model SalesOrder {
   salespersonId     String?
   stockApprovedById String?
   stockApprovedAt   DateTime?
-  notes             String?
+  notes             String? @db.VarChar(500)
 
   // Storefront / online orders
   isStorefrontOrder         Boolean @default(false)
@@ -2396,7 +2396,7 @@ model SalesQuote {
   discountAmount Decimal          @default(0) @db.Decimal(18, 4)
   taxAmount      Decimal          @default(0) @db.Decimal(18, 4)
   totalAmount    Decimal          @default(0) @db.Decimal(18, 4)
-  notes          String?
+  notes          String? @db.VarChar(500)
   salesOrderId   String?
   sentAt         DateTime?
   decidedAt      DateTime?
@@ -2575,7 +2575,7 @@ model SalesReturn {
   quantity     Decimal           @db.Decimal(18, 4)
   unitPrice    Decimal           @db.Decimal(18, 4)
   totalAmount  Decimal           @db.Decimal(18, 4)
-  reason       String
+  reason       String @db.VarChar(500)
   status       SalesReturnStatus @default(REQUESTED)
   approvedById String?
   approvedAt   DateTime?
@@ -2678,7 +2678,7 @@ model ProspectVisit {
   longitude      Decimal?             @db.Decimal(10, 7)
   visitType      ProspectVisitType    @default(COLD_CALL)
   outcome        ProspectVisitOutcome @default(INTERESTED)
-  notes          String?
+  notes          String? @db.VarChar(500)
   visitedAt      DateTime             @default(now())
   idempotencyKey String?              @db.VarChar(100)
   createdAt      DateTime             @default(now())
@@ -2707,7 +2707,7 @@ model DeliveryNote {
   releasedById   String?
   deliveredAt    DateTime?
   recipientName  String?
-  notes          String?
+  notes          String? @db.VarChar(500)
   createdById    String?
   updatedById    String?
   createdAt      DateTime           @default(now())
@@ -2748,7 +2748,7 @@ model Machine {
   installationDate DateTime?
   capacity         String?
   location         String?
-  notes            String?
+  notes            String? @db.VarChar(500)
   createdById      String?
   updatedById      String?
   createdAt        DateTime    @default(now())
@@ -2799,7 +2799,7 @@ model Equipment {
   serialNumber     String?
   purchaseDate     DateTime?
   location         String?
-  notes            String?
+  notes            String? @db.VarChar(500)
   createdById      String?
   updatedById      String?
   createdAt        DateTime      @default(now())
@@ -2851,7 +2851,7 @@ model MaintenanceSchedule {
   lastCompletedAt  DateTime?
   nextDueDate      DateTime
   status           MaintenanceWorkflowStatus @default(SCHEDULED)
-  instructions     String?
+  instructions     String? @db.VarChar(500)
   createdById      String?
   updatedById      String?
   createdAt        DateTime                  @default(now())
@@ -3013,7 +3013,7 @@ model SparePartUsage {
   totalCost           Decimal   @default(0) @db.Decimal(18, 4)
   issuedById          String?
   usedAt              DateTime  @default(now())
-  notes               String?
+  notes               String? @db.VarChar(500)
   createdById         String?
   updatedById         String?
   createdAt           DateTime  @default(now())
@@ -3057,7 +3057,7 @@ model TechnicianAssignment {
   assignedAt          DateTime                   @default(now())
   dueDate             DateTime?
   status              TechnicianAssignmentStatus @default(ASSIGNED)
-  notes               String?
+  notes               String? @db.VarChar(500)
   createdById         String?
   updatedById         String?
   createdAt           DateTime                   @default(now())
@@ -3101,7 +3101,7 @@ model MachineDowntimeRecord {
   startAt           DateTime
   endAt             DateTime?
   durationHours     Decimal        @default(0) @db.Decimal(18, 4)
-  reason            String
+  reason            String @db.VarChar(500)
   status            DowntimeStatus @default(OPEN)
   createdById       String?
   updatedById       String?
@@ -3239,7 +3239,7 @@ model FlockBatch {
   expectedCloseDate DateTime?
   actualCloseDate   DateTime?
   status            FlockBatchStatus @default(ACTIVE)
-  notes             String?
+  notes             String? @db.VarChar(500)
   createdById       String?
   updatedById       String?
   createdAt         DateTime         @default(now())
@@ -3287,7 +3287,7 @@ model DailyPoultryRecord {
   culledCount      Int                 @default(0)
   feedConsumedKg   Decimal             @default(0) @db.Decimal(18, 4)
   totalEggs        Int                 @default(0)
-  notes            String?
+  notes            String? @db.VarChar(500)
   status           PoultryRecordStatus @default(SUBMITTED)
   createdById      String?
   updatedById      String?
@@ -3324,8 +3324,8 @@ model MortalityRecord {
   recordDate     DateTime
   birdCount      Int
   isCulling      Boolean             @default(false)
-  reason         String?
-  notes          String?
+  reason         String? @db.VarChar(500)
+  notes          String? @db.VarChar(500)
   status         PoultryRecordStatus @default(SUBMITTED)
   idempotencyKey String?             @db.VarChar(100)
   createdById    String?
@@ -3365,7 +3365,7 @@ model FeedConsumptionRecord {
   recordDate     DateTime
   quantityKg     Decimal             @db.Decimal(18, 4)
   costAmount     Decimal?            @db.Decimal(18, 4)
-  notes          String?
+  notes          String? @db.VarChar(500)
   status         PoultryRecordStatus @default(SUBMITTED)
   idempotencyKey String?             @db.VarChar(100)
   createdById    String?
@@ -3410,7 +3410,7 @@ model EggProductionRecord {
   dirtyEggs      Int                 @default(0)
   brokenEggs     Int                 @default(0)
   rejectedEggs   Int                 @default(0)
-  notes          String?
+  notes          String? @db.VarChar(500)
   status         PoultryRecordStatus @default(SUBMITTED)
   idempotencyKey String?             @db.VarChar(100)
   createdById    String?
@@ -3448,7 +3448,7 @@ model BirdWeightRecord {
   recordDate      DateTime
   sampleSize      Int
   averageWeightKg Decimal             @db.Decimal(18, 4)
-  notes           String?
+  notes           String? @db.VarChar(500)
   status          PoultryRecordStatus @default(SUBMITTED)
   idempotencyKey  String?             @db.VarChar(100)
   createdById     String?
@@ -3489,7 +3489,7 @@ model MedicationRecord {
   startDate       DateTime
   endDate         DateTime?
   withdrawalUntil DateTime?
-  notes           String?
+  notes           String? @db.VarChar(500)
   status          PoultryRecordStatus @default(SUBMITTED)
   idempotencyKey  String?             @db.VarChar(100)
   createdById     String?
@@ -3528,7 +3528,7 @@ model VaccinationRecord {
   dose            String
   vaccinationDate DateTime
   nextDueDate     DateTime?
-  notes           String?
+  notes           String? @db.VarChar(500)
   status          PoultryRecordStatus @default(SUBMITTED)
   idempotencyKey  String?             @db.VarChar(100)
   createdById     String?
@@ -3578,8 +3578,8 @@ model PoultryTransferRecord {
   isFullBatchRelocation Boolean               @default(false)
   transferDate          DateTime
   status                PoultryTransferStatus @default(PENDING)
-  reason                String?
-  notes                 String?
+  reason                String? @db.VarChar(500)
+  notes                 String? @db.VarChar(500)
   approvedById          String?
   approvedAt            DateTime?
   createdById           String?
@@ -3713,7 +3713,7 @@ model FeedReceiptRecord {
   billReference          String?             @db.VarChar(100)
   unitCost               Decimal?            @db.Decimal(18, 4)
   totalCost              Decimal?            @db.Decimal(18, 4)
-  notes                  String?
+  notes                  String? @db.VarChar(500)
   status                 PoultryRecordStatus @default(SUBMITTED)
   idempotencyKey         String?             @db.VarChar(100)
   createdById            String?
@@ -3794,7 +3794,7 @@ model BatchPenAllocation {
   poultryHouseId String
   farmId         String
   birdCount      Int
-  notes          String?
+  notes          String? @db.VarChar(500)
   allocatedAt    DateTime @default(now())
   createdById    String?
 
@@ -3876,7 +3876,7 @@ model FeedFormulaVersion {
   ingredientSnapshot Json
   costPer100Kg       Decimal           @default(0) @db.Decimal(18, 4)
   costPer50KgBag     Decimal           @default(0) @db.Decimal(18, 4)
-  notes              String?
+  notes              String? @db.VarChar(500)
   createdById        String?
   createdAt          DateTime          @default(now())
 
@@ -3906,7 +3906,7 @@ model FeedProductionOrder {
   plannedQuantityKg    Decimal                   @db.Decimal(18, 4)
   scheduledDate        DateTime
   status               FeedProductionOrderStatus @default(DRAFT)
-  notes                String?
+  notes                String? @db.VarChar(500)
   approvedById         String?
   approvedAt           DateTime?
   createdById          String?
@@ -4145,7 +4145,7 @@ model FeedInternalTransfer {
   quantityKg        Decimal            @db.Decimal(18, 4)
   status            FeedTransferStatus @default(PENDING)
   transferDate      DateTime           @default(now())
-  notes             String?
+  notes             String? @db.VarChar(500)
   createdById       String?
   updatedById       String?
   createdAt         DateTime           @default(now())
@@ -4562,7 +4562,7 @@ model SoyaBeanIntake {
   moisturePercent  Decimal?          @db.Decimal(18, 4)
   qualityStatus    SoyaQualityStatus @default(PENDING)
   receivedAt       DateTime          @default(now())
-  notes            String?
+  notes            String? @db.VarChar(500)
   idempotencyKey   String?           @db.VarChar(100)
   createdById      String?
   updatedById      String?
@@ -4600,7 +4600,7 @@ model SoyaProcessingBatch {
   beansUsedKg      Decimal                   @db.Decimal(18, 4)
   processingDate   DateTime                  @default(now())
   status           SoyaProcessingBatchStatus @default(PLANNED)
-  notes            String?
+  notes            String? @db.VarChar(500)
   idempotencyKey   String?                   @db.VarChar(100)
   createdById      String?
   updatedById      String?
@@ -4704,7 +4704,7 @@ model SoyaWasteRecord {
   productionSiteId  String
   productionBatchId String
   quantityKg        Decimal   @db.Decimal(18, 4)
-  reason            String?
+  reason            String? @db.VarChar(500)
   createdById       String?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
@@ -4733,7 +4733,7 @@ model SoyaQualityCheck {
   oilPurityPercent   Decimal?          @db.Decimal(18, 4)
   cakeProteinPercent Decimal?          @db.Decimal(18, 4)
   status             SoyaQualityStatus @default(PENDING)
-  notes              String?
+  notes              String? @db.VarChar(500)
   checkedById        String?
   approvedById       String?
   approvedAt         DateTime?
@@ -4800,7 +4800,7 @@ model SoyaInternalTransfer {
   quantity           Decimal            @db.Decimal(18, 4)
   status             SoyaTransferStatus @default(PENDING)
   transferDate       DateTime           @default(now())
-  notes              String?
+  notes              String? @db.VarChar(500)
   createdById        String?
   updatedById        String?
   createdAt          DateTime           @default(now())

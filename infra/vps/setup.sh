@@ -93,11 +93,18 @@ SQL
 mkdir -p /etc/mysql/mariadb.conf.d
 # sql_mode: the app was built + run for months against Hostinger's lenient
 # MariaDB. Modern MariaDB defaults to STRICT_TRANS_TABLES, which turns silent
-# truncations / out-of-range enum values into hard errors (1265) — several
-# columns in the imported schema are undersized (AI chat content, some
-# notification enums) and every write to them 500'd on the VPS. Match the
-# environment the app expects; widen the genuinely-oversized columns via
-# proper migrations separately.
+# truncations / out-of-range enum values into hard errors (1265).
+#
+# Status of the undersized columns that forced this:
+#   - AI chat content     -> fixed (migration 20260831000000_ai_chat_text_columns)
+#   - notification enums  -> fixed (migration 20260901010000_notification_enum_drift_repair)
+#   - free-text notes/reason (VARCHAR 191 vs DTO 500)
+#                         -> fixed (migration 20260903000000_widen_free_text_notes)
+#
+# Audit H2 follow-up: once that last migration is deployed and verified,
+# flip this to "STRICT_TRANS_TABLES,NO_ENGINE_SUBSTITUTION" and
+# `systemctl restart mariadb` so any *future* schema/DTO drift errors loudly
+# instead of silently dropping data.
 cat > /etc/mysql/mariadb.conf.d/99-jokas.cnf <<'CNF'
 [mysqld]
 bind-address            = 127.0.0.1
