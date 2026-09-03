@@ -212,6 +212,7 @@ export default function SettingsPage() {
     ...options,
     branches: options.branches?.length ? options.branches : toOpt(master.branches ?? []),
     farms: options.farms?.length ? options.farms : toOpt(master.farms ?? []),
+    productionSites: options.productionSites?.length ? options.productionSites : toOpt(master["production-sites"] ?? []),
     productCategories: options.productCategories?.length ? options.productCategories : toOpt(master.productCategories ?? []),
     accounts: options.accounts ?? [],
   }), [options, master]);
@@ -565,7 +566,7 @@ function rowToForm(resource: string, row: Row): Record<string, string> {
   if (resource === "branches") { form.city = row.city ?? ""; form.country = row.country ?? "Ghana"; }
   if (["farms", "warehouses", "production-sites", "departments"].includes(resource)) form.branchId = row.branchId ?? "";
   if (resource === "farms") { form.type = row.type ?? "POULTRY"; form.location = row.location ?? ""; }
-  if (resource === "warehouses") { form.farmId = row.farmId ?? ""; form.type = row.type ?? "GENERAL"; form.location = row.location ?? ""; }
+  if (resource === "warehouses") { form.farmId = row.farmId ?? ""; form.productionSiteId = row.productionSiteId ?? ""; form.type = row.type ?? "GENERAL"; form.location = row.location ?? ""; }
   if (resource === "production-sites") { form.type = row.type ?? "FEED_PRODUCTION"; form.location = row.location ?? ""; }
   if (resource === "units-of-measure") form.symbol = row.symbol ?? "";
   if (resource === "product-categories") form.parentId = row.parentId ?? "";
@@ -618,8 +619,14 @@ function masterFields(resource: string, form: Record<string, string>, setForm: (
   if (resource === "branches") base.push(<input key="city" className={inputClass} placeholder="City" value={form.city ?? ""} onChange={(e) => set("city", e.target.value)} />);
   if (["farms", "warehouses", "production-sites", "departments"].includes(resource)) base.push(<Select key="branchId" value={form.branchId ?? ""} onChange={(v) => set("branchId", v)} options={options.branches ?? []} placeholder="Branch" required={["farms", "warehouses", "production-sites"].includes(resource)} emptyLabel="No branches — add branches first" />);
   if (resource === "farms") base.push(<select key="type" className={inputClass} value={form.type ?? "POULTRY"} onChange={(e) => set("type", e.target.value)}><option value="POULTRY">Poultry</option><option value="CROP">Crop</option><option value="MIXED">Mixed</option></select>);
-  if (resource === "warehouses") base.push(<Select key="farmId" value={form.farmId ?? ""} onChange={(v) => set("farmId", v)} options={options.farms ?? []} placeholder="Farm (optional)" />);
-  if (resource === "warehouses") base.push(<select key="type" className={inputClass} value={form.type ?? "GENERAL"} onChange={(e) => set("type", e.target.value)}><option value="GENERAL">General</option><option value="FARM_STORE">Farm store</option><option value="FEED_STORE">Feed store</option><option value="SOYA_STORE">Soya store</option><option value="EGG_STORE">Egg store</option><option value="COLD_STORAGE">Cold storage</option></select>);
+  if (resource === "warehouses") {
+    const whType = form.type ?? "GENERAL";
+    const needsFarm = whType === "EGG_STORE" || whType === "FARM_STORE";
+    const needsSite = whType === "FEED_STORE" || whType === "SOYA_STORE";
+    base.push(<select key="type" className={inputClass} value={whType} onChange={(e) => set("type", e.target.value)}><option value="GENERAL">General</option><option value="FARM_STORE">Farm store</option><option value="FEED_STORE">Feed store</option><option value="SOYA_STORE">Soya store</option><option value="EGG_STORE">Egg store</option><option value="COLD_STORAGE">Cold storage</option></select>);
+    base.push(<Select key="farmId" value={form.farmId ?? ""} onChange={(v) => set("farmId", v)} options={options.farms ?? []} placeholder={needsFarm ? "Farm (required for this type)" : "Farm (optional)"} required={needsFarm} />);
+    base.push(<Select key="productionSiteId" value={form.productionSiteId ?? ""} onChange={(v) => set("productionSiteId", v)} options={options.productionSites ?? []} placeholder={needsSite ? "Production site — the mill / plant it belongs to (required)" : "Production site (optional)"} required={needsSite} emptyLabel="No production sites — add one under Production Sites first" />);
+  }
   if (resource === "production-sites") base.push(<select key="type" className={inputClass} value={form.type ?? "FEED_PRODUCTION"} onChange={(e) => set("type", e.target.value)}><option value="FEED_PRODUCTION">Feed production</option><option value="SOYA_PROCESSING">Soya processing</option><option value="MIXED">Mixed</option></select>);
   if (resource === "units-of-measure") base.push(<input key="symbol" className={inputClass} placeholder="Symbol" value={form.symbol ?? ""} onChange={(e) => set("symbol", e.target.value)} required />);
   if (resource === "product-categories") base.push(<Select key="parentId" value={form.parentId ?? ""} onChange={(v) => set("parentId", v)} options={options.productCategories ?? []} placeholder="Parent category (optional)" />);
