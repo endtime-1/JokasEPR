@@ -32,7 +32,28 @@ type Option = {
   name: string;
   farmId?: string;
   poultryHouseId?: string;
+  type?: string;
 };
+
+// The store a poultry record should draw from / deposit into, for the flock's
+// own farm: feed consumption → the farm's Feed Store, egg collection → its
+// Egg Store, anything else → any warehouse on that farm. Falls back to the
+// first warehouse when the farm has no matching store set up yet.
+function defaultWarehouse(purpose: "feed" | "eggs" | "other", farmId: string | undefined, options: PoultryOptions): string {
+  const all = options.warehouses;
+  const onFarm = (w: Option) => !farmId || !w.farmId || w.farmId === farmId;
+  if (purpose === "feed") {
+    return options.feedWarehouses.find((w) => w.farmId === farmId)?.id
+      ?? all.find((w) => w.type === "FEED_STORE" && onFarm(w))?.id
+      ?? all.find(onFarm)?.id ?? all[0]?.id ?? "";
+  }
+  if (purpose === "eggs") {
+    return options.eggWarehouses.find((w) => w.farmId === farmId)?.id
+      ?? all.find((w) => w.type === "EGG_STORE" && onFarm(w))?.id
+      ?? all.find(onFarm)?.id ?? all[0]?.id ?? "";
+  }
+  return all.find(onFarm)?.id ?? all[0]?.id ?? "";
+}
 
 type PenOption = {
   id: string;
@@ -1204,12 +1225,20 @@ function BatchRecordSection({ batchId, type, label, cols, endpoint, options }: {
       if (f.defaultValue !== undefined) defaults[f.name] = String(f.defaultValue);
       else if (f.kind === "select" && f.options?.length) defaults[f.name] = f.options[0];
     }
+    const batchFarmId = options.batches.find((b) => b.id === batchId)?.farmId;
     if (type === "feed") {
       defaults.feedProductId = feedPickerProducts[0]?.id ?? "";
-      defaults.warehouseId = options.warehouses[0]?.id ?? "";
+      defaults.warehouseId = defaultWarehouse("feed", batchFarmId, options);
     }
-    if (["eggs", "medications", "vaccinations"].includes(type)) {
-      defaults.warehouseId = options.warehouses[0]?.id ?? "";
+    if (type === "eggs") {
+      defaults.warehouseId = defaultWarehouse("eggs", batchFarmId, options);
+    }
+    if (["medications", "vaccinations"].includes(type)) {
+      defaults.warehouseId = defaultWarehouse("other", batchFarmId, options);
+    }
+    if (type === "daily") {
+      defaults.feedWarehouseId = defaultWarehouse("feed", batchFarmId, options);
+      defaults.eggWarehouseId = defaultWarehouse("eggs", batchFarmId, options);
     }
     setAddForm(defaults);
     setAddCrates("");
@@ -1867,6 +1896,30 @@ function GenericRecordForm({ options, optionsLoading = false, form, setForm, sub
     setForm({ ...form, [pieceField]: v ? String(n * EGGS_PER_CRATE) : "" });
   }
 
+  // When a batch is picked, auto-select the store its farm actually uses for
+  // this kind of record — feed → the farm's Feed Store, eggs → its Egg Store,
+  // the daily record sets both. Skipped while editing an existing record so a
+  // saved warehouse is never silently changed.
+  function warehouseDefaultsForBatch(batchId: string): Record<string, string> {
+    if (isEditing) return {};
+    const farmId = options.batches.find((b) => b.id === batchId)?.farmId;
+    if (type === "feed") return { warehouseId: defaultWarehouse("feed", farmId, options) };
+    if (type === "eggs") return { warehouseId: defaultWarehouse("eggs", farmId, options) };
+    if (type === "medications" || type === "vaccinations") return { warehouseId: defaultWarehouse("other", farmId, options) };
+    if (type === "daily") return { feedWarehouseId: defaultWarehouse("feed", farmId, options), eggWarehouseId: defaultWarehouse("eggs", farmId, options) };
+    return {};
+  }
+
+  // If the form loads with a batch already chosen (dashboard deep-link,
+  // returning to a half-filled form) and no warehouse yet, fill it in.
+  useEffect(() => {
+    if (isEditing || !form.flockBatchId) return;
+    const d = warehouseDefaultsForBatch(form.flockBatchId);
+    const missing = Object.entries(d).some(([k, v]) => v && !form[k]);
+    if (missing) setForm({ ...form, ...d });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.flockBatchId, options.batches.length, options.warehouses.length]);
+
   // Batch chosen → just its houses (BatchPenAllocation); otherwise every house
   // that has at least one pen.
   const housesWithPens = useMemo(() => {
@@ -1895,7 +1948,7 @@ function GenericRecordForm({ options, optionsLoading = false, form, setForm, sub
           name="flockBatchId"
           className={`${inputClass} ${!optionsLoading && options.batches.length === 0 ? "border-amber-400 bg-amber-50" : ""}`}
           value={form.flockBatchId}
-          onChange={(e) => setForm({ ...form, flockBatchId: e.target.value, poultryHouseId: "", penId: "" })}
+          onChange={(e) => setForm({ ...form, flockBatchId: e.target.value, poultryHouseId: "", penId: "", ...warehouseDefaultsForBatch(e.target.value) })}
           disabled={optionsLoading && options.batches.length === 0}
           required
         >

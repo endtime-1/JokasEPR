@@ -92,7 +92,24 @@ export function DailyPoultryScreen() {
   // screens' own "deduct from stock (optional)" convention: the count is
   // recorded either way, these just also move real stock when given.
   const { data: rawWarehouses, error: warehousesError, loading: warehousesLoading } = useLookup("warehouses", async () => { const r = await fetchWarehouses(); return (r.data as any[]) ?? []; });
-  const warehouses: SelectOption[] = useMemo(() => (rawWarehouses ?? []).map((w: any) => ({ label: w.name, value: w.id })), [rawWarehouses]);
+  const allWarehouses: SelectOption[] = useMemo(() => (rawWarehouses ?? []).map((w: any) => ({ label: w.name, value: w.id })), [rawWarehouses]);
+  // Feed goes out of the farm's Feed Store, eggs into its Egg Store — scope
+  // each picker to the selected farm and auto-select it.
+  const feedStores: SelectOption[] = useMemo(() => {
+    const s = (opts?.data.feedWarehouses ?? []).filter((w) => !form.farmId || w.farmId === form.farmId);
+    return s.length ? s.map((w) => ({ label: w.code ? `${w.name} (${w.code})` : w.name, value: w.id })) : allWarehouses;
+  }, [opts, form.farmId, allWarehouses]);
+  const eggStores: SelectOption[] = useMemo(() => {
+    const s = (opts?.data.eggWarehouses ?? []).filter((w) => !form.farmId || w.farmId === form.farmId);
+    return s.length ? s.map((w) => ({ label: w.code ? `${w.name} (${w.code})` : w.name, value: w.id })) : allWarehouses;
+  }, [opts, form.farmId, allWarehouses]);
+  useEffect(() => {
+    setForm((f) => ({
+      ...f,
+      feedWarehouseId: feedStores.find((w) => w.value === f.feedWarehouseId) ? f.feedWarehouseId : (feedStores[0]?.value ?? ""),
+      eggWarehouseId: eggStores.find((w) => w.value === f.eggWarehouseId) ? f.eggWarehouseId : (eggStores[0]?.value ?? "")
+    }));
+  }, [feedStores, eggStores]);
   // Finished feed only — poultry never consumes raw ingredients. The poultry
   // options endpoint already narrows feedProducts to finished feed.
   const feedProducts: SelectOption[] = useMemo(() => (opts?.data.feedProducts ?? []).map((p) => ({ label: p.sku ? `${p.sku} — ${p.name}` : p.name, value: p.id })), [opts]);
@@ -272,14 +289,14 @@ export function DailyPoultryScreen() {
 
       {Number(form.feedConsumedKg) > 0 && (
         <FormCard label="DEDUCT FEED FROM STOCK (OPTIONAL)">
-          <SelectField label="Warehouse" value={form.feedWarehouseId} options={warehouses} onChange={set("feedWarehouseId")} error={warehousesError ?? undefined} loading={warehousesLoading} placeholder="No warehouse selected" />
+          <SelectField label="Warehouse" value={form.feedWarehouseId} options={feedStores} onChange={set("feedWarehouseId")} error={warehousesError ?? undefined} loading={warehousesLoading} placeholder="No warehouse selected" />
           <SelectField label="Feed Product" value={form.feedProductId} options={feedProducts} onChange={set("feedProductId")} placeholder="No product selected" />
         </FormCard>
       )}
 
       {Number(form.totalEggs) > 0 && (
         <FormCard label="ADD EGGS TO STOCK (OPTIONAL)">
-          <SelectField label="Warehouse" value={form.eggWarehouseId} options={warehouses} onChange={set("eggWarehouseId")} error={warehousesError ?? undefined} loading={warehousesLoading} placeholder="No warehouse selected" />
+          <SelectField label="Warehouse" value={form.eggWarehouseId} options={eggStores} onChange={set("eggWarehouseId")} error={warehousesError ?? undefined} loading={warehousesLoading} placeholder="No warehouse selected" />
           <SelectField label="Egg Product" value={form.eggProductId} options={eggProducts} onChange={set("eggProductId")} placeholder="No inventory item selected" />
         </FormCard>
       )}

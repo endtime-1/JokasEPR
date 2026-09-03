@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
@@ -76,11 +76,16 @@ export function EggCollectionScreen() {
     [opts, batchId]
   );
 
+  // Eggs go into the flock's own farm's Egg Store — scope the picker to that
+  // farm and auto-select it, rather than listing every warehouse.
   const { data: rawWarehouses } = useLookup("warehouses", async () => { const r = await fetchWarehouses(); return (r.data as any[]) ?? []; });
-  const warehouses: SelectOption[] = useMemo(
-    () => (rawWarehouses ?? []).map((w: any) => ({ label: w.name, value: w.id })),
-    [rawWarehouses]
-  );
+  const warehouses: SelectOption[] = useMemo(() => {
+    const s = (opts?.data.eggWarehouses ?? []).filter((w) => !farmId || w.farmId === farmId);
+    return s.length ? s.map((w) => ({ label: w.code ? `${w.name} (${w.code})` : w.name, value: w.id })) : (rawWarehouses ?? []).map((w: any) => ({ label: w.name, value: w.id }));
+  }, [opts, farmId, rawWarehouses]);
+  useEffect(() => {
+    setWarehouseId((prev) => (warehouses.find((w) => w.value === prev) ? prev : (warehouses[0]?.value ?? "")));
+  }, [warehouses]);
 
   const { data: rawProducts } = useLookup("products", async () => { const r = await fetchProducts(); return (r.data as any[]) ?? []; });
   const products: SelectOption[] = useMemo(

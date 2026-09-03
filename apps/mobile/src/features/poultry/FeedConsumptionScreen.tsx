@@ -69,11 +69,18 @@ export function FeedConsumptionScreen() {
     [opts, batchId]
   );
 
+  // The feed comes out of the flock's own farm's Feed Store — scope the picker
+  // to that farm and auto-select it, instead of listing every warehouse.
   const { data: rawWarehouses } = useLookup("warehouses", async () => { const r = await fetchWarehouses(); return (r.data as any[]) ?? []; });
-  const warehouses: SelectOption[] = useMemo(
-    () => (rawWarehouses ?? []).map((w: any) => ({ label: w.name, value: w.id })),
-    [rawWarehouses]
-  );
+  const feedStores: SelectOption[] = useMemo(() => {
+    const scoped = (opts?.data.feedWarehouses ?? []).filter((w) => !farmId || w.farmId === farmId);
+    if (scoped.length) return scoped.map((w) => ({ label: w.code ? `${w.name} (${w.code})` : w.name, value: w.id }));
+    return (rawWarehouses ?? []).map((w: any) => ({ label: w.name, value: w.id }));
+  }, [opts, farmId, rawWarehouses]);
+  const warehouses = feedStores;
+  useEffect(() => {
+    setWarehouseId((prev) => (feedStores.find((w) => w.value === prev) ? prev : (feedStores[0]?.value ?? "")));
+  }, [feedStores]);
 
   // Finished feed only — poultry never consumes raw ingredients. The poultry
   // options endpoint already narrows feedProducts to finished feed.
