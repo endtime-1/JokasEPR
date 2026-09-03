@@ -29,6 +29,7 @@ export function FeedReceiptScreen() {
   const [feedProductId, setFeedProductId] = useState("");
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [quantityKg, setQuantityKg] = useState("");
+  const [bags, setBags] = useState("");
   const [sourceType, setSourceType] = useState("SUPPLIER");
   const [supplierName, setSupplierName] = useState("");
   const [billReference, setBillReference] = useState("");
@@ -57,6 +58,20 @@ export function FeedReceiptScreen() {
   useEffect(() => {
     setWarehouseId((prev) => (feedStores.find((w) => w.value === prev) ? prev : (feedStores[0]?.value ?? "")));
   }, [feedStores]);
+
+  // Feed comes in 50 kg bags — keep bags <-> kg in sync, submit kg.
+  const KG_PER_BAG = 50;
+  function onBagsChange(v: string) {
+    setBags(v);
+    setQuantityKg(v === "" ? "" : String(Number(v) * KG_PER_BAG));
+    setErrors((e) => ({ ...e, quantityKg: "" }));
+  }
+  function onKgChange(v: string) {
+    setQuantityKg(v);
+    const b = Number(v) / KG_PER_BAG;
+    setBags(v === "" ? "" : (Number.isInteger(b) ? String(b) : b.toFixed(2)));
+    setErrors((e) => ({ ...e, quantityKg: "" }));
+  }
 
   // Read-only "feed on hand" summary for the selected farm.
   const { data: stock } = useLookup(`feed-stock:${farmId}`, () => fetchFeedStock(farmId), !farmId);
@@ -149,19 +164,26 @@ export function FeedReceiptScreen() {
         <View style={styles.row}>
           <View style={styles.half}>
             <FormField
+              label="Bags (50 kg each)"
+              value={bags}
+              onChangeText={onBagsChange}
+              keyboardType="decimal-pad"
+              placeholder="e.g. 20"
+            />
+          </View>
+          <View style={styles.half}>
+            <FormField
               label="Quantity (kg)"
               required
               value={quantityKg}
-              onChangeText={(v) => { setQuantityKg(v); setErrors((e) => ({ ...e, quantityKg: "" })); }}
+              onChangeText={onKgChange}
               error={errors.quantityKg}
               keyboardType="decimal-pad"
               placeholder="e.g. 1000"
             />
           </View>
-          <View style={styles.half}>
-            <FormField label="Unit cost / kg" value={unitCost} onChangeText={setUnitCost} keyboardType="decimal-pad" placeholder="Optional" />
-          </View>
         </View>
+        <FormField label="Unit cost / kg" value={unitCost} onChangeText={setUnitCost} keyboardType="decimal-pad" placeholder="Optional" />
         <DateField label="Date received" required value={date} onChangeText={setDate} error={errors.date} />
         <SelectField label="Source" value={sourceType} options={SOURCES} onChange={setSourceType} required />
         {sourceType === "SUPPLIER" && (

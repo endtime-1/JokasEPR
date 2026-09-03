@@ -2616,6 +2616,12 @@ type FeedReceiptRow = Record<string, any>;
 
 const SOURCE_LABELS: Record<string, string> = { SUPPLIER: "Supplier", FEED_MILL: "Feed mill", OTHER: "Other" };
 const todayISO = () => new Date().toISOString().slice(0, 10);
+// Feed is bagged in 50 kg sacks — same factor the rest of Inventory uses.
+const KG_PER_BAG = 50;
+const bagsFromKg = (kg: number) => {
+  const b = kg / KG_PER_BAG;
+  return Number.isInteger(b) ? String(b) : b.toFixed(2);
+};
 
 export function PoultryFeedStorePage() {
   const { options, optionsError, optionsLoading } = usePoultryOptions();
@@ -2635,9 +2641,12 @@ export function PoultryFeedStorePage() {
   const [loading, setLoading] = useState(true);
 
   const [form, setForm] = useState({
-    warehouseId: "", feedProductId: "", receiptDate: todayISO(), quantityKg: "",
+    warehouseId: "", feedProductId: "", receiptDate: todayISO(), quantityKg: "", bags: "",
     sourceType: "SUPPLIER", supplierName: "", billReference: "", unitCost: "", notes: ""
   });
+  // Bags <-> kg stay in sync; the submitted value is always quantityKg.
+  const setBags = (v: string) => setForm((f) => ({ ...f, bags: v, quantityKg: v === "" ? "" : String(Number(v) * KG_PER_BAG) }));
+  const setKg = (v: string) => setForm((f) => ({ ...f, quantityKg: v, bags: v === "" ? "" : bagsFromKg(Number(v)) }));
   const [saving, setSaving] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [submitOk, setSubmitOk] = useState("");
@@ -2681,7 +2690,7 @@ export function PoultryFeedStorePage() {
       if (form.notes) payload.notes = form.notes;
       await apiFetch("/poultry/feed-receipts", { method: "POST", body: JSON.stringify(payload) });
       setSubmitOk("Feed receipt recorded — the feed store stock has been updated.");
-      setForm((prev) => ({ ...prev, quantityKg: "", billReference: "", unitCost: "", notes: "" }));
+      setForm((prev) => ({ ...prev, quantityKg: "", bags: "", billReference: "", unitCost: "", notes: "" }));
       reload();
     } catch (err: any) {
       setSubmitError(err?.message ?? "Failed to record the feed receipt.");
@@ -2692,9 +2701,9 @@ export function PoultryFeedStorePage() {
 
   const stockColumns = [
     { key: "product", label: "Feed product", render: (r: FeedStockLine) => r.product ?? "—" },
-    { key: "onHandKg", label: "On hand (kg)", render: (r: FeedStockLine) => r.onHandKg.toLocaleString() },
-    { key: "receivedKg", label: "Received (period)", render: (r: FeedStockLine) => r.receivedKg.toLocaleString() },
-    { key: "consumedKg", label: "Fed to birds (period)", render: (r: FeedStockLine) => r.consumedKg.toLocaleString() },
+    { key: "onHandKg", label: "On hand", render: (r: FeedStockLine) => `${r.onHandKg.toLocaleString()} kg (${bagsFromKg(r.onHandKg)} bags)` },
+    { key: "receivedKg", label: "Received (period)", render: (r: FeedStockLine) => `${r.receivedKg.toLocaleString()} kg` },
+    { key: "consumedKg", label: "Fed to birds (period)", render: (r: FeedStockLine) => `${r.consumedKg.toLocaleString()} kg` },
     { key: "varianceKg", label: "Variance", render: (r: FeedStockLine) => (
       <span className={Math.abs(r.varianceKg) > 0.01 ? "font-semibold text-amber-600" : "text-ink/50"}>{r.varianceKg.toLocaleString()}</span>
     ) },
@@ -2702,7 +2711,7 @@ export function PoultryFeedStorePage() {
   const receiptColumns = [
     { key: "receiptDate", label: "Date", render: (r: FeedReceiptRow) => formatCell("receiptDate", r.receiptDate) },
     { key: "feedProduct", label: "Feed", render: (r: FeedReceiptRow) => r.feedProduct?.name ?? "—" },
-    { key: "quantityKg", label: "Qty (kg)", render: (r: FeedReceiptRow) => Number(r.quantityKg).toLocaleString() },
+    { key: "quantityKg", label: "Qty", render: (r: FeedReceiptRow) => `${Number(r.quantityKg).toLocaleString()} kg (${bagsFromKg(Number(r.quantityKg))} bags)` },
     { key: "sourceType", label: "Source", render: (r: FeedReceiptRow) => SOURCE_LABELS[r.sourceType] ?? r.sourceType },
     { key: "supplierName", label: "Supplier", render: (r: FeedReceiptRow) => r.supplierName ?? "—" },
     { key: "billReference", label: "Waybill / bill #", render: (r: FeedReceiptRow) => r.billReference ?? "—" },
@@ -2742,7 +2751,7 @@ export function PoultryFeedStorePage() {
         />
         {stock && stock.lines.length > 0 && (
           <p className="mt-2 text-sm text-ink/60">
-            Total on hand: <strong>{(stock.totals.onHandKg ?? 0).toLocaleString()} kg</strong>
+            Total on hand: <strong>{(stock.totals.onHandKg ?? 0).toLocaleString()} kg ({bagsFromKg(stock.totals.onHandKg ?? 0)} bags)</strong>
             {" · "}received: {(stock.totals.receivedKg ?? 0).toLocaleString()} kg
             {" · "}fed to birds: {(stock.totals.consumedKg ?? 0).toLocaleString()} kg
           </p>
@@ -2765,8 +2774,11 @@ export function PoultryFeedStorePage() {
               {feedProducts.map((p) => <option key={p.id} value={p.id}>{p.name}{p.sku ? ` (${p.sku})` : ""}</option>)}
             </select>
           </FormField>
-          <FormField label="Quantity received (kg)" required>
-            <input type="number" min={0.001} step="any" className={inputClass} value={form.quantityKg} onChange={(e) => setForm({ ...form, quantityKg: e.target.value })} required />
+          <FormField label={`Bags received (${KG_PER_BAG} kg each)`} hint="Fills the kg field automatically">
+            <input type="number" min={0} step="any" className={inputClass} value={form.bags} onChange={(e) => setBags(e.target.value)} placeholder="e.g. 40" />
+          </FormField>
+          <FormField label="Quantity received (kg)" required hint="Or type kg directly for a part-bag delivery">
+            <input type="number" min={0.001} step="any" className={inputClass} value={form.quantityKg} onChange={(e) => setKg(e.target.value)} required />
           </FormField>
           <FormField label="Date received" required>
             <input type="date" className={inputClass} value={form.receiptDate} onChange={(e) => setForm({ ...form, receiptDate: e.target.value })} required />
