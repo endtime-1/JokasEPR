@@ -6,6 +6,8 @@ import {
   AlertTriangle,
   ArrowRight,
   ChartBar,
+  ChevronLeft,
+  ChevronRight,
   Bird,
   Boxes,
   CalendarDays,
@@ -100,6 +102,10 @@ type Filters = {
   businessUnit: string;
   startDate: string;
   endDate: string;
+  // The single calendar day the "today"-labeled cards (eggs/mortality/feed
+  // consumed) snapshot. Independent of startDate/endDate, which only drive
+  // the trend charts and every other rollup KPI below.
+  day: string;
 };
 
 const chartTitles: Record<string, string> = {
@@ -197,8 +203,25 @@ function defaultFilters(): Filters {
     productionSiteId: "",
     businessUnit: "",
     startDate: start.toISOString().slice(0, 10),
-    endDate: end.toISOString().slice(0, 10)
+    endDate: end.toISOString().slice(0, 10),
+    day: todayStr()
   };
+}
+
+function todayStr(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function addDays(dateStr: string, delta: number): string {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + delta);
+  return d.toISOString().slice(0, 10);
+}
+
+function dayLabel(dateStr: string): string {
+  if (dateStr === todayStr()) return "Today";
+  if (dateStr === addDays(todayStr(), -1)) return "Yesterday";
+  return new Date(`${dateStr}T00:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 }
 
 function timeAgoLabel(date: Date): string {
@@ -805,7 +828,7 @@ export default function DashboardPage() {
           <div className="flex flex-col items-end gap-2">
             <div className="flex flex-wrap gap-2">
               {[
-                { label: "Date window", value: `${filters.startDate.slice(5)} — ${filters.endDate.slice(5)}` },
+                { label: "Trend window", value: `${filters.startDate.slice(5)} — ${filters.endDate.slice(5)}` },
                 { label: "Scope", value: filters.branchId ? "Branch filtered" : "All branches" },
                 {
                   label: "Active alerts",
@@ -821,6 +844,58 @@ export default function DashboardPage() {
                 </div>
               ))}
             </div>
+
+            {/* Daily snapshot — the "today" cards (eggs/mortality/feed
+                consumed) always reflect this one day, independent of the
+                Date window trend filter below. Always visible so switching
+                to yesterday or any earlier day never requires opening the
+                filter panel. */}
+            <div className="flex items-center gap-1 rounded-xl border border-line bg-white/80 px-2 py-1.5 backdrop-blur-sm">
+              <span className="pl-1 pr-1 text-[10px] font-bold uppercase tracking-wider text-ink/40">Daily</span>
+              <button
+                type="button"
+                onClick={() => setFilters((f) => ({ ...f, day: addDays(f.day, -1) }))}
+                title="Previous day"
+                className="rounded-md p-1 text-ink/50 transition hover:bg-field hover:text-ink"
+              >
+                <ChevronLeft aria-hidden className="h-4 w-4" />
+              </button>
+              <input
+                type="date"
+                value={filters.day}
+                max={todayStr()}
+                onChange={(e) => e.target.value && setFilters((f) => ({ ...f, day: e.target.value }))}
+                className="w-[124px] rounded-md border border-line bg-white px-1.5 py-1 text-xs font-semibold text-ink"
+              />
+              <button
+                type="button"
+                onClick={() => setFilters((f) => ({ ...f, day: addDays(f.day, 1) }))}
+                disabled={filters.day >= todayStr()}
+                title="Next day"
+                className="rounded-md p-1 text-ink/50 transition hover:bg-field hover:text-ink disabled:cursor-not-allowed disabled:opacity-30"
+              >
+                <ChevronRight aria-hidden className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilters((f) => ({ ...f, day: todayStr() }))}
+                className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition ${
+                  filters.day === todayStr() ? "bg-brand text-white" : "bg-field text-ink/60 hover:bg-line hover:text-ink"
+                }`}
+              >
+                Today
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilters((f) => ({ ...f, day: addDays(todayStr(), -1) }))}
+                className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition ${
+                  filters.day === addDays(todayStr(), -1) ? "bg-brand text-white" : "bg-field text-ink/60 hover:bg-line hover:text-ink"
+                }`}
+              >
+                Yesterday
+              </button>
+            </div>
+
             <div className="flex items-center gap-2">
               {lastRefreshed && (
                 <span className="text-[11px] text-ink/40">
@@ -863,7 +938,7 @@ export default function DashboardPage() {
           onClick={() => setFiltersOpen((v) => !v)}
         >
           <SlidersHorizontal aria-hidden className="h-4 w-4 text-brand" />
-          Filters & date range
+          Scope & trend window
           <span className="ml-auto text-xs font-normal text-ink/40">
             {filtersOpen ? "Collapse" : "Expand"}
           </span>
@@ -979,7 +1054,7 @@ export default function DashboardPage() {
         <DashboardSkeleton />
       ) : (
         <>
-          <ExecutiveOverview summary={dashboard?.summary ?? []} charts={dashboard?.charts ?? {}} />
+          <ExecutiveOverview summary={dashboard?.summary ?? []} charts={dashboard?.charts ?? {}} dayLabel={dayLabel(filters.day)} />
 
           <details className="mt-6 app-card overflow-hidden">
             <summary className="cursor-pointer px-5 py-3 text-sm font-semibold text-ink transition hover:bg-field">

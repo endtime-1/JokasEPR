@@ -28,16 +28,23 @@ function spark(charts: Record<string, Series[]>, key: string): { i: number; valu
   return s.data.map((d, i) => ({ i, value: d.value }));
 }
 
-export function ExecutiveOverview({ summary, charts }: { summary: Card[]; charts: Record<string, Series[]> }) {
+// "Today"/"Yesterday" read naturally bare ("Mortality today"); an earlier
+// picked date reads better with "on" ("Mortality on 15 Aug").
+function dayPhrase(dayLabel: string): string {
+  return dayLabel === "Today" || dayLabel === "Yesterday" ? dayLabel.toLowerCase() : `on ${dayLabel}`;
+}
+
+export function ExecutiveOverview({ summary, charts, dayLabel = "Today" }: { summary: Card[]; charts: Record<string, Series[]>; dayLabel?: string }) {
   const by = Object.fromEntries(summary.map((c) => [c.key, c])) as Record<string, Card | undefined>;
   const v = (k: string) => by[k]?.value ?? 0;
+  const day = dayPhrase(dayLabel);
 
   const openAlerts = v("lowStockAlerts") + v("pendingPurchaseApprovals") + v("machineMaintenanceAlerts") + v("aiAlerts") + v("pendingProductionOrders");
 
   const ribbon = [
     { label: "Total birds", value: fmt(v("totalBirds"), "birds"), spark: spark(charts, "mortalityTrend"), tone: "neutral" as const },
-    { label: "Mortality today", value: fmt(v("mortalityToday")), spark: spark(charts, "mortalityTrend"), tone: v("mortalityToday") > 0 ? ("critical" as const) : ("good" as const) },
-    { label: "Eggs today", value: fmt(v("eggProductionToday")), spark: spark(charts, "eggProductionTrend"), tone: "neutral" as const },
+    { label: `Mortality ${day}`, value: fmt(v("mortalityToday")), spark: spark(charts, "mortalityTrend"), tone: v("mortalityToday") > 0 ? ("critical" as const) : ("good" as const) },
+    { label: `Eggs ${day}`, value: fmt(v("eggProductionToday")), spark: spark(charts, "eggProductionTrend"), tone: "neutral" as const },
     { label: "Inventory value", value: fmt(v("currentInventoryValue"), "GHS"), spark: [], tone: "neutral" as const },
     { label: "Sales this month", value: fmt(v("salesThisMonth"), "GHS"), spark: spark(charts, "salesTrend"), tone: "good" as const },
     { label: "Open items", value: fmt(openAlerts), spark: [], tone: openAlerts > 0 ? ("warning" as const) : ("good" as const) },
@@ -48,11 +55,11 @@ export function ExecutiveOverview({ summary, charts }: { summary: Card[]; charts
       key: "poultry", label: "Poultry", icon: Bird, href: "/dashboard/poultry", spark: spark(charts, "mortalityTrend"),
       lines: [
         { label: "batches open", value: fmt(v("activeFlockBatches")) },
-        { label: "dead today", value: fmt(v("mortalityToday")), tone: v("mortalityToday") > 0 ? "critical" : undefined },
-        { label: "eggs today", value: fmt(v("eggProductionToday")) },
+        { label: `dead ${day}`, value: fmt(v("mortalityToday")), tone: v("mortalityToday") > 0 ? "critical" : undefined },
+        { label: `eggs ${day}`, value: fmt(v("eggProductionToday")) },
         // Feed *fed to birds* is a poultry number (drawn from the farm feed
         // store), not a feed-mill number — it belongs on this card.
-        { label: "feed fed today", value: `${fmt(v("feedConsumedToday"))} kg` },
+        { label: `feed fed ${day}`, value: `${fmt(v("feedConsumedToday"))} kg` },
       ],
     },
     {

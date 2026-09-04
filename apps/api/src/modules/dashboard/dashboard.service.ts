@@ -28,6 +28,17 @@ const POINT_IN_TIME_KEYS = new Set([
   "machineMaintenanceAlerts", "aiAlerts"
 ]);
 
+// (2026-09-04) These three cards are labeled "today" but were computed over
+// whatever trend range the date-window filter happened to be set to — which
+// defaults to the last 30 days. So "Mortality today" silently showed 30 days
+// of deaths, "day" and "range" got conflated, and there was no way to see a
+// single specific day (yesterday, or any earlier day) without also collapsing
+// every trend chart on the page to that same day. These keys are now always
+// computed against the separate `day` query param (default: today) —
+// independent of startDate/endDate, which still drive the trend charts and
+// every other rollup KPI on this page.
+const DAILY_SNAPSHOT_KEYS = new Set(["eggProductionToday", "mortalityToday", "feedConsumedToday"]);
+
 const CARD_CONFIG: Array<{ key: string; label: string; metricKey: DashboardMetricKey; unit?: string; tone: Card["tone"] }> = [
   { key: "totalBirds", label: "Total birds", metricKey: "TOTAL_BIRDS", unit: "birds", tone: "neutral" },
   { key: "activeFlockBatches", label: "Active flock batches", metricKey: "ACTIVE_FLOCK_BATCHES", unit: "batches", tone: "neutral" },
@@ -139,6 +150,9 @@ export class DashboardService {
 
     const range = this.resolveRange(query);
     const prior = this.priorRange(range);
+    const day = query.day ? startOfDayAccra(new Date(query.day)) : startOfTodayAccra();
+    const dayBefore = new Date(day);
+    dayBefore.setUTCDate(dayBefore.getUTCDate() - 1);
 
     // H23: computeMetricValues()/liveCharts()/alerts() used to swallow
     // every failure into a fake 0 or empty default internally, so a single
@@ -151,16 +165,19 @@ export class DashboardService {
     // error instead of a wrong number, matching HRService.dashboard's
     // identical fix for the same pattern.
     try {
-      const [currentValues, priorValues, charts, alerts] = await Promise.all([
+      const [currentValues, priorValues, charts, alerts, daySnap, dayBeforeSnap] = await Promise.all([
         this.computeMetricValues(user, query, range),
         this.computeMetricValues(user, query, prior),
         this.liveCharts(user, query, range),
-        this.alerts(user, query, range)
+        this.alerts(user, query, range),
+        this.dailySnapshot(user, query, day),
+        this.dailySnapshot(user, query, dayBefore)
       ]);
 
       const summary: Card[] = CARD_CONFIG.map((card) => {
-        const value = currentValues[card.key] ?? 0;
-        const priorValue = priorValues[card.key] ?? 0;
+        const daily = DAILY_SNAPSHOT_KEYS.has(card.key);
+        const value = daily ? daySnap[card.key] ?? 0 : currentValues[card.key] ?? 0;
+        const priorValue = daily ? dayBeforeSnap[card.key] ?? 0 : priorValues[card.key] ?? 0;
         const delta: number | null = POINT_IN_TIME_KEYS.has(card.key)
           ? null
           : priorValue === 0
@@ -169,7 +186,19 @@ export class DashboardService {
         return { key: card.key, label: card.label, value, unit: card.unit, tone: card.tone, delta };
       });
 
-      return { data: { filters: { ...query, startDate: range.start.toISOString(), endDate: range.end.toISOString() }, summary, charts, alerts } };
+      return {
+        data: {
+          filters: {
+            ...query,
+            startDate: range.start.toISOString(),
+            endDate: range.end.toISOString(),
+            day: day.toISOString().slice(0, 10)
+          },
+          summary,
+          charts,
+          alerts
+        }
+      };
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
       this.logger.error(`executive dashboard failed to load for company ${user.companyId}: ${message}`);
@@ -559,6 +588,39 @@ export class DashboardService {
       machineMaintenanceAlerts: maintenanceAlerts,
       aiAlerts,
     };
+  }
+
+  // Backs the three DAILY_SNAPSHOT_KEYS cards — a real single calendar day,
+  // independent of the trend-range filter (see the constant's own comment).
+  // Deliberately three targeted queries, not a full computeMetricValues()
+  // call: this runs twice per page load (today + the day before) alongside
+  // the two range-based computeMetricValues() calls already in executive(),
+  // and duplicating all 17 of that method's queries here would double the
+  // page's total query count for 3 numbers we actually need.
+  private async dailySnapshot(user: AuthenticatedUser, query: DashboardQueryDto, day: Date): Promise<Record<string, number>> {
+    const cid = user.companyId;
+    const farmF = this.liveFarmFilter(user, query);
+    const dateRange = { gte: day, lte: endOfDayAccra(day) };
+
+    const [eggAgg, mortalityAgg, feedAgg] = await Promise.all([
+      this.dashboardQueryLimit.run(() => this.prisma.eggProductionRecord.aggregate({
+        where: { companyId: cid, deletedAt: null, ...farmF, recordDate: dateRange },
+        _sum: { goodEggs: true, crackedEggs: true, dirtyEggs: true, brokenEggs: true, rejectedEggs: true }
+      }).then(r => {
+        const s = r._sum;
+        return [s.goodEggs, s.crackedEggs, s.dirtyEggs, s.brokenEggs, s.rejectedEggs].reduce((acc: number, v) => acc + Number(v ?? 0), 0);
+      })),
+      this.dashboardQueryLimit.run(() => this.prisma.mortalityRecord.aggregate({
+        where: { companyId: cid, deletedAt: null, ...farmF, recordDate: dateRange },
+        _sum: { birdCount: true }
+      }).then(r => Number(r._sum.birdCount ?? 0))),
+      this.dashboardQueryLimit.run(() => this.prisma.feedConsumptionRecord.aggregate({
+        where: { companyId: cid, deletedAt: null, ...farmF, recordDate: dateRange },
+        _sum: { quantityKg: true }
+      }).then(r => Number(r._sum.quantityKg ?? 0))),
+    ]);
+
+    return { eggProductionToday: eggAgg, mortalityToday: mortalityAgg, feedConsumedToday: feedAgg };
   }
 
   private async liveCharts(user: AuthenticatedUser, query: DashboardQueryDto, range: { start: Date; end: Date }) {

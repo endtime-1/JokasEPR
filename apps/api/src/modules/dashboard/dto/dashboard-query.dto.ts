@@ -33,4 +33,11 @@ export class DashboardQueryDto {
   @IsOptional()
   @IsDateString()
   endDate?: string;
+
+  // The calendar day the "today"-labeled cards (eggs/mortality/feed
+  // consumed) snapshot — independent of startDate/endDate, which only
+  // drive the trend charts and the other rollup KPIs. Defaults to today.
+  @IsOptional()
+  @IsDateString()
+  day?: string;
 }

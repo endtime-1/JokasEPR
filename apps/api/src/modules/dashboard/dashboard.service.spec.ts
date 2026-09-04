@@ -491,4 +491,43 @@ describe("DashboardService", () => {
       );
     });
   });
+
+  describe("executive — 'today' cards reflect a real calendar day, not the trend-range filter (2026-09-04)", () => {
+    beforeEach(() => {
+      prisma.stockBatch.findMany.mockResolvedValue([]);
+      prisma.productProfitability.findMany.mockResolvedValue([]);
+    });
+
+    function daySpanHours(args: any): number {
+      const gte = new Date(args.where.recordDate.gte);
+      const lte = new Date(args.where.recordDate.lte);
+      return (lte.getTime() - gte.getTime()) / 3600000;
+    }
+
+    it("computes mortalityToday from a single day, even with a 30-day startDate/endDate filter applied", async () => {
+      prisma.mortalityRecord.aggregate.mockImplementation((args: any) =>
+        Promise.resolve({ _sum: { birdCount: daySpanHours(args) < 25 ? 7 : 500 } })
+      );
+
+      const result = await service.executive(makeUser({ hasGlobalAccess: true }), {
+        startDate: "2026-08-01", endDate: "2026-08-31"
+      } as never);
+
+      const card = result.data.summary.find((c: { key: string }) => c.key === "mortalityToday");
+      expect(card?.value).toBe(7);
+    });
+
+    it("a `day` param picks a specific earlier date (for the day itself and its prior-day delta)", async () => {
+      const dailySpanDates: string[] = [];
+      prisma.eggProductionRecord.aggregate.mockImplementation((args: any) => {
+        if (daySpanHours(args) < 25) dailySpanDates.push(new Date(args.where.recordDate.gte).toISOString().slice(0, 10));
+        return Promise.resolve({ _sum: { goodEggs: 0, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0 } });
+      });
+
+      const result = await service.executive(makeUser({ hasGlobalAccess: true }), { day: "2026-08-15" } as never);
+
+      expect(dailySpanDates.sort()).toEqual(["2026-08-14", "2026-08-15"]);
+      expect(result.data.filters.day).toBe("2026-08-15");
+    });
+  });
 });
