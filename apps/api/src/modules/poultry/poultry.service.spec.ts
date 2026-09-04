@@ -2036,23 +2036,41 @@ describe("PoultryService.deletePen / deleteHouse — blocked while live birds ar
   });
 });
 
-describe("PoultryService.addPen — never reuses a deleted pen's number (2026-08-18)", () => {
+describe("PoultryService.addPen — fills the lowest free slot (2026-09-04)", () => {
   beforeEach(() => jest.clearAllMocks());
 
-  it("looks at every pen ever created in the house, including deleted ones, when computing the next penNumber", async () => {
+  it("revives the dormant PEN-03 row in place when pen 3 was deleted from a 5-pen house", async () => {
     mockPrisma.poultryHouse.findFirst.mockResolvedValue({ id: "house-1", companyId: "company-1", farmId: "farm-1", branchId: "branch-1", code: "H1" });
-    // Pen 5 was deleted, but its penNumber is still occupying the unique
-    // index slot — the query below must not filter it out, or the next
-    // pen would be handed the same number and fail with a duplicate key.
-    mockPrisma.pen.findFirst.mockResolvedValue({ penNumber: 5 });
+    mockPrisma.pen.findMany.mockResolvedValue([
+      { id: "pen-1", penNumber: 1, deletedAt: null },
+      { id: "pen-2", penNumber: 2, deletedAt: null },
+      { id: "pen-3", penNumber: 3, deletedAt: new Date() },
+      { id: "pen-4", penNumber: 4, deletedAt: null },
+      { id: "pen-5", penNumber: 5, deletedAt: null }
+    ]);
+    mockPrisma.pen.update.mockResolvedValue({ id: "pen-3", penNumber: 3, code: "PEN-03", deletedAt: null });
+
+    const service = makeService();
+    await service.addPen(makeUser({ farmIds: ["farm-1"] }), "house-1", {} as never, {});
+
+    expect(mockPrisma.pen.create).not.toHaveBeenCalled();
+    expect(mockPrisma.pen.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "pen-3" },
+        data: expect.objectContaining({ deletedAt: null, isActive: true, code: "PEN-03" })
+      })
+    );
+  });
+
+  it("creates PEN-06 when all five pens are still active", async () => {
+    mockPrisma.poultryHouse.findFirst.mockResolvedValue({ id: "house-1", companyId: "company-1", farmId: "farm-1", branchId: "branch-1", code: "H1" });
+    mockPrisma.pen.findMany.mockResolvedValue([1, 2, 3, 4, 5].map((n) => ({ id: `pen-${n}`, penNumber: n, deletedAt: null })));
     mockPrisma.pen.create.mockResolvedValue({ id: "pen-6", penNumber: 6, code: "PEN-06" });
 
     const service = makeService();
     await service.addPen(makeUser({ farmIds: ["farm-1"] }), "house-1", {} as never, {});
 
-    expect(mockPrisma.pen.findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { poultryHouseId: "house-1" } })
-    );
+    expect(mockPrisma.pen.update).not.toHaveBeenCalled();
     expect(mockPrisma.pen.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ penNumber: 6, code: "PEN-06" }) })
     );

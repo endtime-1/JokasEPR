@@ -376,29 +376,42 @@ export class PoultryService {
   async addPen(user: AuthenticatedUser, houseId: string, dto: AddPenDto, context: RequestContext) {
     const house = await this.getHouse(user.companyId, houseId);
     this.assertFarmAccess(user, house.farmId);
-    // (2026-08-18) Deliberately NOT filtering deletedAt: null here. The
-    // @@unique([poultryHouseId, penNumber]) index isn't deletedAt-aware —
-    // deleting a pen leaves its penNumber (and derived code, e.g. PEN-05)
-    // still occupying that slot. Excluding deleted pens from this lookup
-    // meant the very next pen created would be handed that same reserved
-    // number/code and fail with a raw duplicate-key error. Looking at
-    // every pen ever created in this house, deleted or not, guarantees the
-    // next number was never used before.
-    const lastPen = await this.prisma.pen.findFirst({ where: { poultryHouseId: houseId }, orderBy: { penNumber: "desc" } });
-    const nextNumber = (lastPen?.penNumber ?? 0) + 1;
-    const pen = await this.prisma.pen.create({
-      data: {
-        companyId: user.companyId,
-        branchId: house.branchId,
-        farmId: house.farmId,
-        poultryHouseId: houseId,
-        penNumber: nextNumber,
-        code: `PEN-${String(nextNumber).padStart(2, "0")}`,
-        name: dto.name,
-        capacity: dto.capacity,
-        createdById: user.id
-      }
-    });
+    // (2026-09-04) Fill the lowest free slot, not "highest ever + 1". If you
+    // delete PEN-03 from a 5-pen house and add one back, you want PEN-03
+    // again, not PEN-06. A deleted pen leaves a soft-deleted row on that
+    // (house, penNumber) slot — and @@unique([poultryHouseId, penNumber])
+    // isn't deletedAt-aware — so if a dormant row already sits on the slot
+    // we're reclaiming, revive it in place; otherwise create a fresh one.
+    const allPens = await this.prisma.pen.findMany({ where: { poultryHouseId: houseId }, orderBy: { penNumber: "asc" } });
+    const activeNumbers = new Set(allPens.filter((p) => !p.deletedAt).map((p) => p.penNumber));
+    let nextNumber = 1;
+    while (activeNumbers.has(nextNumber)) nextNumber += 1;
+    const code = `PEN-${String(nextNumber).padStart(2, "0")}`;
+    const dormant = allPens.find((p) => p.deletedAt && p.penNumber === nextNumber);
+    const pen = dormant
+      ? await this.prisma.pen.update({
+          where: { id: dormant.id },
+          data: {
+            deletedAt: null,
+            isActive: true,
+            code,
+            name: dto.name ?? null,
+            capacity: dto.capacity ?? null
+          }
+        })
+      : await this.prisma.pen.create({
+          data: {
+            companyId: user.companyId,
+            branchId: house.branchId,
+            farmId: house.farmId,
+            poultryHouseId: houseId,
+            penNumber: nextNumber,
+            code,
+            name: dto.name,
+            capacity: dto.capacity,
+            createdById: user.id
+          }
+        });
     this.lookupCache.invalidate(`poultry:opts:${user.companyId}`);
     await this.writeAudit(user, "CREATE", "Pen", pen.id, `Added pen ${pen.code} to house ${house.code}`, context, house.farmId);
     return { data: pen };
