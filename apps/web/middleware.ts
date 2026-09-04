@@ -13,13 +13,23 @@ const PUBLIC_PREFIXES = ["/login", "/setup", "/_next", "/favicon.ico", "/api/", 
 // TODO: revisit — force dynamic rendering on the authed pages, move CSP into
 // next.config headers with static hashes, or wait for a Next.js fix.
 // style-src keeps 'unsafe-inline' for React inline `style={{...}}`.
+// (2026-09-04) nginx accepts both jokasfarms.com and www.jokasfarms.com on
+// the same server block (infra/vps/nginx.conf) with no canonical redirect,
+// but NEXT_PUBLIC_API_URL is pinned to the bare domain. A page loaded from
+// www.jokasfarms.com has document origin www.jokasfarms.com, so its own
+// fetches to https://jokasfarms.com/api/... don't match connect-src 'self'
+// (different host) — every API call on that host was silently CSP-blocked,
+// reported live as "some desktops" being unable to load anything. Listed
+// explicitly here as a second line of defense alongside the www->apex
+// redirect below (which removes the mismatch at the source for anyone who
+// hits it after this deploys).
 const CSP = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self'",
-  "connect-src 'self'",
+  "connect-src 'self' https://jokasfarms.com https://www.jokasfarms.com",
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
@@ -28,6 +38,20 @@ const CSP = [
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  // Canonicalize the host BEFORE anything else — see the CSP comment above
+  // for why serving the app from www. breaks every API call. 308 preserves
+  // the HTTP method, so a client fetch (not just a browser navigation) that
+  // somehow reaches www. is redirected correctly too, not downgraded to GET.
+  const forwardedHost = request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? request.nextUrl.host;
+  if (forwardedHost.startsWith("www.")) {
+    const proto = request.headers.get("x-forwarded-proto") ?? request.nextUrl.protocol.replace(":", "");
+    const canonicalHost = forwardedHost.slice(4);
+    const target = new URL(`${pathname}${request.nextUrl.search}`, `${proto}://${canonicalHost}`);
+    const response = NextResponse.redirect(target, 308);
+    response.headers.set("Content-Security-Policy", CSP);
+    return response;
+  }
 
   if (PUBLIC_PREFIXES.some((prefix) => pathname.startsWith(prefix))) {
     const response = NextResponse.next();
