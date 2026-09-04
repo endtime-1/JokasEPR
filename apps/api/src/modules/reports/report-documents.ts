@@ -13,7 +13,10 @@ import { PrismaService } from "../prisma/prisma.service";
 import { AuthenticatedUser } from "@jokas/shared";
 
 export type ReportSection =
-  | { type: "header"; fields: { label: string; value: string }[] }
+  // imageUrl is the same `/api/v1/uploads/...` path the app already serves
+  // profile pictures from (see Employee.photoUrl) — optional, so every
+  // other header-using report is unaffected.
+  | { type: "header"; fields: { label: string; value: string }[]; imageUrl?: string }
   | { type: "kpis"; items: { label: string; value: string; tone?: "good" | "warning" | "critical" | "neutral" }[] }
   | {
       type: "line-chart";
@@ -781,7 +784,7 @@ const employeeRecord: DocumentReportDefinition = {
   async run({ prisma, user, scopeId }) {
     const emp = await prisma.employee.findFirst({
       where: { id: scopeId, companyId: user.companyId, deletedAt: null },
-      select: { id: true, code: true, fullName: true, phone: true, email: true, startDate: true, status: true, branch: { select: { name: true } } },
+      select: { id: true, code: true, fullName: true, phone: true, email: true, startDate: true, status: true, photoUrl: true, branch: { select: { name: true } } },
     });
     if (!emp) throw new Error("Employee was not found.");
 
@@ -809,6 +812,7 @@ const employeeRecord: DocumentReportDefinition = {
           { label: "Started", value: `${dayKey(emp.startDate)} (${tenureYears} yrs)` },
           { label: "Status", value: emp.status },
         ],
+        imageUrl: emp.photoUrl ?? undefined,
       },
       {
         type: "kpis",

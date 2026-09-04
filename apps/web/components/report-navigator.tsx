@@ -32,7 +32,7 @@ type ScopeTree = { module: string; levels: string[]; root: ScopeNode };
 type DocDef = { id: string; module: string; label: string; description: string; scopeType: string };
 
 type Section =
-  | { type: "header"; fields: { label: string; value: string }[] }
+  | { type: "header"; fields: { label: string; value: string }[]; imageUrl?: string }
   | { type: "kpis"; items: { label: string; value: string; tone?: string }[] }
   | { type: "line-chart"; title: string; xKey: string; series: { name: string; key: string; color?: string }[]; data: Record<string, string | number>[] }
   | { type: "bar-chart"; title: string; xKey: string; series: { name: string; key: string; color?: string }[]; data: Record<string, string | number>[] }
@@ -275,16 +275,36 @@ function TreeNode({
   );
 }
 
+// Same handling as hr-pages.tsx's normalizePhotoUrl — a bare filename, an
+// /uploads/... path, or the current /api/v1/uploads/... path, all pointing
+// at the same file this app already serves employee/product photos from.
+function normalizeUploadUrl(url: string): string {
+  if (url.startsWith("/api/v1/uploads/")) return url;
+  if (url.startsWith("/uploads/")) return `/api/v1${url}`;
+  if (!url.includes("/")) return `/api/v1/uploads/employees/${url}`;
+  return url;
+}
+
 function SectionView({ section }: { section: Section }) {
   if (section.type === "header") {
     return (
-      <div className="app-card grid gap-x-6 gap-y-2 p-4 sm:grid-cols-3">
-        {section.fields.map((f) => (
-          <div key={f.label}>
-            <div className="text-[11px] uppercase tracking-wide text-ink/45">{f.label}</div>
-            <div className="text-sm font-semibold text-ink">{f.value}</div>
-          </div>
-        ))}
+      <div className="app-card flex flex-wrap items-start gap-5 p-4">
+        {section.imageUrl && (
+          <img
+            src={normalizeUploadUrl(section.imageUrl)}
+            alt=""
+            className="h-16 w-16 shrink-0 rounded-full border border-line object-cover"
+            onError={(e) => { e.currentTarget.style.display = "none"; }}
+          />
+        )}
+        <div className="grid flex-1 gap-x-6 gap-y-2 sm:grid-cols-3">
+          {section.fields.map((f) => (
+            <div key={f.label}>
+              <div className="text-[11px] uppercase tracking-wide text-ink/45">{f.label}</div>
+              <div className="text-sm font-semibold text-ink">{f.value}</div>
+            </div>
+          ))}
+        </div>
       </div>
     );
   }

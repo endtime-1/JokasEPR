@@ -1,3 +1,5 @@
+import { existsSync } from "fs";
+import { join } from "path";
 import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { AuthenticatedUser, PERMISSIONS, PermissionKey } from "@jokas/shared";
 import { Prisma } from "@prisma/client";
@@ -530,7 +532,20 @@ export class ReportsService {
 
     for (const s of report.sections) {
       if (s.type === "header") {
-        for (const f of s.fields) doc.fontSize(9).font("Helvetica-Bold").text(`${f.label}: `, { continued: true }).font("Helvetica").text(f.value);
+        const photoPath = this.resolveUploadPath(s.imageUrl);
+        const fieldsX = photoPath ? doc.x + 76 : doc.x;
+        const startY = doc.y;
+        if (photoPath) {
+          try {
+            doc.image(photoPath, doc.x, startY, { width: 60, height: 60, fit: [60, 60] });
+          } catch {
+            // Corrupt/unreadable image file — skip it, the text fields still render.
+          }
+        }
+        doc.x = fieldsX;
+        for (const f of s.fields) doc.fontSize(9).font("Helvetica-Bold").text(`${f.label}: `, fieldsX, doc.y, { continued: true }).font("Helvetica").text(f.value);
+        doc.x = doc.page.margins.left;
+        if (photoPath) doc.y = Math.max(doc.y, startY + 64);
         doc.moveDown(0.5);
       } else if (s.type === "narrative") {
         doc.moveDown(0.3).fontSize(10).font("Helvetica-Oblique").fillColor("#333").text(s.text).fillColor("#000");
@@ -551,6 +566,21 @@ export class ReportsService {
     }
     doc.end();
     return done;
+  }
+
+  // Employee.photoUrl (and anything else that reuses the header image slot)
+  // is stored as an app-relative path like "/api/v1/uploads/employees/x.jpg".
+  // pdfkit needs a real file on disk, not a URL — resolve straight to the
+  // uploads dir this same process writes to (see UploadsController /
+  // hr.controller's diskStorage), instead of looping the PDF generator back
+  // through its own HTTP server.
+  private resolveUploadPath(imageUrl?: string): string | undefined {
+    if (!imageUrl) return undefined;
+    const match = imageUrl.match(/\/uploads\/(.+)$/);
+    const relative = match ? match[1] : imageUrl.replace(/^\/+/, "");
+    if (!relative || relative.includes("..")) return undefined;
+    const full = join(process.cwd(), "uploads", relative);
+    return existsSync(full) ? full : undefined;
   }
 
   private pdfTable(doc: PDFKit.PDFDocument, title: string, head: string[], rows: string[][]) {

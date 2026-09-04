@@ -291,6 +291,46 @@ describe("ReportsService.runDocument — other modules", () => {
     const bal = data.sections.find((s) => s.type === "line-chart" && s.title === "Running balance") as { data: Record<string, number>[] };
     expect(bal.data.map((d) => d.balance)).toEqual([50, 30]);
   });
+
+  it("hr.employee-record carries the employee's photo through as the header's imageUrl", async () => {
+    const mockPrisma = {
+      employee: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: "e-1", code: "EMP01", fullName: "Ama Serwaa", phone: "024...", email: "ama@x.com",
+          startDate: new Date("2024-01-01"), status: "ACTIVE", photoUrl: "/api/v1/uploads/employees/emp-1.jpg",
+          branch: { name: "HQ" },
+        }),
+      },
+      attendanceRecord: { findMany: jest.fn().mockResolvedValue([]) },
+      payrollRecord: { findMany: jest.fn().mockResolvedValue([]) },
+      leaveRequest: { findMany: jest.fn().mockResolvedValue([]) },
+      disciplinaryRecord: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const service = new ReportsService(mockPrisma as never, {} as never);
+    const { data } = await service.runDocument("hr.employee-record", makeUser(["hr.read"]) as never, { scopeType: "employee", scopeId: "e-1" } as never);
+    const header = data.sections.find((s) => s.type === "header") as { imageUrl?: string };
+    expect(header.imageUrl).toBe("/api/v1/uploads/employees/emp-1.jpg");
+  });
+
+  it("hr.employee-record omits imageUrl when the employee has no photo", async () => {
+    const mockPrisma = {
+      employee: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: "e-2", code: "EMP02", fullName: "Kwame Boateng", phone: null, email: null,
+          startDate: new Date("2024-01-01"), status: "ACTIVE", photoUrl: null,
+          branch: { name: "HQ" },
+        }),
+      },
+      attendanceRecord: { findMany: jest.fn().mockResolvedValue([]) },
+      payrollRecord: { findMany: jest.fn().mockResolvedValue([]) },
+      leaveRequest: { findMany: jest.fn().mockResolvedValue([]) },
+      disciplinaryRecord: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const service = new ReportsService(mockPrisma as never, {} as never);
+    const { data } = await service.runDocument("hr.employee-record", makeUser(["hr.read"]) as never, { scopeType: "employee", scopeId: "e-2" } as never);
+    const header = data.sections.find((s) => s.type === "header") as { imageUrl?: string };
+    expect(header.imageUrl).toBeUndefined();
+  });
 });
 
 describe("ReportsService — CSV/XLS formula-injection neutralization (M12)", () => {
