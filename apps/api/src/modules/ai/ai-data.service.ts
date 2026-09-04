@@ -22,6 +22,31 @@ export class AiDataService {
     return where;
   }
 
+  // Turn `groupBy(["<dateField>"])` rows into an ordered "YYYY-MM-DD: ..." list,
+  // one line per calendar day from `from` to today, so the model can answer
+  // single-day questions ("yesterday", "on the 1st") — not just 7/30-day
+  // totals. A day with no records is shown explicitly as "no records".
+  private dailyLines(
+    from: Date,
+    rows: Array<Record<string, unknown>>,
+    dateField: string,
+    render: (row: Record<string, unknown> | undefined) => string,
+  ): string[] {
+    const byDay = new Map<string, Record<string, unknown>>();
+    for (const r of rows) {
+      const key = new Date(r[dateField] as Date).toISOString().slice(0, 10);
+      byDay.set(key, r);
+    }
+    const lines: string[] = [];
+    const start = new Date(from.toISOString().slice(0, 10));
+    const today = new Date(new Date().toISOString().slice(0, 10));
+    for (let d = new Date(start); d <= today; d.setUTCDate(d.getUTCDate() + 1)) {
+      const key = d.toISOString().slice(0, 10);
+      lines.push(`  ${key}: ${render(byDay.get(key))}`);
+    }
+    return lines;
+  }
+
   // (2026-08-27) This used to be one long function running up to 19 awaited
   // DB queries strictly one after another — for a user holding every
   // permission, every single AI query paid that full sequential cost before
@@ -36,12 +61,13 @@ export class AiDataService {
   async buildContext(user: AuthenticatedUser): Promise<string> {
     const companyId = user.companyId;
     const since7 = new Date(Date.now() - 7 * 86400000);
+    const since14 = new Date(Date.now() - 14 * 86400000);
     const since30 = new Date(Date.now() - 30 * 86400000);
     const has = (p: string) => user.permissions.includes(p);
 
     const sectionPromises: Promise<string | undefined>[] = [
-      has("poultry.read") ? this.poultrySection(user, companyId, since7) : Promise.resolve(undefined),
-      has("feed.read") ? this.feedSection(user, companyId, since30) : Promise.resolve(undefined),
+      has("poultry.read") ? this.poultrySection(user, companyId, since7, since14) : Promise.resolve(undefined),
+      has("feed.read") ? this.feedSection(user, companyId, since30, since14) : Promise.resolve(undefined),
       has("soya.read") ? this.soyaSection(user, companyId, since30) : Promise.resolve(undefined),
       has("inventory.read") ? this.inventorySection(user, companyId) : Promise.resolve(undefined),
       has("sales.read") ? this.salesSection(user, companyId, since30) : Promise.resolve(undefined),
@@ -58,8 +84,9 @@ export class AiDataService {
     return sections.join("\n\n");
   }
 
-  private async poultrySection(user: AuthenticatedUser, companyId: string, since7: Date): Promise<string> {
-    const [flocks, eggTotals, mortalityTotals, feedTotals, healthObs] = await Promise.all([
+  private async poultrySection(user: AuthenticatedUser, companyId: string, since7: Date, since14: Date): Promise<string> {
+    const poultryScope = this.locationScope(user, { branch: true, farm: true });
+    const [flocks, eggTotals, mortalityTotals, feedTotals, healthObs, eggDaily, mortalityDaily, feedDaily] = await Promise.all([
       this.prisma.flockBatch.findMany({
         where: { companyId, deletedAt: null, status: { in: ["ACTIVE", "PLANNED"] }, ...this.locationScope(user, { branch: true, farm: true }) },
         select: {
@@ -85,10 +112,25 @@ export class AiDataService {
         _sum: { quantityKg: true }
       }),
       this.prisma.poultryHealthObservation.findMany({
-        where: { companyId, deletedAt: null, observationDate: { gte: since7 }, ...this.locationScope(user, { branch: true, farm: true }) },
+        where: { companyId, deletedAt: null, observationDate: { gte: since7 }, ...poultryScope },
         select: { severity: true, observation: true, recommendation: true, flockBatch: { select: { name: true } } },
         take: 5,
         orderBy: { observationDate: "desc" }
+      }),
+      this.prisma.eggProductionRecord.groupBy({
+        by: ["recordDate"],
+        where: { companyId, deletedAt: null, recordDate: { gte: since14 }, ...poultryScope },
+        _sum: { goodEggs: true, crackedEggs: true, brokenEggs: true, dirtyEggs: true, rejectedEggs: true }
+      }),
+      this.prisma.mortalityRecord.groupBy({
+        by: ["recordDate"],
+        where: { companyId, deletedAt: null, recordDate: { gte: since14 }, isCulling: false, ...poultryScope },
+        _sum: { birdCount: true }
+      }),
+      this.prisma.feedConsumptionRecord.groupBy({
+        by: ["recordDate"],
+        where: { companyId, deletedAt: null, recordDate: { gte: since14 }, ...poultryScope },
+        _sum: { quantityKg: true }
       })
     ]);
 
@@ -105,11 +147,24 @@ export class AiDataService {
       return `  - ${f.name} (${f.birdType}, ${f.farm.name}, ${f.poultryHouse?.name ?? "multi-house"}): opening=${f.openingBirdCount} birds, 7d eggs=${goodEggs} good/${badEggs} bad, 7d mortality=${mortality}, 7d feed=${feed}kg`;
     });
 
-    return `POULTRY (last 7 days):\n${flockLines.join("\n")}${healthObs.length ? "\nHealth observations:\n" + healthObs.map((h) => `  - ${h.flockBatch?.name ?? "Unknown batch"} [${h.severity}]: ${h.observation}`).join("\n") : ""}`;
+    const eggDay = new Map(eggDaily.map((r) => [new Date(r.recordDate).toISOString().slice(0, 10), r._sum]));
+    const mortDay = new Map(mortalityDaily.map((r) => [new Date(r.recordDate).toISOString().slice(0, 10), Number(r._sum.birdCount ?? 0)]));
+    const feedDay = new Map(feedDaily.map((r) => [new Date(r.recordDate).toISOString().slice(0, 10), Number(r._sum.quantityKg ?? 0)]));
+    const allDays = new Set<string>([...eggDay.keys(), ...mortDay.keys(), ...feedDay.keys()]);
+    const dailyRows = this.dailyLines(since14, [...allDays].map((d) => ({ recordDate: d })), "recordDate", (row) => {
+      const d = row ? (row.recordDate as string) : "";
+      const e = eggDay.get(d);
+      const totalEggs = e ? Number(e.goodEggs ?? 0) + Number(e.crackedEggs ?? 0) + Number(e.brokenEggs ?? 0) + Number(e.dirtyEggs ?? 0) + Number(e.rejectedEggs ?? 0) : 0;
+      const goodEggs = e ? Number(e.goodEggs ?? 0) : 0;
+      return `eggs=${totalEggs} (${goodEggs} good), deaths=${mortDay.get(d) ?? 0}, feed=${(feedDay.get(d) ?? 0).toFixed(1)}kg`;
+    });
+
+    return `POULTRY (last 7 days):\n${flockLines.join("\n")}${healthObs.length ? "\nHealth observations:\n" + healthObs.map((h) => `  - ${h.flockBatch?.name ?? "Unknown batch"} [${h.severity}]: ${h.observation}`).join("\n") : ""}\nPOULTRY DAILY TOTALS (last 14 days, all farms within your access — use these for single-day questions like "yesterday"):\n${dailyRows.join("\n")}`;
   }
 
-  private async feedSection(user: AuthenticatedUser, companyId: string, since30: Date): Promise<string> {
-    const [batches, formulas] = await Promise.all([
+  private async feedSection(user: AuthenticatedUser, companyId: string, since30: Date, since14: Date): Promise<string> {
+    const feedScope = this.locationScope(user, { branch: true, site: true });
+    const [batches, formulas, prodDaily] = await Promise.all([
       this.prisma.feedProductionBatch.findMany({
         where: { companyId, deletedAt: null, createdAt: { gte: since30 }, ...this.locationScope(user, { branch: true, site: true }) },
         select: {
@@ -131,13 +186,23 @@ export class AiDataService {
           }
         },
         take: 10
+      }),
+      this.prisma.feedProductionBatch.groupBy({
+        by: ["productionDate"],
+        where: { companyId, deletedAt: null, productionDate: { gte: since14 }, ...feedScope },
+        _sum: { producedQuantityKg: true, wastageKg: true }
       })
     ]);
 
     const formulaLines = formulas.map((f) => `  - ${f.name} (${f.feedType}): GHS ${Number(f.versions[0]?.costPer100Kg ?? 0).toFixed(2)}/100kg`);
     const batchLines = batches.map((b) => `  - ${b.batchNumber} [${b.status}]: formula=${b.productionOrder?.formula?.name ?? "unknown"}, output=${Number(b.producedQuantityKg ?? 0).toFixed(2)}kg`);
+    const prodDailyRows = this.dailyLines(since14, prodDaily as unknown as Array<Record<string, unknown>>, "productionDate", (row) => {
+      if (!row) return "no batches";
+      const s = (row as { _sum: { producedQuantityKg: unknown; wastageKg: unknown } })._sum;
+      return `produced=${Number(s.producedQuantityKg ?? 0).toFixed(1)}kg, wastage=${Number(s.wastageKg ?? 0).toFixed(1)}kg`;
+    });
 
-    return `FEED PRODUCTION (last 30 days):\nActive formulas:\n${formulaLines.join("\n")}\nRecent batches:\n${batchLines.join("\n")}`;
+    return `FEED PRODUCTION (last 30 days):\nActive formulas:\n${formulaLines.join("\n")}\nRecent batches:\n${batchLines.join("\n")}\nFEED PRODUCED PER DAY (last 14 days, mill output — use for single-day questions):\n${prodDailyRows.join("\n")}`;
   }
 
   private async soyaSection(user: AuthenticatedUser, companyId: string, since30: Date): Promise<string> {

@@ -7,7 +7,7 @@ const mockPrisma = {
   mortalityRecord: { groupBy: jest.fn().mockResolvedValue([]) },
   feedConsumptionRecord: { groupBy: jest.fn().mockResolvedValue([]) },
   poultryHealthObservation: { findMany: jest.fn().mockResolvedValue([]) },
-  feedProductionBatch: { findMany: jest.fn().mockResolvedValue([]) },
+  feedProductionBatch: { findMany: jest.fn().mockResolvedValue([]), groupBy: jest.fn().mockResolvedValue([]) },
   feedFormula: { findMany: jest.fn().mockResolvedValue([]) },
   soyaProcessingBatch: { findMany: jest.fn().mockResolvedValue([]) },
   inventoryItem: { findMany: jest.fn().mockResolvedValue([]) },
@@ -78,6 +78,21 @@ describe("AiDataService.buildContext — location scoping (H14)", () => {
 
     expect(mockPrisma.revenue.aggregate.mock.calls[0][0].where.branchId).toEqual({ in: ["branch-1"] });
     expect(mockPrisma.expense.aggregate.mock.calls[0][0].where.branchId).toEqual({ in: ["branch-1"] });
+  });
+
+  it("includes a scoped day-by-day poultry breakdown so single-day questions are answerable", async () => {
+    mockPrisma.eggProductionRecord.groupBy.mockResolvedValueOnce([]); // by flockBatchId
+    mockPrisma.eggProductionRecord.groupBy.mockResolvedValueOnce([
+      { recordDate: new Date("2026-09-02"), _sum: { goodEggs: 900, crackedEggs: 10, brokenEggs: 0, dirtyEggs: 5, rejectedEggs: 0 } },
+    ]);
+    const service = makeService();
+    const ctx = await service.buildContext(makeUser({ farmIds: ["farm-1"] }));
+
+    // the daily groupBy is scoped like every other query
+    const dailyCall = mockPrisma.eggProductionRecord.groupBy.mock.calls.find((c) => c[0].by?.includes("recordDate"));
+    expect(dailyCall[0].where.farmId).toEqual({ in: ["farm-1"] });
+    expect(ctx).toContain("POULTRY DAILY TOTALS");
+    expect(ctx).toContain("2026-09-02: eggs=915 (900 good)");
   });
 
   it("applies no location filter at all for a global-access user", async () => {
