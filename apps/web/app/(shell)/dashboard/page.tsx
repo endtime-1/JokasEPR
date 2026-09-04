@@ -164,6 +164,10 @@ const cardHrefs: Record<string, string> = {
 
 type DatePreset = "today" | "7d" | "30d" | "mtd" | "qtd" | "ytd";
 
+const PRESET_LABELS: Record<DatePreset, string> = {
+  today: "Today", "7d": "7 days", "30d": "30 days", mtd: "MTD", qtd: "QTD", ytd: "YTD",
+};
+
 function applyPreset(preset: DatePreset): { startDate: string; endDate: string } {
   const today = new Date();
   const fmt = (d: Date) => d.toISOString().slice(0, 10);
@@ -1054,7 +1058,12 @@ export default function DashboardPage() {
         <DashboardSkeleton />
       ) : (
         <>
-          <ExecutiveOverview summary={dashboard?.summary ?? []} charts={dashboard?.charts ?? {}} dayLabel={dayLabel(filters.day)} />
+          <ExecutiveOverview
+            summary={dashboard?.summary ?? []}
+            charts={dashboard?.charts ?? {}}
+            dayLabel={dayLabel(filters.day)}
+            periodLabel={activePreset ? PRESET_LABELS[activePreset] : `${filters.startDate.slice(5)}–${filters.endDate.slice(5)}`}
+          />
 
           <details className="mt-6 app-card overflow-hidden">
             <summary className="cursor-pointer px-5 py-3 text-sm font-semibold text-ink transition hover:bg-field">

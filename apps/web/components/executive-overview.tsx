@@ -34,7 +34,9 @@ function dayPhrase(dayLabel: string): string {
   return dayLabel === "Today" || dayLabel === "Yesterday" ? dayLabel.toLowerCase() : `on ${dayLabel}`;
 }
 
-export function ExecutiveOverview({ summary, charts, dayLabel = "Today" }: { summary: Card[]; charts: Record<string, Series[]>; dayLabel?: string }) {
+export function ExecutiveOverview({
+  summary, charts, dayLabel = "Today", periodLabel = "selected period"
+}: { summary: Card[]; charts: Record<string, Series[]>; dayLabel?: string; periodLabel?: string }) {
   const by = Object.fromEntries(summary.map((c) => [c.key, c])) as Record<string, Card | undefined>;
   const v = (k: string) => by[k]?.value ?? 0;
   const day = dayPhrase(dayLabel);
@@ -43,8 +45,19 @@ export function ExecutiveOverview({ summary, charts, dayLabel = "Today" }: { sum
 
   const ribbon = [
     { label: "Total birds", value: fmt(v("totalBirds"), "birds"), spark: spark(charts, "mortalityTrend"), tone: "neutral" as const },
-    { label: `Mortality ${day}`, value: fmt(v("mortalityToday")), spark: spark(charts, "mortalityTrend"), tone: v("mortalityToday") > 0 ? ("critical" as const) : ("good" as const) },
-    { label: `Eggs ${day}`, value: fmt(v("eggProductionToday")), spark: spark(charts, "eggProductionTrend"), tone: "neutral" as const },
+    {
+      label: `Mortality ${day}`, value: fmt(v("mortalityToday")), spark: spark(charts, "mortalityTrend"),
+      tone: v("mortalityToday") > 0 ? ("critical" as const) : ("good" as const),
+      // The Daily stepper (Today/Yesterday/any date) drives the value above;
+      // the Scope & trend window filter (7d/30d/MTD/...) drives this
+      // sub-line instead — so switching that filter still visibly does
+      // something even though it no longer touches the "Today" figure.
+      sub: `${periodLabel}: ${fmt(v("mortalityPeriod"))}`,
+    },
+    {
+      label: `Eggs ${day}`, value: fmt(v("eggProductionToday")), spark: spark(charts, "eggProductionTrend"), tone: "neutral" as const,
+      sub: `${periodLabel}: ${fmt(v("eggProductionPeriod"))}`,
+    },
     { label: "Inventory value", value: fmt(v("currentInventoryValue"), "GHS"), spark: [], tone: "neutral" as const },
     { label: "Sales this month", value: fmt(v("salesThisMonth"), "GHS"), spark: spark(charts, "salesTrend"), tone: "good" as const },
     { label: "Open items", value: fmt(openAlerts), spark: [], tone: openAlerts > 0 ? ("warning" as const) : ("good" as const) },
@@ -102,6 +115,7 @@ export function ExecutiveOverview({ summary, charts, dayLabel = "Today" }: { sum
           <div key={k.label} className="app-card p-3">
             <div className="text-[10px] font-semibold uppercase tracking-wide text-ink/45">{k.label}</div>
             <div className={`text-lg font-extrabold leading-tight ${TONE[k.tone]}`}>{k.value}</div>
+            {"sub" in k && k.sub && <div className="mt-0.5 text-[10px] font-medium text-ink/40">{k.sub}</div>}
             {k.spark.length > 1 && (
               <div className="mt-1 h-6">
                 <ResponsiveContainer width="100%" height="100%">

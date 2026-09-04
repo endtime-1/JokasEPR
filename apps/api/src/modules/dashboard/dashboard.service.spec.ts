@@ -529,5 +529,20 @@ describe("DashboardService", () => {
       expect(dailySpanDates.sort()).toEqual(["2026-08-14", "2026-08-15"]);
       expect(result.data.filters.day).toBe("2026-08-15");
     });
+
+    it("the '(selected period)' cards still move with the trend-range filter, even though the 'today' cards don't", async () => {
+      prisma.mortalityRecord.aggregate.mockImplementation((args: any) =>
+        Promise.resolve({ _sum: { birdCount: daySpanHours(args) < 25 ? 3 : 40 } })
+      );
+
+      const result = await service.executive(makeUser({ hasGlobalAccess: true }), {
+        startDate: "2026-08-01", endDate: "2026-08-31", day: "2026-08-31"
+      } as never);
+
+      const today = result.data.summary.find((c: { key: string }) => c.key === "mortalityToday");
+      const period = result.data.summary.find((c: { key: string }) => c.key === "mortalityPeriod");
+      expect(today?.value).toBe(3);
+      expect(period?.value).toBe(40);
+    });
   });
 });

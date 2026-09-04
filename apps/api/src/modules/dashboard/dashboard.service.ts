@@ -45,6 +45,14 @@ const CARD_CONFIG: Array<{ key: string; label: string; metricKey: DashboardMetri
   { key: "eggProductionToday", label: "Egg production today", metricKey: "EGG_PRODUCTION", unit: "eggs", tone: "good" },
   { key: "mortalityToday", label: "Mortality today", metricKey: "MORTALITY", unit: "birds", tone: "critical" },
   { key: "feedConsumedToday", label: "Feed consumed today", metricKey: "FEED_CONSUMED", unit: "kg", tone: "neutral" },
+  // Same underlying figures as the three "Today" cards above, but totalled
+  // over the Scope & trend window filter (7/30 days, MTD, QTD, YTD) instead
+  // of a single day — so switching that filter still has a visible effect
+  // even though the "Today" cards are deliberately locked to the Daily
+  // stepper. See DAILY_SNAPSHOT_KEYS below.
+  { key: "eggProductionPeriod", label: "Egg production (selected period)", metricKey: "EGG_PRODUCTION", unit: "eggs", tone: "good" },
+  { key: "mortalityPeriod", label: "Mortality (selected period)", metricKey: "MORTALITY", unit: "birds", tone: "critical" },
+  { key: "feedConsumedPeriod", label: "Feed consumed (selected period)", metricKey: "FEED_CONSUMED", unit: "kg", tone: "neutral" },
   { key: "feedProducedThisWeek", label: "Feed produced this week", metricKey: "FEED_PRODUCED", unit: "kg", tone: "good" },
   { key: "soyaBeansProcessedThisWeek", label: "Soya beans processed this week", metricKey: "SOYA_BEANS_PROCESSED", unit: "kg", tone: "good" },
   { key: "soyaOilProduced", label: "Soya oil produced", metricKey: "SOYA_OIL_PRODUCED", unit: "L", tone: "good" },
@@ -574,6 +582,13 @@ export class DashboardService {
       eggProductionToday: eggAgg,
       mortalityToday: mortalityAgg,
       feedConsumedToday: feedAgg,
+      // Aliases feeding the "(selected period)" cards — same query, same
+      // value, just also exposed under the period-scoped card key so the
+      // trend-window filter still visibly changes something even though
+      // the "Today" cards are locked to the Daily stepper (see executive()).
+      eggProductionPeriod: eggAgg,
+      mortalityPeriod: mortalityAgg,
+      feedConsumedPeriod: feedAgg,
       feedProducedThisWeek: feedProdAgg,
       soyaBeansProcessedThisWeek: soyaBeanAgg,
       soyaOilProduced: soyaOilAgg,
