@@ -50,13 +50,15 @@ export function ExecutiveOverview({ summary, charts }: { summary: Card[]; charts
         { label: "batches open", value: fmt(v("activeFlockBatches")) },
         { label: "dead today", value: fmt(v("mortalityToday")), tone: v("mortalityToday") > 0 ? "critical" : undefined },
         { label: "eggs today", value: fmt(v("eggProductionToday")) },
+        // Feed *fed to birds* is a poultry number (drawn from the farm feed
+        // store), not a feed-mill number — it belongs on this card.
+        { label: "feed fed today", value: `${fmt(v("feedConsumedToday"))} kg` },
       ],
     },
     {
       key: "feed", label: "Feed Mill", icon: Wheat, href: "/dashboard/feed", spark: spark(charts, "feedProductionTrend"),
       lines: [
         { label: "produced this wk", value: `${fmt(v("feedProducedThisWeek"))} kg` },
-        { label: "consumed today", value: `${fmt(v("feedConsumedToday"))} kg` },
         { label: "orders pending", value: fmt(v("pendingProductionOrders")), tone: v("pendingProductionOrders") > 0 ? "warning" : undefined },
       ],
     },
