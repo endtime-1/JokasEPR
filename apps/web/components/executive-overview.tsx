@@ -35,28 +35,32 @@ function dayPhrase(dayLabel: string): string {
 }
 
 export function ExecutiveOverview({
-  summary, charts, dayLabel = "Today", periodLabel = "selected period"
-}: { summary: Card[]; charts: Record<string, Series[]>; dayLabel?: string; periodLabel?: string }) {
+  summary, charts, dayLabel = "Today", periodLabel = "selected period", metricMode = "day"
+}: { summary: Card[]; charts: Record<string, Series[]>; dayLabel?: string; periodLabel?: string; metricMode?: "day" | "period" }) {
   const by = Object.fromEntries(summary.map((c) => [c.key, c])) as Record<string, Card | undefined>;
   const v = (k: string) => by[k]?.value ?? 0;
   const day = dayPhrase(dayLabel);
+
+  // The Daily stepper (Today/Yesterday/any date) and the Scope & trend
+  // window presets (7d/30d/MTD/...) both drive the SAME headline figure —
+  // whichever the user last touched wins, via metricMode. That way picking
+  // "30 days" really does swap the big number, not just add a caption.
+  const isPeriod = metricMode === "period";
+  const phrase = isPeriod ? periodLabel : day;
+  const mortality = isPeriod ? v("mortalityPeriod") : v("mortalityToday");
+  const eggs = isPeriod ? v("eggProductionPeriod") : v("eggProductionToday");
+  const feedConsumed = isPeriod ? v("feedConsumedPeriod") : v("feedConsumedToday");
 
   const openAlerts = v("lowStockAlerts") + v("pendingPurchaseApprovals") + v("machineMaintenanceAlerts") + v("aiAlerts") + v("pendingProductionOrders");
 
   const ribbon = [
     { label: "Total birds", value: fmt(v("totalBirds"), "birds"), spark: spark(charts, "mortalityTrend"), tone: "neutral" as const },
     {
-      label: `Mortality ${day}`, value: fmt(v("mortalityToday")), spark: spark(charts, "mortalityTrend"),
-      tone: v("mortalityToday") > 0 ? ("critical" as const) : ("good" as const),
-      // The Daily stepper (Today/Yesterday/any date) drives the value above;
-      // the Scope & trend window filter (7d/30d/MTD/...) drives this
-      // sub-line instead — so switching that filter still visibly does
-      // something even though it no longer touches the "Today" figure.
-      sub: `${periodLabel}: ${fmt(v("mortalityPeriod"))}`,
+      label: isPeriod ? `Mortality (${phrase})` : `Mortality ${phrase}`, value: fmt(mortality), spark: spark(charts, "mortalityTrend"),
+      tone: mortality > 0 ? ("critical" as const) : ("good" as const),
     },
     {
-      label: `Eggs ${day}`, value: fmt(v("eggProductionToday")), spark: spark(charts, "eggProductionTrend"), tone: "neutral" as const,
-      sub: `${periodLabel}: ${fmt(v("eggProductionPeriod"))}`,
+      label: isPeriod ? `Eggs (${phrase})` : `Eggs ${phrase}`, value: fmt(eggs), spark: spark(charts, "eggProductionTrend"), tone: "neutral" as const,
     },
     { label: "Inventory value", value: fmt(v("currentInventoryValue"), "GHS"), spark: [], tone: "neutral" as const },
     { label: "Sales this month", value: fmt(v("salesThisMonth"), "GHS"), spark: spark(charts, "salesTrend"), tone: "good" as const },
@@ -68,11 +72,11 @@ export function ExecutiveOverview({
       key: "poultry", label: "Poultry", icon: Bird, href: "/dashboard/poultry", spark: spark(charts, "mortalityTrend"),
       lines: [
         { label: "batches open", value: fmt(v("activeFlockBatches")) },
-        { label: `dead ${day}`, value: fmt(v("mortalityToday")), tone: v("mortalityToday") > 0 ? "critical" : undefined },
-        { label: `eggs ${day}`, value: fmt(v("eggProductionToday")) },
+        { label: isPeriod ? `dead (${phrase})` : `dead ${phrase}`, value: fmt(mortality), tone: mortality > 0 ? "critical" : undefined },
+        { label: isPeriod ? `eggs (${phrase})` : `eggs ${phrase}`, value: fmt(eggs) },
         // Feed *fed to birds* is a poultry number (drawn from the farm feed
         // store), not a feed-mill number — it belongs on this card.
-        { label: `feed fed ${day}`, value: `${fmt(v("feedConsumedToday"))} kg` },
+        { label: isPeriod ? `feed fed (${phrase})` : `feed fed ${phrase}`, value: `${fmt(feedConsumed)} kg` },
       ],
     },
     {
@@ -115,7 +119,6 @@ export function ExecutiveOverview({
           <div key={k.label} className="app-card p-3">
             <div className="text-[10px] font-semibold uppercase tracking-wide text-ink/45">{k.label}</div>
             <div className={`text-lg font-extrabold leading-tight ${TONE[k.tone]}`}>{k.value}</div>
-            {"sub" in k && k.sub && <div className="mt-0.5 text-[10px] font-medium text-ink/40">{k.sub}</div>}
             {k.spark.length > 1 && (
               <div className="mt-1 h-6">
                 <ResponsiveContainer width="100%" height="100%">

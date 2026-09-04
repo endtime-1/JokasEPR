@@ -688,6 +688,11 @@ export default function DashboardPage() {
   const router = useRouter();
   const [filters, setFilters] = useState<Filters>(defaultFilters);
   const [activePreset, setActivePreset] = useState<DatePreset | null>("30d");
+  // Which figure the Mortality/Eggs/Feed-consumed headline tiles show right
+  // now: the single Daily-stepper day, or the Scope & trend window's period
+  // total. Whichever control the user last touched wins — so picking "30
+  // days" really does swap the big number, not just a small caption.
+  const [metricMode, setMetricMode] = useState<"day" | "period">("day");
   const [options, setOptions] = useState<DashboardOptions | null>(null);
   const [dashboard, setDashboard] = useState<DashboardResponse | null>(() => getCachedFirst<ApiEnvelope<DashboardResponse>>("/dashboard/executive")?.data ?? null);
   const [dashboardLoading, setDashboardLoading] = useState(!hasCached("/dashboard/executive"));
@@ -858,7 +863,7 @@ export default function DashboardPage() {
               <span className="pl-1 pr-1 text-[10px] font-bold uppercase tracking-wider text-ink/40">Daily</span>
               <button
                 type="button"
-                onClick={() => setFilters((f) => ({ ...f, day: addDays(f.day, -1) }))}
+                onClick={() => { setMetricMode("day"); setFilters((f) => ({ ...f, day: addDays(f.day, -1) })); }}
                 title="Previous day"
                 className="rounded-md p-1 text-ink/50 transition hover:bg-field hover:text-ink"
               >
@@ -868,12 +873,12 @@ export default function DashboardPage() {
                 type="date"
                 value={filters.day}
                 max={todayStr()}
-                onChange={(e) => e.target.value && setFilters((f) => ({ ...f, day: e.target.value }))}
+                onChange={(e) => { if (e.target.value) { setMetricMode("day"); setFilters((f) => ({ ...f, day: e.target.value })); } }}
                 className="w-[124px] rounded-md border border-line bg-white px-1.5 py-1 text-xs font-semibold text-ink"
               />
               <button
                 type="button"
-                onClick={() => setFilters((f) => ({ ...f, day: addDays(f.day, 1) }))}
+                onClick={() => { setMetricMode("day"); setFilters((f) => ({ ...f, day: addDays(f.day, 1) })); }}
                 disabled={filters.day >= todayStr()}
                 title="Next day"
                 className="rounded-md p-1 text-ink/50 transition hover:bg-field hover:text-ink disabled:cursor-not-allowed disabled:opacity-30"
@@ -882,18 +887,18 @@ export default function DashboardPage() {
               </button>
               <button
                 type="button"
-                onClick={() => setFilters((f) => ({ ...f, day: todayStr() }))}
+                onClick={() => { setMetricMode("day"); setFilters((f) => ({ ...f, day: todayStr() })); }}
                 className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition ${
-                  filters.day === todayStr() ? "bg-brand text-white" : "bg-field text-ink/60 hover:bg-line hover:text-ink"
+                  metricMode === "day" && filters.day === todayStr() ? "bg-brand text-white" : "bg-field text-ink/60 hover:bg-line hover:text-ink"
                 }`}
               >
                 Today
               </button>
               <button
                 type="button"
-                onClick={() => setFilters((f) => ({ ...f, day: addDays(todayStr(), -1) }))}
+                onClick={() => { setMetricMode("day"); setFilters((f) => ({ ...f, day: addDays(todayStr(), -1) })); }}
                 className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition ${
-                  filters.day === addDays(todayStr(), -1) ? "bg-brand text-white" : "bg-field text-ink/60 hover:bg-line hover:text-ink"
+                  metricMode === "day" && filters.day === addDays(todayStr(), -1) ? "bg-brand text-white" : "bg-field text-ink/60 hover:bg-line hover:text-ink"
                 }`}
               >
                 Yesterday
@@ -966,7 +971,17 @@ export default function DashboardPage() {
                   onClick={() => {
                     const dates = applyPreset(p.id);
                     setActivePreset(p.id);
-                    setFilters((f) => ({ ...f, ...dates }));
+                    // "Today" here means the same thing as the Daily
+                    // stepper's Today button — show today's day figure. Any
+                    // other preset is a real multi-day period, so the
+                    // headline switches to that period's total.
+                    if (p.id === "today") {
+                      setMetricMode("day");
+                      setFilters((f) => ({ ...f, ...dates, day: todayStr() }));
+                    } else {
+                      setMetricMode("period");
+                      setFilters((f) => ({ ...f, ...dates }));
+                    }
                   }}
                   className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
                     activePreset === p.id
@@ -1063,6 +1078,7 @@ export default function DashboardPage() {
             charts={dashboard?.charts ?? {}}
             dayLabel={dayLabel(filters.day)}
             periodLabel={activePreset ? PRESET_LABELS[activePreset] : `${filters.startDate.slice(5)}–${filters.endDate.slice(5)}`}
+            metricMode={metricMode}
           />
 
           <details className="mt-6 app-card overflow-hidden">
