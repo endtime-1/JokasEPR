@@ -10,7 +10,7 @@ import { DateField } from "../../components/DateField";
 import { SelectField, SelectOption } from "../../components/SelectField";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
-import { fetchPoultryOptions, pensForBatch } from "../../api/endpoints";
+import { fetchPoultryOptions, housesForBatch, pensForBatch } from "../../api/endpoints";
 import { colors, font, radius, spacing } from "../../constants/theme";
 
 type Severity = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
@@ -27,6 +27,7 @@ export function HealthObservationScreen() {
   const today = new Date().toISOString().split("T")[0];
 
   const [flockBatchId,      setFlockBatchId]      = useState("");
+  const [houseId,           setHouseId]           = useState("");
   const [penId,             setPenId]             = useState("");
   const [observationDate,   setObservationDate]   = useState(today);
   const [severity,          setSeverity]          = useState<Severity>("MEDIUM");
@@ -53,9 +54,14 @@ export function HealthObservationScreen() {
     [opts, flockBatchId]
   );
 
-  const penOptions: SelectOption[] = useMemo(
-    () => pensForBatch(opts, flockBatchId).map((p) => ({ label: `${p.name ?? `Pen ${p.penNumber}`} (${p.code})`, value: p.id })),
+  const houseOptions: SelectOption[] = useMemo(
+    () => housesForBatch(opts, flockBatchId).map((h) => ({ label: h.code ? `${h.name} (${h.code})` : h.name, value: h.id })),
     [opts, flockBatchId]
+  );
+
+  const penOptions: SelectOption[] = useMemo(
+    () => pensForBatch(opts, flockBatchId, houseId || undefined).map((p) => ({ label: `${p.name ?? `Pen ${p.penNumber}`} (${p.code})`, value: p.id })),
+    [opts, flockBatchId, houseId]
   );
 
   function validate() {
@@ -86,7 +92,7 @@ export function HealthObservationScreen() {
     if (!validate()) return;
     await submit({
       flockBatchId,
-      ...(penId ? { penId } : {}),
+      ...(penId ? { penId } : houseId ? { poultryHouseId: houseId } : {}),
       observationDate,
       severity,
       observation,
@@ -111,8 +117,14 @@ export function HealthObservationScreen() {
 
       <FormCard label="FLOCK DETAILS">
         <SelectField label="Flock Batch" value={flockBatchId} options={batchOptions}
-          onChange={(v) => { setFlockBatchId(v); setPenId(""); setErrors((e) => ({ ...e, flockBatchId: "" })); }}
+          onChange={(v) => { setFlockBatchId(v); setHouseId(""); setPenId(""); setErrors((e) => ({ ...e, flockBatchId: "" })); }}
           required error={errors.flockBatchId} placeholder="Select flock batch…" />
+
+        {houseOptions.length > 1 && (
+          <SelectField label="House" value={houseId} options={houseOptions}
+            onChange={(v) => { setHouseId(v); setPenId(""); }}
+            placeholder="All houses in batch" />
+        )}
 
         <SelectField label="Pen (optional)" value={penId} options={penOptions}
           onChange={setPenId}

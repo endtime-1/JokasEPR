@@ -10,7 +10,7 @@ import { DateField } from "../../components/DateField";
 import { SelectField, SelectOption } from "../../components/SelectField";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
-import { fetchFlockBatches, fetchFarms, fetchWarehouses, fetchPoultryOptions, pensForBatch, poultryStoreFor } from "../../api/endpoints";
+import { fetchFlockBatches, fetchFarms, fetchWarehouses, fetchPoultryOptions, housesForBatch, pensForBatch, poultryStoreFor } from "../../api/endpoints";
 import { useAuth } from "../../auth/AuthContext";
 import { colors, font, spacing } from "../../constants/theme";
 
@@ -62,11 +62,16 @@ export function FeedConsumptionScreen() {
     ? (Number(selectedBatch.currentBirdCount ?? selectedBatch.birdCount ?? selectedBatch.openingBirds) || 0)
     : 0;
 
+  const [houseId, setHouseId] = useState("");
   const [penId, setPenId] = useState("");
   const { data: opts } = useLookup("poultry-options", fetchPoultryOptions);
-  const pens: SelectOption[] = useMemo(
-    () => pensForBatch(opts?.data, batchId).map((p) => ({ label: `Pen ${p.penNumber} — ${p.name}`, value: p.id })),
+  const houses: SelectOption[] = useMemo(
+    () => housesForBatch(opts?.data, batchId).map((h) => ({ label: h.code ? `${h.name} (${h.code})` : h.name, value: h.id })),
     [opts, batchId]
+  );
+  const pens: SelectOption[] = useMemo(
+    () => pensForBatch(opts?.data, batchId, houseId || undefined).map((p) => ({ label: `Pen ${p.penNumber} — ${p.name}`, value: p.id })),
+    [opts, batchId, houseId]
   );
 
   // The feed comes out of the flock's own farm's Feed Store — scope the picker
@@ -152,6 +157,7 @@ export function FeedConsumptionScreen() {
       notes:         notes || undefined,
       warehouseId:   warehouseId   || undefined,
       feedProductId: feedProductId || undefined,
+      poultryHouseId: penId ? undefined : (houseId || undefined),
       penId:         penId         || undefined,
     });
   }
@@ -177,7 +183,7 @@ export function FeedConsumptionScreen() {
           label="Farm"
           value={farmId}
           options={farms}
-          onChange={(v) => { setFarmId(v); setBatchId(""); setGramsPerBird(""); setQuantityKg(""); }}
+          onChange={(v) => { setFarmId(v); setBatchId(""); setHouseId(""); setPenId(""); setGramsPerBird(""); setQuantityKg(""); }}
           error={errors.farmId}
           required
         />
@@ -185,11 +191,12 @@ export function FeedConsumptionScreen() {
           label="Flock Batch"
           value={batchId}
           options={batches}
-          onChange={(v) => { setBatchId(v); setPenId(""); }}
+          onChange={(v) => { setBatchId(v); setHouseId(""); setPenId(""); }}
           error={errors.batchId}
           required
           placeholder={farmId ? (batches.length === 0 ? "No active batches" : "Select batch…") : "Select farm first"}
         />
+        {houses.length > 1 && <SelectField label="House" value={houseId} options={houses} onChange={(v) => { setHouseId(v); setPenId(""); }} placeholder="All houses in batch" />}
         {pens.length > 0 && <SelectField label="Pen (optional)" value={penId} options={pens} onChange={setPenId} placeholder="All pens" />}
         {/* Bird count chip — shows once a batch with known population is selected */}
         {birdCount > 0 && (

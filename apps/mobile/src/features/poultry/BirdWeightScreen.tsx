@@ -10,7 +10,7 @@ import { DateField } from "../../components/DateField";
 import { SelectField, SelectOption } from "../../components/SelectField";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
-import { fetchPoultryOptions, pensForBatch } from "../../api/endpoints";
+import { fetchPoultryOptions, housesForBatch, pensForBatch } from "../../api/endpoints";
 import { colors, font, radius, spacing } from "../../constants/theme";
 
 // Approximate target weights (kg) by bird type and age (weeks)
@@ -37,6 +37,7 @@ export function BirdWeightScreen() {
   const today = new Date().toISOString().split("T")[0];
 
   const [flockBatchId, setFlockBatchId] = useState("");
+  const [houseId,      setHouseId]      = useState("");
   const [penId,        setPenId]        = useState("");
   const [recordDate,   setRecordDate]   = useState(today);
   const [sampleSize,   setSampleSize]   = useState("");
@@ -59,9 +60,14 @@ export function BirdWeightScreen() {
     [opts, flockBatchId]
   );
 
-  const penOptions: SelectOption[] = useMemo(
-    () => pensForBatch(opts, flockBatchId).map((p) => ({ label: `${p.name ?? `Pen ${p.penNumber}`} (${p.code})`, value: p.id })),
+  const houseOptions: SelectOption[] = useMemo(
+    () => housesForBatch(opts, flockBatchId).map((h) => ({ label: h.code ? `${h.name} (${h.code})` : h.name, value: h.id })),
     [opts, flockBatchId]
+  );
+
+  const penOptions: SelectOption[] = useMemo(
+    () => pensForBatch(opts, flockBatchId, houseId || undefined).map((p) => ({ label: `${p.name ?? `Pen ${p.penNumber}`} (${p.code})`, value: p.id })),
+    [opts, flockBatchId, houseId]
   );
 
   const avgNum = parseFloat(avgWeightKg) || 0;
@@ -98,7 +104,7 @@ export function BirdWeightScreen() {
     if (!validate()) return;
     await submit({
       flockBatchId,
-      ...(penId ? { penId } : {}),
+      ...(penId ? { penId } : houseId ? { poultryHouseId: houseId } : {}),
       recordDate,
       sampleSize: parseInt(sampleSize, 10),
       averageWeightKg: avgNum,
@@ -120,8 +126,14 @@ export function BirdWeightScreen() {
 
       <FormCard label="FLOCK DETAILS">
         <SelectField label="Flock Batch" value={flockBatchId} options={batchOptions}
-          onChange={(v) => { setFlockBatchId(v); setPenId(""); setErrors((e) => ({ ...e, flockBatchId: "" })); }}
+          onChange={(v) => { setFlockBatchId(v); setHouseId(""); setPenId(""); setErrors((e) => ({ ...e, flockBatchId: "" })); }}
           required error={errors.flockBatchId} placeholder="Select flock batch…" />
+
+        {houseOptions.length > 1 && (
+          <SelectField label="House" value={houseId} options={houseOptions}
+            onChange={(v) => { setHouseId(v); setPenId(""); }}
+            placeholder="All houses in batch" />
+        )}
 
         <SelectField label="Pen (optional)" value={penId} options={penOptions}
           onChange={setPenId}

@@ -10,7 +10,7 @@ import { DateField } from "../../components/DateField";
 import { SelectField, SelectOption } from "../../components/SelectField";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
-import { fetchFlockBatches, fetchFarms, fetchPoultryOptions, fetchWarehouses, fetchProducts, fetchDailyPoultryRecords, pensForBatch, poultryStoreFor, DailyPoultryRecordRow } from "../../api/endpoints";
+import { fetchFlockBatches, fetchFarms, fetchPoultryOptions, fetchWarehouses, fetchProducts, fetchDailyPoultryRecords, housesForBatch, pensForBatch, poultryStoreFor, DailyPoultryRecordRow } from "../../api/endpoints";
 import { apiFetch } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
 import { colors, font, radius, spacing } from "../../constants/theme";
@@ -25,6 +25,7 @@ type Form = {
   feedConsumedKg: string;
   totalEggs: string;
   notes: string;
+  houseId: string;
   penId: string;
   feedWarehouseId: string;
   feedProductId: string;
@@ -34,7 +35,7 @@ type Form = {
 
 const EMPTY: Form = {
   farmId: "", flockBatchId: "", recordDate: new Date().toISOString().split("T")[0],
-  openingBirdCount: "", mortalityCount: "0", culledCount: "0", feedConsumedKg: "0", totalEggs: "0", notes: "", penId: "",
+  openingBirdCount: "", mortalityCount: "0", culledCount: "0", feedConsumedKg: "0", totalEggs: "0", notes: "", houseId: "", penId: "",
   feedWarehouseId: "", feedProductId: "", eggWarehouseId: "", eggProductId: ""
 };
 
@@ -83,9 +84,13 @@ export function DailyPoultryScreen() {
 
   const { data: opts } = useLookup("poultry-options", fetchPoultryOptions);
   const selectedBatch = useMemo(() => (rawBatches ?? []).find((b: any) => b.id === form.flockBatchId), [rawBatches, form.flockBatchId]);
-  const pens: SelectOption[] = useMemo(
-    () => pensForBatch(opts?.data, form.flockBatchId).map((p) => ({ label: `Pen ${p.penNumber} — ${p.name}`, value: p.id })),
+  const houses: SelectOption[] = useMemo(
+    () => housesForBatch(opts?.data, form.flockBatchId).map((h) => ({ label: h.code ? `${h.name} (${h.code})` : h.name, value: h.id })),
     [opts, form.flockBatchId]
+  );
+  const pens: SelectOption[] = useMemo(
+    () => pensForBatch(opts?.data, form.flockBatchId, form.houseId || undefined).map((p) => ({ label: `Pen ${p.penNumber} — ${p.name}`, value: p.id })),
+    [opts, form.flockBatchId, form.houseId]
   );
 
   // Optional — matching the dedicated Feed Consumption / Egg Collection
@@ -206,6 +211,7 @@ export function DailyPoultryScreen() {
       feedConsumedKg: Number(form.feedConsumedKg) || 0,
       totalEggs: Number(form.totalEggs) || 0,
       notes: form.notes || undefined,
+      poultryHouseId: form.penId ? undefined : (form.houseId || undefined),
       penId: form.penId || undefined,
       feedWarehouseId: form.feedWarehouseId || undefined,
       feedProductId: form.feedProductId || undefined,
@@ -227,8 +233,9 @@ export function DailyPoultryScreen() {
       </View>
 
       <FormCard label="FLOCK / BATCH">
-        <SelectField label="Farm" value={form.farmId} options={farms} onChange={set("farmId")} error={errors.farmId ?? farmsError ?? undefined} loading={farmsLoading} required placeholder="Select farm…" />
-        <SelectField label="Flock Batch" value={form.flockBatchId} options={batches} onChange={set("flockBatchId")} error={errors.flockBatchId ?? batchesError ?? undefined} loading={batchesLoading} required placeholder={form.farmId ? "Select batch…" : "Select farm first"} />
+        <SelectField label="Farm" value={form.farmId} options={farms} onChange={(v) => { setForm((f) => ({ ...f, farmId: v, flockBatchId: "", houseId: "", penId: "" })); setErrors((e) => ({ ...e, farmId: undefined })); }} error={errors.farmId ?? farmsError ?? undefined} loading={farmsLoading} required placeholder="Select farm…" />
+        <SelectField label="Flock Batch" value={form.flockBatchId} options={batches} onChange={(v) => { setForm((f) => ({ ...f, flockBatchId: v, houseId: "", penId: "" })); setErrors((e) => ({ ...e, flockBatchId: undefined })); }} error={errors.flockBatchId ?? batchesError ?? undefined} loading={batchesLoading} required placeholder={form.farmId ? "Select batch…" : "Select farm first"} />
+        {houses.length > 1 && <SelectField label="House" value={form.houseId} options={houses} onChange={(v) => setForm((f) => ({ ...f, houseId: v, penId: "" }))} placeholder="All houses in batch" />}
         {pens.length > 0 && <SelectField label="Pen (optional)" value={form.penId} options={pens} onChange={set("penId")} placeholder="All pens" />}
         <DateField label="Record Date" required value={form.recordDate} onChangeText={set("recordDate")} error={errors.recordDate} />
       </FormCard>
