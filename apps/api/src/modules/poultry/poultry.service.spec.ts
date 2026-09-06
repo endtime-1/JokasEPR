@@ -164,6 +164,37 @@ describe("PoultryService — farm/warehouse access checks (H7)", () => {
       ).rejects.toThrow(ForbiddenException);
     });
 
+    it("attributes the record to an explicitly chosen house, not the batch's default house (multi-house batch, 2026-09-06)", async () => {
+      mockPrisma.flockBatch.findFirst.mockResolvedValue({ id: "batch-1", companyId: "company-1", farmId: "farm-1", branchId: "branch-1", poultryHouseId: "house-1", birdType: "LAYERS", status: "ACTIVE", code: "FLK-1" });
+      mockPrisma.batchPenAllocation.findFirst.mockResolvedValue({ id: "alloc-1", flockBatchId: "batch-1", poultryHouseId: "house-3" });
+      mockTx.eggProductionRecord.create.mockResolvedValue({ id: "egg-rec-1" });
+
+      const service = makeService();
+      await service.createEggs(
+        makeUser({ farmIds: ["farm-1"] }),
+        { flockBatchId: "batch-1", poultryHouseId: "house-3", recordDate: "2026-01-01", goodEggs: 10, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0 } as never,
+        {}
+      );
+
+      expect(mockTx.eggProductionRecord.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ poultryHouseId: "house-3", flockBatchId: "batch-1" })
+      });
+    });
+
+    it("rejects an explicit house the batch has no birds in", async () => {
+      mockPrisma.flockBatch.findFirst.mockResolvedValue({ id: "batch-1", companyId: "company-1", farmId: "farm-1", branchId: "branch-1", poultryHouseId: "house-1", birdType: "LAYERS", status: "ACTIVE", code: "FLK-1" });
+      mockPrisma.batchPenAllocation.findFirst.mockResolvedValue(null);
+
+      const service = makeService();
+      await expect(
+        service.createEggs(
+          makeUser({ farmIds: ["farm-1"] }),
+          { flockBatchId: "batch-1", poultryHouseId: "house-9", recordDate: "2026-01-01", goodEggs: 10, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0 } as never,
+          {}
+        )
+      ).rejects.toThrow(/no birds allocated to the selected house/);
+    });
+
     it("H-BUG-2: crediting egg output creates a real, sellable StockBatch — not just a quantityOnHand bump", async () => {
       mockPrisma.flockBatch.findFirst.mockResolvedValue({ id: "batch-1", companyId: "company-1", farmId: "farm-1", branchId: "branch-1", poultryHouseId: "house-1", birdType: "LAYERS", status: "ACTIVE", code: "FLK-1" });
       mockTx.eggProductionRecord.create.mockResolvedValue({ id: "egg-rec-1" });

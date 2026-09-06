@@ -206,6 +206,13 @@ class FlockRecordDto {
   @IsUUID()
   flockBatchId!: string;
 
+  // A batch can span several houses. When a pen is given, the house is
+  // derived from it; when it isn't, this pins the record to a specific
+  // house instead of silently falling back to the batch's default house.
+  @IsOptional()
+  @IsUUID()
+  poultryHouseId?: string;
+
   @IsOptional()
   @IsUUID()
   penId?: string;
@@ -398,6 +405,10 @@ export class CreateMedicationRecordDto {
 
   @IsOptional()
   @IsUUID()
+  poultryHouseId?: string;
+
+  @IsOptional()
+  @IsUUID()
   penId?: string;
 
   @IsString()
@@ -461,6 +472,10 @@ export class CreateVaccinationRecordDto {
 
   @IsOptional()
   @IsUUID()
+  poultryHouseId?: string;
+
+  @IsOptional()
+  @IsUUID()
   penId?: string;
 
   @IsString()
@@ -512,6 +527,10 @@ export class CreateVaccinationRecordDto {
 export class CreateHealthObservationDto {
   @IsUUID()
   flockBatchId!: string;
+
+  @IsOptional()
+  @IsUUID()
+  poultryHouseId?: string;
 
   @IsOptional()
   @IsUUID()
@@ -594,6 +613,10 @@ export class AllocateTransferPenDto {
 export class CreatePoultryCostRecordDto {
   @IsUUID()
   flockBatchId!: string;
+
+  @IsOptional()
+  @IsUUID()
+  poultryHouseId?: string;
 
   @IsOptional()
   @IsUUID()

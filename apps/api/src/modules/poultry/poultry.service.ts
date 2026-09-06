@@ -830,7 +830,7 @@ export class PoultryService {
     if (dto.eggWarehouseId) this.assertWarehouseAccess(user, dto.eggWarehouseId);
     await this.assertWarehousePurposeIfSet(user, dto.feedWarehouseId, "feed.consumption", dto.purposeOverrideReason, context);
     await this.assertWarehousePurposeIfSet(user, dto.eggWarehouseId, "egg.collection", dto.purposeOverrideReason, context);
-    const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
+    const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch, dto.poultryHouseId);
     const recordDate = new Date(dto.recordDate);
     const payload = { openingBirdCount: dto.openingBirdCount, mortalityCount: dto.mortalityCount, culledCount: dto.culledCount, feedConsumedKg: dto.feedConsumedKg, totalEggs: dto.totalEggs, notes: dto.notes, status: dto.status ?? "SUBMITTED" };
     const existing = await this.prisma.dailyPoultryRecord.findFirst({
@@ -931,7 +931,7 @@ export class PoultryService {
 
   async createMortality(user: AuthenticatedUser, dto: CreateMortalityRecordDto, context: RequestContext) {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
-    const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
+    const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch, dto.poultryHouseId);
     // Mobile parity audit (2026-08-17): a mobile offline-queue resend (or a
     // client retry after a dropped response) carrying the same
     // idempotencyKey replays the original record instead of creating a
@@ -970,7 +970,7 @@ export class PoultryService {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
     if (dto.warehouseId) this.assertWarehouseAccess(user, dto.warehouseId);
     await this.assertWarehousePurposeIfSet(user, dto.warehouseId, "feed.consumption", dto.purposeOverrideReason, context);
-    const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
+    const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch, dto.poultryHouseId);
     // Mobile parity audit (2026-08-17): a mobile offline-queue resend (or a
     // client retry after a dropped response) carrying the same
     // idempotencyKey replays the original record instead of creating a
@@ -1043,7 +1043,7 @@ export class PoultryService {
         ageWarning = `This flock started ${Math.max(Math.floor(daysSinceStart), 0)} day(s) ago — layers don't typically begin laying until ~16 weeks. Please confirm this is the right batch.`;
       }
     }
-    const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
+    const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch, dto.poultryHouseId);
     // Mobile parity audit (2026-08-17): a mobile offline-queue resend (or a
     // client retry after a dropped response) carrying the same
     // idempotencyKey replays the original record instead of creating a
@@ -1088,7 +1088,7 @@ export class PoultryService {
 
   async createWeight(user: AuthenticatedUser, dto: CreateBirdWeightRecordDto, context: RequestContext) {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
-    const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
+    const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch, dto.poultryHouseId);
     // Mobile parity audit (2026-08-17): a mobile offline-queue resend (or a
     // client retry after a dropped response) carrying the same
     // idempotencyKey replays the original record instead of creating a
@@ -1117,7 +1117,7 @@ export class PoultryService {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
     if (dto.warehouseId) this.assertWarehouseAccess(user, dto.warehouseId);
     await this.assertWarehousePurposeIfSet(user, dto.warehouseId, "poultry.health-supplies", dto.purposeOverrideReason, context);
-    const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
+    const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch, dto.poultryHouseId);
     // Mobile parity audit (2026-08-17): a mobile offline-queue resend (or a
     // client retry after a dropped response) carrying the same
     // idempotencyKey replays the original record instead of creating a
@@ -1156,7 +1156,7 @@ export class PoultryService {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
     if (dto.warehouseId) this.assertWarehouseAccess(user, dto.warehouseId);
     await this.assertWarehousePurposeIfSet(user, dto.warehouseId, "poultry.health-supplies", dto.purposeOverrideReason, context);
-    const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
+    const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch, dto.poultryHouseId);
     // Mobile parity audit (2026-08-17): a mobile offline-queue resend (or a
     // client retry after a dropped response) carrying the same
     // idempotencyKey replays the original record instead of creating a
@@ -1193,7 +1193,7 @@ export class PoultryService {
 
   async createHealthObservation(user: AuthenticatedUser, dto: CreateHealthObservationDto, context: RequestContext) {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
-    const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
+    const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch, dto.poultryHouseId);
     // Mobile parity audit (2026-08-17): a mobile offline-queue resend (or a
     // client retry after a dropped response) carrying the same
     // idempotencyKey replays the original record instead of creating a
@@ -1483,7 +1483,7 @@ export class PoultryService {
 
   async createCost(user: AuthenticatedUser, dto: CreatePoultryCostRecordDto, context: RequestContext) {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
-    const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch);
+    const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch, dto.poultryHouseId);
     // Mobile parity audit (2026-08-17): a mobile offline-queue resend (or a
     // client retry after a dropped response) carrying the same
     // idempotencyKey replays the original record instead of creating a
@@ -2074,13 +2074,29 @@ export class PoultryService {
     };
   }
 
-  private async resolvePenHouseId(companyId: string, penId: string | undefined, batch: BatchContext): Promise<string> {
+  private async resolvePenHouseId(
+    companyId: string,
+    penId: string | undefined,
+    batch: BatchContext,
+    poultryHouseId?: string
+  ): Promise<string> {
     if (penId) {
       const pen = await this.prisma.pen.findFirst({ where: { id: penId, companyId, deletedAt: null } });
       if (!pen) throw new BadRequestException("Pen not found.");
       const alloc = await this.prisma.batchPenAllocation.findFirst({ where: { flockBatchId: batch.id, penId } });
       if (!alloc) throw new BadRequestException("The specified pen is not allocated to this batch.");
+      if (poultryHouseId && poultryHouseId !== pen.poultryHouseId) {
+        throw new BadRequestException("The selected pen is not in the selected house.");
+      }
       return pen.poultryHouseId;
+    }
+    // No pen — a batch can span several houses, so an explicit house pins
+    // the record to the right one instead of falling back to the batch's
+    // default. Only accept a house the batch actually occupies.
+    if (poultryHouseId) {
+      const houseAlloc = await this.prisma.batchPenAllocation.findFirst({ where: { flockBatchId: batch.id, poultryHouseId } });
+      if (houseAlloc || batch.poultryHouseId === poultryHouseId) return poultryHouseId;
+      throw new BadRequestException("This batch has no birds allocated to the selected house.");
     }
     if (batch.poultryHouseId) return batch.poultryHouseId;
     const firstAlloc = await this.prisma.batchPenAllocation.findFirst({ where: { flockBatchId: batch.id }, include: { pen: true } });

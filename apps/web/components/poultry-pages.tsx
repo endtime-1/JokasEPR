@@ -1250,6 +1250,11 @@ function BatchRecordSection({ batchId, type, label, cols, endpoint, options }: {
       if (f.defaultValue !== undefined) defaults[f.name] = String(f.defaultValue);
       else if (f.kind === "select" && f.options?.length) defaults[f.name] = f.options[0];
     }
+    // If the list is currently narrowed to a house/pen, a new record
+    // belongs to that same house/pen — otherwise it would land on the
+    // batch's default house and vanish from the view you added it in.
+    if (houseFilter) defaults.poultryHouseId = houseFilter;
+    if (penFilter) defaults.penId = penFilter;
     const batchFarmId = options.batches.find((b) => b.id === batchId)?.farmId;
     if (type === "feed") {
       defaults.feedProductId = feedPickerProducts[0]?.id ?? "";
@@ -2199,7 +2204,10 @@ function buildRecordPayload(type: string, form: Record<string, string>, options:
     ...merged,
     flockBatchId: merged.flockBatchId,
     penId: merged.penId || undefined,
-    poultryHouseId: undefined
+    // A batch can span several houses — send the chosen house so the record
+    // is attributed to it, not silently to the batch's default house. The
+    // API derives the house from the pen when one is given.
+    poultryHouseId: merged.penId ? undefined : (merged.poultryHouseId || undefined)
   };
   const numericKeys = ["mortalityCount", "culledCount", "feedConsumedKg", "totalEggs", "birdCount", "quantityKg", "costAmount", "goodEggs", "crackedEggs", "dirtyEggs", "brokenEggs", "rejectedEggs", "sampleSize", "averageWeightKg", "amount", "openingBirdCount", "quantityUsed"];
   for (const key of Object.keys(payload)) {

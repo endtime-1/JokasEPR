@@ -10,7 +10,7 @@ import { Button } from "../../components/Button";
 import { SyncBanner } from "../../components/SyncBanner";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
-import { fetchFlockBatches, fetchFarms, fetchWarehouses, fetchProducts, fetchPoultryOptions, pensForBatch, poultryStoreFor } from "../../api/endpoints";
+import { fetchFlockBatches, fetchFarms, fetchWarehouses, fetchProducts, fetchPoultryOptions, housesForBatch, pensForBatch, poultryStoreFor } from "../../api/endpoints";
 import { useAuth } from "../../auth/AuthContext";
 import { colors, font, radius, shadow, spacing } from "../../constants/theme";
 
@@ -35,6 +35,7 @@ export function EggCollectionScreen() {
   const [warehouseId, setWarehouseId] = useState("");
   const [eggProductId, setEggProductId] = useState("");
   const [secondsProductId, setSecondsProductId] = useState("");
+  const [houseId, setHouseId]         = useState("");
   const [penId, setPenId]             = useState("");
   const [errors, setErrors]           = useState<Record<string, string>>({});
 
@@ -71,9 +72,16 @@ export function EggCollectionScreen() {
 
   const { data: opts } = useLookup("poultry-options", fetchPoultryOptions);
   const selectedBatch = useMemo(() => (rawBatches ?? []).find((b: any) => b.id === batchId), [rawBatches, batchId]);
-  const pens: SelectOption[] = useMemo(
-    () => pensForBatch(opts?.data, batchId).map((p) => ({ label: `Pen ${p.penNumber} — ${p.name}`, value: p.id })),
+  // A batch can span several houses. Pick the house so the record is
+  // attributed to it (not the batch's default house); the pen list then
+  // narrows to that house.
+  const houses: SelectOption[] = useMemo(
+    () => housesForBatch(opts?.data, batchId).map((h) => ({ label: h.code ? `${h.name} (${h.code})` : h.name, value: h.id })),
     [opts, batchId]
+  );
+  const pens: SelectOption[] = useMemo(
+    () => pensForBatch(opts?.data, batchId, houseId || undefined).map((p) => ({ label: `Pen ${p.penNumber} — ${p.name}`, value: p.id })),
+    [opts, batchId, houseId]
   );
 
   // Eggs go into the flock's own farm's Egg Store — scope the picker to that
@@ -162,6 +170,7 @@ export function EggCollectionScreen() {
       warehouseId:   warehouseId  || undefined,
       eggProductId:  eggProductId || undefined,
       secondsProductId: secondsProductId || undefined,
+      poultryHouseId: penId ? undefined : (houseId || undefined),
       penId:         penId        || undefined,
     });
   }
@@ -189,8 +198,9 @@ export function EggCollectionScreen() {
           {/* ── Flock Info ── */}
           <View style={styles.card}>
             <Text style={styles.cardLabel}>FLOCK DETAILS</Text>
-            <SelectField label="Farm" value={farmId} options={farms} onChange={(v) => { setFarmId(v); setBatchId(""); setPenId(""); }} error={errors.farmId} required />
-            <SelectField label="Flock Batch" value={batchId} options={batches} onChange={(v) => { setBatchId(v); setPenId(""); }} error={errors.batchId} required placeholder={farmId ? "Select batch…" : "Select farm first"} />
+            <SelectField label="Farm" value={farmId} options={farms} onChange={(v) => { setFarmId(v); setBatchId(""); setHouseId(""); setPenId(""); }} error={errors.farmId} required />
+            <SelectField label="Flock Batch" value={batchId} options={batches} onChange={(v) => { setBatchId(v); setHouseId(""); setPenId(""); }} error={errors.batchId} required placeholder={farmId ? "Select batch…" : "Select farm first"} />
+            {houses.length > 1 && <SelectField label="House" value={houseId} options={houses} onChange={(v) => { setHouseId(v); setPenId(""); }} placeholder="All houses in batch" />}
             {pens.length > 0 && <SelectField label="Pen (optional)" value={penId} options={pens} onChange={setPenId} placeholder="All pens" />}
             <DateField label="Collection Date" required value={date} onChangeText={setDate} error={errors.date} />
           </View>
