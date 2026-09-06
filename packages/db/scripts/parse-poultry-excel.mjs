@@ -41,59 +41,87 @@ const iso = (d) => d.toISOString().slice(0, 10);
 
 const out = { generatedAt: new Date().toISOString(), through: iso(CUTOFF), houses: {} };
 
+const norm = (s) => String(s || "").toLowerCase().replace(/["']/g, "").replace(/\s+/g, " ").trim();
+function resolveCols(rows) {
+  const hdr = rows.find((r) => r.some((c) => /age\s*\(wks\)/i.test(String(c)))) || rows[0];
+  const H = hdr.map(norm);
+  const find = (...names) => { for (const n of names) { const i = H.indexOf(n); if (i >= 0) return i; } return -1; };
+  return {
+    age: find("age(wks)", "age (wks)"),
+    oStock: find("o stock", "ostock"),
+    cull: find("curl", "cull"),
+    mortality: find("mortality"),
+    trnsfOut: find("trnsf out", "trsf out", "transfer out"),
+    trnsfIn: find("trsf in", "trnsf in", "transfer in"),
+    cStock: find("c stock", "cstock"),
+    eggs: find("eggs prodn", "eggs prod'n", "eggs production"),
+    actualWt: find("actual wt", "actual weight"),
+    med: find("medication"),
+    remark: find("remarks", "remark"),
+  };
+}
+// collapse consecutive same-name medication rows into courses
+function medCoursesFrom(daily) {
+  const courses = [];
+  let cur = null;
+  for (const rec of daily) {
+    const name = rec.med && rec.med !== "-" && rec.med !== "=" ? rec.med : null;
+    if (name && cur && cur.name.toLowerCase() === name.toLowerCase() && daysBetween(cur.end, rec.date) <= 1) cur.end = rec.date;
+    else { if (cur) courses.push(cur); cur = name ? { name, start: rec.date, end: rec.date } : null; }
+  }
+  if (cur) courses.push(cur);
+  return courses;
+}
+function parseSheet(rows) {
+  const C = resolveCols(rows);
+  const daily = [];
+  for (const r of rows) {
+    const d0 = String(r[0] || "").trim();
+    if (/WKL\s*REP/i.test(d0)) continue;
+    const date = parseDate(d0);
+    if (!date || date > CUTOFF) continue;
+    daily.push({
+      date: iso(date),
+      age: num(r[C.age]), oStock: num(r[C.oStock]), cull: num(r[C.cull]), mortality: num(r[C.mortality]),
+      trnsfOut: num(r[C.trnsfOut]), trnsfIn: num(r[C.trnsfIn]), cStock: num(r[C.cStock]),
+      eggs: num(r[C.eggs]), actualWt: C.actualWt >= 0 ? num(r[C.actualWt]) : 0,
+      med: C.med >= 0 ? String(r[C.med] || "").trim() : "",
+      remark: C.remark >= 0 ? String(r[C.remark] || "").trim() : "",
+    });
+  }
+  return daily;
+}
+
 for (const [file, house] of Object.entries(HOUSES)) {
   const wb = XLSX.readFile(path.join(SRC, file), { cellDates: false });
-  out.houses[house] = { rooms: {} };
+  out.houses[house] = { rooms: {}, totalMedCourses: [] };
   for (const sn of wb.SheetNames) {
-    if (/total/i.test(sn)) continue; // house TOTAL sheet is a rollup; rooms are the truth
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, raw: false, defval: "" });
+    if (/total/i.test(sn)) {
+      // rollup sheet — some farms log the whole-house medication regime only here
+      out.houses[house].totalMedCourses = medCoursesFrom(parseSheet(rows));
+      continue;
+    }
     const room = sn.replace(/\s+/g, "");
-    const daily = [];
+    const daily = parseSheet(rows);
     let openingStock = 0;
     let openingDate = null;
-    for (const r of rows) {
-      const d0 = String(r[0] || "").trim();
-      if (/WKL\s*REP/i.test(d0)) continue;
-      const date = parseDate(d0);
-      if (!date || date > CUTOFF) continue;
-      const rec = {
-        date: iso(date),
-        age: num(r[1]),
-        oStock: num(r[2]),
-        cull: num(r[3]),
-        mortality: num(r[4]),
-        trnsfOut: num(r[5]),
-        trnsfIn: num(r[6]),
-        cStock: num(r[7]),
-        eggs: num(r[11]),
-        actualWt: num(r[17]),
-        med: String(r[18] || "").trim(),
-        remark: String(r[19] || "").trim(),
-      };
-      // opening = the first day this room holds birds, via O'Stock or first trnsfIn
+    let openingViaStock = false; // true = genuine placement (O'Stock col); false = arrived via transfer
+    for (const rec of daily) {
+      // opening = the first day this room holds birds, via O'Stock (genuine
+      // placement) or first trnsfIn (birds moved in from elsewhere)
       if (!openingDate && (rec.oStock > 0 || rec.trnsfIn > 0)) {
         openingDate = rec.date;
+        openingViaStock = rec.oStock > 0;
         openingStock = rec.oStock > 0 ? rec.oStock : rec.trnsfIn;
       }
-      daily.push(rec);
     }
-    // collapse consecutive same-name medication rows into courses
-    const medCourses = [];
-    let cur = null;
-    for (const rec of daily) {
-      const name = rec.med && rec.med !== "-" && rec.med !== "=" ? rec.med : null;
-      if (name && cur && cur.name.toLowerCase() === name.toLowerCase() && daysBetween(cur.end, rec.date) <= 1) {
-        cur.end = rec.date;
-      } else {
-        if (cur) medCourses.push(cur);
-        cur = name ? { name, start: rec.date, end: rec.date } : null;
-      }
-    }
-    if (cur) medCourses.push(cur);
+    const medCourses = medCoursesFrom(daily);
 
     out.houses[house].rooms[room] = {
       openingDate,
       openingStock,
+      openingViaStock,
       firstDate: daily[0]?.date ?? null,
       lastDate: daily[daily.length - 1]?.date ?? null,
       totals: {
@@ -120,7 +148,7 @@ function daysBetween(a, b) { return Math.abs((new Date(b) - new Date(a)) / 86400
 fs.writeFileSync(OUT, JSON.stringify(out, null, 1));
 console.log("wrote " + OUT);
 for (const [h, hd] of Object.entries(out.houses)) {
-  console.log("\n" + h);
+  console.log("\n" + h + `   (TOTAL-sheet med courses: ${hd.totalMedCourses.length})`);
   for (const [room, rd] of Object.entries(hd.rooms)) {
     console.log(`  ${room}: open ${rd.openingStock}@${rd.openingDate}  mort ${rd.totals.mortality}  tIn ${rd.totals.trnsfIn}  tOut ${rd.totals.trnsfOut}  eggs ${rd.totals.eggs}  lastC'Stock ${rd.totals.lastCStock}  medCourses ${rd.medCourses.length}`);
   }
