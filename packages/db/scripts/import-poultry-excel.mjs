@@ -288,6 +288,7 @@ async function main() {
       if (!EGG_FROM || d.date >= EGG_FROM) eggCreditPieces += d.count;
     }
     const eggCreditQty = EGG_UNIT === "crates" ? money(eggCreditPieces / EGGS_PER_CRATE) : eggCreditPieces;
+    const eggBreakdown = `${eggCreditPieces} eggs = ${Math.floor(eggCreditPieces / EGGS_PER_CRATE)} crates + ${eggCreditPieces % EGGS_PER_CRATE} loose`;
 
     // ---- weights ----
     let weightRows = 0;
@@ -320,13 +321,13 @@ async function main() {
       transfers: transfers.length,
       residualAdjustments: adjustments.length,
       finalReconcileAdjustments: finalAdj.length,
-      eggs: `${eggRows} day-rows / ${eggPieces} pieces  → credit ${eggCreditPieces} pieces = ${eggCreditQty} ${EGG_UNIT}`,
+      eggs: `${eggRows} day-rows / ${eggPieces} eggs (kept per pen per day)  → egg store: ${eggCreditQty} ${EGG_UNIT}  (${eggBreakdown})`,
       weights: weightRows,
       medications: meds.length,
       vaccinations: vaccs.length,
     };
     plan._detail = plan._detail || {};
-    plan._detail[B.code] = { transfers, adjustments, finalAdj, meds, vaccs, batchId: batch.id, branchId, farmId, primaryHouseId: houseByName[B.primaryHouse].id, rooms, allocations, eggCreditQty };
+    plan._detail[B.code] = { transfers, adjustments, finalAdj, meds, vaccs, batchId: batch.id, branchId, farmId, primaryHouseId: houseByName[B.primaryHouse].id, rooms, allocations, eggCreditQty, eggCreditPieces, eggBreakdown };
 
     // sanity
     if (B.code === "001" && openingTotal !== 11520) plan.warnings.push(`Batch 1 opening allocations sum to ${openingTotal}, expected 11520`);
@@ -486,6 +487,7 @@ async function main() {
         create: { companyId: EXPECT.company, branchId: eggStoreW.branchId, warehouseId: eggStoreW.id, farmId, productId: eggProd.id, uomId: eggProd.uomId, quantityOnHand: det.eggCreditQty, createdById: CREATED_BY },
       });
       const firstEggDate = eggData.map((e) => e.recordDate).sort((a, b) => a - b)[0];
+      const eggNote = `Excel import — ${B.label}: ${det.eggBreakdown} → egg store (raw piece counts kept per pen per day on the egg-production records)`;
       const sb = await prisma.stockBatch.create({ data: {
         companyId: EXPECT.company, branchId: eggStoreW.branchId, farmId, warehouseId: eggStoreW.id, productId: eggProd.id,
         inventoryItemId: item.id, uomId: eggProd.uomId, batchNumber: `EGG-XLS-${B.code}`,
@@ -495,9 +497,9 @@ async function main() {
         companyId: EXPECT.company, branchId: eggStoreW.branchId, productId: eggProd.id, inventoryItemId: item.id, stockBatchId: sb.id,
         toWarehouseId: eggStoreW.id, warehouseId: eggStoreW.id, farmId, uomId: eggProd.uomId,
         movementType: "PRODUCTION_OUTPUT", quantity: det.eggCreditQty, referenceType: "PoultryExcelImport", referenceId: batchId,
-        notes: `Excel import: ${B.label} eggs → egg store`, movementDate: firstEggDate, createdById: CREATED_BY,
+        notes: eggNote.slice(0, 490), movementDate: firstEggDate, createdById: CREATED_BY,
       } });
-      console.log(`   egg inventory credited: ${det.eggCreditQty} ${EGG_UNIT}`);
+      console.log(`   egg inventory credited: ${det.eggCreditQty} ${EGG_UNIT}  (${det.eggBreakdown})`);
     }
 
     // 8. weights
