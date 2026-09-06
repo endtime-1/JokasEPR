@@ -121,8 +121,8 @@ const note = (s) => { const t = String(s || "").trim(); return !t || /^[\d.,]+$/
 function buildMovements(rooms, openingKeys) {
   const outs = [], ins = [];
   for (const r of rooms) for (const t of r.transfers) {
-    if (t.out > 0) outs.push({ date: t.date, qty: t.out, penId: r.penId, houseId: r.houseId, label: r.roomLabel });
-    if (t.in > 0 && !openingKeys.has(`${r.penId}|${t.date}`)) ins.push({ date: t.date, qty: t.in, penId: r.penId, houseId: r.houseId, label: r.roomLabel });
+    if (t.out > 0) outs.push({ date: t.date, qty: t.out, penId: r.penId, houseId: r.houseId, label: r.label });
+    if (t.in > 0 && !openingKeys.has(`${r.penId}|${t.date}`)) ins.push({ date: t.date, qty: t.in, penId: r.penId, houseId: r.houseId, label: r.label });
   }
   outs.sort((a, b) => a.date.localeCompare(b.date));
   ins.sort((a, b) => a.date.localeCompare(b.date));
@@ -205,7 +205,7 @@ async function main() {
       const H = houseByName[xh];
       for (const [roomLabel, rd] of Object.entries(hd.rooms)) {
         rooms.push({
-          xh, roomLabel, houseId: H.id, penId: H.penByNo[roomNo(roomLabel)],
+          xh, roomLabel, label: `${xh}/${roomLabel}`, houseId: H.id, penId: H.penByNo[roomNo(roomLabel)],
           transfers: rd.transfers, mortalityDays: rd.mortalityDays, cullDays: rd.cullDays,
           eggDays: rd.eggDays, weightDays: rd.weightDays, medCourses: rd.medCourses,
           lastCStock: rd.totals.lastCStock,
@@ -296,21 +296,25 @@ async function main() {
 
     // ---- medication / vaccination (dedup → batch level) ----
     // The farm logs one regime across all room columns (Adubofour) OR only in
-    // the house TOTAL sheet (Simon) — union both, dedup by name+start+end.
-    const medSeen = new Map();
-    const medSources = [
-      ...rooms.flatMap((r) => r.medCourses),
-      ...B.excelHouses.flatMap((xh) => data.houses[xh].totalMedCourses || []),
-    ];
-    for (const c of medSources) {
+    // the house TOTAL sheet (Simon) — union both, then merge same-drug courses
+    // whose ranges overlap or sit within 2 days (the room column and the TOTAL
+    // sheet often log the same course a day apart).
+    const classified = [];
+    for (const c of [...rooms.flatMap((r) => r.medCourses), ...B.excelHouses.flatMap((xh) => data.houses[xh].totalMedCourses || [])]) {
       const cls = classifyMed(c.name);
-      if (!cls) continue;
-      const key = `${cls.kind}|${cls.name}|${c.start}`; // same drug, same start = one course; keep the longest
-      const prev = medSeen.get(key);
-      if (!prev || c.end > prev.end) medSeen.set(key, { ...cls, start: c.start, end: c.end });
+      if (cls) classified.push({ ...cls, start: c.start, end: c.end });
     }
-    const meds = [...medSeen.values()].filter((x) => x.kind === "medication");
-    const vaccs = [...medSeen.values()].filter((x) => x.kind === "vaccine");
+    classified.sort((a, b) => a.start.localeCompare(b.start));
+    const merged = [];
+    for (const c of classified) {
+      // classified is sorted by start, so c.start >= m.start always; merge when
+      // c starts on/before m.end + 2 days (overlapping, contiguous, or a tiny gap)
+      const hit = merged.find((m) => m.kind === c.kind && m.name === c.name && iso(c.start).getTime() <= iso(m.end).getTime() + 2 * 86400000);
+      if (hit) { if (c.end > hit.end) hit.end = c.end; }
+      else merged.push({ ...c });
+    }
+    const meds = merged.filter((x) => x.kind === "medication");
+    const vaccs = merged.filter((x) => x.kind === "vaccine");
 
     plan.creates[B.code] = {
       fieldFix,
