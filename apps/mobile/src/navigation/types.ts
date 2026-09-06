@@ -43,6 +43,7 @@ export type RecordsStackParams = {
   MaintenanceLog: { scheduleId?: string; machineId?: string; equipmentId?: string; assetName: string; maintenanceType?: string };
   HealthObservation: undefined;
   BirdWeight: undefined;
+  BirdRecount: undefined;
   CorrectiveAction: undefined;
   LabReport: undefined;
   FinanceMobile: undefined;

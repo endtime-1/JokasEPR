@@ -1,6 +1,6 @@
 import { BirdType, FeedReceiptSource, FlockBatchStatus, PoultryCostType, PoultryHealthSeverity, PoultryRecordStatus, PoultryTransferStatus } from "@prisma/client";
 import { Type } from "class-transformer";
-import { IsArray, IsBoolean, IsDateString, IsEnum, IsInt, IsNumber, IsOptional, IsString, IsUUID, MaxLength, Min, ValidateIf, ValidateNested } from "class-validator";
+import { IsArray, IsBoolean, IsDateString, IsEnum, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, MaxLength, Min, ValidateIf, ValidateNested } from "class-validator";
 
 export enum PoultryRecordType {
   daily = "daily",
@@ -13,6 +13,7 @@ export enum PoultryRecordType {
   health = "health",
   transfers = "transfers",
   costs = "costs",
+  count_adjustments = "count-adjustments",
 }
 
 export class PoultryQueryDto {
@@ -51,6 +52,20 @@ export class PoultryQueryDto {
   @Min(0)
   @Type(() => Number)
   skip?: number;
+}
+
+export class BatchLedgerQueryDto {
+  @IsOptional()
+  @IsIn(["batch", "house", "pen"])
+  scope?: "batch" | "house" | "pen";
+
+  @IsOptional()
+  @IsUUID()
+  scopeId?: string;
+
+  @IsOptional()
+  @IsIn(["daily", "weekly"])
+  granularity?: "daily" | "weekly";
 }
 
 export class CreatePoultryHouseDto {
@@ -301,6 +316,25 @@ export class CreateMortalityRecordDto extends FlockRecordDto {
   // Mobile parity audit (2026-08-17): closes the idempotency gap for mobile
   // offline-queue resends — see sales.dto.ts's CreateSalesOrderDto for the
   // original pattern this mirrors.
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  idempotencyKey?: string;
+}
+
+export class CreatePoultryCountAdjustmentDto extends FlockRecordDto {
+  // The physical head-count for the scope (whole batch, a house via
+  // poultryHouseId, or a pen via penId). The system computes the expected
+  // count and stores the signed difference.
+  @IsInt()
+  @Min(0)
+  countedTotal!: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(240)
+  reason?: string;
+
   @IsOptional()
   @IsString()
   @MaxLength(100)

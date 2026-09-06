@@ -7,6 +7,7 @@ import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { PermissionsGuard } from "../../common/guards/permissions.guard";
 import {
   AddPenDto,
+  BatchLedgerQueryDto,
   CreateBirdWeightRecordDto,
   CreateDailyPoultryRecordDto,
   CreateEggProductionRecordDto,
@@ -15,6 +16,7 @@ import {
   CreateHealthObservationDto,
   CreateMedicationRecordDto,
   CreateMortalityRecordDto,
+  CreatePoultryCountAdjustmentDto,
   CreatePoultryCostRecordDto,
   CreatePoultryHouseDto,
   CreatePoultryTransferDto,
@@ -129,6 +131,12 @@ export class PoultryController {
     return this.poultryService.getBatch(user, id);
   }
 
+  @Get("batches/:id/ledger")
+  @RequirePermissions(PERMISSIONS.POULTRY_READ)
+  batchLedger(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Query() query: BatchLedgerQueryDto) {
+    return this.poultryService.batchLedger(user, id, query);
+  }
+
   @Post("batches")
   @RequirePermissions(PERMISSIONS.POULTRY_MANAGE)
   createBatch(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateFlockBatchDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
@@ -233,6 +241,12 @@ export class PoultryController {
   @RequirePermissions(PERMISSIONS.POULTRY_RECORD)
   createWeight(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateBirdWeightRecordDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.poultryService.createWeight(user, dto, { ipAddress, userAgent });
+  }
+
+  @Post("count-adjustments")
+  @RequirePermissions(PERMISSIONS.POULTRY_MANAGE)
+  createCountAdjustment(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreatePoultryCountAdjustmentDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.poultryService.createCountAdjustment(user, dto, { ipAddress, userAgent });
   }
 
   @Post("medication-records")

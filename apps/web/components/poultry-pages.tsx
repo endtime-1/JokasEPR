@@ -965,7 +965,7 @@ export function FlockBatchDetailsPage() {
   const { options, optionsError } = usePoultryOptions();
   const [batch, setBatch] = useState<BatchDetail | null>(() => getCachedFirst<ApiEnvelope<BatchDetail>>(`/poultry/batches/${params?.id}`)?.data ?? null);
   const [batchError, setBatchError] = useState("");
-  const [tab, setTab] = useState<"overview" | "pens" | "records">("overview");
+  const [tab, setTab] = useState<"overview" | "pens" | "records" | "ledger">("overview");
   const [statusForm, setStatusForm] = useState({ status: "", notes: "" });
   const [statusMsg, setStatusMsg] = useState("");
   const [pendingPens, setPendingPens] = useState<Record<string, string>>({});
@@ -1054,7 +1054,7 @@ export function FlockBatchDetailsPage() {
           )}
 
           <div className="mb-4 flex gap-1 border-b border-line">
-            {(["overview", "pens", "records"] as const).map((t) => (
+            {(["overview", "pens", "records", "ledger"] as const).map((t) => (
               <button key={t} onClick={() => setTab(t)} className={`px-4 py-2 text-sm font-medium capitalize ${tab === t ? "border-b-2 border-brand text-brand" : "text-ink/60"}`}>
                 {t}
               </button>
@@ -1085,6 +1085,8 @@ export function FlockBatchDetailsPage() {
                   <button type="submit" className="min-h-11 rounded-md bg-brand px-4 text-sm font-semibold text-white">Update</button>
                 </form>
               </div>
+
+              <RecountCard batchId={batch.id} options={options} onDone={reloadBatch} />
             </div>
           )}
 
@@ -1145,9 +1147,291 @@ export function FlockBatchDetailsPage() {
           {tab === "records" && batch && (
             <BatchRecordsTab batchId={batch.id} options={options} />
           )}
+
+          {tab === "ledger" && batch && (
+            <BatchLedgerTab batchId={batch.id} options={options} />
+          )}
         </>
       )}
     </>
+  );
+}
+
+// ─── Batch Ledger Tab ─────────────────────────────────────────────────────────
+// The day-by-day / week-by-week opening→closing running record the farm keeps
+// in its Excel "Room" sheets, rebuilt from the discrete records the system
+// stores. Scope = whole batch, one house, or one pen.
+
+type LedgerDayRow = {
+  date: string; ageWeeks: number; opening: number; mortality: number; culls: number;
+  transferIn: number; transferOut: number; adjustment: number; closing: number;
+  cumulativeDeaths: number; cumulativeMortalityPct: number; eggs: number;
+  layPct: number | null; feedKg: number; feedBags: number; weightKg: number | null;
+};
+type LedgerWeekRow = {
+  week: number; fromDate: string; toDate: string; opening: number; mortality: number;
+  culls: number; transferIn: number; transferOut: number; adjustment: number; closing: number;
+  cumulativeDeaths: number; cumulativeMortalityPct: number; eggs: number; avgLayPct: number | null;
+  feedKg: number; feedBags: number; actualWeightKg: number | null; targetWeightKg: number | null;
+};
+type LedgerResponse = {
+  scope: "batch" | "house" | "pen";
+  scopeLabel: string;
+  opening: number;
+  granularity: "daily" | "weekly";
+  rows: LedgerDayRow[] | LedgerWeekRow[];
+};
+
+const n0 = (v: number) => v.toLocaleString("en-GH", { maximumFractionDigits: 0 });
+const transferCell = (row: { transferIn: number; transferOut: number; adjustment: number }) => {
+  const net = row.transferIn - row.transferOut + row.adjustment;
+  if (net === 0) return "";
+  return net > 0 ? `+${n0(net)}` : n0(net);
+};
+
+function BatchLedgerTab({ batchId, options }: { batchId: string; options: PoultryOptions }) {
+  const [scope, setScope] = useState<"batch" | "house" | "pen">("batch");
+  const [scopeId, setScopeId] = useState("");
+  const [granularity, setGranularity] = useState<"daily" | "weekly">("weekly");
+  const [data, setData] = useState<LedgerResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const houses = useMemo(() => housesForBatch(options, batchId), [options, batchId]);
+  const pens = useMemo(
+    () => (scope === "pen" && scopeId ? [] : pensForBatch(options, batchId, scope === "house" ? scopeId : undefined)),
+    [options, batchId, scope, scopeId],
+  );
+  const pensForPicker = useMemo(() => pensForBatch(options, batchId), [options, batchId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+    const params = new URLSearchParams({ granularity });
+    if (scope !== "batch" && scopeId) { params.set("scope", scope); params.set("scopeId", scopeId); }
+    apiFetch<ApiEnvelope<LedgerResponse>>(`/poultry/batches/${batchId}/ledger?${params}`)
+      .then((r) => { if (!cancelled) setData(r.data ?? null); })
+      .catch((err: any) => { if (!cancelled) setError(err?.message ?? "Failed to load the ledger."); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [batchId, scope, scopeId, granularity]);
+
+  const rows = data?.rows ?? [];
+  const weekly = granularity === "weekly";
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="text-xs">
+          <span className="mb-0.5 block text-[10px] font-semibold uppercase text-ink/50">Scope</span>
+          <select
+            className="rounded border border-line bg-white px-2 py-1 text-xs"
+            value={scope === "batch" ? "batch" : `${scope}:${scopeId}`}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === "batch") { setScope("batch"); setScopeId(""); return; }
+              const [s, id] = v.split(":");
+              setScope(s as "house" | "pen");
+              setScopeId(id);
+            }}
+          >
+            <option value="batch">Whole batch</option>
+            {houses.length > 0 && (
+              <optgroup label="Houses">
+                {houses.map((h) => <option key={h.id} value={`house:${h.id}`}>{h.code}{h.name ? ` — ${h.name}` : ""}</option>)}
+              </optgroup>
+            )}
+            {pensForPicker.length > 0 && (
+              <optgroup label="Pens">
+                {pensForPicker.map((p) => <option key={p.id} value={`pen:${p.id}`}>{p.code}{p.name ? ` — ${p.name}` : ""}</option>)}
+              </optgroup>
+            )}
+          </select>
+        </label>
+
+        <div className="flex rounded border border-line text-xs">
+          {(["daily", "weekly"] as const).map((g) => (
+            <button
+              key={g}
+              type="button"
+              onClick={() => setGranularity(g)}
+              className={`px-3 py-1 capitalize ${granularity === g ? "bg-brand text-white" : "text-ink/60 hover:bg-field"}`}
+            >
+              {g}
+            </button>
+          ))}
+        </div>
+
+        {data && <span className="text-xs text-ink/50">{data.scopeLabel} · opened with {n0(data.opening)} birds</span>}
+      </div>
+
+      {error && (
+        <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</div>
+      )}
+      {loading && !data && <p className="text-xs text-ink/50">Rebuilding the ledger…</p>}
+
+      {data && rows.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs tabular-nums">
+            <thead className="bg-field">
+              <tr className="[&>th]:px-2 [&>th]:py-1.5 [&>th]:font-semibold [&>th]:uppercase [&>th]:text-[10px] [&>th]:text-ink/60">
+                <th>{weekly ? "Week" : "Date"}</th>
+                {!weekly && <th>Wk</th>}
+                <th className="text-right">Opening</th>
+                <th className="text-right">Mort</th>
+                <th className="text-right">Cull</th>
+                <th className="text-right">Transf</th>
+                <th className="text-right">Closing</th>
+                <th className="text-right">Cum †</th>
+                <th className="text-right">% Cum †</th>
+                <th className="text-right">Eggs</th>
+                <th className="text-right">Lay %</th>
+                <th className="text-right">Feed kg</th>
+                <th className="text-right">Feed bags</th>
+                <th className="text-right">Actual WT</th>
+                {weekly && <th className="text-right">Target WT</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {weekly
+                ? (rows as LedgerWeekRow[]).map((r) => (
+                    <tr key={r.week} className="border-t border-line [&>td]:px-2 [&>td]:py-1.5">
+                      <td>Wk {r.week}</td>
+                      <td className="text-right">{n0(r.opening)}</td>
+                      <td className="text-right">{r.mortality || ""}</td>
+                      <td className="text-right">{r.culls || ""}</td>
+                      <td className="text-right">{transferCell(r)}</td>
+                      <td className="text-right font-semibold">{n0(r.closing)}</td>
+                      <td className="text-right">{r.cumulativeDeaths || ""}</td>
+                      <td className="text-right">{r.cumulativeMortalityPct ? `${r.cumulativeMortalityPct}%` : ""}</td>
+                      <td className="text-right">{r.eggs || ""}</td>
+                      <td className="text-right">{r.avgLayPct != null ? `${r.avgLayPct}%` : ""}</td>
+                      <td className="text-right">{r.feedKg || ""}</td>
+                      <td className="text-right">{r.feedBags || ""}</td>
+                      <td className="text-right">{r.actualWeightKg != null ? r.actualWeightKg : ""}</td>
+                      <td className="text-right text-ink/50">{r.targetWeightKg != null ? r.targetWeightKg : ""}</td>
+                    </tr>
+                  ))
+                : (rows as LedgerDayRow[]).map((r) => {
+                    const quiet = !r.mortality && !r.culls && !r.transferIn && !r.transferOut && !r.adjustment && !r.eggs && !r.feedKg && r.weightKg == null;
+                    return (
+                      <tr key={r.date} className={`border-t border-line [&>td]:px-2 [&>td]:py-1 ${quiet ? "text-ink/40" : ""}`}>
+                        <td>{r.date.slice(5)}</td>
+                        <td className="text-right text-ink/40">{r.ageWeeks}</td>
+                        <td className="text-right">{n0(r.opening)}</td>
+                        <td className="text-right">{r.mortality || ""}</td>
+                        <td className="text-right">{r.culls || ""}</td>
+                        <td className="text-right">{transferCell(r)}</td>
+                        <td className="text-right font-semibold">{n0(r.closing)}</td>
+                        <td className="text-right">{r.cumulativeDeaths || ""}</td>
+                        <td className="text-right">{r.cumulativeMortalityPct ? `${r.cumulativeMortalityPct}%` : ""}</td>
+                        <td className="text-right">{r.eggs || ""}</td>
+                        <td className="text-right">{r.layPct != null ? `${r.layPct}%` : ""}</td>
+                        <td className="text-right">{r.feedKg || ""}</td>
+                        <td className="text-right">{r.feedBags || ""}</td>
+                        <td className="text-right">{r.weightKg != null ? r.weightKg : ""}</td>
+                      </tr>
+                    );
+                  })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {data && rows.length === 0 && !loading && <p className="text-xs text-ink/50">Nothing to show for this scope yet.</p>}
+      <p className="text-[10px] text-ink/40">† = deaths (natural mortality). Rebuilt from the batch's records; a physical recount shows in the Transf column.</p>
+    </div>
+  );
+}
+
+// ─── Physical recount ────────────────────────────────────────────────────────
+// A head-count of the birds in the batch / a house / a pen. The system computes
+// what it expected and stores the signed difference; from then on every
+// live-bird figure includes it. Mirrors the farm's Excel "Recount" remark.
+
+function RecountCard({ batchId, options, onDone }: { batchId: string; options: PoultryOptions; onDone: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [scope, setScope] = useState<"batch" | "house" | "pen">("batch");
+  const [scopeId, setScopeId] = useState("");
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [counted, setCounted] = useState("");
+  const [reason, setReason] = useState("");
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const houses = useMemo(() => housesForBatch(options, batchId), [options, batchId]);
+  const pens = useMemo(() => pensForBatch(options, batchId), [options, batchId]);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!counted) return;
+    setBusy(true);
+    setMsg("");
+    try {
+      const body: Record<string, unknown> = { flockBatchId: batchId, recordDate: date, countedTotal: Number(counted), reason: reason || undefined };
+      if (scope === "house" && scopeId) body.poultryHouseId = scopeId;
+      if (scope === "pen" && scopeId) body.penId = scopeId;
+      const res = await apiFetch<{ data: { delta: number; expectedTotal: number } }>("/poultry/count-adjustments", { method: "POST", body: JSON.stringify(body) });
+      const d = res.data.delta;
+      setMsg(`Recorded. System expected ${res.data.expectedTotal.toLocaleString()}, you counted ${Number(counted).toLocaleString()} — ${d > 0 ? `+${d}` : d}.`);
+      setCounted(""); setReason("");
+      onDone();
+    } catch (err: any) {
+      setMsg(err?.message ?? "Failed to record the recount.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="rounded-md border border-line bg-white p-4 shadow-panel">
+      <div className="flex items-center justify-between">
+        <h3 className="font-semibold">Physical recount</h3>
+        <button type="button" className="text-xs font-semibold text-brand hover:underline" onClick={() => setOpen((v) => !v)}>
+          {open ? "Cancel" : "Record a count"}
+        </button>
+      </div>
+      {msg && <p className="mt-2 text-sm text-ink/70">{msg}</p>}
+      {open && (
+        <form onSubmit={submit} className="mt-3 grid gap-3 sm:grid-cols-2">
+          <label className="text-xs">
+            <span className="mb-0.5 block text-[10px] font-semibold uppercase text-ink/50">Scope</span>
+            <select
+              className={inputClass}
+              value={scope === "batch" ? "batch" : `${scope}:${scopeId}`}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v === "batch") { setScope("batch"); setScopeId(""); return; }
+                const [s, id] = v.split(":");
+                setScope(s as "house" | "pen");
+                setScopeId(id);
+              }}
+            >
+              <option value="batch">Whole batch</option>
+              {houses.length > 0 && <optgroup label="Houses">{houses.map((h) => <option key={h.id} value={`house:${h.id}`}>{h.code}{h.name ? ` — ${h.name}` : ""}</option>)}</optgroup>}
+              {pens.length > 0 && <optgroup label="Pens">{pens.map((p) => <option key={p.id} value={`pen:${p.id}`}>{p.code}{p.name ? ` — ${p.name}` : ""}</option>)}</optgroup>}
+            </select>
+          </label>
+          <label className="text-xs">
+            <span className="mb-0.5 block text-[10px] font-semibold uppercase text-ink/50">Count date</span>
+            <input type="date" className={inputClass} value={date} max={new Date().toISOString().slice(0, 10)} onChange={(e) => setDate(e.target.value)} />
+          </label>
+          <label className="text-xs">
+            <span className="mb-0.5 block text-[10px] font-semibold uppercase text-ink/50">Birds counted</span>
+            <input type="number" min="0" className={inputClass} value={counted} onChange={(e) => setCounted(e.target.value)} required placeholder="e.g. 1002" />
+          </label>
+          <label className="text-xs">
+            <span className="mb-0.5 block text-[10px] font-semibold uppercase text-ink/50">Reason (optional)</span>
+            <input className={inputClass} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. quarterly recount" />
+          </label>
+          <div className="sm:col-span-2">
+            <button type="submit" disabled={busy} className="min-h-11 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-50">
+              {busy ? "Saving…" : "Save recount"}
+            </button>
+          </div>
+        </form>
+      )}
+    </div>
   );
 }
 

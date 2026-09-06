@@ -819,7 +819,8 @@ export class DashboardService {
       select: {
         openingBirdCount: true,
         mortalityRecords: { where: { deletedAt: null }, select: { birdCount: true } },
-        poultryTransferRecords: { where: { deletedAt: null }, select: { birdCount: true, isFullBatchRelocation: true, fromFarmId: true, toFarmId: true, status: true } }
+        poultryTransferRecords: { where: { deletedAt: null }, select: { birdCount: true, isFullBatchRelocation: true, fromFarmId: true, toFarmId: true, status: true } },
+        countAdjustments: { where: { deletedAt: null }, select: { delta: true } }
       }
     });
     return batches.reduce((sum, batch) => {
@@ -827,7 +828,8 @@ export class DashboardService {
       const outgoingTotal = batch.poultryTransferRecords
         .filter((t) => !t.isFullBatchRelocation && t.fromFarmId !== t.toFarmId && t.status !== "CANCELLED")
         .reduce((s, t) => s + t.birdCount, 0);
-      return sum + Math.max(0, batch.openingBirdCount - mortalityTotal - outgoingTotal);
+      const adjustmentTotal = (batch.countAdjustments ?? []).reduce((s, a) => s + a.delta, 0);
+      return sum + Math.max(0, batch.openingBirdCount - mortalityTotal - outgoingTotal + adjustmentTotal);
     }, 0);
   }
 

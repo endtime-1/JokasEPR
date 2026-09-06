@@ -118,6 +118,7 @@ export function createPrismaMock() {
     soyaProcessingBatch: modelMock(),
     reorderRule: modelMock(),
     poultryHealthObservation: modelMock(),
+    poultryCountAdjustment: modelMock(),
     systemSetting: modelMock(),
     pen: modelMock(),
     $transaction: jest.fn().mockImplementation((arg: unknown) => {

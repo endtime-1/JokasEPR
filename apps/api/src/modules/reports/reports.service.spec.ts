@@ -233,6 +233,24 @@ describe("ReportsService.runDocument — poultry batch lifecycle", () => {
     expect(curve.data.at(-1)?.cumulativeMortality).toBe(50);
   });
 
+  it("includes a weekly summary table and a weight-vs-target chart", async () => {
+    const mockPrisma = { flockBatch: { findFirst: jest.fn().mockResolvedValue(batch) } };
+    const service = new ReportsService(mockPrisma as never, {} as never);
+
+    const { data } = await service.runDocument("poultry.batch-lifecycle", makeUser() as never, { scopeType: "batch", scopeId: "b-1" } as never);
+
+    const weekly = data.sections.find((s) => s.type === "table" && s.title === "Weekly summary") as { rows: Record<string, unknown>[]; columns: { key: string }[] };
+    expect(weekly).toBeDefined();
+    expect(weekly.rows.length).toBeGreaterThanOrEqual(3); // batch is ~3 weeks old
+    expect(weekly.columns.some((c) => c.key === "targetWt")).toBe(true);
+    // last week's closing = 1000 - 50 deaths - 5 culls
+    expect(weekly.rows.at(-1)?.closing).toBe(945);
+
+    const wt = data.sections.find((s) => s.type === "line-chart" && s.title === "Weight vs breed target (kg)") as { data: Record<string, number>[] };
+    expect(wt.data.at(-1)?.actual).toBe(1.6);
+    expect(wt.data.at(-1)?.target).toBeGreaterThan(0); // BROILERS wk3 standard
+  });
+
   it("rejects a scopeType mismatch", async () => {
     const service = new ReportsService({ flockBatch: { findFirst: jest.fn() } } as never, {} as never);
     await expect(

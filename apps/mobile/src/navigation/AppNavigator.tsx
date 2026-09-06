@@ -40,6 +40,7 @@ import { MaintenanceTasksScreen } from "../features/maintenance/MaintenanceTasks
 import { MaintenanceLogScreen } from "../features/maintenance/MaintenanceLogScreen";
 import { HealthObservationScreen } from "../features/poultry/HealthObservationScreen";
 import { BirdWeightScreen } from "../features/poultry/BirdWeightScreen";
+import { BirdRecountScreen } from "../features/poultry/BirdRecountScreen";
 import { CorrectiveActionScreen } from "../features/quality/CorrectiveActionScreen";
 import { LabReportScreen } from "../features/quality/LabReportScreen";
 import { FinanceMobileScreen } from "../features/manager/FinanceMobileScreen";
@@ -287,6 +288,7 @@ function RecordsNavigator() {
       <RecordsStack.Screen name="HiproPredict"     component={P.HiproPredict}      options={{ title: "Feed Predictive"      }} />
       <RecordsStack.Screen name="HealthObservation"   component={HealthObservationScreen}  options={{ title: "Health Observation" }} />
       <RecordsStack.Screen name="BirdWeight"          component={BirdWeightScreen}         options={{ title: "Bird Weight"        }} />
+      <RecordsStack.Screen name="BirdRecount"         component={BirdRecountScreen}        options={{ title: "Bird Recount"       }} />
       <RecordsStack.Screen name="CorrectiveAction"    component={P.CorrectiveAction}   options={{ title: "Corrective Action"  }} />
       <RecordsStack.Screen name="LabReport"           component={P.LabReport}          options={{ title: "Lab Report"         }} />
       <RecordsStack.Screen name="BreakdownReport"     component={P.BreakdownReport}    options={{ title: "Report Breakdown"   }} />

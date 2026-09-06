@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
-import { AuthenticatedUser, WarehouseOperation } from "@jokas/shared";
+import { AuthenticatedUser, WarehouseOperation, standardWeightKg } from "@jokas/shared";
 import { Prisma } from "@prisma/client";
+import { buildDailyLedger, bucketWeekly } from "./batch-ledger.util";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
 import { LookupCacheService } from "../../common/services/lookup-cache.service";
@@ -10,6 +11,7 @@ import { nextRef } from "../../common/next-ref";
 import { withDbRetry } from "../../common/db-retry";
 import {
   AddPenDto,
+  BatchLedgerQueryDto,
   CreateBirdWeightRecordDto,
   CreateDailyPoultryRecordDto,
   CreateEggProductionRecordDto,
@@ -18,6 +20,7 @@ import {
   CreateHealthObservationDto,
   CreateMedicationRecordDto,
   CreateMortalityRecordDto,
+  CreatePoultryCountAdjustmentDto,
   CreatePoultryCostRecordDto,
   CreatePoultryHouseDto,
   CreatePoultryTransferDto,
@@ -293,6 +296,7 @@ export class PoultryService {
           include: {
             mortalityRecords: { where: { deletedAt: null } },
             poultryTransferRecords: { where: { deletedAt: null }, select: { birdCount: true, isFullBatchRelocation: true, fromFarmId: true, toFarmId: true, status: true } },
+            countAdjustments: { where: { deletedAt: null }, select: { delta: true } },
             eggProductionRecords: { where: { deletedAt: null } },
             feedConsumptionRecords: { where: { deletedAt: null }, select: { quantityKg: true } },
             costRecords: { where: { deletedAt: null } }
@@ -304,7 +308,7 @@ export class PoultryService {
       data: {
         houses,
         batchCount: batches.length,
-        currentLiveBirds: batches.reduce((sum, batch) => sum + this.currentLiveBirds(batch.openingBirdCount, batch.mortalityRecords, batch.poultryTransferRecords), 0),
+        currentLiveBirds: batches.reduce((sum, batch) => sum + this.currentLiveBirds(batch.openingBirdCount, batch.mortalityRecords, batch.poultryTransferRecords, batch.countAdjustments), 0),
         eggs: batches.flatMap((batch) => batch.eggProductionRecords).reduce((sum, row) => sum + this.totalEggs(row), 0),
         feedKg: batches.flatMap((batch) => batch.feedConsumptionRecords).reduce((sum, row) => sum + Number(row.quantityKg), 0),
         costs: batches.flatMap((batch) => batch.costRecords).reduce((sum, row) => sum + Number(row.amount), 0)
@@ -546,6 +550,7 @@ export class PoultryService {
           poultryHouse: { select: { code: true, name: true } },
           mortalityRecords: { where: { deletedAt: null } },
           poultryTransferRecords: { where: { deletedAt: null }, select: { birdCount: true, isFullBatchRelocation: true, fromFarmId: true, toFarmId: true, status: true } },
+          countAdjustments: { where: { deletedAt: null }, select: { delta: true } },
           feedConsumptionRecords: { where: { deletedAt: null } },
           eggProductionRecords: { where: { deletedAt: null } },
           birdWeightRecords: { where: { deletedAt: null }, orderBy: { recordDate: "desc" }, take: 1 },
@@ -582,6 +587,7 @@ export class PoultryService {
           }
         },
         costRecords: { where: { deletedAt: null }, orderBy: { costDate: "desc" } },
+        countAdjustments: { where: { deletedAt: null }, orderBy: { adjustmentDate: "desc" } },
         penAllocations: { include: { pen: { select: { code: true, name: true, penNumber: true, poultryHouse: { select: { name: true, code: true } } } } } }
       }
     });
@@ -611,15 +617,148 @@ export class PoultryService {
         mortalityByPen.set((m as any).penId, (mortalityByPen.get((m as any).penId) ?? 0) + m.birdCount);
       }
     }
+    // Pen-scoped physical recounts adjust that pen's effective count.
+    const adjustmentByPen = new Map<string, number>();
+    for (const a of batch.countAdjustments ?? []) {
+      if (a.penId) adjustmentByPen.set(a.penId, (adjustmentByPen.get(a.penId) ?? 0) + a.delta);
+    }
     const adjustedAllocations = batch.penAllocations.map((alloc: any) => ({
       ...alloc,
       birdCount: Math.max(0, alloc.birdCount
         - (outgoingByPen.get(alloc.penId) ?? 0)
-        - (mortalityByPen.get(alloc.penId) ?? 0))
+        - (mortalityByPen.get(alloc.penId) ?? 0)
+        + (adjustmentByPen.get(alloc.penId) ?? 0))
     }));
 
     const batchAdj = { ...batch, penAllocations: adjustedAllocations };
     return { data: { ...batchAdj, metrics: this.batchMetrics(batchAdj, prices) } };
+  }
+
+  /**
+   * The day-by-day (or week-by-week) opening→closing ledger the farm keeps in
+   * its Excel "Room" sheets, rebuilt from the discrete records we store.
+   * `scope` = the whole batch, one house, or one pen.
+   */
+  async batchLedger(user: AuthenticatedUser, batchId: string, query: BatchLedgerQueryDto) {
+    const batch = await this.prisma.flockBatch.findFirst({
+      where: { ...this.batchWhere(user), id: batchId },
+      include: {
+        penAllocations: { select: { penId: true, poultryHouseId: true, birdCount: true, pen: { select: { code: true, name: true } } } },
+        poultryHouse: { select: { id: true, code: true, name: true } },
+      },
+    });
+    if (!batch) throw new NotFoundException("Flock batch was not found.");
+    this.assertFarmAccess(user, batch.farmId);
+
+    const scope = query.scope ?? "batch";
+    const granularity = query.granularity ?? "daily";
+
+    const [mortality, eggRows, feedRows, weightRows, transfers, countAdjustments] = await Promise.all([
+      this.prisma.mortalityRecord.findMany({
+        where: { flockBatchId: batchId, deletedAt: null, ...this.ledgerScopeWhere(scope, query.scopeId) },
+        select: { recordDate: true, birdCount: true, isCulling: true },
+      }),
+      this.prisma.eggProductionRecord.findMany({
+        where: { flockBatchId: batchId, deletedAt: null, ...this.ledgerScopeWhere(scope, query.scopeId) },
+        select: { recordDate: true, goodEggs: true, crackedEggs: true, dirtyEggs: true, brokenEggs: true, rejectedEggs: true },
+      }),
+      this.prisma.feedConsumptionRecord.findMany({
+        where: { flockBatchId: batchId, deletedAt: null, ...this.ledgerScopeWhere(scope, query.scopeId) },
+        select: { recordDate: true, quantityKg: true },
+      }),
+      this.prisma.birdWeightRecord.findMany({
+        where: { flockBatchId: batchId, deletedAt: null, ...this.ledgerScopeWhere(scope, query.scopeId) },
+        select: { recordDate: true, averageWeightKg: true },
+      }),
+      this.prisma.poultryTransferRecord.findMany({
+        where: { flockBatchId: batchId, deletedAt: null, status: { not: "CANCELLED" }, isFullBatchRelocation: false },
+        select: {
+          transferDate: true, birdCount: true,
+          fromFarmId: true, toFarmId: true,
+          fromPoultryHouseId: true, toPoultryHouseId: true,
+          fromPenId: true, toPenId: true,
+        },
+      }),
+      this.prisma.poultryCountAdjustment.findMany({
+        where: { flockBatchId: batchId, deletedAt: null, ...this.ledgerScopeWhere(scope, query.scopeId) },
+        select: { adjustmentDate: true, delta: true },
+      }),
+    ]);
+
+    // Which transfers count as "in" / "out" for this scope, and the scope's
+    // opening count at the batch's start date.
+    let opening: number;
+    let scopeLabel: string;
+    const transIn: { date: Date; birdCount: number }[] = [];
+    const transOut: { date: Date; birdCount: number }[] = [];
+
+    if (scope === "batch") {
+      opening = batch.openingBirdCount;
+      scopeLabel = `${batch.code} — ${batch.name}`;
+      for (const t of transfers) {
+        if (t.fromFarmId === t.toFarmId) continue; // same-farm move doesn't change the batch total
+        if (t.toFarmId === batch.farmId) transIn.push({ date: t.transferDate, birdCount: t.birdCount });
+        if (t.fromFarmId === batch.farmId) transOut.push({ date: t.transferDate, birdCount: t.birdCount });
+      }
+    } else if (scope === "house") {
+      const houseId = query.scopeId;
+      const pensInHouse = batch.penAllocations.filter((a) => a.poultryHouseId === houseId);
+      let incomingFromOutside = 0;
+      for (const t of transfers) {
+        const inThis = t.toPoultryHouseId === houseId && t.fromPoultryHouseId !== houseId;
+        const outThis = t.fromPoultryHouseId === houseId && t.toPoultryHouseId !== houseId;
+        if (inThis) { transIn.push({ date: t.transferDate, birdCount: t.birdCount }); incomingFromOutside += t.birdCount; }
+        if (outThis) transOut.push({ date: t.transferDate, birdCount: t.birdCount });
+      }
+      // stored allocation = original + incoming transfers; back out to get the day-1 opening.
+      opening = Math.max(0, pensInHouse.reduce((s, a) => s + a.birdCount, 0) - incomingFromOutside);
+      const house = pensInHouse[0]?.poultryHouseId === houseId;
+      scopeLabel = house ? `House ${batch.poultryHouse?.code ?? ""}`.trim() : "House";
+    } else {
+      const penId = query.scopeId;
+      const alloc = batch.penAllocations.find((a) => a.penId === penId);
+      let incoming = 0;
+      for (const t of transfers) {
+        if (t.toPenId === penId) { transIn.push({ date: t.transferDate, birdCount: t.birdCount }); incoming += t.birdCount; }
+        if (t.fromPenId === penId) transOut.push({ date: t.transferDate, birdCount: t.birdCount });
+      }
+      opening = Math.max(0, (alloc?.birdCount ?? 0) - incoming);
+      scopeLabel = alloc?.pen ? `Pen ${alloc.pen.code}${alloc.pen.name ? ` — ${alloc.pen.name}` : ""}` : "Pen";
+    }
+
+    const days = buildDailyLedger({
+      openingBirdCount: opening,
+      startDate: batch.startDate,
+      mortality: mortality.map((m) => ({ date: m.recordDate, birdCount: m.birdCount, isCulling: m.isCulling })),
+      transfersIn: transIn.map((t) => ({ date: t.date, birdCount: t.birdCount })),
+      transfersOut: transOut.map((t) => ({ date: t.date, birdCount: t.birdCount })),
+      adjustments: countAdjustments.map((a) => ({ date: a.adjustmentDate, delta: a.delta })),
+      eggs: eggRows.map((e) => ({ date: e.recordDate, count: e.goodEggs + e.crackedEggs + e.dirtyEggs + e.brokenEggs + e.rejectedEggs })),
+      feedKg: feedRows.map((f) => ({ date: f.recordDate, kg: Number(f.quantityKg) })),
+      weights: weightRows.map((w) => ({ date: w.recordDate, averageWeightKg: Number(w.averageWeightKg) })),
+    });
+
+    return {
+      data: {
+        batch: { id: batch.id, code: batch.code, name: batch.name, birdType: batch.birdType, startDate: batch.startDate, status: batch.status },
+        scope,
+        scopeId: query.scopeId ?? null,
+        scopeLabel,
+        opening,
+        granularity,
+        houses: [...new Map(batch.penAllocations.map((a) => [a.poultryHouseId, a.poultryHouseId])).keys()],
+        pens: batch.penAllocations.map((a) => ({ id: a.penId, houseId: a.poultryHouseId, label: a.pen?.code ?? "Pen", name: a.pen?.name ?? null })),
+        rows: granularity === "weekly" ? bucketWeekly(days, (wk) => standardWeightKg(batch.birdType, wk)) : days,
+      },
+    };
+  }
+
+  // Filter a per-record `where` to the ledger scope. Transfers are handled
+  // separately (they carry from/to on both ends).
+  private ledgerScopeWhere(scope: string, scopeId?: string) {
+    if (scope === "house" && scopeId) return { poultryHouseId: scopeId };
+    if (scope === "pen" && scopeId) return { penId: scopeId };
+    return {};
   }
 
   async createBatch(user: AuthenticatedUser, dto: CreateFlockBatchDto, context: RequestContext) {
@@ -964,6 +1103,81 @@ export class PoultryService {
     await this.writeAudit(user, "CREATE", "MortalityRecord", data.id, dto.isCulling ? "Recorded poultry culling" : "Recorded poultry mortality", context, batch.farmId);
     const warning = await this.dailyRecordOverlapWarning(user.companyId, batch.id, new Date(dto.recordDate), dto.isCulling ? "culledCount" : "mortalityCount", dto.isCulling ? "culled" : "mortality");
     return { data, warning };
+  }
+
+  /**
+   * A physical head-count. Computes the expected live count for the scope
+   * (whole batch, a house, or a pen), stores the signed difference as a
+   * PoultryCountAdjustment, and from then on every live-bird calculation adds
+   * that delta in. The Excel sheets do this as a transfer with a "Recount"
+   * remark — this is the first-class version.
+   */
+  async createCountAdjustment(user: AuthenticatedUser, dto: CreatePoultryCountAdjustmentDto, context: RequestContext) {
+    const batch = await this.getBatchContext(user, dto.flockBatchId);
+    const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch, dto.poultryHouseId);
+    if (dto.idempotencyKey) {
+      const existing = await this.findCountAdjustmentByIdempotencyKey(user.companyId, dto.idempotencyKey);
+      if (existing) return { data: existing };
+    }
+    let data;
+    try {
+      data = await this.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM FlockBatch WHERE id = ${batch.id} FOR UPDATE`;
+        const expectedTotal = await this.expectedLiveCount(tx, batch, dto.penId, dto.penId ? undefined : dto.poultryHouseId);
+        const delta = dto.countedTotal - expectedTotal;
+        return tx.poultryCountAdjustment.create({
+          data: {
+            ...this.batchRecordBase(user, batch, penHouseId, dto.penId),
+            adjustmentDate: new Date(dto.recordDate),
+            countedTotal: dto.countedTotal,
+            expectedTotal,
+            delta,
+            reason: dto.reason,
+            notes: dto.notes,
+            status: dto.status ?? "SUBMITTED",
+            idempotencyKey: dto.idempotencyKey,
+          },
+        });
+      });
+    } catch (err: unknown) {
+      if (dto.idempotencyKey && (err as { code?: string })?.code === "P2002") {
+        const existing = await this.findCountAdjustmentByIdempotencyKey(user.companyId, dto.idempotencyKey);
+        if (existing) return { data: existing };
+      }
+      throw err;
+    }
+    const sign = data.delta > 0 ? `+${data.delta}` : String(data.delta);
+    await this.writeAudit(user, "UPDATE", "PoultryCountAdjustment", data.id, `Recount: counted ${data.countedTotal}, expected ${data.expectedTotal} (${sign})`, context, batch.farmId);
+    return { data };
+  }
+
+  /** Expected live count for a scope, as of now, inside a transaction. */
+  private async expectedLiveCount(
+    tx: Prisma.TransactionClient,
+    batch: BatchContext,
+    penId?: string,
+    poultryHouseId?: string,
+  ): Promise<number> {
+    if (penId) {
+      const [alloc, mortAgg, outAgg, adjAgg] = await Promise.all([
+        tx.batchPenAllocation.findFirst({ where: { flockBatchId: batch.id, penId }, select: { birdCount: true } }),
+        tx.mortalityRecord.aggregate({ where: { flockBatchId: batch.id, penId, deletedAt: null }, _sum: { birdCount: true } }),
+        tx.poultryTransferRecord.aggregate({ where: { flockBatchId: batch.id, fromPenId: penId, deletedAt: null, status: { not: "CANCELLED" } }, _sum: { birdCount: true } }),
+        tx.poultryCountAdjustment.aggregate({ where: { flockBatchId: batch.id, penId, deletedAt: null }, _sum: { delta: true } }),
+      ]);
+      return Math.max(0, (alloc?.birdCount ?? 0) - (mortAgg._sum.birdCount ?? 0) - (outAgg._sum.birdCount ?? 0) + (adjAgg._sum.delta ?? 0));
+    }
+    if (poultryHouseId) {
+      const [allocAgg, mortAgg, transfers, adjAgg] = await Promise.all([
+        tx.batchPenAllocation.aggregate({ where: { flockBatchId: batch.id, poultryHouseId }, _sum: { birdCount: true } }),
+        tx.mortalityRecord.aggregate({ where: { flockBatchId: batch.id, poultryHouseId, deletedAt: null }, _sum: { birdCount: true } }),
+        tx.poultryTransferRecord.findMany({ where: { flockBatchId: batch.id, fromPoultryHouseId: poultryHouseId, deletedAt: null, status: { not: "CANCELLED" } }, select: { birdCount: true, toPoultryHouseId: true } }),
+        tx.poultryCountAdjustment.aggregate({ where: { flockBatchId: batch.id, poultryHouseId, deletedAt: null }, _sum: { delta: true } }),
+      ]);
+      const outOfHouse = transfers.filter((t) => t.toPoultryHouseId !== poultryHouseId).reduce((s, t) => s + t.birdCount, 0);
+      return Math.max(0, (allocAgg._sum.birdCount ?? 0) - (mortAgg._sum.birdCount ?? 0) - outOfHouse + (adjAgg._sum.delta ?? 0));
+    }
+    return this.liveBirdsRemaining(tx, batch.id, batch.openingBirdCount);
   }
 
   async createFeed(user: AuthenticatedUser, dto: CreateFeedConsumptionRecordDto, context: RequestContext) {
@@ -1903,7 +2117,7 @@ export class PoultryService {
     const naturalMortality = records.filter((r) => !r.isCulling).reduce((sum: number, r: any) => sum + r.birdCount, 0);
     // currentLiveBirds subtracts natural deaths, culling, AND birds transferred
     // out of the batch (excluding whole-batch relocations — see currentLiveBirds).
-    const currentLiveBirds = this.currentLiveBirds(batch.openingBirdCount, records, batch.poultryTransferRecords ?? []);
+    const currentLiveBirds = this.currentLiveBirds(batch.openingBirdCount, records, batch.poultryTransferRecords ?? [], batch.countAdjustments ?? []);
     const totalFeedKg = (batch.feedConsumptionRecords ?? []).reduce((sum: number, row: any) => sum + Number(row.quantityKg), 0);
     const totalEggs = (batch.eggProductionRecords ?? []).reduce((sum: number, row: any) => sum + this.totalEggs(row), 0);
     const totalCosts = (batch.costRecords ?? []).reduce((sum: number, row: any) => sum + Number(row.amount), 0);
@@ -1987,9 +2201,14 @@ export class PoultryService {
   private currentLiveBirds(
     openingBirdCount: number,
     mortalityRecords: Array<{ birdCount: number }>,
-    transferRecords: Array<{ birdCount: number; isFullBatchRelocation: boolean; fromFarmId: string; toFarmId: string; status: string }> = []
+    transferRecords: Array<{ birdCount: number; isFullBatchRelocation: boolean; fromFarmId: string; toFarmId: string; status: string }> = [],
+    countAdjustments: Array<{ delta: number }> = []
   ) {
     const mortalityTotal = mortalityRecords.reduce((sum, row) => sum + row.birdCount, 0);
+    // A physical recount books a fixed signed delta (counted − expected). It
+    // adds in exactly like an outgoing transfer subtracts — see
+    // PoultryCountAdjustment.
+    const adjustmentTotal = countAdjustments.reduce((sum, row) => sum + row.delta, 0);
     // (2026-08-18, same day again) A CANCELLED transfer was still counted
     // as birds gone forever — nothing anywhere reversed its effect, so
     // cancelling (exposed on the Transfers page as a status option) just
@@ -1998,7 +2217,7 @@ export class PoultryService {
     const outgoingTotal = transferRecords
       .filter((t) => !t.isFullBatchRelocation && t.fromFarmId !== t.toFarmId && t.status !== "CANCELLED")
       .reduce((sum, row) => sum + row.birdCount, 0);
-    return Math.max(0, openingBirdCount - mortalityTotal - outgoingTotal);
+    return Math.max(0, openingBirdCount - mortalityTotal - outgoingTotal + adjustmentTotal);
   }
 
   // Transactional counterpart of currentLiveBirds, for the write-path checks
@@ -2016,7 +2235,7 @@ export class PoultryService {
     openingBirdCount: number,
     excludeMortalityId?: string
   ): Promise<number> {
-    const [mortalityAgg, transfers] = await Promise.all([
+    const [mortalityAgg, transfers, adjustmentAgg] = await Promise.all([
       client.mortalityRecord.aggregate({
         where: { flockBatchId, deletedAt: null, ...(excludeMortalityId ? { id: { not: excludeMortalityId } } : {}) },
         _sum: { birdCount: true }
@@ -2024,10 +2243,11 @@ export class PoultryService {
       client.poultryTransferRecord.findMany({
         where: { flockBatchId, deletedAt: null, isFullBatchRelocation: false, status: { not: "CANCELLED" } },
         select: { birdCount: true, fromFarmId: true, toFarmId: true }
-      })
+      }),
+      client.poultryCountAdjustment.aggregate({ where: { flockBatchId, deletedAt: null }, _sum: { delta: true } })
     ]);
     const outgoingTotal = transfers.filter((t) => t.fromFarmId !== t.toFarmId).reduce((sum, t) => sum + t.birdCount, 0);
-    return Math.max(0, openingBirdCount - (mortalityAgg._sum.birdCount ?? 0) - outgoingTotal);
+    return Math.max(0, openingBirdCount - (mortalityAgg._sum.birdCount ?? 0) - outgoingTotal + (adjustmentAgg._sum.delta ?? 0));
   }
 
   private totalEggs(row: { goodEggs: number; crackedEggs: number; dirtyEggs: number; brokenEggs: number; rejectedEggs: number }) {
@@ -2133,7 +2353,7 @@ export class PoultryService {
       daily: "recordDate", mortality: "recordDate", feed: "recordDate",
       eggs: "recordDate", weights: "recordDate", medications: "startDate",
       vaccinations: "vaccinationDate", health: "observationDate",
-      transfers: "transferDate", costs: "costDate"
+      transfers: "transferDate", costs: "costDate", "count-adjustments": "adjustmentDate"
     };
     const dateField = type ? (DATE_FIELD[type] ?? "recordDate") : "recordDate";
     const dateRange = query.startDate || query.endDate
@@ -2162,7 +2382,8 @@ export class PoultryService {
       vaccinations: this.prisma.vaccinationRecord,
       health: this.prisma.poultryHealthObservation,
       transfers: this.prisma.poultryTransferRecord,
-      costs: this.prisma.poultryCostRecord
+      costs: this.prisma.poultryCostRecord,
+      "count-adjustments": this.prisma.poultryCountAdjustment
     };
     const model = models[type];
     if (!model) {
@@ -2402,6 +2623,10 @@ export class PoultryService {
 
   private async findEggsByIdempotencyKey(companyId: string, idempotencyKey: string) {
     return this.prisma.eggProductionRecord.findFirst({ where: { companyId, idempotencyKey, deletedAt: null } });
+  }
+
+  private async findCountAdjustmentByIdempotencyKey(companyId: string, idempotencyKey: string) {
+    return this.prisma.poultryCountAdjustment.findFirst({ where: { companyId, idempotencyKey, deletedAt: null } });
   }
 
   private async findWeightByIdempotencyKey(companyId: string, idempotencyKey: string) {

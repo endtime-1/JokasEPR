@@ -8,9 +8,10 @@
  * Each definition declares the scope-tree node type it runs against
  * (`scopeType`) and a `run()` that assembles the sections.
  */
-import { PermissionKey } from "@jokas/shared";
+import { PermissionKey, standardWeightKg, standardLayPct } from "@jokas/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuthenticatedUser } from "@jokas/shared";
+import { buildDailyLedger, bucketWeekly } from "../poultry/batch-ledger.util";
 
 export type ReportSection =
   // imageUrl is the same `/api/v1/uploads/...` path the app already serves
@@ -91,6 +92,7 @@ const poultryBatchLifecycle: DocumentReportDefinition = {
         vaccinationRecords: { where: { deletedAt: null }, orderBy: { vaccinationDate: "asc" } },
         healthObservations: { where: { deletedAt: null }, orderBy: { observationDate: "asc" } },
         poultryTransferRecords: { where: { deletedAt: null }, orderBy: { transferDate: "asc" } },
+        countAdjustments: { where: { deletedAt: null }, orderBy: { adjustmentDate: "asc" } },
         costRecords: { where: { deletedAt: null }, orderBy: { costDate: "asc" } },
       },
     });
@@ -103,7 +105,9 @@ const poultryBatchLifecycle: DocumentReportDefinition = {
       const inbound = t.toFarmId === batch.farmId;
       return s + (inbound ? num(t.birdCount) : -num(t.birdCount));
     }, 0);
-    const alive = Math.max(placed - totalDeaths - totalCulls + netTransfers, 0);
+    const countAdjustments = batch.countAdjustments ?? [];
+    const netAdjustments = countAdjustments.reduce((s, a) => s + num(a.delta), 0);
+    const alive = Math.max(placed - totalDeaths - totalCulls + netTransfers + netAdjustments, 0);
     const mortalityPct = placed > 0 ? round((totalDeaths / placed) * 100, 2) : 0;
 
     const totalFeedKg = batch.feedConsumptionRecords.reduce((s, f) => s + num(f.quantityKg), 0);
@@ -155,6 +159,32 @@ const poultryBatchLifecycle: DocumentReportDefinition = {
       return { date: d.date, daily: round(d.feed, 1), cumulative: round(cumFeed, 1) };
     });
 
+    // ── weekly ledger (the farm's "WKL REP" line) + target-weight curve ──
+    const ledgerDays = buildDailyLedger({
+      openingBirdCount: placed,
+      startDate: batch.startDate,
+      mortality: batch.mortalityRecords.map((m) => ({ date: m.recordDate, birdCount: num(m.birdCount), isCulling: m.isCulling })),
+      transfersIn: batch.poultryTransferRecords
+        .filter((t) => t.fromFarmId !== t.toFarmId && t.toFarmId === batch.farmId && t.status !== "CANCELLED" && !t.isFullBatchRelocation)
+        .map((t) => ({ date: t.transferDate, birdCount: num(t.birdCount) })),
+      transfersOut: batch.poultryTransferRecords
+        .filter((t) => t.fromFarmId !== t.toFarmId && t.fromFarmId === batch.farmId && t.status !== "CANCELLED" && !t.isFullBatchRelocation)
+        .map((t) => ({ date: t.transferDate, birdCount: num(t.birdCount) })),
+      adjustments: countAdjustments.map((a) => ({ date: a.adjustmentDate, delta: num(a.delta) })),
+      eggs: batch.eggProductionRecords.map((e) => ({ date: e.recordDate, count: num(e.goodEggs) + num(e.crackedEggs) + num(e.dirtyEggs) + num(e.brokenEggs) + num(e.rejectedEggs) })),
+      feedKg: batch.feedConsumptionRecords.map((f) => ({ date: f.recordDate, kg: num(f.quantityKg) })),
+      weights: batch.birdWeightRecords.map((w) => ({ date: w.recordDate, averageWeightKg: num(w.averageWeightKg) })),
+    });
+    const weeks = bucketWeekly(ledgerDays, (wk) => standardWeightKg(batch.birdType, wk));
+
+    const weightVsTarget = batch.birdWeightRecords.map((w) => {
+      const wk = Math.floor((new Date(dayKey(w.recordDate)).getTime() - new Date(dayKey(batch.startDate)).getTime()) / (7 * 86400000)) + 1;
+      return { date: dayKey(w.recordDate), actual: round(num(w.averageWeightKg), 3), target: standardWeightKg(batch.birdType, wk) ?? 0 };
+    });
+    const layVsStandard = isLayer
+      ? ledgerDays.filter((d) => d.layPct != null).map((d) => ({ date: d.date, actual: d.layPct as number, standard: standardLayPct(batch.birdType, d.ageWeeks) ?? 0 }))
+      : [];
+
     const events = [
       ...batch.poultryTransferRecords.map((t) => ({ date: dayKey(t.transferDate), label: `Transfer — ${num(t.birdCount)} birds`, kind: "transfer" })),
       ...batch.medicationRecords.map((m) => ({ date: dayKey(m.startDate), label: `Medication — ${m.medicationName}`, kind: "medication" })),
@@ -190,6 +220,35 @@ const poultryBatchLifecycle: DocumentReportDefinition = {
         ],
       },
       {
+        type: "table",
+        title: "Weekly summary",
+        columns: [
+          { key: "week", label: "Wk", type: "number" },
+          { key: "opening", label: "Opening", type: "number" },
+          { key: "mortality", label: "Mort", type: "number" },
+          { key: "culls", label: "Cull", type: "number" },
+          { key: "closing", label: "Closing", type: "number" },
+          { key: "cumMortPct", label: "% Cum †", type: "percent" },
+          ...(isLayer ? [{ key: "eggs", label: "Eggs", type: "number" as const }, { key: "layPct", label: "Lay %", type: "percent" as const }] : []),
+          { key: "feedKg", label: "Feed kg", type: "number" },
+          { key: "actualWt", label: "Actual WT", type: "number" },
+          { key: "targetWt", label: "Target WT", type: "number" },
+        ],
+        rows: weeks.map((w) => ({
+          week: w.week,
+          opening: w.opening,
+          mortality: w.mortality,
+          culls: w.culls,
+          closing: w.closing,
+          cumMortPct: w.cumulativeMortalityPct,
+          eggs: w.eggs,
+          layPct: w.avgLayPct ?? "",
+          feedKg: round(w.feedKg, 1),
+          actualWt: w.actualWeightKg ?? "",
+          targetWt: w.targetWeightKg ?? "",
+        })),
+      },
+      {
         type: "line-chart",
         title: "Bird survival",
         xKey: "date",
@@ -209,15 +268,31 @@ const poultryBatchLifecycle: DocumentReportDefinition = {
         ],
         data: mortalityCurve,
       },
-      isLayer
-        ? { type: "line-chart" as const, title: "Egg production per day", xKey: "date", series: [{ name: "Eggs", key: "eggs", color: "#3C6E9F" }], data: eggCurve }
-        : {
+      ...(isLayer
+        ? [{ type: "line-chart" as const, title: "Egg production per day", xKey: "date", series: [{ name: "Eggs", key: "eggs", color: "#3C6E9F" }], data: eggCurve }]
+        : []),
+      {
+        type: "line-chart",
+        title: "Weight vs breed target (kg)",
+        xKey: "date",
+        series: [
+          { name: "Actual", key: "actual", color: "#3C6E9F" },
+          { name: "Target", key: "target", color: "#B08968" },
+        ],
+        data: weightVsTarget,
+      },
+      ...(isLayer && layVsStandard.length
+        ? [{
             type: "line-chart" as const,
-            title: "Average weight",
+            title: "Lay rate vs standard (%)",
             xKey: "date",
-            series: [{ name: "kg", key: "kg", color: "#3C6E9F" }],
-            data: batch.birdWeightRecords.map((w) => ({ date: dayKey(w.recordDate), kg: round(num(w.averageWeightKg), 3) })),
-          },
+            series: [
+              { name: "Actual", key: "actual", color: "#3C6E9F" },
+              { name: "Standard", key: "standard", color: "#B08968" },
+            ],
+            data: layVsStandard,
+          }]
+        : []),
       {
         type: "line-chart",
         title: "Feed — daily & cumulative (kg)",

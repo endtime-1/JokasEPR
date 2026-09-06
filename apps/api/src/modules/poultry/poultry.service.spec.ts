@@ -24,6 +24,7 @@ const mockTx = {
   // needs individual rows to compare fromFarmId/toFarmId per transfer.
   poultryTransferRecord: { aggregate: jest.fn().mockResolvedValue({ _sum: { birdCount: 0 } }), findMany: jest.fn().mockResolvedValue([]), create: jest.fn(), update: jest.fn() },
   batchPenAllocation: { findFirst: jest.fn(), upsert: jest.fn(), updateMany: jest.fn().mockResolvedValue({ count: 1 }), update: jest.fn(), aggregate: jest.fn().mockResolvedValue({ _sum: { birdCount: 0 } }) },
+  poultryCountAdjustment: { findFirst: jest.fn(), aggregate: jest.fn().mockResolvedValue({ _sum: { delta: 0 } }), create: jest.fn() },
   pen: { update: jest.fn(), findFirst: jest.fn() },
   flockBatch: { findFirstOrThrow: jest.fn(), update: jest.fn() },
   $queryRaw: jest.fn().mockResolvedValue([])
@@ -39,6 +40,7 @@ const mockPrisma = {
   systemSetting: { findFirst: jest.fn().mockResolvedValue(null) },
   warehouse: { findFirst: jest.fn().mockResolvedValue({ id: "wh-1", type: "GENERAL", name: "WH", code: "WH", branchId: "b-1" }) },
   batchPenAllocation: { findFirst: jest.fn() },
+  poultryCountAdjustment: { findFirst: jest.fn(), aggregate: jest.fn().mockResolvedValue({ _sum: { delta: 0 } }), findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0) },
   poultryTransferRecord: { findFirst: jest.fn(), count: jest.fn().mockResolvedValue(0), aggregate: jest.fn().mockResolvedValue({ _sum: { birdCount: 0 } }), findMany: jest.fn().mockResolvedValue([]) },
   feedConsumptionRecord: { findFirst: jest.fn(), count: jest.fn().mockResolvedValue(0), aggregate: jest.fn().mockResolvedValue({ _sum: { quantityKg: 0 } }) },
   eggProductionRecord: { findFirst: jest.fn(), count: jest.fn().mockResolvedValue(0), aggregate: jest.fn().mockResolvedValue({ _sum: { goodEggs: 0, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0 } }) },
@@ -2291,5 +2293,55 @@ describe("PoultryService — CANCELLED transfers no longer count against pen/bat
         {}
       )
     ).resolves.toBeDefined();
+  });
+});
+
+describe("PoultryService.createCountAdjustment — physical recount (2026-09-06)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const activeBatch = { id: "batch-1", companyId: "company-1", farmId: "farm-1", branchId: "branch-1", poultryHouseId: "house-1", birdType: "LAYERS", status: "ACTIVE", code: "FB-1", openingBirdCount: 1000 };
+
+  it("stores the signed delta between the physical count and the system's expected count (batch scope)", async () => {
+    mockPrisma.flockBatch.findFirst.mockResolvedValue(activeBatch);
+    mockPrisma.batchPenAllocation.findFirst.mockResolvedValue({ id: "alloc-1", poultryHouseId: "house-1" });
+    mockPrisma.poultryCountAdjustment.findFirst.mockResolvedValue(null);
+    mockTx.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 50 } });
+    mockTx.poultryTransferRecord.findMany.mockResolvedValue([]);
+    mockTx.poultryCountAdjustment.aggregate.mockResolvedValue({ _sum: { delta: 0 } });
+    mockTx.poultryCountAdjustment.create.mockImplementation((args: any) => Promise.resolve({ id: "adj-1", ...args.data }));
+
+    const service = makeService();
+    await service.createCountAdjustment(
+      makeUser({ farmIds: ["farm-1"] }),
+      { flockBatchId: "batch-1", recordDate: "2026-09-06", countedTotal: 900 } as never,
+      {},
+    );
+
+    // system expected 1000 - 50 = 950; counted 900 -> delta -50
+    expect(mockTx.poultryCountAdjustment.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ countedTotal: 900, expectedTotal: 950, delta: -50, flockBatchId: "batch-1" }) }),
+    );
+  });
+
+  it("replays the original record on an idempotency-key resend", async () => {
+    mockPrisma.flockBatch.findFirst.mockResolvedValue(activeBatch);
+    mockPrisma.batchPenAllocation.findFirst.mockResolvedValue({ id: "alloc-1", poultryHouseId: "house-1" });
+    mockPrisma.poultryCountAdjustment.findFirst.mockResolvedValue({ id: "adj-existing", delta: -13 });
+
+    const service = makeService();
+    const res = await service.createCountAdjustment(
+      makeUser({ farmIds: ["farm-1"] }),
+      { flockBatchId: "batch-1", poultryHouseId: "house-1", recordDate: "2026-09-06", countedTotal: 900, idempotencyKey: "k-1" } as never,
+      {},
+    );
+    expect(res.data).toEqual({ id: "adj-existing", delta: -13 });
+    expect(mockTx.poultryCountAdjustment.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("PoultryService.currentLiveBirds — a recount delta is added in", () => {
+  it("counted 990 vs expected 1000 leaves 990 live", () => {
+    const service = makeService() as unknown as { currentLiveBirds: (o: number, m: unknown[], t: unknown[], a: unknown[]) => number };
+    expect(service.currentLiveBirds(1000, [{ birdCount: 0 }], [], [{ delta: -10 }])).toBe(990);
   });
 });

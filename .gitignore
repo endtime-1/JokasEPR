@@ -13,3 +13,8 @@ tmp
 *.stackdump
 *.tsbuildinfo
 google-play-service-account.json
+
+# ad-hoc data files dropped in the repo root for review (Excel exports, etc.)
+/*.xlsx
+/*.xls
+/*.csv

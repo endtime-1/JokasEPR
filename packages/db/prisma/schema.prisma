@@ -700,6 +700,7 @@ model Company {
   flockBatches               FlockBatch[]
   dailyPoultryRecords        DailyPoultryRecord[]
   mortalityRecords           MortalityRecord[]
+  poultryCountAdjustments    PoultryCountAdjustment[]
   feedConsumptionRecords     FeedConsumptionRecord[]
   feedReceiptRecords         FeedReceiptRecord[]
   eggProductionRecords       EggProductionRecord[]
@@ -873,6 +874,7 @@ model Branch {
   flockBatches              FlockBatch[]
   dailyPoultryRecords       DailyPoultryRecord[]
   mortalityRecords          MortalityRecord[]
+  poultryCountAdjustments   PoultryCountAdjustment[]
   feedConsumptionRecords    FeedConsumptionRecord[]
   feedReceiptRecords        FeedReceiptRecord[]
   eggProductionRecords      EggProductionRecord[]
@@ -988,6 +990,7 @@ model Farm {
   flockBatches                FlockBatch[]
   dailyPoultryRecords         DailyPoultryRecord[]
   mortalityRecords            MortalityRecord[]
+  poultryCountAdjustments     PoultryCountAdjustment[]
   feedConsumptionRecords      FeedConsumptionRecord[]
   feedReceiptRecords          FeedReceiptRecord[]
   eggProductionRecords        EggProductionRecord[]
@@ -1119,6 +1122,7 @@ model PoultryHouse {
   flockBatches                 FlockBatch[]
   dailyPoultryRecords          DailyPoultryRecord[]
   mortalityRecords             MortalityRecord[]
+  poultryCountAdjustments      PoultryCountAdjustment[]
   feedConsumptionRecords       FeedConsumptionRecord[]
   eggProductionRecords         EggProductionRecord[]
   birdWeightRecords            BirdWeightRecord[]
@@ -3261,6 +3265,7 @@ model FlockBatch {
   poultryTransferRecords PoultryTransferRecord[]
   healthObservations     PoultryHealthObservation[]
   costRecords            PoultryCostRecord[]
+  countAdjustments       PoultryCountAdjustment[]
 
   @@unique([companyId, code])
   @@index([companyId])
@@ -3693,6 +3698,53 @@ model PoultryCostRecord {
   @@index([deletedAt])
 }
 
+// A physical head-count of the birds in a batch / house / pen. The farm
+// recounts periodically (the Excel books it as a transfer with a "Recount"
+// remark). `delta` = countedTotal - expectedTotal at the moment of counting;
+// it is a fixed signed number thereafter and is added into every live-bird
+// calculation exactly like an outgoing transfer is subtracted. Soft-deleting
+// the row removes its effect (all live-count sums filter deletedAt: null).
+model PoultryCountAdjustment {
+  id             String              @id @default(uuid())
+  companyId      String
+  branchId       String
+  farmId         String
+  poultryHouseId String
+  penId          String?
+  flockBatchId   String
+  adjustmentDate DateTime
+  countedTotal   Int
+  expectedTotal  Int
+  delta          Int
+  reason         String?             @db.VarChar(500)
+  notes          String?             @db.VarChar(500)
+  status         PoultryRecordStatus @default(SUBMITTED)
+  idempotencyKey String?             @db.VarChar(100)
+  createdById    String?
+  updatedById    String?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  deletedAt      DateTime?
+
+  company      Company      @relation(fields: [companyId], references: [id])
+  branch       Branch       @relation(fields: [branchId], references: [id])
+  farm         Farm         @relation(fields: [farmId], references: [id])
+  poultryHouse PoultryHouse @relation(fields: [poultryHouseId], references: [id])
+  pen          Pen?         @relation(fields: [penId], references: [id])
+  flockBatch   FlockBatch   @relation(fields: [flockBatchId], references: [id])
+
+  @@unique([companyId, idempotencyKey])
+  @@index([companyId])
+  @@index([branchId])
+  @@index([farmId])
+  @@index([poultryHouseId])
+  @@index([penId])
+  @@index([flockBatchId])
+  @@index([companyId, status])
+  @@index([companyId, adjustmentDate])
+  @@index([deletedAt])
+}
+
 // Feed arriving at a farm's feed store (WarehouseType FEED_STORE). The Poultry
 // Supervisor records these; creating one credits inventory (upserts the
 // InventoryItem, opens a StockBatch lot, writes a PURCHASE_RECEIPT/TRANSFER
@@ -3773,6 +3825,7 @@ model Pen {
   vaccinationRecords     VaccinationRecord[]
   healthObservations     PoultryHealthObservation[]
   costRecords            PoultryCostRecord[]
+  countAdjustments       PoultryCountAdjustment[]
   transfersFrom          PoultryTransferRecord[]    @relation("TransferFromPen")
   transfersTo            PoultryTransferRecord[]    @relation("TransferToPen")
 
