@@ -738,7 +738,7 @@ export class InventoryService {
           toWarehouse: { select: { name: true } }
         },
         orderBy: { movementDate: "desc" },
-        take: 300
+        take: 1000
       })
     ]);
 

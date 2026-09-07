@@ -713,7 +713,7 @@ export function WarehouseDetailPage() {
   const [data, setData] = useState<WarehouseDetail | null>(() => getCachedFirst<ApiEnvelope<WarehouseDetail>>(`/inventory/warehouses/${id}`)?.data ?? null);
   const [loading, setLoading] = useState(!hasCached(`/inventory/warehouses/${id}`));
   const [loadError, setLoadError] = useState("");
-  const [tab, setTab] = useState<"onhand" | "activity">("onhand");
+  const [tab, setTab] = useState<"onhand" | "daily" | "activity">("daily");
 
   function load() {
     setLoadError("");
@@ -726,6 +726,34 @@ export function WarehouseDetailPage() {
   useApiRecovery(!data && !loading, load);
 
   const movementRows = useMemo(() => (data?.movements ?? []).map((m) => ({ ...m })), [data]);
+
+  // One row per calendar day: how much came in, how much went out, and — when
+  // this store only ever holds a single product (e.g. the egg store) and no
+  // date filter is narrowing the log — the running balance after that day.
+  const dailyRows = useMemo(() => {
+    const moves = data?.movements ?? [];
+    const byDay = new Map<string, { date: string; inQty: number; outQty: number; count: number; products: Set<string> }>();
+    for (const m of moves) {
+      const d = String(m.movementDate).slice(0, 10);
+      let g = byDay.get(d);
+      if (!g) { g = { date: d, inQty: 0, outQty: 0, count: 0, products: new Set() }; byDay.set(d, g); }
+      if (m.direction === "IN") g.inQty += Number(m.quantity) || 0;
+      else g.outQty += Number(m.quantity) || 0;
+      g.count += 1;
+      if (m.product?.sku) g.products.add(m.product.sku);
+    }
+    const rows = [...byDay.values()].sort((a, b) => b.date.localeCompare(a.date))
+      .map((g) => ({ ...g, net: g.inQty - g.outQty, productList: [...g.products].join(", "), balance: null as number | null }));
+    const distinctProducts = new Set(moves.map((m) => m.product?.sku).filter(Boolean));
+    const canBalance = !range.startDate && !range.endDate && distinctProducts.size <= 1 && (data?.summary.itemCount ?? 0) <= 1;
+    if (canBalance && data) {
+      let bal = Number(data.summary.totalQuantity) || 0;
+      for (const r of rows) { r.balance = bal; bal = bal - r.net; }
+    }
+    return rows;
+  }, [data, range.startDate, range.endDate]);
+  const dailyProduct = useMemo(() => (data?.movements ?? []).find((m) => m.product)?.product ?? undefined, [data]);
+  const showBalance = dailyRows.some((r) => r.balance !== null);
 
   return (
     <InventoryShell>
@@ -750,26 +778,62 @@ export function WarehouseDetailPage() {
       )}
 
       <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiCard label="Items on hand" value={loading ? "…" : String(data?.summary.itemCount ?? 0)} sub={`${qty(data?.summary.totalQuantity)} total qty`} />
-        <KpiCard label="Stock value" value={loading ? "…" : ghs(data?.summary.totalValue)} sub="FIFO cost basis" />
-        <KpiCard label="Received today" value={loading ? "…" : qty(data?.today.inQty)} sub={`${data?.today.movementCount ?? 0} movements today`} />
-        <KpiCard label="Issued today" value={loading ? "…" : qty(data?.today.outQty)} sub={`net ${qty(data?.today.netQty)}`} />
+        <KpiCard label="Products stored here" value={loading ? "…" : String(data?.summary.itemCount ?? 0)} sub={`${qty(data?.summary.totalQuantity)} units on hand in total`} />
+        <KpiCard label="Value on hand" value={loading ? "…" : ghs(data?.summary.totalValue)} sub="at what the stock cost to buy" />
+        <KpiCard label="Came in today" value={loading ? "…" : qty(data?.today.inQty)} sub={`${data?.today.movementCount ?? 0} ${(data?.today.movementCount ?? 0) === 1 ? "entry" : "entries"} logged today`} />
+        <KpiCard label="Went out today" value={loading ? "…" : qty(data?.today.outQty)} sub={`${qty(data?.today.netQty)} net change today`} />
       </div>
 
-      <div className="mb-4 flex gap-1 border-b border-line">
-        {(["onhand", "activity"] as const).map((t) => (
+      <div className="mb-2 flex gap-1 border-b border-line">
+        {(["onhand", "daily", "activity"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
             className={`-mb-px border-b-2 px-3 py-2 text-sm font-semibold transition ${tab === t ? "border-brand text-brand" : "border-transparent text-ink/55 hover:text-ink"}`}
           >
-            {t === "onhand" ? "On hand" : "Activity"}
+            {t === "onhand" ? "What's in stock now" : t === "daily" ? "Day by day" : "Every entry"}
           </button>
         ))}
       </div>
+      <p className="mb-4 text-xs text-ink/55">
+        {tab === "onhand"
+          ? "The quantity of each product sitting in this store right now."
+          : tab === "daily"
+            ? "One line per day — how much was collected or received, how much left, and the balance left in the store after that day."
+            : "The full log: every single receipt and issue, most recent first. Use the dates to narrow it."}
+      </p>
 
       {tab === "onhand" ? (
         <InventoryItemsTable rows={data?.items ?? []} loading={loading} />
+      ) : tab === "daily" ? (
+        <>
+          <div className="mb-4 flex flex-wrap items-end gap-3">
+            <FormField label="From">
+              <input type="date" className={inputClass} value={range.startDate} onChange={(e) => setRange((r) => ({ ...r, startDate: e.target.value }))} />
+            </FormField>
+            <FormField label="To">
+              <input type="date" className={inputClass} value={range.endDate} onChange={(e) => setRange((r) => ({ ...r, endDate: e.target.value }))} />
+            </FormField>
+            {(range.startDate || range.endDate) && (
+              <button type="button" className="min-h-11 rounded-md border border-line px-3 text-sm font-semibold hover:bg-field" onClick={() => setRange({ startDate: "", endDate: "" })}>Clear</button>
+            )}
+          </div>
+          <DataTable
+            rows={dailyRows as unknown as Record<string, any>[]}
+            loading={loading}
+            empty="No activity in this period"
+            csvFilename={`warehouse-${data?.warehouse.code ?? id}-daily`}
+            columns={[
+              { key: "date", label: "Day", render: (r) => formatDate(r.date) },
+              { key: "inQty", label: "Came in", render: (r) => (r.inQty ? formatQtyForProduct(r.inQty, dailyProduct) : "—"), csv: (r) => r.inQty },
+              { key: "outQty", label: "Went out", render: (r) => (r.outQty ? formatQtyForProduct(r.outQty, dailyProduct) : "—"), csv: (r) => r.outQty },
+              { key: "net", label: "Net", render: (r) => <span className={r.net > 0 ? "text-emerald-600" : r.net < 0 ? "text-amber-600" : ""}>{r.net > 0 ? "+" : ""}{formatQtyForProduct(Math.abs(r.net), dailyProduct)}</span>, csv: (r) => r.net },
+              ...(showBalance ? [{ key: "balance", label: "Balance after", render: (r: Record<string, any>) => (r.balance !== null ? formatQtyForProduct(r.balance, dailyProduct) : "—"), csv: (r: Record<string, any>) => r.balance }] : []),
+              { key: "count", label: "Entries", render: (r) => String(r.count) },
+              { key: "productList", label: "Products", render: (r) => r.productList || "—" },
+            ]}
+          />
+        </>
       ) : (
         <>
           <div className="mb-4 flex flex-wrap items-end gap-3">
