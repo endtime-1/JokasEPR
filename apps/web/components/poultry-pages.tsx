@@ -2306,13 +2306,19 @@ function GenericRecordForm({ options, optionsLoading = false, form, setForm, sub
   // this kind of record — feed → the farm's Feed Store, eggs → its Egg Store,
   // the daily record sets both. Skipped while editing an existing record so a
   // saved warehouse is never silently changed.
+  const eggProductId = useMemo(
+    () => options.products.find((p) => p.sku === "EG" || /^eggs?$/i.test(p.name))?.id ?? "",
+    [options.products],
+  );
   function warehouseDefaultsForBatch(batchId: string): Record<string, string> {
     if (isEditing) return {};
     const farmId = options.batches.find((b) => b.id === batchId)?.farmId;
     if (type === "feed") return { warehouseId: defaultWarehouse("feed", farmId, options) };
-    if (type === "eggs") return { warehouseId: defaultWarehouse("eggs", farmId, options) };
+    // Eggs always go to the farm's egg store as the "Eggs" product — pick both
+    // automatically so a collection can't be logged without crediting stock.
+    if (type === "eggs") return { warehouseId: defaultWarehouse("eggs", farmId, options), eggProductId };
     if (type === "medications" || type === "vaccinations") return { warehouseId: defaultWarehouse("other", farmId, options) };
-    if (type === "daily") return { feedWarehouseId: defaultWarehouse("feed", farmId, options), eggWarehouseId: defaultWarehouse("eggs", farmId, options) };
+    if (type === "daily") return { feedWarehouseId: defaultWarehouse("feed", farmId, options), eggWarehouseId: defaultWarehouse("eggs", farmId, options), eggProductId };
     return {};
   }
 
@@ -2323,7 +2329,7 @@ function GenericRecordForm({ options, optionsLoading = false, form, setForm, sub
     const d = warehouseDefaultsForBatch(form.flockBatchId);
     const missing = Object.entries(d).some(([k, v]) => v && !form[k]);
     if (missing) setForm({ ...form, ...d });
-  }, [form.flockBatchId, options.batches.length, options.warehouses.length]);
+  }, [form.flockBatchId, options.batches.length, options.warehouses.length, eggProductId]);
 
   // Batch chosen → just its houses (BatchPenAllocation); otherwise every house
   // that has at least one pen.
@@ -2464,24 +2470,36 @@ function GenericRecordForm({ options, optionsLoading = false, form, setForm, sub
           <FormField label={`Crates collected (1 crate = ${EGGS_PER_CRATE} eggs, optional)`}>
             <input type="number" min="0" step="1" className={inputClass} placeholder="e.g. 140" value={crates} onChange={(e) => handleCratesChange(e.target.value, "goodEggs")} />
           </FormField>
-          <FormField label="Egg product (good eggs → stock)">
-            <select name="eggProductId" className={inputClass} value={form.eggProductId ?? ""} onChange={(e) => setForm({ ...form, eggProductId: e.target.value })}>
-              <option value="">— none —</option>
-              {options.products.map((p) => <option key={p.id} value={p.id}>{p.sku ?? p.code} — {p.name}</option>)}
-            </select>
-          </FormField>
-          <FormField label="Seconds product (cracked/dirty → stock)">
-            <select name="secondsProductId" className={inputClass} value={form.secondsProductId ?? ""} onChange={(e) => setForm({ ...form, secondsProductId: e.target.value })}>
-              <option value="">— none —</option>
-              {options.products.map((p) => <option key={p.id} value={p.id}>{p.sku ?? p.code} — {p.name}</option>)}
-            </select>
-          </FormField>
-          <FormField label="Warehouse">
-            <select name="warehouseId" className={inputClass} value={form.warehouseId ?? ""} onChange={(e) => setForm({ ...form, warehouseId: e.target.value })}>
-              <option value="">— none —</option>
-              {options.warehouses.map((w) => <option key={w.id} value={w.id}>{w.code} — {w.name}</option>)}
-            </select>
-          </FormField>
+          {form.eggProductId && form.warehouseId ? (
+            <>
+              <div className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-800">
+                Good eggs are credited automatically to{" "}
+                <strong>{options.warehouses.find((w) => w.id === form.warehouseId)?.name ?? "the egg store"}</strong>{" "}
+                as <strong>{options.products.find((p) => p.id === form.eggProductId)?.name ?? "Eggs"}</strong>.
+              </div>
+              <FormField label="Seconds product (cracked/dirty → stock, optional)">
+                <select name="secondsProductId" className={inputClass} value={form.secondsProductId ?? ""} onChange={(e) => setForm({ ...form, secondsProductId: e.target.value })}>
+                  <option value="">— none —</option>
+                  {options.products.map((p) => <option key={p.id} value={p.id}>{p.sku ?? p.code} — {p.name}</option>)}
+                </select>
+              </FormField>
+            </>
+          ) : (
+            <>
+              <FormField label="Egg product (good eggs → stock)">
+                <select name="eggProductId" className={inputClass} value={form.eggProductId ?? ""} onChange={(e) => setForm({ ...form, eggProductId: e.target.value })}>
+                  <option value="">— none —</option>
+                  {options.products.map((p) => <option key={p.id} value={p.id}>{p.sku ?? p.code} — {p.name}</option>)}
+                </select>
+              </FormField>
+              <FormField label="Warehouse">
+                <select name="warehouseId" className={inputClass} value={form.warehouseId ?? ""} onChange={(e) => setForm({ ...form, warehouseId: e.target.value })}>
+                  <option value="">— none —</option>
+                  {options.warehouses.map((w) => <option key={w.id} value={w.id}>{w.code} — {w.name}</option>)}
+                </select>
+              </FormField>
+            </>
+          )}
         </>
       )}
 
