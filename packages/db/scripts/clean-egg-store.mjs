@@ -22,10 +22,17 @@ async function main() {
   console.log(`\n=== CLEAN JOKAS EGG STORE — ${COMMIT ? "!!! COMMIT !!!" : "dry run"} ===\n`);
   const store = await prisma.warehouse.findFirst({ where: { type: "EGG_STORE", deletedAt: null }, select: { id: true, name: true, companyId: true } });
   if (!store) throw new Error("no EGG_STORE warehouse");
-  const product = await prisma.product.findFirst({ where: { sku: "EG" }, select: { id: true, name: true, uom: { select: { name: true } } } });
+  const product = await prisma.product.findFirst({ where: { sku: "EG" }, select: { id: true, name: true, piecesPerUnit: true, uom: { select: { name: true } } } });
   if (!product) throw new Error('no egg product (sku "EG")');
   console.log(`store: ${store.name} (${store.id})`);
-  console.log(`product: ${product.name}  unit: ${product.uom?.name}\n`);
+  console.log(`product: ${product.name}  unit: ${product.uom?.name}  piecesPerUnit: ${product.piecesPerUnit}`);
+  // A crate is 30 eggs. With piecesPerUnit=1 the daily Egg Collection screen
+  // (which submits a piece count) would credit pieces AS crates. Fix it so the
+  // whole system treats 30 eggs = 1 crate consistently going forward.
+  const EGGS_PER_CRATE = 30;
+  const fixPiecesPerUnit = /crate/i.test(product.uom?.name ?? "") && product.piecesPerUnit !== EGGS_PER_CRATE;
+  if (fixPiecesPerUnit) console.log(`  → will set piecesPerUnit = ${EGGS_PER_CRATE} (unit is "crate")`);
+  console.log("");
 
   const item = await prisma.inventoryItem.findFirst({ where: { warehouseId: store.id, productId: product.id }, select: { id: true, quantityOnHand: true } });
   console.log(`InventoryItem on hand now: ${item ? num(item.quantityOnHand) : "(none)"}\n`);
@@ -62,7 +69,9 @@ async function main() {
   console.log(`StockReservations on removed batches: ${resv}`);
 
   const survivingRemain = keep.reduce((s, b) => s + num(b.quantityRemaining), 0);
-  console.log(`\n=> after cleanup, on-hand will be ${survivingRemain} ${product.uom?.name}(s)  (sum of ${keep.map((b) => b.batchNumber).join(", ") || "nothing"})`);
+  const asPieces = Math.round(survivingRemain * EGGS_PER_CRATE);
+  console.log(`\n=> after cleanup the Jokas Egg store holds the farm's cumulative egg production:`);
+  console.log(`   ${survivingRemain} ${product.uom?.name}(s)  ≈ ${asPieces} eggs  (from ${keep.map((b) => b.batchNumber).join(", ") || "nothing"})`);
 
   if (!COMMIT) { console.log("\n(dry run — nothing written)\n"); await prisma.$disconnect(); return; }
 
@@ -82,6 +91,10 @@ async function main() {
   if (item) {
     await prisma.inventoryItem.update({ where: { id: item.id }, data: { quantityOnHand: survivingRemain } });
     console.log(`  set InventoryItem.quantityOnHand = ${survivingRemain}`);
+  }
+  if (fixPiecesPerUnit) {
+    await prisma.product.update({ where: { id: product.id }, data: { piecesPerUnit: EGGS_PER_CRATE } });
+    console.log(`  set ${product.name}.piecesPerUnit = ${EGGS_PER_CRATE}`);
   }
   console.log("\n>>> DONE\n");
   await prisma.$disconnect();
