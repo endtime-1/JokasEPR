@@ -55,31 +55,37 @@ async function main() {
 
   if (!COMMIT) { console.log("\n  (dry run — nothing written)\n"); await prisma.$disconnect(); return; }
 
-  const item = await prisma.inventoryItem.upsert({
-    where: { companyId_warehouseId_productId: { companyId: COMPANY, warehouseId: EGG_STORE, productId: prod.id } },
-    update: { quantityOnHand: totalCrates, deletedAt: null, status: "ACTIVE" },
-    create: { companyId: COMPANY, branchId: store.branchId, warehouseId: EGG_STORE, farmId: FARM, productId: prod.id, uomId: prod.uomId, quantityOnHand: totalCrates },
-  });
-  // one stock batch holding the lot
-  await prisma.stockMovement.deleteMany({ where: { warehouseId: EGG_STORE, productId: prod.id } });
-  await prisma.stockBatch.deleteMany({ where: { warehouseId: EGG_STORE, productId: prod.id } });
   const first = new Date(days[0][0] + "T00:00:00.000Z");
-  const sb = await prisma.stockBatch.create({ data: {
-    companyId: COMPANY, branchId: store.branchId, farmId: FARM, warehouseId: EGG_STORE, productId: prod.id,
-    inventoryItemId: item.id, uomId: prod.uomId, batchNumber: "EGG-COLLECTED",
-    quantityReceived: totalCrates, quantityRemaining: totalCrates, manufactureDate: first,
-  } });
-  // one movement per collection day
-  const rows = days.map(([d, pieces]) => ({
-    companyId: COMPANY, branchId: store.branchId, productId: prod.id, inventoryItemId: item.id, stockBatchId: sb.id,
-    toWarehouseId: EGG_STORE, warehouseId: EGG_STORE, farmId: FARM, uomId: prod.uomId,
-    movementType: "PRODUCTION_OUTPUT", quantity: money(pieces / PER_CRATE),
-    referenceType: "EggProductionDaily", referenceId: d,
-    notes: `Eggs collected ${d}: ${pieces} eggs (${money(pieces / PER_CRATE)} crates)`,
-    movementDate: new Date(d + "T12:00:00.000Z"),
-  }));
-  for (let i = 0; i < rows.length; i += 500) await prisma.stockMovement.createMany({ data: rows.slice(i, i + 500) });
-  console.log(`\n  wrote ${rows.length} daily movements; on hand = ${totalCrates} crates\n  >>> DONE\n`);
+  await prisma.$transaction(async (tx) => {
+    const item = await tx.inventoryItem.upsert({
+      where: { companyId_warehouseId_productId: { companyId: COMPANY, warehouseId: EGG_STORE, productId: prod.id } },
+      update: { quantityOnHand: totalCrates, deletedAt: null, status: "ACTIVE" },
+      create: { companyId: COMPANY, branchId: store.branchId, warehouseId: EGG_STORE, farmId: FARM, productId: prod.id, uomId: prod.uomId, quantityOnHand: totalCrates },
+    });
+    // wipe every existing movement + batch for eggs in this store (incl. the
+    // import lump and any half-written backfill), FK-safe: movements first.
+    const oldBatches = await tx.stockBatch.findMany({ where: { warehouseId: EGG_STORE, productId: prod.id }, select: { id: true } });
+    const oldBatchIds = oldBatches.map((b) => b.id);
+    await tx.stockMovement.deleteMany({ where: { OR: [{ warehouseId: EGG_STORE, productId: prod.id }, { stockBatchId: { in: oldBatchIds } }] } });
+    await tx.stockBatch.deleteMany({ where: { id: { in: oldBatchIds } } });
+
+    const sb = await tx.stockBatch.create({ data: {
+      companyId: COMPANY, branchId: store.branchId, farmId: FARM, warehouseId: EGG_STORE, productId: prod.id,
+      inventoryItemId: item.id, uomId: prod.uomId, batchNumber: "EGG-COLLECTED",
+      quantityReceived: totalCrates, quantityRemaining: totalCrates, manufactureDate: first,
+    } });
+    const rows = days.map(([d, pieces]) => ({
+      companyId: COMPANY, branchId: store.branchId, productId: prod.id, inventoryItemId: item.id, stockBatchId: sb.id,
+      toWarehouseId: EGG_STORE, warehouseId: EGG_STORE, farmId: FARM, uomId: prod.uomId,
+      movementType: "PRODUCTION_OUTPUT", quantity: money(pieces / PER_CRATE),
+      referenceType: "EggProductionDaily", referenceId: d,
+      notes: `Eggs collected ${d}: ${pieces} eggs (${money(pieces / PER_CRATE)} crates)`,
+      movementDate: new Date(d + "T12:00:00.000Z"),
+    }));
+    for (let i = 0; i < rows.length; i += 500) await tx.stockMovement.createMany({ data: rows.slice(i, i + 500) });
+    console.log(`\n  wrote ${rows.length} daily movements; on hand set to ${totalCrates} crates`);
+  }, { timeout: 60000 });
+  console.log(`  >>> DONE\n`);
   await prisma.$disconnect();
 }
 main().catch((e) => { console.error(e); prisma.$disconnect(); process.exit(1); });
