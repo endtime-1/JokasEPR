@@ -177,15 +177,15 @@ async function main() {
   const CREATED_BY = adminUser?.id ?? null;
   console.log(`  createdBy: ${adminUser?.email ?? "(null)"}\n`);
 
-  // hard-deleted and rebuilt from the sheet
+  // hard-deleted and rebuilt from the sheet. DailyPoultryRecord (the mobile
+  // daily-entry screen's own log) is included — it's test data for these
+  // batches and its stale openingBirdCount would mislead the daily-entry
+  // prefill. The authoritative feed history (FeedConsumptionRecord) is KEPT.
   const WIPE_MODELS = [
     "mortalityRecord", "eggProductionRecord", "birdWeightRecord", "medicationRecord",
     "vaccinationRecord", "poultryTransferRecord", "poultryHealthObservation",
-    "poultryCountAdjustment", "poultryCostRecord", "batchPenAllocation",
+    "poultryCountAdjustment", "poultryCostRecord", "dailyPoultryRecord", "batchPenAllocation",
   ];
-  // DailyPoultryRecord is NOT deleted (it carries feedConsumedKg, which the
-  // user asked to keep). Its mortality/cull/egg fields are zeroed so they stop
-  // double-reporting alongside the imported per-pen records.
 
   const plan = { deletes: {}, creates: {}, warnings: [], reconcile: [] };
 
@@ -225,7 +225,6 @@ async function main() {
     plan.deletes[B.code]._eggStockMovements = eggMoves;
     const prevImportSb = await prisma.stockBatch.count({ where: { companyId: EXPECT.company, batchNumber: `EGG-XLS-${B.code}` } });
     if (prevImportSb) plan.deletes[B.code]._prevImportEggBatch = prevImportSb;
-    plan.deletes[B.code]["dailyPoultryRecord (ZEROED, not deleted)"] = await prisma.dailyPoultryRecord.count({ where: { flockBatchId: batch.id } });
 
     // ---- batch field fixes ----
     const fieldFix = {};
@@ -405,16 +404,10 @@ async function main() {
       await prisma.stockBatch.delete({ where: { id: prevSb.id } });
       console.log(`   reversed previous import egg batch EGG-XLS-${B.code}`);
     }
-    for (const m of ["mortalityRecord", "eggProductionRecord", "birdWeightRecord", "medicationRecord", "vaccinationRecord", "poultryTransferRecord", "poultryHealthObservation", "poultryCountAdjustment", "poultryCostRecord", "batchPenAllocation"]) {
+    for (const m of ["mortalityRecord", "eggProductionRecord", "birdWeightRecord", "medicationRecord", "vaccinationRecord", "poultryTransferRecord", "poultryHealthObservation", "poultryCountAdjustment", "poultryCostRecord", "dailyPoultryRecord", "batchPenAllocation"]) {
       const { count } = await prisma[m].deleteMany({ where: { flockBatchId: batchId } });
       console.log(`   wiped ${m}: ${count}`);
     }
-    // DailyPoultryRecord: keep feedConsumedKg + notes, zero the rest
-    const dz = await prisma.dailyPoultryRecord.updateMany({
-      where: { flockBatchId: batchId, OR: [{ mortalityCount: { gt: 0 } }, { culledCount: { gt: 0 } }, { totalEggs: { gt: 0 } }] },
-      data: { mortalityCount: 0, culledCount: 0, totalEggs: 0 },
-    });
-    console.log(`   zeroed dailyPoultryRecord mortality/cull/egg fields: ${dz.count}`);
 
     // 2. batch field fixes
     await prisma.flockBatch.update({ where: { id: batchId }, data: {

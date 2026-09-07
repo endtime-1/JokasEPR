@@ -109,6 +109,7 @@ export class PoultryService {
           eggProductionRecords: { where: { deletedAt: null }, select: { goodEggs: true, crackedEggs: true, dirtyEggs: true, brokenEggs: true, rejectedEggs: true } },
           birdWeightRecords: { where: { deletedAt: null }, orderBy: { recordDate: "desc" }, take: 1 },
           costRecords: { where: { deletedAt: null }, select: { amount: true } },
+          countAdjustments: { where: { deletedAt: null }, select: { delta: true } },
           dailyRecords: { where: { deletedAt: null, recordDate: { gte: todayStart } }, select: { id: true } },
           penAllocations: { select: { birdCount: true, pen: { select: { code: true, name: true } } } }
         },
