@@ -2625,7 +2625,9 @@ export class PoultryService {
     const quantityInStockUnits = Math.round((quantity / (product.piecesPerUnit || 1)) * 10000) / 10000;
     const item = await tx.inventoryItem.upsert({
       where: { companyId_warehouseId_productId: { companyId: user.companyId, warehouseId, productId } },
-      update: { quantityOnHand: { increment: quantityInStockUnits }, updatedById: user.id },
+      // A prior cleanup may have soft-deleted / de-activated this item —
+      // crediting stock must bring it back, or the balance grows invisibly.
+      update: { quantityOnHand: { increment: quantityInStockUnits }, deletedAt: null, status: "ACTIVE", updatedById: user.id },
       create: { companyId: user.companyId, branchId: warehouse.branchId, warehouseId, farmId: batch.farmId, productId, uomId: product.uomId, quantityOnHand: quantityInStockUnits, createdById: user.id }
     });
     // H-BUG-2 (2026-08-12): this only ever raised the aggregate
@@ -2797,7 +2799,7 @@ export class PoultryService {
     // Lock InventoryItem then StockBatch — same order as consumeInventoryTx.
     const item = await tx.inventoryItem.upsert({
       where: { companyId_warehouseId_productId: { companyId: user.companyId, warehouseId, productId: product.id } },
-      update: { quantityOnHand: { increment: quantityKg }, updatedById: user.id },
+      update: { quantityOnHand: { increment: quantityKg }, deletedAt: null, status: "ACTIVE", updatedById: user.id },
       create: { companyId: user.companyId, branchId, warehouseId, farmId, productId: product.id, uomId: product.uomId, quantityOnHand: quantityKg, createdById: user.id },
     });
     await tx.stockBatch.create({

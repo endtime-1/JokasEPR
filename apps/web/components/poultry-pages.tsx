@@ -1585,6 +1585,10 @@ function BatchRecordSection({ batchId, type, label, cols, endpoint, options }: {
     }
     if (type === "eggs") {
       defaults.warehouseId = defaultWarehouse("eggs", batchFarmId, options);
+      // Default the egg product too — without it the record saves the count
+      // but never credits the egg store.
+      const eggProd = options.products.find((p) => p.sku === "EG" || /^eggs?$/i.test(p.name));
+      if (eggProd) defaults.eggProductId = eggProd.id;
     }
     if (["medications", "vaccinations"].includes(type)) {
       defaults.warehouseId = defaultWarehouse("other", batchFarmId, options);
@@ -1592,6 +1596,8 @@ function BatchRecordSection({ batchId, type, label, cols, endpoint, options }: {
     if (type === "daily") {
       defaults.feedWarehouseId = defaultWarehouse("feed", batchFarmId, options);
       defaults.eggWarehouseId = defaultWarehouse("eggs", batchFarmId, options);
+      const eggProd = options.products.find((p) => p.sku === "EG" || /^eggs?$/i.test(p.name));
+      if (eggProd) defaults.eggProductId = eggProd.id;
     }
     setAddForm(defaults);
     setAddCrates("");

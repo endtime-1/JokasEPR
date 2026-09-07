@@ -101,6 +101,12 @@ export function EggCollectionScreen() {
     () => (rawProducts ?? []).map((p: any) => ({ label: `${p.sku} — ${p.name}`, value: p.id })),
     [rawProducts]
   );
+  // Default to the eggs product so the collection actually credits the store.
+  useEffect(() => {
+    if (eggProductId) return;
+    const egg = (rawProducts ?? []).find((p: any) => p.sku === "EG" || /^eggs?$/i.test(p.name));
+    if (egg) setEggProductId(egg.id);
+  }, [rawProducts, eggProductId]);
 
   // ── Crates → pieces conversion ───────────────────────────────────────
   // Crates is a data-entry convenience only — Good Eggs (pieces) stays the

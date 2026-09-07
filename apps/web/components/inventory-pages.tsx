@@ -88,9 +88,13 @@ function formatQtyForProduct(val: unknown, product?: { piecesPerUnit?: number; u
   if (isNaN(qty)) return String(val);
   const piecesPerUnit = product?.piecesPerUnit ?? 1;
   if (piecesPerUnit > 1) {
-    const crates = qty / piecesPerUnit;
-    const cratesStr = Number.isInteger(crates) ? `${crates}` : crates.toFixed(2);
-    return `${qty} pieces (${cratesStr} crates)`;
+    // Stock is held in the product's own unit (e.g. crates) — NOT loose
+    // pieces. piecesPerUnit only converts a piece count on the way in/out;
+    // the stored quantity is already in the unit.
+    const unit = (product?.uom?.symbol || product?.uom?.name || "unit").toLowerCase();
+    const qtyStr = Number.isInteger(qty) ? `${qty}` : qty.toFixed(2);
+    const pieces = Math.round(qty * piecesPerUnit);
+    return `${qtyStr} ${unit}${qty === 1 ? "" : "s"} (${pieces.toLocaleString()} pieces)`;
   }
   const unitLabel = product?.uom?.symbol || product?.uom?.name;
   if (unitLabel && unitLabel.toLowerCase() !== "kg") return `${qty} ${unitLabel}`;
