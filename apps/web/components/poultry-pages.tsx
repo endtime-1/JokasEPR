@@ -1176,6 +1176,7 @@ type LedgerWeekRow = {
 };
 type LedgerResponse = {
   scope: "batch" | "house" | "pen";
+  scopeId: string | null;
   scopeLabel: string;
   opening: number;
   granularity: "daily" | "weekly";
@@ -1217,8 +1218,13 @@ function BatchLedgerTab({ batchId, options }: { batchId: string; options: Poultr
     return () => { cancelled = true; };
   }, [batchId, scope, scopeId, granularity]);
 
-  const rows = data?.rows ?? [];
-  const weekly = granularity === "weekly";
+  // Derive the table shape from the LOADED data, not the toggle — while a
+  // granularity switch is refetching, `data` still holds the previous shape's
+  // rows (weekly rows have no `date`), and rendering them with the other
+  // renderer throws. Only show rows once the response matches the toggle.
+  const inSync = !!data && data.granularity === granularity && (scope === "batch" || data.scopeId === scopeId);
+  const rows = inSync ? data!.rows : [];
+  const weekly = data?.granularity === "weekly";
 
   return (
     <div className="space-y-3">
@@ -1269,9 +1275,9 @@ function BatchLedgerTab({ batchId, options }: { batchId: string; options: Poultr
       {error && (
         <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</div>
       )}
-      {loading && !data && <p className="text-xs text-ink/50">Rebuilding the ledger…</p>}
+      {(loading || !inSync) && !error && <p className="text-xs text-ink/50">Rebuilding the ledger…</p>}
 
-      {data && rows.length > 0 && (
+      {inSync && rows.length > 0 && (
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs tabular-nums">
             <thead className="bg-field">
@@ -1317,7 +1323,7 @@ function BatchLedgerTab({ batchId, options }: { batchId: string; options: Poultr
                     const quiet = !r.mortality && !r.culls && !r.transferIn && !r.transferOut && !r.adjustment && !r.eggs && !r.feedKg && r.weightKg == null;
                     return (
                       <tr key={r.date} className={`border-t border-line [&>td]:px-2 [&>td]:py-1 ${quiet ? "text-ink/40" : ""}`}>
-                        <td>{r.date.slice(5)}</td>
+                        <td>{r.date?.slice(5) ?? ""}</td>
                         <td className="text-right text-ink/40">{r.ageWeeks}</td>
                         <td className="text-right">{n0(r.opening)}</td>
                         <td className="text-right">{r.mortality || ""}</td>
@@ -1338,7 +1344,7 @@ function BatchLedgerTab({ batchId, options }: { batchId: string; options: Poultr
           </table>
         </div>
       )}
-      {data && rows.length === 0 && !loading && <p className="text-xs text-ink/50">Nothing to show for this scope yet.</p>}
+      {inSync && rows.length === 0 && !loading && <p className="text-xs text-ink/50">Nothing to show for this scope yet.</p>}
       <p className="text-[10px] text-ink/40">† = deaths (natural mortality). Rebuilt from the batch's records; a physical recount shows in the Transf column.</p>
     </div>
   );

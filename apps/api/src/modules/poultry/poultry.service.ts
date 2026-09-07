@@ -1739,8 +1739,12 @@ export class PoultryService {
     const model = this.recordModel(type);
     const take = Math.min(query.take ?? 200, 500);
     const skip = query.skip ?? 0;
+    // Order by the record's own date (newest first), not createdAt — a bulk
+    // import (or backfilled entries) all share one createdAt, which would jumble
+    // the list. createdAt breaks ties within the same day.
+    const dateField = this.recordDateField(type);
     const [data, total] = await Promise.all([
-      model.findMany({ where, orderBy: { createdAt: "desc" }, take, skip }),
+      model.findMany({ where, orderBy: [{ [dateField]: "desc" }, { createdAt: "desc" }], take, skip }),
       model.count({ where })
     ]);
     return { data, meta: { total, take, skip } };
@@ -2337,6 +2341,19 @@ export class PoultryService {
     return { companyId: user.companyId, deletedAt: null, ...(user.hasGlobalAccess ? {} : { farmId: { in: user.farmIds } }) };
   }
 
+  // Each record type stores its date under a different field name. Using an OR
+  // across all field names causes Prisma validation errors for types that don't
+  // have those fields — resolve the right one per type instead.
+  private recordDateField(type?: string): string {
+    const DATE_FIELD: Record<string, string> = {
+      daily: "recordDate", mortality: "recordDate", feed: "recordDate",
+      eggs: "recordDate", weights: "recordDate", medications: "startDate",
+      vaccinations: "vaccinationDate", health: "observationDate",
+      transfers: "transferDate", costs: "costDate", "count-adjustments": "adjustmentDate"
+    };
+    return type ? (DATE_FIELD[type] ?? "recordDate") : "recordDate";
+  }
+
   private recordWhere(user: AuthenticatedUser, query: PoultryQueryDto, type?: string) {
     const farmFilter: Record<string, unknown> = user.hasGlobalAccess
       ? (query.farmId ? { farmId: query.farmId } : {})
@@ -2347,16 +2364,7 @@ export class PoultryService {
               : { in: user.farmIds }
         };
 
-    // Each record type stores its date under a different field name.
-    // Using an OR across all field names causes Prisma validation errors for types
-    // that don't have those fields. Use the correct field per type instead.
-    const DATE_FIELD: Record<string, string> = {
-      daily: "recordDate", mortality: "recordDate", feed: "recordDate",
-      eggs: "recordDate", weights: "recordDate", medications: "startDate",
-      vaccinations: "vaccinationDate", health: "observationDate",
-      transfers: "transferDate", costs: "costDate", "count-adjustments": "adjustmentDate"
-    };
-    const dateField = type ? (DATE_FIELD[type] ?? "recordDate") : "recordDate";
+    const dateField = this.recordDateField(type);
     const dateRange = query.startDate || query.endDate
       ? { [dateField]: { gte: query.startDate ? new Date(query.startDate) : undefined, lte: query.endDate ? new Date(query.endDate) : undefined } }
       : {};

@@ -2339,6 +2339,30 @@ describe("PoultryService.createCountAdjustment — physical recount (2026-09-06)
   });
 });
 
+describe("PoultryService.listRecords — ordered by the record's own date, newest first", () => {
+  it("orders by the type's date field (not createdAt, which a bulk import shares)", async () => {
+    const service = makeService();
+    const m = mockPrisma.mortalityRecord as unknown as Record<string, jest.Mock>;
+    m.findMany = jest.fn().mockResolvedValue([]);
+    m.count = jest.fn().mockResolvedValue(0);
+    await service.listRecords({ companyId: "c-1", hasGlobalAccess: true } as never, "mortality", {} as never);
+    expect(m.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ orderBy: [{ recordDate: "desc" }, { createdAt: "desc" }] }),
+    );
+  });
+
+  it("uses vaccinationDate for vaccination records", async () => {
+    const service = makeService();
+    const v = mockPrisma.vaccinationRecord as unknown as Record<string, jest.Mock>;
+    v.findMany = jest.fn().mockResolvedValue([]);
+    v.count = jest.fn().mockResolvedValue(0);
+    await service.listRecords({ companyId: "c-1", hasGlobalAccess: true } as never, "vaccinations", {} as never);
+    expect(v.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ orderBy: [{ vaccinationDate: "desc" }, { createdAt: "desc" }] }),
+    );
+  });
+});
+
 describe("PoultryService.currentLiveBirds — a recount delta is added in", () => {
   it("counted 990 vs expected 1000 leaves 990 live", () => {
     const service = makeService() as unknown as { currentLiveBirds: (o: number, m: unknown[], t: unknown[], a: unknown[]) => number };
