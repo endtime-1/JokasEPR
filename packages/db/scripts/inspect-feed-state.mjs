@@ -17,18 +17,13 @@ async function main() {
   console.log("=== FEED_STORE WAREHOUSES ===\n" + j(feedStores));
 
   const feedProducts = await prisma.product.findMany({
-    where: {
-      OR: [
-        { type: "FINISHED_GOOD" },
-        { name: { contains: "Mash" } }, { name: { contains: "mash" } },
-        { name: { contains: "Feed" } }, { name: { contains: "Concentrate" } },
-        { feedForm: { not: null } },
-      ],
-    },
-    select: { id: true, sku: true, name: true, type: true, feedForm: true, piecesPerUnit: true, uom: { select: { code: true, name: true } } },
+    select: { id: true, sku: true, name: true, type: true, status: true, feedForm: true, deletedAt: true, uom: { select: { code: true, name: true } } },
     orderBy: { name: "asc" },
   });
-  console.log("\n=== FEED-ish PRODUCTS ===\n" + j(feedProducts));
+  console.log(`\n=== ALL PRODUCTS (${feedProducts.length}) ===`);
+  for (const p of feedProducts) {
+    console.log(`  ${(p.name || "").padEnd(28)} sku=${(p.sku || "").padEnd(14)} ${p.type.padEnd(13)} form=${p.feedForm ?? "-"}  ${p.deletedAt ? "DELETED" : p.status}`);
+  }
 
   for (const w of feedStores) {
     const items = await prisma.inventoryItem.findMany({
