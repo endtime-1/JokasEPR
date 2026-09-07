@@ -309,6 +309,18 @@ export class PoultryController {
     return this.poultryService.softDelete(user, type, id, { ipAddress, userAgent });
   }
 
+  @Patch("records/:type/:id/approve")
+  @RequirePermissions(PERMISSIONS.POULTRY_MANAGE)
+  approveRecord(@CurrentUser() user: AuthenticatedUser, @Param("type", new ParseEnumPipe(PoultryRecordType)) type: PoultryRecordType, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.poultryService.approveRecord(user, type, id, { ipAddress, userAgent });
+  }
+
+  @Post("records/:type/approve-all")
+  @RequirePermissions(PERMISSIONS.POULTRY_MANAGE)
+  approveRecordsBulk(@CurrentUser() user: AuthenticatedUser, @Param("type", new ParseEnumPipe(PoultryRecordType)) type: PoultryRecordType, @Query() query: PoultryQueryDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.poultryService.approveRecordsBulk(user, type, query, { ipAddress, userAgent });
+  }
+
   @Get("reports/summary.csv")
   @RequirePermissions(PERMISSIONS.POULTRY_READ)
   async report(@CurrentUser() user: AuthenticatedUser, @Query() query: PoultryQueryDto, @Res() response: Response, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {

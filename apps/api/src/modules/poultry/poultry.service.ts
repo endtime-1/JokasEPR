@@ -1750,6 +1750,31 @@ export class PoultryService {
     return { data };
   }
 
+  // (2026-09-07) Records from the daily screens are born SUBMITTED; a manager
+  // marks them APPROVED. Nothing gates counting on the status — a SUBMITTED
+  // record already shows in every total — but the farm reviews entries, so
+  // this endpoint (and the bulk form) let them clear the queue.
+  async approveRecord(user: AuthenticatedUser, type: string, id: string, context: RequestContext) {
+    if (type === "costs") return this.approveCost(user, id, context);
+    const model = this.recordModel(type);
+    const existing = await model.findFirst({ where: { companyId: user.companyId, id, deletedAt: null } });
+    if (!existing) throw new NotFoundException("Record was not found.");
+    if (existing.farmId) this.assertFarmAccess(user, existing.farmId);
+    if (existing.status === "APPROVED") return { data: existing };
+    const data = await model.update({ where: { id }, data: { status: "APPROVED", updatedById: user.id } });
+    await this.writeAudit(user, "APPROVE", type, id, `Approved ${type} record`, context, existing.farmId);
+    return { data };
+  }
+
+  /** Approve every SUBMITTED record of a type for a batch (optionally a date). */
+  async approveRecordsBulk(user: AuthenticatedUser, type: string, query: PoultryQueryDto, context: RequestContext) {
+    const model = this.recordModel(type);
+    const where = { ...this.recordWhere(user, query, type), status: "SUBMITTED" as const };
+    const { count } = await model.updateMany({ where, data: { status: "APPROVED", updatedById: user.id } });
+    if (count > 0) await this.writeAudit(user, "APPROVE", type, query.flockBatchId ?? "bulk", `Approved ${count} ${type} record(s)`, context);
+    return { data: { approved: count } };
+  }
+
   async listRecords(user: AuthenticatedUser, type: string, query: PoultryQueryDto) {
     const where = this.recordWhere(user, query, type);
     const model = this.recordModel(type);

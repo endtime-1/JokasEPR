@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { ChevronDown, ChevronUp, Download, Home, Pencil, Plus, Trash2, X } from "lucide-react";
+import { Check, CheckCheck, ChevronDown, ChevronUp, Download, Home, Pencil, Plus, Trash2, X } from "lucide-react";
 import { DataTable } from "./data-table";
 import { FormField } from "./form-field";
 import { ApiEnvelope, apiFetch, downloadReport, downloadRowsAsCsv, getCached, getCachedFirst, hasCached } from "../lib/api";
@@ -2041,6 +2041,8 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
   const [recordsError, setRecordsError] = useState("");
   const [confirmRow, setConfirmRow] = useState<Record<string, any> | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const { approveOne, approveAll, busy: approving, msg: approveMsg, setMsg: setApproveMsg } = useApprove(type, () => loadRecords());
+  const pendingCount = rows.filter((r) => r.status === "SUBMITTED").length;
   const recordLoadingRef = useRef(false);
   // (2026-08-25) The empty-result guard below exists to survive a transient
   // backend hiccup (a "successful" response that comes back empty mid-outage)
@@ -2240,11 +2242,25 @@ export function PoultryRecordPage({ title, type, endpoint, health = false }: { t
       )}
       {recordsError && <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{recordsError}</p>}
       <GenericRecordForm options={options} optionsLoading={optionsLoading} form={form} setForm={setForm} submit={submit} type={type} isEditing={!!editingId} saving={saving} />
-      <h3 className="mt-6 mb-2 text-sm font-semibold text-ink/70">Records{rows.length ? ` (${rows.length})` : ""}</h3>
+      <div className="mt-6 mb-2 flex flex-wrap items-center gap-3">
+        <h3 className="text-sm font-semibold text-ink/70">Records{rows.length ? ` (${rows.length})` : ""}</h3>
+        {canManage && pendingCount > 0 && (
+          <button
+            type="button"
+            disabled={approving}
+            onClick={() => approveAll({ flockBatchId: form.flockBatchId || undefined, poultryHouseId: form.poultryHouseId || undefined, penId: form.penId || undefined })}
+            className="inline-flex items-center gap-1 rounded-md border border-green-300 bg-green-50 px-2.5 py-1 text-xs font-semibold text-green-700 hover:bg-green-100 disabled:opacity-50"
+          >
+            <CheckCheck className="h-3.5 w-3.5" /> {approving ? "Approving…" : `Approve ${pendingCount} pending`}
+          </button>
+        )}
+        {approveMsg && <span className="text-xs text-ink/60">{approveMsg}<button type="button" className="ml-1 underline" onClick={() => setApproveMsg("")}>dismiss</button></span>}
+      </div>
       <SimpleRecordTable
         rows={rows}
         loading={recordsLoading}
         onEdit={startEdit}
+        onApprove={canManage ? approveOne : undefined}
         onDelete={canManage ? setConfirmRow : undefined}
         csvFilename={`${type}-records${options.batches.find((b) => b.id === form.flockBatchId)?.code ? `-${options.batches.find((b) => b.id === form.flockBatchId)!.code}` : ""}`}
       />
@@ -2652,12 +2668,17 @@ function recordDisplayColumns(rows: Record<string, any>[]): { key: string; label
     .map((key) => ({ key, label: EGG_PIECE_COLUMN_LABELS[key] ?? key.replace(/([A-Z])/g, " $1").trim() }));
 }
 
-function SimpleRecordTable({ rows, loading, onEdit, onDelete, csvFilename }: { rows: Record<string, any>[]; loading?: boolean; onEdit?: (row: Record<string, any>) => void; onDelete?: (row: Record<string, any>) => void; csvFilename?: string }) {
+function SimpleRecordTable({ rows, loading, onEdit, onDelete, onApprove, csvFilename }: { rows: Record<string, any>[]; loading?: boolean; onEdit?: (row: Record<string, any>) => void; onDelete?: (row: Record<string, any>) => void; onApprove?: (row: Record<string, any>) => void; csvFilename?: string }) {
   const keys = recordDisplayColumns(rows).map((c) => c.key);
   const columns = [
     ...keys.map((key) => ({ key, label: EGG_PIECE_COLUMN_LABELS[key] ?? key.replace(/([A-Z])/g, " $1"), render: (row: Record<string, any>) => formatCell(key, row[key], 80) })),
-    ...((onEdit || onDelete) ? [{ key: "_actions", label: "", render: (row: Record<string, any>) => (
+    ...((onEdit || onDelete || onApprove) ? [{ key: "_actions", label: "", render: (row: Record<string, any>) => (
       <div className="flex gap-1">
+        {onApprove && row.status === "SUBMITTED" && (
+          <button type="button" title="Approve record" onClick={() => onApprove(row)} className="rounded p-1 text-green-600/70 hover:bg-green-50 hover:text-green-700">
+            <Check className="h-3.5 w-3.5" />
+          </button>
+        )}
         {onEdit && (
           <button type="button" title="Correct record" onClick={() => onEdit(row)} className="rounded p-1 text-ink/40 hover:bg-brand/10 hover:text-brand">
             <Pencil className="h-3.5 w-3.5" />
@@ -2672,6 +2693,27 @@ function SimpleRecordTable({ rows, loading, onEdit, onDelete, csvFilename }: { r
     ) }] : [])
   ];
   return <DataTable rows={rows} loading={loading} empty="No records found" columns={columns} csvFilename={csvFilename} />;
+}
+
+function useApprove(type: string, reload: () => void) {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  async function approveOne(row: Record<string, any>) {
+    try { await apiFetch(`/poultry/records/${type}/${row.id}/approve`, { method: "PATCH" }); reload(); }
+    catch (err: any) { setMsg(err?.message ?? "Failed to approve."); }
+  }
+  async function approveAll(query: Record<string, string | undefined>) {
+    setBusy(true); setMsg("");
+    try {
+      const p = new URLSearchParams();
+      for (const [k, v] of Object.entries(query)) if (v) p.set(k, v);
+      const r = await apiFetch<{ data: { approved: number } }>(`/poultry/records/${type}/approve-all?${p}`, { method: "POST" });
+      setMsg(`Approved ${r.data.approved} record${r.data.approved === 1 ? "" : "s"}.`);
+      reload();
+    } catch (err: any) { setMsg(err?.message ?? "Failed to approve."); }
+    finally { setBusy(false); }
+  }
+  return { approveOne, approveAll, busy, msg, setMsg };
 }
 
 // ─── Transfers ────────────────────────────────────────────────────────────────
