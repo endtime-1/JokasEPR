@@ -6,7 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { ChevronDown, ChevronUp, Download, Home, Pencil, Plus, Trash2, X } from "lucide-react";
 import { DataTable } from "./data-table";
 import { FormField } from "./form-field";
-import { ApiEnvelope, apiFetch, downloadReport, getCached, getCachedFirst, hasCached } from "../lib/api";
+import { ApiEnvelope, apiFetch, downloadReport, downloadRowsAsCsv, getCached, getCachedFirst, hasCached } from "../lib/api";
 import { formatCell } from "../lib/format";
 import { useAuth } from "./auth-context";
 import { ConfirmModal, EmptyState, StatusBadge } from "./ui";
@@ -1226,6 +1226,30 @@ function BatchLedgerTab({ batchId, options }: { batchId: string; options: Poultr
   const rows = inSync ? data!.rows : [];
   const weekly = data?.granularity === "weekly";
 
+  function downloadCsv() {
+    if (!inSync || rows.length === 0) return;
+    const scopeSlug = (data!.scopeLabel || "batch").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "").toLowerCase();
+    const name = `ledger-${scopeSlug}-${data!.granularity}-${new Date().toISOString().slice(0, 10)}.csv`;
+    const cols = weekly
+      ? [
+          { key: "week", label: "Week" }, { key: "fromDate", label: "From" }, { key: "toDate", label: "To" },
+          { key: "opening", label: "Opening" }, { key: "mortality", label: "Mortality" }, { key: "culls", label: "Culls" },
+          { key: "transferIn", label: "Transfer In" }, { key: "transferOut", label: "Transfer Out" }, { key: "adjustment", label: "Recount Adj" },
+          { key: "closing", label: "Closing" }, { key: "cumulativeDeaths", label: "Cum Deaths" }, { key: "cumulativeMortalityPct", label: "Cum Mortality %" },
+          { key: "eggs", label: "Eggs" }, { key: "avgLayPct", label: "Avg Lay %" }, { key: "feedKg", label: "Feed kg" }, { key: "feedBags", label: "Feed bags" },
+          { key: "actualWeightKg", label: "Actual WT (kg)" }, { key: "targetWeightKg", label: "Target WT (kg)" },
+        ]
+      : [
+          { key: "date", label: "Date" }, { key: "ageWeeks", label: "Age (wk)" },
+          { key: "opening", label: "Opening" }, { key: "mortality", label: "Mortality" }, { key: "culls", label: "Culls" },
+          { key: "transferIn", label: "Transfer In" }, { key: "transferOut", label: "Transfer Out" }, { key: "adjustment", label: "Recount Adj" },
+          { key: "closing", label: "Closing" }, { key: "cumulativeDeaths", label: "Cum Deaths" }, { key: "cumulativeMortalityPct", label: "Cum Mortality %" },
+          { key: "eggs", label: "Eggs" }, { key: "layPct", label: "Lay %" }, { key: "feedKg", label: "Feed kg" }, { key: "feedBags", label: "Feed bags" },
+          { key: "weightKg", label: "Weight (kg)" },
+        ];
+    downloadRowsAsCsv(name, cols, rows as Record<string, unknown>[]);
+  }
+
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-end gap-3">
@@ -1268,6 +1292,15 @@ function BatchLedgerTab({ batchId, options }: { batchId: string; options: Poultr
             </button>
           ))}
         </div>
+
+        <button
+          type="button"
+          onClick={downloadCsv}
+          disabled={!inSync || rows.length === 0}
+          className="inline-flex items-center gap-1 rounded border border-line px-2.5 py-1 text-xs font-semibold text-ink/70 hover:bg-field disabled:opacity-40"
+        >
+          <Download className="h-3.5 w-3.5" /> CSV
+        </button>
 
         {data && <span className="text-xs text-ink/50">{data.scopeLabel} · opened with {n0(data.opening)} birds</span>}
       </div>
