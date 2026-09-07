@@ -706,15 +706,22 @@ export class PoultryService {
     } else if (scope === "house") {
       const houseId = query.scopeId;
       const pensInHouse = batch.penAllocations.filter((a) => a.poultryHouseId === houseId);
-      let incomingFromOutside = 0;
+      const penIdsInHouse = new Set(pensInHouse.map((a) => a.penId));
+      // BatchPenAllocation.birdCount is (initial placement + EVERY incoming
+      // transfer into that pen — including room-to-room moves within this same
+      // house). To recover the house's day-1 opening we must back out ALL of
+      // those, not just the ones that came from another house — otherwise a
+      // house that only shuffled birds between its own pens looks like it
+      // opened with several times what it actually did.
+      let incomingToHousePens = 0;
       for (const t of transfers) {
+        if (t.toPenId ? penIdsInHouse.has(t.toPenId) : t.toPoultryHouseId === houseId) incomingToHousePens += t.birdCount;
         const inThis = t.toPoultryHouseId === houseId && t.fromPoultryHouseId !== houseId;
         const outThis = t.fromPoultryHouseId === houseId && t.toPoultryHouseId !== houseId;
-        if (inThis) { transIn.push({ date: t.transferDate, birdCount: t.birdCount }); incomingFromOutside += t.birdCount; }
+        if (inThis) transIn.push({ date: t.transferDate, birdCount: t.birdCount });
         if (outThis) transOut.push({ date: t.transferDate, birdCount: t.birdCount });
       }
-      // stored allocation = original + incoming transfers; back out to get the day-1 opening.
-      opening = Math.max(0, pensInHouse.reduce((s, a) => s + a.birdCount, 0) - incomingFromOutside);
+      opening = Math.max(0, pensInHouse.reduce((s, a) => s + a.birdCount, 0) - incomingToHousePens);
       const house = pensInHouse[0]?.poultryHouseId === houseId;
       scopeLabel = house ? `House ${batch.poultryHouse?.code ?? ""}`.trim() : "House";
     } else {
@@ -1171,14 +1178,17 @@ export class PoultryService {
       return Math.max(0, (alloc?.birdCount ?? 0) - (mortAgg._sum.birdCount ?? 0) - (outAgg._sum.birdCount ?? 0) + (adjAgg._sum.delta ?? 0));
     }
     if (poultryHouseId) {
-      const [allocAgg, mortAgg, transfers, adjAgg] = await Promise.all([
+      const [allocAgg, mortAgg, outAgg, adjAgg] = await Promise.all([
         tx.batchPenAllocation.aggregate({ where: { flockBatchId: batch.id, poultryHouseId }, _sum: { birdCount: true } }),
         tx.mortalityRecord.aggregate({ where: { flockBatchId: batch.id, poultryHouseId, deletedAt: null }, _sum: { birdCount: true } }),
-        tx.poultryTransferRecord.findMany({ where: { flockBatchId: batch.id, fromPoultryHouseId: poultryHouseId, deletedAt: null, status: { not: "CANCELLED" } }, select: { birdCount: true, toPoultryHouseId: true } }),
+        // ALL transfers out of this house's pens, room-to-room moves included:
+        // the allocation aggregate above already counted every incoming
+        // transfer (intra-house ones too), so a room-to-room shuffle nets out
+        // (+X on the receiving pen's allocation, -X here) instead of inflating.
+        tx.poultryTransferRecord.aggregate({ where: { flockBatchId: batch.id, fromPoultryHouseId: poultryHouseId, deletedAt: null, status: { not: "CANCELLED" } }, _sum: { birdCount: true } }),
         tx.poultryCountAdjustment.aggregate({ where: { flockBatchId: batch.id, poultryHouseId, deletedAt: null }, _sum: { delta: true } }),
       ]);
-      const outOfHouse = transfers.filter((t) => t.toPoultryHouseId !== poultryHouseId).reduce((s, t) => s + t.birdCount, 0);
-      return Math.max(0, (allocAgg._sum.birdCount ?? 0) - (mortAgg._sum.birdCount ?? 0) - outOfHouse + (adjAgg._sum.delta ?? 0));
+      return Math.max(0, (allocAgg._sum.birdCount ?? 0) - (mortAgg._sum.birdCount ?? 0) - (outAgg._sum.birdCount ?? 0) + (adjAgg._sum.delta ?? 0));
     }
     return this.liveBirdsRemaining(tx, batch.id, batch.openingBirdCount);
   }
