@@ -128,6 +128,8 @@ export function EggCollectionScreen() {
     const e: Record<string, string> = {};
     if (!farmId)  e.farmId  = "Select a farm";
     if (!batchId) e.batchId = "Select a batch";
+    if (houses.length && !houseId) e.houseId = "Select the house";
+    if (pens.length && !penId)     e.penId   = "Select the pen these eggs came from";
     if (!date)    e.date    = "Date required";
     if (!goodEggs || isNaN(Number(goodEggs)) || Number(goodEggs) < 0)
       e.goodEggs = "Enter good egg count";
@@ -200,8 +202,8 @@ export function EggCollectionScreen() {
             <Text style={styles.cardLabel}>FLOCK DETAILS</Text>
             <SelectField label="Farm" value={farmId} options={farms} onChange={(v) => { setFarmId(v); setBatchId(""); setHouseId(""); setPenId(""); }} error={errors.farmId} required />
             <SelectField label="Flock Batch" value={batchId} options={batches} onChange={(v) => { setBatchId(v); setHouseId(""); setPenId(""); }} error={errors.batchId} required placeholder={farmId ? "Select batch…" : "Select farm first"} />
-            {houses.length > 1 && <SelectField label="House" value={houseId} options={houses} onChange={(v) => { setHouseId(v); setPenId(""); }} placeholder="All houses in batch" />}
-            {pens.length > 0 && <SelectField label="Pen (optional)" value={penId} options={pens} onChange={setPenId} placeholder="All pens" />}
+            {houses.length > 0 && <SelectField label="House" required value={houseId} options={houses} onChange={(v) => { setHouseId(v); setPenId(""); }} error={errors.houseId} placeholder="Select house…" />}
+            {pens.length > 0 && <SelectField label="Pen" required value={penId} options={pens} onChange={setPenId} error={errors.penId} placeholder={houseId ? "Select pen…" : "Select house first"} />}
             <DateField label="Collection Date" required value={date} onChangeText={setDate} error={errors.date} />
           </View>
 

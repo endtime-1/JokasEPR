@@ -1722,6 +1722,37 @@ function BatchRecordSection({ batchId, type, label, cols, endpoint, options }: {
                 <button type="button" className="ml-auto" onClick={() => setAddOpen(false)}><X className="h-3.5 w-3.5" /></button>
               </div>
               <div className="grid gap-2 sm:grid-cols-3">
+                {(type === "eggs" || type === "feed") && (
+                  <>
+                    <div>
+                      <label className="mb-0.5 block text-[10px] text-ink/60">House <span className="text-red-500">*</span></label>
+                      <select
+                        required
+                        className="w-full rounded border border-line bg-white px-2 py-1 text-xs"
+                        value={addForm.poultryHouseId ?? ""}
+                        onChange={(e) => setAddForm((f) => ({ ...f, poultryHouseId: e.target.value, penId: "" }))}
+                      >
+                        <option value="">— select house —</option>
+                        {housesWithPens.map((h) => <option key={h.id} value={h.id}>{h.code}{h.name ? ` — ${h.name}` : ""}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-0.5 block text-[10px] text-ink/60">Pen <span className="text-red-500">*</span></label>
+                      <select
+                        required
+                        className="w-full rounded border border-line bg-white px-2 py-1 text-xs"
+                        value={addForm.penId ?? ""}
+                        onChange={(e) => setAddForm((f) => ({ ...f, penId: e.target.value }))}
+                        disabled={!addForm.poultryHouseId}
+                      >
+                        <option value="">{addForm.poultryHouseId ? "— select pen —" : "— pick a house first —"}</option>
+                        {pensForBatch(options, batchId, addForm.poultryHouseId || undefined).map((p) => (
+                          <option key={p.id} value={p.id}>{p.code}{p.name ? ` — ${p.name}` : ""}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </>
+                )}
                 {type === "feed" && (
                   <>
                     <div>

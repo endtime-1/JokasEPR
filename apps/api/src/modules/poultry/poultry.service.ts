@@ -52,6 +52,8 @@ const INVENTORY_LINKED_RECORD_TYPES: Record<string, string> = {
   vaccinations: "VaccinationRecord"
 };
 
+const EGG_PIECES_PER_CRATE = 30;
+
 type BatchContext = {
   id: string;
   code: string;
@@ -1183,6 +1185,7 @@ export class PoultryService {
 
   async createFeed(user: AuthenticatedUser, dto: CreateFeedConsumptionRecordDto, context: RequestContext) {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
+    this.assertPenRequired(dto.penId, "feed");
     if (dto.warehouseId) this.assertWarehouseAccess(user, dto.warehouseId);
     await this.assertWarehousePurposeIfSet(user, dto.warehouseId, "feed.consumption", dto.purposeOverrideReason, context);
     const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch, dto.poultryHouseId);
@@ -1228,6 +1231,7 @@ export class PoultryService {
 
   async createEggs(user: AuthenticatedUser, dto: CreateEggProductionRecordDto, context: RequestContext) {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
+    this.assertPenRequired(dto.penId, "eggs");
     if (!["LAYERS", "BREEDERS"].includes(batch.birdType)) {
       throw new BadRequestException(`Egg production cannot be recorded for a ${batch.birdType} batch. Only LAYERS and BREEDERS batches produce eggs.`);
     }
@@ -1259,6 +1263,8 @@ export class PoultryService {
       }
     }
     const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch, dto.poultryHouseId);
+    const totalEggs = dto.goodEggs + dto.crackedEggs + dto.dirtyEggs + dto.brokenEggs + dto.rejectedEggs;
+    await this.assertEggsWithinPenFlock(batch, dto.penId, totalEggs, dto.recordDate);
     // Mobile parity audit (2026-08-17): a mobile offline-queue resend (or a
     // client retry after a dropped response) carrying the same
     // idempotencyKey replays the original record instead of creating a
@@ -2415,6 +2421,30 @@ export class PoultryService {
   private assertWarehouseAccess(user: AuthenticatedUser, warehouseId: string) {
     if (!user.hasGlobalAccess && user.warehouseIds.length > 0 && !user.warehouseIds.includes(warehouseId)) {
       throw new ForbiddenException("You do not have access to this warehouse.");
+    }
+  }
+
+  // (2026-09-07) Egg and feed entries must be tied to a specific pen — a
+  // house-level or batch-level figure can't be reconciled against the birds
+  // actually in that pen, and the farm wants every collection allocated to
+  // one pen. Assert here so it holds no matter which client submits.
+  private assertPenRequired(penId: string | undefined, what: string): asserts penId is string {
+    if (!penId) {
+      throw new BadRequestException(`Select the pen these ${what} belong to — every ${what} entry must be recorded against a specific pen.`);
+    }
+  }
+
+  // (2026-09-07) One record can't hold more eggs than the pen has live birds —
+  // a hen lays at most one egg a day. Blocks the obvious data-entry slip
+  // (e.g. a crate count entered as a piece count). Multi-day collections
+  // should be split into one record per day.
+  private async assertEggsWithinPenFlock(batch: BatchContext, penId: string, totalEggs: number, recordDate: string) {
+    const penLive = await this.expectedLiveCount(this.prisma, batch, penId);
+    if (totalEggs > penLive) {
+      const pen = await this.prisma.pen.findFirst({ where: { id: penId }, select: { code: true } });
+      throw new BadRequestException(
+        `Recorded ${totalEggs} egg(s) for ${new Date(recordDate).toISOString().slice(0, 10)} but pen ${pen?.code ?? "selected"} only has ${penLive} live bird(s) — a hen lays at most one egg a day. Check the count (a crate is ${EGG_PIECES_PER_CRATE} eggs), or split a multi-day collection into one record per day.`,
+      );
     }
   }
 

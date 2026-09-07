@@ -119,6 +119,8 @@ export function FeedConsumptionScreen() {
     const e: Record<string, string> = {};
     if (!farmId)    e.farmId    = "Select farm";
     if (!batchId)   e.batchId   = "Select batch";
+    if (houses.length && !houseId) e.houseId = "Select the house";
+    if (pens.length && !penId)     e.penId   = "Select the pen this feed went to";
     if (!date)      e.date      = "Date required";
     if (!quantityKg || isNaN(Number(quantityKg)) || Number(quantityKg) <= 0) e.quantityKg = "Enter quantity";
     setErrors(e);
@@ -196,8 +198,8 @@ export function FeedConsumptionScreen() {
           required
           placeholder={farmId ? (batches.length === 0 ? "No active batches" : "Select batch…") : "Select farm first"}
         />
-        {houses.length > 1 && <SelectField label="House" value={houseId} options={houses} onChange={(v) => { setHouseId(v); setPenId(""); }} placeholder="All houses in batch" />}
-        {pens.length > 0 && <SelectField label="Pen (optional)" value={penId} options={pens} onChange={setPenId} placeholder="All pens" />}
+        {houses.length > 0 && <SelectField label="House" required value={houseId} options={houses} onChange={(v) => { setHouseId(v); setPenId(""); }} error={errors.houseId} placeholder="Select house…" />}
+        {pens.length > 0 && <SelectField label="Pen" required value={penId} options={pens} onChange={setPenId} error={errors.penId} placeholder={houseId ? "Select pen…" : "Select house first"} />}
         {/* Bird count chip — shows once a batch with known population is selected */}
         {birdCount > 0 && (
           <View style={styles.birdChip}>

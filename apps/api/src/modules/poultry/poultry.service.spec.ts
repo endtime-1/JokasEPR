@@ -35,11 +35,14 @@ const mockPrisma = {
   // count defaults to 0 ("destination house has no pens") so createTransfer
   // tests that don't specify toPenId aren't blocked by the new
   // toHousePenCount check unless a test explicitly says otherwise.
-  pen: { findFirst: jest.fn(), findMany: jest.fn(), update: jest.fn(), create: jest.fn(), count: jest.fn().mockResolvedValue(0) },
+  // default pen resolves cleanly to house-1 with plenty of birds so the
+  // pen-required + eggs-within-flock guards don't trip tests that aren't
+  // about them; a test that cares overrides these.
+  pen: { findFirst: jest.fn().mockResolvedValue({ id: "pen-1", poultryHouseId: "house-1", companyId: "co-1" }), findMany: jest.fn(), update: jest.fn(), create: jest.fn(), count: jest.fn().mockResolvedValue(0) },
   flockBatch: { findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn() },
   systemSetting: { findFirst: jest.fn().mockResolvedValue(null) },
   warehouse: { findFirst: jest.fn().mockResolvedValue({ id: "wh-1", type: "GENERAL", name: "WH", code: "WH", branchId: "b-1" }) },
-  batchPenAllocation: { findFirst: jest.fn() },
+  batchPenAllocation: { findFirst: jest.fn().mockResolvedValue({ penId: "pen-1", poultryHouseId: "house-1", birdCount: 100000 }) },
   poultryCountAdjustment: { findFirst: jest.fn(), aggregate: jest.fn().mockResolvedValue({ _sum: { delta: 0 } }), findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0) },
   poultryTransferRecord: { findFirst: jest.fn(), count: jest.fn().mockResolvedValue(0), aggregate: jest.fn().mockResolvedValue({ _sum: { birdCount: 0 } }), findMany: jest.fn().mockResolvedValue([]) },
   feedConsumptionRecord: { findFirst: jest.fn(), count: jest.fn().mockResolvedValue(0), aggregate: jest.fn().mockResolvedValue({ _sum: { quantityKg: 0 } }) },
@@ -61,6 +64,15 @@ const mockWarehousePurpose = {
   filterForOperation: jest.fn().mockImplementation((_c: string, list: unknown[]) => Promise.resolve(list)),
   invalidate: jest.fn()
 };
+
+// A prior test's `.mockResolvedValue(null)` on these sticks past clearAllMocks
+// (it clears call data, not implementations). createEggs/createFeed now resolve
+// a pen for every entry, so restore a clean default before each test — a test
+// that cares still overrides it.
+beforeEach(() => {
+  mockPrisma.pen.findFirst.mockResolvedValue({ id: "pen-1", poultryHouseId: "house-1", companyId: "co-1" });
+  mockPrisma.batchPenAllocation.findFirst.mockResolvedValue({ penId: "pen-1", poultryHouseId: "house-1", birdCount: 100000 });
+});
 
 function makeService() {
   return new PoultryService(
@@ -160,21 +172,22 @@ describe("PoultryService — farm/warehouse access checks (H7)", () => {
       await expect(
         service.createEggs(
           makeUser({ farmIds: ["farm-1"], warehouseIds: ["wh-1"] }),
-          { flockBatchId: "batch-1", recordDate: "2026-01-01", goodEggs: 10, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0, warehouseId: "wh-OTHER", eggProductId: "prod-1" } as never,
+          { flockBatchId: "batch-1", penId: "pen-1", recordDate: "2026-01-01", goodEggs: 10, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0, warehouseId: "wh-OTHER", eggProductId: "prod-1" } as never,
           {}
         )
       ).rejects.toThrow(ForbiddenException);
     });
 
-    it("attributes the record to an explicitly chosen house, not the batch's default house (multi-house batch, 2026-09-06)", async () => {
+    it("attributes the record to the chosen pen's house (multi-house batch, 2026-09-06 / pen required 2026-09-07)", async () => {
       mockPrisma.flockBatch.findFirst.mockResolvedValue({ id: "batch-1", companyId: "company-1", farmId: "farm-1", branchId: "branch-1", poultryHouseId: "house-1", birdType: "LAYERS", status: "ACTIVE", code: "FLK-1" });
-      mockPrisma.batchPenAllocation.findFirst.mockResolvedValue({ id: "alloc-1", flockBatchId: "batch-1", poultryHouseId: "house-3" });
+      mockPrisma.pen.findFirst.mockResolvedValue({ id: "pen-3", poultryHouseId: "house-3", companyId: "company-1" });
+      mockPrisma.batchPenAllocation.findFirst.mockResolvedValue({ id: "alloc-1", flockBatchId: "batch-1", penId: "pen-3", poultryHouseId: "house-3", birdCount: 100000 });
       mockTx.eggProductionRecord.create.mockResolvedValue({ id: "egg-rec-1" });
 
       const service = makeService();
       await service.createEggs(
         makeUser({ farmIds: ["farm-1"] }),
-        { flockBatchId: "batch-1", poultryHouseId: "house-3", recordDate: "2026-01-01", goodEggs: 10, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0 } as never,
+        { flockBatchId: "batch-1", penId: "pen-3", recordDate: "2026-01-01", goodEggs: 10, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0 } as never,
         {}
       );
 
@@ -183,18 +196,46 @@ describe("PoultryService — farm/warehouse access checks (H7)", () => {
       });
     });
 
-    it("rejects an explicit house the batch has no birds in", async () => {
+    it("rejects a pen that isn't allocated to this batch", async () => {
       mockPrisma.flockBatch.findFirst.mockResolvedValue({ id: "batch-1", companyId: "company-1", farmId: "farm-1", branchId: "branch-1", poultryHouseId: "house-1", birdType: "LAYERS", status: "ACTIVE", code: "FLK-1" });
+      mockPrisma.pen.findFirst.mockResolvedValue({ id: "pen-9", poultryHouseId: "house-9", companyId: "company-1" });
       mockPrisma.batchPenAllocation.findFirst.mockResolvedValue(null);
 
       const service = makeService();
       await expect(
         service.createEggs(
           makeUser({ farmIds: ["farm-1"] }),
-          { flockBatchId: "batch-1", poultryHouseId: "house-9", recordDate: "2026-01-01", goodEggs: 10, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0 } as never,
+          { flockBatchId: "batch-1", penId: "pen-9", recordDate: "2026-01-01", goodEggs: 10, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0 } as never,
           {}
         )
-      ).rejects.toThrow(/no birds allocated to the selected house/);
+      ).rejects.toThrow(/not allocated to this batch/);
+    });
+
+    it("rejects an egg record with no pen selected (pen required 2026-09-07)", async () => {
+      mockPrisma.flockBatch.findFirst.mockResolvedValue({ id: "batch-1", companyId: "company-1", farmId: "farm-1", branchId: "branch-1", poultryHouseId: "house-1", birdType: "LAYERS", status: "ACTIVE", code: "FLK-1" });
+      const service = makeService();
+      await expect(
+        service.createEggs(
+          makeUser({ farmIds: ["farm-1"] }),
+          { flockBatchId: "batch-1", recordDate: "2026-01-01", goodEggs: 10, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0 } as never,
+          {}
+        )
+      ).rejects.toThrow(/must be recorded against a specific pen/);
+    });
+
+    it("rejects more eggs than the pen has live birds (2026-09-07)", async () => {
+      mockPrisma.flockBatch.findFirst.mockResolvedValue({ id: "batch-1", companyId: "company-1", farmId: "farm-1", branchId: "branch-1", poultryHouseId: "house-1", birdType: "LAYERS", status: "ACTIVE", code: "FLK-1", startDate: new Date("2025-01-01") });
+      mockPrisma.pen.findFirst.mockResolvedValue({ id: "pen-1", poultryHouseId: "house-1", code: "PEN-01", companyId: "company-1" });
+      mockPrisma.batchPenAllocation.findFirst.mockResolvedValue({ id: "alloc-1", flockBatchId: "batch-1", penId: "pen-1", poultryHouseId: "house-1", birdCount: 900 });
+
+      const service = makeService();
+      await expect(
+        service.createEggs(
+          makeUser({ farmIds: ["farm-1"] }),
+          { flockBatchId: "batch-1", penId: "pen-1", recordDate: "2026-01-01", goodEggs: 1200, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0 } as never,
+          {}
+        )
+      ).rejects.toThrow(/only has 900 live bird/);
     });
 
     it("H-BUG-2: crediting egg output creates a real, sellable StockBatch — not just a quantityOnHand bump", async () => {
@@ -207,7 +248,7 @@ describe("PoultryService — farm/warehouse access checks (H7)", () => {
       const service = makeService();
       await service.createEggs(
         makeUser({ farmIds: ["farm-1"], warehouseIds: ["wh-1"] }),
-        { flockBatchId: "batch-1", recordDate: "2026-01-01", goodEggs: 10, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0, warehouseId: "wh-1", eggProductId: "prod-1" } as never,
+        { flockBatchId: "batch-1", penId: "pen-1", recordDate: "2026-01-01", goodEggs: 10, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0, warehouseId: "wh-1", eggProductId: "prod-1" } as never,
         {}
       );
 
@@ -238,7 +279,7 @@ describe("PoultryService — farm/warehouse access checks (H7)", () => {
       const service = makeService();
       await service.createEggs(
         makeUser({ farmIds: ["farm-1"], warehouseIds: ["wh-1"] }),
-        { flockBatchId: "batch-1", recordDate: "2026-01-01", goodEggs: 4200, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0, warehouseId: "wh-1", eggProductId: "prod-1" } as never,
+        { flockBatchId: "batch-1", penId: "pen-1", recordDate: "2026-01-01", goodEggs: 4200, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0, warehouseId: "wh-1", eggProductId: "prod-1" } as never,
         {}
       );
 
@@ -264,7 +305,7 @@ describe("PoultryService — farm/warehouse access checks (H7)", () => {
       const service = makeService();
       await service.createEggs(
         makeUser({ farmIds: ["farm-1"], warehouseIds: ["wh-1"] }),
-        { flockBatchId: "batch-1", recordDate: "2026-01-01", goodEggs: 4205, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0, warehouseId: "wh-1", eggProductId: "prod-1" } as never,
+        { flockBatchId: "batch-1", penId: "pen-1", recordDate: "2026-01-01", goodEggs: 4205, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0, warehouseId: "wh-1", eggProductId: "prod-1" } as never,
         {}
       );
 
@@ -284,7 +325,7 @@ describe("PoultryService — farm/warehouse access checks (H7)", () => {
       const service = makeService();
       await service.createEggs(
         makeUser({ farmIds: ["farm-1"], warehouseIds: ["wh-1"] }),
-        { flockBatchId: "batch-1", recordDate: "2026-01-01", goodEggs: 10, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0, warehouseId: "wh-1", eggProductId: "prod-1" } as never,
+        { flockBatchId: "batch-1", penId: "pen-1", recordDate: "2026-01-01", goodEggs: 10, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0, warehouseId: "wh-1", eggProductId: "prod-1" } as never,
         {}
       );
 
@@ -301,7 +342,7 @@ describe("PoultryService — farm/warehouse access checks (H7)", () => {
       await expect(
         service.createEggs(
           makeUser({ farmIds: ["farm-1"], warehouseIds: ["wh-1"] }),
-          { flockBatchId: "batch-1", recordDate: "2026-01-01", goodEggs: 10, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0, warehouseId: "wh-1", eggProductId: "prod-1" } as never,
+          { flockBatchId: "batch-1", penId: "pen-1", recordDate: "2026-01-01", goodEggs: 10, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0, warehouseId: "wh-1", eggProductId: "prod-1" } as never,
           {}
         )
       ).rejects.toThrow(/active withdrawal period/);
@@ -316,7 +357,7 @@ describe("PoultryService — farm/warehouse access checks (H7)", () => {
       const service = makeService();
       await service.createEggs(
         makeUser({ farmIds: ["farm-1"], warehouseIds: ["wh-1"] }),
-        { flockBatchId: "batch-1", recordDate: "2026-01-01", goodEggs: 10, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0 } as never,
+        { flockBatchId: "batch-1", penId: "pen-1", recordDate: "2026-01-01", goodEggs: 10, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0 } as never,
         {}
       );
 
@@ -334,7 +375,7 @@ describe("PoultryService — farm/warehouse access checks (H7)", () => {
       const service = makeService();
       const result = await service.createEggs(
         makeUser({ farmIds: ["farm-1"], warehouseIds: ["wh-1"] }),
-        { flockBatchId: "batch-1", recordDate: "2026-01-01", goodEggs: 0, crackedEggs: 3, dirtyEggs: 2, brokenEggs: 0, rejectedEggs: 0, warehouseId: "wh-1", secondsProductId: "prod-seconds" } as never,
+        { flockBatchId: "batch-1", penId: "pen-1", recordDate: "2026-01-01", goodEggs: 0, crackedEggs: 3, dirtyEggs: 2, brokenEggs: 0, rejectedEggs: 0, warehouseId: "wh-1", secondsProductId: "prod-seconds" } as never,
         {}
       );
 
@@ -351,7 +392,7 @@ describe("PoultryService — farm/warehouse access checks (H7)", () => {
       const service = makeService();
       const result = await service.createEggs(
         makeUser({ farmIds: ["farm-1"], warehouseIds: ["wh-1"] }),
-        { flockBatchId: "batch-1", recordDate: "2026-01-01", goodEggs: 0, crackedEggs: 3, dirtyEggs: 2, brokenEggs: 0, rejectedEggs: 0 } as never,
+        { flockBatchId: "batch-1", penId: "pen-1", recordDate: "2026-01-01", goodEggs: 0, crackedEggs: 3, dirtyEggs: 2, brokenEggs: 0, rejectedEggs: 0 } as never,
         {}
       );
 
@@ -366,7 +407,7 @@ describe("PoultryService — farm/warehouse access checks (H7)", () => {
       const service = makeService();
       const result = await service.createEggs(
         makeUser({ farmIds: ["farm-1"], warehouseIds: ["wh-1"] }),
-        { flockBatchId: "batch-1", recordDate: "2026-01-15", goodEggs: 10, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0 } as never,
+        { flockBatchId: "batch-1", penId: "pen-1", recordDate: "2026-01-15", goodEggs: 10, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0 } as never,
         {}
       );
 
@@ -380,7 +421,7 @@ describe("PoultryService — farm/warehouse access checks (H7)", () => {
       const service = makeService();
       const result = await service.createEggs(
         makeUser({ farmIds: ["farm-1"], warehouseIds: ["wh-1"] }),
-        { flockBatchId: "batch-1", recordDate: "2026-01-15", goodEggs: 10, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0 } as never,
+        { flockBatchId: "batch-1", penId: "pen-1", recordDate: "2026-01-15", goodEggs: 10, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0 } as never,
         {}
       );
 
@@ -664,7 +705,7 @@ describe("PoultryService.createFeed / consumeInventoryTx — floor-guarded decre
   beforeEach(() => jest.clearAllMocks());
 
   const flockBatch = { id: "batch-1", farmId: "farm-1", branchId: "branch-1", poultryHouseId: "house-1", status: "ACTIVE", code: "FB-1", birdType: "BROILERS" };
-  const dto = { flockBatchId: "batch-1", recordDate: "2026-08-09", feedProductId: "prod-feed", warehouseId: "wh-1", quantityKg: 50 };
+  const dto = { flockBatchId: "batch-1", penId: "pen-1", recordDate: "2026-08-09", feedProductId: "prod-feed", warehouseId: "wh-1", quantityKg: 50 };
 
   it("issues the decrement as a floor-guarded updateMany, not a plain unguarded update", async () => {
     mockPrisma.flockBatch.findFirst.mockResolvedValue(flockBatch);
@@ -1411,7 +1452,7 @@ describe("PoultryService — idempotencyKey dedup for the 8 poultry create endpo
   });
 
   describe("createFeed", () => {
-    const dto = { flockBatchId: "batch-1", recordDate: "2026-08-09", quantityKg: 50, idempotencyKey: "idem-feed-1" };
+    const dto = { flockBatchId: "batch-1", penId: "pen-1", recordDate: "2026-08-09", quantityKg: 50, idempotencyKey: "idem-feed-1" };
 
     it("replays the original record instead of creating a duplicate when the idempotencyKey was already used", async () => {
       mockPrisma.flockBatch.findFirst.mockResolvedValue(broilerBatch);
@@ -1439,7 +1480,7 @@ describe("PoultryService — idempotencyKey dedup for the 8 poultry create endpo
   });
 
   describe("createEggs", () => {
-    const dto = { flockBatchId: "batch-1", recordDate: "2026-01-01", goodEggs: 10, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0, idempotencyKey: "idem-eggs-1" };
+    const dto = { flockBatchId: "batch-1", penId: "pen-1", recordDate: "2026-01-01", goodEggs: 10, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0, idempotencyKey: "idem-eggs-1" };
 
     it("replays the original record instead of creating a duplicate when the idempotencyKey was already used", async () => {
       mockPrisma.flockBatch.findFirst.mockResolvedValue(layerBatch);
