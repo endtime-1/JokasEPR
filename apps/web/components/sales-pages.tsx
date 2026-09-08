@@ -144,7 +144,18 @@ function ProductOptions({ products }: { products: Opt[] }) {
 
 // ─── Options ──────────────────────────────────────────────────────────────────
 
-type Opt = { id: string; code?: string; sku?: string; name?: string; feedForm?: "MASH" | "CONCENTRATE" | null; invoiceNumber?: string; balanceDue?: string | number; customerId?: string; product?: { sku: string; name: string }; customerGroup?: { code: string; name: string } };
+type Opt = { id: string; code?: string; sku?: string; name?: string; feedForm?: "MASH" | "CONCENTRATE" | null; piecesPerUnit?: number; uom?: { symbol?: string; name?: string } | null; invoiceNumber?: string; balanceDue?: string | number; customerId?: string; product?: { sku: string; name: string }; customerGroup?: { code: string; name: string } };
+
+// The unit a product's quantity is entered/priced in. Eggs are tracked in
+// crates (30 pieces) across all of inventory, so a sales line for eggs is
+// crates, not loose eggs — label the Qty field so nobody enters 300 for
+// "10 crates".
+function productUnit(products: Opt[], productId: string): { word: string; piecesPerUnit: number } {
+  const p = products.find((x) => x.id === productId);
+  const ppu = Number(p?.piecesPerUnit) || 1;
+  if (ppu > 1) return { word: /crate/i.test(p?.uom?.name ?? "") ? "crates" : (p?.uom?.symbol || p?.uom?.name || "crates"), piecesPerUnit: ppu };
+  return { word: p?.uom?.symbol || p?.uom?.name || "units", piecesPerUnit: 1 };
+}
 
 type SalesOptions = {
   branches: Opt[];
@@ -1203,12 +1214,20 @@ export function OrdersPage({ create = false }: { create?: boolean }) {
                         <ProductOptions products={opts.products} />
                       </select>
                     </div>
-                    <div><label className={labelCls}>Qty</label>
-                      <input type="number" min={1} step="1" value={it.quantity} onChange={(e) => updateItem(i, "quantity", e.target.value)} className={inputCls} />
-                    </div>
-                    <div><label className={labelCls}>Unit Price</label>
-                      <input type="number" min={0} step="0.01" value={it.unitPrice} onChange={(e) => updateItem(i, "unitPrice", e.target.value)} className={inputCls} />
-                    </div>
+                    {(() => {
+                      const u = productUnit(opts.products, it.productId);
+                      return (
+                        <>
+                          <div><label className={labelCls}>Qty{u.piecesPerUnit > 1 ? ` (${u.word})` : ""}</label>
+                            <input type="number" min={0} step={u.piecesPerUnit > 1 ? "0.001" : "1"} value={it.quantity} onChange={(e) => updateItem(i, "quantity", e.target.value)} className={inputCls} />
+                            {u.piecesPerUnit > 1 && Number(it.quantity) > 0 && <span className="mt-0.5 block text-[10px] text-ink/45">= {(Number(it.quantity) * u.piecesPerUnit).toLocaleString()} pieces</span>}
+                          </div>
+                          <div><label className={labelCls}>Unit Price{u.piecesPerUnit > 1 ? ` / ${u.word.replace(/s$/, "")}` : ""}</label>
+                            <input type="number" min={0} step="0.01" value={it.unitPrice} onChange={(e) => updateItem(i, "unitPrice", e.target.value)} className={inputCls} />
+                          </div>
+                        </>
+                      );
+                    })()}
                     <div><label className={labelCls}>Discount</label>
                       <input type="number" min={0} step="0.01" value={it.discountAmount} onChange={(e) => updateItem(i, "discountAmount", e.target.value)} className={inputCls} />
                     </div>
@@ -1466,8 +1485,10 @@ export function QuotesPage({ create = false }: { create?: boolean }) {
                       <option value="">— Select —</option><ProductOptions products={opts.products} />
                     </select>
                   </div>
-                  <div><label className={labelCls}>Qty</label><input type="number" min={1} step="1" value={it.quantity} onChange={(e) => setItems((p) => p.map((x, idx) => idx === i ? { ...x, quantity: e.target.value } : x))} className={inputCls} /></div>
-                  <div><label className={labelCls}>Unit Price</label><input type="number" min={0} step="0.01" value={it.unitPrice} onChange={(e) => setItems((p) => p.map((x, idx) => idx === i ? { ...x, unitPrice: e.target.value } : x))} className={inputCls} /></div>
+                  {(() => { const u = productUnit(opts.products, it.productId); return (<>
+                    <div><label className={labelCls}>Qty{u.piecesPerUnit > 1 ? ` (${u.word})` : ""}</label><input type="number" min={0} step={u.piecesPerUnit > 1 ? "0.001" : "1"} value={it.quantity} onChange={(e) => setItems((p) => p.map((x, idx) => idx === i ? { ...x, quantity: e.target.value } : x))} className={inputCls} /></div>
+                    <div><label className={labelCls}>Unit Price{u.piecesPerUnit > 1 ? ` / ${u.word.replace(/s$/, "")}` : ""}</label><input type="number" min={0} step="0.01" value={it.unitPrice} onChange={(e) => setItems((p) => p.map((x, idx) => idx === i ? { ...x, unitPrice: e.target.value } : x))} className={inputCls} /></div>
+                  </>); })()}
                   <div><label className={labelCls}>Discount</label><input type="number" min={0} step="0.01" value={it.discountAmount} onChange={(e) => setItems((p) => p.map((x, idx) => idx === i ? { ...x, discountAmount: e.target.value } : x))} className={inputCls} /></div>
                   <div><label className={labelCls}>Line</label><p className="min-h-10 flex items-center px-1 text-sm font-semibold">{money(lineTotal(it))}</p></div>
                   <div className="pb-1">{items.length > 1 && <button type="button" onClick={() => setItems((p) => p.filter((_, idx) => idx !== i))} className="text-xs text-red-500 hover:underline">Remove</button>}</div>
@@ -1760,12 +1781,15 @@ export function ReturnsPage() {
                 <ProductOptions products={opts.products} />
               </select>
             </div>
-            <div><FormLabel>Quantity *</FormLabel>
-              <input required type="number" min={1} value={form.quantity} onChange={f("quantity")} className={inputCls} />
-            </div>
-            <div><FormLabel>Unit Price (GHS) *</FormLabel>
-              <input required type="number" min={0} step="0.01" value={form.unitPrice} onChange={f("unitPrice")} className={inputCls} />
-            </div>
+            {(() => { const u = productUnit(opts.products, form.productId); return (<>
+              <div><FormLabel>Quantity{u.piecesPerUnit > 1 ? ` (${u.word})` : ""} *</FormLabel>
+                <input required type="number" min={0} step={u.piecesPerUnit > 1 ? "0.001" : "1"} value={form.quantity} onChange={f("quantity")} className={inputCls} />
+                {u.piecesPerUnit > 1 && Number(form.quantity) > 0 && <span className="mt-0.5 block text-[10px] text-ink/45">= {(Number(form.quantity) * u.piecesPerUnit).toLocaleString()} pieces</span>}
+              </div>
+              <div><FormLabel>Unit Price (GHS){u.piecesPerUnit > 1 ? ` / ${u.word.replace(/s$/, "")}` : ""} *</FormLabel>
+                <input required type="number" min={0} step="0.01" value={form.unitPrice} onChange={f("unitPrice")} className={inputCls} />
+              </div>
+            </>); })()}
             <div><FormLabel>Reason *</FormLabel>
               <input required value={form.reason} onChange={f("reason")} className={inputCls} />
             </div>
