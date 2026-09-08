@@ -242,7 +242,7 @@ export function InventoryItemsPage({ create = false }: { create?: boolean }) {
 
 export function StockOperationPage({ mode }: { mode: "stock-in" | "stock-out" | "transfers" | "adjustments" }) {
   const { options, optionsError } = useInventoryOptions();
-  const [form, setForm] = useState<Record<string, string>>({ warehouseId: "", fromWarehouseId: "", toWarehouseId: "", productId: "", batchNumber: "", bags: "", quantity: "", unitCost: "", reason: "", adjustmentType: "DAMAGE", movementType: "ADJUSTMENT_OUT", expiryDate: "" });
+  const [form, setForm] = useState<Record<string, string>>({ warehouseId: "", fromWarehouseId: "", toWarehouseId: "", productId: "", batchNumber: "", bags: "", quantity: "", unitCost: "", reason: "", adjustmentType: "DAMAGE", movementType: "ADJUSTMENT_OUT", expiryDate: "", transferDate: "" });
   const [submitError, setSubmitError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const title = mode === "stock-in" ? "Stock In" : mode === "stock-out" ? "Stock Out" : mode === "transfers" ? "Stock Transfer" : "Stock Adjustment";
@@ -257,7 +257,7 @@ export function StockOperationPage({ mode }: { mode: "stock-in" | "stock-out" | 
     const payload =
       mode === "stock-in" ? { ...base, warehouseId, batchNumber: form.batchNumber, unitCost: Number(form.unitCost), expiryDate: form.expiryDate || undefined } :
       mode === "stock-out" ? { ...base, warehouseId, movementType: form.movementType } :
-      mode === "transfers" ? { ...base, fromWarehouseId, toWarehouseId } :
+      mode === "transfers" ? { ...base, fromWarehouseId, toWarehouseId, transferDate: form.transferDate || undefined } :
       { ...base, warehouseId, adjustmentType: form.adjustmentType, quantity: Number(form.quantity), reason: form.reason, approveNow: false };
     const endpoint = mode === "transfers" ? "/inventory/transfers" : mode === "adjustments" ? "/inventory/adjustments" : `/inventory/${mode}`;
     setSubmitting(true);
@@ -280,6 +280,10 @@ export function StockOperationPage({ mode }: { mode: "stock-in" | "stock-out" | 
           <>
             <SelectField label="From warehouse" value={form.fromWarehouseId || options.warehouses[0]?.id || ""} options={options.warehouses} onChange={(value) => setForm({ ...form, fromWarehouseId: value })} />
             <SelectField label="To warehouse" value={form.toWarehouseId || options.warehouses[1]?.id || ""} options={options.warehouses} onChange={(value) => setForm({ ...form, toWarehouseId: value })} />
+            <FormField label="Transfer date">
+              <input className={inputClass} type="date" max={new Date().toISOString().slice(0, 10)} value={form.transferDate} onChange={(event) => setForm({ ...form, transferDate: event.target.value })} />
+              <span className="mt-1 block text-xs text-ink/50">Leave blank for today. Set it to the day the goods actually moved.</span>
+            </FormField>
           </>
         ) : <SelectField label="Warehouse" value={form.warehouseId || options.warehouses[0]?.id || ""} options={options.warehouses} onChange={(value) => setForm({ ...form, warehouseId: value })} />}
         <SelectField
@@ -486,7 +490,7 @@ function StagedTransfersPanel() {
           loading={loading}
           empty="No transfers yet"
           columns={[
-            { key: "createdAt", label: "Date", render: (row: Record<string, any>) => row.createdAt ? new Date(row.createdAt).toLocaleDateString() : "-" },
+            { key: "transferDate", label: "Date", render: (row: Record<string, any>) => (row.transferDate || row.createdAt) ? new Date(row.transferDate || row.createdAt).toLocaleDateString() : "-" },
             { key: "transferNumber", label: "Ref", render: (row: Record<string, any>) => row.transferNumber ?? "-" },
             { key: "product", label: "Product", render: (row: Record<string, any>) => row.product ? <span><span className="font-semibold">{row.product.sku}</span><span className="text-ink/60"> — {row.product.name}</span></span> : "-" },
             { key: "quantity", label: "Qty", render: (row: Record<string, any>) => formatQtyForProduct(row.quantity, row.product) },

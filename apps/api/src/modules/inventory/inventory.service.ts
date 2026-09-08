@@ -253,6 +253,7 @@ export class InventoryService {
       if (existing) return { data: existing };
     }
     const instant = dto.autoApprove === true && user.hasGlobalAccess;
+    const movedOn = dto.transferDate ? new Date(dto.transferDate) : undefined;
     const transferNumber = await nextRef(this.prisma, user.companyId, "STR");
     let data;
     try {
@@ -263,13 +264,14 @@ export class InventoryService {
           fromProductionSiteId: sourceItem.productionSiteId, toProductionSiteId: toWarehouse.productionSiteId,
           quantity: dto.quantity, barcode: dto.barcode, notes: dto.notes,
           status: instant ? "COMPLETED" : "PENDING_APPROVAL",
+          ...(movedOn ? { transferDate: movedOn } : {}),
           idempotencyKey: dto.idempotencyKey, requestedById: user.id, createdById: user.id,
           ...(instant ? { approvedById: user.id, approvedAt: new Date(), receivedById: user.id, receivedAt: new Date(), receivedQuantity: dto.quantity } : {}),
         } });
         if (instant) {
-          const consumed = await this.consumeFifoTx(tx, user, sourceItem, dto.quantity, "TRANSFER", "StockTransfer", transfer.id, `Transfer ${transferNumber}`);
+          const consumed = await this.consumeFifoTx(tx, user, sourceItem, dto.quantity, "TRANSFER", "StockTransfer", transfer.id, `Transfer ${transferNumber}`, movedOn);
           await tx.stockTransfer.update({ where: { id: transfer.id }, data: { dispatchedLots: consumed.issued as unknown as Prisma.InputJsonValue, unitCost: consumed.unitCost } });
-          await this.creditTransferDestinationTx(tx, user, { toWarehouse, product, quantity: dto.quantity, unitCost: consumed.unitCost, transferId: transfer.id, transferNumber });
+          await this.creditTransferDestinationTx(tx, user, { toWarehouse, product, quantity: dto.quantity, unitCost: consumed.unitCost, transferId: transfer.id, transferNumber, movementDate: movedOn });
         }
         return transfer;
       }), { label: "InventoryService.transfer" });
@@ -303,7 +305,7 @@ export class InventoryService {
         data: { status: "IN_TRANSIT", approvedById: user.id, approvedAt: new Date(), updatedById: user.id },
       });
       if (claimed.count === 0) throw new BadRequestException("This transfer has already been processed.");
-      const consumed = await this.consumeFifoTx(tx, user, sourceItem, Number(transfer.quantity), "TRANSFER", "StockTransfer", id, `Transfer ${transfer.transferNumber} dispatched`);
+      const consumed = await this.consumeFifoTx(tx, user, sourceItem, Number(transfer.quantity), "TRANSFER", "StockTransfer", id, `Transfer ${transfer.transferNumber} dispatched`, transfer.transferDate ?? undefined);
       await tx.stockTransfer.update({ where: { id }, data: { dispatchedLots: consumed.issued as unknown as Prisma.InputJsonValue, unitCost: consumed.unitCost, ...(dto.notes ? { notes: dto.notes } : {}) } });
       return tx.stockTransfer.findUniqueOrThrow({ where: { id } });
     }), { label: "InventoryService.approveTransfer" });
@@ -345,7 +347,7 @@ export class InventoryService {
       });
       if (claimed.count === 0) throw new BadRequestException("This transfer has already been received.");
       if (dto.receivedQuantity > 0) {
-        await this.creditTransferDestinationTx(tx, user, { toWarehouse, product, quantity: dto.receivedQuantity, unitCost, transferId: id, transferNumber: transfer.transferNumber });
+        await this.creditTransferDestinationTx(tx, user, { toWarehouse, product, quantity: dto.receivedQuantity, unitCost, transferId: id, transferNumber: transfer.transferNumber, movementDate: transfer.transferDate ?? undefined });
       }
       if (difference !== 0) {
         await tx.transferDiscrepancy.create({ data: {
@@ -466,7 +468,7 @@ export class InventoryService {
   private async creditTransferDestinationTx(
     tx: Prisma.TransactionClient,
     user: AuthenticatedUser,
-    p: { toWarehouse: { id: string; branchId: string; farmId: string | null; productionSiteId: string | null }; product: { id: string; sku: string; uomId: string }; quantity: number; unitCost: number; transferId: string; transferNumber: string }
+    p: { toWarehouse: { id: string; branchId: string; farmId: string | null; productionSiteId: string | null }; product: { id: string; sku: string; uomId: string }; quantity: number; unitCost: number; transferId: string; transferNumber: string; movementDate?: Date }
   ) {
     const destination = await tx.inventoryItem.upsert({
       where: { companyId_warehouseId_productId: { companyId: user.companyId, warehouseId: p.toWarehouse.id, productId: p.product.id } },
@@ -476,13 +478,15 @@ export class InventoryService {
     await tx.stockBatch.create({ data: {
       companyId: user.companyId, branchId: p.toWarehouse.branchId, farmId: p.toWarehouse.farmId, warehouseId: p.toWarehouse.id, productionSiteId: p.toWarehouse.productionSiteId,
       productId: p.product.id, inventoryItemId: destination.id, uomId: p.product.uomId,
-      batchNumber: `${p.transferNumber}-${p.product.sku}`.slice(0, 60), quantityReceived: p.quantity, quantityRemaining: p.quantity, unitCost: p.unitCost, createdById: user.id,
+      batchNumber: `${p.transferNumber}-${p.product.sku}`.slice(0, 60), quantityReceived: p.quantity, quantityRemaining: p.quantity, unitCost: p.unitCost,
+      ...(p.movementDate ? { manufactureDate: p.movementDate } : {}), createdById: user.id,
     } });
     await tx.stockMovement.create({ data: {
       companyId: user.companyId, branchId: p.toWarehouse.branchId, productId: p.product.id, inventoryItemId: destination.id,
       toWarehouseId: p.toWarehouse.id, warehouseId: p.toWarehouse.id, productionSiteId: p.toWarehouse.productionSiteId,
       uomId: p.product.uomId, movementType: "TRANSFER", quantity: p.quantity, unitCost: p.unitCost,
-      referenceType: "StockTransfer", referenceId: p.transferId, notes: `Transfer received ${p.transferNumber}`, createdById: user.id,
+      referenceType: "StockTransfer", referenceId: p.transferId, notes: `Transfer received ${p.transferNumber}`,
+      ...(p.movementDate ? { movementDate: p.movementDate } : {}), createdById: user.id,
     } });
   }
 
@@ -920,7 +924,7 @@ export class InventoryService {
     );
   }
 
-  private async consumeFifoTx(tx: Prisma.TransactionClient, user: AuthenticatedUser, item: { id: string; companyId: string; branchId: string; warehouseId: string; productionSiteId: string | null; productId: string; uomId: string }, quantity: number, movementType: "ADJUSTMENT_OUT" | "SALE_DISPATCH" | "TRANSFER" | "WASTE" | "PRODUCTION_INPUT" | "RETURN_OUT", referenceType: string, referenceId?: string, notes?: string) {
+  private async consumeFifoTx(tx: Prisma.TransactionClient, user: AuthenticatedUser, item: { id: string; companyId: string; branchId: string; warehouseId: string; productionSiteId: string | null; productId: string; uomId: string }, quantity: number, movementType: "ADJUSTMENT_OUT" | "SALE_DISPATCH" | "TRANSFER" | "WASTE" | "PRODUCTION_INPUT" | "RETURN_OUT", referenceType: string, referenceId?: string, notes?: string, movementDate?: Date) {
     let remaining = quantity;
     let value = 0;
     const issued: Array<{ batchId: string; quantity: number; unitCost: number }> = [];
@@ -935,7 +939,7 @@ export class InventoryService {
       // preventing a concurrent transaction's stale snapshot from driving the column negative.
       const batchUpdate = await tx.stockBatch.updateMany({ where: { id: batch.id, quantityRemaining: { gte: take } }, data: { quantityRemaining: { decrement: take } } });
       if (batchUpdate.count === 0) throw new BadRequestException("FIFO batches do not contain enough available stock.");
-      await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: item.branchId, productId: item.productId, inventoryItemId: item.id, stockBatchId: batch.id, fromWarehouseId: item.warehouseId, warehouseId: item.warehouseId, productionSiteId: item.productionSiteId, uomId: item.uomId, movementType, quantity: take, unitCost, referenceType, referenceId, notes, createdById: user.id } });
+      await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: item.branchId, productId: item.productId, inventoryItemId: item.id, stockBatchId: batch.id, fromWarehouseId: item.warehouseId, warehouseId: item.warehouseId, productionSiteId: item.productionSiteId, uomId: item.uomId, movementType, quantity: take, unitCost, referenceType, referenceId, notes, ...(movementDate ? { movementDate } : {}), createdById: user.id } });
       issued.push({ batchId: batch.id, quantity: take, unitCost });
       value += take * unitCost;
       remaining -= take;

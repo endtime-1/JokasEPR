@@ -149,6 +149,13 @@ export class StockTransferDto {
   @IsUUID()
   stockBatchId?: string;
 
+  // The date the goods physically moved. Defaults to now; set it to record a
+  // transfer that happened earlier (e.g. eggs moved to the packing store
+  // yesterday) so it lands on the right day in the movement log and reports.
+  @IsOptional()
+  @IsDateString()
+  transferDate?: string;
+
   @IsOptional()
   @IsString()
   barcode?: string;

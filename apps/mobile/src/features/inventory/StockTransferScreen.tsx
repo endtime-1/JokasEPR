@@ -6,6 +6,7 @@ import { ScreenWrapper } from "../../components/ScreenWrapper";
 import { FormCard } from "../../components/FormCard";
 import { FormFooter } from "../../components/FormFooter";
 import { FormField } from "../../components/FormField";
+import { DateField } from "../../components/DateField";
 import { SelectField, SelectOption } from "../../components/SelectField";
 import { useSubmit } from "../../hooks/useSubmit";
 import { useLookup } from "../../hooks/useLookup";
@@ -21,6 +22,7 @@ export function StockTransferScreen() {
   const [toWarehouseId,   setToWarehouseId]   = useState("");
   const [productId,       setProductId]        = useState("");
   const [quantity,        setQuantity]         = useState("");
+  const [transferDate,    setTransferDate]     = useState("");
   const [notes,           setNotes]            = useState("");
   const [errors,          setErrors]           = useState<Record<string, string>>({});
 
@@ -102,6 +104,7 @@ export function StockTransferScreen() {
       toWarehouseId,
       productId,
       quantity: qtyNum,
+      transferDate: transferDate || undefined,
       notes: notes || undefined,
     });
   }
@@ -148,6 +151,10 @@ export function StockTransferScreen() {
           onChange={(v) => { setToWarehouseId(v); setErrors((e) => ({ ...e, toWarehouseId: "" })); }}
           error={errors.toWarehouseId} required
           placeholder={fromWarehouseId ? "Select destination warehouse…" : "Select source warehouse first"} />
+
+        <DateField label="Transfer Date" value={transferDate} onChangeText={setTransferDate}
+          maximumDate={new Date()}
+          hint="Leave blank for today — set it to the day the goods actually moved" />
       </FormCard>
 
       <FormCard label="PRODUCT & QUANTITY">
