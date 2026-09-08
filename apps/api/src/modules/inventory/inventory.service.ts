@@ -381,8 +381,13 @@ export class InventoryService {
     const scope: Prisma.StockTransferWhereInput = { companyId: user.companyId, deletedAt: null };
     if (query.status) scope.status = query.status;
     const whId = query.warehouseId;
-    if (query.direction === "incoming") scope.toWarehouseId = whId ?? undefined;
-    else if (query.direction === "outgoing") scope.fromWarehouseId = whId ?? undefined;
+    // "incoming"/"outgoing" is relative to a warehouse. If the caller names one,
+    // use it; otherwise fall back to the caller's own warehouses so the mobile
+    // "To receive" tab shows only transfers heading to this user's store (not
+    // ones they're sending out). Unscoped/global users get no extra filter.
+    const myScope = !user.hasGlobalAccess && user.warehouseIds.length > 0 ? { in: user.warehouseIds } : undefined;
+    if (query.direction === "incoming") scope.toWarehouseId = whId ?? myScope;
+    else if (query.direction === "outgoing") scope.fromWarehouseId = whId ?? myScope;
     else if (whId) scope.OR = [{ fromWarehouseId: whId }, { toWarehouseId: whId }];
     if (!user.hasGlobalAccess && user.warehouseIds.length > 0) {
       scope.AND = [{ OR: [{ fromWarehouseId: { in: user.warehouseIds } }, { toWarehouseId: { in: user.warehouseIds } }] }];

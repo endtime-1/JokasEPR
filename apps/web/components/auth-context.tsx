@@ -11,6 +11,7 @@ type Profile = {
   fullName: string;
   roles: string[];
   permissions: string[];
+  warehouseIds: string[];
   hasGlobalAccess: boolean;
 };
 

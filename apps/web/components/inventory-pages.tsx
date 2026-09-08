@@ -12,6 +12,7 @@ import { formatDate } from "../lib/format";
 import { ApiEnvelope, apiFetch, downloadReport, hasCached, getCached, getCachedFirst, invalidateCache } from "../lib/api";
 import { useApiRecovery } from "../lib/use-api-recovery";
 import { useLatestRequest } from "../lib/use-latest-request";
+import { useAuth } from "./auth-context";
 
 type Option = {
   id: string;
@@ -396,6 +397,14 @@ function warehouseLabel(w?: { code?: string; name?: string; branch?: { name?: st
 // opens a discrepancy for a manager to review). Actions call the API and let
 // it enforce permissions — a 403 surfaces as an inline error.
 function StagedTransfersPanel() {
+  const { profile } = useAuth();
+  // Who acts on each stage: the source warehouse's people approve/cancel, the
+  // destination warehouse's people receive. A full-access account (or one with
+  // no warehouse scoping) sees every action.
+  const myWarehouses = useMemo(() => new Set(profile?.warehouseIds ?? []), [profile?.warehouseIds]);
+  const seesAll = !!profile?.hasGlobalAccess || myWarehouses.size === 0;
+  const iSend = (row: Record<string, any>) => seesAll || myWarehouses.has(row.fromWarehouseId);
+  const iReceive = (row: Record<string, any>) => seesAll || myWarehouses.has(row.toWarehouseId);
   const [transfers, setTransfers] = useState<Record<string, any>[]>([]);
   const [discrepancies, setDiscrepancies] = useState<Record<string, any>[]>([]);
   const [loading, setLoading] = useState(true);
@@ -459,6 +468,31 @@ function StagedTransfersPanel() {
       )}
       {actionError && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{actionError}</p>}
 
+      {(() => {
+        const toReceive = transfers.filter((t) => String(t.status) === "IN_TRANSIT" && iReceive(t));
+        if (toReceive.length === 0) return null;
+        return (
+          <div className="rounded-xl border border-sky-200 bg-sky-50/60 p-4">
+            <h3 className="mb-1 text-sm font-semibold text-sky-900">Incoming — awaiting your receipt ({toReceive.length})</h3>
+            <p className="mb-3 text-xs text-sky-800/80">These have been dispatched and are in transit to your store. Confirm what actually arrived.</p>
+            <DataTable
+              rows={toReceive}
+              empty="Nothing in transit to your store"
+              columns={[
+                { key: "transferNumber", label: "Ref", render: (row: Record<string, any>) => row.transferNumber ?? "-" },
+                { key: "product", label: "Product", render: (row: Record<string, any>) => row.product ? `${row.product.sku} — ${row.product.name}` : "-" },
+                { key: "quantity", label: "Sent", render: (row: Record<string, any>) => formatQtyForProduct(row.quantity, row.product) },
+                { key: "route", label: "From", render: (row: Record<string, any>) => warehouseLabel(row.fromWarehouse) },
+                { key: "date", label: "Transfer date", render: (row: Record<string, any>) => (row.transferDate || row.createdAt) ? new Date(row.transferDate || row.createdAt).toLocaleDateString() : "-" },
+                { key: "actions", label: "", render: (row: Record<string, any>) => (
+                  <button type="button" disabled={busyId === row.id} className="rounded-md border border-sky-400 bg-white px-3 py-1 text-xs font-semibold text-sky-700 hover:bg-sky-50 disabled:opacity-50" onClick={() => receive(row)}>Confirm receipt</button>
+                ) },
+              ]}
+            />
+          </div>
+        );
+      })()}
+
       {discrepancies.length > 0 && (
         <div>
           <h3 className="mb-2 text-sm font-semibold text-ink">Discrepancies needing review ({discrepancies.length})</h3>
@@ -507,18 +541,24 @@ function StagedTransfersPanel() {
                 </span>
               );
             } },
-            { key: "actions", label: "Actions", render: (row: Record<string, any>) => {
+            { key: "actions", label: "Next step", render: (row: Record<string, any>) => {
               const s = String(row.status ?? "");
               const busy = busyId === row.id;
               const btn = "rounded-md border px-2 py-1 text-xs font-semibold disabled:opacity-50";
-              if (s === "PENDING_APPROVAL") return (
-                <span className="flex gap-1">
-                  <button type="button" disabled={busy} className={`${btn} border-emerald-300 text-emerald-700 hover:bg-emerald-50`} onClick={() => approve(row)}>Approve</button>
-                  <button type="button" disabled={busy} className={`${btn} border-red-300 text-red-700 hover:bg-red-50`} onClick={() => reject(row)}>Reject</button>
-                  <button type="button" disabled={busy} className={`${btn} border-slate-300 text-slate-600 hover:bg-slate-50`} onClick={() => cancel(row)}>Cancel</button>
-                </span>
-              );
-              if (s === "IN_TRANSIT") return <button type="button" disabled={busy} className={`${btn} border-sky-300 text-sky-700 hover:bg-sky-50`} onClick={() => receive(row)}>Receive</button>;
+              if (s === "PENDING_APPROVAL") {
+                if (!iSend(row)) return <span className="text-xs text-ink/45">{warehouseLabel(row.fromWarehouse)} to approve</span>;
+                return (
+                  <span className="flex gap-1">
+                    <button type="button" disabled={busy} className={`${btn} border-emerald-300 text-emerald-700 hover:bg-emerald-50`} onClick={() => approve(row)}>Approve</button>
+                    <button type="button" disabled={busy} className={`${btn} border-red-300 text-red-700 hover:bg-red-50`} onClick={() => reject(row)}>Reject</button>
+                    <button type="button" disabled={busy} className={`${btn} border-slate-300 text-slate-600 hover:bg-slate-50`} onClick={() => cancel(row)}>Cancel</button>
+                  </span>
+                );
+              }
+              if (s === "IN_TRANSIT") {
+                if (!iReceive(row)) return <span className="text-xs text-ink/45">{warehouseLabel(row.toWarehouse)} to receive</span>;
+                return <button type="button" disabled={busy} className={`${btn} border-sky-300 text-sky-700 hover:bg-sky-50`} onClick={() => receive(row)}>Receive</button>;
+              }
               return <span className="text-ink/40">—</span>;
             } },
           ]}
