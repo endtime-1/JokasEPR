@@ -28,7 +28,7 @@ async function main() {
   const transfers = await prisma.stockTransfer.findMany({
     where: { fromWarehouseId: FROM_WH, deletedAt: null, status: { in: ["IN_TRANSIT", "COMPLETED"] } },
     orderBy: { transferDate: "asc" },
-    select: { id: true, transferNumber: true, transferDate: true, quantity: true, productId: true, branchId: true, farmId: true, uomId: true, unitCost: true, toWarehouseId: true },
+    select: { id: true, transferNumber: true, transferDate: true, quantity: true, productId: true, branchId: true, toWarehouseId: true },
   });
 
   let totalToApply = 0;
@@ -52,7 +52,7 @@ async function main() {
 
   for (const t of todo) {
     await prisma.$transaction(async (tx) => {
-      const inv = await tx.inventoryItem.findFirst({ where: { warehouseId: FROM_WH, productId: t.productId, deletedAt: null } });
+      const inv = await tx.inventoryItem.findFirst({ where: { warehouseId: FROM_WH, productId: t.productId, deletedAt: null }, select: { id: true, companyId: true, branchId: true, farmId: true, productionSiteId: true, uomId: true, quantityOnHand: true } });
       if (!inv) throw new Error(`${t.transferNumber}: no source inventory item for product ${t.productId}`);
       let remaining = Number(t.quantity);
       const batches = await tx.stockBatch.findMany({
@@ -65,8 +65,8 @@ async function main() {
         const upd = await tx.stockBatch.updateMany({ where: { id: b.id, quantityRemaining: { gte: take } }, data: { quantityRemaining: { decrement: take } } });
         if (upd.count === 0) throw new Error(`${t.transferNumber}: batch ${b.batchNumber} raced`);
         await tx.stockMovement.create({ data: {
-          companyId: inv.companyId, branchId: t.branchId, productId: t.productId, inventoryItemId: inv.id, stockBatchId: b.id,
-          fromWarehouseId: FROM_WH, warehouseId: FROM_WH, farmId: t.farmId, uomId: t.uomId,
+          companyId: inv.companyId, branchId: inv.branchId, productId: t.productId, inventoryItemId: inv.id, stockBatchId: b.id,
+          fromWarehouseId: FROM_WH, warehouseId: FROM_WH, farmId: inv.farmId ?? undefined, productionSiteId: inv.productionSiteId ?? undefined, uomId: inv.uomId,
           movementType: "TRANSFER", quantity: round(take), unitCost: b.unitCost ?? undefined,
           referenceType: "StockTransfer", referenceId: t.id,
           notes: `Transfer ${t.transferNumber} dispatched (source deduction re-applied)`,
