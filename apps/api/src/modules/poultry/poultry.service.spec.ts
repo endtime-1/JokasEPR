@@ -42,6 +42,7 @@ const mockPrisma = {
   flockBatch: { findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn() },
   systemSetting: { findFirst: jest.fn().mockResolvedValue(null) },
   warehouse: { findFirst: jest.fn().mockResolvedValue({ id: "wh-1", type: "GENERAL", name: "WH", code: "WH", branchId: "b-1" }) },
+  product: { findFirst: jest.fn().mockResolvedValue({ id: "prod-egg", sku: "EG", uomId: "uom-1", piecesPerUnit: 30 }) },
   batchPenAllocation: { findFirst: jest.fn().mockResolvedValue({ penId: "pen-1", poultryHouseId: "house-1", birdCount: 100000 }) },
   poultryCountAdjustment: { findFirst: jest.fn(), aggregate: jest.fn().mockResolvedValue({ _sum: { delta: 0 } }), findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0) },
   poultryTransferRecord: { findFirst: jest.fn(), count: jest.fn().mockResolvedValue(0), aggregate: jest.fn().mockResolvedValue({ _sum: { birdCount: 0 } }), findMany: jest.fn().mockResolvedValue([]) },
@@ -366,6 +367,7 @@ describe("PoultryService — farm/warehouse access checks (H7)", () => {
     });
 
     it("M-BUG: credits cracked/dirty eggs to a 'seconds' product when one is given", async () => {
+      mockPrisma.medicationRecord.findFirst.mockResolvedValue(null);
       mockPrisma.flockBatch.findFirst.mockResolvedValue({ id: "batch-1", companyId: "company-1", farmId: "farm-1", branchId: "branch-1", poultryHouseId: "house-1", birdType: "LAYERS", status: "ACTIVE", code: "FLK-1", startDate: new Date("2020-01-01") });
       mockTx.eggProductionRecord.create.mockResolvedValue({ id: "egg-rec-1" });
       mockTx.warehouse.findFirst.mockResolvedValue({ id: "wh-1", companyId: "company-1", branchId: "branch-1" });
@@ -375,7 +377,7 @@ describe("PoultryService — farm/warehouse access checks (H7)", () => {
       const service = makeService();
       const result = await service.createEggs(
         makeUser({ farmIds: ["farm-1"], warehouseIds: ["wh-1"] }),
-        { flockBatchId: "batch-1", penId: "pen-1", recordDate: "2026-01-01", goodEggs: 0, crackedEggs: 3, dirtyEggs: 2, brokenEggs: 0, rejectedEggs: 0, warehouseId: "wh-1", secondsProductId: "prod-seconds" } as never,
+        { flockBatchId: "batch-1", penId: "pen-1", recordDate: "2026-01-01", goodEggs: 0, crackedEggs: 3, dirtyEggs: 2, brokenEggs: 0, rejectedEggs: 0, warehouseId: "wh-1", eggProductId: "prod-egg", secondsProductId: "prod-seconds" } as never,
         {}
       );
 
@@ -385,19 +387,26 @@ describe("PoultryService — farm/warehouse access checks (H7)", () => {
       expect(result.warning).toBeUndefined();
     });
 
-    it("M-BUG: warns instead of silently discarding cracked/dirty eggs when no 'seconds' product is set", async () => {
+    it("credits cracked/dirty eggs to the main egg product when no 'seconds' product is set (no grading)", async () => {
+      mockPrisma.medicationRecord.findFirst.mockResolvedValue(null);
       mockPrisma.flockBatch.findFirst.mockResolvedValue({ id: "batch-1", companyId: "company-1", farmId: "farm-1", branchId: "branch-1", poultryHouseId: "house-1", birdType: "LAYERS", status: "ACTIVE", code: "FLK-1", startDate: new Date("2020-01-01") });
       mockTx.eggProductionRecord.create.mockResolvedValue({ id: "egg-rec-1" });
+      mockTx.warehouse.findFirst.mockResolvedValue({ id: "wh-1", companyId: "company-1", branchId: "branch-1" });
+      mockTx.product.findFirst.mockResolvedValue({ id: "prod-egg", companyId: "company-1", uomId: "uom-1", piecesPerUnit: 1 });
+      mockTx.inventoryItem.upsert.mockResolvedValue({ id: "inv-egg" });
 
       const service = makeService();
       const result = await service.createEggs(
         makeUser({ farmIds: ["farm-1"], warehouseIds: ["wh-1"] }),
-        { flockBatchId: "batch-1", penId: "pen-1", recordDate: "2026-01-01", goodEggs: 0, crackedEggs: 3, dirtyEggs: 2, brokenEggs: 0, rejectedEggs: 0 } as never,
+        { flockBatchId: "batch-1", penId: "pen-1", recordDate: "2026-01-01", goodEggs: 0, crackedEggs: 3, dirtyEggs: 2, brokenEggs: 0, rejectedEggs: 0, warehouseId: "wh-1", eggProductId: "prod-egg" } as never,
         {}
       );
 
-      expect(mockTx.stockBatch.create).not.toHaveBeenCalled();
-      expect(result.warning).toMatch(/not credited to sellable stock/);
+      // all 5 eggs land on the main egg product — nothing is discarded
+      expect(mockTx.stockBatch.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ productId: "prod-egg", quantityReceived: 5, quantityRemaining: 5 })
+      });
+      expect(result.warning).toBeUndefined();
     });
 
     it("M-BUG: warns when eggs are logged for a LAYERS flock that's too young to plausibly be laying", async () => {

@@ -1021,7 +1021,10 @@ export class PoultryService {
     if (eggsDelta > 0 && !["LAYERS", "BREEDERS"].includes(batch.birdType)) {
       throw new BadRequestException(`Egg production cannot be recorded for a ${batch.birdType} batch. Only LAYERS and BREEDERS batches produce eggs.`);
     }
-    if (eggsDelta > 0 && dto.eggProductId && dto.eggWarehouseId) {
+    const dailyEggStock = eggsDelta > 0
+      ? await this.resolveEggStock(user.companyId, batch.farmId, { warehouseId: dto.eggWarehouseId, eggProductId: dto.eggProductId })
+      : { warehouseId: dto.eggWarehouseId, eggProductId: dto.eggProductId };
+    if (eggsDelta > 0 && dailyEggStock.eggProductId && dailyEggStock.warehouseId) {
       await this.assertNoActiveWithdrawal(dto.flockBatchId, user.companyId, "eggs collected during this window can still be logged, but omit the egg product/warehouse to record them without crediting sellable stock");
     }
 
@@ -1067,8 +1070,8 @@ export class PoultryService {
         const eggRecord = await tx.eggProductionRecord.create({
           data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), recordDate, goodEggs: eggsDelta, notes: "Daily record", status: "SUBMITTED" }
         });
-        if (dto.eggProductId && dto.eggWarehouseId) {
-          await this.addToInventoryTx(tx, user, batch, dto.eggWarehouseId, dto.eggProductId, eggsDelta, "EggProductionRecord", eggRecord.id, `Egg production from daily record for flock ${batch.code}`);
+        if (dailyEggStock.eggProductId && dailyEggStock.warehouseId) {
+          await this.addToInventoryTx(tx, user, batch, dailyEggStock.warehouseId, dailyEggStock.eggProductId, eggsDelta, "EggProductionRecord", eggRecord.id, `Egg production from daily record for flock ${batch.code}`);
         }
       }
       return row;
@@ -1239,12 +1242,37 @@ export class PoultryService {
     return { data, warning: [stockWarning, overlapWarning].filter(Boolean).join(" ") || undefined };
   }
 
+  // Fill in a missing egg store / "Eggs" product for a collection when the
+  // client sent one half but not the other — the common case being a web form
+  // whose warehouse auto-select didn't resolve (two "egg" warehouses now
+  // exist) while the product did. If the client sent NEITHER, this returns
+  // them unchanged so the "log without crediting stock" path still works.
+  private async resolveEggStock(companyId: string, farmId: string | null | undefined, dto: { warehouseId?: string | null; eggProductId?: string | null }) {
+    let warehouseId = dto.warehouseId ?? undefined;
+    let eggProductId = dto.eggProductId ?? undefined;
+    if (!warehouseId && !eggProductId) return { warehouseId, eggProductId };
+    if (!warehouseId) {
+      const store =
+        (await this.prisma.warehouse.findFirst({ where: { companyId, deletedAt: null, status: "ACTIVE", type: "EGG_STORE", ...(farmId ? { farmId } : {}) }, select: { id: true } }))
+        ?? (await this.prisma.warehouse.findFirst({ where: { companyId, deletedAt: null, status: "ACTIVE", name: { contains: "Egg" }, ...(farmId ? { farmId } : {}) }, select: { id: true } }))
+        ?? (await this.prisma.warehouse.findFirst({ where: { companyId, deletedAt: null, status: "ACTIVE", type: "EGG_STORE" }, select: { id: true } }));
+      warehouseId = store?.id;
+    }
+    if (!eggProductId) {
+      const p = await this.prisma.product.findFirst({ where: { companyId, deletedAt: null, sku: "EG" }, select: { id: true } });
+      eggProductId = p?.id;
+    }
+    return { warehouseId, eggProductId };
+  }
+
   async createEggs(user: AuthenticatedUser, dto: CreateEggProductionRecordDto, context: RequestContext) {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
     this.assertPenRequired(dto.penId, "eggs");
     if (!["LAYERS", "BREEDERS"].includes(batch.birdType)) {
       throw new BadRequestException(`Egg production cannot be recorded for a ${batch.birdType} batch. Only LAYERS and BREEDERS batches produce eggs.`);
     }
+    const eggStock = await this.resolveEggStock(user.companyId, batch.farmId, dto);
+    const totalEggs = dto.goodEggs + dto.crackedEggs + dto.dirtyEggs + dto.brokenEggs + dto.rejectedEggs;
     // Previously missing — unlike createFeed/createMedication/createVaccination,
     // this credited inventory to dto.warehouseId with no access check, letting
     // a user credit egg output to a warehouse outside their assignment.
@@ -1255,7 +1283,7 @@ export class PoultryService {
     // hasn't cleared yet. The raw count can still be logged for
     // record-keeping (omit product/warehouse), only the stock-crediting
     // path is blocked.
-    if (dto.eggProductId && dto.warehouseId && dto.goodEggs > 0) {
+    if (eggStock.eggProductId && eggStock.warehouseId && totalEggs > 0) {
       await this.assertNoActiveWithdrawal(dto.flockBatchId, user.companyId, "eggs collected during this window can still be logged, but omit the product/warehouse to record them without crediting sellable stock");
     }
     // M-BUG (2026-08-13): no sanity check that this flock is old enough to
@@ -1273,7 +1301,6 @@ export class PoultryService {
       }
     }
     const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch, dto.poultryHouseId);
-    const totalEggs = dto.goodEggs + dto.crackedEggs + dto.dirtyEggs + dto.brokenEggs + dto.rejectedEggs;
     await this.assertEggsWithinPenFlock(batch, dto.penId, totalEggs, dto.recordDate);
     // Mobile parity audit (2026-08-17): a mobile offline-queue resend (or a
     // client retry after a dropped response) carrying the same
@@ -1290,17 +1317,21 @@ export class PoultryService {
         const record = await tx.eggProductionRecord.create({
           data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), recordDate: new Date(dto.recordDate), goodEggs: dto.goodEggs, crackedEggs: dto.crackedEggs, dirtyEggs: dto.dirtyEggs, brokenEggs: dto.brokenEggs, rejectedEggs: dto.rejectedEggs, notes: dto.notes, status: dto.status ?? "SUBMITTED", idempotencyKey: dto.idempotencyKey }
         });
-        if (dto.eggProductId && dto.warehouseId && dto.goodEggs > 0) {
-          await this.addToInventoryTx(tx, user, batch, dto.warehouseId, dto.eggProductId, dto.goodEggs, "EggProductionRecord", record.id, `Egg production from flock ${batch.code}`);
-        }
-        // M-BUG (2026-08-13): only goodEggs could ever become sellable stock —
-        // cracked/dirty eggs (commonly sold at a discount as "seconds" on real
-        // farms) had no way to be sold through the system at all.
+        // A collection is pen -> egg store, no grading step: credit the whole
+        // count to the egg product. Only when a "seconds" product is explicitly
+        // configured do we split good vs cracked/dirty.
+        const wh = eggStock.warehouseId;
         const seconds = dto.crackedEggs + dto.dirtyEggs;
-        if (dto.secondsProductId && dto.warehouseId && seconds > 0) {
-          await this.addToInventoryTx(tx, user, batch, dto.warehouseId, dto.secondsProductId, seconds, "EggProductionRecord", record.id, `Seconds (cracked/dirty) eggs from flock ${batch.code}`);
-        } else if (seconds > 0 && !dto.secondsProductId) {
-          stockWarning = `${seconds} cracked/dirty egg(s) were recorded but not credited to sellable stock — set a "seconds" product to sell them at a discount.`;
+        if (wh && eggStock.eggProductId) {
+          const toMain = dto.secondsProductId ? dto.goodEggs : totalEggs;
+          if (toMain > 0) {
+            await this.addToInventoryTx(tx, user, batch, wh, eggStock.eggProductId, toMain, "EggProductionRecord", record.id, `Egg production from flock ${batch.code}`);
+          }
+          if (dto.secondsProductId && seconds > 0) {
+            await this.addToInventoryTx(tx, user, batch, wh, dto.secondsProductId, seconds, "EggProductionRecord", record.id, `Seconds (cracked/dirty) eggs from flock ${batch.code}`);
+          }
+        } else if (totalEggs > 0 && (dto.warehouseId || dto.eggProductId)) {
+          stockWarning = `${totalEggs} egg(s) were recorded but not credited to a store — the farm's egg store or "Eggs" product could not be resolved.`;
         }
         return record;
       });
