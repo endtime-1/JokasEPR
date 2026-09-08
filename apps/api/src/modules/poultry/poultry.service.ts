@@ -1024,6 +1024,9 @@ export class PoultryService {
     const dailyEggStock = eggsDelta > 0
       ? await this.resolveEggStock(user.companyId, batch.farmId, { warehouseId: dto.eggWarehouseId, eggProductId: dto.eggProductId })
       : { warehouseId: dto.eggWarehouseId, eggProductId: dto.eggProductId };
+    const dailyFeedStore = feedDelta > 0
+      ? await this.resolveFeedStore(user.companyId, batch.farmId, { warehouseId: dto.feedWarehouseId, feedProductId: dto.feedProductId })
+      : { warehouseId: dto.feedWarehouseId };
     if (eggsDelta > 0 && dailyEggStock.eggProductId && dailyEggStock.warehouseId) {
       await this.assertNoActiveWithdrawal(dto.flockBatchId, user.companyId, "eggs collected during this window can still be logged, but omit the egg product/warehouse to record them without crediting sellable stock");
     }
@@ -1060,10 +1063,10 @@ export class PoultryService {
       }
       if (feedDelta > 0) {
         const feedRecord = await tx.feedConsumptionRecord.create({
-          data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), recordDate, feedProductId: dto.feedProductId, warehouseId: dto.feedWarehouseId, quantityKg: feedDelta, notes: "Daily record", status: "SUBMITTED" }
+          data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), recordDate, feedProductId: dto.feedProductId, warehouseId: dailyFeedStore.warehouseId ?? dto.feedWarehouseId, quantityKg: feedDelta, notes: "Daily record", status: "SUBMITTED" }
         });
-        if (dto.feedProductId && dto.feedWarehouseId) {
-          await this.consumeInventoryTx(tx, user, batch, dto.feedWarehouseId, dto.feedProductId, feedDelta, "PRODUCTION_INPUT", "FeedConsumptionRecord", feedRecord.id, `Feed consumption from daily record for flock ${batch.code}`);
+        if (dto.feedProductId && dailyFeedStore.warehouseId) {
+          await this.consumeInventoryTx(tx, user, batch, dailyFeedStore.warehouseId, dto.feedProductId, feedDelta, "PRODUCTION_INPUT", "FeedConsumptionRecord", feedRecord.id, `Feed consumption from daily record for flock ${batch.code}`);
         }
       }
       if (eggsDelta > 0) {
@@ -1199,6 +1202,7 @@ export class PoultryService {
   async createFeed(user: AuthenticatedUser, dto: CreateFeedConsumptionRecordDto, context: RequestContext) {
     const batch = await this.getBatchContext(user, dto.flockBatchId);
     this.assertPenRequired(dto.penId, "feed");
+    const feedStore = await this.resolveFeedStore(user.companyId, batch.farmId, dto);
     if (dto.warehouseId) this.assertWarehouseAccess(user, dto.warehouseId);
     await this.assertWarehousePurposeIfSet(user, dto.warehouseId, "feed.consumption", dto.purposeOverrideReason, context);
     const penHouseId = await this.resolvePenHouseId(user.companyId, dto.penId, batch, dto.poultryHouseId);
@@ -1218,14 +1222,14 @@ export class PoultryService {
       // resulting deadlock risk until the lock order is reconciled.
       data = await withDbRetry(() => this.prisma.$transaction(async (tx) => {
         const record = await tx.feedConsumptionRecord.create({
-          data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), recordDate: new Date(dto.recordDate), feedProductId: dto.feedProductId, warehouseId: dto.warehouseId, quantityKg: dto.quantityKg, costAmount: dto.costAmount, notes: dto.notes, status: dto.status ?? "SUBMITTED", idempotencyKey: dto.idempotencyKey }
+          data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), recordDate: new Date(dto.recordDate), feedProductId: dto.feedProductId, warehouseId: feedStore.warehouseId ?? dto.warehouseId, quantityKg: dto.quantityKg, costAmount: dto.costAmount, notes: dto.notes, status: dto.status ?? "SUBMITTED", idempotencyKey: dto.idempotencyKey }
         });
-        if (dto.feedProductId && dto.warehouseId) {
+        if (dto.feedProductId && feedStore.warehouseId) {
           // M-BUG (2026-08-13): a mismatch between this warehouse and the one
           // the product's actually stocked in used to fail completely
           // silently — the record saved as if stock was deducted, with
           // nothing telling the person who entered it that it wasn't.
-          const result = await this.consumeInventoryTx(tx, user, batch, dto.warehouseId, dto.feedProductId, dto.quantityKg, "PRODUCTION_INPUT", "FeedConsumptionRecord", record.id, `Feed consumption for flock ${batch.code}`);
+          const result = await this.consumeInventoryTx(tx, user, batch, feedStore.warehouseId, dto.feedProductId, dto.quantityKg, "PRODUCTION_INPUT", "FeedConsumptionRecord", record.id, `Feed consumption for flock ${batch.code}`);
           stockWarning = result.warning;
         }
         return record;
@@ -1263,6 +1267,19 @@ export class PoultryService {
       eggProductId = p?.id;
     }
     return { warehouseId, eggProductId };
+  }
+
+  // Same idea for feed consumption: fill in a missing feed store when the
+  // client sent a feed product but not the warehouse (a form whose feed-store
+  // auto-select didn't resolve). Sending neither still logs without deducting.
+  private async resolveFeedStore(companyId: string, farmId: string | null | undefined, dto: { warehouseId?: string | null; feedProductId?: string | null }) {
+    let warehouseId = dto.warehouseId ?? undefined;
+    if (warehouseId || !dto.feedProductId) return { warehouseId };
+    const store =
+      (await this.prisma.warehouse.findFirst({ where: { companyId, deletedAt: null, status: "ACTIVE", type: "FEED_STORE", ...(farmId ? { farmId } : {}) }, select: { id: true } }))
+      ?? (await this.prisma.warehouse.findFirst({ where: { companyId, deletedAt: null, status: "ACTIVE", name: { contains: "Feed" }, ...(farmId ? { farmId } : {}) }, select: { id: true } }))
+      ?? (await this.prisma.warehouse.findFirst({ where: { companyId, deletedAt: null, status: "ACTIVE", type: "FEED_STORE" }, select: { id: true } }));
+    return { warehouseId: store?.id };
   }
 
   async createEggs(user: AuthenticatedUser, dto: CreateEggProductionRecordDto, context: RequestContext) {
