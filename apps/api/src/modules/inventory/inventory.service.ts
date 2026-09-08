@@ -397,7 +397,7 @@ export class InventoryService {
       orderBy: { createdAt: "desc" },
       take: Math.min(query.take ?? 100, 300),
       include: {
-        product: { select: { sku: true, name: true } },
+        product: { select: { sku: true, name: true, piecesPerUnit: true, uom: { select: { symbol: true, name: true } } } },
         fromWarehouse: { select: { code: true, name: true, branch: { select: { name: true } } } },
         toWarehouse: { select: { code: true, name: true, branch: { select: { name: true } } } },
         discrepancies: { where: { deletedAt: null }, select: { id: true, status: true, differenceQuantity: true } },
@@ -415,7 +415,7 @@ export class InventoryService {
         stockTransfer: {
           select: {
             transferNumber: true, quantity: true, transferDate: true,
-            product: { select: { sku: true, name: true } },
+            product: { select: { sku: true, name: true, piecesPerUnit: true, uom: { select: { symbol: true, name: true } } } },
             fromWarehouse: { select: { code: true, name: true } },
             toWarehouse: { select: { code: true, name: true } },
           },
