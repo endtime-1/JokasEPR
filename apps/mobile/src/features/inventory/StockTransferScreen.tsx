@@ -66,6 +66,19 @@ export function StockTransferScreen() {
     [sourceItems, productId]
   );
 
+  // Eggs & other packed goods are tracked in the stock unit (crates), not
+  // pieces — quantityOnHand, batches and FIFO are all in crates, so the
+  // quantity entered here is crates too. Pull the unit from the product list
+  // (opts.items only carries sku/name).
+  const selectedProduct = useMemo(
+    () => (opts?.products ?? []).find((p: any) => p.id === productId),
+    [opts, productId]
+  );
+  const piecesPerUnit = Number(selectedProduct?.piecesPerUnit) || 1;
+  const unitWord = piecesPerUnit > 1
+    ? (/crate/i.test(selectedProduct?.uom?.name ?? "") ? "crates" : (selectedProduct?.uom?.symbol || selectedProduct?.uom?.name || "crates"))
+    : (selectedProduct?.uom?.symbol || selectedProduct?.uom?.name || "units");
+
   const qtyNum = Number(quantity) || 0;
   const afterTransfer = selectedItem ? Number(selectedItem.quantityOnHand) - qtyNum : null;
 
@@ -77,7 +90,7 @@ export function StockTransferScreen() {
     if (!productId)        e.productId       = "Select a product to transfer";
     if (!quantity || qtyNum <= 0) e.quantity = "Enter a valid quantity";
     if (selectedItem && qtyNum > Number(selectedItem.quantityOnHand))
-      e.quantity = `Cannot exceed available stock (${Number(selectedItem.quantityOnHand)})`;
+      e.quantity = `Cannot exceed available stock (${Number(selectedItem.quantityOnHand)} ${unitWord})`;
     setErrors(e);
     return Object.keys(e).length === 0;
   }
@@ -166,13 +179,14 @@ export function StockTransferScreen() {
         {selectedItem && (
           <View style={styles.availableCard}>
             <Text style={styles.availableLabel}>Available in {selectedItem.warehouse?.name ?? "—"}</Text>
-            <Text style={styles.availableValue}>{Number(selectedItem.quantityOnHand)}</Text>
+            <Text style={styles.availableValue}>{Number(selectedItem.quantityOnHand)} {unitWord}</Text>
           </View>
         )}
 
-        <FormField label="Quantity to Transfer" value={quantity}
+        <FormField label={`Quantity to Transfer (${unitWord})`} value={quantity}
           onChangeText={(v) => { setQuantity(v); setErrors((e) => ({ ...e, quantity: "" })); }}
-          keyboardType="decimal-pad" required error={errors.quantity} placeholder="0" />
+          keyboardType="decimal-pad" required error={errors.quantity} placeholder="0"
+          hint={piecesPerUnit > 1 && qtyNum > 0 ? `= ${(qtyNum * piecesPerUnit).toLocaleString()} pieces (${piecesPerUnit} per ${unitWord.replace(/s$/, "")})` : undefined} />
 
         {afterTransfer !== null && qtyNum > 0 && (
           <View style={styles.previewRow}>

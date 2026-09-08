@@ -67,6 +67,16 @@ export function StockMovementScreen() {
     [rawItems]
   );
 
+  // Eggs & other packed goods are tracked in the stock unit (crates), never
+  // loose pieces — so the quantity entered here is crates, matching
+  // quantityOnHand / batches / FIFO. Label the field with the real unit.
+  const selectedRawItem = useMemo(() => (rawItems ?? []).find((i: any) => i.id === itemId), [rawItems, itemId]);
+  const piecesPerUnit = Number(selectedRawItem?.product?.piecesPerUnit) || 1;
+  const unitWord = piecesPerUnit > 1
+    ? (/crate/i.test(selectedRawItem?.product?.uom?.name ?? "") ? "crates" : (selectedRawItem?.product?.uom?.symbol || selectedRawItem?.product?.uom?.name || "crates"))
+    : (selectedRawItem?.product?.uom?.symbol || selectedRawItem?.product?.uom?.name || "units");
+  const qtyNum = Number(quantity) || 0;
+
   function validate() {
     const e: Record<string, string> = {};
     if (!warehouseId) e.warehouseId = "Select a warehouse";
@@ -142,9 +152,10 @@ export function StockMovementScreen() {
 
         <View style={styles.row}>
           <View style={styles.half}>
-            <FormField label="Quantity" required value={quantity}
+            <FormField label={`Quantity (${unitWord})`} required value={quantity}
               onChangeText={(v) => { setQuantity(v); setErrors((e) => ({ ...e, quantity: "" })); }}
-              error={errors.quantity} keyboardType="decimal-pad" placeholder="e.g. 100" />
+              error={errors.quantity} keyboardType="decimal-pad" placeholder="e.g. 100"
+              hint={piecesPerUnit > 1 && qtyNum > 0 ? `= ${(qtyNum * piecesPerUnit).toLocaleString()} pieces` : undefined} />
           </View>
           <View style={styles.half}>
             <FormField label="Unit Cost (GHS)" value={unitCost} onChangeText={setUnitCost}

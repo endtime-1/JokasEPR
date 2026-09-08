@@ -306,28 +306,30 @@ export function StockOperationPage({ mode }: { mode: "stock-in" | "stock-out" | 
           const isCrateLike = piecesPerUnit > 1;
           const isKg = !isCrateLike && unitLabel.toLowerCase() === "kg";
           if (isCrateLike) {
+            // Eggs (and anything with piecesPerUnit > 1) are tracked in the
+            // stock unit — crates — everywhere in inventory: quantityOnHand,
+            // stock batches, FIFO consumption. So the quantity submitted here
+            // must be CRATES, not pieces. (2026-09-08) Previously this posted
+            // pieces (crates × 30), so a 10-crate transfer tried to move 300
+            // crates out of the egg store.
+            const crateWord = /crate/i.test(unitLabel) ? unitLabel : "crates";
+            const cratesNum = Number(form.quantity);
             return (
-              <>
-                {mode !== "adjustments" && (
-                  <FormField label={`Crates (1 = ${piecesPerUnit} pieces)`}>
-                    <input
-                      className={inputClass}
-                      type="number"
-                      min="1"
-                      step="1"
-                      placeholder="Enter crates to auto-fill pieces"
-                      value={form.bags}
-                      onChange={(event) => {
-                        const crates = event.target.value;
-                        setForm({ ...form, bags: crates, quantity: crates ? String(Number(crates) * piecesPerUnit) : "" });
-                      }}
-                    />
-                  </FormField>
+              <FormField label={`Quantity (${crateWord})`}>
+                <input
+                  className={inputClass}
+                  type="number"
+                  min="0.001"
+                  step="0.001"
+                  placeholder={`Number of ${crateWord}`}
+                  value={form.quantity}
+                  onChange={(event) => setForm({ ...form, bags: "", quantity: event.target.value })}
+                  required
+                />
+                {form.quantity !== "" && Number.isFinite(cratesNum) && (
+                  <span className="mt-1 block text-xs text-ink/50">= {(cratesNum * piecesPerUnit).toLocaleString()} pieces ({piecesPerUnit} per {crateWord.replace(/s$/, "")})</span>
                 )}
-                <FormField label={form.bags && mode !== "adjustments" ? `Quantity (pieces) — ${form.bags} crate${Number(form.bags) !== 1 ? "s" : ""} × ${piecesPerUnit}` : "Quantity (pieces)"}>
-                  <input className={inputClass} type="number" min="1" step="1" value={form.quantity} onChange={(event) => setForm({ ...form, bags: "", quantity: event.target.value })} required />
-                </FormField>
-              </>
+              </FormField>
             );
           }
           if (isKg) {

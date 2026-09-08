@@ -465,6 +465,10 @@ export type InventoryOption = {
   name: string;
   code?: string;
   sku?: string;
+  // products only: the stock unit (eggs = crates of 30) — the quantity fields
+  // on Stock In/Out/Transfer are in this unit, not loose pieces.
+  piecesPerUnit?: number;
+  uom?: { symbol?: string; name?: string } | null;
 };
 export type InventoryItemOption = {
   id: string;
