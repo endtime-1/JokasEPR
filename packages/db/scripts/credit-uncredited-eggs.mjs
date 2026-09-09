@@ -1,17 +1,24 @@
 /*
- * Non-destructive: credit the Jokas Egg store for egg production records that
- * were logged but never wrote a StockMovement (the form didn't attach a
+ * Non-destructive: credit the Jokas Egg store for egg production records ON OR
+ * AFTER --since that never wrote a StockMovement (the form didn't attach a
  * product/warehouse, or predates the auto-resolve fix). One PRODUCTION_OUTPUT
- * movement per uncredited record, dated to the record, keyed by the record id
- * so a re-run skips anything already done. Transfers are left untouched.
+ * movement per such record, dated to the record, keyed by record id so a
+ * re-run skips anything already done. Transfers untouched.
+ *
+ * IMPORTANT: records BEFORE --since are assumed already credited via
+ * rebuild-egg-store-daily.mjs's consolidated per-day movements. Default
+ * --since is 2026-09-08 (the day after that rebuild's last covered date).
  *
  *   node packages/db/scripts/credit-uncredited-eggs.mjs                 # dry run
+ *   node packages/db/scripts/credit-uncredited-eggs.mjs --since 2026-09-08
  *   node packages/db/scripts/credit-uncredited-eggs.mjs --commit --i-have-a-backup
  */
 import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 const A = process.argv.slice(2);
 const COMMIT = A.includes("--commit");
+const optv = (name, d) => { const i = A.indexOf("--" + name); return i >= 0 ? A[i + 1] : d; };
+const SINCE = new Date(optv("since", "2026-09-08") + "T00:00:00.000Z");
 if (COMMIT && !A.includes("--i-have-a-backup")) { console.error("Refusing --commit without --i-have-a-backup."); process.exit(1); }
 
 const COMPANY = "1c2bb797-7e05-4a96-bc0a-ef906ea4dba1";
@@ -23,12 +30,12 @@ const round = (x) => Math.round(x * 10000) / 10000;
 const eggSum = (r) => n(r.goodEggs) + n(r.crackedEggs) + n(r.dirtyEggs) + n(r.brokenEggs) + n(r.rejectedEggs);
 
 async function main() {
-  console.log(`\n=== CREDIT UNCREDITED EGGS — ${COMMIT ? "!!! COMMIT !!!" : "dry run"} ===\n`);
+  console.log(`\n=== CREDIT UNCREDITED EGGS (records on/after ${SINCE.toISOString().slice(0, 10)}) — ${COMMIT ? "!!! COMMIT !!!" : "dry run"} ===\n`);
   const prod = await prisma.product.findFirst({ where: { sku: "EG" }, select: { id: true, uomId: true } });
   const store = await prisma.warehouse.findFirst({ where: { id: EGG_STORE }, select: { branchId: true } });
 
   const recs = await prisma.eggProductionRecord.findMany({
-    where: { companyId: COMPANY, deletedAt: null },
+    where: { companyId: COMPANY, deletedAt: null, recordDate: { gte: SINCE } },
     select: { id: true, recordDate: true, goodEggs: true, crackedEggs: true, dirtyEggs: true, brokenEggs: true, rejectedEggs: true, branchId: true },
     orderBy: { recordDate: "asc" },
   });
