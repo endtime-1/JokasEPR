@@ -82,7 +82,7 @@ async function main() {
     console.log(`  ${r.recordDate.toISOString().slice(0, 10)}  ${String(Number(r.quantityKg)).padStart(8)} kg  batch ${batchCode.get(r.flockBatchId) ?? "?"}  ${p?.sku ?? "?"} ${p?.name ?? ""}${stamp ? "  (stamped)" : ""}`);
   }
   const totalKg = todo.reduce((s, r) => s + Number(r.quantityKg), 0);
-  console.log(`\n  to deduct: ${todo.length} records = ${round(totalKg)} kg` + (needStamp ? `  (${needStamp} get product ${DEFAULT_SKU})` : "") + (noProduct ? `  · ${noProduct} still have no product` : ""));
+  console.log(`\n  to deduct: ${todo.length} records = ${round(totalKg)} kg` + (needStamp ? `  (${needStamp} stamped with a product)` : "") + (noProduct ? `  · ${noProduct} still have no product` : ""));
   if (shortfall.size) console.log(`  SKIPPED for lack of stock: ` + [...shortfall].map(([s, kg]) => `${s} ${round(kg)}kg`).join(", "));
 
   if (!COMMIT) { console.log("\n  (dry run — nothing written)\n"); await prisma.$disconnect(); return; }
