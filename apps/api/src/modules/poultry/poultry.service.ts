@@ -1027,9 +1027,9 @@ export class PoultryService {
     const dailyFeedStore = feedDelta > 0
       ? await this.resolveFeedStore(user.companyId, batch.farmId, { warehouseId: dto.feedWarehouseId, feedProductId: dto.feedProductId })
       : { warehouseId: dto.feedWarehouseId };
-    if (eggsDelta > 0 && dailyEggStock.eggProductId && dailyEggStock.warehouseId) {
-      await this.assertNoActiveWithdrawal(dto.flockBatchId, user.companyId, "eggs collected during this window can still be logged, but omit the egg product/warehouse to record them without crediting sellable stock");
-    }
+    // Same as createEggs: during a withdrawal window the count still lands in
+    // the store, just QUARANTINED (not sellable).
+    const dailyWithdrawal = eggsDelta > 0 ? await this.activeWithdrawal(dto.flockBatchId, user.companyId) : null;
 
     // High (DB stability audit, 2026-08-16): consumeInventoryTx locks
     // InventoryItem before StockBatch, opposite the order used by
@@ -1074,7 +1074,8 @@ export class PoultryService {
           data: { ...this.batchRecordBase(user, batch, penHouseId, dto.penId), recordDate, goodEggs: eggsDelta, notes: "Daily record", status: "SUBMITTED" }
         });
         if (dailyEggStock.eggProductId && dailyEggStock.warehouseId) {
-          await this.addToInventoryTx(tx, user, batch, dailyEggStock.warehouseId, dailyEggStock.eggProductId, eggsDelta, "EggProductionRecord", eggRecord.id, `Egg production from daily record for flock ${batch.code}`);
+          const nq = dailyWithdrawal ? ` — QUARANTINED (withdrawal until ${dailyWithdrawal.until.toISOString().slice(0, 10)})` : "";
+          await this.addToInventoryTx(tx, user, batch, dailyEggStock.warehouseId, dailyEggStock.eggProductId, eggsDelta, "EggProductionRecord", eggRecord.id, `Egg production from daily record for flock ${batch.code}${nq}`, !!dailyWithdrawal);
         }
       }
       return row;
@@ -1254,7 +1255,9 @@ export class PoultryService {
   private async resolveEggStock(companyId: string, farmId: string | null | undefined, dto: { warehouseId?: string | null; eggProductId?: string | null }) {
     let warehouseId = dto.warehouseId ?? undefined;
     let eggProductId = dto.eggProductId ?? undefined;
-    if (!warehouseId && !eggProductId) return { warehouseId, eggProductId };
+    // Always resolve — an egg collection must land in the store no matter what
+    // the client sent. (The medication-withdrawal case is handled by crediting
+    // to a QUARANTINED batch, not by skipping the credit.)
     if (!warehouseId) {
       const store =
         (await this.prisma.warehouse.findFirst({ where: { companyId, deletedAt: null, status: "ACTIVE", type: "EGG_STORE", ...(farmId ? { farmId } : {}) }, select: { id: true } }))
@@ -1295,14 +1298,12 @@ export class PoultryService {
     // a user credit egg output to a warehouse outside their assignment.
     if (dto.warehouseId) this.assertWarehouseAccess(user, dto.warehouseId);
     await this.assertWarehousePurposeIfSet(user, dto.warehouseId, "egg.collection", dto.purposeOverrideReason, context);
-    // H-BUG-2 (2026-08-13): a batch inside an active medication withdrawal
-    // window shouldn't have its eggs credited to sellable stock — residue
-    // hasn't cleared yet. The raw count can still be logged for
-    // record-keeping (omit product/warehouse), only the stock-crediting
-    // path is blocked.
-    if (eggStock.eggProductId && eggStock.warehouseId && totalEggs > 0) {
-      await this.assertNoActiveWithdrawal(dto.flockBatchId, user.companyId, "eggs collected during this window can still be logged, but omit the product/warehouse to record them without crediting sellable stock");
-    }
+    // H-BUG-2 (2026-08-13, revised 2026-09-09): a batch inside an active
+    // medication withdrawal shouldn't have its eggs SOLD — residue hasn't
+    // cleared. But the count must still reach the store (the whole point of
+    // "did the collected eggs land in the store"), so during a window we
+    // credit to a QUARANTINED stock batch instead of blocking the credit.
+    const withdrawal = totalEggs > 0 ? await this.activeWithdrawal(dto.flockBatchId, user.companyId) : null;
     // M-BUG (2026-08-13): no sanity check that this flock is old enough to
     // plausibly be laying — a wrong-batch data-entry mistake (an obvious
     // error to a person looking at it) went through unquestioned. Can't
@@ -1339,16 +1340,19 @@ export class PoultryService {
         // configured do we split good vs cracked/dirty.
         const wh = eggStock.warehouseId;
         const seconds = dto.crackedEggs + dto.dirtyEggs;
+        const q = !!withdrawal;
+        const note = (base: string) => q ? `${base} — QUARANTINED (withdrawal until ${withdrawal!.until.toISOString().slice(0, 10)})` : base;
         if (wh && eggStock.eggProductId) {
           const toMain = dto.secondsProductId ? dto.goodEggs : totalEggs;
           if (toMain > 0) {
-            await this.addToInventoryTx(tx, user, batch, wh, eggStock.eggProductId, toMain, "EggProductionRecord", record.id, `Egg production from flock ${batch.code}`);
+            await this.addToInventoryTx(tx, user, batch, wh, eggStock.eggProductId, toMain, "EggProductionRecord", record.id, note(`Egg production from flock ${batch.code}`), q);
           }
           if (dto.secondsProductId && seconds > 0) {
-            await this.addToInventoryTx(tx, user, batch, wh, dto.secondsProductId, seconds, "EggProductionRecord", record.id, `Seconds (cracked/dirty) eggs from flock ${batch.code}`);
+            await this.addToInventoryTx(tx, user, batch, wh, dto.secondsProductId, seconds, "EggProductionRecord", record.id, note(`Seconds (cracked/dirty) eggs from flock ${batch.code}`), q);
           }
-        } else if (totalEggs > 0 && (dto.warehouseId || dto.eggProductId)) {
-          stockWarning = `${totalEggs} egg(s) were recorded but not credited to a store — the farm's egg store or "Eggs" product could not be resolved.`;
+          if (q) stockWarning = `Credited ${totalEggs} egg(s) as QUARANTINED stock — batch is in a medication withdrawal (${withdrawal!.medicationName}) until ${withdrawal!.until.toISOString().slice(0, 10)}; not sellable until Quality clears it.`;
+        } else if (totalEggs > 0) {
+          stockWarning = `${totalEggs} egg(s) recorded but the farm's egg store or "Eggs" product could not be resolved — nothing was credited.`;
         }
         return record;
       });
@@ -2584,14 +2588,22 @@ export class PoultryService {
   }
 
   private async assertNoActiveWithdrawal(flockBatchId: string, companyId: string, guidance: string) {
-    const active = await this.prisma.medicationRecord.findFirst({
-      where: { flockBatchId, companyId, deletedAt: null, withdrawalUntil: { gt: new Date() } },
-      orderBy: { withdrawalUntil: "desc" }
-    });
+    const active = await this.activeWithdrawal(flockBatchId, companyId);
     if (active) {
-      const until = active.withdrawalUntil!.toISOString().slice(0, 10);
+      const until = active.until.toISOString().slice(0, 10);
       throw new BadRequestException(`This batch is within an active withdrawal period (${active.medicationName}) until ${until} — ${guidance}.`);
     }
+  }
+
+  // Non-throwing variant — used by egg collection, which always logs + credits
+  // the count but marks the stock QUARANTINED (not sellable) during a window.
+  private async activeWithdrawal(flockBatchId: string, companyId: string) {
+    const active = await this.prisma.medicationRecord.findFirst({
+      where: { flockBatchId, companyId, deletedAt: null, withdrawalUntil: { gt: new Date() } },
+      orderBy: { withdrawalUntil: "desc" },
+      select: { medicationName: true, withdrawalUntil: true },
+    });
+    return active ? { medicationName: active.medicationName, until: active.withdrawalUntil! } : null;
   }
 
   private async consumeInventoryTx(
@@ -2683,7 +2695,8 @@ export class PoultryService {
     quantity: number,
     referenceType: string,
     referenceId: string,
-    notes: string
+    notes: string,
+    quarantine = false,
   ) {
     const warehouse = await tx.warehouse.findFirst({ where: { companyId: user.companyId, id: warehouseId, deletedAt: null } });
     if (!warehouse) throw new BadRequestException("Warehouse not found.");
@@ -2726,6 +2739,7 @@ export class PoultryService {
         quantityReceived: quantityInStockUnits,
         quantityRemaining: quantityInStockUnits,
         manufactureDate: new Date(),
+        ...(quarantine ? { status: "QUARANTINED" as const } : {}),
         createdById: user.id
       }
     });

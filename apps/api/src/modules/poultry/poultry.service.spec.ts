@@ -10,10 +10,13 @@ const mockTx = {
   medicationRecord: { create: jest.fn(), update: jest.fn() },
   vaccinationRecord: { create: jest.fn(), update: jest.fn() },
   dailyPoultryRecord: { create: jest.fn(), update: jest.fn() },
-  inventoryItem: { findFirst: jest.fn(), updateMany: jest.fn(), update: jest.fn(), upsert: jest.fn() },
-  product: { findFirst: jest.fn().mockResolvedValue({ id: "prod-feed", uomId: "uom-1" }) },
-  warehouse: { findFirst: jest.fn() },
-  stockBatch: { create: jest.fn(), findMany: jest.fn().mockResolvedValue([]), updateMany: jest.fn() },
+  // Defaults so addToInventoryTx (egg collection now always credits the store)
+  // succeeds silently for the many tests that aren't about stock — tests that
+  // assert on the credit override these.
+  inventoryItem: { findFirst: jest.fn(), updateMany: jest.fn().mockResolvedValue({ count: 1 }), update: jest.fn().mockResolvedValue({ id: "inv-1", quantityOnHand: 0 }), upsert: jest.fn().mockResolvedValue({ id: "inv-1", quantityOnHand: 0 }), findUnique: jest.fn().mockResolvedValue({ id: "inv-1", quantityOnHand: 0 }) },
+  product: { findFirst: jest.fn().mockResolvedValue({ id: "prod-feed", uomId: "uom-1", piecesPerUnit: 1 }) },
+  warehouse: { findFirst: jest.fn().mockResolvedValue({ id: "wh-1", companyId: "company-1", branchId: "branch-1" }) },
+  stockBatch: { create: jest.fn().mockResolvedValue({ id: "sb-1" }), findMany: jest.fn().mockResolvedValue([]), updateMany: jest.fn() },
   stockMovement: { create: jest.fn(), findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn() },
   mortalityRecord: { aggregate: jest.fn(), create: jest.fn(), update: jest.fn() },
   // Defaults to "no outgoing transfers" so tests that don't care about
@@ -335,24 +338,26 @@ describe("PoultryService — farm/warehouse access checks (H7)", () => {
       });
     });
 
-    it("H-BUG-2: blocks crediting eggs to sellable stock while the batch is inside an active medication withdrawal window", async () => {
+    it("H-BUG-2 (revised 2026-09-09): during a withdrawal window the count still reaches the store, but as QUARANTINED stock", async () => {
       mockPrisma.flockBatch.findFirst.mockResolvedValue({ id: "batch-1", companyId: "company-1", farmId: "farm-1", branchId: "branch-1", poultryHouseId: "house-1", birdType: "LAYERS", status: "ACTIVE", code: "FLK-1" });
       mockPrisma.medicationRecord.findFirst.mockResolvedValue({ medicationName: "Amoxicillin", withdrawalUntil: new Date("2099-01-01") });
+      mockTx.eggProductionRecord.create.mockResolvedValue({ id: "egg-rec-1" });
 
       const service = makeService();
-      await expect(
-        service.createEggs(
-          makeUser({ farmIds: ["farm-1"], warehouseIds: ["wh-1"] }),
-          { flockBatchId: "batch-1", penId: "pen-1", recordDate: "2026-01-01", goodEggs: 10, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0, warehouseId: "wh-1", eggProductId: "prod-1" } as never,
-          {}
-        )
-      ).rejects.toThrow(/active withdrawal period/);
-      expect(mockTx.eggProductionRecord.create).not.toHaveBeenCalled();
+      const result = await service.createEggs(
+        makeUser({ farmIds: ["farm-1"], warehouseIds: ["wh-1"] }),
+        { flockBatchId: "batch-1", penId: "pen-1", recordDate: "2026-01-01", goodEggs: 10, crackedEggs: 0, dirtyEggs: 0, brokenEggs: 0, rejectedEggs: 0, warehouseId: "wh-1", eggProductId: "prod-1" } as never,
+        {}
+      );
+
+      expect(mockTx.eggProductionRecord.create).toHaveBeenCalled();
+      expect(mockTx.stockBatch.create).toHaveBeenCalledWith({ data: expect.objectContaining({ status: "QUARANTINED" }) });
+      expect(result.warning).toMatch(/QUARANTINED/);
     });
 
-    it("still allows logging the raw egg count during an active withdrawal window when no product/warehouse is given (no stock effect)", async () => {
-      mockPrisma.flockBatch.findFirst.mockResolvedValue({ id: "batch-1", companyId: "company-1", farmId: "farm-1", branchId: "branch-1", poultryHouseId: "house-1", birdType: "LAYERS", status: "ACTIVE", code: "FLK-1" });
-      mockPrisma.medicationRecord.findFirst.mockResolvedValue({ medicationName: "Amoxicillin", withdrawalUntil: new Date("2099-01-01") });
+    it("still credits the count even when the form sent no product/warehouse — auto-resolves the farm egg store", async () => {
+      mockPrisma.flockBatch.findFirst.mockResolvedValue({ id: "batch-1", companyId: "company-1", farmId: "farm-1", branchId: "branch-1", poultryHouseId: "house-1", birdType: "LAYERS", status: "ACTIVE", code: "FLK-1", startDate: new Date("2020-01-01") });
+      mockPrisma.medicationRecord.findFirst.mockResolvedValue(null);
       mockTx.eggProductionRecord.create.mockResolvedValue({ id: "egg-rec-1" });
 
       const service = makeService();
@@ -363,7 +368,7 @@ describe("PoultryService — farm/warehouse access checks (H7)", () => {
       );
 
       expect(mockTx.eggProductionRecord.create).toHaveBeenCalled();
-      expect(mockTx.stockBatch.create).not.toHaveBeenCalled();
+      expect(mockTx.stockBatch.create).toHaveBeenCalled(); // credited, not skipped
     });
 
     it("M-BUG: credits cracked/dirty eggs to a 'seconds' product when one is given", async () => {
@@ -636,20 +641,21 @@ describe("PoultryService.createDailyRecord — mortality/culled/feed/egg deltas 
     expect(mockTx.eggProductionRecord.create).not.toHaveBeenCalled();
   });
 
-  it("blocks crediting egg stock during an active medication withdrawal, same guard as createEggs", async () => {
+  it("during a withdrawal window the daily record's eggs are credited QUARANTINED, not blocked (same as createEggs)", async () => {
     mockPrisma.flockBatch.findFirst.mockResolvedValue(makeBatch());
     mockPrisma.dailyPoultryRecord.findFirst.mockResolvedValue(null);
     mockPrisma.medicationRecord.findFirst.mockResolvedValue({ medicationName: "Amoxicillin", withdrawalUntil: new Date("2099-01-01") });
+    mockTx.eggProductionRecord.create.mockResolvedValue({ id: "egg-rec-1" });
 
     const service = makeService();
-    await expect(
-      service.createDailyRecord(
-        makeUser({ farmIds: ["farm-1"], warehouseIds: ["wh-1"] }),
-        { flockBatchId: "batch-1", recordDate: "2026-01-01", mortalityCount: 0, culledCount: 0, feedConsumedKg: 0, totalEggs: 40, eggProductId: "egg-1", eggWarehouseId: "wh-1" } as never,
-        {}
-      )
-    ).rejects.toThrow(/withdrawal period/);
-    expect(mockTx.eggProductionRecord.create).not.toHaveBeenCalled();
+    await service.createDailyRecord(
+      makeUser({ farmIds: ["farm-1"], warehouseIds: ["wh-1"] }),
+      { flockBatchId: "batch-1", recordDate: "2026-01-01", mortalityCount: 0, culledCount: 0, feedConsumedKg: 0, totalEggs: 40, eggProductId: "egg-1", eggWarehouseId: "wh-1" } as never,
+      {}
+    );
+
+    expect(mockTx.eggProductionRecord.create).toHaveBeenCalled();
+    expect(mockTx.stockBatch.create).toHaveBeenCalledWith({ data: expect.objectContaining({ status: "QUARANTINED" }) });
   });
 });
 
