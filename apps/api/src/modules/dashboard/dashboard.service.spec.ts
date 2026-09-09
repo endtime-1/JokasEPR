@@ -46,6 +46,7 @@ describe("DashboardService", () => {
     salesOrderItem: { aggregate: jest.Mock };
     warehouse: { findMany: jest.Mock };
     inventoryItem: { findMany: jest.Mock; aggregate: jest.Mock };
+    finishedFeedStock: { aggregate: jest.Mock };
   };
 
   beforeEach(async () => {
@@ -74,6 +75,7 @@ describe("DashboardService", () => {
       salesOrderItem: { aggregate: jest.fn().mockResolvedValue({ _sum: { quantity: 0 } }) },
       warehouse: { findMany: jest.fn().mockResolvedValue([]) },
       inventoryItem: { findMany: jest.fn().mockResolvedValue([]), aggregate: jest.fn().mockResolvedValue({ _sum: { quantityOnHand: 0 } }) },
+      finishedFeedStock: { aggregate: jest.fn().mockResolvedValue({ _sum: { quantityKg: 0 } }) },
       attendanceRecord: { count: jest.fn().mockResolvedValue(0) },
       prospectVisit: { count: jest.fn().mockResolvedValue(0) },
       feedProductionBatch: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue([]), aggregate: jest.fn().mockResolvedValue({ _sum: { producedQuantityKg: 0 } }) },
@@ -570,9 +572,9 @@ describe("DashboardService", () => {
 
     it("returns Poultry / Feed / Soya / Marketing / Inventory, every card carrying an href", async () => {
       prisma.warehouse.findMany.mockResolvedValue([
-        { id: "wh-feed", name: "Jokas Feed", type: "FEED_STORE" },
-        { id: "wh-egg", name: "Jokas Egg", type: "EGG_STORE" },
-        { id: "wh-akoko", name: "Akoko Solutions Egg Store", type: "EGG_STORE" },
+        { id: "wh-feed", name: "Jokas Feed", code: "JF", type: "FEED_STORE", farm: { name: "JOKASFARM" }, branch: { name: "Esaso" } },
+        { id: "wh-egg", name: "Jokas Egg", code: "JE", type: "EGG_STORE", farm: { name: "JOKASFARM" }, branch: { name: "Esaso" } },
+        { id: "wh-akoko", name: "Egg Store", code: "AES", type: "EGG_STORE", farm: { name: "Akoko Solutions" }, branch: { name: "Head Office" } },
       ]);
 
       const result = await service.executive(makeUser({ hasGlobalAccess: true }), {} as never);

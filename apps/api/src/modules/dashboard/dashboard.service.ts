@@ -1151,7 +1151,7 @@ export class DashboardService {
     const stores = await run(() =>
       this.prisma.warehouse.findMany({
         where: { companyId: cid, deletedAt: null, status: "ACTIVE", type: { in: ["FEED_STORE", "EGG_STORE"] }, ...branchF, ...farmF, ...warehouseF },
-        select: { id: true, name: true, type: true },
+        select: { id: true, name: true, code: true, type: true, farm: { select: { name: true } }, branch: { select: { name: true } } },
         orderBy: [{ type: "asc" }, { name: "asc" }],
       }),
     );
@@ -1170,13 +1170,16 @@ export class DashboardService {
       run(() => this.prisma.feedConsumptionRecord.aggregate({ where: { companyId: cid, deletedAt: null, ...farmF }, _sum: { quantityKg: true } }).then((r) => num(r._sum.quantityKg))),
       run(() => this.prisma.feedConsumptionRecord.aggregate({ where: { companyId: cid, deletedAt: null, ...farmF, recordDate: thisWeek }, _sum: { quantityKg: true } }).then((r) => num(r._sum.quantityKg))),
 
-      run(() => this.prisma.inventoryItem.findMany({ where: { companyId: cid, deletedAt: null, product: { type: "FINISHED_GOOD" }, ...warehouseF }, select: { quantityOnHand: true } }).then((rows) => rows.reduce((s, r) => s + num(r.quantityOnHand), 0))),
+      // Feed MILL finished-feed stock — the FinishedFeedStock ledger the
+      // /feed-production/finished-feed-inventory page reads. NOT the farm feed
+      // store (that's already its own card in the Inventory section).
+      run(() => this.prisma.finishedFeedStock.aggregate({ where: { companyId: cid, deletedAt: null, ...siteF }, _sum: { quantityKg: true } }).then((r) => num(r._sum.quantityKg))),
       run(() => latestTarget
         ? this.prisma.marketTargetItem.aggregate({ where: { companyId: cid, deletedAt: null, marketTargetId: latestTarget.id }, _sum: { targetQuantityKg: true, finalTargetQuantity: true } }).then((r) => ({ kg: num(r._sum.targetQuantityKg), bags: num(r._sum.finalTargetQuantity) }))
         : Promise.resolve({ kg: 0, bags: 0 })),
       run(() => this.prisma.materialRequirementPlan.aggregate({ where: { companyId: cid, deletedAt: null, ...branchF }, _sum: { totalRequiredKg: true } }).then((r) => num(r._sum.totalRequiredKg))),
       run(() => this.prisma.materialRequirementPlan.aggregate({ where: { companyId: cid, deletedAt: null, ...branchF }, _sum: { totalShortageKg: true } }).then((r) => num(r._sum.totalShortageKg))),
-      run(() => this.prisma.feedProductionBatch.aggregate({ where: { companyId: cid, deletedAt: null, ...siteF, marketTargetId: { not: null } }, _sum: { producedQuantityKg: true } }).then((r) => num(r._sum.producedQuantityKg))),
+      run(() => this.prisma.feedProductionBatch.aggregate({ where: { companyId: cid, deletedAt: null, ...siteF }, _sum: { producedQuantityKg: true } }).then((r) => num(r._sum.producedQuantityKg))),
 
       run(() => this.prisma.soyaBeanIntake.aggregate({ where: { companyId: cid, deletedAt: null, ...siteF }, _sum: { quantityKg: true } }).then((r) => num(r._sum.quantityKg))),
       run(() => this.prisma.soyaOilOutput.aggregate({ where: { companyId: cid, deletedAt: null, ...siteF }, _sum: { quantityLitres: true } }).then((r) => num(r._sum.quantityLitres))),
@@ -1188,7 +1191,7 @@ export class DashboardService {
         Promise.all([
           this.prisma.inventoryItem.aggregate({ where: { warehouseId: w.id, deletedAt: null }, _sum: { quantityOnHand: true } }).then((r) => num(r._sum.quantityOnHand)),
           this.prisma.stockBatch.findMany({ where: { warehouseId: w.id, deletedAt: null, status: "AVAILABLE" as never, quantityRemaining: { gt: 0 }, unitCost: { not: null } }, select: { quantityRemaining: true, unitCost: true } }).then((rows) => rows.reduce((s, b) => s + num(b.quantityRemaining) * num(b.unitCost), 0)),
-        ]).then(([qty, value]) => ({ id: w.id, name: w.name, type: w.type, qty, value })),
+        ]).then(([qty, value]) => ({ id: w.id, name: w.name, code: w.code, type: w.type, farmName: w.farm?.name ?? "", branchName: w.branch?.name ?? "", qty, value })),
       ))),
     ]);
 
@@ -1246,14 +1249,19 @@ export class DashboardService {
       ],
     };
 
-    const storeLabel = (s: { name: string; type: string }) =>
-      /akoko/i.test(s.name) ? "Akoko Solution Egg Store" : s.type === "FEED_STORE" ? "Esaso Feed Store" : "Esaso Egg Store";
+    // Name each store by its place (branch, e.g. "Esaso") + kind. The onward
+    // egg store is on a different farm — "Akoko Solutions".
+    const storeLabel = (s: { name: string; code: string; type: string; farmName: string; branchName: string }) => {
+      if (/akoko/i.test(s.farmName) || /akoko/i.test(s.name) || s.code === "AES") return "Akoko Solution Egg Store";
+      const place = s.branchName || s.farmName || "Farm";
+      return `${place} ${s.type === "FEED_STORE" ? "Feed Store" : "Egg Store"}`;
+    };
     const inventory: DashboardSection = {
       key: "inventory", label: "Inventory", icon: "boxes", moduleHref: "/inventory/warehouses",
-      cards: (storeStats as Array<{ id: string; name: string; type: string; qty: number; value: number }>).map((s) => ({
+      cards: (storeStats as Array<{ id: string; name: string; code: string; type: string; farmName: string; branchName: string; qty: number; value: number }>).map((s) => ({
         key: `store-${s.id}`,
         label: storeLabel(s),
-        sub: s.value > 0 ? ghs(s.value) : undefined,
+        sub: s.value > 0 ? ghs(s.value) : `${s.name} (${s.code})`,
         value: Math.round(s.qty * 100) / 100,
         unit: s.type === "FEED_STORE" ? "kg" : "crates",
         tone: "neutral" as Card["tone"],
