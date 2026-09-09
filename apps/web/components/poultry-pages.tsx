@@ -2310,15 +2310,27 @@ function GenericRecordForm({ options, optionsLoading = false, form, setForm, sub
     () => options.products.find((p) => p.sku === "EG" || /^eggs?$/i.test(p.name))?.id ?? "",
     [options.products],
   );
+  // A feed consumption without a product logs but never deducts stock, so
+  // pre-pick one that fits the batch's bird type (Layer feed for LAYERS, etc.)
+  // — the person can still change it.
+  function defaultFeedProductId(birdType?: string): string {
+    const re: Record<string, RegExp> = {
+      LAYERS: /layer/i, BREEDERS: /breeder|layer/i,
+      BROILERS: /broiler|finisher|grower/i, COCKERELS: /cockerel|grower/i, CHICKS: /chick|starter/i,
+    };
+    const pat = re[birdType ?? ""] ?? /layer/i;
+    return (feedPickerProducts.find((p) => pat.test(p.name)) ?? feedPickerProducts[0])?.id ?? "";
+  }
   function warehouseDefaultsForBatch(batchId: string): Record<string, string> {
     if (isEditing) return {};
-    const farmId = options.batches.find((b) => b.id === batchId)?.farmId;
-    if (type === "feed") return { warehouseId: defaultWarehouse("feed", farmId, options) };
+    const batchOpt = options.batches.find((b) => b.id === batchId);
+    const farmId = batchOpt?.farmId;
+    if (type === "feed") return { warehouseId: defaultWarehouse("feed", farmId, options), feedProductId: defaultFeedProductId(batchOpt?.birdType) };
     // Eggs always go to the farm's egg store as the "Eggs" product — pick both
     // automatically so a collection can't be logged without crediting stock.
     if (type === "eggs") return { warehouseId: defaultWarehouse("eggs", farmId, options), eggProductId };
     if (type === "medications" || type === "vaccinations") return { warehouseId: defaultWarehouse("other", farmId, options) };
-    if (type === "daily") return { feedWarehouseId: defaultWarehouse("feed", farmId, options), eggWarehouseId: defaultWarehouse("eggs", farmId, options), eggProductId };
+    if (type === "daily") return { feedWarehouseId: defaultWarehouse("feed", farmId, options), feedProductId: defaultFeedProductId(batchOpt?.birdType), eggWarehouseId: defaultWarehouse("eggs", farmId, options), eggProductId };
     return {};
   }
 
@@ -2329,7 +2341,7 @@ function GenericRecordForm({ options, optionsLoading = false, form, setForm, sub
     const d = warehouseDefaultsForBatch(form.flockBatchId);
     const missing = Object.entries(d).some(([k, v]) => v && !form[k]);
     if (missing) setForm({ ...form, ...d });
-  }, [form.flockBatchId, options.batches.length, options.warehouses.length, eggProductId]);
+  }, [form.flockBatchId, options.batches.length, options.warehouses.length, eggProductId, feedPickerProducts.length]);
 
   // Batch chosen → just its houses (BatchPenAllocation); otherwise every house
   // that has at least one pen.
