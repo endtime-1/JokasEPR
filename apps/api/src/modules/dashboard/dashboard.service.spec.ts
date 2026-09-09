@@ -40,6 +40,12 @@ describe("DashboardService", () => {
     maintenanceRecord: { count: jest.Mock };
     aiAlert: { count: jest.Mock; findMany: jest.Mock };
     supplierInvoice: { aggregate: jest.Mock };
+    marketTarget: { findFirst: jest.Mock };
+    marketTargetItem: { aggregate: jest.Mock };
+    materialRequirementPlan: { aggregate: jest.Mock };
+    salesOrderItem: { aggregate: jest.Mock };
+    warehouse: { findMany: jest.Mock };
+    inventoryItem: { findMany: jest.Mock; aggregate: jest.Mock };
   };
 
   beforeEach(async () => {
@@ -61,6 +67,13 @@ describe("DashboardService", () => {
       soyaBeanIntake: { count: jest.fn().mockResolvedValue(0), aggregate: jest.fn().mockResolvedValue({ _sum: { quantityKg: 0 } }), findMany: jest.fn().mockResolvedValue([]) },
       soyaOilOutput: { aggregate: jest.fn().mockResolvedValue({ _sum: { quantityLitres: 0 } }), findMany: jest.fn().mockResolvedValue([]) },
       soyaCakeOutput: { aggregate: jest.fn().mockResolvedValue({ _sum: { quantityKg: 0 } }), findMany: jest.fn().mockResolvedValue([]) },
+      // executiveSections()
+      marketTarget: { findFirst: jest.fn().mockResolvedValue(null) },
+      marketTargetItem: { aggregate: jest.fn().mockResolvedValue({ _sum: { targetQuantityKg: 0, finalTargetQuantity: 0 } }) },
+      materialRequirementPlan: { aggregate: jest.fn().mockResolvedValue({ _sum: { totalRequiredKg: 0, totalShortageKg: 0 } }) },
+      salesOrderItem: { aggregate: jest.fn().mockResolvedValue({ _sum: { quantity: 0 } }) },
+      warehouse: { findMany: jest.fn().mockResolvedValue([]) },
+      inventoryItem: { findMany: jest.fn().mockResolvedValue([]), aggregate: jest.fn().mockResolvedValue({ _sum: { quantityOnHand: 0 } }) },
       attendanceRecord: { count: jest.fn().mockResolvedValue(0) },
       prospectVisit: { count: jest.fn().mockResolvedValue(0) },
       feedProductionBatch: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue([]), aggregate: jest.fn().mockResolvedValue({ _sum: { producedQuantityKg: 0 } }) },
@@ -499,9 +512,12 @@ describe("DashboardService", () => {
     });
 
     function daySpanHours(args: any): number {
-      const gte = new Date(args.where.recordDate.gte);
-      const lte = new Date(args.where.recordDate.lte);
-      return (lte.getTime() - gte.getTime()) / 3600000;
+      // executiveSections() also fires "to date" aggregates with no recordDate
+      // filter — treat those as a huge span so they never match the < 25h
+      // "today" branch the tests below assert on.
+      const r = args?.where?.recordDate;
+      if (!r) return Number.MAX_SAFE_INTEGER;
+      return (new Date(r.lte).getTime() - new Date(r.gte).getTime()) / 3600000;
     }
 
     it("computes mortalityToday from a single day, even with a 30-day startDate/endDate filter applied", async () => {
@@ -543,6 +559,52 @@ describe("DashboardService", () => {
       const period = result.data.summary.find((c: { key: string }) => c.key === "mortalityPeriod");
       expect(today?.value).toBe(3);
       expect(period?.value).toBe(40);
+    });
+  });
+
+  describe("executive — the owner's 5 module sections", () => {
+    beforeEach(() => {
+      prisma.stockBatch.findMany.mockResolvedValue([]);
+      prisma.productProfitability.findMany.mockResolvedValue([]);
+    });
+
+    it("returns Poultry / Feed / Soya / Marketing / Inventory, every card carrying an href", async () => {
+      prisma.warehouse.findMany.mockResolvedValue([
+        { id: "wh-feed", name: "Jokas Feed", type: "FEED_STORE" },
+        { id: "wh-egg", name: "Jokas Egg", type: "EGG_STORE" },
+        { id: "wh-akoko", name: "Akoko Solutions Egg Store", type: "EGG_STORE" },
+      ]);
+
+      const result = await service.executive(makeUser({ hasGlobalAccess: true }), {} as never);
+      const sections = result.data.sections;
+
+      expect(sections.map((s: { key: string }) => s.key)).toEqual(["poultry", "feed", "soya", "marketing", "inventory"]);
+      for (const section of sections) {
+        expect(section.cards.length).toBeGreaterThan(0);
+        for (const card of section.cards) expect(card.href).toMatch(/^\//);
+      }
+      const inv = sections.find((s: { key: string }) => s.key === "inventory")!;
+      expect(inv.cards.map((c: { label: string }) => c.label)).toEqual([
+        "Esaso Feed Store", "Esaso Egg Store", "Akoko Solution Egg Store",
+      ]);
+      expect(inv.cards[2].href).toBe("/inventory/warehouses/wh-akoko");
+    });
+
+    it("mortality group carries to-date / period / this-week / today windows", async () => {
+      prisma.mortalityRecord.aggregate.mockImplementation((args: any) => {
+        const r = args?.where?.recordDate;
+        if (!r) return Promise.resolve({ _sum: { birdCount: 900 } });          // to date
+        const hours = (new Date(r.lte).getTime() - new Date(r.gte).getTime()) / 3600000;
+        return Promise.resolve({ _sum: { birdCount: hours < 25 ? 4 : 120 } }); // today vs week/period
+      });
+
+      const result = await service.executive(makeUser({ hasGlobalAccess: true }), {} as never);
+      const poultry = result.data.sections.find((s: { key: string }) => s.key === "poultry")!;
+      const byKey = Object.fromEntries(poultry.cards.map((c: { key: string; value: number; sub?: string }) => [c.key, c]));
+      expect(byKey.mortToDate.value).toBe(900);
+      expect(byKey.mortToDate.sub).toBe("to date");
+      expect(byKey.mort7.sub).toBe("this week");
+      expect(byKey.mortToday.value).toBe(4);
     });
   });
 });

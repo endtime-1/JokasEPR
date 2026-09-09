@@ -20,6 +20,25 @@ type Series = {
   data: { label: string; value: number }[];
 };
 
+// The owner's executive dashboard: five module sections, each a row of metric
+// cards, every card a link into that module's main page.
+type SectionCard = {
+  key: string;
+  label: string;
+  sub?: string;
+  value: number;
+  unit?: string;
+  tone: Card["tone"];
+  href: string;
+};
+type DashboardSection = {
+  key: string;
+  label: string;
+  icon: string;
+  moduleHref: string;
+  cards: SectionCard[];
+};
+
 // Keys representing point-in-time state — no meaningful period delta
 const POINT_IN_TIME_KEYS = new Set([
   "totalBirds", "activeFlockBatches", "currentInventoryValue",
@@ -182,6 +201,8 @@ export class DashboardService {
         this.dailySnapshot(user, query, dayBefore)
       ]);
 
+      const sections = await this.executiveSections(user, query, range, day, currentValues, daySnap);
+
       const summary: Card[] = CARD_CONFIG.map((card) => {
         const daily = DAILY_SNAPSHOT_KEYS.has(card.key);
         const value = daily ? daySnap[card.key] ?? 0 : currentValues[card.key] ?? 0;
@@ -203,6 +224,7 @@ export class DashboardService {
             day: day.toISOString().slice(0, 10)
           },
           summary,
+          sections,
           charts,
           alerts
         }
@@ -1088,6 +1110,158 @@ export class DashboardService {
     const priorEnd = new Date(range.start.getTime() - 1);
     const priorStart = new Date(range.start.getTime() - durationMs - 1);
     return { start: priorStart, end: priorEnd };
+  }
+
+  // The owner's executive dashboard, grouped his way. `current` (period-scoped)
+  // and `daySnap` (the picked day) come from executive()'s existing queries so
+  // this only fires the extra aggregates: lifetime + rolling-7-day totals, the
+  // Market Planning target/MRP numbers, soya lifetime totals, and the three
+  // farm stores. Everything is scoped by the same live*Filter helpers.
+  private async executiveSections(
+    user: AuthenticatedUser,
+    query: DashboardQueryDto,
+    range: { start: Date; end: Date },
+    day: Date,
+    current: Record<string, number>,
+    daySnap: Record<string, number>,
+  ): Promise<DashboardSection[]> {
+    const cid = user.companyId;
+    const farmF = this.liveFarmFilter(user, query);
+    const siteF = this.liveSiteFilter(user, query);
+    const branchF = this.liveBranchFilter(user, query);
+    const warehouseF = this.liveWarehouseFilter(user, query);
+    const run = <T,>(fn: () => Promise<T>) => this.dashboardQueryLimit.run(fn);
+    const num = (v: unknown) => Number(v ?? 0);
+    const eggSum = (s: { goodEggs?: unknown; crackedEggs?: unknown; dirtyEggs?: unknown; brokenEggs?: unknown; rejectedEggs?: unknown } | null) =>
+      num(s?.goodEggs) + num(s?.crackedEggs) + num(s?.dirtyEggs) + num(s?.brokenEggs) + num(s?.rejectedEggs);
+
+    // "This week" = the current Monday→Sunday (Ghana runs on UTC, so getUTCDay
+    // is the local day-of-week).
+    const now = new Date();
+    const mondayOffset = (now.getUTCDay() + 6) % 7;
+    const monday = new Date(now); monday.setUTCDate(monday.getUTCDate() - mondayOffset);
+    const sunday = new Date(monday); sunday.setUTCDate(sunday.getUTCDate() + 6);
+    const thisWeek = { gte: startOfDayAccra(monday), lte: endOfDayAccra(sunday) };
+    const eggFields = { goodEggs: true, crackedEggs: true, dirtyEggs: true, brokenEggs: true, rejectedEggs: true } as const;
+
+    const latestTarget = await run(() =>
+      this.prisma.marketTarget.findFirst({ where: { companyId: cid, deletedAt: null, ...branchF }, orderBy: { periodStart: "desc" }, select: { id: true } }),
+    );
+
+    const stores = await run(() =>
+      this.prisma.warehouse.findMany({
+        where: { companyId: cid, deletedAt: null, status: "ACTIVE", type: { in: ["FEED_STORE", "EGG_STORE"] }, ...branchF, ...farmF, ...warehouseF },
+        select: { id: true, name: true, type: true },
+        orderBy: [{ type: "asc" }, { name: "asc" }],
+      }),
+    );
+
+    const [
+      openingBirds, mortToDate, mort7, eggsToDate, eggs7, feedToDate, feed7,
+      finishedFeedKg, targetSum, mrpRequiredKg, mrpShortageKg, feedProducedToDate,
+      beanStockKg, oilProducedToDate, cakeProducedToDate, oilStockValue, salesMade,
+      storeStats,
+    ] = await Promise.all([
+      run(() => this.prisma.flockBatch.aggregate({ where: { companyId: cid, status: "ACTIVE", deletedAt: null, ...farmF }, _sum: { openingBirdCount: true } }).then((r) => num(r._sum.openingBirdCount))),
+      run(() => this.prisma.mortalityRecord.aggregate({ where: { companyId: cid, deletedAt: null, ...farmF }, _sum: { birdCount: true } }).then((r) => num(r._sum.birdCount))),
+      run(() => this.prisma.mortalityRecord.aggregate({ where: { companyId: cid, deletedAt: null, ...farmF, recordDate: thisWeek }, _sum: { birdCount: true } }).then((r) => num(r._sum.birdCount))),
+      run(() => this.prisma.eggProductionRecord.aggregate({ where: { companyId: cid, deletedAt: null, ...farmF }, _sum: eggFields }).then((r) => eggSum(r._sum))),
+      run(() => this.prisma.eggProductionRecord.aggregate({ where: { companyId: cid, deletedAt: null, ...farmF, recordDate: thisWeek }, _sum: eggFields }).then((r) => eggSum(r._sum))),
+      run(() => this.prisma.feedConsumptionRecord.aggregate({ where: { companyId: cid, deletedAt: null, ...farmF }, _sum: { quantityKg: true } }).then((r) => num(r._sum.quantityKg))),
+      run(() => this.prisma.feedConsumptionRecord.aggregate({ where: { companyId: cid, deletedAt: null, ...farmF, recordDate: thisWeek }, _sum: { quantityKg: true } }).then((r) => num(r._sum.quantityKg))),
+
+      run(() => this.prisma.inventoryItem.findMany({ where: { companyId: cid, deletedAt: null, product: { type: "FINISHED_GOOD" }, ...warehouseF }, select: { quantityOnHand: true } }).then((rows) => rows.reduce((s, r) => s + num(r.quantityOnHand), 0))),
+      run(() => latestTarget
+        ? this.prisma.marketTargetItem.aggregate({ where: { companyId: cid, deletedAt: null, marketTargetId: latestTarget.id }, _sum: { targetQuantityKg: true, finalTargetQuantity: true } }).then((r) => ({ kg: num(r._sum.targetQuantityKg), bags: num(r._sum.finalTargetQuantity) }))
+        : Promise.resolve({ kg: 0, bags: 0 })),
+      run(() => this.prisma.materialRequirementPlan.aggregate({ where: { companyId: cid, deletedAt: null, ...branchF }, _sum: { totalRequiredKg: true } }).then((r) => num(r._sum.totalRequiredKg))),
+      run(() => this.prisma.materialRequirementPlan.aggregate({ where: { companyId: cid, deletedAt: null, ...branchF }, _sum: { totalShortageKg: true } }).then((r) => num(r._sum.totalShortageKg))),
+      run(() => this.prisma.feedProductionBatch.aggregate({ where: { companyId: cid, deletedAt: null, ...siteF, marketTargetId: { not: null } }, _sum: { producedQuantityKg: true } }).then((r) => num(r._sum.producedQuantityKg))),
+
+      run(() => this.prisma.soyaBeanIntake.aggregate({ where: { companyId: cid, deletedAt: null, ...siteF }, _sum: { quantityKg: true } }).then((r) => num(r._sum.quantityKg))),
+      run(() => this.prisma.soyaOilOutput.aggregate({ where: { companyId: cid, deletedAt: null, ...siteF }, _sum: { quantityLitres: true } }).then((r) => num(r._sum.quantityLitres))),
+      run(() => this.prisma.soyaCakeOutput.aggregate({ where: { companyId: cid, deletedAt: null, ...siteF }, _sum: { quantityKg: true } }).then((r) => num(r._sum.quantityKg))),
+      run(() => this.prisma.soyaOilOutput.findMany({ where: { companyId: cid, deletedAt: null, ...siteF }, select: { quantityLitres: true, unitCost: true } }).then((rows) => rows.reduce((s, r) => s + num(r.quantityLitres) * num(r.unitCost), 0))),
+      run(() => this.prisma.salesOrderItem.aggregate({ where: { salesOrder: { companyId: cid, deletedAt: null, status: { not: "CANCELLED" }, ...branchF } }, _sum: { quantity: true } }).then((r) => num(r._sum.quantity))),
+
+      Promise.all(stores.map((w) => run(() =>
+        Promise.all([
+          this.prisma.inventoryItem.aggregate({ where: { warehouseId: w.id, deletedAt: null }, _sum: { quantityOnHand: true } }).then((r) => num(r._sum.quantityOnHand)),
+          this.prisma.stockBatch.findMany({ where: { warehouseId: w.id, deletedAt: null, status: "AVAILABLE" as never, quantityRemaining: { gt: 0 }, unitCost: { not: null } }, select: { quantityRemaining: true, unitCost: true } }).then((rows) => rows.reduce((s, b) => s + num(b.quantityRemaining) * num(b.unitCost), 0)),
+        ]).then(([qty, value]) => ({ id: w.id, name: w.name, type: w.type, qty, value })),
+      ))),
+    ]);
+
+    const ghs = (n: number) => `GHS ${Math.round(n).toLocaleString("en-GH")}`;
+    const period = "selected period";
+
+    const poultry: DashboardSection = {
+      key: "poultry", label: "Poultry", icon: "bird", moduleHref: "/poultry",
+      cards: [
+        { key: "openingBirds", label: "Opening stock", value: openingBirds, unit: "birds", tone: "neutral", href: "/poultry/batches" },
+        { key: "currentBirds", label: "Current bird stock", value: num(current.totalBirds), unit: "birds", tone: "neutral", href: "/poultry/batches" },
+        { key: "mortToDate", label: "Mortality", sub: "to date", value: mortToDate, unit: "birds", tone: mortToDate > 0 ? "critical" : "good", href: "/poultry/mortality" },
+        { key: "mortPeriod", label: "Mortality", sub: period, value: num(current.mortalityPeriod), unit: "birds", tone: num(current.mortalityPeriod) > 0 ? "warning" : "good", href: "/poultry/mortality" },
+        { key: "mort7", label: "Mortality", sub: "this week", value: mort7, unit: "birds", tone: mort7 > 0 ? "warning" : "good", href: "/poultry/mortality" },
+        { key: "mortToday", label: "Mortality", sub: "today", value: num(daySnap.mortalityToday), unit: "birds", tone: num(daySnap.mortalityToday) > 0 ? "critical" : "good", href: "/poultry/mortality" },
+        { key: "eggsToDate", label: "Egg production", sub: "to date", value: eggsToDate, unit: "eggs", tone: "good", href: "/poultry/egg-production" },
+        { key: "eggsPeriod", label: "Egg production", sub: period, value: num(current.eggProductionPeriod), unit: "eggs", tone: "good", href: "/poultry/egg-production" },
+        { key: "eggs7", label: "Egg production", sub: "this week", value: eggs7, unit: "eggs", tone: "good", href: "/poultry/egg-production" },
+        { key: "eggsToday", label: "Egg production", sub: "today", value: num(daySnap.eggProductionToday), unit: "eggs", tone: "good", href: "/poultry/egg-production" },
+        { key: "feedToDate", label: "Feed consumed", sub: "to date", value: feedToDate, unit: "kg", tone: "neutral", href: "/poultry/feed-consumption" },
+        { key: "feedPeriod", label: "Feed consumed", sub: period, value: num(current.feedConsumedPeriod), unit: "kg", tone: "neutral", href: "/poultry/feed-consumption" },
+        { key: "feed7", label: "Feed consumed", sub: "this week", value: feed7, unit: "kg", tone: "neutral", href: "/poultry/feed-consumption" },
+        { key: "feedToday", label: "Feed consumed", sub: "today", value: num(daySnap.feedConsumedToday), unit: "kg", tone: "neutral", href: "/poultry/feed-consumption" },
+      ],
+    };
+
+    const feed: DashboardSection = {
+      key: "feed", label: "Feed", icon: "wheat", moduleHref: "/feed-production",
+      cards: [
+        { key: "finishedFeed", label: "Current stock", sub: "finished feed", value: finishedFeedKg, unit: "kg", tone: "neutral", href: "/feed-production/finished-feed-inventory" },
+        { key: "prodTarget", label: "Production target", sub: targetSum.bags ? `${Math.round(targetSum.bags).toLocaleString("en-GH")} bags` : undefined, value: targetSum.kg, unit: "kg", tone: "neutral", href: "/market-planning/targets" },
+        { key: "rawMaterial", label: "Raw material requirement", value: mrpRequiredKg, unit: "kg", tone: "neutral", href: "/market-planning/mrp" },
+        { key: "restock", label: "Restock shortfall", value: mrpShortageKg, unit: "kg", tone: mrpShortageKg > 0 ? "warning" : "good", href: "/market-planning/recommendations" },
+        { key: "produced", label: "Production to date", value: feedProducedToDate, unit: "kg", tone: "good", href: "/feed-production/batches" },
+      ],
+    };
+
+    const soya: DashboardSection = {
+      key: "soya", label: "Soya", icon: "factory", moduleHref: "/soya-processing",
+      cards: [
+        { key: "beanStock", label: "Beans received", sub: "to date", value: beanStockKg, unit: "kg", tone: "neutral", href: "/soya-processing" },
+        { key: "cake", label: "Cake produced", sub: "to date", value: cakeProducedToDate, unit: "kg", tone: "good", href: "/soya-processing/cake-stock" },
+        { key: "oil", label: "Oil produced", sub: "to date", value: oilProducedToDate, unit: "L", tone: "good", href: "/soya-processing/oil-stock" },
+        { key: "oilStock", label: "Oil stock value", value: Math.round(oilStockValue), unit: "GHS", tone: "neutral", href: "/soya-processing/oil-stock" },
+      ],
+    };
+
+    const marketing: DashboardSection = {
+      key: "marketing", label: "Marketing", icon: "cart", moduleHref: "/sales",
+      cards: [
+        { key: "salesTarget", label: "Sales target", sub: "current market target", value: targetSum.bags, unit: "bags", tone: "neutral", href: "/market-planning/targets" },
+        { key: "salesMade", label: "Sales made", sub: "against target", value: salesMade, unit: "bags", tone: "good", href: "/sales/orders" },
+        { key: "salesBalance", label: "Sales balance", value: Math.max(0, targetSum.bags - salesMade), unit: "bags", tone: targetSum.bags - salesMade > 0 ? "warning" : "good", href: "/sales/orders" },
+        { key: "salesRevenue", label: "Sales revenue", sub: period, value: Math.round(num(current.salesThisMonth)), unit: "GHS", tone: "good", href: "/sales/orders" },
+      ],
+    };
+
+    const storeLabel = (s: { name: string; type: string }) =>
+      /akoko/i.test(s.name) ? "Akoko Solution Egg Store" : s.type === "FEED_STORE" ? "Esaso Feed Store" : "Esaso Egg Store";
+    const inventory: DashboardSection = {
+      key: "inventory", label: "Inventory", icon: "boxes", moduleHref: "/inventory/warehouses",
+      cards: (storeStats as Array<{ id: string; name: string; type: string; qty: number; value: number }>).map((s) => ({
+        key: `store-${s.id}`,
+        label: storeLabel(s),
+        sub: s.value > 0 ? ghs(s.value) : undefined,
+        value: Math.round(s.qty * 100) / 100,
+        unit: s.type === "FEED_STORE" ? "kg" : "crates",
+        tone: "neutral" as Card["tone"],
+        href: `/inventory/warehouses/${s.id}`,
+      })),
+    };
+
+    return [poultry, feed, soya, marketing, inventory];
   }
 
   private formatDate(date: Date) {
