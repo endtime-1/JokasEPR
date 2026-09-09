@@ -8,7 +8,8 @@
  *
  *   node packages/db/scripts/reapply-feed-deductions.mjs                          # dry run, records on/after --since
  *   node packages/db/scripts/reapply-feed-deductions.mjs --since 2026-09-06
- *   node packages/db/scripts/reapply-feed-deductions.mjs --default-product L001   # stamp this feed onto records with no product
+ *   node packages/db/scripts/reapply-feed-deductions.mjs --default-product L001   # stamp this feed onto every record with no product
+ *   node packages/db/scripts/reapply-feed-deductions.mjs --map 001=L001,002=DEV  # ...by batch code instead
  *   node packages/db/scripts/reapply-feed-deductions.mjs --commit --i-have-a-backup
  *
  * Default --since is 2026-09-06. A record whose product has no stock is
@@ -23,6 +24,8 @@ const opt = (n, d) => { const i = A.indexOf("--" + n); return i >= 0 ? A[i + 1] 
 const SINCE = new Date((opt("since", "2026-09-06")) + "T00:00:00.000Z");
 const FEED_STORE = opt("store", "ae537045-e7ab-4c2d-8ea9-f113d19c3243"); // Jokas Feed
 const DEFAULT_SKU = opt("default-product", null); // e.g. "L001" — stamped onto no-product records
+const MAP_ARG = opt("map", null); // e.g. "001=L001,002=DEV" — batch code -> feed SKU
+const BATCH_MAP = new Map((MAP_ARG ?? "").split(",").filter(Boolean).map((kv) => kv.split("=").map((s) => s.trim())));
 const COMPANY = "1c2bb797-7e05-4a96-bc0a-ef906ea4dba1";
 const round = (n) => Math.round(n * 10000) / 10000;
 
@@ -36,12 +39,14 @@ async function main() {
   const byId = new Map(products.map((p) => [p.id, p]));
   const defaultProd = DEFAULT_SKU ? bySku.get(DEFAULT_SKU) : null;
   if (DEFAULT_SKU && !defaultProd) { console.error(`  no product with SKU ${DEFAULT_SKU}`); process.exit(1); }
+  for (const [, sku] of BATCH_MAP) if (!bySku.get(sku)) { console.error(`  --map references unknown SKU ${sku}`); process.exit(1); }
 
   const recs = await prisma.feedConsumptionRecord.findMany({
     where: { companyId: COMPANY, deletedAt: null, recordDate: { gte: SINCE } },
     orderBy: { recordDate: "asc" },
-    select: { id: true, recordDate: true, quantityKg: true, feedProductId: true },
+    select: { id: true, recordDate: true, quantityKg: true, feedProductId: true, flockBatchId: true },
   });
+  const batchCode = new Map((await prisma.flockBatch.findMany({ where: { id: { in: [...new Set(recs.map((r) => r.flockBatchId))] } }, select: { id: true, code: true } })).map((b) => [b.id, b.code]));
   const movedIds = new Set((await prisma.stockMovement.findMany({
     where: { referenceType: "FeedConsumptionRecord", referenceId: { in: recs.map((r) => r.id) }, deletedAt: null },
     select: { referenceId: true },
@@ -59,8 +64,11 @@ async function main() {
     let pid = r.feedProductId;
     let stamp = false;
     if (!pid) {
-      if (!defaultProd) { noProduct++; console.log(`  ${r.recordDate.toISOString().slice(0, 10)}  ${Number(r.quantityKg)} kg  — NO product (pass --default-product to fix)`); continue; }
-      pid = defaultProd.id; stamp = true; needStamp++;
+      const code = batchCode.get(r.flockBatchId);
+      const mapped = BATCH_MAP.get(code);
+      const chosen = mapped ? bySku.get(mapped) : defaultProd;
+      if (!chosen) { noProduct++; console.log(`  ${r.recordDate.toISOString().slice(0, 10)}  ${Number(r.quantityKg)} kg  batch ${code ?? "?"}  — NO product (pass --default-product or --map)`); continue; }
+      pid = chosen.id; stamp = true; needStamp++;
     }
     const p = byId.get(pid);
     const have = stock.get(pid) ?? 0;
@@ -71,7 +79,7 @@ async function main() {
     }
     stock.set(pid, have - Number(r.quantityKg)); // reserve so the dry run is realistic
     todo.push({ ...r, pid, stamp });
-    console.log(`  ${r.recordDate.toISOString().slice(0, 10)}  ${String(Number(r.quantityKg)).padStart(8)} kg  ${p?.sku ?? "?"} ${p?.name ?? ""}${stamp ? "  (stamped)" : ""}`);
+    console.log(`  ${r.recordDate.toISOString().slice(0, 10)}  ${String(Number(r.quantityKg)).padStart(8)} kg  batch ${batchCode.get(r.flockBatchId) ?? "?"}  ${p?.sku ?? "?"} ${p?.name ?? ""}${stamp ? "  (stamped)" : ""}`);
   }
   const totalKg = todo.reduce((s, r) => s + Number(r.quantityKg), 0);
   console.log(`\n  to deduct: ${todo.length} records = ${round(totalKg)} kg` + (needStamp ? `  (${needStamp} get product ${DEFAULT_SKU})` : "") + (noProduct ? `  · ${noProduct} still have no product` : ""));
