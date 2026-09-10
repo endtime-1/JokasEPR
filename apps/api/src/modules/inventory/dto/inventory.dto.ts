@@ -235,6 +235,26 @@ export class TransferQueryDto {
   take?: number;
 }
 
+export class AdjustmentQueryDto {
+  @IsOptional()
+  @IsEnum(StockWorkflowStatus)
+  status?: StockWorkflowStatus;
+
+  @IsOptional()
+  @IsUUID()
+  warehouseId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  productId?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Type(() => Number)
+  take?: number;
+}
+
 export class MergeWarehouseDto {
   @IsUUID()
   targetWarehouseId!: string;

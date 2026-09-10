@@ -16,7 +16,8 @@ const mockTx = {
 
 const mockPrisma = {
   inventoryItem: { findFirst: jest.fn(), findUniqueOrThrow: jest.fn(), update: jest.fn(), findMany: jest.fn().mockResolvedValue([]), groupBy: jest.fn().mockResolvedValue([]) },
-  stockAdjustment: { findFirst: jest.fn(), update: jest.fn().mockResolvedValue({}) },
+  stockAdjustment: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), update: jest.fn().mockResolvedValue({}) },
+  user: { findMany: jest.fn().mockResolvedValue([]) },
   stockApproval: { updateMany: jest.fn().mockResolvedValue({}) },
   stockReservation: { findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn(), update: jest.fn() },
   stockBatch: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), groupBy: jest.fn().mockResolvedValue([]) },
@@ -179,6 +180,64 @@ describe("InventoryService.approveAdjustment → applyAdjustment — StockBatch 
       "This adjustment has already been processed."
     );
     expect(mockTx.stockBatch.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("InventoryService.listAdjustments (2026-09-10)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("returns adjustments with requester/approver names resolved", async () => {
+    mockPrisma.stockAdjustment.findMany.mockResolvedValue([
+      { id: "adj-1", status: "PENDING_APPROVAL", quantity: -40, adjustmentType: "COUNT_CORRECTION", reason: "wrong import", requestedById: "user-9", approvedById: null, product: { name: "Layer Mash" }, warehouse: { name: "Jokas Feed" } },
+    ]);
+    mockPrisma.user.findMany.mockResolvedValue([{ id: "user-9", fullName: "Ama Boateng" }]);
+
+    const service = makeService();
+    const res = await service.listAdjustments(makeUser({ hasGlobalAccess: true }), {} as never);
+
+    expect(res.data[0]).toMatchObject({ id: "adj-1", requestedByName: "Ama Boateng", approvedByName: null });
+  });
+
+  it("scopes a warehouse-limited user to their own warehouses", async () => {
+    mockPrisma.stockAdjustment.findMany.mockResolvedValue([]);
+    const service = makeService();
+    await service.listAdjustments(makeUser({ hasGlobalAccess: false, warehouseIds: ["wh-1", "wh-2"] }), {} as never);
+
+    expect(mockPrisma.stockAdjustment.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ AND: [{ warehouseId: { in: ["wh-1", "wh-2"] } }] }) })
+    );
+  });
+});
+
+describe("InventoryService.createAdjustment — a negative quantity removes stock via FIFO (2026-09-10)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("routes an approve-now negative adjustment through consumeFifo (ADJUSTMENT_OUT), not a StockBatch add", async () => {
+    mockPrisma.inventoryItem.findFirst.mockResolvedValue({
+      id: "item-1", companyId: "company-1", branchId: "branch-1", farmId: null, warehouseId: "wh-1",
+      productionSiteId: null, productId: "prod-1", uomId: "uom-1", quantityOnHand: 500
+    });
+    mockTx.stockAdjustment.create.mockResolvedValue({ id: "adj-1", quantity: -120, unitCost: null, reason: "over-imported", adjustmentType: "COUNT_CORRECTION" });
+    mockTx.stockApproval.create.mockResolvedValue({});
+    mockTx.stockBatch.findMany.mockResolvedValue([{ id: "b-1", quantityRemaining: 500, unitCost: 3 }]);
+    mockTx.stockBatch.updateMany.mockResolvedValue({ count: 1 });
+    mockTx.stockMovement.create.mockResolvedValue({});
+    mockTx.inventoryItem.updateMany.mockResolvedValue({ count: 1 });
+
+    const service = makeService();
+    await service.createAdjustment(
+      makeUser({ hasGlobalAccess: true }),
+      { warehouseId: "wh-1", productId: "prod-1", adjustmentType: "COUNT_CORRECTION", quantity: -120, reason: "over-imported", approveNow: true } as never,
+      {}
+    );
+
+    expect(mockTx.stockBatch.create).not.toHaveBeenCalled();
+    expect(mockTx.inventoryItem.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ quantityOnHand: { decrement: 120 } }) })
+    );
+    expect(mockTx.stockMovement.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ movementType: "ADJUSTMENT_OUT", quantity: 120 }) })
+    );
   });
 });
 

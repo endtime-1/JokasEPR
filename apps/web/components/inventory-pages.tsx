@@ -243,9 +243,10 @@ export function InventoryItemsPage({ create = false }: { create?: boolean }) {
 
 export function StockOperationPage({ mode }: { mode: "stock-in" | "stock-out" | "transfers" | "adjustments" }) {
   const { options, optionsError } = useInventoryOptions();
-  const [form, setForm] = useState<Record<string, string>>({ warehouseId: "", fromWarehouseId: "", toWarehouseId: "", productId: "", batchNumber: "", bags: "", quantity: "", unitCost: "", reason: "", adjustmentType: "DAMAGE", movementType: "ADJUSTMENT_OUT", expiryDate: "", transferDate: "" });
+  const [form, setForm] = useState<Record<string, string>>({ warehouseId: "", fromWarehouseId: "", toWarehouseId: "", productId: "", batchNumber: "", bags: "", quantity: "", unitCost: "", reason: "", adjustmentType: "DAMAGE", adjustmentDirection: "decrease", movementType: "ADJUSTMENT_OUT", expiryDate: "", transferDate: "" });
   const [submitError, setSubmitError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [adjustmentsRefresh, setAdjustmentsRefresh] = useState(0);
   const title = mode === "stock-in" ? "Stock In" : mode === "stock-out" ? "Stock Out" : mode === "transfers" ? "Stock Transfer" : "Stock Adjustment";
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -255,17 +256,24 @@ export function StockOperationPage({ mode }: { mode: "stock-in" | "stock-out" | 
     const toWarehouseId = form.toWarehouseId || options.warehouses[1]?.id;
     if (!productId || (mode === "transfers" ? (!fromWarehouseId || !toWarehouseId) : !warehouseId)) return;
     const base = { productId, quantity: Number(form.quantity) };
+    // A stock adjustment's SIGN is what decides add vs remove on the API — the
+    // form only ever collects a positive magnitude, so apply the direction here.
+    // approveNow lets a full-access user (CEO / SUPER_ADMIN) apply it straight
+    // away; for anyone else the API keeps it PENDING_APPROVAL for a manager to
+    // approve from the panel below.
+    const adjustQty = (form.adjustmentDirection === "decrease" ? -1 : 1) * Math.abs(Number(form.quantity));
     const payload =
       mode === "stock-in" ? { ...base, warehouseId, batchNumber: form.batchNumber, unitCost: Number(form.unitCost), expiryDate: form.expiryDate || undefined } :
       mode === "stock-out" ? { ...base, warehouseId, movementType: form.movementType } :
       mode === "transfers" ? { ...base, fromWarehouseId, toWarehouseId, transferDate: form.transferDate || undefined } :
-      { ...base, warehouseId, adjustmentType: form.adjustmentType, quantity: Number(form.quantity), reason: form.reason, approveNow: false };
+      { ...base, warehouseId, adjustmentType: form.adjustmentType, quantity: adjustQty, reason: form.reason, approveNow: true };
     const endpoint = mode === "transfers" ? "/inventory/transfers" : mode === "adjustments" ? "/inventory/adjustments" : `/inventory/${mode}`;
     setSubmitting(true);
     setSubmitError("");
     try {
       await apiFetch(endpoint, { method: "POST", body: JSON.stringify(payload) });
       setForm({ ...form, batchNumber: "", bags: "", quantity: "", unitCost: "", reason: "" });
+      if (mode === "adjustments") { invalidateCache("/inventory/movements"); setAdjustmentsRefresh((n) => n + 1); }
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : `Failed to submit ${title.toLowerCase()}.`);
     } finally {
@@ -367,12 +375,22 @@ export function StockOperationPage({ mode }: { mode: "stock-in" | "stock-out" | 
         {mode === "stock-in" ? <FormField label="Unit cost"><input className={inputClass} type="number" min="0" step="0.01" value={form.unitCost} onChange={(event) => setForm({ ...form, unitCost: event.target.value })} required /></FormField> : null}
         {mode === "stock-in" ? <FormField label="Expiry date"><input className={inputClass} type="date" value={form.expiryDate} onChange={(event) => setForm({ ...form, expiryDate: event.target.value })} /></FormField> : null}
         {mode === "stock-out" ? <FormField label="Movement type"><select className={inputClass} value={form.movementType} onChange={(event) => setForm({ ...form, movementType: event.target.value })}><option>ADJUSTMENT_OUT</option><option>SALE_DISPATCH</option><option>PRODUCTION_INPUT</option><option>WASTE</option></select></FormField> : null}
+        {mode === "adjustments" ? (
+          <FormField label="Direction">
+            <select className={inputClass} value={form.adjustmentDirection} onChange={(event) => setForm({ ...form, adjustmentDirection: event.target.value })}>
+              <option value="decrease">Decrease — remove from stock</option>
+              <option value="increase">Increase — add to stock</option>
+            </select>
+            <span className="mt-1 block text-xs text-ink/50">Decrease pulls the quantity out of the store (FIFO). Increase adds it back.</span>
+          </FormField>
+        ) : null}
         {mode === "adjustments" ? <FormField label="Adjustment type"><select className={inputClass} value={form.adjustmentType} onChange={(event) => setForm({ ...form, adjustmentType: event.target.value })}><option>DAMAGE</option><option>EXPIRY</option><option>WASTE</option><option>COUNT_CORRECTION</option><option>WRITE_OFF</option><option>FOUND_STOCK</option></select></FormField> : null}
         {mode === "adjustments" ? <FormField label="Reason"><input className={inputClass} value={form.reason} onChange={(event) => setForm({ ...form, reason: event.target.value })} required /></FormField> : null}
         <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:col-span-4">{submitting ? "Submitting…" : `Submit ${title.toLowerCase()}`}</button>
         {submitError && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 md:col-span-4">{submitError}</p>}
       </form>
       {mode === "transfers" && <StagedTransfersPanel />}
+      {mode === "adjustments" && <StockAdjustmentsPanel refreshKey={adjustmentsRefresh} />}
     </InventoryShell>
   );
 }
@@ -563,6 +581,111 @@ function StagedTransfersPanel() {
             } },
           ]}
         />
+      </div>
+    </div>
+  );
+}
+
+// Shows what's been submitted on the Stock Adjustment screen: a pending
+// adjustment has NO stock effect until it's approved, and there was no way to
+// see or approve one from the UI before. A full-access user's own submissions
+// apply immediately (approveNow on the form); everyone else's wait here.
+function StockAdjustmentsPanel({ refreshKey }: { refreshKey: number }) {
+  const { profile } = useAuth();
+  const canApprove = !!profile?.hasGlobalAccess || !!profile?.permissions?.includes("inventory.manage");
+  const [rows, setRows] = useState<Record<string, any>[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [actionError, setActionError] = useState("");
+  const [busyId, setBusyId] = useState("");
+
+  function load() {
+    setLoadError("");
+    apiFetch<ApiEnvelope<Record<string, any>[]>>("/inventory/adjustments?take=60")
+      .then((r) => setRows(r.data ?? []))
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load adjustments."))
+      .finally(() => setLoading(false));
+  }
+  useEffect(() => { load(); }, [refreshKey]);
+  useApiRecovery(rows.length === 0, load);
+
+  async function act(id: string, status: "APPROVED" | "REJECTED") {
+    setBusyId(id);
+    setActionError("");
+    try {
+      await apiFetch(`/inventory/adjustments/${id}/approve`, { method: "PATCH", body: JSON.stringify({ status }) });
+      invalidateCache("/inventory/movements");
+      load();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Action failed.");
+    } finally {
+      setBusyId("");
+    }
+  }
+
+  const pending = rows.filter((r) => r.status === "PENDING_APPROVAL");
+  const recent = rows.filter((r) => r.status !== "PENDING_APPROVAL").slice(0, 15);
+
+  const signedQty = (r: Record<string, any>) => {
+    const n = Number(r.quantity);
+    return <span className={n < 0 ? "font-semibold text-amber-700" : "font-semibold text-emerald-700"}>{n < 0 ? "−" : "+"}{formatQtyForProduct(Math.abs(n), r.product)}</span>;
+  };
+  const statusPill = (s: string) => <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${TRANSFER_STATUS_STYLES[s] ?? "bg-slate-100 text-slate-700"}`}>{s.replace(/_/g, " ").toLowerCase()}</span>;
+
+  return (
+    <div className="mt-6 space-y-6">
+      {loadError && (
+        <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <span>{loadError}</span>
+          <button type="button" className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold hover:bg-red-50" onClick={load}>Retry</button>
+        </div>
+      )}
+      {actionError && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{actionError}</p>}
+
+      <div className="rounded-md border border-line bg-white p-4 shadow-panel">
+        <h3 className="mb-3 font-semibold">Pending approval ({pending.length})</h3>
+        {loading && rows.length === 0 ? <p className="text-sm text-ink/50">Loading…</p> : pending.length === 0 ? (
+          <p className="text-sm text-ink/60">Nothing waiting. An adjustment you submit is applied straight away when you have full access — otherwise it lands here for a manager to approve.</p>
+        ) : (
+          <div className="space-y-2">
+            {pending.map((r) => (
+              <div key={r.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded border border-line p-3 text-sm">
+                <span className="font-mono text-xs text-ink/55">{r.adjustmentNumber}</span>
+                <span className="font-semibold">{r.product?.name}</span>
+                <span className="text-ink/70">{r.warehouse?.name}</span>
+                {signedQty(r)}
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs">{String(r.adjustmentType).replace(/_/g, " ").toLowerCase()}</span>
+                <span className="text-ink/60">{r.reason}</span>
+                <span className="text-xs text-ink/45">{r.requestedByName ? `${r.requestedByName} · ` : ""}{formatDate(r.createdAt)}</span>
+                {canApprove && (
+                  <span className="ml-auto flex gap-1">
+                    <button type="button" disabled={busyId === r.id} className="rounded-md border border-emerald-300 px-2 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-50" onClick={() => act(r.id, "APPROVED")}>Approve</button>
+                    <button type="button" disabled={busyId === r.id} className="rounded-md border border-red-300 px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50" onClick={() => act(r.id, "REJECTED")}>Reject</button>
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-md border border-line bg-white p-4 shadow-panel">
+        <h3 className="mb-3 font-semibold">Recent adjustments</h3>
+        {recent.length === 0 ? <p className="text-sm text-ink/60">No processed adjustments yet.</p> : (
+          <div className="space-y-2">
+            {recent.map((r) => (
+              <div key={r.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded border border-line/60 p-2 text-sm">
+                <span className="font-mono text-xs text-ink/45">{r.adjustmentNumber}</span>
+                <span className="font-semibold">{r.product?.name}</span>
+                <span className="text-ink/70">{r.warehouse?.name}</span>
+                {signedQty(r)}
+                {statusPill(r.status)}
+                <span className="text-ink/55">{r.reason}</span>
+                <span className="ml-auto text-xs text-ink/45">{formatDate(r.approvedAt ?? r.createdAt)}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -813,6 +936,10 @@ export function WarehouseDetailPage() {
             {data?.warehouse.branch ? ` · ${data.warehouse.branch}` : ""}
             {data?.warehouse.farm ? ` · ${data.warehouse.farm}` : ""}
           </p>
+        </div>
+        <div className="flex gap-2">
+          <Link href="/inventory/adjustments" className="inline-flex min-h-10 items-center rounded-md border border-line px-3 text-sm font-semibold hover:bg-field">Adjust stock</Link>
+          <Link href="/inventory/stock-out" className="inline-flex min-h-10 items-center rounded-md border border-line px-3 text-sm font-semibold hover:bg-field">Stock out</Link>
         </div>
       </div>
 

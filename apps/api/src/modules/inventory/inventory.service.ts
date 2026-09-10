@@ -8,6 +8,7 @@ import { nextRef } from "../../common/next-ref";
 import { startOfTodayAccra } from "../../common/utils/timezone";
 import { withDbRetry } from "../../common/db-retry";
 import {
+  AdjustmentQueryDto,
   ApproveStockDto,
   ApproveTransferDto,
   CreateInventoryItemDto,
@@ -508,6 +509,42 @@ export class InventoryService {
   // disagreeing with reality. Wrapping the whole thing in one transaction
   // means a failed apply rolls back the creation too, so an adjustment only
   // ever exists in the DB as APPROVED if the stock genuinely moved.
+  // The Stock Adjustment screen needs to show what's been submitted — a
+  // pending adjustment has no stock effect until it's approved, and there was
+  // previously no way to see (or approve) one from the UI at all.
+  async listAdjustments(user: AuthenticatedUser, query: AdjustmentQueryDto) {
+    const and: Prisma.StockAdjustmentWhereInput[] = [];
+    if (query.warehouseId) and.push({ warehouseId: query.warehouseId });
+    if (!user.hasGlobalAccess && user.warehouseIds.length > 0) and.push({ warehouseId: { in: user.warehouseIds } });
+    const rows = await this.prisma.stockAdjustment.findMany({
+      where: {
+        companyId: user.companyId,
+        deletedAt: null,
+        ...(query.status ? { status: query.status } : {}),
+        ...(query.productId ? { productId: query.productId } : {}),
+        ...(and.length ? { AND: and } : {}),
+      },
+      orderBy: { createdAt: "desc" },
+      take: Math.min(query.take ?? 60, 200),
+      include: {
+        product: { select: { sku: true, name: true, piecesPerUnit: true, uom: { select: { symbol: true, name: true } } } },
+        warehouse: { select: { code: true, name: true } },
+      },
+    });
+    const userIds = [...new Set(rows.flatMap((r) => [r.requestedById, r.approvedById]).filter((v): v is string => !!v))];
+    const names = userIds.length
+      ? await this.prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, fullName: true } })
+      : [];
+    const nameById = new Map(names.map((u) => [u.id, u.fullName]));
+    return {
+      data: rows.map((r) => ({
+        ...r,
+        requestedByName: r.requestedById ? nameById.get(r.requestedById) ?? null : null,
+        approvedByName: r.approvedById ? nameById.get(r.approvedById) ?? null : null,
+      })),
+    };
+  }
+
   async createAdjustment(user: AuthenticatedUser, dto: StockAdjustmentDto, context: RequestContext) {
     this.assertWarehouseAccess(user, dto.warehouseId);
     const item = await this.requireItem(user.companyId, dto.warehouseId, dto.productId);

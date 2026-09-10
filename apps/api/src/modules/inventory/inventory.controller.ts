@@ -6,6 +6,7 @@ import { RequirePermissions } from "../../common/decorators/permissions.decorato
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { PermissionsGuard } from "../../common/guards/permissions.guard";
 import {
+  AdjustmentQueryDto,
   ApproveStockDto,
   ApproveTransferDto,
   CreateInventoryItemDto,
@@ -153,6 +154,12 @@ export class InventoryController {
   @RequirePermissions(PERMISSIONS.INVENTORY_MANAGE)
   mergeWarehouse(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: MergeWarehouseDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.inventoryService.mergeWarehouse(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Get("adjustments")
+  @RequirePermissions(PERMISSIONS.INVENTORY_READ)
+  adjustments(@CurrentUser() user: AuthenticatedUser, @Query() query: AdjustmentQueryDto) {
+    return this.inventoryService.listAdjustments(user, query);
   }
 
   @Post("adjustments")
