@@ -2791,6 +2791,16 @@ export function PoultryTransferPage() {
   // "Please select a flock batch" fires despite one being visibly chosen.
   const effectiveFlockBatchId = form.flockBatchId || options.batches[0]?.id || "";
   const toPens = useMemo(() => options.pens.filter((p) => !effectiveToHouseId || p.poultryHouseId === effectiveToHouseId), [options.pens, effectiveToHouseId]);
+  // Pens already holding a *different* active batch — a pen can only hold one
+  // active batch at a time, so the API rejects a transfer into one of these.
+  // Flag them here so the picker doesn't offer a dead end.
+  const pensHeldByOtherBatch = useMemo(() => {
+    const s = new Set<string>();
+    for (const a of options.allocations) {
+      if (a.flockBatchId !== effectiveFlockBatchId) s.add(a.penId);
+    }
+    return s;
+  }, [options.allocations, effectiveFlockBatchId]);
 
   const selectedPens = penSelections.filter((p) => p.selected);
   const anyPenSelected = selectedPens.length > 0;
@@ -2979,7 +2989,10 @@ export function PoultryTransferPage() {
         <FormField label={toPens.length > 0 ? "To pen" : "To pen (no pens in this house)"}>
           <select className={inputClass} value={form.toPenId} onChange={(e) => setForm({ ...form, toPenId: e.target.value })} required={toPens.length > 0}>
             <option value="">{toPens.length > 0 ? "— select a pen —" : "— no pens in this house —"}</option>
-            {toPens.map((pen) => <option key={pen.id} value={pen.id}>{pen.code}</option>)}
+            {toPens.map((pen) => {
+              const taken = pensHeldByOtherBatch.has(pen.id);
+              return <option key={pen.id} value={pen.id} disabled={taken}>{pen.code}{taken ? " — occupied by another batch" : ""}</option>;
+            })}
           </select>
         </FormField>
         {!anyPenSelected && (

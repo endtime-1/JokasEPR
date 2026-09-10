@@ -26,7 +26,10 @@ const mockTx = {
   // fromPenId branch, unchanged); findMany backs liveBirdsRemaining, which
   // needs individual rows to compare fromFarmId/toFarmId per transfer.
   poultryTransferRecord: { aggregate: jest.fn().mockResolvedValue({ _sum: { birdCount: 0 } }), findMany: jest.fn().mockResolvedValue([]), create: jest.fn(), update: jest.fn() },
-  batchPenAllocation: { findFirst: jest.fn(), upsert: jest.fn(), updateMany: jest.fn().mockResolvedValue({ count: 1 }), update: jest.fn(), aggregate: jest.fn().mockResolvedValue({ _sum: { birdCount: 0 } }) },
+  // findMany defaults to "no other batch in this pen" so the one-active-batch-
+  // per-pen guard on the transfer paths is a no-op for tests that aren't about
+  // it; a test that cares overrides with mockResolvedValueOnce.
+  batchPenAllocation: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), upsert: jest.fn(), updateMany: jest.fn().mockResolvedValue({ count: 1 }), update: jest.fn(), aggregate: jest.fn().mockResolvedValue({ _sum: { birdCount: 0 } }) },
   poultryCountAdjustment: { findFirst: jest.fn(), aggregate: jest.fn().mockResolvedValue({ _sum: { delta: 0 } }), create: jest.fn() },
   pen: { update: jest.fn(), findFirst: jest.fn() },
   flockBatch: { findFirstOrThrow: jest.fn(), update: jest.fn() },
@@ -1080,6 +1083,91 @@ describe("PoultryService — pen physical capacity is enforced, not bypassable (
       ).rejects.toThrow(/capacity is 500.*bring it to 800/);
       expect(mockTx.batchPenAllocation.upsert).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("PoultryService.createTransfer / allocateTransferPen — one active batch per pen (2026-09-10)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const flockBatch = { id: "batch-2", farmId: "farm-1", branchId: "branch-1", poultryHouseId: "house-1", status: "ACTIVE", code: "FB-2", openingBirdCount: 1000 };
+  const toHouse = { id: "house-2", farmId: "farm-2", branchId: "branch-2" };
+
+  function armCreateTransfer() {
+    mockPrisma.flockBatch.findFirst.mockResolvedValue(flockBatch);
+    mockPrisma.poultryHouse.findFirst.mockResolvedValue(toHouse);
+    mockTx.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+    mockTx.poultryTransferRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+    mockTx.poultryTransferRecord.create.mockResolvedValue({ id: "trf-1" });
+    mockTx.pen.findFirst.mockResolvedValue({ id: "pen-2", code: "P2", capacity: null });
+    mockTx.batchPenAllocation.upsert.mockResolvedValue({});
+  }
+
+  it("rejects a transfer into a pen a DIFFERENT active batch still occupies", async () => {
+    armCreateTransfer();
+    mockTx.batchPenAllocation.findMany.mockResolvedValue([
+      { flockBatchId: "batch-1", birdCount: 500, flockBatch: { code: "FB-1" } }
+    ]);
+    // batch-1 has moved none of those 500 out and lost none — net 500 still there.
+    mockTx.poultryTransferRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+    mockTx.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+
+    const service = makeService();
+    await expect(
+      service.createTransfer(
+        makeUser({ hasGlobalAccess: true }),
+        { flockBatchId: "batch-2", toFarmId: "farm-2", toPoultryHouseId: "house-2", toPenId: "pen-2", birdCount: 100, transferDate: "2026-09-10" } as never,
+        {}
+      )
+    ).rejects.toThrow(/already occupied by active batch FB-1 \(500 birds\)/);
+    expect(mockTx.batchPenAllocation.upsert).not.toHaveBeenCalled();
+  });
+
+  it("allows the transfer when the other batch has fully moved out of the pen (net zero)", async () => {
+    armCreateTransfer();
+    mockTx.batchPenAllocation.findMany.mockResolvedValue([
+      { flockBatchId: "batch-1", birdCount: 500, flockBatch: { code: "FB-1" } }
+    ]);
+    // all 500 of batch-1's birds have since been transferred back out of pen-2.
+    mockTx.poultryTransferRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 500 } });
+    mockTx.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+
+    const service = makeService();
+    await service.createTransfer(
+      makeUser({ hasGlobalAccess: true }),
+      { flockBatchId: "batch-2", toFarmId: "farm-2", toPoultryHouseId: "house-2", toPenId: "pen-2", birdCount: 100, transferDate: "2026-09-10" } as never,
+      {}
+    );
+    expect(mockTx.batchPenAllocation.upsert).toHaveBeenCalled();
+  });
+
+  it("allows the transfer when the batch already keeps birds in that pen (same batch, not another)", async () => {
+    armCreateTransfer();
+    mockTx.batchPenAllocation.findMany.mockResolvedValue([]); // query excludes thisBatchId
+
+    const service = makeService();
+    await service.createTransfer(
+      makeUser({ hasGlobalAccess: true }),
+      { flockBatchId: "batch-2", toFarmId: "farm-2", toPoultryHouseId: "house-2", toPenId: "pen-2", birdCount: 100, transferDate: "2026-09-10" } as never,
+      {}
+    );
+    expect(mockTx.batchPenAllocation.upsert).toHaveBeenCalled();
+  });
+
+  it("allocateTransferPen rejects assigning a pen a different active batch occupies", async () => {
+    mockPrisma.poultryTransferRecord.findFirst.mockResolvedValue({ id: "trf-1", flockBatchId: "batch-2", toPenId: null, toPoultryHouseId: "house-2", toFarmId: "farm-2", fromFarmId: "farm-1", branchId: "branch-1", status: "APPROVED", birdCount: 100 });
+    mockPrisma.pen.findFirst.mockResolvedValue({ id: "pen-2", code: "P2", companyId: "company-1", poultryHouseId: "house-2", capacity: null });
+    mockPrisma.poultryHouse.findFirst.mockResolvedValue({ id: "house-2", companyId: "company-1", farmId: "farm-2" });
+    mockTx.batchPenAllocation.findMany.mockResolvedValue([
+      { flockBatchId: "batch-1", birdCount: 300, flockBatch: { code: "FB-1" } }
+    ]);
+    mockTx.poultryTransferRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+    mockTx.mortalityRecord.aggregate.mockResolvedValue({ _sum: { birdCount: 0 } });
+
+    const service = makeService();
+    await expect(
+      service.allocateTransferPen(makeUser({ hasGlobalAccess: true }), "trf-1", { penId: "pen-2" } as never, {})
+    ).rejects.toThrow(/already occupied by active batch FB-1 \(300 birds\)/);
+    expect(mockTx.batchPenAllocation.upsert).not.toHaveBeenCalled();
   });
 });
 

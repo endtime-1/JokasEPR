@@ -277,10 +277,44 @@ export class PoultryService {
           flockBatch: { deletedAt: null, status: { notIn: ["CLOSED", "SOLD", "CULLED"] } },
           ...(user.hasGlobalAccess ? {} : { farmId: { in: user.farmIds } }),
         },
-        select: { flockBatchId: true, poultryHouseId: true, penId: true },
+        select: { flockBatchId: true, poultryHouseId: true, penId: true, birdCount: true },
       })
     ]);
-    const result = { data: { farms, houses, pens, batches, warehouses, products, feedWarehouses, feedProducts, eggWarehouses, allocations } };
+    // The stored allocation birdCount only ever grows (initial + arrivals) —
+    // outgoing transfers, mortality and recounts are applied at read time
+    // everywhere else. Net them out here too, so the placement map doesn't
+    // keep a batch pinned to a house it has fully moved out of (e.g. birds
+    // transferred in and then straight back out again).
+    const allocBatchIds = [...new Set(allocations.map((a) => a.flockBatchId))];
+    const [allocOutgoing, allocMortality, allocAdjustments] = allocBatchIds.length
+      ? await Promise.all([
+          this.prisma.poultryTransferRecord.groupBy({
+            by: ["flockBatchId", "fromPenId"],
+            where: { flockBatchId: { in: allocBatchIds }, fromPenId: { not: null }, deletedAt: null, status: { not: "CANCELLED" } },
+            _sum: { birdCount: true },
+          }),
+          this.prisma.mortalityRecord.groupBy({
+            by: ["flockBatchId", "penId"],
+            where: { flockBatchId: { in: allocBatchIds }, penId: { not: null }, deletedAt: null },
+            _sum: { birdCount: true },
+          }),
+          this.prisma.poultryCountAdjustment.groupBy({
+            by: ["flockBatchId", "penId"],
+            where: { flockBatchId: { in: allocBatchIds }, penId: { not: null }, deletedAt: null },
+            _sum: { delta: true },
+          }),
+        ])
+      : [[], [], []];
+    const outByBatchPen = new Map(allocOutgoing.map((r) => [`${r.flockBatchId}:${r.fromPenId}`, r._sum.birdCount ?? 0]));
+    const mortByBatchPen = new Map(allocMortality.map((r) => [`${r.flockBatchId}:${r.penId}`, r._sum.birdCount ?? 0]));
+    const adjByBatchPen = new Map(allocAdjustments.map((r) => [`${r.flockBatchId}:${r.penId}`, r._sum.delta ?? 0]));
+    const netAllocations = allocations
+      .filter((a) => {
+        const key = `${a.flockBatchId}:${a.penId}`;
+        return a.birdCount - (outByBatchPen.get(key) ?? 0) - (mortByBatchPen.get(key) ?? 0) + (adjByBatchPen.get(key) ?? 0) > 0;
+      })
+      .map((a) => ({ flockBatchId: a.flockBatchId, poultryHouseId: a.poultryHouseId, penId: a.penId }));
+    const result = { data: { farms, houses, pens, batches, warehouses, products, feedWarehouses, feedProducts, eggWarehouses, allocations: netAllocations } };
     // Only cache when batches exist — an empty-batches response can be transient (DB
     // warmup, first request during cold-start) and caching it would serve stale empty
     // data for the full 45-second TTL, causing "No flock batches found" to flash.
@@ -625,13 +659,19 @@ export class PoultryService {
     for (const a of batch.countAdjustments ?? []) {
       if (a.penId) adjustmentByPen.set(a.penId, (adjustmentByPen.get(a.penId) ?? 0) + a.delta);
     }
-    const adjustedAllocations = batch.penAllocations.map((alloc: any) => ({
-      ...alloc,
-      birdCount: Math.max(0, alloc.birdCount
-        - (outgoingByPen.get(alloc.penId) ?? 0)
-        - (mortalityByPen.get(alloc.penId) ?? 0)
-        + (adjustmentByPen.get(alloc.penId) ?? 0))
-    }));
+    const adjustedAllocations = batch.penAllocations
+      .map((alloc: any) => ({
+        ...alloc,
+        birdCount: Math.max(0, alloc.birdCount
+          - (outgoingByPen.get(alloc.penId) ?? 0)
+          - (mortalityByPen.get(alloc.penId) ?? 0)
+          + (adjustmentByPen.get(alloc.penId) ?? 0))
+      }))
+      // Drop pens the batch has fully moved out of — the stored allocation
+      // row is never deleted (outgoing transfers are applied at read time),
+      // so without this a batch keeps showing as kept in a house it left,
+      // e.g. after birds are transferred in and then straight back out.
+      .filter((alloc: any) => alloc.birdCount > 0);
 
     const batchAdj = { ...batch, penAllocations: adjustedAllocations };
     return { data: { ...batchAdj, metrics: this.batchMetrics(batchAdj, prices) } };
@@ -1594,6 +1634,7 @@ export class PoultryService {
         // hold. capacity is nullable, so a pen with none recorded has no cap.
         const toPen = await tx.pen.findFirst({ where: { id: dto.toPenId, companyId: user.companyId, deletedAt: null } });
         if (!toPen) throw new BadRequestException("Destination pen was not found.");
+        await this.assertPenHeldByAtMostThisBatch(tx, dto.toPenId, batch.id, toPen.code);
         if (toPen.capacity != null) {
           // (readiness review 2026-08-20) M18's original check only summed
           // THIS batch's own prior allocation into the pen — a second batch
@@ -1728,13 +1769,17 @@ export class PoultryService {
     if (house) this.assertFarmAccess(user, house.farmId);
 
     const data = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM Pen WHERE id = ${dto.penId} FOR UPDATE`;
+      // One active batch per pen — same guard createTransfer's toPenId path
+      // now applies. Without it, assigning a pen to a transfer could land a
+      // second live batch in a pen another batch already occupies.
+      await this.assertPenHeldByAtMostThisBatch(tx, dto.penId, transfer.flockBatchId, pen.code);
       // (readiness review 2026-08-20) This "assign a pen later" flow had no
       // capacity check at all — createTransfer's toPenId path checks the
       // destination pen's capacity, but a transfer created without a pen and
       // assigned one afterward via this method skipped it entirely. Same
       // lock-then-sum-every-batch check as createTransfer.
       if (pen.capacity != null) {
-        await tx.$queryRaw`SELECT id FROM Pen WHERE id = ${dto.penId} FOR UPDATE`;
         const penTotal = await tx.batchPenAllocation.aggregate({ where: { penId: dto.penId }, _sum: { birdCount: true } });
         const newTotal = (penTotal._sum.birdCount ?? 0) + transfer.birdCount;
         if (newTotal > pen.capacity) {
@@ -2350,6 +2395,51 @@ export class PoultryService {
 
   private totalEggs(row: { goodEggs: number; crackedEggs: number; dirtyEggs: number; brokenEggs: number; rejectedEggs: number }) {
     return row.goodEggs + row.crackedEggs + row.dirtyEggs + row.brokenEggs + row.rejectedEggs;
+  }
+
+  // A pen can only hold one active flock batch at a time — you don't mix
+  // flocks of different ages / health status in the same room (biosecurity).
+  // createBatch already blocks picking a pen that has an active batch, but
+  // the transfer paths (createTransfer, allocateTransferPen) never did, so
+  // birds could be moved straight into a pen another live batch occupies and
+  // both batches then showed as kept in that house. Checks NET presence
+  // (stored allocation minus non-cancelled outgoing transfers and pen
+  // mortality) so a pen a batch has fully moved out of no longer counts as
+  // occupied. Runs inside the caller's transaction, after the FlockBatch /
+  // Pen row locks, so a concurrent transfer into the same pen can't race it.
+  private async assertPenHeldByAtMostThisBatch(
+    tx: Prisma.TransactionClient,
+    penId: string,
+    thisBatchId: string,
+    penCode: string
+  ) {
+    const others = await tx.batchPenAllocation.findMany({
+      where: {
+        penId,
+        flockBatchId: { not: thisBatchId },
+        birdCount: { gt: 0 },
+        flockBatch: { deletedAt: null, status: "ACTIVE" }
+      },
+      select: { flockBatchId: true, birdCount: true, flockBatch: { select: { code: true } } }
+    });
+    for (const other of others) {
+      const [outgoing, mortality] = await Promise.all([
+        tx.poultryTransferRecord.aggregate({
+          where: { flockBatchId: other.flockBatchId, fromPenId: penId, deletedAt: null, status: { not: "CANCELLED" } },
+          _sum: { birdCount: true }
+        }),
+        tx.mortalityRecord.aggregate({
+          where: { flockBatchId: other.flockBatchId, penId, deletedAt: null },
+          _sum: { birdCount: true }
+        })
+      ]);
+      const net = other.birdCount - (outgoing._sum.birdCount ?? 0) - (mortality._sum.birdCount ?? 0);
+      if (net > 0) {
+        throw new BadRequestException(
+          `Pen ${penCode} is already occupied by active batch ${other.flockBatch.code} (${net} bird${net === 1 ? "" : "s"}). A pen can only hold one active batch at a time — move that batch out first, or transfer to a different pen.`
+        );
+      }
+    }
   }
 
   private async getBatchContext(user: AuthenticatedUser, flockBatchId: string, requireActive = true): Promise<BatchContext> {
