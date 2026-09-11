@@ -64,6 +64,13 @@ async function main() {
   for (const b of batches) {
     console.log(`  [${b.createdAt.toISOString()}] batch=${b.batchNumber}  ${b.product.name} (${b.product.feedForm})  received=${n(b.quantityReceived)}  remaining=${n(b.quantityRemaining)}  -> ${b.warehouse.name}  createdById=${b.createdById ?? "-"}`);
   }
+
+  const batchCreatorIds = [...new Set(batches.map((b) => b.createdById).filter(Boolean))];
+  if (batchCreatorIds.length) {
+    const users = await prisma.user.findMany({ where: { id: { in: batchCreatorIds } }, select: { id: true, fullName: true, email: true, roles: { select: { role: { select: { name: true } } } } } });
+    console.log("\n=== StockBatch creators ===");
+    for (const u of users) console.log(`  ${u.id}  ${u.fullName}  <${u.email}>  roles=${u.roles.map((r) => r.role.name).join(",") || "-"}`);
+  }
   console.log();
 }
 main().then(() => prisma.$disconnect()).catch((e) => { console.error(e); prisma.$disconnect(); process.exit(1); });
