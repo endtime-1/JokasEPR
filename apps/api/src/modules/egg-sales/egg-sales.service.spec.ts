@@ -31,6 +31,7 @@ describe("EggSalesService.createSale", () => {
     warehouse: { findFirst: jest.fn() },
     product: { findFirst: jest.fn() },
     inventoryItem: { findFirst: jest.fn() },
+    eggSale: { findFirst: jest.fn() },
     $transaction: jest.fn().mockImplementation((cb: (tx: typeof mockTx) => Promise<unknown>) => cb(mockTx))
   };
   const mockAudit = { write: jest.fn().mockResolvedValue(undefined) };
@@ -44,6 +45,7 @@ describe("EggSalesService.createSale", () => {
     mockPrisma.warehouse.findFirst.mockResolvedValue(WAREHOUSE);
     mockPrisma.product.findFirst.mockResolvedValue(EGGS_PRODUCT);
     mockPrisma.inventoryItem.findFirst.mockResolvedValue(INVENTORY_ITEM);
+    mockPrisma.eggSale.findFirst.mockResolvedValue(null);
     mockTx.stockBatch.findMany.mockResolvedValue([{ id: "batch-1", quantityRemaining: 100, unitCost: 20 }]);
     mockTx.stockBatch.updateMany.mockResolvedValue({ count: 1 });
     mockTx.inventoryItem.updateMany.mockResolvedValue({ count: 1 });
@@ -77,6 +79,28 @@ describe("EggSalesService.createSale", () => {
     expect(result.data.quantityCrates).toBe(5);
     expect(result.data.quantityPieces).toBe(150); // 5 × 30
     expect(result.data.totalAmount).toBe(150);
+  });
+
+  it("uses a manually-given sale number instead of auto-generating one", async () => {
+    const service = makeService();
+    const result = await service.createSale(
+      makeUser(),
+      { warehouseId: "wh-akoko", quantity: 5, unit: "CRATES", unitPriceCrate: 30, saleNumber: "1333" } as never,
+      {}
+    );
+
+    expect(mockPrisma.eggSale.findFirst).toHaveBeenCalledWith({ where: { companyId: "company-1", saleNumber: "1333" } });
+    expect(result.data.saleNumber).toBe("1333");
+  });
+
+  it("rejects a manually-given sale number that's already in use", async () => {
+    mockPrisma.eggSale.findFirst.mockResolvedValue({ id: "existing-sale" });
+    const service = makeService();
+
+    await expect(
+      service.createSale(makeUser(), { warehouseId: "wh-akoko", quantity: 5, unit: "CRATES", unitPriceCrate: 30, saleNumber: "1333" } as never, {})
+    ).rejects.toThrow(/already in use/);
+    expect(mockTx.eggSale.create).not.toHaveBeenCalled();
   });
 
   it("rejects selling from a warehouse that isn't an Egg Store", async () => {

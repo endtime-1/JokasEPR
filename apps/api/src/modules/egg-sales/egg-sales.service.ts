@@ -101,7 +101,13 @@ export class EggSalesService {
     });
     if (!item) throw new BadRequestException(`No egg stock recorded yet in "${warehouse.name}".`);
 
-    const saleNumber = await nextRef(this.prisma, user.companyId, "ES");
+    let saleNumber = dto.saleNumber?.trim();
+    if (saleNumber) {
+      const existing = await this.prisma.eggSale.findFirst({ where: { companyId: user.companyId, saleNumber } });
+      if (existing) throw new BadRequestException(`Sale number "${saleNumber}" is already in use.`);
+    } else {
+      saleNumber = await nextRef(this.prisma, user.companyId, "ES");
+    }
     const sale = await this.prisma.$transaction(async (tx) => {
       const created = await tx.eggSale.create({
         data: {
