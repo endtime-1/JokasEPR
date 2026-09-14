@@ -20,6 +20,8 @@ const PERMISSIONS = [
   ["finance.manage", "Finance", "Manage finance and accounting records"],
   ["sales.read", "Sales", "View sales and customer records"],
   ["sales.manage", "Sales", "Manage sales and customer records"],
+  ["egg-sales.read", "Egg Sales", "View egg sale records"],
+  ["egg-sales.manage", "Egg Sales", "Record and void egg sales"],
   ["procurement.read", "Procurement", "View procurement and supplier records"],
   ["procurement.manage", "Procurement", "Manage procurement and supplier records"],
   ["market-planning.read", "Market Planning", "View market-led production planning and MRP"],
@@ -53,6 +55,7 @@ const ALL_KEYS = PERMISSIONS.map(([key]) => key);
 const ENSURE_SYSTEM_ROLES: ReadonlyArray<readonly [string, string]> = [
   ["Poultry Supervisor", "Records farm feed-store receipts and pen-level poultry operations"],
   ["Marketer", "Submits a weekly market target for their own assigned market"],
+  ["Egg Sales Officer", "Records direct egg sales from an egg store"],
 ];
 
 const ROLE_PERMISSION_MAP: Record<string, readonly string[]> = {
@@ -102,6 +105,11 @@ const ROLE_PERMISSION_MAP: Record<string, readonly string[]> = {
   // service layer further restricts them to seeing/editing only their own
   // targets, never another marketer's.
   "Marketer": ["platform.read", "sales.read", "inventory.read", "market-planning.read", "market-planning.submit", "reports.export", "ai.read", "alerts.read"],
+  // Egg Sales Officer: a distinct person from the marketers (owner's
+  // instruction, 2026-09-14) — records direct egg sales only. Deliberately
+  // no sales.* or market-planning.* — this role's whole job is the egg-sales
+  // screen, not the general Sales module.
+  "Egg Sales Officer": ["platform.read", "inventory.read", "egg-sales.read", "egg-sales.manage", "reports.export", "alerts.read"],
 
   // ── Worker-level roles ───────────────────────────────────────────────────────
   "Worker": ["platform.read", "poultry.read", "poultry.record", "inventory.read"],

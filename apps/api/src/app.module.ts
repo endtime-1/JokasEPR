@@ -17,6 +17,7 @@ import { FinanceModule } from "./modules/finance/finance.module";
 import { HRModule } from "./modules/hr/hr.module";
 import { IdentityModule } from "./modules/identity/identity.module";
 import { QualityModule } from "./modules/quality/quality.module";
+import { EggSalesModule } from "./modules/egg-sales/egg-sales.module";
 import { ProcurementModule } from "./modules/procurement/procurement.module";
 import { QrModule } from "./modules/qr/qr.module";
 import { InventoryModule } from "./modules/inventory/inventory.module";
@@ -62,6 +63,7 @@ import { UploadsModule } from "./modules/uploads/uploads.module";
     FinanceModule,
     ProcurementModule,
     MarketPlanningModule,
+    EggSalesModule,
     QrModule,
     MaintenanceModule,
     HRModule,

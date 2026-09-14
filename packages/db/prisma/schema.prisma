@@ -4285,6 +4285,43 @@ model Market {
   @@index([deletedAt])
 }
 
+// A simple, direct egg sale — customer + quantity + price, sold from one
+// EGG_STORE warehouse, no line items or approval step. Owner request
+// (2026-09-14): the general Sales Order form is built around feed's
+// kg/bag/formula logic and was awkward for a one-product, walk-in-buyer
+// transaction; kept fully separate from SalesOrder/Invoice on purpose (its
+// own reporting, not mixed into Sales' numbers). No Prisma relations, same
+// style as Market/MarketTarget — plain FK columns.
+model EggSale {
+  id             String    @id @default(uuid())
+  companyId      String
+  branchId       String?
+  warehouseId    String
+  saleNumber     String    @db.VarChar(40)
+  saleDate       DateTime  @default(now())
+  buyerName      String?   @db.VarChar(160)
+  // Canonical count is pieces; crates is quantityPieces / the Eggs
+  // product's own piecesPerUnit at the time of sale (kept as its own column
+  // since that conversion factor could change later and this shouldn't).
+  quantityPieces Int
+  quantityCrates Decimal   @db.Decimal(10, 2)
+  unitPriceCrate Decimal   @db.Decimal(18, 4)
+  totalAmount    Decimal   @db.Decimal(18, 4)
+  notes          String?   @db.VarChar(500)
+  createdById    String?
+  updatedById    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  @@unique([companyId, saleNumber])
+  @@index([companyId])
+  @@index([branchId])
+  @@index([warehouseId])
+  @@index([saleDate])
+  @@index([deletedAt])
+}
+
 model MarketTarget {
   id               String               @id @default(uuid())
   companyId        String
