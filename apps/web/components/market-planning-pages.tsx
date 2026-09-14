@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { CircleCheckBig, ClipboardList, Factory, PackageCheck, Pencil, Plus, RefreshCw, SendHorizontal, ShoppingCart, Trash2, TrendingUp } from "lucide-react";
+import { CircleCheckBig, CircleX, ClipboardList, Factory, PackageCheck, Pencil, Plus, RefreshCw, SendHorizontal, ShoppingCart, Trash2, TrendingUp } from "lucide-react";
 import { DataTable } from "./data-table";
 import { ConfirmModal, LockedNote } from "./ui";
 import { ApiEnvelope, apiFetch, getCached, getCachedFirst, hasCached, invalidateCache } from "../lib/api";
@@ -13,7 +13,7 @@ type Option = { id: string; branchId?: string; productionSiteId?: string; code?:
 type PlanningOptions = { branches: Option[]; productionSites: Option[]; warehouses: Option[]; finishedFeeds: Option[]; formulas: Option[]; rawMaterials: Option[] };
 type TargetRow = { id: string; targetNumber: string; title: string; period: string; status: string; periodStart: string; periodEnd: string; targetKg?: number; itemCount?: number };
 type TargetItem = { id: string; productId: string; baseQuantity: string | number; adjustmentPercent: string | number; finalTargetQuantity: string | number; bagSizeKg: string | number; targetQuantityKg: string | number; approvalStatus: string; product?: { name: string; sku: string } };
-type TargetDetail = TargetRow & { branchId?: string; productionSiteId?: string; items: TargetItem[]; productionPlans: PlanRow[]; mrps: MrpRow[]; recommendations: RecommendationRow[] };
+type TargetDetail = TargetRow & { branchId?: string; productionSiteId?: string; marketId?: string; rejectionReason?: string; items: TargetItem[]; productionPlans: PlanRow[]; mrps: MrpRow[]; recommendations: RecommendationRow[] };
 type PlanRow = { id: string; planNumber: string; marketTargetId: string; productionSiteId: string; centralWarehouseId: string; status: string; totalPlannedKg: string | number; producedQuantityKg?: number; createdAt: string; items?: PlanItem[] };
 type PlanItem = { id: string; productId: string; plannedQuantityKg: string | number; producedQuantityKg: string | number; status: string; product?: { name: string; sku: string } };
 type MrpRow = { id: string; mrpNumber: string; status: string; totalRequiredKg: string | number; totalAvailableKg: string | number; totalShortageKg: string | number; centralWarehouseId: string; createdAt: string; items?: MrpItem[]; checks?: unknown[]; recommendations?: RecommendationRow[] };
@@ -256,6 +256,113 @@ function RecommendationTable({ rows, loading, onCancel }: { rows: Recommendation
   );
 }
 
+// ── Markets — who owns which territory ─────────────────────────────────────────
+// Marketer onboarding (2026-09-14): a manager creates a Market and assigns a
+// marketer to it here; that marketer then only ever sees/creates plans for
+// that market (enforced server-side — this page is just how a manager sets
+// the assignment up).
+type MarketRow = { id: string; name: string; code?: string; branchId?: string; assignedUserId?: string; isActive: boolean; assignedUser?: { id: string; fullName: string; email: string } };
+type CompanyUserOption = { id: string; fullName: string; email: string };
+
+export function MarketsPage() {
+  const [rows, setRows] = useState<MarketRow[]>(() => getCachedFirst<ApiEnvelope<MarketRow[]>>("/market-planning/markets")?.data ?? []);
+  const [users, setUsers] = useState<CompanyUserOption[]>([]);
+  const { options } = useOptions();
+  const [loading, setLoading] = useState(!hasCached("/market-planning/markets"));
+  const [loadError, setLoadError] = useState("");
+  const [form, setForm] = useState({ name: "", code: "", branchId: "", assignedUserId: "" });
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState("");
+  const [savingId, setSavingId] = useState<string | null>(null);
+
+  function load() {
+    setLoadError("");
+    Promise.all([
+      apiFetch<ApiEnvelope<MarketRow[]>>("/market-planning/markets"),
+      apiFetch<ApiEnvelope<CompanyUserOption[]>>("/identity/users").catch(() => ({ data: [] as CompanyUserOption[] }))
+    ])
+      .then(([m, u]) => { setRows(m.data ?? []); setUsers(u.data ?? []); })
+      .catch((err: any) => setLoadError(err?.message ?? "Failed to load."))
+      .finally(() => setLoading(false));
+  }
+  useEffect(load, []);
+  useApiRecovery(rows.length === 0, load);
+
+  async function createMarket(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setCreating(true);
+    setCreateError("");
+    try {
+      await apiFetch("/market-planning/markets", {
+        method: "POST",
+        body: JSON.stringify({ name: form.name, code: form.code || undefined, branchId: form.branchId || undefined, assignedUserId: form.assignedUserId || undefined })
+      });
+      invalidateCache("/market-planning/markets", true);
+      setForm({ name: "", code: "", branchId: "", assignedUserId: "" });
+      load();
+    } catch (err: any) {
+      setCreateError(err?.message ?? "Failed to create market.");
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function reassign(market: MarketRow, assignedUserId: string) {
+    setSavingId(market.id);
+    try {
+      await apiFetch(`/market-planning/markets/${market.id}`, { method: "PATCH", body: JSON.stringify({ assignedUserId: assignedUserId || null }) });
+      invalidateCache("/market-planning/markets", true);
+      load();
+    } catch (err: any) {
+      setLoadError(err?.message ?? "Failed to reassign market.");
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  return (
+    <>
+      <Header title="Markets" subtitle="Each marketer owns one market — their weekly plans are scoped to it, and only a manager can reassign it." />
+      {loadError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</p>}
+
+      <form onSubmit={createMarket} className="app-card mb-6 grid gap-4 p-5 md:grid-cols-4">
+        <p className="text-sm font-semibold text-ink md:col-span-4">New market</p>
+        <label className="grid gap-1 text-sm font-semibold">Name<input required className={inputClass} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Kejetia Market" /></label>
+        <label className="grid gap-1 text-sm font-semibold">Code<input className={inputClass} value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} placeholder="optional" /></label>
+        <label className="grid gap-1 text-sm font-semibold">Branch<select className={inputClass} value={form.branchId} onChange={(e) => setForm({ ...form, branchId: e.target.value })}><option value="">Company-wide</option>{options.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label>
+        <label className="grid gap-1 text-sm font-semibold">Marketer<select className={inputClass} value={form.assignedUserId} onChange={(e) => setForm({ ...form, assignedUserId: e.target.value })}><option value="">Unassigned</option>{users.map((u) => <option key={u.id} value={u.id}>{u.fullName} ({u.email})</option>)}</select></label>
+        <button disabled={creating} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:w-fit" type="submit"><Plus className="h-4 w-4" /> {creating ? "Creating…" : "Create market"}</button>
+        {createError && <p className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-700 md:col-span-4">{createError}</p>}
+      </form>
+
+      <DataTable<MarketRow>
+        rows={rows}
+        loading={loading}
+        empty="No markets yet — create one above."
+        columns={[
+          { key: "name", label: "Market", render: (row) => <span className="font-semibold text-ink">{row.name}{row.code ? ` (${row.code})` : ""}</span> },
+          {
+            key: "assignedUserId",
+            label: "Marketer",
+            render: (row) => (
+              <select
+                className={inputClass}
+                value={row.assignedUserId ?? ""}
+                disabled={savingId === row.id}
+                onChange={(e) => reassign(row, e.target.value)}
+              >
+                <option value="">Unassigned</option>
+                {users.map((u) => <option key={u.id} value={u.id}>{u.fullName} ({u.email})</option>)}
+              </select>
+            )
+          },
+          { key: "isActive", label: "Status", render: (row) => (row.isActive ? "Active" : "Inactive") }
+        ]}
+      />
+    </>
+  );
+}
+
 export function MarketTargetListPage() {
   const [rows, setRows] = useState<TargetRow[]>(() => getCachedFirst<ApiEnvelope<TargetRow[]>>("/market-planning/targets")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/market-planning/targets"));
@@ -319,12 +426,18 @@ export function CreateMarketTargetPage({ period }: { period: "WEEKLY" | "MONTHLY
   const [messageHasWarning, setMessageHasWarning] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // Marketer onboarding (2026-09-14): a submit-only marketer with exactly
+  // one assigned market doesn't need this — the server auto-fills it. This
+  // picker exists for a manager (who can plan for any market or none) and
+  // for the rarer marketer assigned to more than one.
+  const [myMarkets, setMyMarkets] = useState<MarketRow[]>([]);
   const [form, setForm] = useState({
     title: period === "WEEKLY" ? "Weekly feed market target" : "Monthly feed market target",
     periodStart: today(),
     periodEnd: period === "WEEKLY" ? nextWeek() : monthEnd(),
     branchId: "",
     productionSiteId: "",
+    marketId: "",
     productId: "",
     formulaId: "",
     baseQuantity: "100",
@@ -332,6 +445,12 @@ export function CreateMarketTargetPage({ period }: { period: "WEEKLY" | "MONTHLY
     bagSizeKg: "50",
     reason: "Demand forecast adjustment"
   });
+
+  useEffect(() => {
+    apiFetch<ApiEnvelope<MarketRow[]>>("/market-planning/markets/mine")
+      .then((res) => setMyMarkets(res.data ?? []))
+      .catch(() => setMyMarkets([]));
+  }, []);
 
   const formulas = useMemo(() => options.formulas.filter((f) => !form.productId || f.finishedProductId === form.productId), [options.formulas, form.productId]);
 
@@ -349,6 +468,7 @@ export function CreateMarketTargetPage({ period }: { period: "WEEKLY" | "MONTHLY
           periodEnd: form.periodEnd,
           branchId: form.branchId || undefined,
           productionSiteId: form.productionSiteId || undefined,
+          marketId: form.marketId || undefined,
           items: [{
             productId: form.productId || options.finishedFeeds[0]?.id,
             formulaId: form.formulaId || formulas[0]?.id,
@@ -387,6 +507,15 @@ export function CreateMarketTargetPage({ period }: { period: "WEEKLY" | "MONTHLY
         <label className="grid gap-1 text-sm font-semibold">End date<input className={inputClass} type="date" value={form.periodEnd} onChange={(e) => setForm({ ...form, periodEnd: e.target.value })} /></label>
         <label className="grid gap-1 text-sm font-semibold">Branch<select className={inputClass} value={form.branchId} onChange={(e) => setForm({ ...form, branchId: e.target.value })}><option value="">Auto</option>{options.branches.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
         <label className="grid gap-1 text-sm font-semibold">Production site<select className={inputClass} value={form.productionSiteId} onChange={(e) => setForm({ ...form, productionSiteId: e.target.value })}><option value="">Select later</option>{options.productionSites.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
+        {myMarkets.length > 0 && (
+          <label className="grid gap-1 text-sm font-semibold">
+            Market{myMarkets.length > 1 && <span className="text-red-500"> *</span>}
+            <select required={myMarkets.length > 1} className={inputClass} value={form.marketId} onChange={(e) => setForm({ ...form, marketId: e.target.value })}>
+              {myMarkets.length === 1 ? <option value={myMarkets[0].id}>{myMarkets[0].name}</option> : <option value="">Select your market</option>}
+              {myMarkets.length > 1 && myMarkets.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+          </label>
+        )}
         <label className="grid gap-1 text-sm font-semibold">Feed product<select required className={inputClass} value={form.productId} onChange={(e) => setForm({ ...form, productId: e.target.value, formulaId: "" })}><option value="">Select product</option>{options.finishedFeeds.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
         <label className="grid gap-1 text-sm font-semibold">Formula<select className={inputClass} value={form.formulaId} onChange={(e) => setForm({ ...form, formulaId: e.target.value })}><option value="">Active formula</option>{formulas.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
         <label className="grid gap-1 text-sm font-semibold">Base bags<input className={inputClass} type="number" min="0" step="0.01" value={form.baseQuantity} onChange={(e) => setForm({ ...form, baseQuantity: e.target.value })} /></label>
@@ -428,6 +557,10 @@ export function MarketTargetDetailsPage() {
   const [approving, setApproving] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
+  const [rejectError, setRejectError] = useState("");
+  const [showReject, setShowReject] = useState(false);
 
   async function load() {
     setLoadError("");
@@ -478,6 +611,23 @@ export function MarketTargetDetailsPage() {
       setApproveError(err instanceof Error ? err.message : "Failed to approve target.");
     } finally {
       setApproving(false);
+    }
+  }
+
+  async function rejectTarget(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setRejecting(true);
+    setRejectError("");
+    try {
+      await apiFetch(`/market-planning/targets/${params.id}/reject`, { method: "PATCH", body: JSON.stringify({ reason: rejectReason }) });
+      invalidateCache("/market-planning/targets", true);
+      setShowReject(false);
+      setRejectReason("");
+      await load();
+    } catch (err) {
+      setRejectError(err instanceof Error ? err.message : "Failed to reject target.");
+    } finally {
+      setRejecting(false);
     }
   }
 
@@ -594,9 +744,31 @@ export function MarketTargetDetailsPage() {
           <label className="grid gap-1 text-sm font-semibold">Production site<select required className={inputClass} value={approve.productionSiteId} onChange={(e) => setApprove({ ...approve, productionSiteId: e.target.value })}><option value="">Select</option>{options.productionSites.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
           <label className="grid gap-1 text-sm font-semibold">Central warehouse<select required className={inputClass} value={approve.centralWarehouseId} onChange={(e) => setApprove({ ...approve, centralWarehouseId: e.target.value })}><option value="">Select</option>{options.warehouses.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
           <label className="grid gap-1 text-sm font-semibold">Notes<input className={inputClass} value={approve.notes} onChange={(e) => setApprove({ ...approve, notes: e.target.value })} /></label>
-          <button disabled={approving} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:w-fit" type="submit"><CircleCheckBig className="h-4 w-4" /> {approving ? "Approving…" : "Approve and plan"}</button>
+          <div className="flex gap-3 md:col-span-3">
+            <button disabled={approving} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60" type="submit"><CircleCheckBig className="h-4 w-4" /> {approving ? "Approving…" : "Approve and plan"}</button>
+            <button type="button" onClick={() => { setRejectError(""); setShowReject(true); }} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-red-200 bg-red-50 px-4 text-sm font-semibold text-red-600 hover:bg-red-100"><CircleX className="h-4 w-4" /> Reject</button>
+          </div>
           {approveError && <p className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-700 md:col-span-3">{approveError}</p>}
         </form>
+      )}
+      {showReject && (
+        <form onSubmit={rejectTarget} className="app-card mb-6 grid gap-3 border-red-200 p-5">
+          <p className="text-sm font-semibold text-ink">Reject this plan</p>
+          <label className="grid gap-1 text-sm font-semibold">Reason<textarea required maxLength={240} className="min-h-20 rounded-md border border-line px-3 py-2" value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} placeholder="Explain what needs to change before this can be resubmitted." /></label>
+          <div className="flex gap-3">
+            <button disabled={rejecting} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-red-600 px-4 text-sm font-semibold text-white disabled:opacity-60" type="submit">{rejecting ? "Rejecting…" : "Confirm reject"}</button>
+            <button type="button" className="app-button-secondary" onClick={() => setShowReject(false)} disabled={rejecting}>Cancel</button>
+          </div>
+          {rejectError && <p className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{rejectError}</p>}
+        </form>
+      )}
+      {target?.status === "REJECTED" && (
+        <div className="app-card mb-6 flex items-start gap-3 border-red-200 bg-red-50 p-5 text-sm">
+          <CircleX className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
+          <p className="text-red-700">
+            <strong>Rejected.</strong> {target.rejectionReason || "No reason was given."}
+          </p>
+        </div>
       )}
       <section className="grid gap-6 xl:grid-cols-2">
         <div><h3 className="mb-3 text-lg font-semibold">Target items</h3><DataTable<TargetItem> rows={target?.items ?? []} empty="No target items." columns={[{ key: "productId", label: "Product", render: (row) => row.product?.name ?? row.productId }, { key: "baseQuantity", label: "Base bags", render: (row) => number(row.baseQuantity) }, { key: "adjustmentPercent", label: "Adjustment %", render: (row) => number(row.adjustmentPercent) }, { key: "targetQuantityKg", label: "Target kg", render: (row) => number(row.targetQuantityKg) }, { key: "approvalStatus", label: "Status" }]} /></div>

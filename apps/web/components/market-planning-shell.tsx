@@ -8,7 +8,8 @@ const NAV_GROUPS = [
     label: "Overview",
     items: [
       { href: "/market-planning", label: "Dashboard", exact: true },
-      { href: "/market-planning/targets", label: "Targets" }
+      { href: "/market-planning/targets", label: "Targets" },
+      { href: "/market-planning/markets", label: "Markets" }
     ]
   },
   {
