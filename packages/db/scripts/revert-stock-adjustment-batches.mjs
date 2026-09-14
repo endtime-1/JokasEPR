@@ -9,7 +9,13 @@
 // feed (four +50kg + one +46,300kg Mash by Farm Manager/Super Admin, one
 // +20kg Concentrate) with no idea where they came from — traced via
 // inspect-todays-feed-receipts.mjs to feature-testing right after the Stock
-// Adjustment fix went live. Confirmed unwanted; this reverts them.
+// Adjustment fix went live. Confirmed unwanted and reverted (see
+// revert-stock-adjustment-batches commit history for that run's output).
+//
+// Batch numbers are always required as args now — a hardcoded default list
+// used to live here, but once those six rows were reverted a bare re-run
+// would silently do nothing (the guard below skips missing batches) instead
+// of erroring, which is a worse failure mode than just requiring args.
 //
 // Dry-run by default:
 //   node packages/db/scripts/revert-stock-adjustment-batches.mjs ADJ-038BBD7B ADJ-AE093EC4 ...
@@ -22,14 +28,12 @@ const args = process.argv.slice(2);
 const COMMIT = args.includes("--commit") && args.includes("--i-have-a-backup");
 const batchNumbers = args.filter((a) => !a.startsWith("--"));
 
-const DEFAULT_BATCH_NUMBERS = [
-  "ADJ-0F7AAE5D", "ADJ-FADEDD4F", "ADJ-400359F3", "ADJ-E8DDD0EC", // 4x +50kg Mash, Farm Manager
-  "ADJ-038BBD7B", // +46,300kg Mash, Super Admin
-  "ADJ-AE093EC4", // +20kg Concentrate, Super Admin
-];
-
 async function main() {
-  const targets = batchNumbers.length ? batchNumbers : DEFAULT_BATCH_NUMBERS;
+  if (batchNumbers.length === 0) {
+    console.error("Refusing to run with no batch numbers given — pass one or more, e.g. ADJ-038BBD7B.");
+    process.exit(1);
+  }
+  const targets = batchNumbers;
   console.log(`${COMMIT ? "COMMIT MODE" : "DRY RUN"} — ${targets.length} batch(es)\n`);
 
   for (const batchNumber of targets) {
