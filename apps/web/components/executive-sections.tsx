@@ -22,6 +22,11 @@ export type DashboardSection = {
 
 const ICONS: Record<string, LucideIcon> = { bird: Bird, wheat: Wheat, factory: Factory, cart: ShoppingCart, boxes: Boxes };
 
+// Matches EGG_PIECES_PER_CRATE in apps/api's poultry.service.ts — every
+// Egg production card here is in raw pieces, but eggs are tracked/sold as
+// crates everywhere else in the app. Owner request (2026-09-14): show both.
+const EGGS_PER_CRATE = 30;
+
 const TONE: Record<SectionCard["tone"], { wrap: string; val: string; dot: string }> = {
   critical: { wrap: "from-red-50 border-red-200", val: "text-red-700", dot: "bg-red-400" },
   warning: { wrap: "from-amber-50 border-amber-200", val: "text-caution", dot: "bg-amber-400" },
@@ -56,6 +61,11 @@ function MetricCard({ card }: { card: SectionCard }) {
         {fmt(card.value, card.unit)}
         {card.unit && card.unit !== "GHS" && <span className="ml-1 text-xs font-bold text-ink/40">{card.unit}</span>}
       </strong>
+      {card.unit === "eggs" && card.value > 0 && (
+        <span className="mt-1 block text-[11px] font-semibold text-ink/40">
+          {(card.value / EGGS_PER_CRATE).toLocaleString(undefined, { maximumFractionDigits: 1 })} crates
+        </span>
+      )}
     </Link>
   );
 }
