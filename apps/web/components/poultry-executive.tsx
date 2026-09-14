@@ -38,6 +38,24 @@ type FeedStock = {
 };
 
 const BAG_KG = 50;
+// Matches EGG_PIECES_PER_CRATE in apps/api's poultry.service.ts — eggs are
+// recorded in pieces but tracked/sold as crates everywhere else in the app.
+const EGGS_PER_CRATE = 30;
+
+// Owner readiness request (2026-09-14): the daily KPI tiles only ever showed
+// a raw count with no sense of whether that's trending up or down. Compares
+// today's trend value against yesterday's (both come from the same 7-day
+// trend arrays the dashboard already fetches) and colors the result using
+// the caller's sense of which direction is actually good for that metric.
+function trendDelta(today: number, yesterday: number, goodDirection: "up" | "down" | "neutral" = "neutral") {
+  if (yesterday === 0) return today === 0 ? null : { text: "new today", tone: "neutral" as const };
+  const pct = Math.round(((today - yesterday) / yesterday) * 100);
+  if (pct === 0) return { text: "flat vs yesterday", tone: "neutral" as const };
+  const isUp = pct > 0;
+  const tone: "good" | "bad" | "neutral" =
+    goodDirection === "neutral" ? "neutral" : (isUp && goodDirection === "up") || (!isUp && goodDirection === "down") ? "good" : "bad";
+  return { text: `${isUp ? "▲" : "▼"} ${isUp ? "+" : ""}${pct}% vs yesterday`, tone };
+}
 
 export function PoultryExecutivePage() {
   const [dash, setDash] = useState<PoultryDashboard | null>(() => getCachedFirst<ApiEnvelope<PoultryDashboard>>("/poultry/dashboard")?.data ?? null);
@@ -59,8 +77,13 @@ export function PoultryExecutivePage() {
   useEffect(() => { load(); }, []);
 
   const todayMortality = dash?.trends.mortality.at(-1)?.count ?? 0;
+  const yesterdayMortality = dash?.trends.mortality.at(-2)?.count ?? 0;
   const todayEggs = dash?.trends.eggs.at(-1)?.total ?? 0;
+  const yesterdayEggs = dash?.trends.eggs.at(-2)?.total ?? 0;
   const todayFeed = dash?.trends.feed.at(-1)?.kg ?? 0;
+  const yesterdayFeed = dash?.trends.feed.at(-2)?.kg ?? 0;
+  const todayEggCrates = todayEggs / EGGS_PER_CRATE;
+  const feedPerBird = dash && dash.summary.currentLiveBirds > 0 ? todayFeed / dash.summary.currentLiveBirds : 0;
   const feedOnHandBags = feed ? Math.round(feed.totals.onHandKg / BAG_KG) : 0;
   // rough days of cover from the last week's average daily consumption
   const weekFeed = (dash?.trends.feed ?? []).reduce((s, p) => s + (p.kg ?? 0), 0);
@@ -117,9 +140,24 @@ export function PoultryExecutivePage() {
         <>
           <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             <Kpi label="Birds alive" value={dash.summary.currentLiveBirds.toLocaleString()} />
-            <Kpi label="Mortality today" value={String(todayMortality)} tone={todayMortality > 0 ? "critical" : "good"} />
-            <Kpi label="Eggs today" value={todayEggs.toLocaleString()} />
-            <Kpi label="Feed used today" value={`${Math.round(todayFeed).toLocaleString()} kg`} />
+            <Kpi
+              label="Mortality today"
+              value={String(todayMortality)}
+              tone={todayMortality > 0 ? "critical" : "good"}
+              delta={trendDelta(todayMortality, yesterdayMortality, "down") ?? undefined}
+            />
+            <Kpi
+              label="Eggs today"
+              value={todayEggs.toLocaleString()}
+              sub={`${todayEggCrates.toLocaleString(undefined, { maximumFractionDigits: 1 })} crates`}
+              delta={trendDelta(todayEggs, yesterdayEggs, "up") ?? undefined}
+            />
+            <Kpi
+              label="Feed used today"
+              value={`${Math.round(todayFeed).toLocaleString()} kg`}
+              sub={feedPerBird > 0 ? `${feedPerBird.toFixed(2)} kg/bird` : undefined}
+              delta={trendDelta(todayFeed, yesterdayFeed, "neutral") ?? undefined}
+            />
             <Kpi
               label="Feed in store"
               value={`${feedOnHandBags.toLocaleString()} bags`}
@@ -190,7 +228,7 @@ export function PoultryExecutivePage() {
           </div>
 
           <div className="mt-5 grid gap-5 lg:grid-cols-3">
-            <Chart title="Eggs / day"><LineChart data={eggSeries} margin={M}><Grid /><X /><Y /><Tip /><Line type="monotone" dataKey="eggs" stroke="#3C6E9F" strokeWidth={2} dot={false} /></LineChart></Chart>
+            <Chart title="Eggs / day"><LineChart data={eggSeries} margin={M}><Grid /><X /><Y /><EggTip /><Line type="monotone" dataKey="eggs" stroke="#3C6E9F" strokeWidth={2} dot={false} /></LineChart></Chart>
             <Chart title="Mortality / day"><LineChart data={mortSeries} margin={M}><Grid /><X /><Y /><Tip /><Line type="monotone" dataKey="deaths" stroke="#9A4526" strokeWidth={2} dot={false} /></LineChart></Chart>
             <Chart title="Feed / day (kg)"><LineChart data={feedSeries} margin={M}><Grid /><X /><Y /><Tip /><Line type="monotone" dataKey="kg" stroke="#2F6F6A" strokeWidth={2} dot={false} /></LineChart></Chart>
           </div>
@@ -200,7 +238,7 @@ export function PoultryExecutivePage() {
               <Chart title="Farm comparison — eggs & mortality" height={260}>
                 <BarChart data={farmComparison} margin={M}>
                   <Grid /><XAxis dataKey="farm" tick={AX} /><YAxis yAxisId="l" tick={AX} width={48} /><YAxis yAxisId="r" orientation="right" tick={AX} width={40} />
-                  <Tip /><Legend wrapperStyle={{ fontSize: 11 }} />
+                  <FarmCompareTip /><Legend wrapperStyle={{ fontSize: 11 }} />
                   <Bar yAxisId="l" dataKey="eggs" name="Eggs" fill="#3C6E9F" radius={[3, 3, 0, 0]} />
                   <Bar yAxisId="r" dataKey="mortalityPct" name="Mortality %" fill="#9A4526" radius={[3, 3, 0, 0]} />
                 </BarChart>
@@ -219,6 +257,16 @@ const Grid = () => <CartesianGrid strokeDasharray="4 5" stroke="#eadfd2" vertica
 const X = () => <XAxis dataKey="date" tick={AX} minTickGap={20} />;
 const Y = () => <YAxis tick={AX} width={44} />;
 const Tip = () => <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />;
+const crateLabel = (eggs: number) => `${eggs.toLocaleString()} (${(eggs / EGGS_PER_CRATE).toLocaleString(undefined, { maximumFractionDigits: 1 })} crates)`;
+const EggTip = () => (
+  <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} formatter={(value: any) => [crateLabel(Number(value)), "Eggs"]} />
+);
+const FarmCompareTip = () => (
+  <Tooltip
+    contentStyle={{ fontSize: 12, borderRadius: 8 }}
+    formatter={(value: any, name: any) => (name === "Eggs" ? [crateLabel(Number(value)), name] : [`${value}%`, name])}
+  />
+);
 
 function Chart({ title, children, height = 200 }: { title: string; children: React.ReactElement; height?: number }) {
   return (
@@ -231,13 +279,25 @@ function Chart({ title, children, height = 200 }: { title: string; children: Rea
   );
 }
 
-function Kpi({ label, value, sub, tone = "neutral" }: { label: string; value: string; sub?: string; tone?: "good" | "warning" | "critical" | "neutral" }) {
+function Kpi({
+  label, value, sub, delta, tone = "neutral",
+}: {
+  label: string; value: string; sub?: string;
+  delta?: { text: string; tone: "good" | "bad" | "neutral" };
+  tone?: "good" | "warning" | "critical" | "neutral";
+}) {
   const cls = tone === "critical" ? "text-red-600" : tone === "warning" ? "text-amber-700" : tone === "good" ? "text-emerald-700" : "text-ink";
+  const deltaCls = delta?.tone === "good" ? "text-emerald-700" : delta?.tone === "bad" ? "text-red-600" : "text-ink/40";
   return (
     <div className="app-card p-3">
       <div className="text-[11px] uppercase tracking-wide text-ink/45">{label}</div>
       <div className={`text-xl font-bold ${cls}`}>{value}</div>
-      {sub && <div className="text-[11px] text-ink/40">{sub}</div>}
+      {(sub || delta) && (
+        <div className="mt-0.5 flex items-center justify-between gap-2">
+          {sub && <div className="text-[11px] text-ink/40">{sub}</div>}
+          {delta && <div className={`text-[11px] font-semibold ${deltaCls}`}>{delta.text}</div>}
+        </div>
+      )}
     </div>
   );
 }
