@@ -4256,11 +4256,44 @@ model FeedExternalSale {
   @@index([deletedAt])
 }
 
+// A sales territory/outlet a Marketer owns (e.g. a named market or town).
+// Owner request (2026-09-14): onboarding several marketers, each submitting
+// their own weekly plan for their own market, without stepping on each
+// other. assignedUserId is who that marketer is; a market with none assigned
+// is unclaimed. No Prisma relation here, matching every other model in this
+// subsystem (MarketTarget, ProductionPlan, ...) — plain FK columns only.
+model Market {
+  id             String    @id @default(uuid())
+  companyId      String
+  branchId       String?
+  name           String    @db.VarChar(120)
+  code           String?   @db.VarChar(40)
+  assignedUserId String?
+  isActive       Boolean   @default(true)
+  notes          String?   @db.VarChar(500)
+  createdById    String?
+  updatedById    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  @@unique([companyId, name])
+  @@index([companyId])
+  @@index([branchId])
+  @@index([assignedUserId])
+  @@index([companyId, isActive])
+  @@index([deletedAt])
+}
+
 model MarketTarget {
   id               String               @id @default(uuid())
   companyId        String
   branchId         String?
   productionSiteId String?
+  // Which marketer's territory this weekly plan is for — nullable because
+  // a manager can still create a target with no specific market (a
+  // production-wide plan), only a Marketer-role submission requires one.
+  marketId         String?
   targetNumber     String               @db.VarChar(40)
   title            String               @db.VarChar(200)
   period           MarketTargetPeriod
@@ -4282,6 +4315,7 @@ model MarketTarget {
   @@index([companyId])
   @@index([branchId])
   @@index([productionSiteId])
+  @@index([marketId])
   @@index([companyId, period])
   @@index([companyId, status])
   @@index([periodStart])

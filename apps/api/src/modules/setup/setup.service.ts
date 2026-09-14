@@ -142,6 +142,7 @@ export class SetupService {
       ["Quality Officer", RoleLevel.OFFICER, "Quality control operations"],
       ["Vet/Health Officer", RoleLevel.OFFICER, "Veterinary and flock health operations"],
       ["Poultry Supervisor", RoleLevel.OFFICER, "Records farm feed-store receipts and pen-level poultry operations"],
+      ["Marketer", RoleLevel.OFFICER, "Submits a weekly market target for their own assigned market"],
       ["Worker", RoleLevel.WORKER, "Operational worker"],
       ["Auditor", RoleLevel.AUDITOR, "Read-only audit access"],
     ] as const;

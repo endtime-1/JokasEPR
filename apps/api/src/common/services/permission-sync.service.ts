@@ -23,6 +23,7 @@ const PERMISSIONS = [
   ["procurement.read", "Procurement", "View procurement and supplier records"],
   ["procurement.manage", "Procurement", "Manage procurement and supplier records"],
   ["market-planning.read", "Market Planning", "View market-led production planning and MRP"],
+  ["market-planning.submit", "Market Planning", "Create and submit a weekly/monthly market target for your own market"],
   ["market-planning.manage", "Market Planning", "Manage market targets, MRP, and production planning"],
   ["hr.read", "HR", "View HR, worker, and task records"],
   ["hr.manage", "HR", "Manage HR, worker, and task records"],
@@ -51,6 +52,7 @@ const ALL_KEYS = PERMISSIONS.map(([key]) => key);
 // the permission sync below like any other role. Never removes roles.
 const ENSURE_SYSTEM_ROLES: ReadonlyArray<readonly [string, string]> = [
   ["Poultry Supervisor", "Records farm feed-store receipts and pen-level poultry operations"],
+  ["Marketer", "Submits a weekly market target for their own assigned market"],
 ];
 
 const ROLE_PERMISSION_MAP: Record<string, readonly string[]> = {
@@ -66,8 +68,11 @@ const ROLE_PERMISSION_MAP: Record<string, readonly string[]> = {
   "Farm Manager": ["platform.read", "inventory.read", "inventory.manage", "poultry.read", "poultry.manage", "poultry.record", "poultry.supervise", "health.read", "health.manage", "maintenance.read", "maintenance.manage"],
   "Feed Mill Manager": ["platform.read", "inventory.read", "inventory.manage", "feed.read", "feed.manage", "market-planning.read", "quality.read", "maintenance.read", "maintenance.manage", "reports.export", "ai.read", "alerts.read", "alerts.manage"],
   "Feed Production Manager": ["platform.read", "inventory.read", "inventory.manage", "feed.read", "feed.manage", "market-planning.read", "quality.read", "maintenance.read", "maintenance.manage", "reports.export", "ai.read", "alerts.read", "alerts.manage"],
-  "Marketing Manager": ["platform.read", "inventory.read", "sales.read", "market-planning.read", "market-planning.manage", "reports.export", "ai.read", "alerts.read"],
-  "Sales Manager": ["platform.read", "inventory.read", "sales.read", "sales.manage", "market-planning.read", "market-planning.manage", "reports.export", "ai.read", "alerts.read"],
+  // identity.read (2026-09-14): assigning a marketer to a Market means
+  // picking them from the company's user list — the same reason any
+  // "assign this to a teammate" picker needs read access to that list.
+  "Marketing Manager": ["platform.read", "identity.read", "inventory.read", "sales.read", "market-planning.read", "market-planning.submit", "market-planning.manage", "reports.export", "ai.read", "alerts.read"],
+  "Sales Manager": ["platform.read", "identity.read", "inventory.read", "sales.read", "sales.manage", "market-planning.read", "market-planning.submit", "market-planning.manage", "reports.export", "ai.read", "alerts.read"],
   "Soya Manager": ["platform.read", "inventory.read", "inventory.manage", "soya.read", "soya.manage", "quality.read", "maintenance.read", "maintenance.manage", "reports.export", "ai.read", "alerts.read", "alerts.manage"],
   "Soya Processing Manager": ["platform.read", "inventory.read", "inventory.manage", "soya.read", "soya.manage", "quality.read", "maintenance.read", "maintenance.manage", "reports.export", "ai.read", "alerts.read", "alerts.manage"],
 
@@ -92,6 +97,11 @@ const ROLE_PERMISSION_MAP: Record<string, readonly string[]> = {
   // farm feed store, records feeding/mortality/eggs (which draw feed stock down
   // automatically), and reconciles feed on hand. Sits alongside Workers.
   "Poultry Supervisor": ["platform.read", "poultry.read", "poultry.record", "poultry.supervise", "health.read", "inventory.read", "feed.read", "reports.export", "alerts.read"],
+  // Marketer: owns one (or more) assigned Markets, submits their own weekly
+  // MarketTarget for it. No market-planning.manage — can't approve, and the
+  // service layer further restricts them to seeing/editing only their own
+  // targets, never another marketer's.
+  "Marketer": ["platform.read", "sales.read", "inventory.read", "market-planning.read", "market-planning.submit", "reports.export", "ai.read", "alerts.read"],
 
   // ── Worker-level roles ───────────────────────────────────────────────────────
   "Worker": ["platform.read", "poultry.read", "poultry.record", "inventory.read"],
