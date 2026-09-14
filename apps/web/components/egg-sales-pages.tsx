@@ -32,7 +32,11 @@ export function EggSalesPage() {
   const [loading, setLoading] = useState(!hasCached("/egg-sales"));
   const [loadError, setLoadError] = useState("");
 
-  const [form, setForm] = useState({ warehouseId: "", buyerName: "", quantity: "", unit: "CRATES" as "PIECES" | "CRATES", unitPriceCrate: "", notes: "" });
+  // Owner feedback (2026-09-14): typed-by-hand sales defaulted to "right
+  // now" with no way to backdate — unlike the bulk import, which could set
+  // any date. The backend always supported this (saleDate is optional on
+  // CreateEggSaleDto); this field was just missing from the form.
+  const [form, setForm] = useState({ warehouseId: "", buyerName: "", quantity: "", unit: "CRATES" as "PIECES" | "CRATES", unitPriceCrate: "", saleDate: new Date().toISOString().slice(0, 10), notes: "" });
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [message, setMessage] = useState("");
@@ -78,13 +82,14 @@ export function EggSalesPage() {
           quantity: quantityNum,
           unit: form.unit,
           unitPriceCrate: Number(form.unitPriceCrate),
+          saleDate: form.saleDate || undefined,
           notes: form.notes || undefined
         })
       });
       invalidateCache("/egg-sales", true);
       invalidateCache("/egg-sales/options", true);
       setMessage(`Sold ${res.data.quantityCrates} crate(s) — ${res.data.saleNumber}`);
-      setForm((f) => ({ ...f, buyerName: "", quantity: "", unitPriceCrate: "", notes: "" }));
+      setForm((f) => ({ ...f, buyerName: "", quantity: "", unitPriceCrate: "", saleDate: new Date().toISOString().slice(0, 10), notes: "" }));
       load();
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Failed to record egg sale.");
@@ -140,7 +145,7 @@ export function EggSalesPage() {
           </select>
         </label>
         <label className="grid gap-1 text-sm font-semibold">Buyer (optional)<input className={inputClass} value={form.buyerName} onChange={(e) => setForm({ ...form, buyerName: e.target.value })} placeholder="Walk-in / customer name" /></label>
-        <div />
+        <label className="grid gap-1 text-sm font-semibold">Sale date<input required type="date" max={new Date().toISOString().slice(0, 10)} className={inputClass} value={form.saleDate} onChange={(e) => setForm({ ...form, saleDate: e.target.value })} /></label>
 
         <label className="grid gap-1 text-sm font-semibold">
           Quantity
