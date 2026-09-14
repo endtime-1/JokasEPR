@@ -44,10 +44,12 @@ overrides:
   '@types/react-dom': '^19.0.0'
   # @nestjs/platform-express@10.4.22 pins multer@2.0.2 (3 open HIGH DoS
   # advisories) as its own transitive dependency, independent of apps/api's
-  # direct multer@^2.2.0 — pnpm's isolated node_modules means Nest's
+  # direct multer@^2.3.0 — pnpm's isolated node_modules means Nest's
   # FileInterceptor (used on 2 authenticated + 1 unauthenticated public
   # upload endpoint) resolved the vulnerable version regardless. Force it.
-  multer: '^2.2.0'
+  # (2026-09-14 readiness audit: bumped ^2.2.0 -> ^2.3.0, fixes a file-size-
+  # limit bypass via an async fileFilter race condition, GHSA-qvfw-j98x-7q72.)
+  multer: '^2.3.0'
   # next@15.5.23 pulls sharp@0.34.5 (inherited libvips CVEs) for its image
   # optimization pipeline, used on web + storefront. Force the fixed line.
   sharp: '^0.35.0'
