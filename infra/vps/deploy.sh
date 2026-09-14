@@ -143,15 +143,18 @@ pnpm --filter @jokas/db exec prisma migrate deploy
 # code/env. delete+start guarantees the new build actually takes over.
 #
 # (2026-09-14) `pm2 delete` returning does not guarantee the underlying OS
-# process has actually exited yet, and `pkill` (no signal = SIGTERM) only
-# *asks* it to — a Next.js standalone server.js that doesn't react fast
-# enough to SIGTERM left the previous `sleep 1` racing `pm2 start`, which
-# then hit EADDRINUSE and crash-looped while the orphan kept answering
-# requests with a now-deleted build's assets (missing chunks -> 400s in the
-# browser). This happened on two consecutive deploys, not a one-off fluke.
-# Two changes: `pkill -9` for an immediate, unignorable kill, and an actual
-# wait-until-free poll on each port instead of a fixed guess at how long
-# that takes.
+# process has actually exited yet, and `pkill -f "<script path>"` only ever
+# matches by command-line pattern — the same evening this was first written,
+# jokas-api got stuck in a 12-minute, 50-restart EADDRINUSE loop on :4001
+# even with this pkill in place, because the actual squatter (confirmed via
+# `ss -ltnp`) had a PID nothing here was tracking: PM2 had already lost sync
+# between its bookkept PID and the real OS process during the earlier rapid
+# restart cycling (exactly the "systemd-resurrected process list can lose
+# the real PIDs" risk the comment above already named, just triggered by
+# restart-thrashing instead of a reboot). A command-line pattern can't catch
+# that — the fix is to ask the OS who actually owns the port and kill THAT,
+# which is unconditionally correct regardless of what PM2 thinks or what the
+# process's argv looks like.
 log "Restart PM2 processes (clean)"
 pm2 delete jokas-api jokas-web jokas-storefront 2>/dev/null || true
 pkill -9 -f "apps/api/dist/main.js" 2>/dev/null || true
@@ -160,13 +163,44 @@ pkill -9 -f "standalone/apps/storefront/server.js" 2>/dev/null || true
 pkill -9 -f "/opt/jokas/live/web/apps/web/server.js" 2>/dev/null || true
 pkill -9 -f "/opt/jokas/live/storefront/apps/storefront/server.js" 2>/dev/null || true
 
+# Authoritative: whoever the kernel says is listening on this port, dead —
+# no dependency on PM2's bookkeeping or matching the right command line.
+kill_port() {
+  local port="$1"
+  local pids
+  # ss's local-address column looks like "*:4001" or "127.0.0.1:4001" — match
+  # ":<port>" immediately followed by whitespace so :4001 can't also match
+  # :40010 or similar.
+  # `grep -oE` + sed, not `grep -oP` — PCRE support isn't guaranteed on every
+  # grep build. -oE also correctly returns every pid= on a line with several
+  # sockets/users, where a single greedy sed capture would only catch the last.
+  pids=$(ss -ltnp 2>/dev/null | grep -E ":${port}[[:space:]]" | grep -oE 'pid=[0-9]+' | sed 's/pid=//' | sort -u)
+  for pid in $pids; do
+    echo "  port $port held by pid $pid — killing"
+    kill -9 "$pid" 2>/dev/null || true
+  done
+}
+kill_port 4001
+kill_port 3000
+kill_port 3002
+
 wait_port_free() {
   local port="$1" tries=0
   while ss -ltn 2>/dev/null | grep -q ":$port "; do
     tries=$((tries + 1))
     if [ "$tries" -ge 20 ]; then
-      echo "WARNING: port $port still in use after 10s — something didn't die. Proceeding anyway; pm2 start may fail."
-      return 0
+      echo "  port $port still in use after 10s — trying kill_port once more."
+      kill_port "$port"
+      tries=0
+      sleep 0.5
+      # If it's STILL not free after a second full round, something is
+      # respawning faster than we can kill it — stop looping forever and
+      # let pm2 start's own failure surface loudly instead of hanging the
+      # deploy indefinitely.
+      if ss -ltn 2>/dev/null | grep -q ":$port "; then
+        echo "  WARNING: port $port still in use — proceeding anyway; pm2 start may fail. Check for a respawning process manually."
+        return 0
+      fi
     fi
     sleep 0.5
   done
