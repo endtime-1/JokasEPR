@@ -1,4 +1,4 @@
-import { BadRequestException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException } from "@nestjs/common";
 import { AuthenticatedUser } from "@jokas/shared";
 import { MarketPlanningService } from "./market-planning.service";
 
@@ -176,7 +176,7 @@ describe("MarketPlanningService.submitTarget / approveTarget — status-guarded,
 
   describe("submitTarget", () => {
     it("rejects submitting a target that isn't DRAFT", async () => {
-      mockPrisma.marketTarget.findFirst.mockResolvedValue({ id: "mt-1", companyId: "company-1", status: "SUBMITTED", branchId: "branch-1", productionSiteId: "site-1" });
+      mockPrisma.marketTarget.findFirst.mockResolvedValue({ id: "mt-1", companyId: "company-1", status: "SUBMITTED", branchId: "branch-1", productionSiteId: "site-1", createdById: "user-1" });
       const service = makeService();
 
       await expect(service.submitTarget(makeUser(), "mt-1", {})).rejects.toThrow(BadRequestException);
@@ -184,7 +184,7 @@ describe("MarketPlanningService.submitTarget / approveTarget — status-guarded,
     });
 
     it("allows submitting a DRAFT target", async () => {
-      mockPrisma.marketTarget.findFirst.mockResolvedValue({ id: "mt-1", companyId: "company-1", status: "DRAFT", branchId: "branch-1", productionSiteId: "site-1", targetNumber: "MT-1" });
+      mockPrisma.marketTarget.findFirst.mockResolvedValue({ id: "mt-1", companyId: "company-1", status: "DRAFT", branchId: "branch-1", productionSiteId: "site-1", targetNumber: "MT-1", createdById: "user-1" });
       mockPrisma.marketTarget.update.mockResolvedValue({ id: "mt-1", status: "SUBMITTED" });
       const service = makeService();
 
@@ -731,5 +731,162 @@ describe("MarketPlanningService.createTarget — flags a suspiciously large comp
     );
 
     expect(result.warnings).toBeUndefined();
+  });
+});
+
+describe("MarketPlanningService — marketer onboarding: own-market scoping, self-approval block, reject (2026-09-14)", () => {
+  const mockTx = {
+    marketTarget: { create: jest.fn() },
+    marketTargetItem: { createMany: jest.fn(), findMany: jest.fn().mockResolvedValue([]) }
+  };
+  const mockPrisma = {
+    market: { findFirst: jest.fn(), findMany: jest.fn() },
+    product: { findFirst: jest.fn().mockResolvedValue({ id: "prod-1", name: "Broiler Starter", companyId: "company-1" }) },
+    feedFormula: { findFirst: jest.fn().mockResolvedValue({ id: "formula-1", targetBatchKg: 100 }) },
+    feedFormulaVersion: { findFirst: jest.fn().mockResolvedValue(null) },
+    marketTarget: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
+    marketTargetItem: { findMany: jest.fn().mockResolvedValue([]), updateMany: jest.fn() },
+    $transaction: jest.fn().mockImplementation((cb: (tx: typeof mockTx) => Promise<unknown>) => cb(mockTx))
+  };
+
+  function makeService() {
+    return new MarketPlanningService(mockPrisma as never, { write: jest.fn() } as never);
+  }
+
+  // A real marketer: market-planning.submit only, no .manage, no global access.
+  function makeMarketer(overrides: Partial<AuthenticatedUser> = {}): AuthenticatedUser {
+    return {
+      id: "marketer-1", companyId: "company-1", email: "m@x.com", fullName: "Marketer",
+      roles: ["Marketer"], permissions: ["market-planning.read", "market-planning.submit"],
+      branchIds: [], farmIds: [], warehouseIds: [], productionSiteIds: [],
+      hasGlobalAccess: false,
+      ...overrides
+    };
+  }
+
+  function makeManager(overrides: Partial<AuthenticatedUser> = {}): AuthenticatedUser {
+    return {
+      id: "manager-1", companyId: "company-1", email: "mgr@x.com", fullName: "Manager",
+      roles: ["Marketing Manager"], permissions: ["market-planning.read", "market-planning.submit", "market-planning.manage"],
+      branchIds: [], farmIds: [], warehouseIds: [], productionSiteIds: [],
+      hasGlobalAccess: false,
+      ...overrides
+    };
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPrisma.product.findFirst.mockResolvedValue({ id: "prod-1", name: "Broiler Starter", companyId: "company-1" });
+    mockPrisma.feedFormula.findFirst.mockResolvedValue({ id: "formula-1", targetBatchKg: 100 });
+    mockPrisma.feedFormulaVersion.findFirst.mockResolvedValue(null);
+    mockTx.marketTarget.create.mockResolvedValue({ id: "mt-1", targetNumber: "MT-1" });
+    mockPrisma.marketTarget.findMany.mockResolvedValue([]); // no overlap by default
+  });
+
+  const oneItem = [{ productId: "prod-1", baseQuantity: 10, bagSizeKg: 50 }];
+  const dto = { title: "Week 38", period: "WEEKLY", periodStart: "2026-09-14", periodEnd: "2026-09-20", items: oneItem };
+
+  describe("createTarget — a submit-only marketer can only plan for their own market", () => {
+    it("auto-uses the marketer's single assigned market when none is specified", async () => {
+      mockPrisma.market.findMany.mockResolvedValue([{ id: "market-1", companyId: "company-1", name: "Kejetia Market", branchId: null }]);
+      const service = makeService();
+
+      await service.createTarget(makeMarketer(), dto as never, {});
+
+      expect(mockTx.marketTarget.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ marketId: "market-1", createdById: "marketer-1" })
+      }));
+    });
+
+    it("rejects a marketer with no market assigned yet", async () => {
+      mockPrisma.market.findMany.mockResolvedValue([]);
+      const service = makeService();
+
+      await expect(service.createTarget(makeMarketer(), dto as never, {})).rejects.toThrow(ForbiddenException);
+      expect(mockTx.marketTarget.create).not.toHaveBeenCalled();
+    });
+
+    it("rejects a marketer trying to submit for a market they're not assigned to", async () => {
+      mockPrisma.market.findMany.mockResolvedValue([{ id: "market-1", companyId: "company-1", name: "Kejetia Market", branchId: null }]);
+      const service = makeService();
+
+      await expect(service.createTarget(makeMarketer(), { ...dto, marketId: "market-99" } as never, {})).rejects.toThrow(ForbiddenException);
+      expect(mockTx.marketTarget.create).not.toHaveBeenCalled();
+    });
+
+    it("warns (does not block) when another target already overlaps the same market/period", async () => {
+      mockPrisma.market.findMany.mockResolvedValue([{ id: "market-1", companyId: "company-1", name: "Kejetia Market", branchId: null }]);
+      mockPrisma.marketTarget.findFirst.mockResolvedValue({ targetNumber: "MT-OLD", status: "SUBMITTED", periodStart: new Date("2026-09-14"), periodEnd: new Date("2026-09-20") });
+      const service = makeService();
+
+      const result = await service.createTarget(makeMarketer(), dto as never, {});
+
+      expect(mockTx.marketTarget.create).toHaveBeenCalled();
+      expect(result.warnings?.[0]).toMatch(/already has MT-OLD/);
+    });
+  });
+
+  describe("listTargets — a marketer sees only their own plans, a manager sees everyone's", () => {
+    it("scopes the query to createdById for a submit-only marketer", async () => {
+      mockPrisma.marketTargetItem.findMany.mockResolvedValueOnce([]);
+      const service = makeService();
+
+      await service.listTargets(makeMarketer(), {});
+
+      expect(mockPrisma.marketTarget.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({ createdById: "marketer-1" })
+      }));
+    });
+
+    it("does not scope by createdById for a manager", async () => {
+      mockPrisma.marketTargetItem.findMany.mockResolvedValueOnce([]);
+      const service = makeService();
+
+      await service.listTargets(makeManager(), {});
+
+      const where = mockPrisma.marketTarget.findMany.mock.calls[0][0].where;
+      expect(where.createdById).toBeUndefined();
+    });
+  });
+
+  describe("approveTarget / rejectTarget — self-review is blocked", () => {
+    it("blocks a manager from approving their own submitted target", async () => {
+      mockPrisma.marketTarget.findFirst.mockResolvedValue({ id: "mt-1", companyId: "company-1", status: "SUBMITTED", branchId: "branch-1", createdById: "manager-1" });
+      const service = makeService();
+
+      await expect(
+        service.approveTarget(makeManager(), "mt-1", { productionSiteId: "site-1", centralWarehouseId: "wh-1" } as never, {})
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it("blocks a manager from rejecting their own submitted target", async () => {
+      mockPrisma.marketTarget.findFirst.mockResolvedValue({ id: "mt-1", companyId: "company-1", status: "SUBMITTED", branchId: "branch-1", createdById: "manager-1" });
+      const service = makeService();
+
+      await expect(service.rejectTarget(makeManager(), "mt-1", { reason: "too high" }, {})).rejects.toThrow(ForbiddenException);
+    });
+
+    it("rejects a submitted target when reviewed by a different manager, recording the reason", async () => {
+      mockPrisma.marketTarget.findFirst.mockResolvedValue({ id: "mt-1", companyId: "company-1", status: "SUBMITTED", branchId: "branch-1", createdById: "marketer-1", targetNumber: "MT-1" });
+      mockPrisma.marketTarget.updateMany.mockResolvedValue({ count: 1 });
+      mockPrisma.marketTarget.findUniqueOrThrow.mockResolvedValue({ id: "mt-1", status: "REJECTED", rejectionReason: "too high" });
+      const service = makeService();
+
+      const result = await service.rejectTarget(makeManager(), "mt-1", { reason: "too high" }, {});
+
+      expect(mockPrisma.marketTarget.updateMany).toHaveBeenCalledWith({
+        where: { id: "mt-1", status: "SUBMITTED" },
+        data: expect.objectContaining({ status: "REJECTED", rejectedById: "manager-1", rejectionReason: "too high" })
+      });
+      expect(result.data.status).toBe("REJECTED");
+    });
+
+    it("rejects rejecting a target that isn't SUBMITTED", async () => {
+      mockPrisma.marketTarget.findFirst.mockResolvedValue({ id: "mt-1", companyId: "company-1", status: "DRAFT", branchId: "branch-1", createdById: "marketer-1" });
+      mockPrisma.marketTarget.updateMany.mockResolvedValue({ count: 0 });
+      const service = makeService();
+
+      await expect(service.rejectTarget(makeManager(), "mt-1", { reason: "too high" }, {})).rejects.toThrow(BadRequestException);
+    });
   });
 });

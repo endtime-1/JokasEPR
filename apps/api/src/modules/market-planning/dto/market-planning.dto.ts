@@ -1,6 +1,6 @@
 import { MarketTargetPeriod } from "@prisma/client";
 import { Type } from "class-transformer";
-import { IsArray, IsDateString, IsEnum, IsNumber, IsOptional, IsString, IsUUID, Max, MaxLength, Min, ValidateNested } from "class-validator";
+import { IsArray, IsBoolean, IsDateString, IsEnum, IsNumber, IsOptional, IsString, IsUUID, Max, MaxLength, Min, ValidateNested } from "class-validator";
 
 export class MarketPlanningQueryDto {
   @IsOptional()
@@ -14,6 +14,10 @@ export class MarketPlanningQueryDto {
   @IsOptional()
   @IsUUID()
   warehouseId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  marketId?: string;
 
   @IsOptional()
   @IsEnum(MarketTargetPeriod)
@@ -93,6 +97,10 @@ export class CreateMarketTargetDto {
   productionSiteId?: string;
 
   @IsOptional()
+  @IsUUID()
+  marketId?: string;
+
+  @IsOptional()
   @IsString()
   @MaxLength(500)
   notes?: string;
@@ -117,6 +125,48 @@ export class UpdateMarketTargetDto {
   @IsOptional() @IsDateString() periodEnd?: string;
   @IsOptional() @IsUUID() branchId?: string;
   @IsOptional() @IsUUID() productionSiteId?: string;
+  @IsOptional() @IsUUID() marketId?: string;
+  @IsOptional() @IsString() @MaxLength(500) notes?: string;
+}
+
+export class RejectMarketTargetDto {
+  @IsString()
+  @MaxLength(240)
+  reason!: string;
+}
+
+export class CreateMarketDto {
+  @IsString()
+  @MaxLength(120)
+  name!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  code?: string;
+
+  @IsOptional()
+  @IsUUID()
+  branchId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  assignedUserId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  notes?: string;
+}
+
+export class UpdateMarketDto {
+  @IsOptional() @IsString() @MaxLength(120) name?: string;
+  @IsOptional() @IsString() @MaxLength(40) code?: string;
+  @IsOptional() @IsUUID() branchId?: string;
+  // Nullable on purpose — this is how a manager un-assigns a marketer from
+  // a market (e.g. they left, or ownership moved to someone else).
+  @IsOptional() @IsUUID() assignedUserId?: string | null;
+  @IsOptional() @IsBoolean() isActive?: boolean;
   @IsOptional() @IsString() @MaxLength(500) notes?: string;
 }
 

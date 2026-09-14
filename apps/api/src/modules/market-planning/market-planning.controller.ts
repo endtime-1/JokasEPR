@@ -9,10 +9,13 @@ import {
   ApproveMarketTargetDto,
   CalculateMrpDto,
   ConvertRecommendationDto,
+  CreateMarketDto,
   CreateMarketTargetDto,
   CreateProductionExecutionDto,
   GenerateProcurementRecommendationsDto,
   MarketPlanningQueryDto,
+  RejectMarketTargetDto,
+  UpdateMarketDto,
   UpdateMarketTargetDto
 } from "./dto/market-planning.dto";
 import { MarketPlanningService } from "./market-planning.service";
@@ -34,14 +37,48 @@ export class MarketPlanningController {
     return this.marketPlanningService.options(user);
   }
 
+  @Get("markets")
+  @RequirePermissions(PERMISSIONS.MARKET_PLANNING_READ)
+  markets(@CurrentUser() user: AuthenticatedUser) {
+    return this.marketPlanningService.listMarkets(user);
+  }
+
+  @Get("markets/mine")
+  @RequirePermissions(PERMISSIONS.MARKET_PLANNING_READ)
+  myMarkets(@CurrentUser() user: AuthenticatedUser) {
+    return this.marketPlanningService.myMarkets(user);
+  }
+
+  @Post("markets")
+  @RequirePermissions(PERMISSIONS.MARKET_PLANNING_MANAGE)
+  createMarket(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateMarketDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.marketPlanningService.createMarket(user, dto, { ipAddress, userAgent });
+  }
+
+  @Patch("markets/:id")
+  @RequirePermissions(PERMISSIONS.MARKET_PLANNING_MANAGE)
+  updateMarket(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateMarketDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.marketPlanningService.updateMarket(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Delete("markets/:id")
+  @RequirePermissions(PERMISSIONS.MARKET_PLANNING_MANAGE)
+  deleteMarket(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.marketPlanningService.deleteMarket(user, id, { ipAddress, userAgent });
+  }
+
   @Get("targets")
   @RequirePermissions(PERMISSIONS.MARKET_PLANNING_READ)
   targets(@CurrentUser() user: AuthenticatedUser, @Query() query: MarketPlanningQueryDto) {
     return this.marketPlanningService.listTargets(user, query);
   }
 
+  // A marketer (market-planning.submit, not .manage) can create/edit/submit/
+  // delete their own targets — the service layer (resolveMarketForCreate,
+  // assertOwnTargetOrManage) does the actual ownership/market enforcement,
+  // this gate just says "you're allowed to submit something at all."
   @Post("targets")
-  @RequirePermissions(PERMISSIONS.MARKET_PLANNING_MANAGE)
+  @RequirePermissions(PERMISSIONS.MARKET_PLANNING_SUBMIT)
   createTarget(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateMarketTargetDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.marketPlanningService.createTarget(user, dto, { ipAddress, userAgent });
   }
@@ -53,27 +90,36 @@ export class MarketPlanningController {
   }
 
   @Patch("targets/:id")
-  @RequirePermissions(PERMISSIONS.MARKET_PLANNING_MANAGE)
+  @RequirePermissions(PERMISSIONS.MARKET_PLANNING_SUBMIT)
   updateTarget(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdateMarketTargetDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.marketPlanningService.updateTarget(user, id, dto, { ipAddress, userAgent });
   }
 
   @Delete("targets/:id")
-  @RequirePermissions(PERMISSIONS.MARKET_PLANNING_MANAGE)
+  @RequirePermissions(PERMISSIONS.MARKET_PLANNING_SUBMIT)
   deleteTarget(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.marketPlanningService.deleteTarget(user, id, { ipAddress, userAgent });
   }
 
   @Patch("targets/:id/submit")
-  @RequirePermissions(PERMISSIONS.MARKET_PLANNING_MANAGE)
+  @RequirePermissions(PERMISSIONS.MARKET_PLANNING_SUBMIT)
   submitTarget(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.marketPlanningService.submitTarget(user, id, { ipAddress, userAgent });
   }
 
+  // Approve/reject stay MANAGE-only — self-approval/self-rejection is
+  // blocked in the service regardless (a manager who submitted their own
+  // target still needs a different manager to decide it).
   @Patch("targets/:id/approve")
   @RequirePermissions(PERMISSIONS.MARKET_PLANNING_MANAGE)
   approveTarget(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: ApproveMarketTargetDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.marketPlanningService.approveTarget(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Patch("targets/:id/reject")
+  @RequirePermissions(PERMISSIONS.MARKET_PLANNING_MANAGE)
+  rejectTarget(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: RejectMarketTargetDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.marketPlanningService.rejectTarget(user, id, dto, { ipAddress, userAgent });
   }
 
   @Patch("targets/:targetId/items/:itemId/adjust")

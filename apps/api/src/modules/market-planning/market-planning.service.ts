@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import { AuthenticatedUser } from "@jokas/shared";
+import { AuthenticatedUser, PERMISSIONS } from "@jokas/shared";
 import {
   Prisma,
   MarketPlanningStatus,
@@ -17,10 +17,13 @@ import {
   ApproveMarketTargetDto,
   CalculateMrpDto,
   ConvertRecommendationDto,
+  CreateMarketDto,
   CreateMarketTargetDto,
   CreateProductionExecutionDto,
   GenerateProcurementRecommendationsDto,
   MarketPlanningQueryDto,
+  RejectMarketTargetDto,
+  UpdateMarketDto,
   UpdateMarketTargetDto
 } from "./dto/market-planning.dto";
 
@@ -172,6 +175,88 @@ export class MarketPlanningService {
     return { data: { branches, productionSites, warehouses, finishedFeeds, formulas, rawMaterials } };
   }
 
+  // ── Markets — a marketer's territory, and who owns it ─────────────────────────
+  // Marketer onboarding (2026-09-14): companies with several marketers each
+  // running their own weekly plan needed something a plan is FOR (a named
+  // market/territory) and someone that market belongs to (assignedUserId) —
+  // neither existed before. Read is open to anyone with market-planning.read
+  // (a marketer should be able to see the full list, not just their own);
+  // create/update/delete require .manage, same as everything else here.
+
+  async listMarkets(user: AuthenticatedUser) {
+    const rows = await this.prisma.market.findMany({
+      where: { companyId: user.companyId, deletedAt: null },
+      orderBy: { name: "asc" }
+    });
+    const assignees = await this.userMap(user.companyId, rows.map((r) => r.assignedUserId).filter((id): id is string => !!id));
+    return { data: rows.map((r) => ({ ...r, assignedUser: r.assignedUserId ? assignees.get(r.assignedUserId) : undefined })) };
+  }
+
+  // What a Marketer's own "my market(s)" UI reads — also used internally by
+  // resolveMarketForCreate.
+  async myMarkets(user: AuthenticatedUser) {
+    const rows = await this.prisma.market.findMany({
+      where: { companyId: user.companyId, assignedUserId: user.id, isActive: true, deletedAt: null },
+      orderBy: { name: "asc" }
+    });
+    return { data: rows };
+  }
+
+  async createMarket(user: AuthenticatedUser, dto: CreateMarketDto, context: RequestContext) {
+    if (dto.branchId) this.assertBranchAccess(user, dto.branchId);
+    if (dto.assignedUserId) await this.requireCompanyUser(user.companyId, dto.assignedUserId);
+    const market = await this.prisma.market.create({
+      data: { companyId: user.companyId, branchId: dto.branchId, name: dto.name, code: dto.code, assignedUserId: dto.assignedUserId, notes: dto.notes, createdById: user.id }
+    });
+    await this.writeAudit(user, "CREATE", "Market", market.id, `Created market ${market.name}`, context, { branchId: dto.branchId });
+    return { data: market };
+  }
+
+  async updateMarket(user: AuthenticatedUser, id: string, dto: UpdateMarketDto, context: RequestContext) {
+    const market = await this.prisma.market.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!market) throw new NotFoundException("Market was not found.");
+    if (dto.branchId) this.assertBranchAccess(user, dto.branchId);
+    if (dto.assignedUserId) await this.requireCompanyUser(user.companyId, dto.assignedUserId);
+    const updated = await this.prisma.market.update({
+      where: { id },
+      data: {
+        name: dto.name,
+        code: dto.code,
+        branchId: dto.branchId,
+        assignedUserId: dto.assignedUserId === null ? null : dto.assignedUserId,
+        isActive: dto.isActive,
+        notes: dto.notes,
+        updatedById: user.id
+      }
+    });
+    await this.writeAudit(user, "UPDATE", "Market", id, `Edited market ${updated.name}`, context, { branchId: updated.branchId ?? undefined });
+    return { data: updated };
+  }
+
+  async deleteMarket(user: AuthenticatedUser, id: string, context: RequestContext) {
+    const market = await this.prisma.market.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!market) throw new NotFoundException("Market was not found.");
+    const openTargets = await this.prisma.marketTarget.count({ where: { companyId: user.companyId, marketId: id, deletedAt: null, status: { in: ["DRAFT", "SUBMITTED", "APPROVED"] } } });
+    if (openTargets > 0) {
+      throw new BadRequestException(`Cannot delete "${market.name}" — it has ${openTargets} open market target(s). Reject, cancel, or reassign them first.`);
+    }
+    await this.prisma.market.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+    await this.writeAudit(user, "DELETE", "Market", id, `Deleted market ${market.name}`, context, { branchId: market.branchId ?? undefined });
+    return { data: { id } };
+  }
+
+  private async requireCompanyUser(companyId: string, userId: string) {
+    const found = await this.prisma.user.findFirst({ where: { id: userId, companyId }, select: { id: true } });
+    if (!found) throw new NotFoundException("User was not found in this company.");
+    return found;
+  }
+
+  private async userMap(companyId: string, userIds: string[]) {
+    if (!userIds.length) return new Map<string, { id: string; fullName: string; email: string }>();
+    const users = await this.prisma.user.findMany({ where: { companyId, id: { in: userIds } }, select: { id: true, fullName: true, email: true } });
+    return new Map(users.map((u) => [u.id, u]));
+  }
+
   async listTargets(user: AuthenticatedUser, query: MarketPlanningQueryDto) {
     const rows = await this.prisma.marketTarget.findMany({
       where: this.targetWhere(user, query),
@@ -208,8 +293,35 @@ export class MarketPlanningService {
     if (dto.branchId) this.assertBranchAccess(user, dto.branchId);
     if (dto.productionSiteId) this.assertProductionSiteAccess(user, dto.productionSiteId);
 
+    // Marketer onboarding (2026-09-14): someone with only market-planning.submit
+    // (not .manage) can only ever plan for a market they're actually assigned
+    // to — resolves/validates marketId against Market.assignedUserId rather
+    // than trusting whatever the client sent, the same way other modules never
+    // trust a client-supplied scope for a restricted user.
+    const market = await this.resolveMarketForCreate(user, dto.marketId);
+    const branchId = dto.branchId ?? market?.branchId ?? undefined;
+    if (branchId) this.assertBranchAccess(user, branchId);
+
     const targetNumber = await nextRef(this.prisma, user.companyId, "MT");
     const warnings: string[] = [];
+    if (market) {
+      const overlapping = await this.prisma.marketTarget.findFirst({
+        where: {
+          companyId: user.companyId,
+          marketId: market.id,
+          deletedAt: null,
+          status: { in: ["DRAFT", "SUBMITTED", "APPROVED"] },
+          periodStart: { lte: new Date(dto.periodEnd) },
+          periodEnd: { gte: new Date(dto.periodStart) }
+        },
+        select: { targetNumber: true, status: true, periodStart: true, periodEnd: true }
+      });
+      if (overlapping) {
+        warnings.push(
+          `${market.name} already has ${overlapping.targetNumber} (${overlapping.status.toLowerCase()}) covering an overlapping period (${overlapping.periodStart.toISOString().slice(0, 10)} to ${overlapping.periodEnd.toISOString().slice(0, 10)}) — the manager reviewing this should check they're not duplicating it.`
+        );
+      }
+    }
     const items = await Promise.all(
       dto.items.map(async (item) => {
         const product = await this.getProduct(user.companyId, item.productId);
@@ -252,8 +364,9 @@ export class MarketPlanningService {
       const created = await tx.marketTarget.create({
         data: {
           companyId: user.companyId,
-          branchId: dto.branchId,
+          branchId,
           productionSiteId: dto.productionSiteId,
+          marketId: market?.id,
           targetNumber,
           title: dto.title,
           period: dto.period,
@@ -275,6 +388,7 @@ export class MarketPlanningService {
 
   async submitTarget(user: AuthenticatedUser, id: string, context: RequestContext) {
     const target = await this.requireTarget(user, id);
+    this.assertOwnTargetOrManage(user, target);
     // C3: submitTarget previously had no status guard at all.
     if (target.status !== "DRAFT") {
       throw new BadRequestException(`Market target is already ${target.status.toLowerCase()} and cannot be submitted again.`);
@@ -293,6 +407,7 @@ export class MarketPlanningService {
   // plans/MRP/recommendations already depend on this target's values.
   async updateTarget(user: AuthenticatedUser, id: string, dto: UpdateMarketTargetDto, context: RequestContext) {
     const target = await this.requireTarget(user, id);
+    this.assertOwnTargetOrManage(user, target);
     if (target.status !== "DRAFT") {
       throw new BadRequestException(`Only DRAFT targets can be edited directly — this target is ${target.status.toLowerCase()}.`);
     }
@@ -303,6 +418,9 @@ export class MarketPlanningService {
     }
     if (dto.branchId) this.assertBranchAccess(user, dto.branchId);
     if (dto.productionSiteId) this.assertProductionSiteAccess(user, dto.productionSiteId);
+    // A submit-only marketer can only ever re-point a target at a market
+    // they're assigned to, same rule as creating one.
+    const market = dto.marketId !== undefined ? await this.resolveMarketForCreate(user, dto.marketId) : undefined;
 
     const updated = await this.prisma.marketTarget.update({
       where: { id },
@@ -313,6 +431,7 @@ export class MarketPlanningService {
         periodEnd: dto.periodEnd ? new Date(dto.periodEnd) : undefined,
         branchId: dto.branchId,
         productionSiteId: dto.productionSiteId,
+        marketId: market !== undefined ? market?.id ?? null : undefined,
         notes: dto.notes,
         updatedById: user.id
       }
@@ -328,6 +447,7 @@ export class MarketPlanningService {
   // convention used everywhere else in this codebase.
   async deleteTarget(user: AuthenticatedUser, id: string, context: RequestContext) {
     const target = await this.requireTarget(user, id);
+    this.assertOwnTargetOrManage(user, target);
     if (!["DRAFT", "SUBMITTED"].includes(target.status)) {
       throw new BadRequestException(`Cannot delete a target that has already been ${target.status.toLowerCase()} — it may have production plans or purchase recommendations depending on it.`);
     }
@@ -381,6 +501,12 @@ export class MarketPlanningService {
 
   async approveTarget(user: AuthenticatedUser, id: string, dto: ApproveMarketTargetDto, context: RequestContext) {
     const target = await this.requireTarget(user, id);
+    // Marketer onboarding (2026-09-14): matches the same rule already used
+    // for Stock Adjustment/Payroll approval elsewhere — a manager can't
+    // approve their own submission, a different manager has to.
+    if (target.createdById === user.id) {
+      throw new ForbiddenException("You cannot approve a market target you created yourself — a different manager must approve it.");
+    }
     const site = await this.requireProductionSite(user, dto.productionSiteId);
     const warehouse = await this.requireWarehouse(user, dto.centralWarehouseId);
     const branchId = target.branchId ?? site.branchId ?? warehouse.branchId;
@@ -500,6 +626,30 @@ export class MarketPlanningService {
     });
     await this.writeAudit(user, "APPROVE", "MarketTarget", id, `Approved market target ${target.targetNumber} into production plan ${planNumber}`, context, { branchId, productionSiteId: site.id, warehouseId: warehouse.id });
     return { data: plan };
+  }
+
+  // Marketer onboarding (2026-09-14): the REJECTED status, rejectedById, and
+  // rejectionReason columns have existed on MarketTarget since it was first
+  // built, but nothing ever set them — a manager who wanted to turn down a
+  // plan had no way to do it other than leaving it sitting SUBMITTED forever
+  // or approving it anyway. Mirrors submitTarget/approveTarget's shape:
+  // status-guarded, and self-rejection is blocked for the same reason
+  // self-approval is.
+  async rejectTarget(user: AuthenticatedUser, id: string, dto: RejectMarketTargetDto, context: RequestContext) {
+    const target = await this.requireTarget(user, id);
+    if (target.createdById === user.id) {
+      throw new ForbiddenException("You cannot reject a market target you created yourself — a different manager must review it.");
+    }
+    const updated = await this.prisma.marketTarget.updateMany({
+      where: { id, status: "SUBMITTED" },
+      data: { status: "REJECTED", rejectedById: user.id, rejectionReason: dto.reason, updatedById: user.id }
+    });
+    if (updated.count === 0) {
+      throw new BadRequestException(`Market target is not in SUBMITTED status and cannot be rejected.`);
+    }
+    await this.prisma.marketTargetItem.updateMany({ where: { companyId: user.companyId, marketTargetId: id, deletedAt: null }, data: { approvalStatus: "REJECTED", updatedById: user.id } });
+    await this.writeAudit(user, "REJECT", "MarketTarget", id, `Rejected market target ${target.targetNumber}: ${dto.reason}`, context, { branchId: target.branchId ?? undefined, productionSiteId: target.productionSiteId ?? undefined });
+    return { data: await this.prisma.marketTarget.findUniqueOrThrow({ where: { id } }) };
   }
 
   async listProductionPlans(user: AuthenticatedUser, query: MarketPlanningQueryDto) {
@@ -1328,6 +1478,50 @@ export class MarketPlanningService {
     });
   }
 
+  private canManageTargets(user: AuthenticatedUser): boolean {
+    return user.hasGlobalAccess || user.permissions.includes(PERMISSIONS.MARKET_PLANNING_MANAGE);
+  }
+
+  // A submit-only marketer may submit/edit/delete their OWN targets, never
+  // someone else's — a manager (market-planning.manage) can act on any
+  // target already reachable via requireTarget's branch/site scoping.
+  private assertOwnTargetOrManage(user: AuthenticatedUser, target: { createdById: string | null }) {
+    if (this.canManageTargets(user)) return;
+    if (target.createdById !== user.id) {
+      throw new ForbiddenException("You can only act on a market target you created yourself.");
+    }
+  }
+
+  // A submit-only user (market-planning.submit but not .manage) may only ever
+  // create a target for a Market they're actually assigned to — resolved from
+  // Market.assignedUserId, never trusted off whatever marketId the client
+  // sent. A manager may optionally tie a target to any market in the company,
+  // or none at all (a market-wide/production plan with no single owner).
+  private async resolveMarketForCreate(user: AuthenticatedUser, requestedMarketId?: string) {
+    if (this.canManageTargets(user)) {
+      if (!requestedMarketId) return null;
+      const market = await this.prisma.market.findFirst({ where: { id: requestedMarketId, companyId: user.companyId, deletedAt: null } });
+      if (!market) throw new NotFoundException("Market was not found.");
+      return market;
+    }
+
+    const myMarkets = await this.prisma.market.findMany({
+      where: { companyId: user.companyId, assignedUserId: user.id, isActive: true, deletedAt: null }
+    });
+    if (!myMarkets.length) {
+      throw new ForbiddenException("You are not assigned to any market yet — ask a Marketing/Sales Manager to assign you one before creating a plan.");
+    }
+    if (requestedMarketId) {
+      const match = myMarkets.find((m) => m.id === requestedMarketId);
+      if (!match) throw new ForbiddenException("You can only create a plan for a market assigned to you.");
+      return match;
+    }
+    if (myMarkets.length > 1) {
+      throw new BadRequestException(`You're assigned to ${myMarkets.length} markets — specify which one (marketId) this plan is for.`);
+    }
+    return myMarkets[0];
+  }
+
   private async requireTarget(user: AuthenticatedUser, id: string) {
     const target = await this.prisma.marketTarget.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
     if (!target) throw new NotFoundException("Market target was not found.");
@@ -1445,8 +1639,14 @@ export class MarketPlanningService {
       ...(query.status ? { status: validateEnumFilter(query.status, Object.values(MarketPlanningStatus)) as never } : {}),
       ...(query.branchId ? { branchId: query.branchId } : {}),
       ...(query.productionSiteId ? { productionSiteId: query.productionSiteId } : {}),
+      ...(query.marketId ? { marketId: query.marketId } : {}),
       ...(query.startDate || query.endDate ? { periodStart: { ...(query.startDate ? { gte: new Date(query.startDate) } : {}), ...(query.endDate ? { lte: new Date(query.endDate) } : {}) } } : {}),
-      ...(user.hasGlobalAccess || (user.branchIds.length === 0 && user.productionSiteIds.length === 0) ? {} : { OR: [{ branchId: null }, ...(user.branchIds.length ? [{ branchId: { in: user.branchIds } }] : []), ...(user.productionSiteIds.length ? [{ productionSiteId: { in: user.productionSiteIds } }] : [])] })
+      ...(user.hasGlobalAccess || (user.branchIds.length === 0 && user.productionSiteIds.length === 0) ? {} : { OR: [{ branchId: null }, ...(user.branchIds.length ? [{ branchId: { in: user.branchIds } }] : []), ...(user.productionSiteIds.length ? [{ productionSiteId: { in: user.productionSiteIds } }] : [])] }),
+      // Marketer onboarding (2026-09-14): a submit-only user (no
+      // market-planning.manage) only ever sees their own targets — this is
+      // what makes the flat target list double as "My Plans" for a marketer
+      // and the full company view for a manager, with no separate endpoint.
+      ...(this.canManageTargets(user) ? {} : { createdById: user.id })
     };
   }
 
