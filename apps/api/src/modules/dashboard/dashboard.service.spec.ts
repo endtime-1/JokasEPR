@@ -608,5 +608,25 @@ describe("DashboardService", () => {
       expect(byKey.mort7.sub).toBe("this week");
       expect(byKey.mortToday.value).toBe(4);
     });
+
+    // (2026-09-14) Live 500 on every executive dashboard load where a
+    // warehouse was picked in the filter: the "stores" lookup here queries
+    // the Warehouse table itself, but was spreading the generic
+    // warehouseId-shaped filter meant for tables that *reference* a
+    // warehouse — Warehouse's own key is `id`, and Prisma rejects an unknown
+    // `warehouseId` argument outright. No test caught it because every prior
+    // test here calls executive() with no warehouseId filter at all, where
+    // the broken spread was just `{}` and never got a chance to fail.
+    it("filters the Warehouse table by id, not a warehouseId argument it doesn't have, when a warehouse is selected", async () => {
+      prisma.warehouse.findMany.mockResolvedValue([]);
+
+      await service.executive(makeUser({ hasGlobalAccess: true }), { warehouseId: "wh-feed" } as never);
+
+      expect(prisma.warehouse.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ id: "wh-feed" }) })
+      );
+      const where = prisma.warehouse.findMany.mock.calls[0][0].where;
+      expect(where.warehouseId).toBeUndefined();
+    });
   });
 });

@@ -1129,7 +1129,6 @@ export class DashboardService {
     const farmF = this.liveFarmFilter(user, query);
     const siteF = this.liveSiteFilter(user, query);
     const branchF = this.liveBranchFilter(user, query);
-    const warehouseF = this.liveWarehouseFilter(user, query);
     const run = <T,>(fn: () => Promise<T>) => this.dashboardQueryLimit.run(fn);
     const num = (v: unknown) => Number(v ?? 0);
     const eggSum = (s: { goodEggs?: unknown; crackedEggs?: unknown; dirtyEggs?: unknown; brokenEggs?: unknown; rejectedEggs?: unknown } | null) =>
@@ -1148,9 +1147,23 @@ export class DashboardService {
       this.prisma.marketTarget.findFirst({ where: { companyId: cid, deletedAt: null, ...branchF }, orderBy: { periodStart: "desc" }, select: { id: true } }),
     );
 
+    // (2026-09-14) This queries the Warehouse table itself, not a table that
+    // *references* one — spreading warehouseF here injected a `warehouseId`
+    // argument that doesn't exist on Warehouse (its own key is `id`), which
+    // Prisma rejects outright at runtime. Every other ...warehouseF spread in
+    // this file is on a table with a real warehouseId column, so this was the
+    // only one broken this way — silent as long as nobody picked a specific
+    // warehouse in the filter (liveWarehouseFilter returns {} until then),
+    // which is exactly why this surfaced as "the dashboard 500s only when I
+    // select a warehouse" rather than on every load.
+    const warehouseSelfF = query.warehouseId
+      ? { id: query.warehouseId }
+      : !user.hasGlobalAccess && user.warehouseIds.length > 0
+        ? { id: { in: user.warehouseIds } }
+        : {};
     const stores = await run(() =>
       this.prisma.warehouse.findMany({
-        where: { companyId: cid, deletedAt: null, status: "ACTIVE", type: { in: ["FEED_STORE", "EGG_STORE"] }, ...branchF, ...farmF, ...warehouseF },
+        where: { companyId: cid, deletedAt: null, status: "ACTIVE", type: { in: ["FEED_STORE", "EGG_STORE"] }, ...branchF, ...farmF, ...warehouseSelfF },
         select: { id: true, name: true, code: true, type: true, farm: { select: { name: true } }, branch: { select: { name: true } } },
         orderBy: [{ type: "asc" }, { name: "asc" }],
       }),
