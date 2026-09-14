@@ -141,15 +141,40 @@ pnpm --filter @jokas/db exec prisma migrate deploy
 # systemd-resurrected process list can lose the real PIDs, so `reload`
 # silently "restarts" a ghost while the real process keeps running stale
 # code/env. delete+start guarantees the new build actually takes over.
-# Also SIGKILL any orphaned app process the delete missed.
+#
+# (2026-09-14) `pm2 delete` returning does not guarantee the underlying OS
+# process has actually exited yet, and `pkill` (no signal = SIGTERM) only
+# *asks* it to — a Next.js standalone server.js that doesn't react fast
+# enough to SIGTERM left the previous `sleep 1` racing `pm2 start`, which
+# then hit EADDRINUSE and crash-looped while the orphan kept answering
+# requests with a now-deleted build's assets (missing chunks -> 400s in the
+# browser). This happened on two consecutive deploys, not a one-off fluke.
+# Two changes: `pkill -9` for an immediate, unignorable kill, and an actual
+# wait-until-free poll on each port instead of a fixed guess at how long
+# that takes.
 log "Restart PM2 processes (clean)"
 pm2 delete jokas-api jokas-web jokas-storefront 2>/dev/null || true
-pkill -f "apps/api/dist/main.js" 2>/dev/null || true
-pkill -f "standalone/apps/web/server.js" 2>/dev/null || true
-pkill -f "standalone/apps/storefront/server.js" 2>/dev/null || true
-pkill -f "/opt/jokas/live/web/apps/web/server.js" 2>/dev/null || true
-pkill -f "/opt/jokas/live/storefront/apps/storefront/server.js" 2>/dev/null || true
-sleep 1
+pkill -9 -f "apps/api/dist/main.js" 2>/dev/null || true
+pkill -9 -f "standalone/apps/web/server.js" 2>/dev/null || true
+pkill -9 -f "standalone/apps/storefront/server.js" 2>/dev/null || true
+pkill -9 -f "/opt/jokas/live/web/apps/web/server.js" 2>/dev/null || true
+pkill -9 -f "/opt/jokas/live/storefront/apps/storefront/server.js" 2>/dev/null || true
+
+wait_port_free() {
+  local port="$1" tries=0
+  while ss -ltn 2>/dev/null | grep -q ":$port "; do
+    tries=$((tries + 1))
+    if [ "$tries" -ge 20 ]; then
+      echo "WARNING: port $port still in use after 10s — something didn't die. Proceeding anyway; pm2 start may fail."
+      return 0
+    fi
+    sleep 0.5
+  done
+}
+wait_port_free 4001
+wait_port_free 3000
+wait_port_free 3002
+
 pm2 start infra/vps/ecosystem.config.js --update-env
 pm2 save
 
