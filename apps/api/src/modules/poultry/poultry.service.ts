@@ -1272,6 +1272,16 @@ export class PoultryService {
           // nothing telling the person who entered it that it wasn't.
           const result = await this.consumeInventoryTx(tx, user, batch, feedStore.warehouseId, dto.feedProductId, dto.quantityKg, "PRODUCTION_INPUT", "FeedConsumptionRecord", record.id, `Feed consumption for flock ${batch.code}`);
           stockWarning = result.warning;
+        } else if (dto.feedProductId) {
+          // Readiness audit (2026-09-14): resolveFeedStore couldn't find any
+          // active feed store for this farm — the record still saves, but
+          // previously this fell through with no warning at all (worse than
+          // the equivalent createEggs gap). Surface it the same way, and log
+          // it so a missing feed store is caught by monitoring instead of
+          // requiring another manual reconciliation pass like
+          // reapply-feed-deductions.mjs.
+          stockWarning = `Feed consumption recorded but the farm's feed store could not be resolved — nothing was deducted from stock.`;
+          this.logger.warn(`createFeed: feed store could not be resolved for company ${user.companyId} farm ${batch.farmId ?? "?"} — FeedConsumptionRecord ${record.id} saved with no stock deduction.`);
         }
         return record;
       }), { label: "PoultryService.createFeed" });
@@ -1393,6 +1403,12 @@ export class PoultryService {
           if (q) stockWarning = `Credited ${totalEggs} egg(s) as QUARANTINED stock — batch is in a medication withdrawal (${withdrawal!.medicationName}) until ${withdrawal!.until.toISOString().slice(0, 10)}; not sellable until Quality clears it.`;
         } else if (totalEggs > 0) {
           stockWarning = `${totalEggs} egg(s) recorded but the farm's egg store or "Eggs" product could not be resolved — nothing was credited.`;
+          // Readiness audit (2026-09-14): this exact failure mode already
+          // required two manual backfills this month (reconcile-egg-store.mjs,
+          // credit-uncredited-eggs.mjs) discovered only when someone noticed
+          // stock looked wrong. Log it so monitoring catches the next one
+          // instead of another after-the-fact data audit.
+          this.logger.warn(`createEggs: egg store/product could not be resolved for company ${user.companyId} farm ${batch.farmId ?? "?"} — EggProductionRecord ${record.id} saved with no stock credit.`);
         }
         return record;
       });
