@@ -53,7 +53,7 @@ export class SoyaProcessingService {
 
   async dashboard(user: AuthenticatedUser) {
     const sevenDaysAgo = new Date(Date.now() - 7 * 86400000);
-    const [intakes, batches, oilOutputs, cakeOutputs, wastes, costs, pendingQc, sales, weekBatches, batchStats, recentIntakes, intakeStats] = await Promise.all([
+    const [intakes, batches, oilOutputs, cakeOutputs, wastes, costs, pendingQc, sales, weekBatches, batchStats, recentIntakes, intakeStats, transferStats, pendingTransferQty, recentTransfers] = await Promise.all([
       this.prisma.soyaBeanIntake.findMany({ where: this.intakeWhere(user, {}), select: { quantityKg: true, totalCost: true } }),
       this.prisma.soyaProcessingBatch.findMany({ where: this.batchWhere(user, {}), include: { oilOutputs: true, cakeOutputs: true, wasteRecords: true, costs: true }, orderBy: { processingDate: "desc" }, take: 8 }),
       this.prisma.soyaOilOutput.findMany({ where: this.outputWhere(user, {}), select: { quantityLitres: true, unitCost: true } }),
@@ -69,7 +69,20 @@ export class SoyaProcessingService {
       }),
       this.prisma.soyaProcessingBatch.groupBy({ by: ["status"], where: { companyId: user.companyId, deletedAt: null }, _count: { status: true } }),
       this.prisma.soyaBeanIntake.findMany({ where: this.intakeWhere(user, {}), include: { warehouse: { select: { name: true, code: true } }, productionSite: { select: { name: true } } }, orderBy: { receivedAt: "desc" }, take: 5 }),
-      this.prisma.soyaBeanIntake.groupBy({ by: ["qualityStatus"], where: { companyId: user.companyId, deletedAt: null }, _count: { qualityStatus: true } })
+      this.prisma.soyaBeanIntake.groupBy({ by: ["qualityStatus"], where: { companyId: user.companyId, deletedAt: null }, _count: { qualityStatus: true } }),
+      this.prisma.soyaInternalTransfer.groupBy({ by: ["status"], where: this.transferWhere(user, {}), _count: { status: true } }),
+      this.prisma.soyaInternalTransfer.groupBy({ by: ["outputType"], where: { ...this.transferWhere(user, {}), status: "PENDING" }, _sum: { quantity: true } }),
+      this.prisma.soyaInternalTransfer.findMany({
+        where: this.transferWhere(user, {}),
+        include: {
+          product: { select: { name: true } },
+          fromWarehouse: { select: { name: true } },
+          toWarehouse: { select: { name: true } },
+          toProductionSite: { select: { name: true } }
+        },
+        orderBy: { transferDate: "desc" },
+        take: 5
+      })
     ]);
     const totalCost = costs.reduce((sum, cost) => sum + this.totalCost(cost), 0);
     const expectedSalesValue = costs.reduce((sum, cost) => sum + Number(cost.expectedOilSalesValue) + Number(cost.expectedCakeSalesValue), 0);
@@ -102,7 +115,23 @@ export class SoyaProcessingService {
           }))
         },
         batchStats: batchStats.map((row) => ({ status: row.status, count: row._count.status })),
-        intakeStats: intakeStats.map((r) => ({ status: r.qualityStatus, count: r._count.qualityStatus }))
+        intakeStats: intakeStats.map((r) => ({ status: r.qualityStatus, count: r._count.qualityStatus })),
+        transfers: {
+          byStatus: transferStats.map((row) => ({ status: row.status, count: row._count.status })),
+          pendingOilQty: Number(pendingTransferQty.find((r) => r.outputType === "OIL")?._sum.quantity ?? 0),
+          pendingCakeQty: Number(pendingTransferQty.find((r) => r.outputType === "CAKE")?._sum.quantity ?? 0),
+          recent: recentTransfers.map((t) => ({
+            id: t.id,
+            outputType: t.outputType,
+            quantity: Number(t.quantity),
+            status: t.status,
+            transferDate: t.transferDate,
+            productName: t.product.name,
+            fromWarehouseName: t.fromWarehouse.name,
+            toWarehouseName: t.toWarehouse.name,
+            toProductionSiteName: t.toProductionSite?.name ?? null
+          }))
+        }
       }
     };
   }

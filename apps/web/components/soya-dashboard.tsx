@@ -46,6 +46,25 @@ type BatchRow = {
 type TrendPoint = { date: string; oilLitres: number; cakeKg: number; wasteKg: number };
 type StatRow = { status: string; count: number };
 
+type TransferRow = {
+  id: string;
+  outputType: "OIL" | "CAKE";
+  quantity: number;
+  status: string;
+  transferDate: string;
+  productName: string;
+  fromWarehouseName: string;
+  toWarehouseName: string;
+  toProductionSiteName: string | null;
+};
+
+type TransferSummary = {
+  byStatus: StatRow[];
+  pendingOilQty: number;
+  pendingCakeQty: number;
+  recent: TransferRow[];
+};
+
 type DashboardData = {
   beansReceivedKg: number;
   beansReceivedCost: number;
@@ -65,6 +84,7 @@ type DashboardData = {
   trends: { processing: TrendPoint[] };
   batchStats: StatRow[];
   intakeStats: StatRow[];
+  transfers: TransferSummary;
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -253,6 +273,39 @@ function StatusBreakdown({ title, stats, total, href }: {
         ))}
         {sorted.length === 0 && <p className="text-xs text-ink/40">No data yet</p>}
       </div>
+    </div>
+  );
+}
+
+function TransferStatusPanel({ transfers }: { transfers: TransferSummary }) {
+  const total = transfers.byStatus.reduce((s, r) => s + r.count, 0);
+  return (
+    <div className="app-card p-4">
+      <div className="mb-4 flex items-center justify-between">
+        <h4 className="text-sm font-bold text-ink">Transfer Status</h4>
+        <Link href="/soya-processing/internal-transfer" className="text-xs font-semibold text-brand hover:underline">View all →</Link>
+      </div>
+      <div className="space-y-3">
+        {[...transfers.byStatus].sort((a, b) => b.count - a.count).map((row) => (
+          <div key={row.status} className="flex items-center gap-2">
+            <span className={`min-w-[90px] rounded-full px-2 py-0.5 text-center text-[11px] font-bold ${statusColor(row.status)}`}>
+              {row.status}
+            </span>
+            <div className="flex-1 overflow-hidden rounded-full bg-line" style={{ height: 6 }}>
+              <div className="h-full rounded-full bg-orange-400 transition-all duration-700"
+                style={{ width: total > 0 ? `${(row.count / total) * 100}%` : "0%" }} />
+            </div>
+            <span className="w-6 text-right text-xs font-extrabold text-ink">{row.count}</span>
+          </div>
+        ))}
+        {transfers.byStatus.length === 0 && <p className="text-xs text-ink/40">No transfers recorded yet</p>}
+      </div>
+      {(transfers.pendingOilQty > 0 || transfers.pendingCakeQty > 0) && (
+        <div className="mt-4 flex gap-4 border-t border-line pt-3 text-xs">
+          <span className="text-ink/55">In transit — Oil: <strong className="text-teal-700">{fmt(transfers.pendingOilQty)} L</strong></span>
+          <span className="text-ink/55">Cake: <strong className="text-amber-700">{fmt(transfers.pendingCakeQty)} kg</strong></span>
+        </div>
+      )}
     </div>
   );
 }
@@ -506,8 +559,16 @@ export function SoyaDashboardPage() {
       </section>
 
       {/* KPI Row 2 */}
-      <section className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <section className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <KpiCard label="Total Stock Value" value={fmtGhs(totalStockValue)} sub="Oil + cake combined" icon={TrendingUp} color="purple" />
+        <KpiCard
+          label="Pending Transfers"
+          value={String((data?.transfers.byStatus.find((r) => r.status === "PENDING")?.count) ?? 0)}
+          sub={`Oil ${fmt(data?.transfers.pendingOilQty ?? 0)} L · Cake ${fmt(data?.transfers.pendingCakeQty ?? 0)} kg in transit`}
+          icon={Truck}
+          color={(data?.transfers.byStatus.find((r) => r.status === "PENDING")?.count ?? 0) > 0 ? "amber" : "default"}
+          href="/soya-processing/internal-transfer"
+        />
         <KpiCard label="External Sales" value={fmtGhs(data?.externalSalesValue ?? 0)} sub="All-time sales revenue" icon={ShoppingCart} color="green" />
         <KpiCard label="Wastage" value={`${fmt(data?.wasteKg ?? 0)} kg`} sub="Total processing waste" icon={Zap} color={(data?.wasteKg ?? 0) > 500 ? "red" : "default"} />
         <KpiCard label="Profit Margin" value={`${data?.profitabilityMargin ?? 0}%`} sub="Expected vs. cost" icon={TrendingUp} color={(data?.profitabilityMargin ?? 0) > 10 ? "green" : (data?.profitabilityMargin ?? 0) > 0 ? "amber" : "red"} />
@@ -520,10 +581,11 @@ export function SoyaDashboardPage() {
         <TrendChart points={wasteTrend} color="#ef4444" label="7-Day Waste" unit=" kg" />
       </section>
 
-      {/* Analytics Row: Status Breakdowns + Yield Efficiency */}
-      <section className="mb-8 grid gap-4 lg:grid-cols-3">
+      {/* Analytics Row: Status Breakdowns + Yield Efficiency + Transfers */}
+      <section className="mb-8 grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
         <StatusBreakdown title="Batch Status" stats={data?.batchStats ?? []} total={batchTotal} href="/soya-processing/batches" />
         <StatusBreakdown title="Intake Quality" stats={data?.intakeStats ?? []} total={intakeTotal} href="/soya-processing/intakes" />
+        <TransferStatusPanel transfers={data?.transfers ?? { byStatus: [], pendingOilQty: 0, pendingCakeQty: 0, recent: [] }} />
         <YieldPanel oilYieldPct={data?.oilYieldPct ?? 0} cakeYieldPct={data?.cakeYieldPct ?? 0} beansKg={data?.beansReceivedKg ?? 0} />
       </section>
 
