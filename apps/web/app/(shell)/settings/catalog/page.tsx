@@ -607,7 +607,7 @@ export default function ProductCatalogPage() {
                       value={form.piecesPerUnit}
                       onChange={(e) => setForm({ ...form, piecesPerUnit: e.target.value })}
                     />
-                    <p className="mt-1 text-[10px] text-ink/40">e.g. 30 if this product's unit is a Crate of 30 eggs. Leave at 1 if the unit already is a single piece.</p>
+                    <p className="mt-1 text-[10px] text-ink/40">Conversion factor for a bulk entry unit — e.g. 30 for a Crate of 30 eggs, or 50 for a Bag of 50kg soya beans. Leave at 1 if there's no bulk unit to convert.</p>
                   </div>
 
                   <div>

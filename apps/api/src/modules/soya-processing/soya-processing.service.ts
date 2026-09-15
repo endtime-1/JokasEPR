@@ -154,7 +154,7 @@ export class SoyaProcessingService {
       }),
       this.prisma.product.findMany({
         where: { companyId: user.companyId, deletedAt: null },
-        select: { id: true, branchId: true, sku: true, name: true, type: true, uomId: true },
+        select: { id: true, branchId: true, sku: true, name: true, type: true, uomId: true, piecesPerUnit: true },
         orderBy: { name: "asc" }
       }),
       this.prisma.soyaBeanIntake.findMany({ where: this.intakeWhere(user, {}), select: { id: true, receiptNumber: true, supplierName: true, quantityKg: true }, orderBy: { receivedAt: "desc" }, take: 50 }),

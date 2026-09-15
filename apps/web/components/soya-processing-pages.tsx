@@ -21,6 +21,7 @@ type Option = {
   receiptNumber?: string;
   batchNumber?: string;
   supplierName?: string;
+  piecesPerUnit?: number;
 };
 
 type SoyaOptions = {
@@ -94,8 +95,16 @@ export function SoyaIntakesPage({ create = false }: { create?: boolean }) {
   const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/soya-processing/intakes")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/soya-processing/intakes"));
   const [loadError, setLoadError] = useState("");
-  const [form, setForm] = useState({ productionSiteId: "", warehouseId: "", productId: "", receiptNumber: "", supplierName: "", quantityKg: "", unitCost: "", moisturePercent: "", qualityStatus: "APPROVED", receivedAt: today() });
+  const [form, setForm] = useState({ productionSiteId: "", warehouseId: "", productId: "", receiptNumber: "", supplierName: "", quantity: "", unit: "KG" as "KG" | "BAGS", unitCost: "", moisturePercent: "", qualityStatus: "APPROVED", receivedAt: today() });
   const beanProducts = products(options, (product) => product.sku?.includes("SOYA-BEANS") ?? false);
+  const selectedBeanProduct = beanProducts.find((p) => p.id === (form.productId || beanProducts[0]?.id));
+  // Product.piecesPerUnit doubles as a generic bulk-unit conversion factor
+  // (30 pieces/crate for eggs, kg/bag here) — set on the product in Settings
+  // → Catalog. Falls back to 1 (no bag conversion) if never configured.
+  const kgPerBag = Number(selectedBeanProduct?.piecesPerUnit) || 1;
+  const quantityNum = Number(form.quantity) || 0;
+  const quantityKg = form.unit === "BAGS" ? quantityNum * kgPerBag : quantityNum;
+  const unitCostPerKg = form.unit === "BAGS" ? (Number(form.unitCost) || 0) / kgPerBag : (Number(form.unitCost) || 0);
   const [editRow, setEditRow] = useState<Record<string, unknown> | null>(null);
   const [editForm, setEditForm] = useState({ receiptNumber: "", supplierName: "", moisturePercent: "", qualityStatus: "APPROVED", receivedAt: "", notes: "" });
   const [editError, setEditError] = useState("");
@@ -124,7 +133,7 @@ export function SoyaIntakesPage({ create = false }: { create?: boolean }) {
     setSubmitting(true);
     setSubmitError("");
     try {
-      await apiFetch("/soya-processing/intakes", { method: "POST", body: JSON.stringify({ ...form, productionSiteId: form.productionSiteId || options.productionSites[0]?.id, warehouseId: form.warehouseId || options.warehouses[0]?.id, productId: form.productId || beanProducts[0]?.id, quantityKg: Number(form.quantityKg), unitCost: Number(form.unitCost), moisturePercent: Number(form.moisturePercent || 0), receivedAt: form.receivedAt }) });
+      await apiFetch("/soya-processing/intakes", { method: "POST", body: JSON.stringify({ productionSiteId: form.productionSiteId || options.productionSites[0]?.id, warehouseId: form.warehouseId || options.warehouses[0]?.id, productId: form.productId || beanProducts[0]?.id, receiptNumber: form.receiptNumber, supplierName: form.supplierName, quantityKg, unitCost: unitCostPerKg, moisturePercent: Number(form.moisturePercent || 0), qualityStatus: form.qualityStatus, receivedAt: form.receivedAt }) });
       await load();
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Failed to save intake.");
@@ -190,8 +199,24 @@ export function SoyaIntakesPage({ create = false }: { create?: boolean }) {
           <SelectField label="Bean product" value={form.productId || beanProducts[0]?.id || ""} options={beanProducts} onChange={(value) => setForm({ ...form, productId: value })} />
           <FormField label="Receipt number"><input className={inputClass} value={form.receiptNumber} onChange={(event) => setForm({ ...form, receiptNumber: event.target.value })} required /></FormField>
           <FormField label="Supplier"><input className={inputClass} value={form.supplierName} onChange={(event) => setForm({ ...form, supplierName: event.target.value })} required /></FormField>
-          <FormField label="Quantity kg"><input className={inputClass} type="number" value={form.quantityKg} onChange={(event) => setForm({ ...form, quantityKg: event.target.value })} required /></FormField>
-          <FormField label="Unit cost"><input className={inputClass} type="number" value={form.unitCost} onChange={(event) => setForm({ ...form, unitCost: event.target.value })} required /></FormField>
+          <FormField label="Quantity">
+            <div className="flex gap-2">
+              <input className={inputClass + " flex-1"} type="number" min={0} step="any" value={form.quantity} onChange={(event) => setForm({ ...form, quantity: event.target.value })} required />
+              <select className={inputClass} value={form.unit} onChange={(event) => setForm({ ...form, unit: event.target.value as "KG" | "BAGS" })}>
+                <option value="KG">kg</option>
+                <option value="BAGS">bags</option>
+              </select>
+            </div>
+            {form.unit === "BAGS" && quantityNum > 0 && (
+              <span className="text-[11px] text-ink/45">= {number(quantityKg)} kg (at {kgPerBag} kg/bag)</span>
+            )}
+          </FormField>
+          <FormField label={form.unit === "BAGS" ? "Unit cost (per bag)" : "Unit cost (per kg)"}>
+            <input className={inputClass} type="number" min={0} step="any" value={form.unitCost} onChange={(event) => setForm({ ...form, unitCost: event.target.value })} required />
+            {form.unit === "BAGS" && Number(form.unitCost) > 0 && (
+              <span className="text-[11px] text-ink/45">= {money(unitCostPerKg)}/kg</span>
+            )}
+          </FormField>
           <FormField label="Moisture %"><input className={inputClass} type="number" value={form.moisturePercent} onChange={(event) => setForm({ ...form, moisturePercent: event.target.value })} /></FormField>
           <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:col-span-4"><Plus aria-hidden className="h-4 w-4" /> {submitting ? "Saving…" : "Save intake"}</button>
           {submitError && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 md:col-span-4">{submitError}</p>}
