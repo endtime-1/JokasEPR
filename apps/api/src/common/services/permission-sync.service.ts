@@ -52,20 +52,29 @@ const ALL_KEYS = PERMISSIONS.map(([key]) => key);
 // setup.service.ts) so a NEW system role rolls out to companies that were
 // created before it existed — created once, idempotently, then picked up by
 // the permission sync below like any other role. Never removes roles.
-// (2026-09-15) This used to hardcode level: "OFFICER" for every role it
-// creates — fine for the first three (all genuinely OFFICER-level), wrong
-// for Marketing Manager/Sales Manager below. Live symptom: both were only
-// ever added to ROLE_PERMISSION_MAP (which attaches permissions to a role
-// that already exists) and to setup.service.ts's brand-new-company list —
-// neither backfills an EXISTING company, so this company's Role table never
-// actually had them and they didn't show up in the Users role picker at
-// all, despite the permission map "knowing" about them the whole time.
+//
+// (2026-09-15) Live symptom: "Marketing Manager" didn't show up in the Users
+// role picker at all, and this company's Role table turned out to genuinely
+// never have had it — being in ROLE_PERMISSION_MAP (attaches permissions to
+// a role that already exists) and in setup.service.ts's brand-new-company
+// list doesn't backfill an EXISTING company. Checking this company's actual
+// synced-role log against setup.service.ts's full canonical list turned up
+// six roles missing this same way, not just the one reported — added all
+// of them here rather than fixing them one report at a time. Also switched
+// this list to carry its own level per role instead of a hardcoded
+// "OFFICER" (harmless for the original three, would have been wrong for
+// every MANAGER-level role added since).
 const ENSURE_SYSTEM_ROLES: ReadonlyArray<readonly [string, string, "MANAGER" | "OFFICER"]> = [
   ["Poultry Supervisor", "Records farm feed-store receipts and pen-level poultry operations", "OFFICER"],
   ["Marketer", "Submits a weekly market target for their own assigned market", "OFFICER"],
   ["Egg Sales Officer", "Records direct egg sales from an egg store", "OFFICER"],
   ["Marketing Manager", "Marketing and planning management", "MANAGER"],
   ["Sales Manager", "Sales and customer management", "MANAGER"],
+  ["Soya Manager", "Soya processing management", "MANAGER"],
+  ["Procurement Officer", "Procurement and supplier operations", "OFFICER"],
+  ["Maintenance Officer", "Machine and maintenance operations", "OFFICER"],
+  ["Quality Officer", "Quality control operations", "OFFICER"],
+  ["Vet/Health Officer", "Veterinary and flock health operations", "OFFICER"],
 ];
 
 const ROLE_PERMISSION_MAP: Record<string, readonly string[]> = {
