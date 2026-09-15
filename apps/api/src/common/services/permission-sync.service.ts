@@ -52,10 +52,20 @@ const ALL_KEYS = PERMISSIONS.map(([key]) => key);
 // setup.service.ts) so a NEW system role rolls out to companies that were
 // created before it existed — created once, idempotently, then picked up by
 // the permission sync below like any other role. Never removes roles.
-const ENSURE_SYSTEM_ROLES: ReadonlyArray<readonly [string, string]> = [
-  ["Poultry Supervisor", "Records farm feed-store receipts and pen-level poultry operations"],
-  ["Marketer", "Submits a weekly market target for their own assigned market"],
-  ["Egg Sales Officer", "Records direct egg sales from an egg store"],
+// (2026-09-15) This used to hardcode level: "OFFICER" for every role it
+// creates — fine for the first three (all genuinely OFFICER-level), wrong
+// for Marketing Manager/Sales Manager below. Live symptom: both were only
+// ever added to ROLE_PERMISSION_MAP (which attaches permissions to a role
+// that already exists) and to setup.service.ts's brand-new-company list —
+// neither backfills an EXISTING company, so this company's Role table never
+// actually had them and they didn't show up in the Users role picker at
+// all, despite the permission map "knowing" about them the whole time.
+const ENSURE_SYSTEM_ROLES: ReadonlyArray<readonly [string, string, "MANAGER" | "OFFICER"]> = [
+  ["Poultry Supervisor", "Records farm feed-store receipts and pen-level poultry operations", "OFFICER"],
+  ["Marketer", "Submits a weekly market target for their own assigned market", "OFFICER"],
+  ["Egg Sales Officer", "Records direct egg sales from an egg store", "OFFICER"],
+  ["Marketing Manager", "Marketing and planning management", "MANAGER"],
+  ["Sales Manager", "Sales and customer management", "MANAGER"],
 ];
 
 const ROLE_PERMISSION_MAP: Record<string, readonly string[]> = {
@@ -152,14 +162,14 @@ export class PermissionSyncService implements OnApplicationBootstrap {
       );
       const permByKey = new Map(upserted.map((p) => [p.key, p]));
 
-      for (const [name, description] of ENSURE_SYSTEM_ROLES) {
+      for (const [name, description, level] of ENSURE_SYSTEM_ROLES) {
         const existing = await this.prisma.role.findFirst({
           where: { companyId: company.id, name },
           select: { id: true },
         });
         if (!existing) {
           await this.prisma.role.create({
-            data: { companyId: company.id, name, description, level: "OFFICER", isSystem: true },
+            data: { companyId: company.id, name, description, level, isSystem: true },
           });
           this.logger.log(`  created missing system role "${name}"`);
         }
