@@ -130,6 +130,17 @@ function FeedFormOptions({ products }: { products: Option[] }) {
   );
 }
 
+// Once raw materials and finished feed live in separate FEED_STORE
+// warehouses, pick the right one by name/code instead of defaulting to
+// whichever warehouse the API happens to list first — the same
+// name-contains heuristic already used for feed-store lookups elsewhere
+// (e.g. poultry's resolveFeedStore). Falls back to undefined (caller then
+// falls back to the first warehouse) when nothing matches, so a single
+// unsplit feed store still behaves exactly as before.
+function guessFeedWarehouseId(warehouses: Option[], keyword: "raw" | "finish"): string | undefined {
+  return warehouses.find((w) => `${w.code ?? ""} ${w.name}`.toLowerCase().includes(keyword))?.id;
+}
+
 function useFeedOptions() {
   const [options, setOptions] = useState<FeedOptions>(() => getCached<ApiEnvelope<FeedOptions>>("/feed-production/options")?.data ?? { branches: [], productionSites: [], warehouses: [], farms: [], poultryHouses: [], rawMaterials: [], finishedFeeds: [], formulas: [], batches: [], marketTargets: [] });
   const [optionsError, setOptionsError] = useState("");
@@ -1336,7 +1347,7 @@ export function FeedProductionOrdersPage({ create = false }: { create?: boolean 
           formulaId: form.formulaId || options.formulas[0]?.id,
           plannedQuantityKg: Number(form.plannedQuantityKg),
           scheduledDate: form.scheduledDate,
-          rawMaterialWarehouseId: form.rawMaterialWarehouseId || options.warehouses[0]?.id,
+          rawMaterialWarehouseId: form.rawMaterialWarehouseId || guessFeedWarehouseId(options.warehouses, "raw") || options.warehouses[0]?.id,
           marketTargetId: form.marketTargetId || undefined,
           notes: form.notes || undefined
         })
@@ -1515,7 +1526,7 @@ function OrderForm({ options, form, setForm, submit, submitting }: { options: Fe
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         <SelectField label="Production site *" value={form.productionSiteId || options.productionSites[0]?.id || ""} options={options.productionSites} onChange={(value) => setForm({ ...form, productionSiteId: value })} />
         <SelectField label="Formula *" value={form.formulaId || options.formulas[0]?.id || ""} options={options.formulas} onChange={(value) => setForm({ ...form, formulaId: value })} />
-        <SelectField label="Raw material warehouse" value={form.rawMaterialWarehouseId || options.warehouses[0]?.id || ""} options={options.warehouses} onChange={(value) => setForm({ ...form, rawMaterialWarehouseId: value })} />
+        <SelectField label="Raw material warehouse" value={form.rawMaterialWarehouseId || guessFeedWarehouseId(options.warehouses, "raw") || options.warehouses[0]?.id || ""} options={options.warehouses} onChange={(value) => setForm({ ...form, rawMaterialWarehouseId: value })} />
         <FormField label="Planned quantity (kg) *"><input className={inputClass} type="number" min="0.001" step="0.001" value={form.plannedQuantityKg} onChange={(event) => setForm({ ...form, plannedQuantityKg: event.target.value })} required /></FormField>
         <FormField label="Scheduled date *"><input className={inputClass} type="date" value={form.scheduledDate} onChange={(event) => setForm({ ...form, scheduledDate: event.target.value })} required /></FormField>
         <FormField label="Notes"><input className={inputClass} placeholder="Optional notes…" value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} /></FormField>
@@ -1727,8 +1738,8 @@ export function FeedBatchCreatePage() {
         method: "POST",
         body: JSON.stringify({
           productionOrderId: form.productionOrderId || approvedOrders[0]?.id,
-          rawMaterialWarehouseId: form.rawMaterialWarehouseId || options.warehouses[0]?.id,
-          finishedWarehouseId: form.finishedWarehouseId || options.warehouses[0]?.id,
+          rawMaterialWarehouseId: form.rawMaterialWarehouseId || guessFeedWarehouseId(options.warehouses, "raw") || options.warehouses[0]?.id,
+          finishedWarehouseId: form.finishedWarehouseId || guessFeedWarehouseId(options.warehouses, "finish") || options.warehouses[0]?.id,
           batchNumber: form.batchNumber || undefined,
           producedQuantityKg: Number(form.producedQuantityKg),
           wastageKg: Number(form.wastageKg) || undefined,
@@ -1817,7 +1828,7 @@ export function FeedBatchCreatePage() {
               <select
                 required
                 className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
-                value={form.rawMaterialWarehouseId}
+                value={form.rawMaterialWarehouseId || guessFeedWarehouseId(options.warehouses, "raw") || ""}
                 onChange={(e) => setForm((f) => ({ ...f, rawMaterialWarehouseId: e.target.value }))}
               >
                 <option value="">— select warehouse —</option>
@@ -1829,7 +1840,7 @@ export function FeedBatchCreatePage() {
               <select
                 required
                 className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
-                value={form.finishedWarehouseId}
+                value={form.finishedWarehouseId || guessFeedWarehouseId(options.warehouses, "finish") || ""}
                 onChange={(e) => setForm((f) => ({ ...f, finishedWarehouseId: e.target.value }))}
               >
                 <option value="">— select warehouse —</option>
