@@ -53,12 +53,43 @@ const emptyForm: UserForm = {
   productionSiteIds: []
 };
 
-function selectedOptions(event: React.ChangeEvent<HTMLSelectElement>) {
-  return Array.from(event.target.selectedOptions).map((option) => option.value);
-}
-
 function scopeNames<T extends Record<string, ScopeOption>>(items: T[] | undefined, key: keyof T) {
   return (items ?? []).map((item) => item[key].code).join(", ") || "-";
+}
+
+// A native <select multiple> requires holding Ctrl/Cmd while clicking to
+// pick more than one option — a plain click looks and feels identical to a
+// single-select, and non-technical users reported it as "seems like I can
+// only pick one warehouse" when they simply didn't know the modifier-key
+// trick. Checkboxes make multi-selection visible and discoverable.
+function CheckboxList({
+  options,
+  selected,
+  onChange,
+  emptyLabel
+}: {
+  options: { id: string; label: string }[];
+  selected: string[];
+  onChange: (ids: string[]) => void;
+  emptyLabel?: string;
+}) {
+  if (options.length === 0) {
+    return <p className="rounded-md border border-line px-3 py-2 text-sm text-ink/45">{emptyLabel ?? "None available"}</p>;
+  }
+  return (
+    <div className="flex max-h-40 flex-wrap gap-2 overflow-y-auto rounded-md border border-line p-2">
+      {options.map((option) => (
+        <label key={option.id} className="flex cursor-pointer items-center gap-2 rounded-md border border-line bg-white px-3 py-1.5 text-sm hover:border-brand/40">
+          <input
+            type="checkbox"
+            checked={selected.includes(option.id)}
+            onChange={(event) => onChange(event.target.checked ? [...selected, option.id] : selected.filter((id) => id !== option.id))}
+          />
+          {option.label}
+        </label>
+      ))}
+    </div>
+  );
 }
 
 export default function UsersPage() {
@@ -323,49 +354,44 @@ export default function UsersPage() {
           <p className="mt-1 text-[11px] text-ink/45">At least 10 characters, with uppercase, lowercase, a number, and a symbol.</p>
         </FormField>
         <FormField label="Roles">
-          <select className="min-h-28 rounded-md border border-line px-3 py-2" multiple value={form.roleIds} onChange={(event) => setForm({ ...form, roleIds: selectedOptions(event) })} required>
-            {roles.map((role) => (
-              <option key={role.id} value={role.id}>
-                {role.name}
-              </option>
-            ))}
-          </select>
+          <CheckboxList
+            options={roles.map((role) => ({ id: role.id, label: role.name }))}
+            selected={form.roleIds}
+            onChange={(roleIds) => setForm({ ...form, roleIds })}
+            emptyLabel="No roles found"
+          />
         </FormField>
         <FormField label="Branches">
-          <select className="min-h-28 rounded-md border border-line px-3 py-2" multiple value={form.branchIds} onChange={(event) => setForm({ ...form, branchIds: selectedOptions(event) })}>
-            {branches.map((branch) => (
-              <option key={branch.id} value={branch.id}>
-                {branch.code} - {branch.name}
-              </option>
-            ))}
-          </select>
+          <CheckboxList
+            options={branches.map((branch) => ({ id: branch.id, label: `${branch.code} - ${branch.name}` }))}
+            selected={form.branchIds}
+            onChange={(branchIds) => setForm({ ...form, branchIds })}
+            emptyLabel="No branches found"
+          />
         </FormField>
         <FormField label="Farms">
-          <select className="min-h-28 rounded-md border border-line px-3 py-2" multiple value={form.farmIds} onChange={(event) => setForm({ ...form, farmIds: selectedOptions(event) })}>
-            {farms.map((farm) => (
-              <option key={farm.id} value={farm.id}>
-                {farm.code} - {farm.name}
-              </option>
-            ))}
-          </select>
+          <CheckboxList
+            options={farms.map((farm) => ({ id: farm.id, label: `${farm.code} - ${farm.name}` }))}
+            selected={form.farmIds}
+            onChange={(farmIds) => setForm({ ...form, farmIds })}
+            emptyLabel="No farms found"
+          />
         </FormField>
         <FormField label="Warehouses">
-          <select className="min-h-28 rounded-md border border-line px-3 py-2" multiple value={form.warehouseIds} onChange={(event) => setForm({ ...form, warehouseIds: selectedOptions(event) })}>
-            {warehouses.map((warehouse) => (
-              <option key={warehouse.id} value={warehouse.id}>
-                {warehouse.code} - {warehouse.name}
-              </option>
-            ))}
-          </select>
+          <CheckboxList
+            options={warehouses.map((warehouse) => ({ id: warehouse.id, label: `${warehouse.code} - ${warehouse.name}` }))}
+            selected={form.warehouseIds}
+            onChange={(warehouseIds) => setForm({ ...form, warehouseIds })}
+            emptyLabel="No warehouses found"
+          />
         </FormField>
         <FormField label="Production sites">
-          <select className="min-h-28 rounded-md border border-line px-3 py-2" multiple value={form.productionSiteIds} onChange={(event) => setForm({ ...form, productionSiteIds: selectedOptions(event) })}>
-            {productionSites.map((site) => (
-              <option key={site.id} value={site.id}>
-                {site.code} - {site.name}
-              </option>
-            ))}
-          </select>
+          <CheckboxList
+            options={productionSites.map((site) => ({ id: site.id, label: `${site.code} - ${site.name}` }))}
+            selected={form.productionSiteIds}
+            onChange={(productionSiteIds) => setForm({ ...form, productionSiteIds })}
+            emptyLabel="No production sites found"
+          />
         </FormField>
         <button className="flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white xl:col-span-4">
           <Plus aria-hidden className="h-4 w-4" />
@@ -379,17 +405,13 @@ export default function UsersPage() {
       {editingRolesFor && (
         <form onSubmit={saveRoles} className="mb-4 rounded-md border border-brand/30 bg-brand/5 p-4">
           <p className="mb-3 text-sm font-semibold">Edit roles for <span className="text-brand">{editingRolesFor.fullName}</span></p>
-          <div className="mb-3 flex flex-wrap gap-2">
-            {roles.map((role) => (
-              <label key={role.id} className="flex cursor-pointer items-center gap-2 rounded-md border border-line bg-white px-3 py-2 text-sm hover:border-brand/40">
-                <input
-                  type="checkbox"
-                  checked={editRoleIds.includes(role.id)}
-                  onChange={(e) => setEditRoleIds(e.target.checked ? [...editRoleIds, role.id] : editRoleIds.filter((id) => id !== role.id))}
-                />
-                {role.name}
-              </label>
-            ))}
+          <div className="mb-3">
+            <CheckboxList
+              options={roles.map((role) => ({ id: role.id, label: role.name }))}
+              selected={editRoleIds}
+              onChange={setEditRoleIds}
+              emptyLabel="No roles found"
+            />
           </div>
           <div className="flex gap-2">
             <button type="submit" disabled={savingRoles} className="inline-flex min-h-9 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-50">
@@ -408,32 +430,36 @@ export default function UsersPage() {
           <p className="mb-3 text-sm font-semibold">Edit access — <span className="text-brand">{editingAccessFor.fullName}</span></p>
           <div className="mb-3 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <FormField label="Branches">
-              <select className="min-h-28 rounded-md border border-line px-3 py-2" multiple value={editAccess.branchIds} onChange={(event) => setEditAccess({ ...editAccess, branchIds: selectedOptions(event) })}>
-                {branches.map((branch) => (
-                  <option key={branch.id} value={branch.id}>{branch.code} - {branch.name}</option>
-                ))}
-              </select>
+              <CheckboxList
+                options={branches.map((branch) => ({ id: branch.id, label: `${branch.code} - ${branch.name}` }))}
+                selected={editAccess.branchIds}
+                onChange={(branchIds) => setEditAccess({ ...editAccess, branchIds })}
+                emptyLabel="No branches found"
+              />
             </FormField>
             <FormField label="Farms">
-              <select className="min-h-28 rounded-md border border-line px-3 py-2" multiple value={editAccess.farmIds} onChange={(event) => setEditAccess({ ...editAccess, farmIds: selectedOptions(event) })}>
-                {farms.map((farm) => (
-                  <option key={farm.id} value={farm.id}>{farm.code} - {farm.name}</option>
-                ))}
-              </select>
+              <CheckboxList
+                options={farms.map((farm) => ({ id: farm.id, label: `${farm.code} - ${farm.name}` }))}
+                selected={editAccess.farmIds}
+                onChange={(farmIds) => setEditAccess({ ...editAccess, farmIds })}
+                emptyLabel="No farms found"
+              />
             </FormField>
             <FormField label="Warehouses">
-              <select className="min-h-28 rounded-md border border-line px-3 py-2" multiple value={editAccess.warehouseIds} onChange={(event) => setEditAccess({ ...editAccess, warehouseIds: selectedOptions(event) })}>
-                {warehouses.map((warehouse) => (
-                  <option key={warehouse.id} value={warehouse.id}>{warehouse.code} - {warehouse.name}</option>
-                ))}
-              </select>
+              <CheckboxList
+                options={warehouses.map((warehouse) => ({ id: warehouse.id, label: `${warehouse.code} - ${warehouse.name}` }))}
+                selected={editAccess.warehouseIds}
+                onChange={(warehouseIds) => setEditAccess({ ...editAccess, warehouseIds })}
+                emptyLabel="No warehouses found"
+              />
             </FormField>
             <FormField label="Production sites">
-              <select className="min-h-28 rounded-md border border-line px-3 py-2" multiple value={editAccess.productionSiteIds} onChange={(event) => setEditAccess({ ...editAccess, productionSiteIds: selectedOptions(event) })}>
-                {productionSites.map((site) => (
-                  <option key={site.id} value={site.id}>{site.code} - {site.name}</option>
-                ))}
-              </select>
+              <CheckboxList
+                options={productionSites.map((site) => ({ id: site.id, label: `${site.code} - ${site.name}` }))}
+                selected={editAccess.productionSiteIds}
+                onChange={(productionSiteIds) => setEditAccess({ ...editAccess, productionSiteIds })}
+                emptyLabel="No production sites found"
+              />
             </FormField>
           </div>
           <div className="flex gap-2">
