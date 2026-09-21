@@ -1,0 +1,22 @@
+[
+  { "category": "raw", "productName": "Maize", "bags": 4, "bagSizeKg": 50, "quantityKg": 200 },
+  { "category": "raw", "productName": "Hipro soya", "bags": 20, "bagSizeKg": 50, "quantityKg": 1000 },
+  { "category": "raw", "productName": "Methionine", "bags": 46, "bagSizeKg": 25, "quantityKg": 1150 },
+  { "category": "raw", "productName": "Kenzyme", "bags": null, "bagSizeKg": null, "quantityKg": 10 },
+  { "category": "raw", "productName": "Salt", "bags": 33, "bagSizeKg": 100, "quantityKg": 3300 },
+  { "category": "raw", "productName": "Dicalcium phosphate", "bags": 21, "bagSizeKg": 25, "quantityKg": 525 },
+  { "category": "raw", "productName": "Lysine", "bags": 14, "bagSizeKg": 25, "quantityKg": 350 },
+  { "category": "raw", "productName": "Toxin binder", "bags": 5, "bagSizeKg": 25, "quantityKg": 125 },
+  { "category": "raw", "productName": "Oyster shells", "bags": 651, "bagSizeKg": 50, "quantityKg": 32550 },
+  { "category": "raw", "productName": "Premix (old)", "bags": 8, "bagSizeKg": 25, "quantityKg": 200 },
+  { "category": "raw", "productName": "Premix (new)", "bags": 130, "bagSizeKg": 25, "quantityKg": 3250 },
+  { "category": "raw", "productName": "Wheat Bran", "bags": 1330, "bagSizeKg": 25, "quantityKg": 33250 },
+
+  { "category": "finished", "productName": "Layer 1 mash", "bags": 1, "bagSizeKg": 50, "quantityKg": 50 },
+  { "category": "finished", "productName": "Pre layer conc", "bags": 2, "bagSizeKg": 50, "quantityKg": 100 },
+  { "category": "finished", "productName": "Layer 1 Conc", "bags": 12, "bagSizeKg": 50, "quantityKg": 600 },
+  { "category": "finished", "productName": "Layer 2 mash", "bags": 3, "bagSizeKg": 50, "quantityKg": 150 },
+  { "category": "finished", "productName": "Developer Conc", "bags": 3, "bagSizeKg": 50, "quantityKg": 150 },
+  { "category": "finished", "productName": "Broiler Starter Conc", "bags": 1, "bagSizeKg": 50, "quantityKg": 50 },
+  { "category": "finished", "productName": "Broiler Starter mash", "bags": 2, "bagSizeKg": 50, "quantityKg": 100 }
+]
