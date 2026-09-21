@@ -38,6 +38,9 @@ const mockPrisma = {
   salesOrderItem: { findFirst: jest.fn(), groupBy: jest.fn().mockResolvedValue([]), aggregate: jest.fn() },
   salesOrder: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), create: jest.fn(), update: jest.fn(), groupBy: jest.fn().mockResolvedValue([]), count: jest.fn(), aggregate: jest.fn().mockResolvedValue({ _count: 0, _sum: {} }) },
   inventoryItem: { findFirst: jest.fn().mockResolvedValue(null), findMany: jest.fn().mockResolvedValue([]) },
+  feedFormula: { findFirst: jest.fn().mockResolvedValue(null), findMany: jest.fn().mockResolvedValue([]) },
+  productionSite: { findFirst: jest.fn().mockResolvedValue(null) },
+  feedProductionOrder: { create: jest.fn().mockResolvedValue({}) },
   salesReturn: { aggregate: jest.fn(), create: jest.fn(), findFirst: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
   prospectVisit: { create: jest.fn(), findFirst: jest.fn() },
   purchaseRequest: { create: jest.fn() },
@@ -681,6 +684,78 @@ describe("SalesService — two-step confirm then release (make-to-order)", () =>
       const service = makeService();
       await expect(service.confirmOrder(user(), "so-1", {})).rejects.toThrow(/credit limit/);
     });
+
+    // autoGenerateProductionOrders is fired non-blocking (void ...catch()) so
+    // confirmOrder's own returned promise doesn't wait on it — spy on the
+    // private method and await the promise it actually returned, rather than
+    // guessing how many microtask ticks its internal awaits need to settle.
+    function spyOnAutoGenerate(service: SalesService) {
+      return jest.spyOn(
+        service as unknown as { autoGenerateProductionOrders: (...args: unknown[]) => Promise<void> },
+        "autoGenerateProductionOrders"
+      );
+    }
+
+    describe("auto-generated production orders — shortfall only", () => {
+      beforeEach(() => {
+        mockPrisma.feedFormula.findFirst.mockResolvedValue({ id: "formula-1", branchId: "branch-1", finishedProductId: "prod-1", targetBatchKg: 100 });
+        mockPrisma.productionSite.findFirst.mockResolvedValue({ id: "site-1", branchId: "branch-1" });
+        mockPrisma.product.findFirst.mockResolvedValue({ uom: { symbol: "kg", name: "Kilogram" } });
+      });
+
+      it("creates nothing when stock already covers the ordered quantity", async () => {
+        mockPrisma.salesOrder.findFirst.mockResolvedValue(pendingOrder({ items: [{ productId: "prod-1", quantity: 10 }] }));
+        mockPrisma.inventoryItem.findFirst.mockResolvedValue({ quantityOnHand: 20 });
+        const service = makeService();
+        const spy = spyOnAutoGenerate(service);
+
+        await service.confirmOrder(user(), "so-1", {});
+        await spy.mock.results[0]?.value;
+
+        expect(mockPrisma.feedProductionOrder.create).not.toHaveBeenCalled();
+      });
+
+      it("creates a production order for only the shortfall when stock partly covers the order", async () => {
+        mockPrisma.salesOrder.findFirst.mockResolvedValue(pendingOrder({ items: [{ productId: "prod-1", quantity: 10 }] }));
+        mockPrisma.inventoryItem.findFirst.mockResolvedValue({ quantityOnHand: 4 });
+        const service = makeService();
+        const spy = spyOnAutoGenerate(service);
+
+        await service.confirmOrder(user(), "so-1", {});
+        await spy.mock.results[0]?.value;
+
+        expect(mockPrisma.feedProductionOrder.create).toHaveBeenCalledWith(
+          expect.objectContaining({ data: expect.objectContaining({ plannedQuantityKg: 6, salesOrderId: "so-1" }) })
+        );
+      });
+
+      it("uses the full ordered quantity as the shortfall when there is no stock at all", async () => {
+        mockPrisma.salesOrder.findFirst.mockResolvedValue(pendingOrder({ items: [{ productId: "prod-1", quantity: 10 }] }));
+        mockPrisma.inventoryItem.findFirst.mockResolvedValue(null);
+        const service = makeService();
+        const spy = spyOnAutoGenerate(service);
+
+        await service.confirmOrder(user(), "so-1", {});
+        await spy.mock.results[0]?.value;
+
+        expect(mockPrisma.feedProductionOrder.create).toHaveBeenCalledWith(
+          expect.objectContaining({ data: expect.objectContaining({ plannedQuantityKg: 10, salesOrderId: "so-1" }) })
+        );
+      });
+
+      it("still skips a line item with no active formula, regardless of stock", async () => {
+        mockPrisma.salesOrder.findFirst.mockResolvedValue(pendingOrder({ items: [{ productId: "prod-1", quantity: 10 }] }));
+        mockPrisma.feedFormula.findFirst.mockResolvedValue(null);
+        mockPrisma.inventoryItem.findFirst.mockResolvedValue({ quantityOnHand: 0 });
+        const service = makeService();
+        const spy = spyOnAutoGenerate(service);
+
+        await service.confirmOrder(user(), "so-1", {});
+        await spy.mock.results[0]?.value;
+
+        expect(mockPrisma.feedProductionOrder.create).not.toHaveBeenCalled();
+      });
+    });
   });
 
   describe("approveStockRelease flow guards", () => {
@@ -1139,6 +1214,23 @@ describe("SalesService — sales order edit & cancel", () => {
       await expect(service.cancelSalesOrder(makeUser(), "so-1", {})).rejects.toThrow(BadRequestException);
       expect(mockTx.salesOrder.update).not.toHaveBeenCalled();
     });
+
+    it("cancels linked Feed Mill orders by their salesOrderId FK, falling back to the old notes-text match for pre-migration rows", async () => {
+      mockPrisma.salesOrder.findFirst.mockResolvedValue({ id: "so-1", companyId: "company-1", branchId: "branch-1", customerId: "cust-1", orderNumber: "SO-001", status: "PENDING_STOCK_APPROVAL", invoices: [] });
+      mockTx.feedProductionOrder.updateMany.mockResolvedValue({ count: 1 });
+      mockTx.salesOrder.update.mockResolvedValue({ id: "so-1", status: "CANCELLED" });
+
+      const service = makeService();
+      await service.cancelSalesOrder(makeUser(), "so-1", {});
+
+      expect(mockTx.feedProductionOrder.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            OR: [{ salesOrderId: "so-1" }, { notes: { contains: "so-1" } }]
+          })
+        })
+      );
+    });
   });
 });
 
@@ -1244,6 +1336,16 @@ describe("SalesService.orderShortage / raiseShortagePurchaseRequest — actionab
       expect(result.data.canApprove).toBe(true);
       expect(result.data.shortages).toEqual([]);
     });
+
+    it("carries the product's type and feedForm through so a caller can tell a manufactured item from a purchasable one", async () => {
+      mockPrisma.product.findMany.mockResolvedValue([{ id: "prod-1", name: "Layer Mash", sku: "LM-1", type: "FINISHED_GOOD", feedForm: "MASH", uom: { symbol: "BAG" } }]);
+      mockPrisma.inventoryItem.findMany.mockResolvedValue([{ productId: "prod-1", quantityOnHand: 0 }]);
+
+      const service = makeService();
+      const result = await service.orderShortage(makeUser({ warehouseIds: ["wh-1"] }), "so-1");
+
+      expect(result.data.shortages[0].product).toEqual(expect.objectContaining({ type: "FINISHED_GOOD", feedForm: "MASH" }));
+    });
   });
 
   describe("raiseShortagePurchaseRequest", () => {
@@ -1274,6 +1376,45 @@ describe("SalesService.orderShortage / raiseShortagePurchaseRequest — actionab
       await expect(
         service.raiseShortagePurchaseRequest(makeUser({ warehouseIds: ["wh-1"] }), "so-1", {}, {})
       ).rejects.toThrow(/no stock shortage/);
+      expect(mockPrisma.purchaseRequest.create).not.toHaveBeenCalled();
+    });
+
+    it("excludes feed items that are actually manufactured, keeping only genuinely purchasable shortages", async () => {
+      mockPrisma.salesOrder.findFirst.mockResolvedValue(orderRow({
+        items: [{ productId: "prod-1", quantity: 50, unitPrice: 10 }, { productId: "prod-2", quantity: 20, unitPrice: 5 }]
+      }));
+      mockPrisma.product.findMany.mockResolvedValue([
+        { id: "prod-1", name: "Maize", sku: "MZ-1", type: "RAW_MATERIAL", feedForm: null, uom: { symbol: "BAG" } },
+        { id: "prod-2", name: "Layer Mash", sku: "LM-1", type: "FINISHED_GOOD", feedForm: "MASH", uom: { symbol: "BAG" } }
+      ]);
+      mockPrisma.inventoryItem.findMany.mockResolvedValue([{ productId: "prod-1", quantityOnHand: 20 }, { productId: "prod-2", quantityOnHand: 0 }]);
+      mockPrisma.feedFormula.findMany.mockResolvedValue([{ finishedProductId: "prod-2" }]);
+      mockPrisma.purchaseRequest.create.mockResolvedValue({ id: "pr-1", reference: "PR-REF-001" });
+
+      const service = makeService();
+      const result = await service.raiseShortagePurchaseRequest(makeUser({ warehouseIds: ["wh-1"] }), "so-1", {}, {});
+
+      expect(mockPrisma.purchaseRequest.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            items: { create: [expect.objectContaining({ productId: "prod-1", quantity: 30 })] }
+          })
+        })
+      );
+      expect(result.excludedItems).toEqual([expect.objectContaining({ productId: "prod-2" })]);
+      expect(result.message).toMatch(/1 item\(s\) excluded/);
+    });
+
+    it("refuses when every shortage item is a manufactured feed product", async () => {
+      mockPrisma.salesOrder.findFirst.mockResolvedValue(orderRow({ items: [{ productId: "prod-2", quantity: 20, unitPrice: 5 }] }));
+      mockPrisma.product.findMany.mockResolvedValue([{ id: "prod-2", name: "Layer Mash", sku: "LM-1", type: "FINISHED_GOOD", feedForm: "MASH", uom: { symbol: "BAG" } }]);
+      mockPrisma.inventoryItem.findMany.mockResolvedValue([{ productId: "prod-2", quantityOnHand: 0 }]);
+      mockPrisma.feedFormula.findMany.mockResolvedValue([{ finishedProductId: "prod-2" }]);
+
+      const service = makeService();
+      await expect(
+        service.raiseShortagePurchaseRequest(makeUser({ warehouseIds: ["wh-1"] }), "so-1", {}, {})
+      ).rejects.toThrow(/produced in-house/);
       expect(mockPrisma.purchaseRequest.create).not.toHaveBeenCalled();
     });
   });

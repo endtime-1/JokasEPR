@@ -59,6 +59,7 @@ type OrderRow = {
   scheduledDate: string;
   status: string;
   marketTargetId?: string | null;
+  salesOrderId?: string | null;
   productionSite?: { name: string; code: string };
   formula?: { name: string; code: string; feedType: string };
   finishedProduct?: { name: string; sku: string };
@@ -1570,6 +1571,9 @@ function OrderTable({ rows, loading, onApprove, onEdit, onCancel }: { rows: Orde
             <span className="font-mono text-xs font-semibold">{row.orderNumber}</span>
             {row.marketTargetId && (
               <span title="Opened from an approved market target" className="rounded-full bg-brand/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-brand">Market-led</span>
+            )}
+            {row.salesOrderId && (
+              <span title="Auto-opened for a confirmed sales order's stock shortfall" className="rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-600">Sales-order</span>
             )}
           </span>
         )

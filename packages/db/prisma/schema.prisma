@@ -3953,6 +3953,10 @@ model FeedProductionOrder {
   formulaVersionId     String?
   finishedProductId    String
   marketTargetId       String?
+  // Loose reference (no @relation, same convention as marketTargetId above) —
+  // set by SalesService.autoGenerateProductionOrders when this order was
+  // auto-opened for the shortfall on a confirmed sales order.
+  salesOrderId         String?
   productionPlanId     String?
   productionPlanItemId String?
   orderNumber          String
@@ -3983,6 +3987,7 @@ model FeedProductionOrder {
   @@index([formulaId])
   @@index([finishedProductId])
   @@index([marketTargetId])
+  @@index([salesOrderId])
   @@index([productionPlanId])
   @@index([productionPlanItemId])
   @@index([companyId, status])

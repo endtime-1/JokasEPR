@@ -31,6 +31,8 @@ type OrderRow = {
   plannedQuantityKg: string | number;
   scheduledDate: string;
   status: string;
+  marketTargetId?: string | null;
+  salesOrderId?: string | null;
   formula?: { name: string; code: string };
 };
 
@@ -517,7 +519,17 @@ export function FeedMillDashboardPage() {
               <tbody className="divide-y divide-line">
                 {(data?.recentOrders ?? []).map((order) => (
                   <tr key={order.id} className="transition hover:bg-field/50">
-                    <td className="px-4 py-2.5 font-bold">{order.orderNumber}</td>
+                    <td className="px-4 py-2.5 font-bold">
+                      <span className="inline-flex items-center gap-1.5">
+                        {order.orderNumber}
+                        {order.marketTargetId && (
+                          <span title="Opened from an approved market target" className="rounded-full bg-brand/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-brand">Market-led</span>
+                        )}
+                        {order.salesOrderId && (
+                          <span title="Auto-opened for a confirmed sales order's stock shortfall" className="rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-600">Sales-order</span>
+                        )}
+                      </span>
+                    </td>
                     <td className="px-4 py-2.5 text-ink/70">{order.formula?.name ?? "—"}</td>
                     <td className="px-4 py-2.5 text-right font-semibold">{fmt(Number(order.plannedQuantityKg))}</td>
                     <td className="px-4 py-2.5 text-ink/60">

@@ -549,13 +549,14 @@ export class SalesService {
         });
       }
       // Cancel any Feed Mill orders auto-opened for this sales order that
-      // haven't started production yet. They carry no salesOrderId column —
-      // the link is the sales order's uuid stamped into their notes by
-      // autoGenerateProductionOrders (uuids don't collide).
+      // haven't started production yet. Newer rows carry a real (loose)
+      // salesOrderId reference; the notes-text match is kept only so rows
+      // created before that column existed (linked solely by the sales
+      // order's uuid stamped into their notes) still get cancelled too.
       await tx.feedProductionOrder.updateMany({
         where: {
           companyId: order.companyId,
-          notes: { contains: order.id },
+          OR: [{ salesOrderId: order.id }, { notes: { contains: order.id } }],
           status: { in: ["DRAFT", "PENDING_STOCK_APPROVAL", "APPROVED"] }
         },
         data: { status: "CANCELLED", updatedById: user.id }
@@ -618,12 +619,14 @@ export class SalesService {
 
     await this.writeAudit(user, "APPROVE", "SalesOrder", order.id, `Confirmed sales order ${order.orderNumber} and issued invoice`, context, { branchId: order.branchId });
 
-    // Now that the customer has confirmed, draft the production orders for any
-    // feed line items (non-blocking — a failure here must not undo a confirmed
-    // order + issued invoice, but it's logged so a silent gap is visible).
+    // Now that the customer has confirmed, draft production orders for any
+    // feed line items still short after what's already in stock (non-
+    // blocking — a failure here must not undo a confirmed order + issued
+    // invoice, but it's logged so a silent gap is visible).
     void this.autoGenerateProductionOrders(
       user.companyId,
       order.branchId,
+      order.warehouseId,
       order.orderNumber,
       order.id,
       order.items.map((it) => ({ productId: it.productId, quantity: Number(it.quantity), unitPrice: Number(it.unitPrice), discountAmount: Number(it.discountAmount) })),
@@ -757,7 +760,7 @@ export class SalesService {
 
     const productIds = order.items.map((item) => item.productId);
     const [products, inventoryItems] = await Promise.all([
-      this.prisma.product.findMany({ where: { id: { in: productIds } }, select: { id: true, name: true, sku: true, uom: { select: { symbol: true } } } }),
+      this.prisma.product.findMany({ where: { id: { in: productIds } }, select: { id: true, name: true, sku: true, type: true, feedForm: true, uom: { select: { symbol: true } } } }),
       this.prisma.inventoryItem.findMany({ where: { companyId: user.companyId, warehouseId: order.warehouseId, productId: { in: productIds }, deletedAt: null }, select: { productId: true, quantityOnHand: true } })
     ]);
     const productMap = new Map(products.map((p) => [p.id, p]));
@@ -789,8 +792,25 @@ export class SalesService {
     const order = await this.prisma.salesOrder.findFirst({ where: { companyId: user.companyId, id }, select: { id: true, orderNumber: true, branchId: true } });
     if (!order) throw new NotFoundException("Sales order was not found.");
 
+    // Feed items are manufactured in-house, not bought from a supplier — a
+    // purchase request for one is nonsensical. Those are already covered by
+    // confirmOrder's own auto-generated production order (see
+    // autoGenerateProductionOrders); only genuinely purchasable shortages
+    // belong on this request.
+    const manufacturedFormulas = await this.prisma.feedFormula.findMany({
+      where: { companyId: user.companyId, finishedProductId: { in: shortage.shortages.map((row) => row.productId) }, status: "ACTIVE", deletedAt: null },
+      select: { finishedProductId: true }
+    });
+    const manufacturedProductIds = new Set(manufacturedFormulas.map((f) => f.finishedProductId));
+    const purchasable = shortage.shortages.filter((row) => !manufacturedProductIds.has(row.productId));
+    const excluded = shortage.shortages.filter((row) => manufacturedProductIds.has(row.productId));
+
+    if (!purchasable.length) {
+      throw new BadRequestException("This order's shortage is entirely feed items that are produced in-house, not purchased — check Feed Production for the auto-generated production order.");
+    }
+
     const reference = await nextRef(this.prisma, user.companyId, "PR");
-    const items = shortage.shortages.map((row, index) => ({
+    const items = purchasable.map((row, index) => ({
       productId: row.productId,
       productName: row.product?.name ?? row.productId,
       quantity: row.shortBy,
@@ -799,7 +819,7 @@ export class SalesService {
       description: `Shortfall for sales order ${order.orderNumber} — ordered ${row.ordered}, in stock ${row.available}`,
       sequence: index + 1
     }));
-    const totalEstimate = shortage.shortages.reduce((sum, row) => sum + row.shortBy * row.unitPrice, 0);
+    const totalEstimate = purchasable.reduce((sum, row) => sum + row.shortBy * row.unitPrice, 0);
 
     const row = await this.prisma.purchaseRequest.create({
       data: {
@@ -818,7 +838,13 @@ export class SalesService {
       include: { items: true }
     });
     await this.writeAudit(user, "CREATE", "PurchaseRequest", row.id, `Raised purchase request ${reference} for sales order ${order.orderNumber} shortage`, context, { branchId: order.branchId ?? undefined });
-    return { data: row };
+    return {
+      data: row,
+      excludedItems: excluded,
+      message: excluded.length
+        ? `${excluded.length} item(s) excluded — produced in-house, not purchased; see the sales order's auto-generated production order instead.`
+        : undefined
+    };
   }
 
   // ── Proforma / Quotations ──────────────────────────────────────────────────
@@ -1733,6 +1759,7 @@ export class SalesService {
   private async autoGenerateProductionOrders(
     companyId: string,
     branchId: string,
+    warehouseId: string,
     salesOrderNumber: string,
     salesOrderId: string,
     items: CreateSalesOrderItemDto[],
@@ -1753,6 +1780,18 @@ export class SalesService {
       });
       if (!site) continue; // no production site available — skip
 
+      // Only produce the shortfall — the same warehouse this order will
+      // release stock from (see approveStockRelease) may already cover it
+      // fully or partly, and a confirmed sale that stock can already satisfy
+      // shouldn't spin up a fresh production run on top of it.
+      const inventoryItem = await this.prisma.inventoryItem.findFirst({
+        where: { companyId, warehouseId, productId: item.productId, deletedAt: null },
+        select: { quantityOnHand: true }
+      });
+      const available = Number(inventoryItem?.quantityOnHand ?? 0);
+      const shortfallUnits = Math.max(0, item.quantity - available);
+      if (shortfallUnits <= 0) continue; // stock already covers this line — nothing to produce
+
       // Convert quantity to kg: assume each unit = 50 kg bag unless UOM says otherwise
       const product = await this.prisma.product.findFirst({
         where: { id: item.productId },
@@ -1761,7 +1800,7 @@ export class SalesService {
       const uomName = (product?.uom?.name ?? "").toLowerCase();
       const uomSymbol = (product?.uom?.symbol ?? "").toLowerCase();
       const kgFactor = uomName.includes("50") || uomSymbol.includes("bag") ? 50 : 1;
-      const plannedQuantityKg = item.quantity * kgFactor;
+      const plannedQuantityKg = shortfallUnits * kgFactor;
 
       // count+1 raced under concurrent sales orders (two requests reading the
       // same count before either insert lands) and produced a different
@@ -1777,11 +1816,12 @@ export class SalesService {
           productionSiteId: site.id,
           formulaId: formula.id,
           finishedProductId: formula.finishedProductId,
+          salesOrderId,
           orderNumber,
           plannedQuantityKg,
           scheduledDate: new Date(),
           status: "DRAFT",
-          notes: `Auto-generated from sales order ${salesOrderNumber} (${salesOrderId})`,
+          notes: `Auto-generated from sales order ${salesOrderNumber} (${salesOrderId}) — shortfall ${shortfallUnits} of ${item.quantity} ordered (${available} in stock)`,
           createdById
         }
       });

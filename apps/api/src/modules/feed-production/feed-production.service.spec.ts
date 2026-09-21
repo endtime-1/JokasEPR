@@ -171,6 +171,15 @@ describe("FeedProductionService.listOrders — orderWhere empty-array convention
     const where = mockPrisma.feedProductionOrder.findMany.mock.calls[0][0].where;
     expect(where.productionSiteId).toBeUndefined();
   });
+
+  it("surfaces a row's salesOrderId untouched, same as marketTargetId — no select strips it", async () => {
+    mockPrisma.feedProductionOrder.findMany.mockResolvedValue([{ id: "order-1", orderNumber: "FPO-1", salesOrderId: "so-1", marketTargetId: null }]);
+
+    const service = makeService();
+    const result = await service.listOrders(makeUser({ hasGlobalAccess: true }), {} as never);
+
+    expect(result.data[0].salesOrderId).toBe("so-1");
+  });
 });
 
 describe("FeedProductionService.createBatch — per-lot floor guard + full-consumption check (H2)", () => {
