@@ -1,0 +1,330 @@
+[
+  {
+    "invoiceNum": "1333",
+    "saleDate": "2026-09-14",
+    "buyerName": "D&D cafeteria & School",
+    "memo": "",
+    "quantityCrates": 30,
+    "unitPriceCrate": 45
+  },
+  {
+    "invoiceNum": "1334",
+    "saleDate": "2026-09-14",
+    "buyerName": "Cash Sales",
+    "memo": "",
+    "quantityCrates": 40,
+    "unitPriceCrate": 38
+  },
+  {
+    "invoiceNum": "1335",
+    "saleDate": "2026-09-14",
+    "buyerName": "Protocol",
+    "memo": "to madam",
+    "quantityCrates": 4,
+    "unitPriceCrate": 0
+  },
+  {
+    "invoiceNum": "1336",
+    "saleDate": "2026-09-14",
+    "buyerName": "Cash Sales",
+    "memo": "",
+    "quantityCrates": 8,
+    "unitPriceCrate": 40
+  },
+  {
+    "invoiceNum": "1337",
+    "saleDate": "2026-09-14",
+    "buyerName": "Vida (Maakro)",
+    "memo": "",
+    "quantityCrates": 100,
+    "unitPriceCrate": 38
+  },
+  {
+    "invoiceNum": "1338",
+    "saleDate": "2026-09-14",
+    "buyerName": "Cash Sales",
+    "memo": "",
+    "quantityCrates": 30,
+    "unitPriceCrate": 38
+  },
+  {
+    "invoiceNum": "1339",
+    "saleDate": "2026-09-14",
+    "buyerName": "Cash Sales",
+    "memo": "Prince",
+    "quantityCrates": 2,
+    "unitPriceCrate": 40
+  },
+  {
+    "invoiceNum": "1351",
+    "saleDate": "2026-09-14",
+    "buyerName": "Damaged",
+    "memo": "DISCARD",
+    "quantityCrates": 1,
+    "unitPriceCrate": 0
+  },
+  {
+    "invoiceNum": "1340",
+    "saleDate": "2026-09-15",
+    "buyerName": "Cash Sales",
+    "memo": "Kate",
+    "quantityCrates": 40,
+    "unitPriceCrate": 38
+  },
+  {
+    "invoiceNum": "1341",
+    "saleDate": "2026-09-15",
+    "buyerName": "Cash Sales",
+    "memo": "Grace",
+    "quantityCrates": 11,
+    "unitPriceCrate": 38
+  },
+  {
+    "invoiceNum": "1341",
+    "saleDate": "2026-09-15",
+    "buyerName": "Cash Sales",
+    "memo": "Broken",
+    "quantityCrates": 1,
+    "unitPriceCrate": 20
+  },
+  {
+    "invoiceNum": "1342",
+    "saleDate": "2026-09-15",
+    "buyerName": "Grace (banker)",
+    "memo": "",
+    "quantityCrates": 150,
+    "unitPriceCrate": 38
+  },
+  {
+    "invoiceNum": "1343",
+    "saleDate": "2026-09-15",
+    "buyerName": "Cash Sales",
+    "memo": "",
+    "quantityCrates": 50,
+    "unitPriceCrate": 38
+  },
+  {
+    "invoiceNum": "1344",
+    "saleDate": "2026-09-15",
+    "buyerName": "Cash Sales",
+    "memo": "",
+    "quantityCrates": 60,
+    "unitPriceCrate": 38
+  },
+  {
+    "invoiceNum": "1345",
+    "saleDate": "2026-09-15",
+    "buyerName": "Cash Sales",
+    "memo": "",
+    "quantityCrates": 10,
+    "unitPriceCrate": 40
+  },
+  {
+    "invoiceNum": "1346",
+    "saleDate": "2026-09-15",
+    "buyerName": "Cash Sales",
+    "memo": "Leticia",
+    "quantityCrates": 11,
+    "unitPriceCrate": 38
+  },
+  {
+    "invoiceNum": "1347",
+    "saleDate": "2026-09-16",
+    "buyerName": "Cash Sales",
+    "memo": "",
+    "quantityCrates": 5,
+    "unitPriceCrate": 40
+  },
+  {
+    "invoiceNum": "1348",
+    "saleDate": "2026-09-16",
+    "buyerName": "Cash Sales",
+    "memo": "Akos",
+    "quantityCrates": 50,
+    "unitPriceCrate": 38
+  },
+  {
+    "invoiceNum": "1349",
+    "saleDate": "2026-09-16",
+    "buyerName": "Hajia Aminu (Ahwiaa)",
+    "memo": "",
+    "quantityCrates": 70,
+    "unitPriceCrate": 38
+  },
+  {
+    "invoiceNum": "1350",
+    "saleDate": "2026-09-16",
+    "buyerName": "Cash Sales",
+    "memo": "",
+    "quantityCrates": 1,
+    "unitPriceCrate": 40
+  },
+  {
+    "invoiceNum": "1352",
+    "saleDate": "2026-09-16",
+    "buyerName": "Cash Sales",
+    "memo": "",
+    "quantityCrates": 1,
+    "unitPriceCrate": 40
+  },
+  {
+    "invoiceNum": "1353",
+    "saleDate": "2026-09-17",
+    "buyerName": "Cash Sales",
+    "memo": "",
+    "quantityCrates": 30,
+    "unitPriceCrate": 38
+  },
+  {
+    "invoiceNum": "1354",
+    "saleDate": "2026-09-17",
+    "buyerName": "Cash Sales",
+    "memo": "Esi",
+    "quantityCrates": 100,
+    "unitPriceCrate": 38
+  },
+  {
+    "invoiceNum": "1355",
+    "saleDate": "2026-09-17",
+    "buyerName": "Cash Sales",
+    "memo": "",
+    "quantityCrates": 30,
+    "unitPriceCrate": 38
+  },
+  {
+    "invoiceNum": "1356",
+    "saleDate": "2026-09-17",
+    "buyerName": "Cash Sales",
+    "memo": "Esther",
+    "quantityCrates": 15,
+    "unitPriceCrate": 38
+  },
+  {
+    "invoiceNum": "1357",
+    "saleDate": "2026-09-17",
+    "buyerName": "Cash Sales",
+    "memo": "Emelia",
+    "quantityCrates": 11,
+    "unitPriceCrate": 38
+  },
+  {
+    "invoiceNum": "1358",
+    "saleDate": "2026-09-18",
+    "buyerName": "Vida Sowah",
+    "memo": "",
+    "quantityCrates": 100,
+    "unitPriceCrate": 38
+  },
+  {
+    "invoiceNum": "1359",
+    "saleDate": "2026-09-18",
+    "buyerName": "Michael KNUST",
+    "memo": "",
+    "quantityCrates": 200,
+    "unitPriceCrate": 38
+  },
+  {
+    "invoiceNum": "1360",
+    "saleDate": "2026-09-18",
+    "buyerName": "Cash Sales",
+    "memo": "",
+    "quantityCrates": 9,
+    "unitPriceCrate": 40
+  },
+  {
+    "invoiceNum": "1361",
+    "saleDate": "2026-09-18",
+    "buyerName": "Cash Sales",
+    "memo": "",
+    "quantityCrates": 3,
+    "unitPriceCrate": 40
+  },
+  {
+    "invoiceNum": "1362",
+    "saleDate": "2026-09-18",
+    "buyerName": "Cash Sales",
+    "memo": "",
+    "quantityCrates": 27,
+    "unitPriceCrate": 38
+  },
+  {
+    "invoiceNum": "1363",
+    "saleDate": "2026-09-21",
+    "buyerName": "Cash Sales",
+    "memo": "",
+    "quantityCrates": 30,
+    "unitPriceCrate": 40
+  },
+  {
+    "invoiceNum": "1364",
+    "saleDate": "2026-09-21",
+    "buyerName": "Cash Sales",
+    "memo": "Moses",
+    "quantityCrates": 50,
+    "unitPriceCrate": 40
+  },
+  {
+    "invoiceNum": "1365",
+    "saleDate": "2026-09-21",
+    "buyerName": "Hajia Aminu (Ahwiaa)",
+    "memo": "",
+    "quantityCrates": 200,
+    "unitPriceCrate": 40
+  },
+  {
+    "invoiceNum": "1366",
+    "saleDate": "2026-09-21",
+    "buyerName": "Cash Sales",
+    "memo": "",
+    "quantityCrates": 44,
+    "unitPriceCrate": 40
+  },
+  {
+    "invoiceNum": "1367",
+    "saleDate": "2026-09-21",
+    "buyerName": "Fosuaah (Bantama)",
+    "memo": "",
+    "quantityCrates": 50,
+    "unitPriceCrate": 40
+  },
+  {
+    "invoiceNum": "1368",
+    "saleDate": "2026-09-21",
+    "buyerName": "Cash Sales",
+    "memo": "Dorcas",
+    "quantityCrates": 30,
+    "unitPriceCrate": 40
+  },
+  {
+    "invoiceNum": "1369",
+    "saleDate": "2026-09-21",
+    "buyerName": "Protocol",
+    "memo": "FOR ECG MEN",
+    "quantityCrates": 4,
+    "unitPriceCrate": 0
+  },
+  {
+    "invoiceNum": "1370",
+    "saleDate": "2026-09-21",
+    "buyerName": "Cash Sales",
+    "memo": "",
+    "quantityCrates": 40,
+    "unitPriceCrate": 40
+  },
+  {
+    "invoiceNum": "1371",
+    "saleDate": "2026-09-21",
+    "buyerName": "Cash Sales",
+    "memo": "Lucy",
+    "quantityCrates": 40,
+    "unitPriceCrate": 40
+  },
+  {
+    "invoiceNum": "1373",
+    "saleDate": "2026-09-21",
+    "buyerName": "D&D cafeteria & School",
+    "memo": "",
+    "quantityCrates": 30,
+    "unitPriceCrate": 45
+  }
+]
