@@ -86,6 +86,21 @@ async function main() {
   console.log(`Raw materials warehouse: ${rawWarehouse.name} (${rawWarehouse.code ?? rawWarehouse.id})`);
   console.log(`Finished goods warehouse: ${finishedWarehouse.name} (${finishedWarehouse.code ?? finishedWarehouse.id})\n`);
 
+  // Two sheet rows can resolve to the SAME catalog product (e.g. "Premix
+  // (old)" and "Premix (new)" both being just "Premix" in the catalog).
+  // Without disambiguation both would generate the identical batch number
+  // and the second row would silently skip as "already loaded" — the same
+  // class of bug found in the book1 egg-sales import for a repeated
+  // invoice number. Append -B, -C, ... to the batch number for the 2nd+
+  // row that lands on a given SKU.
+  const skuOccurrences = new Map();
+  function batchNumberFor(sku) {
+    const count = skuOccurrences.get(sku) ?? 0;
+    skuOccurrences.set(sku, count + 1);
+    const suffixes = "BCDEFGH";
+    return count === 0 ? `OPEN-SEPT19-${sku}`.toUpperCase() : `OPEN-SEPT19-${sku}-${suffixes[count - 1]}`.toUpperCase();
+  }
+
   let ok = 0, notFound = 0, ambiguous = 0, imported = 0, failed = 0;
   for (const row of rows) {
     const warehouse = row.category === "raw" ? rawWarehouse : finishedWarehouse;
@@ -103,10 +118,10 @@ async function main() {
       continue;
     }
     ok++;
-    console.log(`${COMMIT ? "LOADING" : "would load"}  ${row.productName} -> ${product.name} (${product.sku})  ${row.quantityKg}kg (${bagInfo})  into ${warehouse.name}`);
+    const batchNumber = batchNumberFor(product.sku);
+    console.log(`${COMMIT ? "LOADING" : "would load"}  ${batchNumber}  ${row.productName} -> ${product.name} (${product.sku})  ${row.quantityKg}kg (${bagInfo})  into ${warehouse.name}`);
     if (!COMMIT) continue;
 
-    const batchNumber = `OPEN-SEPT19-${product.sku}`.toUpperCase();
     try {
       await prisma.$transaction(async (tx) => {
         const existing = await tx.stockBatch.findFirst({ where: { companyId: company.id, batchNumber } });
