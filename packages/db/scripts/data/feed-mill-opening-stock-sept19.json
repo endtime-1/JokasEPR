@@ -13,6 +13,7 @@
   { "category": "raw", "productName": "Wheat Bran", "bags": 1330, "bagSizeKg": 25, "quantityKg": 33250 },
 
   { "category": "finished", "productName": "Layer 1 mash", "sku": "L001", "bags": 1, "bagSizeKg": 50, "quantityKg": 50 },
+  { "category": "finished", "productName": "Pre layer conc", "bags": 2, "bagSizeKg": 50, "quantityKg": 100 },
   { "category": "finished", "productName": "Layer 1 Conc", "bags": 12, "bagSizeKg": 50, "quantityKg": 600 },
   { "category": "finished", "productName": "Layer 2 mash", "bags": 3, "bagSizeKg": 50, "quantityKg": 150 },
   { "category": "finished", "productName": "Developer Conc", "bags": 3, "bagSizeKg": 50, "quantityKg": 150 },
