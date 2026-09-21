@@ -64,7 +64,13 @@ async function resolveWarehouse(companyId, keyword, code) {
   return matches[0];
 }
 
-async function resolveProduct(companyId, productName, category) {
+async function resolveProduct(companyId, productName, category, sku) {
+  if (sku) {
+    const bySku = await prisma.product.findFirst({ where: { companyId, deletedAt: null, sku }, select: { id: true, name: true, sku: true, uomId: true } });
+    if (bySku) return bySku;
+    // Fall through to name matching if the given SKU doesn't exist — better
+    // to try than to report a false NOT FOUND for a typo'd SKU.
+  }
   const target = norm(productName);
   const types = category === "raw" ? ["RAW_MATERIAL", "SEMI_FINISHED"] : ["FINISHED_GOOD"];
   const candidates = await prisma.product.findMany({ where: { companyId, deletedAt: null, type: { in: types } }, select: { id: true, name: true, sku: true, uomId: true } });
@@ -104,7 +110,7 @@ async function main() {
   let ok = 0, notFound = 0, ambiguous = 0, imported = 0, failed = 0;
   for (const row of rows) {
     const warehouse = row.category === "raw" ? rawWarehouse : finishedWarehouse;
-    const product = await resolveProduct(company.id, row.productName, row.category);
+    const product = await resolveProduct(company.id, row.productName, row.category, row.sku);
     const bagInfo = row.bags != null ? `${row.bags} bag(s) @ ${row.bagSizeKg}kg` : "given directly";
 
     if (!product) {
