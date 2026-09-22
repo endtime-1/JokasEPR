@@ -1,6 +1,6 @@
 import { FarmType, ProductFeedForm, ProductionSiteType, ProductStatus, ProductType, WarehouseType } from "@prisma/client";
 import { Type } from "class-transformer";
-import { IsArray, IsBoolean, IsEnum, IsInt, IsNumber, IsObject, IsOptional, IsString, IsUrl, IsUUID, Max, MaxLength, Min, ValidateNested } from "class-validator";
+import { IsArray, IsBoolean, IsEnum, IsInt, IsNumber, IsObject, IsOptional, IsString, IsUUID, Max, MaxLength, Min, ValidateNested } from "class-validator";
 
 export class UpdateCompanyProfileDto {
   @IsString()
@@ -22,8 +22,14 @@ export class UpdateCompanyProfileDto {
   @MaxLength(80)
   timezone?: string;
 
+  // Not @IsUrl(): the value here is normally the relative "/api/v1/uploads/
+  // company/..." path the upload endpoint hands back (see uploadCompanyLogo
+  // in settings.service.ts), which isURL() rejects for having no host —
+  // every save after uploading a logo failed this check, even ones that
+  // only touched name/address. Plain string covers both that relative path
+  // and a manually-typed absolute URL, which the old field still allows.
   @IsOptional()
-  @IsUrl({ require_tld: false })
+  @IsString()
   @MaxLength(500)
   logoUrl?: string;
 
