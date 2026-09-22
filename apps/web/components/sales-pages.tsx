@@ -1888,6 +1888,14 @@ function colsForEndpoint(endpoint: string): ColDef[] {
     { key: "warehouse",      label: "Warehouse",   render: (r) => (r.warehouse as { name: string } | undefined)?.name ?? "—" },
     { key: "status",         label: "Status",      render: (r) => <StatusBadge status={r.status as string} /> },
     { key: "createdAt",      label: "Date",        render: (r) => fmt(r.createdAt as string) },
+    {
+      key: "actions", label: "", render: (r) => (
+        <button
+          onClick={() => downloadReport(`/sales/delivery-notes/${r.id}/delivery-note.pdf`, `delivery-note-${r.deliveryNumber}.pdf`).catch((e: unknown) => alert(e instanceof Error ? e.message : "Download failed"))}
+          className="rounded-lg border border-line px-2 py-1 text-xs font-semibold text-ink/70 hover:bg-field"
+        >PDF</button>
+      )
+    },
   ];
   return [
     { key: "id",    label: "ID",   render: (r) => String(r.id ?? "").slice(0, 8) },

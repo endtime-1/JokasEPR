@@ -373,6 +373,18 @@ export class HRController {
     return this.svc.emailPayslip(user, id, ctx(req));
   }
 
+  @Get("employees/:id/appointment-letter")
+  @RequirePermissions(PERMISSIONS.HR_READ)
+  appointmentLetter(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Res() res: Response) {
+    return this.svc.streamAppointmentLetter(user, id, res);
+  }
+
+  @Get("employees/:id/employment-certificate")
+  @RequirePermissions(PERMISSIONS.HR_READ)
+  employmentCertificate(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Res() res: Response) {
+    return this.svc.streamEmploymentCertificate(user, id, res);
+  }
+
   // ─── Training ───────────────────────────────────────────────────────────────
 
   @Get("training")
@@ -631,6 +643,12 @@ export class HRController {
     return this.svc.acknowledgeDisciplinary(user, id, ctx(req));
   }
 
+  @Get("disciplinary/:id/letter")
+  @RequirePermissions(PERMISSIONS.HR_READ)
+  disciplinaryLetter(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Res() res: Response) {
+    return this.svc.streamDisciplinaryLetter(user, id, res);
+  }
+
   @Delete("disciplinary/:id")
   @RequirePermissions(PERMISSIONS.HR_MANAGE)
   deleteDisciplinary(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Req() req: Request) {
@@ -655,6 +673,12 @@ export class HRController {
   @RequirePermissions(PERMISSIONS.HR_MANAGE)
   resolveGrievance(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: ResolveGrievanceDto, @Req() req: Request) {
     return this.svc.resolveGrievance(user, id, dto, ctx(req));
+  }
+
+  @Get("grievances/:id/record")
+  @RequirePermissions(PERMISSIONS.HR_READ)
+  grievanceRecordPdf(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Res() res: Response) {
+    return this.svc.streamGrievanceLetter(user, id, res);
   }
 
   @Patch("grievances/:id/close")

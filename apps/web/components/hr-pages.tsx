@@ -878,10 +878,14 @@ export function EmployeeDetailPage({ id }: { id: string }) {
   return (
     
       <div className="space-y-5">
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <Link href="/hr/employees" className="text-sm text-ink/60 hover:text-ink">â† Employees</Link>
           <h1 className="text-xl font-bold">{data.fullName}</h1>
           <StatusBadge status={data.status} />
+          <div className="ml-auto flex items-center gap-2">
+            <a href={`/api/v1/hr/employees/${id}/appointment-letter`} target="_blank" rel="noreferrer" className="rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-semibold text-ink/70 hover:bg-field flex items-center gap-1"><FileText size={12} /> Appointment Letter</a>
+            <a href={`/api/v1/hr/employees/${id}/employment-certificate`} target="_blank" rel="noreferrer" className="rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-semibold text-ink/70 hover:bg-field flex items-center gap-1"><FileText size={12} /> Employment Certificate</a>
+          </div>
         </div>
 
         {optionsError && <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{optionsError}</div>}
@@ -2960,7 +2964,10 @@ export function DisciplinaryPage() {
             { key: "actionTaken", label: "Action Taken", render: r => <span className="line-clamp-1 max-w-xs text-xs">{r.actionTaken as string}</span> },
             { key: "acknowledgedAt", label: "Acknowledged", render: r => r.acknowledgedAt ? <span className="text-green-700 text-xs">Yes</span> : <span className="text-ink/40 text-xs">No</span> },
             { key: "_actions", label: "", render: r => (
-              <button onClick={() => setConfirmDeleteId(r.id as string)} className="rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-600 hover:bg-red-100"><Trash2 size={12} /></button>
+              <div className="flex items-center gap-1.5">
+                <a href={`/api/v1/hr/disciplinary/${r.id}/letter`} target="_blank" rel="noreferrer" className="rounded border border-line bg-white px-2 py-1 text-xs hover:bg-field flex items-center gap-1"><FileText size={10} /> Letter</a>
+                <button onClick={() => setConfirmDeleteId(r.id as string)} className="rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-600 hover:bg-red-100"><Trash2 size={12} /></button>
+              </div>
             )},
           ]}
           rows={rows as Record<string, any>[]}
@@ -3131,6 +3138,7 @@ export function GrievancesPage() {
               <div className="flex gap-1">
                 {r.status === "OPEN" && <button onClick={() => { setResolveId(r.id as string); setResolution(""); }} className="rounded border border-green-200 bg-green-50 px-2 py-1 text-xs text-green-700 hover:bg-green-100">Resolve</button>}
                 {r.status === "RESOLVED" && <button onClick={() => setConfirmCloseId(r.id as string)} className="rounded border border-line px-2 py-1 text-xs hover:bg-field">Close</button>}
+                <a href={`/api/v1/hr/grievances/${r.id}/record`} target="_blank" rel="noreferrer" className="rounded border border-line bg-white px-2 py-1 text-xs hover:bg-field flex items-center gap-1"><FileText size={10} /> Record</a>
                 <button onClick={() => setConfirmDeleteId(r.id as string)} className="rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-600 hover:bg-red-100"><Trash2 size={12} /></button>
               </div>
             )},

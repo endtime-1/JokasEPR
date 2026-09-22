@@ -301,6 +301,15 @@ export class SalesController {
     return this.salesService.listDeliveryNotes(user, query);
   }
 
+  @Get("delivery-notes/:id/delivery-note.pdf")
+  @RequirePermissions(PERMISSIONS.SALES_READ)
+  async deliveryNotePdf(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Res() response: Response) {
+    const { buffer, filename } = await this.salesService.deliveryNotePdf(user, id);
+    response.setHeader("content-type", "application/pdf");
+    response.setHeader("content-disposition", `attachment; filename=${filename}`);
+    response.send(buffer);
+  }
+
   @Get("reports")
   @RequirePermissions(PERMISSIONS.SALES_READ)
   reports(@CurrentUser() user: AuthenticatedUser, @Query() query: SalesQueryDto) {

@@ -2075,6 +2075,216 @@ export class HRService {
     return { data: { sent, failed, period } };
   }
 
+  // ─── HR-F: PDF Letters (appointment, employment certificate, disciplinary, grievance) ──
+
+  private async pdfDoc() {
+    const { default: PDFDocument } = await import("pdfkit");
+    const doc = new PDFDocument({ margin: 50, size: "A4" });
+    const chunks: Buffer[] = [];
+    doc.on("data", (c: Buffer) => chunks.push(c));
+    const done = new Promise<Buffer>((resolve) => doc.on("end", () => resolve(Buffer.concat(chunks))));
+    return { doc, done };
+  }
+
+  private async requireEmployeeForLetter(user: AuthenticatedUser, employeeId: string) {
+    const employee = await this.prisma.employee.findFirst({
+      where: { id: employeeId, companyId: user.companyId, deletedAt: null },
+      select: {
+        id: true, fullName: true, code: true, startDate: true, basicSalary: true, status: true,
+        branchId: true, farmId: true, warehouseId: true, productionSiteId: true,
+        employeeRole: { select: { name: true } },
+        branch: { select: { name: true } }
+      }
+    });
+    if (!employee) throw new NotFoundException("Employee not found");
+    this.assertEmployeeInScope(user, employee);
+    return employee;
+  }
+
+  async appointmentLetterPdf(user: AuthenticatedUser, employeeId: string): Promise<{ pdf: Buffer; filename: string }> {
+    const employee = await this.requireEmployeeForLetter(user, employeeId);
+    const branding = await getCompanyBranding(this.prisma, user.companyId);
+    const { doc, done } = await this.pdfDoc();
+
+    renderCompanyPdfHeader(doc, branding, "LETTER OF APPOINTMENT");
+    doc.fontSize(9).font("Helvetica").text(new Date().toLocaleDateString("en-GH"), { align: "right" });
+    doc.moveDown(1);
+
+    doc.text(`Dear ${employee.fullName},`);
+    doc.moveDown(0.8);
+    doc.text(
+      `We are pleased to confirm your appointment as ${employee.employeeRole?.name ?? "an employee"} of ` +
+      `${branding.legalName || branding.name}, effective ${new Date(employee.startDate).toLocaleDateString("en-GH")}.` +
+      (employee.branch?.name ? ` You will be based at ${employee.branch.name}.` : ""),
+      { align: "justify" }
+    );
+    doc.moveDown(0.8);
+    if (employee.basicSalary != null) {
+      doc.text(
+        `Your basic salary will be GHS ${Number(employee.basicSalary).toLocaleString("en-GH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} per month, ` +
+        `subject to the statutory deductions required by law and any applicable company policy.`,
+        { align: "justify" }
+      );
+      doc.moveDown(0.8);
+    }
+    doc.text(
+      "Your employment is subject to the terms and conditions set out in the company's HR policy, including but not " +
+      "limited to standards of conduct, working hours, and leave entitlements. Please sign and return a copy of this " +
+      "letter to indicate your acceptance.",
+      { align: "justify" }
+    );
+    doc.moveDown(2);
+    doc.text("We look forward to working with you.");
+    doc.moveDown(2);
+    doc.text("For and on behalf of");
+    doc.font("Helvetica-Bold").text(branding.legalName || branding.name);
+    doc.font("Helvetica").moveDown(2.5);
+    doc.text("_____________________________");
+    doc.text("Authorized signatory");
+    doc.moveDown(2);
+    doc.text("_____________________________");
+    doc.text(`${employee.fullName} — acceptance signature & date`);
+
+    doc.end();
+    return { pdf: await done, filename: `appointment-letter-${employee.code}.pdf` };
+  }
+
+  async employmentCertificatePdf(user: AuthenticatedUser, employeeId: string): Promise<{ pdf: Buffer; filename: string }> {
+    const employee = await this.requireEmployeeForLetter(user, employeeId);
+    const branding = await getCompanyBranding(this.prisma, user.companyId);
+    const { doc, done } = await this.pdfDoc();
+
+    renderCompanyPdfHeader(doc, branding, "CERTIFICATE OF EMPLOYMENT");
+    doc.fontSize(9).font("Helvetica").text(new Date().toLocaleDateString("en-GH"), { align: "right" });
+    doc.moveDown(1);
+
+    doc.font("Helvetica-Bold").text("TO WHOM IT MAY CONCERN", { align: "center" });
+    doc.font("Helvetica").moveDown(1);
+
+    const stillEmployed = employee.status === "ACTIVE";
+    doc.text(
+      `This is to certify that ${employee.fullName} (Employee Code: ${employee.code}) ` +
+      `${stillEmployed ? "is currently employed" : "was employed"} by ${branding.legalName || branding.name} ` +
+      `as ${employee.employeeRole?.name ?? "an employee"}, since ${new Date(employee.startDate).toLocaleDateString("en-GH")}.`,
+      { align: "justify" }
+    );
+    doc.moveDown(0.8);
+    doc.text(
+      "This letter is issued upon the employee's request for whatever purpose it may serve, and does not constitute " +
+      "an offer, guarantee, or extension of employment.",
+      { align: "justify" }
+    );
+    doc.moveDown(2.5);
+    doc.text("_____________________________");
+    doc.text("Authorized signatory");
+    doc.text(branding.legalName || branding.name);
+
+    doc.end();
+    return { pdf: await done, filename: `employment-certificate-${employee.code}.pdf` };
+  }
+
+  async disciplinaryLetterPdf(user: AuthenticatedUser, id: string): Promise<{ pdf: Buffer; filename: string }> {
+    const row = await this.prisma.disciplinaryRecord.findFirst({
+      where: { id, companyId: user.companyId, deletedAt: null },
+      include: { employee: { select: { fullName: true, code: true, branchId: true, farmId: true, warehouseId: true, productionSiteId: true } } }
+    });
+    if (!row) throw new NotFoundException("Disciplinary record not found");
+    if (row.employee) this.assertEmployeeInScope(user, row.employee);
+    const branding = await getCompanyBranding(this.prisma, user.companyId);
+    const { doc, done } = await this.pdfDoc();
+
+    renderCompanyPdfHeader(doc, branding, "DISCIPLINARY NOTICE");
+    doc.fontSize(9).font("Helvetica-Bold").text("Reference: ", { continued: true }).font("Helvetica").text(row.reference);
+    doc.font("Helvetica-Bold").text("Date of incident: ", { continued: true }).font("Helvetica").text(new Date(row.incidentDate).toLocaleDateString("en-GH"));
+    doc.font("Helvetica-Bold").text("Employee: ", { continued: true }).font("Helvetica").text(`${row.employee?.fullName ?? "—"} (${row.employee?.code ?? "—"})`);
+    doc.font("Helvetica-Bold").text("Category: ", { continued: true }).font("Helvetica").text(row.category);
+    doc.moveDown(0.8);
+
+    doc.font("Helvetica-Bold").text("Description of incident");
+    doc.font("Helvetica").text(row.description, { align: "justify" });
+    doc.moveDown(0.8);
+
+    doc.font("Helvetica-Bold").text("Action taken");
+    doc.font("Helvetica").text(row.actionTaken, { align: "justify" });
+    if (row.notes) {
+      doc.moveDown(0.8);
+      doc.font("Helvetica-Bold").text("Additional notes");
+      doc.font("Helvetica").text(row.notes, { align: "justify" });
+    }
+    doc.moveDown(2);
+    doc.text(row.acknowledgedAt
+      ? `Acknowledged by employee on ${new Date(row.acknowledgedAt).toLocaleDateString("en-GH")}.`
+      : "Employee acknowledgement pending.");
+    doc.moveDown(1.5);
+    doc.text("_____________________________");
+    doc.text("Employee signature & date");
+
+    doc.end();
+    return { pdf: await done, filename: `disciplinary-${row.reference}.pdf` };
+  }
+
+  async grievanceLetterPdf(user: AuthenticatedUser, id: string): Promise<{ pdf: Buffer; filename: string }> {
+    const row = await this.prisma.grievanceRecord.findFirst({
+      where: { id, companyId: user.companyId, deletedAt: null },
+      include: { employee: { select: { fullName: true, code: true, branchId: true, farmId: true, warehouseId: true, productionSiteId: true } } }
+    });
+    if (!row) throw new NotFoundException("Grievance record not found");
+    if (row.employee) this.assertEmployeeInScope(user, row.employee);
+    const branding = await getCompanyBranding(this.prisma, user.companyId);
+    const { doc, done } = await this.pdfDoc();
+
+    renderCompanyPdfHeader(doc, branding, "GRIEVANCE RECORD");
+    doc.fontSize(9).font("Helvetica-Bold").text("Reference: ", { continued: true }).font("Helvetica").text(row.reference);
+    doc.font("Helvetica-Bold").text("Date submitted: ", { continued: true }).font("Helvetica").text(new Date(row.submittedDate).toLocaleDateString("en-GH"));
+    doc.font("Helvetica-Bold").text("Employee: ", { continued: true }).font("Helvetica").text(`${row.employee?.fullName ?? "—"} (${row.employee?.code ?? "—"})`);
+    doc.font("Helvetica-Bold").text("Category: ", { continued: true }).font("Helvetica").text(row.category);
+    doc.font("Helvetica-Bold").text("Status: ", { continued: true }).font("Helvetica").text(row.status.replace(/_/g, " "));
+    doc.moveDown(0.8);
+
+    doc.font("Helvetica-Bold").text("Description");
+    doc.font("Helvetica").text(row.description, { align: "justify" });
+
+    if (row.resolution) {
+      doc.moveDown(0.8);
+      doc.font("Helvetica-Bold").text("Resolution");
+      doc.font("Helvetica").text(row.resolution, { align: "justify" });
+      if (row.resolvedAt) doc.moveDown(0.3).font("Helvetica").fontSize(8).fillColor("#555").text(`Resolved on ${new Date(row.resolvedAt).toLocaleDateString("en-GH")}`).fillColor("#000").fontSize(9);
+    }
+    doc.moveDown(2);
+    doc.text("_____________________________");
+    doc.text("Employee signature & date");
+
+    doc.end();
+    return { pdf: await done, filename: `grievance-${row.reference}.pdf` };
+  }
+
+  private streamPdf(res: Response, pdf: Buffer, filename: string) {
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("Content-Length", pdf.length);
+    res.send(pdf);
+  }
+
+  async streamAppointmentLetter(user: AuthenticatedUser, employeeId: string, res: Response) {
+    const { pdf, filename } = await this.appointmentLetterPdf(user, employeeId);
+    this.streamPdf(res, pdf, filename);
+  }
+
+  async streamEmploymentCertificate(user: AuthenticatedUser, employeeId: string, res: Response) {
+    const { pdf, filename } = await this.employmentCertificatePdf(user, employeeId);
+    this.streamPdf(res, pdf, filename);
+  }
+
+  async streamDisciplinaryLetter(user: AuthenticatedUser, id: string, res: Response) {
+    const { pdf, filename } = await this.disciplinaryLetterPdf(user, id);
+    this.streamPdf(res, pdf, filename);
+  }
+
+  async streamGrievanceLetter(user: AuthenticatedUser, id: string, res: Response) {
+    const { pdf, filename } = await this.grievanceLetterPdf(user, id);
+    this.streamPdf(res, pdf, filename);
+  }
+
   // ─── HR-E: Bank Export + Finance Journal ─────────────────────────────────────
 
   async bankExportCsv(user: AuthenticatedUser, period: string, res: Response) {

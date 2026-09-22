@@ -1194,9 +1194,52 @@ export class SalesService {
     return { buffer: await done, filename: `receipt-${receipt.receiptNumber}.pdf` };
   }
 
-  private pdfQuoteTable(doc: PDFKit.PDFDocument, rows: string[][]) {
-    const head = ["Item", "Qty", "Unit Price", "Discount", "Line Total"];
-    const widths = [200, 45, 90, 80, 90];
+  async deliveryNotePdf(user: AuthenticatedUser, id: string): Promise<{ buffer: Buffer; filename: string }> {
+    const note = await this.prisma.deliveryNote.findFirst({
+      where: { companyId: user.companyId, id, deletedAt: null },
+      include: {
+        salesOrder: { include: { customer: true, items: { include: { product: true } } } },
+        warehouse: true
+      }
+    });
+    if (!note) throw new NotFoundException("Delivery note was not found.");
+    this.assertBranchAccess(user, note.branchId);
+    const branding = await getCompanyBranding(this.prisma, user.companyId);
+
+    const { default: PDFDocument } = await import("pdfkit");
+    const doc = new PDFDocument({ margin: 48, size: "A4" });
+    const chunks: Buffer[] = [];
+    doc.on("data", (c: Buffer) => chunks.push(c));
+    const done = new Promise<Buffer>((resolve) => doc.on("end", () => resolve(Buffer.concat(chunks))));
+
+    renderCompanyPdfHeader(doc, branding, "DELIVERY NOTE");
+
+    doc.fontSize(9).font("Helvetica-Bold").text("Delivery No: ", { continued: true }).font("Helvetica").text(note.deliveryNumber);
+    doc.font("Helvetica-Bold").text("Date: ", { continued: true }).font("Helvetica").text(new Date(note.deliveryDate).toLocaleDateString("en-GH"));
+    doc.font("Helvetica-Bold").text("Order No: ", { continued: true }).font("Helvetica").text(note.salesOrder.orderNumber);
+    doc.font("Helvetica-Bold").text("Deliver to: ", { continued: true }).font("Helvetica").text(`${note.salesOrder.customer.name} (${note.salesOrder.customer.code})`);
+    doc.font("Helvetica-Bold").text("From warehouse: ", { continued: true }).font("Helvetica").text(note.warehouse.name);
+    doc.font("Helvetica-Bold").text("Status: ", { continued: true }).font("Helvetica").text(note.status.replace(/_/g, " "));
+    if (note.recipientName) doc.font("Helvetica-Bold").text("Recipient: ", { continued: true }).font("Helvetica").text(note.recipientName);
+    doc.moveDown(0.8);
+
+    this.pdfQuoteTable(doc, note.salesOrder.items.map((it) => [
+      it.product?.name ?? it.productId,
+      String(Number(it.quantity))
+    ]), ["Item", "Qty"], [350, 145]);
+
+    if (note.notes) doc.moveDown(1).fontSize(8).fillColor("#555").text(`Notes: ${note.notes}`).fillColor("#000");
+
+    doc.moveDown(2.5);
+    doc.fontSize(9).font("Helvetica").text("Delivered by: ______________________", 48, doc.y, { continued: false });
+    doc.moveDown(1.2).text("Received by: ______________________", 48, doc.y);
+    doc.moveDown(1.5).fontSize(7.5).fillColor("#999").text("Please inspect goods on receipt — sign only once quantities are confirmed correct.");
+
+    doc.end();
+    return { buffer: await done, filename: `delivery-note-${note.deliveryNumber}.pdf` };
+  }
+
+  private pdfQuoteTable(doc: PDFKit.PDFDocument, rows: string[][], head: string[] = ["Item", "Qty", "Unit Price", "Discount", "Line Total"], widths: number[] = [200, 45, 90, 80, 90]) {
     const startX = doc.x;
     let y = doc.y;
     doc.fontSize(8.5).font("Helvetica-Bold");
