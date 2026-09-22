@@ -365,8 +365,13 @@ export default function SettingsPage() {
             <input className={`${inputClass} md:col-span-2`} placeholder="Address" value={company.address ?? ""} onChange={(e) => setCompany({ ...company, address: e.target.value })} />
             <div className="md:col-span-2 flex items-center gap-3">
               {company.logoUrl && (
+                // logoUrl is already the full "/api/v1/uploads/..." path the
+                // backend hands back — prefixing NEXT_PUBLIC_API_URL (which
+                // in production is itself "https://.../api/v1") doubled it.
+                // Site and API share an origin, so the relative path alone
+                // resolves correctly.
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={`${process.env.NEXT_PUBLIC_API_URL ?? ""}${company.logoUrl}`} alt="Company logo" className="h-12 w-12 rounded-lg border border-line object-contain bg-white" />
+                <img src={company.logoUrl} alt="Company logo" className="h-12 w-12 rounded-lg border border-line object-contain bg-white" />
               )}
               <label className="app-button-secondary cursor-pointer text-xs">
                 {logoUploading ? "Uploading…" : "Upload logo"}
