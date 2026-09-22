@@ -332,7 +332,13 @@ export function MarketPlanningDashboardPage() {
   const totalAlerts = (data?.alerts.openShortages.length ?? 0) + ((data?.alerts.procurementPendingCount ?? 0) > 0 ? 1 : 0);
   const achievePct = data?.targetAchievementPercentage ?? 0;
 
-  const activeWeekTarget = data?.currentWeekTarget && ACTIVE_TARGET_STATUSES.has(data.currentWeekTarget.status)
+  // currentWeekTarget is just the most-recently-created target — with no
+  // newer one made since, that can be weeks past its own periodEnd. Status
+  // alone (e.g. still APPROVED) doesn't mean it's still the live plan, so
+  // require the period to actually cover today before calling it "Active".
+  const activeWeekTarget = data?.currentWeekTarget
+    && ACTIVE_TARGET_STATUSES.has(data.currentWeekTarget.status)
+    && new Date(data.currentWeekTarget.periodEnd).getTime() >= Date.now()
     ? data.currentWeekTarget
     : null;
 

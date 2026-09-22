@@ -11,6 +11,7 @@ const mockTx = {
   salesOrder: { update: jest.fn(), create: jest.fn() },
   salesOrderItem: { deleteMany: jest.fn(), createMany: jest.fn() },
   feedProductionOrder: { updateMany: jest.fn() },
+  dashboardAlert: { updateMany: jest.fn() },
   deliveryNote: { create: jest.fn() },
   customer: { findUniqueOrThrow: jest.fn(), findFirst: jest.fn(), create: jest.fn() },
   customerCreditLimit: { upsert: jest.fn(), update: jest.fn(), findUniqueOrThrow: jest.fn().mockResolvedValue({ id: "cl-1", companyId: "company-1", creditLimit: 0, currentBalance: 0 }) },
@@ -1230,6 +1231,20 @@ describe("SalesService — sales order edit & cancel", () => {
           })
         })
       );
+    });
+
+    it("resolves the OPEN dashboard alerts fired for this order's stock shortfall", async () => {
+      mockPrisma.salesOrder.findFirst.mockResolvedValue({ id: "so-1", companyId: "company-1", branchId: "branch-1", customerId: "cust-1", orderNumber: "SO-2026-0001", status: "PENDING_STOCK_APPROVAL", invoices: [] });
+      mockTx.feedProductionOrder.updateMany.mockResolvedValue({ count: 0 });
+      mockTx.salesOrder.update.mockResolvedValue({ id: "so-1", status: "CANCELLED" });
+
+      const service = makeService();
+      await service.cancelSalesOrder(makeUser(), "so-1", {});
+
+      expect(mockTx.dashboardAlert.updateMany).toHaveBeenCalledWith({
+        where: { companyId: "company-1", status: "OPEN", title: { contains: "SO-2026-0001" } },
+        data: { status: "RESOLVED" }
+      });
     });
   });
 });

@@ -561,6 +561,18 @@ export class SalesService {
         },
         data: { status: "CANCELLED", updatedById: user.id }
       });
+      // fireStockShortageAlerts has no FK back to the order it was raised
+      // for (DashboardAlert is a free-text broadcast) — it stamped the order
+      // number into the title, so that's the only handle we have to close
+      // these out. Without this, a cancelled order's "production required" /
+      // "procurement alert" pair stays OPEN forever: nothing else in the
+      // codebase ever resolves a DashboardAlert, so the Feed Mill and
+      // Procurement dashboards keep flagging a shortfall for stock nobody
+      // needs to produce or buy anymore.
+      await tx.dashboardAlert.updateMany({
+        where: { companyId: order.companyId, status: "OPEN", title: { contains: order.orderNumber } },
+        data: { status: "RESOLVED" }
+      });
       return tx.salesOrder.update({ where: { id }, data: { status: "CANCELLED", updatedById: user.id } });
     }), { label: "SalesOrder.cancelSalesOrder" });
 
