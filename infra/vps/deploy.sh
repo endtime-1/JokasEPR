@@ -197,7 +197,18 @@ kill_port() {
   # `grep -oE` + sed, not `grep -oP` — PCRE support isn't guaranteed on every
   # grep build. -oE also correctly returns every pid= on a line with several
   # sockets/users, where a single greedy sed capture would only catch the last.
-  pids=$(ss -ltnp 2>/dev/null | grep -E ":${port}[[:space:]]" | grep -oE 'pid=[0-9]+' | sed 's/pid=//' | sort -u)
+  #
+  # (2026-09-22) `|| true` at the end is load-bearing, not decoration: under
+  # this script's `set -euo pipefail`, a port with NOTHING listening (the
+  # normal case once pm2_as_user delete above has actually done its job) has
+  # both greps exit 1 for "no match" — pipefail then reports the pipeline's
+  # status as that 1, `pids=$(...)` is a failing command substitution, and
+  # `set -e` kills the whole script right here, before pm2 start ever runs.
+  # That's exactly what happened the first time pm2_as_user delete started
+  # working: it actually killed the processes, so kill_port immediately
+  # found each port already empty and the script died mid-restart with
+  # every service down and nothing left to bring them back.
+  pids=$(ss -ltnp 2>/dev/null | grep -E ":${port}[[:space:]]" | grep -oE 'pid=[0-9]+' | sed 's/pid=//' | sort -u || true)
   for pid in $pids; do
     echo "  port $port held by pid $pid — killing"
     kill -9 "$pid" 2>/dev/null || true
