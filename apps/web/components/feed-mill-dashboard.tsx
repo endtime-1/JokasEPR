@@ -412,7 +412,7 @@ export function FeedMillDashboardPage() {
   // The highest-traffic page in the module had no self-heal at all.
   useApiRecovery(!data, () => void load());
 
-  const totalAlertCount = (data?.alerts.stalledOrders.length ?? 0) + ((data?.alerts.pendingQC ?? 0) > 0 ? 1 : 0);
+  const totalAlertCount = (data?.alerts.stalledOrders.length ?? 0) + ((data?.alerts.pendingQC ?? 0) > 0 ? 1 : 0) + (data?.alerts.systemAlerts.length ?? 0);
   const productionTrend = buildTrend(data?.trends.production ?? [], "producedKg");
   const wastageTrend = buildTrend(data?.trends.production ?? [], "wastageKg");
   const formulaTotal = (data?.formulaStats ?? []).reduce((s, r) => s + r.count, 0);
