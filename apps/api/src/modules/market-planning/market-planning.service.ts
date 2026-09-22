@@ -72,6 +72,16 @@ export class MarketPlanningService {
           companyId: user.companyId,
           deletedAt: null,
           product: { type: "FINISHED_GOOD" },
+          // A FEED_STORE warehouse can sit at the mill (a real dispatch-ready
+          // store) OR on a farm (see requiredParentForWarehouseType in
+          // warehouse-purpose.ts) — a farm's feed store holds stock already
+          // delivered there for the birds to eat, drawn down by feed-
+          // consumption records, not stock available to sell. Counting it
+          // here overstated "ready for dispatch" by whatever's currently
+          // sitting at every farm. Egg/soya stores are farm-tied by design
+          // (that's genuinely where dispatch happens for those goods), so
+          // only the feed case needs excluding.
+          NOT: { warehouse: { is: { type: "FEED_STORE", farmId: { not: null } } } },
           ...(query.warehouseId ? { warehouseId: query.warehouseId } : {}),
           ...(user.hasGlobalAccess || user.warehouseIds.length === 0 ? {} : { warehouseId: { in: user.warehouseIds } })
         },
