@@ -156,7 +156,30 @@ pnpm --filter @jokas/db exec prisma migrate deploy
 # which is unconditionally correct regardless of what PM2 thinks or what the
 # process's argv looks like.
 log "Restart PM2 processes (clean)"
-pm2 delete jokas-api jokas-web jokas-storefront 2>/dev/null || true
+# (2026-09-22) The site header above says "run as the deploy user" but this
+# box got deployed from a root shell all night, and every single restart
+# below silently no-opped: PM2 keeps a separate daemon + process list PER OS
+# USER (~/.pm2), so `pm2 delete`/`pm2 start` run as root operate on root's
+# own, empty registry — a different one entirely from the deploy-owned
+# processes actually serving the site. Nothing errored (pm2 happily reports
+# success against its own, correct-but-irrelevant list), so the file swap
+# further up kept landing while the live processes never actually restarted,
+# and only surfaced as "stale chunk" 400s once the old build was deleted out
+# from under them. Route every pm2 call through the user that actually owns
+# these processes, regardless of who invoked this script, instead of relying
+# on remembering to `su - deploy` first every time.
+PM2_USER="deploy"
+pm2_as_user() {
+  if [ "$(id -un)" = "$PM2_USER" ]; then
+    pm2 "$@"
+  elif [ "$(id -u)" = "0" ]; then
+    su -s /bin/bash "$PM2_USER" -c "cd '$REPO_DIR' && pm2 $*"
+  else
+    echo "ERROR: PM2 processes are owned by '$PM2_USER' — run this script as root or as $PM2_USER (currently: $(id -un))."
+    exit 1
+  fi
+}
+pm2_as_user delete jokas-api jokas-web jokas-storefront 2>/dev/null || true
 pkill -9 -f "apps/api/dist/main.js" 2>/dev/null || true
 pkill -9 -f "standalone/apps/web/server.js" 2>/dev/null || true
 pkill -9 -f "standalone/apps/storefront/server.js" 2>/dev/null || true
@@ -209,11 +232,11 @@ wait_port_free 4001
 wait_port_free 3000
 wait_port_free 3002
 
-pm2 start infra/vps/ecosystem.config.js --update-env
-pm2 save
+pm2_as_user start infra/vps/ecosystem.config.js --update-env
+pm2_as_user save
 
 log "Done. Status:"
-pm2 status
+pm2_as_user status
 echo
 echo "Local health checks:"
 curl -fsS -m 5 http://127.0.0.1:4001/health && echo "  api  OK" || echo "  api  FAIL"
