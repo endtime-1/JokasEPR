@@ -26,6 +26,11 @@ export class UpdateCompanyProfileDto {
   @IsUrl({ require_tld: false })
   @MaxLength(500)
   logoUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  address?: string;
 }
 
 export class CreateBranchSettingDto {

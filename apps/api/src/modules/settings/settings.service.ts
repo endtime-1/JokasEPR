@@ -96,8 +96,11 @@ export class SettingsService {
   async company(user: AuthenticatedUser) {
     this.requireSettings(user);
     const company = await this.prisma.company.findUnique({ where: { id: user.companyId } });
-    const logo = await this.getSetting(user.companyId, "company.logo");
-    return { data: { ...company, logoUrl: (logo as any)?.logoUrl ?? "" } };
+    const [logo, address] = await Promise.all([
+      this.getSetting(user.companyId, "company.logo"),
+      this.getSetting(user.companyId, "company.address")
+    ]);
+    return { data: { ...company, logoUrl: (logo as any)?.logoUrl ?? "", address: (address as any)?.address ?? "" } };
   }
 
   async updateCompany(user: AuthenticatedUser, dto: UpdateCompanyProfileDto, ctx: RequestContext) {
@@ -113,8 +116,19 @@ export class SettingsService {
       }
     });
     await this.setSetting(user, "company.logo", { logoUrl: dto.logoUrl ?? "" }, ctx, "Updated company logo setting");
+    await this.setSetting(user, "company.address", { address: dto.address ?? "" }, ctx, "Updated company address setting");
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, action: "UPDATE", entityType: "Company", entityId: company.id, summary: `Updated company profile ${company.name}`, ...ctx });
     return this.company(user);
+  }
+
+  // Stores the uploaded file's URL into the same company.logo setting the
+  // manual "Logo URL" field writes to — one source of truth for every PDF
+  // header (see common/pdf-company-header.ts) regardless of how it got set.
+  async uploadCompanyLogo(user: AuthenticatedUser, filename: string, ctx: RequestContext) {
+    this.requireSettings(user);
+    const logoUrl = `/api/v1/uploads/company/${filename}`;
+    await this.setSetting(user, "company.logo", { logoUrl }, ctx, "Uploaded company logo");
+    return { data: { logoUrl } };
   }
 
   async masterData(user: AuthenticatedUser) {

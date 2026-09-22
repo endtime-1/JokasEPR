@@ -5,6 +5,8 @@ import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { nextRef } from "../../common/next-ref";
 import { withDbRetry } from "../../common/db-retry";
+import { getCompanyBranding } from "../../common/company-branding";
+import { renderCompanyPdfHeader } from "../../common/pdf-company-header";
 import {
   CreateCustomerDto,
   CreateCustomerGroupDto,
@@ -1060,7 +1062,7 @@ export class SalesService {
 
   async quotePdf(user: AuthenticatedUser, id: string): Promise<{ buffer: Buffer; filename: string }> {
     const { data: quote } = await this.getQuote(user, id);
-    const company = await this.prisma.company.findUnique({ where: { id: user.companyId }, select: { name: true, legalName: true } });
+    const branding = await getCompanyBranding(this.prisma, user.companyId);
     const { default: PDFDocument } = await import("pdfkit");
     const doc = new PDFDocument({ margin: 48, size: "A4" });
     const chunks: Buffer[] = [];
@@ -1068,9 +1070,7 @@ export class SalesService {
     const done = new Promise<Buffer>((resolve) => doc.on("end", () => resolve(Buffer.concat(chunks))));
     const gh = (n: unknown) => `GHS ${Number(n ?? 0).toLocaleString("en-GH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-    doc.fontSize(20).font("Helvetica-Bold").text(company?.legalName || company?.name || "Proforma Invoice");
-    doc.fontSize(13).font("Helvetica-Bold").fillColor("#555").text("PROFORMA INVOICE");
-    doc.fillColor("#000").moveDown(0.6);
+    renderCompanyPdfHeader(doc, branding, "PROFORMA INVOICE");
 
     doc.fontSize(9).font("Helvetica-Bold").text("Quote No: ", { continued: true }).font("Helvetica").text(quote.quoteNumber);
     doc.font("Helvetica-Bold").text("Date: ", { continued: true }).font("Helvetica").text(new Date(quote.quoteDate).toLocaleDateString("en-GH"));
@@ -1100,6 +1100,98 @@ export class SalesService {
 
     doc.end();
     return { buffer: await done, filename: `proforma-${quote.quoteNumber}.pdf` };
+  }
+
+  async invoicePdf(user: AuthenticatedUser, id: string): Promise<{ buffer: Buffer; filename: string }> {
+    const invoice = await this.prisma.invoice.findFirst({
+      where: { companyId: user.companyId, id, deletedAt: null },
+      include: {
+        customer: true,
+        salesOrder: { include: { items: { include: { product: true } } } }
+      }
+    });
+    if (!invoice) throw new NotFoundException("Invoice was not found.");
+    this.assertBranchAccess(user, invoice.branchId);
+    const branding = await getCompanyBranding(this.prisma, user.companyId);
+
+    const { default: PDFDocument } = await import("pdfkit");
+    const doc = new PDFDocument({ margin: 48, size: "A4" });
+    const chunks: Buffer[] = [];
+    doc.on("data", (c: Buffer) => chunks.push(c));
+    const done = new Promise<Buffer>((resolve) => doc.on("end", () => resolve(Buffer.concat(chunks))));
+    const gh = (n: unknown) => `GHS ${Number(n ?? 0).toLocaleString("en-GH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+    renderCompanyPdfHeader(doc, branding, "INVOICE");
+
+    doc.fontSize(9).font("Helvetica-Bold").text("Invoice No: ", { continued: true }).font("Helvetica").text(invoice.invoiceNumber);
+    doc.font("Helvetica-Bold").text("Date: ", { continued: true }).font("Helvetica").text(new Date(invoice.invoiceDate).toLocaleDateString("en-GH"));
+    if (invoice.dueDate) doc.font("Helvetica-Bold").text("Due date: ", { continued: true }).font("Helvetica").text(new Date(invoice.dueDate).toLocaleDateString("en-GH"));
+    doc.font("Helvetica-Bold").text("Bill to: ", { continued: true }).font("Helvetica").text(`${invoice.customer.name} (${invoice.customer.code})`);
+    doc.font("Helvetica-Bold").text("Status: ", { continued: true }).font("Helvetica").text(invoice.status.replace(/_/g, " "));
+    doc.moveDown(0.8);
+
+    if (invoice.salesOrder?.items.length) {
+      this.pdfQuoteTable(doc, invoice.salesOrder.items.map((it) => [
+        it.product?.name ?? it.productId,
+        String(Number(it.quantity)),
+        gh(it.unitPrice),
+        Number(it.discountAmount) ? gh(it.discountAmount) : "-",
+        gh(it.lineTotal)
+      ]));
+      doc.moveDown(0.6);
+    }
+
+    doc.fontSize(9);
+    const right = (label: string, val: string, bold = false) => {
+      doc.font(bold ? "Helvetica-Bold" : "Helvetica").text(`${label}   ${val}`, { align: "right" });
+    };
+    right("Subtotal", gh(invoice.subtotal));
+    if (Number(invoice.discountAmount)) right("Discount", `- ${gh(invoice.discountAmount)}`);
+    if (Number(invoice.taxAmount)) right("Tax", `+ ${gh(invoice.taxAmount)}`);
+    right("Total", gh(invoice.totalAmount), true);
+    right("Paid", gh(invoice.paidAmount));
+    right("Balance due", gh(invoice.balanceDue), true);
+
+    doc.moveDown(1.5).fontSize(7.5).fillColor("#999").text("Thank you for your business.");
+
+    doc.end();
+    return { buffer: await done, filename: `invoice-${invoice.invoiceNumber}.pdf` };
+  }
+
+  async receiptPdf(user: AuthenticatedUser, id: string): Promise<{ buffer: Buffer; filename: string }> {
+    const receipt = await this.prisma.receipt.findFirst({
+      where: { companyId: user.companyId, id, deletedAt: null },
+      include: { customer: true, invoice: true, payment: true }
+    });
+    if (!receipt) throw new NotFoundException("Receipt was not found.");
+    this.assertBranchAccess(user, receipt.branchId);
+    const branding = await getCompanyBranding(this.prisma, user.companyId);
+
+    const { default: PDFDocument } = await import("pdfkit");
+    const doc = new PDFDocument({ margin: 48, size: "A4" });
+    const chunks: Buffer[] = [];
+    doc.on("data", (c: Buffer) => chunks.push(c));
+    const done = new Promise<Buffer>((resolve) => doc.on("end", () => resolve(Buffer.concat(chunks))));
+    const gh = (n: unknown) => `GHS ${Number(n ?? 0).toLocaleString("en-GH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+    renderCompanyPdfHeader(doc, branding, "RECEIPT");
+
+    doc.fontSize(9).font("Helvetica-Bold").text("Receipt No: ", { continued: true }).font("Helvetica").text(receipt.receiptNumber);
+    doc.font("Helvetica-Bold").text("Date: ", { continued: true }).font("Helvetica").text(new Date(receipt.receiptDate).toLocaleDateString("en-GH"));
+    doc.font("Helvetica-Bold").text("Received from: ", { continued: true }).font("Helvetica").text(`${receipt.customer.name} (${receipt.customer.code})`);
+    if (receipt.invoice) doc.font("Helvetica-Bold").text("Against invoice: ", { continued: true }).font("Helvetica").text(receipt.invoice.invoiceNumber);
+    if (receipt.payment) doc.font("Helvetica-Bold").text("Payment method: ", { continued: true }).font("Helvetica").text(receipt.payment.method.replace(/_/g, " "));
+    if (receipt.payment?.reference) doc.font("Helvetica-Bold").text("Reference: ", { continued: true }).font("Helvetica").text(receipt.payment.reference);
+    doc.moveDown(1);
+
+    doc.fontSize(14).font("Helvetica-Bold").text(`Amount received: ${gh(receipt.amount)}`, { align: "right" });
+    doc.moveDown(2);
+
+    doc.fontSize(9).font("Helvetica").text("Received by: ______________________", 48, doc.y);
+    doc.moveDown(1.5).fontSize(7.5).fillColor("#999").text("This receipt is computer-generated and valid without a signature.");
+
+    doc.end();
+    return { buffer: await done, filename: `receipt-${receipt.receiptNumber}.pdf` };
   }
 
   private pdfQuoteTable(doc: PDFKit.PDFDocument, rows: string[][]) {

@@ -1838,9 +1838,17 @@ function colsForEndpoint(endpoint: string): ColDef[] {
     { key: "invoiceDate",   label: "Date",      render: (r) => fmt(r.invoiceDate as string) },
     { key: "dueDate",       label: "Due",       render: (r) => fmt(r.dueDate as string) },
     {
-      key: "actions", label: "", render: (r) => Number(r.balanceDue) > 0
-        ? <Link href={`/sales/payments?invoiceId=${r.id}&customerId=${(r.customer as { id?: string } | undefined)?.id ?? r.customerId ?? ""}`} className="rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-bold text-indigo-700 hover:bg-indigo-100 transition">Record payment</Link>
-        : null
+      key: "actions", label: "", render: (r) => (
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => downloadReport(`/sales/invoices/${r.id}/invoice.pdf`, `invoice-${r.invoiceNumber}.pdf`).catch((e: unknown) => alert(e instanceof Error ? e.message : "Download failed"))}
+            className="rounded-lg border border-line px-2 py-1 text-xs font-semibold text-ink/70 hover:bg-field"
+          >PDF</button>
+          {Number(r.balanceDue) > 0 && (
+            <Link href={`/sales/payments?invoiceId=${r.id}&customerId=${(r.customer as { id?: string } | undefined)?.id ?? r.customerId ?? ""}`} className="rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-bold text-indigo-700 hover:bg-indigo-100 transition">Record payment</Link>
+          )}
+        </div>
+      )
     },
   ];
   if (endpoint.includes("receipts")) return [
@@ -1848,6 +1856,14 @@ function colsForEndpoint(endpoint: string): ColDef[] {
     { key: "customer",      label: "Customer",  render: (r) => (r.customer as { name: string } | undefined)?.name ?? "—" },
     { key: "amount",        label: "Amount",    render: (r) => money(r.amount) },
     { key: "receiptDate",   label: "Date",      render: (r) => fmt(r.receiptDate as string) },
+    {
+      key: "actions", label: "", render: (r) => (
+        <button
+          onClick={() => downloadReport(`/sales/receipts/${r.id}/receipt.pdf`, `receipt-${r.receiptNumber}.pdf`).catch((e: unknown) => alert(e instanceof Error ? e.message : "Download failed"))}
+          className="rounded-lg border border-line px-2 py-1 text-xs font-semibold text-ink/70 hover:bg-field"
+        >PDF</button>
+      )
+    },
   ];
   if (endpoint.includes("debtors")) return [
     { key: "customer",       label: "Customer",        render: (r) => (r.customer as { name: string; code: string } | undefined)?.name ?? String(r.customerName ?? "—") },

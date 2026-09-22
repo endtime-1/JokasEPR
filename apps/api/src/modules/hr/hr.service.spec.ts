@@ -22,6 +22,8 @@ const mockPrisma = {
   expenseCategory: { findFirst: jest.fn(), create: jest.fn() },
   expense: { create: jest.fn() },
   user: { findFirst: jest.fn() },
+  company: { findUnique: jest.fn().mockResolvedValue({ name: "Acme Farms", legalName: null }) },
+  systemSetting: { findFirst: jest.fn().mockResolvedValue(null) },
   $queryRaw: jest.fn().mockResolvedValue([]),
   $transaction: jest.fn()
 };

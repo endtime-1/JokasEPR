@@ -24,6 +24,15 @@ export class UploadsController {
     this.send(res, "products", filename);
   }
 
+  // Company logo: shown on customer-facing PDFs (invoices, receipts,
+  // quotes) and the storefront header — public like product images, and
+  // not sensitive (a business's own logo, meant to be seen by customers).
+  @Public()
+  @Get("company/:filename")
+  serveCompanyFile(@Param("filename") filename: string, @Res() res: Response) {
+    this.send(res, "company", filename);
+  }
+
   // Employee photos contain personal data. A valid session alone isn't
   // enough — without checking that the photo actually belongs to an
   // employee in the requester's own company, any authenticated user of ANY

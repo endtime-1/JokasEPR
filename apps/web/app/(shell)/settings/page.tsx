@@ -109,6 +109,7 @@ function SettingCard({ title, icon: Icon, children }: { title: string; icon: any
 
 export default function SettingsPage() {
   const [company, setCompany] = useState<any>(() => getCachedFirst<ApiEnvelope<any>>("/settings/company")?.data ?? {});
+  const [logoUploading, setLogoUploading] = useState(false);
   const [master, setMaster] = useState<MasterData>(() => getCachedFirst<ApiEnvelope<MasterData>>("/settings/master-data")?.data ?? {});
   const [options, setOptions] = useState<Record<string, Option[]>>(() => getCachedFirst<ApiEnvelope<Record<string, Option[]>>>("/settings/options")?.data ?? {});
   const [settings, setSettings] = useState<SettingsMap>(() => {
@@ -355,12 +356,46 @@ export default function SettingsPage() {
         {success && <p className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">{success}</p>}
 
         <SettingCard title="Company Profile" icon={Building2}>
+          <p className="mb-3 -mt-1 text-xs text-ink/50">Shown on every generated PDF — invoices, receipts, proforma quotes, and payslips.</p>
           <form onSubmit={saveCompany} className="grid gap-3 md:grid-cols-2">
             <input className={inputClass} placeholder="Company name" value={company.name ?? ""} onChange={(e) => setCompany({ ...company, name: e.target.value })} required />
             <input className={inputClass} placeholder="Legal name" value={company.legalName ?? ""} onChange={(e) => setCompany({ ...company, legalName: e.target.value })} />
             <input className={inputClass} placeholder="Tax ID" value={company.taxId ?? ""} onChange={(e) => setCompany({ ...company, taxId: e.target.value })} />
             <input className={inputClass} placeholder="Timezone" value={company.timezone ?? ""} onChange={(e) => setCompany({ ...company, timezone: e.target.value })} />
-            <input className={`${inputClass} md:col-span-2`} placeholder="Logo URL" value={company.logoUrl ?? ""} onChange={(e) => setCompany({ ...company, logoUrl: e.target.value })} />
+            <input className={`${inputClass} md:col-span-2`} placeholder="Address" value={company.address ?? ""} onChange={(e) => setCompany({ ...company, address: e.target.value })} />
+            <div className="md:col-span-2 flex items-center gap-3">
+              {company.logoUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={`${process.env.NEXT_PUBLIC_API_URL ?? ""}${company.logoUrl}`} alt="Company logo" className="h-12 w-12 rounded-lg border border-line object-contain bg-white" />
+              )}
+              <label className="app-button-secondary cursor-pointer text-xs">
+                {logoUploading ? "Uploading…" : "Upload logo"}
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  disabled={logoUploading}
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    if (!file) return;
+                    setLogoUploading(true);
+                    setError("");
+                    try {
+                      const fd = new FormData();
+                      fd.append("logo", file);
+                      const res = await apiFetch<ApiEnvelope<{ logoUrl: string }>>("/settings/company/logo", { method: "POST", body: fd });
+                      setCompany((prev: any) => ({ ...prev, logoUrl: res.data.logoUrl }));
+                      setSuccess("Logo uploaded.");
+                    } catch (err) {
+                      setError(err instanceof Error ? err.message : "Logo upload failed.");
+                    } finally {
+                      setLogoUploading(false);
+                    }
+                  }}
+                />
+              </label>
+            </div>
             <button className="app-button-primary md:w-max" disabled={saving === "company"}><Save className="h-4 w-4" />Save company</button>
           </form>
         </SettingCard>

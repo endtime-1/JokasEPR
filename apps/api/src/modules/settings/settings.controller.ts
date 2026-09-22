@@ -1,5 +1,10 @@
-import { Body, Controller, Delete, Get, Headers, Ip, Param, Post, Put, Query, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Delete, Get, Headers, Ip, Param, Post, Put, Query, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
+import { diskStorage } from "multer";
+import { extname, join } from "path";
+import { mkdirSync } from "fs";
 import { AuthenticatedUser, PERMISSIONS } from "@jokas/shared";
+import { validateAndCleanImageUpload } from "../../common/utils/validate-image-magic";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { RequirePermissions } from "../../common/decorators/permissions.decorator";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
@@ -52,6 +57,41 @@ export class SettingsController {
   @Put("company")
   updateCompany(@CurrentUser() user: AuthenticatedUser, @Body() dto: UpdateCompanyProfileDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.settings.updateCompany(user, dto, ctx(ipAddress, userAgent));
+  }
+
+  @Post("company/logo")
+  @UseInterceptors(
+    FileInterceptor("logo", {
+      storage: diskStorage({
+        destination: (_req, _file, cb) => {
+          const dir = join(process.cwd(), "uploads", "company");
+          mkdirSync(dir, { recursive: true });
+          cb(null, dir);
+        },
+        filename: (_req, file, cb) => {
+          const ALLOWED = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif"]);
+          const ext = extname(file.originalname).toLowerCase();
+          cb(null, `logo-${Date.now()}-${Math.random().toString(36).slice(2)}${ALLOWED.has(ext) ? ext : ".jpg"}`);
+        }
+      }),
+      limits: { fileSize: 5 * 1024 * 1024 },
+      fileFilter: (_req, file, cb) => {
+        if (file.mimetype.startsWith("image/")) cb(null, true);
+        else cb(new BadRequestException("Only image files are allowed"), false);
+      }
+    })
+  )
+  uploadCompanyLogo(
+    @CurrentUser() user: AuthenticatedUser,
+    @UploadedFile() file: Express.Multer.File,
+    @Ip() ipAddress: string,
+    @Headers("user-agent") userAgent?: string
+  ) {
+    if (!file) throw new BadRequestException("No file uploaded");
+    if (!validateAndCleanImageUpload(file.path)) {
+      throw new BadRequestException("Invalid image file. Upload a JPEG, PNG, WebP, or GIF.");
+    }
+    return this.settings.uploadCompanyLogo(user, file.filename, ctx(ipAddress, userAgent));
   }
 
   @Get("master-data")

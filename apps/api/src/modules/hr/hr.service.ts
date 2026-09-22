@@ -11,6 +11,8 @@ import { validateEnumFilter } from "../../common/utils/validate-enum-filter";
 import { nextRef } from "../../common/next-ref";
 import { roundMoney } from "../../common/utils/money";
 import { createLimiter } from "../../common/concurrency-limit";
+import { getCompanyBranding, CompanyBranding } from "../../common/company-branding";
+import { renderCompanyPdfHeader } from "../../common/pdf-company-header";
 import {
   AssignTaskDto,
   BulkAttendanceDto,
@@ -1918,23 +1920,28 @@ export class HRService {
   // ─── HR-C: PDF Payslips ───────────────────────────────────────────────────────
 
   private async buildPayslipPdf(user: AuthenticatedUser, payrollId: string): Promise<{ pdf: Buffer; filename: string }> {
-    const row = await this.prisma.payrollRecord.findFirst({
-      where: { id: payrollId, companyId: user.companyId, deletedAt: null },
-      include: {
-        employee: { select: { ssnitNumber: true, tinNumber: true, bankName: true, bankAccount: true, email: true, branchId: true, farmId: true, warehouseId: true, productionSiteId: true } },
-        company: { select: { name: true } },
-      },
-    });
+    const [row, branding] = await Promise.all([
+      this.prisma.payrollRecord.findFirst({
+        where: { id: payrollId, companyId: user.companyId, deletedAt: null },
+        include: {
+          employee: { select: { ssnitNumber: true, tinNumber: true, bankName: true, bankAccount: true, email: true, branchId: true, farmId: true, warehouseId: true, productionSiteId: true } },
+          company: { select: { name: true } },
+        },
+      }),
+      getCompanyBranding(this.prisma, user.companyId)
+    ]);
     if (!row) throw new NotFoundException("Payroll record not found");
     if (row.employee) this.assertEmployeeInScope(user, row.employee); // H-SEC: was missing — a scope-restricted HR_READ holder could pull any employee's payslip PDF (SSNIT/TIN/bank details) by ID
-    return this.renderPayslipPdf(row);
+    return this.renderPayslipPdf(row, branding);
   }
 
   // Medium (DB stability audit, 2026-08-16): split out of buildPayslipPdf so
   // bulkEmailPayslips can render straight from the row it already fetched in
   // one findMany, instead of this method re-querying the same PayrollRecord
-  // by id for every single row in the batch (a pure N+1 re-fetch).
-  private async renderPayslipPdf(row: PayslipPdfRow): Promise<{ pdf: Buffer; filename: string }> {
+  // by id for every single row in the batch (a pure N+1 re-fetch). branding
+  // is likewise fetched once by the caller (one lookup per company, not per
+  // payslip in a bulk run) and passed in rather than re-fetched here.
+  private async renderPayslipPdf(row: PayslipPdfRow, branding: CompanyBranding): Promise<{ pdf: Buffer; filename: string }> {
     // Lazy dynamic import (not a static import) so pdfkit — and its font assets —
     // only load into memory when a payslip is actually being generated, not on
     // every API boot. This also satisfies the no-require-imports lint rule that
@@ -1945,15 +1952,10 @@ export class HRService {
     doc.on("data", (c: Buffer) => chunks.push(c));
 
     const fmt2 = (n: any) => `GHS ${Number(n ?? 0).toFixed(2)}`;
-    const company = (row as any).company?.name ?? "Jokas Farms";
     const emp = (row as any).employee ?? {};
 
     // Header
-    doc.fontSize(20).font("Helvetica-Bold").text(company, { align: "center" });
-    doc.fontSize(12).font("Helvetica").text("PAYSLIP", { align: "center" });
-    doc.moveDown(0.5);
-    doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor("#cccccc").stroke();
-    doc.moveDown(0.5);
+    renderCompanyPdfHeader(doc, branding, "PAYSLIP");
 
     // Employee info
     doc.fontSize(10).font("Helvetica-Bold").text("Employee Information", { underline: true });
@@ -2045,13 +2047,16 @@ export class HRService {
     // every row's PDF render + SMTP send simultaneously with no limit — a
     // company with hundreds of employees used to fan out into hundreds of
     // simultaneous DB queries, PDF renders, and SMTP sends from one request.
-    const rows = await this.prisma.payrollRecord.findMany({
-      // H-SEC: was missing the employeeScope filter every other payroll listing
-      // uses — a scope-restricted user could bulk-email every employee's
-      // payslip company-wide, not just their assigned branch/farm.
-      where: { companyId: user.companyId, period, status: { in: ["APPROVED", "PAID"] }, deletedAt: null, employeeId: { not: null }, employee: this.employeeScope(user) },
-      include: { employee: { select: { ssnitNumber: true, tinNumber: true, bankName: true, bankAccount: true, email: true } }, company: { select: { name: true } } },
-    });
+    const [rows, branding] = await Promise.all([
+      this.prisma.payrollRecord.findMany({
+        // H-SEC: was missing the employeeScope filter every other payroll listing
+        // uses — a scope-restricted user could bulk-email every employee's
+        // payslip company-wide, not just their assigned branch/farm.
+        where: { companyId: user.companyId, period, status: { in: ["APPROVED", "PAID"] }, deletedAt: null, employeeId: { not: null }, employee: this.employeeScope(user) },
+        include: { employee: { select: { ssnitNumber: true, tinNumber: true, bankName: true, bankAccount: true, email: true } }, company: { select: { name: true } } },
+      }),
+      getCompanyBranding(this.prisma, user.companyId)
+    ]);
 
     let sent = 0;
     let failed = 0;
@@ -2059,7 +2064,7 @@ export class HRService {
       const empEmail = row.employee?.email;
       if (!empEmail) { failed++; return; }
       try {
-        const { pdf, filename } = await this.renderPayslipPdf(row);
+        const { pdf, filename } = await this.renderPayslipPdf(row, branding);
         const html = `<p>Dear ${row.employeeName},</p><p>Please find your payslip for ${row.period} attached.</p>`;
         const ok = await this.email.sendWithAttachment(empEmail, `Payslip — ${row.period}`, html, { filename, content: pdf });
         if (ok) sent++; else failed++;

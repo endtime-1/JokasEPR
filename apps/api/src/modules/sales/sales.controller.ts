@@ -223,6 +223,15 @@ export class SalesController {
     return this.salesService.listInvoices(user, query);
   }
 
+  @Get("invoices/:id/invoice.pdf")
+  @RequirePermissions(PERMISSIONS.SALES_READ)
+  async invoicePdf(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Res() response: Response) {
+    const { buffer, filename } = await this.salesService.invoicePdf(user, id);
+    response.setHeader("content-type", "application/pdf");
+    response.setHeader("content-disposition", `attachment; filename=${filename}`);
+    response.send(buffer);
+  }
+
   @Get("payments")
   @RequirePermissions(PERMISSIONS.SALES_READ)
   payments(@CurrentUser() user: AuthenticatedUser, @Query() query: SalesQueryDto) {
@@ -239,6 +248,15 @@ export class SalesController {
   @RequirePermissions(PERMISSIONS.SALES_READ)
   receipts(@CurrentUser() user: AuthenticatedUser, @Query() query: SalesQueryDto) {
     return this.salesService.listReceipts(user, query);
+  }
+
+  @Get("receipts/:id/receipt.pdf")
+  @RequirePermissions(PERMISSIONS.SALES_READ)
+  async receiptPdf(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Res() response: Response) {
+    const { buffer, filename } = await this.salesService.receiptPdf(user, id);
+    response.setHeader("content-type", "application/pdf");
+    response.setHeader("content-disposition", `attachment; filename=${filename}`);
+    response.send(buffer);
   }
 
   @Get("returns")
