@@ -310,10 +310,31 @@ describe("FeedProductionService.createBatch — per-lot floor guard + full-consu
 describe("FeedProductionService.approveOrder — separate-approver toggle", () => {
   beforeEach(() => jest.clearAllMocks());
 
+  // Linked to a sales order — the separate-approver rule applies.
   const order = {
     id: "order-1", orderNumber: "FPO-1", createdById: "user-1", status: "DRAFT",
-    branchId: "branch-1", productionSiteId: "site-1"
+    branchId: "branch-1", productionSiteId: "site-1", salesOrderId: "so-1"
   };
+
+  it("lets the Feed Mill manager approve their own mill-originated order even with the setting on", async () => {
+    const millOrder = { ...order, salesOrderId: null, marketTargetId: null, productionPlanId: null, productionPlanItemId: null };
+    mockPrisma.feedProductionOrder.findFirst.mockResolvedValue(millOrder);
+    mockPrisma.systemSetting.findFirst.mockResolvedValue(null); // default ON
+    mockPrisma.feedProductionOrder.update.mockResolvedValue({ ...millOrder, status: "APPROVED" });
+
+    const service = makeService();
+    const result = await service.approveOrder(makeUser({ id: "user-1" }), "order-1", {});
+    expect(result.data.status).toBe("APPROVED");
+  });
+
+  it("still blocks self-approval of a market-led order when the setting is on", async () => {
+    mockPrisma.feedProductionOrder.findFirst.mockResolvedValue({ ...order, salesOrderId: null, marketTargetId: "mt-1" });
+    mockPrisma.systemSetting.findFirst.mockResolvedValue(null);
+
+    const service = makeService();
+    await expect(service.approveOrder(makeUser({ id: "user-1" }), "order-1", {})).rejects.toThrow(/different manager/i);
+    expect(mockPrisma.feedProductionOrder.update).not.toHaveBeenCalled();
+  });
 
   it("blocks the creator from approving their own order when the setting is on (default)", async () => {
     mockPrisma.feedProductionOrder.findFirst.mockResolvedValue(order);

@@ -563,7 +563,7 @@ export default function SettingsPage() {
                   {key === "enforceWarehousePurpose"
                     ? "Enforce warehouse purpose (feed production → Feed Store, egg collection → Egg Store, …)"
                     : key === "requireSeparateProductionApprover"
-                    ? "Require a separate production approver (the person who creates a feed production order can't also approve it — turn off for a single-operator mill)"
+                    ? "Require a separate production approver for Sales / Market Planning feed orders (the person who creates one can't also approve it — the mill's own orders are always self-approvable; turn off for a single-operator mill)"
                     : key === "requireSeparateProcurementApprover"
                     ? "Require a separate procurement approver (the person who raises a purchase request / purchase order can't also approve it — turn off for a one-person procurement setup)"
                     : key.replace(/([A-Z])/g, " $1")}

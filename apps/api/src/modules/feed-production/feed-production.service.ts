@@ -491,9 +491,13 @@ export class FeedProductionService {
     const order = await this.requireOrder(user, id);
     // M1: block self-approval — committing production stock should require
     // segregation of duties. A single-operator operation turns this off under
-    // Settings → User Access ("require a separate production approver"), which
-    // is the only way one person can run production end to end.
-    if (order.createdById === user.id && (await this.requiresSeparateApprover(user.companyId))) {
+    // Settings → User Access ("require a separate production approver").
+    // Mill-originated orders (not raised from a sales order, market target or
+    // production plan) are exempt: the Feed Mill manager plans their own
+    // stock runs and must be able to approve and start them without waiting
+    // for a demand signal from Sales or Market Planning.
+    const millOriginated = !order.salesOrderId && !order.marketTargetId && !order.productionPlanId && !order.productionPlanItemId;
+    if (order.createdById === user.id && !millOriginated && (await this.requiresSeparateApprover(user.companyId))) {
       throw new ForbiddenException(
         "You cannot approve a production order you created — a different manager must approve it. " +
           "If you run production single-handed, an admin can turn off \"require a separate production approver\" under Settings → User Access."

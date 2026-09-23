@@ -1811,7 +1811,7 @@ export function FeedBatchCreatePage() {
                   {!anyOrders ? (
                     <>No production orders yet. <Link href="/feed-production/orders" className="font-semibold underline">Create one</Link> (you&rsquo;ll need an ACTIVE formula with ingredients and a finished feed product first).</>
                   ) : pendingApprovalCount > 0 ? (
-                    <>{pendingApprovalCount} order{pendingApprovalCount === 1 ? "" : "s"} awaiting approval. A different manager must approve on the <Link href="/feed-production/orders" className="font-semibold underline">orders list</Link> before you can post a batch — or an admin can turn off &ldquo;require a separate production approver&rdquo; under Settings &rarr; User Access.</>
+                    <>{pendingApprovalCount} order{pendingApprovalCount === 1 ? "" : "s"} awaiting approval. Approve {pendingApprovalCount === 1 ? "it" : "them"} on the <Link href="/feed-production/orders" className="font-semibold underline">orders list</Link> before you can post a batch. Orders the mill raised itself can be approved by their creator; orders from Sales or Market Planning need a different manager unless an admin turns off &ldquo;require a separate production approver&rdquo; under Settings &rarr; User Access.</>
                   ) : (
                     <>No approved orders. <Link href="/feed-production/orders" className="font-semibold underline">Approve an order</Link> first.</>
                   )}
