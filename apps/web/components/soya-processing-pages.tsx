@@ -258,7 +258,7 @@ export function SoyaBatchesPage({ create = false }: { create?: boolean }) {
   const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/soya-processing/batches")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/soya-processing/batches"));
   const [loadError, setLoadError] = useState("");
-  const [form, setForm] = useState({ productionSiteId: "", rawWarehouseId: "", oilWarehouseId: "", cakeWarehouseId: "", intakeId: "", beansUsedKg: "", oilProducedLitres: "", cakeProducedKg: "", wasteKg: "", laborCost: "", packagingCost: "", overheadCost: "", expectedOilSalesValue: "", expectedCakeSalesValue: "", processingDate: today() });
+  const [form, setForm] = useState({ productionSiteId: "", rawWarehouseId: "", oilWarehouseId: "", cakeWarehouseId: "", intakeId: "", beansUsedKg: "", oilProducedLitres: "", cakeProducedKg: "", wasteKg: "", processingDate: today() });
   const [editRow, setEditRow] = useState<Record<string, unknown> | null>(null);
   const [editForm, setEditForm] = useState({ batchNumber: "", processingDate: "", notes: "" });
   const [editError, setEditError] = useState("");
@@ -356,12 +356,7 @@ export function SoyaBatchesPage({ create = false }: { create?: boolean }) {
           beansUsedKg: Number(form.beansUsedKg),
           oilProducedLitres: Number(form.oilProducedLitres),
           cakeProducedKg: Number(form.cakeProducedKg),
-          wasteKg: Number(form.wasteKg || 0),
-          laborCost: Number(form.laborCost || 0),
-          packagingCost: Number(form.packagingCost || 0),
-          overheadCost: Number(form.overheadCost || 0),
-          expectedOilSalesValue: Number(form.expectedOilSalesValue || 0),
-          expectedCakeSalesValue: Number(form.expectedCakeSalesValue || 0)
+          wasteKg: Number(form.wasteKg || 0)
         })
       });
       await load();
@@ -372,7 +367,7 @@ export function SoyaBatchesPage({ create = false }: { create?: boolean }) {
 
   return (
     <>
-      <PageHeader title={create ? "Create Processing Batch" : "Soya Processing Batches"} subtitle="Post soya processing batches and calculate oil yield, cake yield, loss, costs, and profitability." />
+      <PageHeader title={create ? "Create Processing Batch" : "Soya Processing Batches"} subtitle="Post soya processing batches — beans used, oil and cake produced, and waste." />
       {optionsError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{optionsError}</p>}
       {loadError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</p>}
       {create ? (
@@ -386,12 +381,7 @@ export function SoyaBatchesPage({ create = false }: { create?: boolean }) {
             ["beansUsedKg", "Beans used kg"],
             ["oilProducedLitres", "Oil produced L"],
             ["cakeProducedKg", "Cake produced kg"],
-            ["wasteKg", "Waste kg"],
-            ["laborCost", "Labor cost"],
-            ["packagingCost", "Packaging cost"],
-            ["overheadCost", "Overhead cost"],
-            ["expectedOilSalesValue", "Oil sales value"],
-            ["expectedCakeSalesValue", "Cake sales value"]
+            ["wasteKg", "Waste kg"]
           ].map(([key, label]) => <FormField key={key} label={label}><input className={inputClass} type="number" value={form[key as keyof typeof form]} onChange={(event) => setForm({ ...form, [key]: event.target.value })} /></FormField>)}
           <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white md:col-span-4"><Plus aria-hidden className="h-4 w-4" /> Save batch</button>
           {submitError && <p className="col-span-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{submitError}</p>}
