@@ -23,6 +23,7 @@ type Option = {
   batchNumber?: string;
   supplierName?: string;
   piecesPerUnit?: number;
+  productId?: string;
 };
 
 type SoyaOptions = {
@@ -84,12 +85,20 @@ function money(value: unknown) {
   return `GHS ${number(value)}`;
 }
 
-function products(options: SoyaOptions, matcher: (option: Option) => boolean) {
-  return options.products.filter(matcher);
-}
+// Soya outputs used to be resolved only by the seed SKUs SOYA-OIL / SOYA-CAKE,
+// so a real catalog with its own codes ("SBO-01", "Soya Meal"…) hard-failed
+// batch creation with "SKU not found". Match the seed SKU first, then any
+// product whose name/SKU mentions soya + oil (or cake/meal). The batch form
+// still lets the user pick, like the mobile app does.
+const SOYA_KIND_WORDS: Record<"BEANS" | "OIL" | "CAKE", RegExp> = { BEANS: /bean/i, OIL: /oil/i, CAKE: /cake|meal/i };
+const SOYA_SEED_SKU: Record<"BEANS" | "OIL" | "CAKE", string> = { BEANS: "SOYA-BEANS-RAW", OIL: "SOYA-OIL", CAKE: "SOYA-CAKE" };
 
-function productBySku(options: SoyaOptions, sku: string) {
-  return options.products.find((product) => product.sku === sku)?.id ?? "";
+function soyaProducts(options: SoyaOptions, kind: "BEANS" | "OIL" | "CAKE") {
+  const matches = options.products.filter((product) => {
+    const text = `${product.name ?? ""} ${product.sku ?? ""}`;
+    return product.sku === SOYA_SEED_SKU[kind] || (/soy/i.test(text) && SOYA_KIND_WORDS[kind].test(text) && !(kind === "OIL" && /raw/i.test(text)));
+  });
+  return matches.sort((a, b) => Number(b.sku === SOYA_SEED_SKU[kind]) - Number(a.sku === SOYA_SEED_SKU[kind]));
 }
 
 export function SoyaIntakesPage({ create = false }: { create?: boolean }) {
@@ -98,7 +107,7 @@ export function SoyaIntakesPage({ create = false }: { create?: boolean }) {
   const [loading, setLoading] = useState(!hasCached("/soya-processing/intakes"));
   const [loadError, setLoadError] = useState("");
   const [form, setForm] = useState({ productionSiteId: "", warehouseId: "", productId: "", receiptNumber: "", supplierName: "", quantity: "", unit: "KG" as "KG" | "BAGS", unitCost: "", moisturePercent: "", qualityStatus: "APPROVED", receivedAt: today() });
-  const beanProducts = products(options, (product) => product.sku?.includes("SOYA-BEANS") ?? false);
+  const beanProducts = soyaProducts(options, "BEANS");
   const selectedBeanProduct = beanProducts.find((p) => p.id === (form.productId || beanProducts[0]?.id));
   // Product.piecesPerUnit doubles as a generic bulk-unit conversion factor
   // (30 pieces/crate for eggs, kg/bag here) — set on the product in Settings
@@ -263,7 +272,11 @@ export function SoyaBatchesPage({ create = false }: { create?: boolean }) {
   const [rows, setRows] = useState<Record<string, unknown>[]>(() => getCachedFirst<ApiEnvelope<Record<string, unknown>[]>>("/soya-processing/batches")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/soya-processing/batches"));
   const [loadError, setLoadError] = useState("");
-  const [form, setForm] = useState({ productionSiteId: "", rawWarehouseId: "", oilWarehouseId: "", cakeWarehouseId: "", intakeId: "", beansUsedKg: "", oilProducedLitres: "", cakeProducedKg: "", wasteKg: "", processingDate: today() });
+  const [form, setForm] = useState({ productionSiteId: "", rawWarehouseId: "", oilWarehouseId: "", cakeWarehouseId: "", intakeId: "", oilProductId: "", cakeProductId: "", beansUsedKg: "", oilProducedLitres: "", cakeProducedKg: "", wasteKg: "", processingDate: today() });
+  // Soya-looking products first; if the catalog has none, offer every
+  // product so the user can still pick instead of being blocked.
+  const oilCandidates = useMemo(() => { const m = soyaProducts(options, "OIL"); return m.length ? m : options.products; }, [options]);
+  const cakeCandidates = useMemo(() => { const m = soyaProducts(options, "CAKE"); return m.length ? m : options.products; }, [options]);
   const [editRow, setEditRow] = useState<Record<string, unknown> | null>(null);
   const [editForm, setEditForm] = useState({ batchNumber: "", processingDate: "", notes: "" });
   const [editError, setEditError] = useState("");
@@ -332,17 +345,15 @@ export function SoyaBatchesPage({ create = false }: { create?: boolean }) {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitError("");
-    // L-BACK: these three products are resolved by a fixed SKU rather than
-    // picked from a dropdown — if a seed product is ever renamed or
-    // re-SKU'd, productBySku silently returns "" and the create would
-    // otherwise fail with a generic backend "must be a UUID" error instead
-    // of naming which product is missing.
-    const beanProductId = productBySku(options, "SOYA-BEANS-RAW");
-    const oilProductId = productBySku(options, "SOYA-OIL");
-    const cakeProductId = productBySku(options, "SOYA-CAKE");
-    const missing = [!beanProductId && "SOYA-BEANS-RAW", !oilProductId && "SOYA-OIL", !cakeProductId && "SOYA-CAKE"].filter(Boolean);
+    // Beans come from the chosen intake's own product when there is one;
+    // oil/cake are picked on the form (pre-filled with the best catalog match).
+    const intakeProductId = options.intakes.find((item) => item.id === form.intakeId)?.productId;
+    const beanProductId = intakeProductId || soyaProducts(options, "BEANS")[0]?.id || "";
+    const oilProductId = form.oilProductId || oilCandidates[0]?.id || "";
+    const cakeProductId = form.cakeProductId || cakeCandidates[0]?.id || "";
+    const missing = [!beanProductId && "soya beans", !oilProductId && "soya oil", !cakeProductId && "soya cake"].filter(Boolean);
     if (missing.length) {
-      setSubmitError(`Product(s) with SKU ${missing.join(", ")} not found — check the product catalog for renamed or missing SKUs.`);
+      setSubmitError(`No ${missing.join(", ")} product found — pick it above, or add it in Settings → Catalog first.`);
       return;
     }
     try {
@@ -382,6 +393,8 @@ export function SoyaBatchesPage({ create = false }: { create?: boolean }) {
           <SelectField label="Oil warehouse" value={form.oilWarehouseId || options.warehouses[0]?.id || ""} options={options.warehouses} onChange={(value) => setForm({ ...form, oilWarehouseId: value })} />
           <SelectField label="Cake warehouse" value={form.cakeWarehouseId || options.warehouses[0]?.id || ""} options={options.warehouses} onChange={(value) => setForm({ ...form, cakeWarehouseId: value })} />
           <SelectField label="Intake" value={form.intakeId || ""} options={options.intakes.map((item) => ({ ...item, name: item.receiptNumber }))} onChange={(value) => setForm({ ...form, intakeId: value })} />
+          <SelectField label="Oil product" value={form.oilProductId || oilCandidates[0]?.id || ""} options={oilCandidates} onChange={(value) => setForm({ ...form, oilProductId: value })} />
+          <SelectField label="Cake product" value={form.cakeProductId || cakeCandidates[0]?.id || ""} options={cakeCandidates} onChange={(value) => setForm({ ...form, cakeProductId: value })} />
           {[
             ["beansUsedKg", "Beans used kg"],
             ["oilProducedLitres", "Oil produced L"],
@@ -766,7 +779,15 @@ export function SoyaTransferPage() {
   const [loading, setLoading] = useState(!hasCached("/soya-processing/transfers"));
   const [loadError, setLoadError] = useState("");
   const [form, setForm] = useState({ productionBatchId: "", fromWarehouseId: "", toWarehouseId: "", toProductionSiteId: "", outputType: "CAKE", productId: "", quantity: "", notes: "" });
-  const outputProducts = useMemo(() => products(options, (product) => ["SOYA-OIL", "SOYA-CAKE"].includes(product.sku ?? "")), [options]);
+  // Product list follows the output type, so CAKE never offers the oil product.
+  const outputProducts = useMemo(() => { const m = soyaProducts(options, form.outputType === "OIL" ? "OIL" : "CAKE"); return m.length ? m : options.products; }, [options, form.outputType]);
+  // Cake moves in 50 kg bags (or the product's own kg/bag if set in Catalog,
+  // same rule as the intake form); oil is always litres. The API takes kg/L.
+  const [quantityUnit, setQuantityUnit] = useState<"KG" | "BAGS">("KG");
+  const selectedOutput = outputProducts.find((p) => p.id === (form.productId || outputProducts[0]?.id));
+  const kgPerBag = Number(selectedOutput?.piecesPerUnit) > 1 ? Number(selectedOutput?.piecesPerUnit) : SOYA_BAG_KG;
+  const inBags = form.outputType === "CAKE" && quantityUnit === "BAGS";
+  const quantityBase = inBags ? (Number(form.quantity) || 0) * kgPerBag : Number(form.quantity) || 0;
   const [editRow, setEditRow] = useState<Record<string, unknown> | null>(null);
   const [editNotes, setEditNotes] = useState("");
   const [editError, setEditError] = useState("");
@@ -793,7 +814,7 @@ export function SoyaTransferPage() {
     setSubmitting(true);
     setSubmitError("");
     try {
-      await apiFetch("/soya-processing/transfers", { method: "POST", body: JSON.stringify({ ...form, productionBatchId: form.productionBatchId || options.batches[0]?.id, fromWarehouseId: form.fromWarehouseId || options.warehouses[0]?.id, toWarehouseId: form.toWarehouseId || options.warehouses[0]?.id, toProductionSiteId: form.toProductionSiteId || undefined, productId: form.productId || outputProducts[0]?.id, quantity: Number(form.quantity) }) });
+      await apiFetch("/soya-processing/transfers", { method: "POST", body: JSON.stringify({ ...form, productionBatchId: form.productionBatchId || options.batches[0]?.id, fromWarehouseId: form.fromWarehouseId || options.warehouses[0]?.id, toWarehouseId: form.toWarehouseId || options.warehouses[0]?.id, toProductionSiteId: form.toProductionSiteId || undefined, productId: form.productId || outputProducts[0]?.id, quantity: quantityBase }) });
       await load();
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Failed to create transfer.");
@@ -847,8 +868,19 @@ export function SoyaTransferPage() {
         <SelectField label="To warehouse" value={form.toWarehouseId || options.warehouses[0]?.id || ""} options={options.warehouses} onChange={(value) => setForm({ ...form, toWarehouseId: value })} />
         <SelectField label="To production site" value={form.toProductionSiteId} options={options.productionSites} onChange={(value) => setForm({ ...form, toProductionSiteId: value })} />
         <SelectField label="Product" value={form.productId || outputProducts[0]?.id || ""} options={outputProducts} onChange={(value) => setForm({ ...form, productId: value })} />
-        <FormField label="Output type"><select className={inputClass} value={form.outputType} onChange={(event) => setForm({ ...form, outputType: event.target.value })}><option>CAKE</option><option>OIL</option></select></FormField>
-        <FormField label="Quantity"><input className={inputClass} type="number" value={form.quantity} onChange={(event) => setForm({ ...form, quantity: event.target.value })} required /></FormField>
+        <FormField label="Output type"><select className={inputClass} value={form.outputType} onChange={(event) => setForm({ ...form, outputType: event.target.value, productId: "" })}><option>CAKE</option><option>OIL</option></select></FormField>
+        <FormField label="Quantity">
+          <div className="flex gap-2">
+            <input className={inputClass + " min-w-0 flex-1"} type="number" min={0} step="any" value={form.quantity} onChange={(event) => setForm({ ...form, quantity: event.target.value })} required />
+            {form.outputType === "CAKE" ? (
+              <select className={inputClass} value={quantityUnit} onChange={(event) => setQuantityUnit(event.target.value as "KG" | "BAGS")}>
+                <option value="KG">kg</option>
+                <option value="BAGS">bags</option>
+              </select>
+            ) : <span className="inline-flex items-center text-sm text-ink/60">L</span>}
+          </div>
+          {inBags && Number(form.quantity) > 0 && <span className="text-[11px] text-ink/45">= {number(quantityBase)} kg (at {kgPerBag} kg/bag)</span>}
+        </FormField>
         <button disabled={submitting} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60 md:col-span-5">{submitting ? "Creating…" : "Create transfer"}</button>
         {submitError && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 md:col-span-5">{submitError}</p>}
       </form>
@@ -884,7 +916,7 @@ export function SoyaSalesPage({ create = false }: { create?: boolean }) {
   const [loading, setLoading] = useState(!hasCached("/soya-processing/sales"));
   const [loadError, setLoadError] = useState("");
   const [form, setForm] = useState({ productionBatchId: "", warehouseId: "", productId: "", outputType: "CAKE", customerName: "", quantity: "", unitPrice: "" });
-  const outputProducts = useMemo(() => products(options, (product) => ["SOYA-OIL", "SOYA-CAKE"].includes(product.sku ?? "")), [options]);
+  const outputProducts = useMemo(() => [...soyaProducts(options, "OIL"), ...soyaProducts(options, "CAKE")], [options]);
   const [editRow, setEditRow] = useState<Record<string, unknown> | null>(null);
   const [editForm, setEditForm] = useState({ customerName: "", saleDate: "" });
   const [editError, setEditError] = useState("");

@@ -157,7 +157,7 @@ export class SoyaProcessingService {
         select: { id: true, branchId: true, sku: true, name: true, type: true, uomId: true, piecesPerUnit: true },
         orderBy: { name: "asc" }
       }),
-      this.prisma.soyaBeanIntake.findMany({ where: this.intakeWhere(user, {}), select: { id: true, receiptNumber: true, supplierName: true, quantityKg: true }, orderBy: { receivedAt: "desc" }, take: 50 }),
+      this.prisma.soyaBeanIntake.findMany({ where: this.intakeWhere(user, {}), select: { id: true, receiptNumber: true, supplierName: true, quantityKg: true, productId: true }, orderBy: { receivedAt: "desc" }, take: 50 }),
       this.prisma.soyaProcessingBatch.findMany({ where: this.batchWhere(user, {}), select: { id: true, batchNumber: true, status: true }, orderBy: { processingDate: "desc" }, take: 50 })
     ]);
     // Every warehouse picker in this module is soya (beans in, oil/cake out) —
