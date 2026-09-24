@@ -208,7 +208,7 @@ export class InventoryService {
     const data = await this.prisma.$transaction(async (tx) => {
       const item = await tx.inventoryItem.upsert({
         where: { companyId_warehouseId_productId: { companyId: user.companyId, warehouseId: warehouse.id, productId: product.id } },
-        update: { quantityOnHand: { increment: dto.quantity }, updatedById: user.id },
+        update: { deletedAt: null, quantityOnHand: { increment: dto.quantity }, updatedById: user.id },
         create: { companyId: user.companyId, branchId: warehouse.branchId, warehouseId: warehouse.id, farmId: warehouse.farmId, productionSiteId: warehouse.productionSiteId, productId: product.id, uomId: product.uomId, quantityOnHand: dto.quantity, createdById: user.id }
       });
       const batch = await tx.stockBatch.create({ data: { companyId: user.companyId, branchId: warehouse.branchId, farmId: warehouse.farmId, warehouseId: warehouse.id, productionSiteId: warehouse.productionSiteId, productId: product.id, inventoryItemId: item.id, uomId: product.uomId, batchNumber: dto.batchNumber.toUpperCase(), quantityReceived: dto.quantity, quantityRemaining: dto.quantity, unitCost: dto.unitCost, manufactureDate: dto.manufactureDate ? new Date(dto.manufactureDate) : undefined, expiryDate: dto.expiryDate ? new Date(dto.expiryDate) : undefined, createdById: user.id } });
@@ -478,7 +478,7 @@ export class InventoryService {
   ) {
     const destination = await tx.inventoryItem.upsert({
       where: { companyId_warehouseId_productId: { companyId: user.companyId, warehouseId: p.toWarehouse.id, productId: p.product.id } },
-      update: { quantityOnHand: { increment: p.quantity }, updatedById: user.id },
+      update: { deletedAt: null, quantityOnHand: { increment: p.quantity }, updatedById: user.id },
       create: { companyId: user.companyId, branchId: p.toWarehouse.branchId, warehouseId: p.toWarehouse.id, farmId: p.toWarehouse.farmId, productionSiteId: p.toWarehouse.productionSiteId, productId: p.product.id, uomId: p.product.uomId, quantityOnHand: p.quantity, createdById: user.id },
     });
     await tx.stockBatch.create({ data: {

@@ -922,7 +922,7 @@ export class ProcurementService {
             quantityOnHand: acceptedQty,
             createdById: user.id,
           },
-          update: { quantityOnHand: { increment: acceptedQty }, updatedById: user.id },
+          update: { deletedAt: null, quantityOnHand: { increment: acceptedQty }, updatedById: user.id },
         });
 
         const batch = await tx.stockBatch.create({

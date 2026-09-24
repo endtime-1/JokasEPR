@@ -1110,7 +1110,7 @@ export class MarketPlanningService {
 
       const finishedInventory = await tx.inventoryItem.upsert({
         where: { companyId_warehouseId_productId: { companyId: user.companyId, warehouseId: dto.finishedGoodsWarehouseId, productId: planItem.productId } },
-        update: { quantityOnHand: { increment: dto.producedQuantityKg }, updatedById: user.id },
+        update: { deletedAt: null, quantityOnHand: { increment: dto.producedQuantityKg }, updatedById: user.id },
         create: {
           companyId: user.companyId,
           branchId: plan.branchId,

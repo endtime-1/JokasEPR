@@ -1674,7 +1674,7 @@ export class SalesService {
 
       const item = await tx.inventoryItem.upsert({
         where: { companyId_warehouseId_productId: { companyId: user.companyId, warehouseId: warehouse.id, productId: product.id } },
-        update: { quantityOnHand: { increment: quantity }, updatedById: user.id },
+        update: { deletedAt: null, quantityOnHand: { increment: quantity }, updatedById: user.id },
         create: { companyId: user.companyId, branchId: warehouse.branchId, warehouseId: warehouse.id, farmId: warehouse.farmId, productionSiteId: warehouse.productionSiteId, productId: product.id, uomId: product.uomId, quantityOnHand: quantity, createdById: user.id }
       });
       await tx.stockBatch.create({

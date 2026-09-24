@@ -750,7 +750,7 @@ export class FeedProductionService {
 
       const finishedInventory = await tx.inventoryItem.upsert({
         where: { companyId_warehouseId_productId: { companyId: user.companyId, warehouseId: dto.finishedWarehouseId, productId: order.finishedProductId } },
-        update: { quantityOnHand: { increment: dto.producedQuantityKg }, updatedById: user.id },
+        update: { deletedAt: null, quantityOnHand: { increment: dto.producedQuantityKg }, updatedById: user.id },
         create: {
           companyId: user.companyId,
           branchId: order.branchId,
