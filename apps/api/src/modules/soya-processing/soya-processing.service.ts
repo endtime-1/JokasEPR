@@ -306,7 +306,12 @@ export class SoyaProcessingService {
         }
         await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: intake.branchId, productId: intake.productId, inventoryItemId: inventory.id, fromWarehouseId: intake.warehouseId, warehouseId: intake.warehouseId, productionSiteId: intake.productionSiteId, uomId: inventory.uomId, movementType: "ADJUSTMENT_OUT", quantity: quantityKg, unitCost: Number(intake.unitCost), referenceType: "SoyaBeanIntake", referenceId: intake.id, notes: `Reversal — soya bean intake ${intake.receiptNumber} deleted`, createdById: user.id } });
       }
-      await tx.soyaBeanIntake.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+      // Soft delete keeps the row, so free its unique keys (the receipt number
+      // and the lot it named) — otherwise re-entering the same receipt after a
+      // delete fails with "already exists". Same `__deleted_<id>` convention
+      // as every other soft-deleted coded record.
+      await tx.stockBatch.updateMany({ where: { companyId: user.companyId, productId: intake.productId, batchNumber: intake.receiptNumber.toUpperCase() }, data: { batchNumber: `${intake.receiptNumber.toUpperCase()}__DELETED_${id}` } });
+      await tx.soyaBeanIntake.update({ where: { id }, data: { receiptNumber: `${intake.receiptNumber}__deleted_${id}`, deletedAt: new Date(), updatedById: user.id } });
     }), { label: "SoyaProcessingService.deleteIntake" });
     await this.writeAudit(user, "DELETE", "SoyaBeanIntake", id, `Deleted soya bean intake ${intake.receiptNumber}`, context, { branchId: intake.branchId, warehouseId: intake.warehouseId, productionSiteId: intake.productionSiteId });
     return { data: { id } };
@@ -497,7 +502,12 @@ export class SoyaProcessingService {
       for (const waste of batch.wasteRecords) await tx.soyaWasteRecord.update({ where: { id: waste.id }, data: { deletedAt: new Date() } });
       for (const cost of batch.costs) await tx.soyaProductionCost.update({ where: { id: cost.id }, data: { deletedAt: new Date() } });
 
-      await tx.soyaProcessingBatch.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+      // Free the batch number and its -OIL/-CAKE lot numbers so the same
+      // batch can be re-entered after a delete (see deleteIntake).
+      for (const suffix of ["-OIL", "-CAKE"]) {
+        await tx.stockBatch.updateMany({ where: { companyId: user.companyId, batchNumber: `${batch.batchNumber}${suffix}` }, data: { batchNumber: `${batch.batchNumber}${suffix}__DELETED_${id}` } });
+      }
+      await tx.soyaProcessingBatch.update({ where: { id }, data: { batchNumber: `${batch.batchNumber}__deleted_${id}`, deletedAt: new Date(), updatedById: user.id } });
     }), { label: "SoyaProcessingService.deleteBatch" });
     await this.writeAudit(user, "DELETE", "SoyaProcessingBatch", id, `Deleted soya processing batch ${batch.batchNumber}`, context, { branchId: batch.branchId, productionSiteId: batch.productionSiteId });
     return { data: { id } };

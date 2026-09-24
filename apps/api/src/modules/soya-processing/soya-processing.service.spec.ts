@@ -469,9 +469,15 @@ describe("SoyaProcessingService.updateIntake / deleteIntake", () => {
       where: { id: "inv-1", quantityOnHand: { gte: 200 } },
       data: { quantityOnHand: { decrement: 200 }, updatedById: "user-1" }
     });
+    // Frees the unique receipt number and its lot so the same receipt can be
+    // re-entered after a delete (was failing with "already exists").
+    expect(mockTx.stockBatch.updateMany).toHaveBeenCalledWith({
+      where: { companyId: "company-1", productId: "prod-bean", batchNumber: "RCPT-001" },
+      data: { batchNumber: "RCPT-001__DELETED_intake-1" }
+    });
     expect(mockTx.soyaBeanIntake.update).toHaveBeenCalledWith({
       where: { id: "intake-1" },
-      data: { deletedAt: expect.any(Date), updatedById: "user-1" }
+      data: { receiptNumber: "RCPT-001__deleted_intake-1", deletedAt: expect.any(Date), updatedById: "user-1" }
     });
     expect(mockAudit.write).toHaveBeenCalledWith(expect.objectContaining({ action: "DELETE", entityType: "SoyaBeanIntake" }));
   });
@@ -542,9 +548,17 @@ describe("SoyaProcessingService.updateBatch / deleteBatch", () => {
     expect(mockTx.soyaCakeOutput.update).toHaveBeenCalledWith({ where: { id: "cake-1" }, data: { deletedAt: expect.any(Date) } });
     expect(mockTx.soyaWasteRecord.update).toHaveBeenCalledWith({ where: { id: "waste-1" }, data: { deletedAt: expect.any(Date) } });
     expect(mockTx.soyaProductionCost.update).toHaveBeenCalledWith({ where: { id: "cost-1" }, data: { deletedAt: expect.any(Date) } });
+    expect(mockTx.stockBatch.updateMany).toHaveBeenCalledWith({
+      where: { companyId: "company-1", batchNumber: "SPB-001-OIL" },
+      data: { batchNumber: "SPB-001-OIL__DELETED_batch-1" }
+    });
+    expect(mockTx.stockBatch.updateMany).toHaveBeenCalledWith({
+      where: { companyId: "company-1", batchNumber: "SPB-001-CAKE" },
+      data: { batchNumber: "SPB-001-CAKE__DELETED_batch-1" }
+    });
     expect(mockTx.soyaProcessingBatch.update).toHaveBeenCalledWith({
       where: { id: "batch-1" },
-      data: { deletedAt: expect.any(Date), updatedById: "user-1" }
+      data: { batchNumber: "SPB-001__deleted_batch-1", deletedAt: expect.any(Date), updatedById: "user-1" }
     });
   });
 
