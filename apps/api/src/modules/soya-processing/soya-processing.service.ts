@@ -304,13 +304,17 @@ export class SoyaProcessingService {
         if (guarded.count === 0) {
           throw new BadRequestException("Cannot delete this intake — its stock has already been used downstream (processed, transferred, or sold), so reversing it would drive inventory negative.");
         }
-        await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: intake.branchId, productId: intake.productId, inventoryItemId: inventory.id, fromWarehouseId: intake.warehouseId, warehouseId: intake.warehouseId, productionSiteId: intake.productionSiteId, uomId: inventory.uomId, movementType: "ADJUSTMENT_OUT", quantity: quantityKg, unitCost: Number(intake.unitCost), referenceType: "SoyaBeanIntake", referenceId: intake.id, notes: `Reversal — soya bean intake ${intake.receiptNumber} deleted`, createdById: user.id } });
       }
       // Soft delete keeps the row, so free its unique keys (the receipt number
       // and the lot it named) — otherwise re-entering the same receipt after a
       // delete fails with "already exists". Same `__deleted_<id>` convention
       // as every other soft-deleted coded record.
       await tx.stockBatch.updateMany({ where: { companyId: user.companyId, productId: intake.productId, batchNumber: intake.receiptNumber.toUpperCase() }, data: { batchNumber: `${intake.receiptNumber.toUpperCase()}__DELETED_${id}` } });
+      // Retire this record's own stock movements rather than posting
+      // "Reversal" movements on top: the warehouse log then shows the
+      // deleted record as gone, not as an entry plus its undo. Quantities are
+      // corrected above; the delete itself is kept in the audit log.
+      await tx.stockMovement.updateMany({ where: { companyId: user.companyId, referenceType: "SoyaBeanIntake", referenceId: id, deletedAt: null }, data: { deletedAt: new Date() } });
       await tx.soyaBeanIntake.update({ where: { id }, data: { receiptNumber: `${intake.receiptNumber}__deleted_${id}`, deletedAt: new Date(), updatedById: user.id } });
     }), { label: "SoyaProcessingService.deleteIntake" });
     await this.writeAudit(user, "DELETE", "SoyaBeanIntake", id, `Deleted soya bean intake ${intake.receiptNumber}`, context, { branchId: intake.branchId, warehouseId: intake.warehouseId, productionSiteId: intake.productionSiteId });
@@ -468,7 +472,6 @@ export class SoyaProcessingService {
         const beanInventory = await tx.inventoryItem.findFirst({ where: { companyId: user.companyId, warehouseId: beanMovement.fromWarehouseId, productId: batch.beanProductId, deletedAt: null } });
         if (beanInventory) {
           await tx.inventoryItem.update({ where: { id: beanInventory.id }, data: { quantityOnHand: { increment: beansUsedKg }, updatedById: user.id } });
-          await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: batch.branchId, productId: batch.beanProductId, inventoryItemId: beanInventory.id, toWarehouseId: beanMovement.fromWarehouseId, warehouseId: beanMovement.fromWarehouseId, productionSiteId: batch.productionSiteId, uomId: beanInventory.uomId, movementType: "ADJUSTMENT_IN", quantity: beansUsedKg, referenceType: "SoyaProcessingBatch", referenceId: batch.id, notes: `Reversal — soya processing batch ${batch.batchNumber} deleted`, createdById: user.id } });
         }
       }
 
@@ -480,7 +483,6 @@ export class SoyaProcessingService {
         await tx.stockBatch.updateMany({ where: { companyId: user.companyId, warehouseId: output.warehouseId, productId: output.productId, batchNumber: `${batch.batchNumber}-OIL`, quantityRemaining: { gte: qty } }, data: { deletedAt: new Date(), quantityRemaining: { decrement: qty } } });
         const guarded = inv ? await tx.inventoryItem.updateMany({ where: { id: inv.id, quantityOnHand: { gte: qty } }, data: { quantityOnHand: { decrement: qty }, updatedById: user.id } }) : { count: 0 };
         if (guarded.count === 0) throw new BadRequestException("Cannot delete this batch — its oil output has already moved on (transferred or sold), so reversing it would drive inventory negative.");
-        await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: batch.branchId, productId: output.productId, inventoryItemId: inv!.id, fromWarehouseId: output.warehouseId, warehouseId: output.warehouseId, productionSiteId: batch.productionSiteId, uomId: inv!.uomId, movementType: "ADJUSTMENT_OUT", quantity: qty, referenceType: "SoyaProcessingBatch", referenceId: batch.id, notes: `Reversal — soya processing batch ${batch.batchNumber} deleted`, createdById: user.id } });
         await tx.soyaOilOutput.update({ where: { id: output.id }, data: { deletedAt: new Date() } });
       }
 
@@ -492,7 +494,6 @@ export class SoyaProcessingService {
         await tx.stockBatch.updateMany({ where: { companyId: user.companyId, warehouseId: output.warehouseId, productId: output.productId, batchNumber: `${batch.batchNumber}-CAKE`, quantityRemaining: { gte: qty } }, data: { deletedAt: new Date(), quantityRemaining: { decrement: qty } } });
         const guarded = inv ? await tx.inventoryItem.updateMany({ where: { id: inv.id, quantityOnHand: { gte: qty } }, data: { quantityOnHand: { decrement: qty }, updatedById: user.id } }) : { count: 0 };
         if (guarded.count === 0) throw new BadRequestException("Cannot delete this batch — its cake output has already moved on (transferred or sold), so reversing it would drive inventory negative.");
-        await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: batch.branchId, productId: output.productId, inventoryItemId: inv!.id, fromWarehouseId: output.warehouseId, warehouseId: output.warehouseId, productionSiteId: batch.productionSiteId, uomId: inv!.uomId, movementType: "ADJUSTMENT_OUT", quantity: qty, referenceType: "SoyaProcessingBatch", referenceId: batch.id, notes: `Reversal — soya processing batch ${batch.batchNumber} deleted`, createdById: user.id } });
         await tx.soyaCakeOutput.update({ where: { id: output.id }, data: { deletedAt: new Date() } });
       }
 
@@ -507,6 +508,11 @@ export class SoyaProcessingService {
       for (const suffix of ["-OIL", "-CAKE"]) {
         await tx.stockBatch.updateMany({ where: { companyId: user.companyId, batchNumber: `${batch.batchNumber}${suffix}` }, data: { batchNumber: `${batch.batchNumber}${suffix}__DELETED_${id}` } });
       }
+      // Retire this record's own stock movements rather than posting
+      // "Reversal" movements on top: the warehouse log then shows the
+      // deleted record as gone, not as an entry plus its undo. Quantities are
+      // corrected above; the delete itself is kept in the audit log.
+      await tx.stockMovement.updateMany({ where: { companyId: user.companyId, referenceType: "SoyaProcessingBatch", referenceId: batch.id, deletedAt: null }, data: { deletedAt: new Date() } });
       await tx.soyaProcessingBatch.update({ where: { id }, data: { batchNumber: `${batch.batchNumber}__deleted_${id}`, deletedAt: new Date(), updatedById: user.id } });
     }), { label: "SoyaProcessingService.deleteBatch" });
     await this.writeAudit(user, "DELETE", "SoyaProcessingBatch", id, `Deleted soya processing batch ${batch.batchNumber}`, context, { branchId: batch.branchId, productionSiteId: batch.productionSiteId });
@@ -644,14 +650,15 @@ export class SoyaProcessingService {
       if (guarded.count === 0) {
         throw new BadRequestException("Cannot delete this transfer — the destination stock has already moved on, so reversing it would drive inventory negative.");
       }
-      await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: transfer.branchId, productId: transfer.productId, inventoryItemId: destination!.id, fromWarehouseId: transfer.toWarehouseId, warehouseId: transfer.toWarehouseId, productionSiteId: transfer.toProductionSiteId ?? transfer.productionSiteId, uomId: destination!.uomId, movementType: "ADJUSTMENT_OUT", quantity, referenceType: "SoyaInternalTransfer", referenceId: transfer.id, notes: "Reversal — soya internal transfer deleted", createdById: user.id } });
 
       const source = await tx.inventoryItem.findFirst({ where: { companyId: user.companyId, warehouseId: transfer.fromWarehouseId, productId: transfer.productId, deletedAt: null } });
       if (source) {
         await tx.inventoryItem.update({ where: { id: source.id }, data: { quantityOnHand: { increment: quantity }, updatedById: user.id } });
-        await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: transfer.branchId, productId: transfer.productId, inventoryItemId: source.id, toWarehouseId: transfer.fromWarehouseId, warehouseId: transfer.fromWarehouseId, productionSiteId: transfer.productionSiteId, uomId: source.uomId, movementType: "ADJUSTMENT_IN", quantity, referenceType: "SoyaInternalTransfer", referenceId: transfer.id, notes: "Reversal — soya internal transfer deleted", createdById: user.id } });
       }
 
+      // Retire this record's own movements instead of posting reversals —
+      // see deleteIntake.
+      await tx.stockMovement.updateMany({ where: { companyId: user.companyId, referenceType: "SoyaInternalTransfer", referenceId: id, deletedAt: null }, data: { deletedAt: new Date() } });
       await tx.soyaInternalTransfer.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id, status: "CANCELLED" } });
     }), { label: "SoyaProcessingService.deleteTransfer" });
     await this.writeAudit(user, "DELETE", "SoyaInternalTransfer", id, "Deleted soya internal transfer", context, { branchId: transfer.branchId, warehouseId: transfer.fromWarehouseId, productionSiteId: transfer.productionSiteId });
@@ -734,8 +741,10 @@ export class SoyaProcessingService {
       const inventory = await tx.inventoryItem.findFirst({ where: { companyId: user.companyId, warehouseId: sale.warehouseId, productId: sale.productId, deletedAt: null } });
       if (inventory) {
         await tx.inventoryItem.update({ where: { id: inventory.id }, data: { quantityOnHand: { increment: quantity }, updatedById: user.id } });
-        await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: sale.branchId, productId: sale.productId, inventoryItemId: inventory.id, toWarehouseId: sale.warehouseId, warehouseId: sale.warehouseId, productionSiteId: sale.productionSiteId, uomId: inventory.uomId, movementType: "ADJUSTMENT_IN", quantity, referenceType: "SoyaSalesLink", referenceId: sale.id, notes: `Reversal — soya sale to ${sale.customerName} deleted`, createdById: user.id } });
       }
+      // Retire this record's own movements instead of posting reversals —
+      // see deleteIntake.
+      await tx.stockMovement.updateMany({ where: { companyId: user.companyId, referenceType: "SoyaSalesLink", referenceId: id, deletedAt: null }, data: { deletedAt: new Date() } });
       await tx.soyaSalesLink.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id, status: "CANCELLED" } });
     });
     await this.writeAudit(user, "DELETE", "SoyaSalesLink", id, `Deleted soya sale to ${sale.customerName}`, context, { branchId: sale.branchId, warehouseId: sale.warehouseId, productionSiteId: sale.productionSiteId });

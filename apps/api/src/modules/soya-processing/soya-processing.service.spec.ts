@@ -5,7 +5,7 @@ const mockTx = {
   inventoryItem: { updateMany: jest.fn(), upsert: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
   soyaBeanIntake: { create: jest.fn(), update: jest.fn() },
   soyaProcessingBatch: { create: jest.fn(), update: jest.fn() },
-  stockMovement: { create: jest.fn() },
+  stockMovement: { create: jest.fn(), updateMany: jest.fn() },
   stockBatch: { create: jest.fn(), findMany: jest.fn().mockResolvedValue([]), updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
   soyaOilOutput: { create: jest.fn(), update: jest.fn() },
   soyaCakeOutput: { create: jest.fn(), update: jest.fn() },
@@ -479,6 +479,20 @@ describe("SoyaProcessingService.updateIntake / deleteIntake", () => {
       where: { id: "intake-1" },
       data: { receiptNumber: "RCPT-001__deleted_intake-1", deletedAt: expect.any(Date), updatedById: "user-1" }
     });
+    // Retires its own movements instead of posting reversals, so the
+    // warehouse log no longer shows the deleted intake.
+    expect(mockTx.stockMovement.updateMany).toHaveBeenCalledWith({
+      where: { companyId: "company-1", referenceType: "SoyaBeanIntake", referenceId: "intake-1", deletedAt: null },
+      data: { deletedAt: expect.any(Date) }
+    });
+    expect(mockTx.stockMovement.create).not.toHaveBeenCalled();
+    // Retires its own movements instead of posting reversals, so the
+    // warehouse log no longer shows the deleted intake.
+    expect(mockTx.stockMovement.updateMany).toHaveBeenCalledWith({
+      where: { companyId: "company-1", referenceType: "SoyaBeanIntake", referenceId: "intake-1", deletedAt: null },
+      data: { deletedAt: expect.any(Date) }
+    });
+    expect(mockTx.stockMovement.create).not.toHaveBeenCalled();
     expect(mockAudit.write).toHaveBeenCalledWith(expect.objectContaining({ action: "DELETE", entityType: "SoyaBeanIntake" }));
   });
 
@@ -560,6 +574,16 @@ describe("SoyaProcessingService.updateBatch / deleteBatch", () => {
       where: { id: "batch-1" },
       data: { batchNumber: "SPB-001__deleted_batch-1", deletedAt: expect.any(Date), updatedById: "user-1" }
     });
+    expect(mockTx.stockMovement.updateMany).toHaveBeenCalledWith({
+      where: { companyId: "company-1", referenceType: "SoyaProcessingBatch", referenceId: "batch-1", deletedAt: null },
+      data: { deletedAt: expect.any(Date) }
+    });
+    expect(mockTx.stockMovement.create).not.toHaveBeenCalled();
+    expect(mockTx.stockMovement.updateMany).toHaveBeenCalledWith({
+      where: { companyId: "company-1", referenceType: "SoyaProcessingBatch", referenceId: "batch-1", deletedAt: null },
+      data: { deletedAt: expect.any(Date) }
+    });
+    expect(mockTx.stockMovement.create).not.toHaveBeenCalled();
   });
 
   it("deleteBatch blocks when an output has already moved on downstream, instead of driving inventory negative", async () => {
