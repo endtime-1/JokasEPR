@@ -9,6 +9,7 @@ import { DataTable } from "./data-table";
 import { FormField } from "./form-field";
 import { EmptyState, StatusBadge } from "./ui";
 import { ApiEnvelope, apiFetch, downloadReport, getCached, getCachedFirst, hasCached } from "../lib/api";
+import { buildAutoColumns } from "../lib/auto-columns";
 import { groupByFeedForm } from "../lib/feed";
 import { useApiRecovery } from "../lib/use-api-recovery";
 
@@ -2928,8 +2929,8 @@ function BatchTable({ rows }: { rows: BatchRow[] }) {
 }
 
 function SimpleRowsTable({ rows }: { rows: Array<Record<string, unknown>> }) {
-  const keys = Object.keys(rows[0] ?? {}).filter((key) => !["id", "companyId", "branchId", "deletedAt", "updatedAt"].includes(key)).slice(0, 8);
-  return <DataTable rows={rows} empty="No records found" columns={keys.map((key) => ({ key, label: key.replace(/([A-Z])/g, " $1"), render: (row: Record<string, unknown>) => typeof row[key] === "object" && row[key] !== null ? JSON.stringify(row[key]).slice(0, 80) : String(row[key] ?? "-").slice(0, 80) }))} />;
+  const auto = buildAutoColumns(rows);
+  return <DataTable rows={auto.rows} empty="No records found" columns={auto.columns} />;
 }
 
 function BatchSection({ title, children }: { title: string; children: ReactNode }) {

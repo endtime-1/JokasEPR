@@ -9,6 +9,7 @@ import { FormField } from "./form-field";
 import { ConfirmModal, Modal } from "./ui";
 import { ApiEnvelope, apiFetch, downloadReport, getCached, getCachedFirst, hasCached, invalidateCache } from "../lib/api";
 import { useApiRecovery } from "../lib/use-api-recovery";
+import { buildAutoColumns } from "../lib/auto-columns";
 
 type Option = {
   id: string;
@@ -33,6 +34,7 @@ type SoyaOptions = {
 };
 
 const inputClass = "min-h-11 rounded-md border border-line px-3";
+const SOYA_BAG_KG = 50;
 const today = () => new Date().toISOString().slice(0, 10);
 
 function useSoyaOptions() {
@@ -100,8 +102,11 @@ export function SoyaIntakesPage({ create = false }: { create?: boolean }) {
   const selectedBeanProduct = beanProducts.find((p) => p.id === (form.productId || beanProducts[0]?.id));
   // Product.piecesPerUnit doubles as a generic bulk-unit conversion factor
   // (30 pieces/crate for eggs, kg/bag here) — set on the product in Settings
-  // → Catalog. Falls back to 1 (no bag conversion) if never configured.
-  const kgPerBag = Number(selectedBeanProduct?.piecesPerUnit) || 1;
+  // → Catalog. The column defaults to 1, which for beans would silently
+  // record a bag as 1 kg — so anything ≤ 1 falls back to the standard 50 kg
+  // soya bean bag.
+  const configuredKgPerBag = Number(selectedBeanProduct?.piecesPerUnit) || 0;
+  const kgPerBag = configuredKgPerBag > 1 ? configuredKgPerBag : SOYA_BAG_KG;
   const quantityNum = Number(form.quantity) || 0;
   const quantityKg = form.unit === "BAGS" ? quantityNum * kgPerBag : quantityNum;
   const unitCostPerKg = form.unit === "BAGS" ? (Number(form.unitCost) || 0) / kgPerBag : (Number(form.unitCost) || 0);
@@ -1022,8 +1027,8 @@ function SelectField({ label, value, options, onChange }: { label: string; value
 }
 
 function SimpleRowsTable({ rows, loading, onEdit, onDelete, onApprove }: { rows: Record<string, unknown>[]; loading?: boolean; onEdit?: (row: Record<string, unknown>) => void; onDelete?: (row: Record<string, unknown>) => void; onApprove?: (row: Record<string, unknown>, status: "APPROVED" | "REJECTED") => void }) {
-  const keys = Object.keys(rows[0] ?? {}).filter((key) => !["id", "companyId", "branchId", "deletedAt", "updatedAt"].includes(key)).slice(0, 8);
-  const columns: { key: string; label: string; sortable?: boolean; render: (row: Record<string, unknown>) => React.ReactNode }[] = keys.map((key) => ({ key, label: key.replace(/([A-Z])/g, " $1"), render: (row: Record<string, unknown>) => typeof row[key] === "object" && row[key] !== null ? JSON.stringify(row[key]).slice(0, 80) : String(row[key] ?? "-").slice(0, 90) }));
+  const auto = useMemo(() => buildAutoColumns(rows), [rows]);
+  const columns: { key: string; label: string; sortable?: boolean; render?: (row: Record<string, unknown>) => React.ReactNode }[] = [...auto.columns];
   if (onEdit || onDelete || onApprove) {
     columns.push({
       key: "actions",
@@ -1055,6 +1060,6 @@ function SimpleRowsTable({ rows, loading, onEdit, onDelete, onApprove }: { rows:
       )
     });
   }
-  return <DataTable rows={rows} empty="No records found" loading={loading} columns={columns} />;
+  return <DataTable rows={auto.rows} empty="No records found" loading={loading} columns={columns} />;
 }
 

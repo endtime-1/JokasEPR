@@ -8,6 +8,7 @@ import { FormField } from "./form-field";
 import { ConfirmModal, Modal, StatusBadge } from "./ui";
 import { useAuth } from "./auth-context";
 import { ApiEnvelope, apiFetch, downloadReport, getCached, getCachedFirst, hasCached, invalidateCache } from "../lib/api";
+import { buildAutoColumns } from "../lib/auto-columns";
 import { useApiRecovery } from "../lib/use-api-recovery";
 
 type Option = {
@@ -2343,6 +2344,6 @@ function TextField({ label, value, onChange, type = "text", required = false }: 
 }
 
 function SimpleRowsTable({ rows, loading }: { rows: Record<string, unknown>[]; loading?: boolean }) {
-  const keys = Object.keys(rows[0] ?? {}).filter((key) => !["id", "companyId", "branchId", "deletedAt", "updatedAt"].includes(key)).slice(0, 8);
-  return <DataTable rows={rows} empty="No records found" loading={loading} columns={keys.map((key) => ({ key, label: key.replace(/([A-Z])/g, " $1"), render: (row: Record<string, unknown>) => typeof row[key] === "object" && row[key] !== null ? JSON.stringify(row[key]).slice(0, 80) : String(row[key] ?? "-").slice(0, 90) }))} />;
+  const auto = buildAutoColumns(rows);
+  return <DataTable rows={auto.rows} empty="No records found" loading={loading} columns={auto.columns} />;
 }
