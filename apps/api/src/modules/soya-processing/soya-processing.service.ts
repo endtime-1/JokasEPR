@@ -328,7 +328,7 @@ export class SoyaProcessingService {
   async getBatch(user: AuthenticatedUser, id: string) {
     const data = await this.prisma.soyaProcessingBatch.findFirst({
       where: { ...this.batchWhere(user, {}), id },
-      include: { productionSite: { select: { name: true, code: true } }, intake: { select: { receiptNumber: true, supplierName: true } }, oilOutputs: true, cakeOutputs: true, wasteRecords: true, qualityChecks: true, costs: true }
+      include: { productionSite: { select: { name: true, code: true } }, intake: { select: { receiptNumber: true, supplierName: true } }, oilOutputs: { include: { warehouse: { select: { name: true } } } }, cakeOutputs: { include: { warehouse: { select: { name: true } } } }, wasteRecords: true, qualityChecks: true, costs: true }
     });
     if (!data) throw new NotFoundException("Soya processing batch was not found.");
     return { data: { ...data, metrics: this.batchMetrics(data) } };

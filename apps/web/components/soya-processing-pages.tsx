@@ -278,6 +278,18 @@ export function SoyaBatchesPage({ create = false }: { create?: boolean }) {
   const [loading, setLoading] = useState(!hasCached("/soya-processing/batches"));
   const [loadError, setLoadError] = useState("");
   const [form, setForm] = useState({ productionSiteId: "", rawWarehouseId: "", oilWarehouseId: "", cakeWarehouseId: "", intakeId: "", oilProductId: "", cakeProductId: "", beansUsedKg: "", oilProducedLitres: "", cakeProducedKg: "", wasteKg: "", processingDate: today() });
+  // Default each warehouse picker to the matching store by name instead of
+  // the alphabetically-first warehouse — the old default silently posted
+  // cake into whatever warehouse sorted first, so it never showed in the
+  // Cake Store. Prefers stores at the chosen production site.
+  const siteId = form.productionSiteId || options.productionSites[0]?.id || "";
+  const defaultWarehouse = (pattern: RegExp) => {
+    const named = options.warehouses.filter((w) => pattern.test(`${w.name ?? ""} ${w.code ?? ""}`));
+    return (named.find((w) => w.productionSiteId === siteId) ?? named[0] ?? options.warehouses[0])?.id ?? "";
+  };
+  const rawWarehouseId = form.rawWarehouseId || defaultWarehouse(/bean|raw|soya store/i);
+  const oilWarehouseId = form.oilWarehouseId || defaultWarehouse(/oil/i);
+  const cakeWarehouseId = form.cakeWarehouseId || defaultWarehouse(/cake|local soya/i);
   const oilCandidates = useMemo(() => soyaProducts(options, "OIL"), [options]);
   const cakeCandidates = useMemo(() => soyaProducts(options, "CAKE"), [options]);
   const [editRow, setEditRow] = useState<Record<string, unknown> | null>(null);
@@ -365,9 +377,9 @@ export function SoyaBatchesPage({ create = false }: { create?: boolean }) {
         body: JSON.stringify({
           ...form,
           productionSiteId: form.productionSiteId || options.productionSites[0]?.id,
-          rawWarehouseId: form.rawWarehouseId || options.warehouses[0]?.id,
-          oilWarehouseId: form.oilWarehouseId || options.warehouses[0]?.id,
-          cakeWarehouseId: form.cakeWarehouseId || options.warehouses[0]?.id,
+          rawWarehouseId,
+          oilWarehouseId,
+          cakeWarehouseId,
           intakeId: form.intakeId || undefined,
           beanProductId,
           oilProductId,
@@ -392,9 +404,9 @@ export function SoyaBatchesPage({ create = false }: { create?: boolean }) {
       {create ? (
         <form onSubmit={submit} className="mb-6 grid gap-4 rounded-md border border-line bg-white p-4 shadow-panel md:grid-cols-4">
           <SelectField label="Production site" value={form.productionSiteId || options.productionSites[0]?.id || ""} options={options.productionSites} onChange={(value) => setForm({ ...form, productionSiteId: value })} />
-          <SelectField label="Raw warehouse" value={form.rawWarehouseId || options.warehouses[0]?.id || ""} options={options.warehouses} onChange={(value) => setForm({ ...form, rawWarehouseId: value })} />
-          <SelectField label="Oil warehouse" value={form.oilWarehouseId || options.warehouses[0]?.id || ""} options={options.warehouses} onChange={(value) => setForm({ ...form, oilWarehouseId: value })} />
-          <SelectField label="Cake warehouse" value={form.cakeWarehouseId || options.warehouses[0]?.id || ""} options={options.warehouses} onChange={(value) => setForm({ ...form, cakeWarehouseId: value })} />
+          <SelectField label="Raw warehouse" value={rawWarehouseId} options={options.warehouses} onChange={(value) => setForm({ ...form, rawWarehouseId: value })} />
+          <SelectField label="Oil warehouse" value={oilWarehouseId} options={options.warehouses} onChange={(value) => setForm({ ...form, oilWarehouseId: value })} />
+          <SelectField label="Cake warehouse" value={cakeWarehouseId} options={options.warehouses} onChange={(value) => setForm({ ...form, cakeWarehouseId: value })} />
           <SelectField label="Intake" value={form.intakeId || ""} options={options.intakes.map((item) => ({ ...item, name: item.receiptNumber }))} onChange={(value) => setForm({ ...form, intakeId: value })} />
           <SelectField label="Oil product" value={form.oilProductId || oilCandidates[0]?.id || ""} options={oilCandidates} onChange={(value) => setForm({ ...form, oilProductId: value })} />
           <SelectField label="Cake product" value={form.cakeProductId || cakeCandidates[0]?.id || ""} options={cakeCandidates} onChange={(value) => setForm({ ...form, cakeProductId: value })} />
@@ -444,8 +456,8 @@ type BatchDetail = {
   notes?: string | null;
   productionSite?: { name: string; code: string };
   intake?: { receiptNumber: string; supplierName: string } | null;
-  oilOutputs: { id: string; quantityLitres: number | string; unitCost: number | string }[];
-  cakeOutputs: { id: string; quantityKg: number | string; unitCost: number | string }[];
+  oilOutputs: { id: string; quantityLitres: number | string; unitCost: number | string; warehouse?: { name: string } | null }[];
+  cakeOutputs: { id: string; quantityKg: number | string; unitCost: number | string; warehouse?: { name: string } | null }[];
   wasteRecords: { id: string; quantityKg: number | string; reason?: string | null }[];
   qualityChecks: { id: string; status: string; moisturePercent?: number | string | null; oilPurityPercent?: number | string | null; cakeProteinPercent?: number | string | null; checkedAt: string; notes?: string | null }[];
   costs: { id: string; rawBeanCost: number | string; laborCost: number | string; packagingCost: number | string; overheadCost: number | string; expectedOilSalesValue: number | string; expectedCakeSalesValue: number | string }[];
@@ -525,6 +537,8 @@ export function SoyaBatchDetailsPage() {
           ["Beans used (kg)", number(batch.beansUsedKg)],
           ["Oil produced (L)", number(batch.metrics.oilProducedLitres)],
           ["Cake produced (kg)", number(batch.metrics.cakeProducedKg)],
+          ["Oil stored in", batch.oilOutputs.map((o) => o.warehouse?.name).filter(Boolean).join(", ") || "—"],
+          ["Cake stored in", batch.cakeOutputs.map((o) => o.warehouse?.name).filter(Boolean).join(", ") || "—"],
           ["Waste (kg)", number(batch.metrics.wasteKg)],
           ["Oil yield", `${batch.metrics.oilYieldPercent}%`],
           ["Cake yield", `${batch.metrics.cakeYieldPercent}%`],
