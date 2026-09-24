@@ -152,8 +152,12 @@ export class SoyaProcessingService {
         select: { id: true, branchId: true, productionSiteId: true, code: true, name: true, type: true },
         orderBy: { name: "asc" }
       }),
+      // Soya pickers only ever deal in soya products (beans in; oil and the
+      // local soya cake out) — offering the whole catalog let a Soya manager
+      // pick unrelated items. Collation is case-insensitive, so "soy" also
+      // matches "Soya"/"SOYA".
       this.prisma.product.findMany({
-        where: { companyId: user.companyId, deletedAt: null },
+        where: { companyId: user.companyId, deletedAt: null, OR: [{ name: { contains: "soy" } }, { sku: { contains: "soy" } }] },
         select: { id: true, branchId: true, sku: true, name: true, type: true, uomId: true, piecesPerUnit: true },
         orderBy: { name: "asc" }
       }),

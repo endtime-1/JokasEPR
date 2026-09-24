@@ -85,20 +85,25 @@ function money(value: unknown) {
   return `GHS ${number(value)}`;
 }
 
-// Soya outputs used to be resolved only by the seed SKUs SOYA-OIL / SOYA-CAKE,
-// so a real catalog with its own codes ("SBO-01", "Soya Meal"…) hard-failed
-// batch creation with "SKU not found". Match the seed SKU first, then any
-// product whose name/SKU mentions soya + oil (or cake/meal). The batch form
-// still lets the user pick, like the mobile app does.
-const SOYA_KIND_WORDS: Record<"BEANS" | "OIL" | "CAKE", RegExp> = { BEANS: /bean/i, OIL: /oil/i, CAKE: /cake|meal/i };
-const SOYA_SEED_SKU: Record<"BEANS" | "OIL" | "CAKE", string> = { BEANS: "SOYA-BEANS-RAW", OIL: "SOYA-OIL", CAKE: "SOYA-CAKE" };
+// Soya products are classified by name/SKU rather than fixed seed SKUs (the
+// live catalog uses its own codes, e.g. "Local Soya" for the cake). The API
+// already limits options.products to soya products; here: beans = "bean",
+// oil = "oil" (not a raw feed-ingredient oil), cake = every other soya product.
+type SoyaKind = "BEANS" | "OIL" | "CAKE";
+const SOYA_SEED_SKU: Record<SoyaKind, string> = { BEANS: "SOYA-BEANS-RAW", OIL: "SOYA-OIL", CAKE: "SOYA-CAKE" };
 
-function soyaProducts(options: SoyaOptions, kind: "BEANS" | "OIL" | "CAKE") {
-  const matches = options.products.filter((product) => {
-    const text = `${product.name ?? ""} ${product.sku ?? ""}`;
-    return product.sku === SOYA_SEED_SKU[kind] || (/soy/i.test(text) && SOYA_KIND_WORDS[kind].test(text) && !(kind === "OIL" && /raw/i.test(text)));
-  });
-  return matches.sort((a, b) => Number(b.sku === SOYA_SEED_SKU[kind]) - Number(a.sku === SOYA_SEED_SKU[kind]));
+function soyaKind(product: Option): SoyaKind | null {
+  const text = `${product.name ?? ""} ${product.sku ?? ""}`;
+  if (!/soy/i.test(text)) return null;
+  if (/bean/i.test(text)) return "BEANS";
+  if (/oil/i.test(text)) return /raw/i.test(text) ? null : "OIL";
+  return "CAKE";
+}
+
+function soyaProducts(options: SoyaOptions, kind: SoyaKind) {
+  return options.products
+    .filter((product) => soyaKind(product) === kind)
+    .sort((a, b) => Number(b.sku === SOYA_SEED_SKU[kind]) - Number(a.sku === SOYA_SEED_SKU[kind]));
 }
 
 export function SoyaIntakesPage({ create = false }: { create?: boolean }) {
@@ -273,10 +278,8 @@ export function SoyaBatchesPage({ create = false }: { create?: boolean }) {
   const [loading, setLoading] = useState(!hasCached("/soya-processing/batches"));
   const [loadError, setLoadError] = useState("");
   const [form, setForm] = useState({ productionSiteId: "", rawWarehouseId: "", oilWarehouseId: "", cakeWarehouseId: "", intakeId: "", oilProductId: "", cakeProductId: "", beansUsedKg: "", oilProducedLitres: "", cakeProducedKg: "", wasteKg: "", processingDate: today() });
-  // Soya-looking products first; if the catalog has none, offer every
-  // product so the user can still pick instead of being blocked.
-  const oilCandidates = useMemo(() => { const m = soyaProducts(options, "OIL"); return m.length ? m : options.products; }, [options]);
-  const cakeCandidates = useMemo(() => { const m = soyaProducts(options, "CAKE"); return m.length ? m : options.products; }, [options]);
+  const oilCandidates = useMemo(() => soyaProducts(options, "OIL"), [options]);
+  const cakeCandidates = useMemo(() => soyaProducts(options, "CAKE"), [options]);
   const [editRow, setEditRow] = useState<Record<string, unknown> | null>(null);
   const [editForm, setEditForm] = useState({ batchNumber: "", processingDate: "", notes: "" });
   const [editError, setEditError] = useState("");
@@ -780,7 +783,7 @@ export function SoyaTransferPage() {
   const [loadError, setLoadError] = useState("");
   const [form, setForm] = useState({ productionBatchId: "", fromWarehouseId: "", toWarehouseId: "", toProductionSiteId: "", outputType: "CAKE", productId: "", quantity: "", notes: "" });
   // Product list follows the output type, so CAKE never offers the oil product.
-  const outputProducts = useMemo(() => { const m = soyaProducts(options, form.outputType === "OIL" ? "OIL" : "CAKE"); return m.length ? m : options.products; }, [options, form.outputType]);
+  const outputProducts = useMemo(() => soyaProducts(options, form.outputType === "OIL" ? "OIL" : "CAKE"), [options, form.outputType]);
   // Cake moves in 50 kg bags (or the product's own kg/bag if set in Catalog,
   // same rule as the intake form); oil is always litres. The API takes kg/L.
   const [quantityUnit, setQuantityUnit] = useState<"KG" | "BAGS">("KG");
