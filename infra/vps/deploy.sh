@@ -250,6 +250,13 @@ log "Done. Status:"
 pm2_as_user status
 echo
 echo "Local health checks:"
+# The apps were started a second ago — checking straight away always
+# reported "api FAIL / HTTP 000" even on a good deploy. Give them up to 90s.
+for _ in $(seq 1 45); do
+  curl -fsS -m 2 -o /dev/null http://127.0.0.1:4001/health 2>/dev/null \
+    && curl -fsS -m 2 -o /dev/null http://127.0.0.1:3000/ 2>/dev/null && break
+  sleep 2
+done
 curl -fsS -m 5 http://127.0.0.1:4001/health && echo "  api  OK" || echo "  api  FAIL"
 curl -fsS -m 5 -o /dev/null -w "  web  HTTP %{http_code}\n"  http://127.0.0.1:3000/ || true
 curl -fsS -m 5 -o /dev/null -w "  shop HTTP %{http_code}\n"  http://127.0.0.1:3002/shop || true
