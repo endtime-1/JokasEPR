@@ -1323,6 +1323,11 @@ export function FeedProductionOrdersPage({ create = false }: { create?: boolean 
   const [cancelling, setCancelling] = useState(false);
   const [cancelErr, setCancelErr] = useState("");
 
+  // Mark-complete confirm
+  const [completeTarget, setCompleteTarget] = useState<OrderRow | null>(null);
+  const [completing, setCompleting] = useState(false);
+  const [completeErr, setCompleteErr] = useState("");
+
   // Delete confirm
   const [deleteTarget, setDeleteTarget] = useState<OrderRow | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -1425,6 +1430,21 @@ export function FeedProductionOrdersPage({ create = false }: { create?: boolean 
     }
   }
 
+  async function handleComplete() {
+    if (!completeTarget) return;
+    setCompleting(true);
+    setCompleteErr("");
+    try {
+      await apiFetch(`/feed-production/orders/${completeTarget.id}/complete`, { method: "PATCH" });
+      setCompleteTarget(null);
+      await load();
+    } catch (err: unknown) {
+      setCompleteErr((err as Error)?.message ?? "Could not complete the order.");
+    } finally {
+      setCompleting(false);
+    }
+  }
+
   async function handleDelete() {
     if (!deleteTarget) return;
     setDeleting(true);
@@ -1475,7 +1495,7 @@ export function FeedProductionOrdersPage({ create = false }: { create?: boolean 
           <Plus aria-hidden className="h-4 w-4" /> Create order
         </Link>
       )}
-      <OrderTable rows={rows} loading={loading} onApprove={approveOrder} onEdit={openEdit} onCancel={setCancelTarget} onDelete={(row) => { setDeleteTarget(row); setDeleteErr(""); }} />
+      <OrderTable rows={rows} loading={loading} onApprove={approveOrder} onEdit={openEdit} onCancel={setCancelTarget} onDelete={(row) => { setDeleteTarget(row); setDeleteErr(""); }} onComplete={(row) => { setCompleteTarget(row); setCompleteErr(""); }} />
 
       {/* Edit order drawer */}
       {editTarget && (
@@ -1543,6 +1563,28 @@ export function FeedProductionOrdersPage({ create = false }: { create?: boolean 
         </div>
       )}
 
+      {/* Mark-complete confirm */}
+      {completeTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-ink/20 backdrop-blur-sm" onClick={() => { setCompleteTarget(null); setCompleteErr(""); }} />
+          <div className="relative z-10 w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50">
+              <CircleCheckBig className="h-5 w-5 text-emerald-600" />
+            </div>
+            <h3 className="text-base font-bold text-ink">Mark this order complete?</h3>
+            <p className="mt-1 text-sm text-ink/60">
+              Order <strong>{completeTarget.orderNumber}</strong> has produced <strong>{number(producedKg(completeTarget))} kg</strong> of the planned {number(completeTarget.plannedQuantityKg)} kg.
+              Closing it means no more batches can be posted against it.
+            </p>
+            {completeErr && <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{completeErr}</p>}
+            <div className="mt-5 flex gap-3">
+              <button onClick={() => { setCompleteTarget(null); setCompleteErr(""); }} className="app-button-secondary flex-1">Not yet</button>
+              <button onClick={handleComplete} disabled={completing} className="app-button-primary flex-1">{completing ? "Saving…" : "Mark complete"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Delete confirm */}
       {deleteTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -1601,7 +1643,11 @@ function OrderForm({ options, form, setForm, submit, submitting }: { options: Fe
   );
 }
 
-function OrderTable({ rows, loading, onApprove, onEdit, onCancel, onDelete }: { rows: OrderRow[]; loading?: boolean; onApprove?: (id: string) => Promise<void>; onEdit?: (row: OrderRow) => void; onCancel?: (row: OrderRow) => void; onDelete?: (row: OrderRow) => void }) {
+function producedKg(row: OrderRow) {
+  return (row.batches ?? []).reduce((sum, batch) => sum + Number(batch.producedQuantityKg ?? 0), 0);
+}
+
+function OrderTable({ rows, loading, onApprove, onEdit, onCancel, onDelete, onComplete }: { rows: OrderRow[]; loading?: boolean; onApprove?: (id: string) => Promise<void>; onEdit?: (row: OrderRow) => void; onCancel?: (row: OrderRow) => void; onDelete?: (row: OrderRow) => void; onComplete?: (row: OrderRow) => void }) {
   const [approvingId, setApprovingId] = useState<string | null>(null);
 
   async function handleApprove(id: string) {
@@ -1627,6 +1673,7 @@ function OrderTable({ rows, loading, onApprove, onEdit, onCancel, onDelete }: { 
       { key: "site", label: "Site", render: (row) => row.productionSite?.name ?? "-" },
       { key: "formula", label: "Formula", render: (row) => row.formula?.name ?? "-" },
       { key: "planned", label: "Planned kg", render: (row) => number(row.plannedQuantityKg) },
+      { key: "produced", label: "Produced kg", render: (row) => row.batches?.length ? number(producedKg(row)) : "-" },
       { key: "date", label: "Scheduled", render: (row) => new Date(row.scheduledDate).toLocaleDateString() },
       { key: "status", label: "Status", render: (row) => <StatusBadge status={row.status} /> },
       { key: "batch", label: "Batch", render: (row) => row.batches?.[0] ? <Link className="font-semibold text-brand" href={`/feed-production/batches/${row.batches[0].id}`}>{row.batches[0].batchNumber}</Link> : "-" },
@@ -1643,6 +1690,11 @@ function OrderTable({ rows, loading, onApprove, onEdit, onCancel, onDelete }: { 
               <Link href={`/feed-production/batches/create?orderId=${row.id}`} className="rounded-lg bg-brand px-2.5 py-1 text-xs font-bold text-white transition hover:bg-brand/90">
                 Post batch
               </Link>
+            )}
+            {row.status === "IN_PROGRESS" && onComplete && (
+              <button onClick={() => onComplete(row)} title="Close this order at the quantity produced so far" className="rounded-lg bg-emerald-500 px-2.5 py-1 text-xs font-bold text-white transition hover:bg-emerald-600">
+                Complete
+              </button>
             )}
             {(row.status === "DRAFT" || row.status === "PENDING_STOCK_APPROVAL") && (
               <button

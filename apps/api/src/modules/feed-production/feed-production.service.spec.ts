@@ -682,3 +682,31 @@ describe("FeedProductionService — cancelling / deleting approved orders", () =
     expect(mockPrisma.feedProductionOrder.update).not.toHaveBeenCalled();
   });
 });
+
+describe("FeedProductionService.completeOrder — closing an under-plan order", () => {
+  const inProgress = { id: "order-1", orderNumber: "FPO-1", branchId: "branch-1", productionSiteId: "site-1", status: "IN_PROGRESS", plannedQuantityKg: 1000 };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPrisma.feedProductionOrder.update.mockResolvedValue({});
+  });
+
+  it("marks an IN_PROGRESS order COMPLETED at the quantity produced so far", async () => {
+    mockPrisma.feedProductionOrder.findFirst.mockResolvedValue(inProgress);
+    mockPrisma.feedProductionBatch.aggregate.mockResolvedValue({ _sum: { producedQuantityKg: 950 } });
+    await makeService().completeOrder(makeUser(), "order-1", {});
+    expect(mockPrisma.feedProductionOrder.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "order-1" }, data: expect.objectContaining({ status: "COMPLETED" }) }));
+  });
+
+  it("refuses an order that is not IN_PROGRESS", async () => {
+    mockPrisma.feedProductionOrder.findFirst.mockResolvedValue({ ...inProgress, status: "APPROVED" });
+    await expect(makeService().completeOrder(makeUser(), "order-1", {})).rejects.toThrow(/in-progress/);
+    expect(mockPrisma.feedProductionOrder.update).not.toHaveBeenCalled();
+  });
+
+  it("refuses when every batch has been deleted (nothing produced)", async () => {
+    mockPrisma.feedProductionOrder.findFirst.mockResolvedValue(inProgress);
+    mockPrisma.feedProductionBatch.aggregate.mockResolvedValue({ _sum: { producedQuantityKg: null } });
+    await expect(makeService().completeOrder(makeUser(), "order-1", {})).rejects.toThrow(/at least one batch/);
+  });
+});

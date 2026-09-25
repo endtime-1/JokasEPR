@@ -141,6 +141,12 @@ export class FeedProductionController {
     return this.feedProductionService.cancelOrder(user, id, { ipAddress, userAgent });
   }
 
+  @Patch("orders/:id/complete")
+  @RequirePermissions(PERMISSIONS.FEED_MANAGE)
+  completeOrder(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.feedProductionService.completeOrder(user, id, { ipAddress, userAgent });
+  }
+
   @Delete("orders/:id")
   @RequirePermissions(PERMISSIONS.FEED_MANAGE)
   deleteOrder(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {

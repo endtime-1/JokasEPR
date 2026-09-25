@@ -549,6 +549,28 @@ export class FeedProductionService {
     return { data };
   }
 
+  // Close an order short. Posting batches only auto-completes an order once
+  // the full planned kg is produced; a run that comes in under plan (the
+  // usual case) otherwise sits IN_PROGRESS forever.
+  async completeOrder(user: AuthenticatedUser, id: string, context: RequestContext) {
+    const order = await this.requireOrder(user, id);
+    if (order.status !== "IN_PROGRESS") {
+      throw new BadRequestException(`Only an in-progress order can be marked complete. Current status: "${order.status}".`);
+    }
+    const produced = await this.prisma.feedProductionBatch.aggregate({
+      where: { companyId: user.companyId, productionOrderId: id, deletedAt: null },
+      _sum: { producedQuantityKg: true }
+    });
+    const producedKg = Number(produced._sum.producedQuantityKg ?? 0);
+    if (producedKg <= 0) throw new BadRequestException("Post at least one batch before marking the order complete.");
+    const data = await this.prisma.feedProductionOrder.update({
+      where: { id },
+      data: { status: "COMPLETED", updatedById: user.id }
+    });
+    await this.writeAudit(user, "UPDATE", "FeedProductionOrder", id, `Marked feed production order ${order.orderNumber} complete at ${producedKg} of ${Number(order.plannedQuantityKg)} kg`, context, { branchId: order.branchId, productionSiteId: order.productionSiteId });
+    return { data };
+  }
+
   // Soft delete. Allowed until the first batch is posted — once a batch
   // exists the order carries real stock movements and must stay on record.
   async deleteOrder(user: AuthenticatedUser, id: string, context: RequestContext) {
