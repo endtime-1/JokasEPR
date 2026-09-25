@@ -147,8 +147,10 @@ export class FeedProductionController {
     return this.feedProductionService.completeOrder(user, id, { ipAddress, userAgent });
   }
 
+  // Moves stock when the order has posted batches, so it needs the same
+  // permissions as posting a batch.
   @Delete("orders/:id")
-  @RequirePermissions(PERMISSIONS.FEED_MANAGE)
+  @RequirePermissions(PERMISSIONS.FEED_MANAGE, PERMISSIONS.INVENTORY_MANAGE)
   deleteOrder(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.feedProductionService.deleteOrder(user, id, { ipAddress, userAgent });
   }
@@ -173,6 +175,12 @@ export class FeedProductionController {
   @RequirePermissions(PERMISSIONS.FEED_MANAGE, PERMISSIONS.INVENTORY_MANAGE)
   createBatch(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateFeedProductionBatchDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.feedProductionService.createBatch(user, dto, { ipAddress, userAgent });
+  }
+
+  @Delete("batches/:id")
+  @RequirePermissions(PERMISSIONS.FEED_MANAGE, PERMISSIONS.INVENTORY_MANAGE)
+  deleteBatch(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.feedProductionService.deleteBatch(user, id, { ipAddress, userAgent });
   }
 
   @Get("batches/:id/label")

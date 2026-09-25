@@ -1595,8 +1595,16 @@ export function FeedProductionOrdersPage({ create = false }: { create?: boolean 
             </div>
             <h3 className="text-base font-bold text-ink">Delete this order?</h3>
             <p className="mt-1 text-sm text-ink/60">
-              Order <strong>{deleteTarget.orderNumber}</strong> will be removed from the orders list. No stock has moved on it, so nothing else changes.
+              Order <strong>{deleteTarget.orderNumber}</strong> will be removed from the orders list.
             </p>
+            {deleteTarget.batches?.length ? (
+              <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                It has {deleteTarget.batches.length} posted batch(es) ({number(producedKg(deleteTarget))} kg). Deleting reverses them: the raw materials go back
+                to the store they were issued from and the finished feed is taken back out of stock. Blocked if any of that feed has already been sold or dispatched.
+              </p>
+            ) : (
+              <p className="mt-2 text-xs text-ink/50">No stock has moved on it, so nothing else changes.</p>
+            )}
             {deleteErr && <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{deleteErr}</p>}
             <div className="mt-5 flex gap-3">
               <button onClick={() => { setDeleteTarget(null); setDeleteErr(""); }} className="app-button-secondary flex-1">Keep order</button>
@@ -1714,7 +1722,7 @@ function OrderTable({ rows, loading, onApprove, onEdit, onCancel, onDelete, onCo
                 <Ban className="h-3.5 w-3.5" />
               </button>
             )}
-            {(row.status === "DRAFT" || row.status === "PENDING_STOCK_APPROVAL" || row.status === "APPROVED" || row.status === "CANCELLED") && !row.batches?.length && onDelete && (
+            {onDelete && (
               <button
                 onClick={() => onDelete(row)}
                 title="Delete order"
@@ -1733,6 +1741,9 @@ function OrderTable({ rows, loading, onApprove, onEdit, onCancel, onDelete, onCo
 export function FeedBatchListPage() {
   const [rows, setRows] = useState<BatchRow[]>(() => getCachedFirst<ApiEnvelope<BatchRow[]>>("/feed-production/batches")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/feed-production/batches"));
+  const [deleteTarget, setDeleteTarget] = useState<BatchRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteErr, setDeleteErr] = useState("");
 
   function load() {
     apiFetch<ApiEnvelope<BatchRow[]>>("/feed-production/batches")
@@ -1743,6 +1754,23 @@ export function FeedBatchListPage() {
 
   useEffect(() => { load(); }, []);
   useApiRecovery(rows.length === 0, load);
+
+  async function handleDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    setDeleteErr("");
+    try {
+      await apiFetch(`/feed-production/batches/${deleteTarget.id}`, { method: "DELETE" });
+      const deletedId = deleteTarget.id;
+      setDeleteTarget(null);
+      setRows((prev) => prev.filter((row) => row.id !== deletedId));
+      load();
+    } catch (err: unknown) {
+      setDeleteErr((err as Error)?.message ?? "Delete failed.");
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   const totalKg = rows.reduce((s, r) => s + Number(r.producedQuantityKg), 0);
   const completedCount = rows.filter((r) => r.status === "COMPLETED").length;
@@ -1777,8 +1805,37 @@ export function FeedBatchListPage() {
           { key: "wastage", label: "Wastage (kg)", render: (r) => number(r.wastageKg) },
           { key: "margin", label: "Margin", render: (r) => `${r.metrics?.profitMargin ?? 0}%` },
           { key: "status", label: "Status", render: (r) => <StatusBadge status={r.status} /> },
+          {
+            key: "actions", label: "", render: (r) => (
+              <button onClick={() => { setDeleteTarget(r); setDeleteErr(""); }} title="Delete batch and return its raw materials" className="rounded-lg p-1.5 text-ink/40 transition hover:bg-red-50 hover:text-red-600">
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            )
+          },
         ]}
       />
+
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-ink/20 backdrop-blur-sm" onClick={() => { setDeleteTarget(null); setDeleteErr(""); }} />
+          <div className="relative z-10 w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-red-50">
+              <Trash2 className="h-5 w-5 text-red-600" />
+            </div>
+            <h3 className="text-base font-bold text-ink">Delete batch {deleteTarget.batchNumber}?</h3>
+            <p className="mt-1 text-sm text-ink/60">
+              The raw materials it used go back to the store they were issued from, and its {number(deleteTarget.producedQuantityKg)} kg of finished feed
+              is taken back out of stock. The order goes back to in progress so the run can be posted again.
+            </p>
+            <p className="mt-2 text-xs text-ink/50">Blocked if any of this feed has already been sold, transferred or dispatched.</p>
+            {deleteErr && <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{deleteErr}</p>}
+            <div className="mt-5 flex gap-3">
+              <button onClick={() => { setDeleteTarget(null); setDeleteErr(""); }} className="app-button-secondary flex-1">Keep batch</button>
+              <button onClick={handleDelete} disabled={deleting} className="app-button-danger flex-1">{deleting ? "Deleting…" : "Delete batch"}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

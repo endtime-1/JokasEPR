@@ -663,24 +663,12 @@ describe("FeedProductionService — cancelling / deleting approved orders", () =
 
   it("soft-deletes an APPROVED order with no batches", async () => {
     mockPrisma.feedProductionOrder.findFirst.mockResolvedValue(approved);
+    (mockPrisma.feedProductionBatch as any).findMany = jest.fn().mockResolvedValue([]);
+    mockTx.feedProductionOrder.update.mockResolvedValue({});
     await makeService().deleteOrder(makeUser(), "order-1", {});
-    expect(mockPrisma.feedProductionOrder.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "order-1" }, data: expect.objectContaining({ deletedAt: expect.any(Date) }) }));
+    expect(mockTx.feedProductionOrder.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "order-1" }, data: expect.objectContaining({ deletedAt: expect.any(Date) }) }));
   });
 
-  it("refuses to delete an order that has posted batches", async () => {
-    mockPrisma.feedProductionOrder.findFirst.mockResolvedValue(approved);
-    mockPrisma.feedProductionBatch.count.mockResolvedValue(1);
-    await expect(makeService().deleteOrder(makeUser(), "order-1", {})).rejects.toThrow(/posted batches/);
-    expect(mockPrisma.feedProductionOrder.update).not.toHaveBeenCalled();
-  });
-
-  it("refuses to delete an IN_PROGRESS or COMPLETED order", async () => {
-    for (const status of ["IN_PROGRESS", "COMPLETED"]) {
-      mockPrisma.feedProductionOrder.findFirst.mockResolvedValue({ ...approved, status });
-      await expect(makeService().deleteOrder(makeUser(), "order-1", {})).rejects.toThrow(/can no longer be deleted/);
-    }
-    expect(mockPrisma.feedProductionOrder.update).not.toHaveBeenCalled();
-  });
 });
 
 describe("FeedProductionService.completeOrder — closing an under-plan order", () => {
@@ -708,5 +696,66 @@ describe("FeedProductionService.completeOrder — closing an under-plan order", 
     mockPrisma.feedProductionOrder.findFirst.mockResolvedValue(inProgress);
     mockPrisma.feedProductionBatch.aggregate.mockResolvedValue({ _sum: { producedQuantityKg: null } });
     await expect(makeService().completeOrder(makeUser(), "order-1", {})).rejects.toThrow(/at least one batch/);
+  });
+});
+
+describe("FeedProductionService — deleting a posted batch reverses its stock", () => {
+  const batch = { id: "batch-1", batchNumber: "FB-1", productionOrderId: "order-1", branchId: "branch-1", productionSiteId: "site-1", producedQuantityKg: 900 };
+  const input = { id: "mv-in", productId: "maize", branchId: "branch-1", fromWarehouseId: "raw-wh", inventoryItemId: "inv-maize", uomId: "kg", quantity: 500, unitCost: 3, movementType: "PRODUCTION_INPUT" };
+  const output = { id: "mv-out", productId: "feed", inventoryItemId: "inv-feed", stockBatchId: "lot-feed", quantity: 900, movementType: "PRODUCTION_OUTPUT" };
+  const tx = mockTx as any;
+  const prisma = mockPrisma as any;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    prisma.feedProductionBatch.findFirst = jest.fn().mockResolvedValue(batch);
+    prisma.feedProductionBatch.findMany = jest.fn().mockResolvedValue([{ id: "batch-1" }]);
+    prisma.feedInternalTransfer = { count: jest.fn().mockResolvedValue(0) };
+    prisma.feedExternalSale = { count: jest.fn().mockResolvedValue(0) };
+    prisma.feedProductionOrder.findFirst.mockResolvedValue({ id: "order-1", orderNumber: "FPO-1", branchId: "branch-1", productionSiteId: "site-1", status: "COMPLETED" });
+    prisma.feedProductionOrder.update.mockResolvedValue({});
+    tx.feedProductionBatch.findFirst = jest.fn().mockResolvedValue(batch);
+    tx.feedProductionBatch.aggregate = jest.fn().mockResolvedValue({ _sum: { producedQuantityKg: 0 } });
+    tx.stockMovement.findMany = jest.fn().mockImplementation(({ where }: any) => Promise.resolve(where.movementType === "PRODUCTION_INPUT" ? [input] : [output]));
+    tx.stockMovement.updateMany = jest.fn().mockResolvedValue({ count: 2 });
+    // one raw-material lot with 200 kg of room: 200 refilled, 300 becomes a return lot
+    tx.stockBatch.findMany = jest.fn().mockResolvedValue([{ id: "lot-maize", quantityReceived: 1000, quantityRemaining: 800 }]);
+    tx.stockBatch.update = jest.fn().mockResolvedValue({});
+    tx.stockBatch.updateMany = jest.fn().mockResolvedValue({ count: 1 });
+    tx.stockBatch.create = jest.fn().mockResolvedValue({});
+    tx.inventoryItem.update = jest.fn().mockResolvedValue({});
+    tx.inventoryItem.updateMany = jest.fn().mockResolvedValue({ count: 1 });
+    for (const model of ["feedRawMaterialUsage", "finishedFeedStock", "feedProductionCost", "feedQualityCheck"]) tx[model].updateMany = jest.fn().mockResolvedValue({ count: 1 });
+    tx.feedProductionOrder.findUnique = jest.fn().mockResolvedValue({ productionPlanItemId: null, status: "COMPLETED", plannedQuantityKg: 1000, deletedAt: null });
+    tx.feedProductionOrder.update = jest.fn().mockResolvedValue({});
+  });
+
+  it("returns raw materials to their store, removes the finished feed and retires the movements", async () => {
+    await makeService().deleteBatch(makeUser(), "batch-1", {});
+    expect(tx.inventoryItem.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "inv-maize" }, data: expect.objectContaining({ quantityOnHand: { increment: 500 } }) }));
+    expect(tx.stockBatch.update).toHaveBeenCalledWith({ where: { id: "lot-maize" }, data: { quantityRemaining: { increment: 200 } } });
+    expect(tx.stockBatch.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ warehouseId: "raw-wh", quantityRemaining: 300 }) }));
+    expect(tx.inventoryItem.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "inv-feed", quantityOnHand: { gte: 900 } } }));
+    expect(tx.stockMovement.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: { deletedAt: expect.any(Date) } }));
+    expect(tx.feedProductionBatch.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "batch-1" }, data: expect.objectContaining({ deletedAt: expect.any(Date) }) }));
+    // nothing left produced on the order → back to APPROVED so it can be re-run
+    expect(tx.feedProductionOrder.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: "APPROVED" }) }));
+  });
+
+  it("blocks the delete when the finished feed has already been sold or moved", async () => {
+    tx.stockBatch.updateMany.mockResolvedValue({ count: 0 });
+    await expect(makeService().deleteBatch(makeUser(), "batch-1", {})).rejects.toThrow(/already been sold/);
+  });
+
+  it("blocks the delete when the batch was dispatched to a farm or sold externally", async () => {
+    prisma.feedInternalTransfer.count.mockResolvedValue(1);
+    await expect(makeService().deleteBatch(makeUser(), "batch-1", {})).rejects.toThrow(/already been dispatched/);
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("deleting a completed order reverses its batches and soft-deletes the order", async () => {
+    await makeService().deleteOrder(makeUser(), "order-1", {});
+    expect(tx.inventoryItem.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "inv-maize" } }));
+    expect(tx.feedProductionOrder.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "order-1" }, data: expect.objectContaining({ deletedAt: expect.any(Date) }) }));
   });
 });

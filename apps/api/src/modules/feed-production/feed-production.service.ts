@@ -571,23 +571,184 @@ export class FeedProductionService {
     return { data };
   }
 
-  // Soft delete. Allowed until the first batch is posted — once a batch
-  // exists the order carries real stock movements and must stay on record.
+  // Soft delete, at any stage. Every batch still live on the order is
+  // reversed first (see reverseBatchTx): raw materials go back to the store
+  // they were issued from and the finished feed comes back out of stock. The
+  // whole thing is one transaction — if any batch's feed has already been
+  // sold, transferred or dispatched, nothing is deleted.
   async deleteOrder(user: AuthenticatedUser, id: string, context: RequestContext) {
     const order = await this.requireOrder(user, id);
-    if (!["DRAFT", "PENDING_STOCK_APPROVAL", "APPROVED", "CANCELLED"].includes(order.status)) {
-      throw new BadRequestException(`Order ${order.orderNumber} is ${order.status.toLowerCase().replace(/_/g, " ")} and can no longer be deleted.`);
-    }
-    const hasBatches = await this.prisma.feedProductionBatch.count({ where: { companyId: user.companyId, productionOrderId: id, deletedAt: null } });
-    if (hasBatches > 0) {
-      throw new BadRequestException(`Order ${order.orderNumber} already has posted batches — delete those batches first.`);
-    }
-    const data = await this.prisma.feedProductionOrder.update({
-      where: { id },
-      data: { deletedAt: new Date(), updatedById: user.id }
+    const batches = await this.prisma.feedProductionBatch.findMany({
+      where: { companyId: user.companyId, productionOrderId: id, deletedAt: null },
+      select: { id: true }
     });
-    await this.writeAudit(user, "DELETE", "FeedProductionOrder", id, `Deleted feed production order ${order.orderNumber}`, context, { branchId: order.branchId, productionSiteId: order.productionSiteId });
+    for (const batch of batches) await this.assertBatchReversible(user, batch.id);
+
+    const data = await withDbRetry(() => this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM FeedProductionOrder WHERE id = ${id} FOR UPDATE`;
+      for (const batch of batches) await this.reverseBatchTx(tx, user, batch.id);
+      return tx.feedProductionOrder.update({
+        where: { id },
+        data: { deletedAt: new Date(), updatedById: user.id }
+      });
+    }), { label: "FeedProductionService.deleteOrder" });
+    if (batches.length > 0) this.lookupCache.invalidate(`feed:opts:${user.companyId}:`);
+    const reversed = batches.length > 0 ? ` and reversed ${batches.length} posted batch(es)` : "";
+    await this.writeAudit(user, "DELETE", "FeedProductionOrder", id, `Deleted feed production order ${order.orderNumber}${reversed}`, context, { branchId: order.branchId, productionSiteId: order.productionSiteId });
     return { data };
+  }
+
+  // Deletes one posted batch and undoes its stock effect (see reverseBatchTx).
+  // The order it belongs to drops back to APPROVED / IN_PROGRESS to match
+  // what is still produced against it.
+  async deleteBatch(user: AuthenticatedUser, id: string, context: RequestContext) {
+    const batch = await this.assertBatchReversible(user, id);
+    await withDbRetry(() => this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM FeedProductionOrder WHERE id = ${batch.productionOrderId} FOR UPDATE`;
+      await this.reverseBatchTx(tx, user, id);
+      const remaining = await tx.feedProductionBatch.aggregate({
+        where: { companyId: user.companyId, productionOrderId: batch.productionOrderId, deletedAt: null },
+        _sum: { producedQuantityKg: true }
+      });
+      const remainingKg = Number(remaining._sum.producedQuantityKg ?? 0);
+      const order = await tx.feedProductionOrder.findUnique({ where: { id: batch.productionOrderId }, select: { status: true, plannedQuantityKg: true, deletedAt: true } });
+      if (order && !order.deletedAt && order.status !== "CANCELLED") {
+        const status = remainingKg <= 0 ? "APPROVED" : remainingKg >= Number(order.plannedQuantityKg) ? "COMPLETED" : "IN_PROGRESS";
+        await tx.feedProductionOrder.update({ where: { id: batch.productionOrderId }, data: { status, updatedById: user.id } });
+      }
+    }), { label: "FeedProductionService.deleteBatch" });
+    this.lookupCache.invalidate(`feed:opts:${user.companyId}:`);
+    await this.writeAudit(user, "DELETE", "FeedProductionBatch", id, `Deleted feed production batch ${batch.batchNumber} — raw materials returned to store, finished feed removed`, context, { branchId: batch.branchId, productionSiteId: batch.productionSiteId });
+    return { data: { id } };
+  }
+
+  // Pre-flight for a batch delete, outside the transaction so the user gets
+  // a clear reason. The finished-goods guards inside reverseBatchTx are the
+  // race-safe backstop.
+  private async assertBatchReversible(user: AuthenticatedUser, id: string) {
+    const batch = await this.prisma.feedProductionBatch.findFirst({ where: { ...this.batchWhere(user, {}), id } });
+    if (!batch) throw new NotFoundException("Feed production batch was not found.");
+    const [transfers, sales] = await Promise.all([
+      this.prisma.feedInternalTransfer.count({ where: { companyId: user.companyId, productionBatchId: id, deletedAt: null } }),
+      this.prisma.feedExternalSale.count({ where: { companyId: user.companyId, productionBatchId: id, deletedAt: null } })
+    ]);
+    if (transfers > 0 || sales > 0) {
+      throw new BadRequestException(`Batch ${batch.batchNumber} has already been dispatched (farm transfer or external sale) — delete those records first, then delete the batch.`);
+    }
+    return batch;
+  }
+
+  // Undoes everything createBatch posted for one batch:
+  //  - raw materials: each PRODUCTION_INPUT movement's quantity goes back on
+  //    the inventory row it came off, and back into that store's lots. The
+  //    exact lots FIFO drew from weren't recorded, so the most recent lots
+  //    with room (drawn down, not full) are refilled first; anything left
+  //    over becomes a return lot so lot totals stay equal to on-hand.
+  //  - finished feed: the batch's own lot and the on-hand quantity come back
+  //    out, both floor-guarded — if any of it has been sold or moved the
+  //    whole delete rolls back.
+  //  - the batch's stock movements are retired (not reversed) so the
+  //    warehouse log shows it as gone, matching the soya delete behaviour.
+  //  - usage, cost, finished-stock and QC rows are soft-deleted; linked
+  //    production plan progress is rolled back.
+  private async reverseBatchTx(tx: Prisma.TransactionClient, user: AuthenticatedUser, id: string) {
+    const batch = await tx.feedProductionBatch.findFirst({ where: { companyId: user.companyId, id, deletedAt: null } });
+    if (!batch) return;
+    const now = new Date();
+    const produced = Number(batch.producedQuantityKg);
+
+    const inputs = await tx.stockMovement.findMany({
+      where: { companyId: user.companyId, referenceType: "FeedProductionBatch", referenceId: id, movementType: "PRODUCTION_INPUT", deletedAt: null }
+    });
+    for (const input of inputs) {
+      const qty = Number(input.quantity);
+      if (qty <= 0 || !input.fromWarehouseId || !input.inventoryItemId) continue;
+      let toReturn = qty;
+      const lots = await tx.stockBatch.findMany({
+        where: { companyId: user.companyId, warehouseId: input.fromWarehouseId, productId: input.productId, status: "AVAILABLE", deletedAt: null },
+        orderBy: { createdAt: "desc" }
+      });
+      for (const lot of lots) {
+        if (toReturn <= 0) break;
+        const room = Number(lot.quantityReceived) - Number(lot.quantityRemaining);
+        if (room <= 0) continue;
+        const add = Math.min(room, toReturn);
+        await tx.stockBatch.update({ where: { id: lot.id }, data: { quantityRemaining: { increment: add } } });
+        toReturn -= add;
+      }
+      if (toReturn > 0.0001) {
+        await tx.stockBatch.create({
+          data: {
+            companyId: user.companyId,
+            branchId: input.branchId,
+            warehouseId: input.fromWarehouseId,
+            productId: input.productId,
+            inventoryItemId: input.inventoryItemId,
+            uomId: input.uomId,
+            batchNumber: `${batch.batchNumber}-RETURN-${id.slice(0, 8)}`,
+            quantityReceived: toReturn,
+            quantityRemaining: toReturn,
+            unitCost: input.unitCost ?? 0,
+            createdById: user.id
+          } as Prisma.StockBatchUncheckedCreateInput
+        });
+      }
+      await tx.inventoryItem.update({
+        where: { id: input.inventoryItemId },
+        data: { deletedAt: null, quantityOnHand: { increment: qty }, updatedById: user.id }
+      });
+    }
+
+    const outputs = await tx.stockMovement.findMany({
+      where: { companyId: user.companyId, referenceType: "FeedProductionBatch", referenceId: id, movementType: "PRODUCTION_OUTPUT", deletedAt: null }
+    });
+    const soldMsg = `Cannot delete batch ${batch.batchNumber} — some of its finished feed has already been sold, transferred or used, so taking it back out of stock would drive inventory negative.`;
+    for (const output of outputs) {
+      const qty = Number(output.quantity);
+      if (output.stockBatchId) {
+        const lotUpdate = await tx.stockBatch.updateMany({
+          where: { id: output.stockBatchId, quantityRemaining: { gte: qty } },
+          data: { quantityRemaining: { decrement: qty }, deletedAt: now, batchNumber: `${batch.batchNumber}__DELETED_${id}` }
+        });
+        if (lotUpdate.count === 0) throw new BadRequestException(soldMsg);
+      }
+      const invUpdate = output.inventoryItemId
+        ? await tx.inventoryItem.updateMany({ where: { id: output.inventoryItemId, quantityOnHand: { gte: qty } }, data: { quantityOnHand: { decrement: qty }, updatedById: user.id } })
+        : { count: 0 };
+      if (invUpdate.count === 0) throw new BadRequestException(soldMsg);
+    }
+
+    await tx.stockMovement.updateMany({ where: { companyId: user.companyId, referenceType: "FeedProductionBatch", referenceId: id, deletedAt: null }, data: { deletedAt: now } });
+    await tx.feedRawMaterialUsage.updateMany({ where: { companyId: user.companyId, productionBatchId: id, deletedAt: null }, data: { deletedAt: now } });
+    await tx.finishedFeedStock.updateMany({ where: { companyId: user.companyId, productionBatchId: id, deletedAt: null }, data: { deletedAt: now } });
+    await tx.feedProductionCost.updateMany({ where: { companyId: user.companyId, productionBatchId: id, deletedAt: null }, data: { deletedAt: now } });
+    await tx.feedQualityCheck.updateMany({ where: { companyId: user.companyId, productionBatchId: id, deletedAt: null }, data: { deletedAt: now } });
+
+    const order = await tx.feedProductionOrder.findUnique({ where: { id: batch.productionOrderId }, select: { productionPlanItemId: true } });
+    if (order?.productionPlanItemId) {
+      const planItem = await tx.productionPlanItem.findUnique({
+        where: { id: order.productionPlanItemId },
+        select: { id: true, productionPlanId: true, plannedQuantityKg: true, producedQuantityKg: true }
+      });
+      if (planItem) {
+        const newProducedKg = Math.max(0, Number(planItem.producedQuantityKg) - produced);
+        await tx.productionPlanItem.update({
+          where: { id: planItem.id },
+          data: { producedQuantityKg: newProducedKg, status: newProducedKg >= Number(planItem.plannedQuantityKg) ? "COMPLETED" : "IN_PROGRESS", updatedById: user.id }
+        });
+        const open = await tx.productionPlanItem.count({
+          where: { companyId: user.companyId, productionPlanId: planItem.productionPlanId, deletedAt: null, status: { not: "COMPLETED" } }
+        });
+        await tx.productionPlan.update({ where: { id: planItem.productionPlanId }, data: { status: open === 0 ? "COMPLETED" : "IN_PROGRESS", updatedById: user.id } });
+      }
+    }
+
+    // Free the batch number so the run can be re-posted under the same
+    // number, and drop the idempotency key so a re-post isn't swallowed.
+    await tx.feedProductionBatch.update({
+      where: { id },
+      data: { batchNumber: `${batch.batchNumber}__deleted_${id}`, idempotencyKey: null, deletedAt: now, updatedById: user.id }
+    });
   }
 
   async orderAvailability(user: AuthenticatedUser, id: string, warehouseId: string) {
