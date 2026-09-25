@@ -27,6 +27,7 @@ import {
   SimulatePredictiveDto,
   UpdateFeedFormulaDto,
   UpdateFeedFormulaIngredientDto,
+  ChangeFeedBatchProductDto,
   UpdateFeedProductionOrderDto,
   UpdateFeedQualityCheckStatusDto,
   UpdateIngredientDto
@@ -627,6 +628,100 @@ export class FeedProductionService {
     this.lookupCache.invalidate(`feed:opts:${user.companyId}:`);
     await this.writeAudit(user, "DELETE", "FeedProductionBatch", id, `Deleted feed production batch ${batch.batchNumber} — raw materials returned to store, finished feed removed`, context, { branchId: batch.branchId, productionSiteId: batch.productionSiteId });
     return { data: { id } };
+  }
+
+  // Re-stocks a posted batch as a different finished product, in the same
+  // warehouse — for feed that went in under the wrong product (e.g. a Layer 1
+  // Concentrate run credited to Layer 1 Mash because the formula or the
+  // market target line pointed at the wrong product). The raw-material side
+  // is untouched. The batch's own lot moves as a whole, so it's only allowed
+  // while none of that feed has been sold, transferred or used; the output
+  // movement is rewritten rather than reversed, so the warehouse log shows
+  // the batch under the right product instead of an entry plus an undo.
+  async changeBatchProduct(user: AuthenticatedUser, id: string, dto: ChangeFeedBatchProductDto, context: RequestContext) {
+    const batch = await this.prisma.feedProductionBatch.findFirst({ where: { ...this.batchWhere(user, {}), id } });
+    if (!batch) throw new NotFoundException("Feed production batch was not found.");
+    if (batch.finishedProductId === dto.finishedProductId) throw new BadRequestException("The batch is already stocked as that product.");
+    const [oldProduct, newProduct] = await Promise.all([
+      this.getProduct(user.companyId, batch.finishedProductId),
+      this.getProduct(user.companyId, dto.finishedProductId)
+    ]);
+    await assertFeedBatchReversible(this.prisma, user.companyId, batch);
+    const refs: Prisma.StockMovementWhereInput[] = [{ referenceType: "FeedProductionBatch", referenceId: id }];
+    if (batch.productionExecutionId) refs.push({ referenceType: "ProductionExecution", referenceId: batch.productionExecutionId });
+    const movedMsg = `Batch ${batch.batchNumber} can't be moved — some of its feed has already been sold, transferred or used as ${oldProduct.name}.`;
+
+    await withDbRetry(() => this.prisma.$transaction(async (tx) => {
+      const outputs = await tx.stockMovement.findMany({ where: { companyId: user.companyId, OR: refs, movementType: "PRODUCTION_OUTPUT", deletedAt: null } });
+      if (!outputs.length) throw new BadRequestException(`No finished-goods entry was found for batch ${batch.batchNumber}.`);
+      for (const output of outputs) {
+        const qty = Number(output.quantity);
+        const warehouseId = output.toWarehouseId ?? output.warehouseId;
+        if (!warehouseId || !output.inventoryItemId) throw new BadRequestException(movedMsg);
+        const oldLot = output.stockBatchId ? await tx.stockBatch.findFirst({ where: { id: output.stockBatchId, deletedAt: null } }) : null;
+        if (oldLot) {
+          const lotUpdate = await tx.stockBatch.updateMany({
+            where: { id: oldLot.id, quantityRemaining: { gte: qty } },
+            data: { quantityRemaining: { decrement: qty }, deletedAt: new Date(), batchNumber: `${oldLot.batchNumber}__MOVED_${oldLot.id}` }
+          });
+          if (lotUpdate.count === 0) throw new BadRequestException(movedMsg);
+        }
+        const oldInv = await tx.inventoryItem.updateMany({
+          where: { id: output.inventoryItemId, quantityOnHand: { gte: qty } },
+          data: { quantityOnHand: { decrement: qty }, updatedById: user.id }
+        });
+        if (oldInv.count === 0) throw new BadRequestException(movedMsg);
+
+        const newInv = await tx.inventoryItem.upsert({
+          where: { companyId_warehouseId_productId: { companyId: user.companyId, warehouseId, productId: newProduct.id } },
+          update: { deletedAt: null, quantityOnHand: { increment: qty }, updatedById: user.id },
+          create: {
+            companyId: user.companyId,
+            branchId: batch.branchId,
+            warehouseId,
+            productionSiteId: batch.productionSiteId,
+            productId: newProduct.id,
+            uomId: newProduct.uomId,
+            quantityOnHand: qty,
+            createdById: user.id
+          }
+        });
+        const newLot = await tx.stockBatch.create({
+          data: {
+            companyId: user.companyId,
+            branchId: batch.branchId,
+            warehouseId,
+            productionSiteId: batch.productionSiteId,
+            productId: newProduct.id,
+            inventoryItemId: newInv.id,
+            uomId: newProduct.uomId,
+            batchNumber: batch.batchNumber,
+            status: oldLot?.status ?? "AVAILABLE",
+            quantityReceived: qty,
+            quantityRemaining: qty,
+            unitCost: oldLot?.unitCost ?? output.unitCost ?? 0,
+            manufactureDate: oldLot?.manufactureDate ?? batch.productionDate,
+            createdById: user.id
+          } as Prisma.StockBatchUncheckedCreateInput
+        });
+        await tx.stockMovement.update({
+          where: { id: output.id },
+          data: { productId: newProduct.id, inventoryItemId: newInv.id, stockBatchId: newLot.id, uomId: newProduct.uomId }
+        });
+      }
+      await tx.finishedFeedStock.updateMany({ where: { companyId: user.companyId, productionBatchId: id, deletedAt: null }, data: { productId: newProduct.id } });
+      await tx.feedProductionBatch.update({ where: { id }, data: { finishedProductId: newProduct.id, updatedById: user.id } });
+      // Keep the order in step once every batch on it is the new product,
+      // so its next batch is stocked correctly too.
+      const stillOld = await tx.feedProductionBatch.count({ where: { companyId: user.companyId, productionOrderId: batch.productionOrderId, deletedAt: null, finishedProductId: { not: newProduct.id } } });
+      if (stillOld === 0) {
+        await tx.feedProductionOrder.update({ where: { id: batch.productionOrderId }, data: { finishedProductId: newProduct.id, updatedById: user.id } });
+      }
+    }), { label: "FeedProductionService.changeBatchProduct" });
+
+    this.lookupCache.invalidate(`feed:opts:${user.companyId}:`);
+    await this.writeAudit(user, "UPDATE", "FeedProductionBatch", id, `Moved batch ${batch.batchNumber} (${Number(batch.producedQuantityKg)} kg) from ${oldProduct.name} to ${newProduct.name}`, context, { branchId: batch.branchId, productionSiteId: batch.productionSiteId });
+    return { data: { id, finishedProductId: newProduct.id } };
   }
 
   // Pre-flight for a batch delete, outside the transaction so the user gets

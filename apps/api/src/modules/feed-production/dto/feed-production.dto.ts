@@ -123,6 +123,11 @@ export class UpdateFeedFormulaDto {
   status?: FeedFormulaStatus;
 }
 
+export class ChangeFeedBatchProductDto {
+  @IsUUID()
+  finishedProductId!: string;
+}
+
 export class UpdateFeedFormulaIngredientDto {
   @IsOptional()
   @IsNumber()

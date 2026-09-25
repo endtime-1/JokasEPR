@@ -1765,6 +1765,11 @@ export function FeedBatchListPage() {
   const [deleteTarget, setDeleteTarget] = useState<BatchRow | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteErr, setDeleteErr] = useState("");
+  const { options } = useFeedOptions();
+  const [moveTarget, setMoveTarget] = useState<BatchRow | null>(null);
+  const [moveProductId, setMoveProductId] = useState("");
+  const [moving, setMoving] = useState(false);
+  const [moveErr, setMoveErr] = useState("");
 
   function load() {
     apiFetch<ApiEnvelope<BatchRow[]>>("/feed-production/batches")
@@ -1775,6 +1780,21 @@ export function FeedBatchListPage() {
 
   useEffect(() => { load(); }, []);
   useApiRecovery(rows.length === 0, load);
+
+  async function handleMove() {
+    if (!moveTarget || !moveProductId) return;
+    setMoving(true);
+    setMoveErr("");
+    try {
+      await apiFetch(`/feed-production/batches/${moveTarget.id}/product`, { method: "PATCH", body: JSON.stringify({ finishedProductId: moveProductId }) });
+      setMoveTarget(null);
+      load();
+    } catch (err: unknown) {
+      setMoveErr((err as Error)?.message ?? "Could not change the product.");
+    } finally {
+      setMoving(false);
+    }
+  }
 
   async function handleDelete() {
     if (!deleteTarget) return;
@@ -1828,13 +1848,41 @@ export function FeedBatchListPage() {
           { key: "status", label: "Status", render: (r) => <StatusBadge status={r.status} /> },
           {
             key: "actions", label: "", render: (r) => (
-              <button onClick={() => { setDeleteTarget(r); setDeleteErr(""); }} title="Delete batch and return its raw materials" className="rounded-lg p-1.5 text-ink/40 transition hover:bg-red-50 hover:text-red-600">
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
+              <div className="flex items-center gap-1">
+                <button onClick={() => { setMoveTarget(r); setMoveProductId(""); setMoveErr(""); }} title="Stocked as the wrong product? Move it to the right one" className="rounded-lg px-2 py-1 text-xs font-semibold text-brand transition hover:bg-brand/10">
+                  Change product
+                </button>
+                <button onClick={() => { setDeleteTarget(r); setDeleteErr(""); }} title="Delete batch and return its raw materials" className="rounded-lg p-1.5 text-ink/40 transition hover:bg-red-50 hover:text-red-600">
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
             )
           },
         ]}
       />
+
+      {moveTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-ink/20 backdrop-blur-sm" onClick={() => setMoveTarget(null)} />
+          <div className="relative z-10 w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+            <h3 className="text-base font-bold text-ink">Change product for batch {moveTarget.batchNumber}</h3>
+            <p className="mt-1 text-sm text-ink/60">
+              It is stocked as <strong>{moveTarget.finishedProduct?.name ?? "—"}</strong>. Its {number(moveTarget.producedQuantityKg)} kg will be moved to the product
+              you pick, in the same warehouse. Raw materials are not affected.
+            </p>
+            <select className="mt-4 min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15" value={moveProductId} onChange={(e) => setMoveProductId(e.target.value)}>
+              <option value="">Select the correct product…</option>
+              <FeedFormOptions products={options.finishedFeeds} />
+            </select>
+            <p className="mt-2 text-xs text-ink/50">Blocked if any of this batch&rsquo;s feed has already been sold, transferred or used.</p>
+            {moveErr && <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{moveErr}</p>}
+            <div className="mt-5 flex gap-3">
+              <button onClick={() => setMoveTarget(null)} className="app-button-secondary flex-1">Cancel</button>
+              <button onClick={handleMove} disabled={moving || !moveProductId} className="app-button-primary flex-1">{moving ? "Moving…" : "Move stock"}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {deleteTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">

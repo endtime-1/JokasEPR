@@ -22,6 +22,7 @@ import {
   SimulatePredictiveDto,
   UpdateFeedFormulaDto,
   UpdateFeedFormulaIngredientDto,
+  ChangeFeedBatchProductDto,
   UpdateFeedProductionOrderDto,
   UpdateFeedQualityCheckStatusDto,
   UpdateIngredientDto
@@ -175,6 +176,12 @@ export class FeedProductionController {
   @RequirePermissions(PERMISSIONS.FEED_MANAGE, PERMISSIONS.INVENTORY_MANAGE)
   createBatch(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateFeedProductionBatchDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.feedProductionService.createBatch(user, dto, { ipAddress, userAgent });
+  }
+
+  @Patch("batches/:id/product")
+  @RequirePermissions(PERMISSIONS.FEED_MANAGE, PERMISSIONS.INVENTORY_MANAGE)
+  changeBatchProduct(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: ChangeFeedBatchProductDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.feedProductionService.changeBatchProduct(user, id, dto, { ipAddress, userAgent });
   }
 
   @Delete("batches/:id")

@@ -808,3 +808,52 @@ describe("FeedProductionService.updateFormula — correcting the finished produc
     expect(tx.feedProductionOrder.updateMany).not.toHaveBeenCalled();
   });
 });
+
+describe("FeedProductionService.changeBatchProduct — re-stock a batch credited to the wrong product", () => {
+  const tx = mockTx as any;
+  const prisma = mockPrisma as any;
+  const batch = { id: "batch-1", batchNumber: "FB-9", branchId: "branch-1", productionSiteId: "site-1", productionOrderId: "order-1", finishedProductId: "mash", producedQuantityKg: 500, productionDate: new Date("2026-09-20"), productionExecutionId: null };
+  const output = { id: "mv-out", quantity: 500, toWarehouseId: "fg-wh", warehouseId: "fg-wh", inventoryItemId: "inv-mash", stockBatchId: "lot-mash", unitCost: 4 };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    prisma.feedProductionBatch.findFirst = jest.fn().mockResolvedValue(batch);
+    prisma.product.findFirst.mockImplementation(({ where }: any) => Promise.resolve(where.id === "mash" ? { id: "mash", name: "Layer 1 Mash", uomId: "kg" } : { id: "conc", name: "Layer 1 Concentrate", uomId: "kg" }));
+    prisma.feedInternalTransfer = { count: jest.fn().mockResolvedValue(0) };
+    prisma.feedExternalSale = { count: jest.fn().mockResolvedValue(0) };
+    tx.stockMovement.findMany = jest.fn().mockResolvedValue([output]);
+    tx.stockMovement.update = jest.fn().mockResolvedValue({});
+    tx.stockBatch.findFirst = jest.fn().mockResolvedValue({ id: "lot-mash", batchNumber: "FB-9", status: "AVAILABLE", unitCost: 4, manufactureDate: batch.productionDate });
+    tx.stockBatch.updateMany = jest.fn().mockResolvedValue({ count: 1 });
+    tx.stockBatch.create = jest.fn().mockResolvedValue({ id: "lot-conc" });
+    tx.inventoryItem.updateMany = jest.fn().mockResolvedValue({ count: 1 });
+    tx.inventoryItem.upsert = jest.fn().mockResolvedValue({ id: "inv-conc" });
+    tx.finishedFeedStock.updateMany = jest.fn().mockResolvedValue({ count: 1 });
+    tx.feedProductionBatch.update = jest.fn().mockResolvedValue({});
+    tx.feedProductionBatch.count = jest.fn().mockResolvedValue(0);
+    tx.feedProductionOrder.update = jest.fn().mockResolvedValue({});
+  });
+
+  it("moves the kg from Mash to Concentrate in the same warehouse and relabels the batch, movement and order", async () => {
+    await makeService().changeBatchProduct(makeUser(), "batch-1", { finishedProductId: "conc" }, {});
+    expect(tx.inventoryItem.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "inv-mash", quantityOnHand: { gte: 500 } } }));
+    expect(tx.inventoryItem.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: { companyId_warehouseId_productId: { companyId: "company-1", warehouseId: "fg-wh", productId: "conc" } },
+      update: expect.objectContaining({ quantityOnHand: { increment: 500 } })
+    }));
+    expect(tx.stockBatch.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ productId: "conc", batchNumber: "FB-9", quantityRemaining: 500 }) }));
+    expect(tx.stockMovement.update).toHaveBeenCalledWith({ where: { id: "mv-out" }, data: { productId: "conc", inventoryItemId: "inv-conc", stockBatchId: "lot-conc", uomId: "kg" } });
+    expect(tx.feedProductionBatch.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ finishedProductId: "conc" }) }));
+    expect(tx.feedProductionOrder.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "order-1" }, data: expect.objectContaining({ finishedProductId: "conc" }) }));
+  });
+
+  it("refuses when some of the batch's feed has already left the lot", async () => {
+    tx.stockBatch.updateMany.mockResolvedValue({ count: 0 });
+    await expect(makeService().changeBatchProduct(makeUser(), "batch-1", { finishedProductId: "conc" }, {})).rejects.toThrow(/already been sold/);
+    expect(tx.inventoryItem.upsert).not.toHaveBeenCalled();
+  });
+
+  it("refuses a no-op move to the same product", async () => {
+    await expect(makeService().changeBatchProduct(makeUser(), "batch-1", { finishedProductId: "mash" }, {})).rejects.toThrow(/already stocked/);
+  });
+});
