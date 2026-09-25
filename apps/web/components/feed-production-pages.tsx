@@ -3,7 +3,7 @@
 import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { CircleAlert, AlertTriangle, ArrowLeft, ChartBar, Brain, Calculator, CircleCheckBig, ChevronDown, ChevronUp, Download, Factory, GripVertical, Package, PackageCheck, Pencil, Plus, Printer, RotateCw, Trash2, TrendingUp, Zap } from "lucide-react";
+import { CircleAlert, AlertTriangle, ArrowLeft, Ban, ChartBar, Brain, Calculator, CircleCheckBig, ChevronDown, ChevronUp, Download, Factory, GripVertical, Package, PackageCheck, Pencil, Plus, Printer, RotateCw, Trash2, TrendingUp, Zap } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { DataTable } from "./data-table";
 import { FormField } from "./form-field";
@@ -1322,6 +1322,11 @@ export function FeedProductionOrdersPage({ create = false }: { create?: boolean 
   const [cancelTarget, setCancelTarget] = useState<OrderRow | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [cancelErr, setCancelErr] = useState("");
+
+  // Delete confirm
+  const [deleteTarget, setDeleteTarget] = useState<OrderRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteErr, setDeleteErr] = useState("");
   const [loadError, setLoadError] = useState("");
 
   async function load() {
@@ -1420,6 +1425,25 @@ export function FeedProductionOrdersPage({ create = false }: { create?: boolean 
     }
   }
 
+  async function handleDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    setDeleteErr("");
+    try {
+      await apiFetch(`/feed-production/orders/${deleteTarget.id}`, { method: "DELETE" });
+      const deletedId = deleteTarget.id;
+      setDeleteTarget(null);
+      // load() keeps the previous rows when the API returns an empty list, so
+      // drop the deleted row locally first or the last order never disappears.
+      setRows((prev) => prev.filter((row) => row.id !== deletedId));
+      await load();
+    } catch (err: unknown) {
+      setDeleteErr((err as Error)?.message ?? "Delete failed.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   const inputCls = "min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm transition focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15";
 
   return (
@@ -1451,7 +1475,7 @@ export function FeedProductionOrdersPage({ create = false }: { create?: boolean 
           <Plus aria-hidden className="h-4 w-4" /> Create order
         </Link>
       )}
-      <OrderTable rows={rows} loading={loading} onApprove={approveOrder} onEdit={openEdit} onCancel={setCancelTarget} />
+      <OrderTable rows={rows} loading={loading} onApprove={approveOrder} onEdit={openEdit} onCancel={setCancelTarget} onDelete={(row) => { setDeleteTarget(row); setDeleteErr(""); }} />
 
       {/* Edit order drawer */}
       {editTarget && (
@@ -1518,6 +1542,27 @@ export function FeedProductionOrdersPage({ create = false }: { create?: boolean 
           </div>
         </div>
       )}
+
+      {/* Delete confirm */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-ink/20 backdrop-blur-sm" onClick={() => { setDeleteTarget(null); setDeleteErr(""); }} />
+          <div className="relative z-10 w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-red-50">
+              <Trash2 className="h-5 w-5 text-red-600" />
+            </div>
+            <h3 className="text-base font-bold text-ink">Delete this order?</h3>
+            <p className="mt-1 text-sm text-ink/60">
+              Order <strong>{deleteTarget.orderNumber}</strong> will be removed from the orders list. No stock has moved on it, so nothing else changes.
+            </p>
+            {deleteErr && <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{deleteErr}</p>}
+            <div className="mt-5 flex gap-3">
+              <button onClick={() => { setDeleteTarget(null); setDeleteErr(""); }} className="app-button-secondary flex-1">Keep order</button>
+              <button onClick={handleDelete} disabled={deleting} className="app-button-danger flex-1">{deleting ? "Deleting…" : "Delete order"}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -1556,7 +1601,7 @@ function OrderForm({ options, form, setForm, submit, submitting }: { options: Fe
   );
 }
 
-function OrderTable({ rows, loading, onApprove, onEdit, onCancel }: { rows: OrderRow[]; loading?: boolean; onApprove?: (id: string) => Promise<void>; onEdit?: (row: OrderRow) => void; onCancel?: (row: OrderRow) => void }) {
+function OrderTable({ rows, loading, onApprove, onEdit, onCancel, onDelete }: { rows: OrderRow[]; loading?: boolean; onApprove?: (id: string) => Promise<void>; onEdit?: (row: OrderRow) => void; onCancel?: (row: OrderRow) => void; onDelete?: (row: OrderRow) => void }) {
   const [approvingId, setApprovingId] = useState<string | null>(null);
 
   async function handleApprove(id: string) {
@@ -1600,22 +1645,31 @@ function OrderTable({ rows, loading, onApprove, onEdit, onCancel }: { rows: Orde
               </Link>
             )}
             {(row.status === "DRAFT" || row.status === "PENDING_STOCK_APPROVAL") && (
-              <>
-                <button
-                  onClick={() => onEdit?.(row)}
-                  title="Edit order"
-                  className="rounded-lg p-1.5 text-ink/40 hover:bg-brand/10 hover:text-brand transition"
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  onClick={() => onCancel?.(row)}
-                  title="Cancel order"
-                  className="rounded-lg p-1.5 text-ink/40 hover:bg-red-50 hover:text-red-600 transition"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              </>
+              <button
+                onClick={() => onEdit?.(row)}
+                title="Edit order"
+                className="rounded-lg p-1.5 text-ink/40 hover:bg-brand/10 hover:text-brand transition"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+            )}
+            {(row.status === "DRAFT" || row.status === "PENDING_STOCK_APPROVAL" || row.status === "APPROVED") && !row.batches?.length && onCancel && (
+              <button
+                onClick={() => onCancel(row)}
+                title="Cancel order"
+                className="rounded-lg p-1.5 text-ink/40 hover:bg-amber-50 hover:text-amber-600 transition"
+              >
+                <Ban className="h-3.5 w-3.5" />
+              </button>
+            )}
+            {(row.status === "DRAFT" || row.status === "PENDING_STOCK_APPROVAL" || row.status === "APPROVED" || row.status === "CANCELLED") && !row.batches?.length && onDelete && (
+              <button
+                onClick={() => onDelete(row)}
+                title="Delete order"
+                className="rounded-lg p-1.5 text-ink/40 hover:bg-red-50 hover:text-red-600 transition"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
             )}
           </div>
         )

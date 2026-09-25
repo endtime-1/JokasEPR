@@ -424,7 +424,7 @@ export class FeedProductionService {
         productionSite: { select: { id: true, code: true, name: true } },
         formula: { select: { id: true, code: true, name: true, feedType: true } },
         finishedProduct: { select: { id: true, name: true, sku: true } },
-        batches: { select: { id: true, batchNumber: true, status: true, producedQuantityKg: true } }
+        batches: { where: { deletedAt: null }, select: { id: true, batchNumber: true, status: true, producedQuantityKg: true } }
       },
       orderBy: { scheduledDate: "desc" },
       take: query.limit ?? 200
@@ -534,8 +534,10 @@ export class FeedProductionService {
 
   async cancelOrder(user: AuthenticatedUser, id: string, context: RequestContext) {
     const order = await this.requireOrder(user, id);
-    if (!["DRAFT", "PENDING_STOCK_APPROVAL"].includes(order.status)) {
-      throw new BadRequestException(`Only DRAFT or PENDING_STOCK_APPROVAL orders can be cancelled. Current status: "${order.status}".`);
+    // Approval doesn't reserve or move any stock, so an approved order that
+    // hasn't posted a batch yet is still safe to cancel.
+    if (!["DRAFT", "PENDING_STOCK_APPROVAL", "APPROVED"].includes(order.status)) {
+      throw new BadRequestException(`Only draft, pending or approved orders can be cancelled. Current status: "${order.status}".`);
     }
     const hasBatches = await this.prisma.feedProductionBatch.count({ where: { companyId: user.companyId, productionOrderId: id, deletedAt: null } });
     if (hasBatches > 0) throw new BadRequestException("Cannot cancel an order that already has posted batches.");
@@ -544,6 +546,25 @@ export class FeedProductionService {
       data: { status: "CANCELLED", updatedById: user.id }
     });
     await this.writeAudit(user, "UPDATE", "FeedProductionOrder", id, `Cancelled feed production order ${order.orderNumber}`, context, { branchId: order.branchId, productionSiteId: order.productionSiteId });
+    return { data };
+  }
+
+  // Soft delete. Allowed until the first batch is posted — once a batch
+  // exists the order carries real stock movements and must stay on record.
+  async deleteOrder(user: AuthenticatedUser, id: string, context: RequestContext) {
+    const order = await this.requireOrder(user, id);
+    if (!["DRAFT", "PENDING_STOCK_APPROVAL", "APPROVED", "CANCELLED"].includes(order.status)) {
+      throw new BadRequestException(`Order ${order.orderNumber} is ${order.status.toLowerCase().replace(/_/g, " ")} and can no longer be deleted.`);
+    }
+    const hasBatches = await this.prisma.feedProductionBatch.count({ where: { companyId: user.companyId, productionOrderId: id, deletedAt: null } });
+    if (hasBatches > 0) {
+      throw new BadRequestException(`Order ${order.orderNumber} already has posted batches — delete those batches first.`);
+    }
+    const data = await this.prisma.feedProductionOrder.update({
+      where: { id },
+      data: { deletedAt: new Date(), updatedById: user.id }
+    });
+    await this.writeAudit(user, "DELETE", "FeedProductionOrder", id, `Deleted feed production order ${order.orderNumber}`, context, { branchId: order.branchId, productionSiteId: order.productionSiteId });
     return { data };
   }
 

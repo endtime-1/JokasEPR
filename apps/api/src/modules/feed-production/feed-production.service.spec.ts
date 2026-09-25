@@ -21,7 +21,7 @@ const mockTx = {
 
 const mockPrisma = {
   feedProductionOrder: { findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn(), update: jest.fn() },
-  feedProductionBatch: { aggregate: jest.fn(), findFirst: jest.fn() },
+  feedProductionBatch: { aggregate: jest.fn(), findFirst: jest.fn(), count: jest.fn().mockResolvedValue(0) },
   feedProductionCost: { findFirst: jest.fn() },
   feedFormula: { findFirst: jest.fn(), create: jest.fn() },
   feedFormulaVersion: { findFirst: jest.fn().mockResolvedValue(null) },
@@ -643,5 +643,42 @@ describe("FeedProductionService.approveQualityCheck — check + batch status upd
       where: { companyId: "company-1", productId: "product-1", batchNumber: "FB-2026-0001", deletedAt: null },
       data: { status: "AVAILABLE", updatedById: "user-approver" }
     });
+  });
+});
+
+describe("FeedProductionService — cancelling / deleting approved orders", () => {
+  const approved = { id: "order-1", orderNumber: "FPO-1", branchId: "branch-1", productionSiteId: "site-1", status: "APPROVED" };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPrisma.feedProductionBatch.count.mockResolvedValue(0);
+    mockPrisma.feedProductionOrder.update.mockResolvedValue({});
+  });
+
+  it("cancels an APPROVED order with no batches", async () => {
+    mockPrisma.feedProductionOrder.findFirst.mockResolvedValue(approved);
+    await makeService().cancelOrder(makeUser(), "order-1", {});
+    expect(mockPrisma.feedProductionOrder.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: "CANCELLED" }) }));
+  });
+
+  it("soft-deletes an APPROVED order with no batches", async () => {
+    mockPrisma.feedProductionOrder.findFirst.mockResolvedValue(approved);
+    await makeService().deleteOrder(makeUser(), "order-1", {});
+    expect(mockPrisma.feedProductionOrder.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "order-1" }, data: expect.objectContaining({ deletedAt: expect.any(Date) }) }));
+  });
+
+  it("refuses to delete an order that has posted batches", async () => {
+    mockPrisma.feedProductionOrder.findFirst.mockResolvedValue(approved);
+    mockPrisma.feedProductionBatch.count.mockResolvedValue(1);
+    await expect(makeService().deleteOrder(makeUser(), "order-1", {})).rejects.toThrow(/posted batches/);
+    expect(mockPrisma.feedProductionOrder.update).not.toHaveBeenCalled();
+  });
+
+  it("refuses to delete an IN_PROGRESS or COMPLETED order", async () => {
+    for (const status of ["IN_PROGRESS", "COMPLETED"]) {
+      mockPrisma.feedProductionOrder.findFirst.mockResolvedValue({ ...approved, status });
+      await expect(makeService().deleteOrder(makeUser(), "order-1", {})).rejects.toThrow(/can no longer be deleted/);
+    }
+    expect(mockPrisma.feedProductionOrder.update).not.toHaveBeenCalled();
   });
 });
