@@ -640,10 +640,11 @@ export class FeedProductionService {
 
   // Undoes everything createBatch posted for one batch:
   //  - raw materials: each PRODUCTION_INPUT movement's quantity goes back on
-  //    the inventory row it came off, and back into that store's lots. The
-  //    exact lots FIFO drew from weren't recorded, so the most recent lots
-  //    with room (drawn down, not full) are refilled first; anything left
-  //    over becomes a return lot so lot totals stay equal to on-hand.
+  //    the inventory row it came off, and back onto the exact lot it was
+  //    drawn from (movement.stockBatchId). Batches posted before lots were
+  //    recorded (or whose lot has since been deleted) fall back to refilling
+  //    the store's most recent lots with room; anything left over becomes a
+  //    return lot so lot totals stay equal to on-hand.
   //  - finished feed: the batch's own lot and the on-hand quantity come back
   //    out, both floor-guarded — if any of it has been sold or moved the
   //    whole delete rolls back.
@@ -656,15 +657,28 @@ export class FeedProductionService {
     if (!batch) return;
     const now = new Date();
     const produced = Number(batch.producedQuantityKg);
+    // Batches posted from the Feed Mill log their movements against the
+    // batch; batches posted from Market Planning's Production Execution log
+    // them against the execution record instead.
+    const executionId = batch.productionExecutionId ?? null;
+    const movementRefs: Prisma.StockMovementWhereInput[] = [{ referenceType: "FeedProductionBatch", referenceId: id }];
+    if (executionId) movementRefs.push({ referenceType: "ProductionExecution", referenceId: executionId });
 
     const inputs = await tx.stockMovement.findMany({
-      where: { companyId: user.companyId, referenceType: "FeedProductionBatch", referenceId: id, movementType: "PRODUCTION_INPUT", deletedAt: null }
+      where: { companyId: user.companyId, OR: movementRefs, movementType: "PRODUCTION_INPUT", deletedAt: null }
     });
     for (const input of inputs) {
       const qty = Number(input.quantity);
       if (qty <= 0 || !input.fromWarehouseId || !input.inventoryItemId) continue;
       let toReturn = qty;
-      const lots = await tx.stockBatch.findMany({
+      if (input.stockBatchId) {
+        const lot = await tx.stockBatch.findFirst({ where: { id: input.stockBatchId, deletedAt: null }, select: { id: true } });
+        if (lot) {
+          await tx.stockBatch.update({ where: { id: lot.id }, data: { quantityRemaining: { increment: qty } } });
+          toReturn = 0;
+        }
+      }
+      const lots = toReturn <= 0 ? [] : await tx.stockBatch.findMany({
         where: { companyId: user.companyId, warehouseId: input.fromWarehouseId, productId: input.productId, status: "AVAILABLE", deletedAt: null },
         orderBy: { createdAt: "desc" }
       });
@@ -700,7 +714,7 @@ export class FeedProductionService {
     }
 
     const outputs = await tx.stockMovement.findMany({
-      where: { companyId: user.companyId, referenceType: "FeedProductionBatch", referenceId: id, movementType: "PRODUCTION_OUTPUT", deletedAt: null }
+      where: { companyId: user.companyId, OR: movementRefs, movementType: "PRODUCTION_OUTPUT", deletedAt: null }
     });
     const soldMsg = `Cannot delete batch ${batch.batchNumber} — some of its finished feed has already been sold, transferred or used, so taking it back out of stock would drive inventory negative.`;
     for (const output of outputs) {
@@ -718,7 +732,8 @@ export class FeedProductionService {
       if (invUpdate.count === 0) throw new BadRequestException(soldMsg);
     }
 
-    await tx.stockMovement.updateMany({ where: { companyId: user.companyId, referenceType: "FeedProductionBatch", referenceId: id, deletedAt: null }, data: { deletedAt: now } });
+    await tx.stockMovement.updateMany({ where: { companyId: user.companyId, OR: movementRefs, deletedAt: null }, data: { deletedAt: now } });
+    if (executionId) await tx.productionExecution.updateMany({ where: { id: executionId, deletedAt: null }, data: { deletedAt: now } });
     await tx.feedRawMaterialUsage.updateMany({ where: { companyId: user.companyId, productionBatchId: id, deletedAt: null }, data: { deletedAt: now } });
     await tx.finishedFeedStock.updateMany({ where: { companyId: user.companyId, productionBatchId: id, deletedAt: null }, data: { deletedAt: now } });
     await tx.feedProductionCost.updateMany({ where: { companyId: user.companyId, productionBatchId: id, deletedAt: null }, data: { deletedAt: now } });
@@ -888,6 +903,9 @@ export class FeedProductionService {
         // letting inventory and its batch-level lot records drift apart with
         // nothing logged. Both now fail loudly and roll back the whole batch.
         let remaining = ingredient.quantityKg;
+        // Which lots this batch drew from, so a later delete can put the
+        // quantity back on exactly those lots (one movement per lot below).
+        const drawnLots: Array<{ stockBatchId: string; quantity: number }> = [];
         // H-BUG-2: status: "AVAILABLE" excludes lots Quality has rejected or
         // quarantined — see quality.service.ts's approve/reject/quarantineBatch.
         const stockBatches = await tx.stockBatch.findMany({
@@ -904,6 +922,7 @@ export class FeedProductionService {
           if (batchUpdate.count === 0) {
             throw new BadRequestException(`Stock batch for "${ingredient.productName}" was consumed concurrently. Please retry.`);
           }
+          drawnLots.push({ stockBatchId: sb.id, quantity: consumed });
           remaining -= consumed;
         }
         if (remaining > 0) {
@@ -932,24 +951,27 @@ export class FeedProductionService {
             createdById: user.id
           }
         });
-        await tx.stockMovement.create({
-          data: {
-            companyId: user.companyId,
-            branchId: order.branchId,
-            productId: ingredient.ingredientId,
-            inventoryItemId: inv.id,
-            fromWarehouseId: dto.rawMaterialWarehouseId,
-            productionSiteId: order.productionSiteId,
-            uomId: inv.uomId,
-            movementType: "PRODUCTION_INPUT",
-            quantity: ingredient.quantityKg,
-            unitCost: ingredient.unitCost,
-            referenceType: "FeedProductionBatch",
-            referenceId: batch.id,
-            notes: `Raw material issued for ${batch.batchNumber}`,
-            createdById: user.id
-          }
-        });
+        for (const lot of drawnLots) {
+          await tx.stockMovement.create({
+            data: {
+              companyId: user.companyId,
+              branchId: order.branchId,
+              productId: ingredient.ingredientId,
+              inventoryItemId: inv.id,
+              stockBatchId: lot.stockBatchId,
+              fromWarehouseId: dto.rawMaterialWarehouseId,
+              productionSiteId: order.productionSiteId,
+              uomId: inv.uomId,
+              movementType: "PRODUCTION_INPUT",
+              quantity: lot.quantity,
+              unitCost: ingredient.unitCost,
+              referenceType: "FeedProductionBatch",
+              referenceId: batch.id,
+              notes: `Raw material issued for ${batch.batchNumber}`,
+              createdById: user.id
+            }
+          });
+        }
       }
 
       const finishedInventory = await tx.inventoryItem.upsert({

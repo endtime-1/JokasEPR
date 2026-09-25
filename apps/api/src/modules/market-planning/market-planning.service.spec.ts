@@ -62,7 +62,7 @@ describe("MarketPlanningService.consumeInventoryTx — atomic guarded decrement 
       where: { id: "batch-1", quantityRemaining: { gte: 10 } },
       data: { quantityRemaining: { decrement: 10 } }
     });
-    expect(result).toEqual({ id: "inv-1", uomId: "uom-1" });
+    expect(result).toEqual({ id: "inv-1", uomId: "uom-1", drawnLots: [{ stockBatchId: "batch-1", quantity: 10 }] });
   });
 
   it("H-BUG-2: a quarantined lot is invisible to this query and can't be consumed even though quantityOnHand looks sufficient", async () => {

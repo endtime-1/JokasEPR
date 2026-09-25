@@ -742,6 +742,24 @@ describe("FeedProductionService — deleting a posted batch reverses its stock",
     expect(tx.feedProductionOrder.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: "APPROVED" }) }));
   });
 
+  it("returns raw material to the exact lot it was drawn from when the movement recorded it", async () => {
+    tx.stockMovement.findMany.mockImplementation(({ where }: any) => Promise.resolve(where.movementType === "PRODUCTION_INPUT" ? [{ ...input, stockBatchId: "lot-original" }] : [output]));
+    tx.stockBatch.findFirst = jest.fn().mockResolvedValue({ id: "lot-original" });
+    await makeService().deleteBatch(makeUser(), "batch-1", {});
+    expect(tx.stockBatch.update).toHaveBeenCalledWith({ where: { id: "lot-original" }, data: { quantityRemaining: { increment: 500 } } });
+    expect(tx.stockBatch.update).toHaveBeenCalledTimes(1);
+    expect(tx.stockBatch.create).not.toHaveBeenCalled();
+  });
+
+  it("finds the movements of a batch posted from Market Planning (logged against the execution)", async () => {
+    tx.feedProductionBatch.findFirst.mockResolvedValue({ ...batch, productionExecutionId: "exec-1" });
+    tx.productionExecution = { updateMany: jest.fn().mockResolvedValue({ count: 1 }) };
+    await makeService().deleteBatch(makeUser(), "batch-1", {});
+    const where = tx.stockMovement.findMany.mock.calls[0][0].where;
+    expect(where.OR).toEqual([{ referenceType: "FeedProductionBatch", referenceId: "batch-1" }, { referenceType: "ProductionExecution", referenceId: "exec-1" }]);
+    expect(tx.productionExecution.updateMany).toHaveBeenCalledWith({ where: { id: "exec-1", deletedAt: null }, data: { deletedAt: expect.any(Date) } });
+  });
+
   it("blocks the delete when the finished feed has already been sold or moved", async () => {
     tx.stockBatch.updateMany.mockResolvedValue({ count: 0 });
     await expect(makeService().deleteBatch(makeUser(), "batch-1", {})).rejects.toThrow(/already been sold/);

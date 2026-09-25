@@ -1088,24 +1088,27 @@ export class MarketPlanningService {
             createdById: user.id
           }
         });
-        await tx.stockMovement.create({
-          data: {
-            companyId: user.companyId,
-            branchId: plan.branchId,
-            productId: ingredient.ingredientId,
-            inventoryItemId: inventory.id,
-            fromWarehouseId: dto.rawMaterialWarehouseId,
-            productionSiteId: plan.productionSiteId,
-            uomId: inventory.uomId,
-            movementType: "PRODUCTION_INPUT",
-            quantity: ingredient.quantityKg,
-            unitCost: ingredient.unitCost,
-            referenceType: "ProductionExecution",
-            referenceId: execution.id,
-            notes: `Raw material issued for ${batch.batchNumber}`,
-            createdById: user.id
-          }
-        });
+        for (const lot of inventory.drawnLots) {
+          await tx.stockMovement.create({
+            data: {
+              companyId: user.companyId,
+              branchId: plan.branchId,
+              productId: ingredient.ingredientId,
+              inventoryItemId: inventory.id,
+              stockBatchId: lot.stockBatchId,
+              fromWarehouseId: dto.rawMaterialWarehouseId,
+              productionSiteId: plan.productionSiteId,
+              uomId: inventory.uomId,
+              movementType: "PRODUCTION_INPUT",
+              quantity: lot.quantity,
+              unitCost: ingredient.unitCost,
+              referenceType: "ProductionExecution",
+              referenceId: execution.id,
+              notes: `Raw material issued for ${batch.batchNumber}`,
+              createdById: user.id
+            }
+          });
+        }
       }
 
       const finishedInventory = await tx.inventoryItem.upsert({
@@ -1451,6 +1454,7 @@ export class MarketPlanningService {
     // the canonical FIFO consumer, closing a cross-module deadlock risk from
     // the previous (opposite) order.
     let remaining = quantity;
+    const drawnLots: Array<{ stockBatchId: string; quantity: number }> = [];
     const stockBatches = await tx.stockBatch.findMany({
       where: { companyId, warehouseId, productId, quantityRemaining: { gt: 0 }, status: "AVAILABLE", deletedAt: null },
       orderBy: { createdAt: "asc" }
@@ -1465,6 +1469,7 @@ export class MarketPlanningService {
       if (batchUpdate.count === 0) {
         throw new BadRequestException(`Stock batch for "${label}" was consumed concurrently. Please retry.`);
       }
+      drawnLots.push({ stockBatchId: sb.id, quantity: consumed });
       remaining -= consumed;
     }
     if (remaining > 0) {
@@ -1482,10 +1487,13 @@ export class MarketPlanningService {
     // Safe to read separately now — the guarded decrement above already
     // succeeded atomically; this just fetches identifying fields (id/uomId
     // don't change) for the stock-movement record.
-    return tx.inventoryItem.findFirstOrThrow({
+    const inventory = await tx.inventoryItem.findFirstOrThrow({
       where: { companyId, warehouseId, productId },
       select: { id: true, uomId: true }
     });
+    // drawnLots: which lots were drawn from, so a batch delete can return the
+    // quantity to exactly those lots (see FeedProductionService.reverseBatchTx).
+    return { ...inventory, drawnLots };
   }
 
   private canManageTargets(user: AuthenticatedUser): boolean {
