@@ -47,7 +47,7 @@ type FormulaRow = {
   feedType: string;
   status: string;
   targetBatchKg: string | number;
-  finishedProduct?: { name: string; sku: string };
+  finishedProduct?: { id?: string; name: string; sku: string };
   costing?: { ingredientCost: number; costPer100Kg: number; costPer50KgBag: number };
   ingredients?: Array<{ id: string; quantityKg: string | number; unitCost: string | number; ingredient?: { name: string; sku: string } }>;
   versions?: Array<{ id: string; versionNo: number; status: string; costPer100Kg: string | number; costPer50KgBag: string | number; createdAt: string }>;
@@ -433,7 +433,7 @@ export function FormulaBuilderPage() {
       const res = await apiFetch<ApiEnvelope<FormulaRow>>("/feed-production/formulas", {
         method: "POST",
         body: JSON.stringify({
-          finishedProductId: finishedProductId || options.finishedFeeds[0]?.id,
+          finishedProductId,
           branchId: branchId || undefined,
           feedType,
           code,
@@ -499,12 +499,13 @@ export function FormulaBuilderPage() {
                 <select
                   required
                   className={inputCls}
-                  value={finishedProductId || options.finishedFeeds[0]?.id || ""}
+                  value={finishedProductId}
                   onChange={(e) => setFinishedProductId(e.target.value)}
                 >
                   <option value="">Select finished product…</option>
                   <FeedFormOptions products={options.finishedFeeds} />
                 </select>
+                <p className="mt-1 text-xs text-ink/45">This is the product every batch from this formula is stocked as in the finished-goods store — pick the exact one (e.g. Concentrate vs Mash).</p>
               </div>
               {(options.branches ?? []).length > 1 && (
                 <div>
@@ -760,7 +761,7 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
 
   // Header edit state
   const [editingHeader, setEditingHeader] = useState(false);
-  const [headerDraft, setHeaderDraft] = useState({ name: "", targetBatchKg: "" });
+  const [headerDraft, setHeaderDraft] = useState({ name: "", targetBatchKg: "", finishedProductId: "" });
   const [headerSaving, setHeaderSaving] = useState(false);
   const [headerErr, setHeaderErr] = useState("");
 
@@ -813,7 +814,7 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
   useApiRecovery(!formula, load);
 
   function openHeaderEdit() {
-    setHeaderDraft({ name: formula?.name ?? "", targetBatchKg: String(formula?.targetBatchKg ?? "") });
+    setHeaderDraft({ name: formula?.name ?? "", targetBatchKg: String(formula?.targetBatchKg ?? ""), finishedProductId: formula?.finishedProduct?.id ?? "" });
     setEditingHeader(true);
   }
 
@@ -823,7 +824,11 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
     try {
       await apiFetch(`/feed-production/formulas/${params.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ name: headerDraft.name, targetBatchKg: Number(headerDraft.targetBatchKg) }),
+        body: JSON.stringify({
+          name: headerDraft.name,
+          targetBatchKg: Number(headerDraft.targetBatchKg),
+          ...(headerDraft.finishedProductId && headerDraft.finishedProductId !== formula?.finishedProduct?.id ? { finishedProductId: headerDraft.finishedProductId } : {})
+        }),
       });
       setEditingHeader(false);
       await load();
@@ -1047,6 +1052,21 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
                 onChange={(e) => setHeaderDraft((d) => ({ ...d, targetBatchKg: e.target.value }))}
                 className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-right text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
               />
+            </div>
+            <div className="sm:col-span-3">
+              <label className="mb-1.5 block text-xs font-semibold text-ink/55">Finished Product</label>
+              <select
+                value={headerDraft.finishedProductId}
+                onChange={(e) => setHeaderDraft((d) => ({ ...d, finishedProductId: e.target.value }))}
+                className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+              >
+                <option value="">Select finished product…</option>
+                <FeedFormOptions products={options.finishedFeeds} />
+              </select>
+              <p className="mt-1 text-xs text-ink/45">
+                Changing this also updates this formula&rsquo;s orders that haven&rsquo;t produced anything yet. Batches already posted stay stocked as the old product —
+                delete them on Production Batches and post again to move that stock.
+              </p>
             </div>
           </div>
           <div className="mt-4 flex gap-2">
@@ -1680,6 +1700,7 @@ function OrderTable({ rows, loading, onApprove, onEdit, onCancel, onDelete, onCo
       },
       { key: "site", label: "Site", render: (row) => row.productionSite?.name ?? "-" },
       { key: "formula", label: "Formula", render: (row) => row.formula?.name ?? "-" },
+      { key: "product", label: "Finished product", render: (row) => row.finishedProduct?.name ?? "-" },
       { key: "planned", label: "Planned kg", render: (row) => number(row.plannedQuantityKg) },
       { key: "produced", label: "Produced kg", render: (row) => row.batches?.length ? number(producedKg(row)) : "-" },
       { key: "date", label: "Scheduled", render: (row) => new Date(row.scheduledDate).toLocaleDateString() },

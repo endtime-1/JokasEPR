@@ -321,18 +321,41 @@ export class FeedProductionService {
     return { data };
   }
 
+  // The finished product is what a batch posted from this formula puts into
+  // the finished-goods store. It used to be fixed at creation — and the
+  // create form pre-selected the first finished feed, so a formula saved
+  // without touching that box (e.g. a concentrate saved as a mash) could
+  // never be corrected. Changing it also moves the formula's orders that
+  // haven't produced anything yet; batches already posted keep the product
+  // they were stocked as (delete and re-post them to move that stock).
   async updateFormula(user: AuthenticatedUser, id: string, dto: UpdateFeedFormulaDto, context: RequestContext) {
     const formula = await this.requireFormula(user, id);
-    const updated = await this.prisma.feedFormula.update({
-      where: { id },
-      data: {
-        ...(dto.name !== undefined && { name: dto.name }),
-        ...(dto.targetBatchKg !== undefined && { targetBatchKg: dto.targetBatchKg }),
-        ...(dto.status !== undefined && { status: dto.status }),
-        updatedById: user.id,
-      },
+    const productChanged = dto.finishedProductId !== undefined && dto.finishedProductId !== formula.finishedProductId;
+    const newProduct = productChanged ? await this.getProduct(user.companyId, dto.finishedProductId as string) : null;
+    let movedOrders = 0;
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.feedFormula.update({
+        where: { id },
+        data: {
+          ...(dto.name !== undefined && { name: dto.name }),
+          ...(dto.targetBatchKg !== undefined && { targetBatchKg: dto.targetBatchKg }),
+          ...(dto.status !== undefined && { status: dto.status }),
+          ...(newProduct && { finishedProductId: newProduct.id }),
+          updatedById: user.id,
+        },
+      });
+      if (newProduct) {
+        const moved = await tx.feedProductionOrder.updateMany({
+          where: { companyId: user.companyId, formulaId: id, deletedAt: null, status: { in: ["DRAFT", "PENDING_STOCK_APPROVAL", "APPROVED"] }, batches: { none: { deletedAt: null } } },
+          data: { finishedProductId: newProduct.id, updatedById: user.id }
+        });
+        movedOrders = moved.count;
+      }
+      return row;
     });
-    await this.writeAudit(user, "UPDATE", "FeedFormula", id, `Updated feed formula ${formula.code}`, context, { branchId: formula.branchId });
+    if (newProduct) this.lookupCache.invalidate(`feed:opts:${user.companyId}:`);
+    const productNote = newProduct ? ` — finished product changed to ${newProduct.name}${movedOrders ? ` (${movedOrders} unproduced order(s) updated)` : ""}` : "";
+    await this.writeAudit(user, "UPDATE", "FeedFormula", id, `Updated feed formula ${formula.code}${productNote}`, context, { branchId: formula.branchId });
     return { data: updated };
   }
 

@@ -781,3 +781,30 @@ describe("FeedProductionService — deleting a posted batch reverses its stock",
     expect(tx.feedProductionOrder.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "order-1" }, data: expect.objectContaining({ deletedAt: expect.any(Date) }) }));
   });
 });
+
+describe("FeedProductionService.updateFormula — correcting the finished product", () => {
+  const tx = mockTx as any;
+  const prisma = mockPrisma as any;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    prisma.feedFormula.findFirst.mockResolvedValue({ id: "formula-1", code: "L1C", branchId: "branch-1", finishedProductId: "layer1-mash" });
+    prisma.product.findFirst.mockResolvedValue({ id: "layer1-conc", name: "Layer 1 Concentrate" });
+    tx.feedFormula = { update: jest.fn().mockResolvedValue({ id: "formula-1", finishedProductId: "layer1-conc" }) };
+    tx.feedProductionOrder.updateMany = jest.fn().mockResolvedValue({ count: 2 });
+  });
+
+  it("switches the formula and its not-yet-produced orders to the new product", async () => {
+    await makeService().updateFormula(makeUser(), "formula-1", { finishedProductId: "layer1-conc" } as never, {});
+    expect(tx.feedFormula.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ finishedProductId: "layer1-conc" }) }));
+    expect(tx.feedProductionOrder.updateMany).toHaveBeenCalledWith({
+      where: { companyId: "company-1", formulaId: "formula-1", deletedAt: null, status: { in: ["DRAFT", "PENDING_STOCK_APPROVAL", "APPROVED"] }, batches: { none: { deletedAt: null } } },
+      data: { finishedProductId: "layer1-conc", updatedById: "user-1" }
+    });
+  });
+
+  it("leaves orders alone when the product isn't changing", async () => {
+    await makeService().updateFormula(makeUser(), "formula-1", { name: "Layer 1 Concentrate" } as never, {});
+    expect(tx.feedProductionOrder.updateMany).not.toHaveBeenCalled();
+  });
+});

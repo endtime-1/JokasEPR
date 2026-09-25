@@ -110,6 +110,10 @@ export class UpdateFeedFormulaDto {
   name?: string;
 
   @IsOptional()
+  @IsUUID()
+  finishedProductId?: string;
+
+  @IsOptional()
   @IsNumber()
   @Min(0.001)
   targetBatchKg?: number;
