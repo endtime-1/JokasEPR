@@ -3669,10 +3669,17 @@ export function HiproPredictivePage() {
           </div>
         </div>
 
+        {!warehouseId && (
+          <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            Showing raw materials added up across <strong>all</strong> warehouses. A production batch can only draw from the one raw material warehouse
+            chosen on the batch form — select that warehouse below to see what you can actually post.
+          </p>
+        )}
+
         {/* WAREHOUSE + MODE ROW */}
         <div className="flex flex-wrap items-center gap-3">
           <span className="text-[11px] font-bold uppercase tracking-wide text-ink/40">Warehouse:</span>
-          {[{ id: "", name: "All" }, ...options.warehouses].map((wh) => (
+          {[{ id: "", name: "All (combined)" }, ...options.warehouses].map((wh) => (
             <button key={wh.id} onClick={() => setWarehouseId(wh.id)}
               className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${warehouseId === wh.id ? "border-brand bg-brand text-white shadow-sm" : "border-line bg-white text-ink/60 hover:bg-field"}`}>
               {wh.name}

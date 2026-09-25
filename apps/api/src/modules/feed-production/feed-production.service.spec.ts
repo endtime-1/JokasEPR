@@ -863,3 +863,25 @@ describe("FeedProductionService.changeBatchProduct — re-stock a batch credited
     await expect(makeService().changeBatchProduct(makeUser(), "batch-1", { finishedProductId: "mash" }, {})).rejects.toThrow(/already stocked/);
   });
 });
+
+describe("FeedProductionService.createBatch — shortage message names the ingredient and where the stock is", () => {
+  it("says what's short in the chosen warehouse and which other warehouse holds it", async () => {
+    jest.clearAllMocks();
+    const prisma = mockPrisma as any;
+    prisma.feedProductionOrder.findFirst.mockResolvedValue({
+      id: "order-1", branchId: "branch-1", productionSiteId: "site-1", status: "APPROVED",
+      plannedQuantityKg: 1000, finishedProductId: "finished-1", finishedProduct: { id: "finished-1", uomId: "uom-1" },
+      formula: { id: "formula-1", targetBatchKg: 100, ingredients: [] }
+    });
+    prisma.feedProductionBatch.aggregate.mockResolvedValue({ _sum: { producedQuantityKg: 0 } });
+    prisma.warehouse.findFirst.mockImplementation(({ where }: any) => Promise.resolve({ id: where.id, type: "GENERAL", name: where.id === "raw-wh" ? "Feed Store" : "Finished Store", code: where.id, branchId: "branch-1" }));
+    prisma.feedFormula.findFirst.mockResolvedValue({ id: "formula-1", targetBatchKg: 100, ingredients: [{ ingredientId: "maize", quantityKg: 50, unitCost: 2, ingredient: { name: "Maize", sku: "MZ" } }] });
+    prisma.inventoryItem.findMany.mockReset();
+    prisma.inventoryItem.findMany
+      .mockResolvedValueOnce([{ productId: "maize", quantityOnHand: 100 }])
+      .mockResolvedValueOnce([{ productId: "maize", quantityOnHand: 800, warehouse: { name: "Main Store" } }]);
+
+    await expect(makeService().createBatch(makeUser(), { productionOrderId: "order-1", rawMaterialWarehouseId: "raw-wh", finishedWarehouseId: "fg-wh", producedQuantityKg: 500 } as never, {}))
+      .rejects.toThrow(/Maize: needs 250 kg, Feed Store has 100 kg \(short 150 kg\) — also 800 kg in Main Store/);
+  });
+});

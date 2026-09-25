@@ -796,7 +796,8 @@ export class FeedProductionService {
     // H3: batch-load availability (one query vs N) for the pre-flight check
     const ingredientPlan = await this.materialAvailability(user, formula.id, dto.rawMaterialWarehouseId, inputQuantityKg);
     if (!ingredientPlan.canProduce) {
-      throw new BadRequestException({ message: "Raw material stock is not sufficient for this production batch.", shortages: ingredientPlan.ingredients.filter((item) => item.shortageKg > 0) });
+      const shortages = ingredientPlan.ingredients.filter((item) => item.shortageKg > 0);
+      throw new BadRequestException({ message: await this.shortageMessage(user.companyId, rawWh, shortages, inputQuantityKg, dto.wastageKg ?? 0), shortages });
     }
 
     // Pre-load inventory records in one query for use inside the transaction
@@ -1631,6 +1632,26 @@ export class FeedProductionService {
       ingredients,
       estimatedRawMaterialCost: Number(ingredients.reduce((sum, i) => sum + i.quantityKg * i.unitCost, 0).toFixed(2))
     };
+  }
+
+  // Spells out a raw-material shortage: which ingredient, how much is needed
+  // versus what the chosen warehouse holds, and where else it's sitting.
+  // Posting a batch draws from ONE warehouse, while the Hi-Pro planner's
+  // default view adds up every warehouse — without this the two looked
+  // contradictory ("Hi-Pro says I can produce it, the batch says I can't").
+  private async shortageMessage(companyId: string, warehouse: { id: string; name: string }, shortages: IngredientPlan[], inputKg: number, wastageKg: number) {
+    const elsewhere = await this.prisma.inventoryItem.findMany({
+      where: { companyId, productId: { in: shortages.map((s) => s.ingredientId) }, warehouseId: { not: warehouse.id }, quantityOnHand: { gt: 0 }, deletedAt: null },
+      select: { productId: true, quantityOnHand: true, warehouse: { select: { name: true } } }
+    });
+    const kg = (n: number) => `${Number(n.toFixed(2)).toLocaleString("en-US")} kg`;
+    const lines = shortages.map((s) => {
+      const other = elsewhere.filter((e) => e.productId === s.ingredientId).map((e) => `${kg(Number(e.quantityOnHand))} in ${e.warehouse.name}`);
+      return `${s.productName}: needs ${kg(s.quantityKg)}, ${warehouse.name} has ${kg(s.availableKg)} (short ${kg(s.shortageKg)})${other.length ? ` — also ${other.join(", ")}` : ""}`;
+    });
+    const basis = wastageKg > 0 ? ` (${kg(inputKg)} = produced + ${kg(wastageKg)} wastage)` : "";
+    return `Not enough raw material in ${warehouse.name} for this batch${basis}. ${lines.join("; ")}. ` +
+      "A batch draws only from the raw material warehouse selected on the form — pick the warehouse that holds the stock, or transfer it there first.";
   }
 
   private async moveFinishedFeed(
