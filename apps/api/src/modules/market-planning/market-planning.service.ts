@@ -12,6 +12,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { nextRef } from "../../common/next-ref";
 import { withDbRetry } from "../../common/db-retry";
 import { validateEnumFilter } from "../../common/utils/validate-enum-filter";
+import { assertFeedBatchReversible, assertFeedOrdersReversible, deleteFeedOrderTx, refreshFeedOrderStatusTx, reverseFeedBatchTx } from "../feed-production/feed-batch-reversal";
 import {
   AdjustTargetItemDto,
   ApproveMarketTargetDto,
@@ -450,22 +451,38 @@ export class MarketPlanningService {
     return { data: updated };
   }
 
-  // H-CRUD-1: allowed for DRAFT and SUBMITTED — neither state has any
-  // downstream production plan/MRP/procurement recommendation yet (those
-  // are only ever created inside approveTarget's own transaction), so
-  // there's nothing to orphan. Soft-delete, matching the deletedAt
-  // convention used everywhere else in this codebase.
+  // DRAFT/SUBMITTED targets have nothing built on them yet — a plain soft
+  // delete. An approved target is deleted together with everything its
+  // approval created (production plans, Feed Mill orders, MRP runs,
+  // recommendations) and any production already posted is reversed; blocked
+  // while an open purchase request depends on it (see planCascadePrecheck).
   async deleteTarget(user: AuthenticatedUser, id: string, context: RequestContext) {
     const target = await this.requireTarget(user, id);
     this.assertOwnTargetOrManage(user, target);
-    if (!["DRAFT", "SUBMITTED"].includes(target.status)) {
-      throw new BadRequestException(`Cannot delete a target that has already been ${target.status.toLowerCase()} — it may have production plans or purchase recommendations depending on it.`);
+    if (["DRAFT", "SUBMITTED"].includes(target.status)) {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.marketTarget.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
+        await tx.marketTargetItem.updateMany({ where: { companyId: user.companyId, marketTargetId: id, deletedAt: null }, data: { deletedAt: new Date(), updatedById: user.id } });
+      });
+      await this.writeAudit(user, "DELETE", "MarketTarget", id, `Deleted market target ${target.targetNumber}`, context, { branchId: target.branchId ?? undefined, productionSiteId: target.productionSiteId ?? undefined });
+      return { success: true };
     }
-    await this.prisma.$transaction(async (tx) => {
+
+    // Past approval the target has its own production plans, Feed Mill
+    // orders and possibly MRP runs / production built on it — deleting it
+    // unwinds all of that (see deletePlansTx), so it's a manager action.
+    if (!this.canManageTargets(user)) {
+      throw new ForbiddenException("Only a market planning manager can delete a target that has been approved.");
+    }
+    const plans = await this.prisma.productionPlan.findMany({ where: { companyId: user.companyId, marketTargetId: id, deletedAt: null }, select: { id: true } });
+    const cascade = await this.planCascadePrecheck(user, plans.map((plan) => plan.id), id);
+    const reversedBatches = await withDbRetry(() => this.prisma.$transaction(async (tx) => {
+      const reversed = await this.deletePlansTx(tx, user, cascade);
       await tx.marketTarget.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
       await tx.marketTargetItem.updateMany({ where: { companyId: user.companyId, marketTargetId: id, deletedAt: null }, data: { deletedAt: new Date(), updatedById: user.id } });
-    });
-    await this.writeAudit(user, "DELETE", "MarketTarget", id, `Deleted market target ${target.targetNumber}`, context, { branchId: target.branchId ?? undefined, productionSiteId: target.productionSiteId ?? undefined });
+      return reversed;
+    }), { label: "MarketPlanningService.deleteTarget" });
+    await this.writeAudit(user, "DELETE", "MarketTarget", id, `Deleted ${target.status.toLowerCase()} market target ${target.targetNumber}${this.cascadeSummary(cascade, reversedBatches)}`, context, { branchId: target.branchId ?? undefined, productionSiteId: target.productionSiteId ?? undefined });
     return { success: true };
   }
 
@@ -690,33 +707,14 @@ export class MarketPlanningService {
   // free-form edit screen would let displayed numbers drift from the
   // calculation that produced them — the correct "fix" for a wrong number
   // is recalculating, which calculateMrp/generateProcurementRecommendations
-  // already support. What was genuinely missing was a way to discard a
-  // mistaken or duplicate run; delete-only, restricted to states with
-  // nothing real yet built on top of it.
+  // already support. Delete is allowed at any stage: it takes the plan's
+  // MRP runs, recommendations and Feed Mill orders with it and reverses any
+  // production already posted (see deletePlansTx).
   async deleteProductionPlan(user: AuthenticatedUser, id: string, context: RequestContext) {
     const plan = await this.requireProductionPlan(user, id);
-    if (!["DRAFT", "READY_FOR_APPROVAL", "APPROVED"].includes(plan.status)) {
-      throw new BadRequestException(`Cannot delete a production plan that is ${plan.status.toLowerCase()} — MRP runs or executions may already depend on it.`);
-    }
-    // L-BUG (2026-08-13): approveTarget always creates a plan with status
-    // APPROVED directly — DRAFT/READY_FOR_APPROVAL are never actually
-    // reachable through the normal flow, so this guard could never
-    // actually be satisfied and the delete option that exists in the API
-    // could never actually be used. APPROVED is now allowed too, but only
-    // when nothing real has been built on top of it yet — a mistaken or
-    // duplicate approval still has an undo, same as the equivalent guard
-    // on deleteMrp/cancelRecommendation.
-    if (plan.status === "APPROVED") {
-      const [mrpCount, executionCount] = await Promise.all([
-        this.prisma.materialRequirementPlan.count({ where: { productionPlanId: id, deletedAt: null } }),
-        this.prisma.productionExecution.count({ where: { productionPlanId: id, deletedAt: null } })
-      ]);
-      if (mrpCount > 0 || executionCount > 0) {
-        throw new BadRequestException("Cannot delete this production plan — MRP runs or executions already depend on it.");
-      }
-    }
-    await this.prisma.productionPlan.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
-    await this.writeAudit(user, "DELETE", "ProductionPlan", id, `Deleted production plan ${plan.planNumber}`, context, { branchId: plan.branchId, productionSiteId: plan.productionSiteId });
+    const cascade = await this.planCascadePrecheck(user, [id]);
+    const reversedBatches = await withDbRetry(() => this.prisma.$transaction((tx) => this.deletePlansTx(tx, user, cascade)), { label: "MarketPlanningService.deleteProductionPlan" });
+    await this.writeAudit(user, "DELETE", "ProductionPlan", id, `Deleted production plan ${plan.planNumber}${this.cascadeSummary(cascade, reversedBatches)}`, context, { branchId: plan.branchId, productionSiteId: plan.productionSiteId });
     return { success: true };
   }
 
@@ -821,16 +819,23 @@ export class MarketPlanningService {
     return { data: { ...mrp, items: items.map((item) => ({ ...item, rawMaterial: products.get(item.rawMaterialId), finishedProduct: products.get(item.finishedProductId) })), checks, recommendations } };
   }
 
-  // H-CRUD-1: same reasoning as deleteProductionPlan above — delete-only,
-  // blocked once procurement recommendations have actually been generated
-  // from this run (PROCUREMENT_RECOMMENDED+).
+  // Delete-only (same reasoning as deleteProductionPlan above). Its
+  // recommendations go with it; blocked while a purchase request raised
+  // from one of them is still open.
   async deleteMrp(user: AuthenticatedUser, id: string, context: RequestContext) {
     const mrp = await this.requireMrp(user, id);
-    if (!["DRAFT", "CALCULATED", "SHORTAGE"].includes(mrp.status)) {
-      throw new BadRequestException(`Cannot delete an MRP run that is ${mrp.status.toLowerCase()} — procurement recommendations may already depend on it.`);
-    }
-    await this.prisma.materialRequirementPlan.update({ where: { id }, data: { deletedAt: new Date(), updatedById: user.id } });
-    await this.writeAudit(user, "DELETE", "MaterialRequirementPlan", id, `Deleted MRP run ${mrp.mrpNumber}`, context, { branchId: mrp.branchId });
+    const recommendations = await this.prisma.procurementRecommendation.findMany({
+      where: { companyId: user.companyId, materialRequirementPlanId: id, deletedAt: null },
+      select: { id: true, purchaseRequestId: true }
+    });
+    await this.assertNoOpenPurchaseRequests(user.companyId, { mrpIds: [id], recommendations });
+    const now = new Date();
+    await this.prisma.$transaction(async (tx) => {
+      await tx.procurementRecommendation.updateMany({ where: { companyId: user.companyId, materialRequirementPlanId: id, deletedAt: null }, data: { deletedAt: now, updatedById: user.id } });
+      await tx.materialRequirementItem.updateMany({ where: { companyId: user.companyId, materialRequirementPlanId: id, deletedAt: null }, data: { deletedAt: now } });
+      await tx.materialRequirementPlan.update({ where: { id }, data: { deletedAt: now, updatedById: user.id } });
+    });
+    await this.writeAudit(user, "DELETE", "MaterialRequirementPlan", id, `Deleted MRP run ${mrp.mrpNumber}${recommendations.length ? ` and its ${recommendations.length} recommendation(s)` : ""}`, context, { branchId: mrp.branchId });
     return { success: true };
   }
 
@@ -1503,6 +1508,147 @@ export class MarketPlanningService {
   // A submit-only marketer may submit/edit/delete their OWN targets, never
   // someone else's — a manager (market-planning.manage) can act on any
   // target already reachable via requireTarget's branch/site scoping.
+  async listExecutions(user: AuthenticatedUser, query: MarketPlanningQueryDto) {
+    const rows = await this.prisma.productionExecution.findMany({
+      where: {
+        companyId: user.companyId,
+        deletedAt: null,
+        ...(query.branchId ? { branchId: query.branchId } : {}),
+        ...(!user.hasGlobalAccess && user.branchIds.length > 0 ? { branchId: { in: user.branchIds } } : {})
+      },
+      orderBy: { createdAt: "desc" },
+      take: 100
+    });
+    const batchIds = rows.map((row) => row.feedProductionBatchId).filter((id): id is string => !!id);
+    const [products, plans, batches] = await Promise.all([
+      this.productMap(user.companyId, rows.map((row) => row.productId)),
+      this.prisma.productionPlan.findMany({ where: { companyId: user.companyId, id: { in: rows.map((row) => row.productionPlanId) } }, select: { id: true, planNumber: true } }),
+      batchIds.length ? this.prisma.feedProductionBatch.findMany({ where: { companyId: user.companyId, id: { in: batchIds } }, select: { id: true, batchNumber: true } }) : Promise.resolve([])
+    ]);
+    const planById = new Map(plans.map((plan) => [plan.id, plan.planNumber]));
+    const batchById = new Map(batches.map((batch) => [batch.id, batch.batchNumber]));
+    return {
+      data: rows.map((row) => ({
+        ...row,
+        product: products.get(row.productId),
+        planNumber: planById.get(row.productionPlanId) ?? null,
+        batchNumber: row.feedProductionBatchId ? batchById.get(row.feedProductionBatchId) ?? null : null
+      }))
+    };
+  }
+
+  // Undoes one posted execution: its batch is reversed exactly as a Feed
+  // Mill batch delete would (raw materials back to their lots, finished feed
+  // out, plan progress rolled back) and the Feed Mill order drops back to
+  // APPROVED / IN_PROGRESS so the run can be posted again.
+  async deleteExecution(user: AuthenticatedUser, id: string, context: RequestContext) {
+    const execution = await this.prisma.productionExecution.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!execution) throw new NotFoundException("Production execution was not found.");
+    this.assertBranchAccess(user, execution.branchId);
+    const batch = execution.feedProductionBatchId
+      ? await this.prisma.feedProductionBatch.findFirst({ where: { id: execution.feedProductionBatchId, companyId: user.companyId, deletedAt: null } })
+      : null;
+    if (batch) {
+      this.assertCanReverseProduction(user);
+      await assertFeedBatchReversible(this.prisma, user.companyId, batch);
+    }
+    await withDbRetry(() => this.prisma.$transaction(async (tx) => {
+      if (batch) {
+        await tx.$queryRaw`SELECT id FROM FeedProductionOrder WHERE id = ${batch.productionOrderId} FOR UPDATE`;
+        await reverseFeedBatchTx(tx, user, batch.id);
+        await refreshFeedOrderStatusTx(tx, user, batch.productionOrderId);
+      }
+      await tx.productionExecution.updateMany({ where: { id, deletedAt: null }, data: { deletedAt: new Date(), updatedById: user.id } });
+    }), { label: "MarketPlanningService.deleteExecution" });
+    await this.writeAudit(user, "DELETE", "ProductionExecution", id, batch ? `Deleted production execution — batch ${batch.batchNumber} reversed (raw materials returned, finished feed removed)` : "Deleted production execution", context, { branchId: execution.branchId });
+    return { success: true };
+  }
+
+  // Undoing production moves stock both ways — same permissions as posting it.
+  private assertCanReverseProduction(user: AuthenticatedUser) {
+    if (user.hasGlobalAccess) return;
+    if (!user.permissions.includes(PERMISSIONS.FEED_MANAGE) || !user.permissions.includes(PERMISSIONS.INVENTORY_MANAGE)) {
+      throw new ForbiddenException("Production has already been posted against this — reversing it needs Feed Mill and Inventory manage permissions.");
+    }
+  }
+
+  // Everything a production-plan delete will touch, checked up front so a
+  // refusal names the reason before anything changes. Purchase requests are
+  // never cancelled from here: a supplier may already be involved, so an
+  // open one blocks the delete and has to be cancelled in Procurement first.
+  private async planCascadePrecheck(user: AuthenticatedUser, planIds: string[], marketTargetId?: string) {
+    const [mrps, orders] = await Promise.all([
+      planIds.length ? this.prisma.materialRequirementPlan.findMany({ where: { companyId: user.companyId, productionPlanId: { in: planIds }, deletedAt: null }, select: { id: true } }) : Promise.resolve([]),
+      planIds.length ? this.prisma.feedProductionOrder.findMany({ where: { companyId: user.companyId, productionPlanId: { in: planIds }, deletedAt: null }, select: { id: true } }) : Promise.resolve([])
+    ]);
+    const mrpIds = mrps.map((mrp) => mrp.id);
+    const recommendations = mrpIds.length
+      ? await this.prisma.procurementRecommendation.findMany({ where: { companyId: user.companyId, materialRequirementPlanId: { in: mrpIds }, deletedAt: null }, select: { id: true, purchaseRequestId: true } })
+      : [];
+    await this.assertNoOpenPurchaseRequests(user.companyId, { mrpIds, recommendations, marketTargetId });
+    const orderIds = orders.map((order) => order.id);
+    const postedBatches = orderIds.length
+      ? await this.prisma.feedProductionBatch.count({ where: { companyId: user.companyId, productionOrderId: { in: orderIds }, deletedAt: null } })
+      : 0;
+    if (postedBatches > 0) {
+      this.assertCanReverseProduction(user);
+      await assertFeedOrdersReversible(this.prisma, user.companyId, orderIds);
+    }
+    return { planIds, mrpIds, orderIds, recommendationCount: recommendations.length };
+  }
+
+  private async assertNoOpenPurchaseRequests(companyId: string, scope: { mrpIds: string[]; recommendations: Array<{ id: string; purchaseRequestId: string | null }>; marketTargetId?: string }) {
+    const recommendationIds = scope.recommendations.map((rec) => rec.id);
+    const linkedPrIds = scope.recommendations.map((rec) => rec.purchaseRequestId).filter((id): id is string => !!id);
+    const or: Prisma.PurchaseRequestWhereInput[] = [];
+    if (scope.mrpIds.length) or.push({ materialRequirementPlanId: { in: scope.mrpIds } });
+    if (recommendationIds.length) or.push({ procurementRecommendationId: { in: recommendationIds } });
+    if (linkedPrIds.length) or.push({ id: { in: linkedPrIds } });
+    if (scope.marketTargetId) or.push({ marketTargetId: scope.marketTargetId });
+    if (!or.length) return;
+    const open = await this.prisma.purchaseRequest.findMany({
+      where: { companyId, deletedAt: null, status: { notIn: ["CANCELLED", "REJECTED"] }, OR: or },
+      select: { reference: true, status: true }
+    });
+    if (open.length) {
+      const list = open.map((pr) => `${pr.reference} (${pr.status.toLowerCase().replace(/_/g, " ")})`).join(", ");
+      throw new BadRequestException(`Can't delete — purchase request(s) ${list} were raised from this plan's material shortages. Cancel them in Procurement first, then try again.`);
+    }
+  }
+
+  // One transaction: reverse and remove the Feed Mill orders (and every
+  // batch posted on them), then soft-delete executions, recommendations,
+  // MRP runs and the plans themselves. Returns how many batches were reversed.
+  private async deletePlansTx(tx: Prisma.TransactionClient, user: AuthenticatedUser, cascade: { planIds: string[]; mrpIds: string[]; orderIds: string[] }) {
+    const now = new Date();
+    let reversed = 0;
+    for (const orderId of cascade.orderIds) reversed += await deleteFeedOrderTx(tx, user, orderId);
+    if (cascade.planIds.length) {
+      await tx.productionExecution.updateMany({ where: { companyId: user.companyId, productionPlanId: { in: cascade.planIds }, deletedAt: null }, data: { deletedAt: now, updatedById: user.id } });
+    }
+    if (cascade.mrpIds.length) {
+      await tx.procurementRecommendation.updateMany({ where: { companyId: user.companyId, materialRequirementPlanId: { in: cascade.mrpIds }, deletedAt: null }, data: { deletedAt: now, updatedById: user.id } });
+      await tx.materialRequirementItem.updateMany({ where: { companyId: user.companyId, materialRequirementPlanId: { in: cascade.mrpIds }, deletedAt: null }, data: { deletedAt: now } });
+      await tx.materialRequirementPlan.updateMany({ where: { companyId: user.companyId, id: { in: cascade.mrpIds } }, data: { deletedAt: now, updatedById: user.id } });
+    }
+    if (cascade.planIds.length) {
+      await tx.productionPlanItem.updateMany({ where: { companyId: user.companyId, productionPlanId: { in: cascade.planIds }, deletedAt: null }, data: { deletedAt: now, updatedById: user.id } });
+      await tx.productionPlan.updateMany({ where: { companyId: user.companyId, id: { in: cascade.planIds } }, data: { deletedAt: now, updatedById: user.id } });
+    }
+    return reversed;
+  }
+
+  private cascadeSummary(cascade: { planIds: string[]; mrpIds: string[]; orderIds: string[]; recommendationCount: number }, reversedBatches: number) {
+    const parts = [
+      cascade.planIds.length ? `${cascade.planIds.length} production plan(s)` : "",
+      cascade.orderIds.length ? `${cascade.orderIds.length} Feed Mill order(s)` : "",
+      cascade.mrpIds.length ? `${cascade.mrpIds.length} MRP run(s)` : "",
+      cascade.recommendationCount ? `${cascade.recommendationCount} recommendation(s)` : ""
+    ].filter(Boolean);
+    const removed = parts.length ? ` — also removed ${parts.join(", ")}` : "";
+    return `${removed}${reversedBatches ? `; reversed ${reversedBatches} posted batch(es)` : ""}`;
+  }
+
   private assertOwnTargetOrManage(user: AuthenticatedUser, target: { createdById: string | null }) {
     if (this.canManageTargets(user)) return;
     if (target.createdById !== user.id) {

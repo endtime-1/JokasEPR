@@ -664,6 +664,8 @@ describe("FeedProductionService — cancelling / deleting approved orders", () =
   it("soft-deletes an APPROVED order with no batches", async () => {
     mockPrisma.feedProductionOrder.findFirst.mockResolvedValue(approved);
     (mockPrisma.feedProductionBatch as any).findMany = jest.fn().mockResolvedValue([]);
+    (mockTx.feedProductionBatch as any).findMany = jest.fn().mockResolvedValue([]);
+    (mockTx.feedProductionOrder as any).findUniqueOrThrow = jest.fn().mockResolvedValue({});
     mockTx.feedProductionOrder.update.mockResolvedValue({});
     await makeService().deleteOrder(makeUser(), "order-1", {});
     expect(mockTx.feedProductionOrder.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "order-1" }, data: expect.objectContaining({ deletedAt: expect.any(Date) }) }));
@@ -709,12 +711,14 @@ describe("FeedProductionService — deleting a posted batch reverses its stock",
   beforeEach(() => {
     jest.clearAllMocks();
     prisma.feedProductionBatch.findFirst = jest.fn().mockResolvedValue(batch);
-    prisma.feedProductionBatch.findMany = jest.fn().mockResolvedValue([{ id: "batch-1" }]);
+    prisma.feedProductionBatch.findMany = jest.fn().mockResolvedValue([{ id: "batch-1", batchNumber: "FB-1" }]);
     prisma.feedInternalTransfer = { count: jest.fn().mockResolvedValue(0) };
     prisma.feedExternalSale = { count: jest.fn().mockResolvedValue(0) };
     prisma.feedProductionOrder.findFirst.mockResolvedValue({ id: "order-1", orderNumber: "FPO-1", branchId: "branch-1", productionSiteId: "site-1", status: "COMPLETED" });
     prisma.feedProductionOrder.update.mockResolvedValue({});
     tx.feedProductionBatch.findFirst = jest.fn().mockResolvedValue(batch);
+    tx.feedProductionBatch.findMany = jest.fn().mockResolvedValue([{ id: "batch-1" }]);
+    tx.feedProductionOrder.findUniqueOrThrow = jest.fn().mockResolvedValue({});
     tx.feedProductionBatch.aggregate = jest.fn().mockResolvedValue({ _sum: { producedQuantityKg: 0 } });
     tx.stockMovement.findMany = jest.fn().mockImplementation(({ where }: any) => Promise.resolve(where.movementType === "PRODUCTION_INPUT" ? [input] : [output]));
     tx.stockMovement.updateMany = jest.fn().mockResolvedValue({ count: 2 });

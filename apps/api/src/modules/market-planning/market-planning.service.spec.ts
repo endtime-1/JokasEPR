@@ -290,14 +290,27 @@ describe("MarketPlanningService.targetVsActualReport — target list is capped, 
 describe("MarketPlanningService — target/plan/MRP/recommendation edit+delete (H-CRUD-1)", () => {
   const mockTx = {
     marketTarget: { update: jest.fn() },
-    marketTargetItem: { updateMany: jest.fn() }
+    marketTargetItem: { updateMany: jest.fn() },
+    productionExecution: { updateMany: jest.fn() },
+    procurementRecommendation: { updateMany: jest.fn() },
+    materialRequirementItem: { updateMany: jest.fn() },
+    materialRequirementPlan: { update: jest.fn(), updateMany: jest.fn() },
+    productionPlanItem: { updateMany: jest.fn() },
+    productionPlan: { updateMany: jest.fn() },
+    feedProductionBatch: { findMany: jest.fn().mockResolvedValue([]) },
+    feedProductionOrder: { update: jest.fn() },
+    $queryRaw: jest.fn().mockResolvedValue([])
   };
   const mockPrisma = {
     marketTarget: { findFirst: jest.fn(), update: jest.fn() },
-    productionPlan: { findFirst: jest.fn(), update: jest.fn() },
-    materialRequirementPlan: { findFirst: jest.fn(), update: jest.fn(), count: jest.fn().mockResolvedValue(0) },
-    productionExecution: { count: jest.fn().mockResolvedValue(0) },
-    procurementRecommendation: { findFirst: jest.fn(), update: jest.fn() },
+    productionPlan: { findFirst: jest.fn(), update: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
+    materialRequirementPlan: { findFirst: jest.fn(), update: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
+    feedProductionOrder: { findMany: jest.fn().mockResolvedValue([]) },
+    feedProductionBatch: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue([]) },
+    feedInternalTransfer: { count: jest.fn().mockResolvedValue(0) },
+    feedExternalSale: { count: jest.fn().mockResolvedValue(0) },
+    purchaseRequest: { findMany: jest.fn().mockResolvedValue([]) },
+    procurementRecommendation: { findFirst: jest.fn(), update: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
     $transaction: jest.fn().mockImplementation((cb: (tx: typeof mockTx) => Promise<unknown>) => cb(mockTx))
   };
   const mockAudit = { write: jest.fn().mockResolvedValue(undefined) };
@@ -315,7 +328,16 @@ describe("MarketPlanningService — target/plan/MRP/recommendation edit+delete (
     };
   }
 
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPrisma.productionPlan.findMany.mockResolvedValue([]);
+    mockPrisma.materialRequirementPlan.findMany.mockResolvedValue([]);
+    mockPrisma.feedProductionOrder.findMany.mockResolvedValue([]);
+    mockPrisma.feedProductionBatch.count.mockResolvedValue(0);
+    mockPrisma.feedProductionBatch.findMany.mockResolvedValue([]);
+    mockPrisma.purchaseRequest.findMany.mockResolvedValue([]);
+    mockPrisma.procurementRecommendation.findMany.mockResolvedValue([]);
+  });
 
   describe("updateTarget", () => {
     it("edits a DRAFT target", async () => {
@@ -358,75 +380,118 @@ describe("MarketPlanningService — target/plan/MRP/recommendation edit+delete (
       await expect(service.deleteTarget(makeUser(), "mt-1", {})).resolves.toEqual({ success: true });
     });
 
-    it("rejects deleting an APPROVED target — production plans may already depend on it", async () => {
+    it("deletes an APPROVED target with its plan, Feed Mill orders and MRP runs", async () => {
       mockPrisma.marketTarget.findFirst.mockResolvedValue({ id: "mt-1", companyId: "company-1", status: "APPROVED", branchId: null, productionSiteId: null, targetNumber: "MT-1" });
+      mockPrisma.productionPlan.findMany.mockResolvedValue([{ id: "pp-1" }]);
+      mockPrisma.materialRequirementPlan.findMany.mockResolvedValue([{ id: "mrp-1" }]);
+      mockPrisma.feedProductionOrder.findMany.mockResolvedValue([{ id: "fpo-1" }]);
 
       const service = makeService();
-      await expect(service.deleteTarget(makeUser(), "mt-1", {})).rejects.toThrow(BadRequestException);
+      await expect(service.deleteTarget(makeUser(), "mt-1", {})).resolves.toEqual({ success: true });
+
+      expect(mockTx.feedProductionOrder.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "fpo-1" }, data: expect.objectContaining({ deletedAt: expect.any(Date) }) }));
+      expect(mockTx.materialRequirementPlan.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ id: { in: ["mrp-1"] } }) }));
+      expect(mockTx.productionPlan.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ id: { in: ["pp-1"] } }) }));
+      expect(mockTx.marketTarget.update).toHaveBeenCalledWith({ where: { id: "mt-1" }, data: expect.objectContaining({ deletedAt: expect.any(Date) }) });
+    });
+
+    it("blocks deleting an APPROVED target while a purchase request raised from it is still open", async () => {
+      mockPrisma.marketTarget.findFirst.mockResolvedValue({ id: "mt-1", companyId: "company-1", status: "APPROVED", branchId: null, productionSiteId: null, targetNumber: "MT-1" });
+      mockPrisma.productionPlan.findMany.mockResolvedValue([{ id: "pp-1" }]);
+      mockPrisma.purchaseRequest.findMany.mockResolvedValue([{ reference: "PR-0007", status: "SUBMITTED" }]);
+
+      const service = makeService();
+      await expect(service.deleteTarget(makeUser(), "mt-1", {})).rejects.toThrow(/PR-0007/);
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it("only a manager can delete an approved target", async () => {
+      mockPrisma.marketTarget.findFirst.mockResolvedValue({ id: "mt-1", companyId: "company-1", status: "APPROVED", branchId: null, productionSiteId: null, targetNumber: "MT-1", createdById: "user-1" });
+
+      const service = makeService();
+      await expect(service.deleteTarget(makeUser({ hasGlobalAccess: false, permissions: ["market-planning.submit"] }), "mt-1", {})).rejects.toThrow(/manager/);
     });
   });
 
   describe("deleteProductionPlan", () => {
-    it("allows deleting a DRAFT plan", async () => {
-      mockPrisma.productionPlan.findFirst.mockResolvedValue({ id: "pp-1", companyId: "company-1", status: "DRAFT", branchId: "branch-1", productionSiteId: "site-1", centralWarehouseId: "wh-1", planNumber: "PP-1" });
-      mockPrisma.productionPlan.update.mockResolvedValue({});
+    const plan = { id: "pp-1", companyId: "company-1", status: "IN_PROGRESS", branchId: "branch-1", productionSiteId: "site-1", centralWarehouseId: "wh-1", planNumber: "PP-1" };
+
+    it("deletes an in-progress plan, reversing the batches posted on its Feed Mill orders", async () => {
+      mockPrisma.productionPlan.findFirst.mockResolvedValue(plan);
+      mockPrisma.feedProductionOrder.findMany.mockResolvedValue([{ id: "fpo-1" }]);
+      mockPrisma.feedProductionBatch.count.mockResolvedValue(1);
+      mockPrisma.feedProductionBatch.findMany.mockResolvedValue([{ id: "fb-1", batchNumber: "FB-1" }]);
+      // reverseFeedBatchTx finding the batch already gone keeps this test on the cascade itself;
+      // the reversal is covered in feed-production.service.spec.ts
+      (mockTx as any).feedProductionBatch.findFirst = jest.fn().mockResolvedValue(null);
+      mockTx.feedProductionBatch.findMany.mockResolvedValue([{ id: "fb-1" }]);
 
       const service = makeService();
       await expect(service.deleteProductionPlan(makeUser(), "pp-1", {})).resolves.toEqual({ success: true });
+      expect(mockTx.feedProductionOrder.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "fpo-1" } }));
+      expect(mockTx.productionExecution.updateMany).toHaveBeenCalled();
+      expect(mockTx.productionPlan.updateMany).toHaveBeenCalled();
     });
 
-    it("rejects deleting a plan that's already IN_PROGRESS", async () => {
-      mockPrisma.productionPlan.findFirst.mockResolvedValue({ id: "pp-1", companyId: "company-1", status: "IN_PROGRESS", branchId: "branch-1", productionSiteId: "site-1", centralWarehouseId: "wh-1", planNumber: "PP-1" });
+    it("blocks the delete when a batch on the plan has already been dispatched", async () => {
+      mockPrisma.productionPlan.findFirst.mockResolvedValue(plan);
+      mockPrisma.feedProductionOrder.findMany.mockResolvedValue([{ id: "fpo-1" }]);
+      mockPrisma.feedProductionBatch.count.mockResolvedValue(1);
+      mockPrisma.feedProductionBatch.findMany.mockResolvedValue([{ id: "fb-1", batchNumber: "FB-1" }]);
+      mockPrisma.feedExternalSale.count.mockResolvedValue(1);
 
       const service = makeService();
-      await expect(service.deleteProductionPlan(makeUser(), "pp-1", {})).rejects.toThrow(BadRequestException);
+      await expect(service.deleteProductionPlan(makeUser(), "pp-1", {})).rejects.toThrow(/dispatched/);
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+      mockPrisma.feedExternalSale.count.mockResolvedValue(0);
     });
 
-    it("L-BUG: allows deleting an APPROVED plan with nothing built on top of it — plans are always created APPROVED, so DRAFT/READY_FOR_APPROVAL alone made this permanently unusable", async () => {
-      mockPrisma.productionPlan.findFirst.mockResolvedValue({ id: "pp-1", companyId: "company-1", status: "APPROVED", branchId: "branch-1", productionSiteId: "site-1", centralWarehouseId: "wh-1", planNumber: "PP-1" });
-      mockPrisma.materialRequirementPlan.count.mockResolvedValue(0);
-      mockPrisma.productionExecution.count.mockResolvedValue(0);
-      mockPrisma.productionPlan.update.mockResolvedValue({});
+    it("reversing posted production needs Feed Mill + Inventory manage", async () => {
+      mockPrisma.productionPlan.findFirst.mockResolvedValue(plan);
+      mockPrisma.feedProductionOrder.findMany.mockResolvedValue([{ id: "fpo-1" }]);
+      mockPrisma.feedProductionBatch.count.mockResolvedValue(1);
 
       const service = makeService();
-      await expect(service.deleteProductionPlan(makeUser(), "pp-1", {})).resolves.toEqual({ success: true });
-    });
-
-    it("L-BUG: rejects deleting an APPROVED plan once an MRP run depends on it", async () => {
-      mockPrisma.productionPlan.findFirst.mockResolvedValue({ id: "pp-1", companyId: "company-1", status: "APPROVED", branchId: "branch-1", productionSiteId: "site-1", centralWarehouseId: "wh-1", planNumber: "PP-1" });
-      mockPrisma.materialRequirementPlan.count.mockResolvedValue(1);
-      mockPrisma.productionExecution.count.mockResolvedValue(0);
-
-      const service = makeService();
-      await expect(service.deleteProductionPlan(makeUser(), "pp-1", {})).rejects.toThrow(BadRequestException);
-      expect(mockPrisma.productionPlan.update).not.toHaveBeenCalled();
-    });
-
-    it("L-BUG: rejects deleting an APPROVED plan once a production execution depends on it", async () => {
-      mockPrisma.productionPlan.findFirst.mockResolvedValue({ id: "pp-1", companyId: "company-1", status: "APPROVED", branchId: "branch-1", productionSiteId: "site-1", centralWarehouseId: "wh-1", planNumber: "PP-1" });
-      mockPrisma.materialRequirementPlan.count.mockResolvedValue(0);
-      mockPrisma.productionExecution.count.mockResolvedValue(1);
-
-      const service = makeService();
-      await expect(service.deleteProductionPlan(makeUser(), "pp-1", {})).rejects.toThrow(BadRequestException);
-      expect(mockPrisma.productionPlan.update).not.toHaveBeenCalled();
+      await expect(service.deleteProductionPlan(makeUser({ hasGlobalAccess: false, permissions: ["market-planning.manage"] }), "pp-1", {})).rejects.toThrow(/permissions/);
     });
   });
 
   describe("deleteMrp", () => {
-    it("allows deleting a CALCULATED run", async () => {
-      mockPrisma.materialRequirementPlan.findFirst.mockResolvedValue({ id: "mrp-1", companyId: "company-1", status: "CALCULATED", branchId: "branch-1", centralWarehouseId: "wh-1", mrpNumber: "MRP-1" });
-      mockPrisma.materialRequirementPlan.update.mockResolvedValue({});
+    it("deletes a run and its recommendations once recommendations exist", async () => {
+      mockPrisma.materialRequirementPlan.findFirst.mockResolvedValue({ id: "mrp-1", companyId: "company-1", status: "PROCUREMENT_RECOMMENDED", branchId: "branch-1", centralWarehouseId: "wh-1", mrpNumber: "MRP-1" });
+      mockPrisma.procurementRecommendation.findMany.mockResolvedValue([{ id: "rec-1", purchaseRequestId: null }]);
 
       const service = makeService();
       await expect(service.deleteMrp(makeUser(), "mrp-1", {})).resolves.toEqual({ success: true });
+      expect(mockTx.procurementRecommendation.updateMany).toHaveBeenCalled();
+      expect(mockTx.materialRequirementPlan.update).toHaveBeenCalledWith({ where: { id: "mrp-1" }, data: expect.objectContaining({ deletedAt: expect.any(Date) }) });
     });
 
-    it("rejects deleting a run once procurement recommendations have been generated from it", async () => {
+    it("blocks the delete while a recommendation's purchase request is still open", async () => {
       mockPrisma.materialRequirementPlan.findFirst.mockResolvedValue({ id: "mrp-1", companyId: "company-1", status: "PROCUREMENT_RECOMMENDED", branchId: "branch-1", centralWarehouseId: "wh-1", mrpNumber: "MRP-1" });
+      mockPrisma.procurementRecommendation.findMany.mockResolvedValue([{ id: "rec-1", purchaseRequestId: "pr-1" }]);
+      mockPrisma.purchaseRequest.findMany.mockResolvedValue([{ reference: "PR-0001", status: "APPROVED" }]);
 
       const service = makeService();
-      await expect(service.deleteMrp(makeUser(), "mrp-1", {})).rejects.toThrow(BadRequestException);
+      await expect(service.deleteMrp(makeUser(), "mrp-1", {})).rejects.toThrow(/Cancel them in Procurement/);
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("deleteExecution", () => {
+    it("reverses the execution's batch and puts the Feed Mill order back so it can be re-run", async () => {
+      const prisma = mockPrisma as any;
+      const tx = mockTx as any;
+      prisma.productionExecution = { findFirst: jest.fn().mockResolvedValue({ id: "ex-1", branchId: "branch-1", feedProductionBatchId: "fb-1" }) };
+      prisma.feedProductionBatch.findFirst = jest.fn().mockResolvedValue({ id: "fb-1", batchNumber: "FB-1", productionOrderId: "fpo-1" });
+      tx.feedProductionBatch.findFirst = jest.fn().mockResolvedValue(null);
+      tx.feedProductionBatch.aggregate = jest.fn().mockResolvedValue({ _sum: { producedQuantityKg: 0 } });
+      tx.feedProductionOrder.findUnique = jest.fn().mockResolvedValue({ status: "COMPLETED", plannedQuantityKg: 1000, deletedAt: null });
+
+      const service = makeService();
+      await expect(service.deleteExecution(makeUser(), "ex-1", {})).resolves.toEqual({ success: true });
+      expect(tx.feedProductionOrder.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "fpo-1" }, data: expect.objectContaining({ status: "APPROVED" }) }));
+      expect(tx.productionExecution.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "ex-1", deletedAt: null } }));
     });
   });
 

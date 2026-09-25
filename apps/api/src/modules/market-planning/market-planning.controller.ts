@@ -194,6 +194,20 @@ export class MarketPlanningController {
     return this.marketPlanningService.convertRecommendationToPurchaseRequest(user, id, dto, { ipAddress, userAgent });
   }
 
+  @Get("executions")
+  @RequirePermissions(PERMISSIONS.MARKET_PLANNING_READ)
+  executions(@CurrentUser() user: AuthenticatedUser, @Query() query: MarketPlanningQueryDto) {
+    return this.marketPlanningService.listExecutions(user, query);
+  }
+
+  // Reverses the posted batch, so the service also requires Feed Mill +
+  // Inventory manage (the permissions needed to post it).
+  @Delete("executions/:id")
+  @RequirePermissions(PERMISSIONS.MARKET_PLANNING_MANAGE)
+  deleteExecution(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.marketPlanningService.deleteExecution(user, id, { ipAddress, userAgent });
+  }
+
   @Post("executions")
   @RequirePermissions(PERMISSIONS.FEED_MANAGE, PERMISSIONS.INVENTORY_MANAGE)
   createExecution(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateProductionExecutionDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {

@@ -123,10 +123,25 @@ function Card({ label, value, icon: Icon }: { label: string; value: React.ReactN
   );
 }
 
-// Delete is only offered for DRAFT/SUBMITTED targets — matches the backend
-// guard exactly (deleteTarget rejects anything APPROVED+, since production
-// plans/MRP/recommendations already depend on it by then).
-const TARGET_DELETABLE_STATUSES = ["DRAFT", "SUBMITTED"];
+// Delete is offered at every stage. Past Submitted it also removes what the
+// approval created and reverses posted production; the backend decides
+// whether that's allowed (manager only, nothing sold/dispatched, no open
+// purchase request) and says why if not.
+const TARGET_SIMPLE_DELETE_STATUSES = ["DRAFT", "SUBMITTED"];
+
+const REVERSAL_NOTE = "Any production already posted is reversed: raw materials go back to the store they came from and the finished feed is taken back out of stock. Blocked if any of that feed has been sold or dispatched, or a purchase request raised from it is still open.";
+
+function targetDeleteMessage(target: { title?: string; targetNumber?: string; status?: string } | null | undefined) {
+  if (!target) return "";
+  const name = `"${target.title}" (${target.targetNumber})`;
+  if (TARGET_SIMPLE_DELETE_STATUSES.includes(target.status ?? "")) return `This will permanently remove ${name}. This can't be undone.`;
+  return `This removes ${name} together with its production plans, Feed Mill orders, MRP runs and recommendations. ${REVERSAL_NOTE}`;
+}
+
+function planDeleteMessage(plan: { planNumber?: string } | null | undefined) {
+  if (!plan) return "";
+  return `This removes plan "${plan.planNumber}" together with its Feed Mill orders, MRP runs and recommendations. ${REVERSAL_NOTE}`;
+}
 
 function TargetTable({ rows, loading, onDelete }: { rows: TargetRow[]; loading?: boolean; onDelete?: (row: TargetRow) => void }) {
   return (
@@ -143,40 +158,20 @@ function TargetTable({ rows, loading, onDelete }: { rows: TargetRow[]; loading?:
         { key: "itemCount", label: "Items", render: (row) => number(row.itemCount) },
         ...(onDelete ? [{
           key: "actions", label: "", render: (row: TargetRow) => (
-            TARGET_DELETABLE_STATUSES.includes(row.status) ? (
-              <button
-                type="button"
-                className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50"
-                onClick={(e) => { e.stopPropagation(); onDelete(row); }}
-                title="Delete target"
-              >
-                <Trash2 className="h-3.5 w-3.5" /> Delete
-              </button>
-            ) : (
-              <LockedNote reason={`${row.status.charAt(0) + row.status.slice(1).toLowerCase()} targets can't be deleted — only Draft or Submitted ones can.`} />
-            )
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50"
+              onClick={(e) => { e.stopPropagation(); onDelete(row); }}
+              title="Delete target"
+            >
+              <Trash2 className="h-3.5 w-3.5" /> Delete
+            </button>
           )
         }] : [])
       ]}
     />
   );
 }
-
-// L-BUG follow-up (2026-08-13): deleteProductionPlan's backend guard was
-// fixed to also allow APPROVED (plans are always created APPROVED through
-// the normal flow — DRAFT/READY_FOR_APPROVAL are never actually reachable),
-// gated on no MRP run or execution depending on it yet. This array was left
-// listing only the two unreachable statuses, so the delete button still
-// never rendered for any real plan — the exact "fixed on the backend, dead
-// on the frontend" bug this whole audit pass was about, reintroduced by
-// the same fix that closed it. Whether an APPROVED plan is ACTUALLY
-// deletable depends on data (MRP/execution counts) this list can't see —
-// show the button and let the backend's real guard be the source of truth;
-// a genuinely blocked delete surfaces its own clear error via deleteError.
-const PLAN_DELETABLE_STATUSES = ["DRAFT", "READY_FOR_APPROVAL", "APPROVED"];
-// Mirrors deleteMrp's guard: delete allowed only before a procurement
-// recommendation could depend on it.
-const MRP_DELETABLE_STATUSES = ["DRAFT", "CALCULATED", "SHORTAGE"];
 
 function PlanTable({ rows, loading, onDelete }: { rows: PlanRow[]; loading?: boolean; onDelete?: (row: PlanRow) => void }) {
   return (
@@ -192,11 +187,9 @@ function PlanTable({ rows, loading, onDelete }: { rows: PlanRow[]; loading?: boo
         { key: "createdAt", label: "Created", render: (row) => new Date(row.createdAt).toLocaleDateString() },
         ...(onDelete ? [{
           key: "actions", label: "", render: (row: PlanRow) => (
-            PLAN_DELETABLE_STATUSES.includes(row.status) ? (
-              <button type="button" className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50" onClick={(e) => { e.stopPropagation(); onDelete(row); }} title="Delete production plan">
-                <Trash2 className="h-3.5 w-3.5" /> Delete
-              </button>
-            ) : <LockedNote reason={`${row.status.charAt(0) + row.status.slice(1).toLowerCase().replace(/_/g, " ")} plans can't be deleted — production has moved too far along.`} />
+            <button type="button" className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50" onClick={(e) => { e.stopPropagation(); onDelete(row); }} title="Delete production plan">
+              <Trash2 className="h-3.5 w-3.5" /> Delete
+            </button>
           )
         }] : [])
       ]}
@@ -218,11 +211,9 @@ function MrpTable({ rows, loading, onDelete }: { rows: MrpRow[]; loading?: boole
         { key: "totalShortageKg", label: "Shortage kg", render: (row) => number(row.totalShortageKg) },
         ...(onDelete ? [{
           key: "actions", label: "", render: (row: MrpRow) => (
-            MRP_DELETABLE_STATUSES.includes(row.status) ? (
-              <button type="button" className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50" onClick={(e) => { e.stopPropagation(); onDelete(row); }} title="Delete MRP run">
-                <Trash2 className="h-3.5 w-3.5" /> Delete
-              </button>
-            ) : <LockedNote reason={`${row.status.charAt(0) + row.status.slice(1).toLowerCase().replace(/_/g, " ")} MRP runs can't be deleted — only Draft, Calculated, or Shortage ones can.`} />
+            <button type="button" className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50" onClick={(e) => { e.stopPropagation(); onDelete(row); }} title="Delete MRP run">
+              <Trash2 className="h-3.5 w-3.5" /> Delete
+            </button>
           )
         }] : [])
       ]}
@@ -413,7 +404,7 @@ export function MarketTargetListPage() {
         onConfirm={confirmDelete}
         loading={deleting}
         title="Delete market target?"
-        message={`This will permanently remove "${deleteTarget?.title}" (${deleteTarget?.targetNumber}). This can't be undone.`}
+        message={targetDeleteMessage(deleteTarget)}
         confirmLabel="Delete target"
       />
     </>
@@ -534,7 +525,6 @@ export function CreateMarketTargetPage({ period }: { period: "WEEKLY" | "MONTHLY
 // DRAFT and SUBMITTED — once APPROVED, production plans/MRP/recommendations
 // already depend on the target's values.
 const TARGET_EDITABLE_STATUSES = ["DRAFT"];
-const TARGET_DELETABLE_STATUSES_DETAIL = ["DRAFT", "SUBMITTED"];
 
 export function MarketTargetDetailsPage() {
   const params = useParams<{ id: string }>();
@@ -677,7 +667,7 @@ export function MarketTargetDetailsPage() {
   }
 
   const canEdit = !!target && TARGET_EDITABLE_STATUSES.includes(target.status);
-  const canDelete = !!target && TARGET_DELETABLE_STATUSES_DETAIL.includes(target.status);
+  const canDelete = !!target;
 
   return (
     <>
@@ -701,8 +691,8 @@ export function MarketTargetDetailsPage() {
           )}
         </div>
       </div>
-      {!canEdit && !canDelete && target && (
-        <p className="mb-4 text-xs text-ink/45">This target is {target.status.toLowerCase()} — editing and deleting are only available for DRAFT (or SUBMITTED, for delete) targets.</p>
+      {!canEdit && target && (
+        <p className="mb-4 text-xs text-ink/45">This target is {target.status.toLowerCase()} — editing is only available for DRAFT targets.</p>
       )}
       {(loadError || optionsError) && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{loadError || optionsError}</p>}
       {deleteError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{deleteError}</p>}
@@ -784,7 +774,7 @@ export function MarketTargetDetailsPage() {
         onConfirm={doDelete}
         loading={deleting}
         title="Delete market target?"
-        message={`This will permanently remove "${target?.title}" (${target?.targetNumber}). This can't be undone.`}
+        message={targetDeleteMessage(target)}
         confirmLabel="Delete target"
       />
       <ConfirmModal
@@ -793,7 +783,7 @@ export function MarketTargetDetailsPage() {
         onConfirm={confirmDeletePlan}
         loading={deletingPlan}
         title="Delete production plan?"
-        message={`This will permanently remove plan "${deletePlanRow?.planNumber}". This can't be undone.`}
+        message={planDeleteMessage(deletePlanRow)}
         confirmLabel="Delete plan"
       />
     </>
@@ -911,7 +901,7 @@ export function ProductionPlanPage() {
         onConfirm={confirmDelete}
         loading={deleting}
         title="Delete production plan?"
-        message={`This will permanently remove plan "${deletePlan?.planNumber}". This can't be undone.`}
+        message={planDeleteMessage(deletePlan)}
         confirmLabel="Delete plan"
       />
     </>
@@ -992,7 +982,7 @@ export function MaterialRequirementPlanningPage() {
         onConfirm={confirmDelete}
         loading={deleting}
         title="Delete MRP run?"
-        message={`This will permanently remove MRP run "${deleteMrpRow?.mrpNumber}". This can't be undone.`}
+        message={`This removes MRP run "${deleteMrpRow?.mrpNumber}" and its procurement recommendations. Blocked while a purchase request raised from it is still open — cancel that in Procurement first.`}
         confirmLabel="Delete MRP run"
       />
     </>
@@ -1181,8 +1171,45 @@ export function ProcurementRecommendationPage({ convert = false }: { convert?: b
   );
 }
 
+type ExecutionRow = {
+  id: string;
+  planNumber: string | null;
+  batchNumber: string | null;
+  product?: { name?: string };
+  productId: string;
+  producedQuantityKg: string | number;
+  status: string;
+  createdAt: string;
+};
+
 export function ProductionExecutionPage() {
   const { options, optionsError } = useOptions();
+  const [executions, setExecutions] = useState<ExecutionRow[]>(() => getCachedFirst<ApiEnvelope<ExecutionRow[]>>("/market-planning/executions")?.data ?? []);
+  const [deleteExecution, setDeleteExecution] = useState<ExecutionRow | null>(null);
+  const [deletingExecution, setDeletingExecution] = useState(false);
+  const [deleteExecutionError, setDeleteExecutionError] = useState("");
+  function loadExecutions() {
+    apiFetch<ApiEnvelope<ExecutionRow[]>>("/market-planning/executions").then((res) => setExecutions(res.data ?? [])).catch(() => undefined);
+  }
+  useEffect(() => { loadExecutions(); }, []);
+  async function confirmDeleteExecution() {
+    if (!deleteExecution) return;
+    setDeletingExecution(true);
+    setDeleteExecutionError("");
+    try {
+      await apiFetch(`/market-planning/executions/${deleteExecution.id}`, { method: "DELETE" });
+      const deletedId = deleteExecution.id;
+      setDeleteExecution(null);
+      setExecutions((prev) => prev.filter((row) => row.id !== deletedId));
+      loadExecutions();
+      loadPlans();
+    } catch (err) {
+      setDeleteExecutionError(err instanceof Error ? err.message : "Delete failed.");
+      setDeleteExecution(null);
+    } finally {
+      setDeletingExecution(false);
+    }
+  }
   const [plans, setPlans] = useState<PlanRow[]>(() => getCachedFirst<ApiEnvelope<PlanRow[]>>("/market-planning/production-plans")?.data ?? []);
   const [plan, setPlan] = useState<PlanRow | null>(null);
   const [form, setForm] = useState({ planId: "", productionPlanItemId: "", rawMaterialWarehouseId: "", finishedGoodsWarehouseId: "", producedQuantityKg: "", wastageKg: "0" });
@@ -1226,6 +1253,7 @@ export function ProductionExecutionPage() {
       const { planId, ...payload } = form;
       await apiFetch("/market-planning/executions", { method: "POST", body: JSON.stringify({ ...payload, producedQuantityKg: Number(form.producedQuantityKg), wastageKg: Number(form.wastageKg) }) });
       setMessage("Production execution posted to inventory");
+      loadExecutions();
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Failed to post production execution.");
     } finally {
@@ -1252,6 +1280,37 @@ export function ProductionExecutionPage() {
         <div className="flex items-center gap-3 md:col-span-2"><button disabled={submitting} className="inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white disabled:opacity-60" type="submit"><Factory className="h-4 w-4" /> {submitting ? "Posting…" : "Post execution"}</button>{message && <span className="text-sm font-semibold text-emerald-700">{message}</span>}</div>
         {submitError && <p className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-700 md:col-span-2">{submitError}</p>}
       </form>
+
+      <h3 className="mb-3 mt-8 text-sm font-bold text-ink">Posted executions</h3>
+      {deleteExecutionError && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{deleteExecutionError}</p>}
+      <DataTable<ExecutionRow>
+        rows={executions}
+        empty="No production executions posted yet."
+        columns={[
+          { key: "batchNumber", label: "Batch", render: (row) => row.batchNumber ?? "-" },
+          { key: "planNumber", label: "Plan", render: (row) => row.planNumber ?? "-" },
+          { key: "product", label: "Product", render: (row) => row.product?.name ?? row.productId },
+          { key: "producedQuantityKg", label: "Produced kg", render: (row) => number(row.producedQuantityKg) },
+          { key: "createdAt", label: "Posted", render: (row) => new Date(row.createdAt).toLocaleDateString() },
+          { key: "status", label: "Status" },
+          {
+            key: "actions", label: "", render: (row) => (
+              <button type="button" className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50" onClick={() => { setDeleteExecutionError(""); setDeleteExecution(row); }} title="Delete execution and reverse its stock">
+                <Trash2 className="h-3.5 w-3.5" /> Delete
+              </button>
+            )
+          }
+        ]}
+      />
+      <ConfirmModal
+        open={!!deleteExecution}
+        onClose={() => setDeleteExecution(null)}
+        onConfirm={confirmDeleteExecution}
+        loading={deletingExecution}
+        title="Delete production execution?"
+        message={`Batch ${deleteExecution?.batchNumber ?? ""} (${number(deleteExecution?.producedQuantityKg ?? 0)} kg) will be reversed: its raw materials go back to the store they came from and the finished feed is taken back out of stock. The plan's progress goes back down so the run can be posted again. Blocked if any of this feed has been sold or dispatched.`}
+        confirmLabel="Delete execution"
+      />
     </>
   );
 }
