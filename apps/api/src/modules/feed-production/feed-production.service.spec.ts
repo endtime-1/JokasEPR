@@ -803,6 +803,12 @@ describe("FeedProductionService.updateFormula — correcting the finished produc
     });
   });
 
+  it("moves a formula to another branch so it can be ordered at that branch's production site", async () => {
+    prisma.branch = { ...(prisma.branch ?? {}), findFirst: jest.fn().mockResolvedValue({ id: "branch-2" }) };
+    await makeService().updateFormula(makeUser(), "formula-1", { branchId: "branch-2" } as never, {});
+    expect(tx.feedFormula.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ branchId: "branch-2" }) }));
+  });
+
   it("leaves orders alone when the product isn't changing", async () => {
     await makeService().updateFormula(makeUser(), "formula-1", { name: "Layer 1 Concentrate" } as never, {});
     expect(tx.feedProductionOrder.updateMany).not.toHaveBeenCalled();

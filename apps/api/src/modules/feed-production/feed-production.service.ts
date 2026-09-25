@@ -182,7 +182,7 @@ export class FeedProductionService {
       }),
       this.prisma.feedFormula.findMany({
         where: this.formulaWhere(user, {}),
-        select: { id: true, code: true, name: true, feedType: true, finishedProductId: true, currentVersionNo: true },
+        select: { id: true, branchId: true, code: true, name: true, feedType: true, finishedProductId: true, currentVersionNo: true },
         orderBy: { name: "asc" }
       }),
       this.prisma.feedProductionBatch.findMany({
@@ -333,6 +333,16 @@ export class FeedProductionService {
     const formula = await this.requireFormula(user, id);
     const productChanged = dto.finishedProductId !== undefined && dto.finishedProductId !== formula.finishedProductId;
     const newProduct = productChanged ? await this.getProduct(user.companyId, dto.finishedProductId as string) : null;
+    // A formula can only be ordered at a production site in its own branch.
+    // The branch was taken from the finished product at creation and could
+    // never be changed, so a formula that landed in the wrong branch was
+    // unusable.
+    const branchChanged = dto.branchId !== undefined && dto.branchId !== formula.branchId;
+    if (branchChanged) {
+      const branch = await this.prisma.branch.findFirst({ where: { id: dto.branchId, companyId: user.companyId, deletedAt: null }, select: { id: true } });
+      if (!branch) throw new NotFoundException("Branch was not found.");
+      this.assertBranchAccess(user, branch.id);
+    }
     let movedOrders = 0;
     const updated = await this.prisma.$transaction(async (tx) => {
       const row = await tx.feedFormula.update({
@@ -342,6 +352,7 @@ export class FeedProductionService {
           ...(dto.targetBatchKg !== undefined && { targetBatchKg: dto.targetBatchKg }),
           ...(dto.status !== undefined && { status: dto.status }),
           ...(newProduct && { finishedProductId: newProduct.id }),
+          ...(branchChanged && { branchId: dto.branchId }),
           updatedById: user.id,
         },
       });
@@ -464,7 +475,12 @@ export class FeedProductionService {
       this.getFormulaForCosting(user, dto.formulaId)
     ]);
     if (site.branchId !== formula.branchId) {
-      throw new BadRequestException("Production site and formula must belong to the same branch.");
+      const branches = await this.prisma.branch.findMany({ where: { id: { in: [site.branchId, formula.branchId] } }, select: { id: true, name: true } });
+      const branchName = (id: string) => branches.find((b) => b.id === id)?.name ?? "another branch";
+      throw new BadRequestException(
+        `Production site "${site.name}" is in ${branchName(site.branchId)}, but formula "${formula.name}" is in ${branchName(formula.branchId)}. ` +
+          "Pick a production site in the formula's branch, or change the formula's branch under Feed Mill → Formulas → Edit."
+      );
     }
     if (dto.marketTargetId) {
       const target = await this.prisma.marketTarget.findFirst({

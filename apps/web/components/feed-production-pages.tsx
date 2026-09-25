@@ -42,6 +42,7 @@ type FeedOptions = {
 
 type FormulaRow = {
   id: string;
+  branchId?: string;
   code: string;
   name: string;
   feedType: string;
@@ -761,7 +762,7 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
 
   // Header edit state
   const [editingHeader, setEditingHeader] = useState(false);
-  const [headerDraft, setHeaderDraft] = useState({ name: "", targetBatchKg: "", finishedProductId: "" });
+  const [headerDraft, setHeaderDraft] = useState({ name: "", targetBatchKg: "", finishedProductId: "", branchId: "" });
   const [headerSaving, setHeaderSaving] = useState(false);
   const [headerErr, setHeaderErr] = useState("");
 
@@ -814,7 +815,7 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
   useApiRecovery(!formula, load);
 
   function openHeaderEdit() {
-    setHeaderDraft({ name: formula?.name ?? "", targetBatchKg: String(formula?.targetBatchKg ?? ""), finishedProductId: formula?.finishedProduct?.id ?? "" });
+    setHeaderDraft({ name: formula?.name ?? "", targetBatchKg: String(formula?.targetBatchKg ?? ""), finishedProductId: formula?.finishedProduct?.id ?? "", branchId: formula?.branchId ?? "" });
     setEditingHeader(true);
   }
 
@@ -827,7 +828,8 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
         body: JSON.stringify({
           name: headerDraft.name,
           targetBatchKg: Number(headerDraft.targetBatchKg),
-          ...(headerDraft.finishedProductId && headerDraft.finishedProductId !== formula?.finishedProduct?.id ? { finishedProductId: headerDraft.finishedProductId } : {})
+          ...(headerDraft.finishedProductId && headerDraft.finishedProductId !== formula?.finishedProduct?.id ? { finishedProductId: headerDraft.finishedProductId } : {}),
+          ...(headerDraft.branchId && headerDraft.branchId !== formula?.branchId ? { branchId: headerDraft.branchId } : {})
         }),
       });
       setEditingHeader(false);
@@ -1065,9 +1067,22 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
               </select>
               <p className="mt-1 text-xs text-ink/45">
                 Changing this also updates this formula&rsquo;s orders that haven&rsquo;t produced anything yet. Batches already posted stay stocked as the old product —
-                delete them on Production Batches and post again to move that stock.
+                use &ldquo;Change product&rdquo; on Production Batches to move that stock.
               </p>
             </div>
+            {(options.branches ?? []).length > 1 && (
+              <div className="sm:col-span-3">
+                <label className="mb-1.5 block text-xs font-semibold text-ink/55">Branch</label>
+                <select
+                  value={headerDraft.branchId}
+                  onChange={(e) => setHeaderDraft((d) => ({ ...d, branchId: e.target.value }))}
+                  className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                >
+                  {(options.branches ?? []).map((b) => <option key={b.id} value={b.id}>{b.code} — {b.name}</option>)}
+                </select>
+                <p className="mt-1 text-xs text-ink/45">Orders can only use this formula at a production site in the same branch.</p>
+              </div>
+            )}
           </div>
           <div className="mt-4 flex gap-2">
             <button onClick={saveHeader} disabled={headerSaving} className="app-button-primary">
@@ -1375,7 +1390,7 @@ export function FeedProductionOrdersPage({ create = false }: { create?: boolean 
       await apiFetch("/feed-production/orders", {
         method: "POST",
         body: JSON.stringify({
-          productionSiteId: form.productionSiteId || options.productionSites[0]?.id,
+          productionSiteId: orderFormSites(options, form).siteId || undefined,
           formulaId: form.formulaId || options.formulas[0]?.id,
           plannedQuantityKg: Number(form.plannedQuantityKg),
           scheduledDate: form.scheduledDate,
@@ -1637,12 +1652,28 @@ export function FeedProductionOrdersPage({ create = false }: { create?: boolean 
   );
 }
 
+// A formula can only be ordered at a production site in its own branch, so
+// the site list follows the chosen formula instead of defaulting to
+// whichever site happens to be first (which may be another branch).
+function orderFormSites(options: FeedOptions, form: OrderFormState) {
+  const formula = options.formulas.find((f) => f.id === (form.formulaId || options.formulas[0]?.id));
+  const sites = formula?.branchId ? options.productionSites.filter((s) => s.branchId === formula.branchId) : options.productionSites;
+  const siteId = sites.some((s) => s.id === form.productionSiteId) ? form.productionSiteId : sites[0]?.id ?? "";
+  return { formula, sites, siteId };
+}
+
 function OrderForm({ options, form, setForm, submit, submitting }: { options: FeedOptions; form: OrderFormState; setForm: (form: OrderFormState) => void; submit: (event: FormEvent<HTMLFormElement>) => void; submitting?: boolean }) {
+  const { formula, sites, siteId } = orderFormSites(options, form);
   return (
     <form onSubmit={submit} className="mb-6 rounded-2xl border border-line bg-white p-5 shadow-panel">
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <SelectField label="Production site *" value={form.productionSiteId || options.productionSites[0]?.id || ""} options={options.productionSites} onChange={(value) => setForm({ ...form, productionSiteId: value })} />
         <SelectField label="Formula *" value={form.formulaId || options.formulas[0]?.id || ""} options={options.formulas} onChange={(value) => setForm({ ...form, formulaId: value })} />
+        <SelectField label="Production site *" value={siteId} options={sites} onChange={(value) => setForm({ ...form, productionSiteId: value })} />
+        {formula && sites.length === 0 && (
+          <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 md:col-span-2 lg:col-span-3">
+            No production site is in this formula&rsquo;s branch. Change the formula&rsquo;s branch under Feed Mill → Formulas → Edit.
+          </p>
+        )}
         <SelectField label="Raw material warehouse" value={form.rawMaterialWarehouseId || guessFeedWarehouseId(options.warehouses, "raw") || options.warehouses[0]?.id || ""} options={options.warehouses} onChange={(value) => setForm({ ...form, rawMaterialWarehouseId: value })} />
         <FormField label="Planned quantity (kg) *"><input className={inputClass} type="number" min="0.001" step="0.001" value={form.plannedQuantityKg} onChange={(event) => setForm({ ...form, plannedQuantityKg: event.target.value })} required /></FormField>
         <FormField label="Scheduled date *"><input className={inputClass} type="date" value={form.scheduledDate} onChange={(event) => setForm({ ...form, scheduledDate: event.target.value })} required /></FormField>
