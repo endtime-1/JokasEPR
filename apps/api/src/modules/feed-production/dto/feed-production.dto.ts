@@ -101,6 +101,53 @@ export class CreateFeedFormulaDto {
   ingredients?: FeedFormulaIngredientInputDto[];
 }
 
+// An alternative formula for the same finished product as an existing one
+// (e.g. Chick Mash from local soya instead of HiPro soya). Product, branch and
+// feed type are copied from that formula and can't be supplied here.
+// Ingredients default to a copy of that formula's when left out.
+export class CreateFeedFormulaAlternativeDto {
+  @IsString()
+  @MaxLength(40)
+  code!: string;
+
+  @IsString()
+  @MaxLength(160)
+  name!: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0.001)
+  targetBatchKg?: number;
+
+  @IsOptional()
+  @IsEnum(FeedFormulaStatus)
+  status?: FeedFormulaStatus;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => FeedFormulaIngredientInputDto)
+  ingredients?: FeedFormulaIngredientInputDto[];
+}
+
+// The order form's "which formula?" list for one finished product: each
+// active formula's cost, and — with a warehouse and quantity — whether that
+// warehouse holds enough of its ingredients.
+export class FeedFormulaChoicesQueryDto {
+  @IsUUID()
+  productId!: string;
+
+  @IsOptional()
+  @IsUUID()
+  warehouseId?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0.001)
+  quantityKg?: number;
+}
+
 export class AddFeedFormulaIngredientDto extends FeedFormulaIngredientInputDto {}
 
 export class UpdateFeedFormulaDto {

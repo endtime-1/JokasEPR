@@ -3877,6 +3877,15 @@ model FeedFormula {
   targetBatchKg     Decimal           @default(100) @db.Decimal(18, 4)
   status            FeedFormulaStatus @default(DRAFT)
   currentVersionNo  Int               @default(1)
+  // Several formulas may make the same finished product (e.g. Chick Mash
+  // from local soya or from HiPro soya). isDefault marks the one the system
+  // uses when it picks a formula for a product by itself (sales shortfall
+  // orders, Market Planning) — at most one per product.
+  isDefault         Boolean           @default(false)
+  // Set when this formula was created as an alternative of another one.
+  // Its finished product then follows that formula and can't be changed on
+  // its own. Loose reference (no @relation), same as marketTargetId.
+  alternativeOfId   String?
   createdById       String?
   updatedById       String?
   createdAt         DateTime          @default(now())
@@ -3894,6 +3903,7 @@ model FeedFormula {
   @@index([companyId])
   @@index([branchId])
   @@index([finishedProductId])
+  @@index([alternativeOfId])
   @@index([companyId, feedType])
   @@index([companyId, status])
   @@index([deletedAt])

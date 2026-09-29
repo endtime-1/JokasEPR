@@ -725,7 +725,7 @@ describe("MarketPlanningService — an old/unapproved formula can't be used just
     await expect(service.resolveFormula("company-1", "prod-1", "formula-1")).rejects.toThrow(/active feed formula/);
     expect(mockPrisma.feedFormula.findFirst).toHaveBeenCalledWith({
       where: { companyId: "company-1", deletedAt: null, status: "ACTIVE", id: "formula-1" },
-      orderBy: { updatedAt: "desc" }
+      orderBy: [{ isDefault: "desc" }, { updatedAt: "desc" }]
     });
   });
 

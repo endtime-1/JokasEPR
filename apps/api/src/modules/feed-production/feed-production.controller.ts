@@ -7,6 +7,7 @@ import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { PermissionsGuard } from "../../common/guards/permissions.guard";
 import {
   AddFeedFormulaIngredientDto,
+  CreateFeedFormulaAlternativeDto,
   CreateFeedFormulaDto,
   CreateFeedFormulaVersionDto,
   CreateFeedInternalTransferDto,
@@ -16,6 +17,7 @@ import {
   CreateFeedProductionOrderDto,
   CreateFeedQualityCheckDto,
   CreateIngredientDto,
+  FeedFormulaChoicesQueryDto,
   FeedProductionQueryDto,
   HiproPredictiveQueryDto,
   RecordExternalFeedSaleDto,
@@ -56,6 +58,24 @@ export class FeedProductionController {
   @RequirePermissions(PERMISSIONS.FEED_MANAGE)
   createFormula(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateFeedFormulaDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
     return this.feedProductionService.createFormula(user, dto, { ipAddress, userAgent });
+  }
+
+  @Get("formulas/choices")
+  @RequirePermissions(PERMISSIONS.FEED_READ)
+  formulaChoices(@CurrentUser() user: AuthenticatedUser, @Query() query: FeedFormulaChoicesQueryDto) {
+    return this.feedProductionService.formulaChoices(user, query);
+  }
+
+  @Post("formulas/:id/alternatives")
+  @RequirePermissions(PERMISSIONS.FEED_MANAGE)
+  createAlternativeFormula(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: CreateFeedFormulaAlternativeDto, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.feedProductionService.createAlternativeFormula(user, id, dto, { ipAddress, userAgent });
+  }
+
+  @Patch("formulas/:id/default")
+  @RequirePermissions(PERMISSIONS.FEED_MANAGE)
+  setDefaultFormula(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Ip() ipAddress: string, @Headers("user-agent") userAgent?: string) {
+    return this.feedProductionService.setDefaultFormula(user, id, { ipAddress, userAgent });
   }
 
   @Get("formulas/:id/costing")

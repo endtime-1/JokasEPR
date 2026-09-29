@@ -3,7 +3,7 @@
 import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { CircleAlert, AlertTriangle, ArrowLeft, Ban, ChartBar, Brain, Calculator, CircleCheckBig, ChevronDown, ChevronUp, Download, Factory, GripVertical, Package, PackageCheck, Pencil, Plus, Printer, RotateCw, Trash2, TrendingUp, Zap } from "lucide-react";
+import { CircleAlert, AlertTriangle, ArrowLeft, Ban, ChartBar, Brain, Calculator, CircleCheckBig, ChevronDown, ChevronUp, CopyPlus, Download, Factory, GripVertical, Package, PackageCheck, Pencil, Plus, Printer, RotateCw, Star, Trash2, TrendingUp, Zap } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { DataTable } from "./data-table";
 import { FormField } from "./form-field";
@@ -25,6 +25,8 @@ type Option = {
   feedForm?: "MASH" | "CONCENTRATE" | null;
   finishedProductId?: string;
   currentVersionNo?: number;
+  isDefault?: boolean;
+  alternativeOfId?: string | null;
 };
 
 type FeedOptions = {
@@ -48,9 +50,11 @@ type FormulaRow = {
   feedType: string;
   status: string;
   targetBatchKg: string | number;
+  isDefault?: boolean;
+  alternativeOfId?: string | null;
   finishedProduct?: { id?: string; name: string; sku: string };
   costing?: { ingredientCost: number; costPer100Kg: number; costPer50KgBag: number };
-  ingredients?: Array<{ id: string; quantityKg: string | number; unitCost: string | number; ingredient?: { name: string; sku: string } }>;
+  ingredients?: Array<{ id: string; ingredientId?: string; quantityKg: string | number; unitCost: string | number; ingredient?: { name: string; sku: string } }>;
   versions?: Array<{ id: string; versionNo: number; status: string; costPer100Kg: string | number; costPer50KgBag: string | number; createdAt: string }>;
 };
 
@@ -107,6 +111,7 @@ type IngredientDraftRow = {
 
 type OrderFormState = {
   productionSiteId: string;
+  productId: string;
   formulaId: string;
   plannedQuantityKg: string;
   scheduledDate: string;
@@ -215,6 +220,7 @@ export function FeedFormulaListPage() {
   const [deleteErr, setDeleteErr] = useState("");
 
   const [loadError, setLoadError] = useState("");
+  const [defaultErr, setDefaultErr] = useState("");
 
   async function load() {
     setLoadError("");
@@ -255,6 +261,16 @@ export function FeedFormulaListPage() {
     }
   }
 
+  async function makeDefault(row: FormulaRow) {
+    setDefaultErr("");
+    try {
+      await apiFetch(`/feed-production/formulas/${row.id}/default`, { method: "PATCH" });
+      await load();
+    } catch (err: unknown) {
+      setDefaultErr((err as Error)?.message ?? "Could not change the default formula.");
+    }
+  }
+
   async function handleDelete() {
     if (!deleteTarget) return;
     setDeleting(true);
@@ -277,7 +293,17 @@ export function FeedFormulaListPage() {
       <Link className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white" href="/feed-production/formulas/create">
         <Plus aria-hidden className="h-4 w-4" /> Create formula
       </Link>
-      <FormulaTable rows={rows} loading={loading} onEdit={openEdit} onDelete={setDeleteTarget} />
+      <p className="mb-4 text-xs text-ink/50">
+        One feed can have several formulas — e.g. Chick Mash from local soya or from HiPro soya. Use <CopyPlus aria-hidden className="inline h-3.5 w-3.5" /> to add
+        another formula for the same feed; it always stocks the same product. The <Star aria-hidden className="inline h-3.5 w-3.5 fill-amber-400 text-amber-500" /> default
+        is the one used when the system picks a formula by itself (sales shortfall orders, Market Planning).
+      </p>
+      {(loadError || defaultErr) && (
+        <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+          <CircleAlert className="h-4 w-4 shrink-0" /><span>{loadError || defaultErr}</span>
+        </div>
+      )}
+      <FormulaTable rows={rows} loading={loading} onEdit={openEdit} onDelete={setDeleteTarget} onMakeDefault={makeDefault} />
 
       {/* Edit drawer */}
       {editTarget && (
@@ -400,6 +426,30 @@ export function FormulaBuilderPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // "Add alternative" mode (?alternativeOf=<formula id>): another formula for
+  // the same feed. Product, branch and feed type come from that formula and
+  // are locked; ingredients start as a copy to edit (e.g. swap HiPro soya
+  // for local soya).
+  const [base, setBase] = useState<FormulaRow | null>(null);
+  const [baseErr, setBaseErr] = useState("");
+  useEffect(() => {
+    const baseId = new URLSearchParams(window.location.search).get("alternativeOf");
+    if (!baseId) return;
+    apiFetch<ApiEnvelope<FormulaRow>>(`/feed-production/formulas/${baseId}`)
+      .then((res) => {
+        const f = res.data;
+        setBase(f);
+        setFinishedProductId(f.finishedProduct?.id ?? "");
+        setBranchId(f.branchId ?? "");
+        setFeedType(f.feedType);
+        setTargetBatchKg(String(Number(f.targetBatchKg)));
+        setName(`${f.finishedProduct?.name ?? f.name} – `);
+        const copied = (f.ingredients ?? []).map((i) => ({ uid: uid(), ingredientId: i.ingredientId ?? "", quantityKg: String(Number(i.quantityKg)), unitCost: String(Number(i.unitCost)) }));
+        if (copied.length) setIngRows(copied);
+      })
+      .catch((err: unknown) => setBaseErr((err as Error)?.message ?? "Could not load the formula to copy."));
+  }, []);
+
   function addRow() {
     setIngRows((prev) => [...prev, { uid: uid(), ingredientId: "", quantityKg: "", unitCost: "" }]);
   }
@@ -424,14 +474,25 @@ export function FormulaBuilderPage() {
       setError("Add at least one ingredient before saving the formula.");
       return;
     }
-    if ((options.branches ?? []).length > 1 && !branchId) {
+    if (!base && (options.branches ?? []).length > 1 && !branchId) {
       setError("Select a branch before saving the formula.");
       return;
     }
     setSaving(true);
     setError(null);
     try {
-      const res = await apiFetch<ApiEnvelope<FormulaRow>>("/feed-production/formulas", {
+      const ingredients = validRows.map((r, i) => ({
+        ingredientId: r.ingredientId,
+        quantityKg: Number(r.quantityKg),
+        unitCost: Number(r.unitCost),
+        sortOrder: i + 1
+      }));
+      const res = base
+        ? await apiFetch<ApiEnvelope<FormulaRow>>(`/feed-production/formulas/${base.id}/alternatives`, {
+            method: "POST",
+            body: JSON.stringify({ code, name, targetBatchKg: batchKg, status: "ACTIVE", ingredients })
+          })
+        : await apiFetch<ApiEnvelope<FormulaRow>>("/feed-production/formulas", {
         method: "POST",
         body: JSON.stringify({
           finishedProductId,
@@ -469,17 +530,19 @@ export function FormulaBuilderPage() {
               <ArrowLeft className="h-3 w-3" /> Formulas
             </Link>
             <p className="app-kicker">Feed Mill</p>
-            <h1 className="mt-0.5 text-2xl font-bold text-ink">New Feed Formula</h1>
+            <h1 className="mt-0.5 text-2xl font-bold text-ink">{base ? "Alternative Formula" : "New Feed Formula"}</h1>
             <p className="mt-1 text-sm text-ink/55">
-              Set formula details, then add as many ingredients as needed. The formula cannot be saved without at least one ingredient.
+              {base
+                ? <>Another formula for <strong>{base.finishedProduct?.name}</strong>, next to {base.code} ({base.name}). It always stocks the same product. The ingredients below are copied from {base.code} — change the ones that differ (e.g. local soya instead of HiPro soya).</>
+                : "Set formula details, then add as many ingredients as needed. The formula cannot be saved without at least one ingredient."}
             </p>
           </div>
         </div>
 
-        {optionsError && (
+        {(optionsError || baseErr) && (
           <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
             <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>{optionsError}</span>
+            <span>{optionsError || baseErr}</span>
           </div>
         )}
         {error && (
@@ -499,16 +562,21 @@ export function FormulaBuilderPage() {
                 <label className="mb-1.5 block text-xs font-semibold text-ink/55">Finished Product *</label>
                 <select
                   required
-                  className={inputCls}
+                  disabled={!!base}
+                  className={`${inputCls} disabled:bg-field disabled:text-ink/70`}
                   value={finishedProductId}
                   onChange={(e) => setFinishedProductId(e.target.value)}
                 >
                   <option value="">Select finished product…</option>
                   <FeedFormOptions products={options.finishedFeeds} />
                 </select>
-                <p className="mt-1 text-xs text-ink/45">This is the product every batch from this formula is stocked as in the finished-goods store — pick the exact one (e.g. Concentrate vs Mash).</p>
+                <p className="mt-1 text-xs text-ink/45">
+                  {base
+                    ? `Locked — alternative formulas always make the same product as ${base.code}.`
+                    : "This is the product every batch from this formula is stocked as in the finished-goods store — pick the exact one (e.g. Concentrate vs Mash)."}
+                </p>
               </div>
-              {(options.branches ?? []).length > 1 && (
+              {!base && (options.branches ?? []).length > 1 && (
                 <div>
                   <label className="mb-1.5 block text-xs font-semibold text-ink/55">Branch *</label>
                   <select required className={inputCls} value={branchId} onChange={(e) => setBranchId(e.target.value)}>
@@ -521,7 +589,7 @@ export function FormulaBuilderPage() {
               )}
               <div>
                 <label className="mb-1.5 block text-xs font-semibold text-ink/55">Feed Type *</label>
-                <select required className={inputCls} value={feedType} onChange={(e) => setFeedType(e.target.value)}>
+                <select required disabled={!!base} className={`${inputCls} disabled:bg-field disabled:text-ink/70`} value={feedType} onChange={(e) => setFeedType(e.target.value)}>
                   {FEED_TYPES.map((t) => <option key={t}>{t}</option>)}
                 </select>
               </div>
@@ -531,7 +599,7 @@ export function FormulaBuilderPage() {
               </div>
               <div>
                 <label className="mb-1.5 block text-xs font-semibold text-ink/55">Formula Name *</label>
-                <input required maxLength={160} className={inputCls} placeholder="e.g. Layer Mash Premium" value={name} onChange={(e) => setName(e.target.value)} />
+                <input required maxLength={160} className={inputCls} placeholder={base ? "e.g. Chick Mash – Local Soya" : "e.g. Layer Mash Premium"} value={name} onChange={(e) => setName(e.target.value)} />
               </div>
               <div>
                 <label className="mb-1.5 block text-xs font-semibold text-ink/55">Target Batch kg *</label>
@@ -712,17 +780,46 @@ export function FormulaBuilderPage() {
   );
 }
 
-function FormulaTable({ rows, loading, onEdit, onDelete }: { rows: FormulaRow[]; loading?: boolean; onEdit?: (row: FormulaRow) => void; onDelete?: (row: FormulaRow) => void }) {
+function FormulaTable({ rows, loading, onEdit, onDelete, onMakeDefault }: { rows: FormulaRow[]; loading?: boolean; onEdit?: (row: FormulaRow) => void; onDelete?: (row: FormulaRow) => void; onMakeDefault?: (row: FormulaRow) => void }) {
+  // Formulas for the same feed sit together, default first, so the choices
+  // for one product (local vs HiPro soya) read as a group.
+  const perProduct = new Map<string, number>();
+  for (const row of rows) {
+    const key = row.finishedProduct?.id ?? "";
+    perProduct.set(key, (perProduct.get(key) ?? 0) + 1);
+  }
+  const sorted = [...rows].sort((a, b) =>
+    (a.finishedProduct?.name ?? "").localeCompare(b.finishedProduct?.name ?? "") ||
+    Number(!!b.isDefault) - Number(!!a.isDefault) ||
+    a.name.localeCompare(b.name)
+  );
   return (
     <DataTable
-      rows={rows}
+      rows={sorted}
       loading={loading}
       empty="No feed formulas found"
       columns={[
-        { key: "code", label: "Formula", render: (row) => <Link className="font-semibold text-brand" href={`/feed-production/formulas/${row.id}`}>{row.code}</Link> },
+        {
+          key: "code", label: "Formula", render: (row) => (
+            <span className="inline-flex items-center gap-1.5">
+              {row.isDefault && <Star aria-label="Default formula" className="h-3.5 w-3.5 shrink-0 fill-amber-400 text-amber-500" />}
+              <Link className="font-semibold text-brand" href={`/feed-production/formulas/${row.id}`}>{row.code}</Link>
+            </span>
+          )
+        },
         { key: "name", label: "Name", render: (row) => row.name },
         { key: "feedType", label: "Feed type", render: (row) => row.feedType },
-        { key: "product", label: "Finished feed", render: (row) => row.finishedProduct?.name ?? "-" },
+        {
+          key: "product", label: "Finished feed", render: (row) => {
+            const count = perProduct.get(row.finishedProduct?.id ?? "") ?? 1;
+            return (
+              <span>
+                {row.finishedProduct?.name ?? "-"}
+                {count > 1 && <span className="ml-1.5 rounded-full bg-field px-2 py-0.5 text-[10px] font-semibold text-ink/55">{count} formulas</span>}
+              </span>
+            );
+          }
+        },
         { key: "cost100", label: "Cost / 100kg", render: (row) => money(row.costing?.costPer100Kg) },
         { key: "costBag", label: "Cost / 50kg", render: (row) => money(row.costing?.costPer50KgBag) },
         { key: "status", label: "Status", render: (row) => <StatusBadge status={row.status} /> },
@@ -730,6 +827,22 @@ function FormulaTable({ rows, loading, onEdit, onDelete }: { rows: FormulaRow[];
           key: "actions", label: "",
           render: (row) => (
             <div className="flex items-center justify-end gap-1">
+              {!row.isDefault && row.status === "ACTIVE" && onMakeDefault && (
+                <button
+                  onClick={() => onMakeDefault(row)}
+                  title="Make this the default formula for its feed"
+                  className="rounded-lg p-1.5 text-ink/40 hover:bg-amber-50 hover:text-amber-600 transition"
+                >
+                  <Star className="h-3.5 w-3.5" />
+                </button>
+              )}
+              <Link
+                href={`/feed-production/formulas/create?alternativeOf=${row.id}`}
+                title="Add another formula for the same feed"
+                className="rounded-lg p-1.5 text-ink/40 hover:bg-brand/10 hover:text-brand transition"
+              >
+                <CopyPlus className="h-3.5 w-3.5" />
+              </Link>
               <button
                 onClick={() => onEdit?.(row)}
                 title="Edit formula"
@@ -950,7 +1063,22 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
     }
   }
 
+  const [makingDefault, setMakingDefault] = useState(false);
+  async function makeDefault() {
+    setMakingDefault(true);
+    setArchiveErr("");
+    try {
+      await apiFetch(`/feed-production/formulas/${params.id}/default`, { method: "PATCH" });
+      await load();
+    } catch (e: unknown) {
+      setArchiveErr(e instanceof Error ? e.message : "Could not make this the default formula.");
+    } finally {
+      setMakingDefault(false);
+    }
+  }
+
   const title = mode === "costing" ? "Formula Costing" : mode === "versions" ? "Formula Version History" : formula?.name ?? "Formula Details";
+  const isAlternative = !!formula?.alternativeOfId;
 
   return (
     <>
@@ -959,6 +1087,11 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-bold text-ink">{title}</h1>
             {formula?.status && <StatusBadge status={formula.status} />}
+            {formula?.isDefault && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700">
+                <Star aria-hidden className="h-3 w-3 fill-amber-400 text-amber-500" /> Default for {formula.finishedProduct?.name}
+              </span>
+            )}
           </div>
           <p className="mt-0.5 text-sm text-ink/50">Formula ingredients, cost per 100kg, cost per 50kg bag, and version history.</p>
         </div>
@@ -970,6 +1103,21 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
             >
               <Pencil className="h-3.5 w-3.5" aria-hidden /> Edit
             </button>
+            <Link
+              href={`/feed-production/formulas/create?alternativeOf=${params.id}`}
+              className="inline-flex items-center gap-2 rounded-xl border border-line bg-white px-4 py-2 text-sm font-semibold text-ink/60 shadow-sm transition hover:border-brand/30 hover:text-brand"
+            >
+              <CopyPlus className="h-3.5 w-3.5" aria-hidden /> Add alternative formula
+            </Link>
+            {formula && !formula.isDefault && formula.status === "ACTIVE" && (
+              <button
+                onClick={makeDefault}
+                disabled={makingDefault}
+                className="inline-flex items-center gap-2 rounded-xl border border-line bg-white px-4 py-2 text-sm font-semibold text-ink/60 shadow-sm transition hover:border-amber-300 hover:text-amber-700 disabled:opacity-50"
+              >
+                <Star className="h-3.5 w-3.5" aria-hidden /> {makingDefault ? "Saving…" : "Make default"}
+              </button>
+            )}
             {formula?.status === "ARCHIVED" ? (
               <button
                 onClick={restoreFormula}
@@ -1059,15 +1207,20 @@ export function FeedFormulaDetailsPage({ mode = "details" }: { mode?: "details" 
               <label className="mb-1.5 block text-xs font-semibold text-ink/55">Finished Product</label>
               <select
                 value={headerDraft.finishedProductId}
+                disabled={isAlternative}
                 onChange={(e) => setHeaderDraft((d) => ({ ...d, finishedProductId: e.target.value }))}
-                className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                className="min-h-10 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15 disabled:bg-field disabled:text-ink/70"
               >
                 <option value="">Select finished product…</option>
                 <FeedFormOptions products={options.finishedFeeds} />
               </select>
               <p className="mt-1 text-xs text-ink/45">
-                Changing this also updates this formula&rsquo;s orders that haven&rsquo;t produced anything yet. Batches already posted stay stocked as the old product —
-                use &ldquo;Change product&rdquo; on Production Batches to move that stock.
+                {isAlternative ? (
+                  <>Locked — this is an alternative formula and always makes the same product as the <Link className="text-brand underline" href={`/feed-production/formulas/${formula?.alternativeOfId}`}>formula it was made from</Link>. Change the product there; its alternatives follow.</>
+                ) : (
+                  <>Changing this also moves this formula&rsquo;s alternative formulas and the orders that haven&rsquo;t produced anything yet. Batches already posted stay stocked as the old product —
+                  use &ldquo;Change product&rdquo; on Production Batches to move that stock.</>
+                )}
               </p>
             </div>
             {(options.branches ?? []).length > 1 && (
@@ -1342,7 +1495,7 @@ export function FeedProductionOrdersPage({ create = false }: { create?: boolean 
   const { options, optionsError } = useFeedOptions();
   const [rows, setRows] = useState<OrderRow[]>(() => getCachedFirst<ApiEnvelope<OrderRow[]>>("/feed-production/orders")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/feed-production/orders"));
-  const [form, setForm] = useState<OrderFormState>({ productionSiteId: "", formulaId: "", plannedQuantityKg: "", scheduledDate: today(), rawMaterialWarehouseId: "", marketTargetId: "", notes: "" });
+  const [form, setForm] = useState<OrderFormState>({ productionSiteId: "", productId: "", formulaId: "", plannedQuantityKg: "", scheduledDate: today(), rawMaterialWarehouseId: "", marketTargetId: "", notes: "" });
   const [submitErr, setSubmitErr] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [actionErr, setActionErr] = useState("");
@@ -1391,7 +1544,7 @@ export function FeedProductionOrdersPage({ create = false }: { create?: boolean 
         method: "POST",
         body: JSON.stringify({
           productionSiteId: orderFormSites(options, form).siteId || undefined,
-          formulaId: form.formulaId || options.formulas[0]?.id,
+          formulaId: orderFormSites(options, form).formula?.id,
           plannedQuantityKg: Number(form.plannedQuantityKg),
           scheduledDate: form.scheduledDate,
           rawMaterialWarehouseId: form.rawMaterialWarehouseId || guessFeedWarehouseId(options.warehouses, "raw") || options.warehouses[0]?.id,
@@ -1655,27 +1808,105 @@ export function FeedProductionOrdersPage({ create = false }: { create?: boolean 
 // A formula can only be ordered at a production site in its own branch, so
 // the site list follows the chosen formula instead of defaulting to
 // whichever site happens to be first (which may be another branch).
+//
+// The form picks the feed first, then one of that feed's formulas (local vs
+// HiPro soya) — the feed's default one unless another is chosen. The
+// formulas list arrives default-first from the API.
 function orderFormSites(options: FeedOptions, form: OrderFormState) {
-  const formula = options.formulas.find((f) => f.id === (form.formulaId || options.formulas[0]?.id));
+  const productId = form.productId || options.formulas[0]?.finishedProductId || "";
+  const productFormulas = options.formulas.filter((f) => f.finishedProductId === productId);
+  const formula = productFormulas.find((f) => f.id === form.formulaId) ?? productFormulas[0];
   const sites = formula?.branchId ? options.productionSites.filter((s) => s.branchId === formula.branchId) : options.productionSites;
   const siteId = sites.some((s) => s.id === form.productionSiteId) ? form.productionSiteId : sites[0]?.id ?? "";
-  return { formula, sites, siteId };
+  return { productId, productFormulas, formula, sites, siteId };
+}
+
+type FormulaChoice = {
+  id: string;
+  code: string;
+  name: string;
+  isDefault: boolean;
+  costPer50KgBag: number;
+  costPer100Kg: number;
+  availability: { canProduce: boolean; shortages: Array<{ name: string; neededKg: number; availableKg: number; shortageKg: number }> } | null;
+};
+
+// The chosen feed's formulas side by side: cost per 50 kg bag and whether
+// the raw material warehouse holds enough for the planned quantity.
+function FormulaChoices({ productId, warehouseId, quantityKg, selectedId, onSelect }: { productId: string; warehouseId: string; quantityKg: number; selectedId?: string; onSelect: (id: string) => void }) {
+  const [choices, setChoices] = useState<FormulaChoice[]>([]);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    if (!productId) { setChoices([]); return; }
+    let stale = false;
+    const timer = setTimeout(() => {
+      const qs = new URLSearchParams({ productId });
+      if (warehouseId && quantityKg > 0) { qs.set("warehouseId", warehouseId); qs.set("quantityKg", String(quantityKg)); }
+      apiFetch<ApiEnvelope<FormulaChoice[]>>(`/feed-production/formulas/choices?${qs}`)
+        .then((res) => { if (!stale) { setChoices(res.data ?? []); setError(""); } })
+        .catch((err: unknown) => { if (!stale) setError((err as Error)?.message ?? "Could not load the formulas for this feed."); });
+    }, 350);
+    return () => { stale = true; clearTimeout(timer); };
+  }, [productId, warehouseId, quantityKg]);
+
+  if (error) return <p className="text-xs text-red-600 md:col-span-2 lg:col-span-3">{error}</p>;
+  if (!choices.length) return null;
+  return (
+    <fieldset className="md:col-span-2 lg:col-span-3">
+      <legend className="mb-1.5 text-sm font-semibold">Formula *</legend>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {choices.map((c) => {
+          const selected = c.id === selectedId;
+          return (
+            <label key={c.id} className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 text-sm transition ${selected ? "border-brand bg-brand/5 ring-2 ring-brand/15" : "border-line hover:border-brand/40"}`}>
+              <input type="radio" name="formulaChoice" className="mt-1" checked={selected} onChange={() => onSelect(c.id)} />
+              <span className="min-w-0 flex-1">
+                <span className="flex flex-wrap items-center gap-1.5 font-semibold text-ink">
+                  {c.name}
+                  {c.isDefault && <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700"><Star aria-hidden className="h-2.5 w-2.5 fill-amber-400 text-amber-500" /> Default</span>}
+                </span>
+                <span className="block text-xs text-ink/50">{c.code} · {money(c.costPer50KgBag)} per 50 kg bag</span>
+                {c.availability == null ? (
+                  <span className="mt-1 block text-xs text-ink/40">Enter a quantity to check the store.</span>
+                ) : c.availability.canProduce ? (
+                  <span className="mt-1 block text-xs font-semibold text-emerald-700">Enough raw material in the store</span>
+                ) : (
+                  <span className="mt-1 block text-xs text-amber-700">
+                    Short: {c.availability.shortages.map((sh) => `${sh.name} ${number(sh.shortageKg)} kg`).join(", ")}
+                  </span>
+                )}
+              </span>
+            </label>
+          );
+        })}
+      </div>
+    </fieldset>
+  );
 }
 
 function OrderForm({ options, form, setForm, submit, submitting }: { options: FeedOptions; form: OrderFormState; setForm: (form: OrderFormState) => void; submit: (event: FormEvent<HTMLFormElement>) => void; submitting?: boolean }) {
-  const { formula, sites, siteId } = orderFormSites(options, form);
+  const { productId, formula, sites, siteId } = orderFormSites(options, form);
+  // Only feeds that have at least one active formula can be ordered.
+  const producible = new Set(options.formulas.map((f) => f.finishedProductId));
+  const feeds = options.finishedFeeds.filter((p) => producible.has(p.id));
+  const warehouseId = form.rawMaterialWarehouseId || guessFeedWarehouseId(options.warehouses, "raw") || options.warehouses[0]?.id || "";
   return (
     <form onSubmit={submit} className="mb-6 rounded-2xl border border-line bg-white p-5 shadow-panel">
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <SelectField label="Formula *" value={form.formulaId || options.formulas[0]?.id || ""} options={options.formulas} onChange={(value) => setForm({ ...form, formulaId: value })} />
+        <FormField label="Feed to produce *">
+          <select className={inputClass} value={productId} onChange={(event) => setForm({ ...form, productId: event.target.value, formulaId: "" })} required>
+            <FeedFormOptions products={feeds} />
+          </select>
+        </FormField>
         <SelectField label="Production site *" value={siteId} options={sites} onChange={(value) => setForm({ ...form, productionSiteId: value })} />
         {formula && sites.length === 0 && (
           <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 md:col-span-2 lg:col-span-3">
             No production site is in this formula&rsquo;s branch. Change the formula&rsquo;s branch under Feed Mill → Formulas → Edit.
           </p>
         )}
-        <SelectField label="Raw material warehouse" value={form.rawMaterialWarehouseId || guessFeedWarehouseId(options.warehouses, "raw") || options.warehouses[0]?.id || ""} options={options.warehouses} onChange={(value) => setForm({ ...form, rawMaterialWarehouseId: value })} />
+        <SelectField label="Raw material warehouse" value={warehouseId} options={options.warehouses} onChange={(value) => setForm({ ...form, rawMaterialWarehouseId: value })} />
         <FormField label="Planned quantity (kg) *"><input className={inputClass} type="number" min="0.001" step="0.001" value={form.plannedQuantityKg} onChange={(event) => setForm({ ...form, plannedQuantityKg: event.target.value })} required /></FormField>
+        <FormulaChoices productId={productId} warehouseId={warehouseId} quantityKg={Number(form.plannedQuantityKg) || 0} selectedId={formula?.id} onSelect={(id) => setForm({ ...form, formulaId: id })} />
         <FormField label="Scheduled date *"><input className={inputClass} type="date" value={form.scheduledDate} onChange={(event) => setForm({ ...form, scheduledDate: event.target.value })} required /></FormField>
         <FormField label="Notes"><input className={inputClass} placeholder="Optional notes…" value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} /></FormField>
         {options.marketTargets.length > 0 && (

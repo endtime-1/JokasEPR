@@ -174,8 +174,8 @@ export class MarketPlanningService {
       }),
       this.prisma.feedFormula.findMany({
         where: { companyId: user.companyId, deletedAt: null, status: "ACTIVE" },
-        select: { id: true, branchId: true, finishedProductId: true, code: true, name: true, targetBatchKg: true, currentVersionNo: true },
-        orderBy: { name: "asc" }
+        select: { id: true, branchId: true, finishedProductId: true, code: true, name: true, targetBatchKg: true, currentVersionNo: true, isDefault: true },
+        orderBy: [{ isDefault: "desc" }, { name: "asc" }]
       }),
       this.prisma.product.findMany({
         where: { companyId: user.companyId, deletedAt: null, type: { in: ["RAW_MATERIAL", "SEMI_FINISHED", "CONSUMABLE"] } },
@@ -1772,7 +1772,9 @@ export class MarketPlanningService {
   private async resolveFormula(companyId: string, productId: string, formulaId?: string) {
     const formula = await this.prisma.feedFormula.findFirst({
       where: { companyId, deletedAt: null, status: "ACTIVE", ...(formulaId ? { id: formulaId } : { finishedProductId: productId }) },
-      orderBy: { updatedAt: "desc" }
+      // A product can have several formulas (local vs HiPro soya) — with
+      // none named, use the one marked default.
+      orderBy: [{ isDefault: "desc" }, { updatedAt: "desc" }]
     });
     if (!formula) throw new BadRequestException("An active feed formula is required for each market target product.");
     return formula;

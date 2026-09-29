@@ -1913,10 +1913,13 @@ export class SalesService {
     createdById: string
   ) {
     for (const item of items) {
-      // Find an active formula whose finished product matches this sales item
+      // Find an active formula whose finished product matches this sales
+      // item — the product's default one when it has several (e.g. local
+      // soya vs HiPro soya); the mill can switch it on the order.
       const formula = await this.prisma.feedFormula.findFirst({
         where: { companyId, finishedProductId: item.productId, status: "ACTIVE", deletedAt: null },
-        select: { id: true, branchId: true, finishedProductId: true, targetBatchKg: true }
+        select: { id: true, branchId: true, finishedProductId: true, targetBatchKg: true },
+        orderBy: [{ isDefault: "desc" }, { updatedAt: "desc" }]
       });
       if (!formula) continue; // not a feed product — skip
 

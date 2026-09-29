@@ -9,7 +9,7 @@ import { ConfirmModal, LockedNote } from "./ui";
 import { ApiEnvelope, apiFetch, getCached, getCachedFirst, hasCached, invalidateCache } from "../lib/api";
 import { useApiRecovery } from "../lib/use-api-recovery";
 
-type Option = { id: string; branchId?: string; productionSiteId?: string; code?: string; sku?: string; name: string; finishedProductId?: string };
+type Option = { id: string; branchId?: string; productionSiteId?: string; code?: string; sku?: string; name: string; finishedProductId?: string; isDefault?: boolean };
 type PlanningOptions = { branches: Option[]; productionSites: Option[]; warehouses: Option[]; finishedFeeds: Option[]; formulas: Option[]; rawMaterials: Option[] };
 type TargetRow = { id: string; targetNumber: string; title: string; period: string; status: string; periodStart: string; periodEnd: string; targetKg?: number; itemCount?: number };
 type TargetItem = { id: string; productId: string; baseQuantity: string | number; adjustmentPercent: string | number; finalTargetQuantity: string | number; bagSizeKg: string | number; targetQuantityKg: string | number; approvalStatus: string; product?: { name: string; sku: string } };
@@ -462,7 +462,8 @@ export function CreateMarketTargetPage({ period }: { period: "WEEKLY" | "MONTHLY
           marketId: form.marketId || undefined,
           items: [{
             productId: form.productId || options.finishedFeeds[0]?.id,
-            formulaId: form.formulaId || formulas[0]?.id,
+            // Left blank, the API uses the product's default formula.
+            formulaId: form.formulaId || undefined,
             baseQuantity: Number(form.baseQuantity),
             adjustmentPercent: Number(form.adjustmentPercent),
             bagSizeKg: Number(form.bagSizeKg),
@@ -508,7 +509,7 @@ export function CreateMarketTargetPage({ period }: { period: "WEEKLY" | "MONTHLY
           </label>
         )}
         <label className="grid gap-1 text-sm font-semibold">Feed product<select required className={inputClass} value={form.productId} onChange={(e) => setForm({ ...form, productId: e.target.value, formulaId: "" })}><option value="">Select product</option>{options.finishedFeeds.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
-        <label className="grid gap-1 text-sm font-semibold">Formula<select className={inputClass} value={form.formulaId} onChange={(e) => setForm({ ...form, formulaId: e.target.value })}><option value="">Active formula</option>{formulas.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
+        <label className="grid gap-1 text-sm font-semibold">Formula<select className={inputClass} value={form.formulaId} onChange={(e) => setForm({ ...form, formulaId: e.target.value })}><option value="">Default formula</option>{formulas.map((x) => <option key={x.id} value={x.id}>{x.name}{x.isDefault ? " (default)" : ""}</option>)}</select></label>
         <label className="grid gap-1 text-sm font-semibold">Base bags<input className={inputClass} type="number" min="0" step="0.01" value={form.baseQuantity} onChange={(e) => setForm({ ...form, baseQuantity: e.target.value })} /></label>
         <label className="grid gap-1 text-sm font-semibold">Adjustment %<input className={inputClass} type="number" step="0.01" value={form.adjustmentPercent} onChange={(e) => setForm({ ...form, adjustmentPercent: e.target.value })} /></label>
         <label className="grid gap-1 text-sm font-semibold">Bag size kg<input className={inputClass} type="number" min="1" step="0.01" value={form.bagSizeKg} onChange={(e) => setForm({ ...form, bagSizeKg: e.target.value })} /></label>

@@ -12,6 +12,7 @@ import { SalesService } from "../sales/sales.service";
 import { assertFeedBatchReversible, assertFeedOrdersReversible, deleteFeedOrderTx, refreshFeedOrderStatusTx, reverseFeedBatchTx } from "./feed-batch-reversal";
 import {
   AddFeedFormulaIngredientDto,
+  CreateFeedFormulaAlternativeDto,
   CreateFeedFormulaDto,
   CreateFeedFormulaVersionDto,
   CreateFeedInternalTransferDto,
@@ -21,6 +22,7 @@ import {
   CreateFeedProductionOrderDto,
   CreateFeedQualityCheckDto,
   CreateIngredientDto,
+  FeedFormulaChoicesQueryDto,
   FeedProductionQueryDto,
   HiproPredictiveQueryDto,
   RecordExternalFeedSaleDto,
@@ -182,8 +184,8 @@ export class FeedProductionService {
       }),
       this.prisma.feedFormula.findMany({
         where: this.formulaWhere(user, {}),
-        select: { id: true, branchId: true, code: true, name: true, feedType: true, finishedProductId: true, currentVersionNo: true },
-        orderBy: { name: "asc" }
+        select: { id: true, branchId: true, code: true, name: true, feedType: true, finishedProductId: true, currentVersionNo: true, isDefault: true, alternativeOfId: true },
+        orderBy: [{ isDefault: "desc" }, { name: "asc" }]
       }),
       this.prisma.feedProductionBatch.findMany({
         where: this.batchWhere(user, {}),
@@ -272,6 +274,10 @@ export class FeedProductionService {
     const existing = await this.prisma.feedFormula.findFirst({ where: { companyId: user.companyId, code: codeUpper, deletedAt: null } });
     if (existing) throw new ConflictException(`Formula code "${codeUpper}" is already in use.`);
 
+    // The first formula for a product becomes its default; a later one for
+    // the same product is an extra recipe until someone marks it default.
+    const productHasDefault = await this.prisma.feedFormula.count({ where: { companyId: user.companyId, finishedProductId: finishedProduct.id, isDefault: true, deletedAt: null } });
+
     const formula = await this.prisma.feedFormula.create({
       data: {
         companyId: user.companyId,
@@ -282,6 +288,7 @@ export class FeedProductionService {
         feedType: dto.feedType,
         targetBatchKg: dto.targetBatchKg,
         status: dto.status ?? "DRAFT",
+        isDefault: productHasDefault === 0,
         createdById: user.id,
         ingredients: dto.ingredients?.length
           ? {
@@ -303,6 +310,96 @@ export class FeedProductionService {
 
     await this.writeAudit(user, "CREATE", "FeedFormula", formula.id, `Created feed formula ${formula.code}`, context, { branchId });
     return { data: formula };
+  }
+
+  // Another recipe for the same finished product — e.g. Chick Mash from local
+  // soya next to the HiPro soya one. Product, branch and feed type are copied
+  // from the formula it's made from, so it can never stock a different
+  // product. Ingredients start as a copy unless the caller sends its own.
+  async createAlternativeFormula(user: AuthenticatedUser, baseId: string, dto: CreateFeedFormulaAlternativeDto, context: RequestContext) {
+    const base = await this.prisma.feedFormula.findFirst({
+      where: { ...this.formulaWhere(user, {}), id: baseId },
+      include: { ingredients: { where: { deletedAt: null }, orderBy: { sortOrder: "asc" } }, finishedProduct: { select: { name: true } } }
+    });
+    if (!base) throw new NotFoundException("Feed formula was not found.");
+    this.assertBranchAccess(user, base.branchId);
+
+    const codeUpper = dto.code.toUpperCase();
+    const existing = await this.prisma.feedFormula.findFirst({ where: { companyId: user.companyId, code: codeUpper, deletedAt: null } });
+    if (existing) throw new ConflictException(`Formula code "${codeUpper}" is already in use.`);
+
+    const ingredients = dto.ingredients?.length
+      ? dto.ingredients.map((ingredient, index) => ({ ingredientId: ingredient.ingredientId, quantityKg: ingredient.quantityKg, unitCost: ingredient.unitCost, sortOrder: ingredient.sortOrder ?? index + 1 }))
+      : base.ingredients.map((ingredient) => ({ ingredientId: ingredient.ingredientId, quantityKg: ingredient.quantityKg, unitCost: ingredient.unitCost, sortOrder: ingredient.sortOrder }));
+    if (!ingredients.length) throw new BadRequestException("Add at least one ingredient to the alternative formula.");
+
+    const formula = await this.prisma.feedFormula.create({
+      data: {
+        companyId: user.companyId,
+        branchId: base.branchId,
+        finishedProductId: base.finishedProductId,
+        // Always point at the group's original formula, so a chain of
+        // alternatives still has one formula that owns the product.
+        alternativeOfId: base.alternativeOfId ?? base.id,
+        code: codeUpper,
+        name: dto.name,
+        feedType: base.feedType,
+        targetBatchKg: dto.targetBatchKg ?? base.targetBatchKg,
+        status: dto.status ?? "ACTIVE",
+        isDefault: false,
+        createdById: user.id,
+        ingredients: { create: ingredients.map((ingredient) => ({ companyId: user.companyId, ...ingredient })) }
+      },
+      include: { ingredients: true }
+    });
+    this.lookupCache.invalidate(`feed:opts:${user.companyId}:`);
+    await this.writeAudit(user, "CREATE", "FeedFormula", formula.id, `Created feed formula ${formula.code} as an alternative of ${base.code} (makes ${base.finishedProduct.name})`, context, { branchId: base.branchId });
+    return { data: formula };
+  }
+
+  // Marks the formula the system uses when it picks one for this product by
+  // itself (sales shortfall orders, Market Planning). One per product.
+  async setDefaultFormula(user: AuthenticatedUser, id: string, context: RequestContext) {
+    const formula = await this.requireFormula(user, id);
+    if (formula.status !== "ACTIVE") throw new BadRequestException("Only an active formula can be the default — set it to Active first.");
+    await this.prisma.$transaction([
+      this.prisma.feedFormula.updateMany({ where: { companyId: user.companyId, finishedProductId: formula.finishedProductId, isDefault: true, id: { not: id } }, data: { isDefault: false } }),
+      this.prisma.feedFormula.update({ where: { id }, data: { isDefault: true, updatedById: user.id } })
+    ]);
+    this.lookupCache.invalidate(`feed:opts:${user.companyId}:`);
+    await this.writeAudit(user, "UPDATE", "FeedFormula", id, `Made ${formula.code} the default formula for its product`, context, { branchId: formula.branchId });
+    return { data: { id, isDefault: true } };
+  }
+
+  // Every active formula that makes one product, with its cost and — given a
+  // raw-material warehouse and quantity — whether that warehouse can cover it.
+  async formulaChoices(user: AuthenticatedUser, query: FeedFormulaChoicesQueryDto) {
+    const formulas = await this.prisma.feedFormula.findMany({
+      where: { ...this.formulaWhere(user, {}), finishedProductId: query.productId, status: "ACTIVE" },
+      include: { ingredients: { where: { deletedAt: null }, include: { ingredient: { select: { name: true, sku: true } } }, orderBy: { sortOrder: "asc" } } },
+      orderBy: [{ isDefault: "desc" }, { name: "asc" }]
+    });
+    const data = await Promise.all(formulas.map(async (formula) => {
+      const costing = this.costFormula(formula);
+      const availability = query.warehouseId && query.quantityKg && formula.ingredients.length
+        ? await this.materialAvailability(user, formula.id, query.warehouseId, query.quantityKg)
+        : null;
+      return {
+        id: formula.id,
+        code: formula.code,
+        name: formula.name,
+        branchId: formula.branchId,
+        isDefault: formula.isDefault,
+        costPer100Kg: costing.costPer100Kg,
+        costPer50KgBag: costing.costPer50KgBag,
+        ingredientCount: formula.ingredients.length,
+        availability: availability && {
+          canProduce: availability.canProduce,
+          shortages: availability.ingredients.filter((i) => i.shortageKg > 0).map((i) => ({ name: i.productName, neededKg: i.quantityKg, availableKg: i.availableKg, shortageKg: i.shortageKg }))
+        }
+      };
+    }));
+    return { data };
   }
 
   async addIngredient(user: AuthenticatedUser, formulaId: string, dto: AddFeedFormulaIngredientDto, context: RequestContext) {
@@ -332,6 +429,12 @@ export class FeedProductionService {
   async updateFormula(user: AuthenticatedUser, id: string, dto: UpdateFeedFormulaDto, context: RequestContext) {
     const formula = await this.requireFormula(user, id);
     const productChanged = dto.finishedProductId !== undefined && dto.finishedProductId !== formula.finishedProductId;
+    // An alternative formula makes whatever its original formula makes —
+    // change the product there and the whole group moves together.
+    if (productChanged && formula.alternativeOfId) {
+      const original = await this.prisma.feedFormula.findFirst({ where: { id: formula.alternativeOfId, companyId: user.companyId, deletedAt: null }, select: { code: true, name: true } });
+      if (original) throw new BadRequestException(`"${formula.name}" is an alternative of ${original.code} (${original.name}) and always makes the same product. Change the finished product on ${original.code} instead — its alternatives follow it.`);
+    }
     const newProduct = productChanged ? await this.getProduct(user.companyId, dto.finishedProductId as string) : null;
     // A formula can only be ordered at a production site in its own branch.
     // The branch was taken from the finished product at creation and could
@@ -344,6 +447,7 @@ export class FeedProductionService {
       this.assertBranchAccess(user, branch.id);
     }
     let movedOrders = 0;
+    let movedAlternatives = 0;
     const updated = await this.prisma.$transaction(async (tx) => {
       const row = await tx.feedFormula.update({
         where: { id },
@@ -357,8 +461,20 @@ export class FeedProductionService {
         },
       });
       if (newProduct) {
+        // The formula's alternatives move with it, so the group keeps
+        // making one product.
+        const alternatives = await tx.feedFormula.findMany({ where: { companyId: user.companyId, alternativeOfId: id, deletedAt: null }, select: { id: true } });
+        const groupIds = [id, ...alternatives.map((a) => a.id)];
+        if (alternatives.length) {
+          await tx.feedFormula.updateMany({ where: { id: { in: alternatives.map((a) => a.id) } }, data: { finishedProductId: newProduct.id, updatedById: user.id } });
+          movedAlternatives = alternatives.length;
+        }
+        // One default per product: if the product being moved into already
+        // has one, it stays the default and the moved group's steps down.
+        const targetHasDefault = await tx.feedFormula.count({ where: { companyId: user.companyId, finishedProductId: newProduct.id, isDefault: true, deletedAt: null, id: { notIn: groupIds } } });
+        if (targetHasDefault) await tx.feedFormula.updateMany({ where: { id: { in: groupIds }, isDefault: true }, data: { isDefault: false } });
         const moved = await tx.feedProductionOrder.updateMany({
-          where: { companyId: user.companyId, formulaId: id, deletedAt: null, status: { in: ["DRAFT", "PENDING_STOCK_APPROVAL", "APPROVED"] }, batches: { none: { deletedAt: null } } },
+          where: { companyId: user.companyId, formulaId: { in: groupIds }, deletedAt: null, status: { in: ["DRAFT", "PENDING_STOCK_APPROVAL", "APPROVED"] }, batches: { none: { deletedAt: null } } },
           data: { finishedProductId: newProduct.id, updatedById: user.id }
         });
         movedOrders = moved.count;
@@ -366,7 +482,9 @@ export class FeedProductionService {
       return row;
     });
     if (newProduct) this.lookupCache.invalidate(`feed:opts:${user.companyId}:`);
-    const productNote = newProduct ? ` — finished product changed to ${newProduct.name}${movedOrders ? ` (${movedOrders} unproduced order(s) updated)` : ""}` : "";
+    const productNote = newProduct
+      ? ` — finished product changed to ${newProduct.name}${movedAlternatives ? ` with its ${movedAlternatives} alternative formula(s)` : ""}${movedOrders ? ` (${movedOrders} unproduced order(s) updated)` : ""}`
+      : "";
     await this.writeAudit(user, "UPDATE", "FeedFormula", id, `Updated feed formula ${formula.code}${productNote}`, context, { branchId: formula.branchId });
     return { data: updated };
   }
@@ -380,7 +498,24 @@ export class FeedProductionService {
     // @@unique([companyId, code]) isn't deletedAt-aware — without rewriting
     // the code here, deleting a formula and recreating one with the same
     // code fails the create with a unique-constraint error.
-    await this.prisma.feedFormula.update({ where: { id }, data: { code: `${formula.code}__deleted_${id}`, deletedAt: new Date(), updatedById: user.id } });
+    await this.prisma.$transaction(async (tx) => {
+      await tx.feedFormula.update({ where: { id }, data: { code: `${formula.code}__deleted_${id}`, deletedAt: new Date(), isDefault: false, updatedById: user.id } });
+      // Deleting a group's original formula: its oldest alternative becomes
+      // the new original, so the rest stay locked to the same product.
+      const alternatives = await tx.feedFormula.findMany({ where: { companyId: user.companyId, alternativeOfId: id, deletedAt: null }, select: { id: true }, orderBy: { createdAt: "asc" } });
+      if (alternatives.length) {
+        const [heir, ...rest] = alternatives;
+        await tx.feedFormula.update({ where: { id: heir.id }, data: { alternativeOfId: null } });
+        if (rest.length) await tx.feedFormula.updateMany({ where: { id: { in: rest.map((r) => r.id) } }, data: { alternativeOfId: heir.id } });
+      }
+      // Deleting the default: the most recently updated active formula for
+      // the product takes over — the one the system picked before defaults existed.
+      if (formula.isDefault) {
+        const next = await tx.feedFormula.findFirst({ where: { companyId: user.companyId, finishedProductId: formula.finishedProductId, status: "ACTIVE", deletedAt: null }, orderBy: { updatedAt: "desc" }, select: { id: true } });
+        if (next) await tx.feedFormula.update({ where: { id: next.id }, data: { isDefault: true } });
+      }
+    });
+    this.lookupCache.invalidate(`feed:opts:${user.companyId}:`);
     await this.writeAudit(user, "DELETE", "FeedFormula", id, `Deleted formula ${formula.code}`, context, { branchId: formula.branchId });
     return { data: { ok: true } };
   }

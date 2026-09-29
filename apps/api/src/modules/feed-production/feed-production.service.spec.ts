@@ -23,7 +23,7 @@ const mockPrisma = {
   feedProductionOrder: { findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn(), update: jest.fn() },
   feedProductionBatch: { aggregate: jest.fn(), findFirst: jest.fn(), count: jest.fn().mockResolvedValue(0) },
   feedProductionCost: { findFirst: jest.fn() },
-  feedFormula: { findFirst: jest.fn(), create: jest.fn() },
+  feedFormula: { findFirst: jest.fn(), create: jest.fn(), count: jest.fn().mockResolvedValue(0) },
   feedFormulaVersion: { findFirst: jest.fn().mockResolvedValue(null) },
   warehouse: { findFirst: jest.fn() },
   inventoryItem: { findMany: jest.fn() },
@@ -790,7 +790,12 @@ describe("FeedProductionService.updateFormula — correcting the finished produc
     jest.clearAllMocks();
     prisma.feedFormula.findFirst.mockResolvedValue({ id: "formula-1", code: "L1C", branchId: "branch-1", finishedProductId: "layer1-mash" });
     prisma.product.findFirst.mockResolvedValue({ id: "layer1-conc", name: "Layer 1 Concentrate" });
-    tx.feedFormula = { update: jest.fn().mockResolvedValue({ id: "formula-1", finishedProductId: "layer1-conc" }) };
+    tx.feedFormula = {
+      update: jest.fn().mockResolvedValue({ id: "formula-1", finishedProductId: "layer1-conc" }),
+      findMany: jest.fn().mockResolvedValue([]),
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      count: jest.fn().mockResolvedValue(0)
+    };
     tx.feedProductionOrder.updateMany = jest.fn().mockResolvedValue({ count: 2 });
   });
 
@@ -798,9 +803,30 @@ describe("FeedProductionService.updateFormula — correcting the finished produc
     await makeService().updateFormula(makeUser(), "formula-1", { finishedProductId: "layer1-conc" } as never, {});
     expect(tx.feedFormula.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ finishedProductId: "layer1-conc" }) }));
     expect(tx.feedProductionOrder.updateMany).toHaveBeenCalledWith({
-      where: { companyId: "company-1", formulaId: "formula-1", deletedAt: null, status: { in: ["DRAFT", "PENDING_STOCK_APPROVAL", "APPROVED"] }, batches: { none: { deletedAt: null } } },
+      where: { companyId: "company-1", formulaId: { in: ["formula-1"] }, deletedAt: null, status: { in: ["DRAFT", "PENDING_STOCK_APPROVAL", "APPROVED"] }, batches: { none: { deletedAt: null } } },
       data: { finishedProductId: "layer1-conc", updatedById: "user-1" }
     });
+  });
+
+  it("moves the formula's alternative formulas and their orders with it", async () => {
+    tx.feedFormula.findMany.mockResolvedValue([{ id: "alt-1" }, { id: "alt-2" }]);
+    await makeService().updateFormula(makeUser(), "formula-1", { finishedProductId: "layer1-conc" } as never, {});
+    expect(tx.feedFormula.updateMany).toHaveBeenCalledWith({ where: { id: { in: ["alt-1", "alt-2"] } }, data: { finishedProductId: "layer1-conc", updatedById: "user-1" } });
+    expect(tx.feedProductionOrder.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ formulaId: { in: ["formula-1", "alt-1", "alt-2"] } }) }));
+  });
+
+  it("steps the moved group's default down when the new product already has a default", async () => {
+    tx.feedFormula.count.mockResolvedValue(1);
+    await makeService().updateFormula(makeUser(), "formula-1", { finishedProductId: "layer1-conc" } as never, {});
+    expect(tx.feedFormula.updateMany).toHaveBeenCalledWith({ where: { id: { in: ["formula-1"] }, isDefault: true }, data: { isDefault: false } });
+  });
+
+  it("refuses to change the product of an alternative formula on its own", async () => {
+    prisma.feedFormula.findFirst
+      .mockResolvedValueOnce({ id: "alt-1", code: "CM-LS", name: "Chick Mash – Local Soya", branchId: "branch-1", finishedProductId: "chick-mash", alternativeOfId: "formula-1" })
+      .mockResolvedValueOnce({ code: "CM-HP", name: "Chick Mash – HiPro" });
+    await expect(makeService().updateFormula(makeUser(), "alt-1", { finishedProductId: "layer1-conc" } as never, {})).rejects.toThrow(/alternative of CM-HP/);
+    expect(tx.feedFormula.update).not.toHaveBeenCalled();
   });
 
   it("moves a formula to another branch so it can be ordered at that branch's production site", async () => {
@@ -883,5 +909,95 @@ describe("FeedProductionService.createBatch — shortage message names the ingre
 
     await expect(makeService().createBatch(makeUser(), { productionOrderId: "order-1", rawMaterialWarehouseId: "raw-wh", finishedWarehouseId: "fg-wh", producedQuantityKg: 500 } as never, {}))
       .rejects.toThrow(/Maize: needs 250 kg, Feed Store has 100 kg \(short 150 kg\) — also 800 kg in Main Store/);
+  });
+});
+
+describe("FeedProductionService — several formulas for one feed (local vs HiPro soya)", () => {
+  const prisma = mockPrisma as any;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    prisma.feedFormula.count = jest.fn().mockResolvedValue(0);
+    prisma.feedFormula.updateMany = jest.fn().mockReturnValue("updateMany-op");
+    prisma.feedFormula.update = jest.fn().mockReturnValue("update-op");
+    prisma.feedFormula.findMany = jest.fn();
+  });
+
+  const base = {
+    id: "formula-hp", code: "CM-HP", name: "Chick Mash – HiPro", branchId: "branch-1", finishedProductId: "chick-mash",
+    feedType: "CHICK_MASH", targetBatchKg: 1000, alternativeOfId: null, finishedProduct: { name: "Chick Mash" },
+    ingredients: [{ ingredientId: "hipro-soya", quantityKg: 200, unitCost: 9, sortOrder: 1 }, { ingredientId: "maize", quantityKg: 800, unitCost: 4, sortOrder: 2 }]
+  };
+
+  it("an alternative formula always stocks the original's product, branch and feed type", async () => {
+    prisma.feedFormula.findFirst.mockResolvedValueOnce(base).mockResolvedValueOnce(null);
+    prisma.feedFormula.create.mockResolvedValue({ id: "formula-ls", code: "CM-LS" });
+    await makeService().createAlternativeFormula(makeUser(), "formula-hp", {
+      code: "cm-ls", name: "Chick Mash – Local Soya",
+      ingredients: [{ ingredientId: "local-soya", quantityKg: 220, unitCost: 6 }, { ingredientId: "maize", quantityKg: 780, unitCost: 4 }]
+    } as never, {});
+    const data = prisma.feedFormula.create.mock.calls[0][0].data;
+    expect(data).toEqual(expect.objectContaining({
+      finishedProductId: "chick-mash", branchId: "branch-1", feedType: "CHICK_MASH", alternativeOfId: "formula-hp", code: "CM-LS", isDefault: false, status: "ACTIVE", targetBatchKg: 1000
+    }));
+    expect(data.ingredients.create.map((i: { ingredientId: string }) => i.ingredientId)).toEqual(["local-soya", "maize"]);
+  });
+
+  it("copies the original's ingredients when none are sent, and links a chain back to the first formula", async () => {
+    prisma.feedFormula.findFirst.mockResolvedValueOnce({ ...base, id: "formula-ls", alternativeOfId: "formula-hp" }).mockResolvedValueOnce(null);
+    prisma.feedFormula.create.mockResolvedValue({ id: "formula-3", code: "CM-3" });
+    await makeService().createAlternativeFormula(makeUser(), "formula-ls", { code: "CM-3", name: "Chick Mash – 3" } as never, {});
+    const data = prisma.feedFormula.create.mock.calls[0][0].data;
+    expect(data.alternativeOfId).toBe("formula-hp");
+    expect(data.ingredients.create).toHaveLength(2);
+  });
+
+  it("making a formula the default clears the product's other default", async () => {
+    prisma.feedFormula.findFirst.mockResolvedValue({ id: "formula-ls", code: "CM-LS", status: "ACTIVE", branchId: "branch-1", finishedProductId: "chick-mash" });
+    prisma.$transaction.mockImplementationOnce((ops: unknown[]) => Promise.resolve(ops));
+    await makeService().setDefaultFormula(makeUser(), "formula-ls", {});
+    expect(prisma.feedFormula.updateMany).toHaveBeenCalledWith({ where: { companyId: "company-1", finishedProductId: "chick-mash", isDefault: true, id: { not: "formula-ls" } }, data: { isDefault: false } });
+    expect(prisma.feedFormula.update).toHaveBeenCalledWith({ where: { id: "formula-ls" }, data: { isDefault: true, updatedById: "user-1" } });
+  });
+
+  it("an archived or draft formula can't be the default", async () => {
+    prisma.feedFormula.findFirst.mockResolvedValue({ id: "formula-ls", code: "CM-LS", status: "ARCHIVED", branchId: "branch-1", finishedProductId: "chick-mash" });
+    await expect(makeService().setDefaultFormula(makeUser(), "formula-ls", {})).rejects.toThrow(/Only an active formula/);
+  });
+
+  it("the first formula for a feed becomes its default; a second one does not", async () => {
+    prisma.product.findFirst.mockResolvedValue({ id: "chick-mash", branchId: "branch-1" });
+    prisma.feedFormula.findFirst.mockResolvedValue(null);
+    prisma.feedFormula.create.mockResolvedValue({ id: "f", code: "X", ingredients: [] });
+    const dto = { finishedProductId: "chick-mash", code: "X", name: "X", feedType: "CHICK_MASH", targetBatchKg: 1000 } as never;
+
+    await makeService().createFormula(makeUser(), dto, {});
+    expect(prisma.feedFormula.create.mock.calls[0][0].data.isDefault).toBe(true);
+
+    prisma.feedFormula.count.mockResolvedValue(1);
+    await makeService().createFormula(makeUser(), dto, {});
+    expect(prisma.feedFormula.create.mock.calls[1][0].data.isDefault).toBe(false);
+  });
+
+  it("order-form choices list each formula's bag cost and store shortfall", async () => {
+    prisma.feedFormula.findMany.mockResolvedValue([
+      { id: "formula-hp", code: "CM-HP", name: "HiPro", branchId: "branch-1", isDefault: true, targetBatchKg: 1000, ingredients: [{ ingredientId: "hipro-soya", quantityKg: 1000, unitCost: 10, ingredient: { name: "HiPro Soya", sku: "HP" } }] },
+      { id: "formula-ls", code: "CM-LS", name: "Local", branchId: "branch-1", isDefault: false, targetBatchKg: 1000, ingredients: [{ ingredientId: "local-soya", quantityKg: 1000, unitCost: 6, ingredient: { name: "Local Soya", sku: "LS" } }] }
+    ]);
+    // materialAvailability re-reads each formula, then the warehouse stock
+    prisma.feedFormula.findFirst.mockImplementation(({ where }: { where: { id: string } }) =>
+      Promise.resolve(where.id === "formula-hp"
+        ? { id: "formula-hp", targetBatchKg: 1000, ingredients: [{ ingredientId: "hipro-soya", quantityKg: 1000, unitCost: 10, ingredient: { name: "HiPro Soya", sku: "HP" } }] }
+        : { id: "formula-ls", targetBatchKg: 1000, ingredients: [{ ingredientId: "local-soya", quantityKg: 1000, unitCost: 6, ingredient: { name: "Local Soya", sku: "LS" } }] }));
+    prisma.inventoryItem.findMany.mockImplementation(({ where }: { where: { productId: { in: string[] } } }) =>
+      Promise.resolve(where.productId.in.includes("hipro-soya") ? [{ productId: "hipro-soya", quantityOnHand: 100 }] : [{ productId: "local-soya", quantityOnHand: 5000 }]));
+
+    const { data } = await makeService().formulaChoices(makeUser(), { productId: "chick-mash", warehouseId: "wh-raw", quantityKg: 1000 } as never);
+    expect(data.map((c) => [c.code, c.isDefault, c.costPer50KgBag, c.availability?.canProduce])).toEqual([
+      ["CM-HP", true, 500, false],
+      ["CM-LS", false, 300, true]
+    ]);
+    expect(data[0].availability?.shortages).toEqual([{ name: "HiPro Soya", neededKg: 1000, availableKg: 100, shortageKg: 900 }]);
+    prisma.feedFormula.findFirst.mockReset();
   });
 });
