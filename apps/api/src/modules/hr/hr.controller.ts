@@ -386,6 +386,49 @@ export class HRController {
     return this.svc.letterDraft(user, this.letterKind(kind), id);
   }
 
+  @Get("letters/:kind/:id/signed")
+  @RequirePermissions(PERMISSIONS.HR_READ)
+  listSignedLetters(@CurrentUser() user: AuthenticatedUser, @Param("kind") kind: string, @Param("id") id: string) {
+    return this.svc.listSignedLetters(user, this.letterKind(kind), id);
+  }
+
+  @Post("letters/:kind/:id/signed")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  @UseInterceptors(
+    FileInterceptor("document", {
+      storage: diskStorage({
+        destination: (req, file, cb) => {
+          const dest = join(process.cwd(), "uploads", "documents");
+          mkdirSync(dest, { recursive: true });
+          cb(null, dest);
+        },
+        filename: (req, file, cb) => {
+          const unique = `${Date.now()}-${Math.round(Math.random() * 1e6)}`;
+          cb(null, `${unique}${extname(file.originalname)}`);
+        },
+      }),
+      limits: { fileSize: 10 * 1024 * 1024 },
+      fileFilter: (req, file, cb) => {
+        const allowed = [".jpg", ".jpeg", ".png", ".webp", ".pdf"];
+        if (allowed.includes(extname(file.originalname).toLowerCase())) cb(null, true);
+        else cb(new BadRequestException("Only images and PDF files are allowed") as never, false);
+      },
+    }),
+  )
+  uploadSignedLetter(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("kind") kind: string,
+    @Param("id") id: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Req() req: Request,
+  ) {
+    if (!file) throw new BadRequestException("No file uploaded");
+    if (!validateAndCleanDocumentUpload(file.path)) {
+      throw new BadRequestException("Invalid file. Upload a JPEG, PNG, WebP, GIF, or PDF.");
+    }
+    return this.svc.uploadSignedLetter(user, this.letterKind(kind), id, file.filename, ctx(req));
+  }
+
   @Put("letters/:kind/:id")
   @RequirePermissions(PERMISSIONS.HR_MANAGE)
   saveLetter(@CurrentUser() user: AuthenticatedUser, @Param("kind") kind: string, @Param("id") id: string, @Body() dto: RenderLetterDto, @Req() req: Request) {

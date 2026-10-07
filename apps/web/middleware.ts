@@ -30,7 +30,11 @@ const CSP = [
   "img-src 'self' data: blob:",
   "font-src 'self'",
   "connect-src 'self' https://jokasfarms.com https://www.jokasfarms.com",
-  "object-src 'none'",
+  // blob: lets the HR letter editor preview a generated PDF in-page (a blob
+  // frame inherits this policy; Chrome's PDF viewer needs object-src to allow
+  // it). Still no remote frames or plugins.
+  "frame-src 'self' blob:",
+  "object-src 'self' blob:",
   "base-uri 'self'",
   "form-action 'self'",
   "frame-ancestors 'none'",

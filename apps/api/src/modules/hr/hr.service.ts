@@ -90,7 +90,7 @@ type PayslipPdfRow = Prisma.PayrollRecordGetPayload<{
 
 export type LetterKind = "appointment" | "employment-certificate" | "disciplinary" | "grievance";
 export const LETTER_KINDS: LetterKind[] = ["appointment", "employment-certificate", "disciplinary", "grievance"];
-type LetterDraft = { title: string; body: string; filename: string };
+type LetterDraft = { title: string; body: string; filename: string; employeeId: string };
 
 @Injectable()
 export class HRService {
@@ -2136,7 +2136,7 @@ export class HRService {
           `For and on behalf of\n${company}\n\n\n_____________________________\nAuthorized signatory`,
           `_____________________________\n${employee.fullName} — acceptance signature & date`
         );
-        return { title: "LETTER OF APPOINTMENT", body: parts.join("\n\n"), filename: `appointment-letter-${employee.code}.pdf` };
+        return { title: "LETTER OF APPOINTMENT", body: parts.join("\n\n"), filename: `appointment-letter-${employee.code}.pdf`, employeeId: employee.id };
       }
       const stillEmployed = employee.status === "ACTIVE";
       const body = [
@@ -2145,7 +2145,7 @@ export class HRService {
         "This letter is issued upon the employee's request for whatever purpose it may serve, and does not constitute an offer, guarantee, or extension of employment.",
         `_____________________________\nAuthorized signatory\n${company}`
       ].join("\n\n");
-      return { title: "CERTIFICATE OF EMPLOYMENT", body, filename: `employment-certificate-${employee.code}.pdf` };
+      return { title: "CERTIFICATE OF EMPLOYMENT", body, filename: `employment-certificate-${employee.code}.pdf`, employeeId: employee.id };
     }
 
     const empSelect = { fullName: true, code: true, branchId: true, farmId: true, warehouseId: true, productionSiteId: true };
@@ -2163,7 +2163,7 @@ export class HRService {
         row.acknowledgedAt ? `Acknowledged by employee on ${fmtDate(row.acknowledgedAt)}.` : "Employee acknowledgement pending.",
         "_____________________________\nEmployee signature & date"
       );
-      return { title: "DISCIPLINARY NOTICE", body: parts.join("\n\n"), filename: `disciplinary-${row.reference}.pdf` };
+      return { title: "DISCIPLINARY NOTICE", body: parts.join("\n\n"), filename: `disciplinary-${row.reference}.pdf`, employeeId: row.employeeId };
     }
 
     const row = await this.prisma.grievanceRecord.findFirst({ where: { id, companyId: user.companyId, deletedAt: null }, include: { employee: { select: empSelect } } });
@@ -2178,7 +2178,7 @@ export class HRService {
       if (row.resolvedAt) parts.push(`Resolved on ${fmtDate(row.resolvedAt)}`);
     }
     parts.push("_____________________________\nEmployee signature & date");
-    return { title: "GRIEVANCE RECORD", body: parts.join("\n\n"), filename: `grievance-${row.reference}.pdf` };
+    return { title: "GRIEVANCE RECORD", body: parts.join("\n\n"), filename: `grievance-${row.reference}.pdf`, employeeId: row.employeeId };
   }
 
   // A letter someone has edited and saved wins over the generated text; the
@@ -2199,6 +2199,38 @@ export class HRService {
     });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "HrLetter", entityId: id, action: "UPDATE", summary: `Saved edited ${kind} letter`, ...ctx });
     return { data: { saved: true } };
+  }
+
+  // Signed copies: the scanned/photographed letter after the employee signs.
+  // Stored as an EmployeeDocument tagged with the letter, so it is also listed
+  // under the employee's Documents and served by the existing documents route.
+  async listSignedLetters(user: AuthenticatedUser, kind: LetterKind, id: string) {
+    await this.buildLetterDraft(user, kind, id);
+    const rows = await this.prisma.employeeDocument.findMany({
+      where: { companyId: user.companyId, letterKind: kind, letterEntityId: id, deletedAt: null },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, employeeId: true, title: true, fileUrl: true, createdAt: true }
+    });
+    return { data: rows };
+  }
+
+  async uploadSignedLetter(user: AuthenticatedUser, kind: LetterKind, id: string, filename: string, ctx: RequestContext) {
+    const draft = await this.buildLetterDraft(user, kind, id);
+    const doc = await this.prisma.employeeDocument.create({
+      data: {
+        companyId: user.companyId,
+        employeeId: draft.employeeId,
+        docType: "SIGNED_LETTER",
+        title: `Signed — ${draft.title}`,
+        fileUrl: `/api/v1/uploads/documents/${filename}`,
+        letterKind: kind,
+        letterEntityId: id,
+        createdById: user.id
+      },
+      select: { id: true, employeeId: true, title: true, fileUrl: true, createdAt: true }
+    });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "EmployeeDocument", entityId: doc.id, action: "CREATE", summary: `Uploaded signed ${kind} letter`, ...ctx });
+    return { data: doc };
   }
 
   async resetLetter(user: AuthenticatedUser, kind: LetterKind, id: string, ctx: RequestContext) {

@@ -7588,6 +7588,9 @@ model EmployeeDocument {
   fileUrl     String    @db.VarChar(500)
   expiryDate  DateTime?
   notes       String?   @db.Text
+  // Set when this file is the signed copy of an HR letter (see HrLetter).
+  letterKind     String?   @db.VarChar(40)
+  letterEntityId String?
   createdById String?
   updatedById String?
   createdAt   DateTime  @default(now())
@@ -7599,6 +7602,7 @@ model EmployeeDocument {
 
   @@index([companyId, employeeId])
   @@index([companyId, docType])
+  @@index([companyId, letterKind, letterEntityId])
   @@index([expiryDate])
   @@index([deletedAt])
 }

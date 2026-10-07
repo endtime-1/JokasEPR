@@ -744,6 +744,7 @@ type EmployeeDetail = Employee & {
 };
 
 type LetterKind = "appointment" | "employment-certificate" | "disciplinary" | "grievance";
+type SignedCopy = { id: string; employeeId: string; title: string; fileUrl: string; createdAt: string };
 
 // Edit a generated HR letter's wording, preview the PDF on the company
 // letterhead in-page, then download it. "Save changes" keeps the wording
@@ -758,6 +759,8 @@ function LetterEditor({ kind, id, onClose }: { kind: LetterKind; id: string; onC
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [notice, setNotice] = useState("");
+  const [signed, setSigned] = useState<SignedCopy[]>([]);
+  const [uploading, setUploading] = useState(false);
   const previewRef = useRef<string | null>(null);
 
   async function renderPdf(t: string, b: string, inline: boolean) {
@@ -791,6 +794,7 @@ function LetterEditor({ kind, id, onClose }: { kind: LetterKind; id: string; onC
         setBody(res.data.body);
         setSaved(res.data.saved);
         setLoading(false);
+        void loadSigned();
         await refreshPreview(res.data.title, res.data.body);
       } catch (err: unknown) {
         if (!cancelled) {
@@ -838,6 +842,42 @@ function LetterEditor({ kind, id, onClose }: { kind: LetterKind; id: string; onC
     }
   }
 
+  async function loadSigned() {
+    try {
+      const res = await apiFetch<ApiEnvelope<SignedCopy[]>>(`/hr/letters/${kind}/${id}/signed`);
+      setSigned(res.data ?? []);
+    } catch {
+      // Non-fatal: the editor still works without the signed-copy list.
+    }
+  }
+
+  async function uploadSigned(file: File) {
+    setUploading(true);
+    setError("");
+    setNotice("");
+    try {
+      const body = new FormData();
+      body.append("document", file, file.name);
+      await apiFetch(`/hr/letters/${kind}/${id}/signed`, { method: "POST", body });
+      setNotice("Signed copy uploaded.");
+      await loadSigned();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function removeSigned(copy: SignedCopy) {
+    setError("");
+    try {
+      await apiFetch(`/hr/employees/${copy.employeeId}/documents/${copy.id}`, { method: "DELETE" });
+      await loadSigned();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Could not remove the file");
+    }
+  }
+
   async function download() {
     setBusy(true);
     setError("");
@@ -880,6 +920,27 @@ function LetterEditor({ kind, id, onClose }: { kind: LetterKind; id: string; onC
           <div className="min-h-[320px] overflow-hidden rounded-md border border-line bg-field">
             {previewUrl ? <iframe src={previewUrl} title="Letter preview" className="h-full min-h-[480px] w-full" /> : <div className="grid h-full min-h-[320px] place-items-center text-sm text-ink/50">{loading || busy ? "Building preview…" : "No preview yet"}</div>}
           </div>
+        </div>
+        <div className="border-t border-line px-5 py-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <h3 className="text-sm font-bold">Signed copy</h3>
+            <label className={`cursor-pointer rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-semibold hover:bg-field ${uploading ? "opacity-50" : ""}`}>
+              {uploading ? "Uploading…" : signed.length ? "Upload another" : "Upload signed copy"}
+              <input type="file" accept="image/*,application/pdf" className="sr-only" disabled={uploading || loading} onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadSigned(f); e.target.value = ""; }} />
+            </label>
+            <span className="text-xs text-ink/50">After the employee signs, scan or photograph it and upload (PDF or image, up to 10 MB).</span>
+          </div>
+          {signed.length > 0 && (
+            <ul className="mt-2 space-y-1">
+              {signed.map((c) => (
+                <li key={c.id} className="flex items-center gap-3 text-xs">
+                  <a href={c.fileUrl} target="_blank" rel="noreferrer" className="font-semibold text-brand hover:underline">{c.title}</a>
+                  <span className="text-ink/50">uploaded {new Date(c.createdAt).toLocaleDateString("en-GH")}</span>
+                  <button onClick={() => removeSigned(c)} className="text-red-600 hover:underline">Remove</button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
         <div className="flex flex-wrap justify-end gap-2 border-t border-line px-5 py-3">
           {saved && <button onClick={resetToDefault} disabled={loading || busy} className="mr-auto rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-100 disabled:opacity-50">Reset to default</button>}
