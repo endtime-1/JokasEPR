@@ -2251,18 +2251,37 @@ export class HRService {
     doc.fontSize(9).font("Helvetica").text(new Date().toLocaleDateString("en-GH"), { align: "right" });
     doc.moveDown(1);
 
+    // Lightweight markup: "## " at the start of a line = bold heading line,
+    // **text** = bold inside a paragraph. Blank line = new paragraph.
+    const writeParagraph = (lines: string[]) => {
+      if (!lines.length) return;
+      const para = lines.join("\n");
+      doc.fontSize(9);
+      if (!para.includes("**")) {
+        doc.font("Helvetica").text(para, { align: lines.length > 1 ? "left" : "justify" });
+        return;
+      }
+      const parts = para.split(/\*\*(.+?)\*\*/s);
+      parts.forEach((part, i) => {
+        if (!part) return;
+        doc.font(i % 2 === 1 ? "Helvetica-Bold" : "Helvetica").text(part, { continued: i < parts.length - 1, align: "left" });
+      });
+      doc.text("", { continued: false });
+    };
     const text = (edited?.body ?? draft.body).replace(/\r\n/g, "\n");
     for (const block of text.split(/\n{2,}/)) {
-      const trimmed = block.replace(/^\n+|\n+$/g, "");
-      if (!trimmed.trim()) continue;
-      if (trimmed.startsWith("## ")) {
-        const [heading, ...rest] = trimmed.slice(3).split("\n");
-        doc.fontSize(9).font("Helvetica-Bold").text(heading);
-        if (rest.length) doc.font("Helvetica").text(rest.join("\n"), { align: "justify" });
-      } else {
-        doc.fontSize(9).font("Helvetica").text(trimmed, { align: trimmed.includes("\n") ? "left" : "justify" });
+      let pending: string[] = [];
+      for (const line of block.replace(/^\n+|\n+$/g, "").split("\n")) {
+        if (line.startsWith("## ")) {
+          writeParagraph(pending);
+          pending = [];
+          doc.fontSize(9).font("Helvetica-Bold").text(line.slice(3));
+        } else {
+          pending.push(line);
+        }
       }
-      doc.moveDown(0.8);
+      writeParagraph(pending);
+      if (block.trim()) doc.moveDown(0.8);
     }
 
     doc.end();

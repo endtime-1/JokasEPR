@@ -762,6 +762,7 @@ function LetterEditor({ kind, id, onClose }: { kind: LetterKind; id: string; onC
   const [signed, setSigned] = useState<SignedCopy[]>([]);
   const [uploading, setUploading] = useState(false);
   const previewRef = useRef<string | null>(null);
+  const bodyRef = useRef<HTMLTextAreaElement | null>(null);
 
   async function renderPdf(t: string, b: string, inline: boolean) {
     const res = await apiFetchResponse(`/hr/letters/${kind}/${id}/pdf${inline ? "?inline=1" : ""}`, { method: "POST", body: JSON.stringify({ title: t, body: b }) });
@@ -842,6 +843,43 @@ function LetterEditor({ kind, id, onClose }: { kind: LetterKind; id: string; onC
     }
   }
 
+  // Toolbar: wrap the selection in **...** (bold) or toggle "## " (heading) on
+  // the selected lines, then restore the selection.
+  function applyFormat(kind: "bold" | "heading") {
+    const el = bodyRef.current;
+    if (!el) return;
+    const { selectionStart: start, selectionEnd: end } = el;
+    let next = body;
+    let selStart = start;
+    let selEnd = end;
+    if (kind === "bold") {
+      const picked = body.slice(start, end);
+      if (picked.startsWith("**") && picked.endsWith("**") && picked.length >= 4) {
+        next = body.slice(0, start) + picked.slice(2, -2) + body.slice(end);
+        selEnd = end - 4;
+      } else {
+        next = body.slice(0, start) + "**" + picked + "**" + body.slice(end);
+        selStart = start + 2;
+        selEnd = end + 2;
+      }
+    } else {
+      const lineStart = body.lastIndexOf("\n", start - 1) + 1;
+      const nl = body.indexOf("\n", end);
+      const lineEnd = nl === -1 ? body.length : nl;
+      const lines = body.slice(lineStart, lineEnd).split("\n");
+      const allHeadings = lines.every((l) => l.startsWith("## "));
+      const changed = lines.map((l) => (allHeadings ? l.slice(3) : l.startsWith("## ") ? l : `## ${l}`)).join("\n");
+      next = body.slice(0, lineStart) + changed + body.slice(lineEnd);
+      selStart = lineStart;
+      selEnd = lineStart + changed.length;
+    }
+    setBody(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(selStart, selEnd);
+    });
+  }
+
   async function loadSigned() {
     try {
       const res = await apiFetch<ApiEnvelope<SignedCopy[]>>(`/hr/letters/${kind}/${id}/signed`);
@@ -912,9 +950,13 @@ function LetterEditor({ kind, id, onClose }: { kind: LetterKind; id: string; onC
               <input value={title} onChange={(e) => setTitle(e.target.value)} disabled={loading} className="w-full rounded-md border border-line px-3 py-2 text-sm" />
             </div>
             <div className="flex min-h-0 flex-1 flex-col">
-              <label className="mb-1 block text-xs font-semibold text-ink/70">Letter text</label>
-              <textarea value={body} onChange={(e) => setBody(e.target.value)} disabled={loading} rows={20} className="min-h-[320px] w-full flex-1 rounded-md border border-line px-3 py-2 font-mono text-xs leading-relaxed" />
-              <p className="mt-1 text-xs text-ink/50">Leave a blank line between paragraphs. Start a line with “## ” to make it a bold heading.</p>
+              <div className="mb-1 flex items-center gap-2">
+                <label className="text-xs font-semibold text-ink/70">Letter text</label>
+                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyFormat("bold")} disabled={loading} title="Bold the selected text" className="rounded border border-line bg-white px-2.5 py-0.5 text-xs font-extrabold hover:bg-field disabled:opacity-50">B</button>
+                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyFormat("heading")} disabled={loading} title="Make the selected line(s) a bold heading" className="rounded border border-line bg-white px-2.5 py-0.5 text-xs font-semibold hover:bg-field disabled:opacity-50">Heading</button>
+              </div>
+              <textarea ref={bodyRef} value={body} onChange={(e) => setBody(e.target.value)} disabled={loading} rows={20} className="min-h-[320px] w-full flex-1 rounded-md border border-line px-3 py-2 font-mono text-xs leading-relaxed" />
+              <p className="mt-1 text-xs text-ink/50">Select text and press B to make it bold (shown as **text**). Heading makes a whole line bold. Leave a blank line between paragraphs.</p>
             </div>
           </div>
           <div className="min-h-[320px] overflow-hidden rounded-md border border-line bg-field">
