@@ -826,6 +826,7 @@ model Company {
   publicHolidays             PublicHoliday[]
   employeeDocuments          EmployeeDocument[]
   disciplinaryRecords        DisciplinaryRecord[]
+  hrLetters                 HrLetter[]
   grievanceRecords           GrievanceRecord[]
   trainingCourses            TrainingCourse[]
   salaryBands                SalaryBand[]
@@ -5500,7 +5501,7 @@ model PayrollRecord {
   paymentMethod      PaymentMethod?
   bankAccountId      String?
   status             PayrollStatus  @default(DRAFT)
-  notes              String?        @db.VarChar(500)
+  notes              String?        @db.Text
   branchId           String?
   employeeId         String?
   createdById        String?
@@ -6295,7 +6296,7 @@ model Employee {
   tinNumber             String?        @db.VarChar(20)
   emergencyContactName  String?        @db.VarChar(120)
   emergencyContactPhone String?        @db.VarChar(40)
-  notes                 String?        @db.VarChar(500)
+  notes                 String?        @db.Text
   photoUrl              String?        @db.VarChar(500)
   managerId             String?
   createdById           String?
@@ -6459,7 +6460,7 @@ model TrainingCourse {
   companyId     String
   code          String    @db.VarChar(30)
   title         String    @db.VarChar(200)
-  description   String?   @db.VarChar(500)
+  description   String?   @db.Text
   category      String?   @db.VarChar(80)
   durationHours Decimal?  @db.Decimal(5, 1)
   provider      String?   @db.VarChar(120)
@@ -6482,14 +6483,14 @@ model TrainingRecord {
   employeeId        String
   courseId          String?
   title             String          @db.VarChar(200)
-  description       String?         @db.VarChar(500)
+  description       String?         @db.Text
   trainer           String?         @db.VarChar(120)
   trainingDate      DateTime
   durationHours     Decimal?        @db.Decimal(5, 1)
   outcome           TrainingOutcome @default(ONGOING)
   certificate       String?         @db.VarChar(120)
   certificateExpiry DateTime?
-  notes             String?         @db.VarChar(500)
+  notes             String?         @db.Text
   createdById       String?
   updatedById       String?
   createdAt         DateTime        @default(now())
@@ -6517,8 +6518,8 @@ model HRPerformanceRecord {
   taskCompletionScore Int                 @default(0)
   qualityScore        Int                 @default(0)
   teamworkScore       Int                 @default(0)
-  comments            String?             @db.VarChar(1000)
-  goals               String?             @db.VarChar(500)
+  comments            String?             @db.Text
+  goals               String?             @db.Text
   status              HRPerformanceStatus @default(DRAFT)
   acknowledgedAt      DateTime?
   createdById         String?
@@ -7022,11 +7023,11 @@ model DisciplinaryRecord {
   reference      String    @db.VarChar(30)
   incidentDate   DateTime
   category       String    @db.VarChar(60)
-  description    String    @db.VarChar(1000)
-  actionTaken    String    @db.VarChar(500)
+  description    String    @db.Text
+  actionTaken    String    @db.Text
   issuedById     String?
   acknowledgedAt DateTime?
-  notes          String?   @db.VarChar(500)
+  notes          String?   @db.Text
   createdById    String?
   updatedById    String?
   createdAt      DateTime  @default(now())
@@ -7040,6 +7041,28 @@ model DisciplinaryRecord {
   @@index([deletedAt])
 }
 
+// Edited wording for a generated HR letter (appointment, certificate,
+// disciplinary notice, grievance record). One saved version per letter;
+// deleting it ("Reset to default") goes back to the system-generated text.
+// entityId is the employee (appointment/certificate) or the disciplinary /
+// grievance record, so it carries no foreign key of its own.
+model HrLetter {
+  id          String   @id @default(uuid())
+  companyId   String
+  kind        String   @db.VarChar(40)
+  entityId    String
+  title       String   @db.VarChar(200)
+  body        String   @db.Text
+  createdById String?
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  company     Company  @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, kind, entityId])
+  @@index([companyId])
+}
+
 model GrievanceRecord {
   id            String    @id @default(uuid())
   companyId     String
@@ -7047,9 +7070,9 @@ model GrievanceRecord {
   reference     String    @db.VarChar(30)
   submittedDate DateTime
   category      String    @db.VarChar(60)
-  description   String    @db.VarChar(1000)
+  description   String    @db.Text
   status        String    @default("OPEN") @db.VarChar(30)
-  resolution    String?   @db.VarChar(1000)
+  resolution    String?   @db.Text
   resolvedById  String?
   resolvedAt    DateTime?
   createdById   String?
@@ -7078,7 +7101,7 @@ model SalaryBand {
   maxSalary      Decimal   @db.Decimal(15, 2)
   currency       String    @default("GHS") @db.VarChar(10)
   effectiveDate  DateTime
-  notes          String?   @db.VarChar(500)
+  notes          String?   @db.Text
   createdById    String?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
@@ -7128,7 +7151,7 @@ model JobApplication {
   resumeUrl           String?   @db.VarChar(500)
   coverLetter         String?   @db.Text
   status              String    @default("RECEIVED") @db.VarChar(30)
-  notes               String?   @db.VarChar(1000)
+  notes               String?   @db.Text
   interviewDate       DateTime?
   reviewedById        String?
   convertedEmployeeId String?
@@ -7155,7 +7178,7 @@ model OnboardingChecklist {
   dueDate       DateTime?
   completedAt   DateTime?
   completedById String?
-  notes         String?   @db.VarChar(500)
+  notes         String?   @db.Text
   sortOrder     Int       @default(0)
   createdById   String?
   createdAt     DateTime  @default(now())
@@ -7176,7 +7199,7 @@ model PerformancePeerReview {
   reviewerEmployeeId String
   relationship       String    @db.VarChar(30)
   overallRating      HRRating
-  comments           String?   @db.VarChar(1000)
+  comments           String?   @db.Text
   submittedAt        DateTime?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
@@ -7564,7 +7587,7 @@ model EmployeeDocument {
   title       String    @db.VarChar(200)
   fileUrl     String    @db.VarChar(500)
   expiryDate  DateTime?
-  notes       String?   @db.VarChar(500)
+  notes       String?   @db.Text
   createdById String?
   updatedById String?
   createdAt   DateTime  @default(now())
@@ -7609,10 +7632,10 @@ model LeaveRequest {
   startDate     DateTime
   endDate       DateTime
   daysRequested Int
-  reason        String?     @db.VarChar(500)
+  reason        String?     @db.Text
   status        LeaveStatus @default(PENDING)
   reviewedById  String?
-  reviewNote    String?     @db.VarChar(500)
+  reviewNote    String?     @db.Text
   reviewedAt    DateTime?
   createdById   String?
   updatedById   String?

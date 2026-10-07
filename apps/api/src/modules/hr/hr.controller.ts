@@ -10,9 +10,10 @@ import { PermissionsGuard } from "../../common/guards/permissions.guard";
 import { RequirePermissions } from "../../common/decorators/permissions.decorator";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { PERMISSIONS, AuthenticatedUser } from "@jokas/shared";
-import { HRService } from "./hr.service";
+import { HRService, LETTER_KINDS, LetterKind } from "./hr.service";
 import {
   AssignTaskDto,
+  RenderLetterDto,
   BulkAttendanceDto,
   CheckInSelfDto,
   CheckOutSelfDto,
@@ -44,6 +45,7 @@ import {
   BulkPayrollRunDto,
   PayrollPrefillQueryDto,
   CreateDisciplinaryDto,
+  AcknowledgeDisciplinaryDto,
   CreateGrievanceDto,
   ResolveGrievanceDto,
   CreateTrainingCourseDto,
@@ -373,6 +375,37 @@ export class HRController {
     return this.svc.emailPayslip(user, id, ctx(req));
   }
 
+  private letterKind(kind: string): LetterKind {
+    if (!LETTER_KINDS.includes(kind as LetterKind)) throw new BadRequestException("Unknown letter type.");
+    return kind as LetterKind;
+  }
+
+  @Get("letters/:kind/:id/draft")
+  @RequirePermissions(PERMISSIONS.HR_READ)
+  letterDraft(@CurrentUser() user: AuthenticatedUser, @Param("kind") kind: string, @Param("id") id: string) {
+    return this.svc.letterDraft(user, this.letterKind(kind), id);
+  }
+
+  @Put("letters/:kind/:id")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  saveLetter(@CurrentUser() user: AuthenticatedUser, @Param("kind") kind: string, @Param("id") id: string, @Body() dto: RenderLetterDto, @Req() req: Request) {
+    return this.svc.saveLetter(user, this.letterKind(kind), id, dto, ctx(req));
+  }
+
+  @Delete("letters/:kind/:id")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  resetLetter(@CurrentUser() user: AuthenticatedUser, @Param("kind") kind: string, @Param("id") id: string, @Req() req: Request) {
+    return this.svc.resetLetter(user, this.letterKind(kind), id, ctx(req));
+  }
+
+  // Renders the (possibly edited) letter. ?inline=1 lets the editor preview it
+  // in the page; without it the browser downloads the file.
+  @Post("letters/:kind/:id/pdf")
+  @RequirePermissions(PERMISSIONS.HR_READ)
+  renderLetter(@CurrentUser() user: AuthenticatedUser, @Param("kind") kind: string, @Param("id") id: string, @Body() dto: RenderLetterDto, @Query("inline") inline: string | undefined, @Res() res: Response) {
+    return this.svc.streamLetterPdf(user, this.letterKind(kind), id, dto, res, inline === "1");
+  }
+
   @Get("employees/:id/appointment-letter")
   @RequirePermissions(PERMISSIONS.HR_READ)
   appointmentLetter(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Res() res: Response) {
@@ -638,9 +671,9 @@ export class HRController {
   }
 
   @Patch("disciplinary/:id/acknowledge")
-  @RequirePermissions(PERMISSIONS.PLATFORM_READ)
-  acknowledgeDisciplinary(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Req() req: Request) {
-    return this.svc.acknowledgeDisciplinary(user, id, ctx(req));
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  acknowledgeDisciplinary(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: AcknowledgeDisciplinaryDto, @Req() req: Request) {
+    return this.svc.acknowledgeDisciplinary(user, id, dto.acknowledged ?? true, ctx(req));
   }
 
   @Get("disciplinary/:id/letter")

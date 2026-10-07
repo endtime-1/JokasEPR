@@ -6,6 +6,7 @@ import { Prisma } from "@prisma/client";
 import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { sanitizeFormulaCell } from "../../common/utils/csv";
+import { applyLetterhead, LETTERHEAD_MAX_Y } from "../../common/pdf-letterhead";
 import { ReportQueryDto, DocumentReportRunDto } from "./dto/report-query.dto";
 import { DOCUMENT_REPORTS, DocumentReport, DocumentReportDefinition } from "./report-documents";
 
@@ -525,6 +526,8 @@ export class ReportsService {
     doc.on("data", (c: Buffer) => chunks.push(c));
     const done = new Promise<Buffer>((resolve) => doc.on("end", () => resolve(Buffer.concat(chunks))));
 
+    applyLetterhead(doc);
+
     doc.fontSize(18).font("Helvetica-Bold").text(report.title);
     doc.fontSize(11).font("Helvetica").fillColor("#555").text(`${report.scope.label} — ${report.subtitle}`);
     doc.fontSize(8).fillColor("#999").text(`Generated ${new Date(report.generatedAt).toLocaleString("en-GH")}`);
@@ -584,14 +587,14 @@ export class ReportsService {
   }
 
   private pdfTable(doc: PDFKit.PDFDocument, title: string, head: string[], rows: string[][]) {
-    if (doc.y > 720) doc.addPage();
+    if (doc.y > LETTERHEAD_MAX_Y - 60) doc.addPage();
     doc.moveDown(0.5).fontSize(11).font("Helvetica-Bold").fillColor("#000").text(title);
     doc.fontSize(8).font("Helvetica");
     const preview = rows.slice(0, 40);
     doc.font("Helvetica-Bold").text(head.join("   |   "));
     doc.font("Helvetica");
     for (const r of preview) {
-      if (doc.y > 780) doc.addPage();
+      if (doc.y > LETTERHEAD_MAX_Y - 12) doc.addPage();
       doc.text(r.join("   |   "));
     }
     if (rows.length > preview.length) doc.fillColor("#999").text(`… ${rows.length - preview.length} more rows`).fillColor("#000");

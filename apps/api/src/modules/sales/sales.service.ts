@@ -7,6 +7,7 @@ import { nextRef } from "../../common/next-ref";
 import { withDbRetry } from "../../common/db-retry";
 import { getCompanyBranding } from "../../common/company-branding";
 import { renderCompanyPdfHeader } from "../../common/pdf-company-header";
+import { LETTERHEAD_MAX_Y } from "../../common/pdf-letterhead";
 import {
   CreateCustomerDto,
   CreateCustomerGroupDto,
@@ -1187,7 +1188,7 @@ export class SalesService {
     doc.fontSize(14).font("Helvetica-Bold").text(`Amount received: ${gh(receipt.amount)}`, { align: "right" });
     doc.moveDown(2);
 
-    doc.fontSize(9).font("Helvetica").text("Received by: ______________________", 48, doc.y);
+    doc.fontSize(9).font("Helvetica").text("Received by: ______________________", 50, doc.y);
     doc.moveDown(1.5).fontSize(7.5).fillColor("#999").text("This receipt is computer-generated and valid without a signature.");
 
     doc.end();
@@ -1231,15 +1232,15 @@ export class SalesService {
     if (note.notes) doc.moveDown(1).fontSize(8).fillColor("#555").text(`Notes: ${note.notes}`).fillColor("#000");
 
     doc.moveDown(2.5);
-    doc.fontSize(9).font("Helvetica").text("Delivered by: ______________________", 48, doc.y, { continued: false });
-    doc.moveDown(1.2).text("Received by: ______________________", 48, doc.y);
+    doc.fontSize(9).font("Helvetica").text("Delivered by: ______________________", 50, doc.y, { continued: false });
+    doc.moveDown(1.2).text("Received by: ______________________", 50, doc.y);
     doc.moveDown(1.5).fontSize(7.5).fillColor("#999").text("Please inspect goods on receipt — sign only once quantities are confirmed correct.");
 
     doc.end();
     return { buffer: await done, filename: `delivery-note-${note.deliveryNumber}.pdf` };
   }
 
-  private pdfQuoteTable(doc: PDFKit.PDFDocument, rows: string[][], head: string[] = ["Item", "Qty", "Unit Price", "Discount", "Line Total"], widths: number[] = [200, 45, 90, 80, 90]) {
+  private pdfQuoteTable(doc: PDFKit.PDFDocument, rows: string[][], head: string[] = ["Item", "Qty", "Unit Price", "Discount", "Line Total"], widths: number[] = [190, 45, 85, 80, 90]) {
     const startX = doc.x;
     let y = doc.y;
     doc.fontSize(8.5).font("Helvetica-Bold");
@@ -1247,6 +1248,10 @@ export class SalesService {
     y += 16;
     doc.font("Helvetica");
     for (const row of rows) {
+      if (y > LETTERHEAD_MAX_Y - 20) {
+        doc.addPage();
+        y = doc.y;
+      }
       row.forEach((cell, i) => doc.text(cell, startX + widths.slice(0, i).reduce((a, b) => a + b, 0), y, { width: widths[i] }));
       y += 15;
     }

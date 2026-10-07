@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { AlertTriangle, CalendarDays, Camera, CircleAlert, ClipboardList, DollarSign, FileText, Pencil, Trash2, Upload, UserCheck, UserPlus, Users } from "lucide-react";
-import { ApiEnvelope, apiFetch, getCached, getCachedFirst, hasCached } from "../lib/api";
+import { ApiEnvelope, apiFetch, apiFetchResponse, getCached, getCachedFirst, hasCached } from "../lib/api";
 import { DataTable } from "./data-table";
 import { StatusBadge, EmptyState, ConfirmModal } from "./ui";
 import { useApiRecovery } from "../lib/use-api-recovery";
@@ -743,9 +743,160 @@ type EmployeeDetail = Employee & {
   performanceRecords: Array<{ id: string; period: string; overallRating: string; status: string }>;
 };
 
+type LetterKind = "appointment" | "employment-certificate" | "disciplinary" | "grievance";
+
+// Edit a generated HR letter's wording, preview the PDF on the company
+// letterhead in-page, then download it. "Save changes" keeps the wording
+// (HrLetter table) so it is what opens and downloads next time; "Reset to
+// default" drops it and regenerates from the record.
+function LetterEditor({ kind, id, onClose }: { kind: LetterKind; id: string; onClose: () => void }) {
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [notice, setNotice] = useState("");
+  const previewRef = useRef<string | null>(null);
+
+  async function renderPdf(t: string, b: string, inline: boolean) {
+    const res = await apiFetchResponse(`/hr/letters/${kind}/${id}/pdf${inline ? "?inline=1" : ""}`, { method: "POST", body: JSON.stringify({ title: t, body: b }) });
+    const match = /filename="([^"]+)"/.exec(res.headers.get("content-disposition") ?? "");
+    return { blob: await res.blob(), filename: match?.[1] ?? "letter.pdf" };
+  }
+
+  async function refreshPreview(t: string, b: string) {
+    setBusy(true);
+    setError("");
+    try {
+      const { blob } = await renderPdf(t, b, true);
+      if (previewRef.current) URL.revokeObjectURL(previewRef.current);
+      previewRef.current = URL.createObjectURL(blob);
+      setPreviewUrl(previewRef.current);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Could not build the preview");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiFetch<ApiEnvelope<{ title: string; body: string; saved: boolean }>>(`/hr/letters/${kind}/${id}/draft`);
+        if (cancelled) return;
+        setTitle(res.data.title);
+        setBody(res.data.body);
+        setSaved(res.data.saved);
+        setLoading(false);
+        await refreshPreview(res.data.title, res.data.body);
+      } catch (err: unknown) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Could not load the letter");
+          setLoading(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (previewRef.current) URL.revokeObjectURL(previewRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kind, id]);
+
+  async function save() {
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      await apiFetch(`/hr/letters/${kind}/${id}`, { method: "PUT", body: JSON.stringify({ title, body }) });
+      setSaved(true);
+      setNotice("Saved — this wording will be used whenever this letter is opened or downloaded.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function resetToDefault() {
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      await apiFetch(`/hr/letters/${kind}/${id}`, { method: "DELETE" });
+      const res = await apiFetch<ApiEnvelope<{ title: string; body: string; saved: boolean }>>(`/hr/letters/${kind}/${id}/draft`);
+      setTitle(res.data.title);
+      setBody(res.data.body);
+      setSaved(false);
+      setNotice("Back to the system-generated wording.");
+      await refreshPreview(res.data.title, res.data.body);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Reset failed");
+      setBusy(false);
+    }
+  }
+
+  async function download() {
+    setBusy(true);
+    setError("");
+    try {
+      const { blob, filename } = await renderPdf(title, body, false);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Download failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label="Edit letter">
+      <div className="flex max-h-[92vh] w-full max-w-6xl flex-col rounded-xl bg-white shadow-xl">
+        <div className="flex items-center justify-between border-b border-line px-5 py-3">
+          <h2 className="text-base font-bold">Edit &amp; preview letter{saved && <span className="ml-2 rounded bg-green-50 px-2 py-0.5 text-xs font-semibold text-green-700">Edited version saved</span>}</h2>
+          <button onClick={onClose} className="rounded px-2 py-1 text-sm text-ink/60 hover:bg-field">Close</button>
+        </div>
+        {error && <div className="mx-5 mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
+        {notice && <div className="mx-5 mt-3 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">{notice}</div>}
+        <div className="grid min-h-0 flex-1 gap-4 overflow-auto p-5 md:grid-cols-2">
+          <div className="flex min-h-0 flex-col gap-3">
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-ink/70">Title</label>
+              <input value={title} onChange={(e) => setTitle(e.target.value)} disabled={loading} className="w-full rounded-md border border-line px-3 py-2 text-sm" />
+            </div>
+            <div className="flex min-h-0 flex-1 flex-col">
+              <label className="mb-1 block text-xs font-semibold text-ink/70">Letter text</label>
+              <textarea value={body} onChange={(e) => setBody(e.target.value)} disabled={loading} rows={20} className="min-h-[320px] w-full flex-1 rounded-md border border-line px-3 py-2 font-mono text-xs leading-relaxed" />
+              <p className="mt-1 text-xs text-ink/50">Leave a blank line between paragraphs. Start a line with “## ” to make it a bold heading.</p>
+            </div>
+          </div>
+          <div className="min-h-[320px] overflow-hidden rounded-md border border-line bg-field">
+            {previewUrl ? <iframe src={previewUrl} title="Letter preview" className="h-full min-h-[480px] w-full" /> : <div className="grid h-full min-h-[320px] place-items-center text-sm text-ink/50">{loading || busy ? "Building preview…" : "No preview yet"}</div>}
+          </div>
+        </div>
+        <div className="flex flex-wrap justify-end gap-2 border-t border-line px-5 py-3">
+          {saved && <button onClick={resetToDefault} disabled={loading || busy} className="mr-auto rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-100 disabled:opacity-50">Reset to default</button>}
+          <button onClick={save} disabled={loading || busy} className="rounded-lg border border-line bg-white px-4 py-2 text-sm font-semibold hover:bg-field disabled:opacity-50">Save changes</button>
+          <button onClick={() => refreshPreview(title, body)} disabled={loading || busy} className="rounded-lg border border-line bg-white px-4 py-2 text-sm font-semibold hover:bg-field disabled:opacity-50">Update preview</button>
+          <button onClick={download} disabled={loading || busy} className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brandDark disabled:opacity-50">Download PDF</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function EmployeeDetailPage({ id }: { id: string }) {
   const [data, setData] = useState<EmployeeDetail | null>(() => getCachedFirst<ApiEnvelope<EmployeeDetail>>(`/hr/employees/${id}`)?.data ?? null);
   const [loadError, setLoadError] = useState("");
+  const [letterKind, setLetterKind] = useState<LetterKind | null>(null);
   const { opts, optionsError } = useHROptions();
   // Read ?tab= from URL so external links (e.g. edit button in employee list) can deep-link
   const [tab, setTab] = useState(() => {
@@ -883,10 +1034,12 @@ export function EmployeeDetailPage({ id }: { id: string }) {
           <h1 className="text-xl font-bold">{data.fullName}</h1>
           <StatusBadge status={data.status} />
           <div className="ml-auto flex items-center gap-2">
-            <a href={`/api/v1/hr/employees/${id}/appointment-letter`} target="_blank" rel="noreferrer" className="rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-semibold text-ink/70 hover:bg-field flex items-center gap-1"><FileText size={12} /> Appointment Letter</a>
-            <a href={`/api/v1/hr/employees/${id}/employment-certificate`} target="_blank" rel="noreferrer" className="rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-semibold text-ink/70 hover:bg-field flex items-center gap-1"><FileText size={12} /> Employment Certificate</a>
+            <button onClick={() => setLetterKind("appointment")} className="rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-semibold text-ink/70 hover:bg-field flex items-center gap-1"><FileText size={12} /> Appointment Letter</button>
+            <button onClick={() => setLetterKind("employment-certificate")} className="rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-semibold text-ink/70 hover:bg-field flex items-center gap-1"><FileText size={12} /> Employment Certificate</button>
           </div>
         </div>
+
+        {letterKind && <LetterEditor kind={letterKind} id={id} onClose={() => setLetterKind(null)} />}
 
         {optionsError && <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{optionsError}</div>}
 
@@ -2872,8 +3025,10 @@ export function DisciplinaryPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [form, setForm] = useState({ employeeId: "", incidentDate: "", category: "Attendance", description: "", actionTaken: "", notes: "" });
+  const [letter, setLetter] = useState<{ kind: LetterKind; id: string } | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [ackBusyId, setAckBusyId] = useState<string | null>(null);
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setForm(p => ({ ...p, [k]: e.target.value }));
 
   function load() {
@@ -2893,6 +3048,15 @@ export function DisciplinaryPage() {
       setShowForm(false); setForm({ employeeId: "", incidentDate: "", category: "Attendance", description: "", actionTaken: "", notes: "" }); load();
     } catch (err: unknown) { setError(err instanceof Error ? err.message : "Failed to save"); }
     finally { setSaving(false); }
+  }
+
+  async function setAcknowledged(id: string, acknowledged: boolean) {
+    setAckBusyId(id);
+    try {
+      await apiFetch(`/hr/disciplinary/${id}/acknowledge`, { method: "PATCH", body: JSON.stringify({ acknowledged }) });
+      load();
+    } catch (err: unknown) { setLoadError(err instanceof Error ? err.message : "Could not update acknowledgement."); }
+    finally { setAckBusyId(null); }
   }
 
   async function remove() {
@@ -2962,10 +3126,21 @@ export function DisciplinaryPage() {
             { key: "incidentDate", label: "Incident Date", render: r => fmt(r.incidentDate as string) },
             { key: "category", label: "Category" },
             { key: "actionTaken", label: "Action Taken", render: r => <span className="line-clamp-1 max-w-xs text-xs">{r.actionTaken as string}</span> },
-            { key: "acknowledgedAt", label: "Acknowledged", render: r => r.acknowledgedAt ? <span className="text-green-700 text-xs">Yes</span> : <span className="text-ink/40 text-xs">No</span> },
+            { key: "acknowledgedAt", label: "Acknowledged", render: r => (
+              <select
+                value={r.acknowledgedAt ? "yes" : "no"}
+                disabled={ackBusyId === r.id}
+                onChange={e => setAcknowledged(r.id as string, e.target.value === "yes")}
+                aria-label="Acknowledged by employee"
+                className={`rounded border px-1.5 py-1 text-xs font-semibold disabled:opacity-50 ${r.acknowledgedAt ? "border-green-200 bg-green-50 text-green-700" : "border-line bg-white text-ink/60"}`}
+              >
+                <option value="no">No</option>
+                <option value="yes">Yes</option>
+              </select>
+            ) },
             { key: "_actions", label: "", render: r => (
               <div className="flex items-center gap-1.5">
-                <a href={`/api/v1/hr/disciplinary/${r.id}/letter`} target="_blank" rel="noreferrer" className="rounded border border-line bg-white px-2 py-1 text-xs hover:bg-field flex items-center gap-1"><FileText size={10} /> Letter</a>
+                <button onClick={() => setLetter({ kind: "disciplinary", id: r.id as string })} className="rounded border border-line bg-white px-2 py-1 text-xs hover:bg-field flex items-center gap-1"><FileText size={10} /> Letter</button>
                 <button onClick={() => setConfirmDeleteId(r.id as string)} className="rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-600 hover:bg-red-100"><Trash2 size={12} /></button>
               </div>
             )},
@@ -2974,6 +3149,7 @@ export function DisciplinaryPage() {
           loading={loading}
           empty="No disciplinary records found." csvFilename="disciplinary-records"
         />
+        {letter && <LetterEditor kind={letter.kind} id={letter.id} onClose={() => setLetter(null)} />}
         <ConfirmModal
           open={!!confirmDeleteId}
           onClose={() => setConfirmDeleteId(null)}
@@ -3010,6 +3186,7 @@ export function GrievancesPage() {
   const [form, setForm] = useState({ employeeId: "", submittedDate: new Date().toISOString().slice(0,10), category: "Harassment", description: "" });
   const [confirmCloseId, setConfirmCloseId] = useState<string | null>(null);
   const [closing, setClosing] = useState(false);
+  const [letter, setLetter] = useState<{ kind: LetterKind; id: string } | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setForm(p => ({ ...p, [k]: e.target.value }));
@@ -3138,7 +3315,7 @@ export function GrievancesPage() {
               <div className="flex gap-1">
                 {r.status === "OPEN" && <button onClick={() => { setResolveId(r.id as string); setResolution(""); }} className="rounded border border-green-200 bg-green-50 px-2 py-1 text-xs text-green-700 hover:bg-green-100">Resolve</button>}
                 {r.status === "RESOLVED" && <button onClick={() => setConfirmCloseId(r.id as string)} className="rounded border border-line px-2 py-1 text-xs hover:bg-field">Close</button>}
-                <a href={`/api/v1/hr/grievances/${r.id}/record`} target="_blank" rel="noreferrer" className="rounded border border-line bg-white px-2 py-1 text-xs hover:bg-field flex items-center gap-1"><FileText size={10} /> Record</a>
+                <button onClick={() => setLetter({ kind: "grievance", id: r.id as string })} className="rounded border border-line bg-white px-2 py-1 text-xs hover:bg-field flex items-center gap-1"><FileText size={10} /> Record</button>
                 <button onClick={() => setConfirmDeleteId(r.id as string)} className="rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-600 hover:bg-red-100"><Trash2 size={12} /></button>
               </div>
             )},
@@ -3147,6 +3324,7 @@ export function GrievancesPage() {
           loading={loading}
           empty="No grievances found." csvFilename="grievances"
         />
+        {letter && <LetterEditor kind={letter.kind} id={letter.id} onClose={() => setLetter(null)} />}
         <ConfirmModal
           open={!!confirmCloseId}
           onClose={() => setConfirmCloseId(null)}
