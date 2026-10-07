@@ -803,7 +803,6 @@ function LetterEditor({ kind, id, onClose }: { kind: LetterKind; id: string; onC
       cancelled = true;
       if (previewRef.current) URL.revokeObjectURL(previewRef.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kind, id]);
 
   async function save() {
