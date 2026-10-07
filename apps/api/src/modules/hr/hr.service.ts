@@ -2097,7 +2097,9 @@ export class HRService {
         id: true, fullName: true, code: true, startDate: true, basicSalary: true, status: true,
         branchId: true, farmId: true, warehouseId: true, productionSiteId: true,
         employeeRole: { select: { name: true } },
-        branch: { select: { name: true } }
+        branch: { select: { name: true } },
+        manager: { select: { fullName: true } },
+        departmentAssignments: { where: { endDate: null }, orderBy: [{ isPrimary: "desc" }, { startDate: "desc" }], take: 1, select: { department: true } }
       }
     });
     if (!employee) throw new NotFoundException("Employee not found");
@@ -2117,26 +2119,39 @@ export class HRService {
     if (kind === "appointment" || kind === "employment-certificate") {
       const employee = await this.requireEmployeeForLetter(user, id);
       if (kind === "appointment") {
-        const parts = [
-          `Dear ${employee.fullName},`,
-          `We are pleased to confirm your appointment as ${employee.employeeRole?.name ?? "an employee"} of ${company}, effective ${fmtDate(employee.startDate)}.` +
-            (employee.branch?.name ? ` You will be based at ${employee.branch.name}.` : ""),
-        ];
-        if (employee.basicSalary != null) {
-          parts.push(
-            `Your basic salary will be GHS ${Number(employee.basicSalary).toLocaleString("en-GH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} per month, ` +
-            `subject to the statutory deductions required by law and any applicable company policy.`
-          );
-        }
-        parts.push(
-          "Your employment is subject to the terms and conditions set out in the company's HR policy, including but not " +
-          "limited to standards of conduct, working hours, and leave entitlements. Please sign and return a copy of this " +
-          "letter to indicate your acceptance.",
-          "We look forward to working with you.",
-          `For and on behalf of\n${company}\n\n\n_____________________________\nAuthorized signatory`,
-          `_____________________________\n${employee.fullName} — acceptance signature & date`
-        );
-        return { title: "LETTER OF APPOINTMENT", body: parts.join("\n\n"), filename: `appointment-letter-${employee.code}.pdf`, employeeId: employee.id };
+        // Company-standard offer letter. Fixed terms (hours, probation, leave,
+        // signatory) are the company's wording and can be edited per letter.
+        const companyCaps = company.toUpperCase();
+        const role = (employee.employeeRole?.name ?? "EMPLOYEE").toUpperCase();
+        const roleTitle = employee.employeeRole?.name ?? "Employee";
+        const salary = employee.basicSalary != null
+          ? Number(employee.basicSalary).toLocaleString("en-GH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+          : "__________";
+        const start = fmtDate(employee.startDate);
+        const body = [
+          `To: ${employee.fullName}`,
+          `## OFFER OF EMPLOYMENT\nDear ${employee.fullName},`,
+          `We are pleased to offer you employment with ${companyCaps} in the position of ${role}, effective ${start}.`,
+          "In this role, you will be responsible for carrying out the duties and responsibilities assigned to you by the Company and your immediate supervisor. You are expected to perform your duties diligently, professionally, and in accordance with the Company's policies, procedures, and standards.",
+          [
+            "Your employment terms are as follows:",
+            `\u2022 Position: ${roleTitle}`,
+            `\u2022 Department: ${employee.departmentAssignments[0]?.department ?? "__________"}`,
+            `\u2022 Start Date: ${start}`,
+            `\u2022 Basic Salary: GHS ${salary}`,
+            "\u2022 Working Hours: 8:00am \u2013 5:00pm",
+            "\u2022 Probation Period: Three (3) months",
+            `\u2022 Reporting To: ${employee.manager?.fullName ?? "__________"}`
+          ].join("\n"),
+          "You will be entitled to applicable employee benefits and fifteen (15) working days of paid annual leave, in accordance with the Company's policies and the applicable labour laws of Ghana.",
+          "During your employment, you are expected to maintain confidentiality regarding all Company information, demonstrate professionalism, and comply with all applicable workplace rules and regulations.",
+          "This appointment is subject to satisfactory performance and compliance with the terms and conditions of employment. Either party may terminate the employment in accordance with the applicable terms of the employment contract and the laws of Ghana.",
+          `We welcome you to ${companyCaps} and look forward to your contribution to the growth and success of the Company.`,
+          `Yours faithfully,\n\n\n____________________________\nMRS. VICTORIA TUFFOUR\nGENERAL MANAGER\n${companyCaps}`,
+          `## EMPLOYEE ACCEPTANCE\nI, ${employee.fullName}, accept the offer of employment and agree to abide by the terms and conditions stated in this letter.`,
+          "Signature: __________________________\nDate: _______________________________"
+        ].join("\n\n");
+        return { title: "EMPLOYMENT LETTER", body, filename: `appointment-letter-${employee.code}.pdf`, employeeId: employee.id };
       }
       const stillEmployed = employee.status === "ACTIVE";
       const body = [
