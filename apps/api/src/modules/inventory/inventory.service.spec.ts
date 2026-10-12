@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { AuthenticatedUser } from "@jokas/shared";
 import { InventoryService } from "./inventory.service";
 
@@ -100,8 +101,8 @@ describe("InventoryService.createStockMovement — StockBatch tracking (H9)", ()
 
     // Consumed from the FIFO batch, not a direct plain decrement on the item.
     expect(mockTx.stockBatch.updateMany).toHaveBeenCalledWith({
-      where: { id: "batch-1", quantityRemaining: { gte: 10 } },
-      data: { quantityRemaining: { decrement: 10 } }
+      where: { id: "batch-1", quantityRemaining: { gte: new Prisma.Decimal(10) } },
+      data: { quantityRemaining: { decrement: new Prisma.Decimal(10) } }
     });
     expect((res.data as { itemId: string; issued: unknown }).issued).toBeDefined();
   });
@@ -130,8 +131,8 @@ describe("InventoryService.createStockMovement — StockBatch tracking (H9)", ()
     ).rejects.toThrow("Insufficient stock — possibly consumed concurrently. Please retry.");
 
     expect(mockTx.inventoryItem.updateMany).toHaveBeenCalledWith({
-      where: { id: "item-1", quantityOnHand: { gte: 10 } },
-      data: { quantityOnHand: { decrement: 10 }, updatedById: "user-1" }
+      where: { id: "item-1", quantityOnHand: { gte: new Prisma.Decimal(10) } },
+      data: { quantityOnHand: { decrement: new Prisma.Decimal(10) }, updatedById: "user-1" }
     });
   });
 });
@@ -233,10 +234,10 @@ describe("InventoryService.createAdjustment — a negative quantity removes stoc
 
     expect(mockTx.stockBatch.create).not.toHaveBeenCalled();
     expect(mockTx.inventoryItem.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ quantityOnHand: { decrement: 120 } }) })
+      expect.objectContaining({ data: expect.objectContaining({ quantityOnHand: { decrement: new Prisma.Decimal(120) } }) })
     );
     expect(mockTx.stockMovement.create).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ movementType: "ADJUSTMENT_OUT", quantity: 120 }) })
+      expect.objectContaining({ data: expect.objectContaining({ movementType: "ADJUSTMENT_OUT", quantity: new Prisma.Decimal(120) }) })
     );
   });
 });

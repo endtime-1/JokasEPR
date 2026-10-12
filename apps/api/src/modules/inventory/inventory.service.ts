@@ -967,27 +967,38 @@ export class InventoryService {
   }
 
   private async consumeFifoTx(tx: Prisma.TransactionClient, user: AuthenticatedUser, item: { id: string; companyId: string; branchId: string; warehouseId: string; productionSiteId: string | null; productId: string; uomId: string }, quantity: number, movementType: "ADJUSTMENT_OUT" | "SALE_DISPATCH" | "TRANSFER" | "WASTE" | "PRODUCTION_INPUT" | "RETURN_OUT", referenceType: string, referenceId?: string, notes?: string, movementDate?: Date) {
-    let remaining = quantity;
+    // Quantities are DECIMAL(18,4). Work in whole 1/10000 units and hand Prisma
+    // exact Decimals: comparing a float like 8.8336 (or 359.16639999999995 after
+    // a few subtractions) against a DECIMAL column in the guard below could be
+    // rejected by rounding noise, which failed whole approvals with a bogus
+    // "not enough stock" even though the lots held plenty.
+    const toUnits = (n: number) => Math.round(n * 10000);
+    const dec = (units: number) => new Prisma.Decimal(units).div(10000);
+    let remainingUnits = toUnits(quantity);
     let value = 0;
     const issued: Array<{ batchId: string; quantity: number; unitCost: number }> = [];
     // H-BUG-2: status: "AVAILABLE" excludes lots Quality has rejected or
     // quarantined — see quality.service.ts's approve/reject/quarantineBatch.
     const batches = await tx.stockBatch.findMany({ where: { companyId: user.companyId, inventoryItemId: item.id, deletedAt: null, quantityRemaining: { gt: 0 }, status: "AVAILABLE" }, orderBy: [{ expiryDate: "asc" }, { createdAt: "asc" }] });
     for (const batch of batches) {
-      if (remaining <= 0) break;
-      const take = Math.min(remaining, Number(batch.quantityRemaining));
+      if (remainingUnits <= 0) break;
+      const takeUnits = Math.min(remainingUnits, toUnits(Number(batch.quantityRemaining)));
+      if (takeUnits <= 0) continue;
+      const take = dec(takeUnits);
+      const takeNumber = take.toNumber();
       const unitCost = Number(batch.unitCost ?? 0);
       // Protected decrement: WHERE quantityRemaining >= take uses a current-read lock in InnoDB,
       // preventing a concurrent transaction's stale snapshot from driving the column negative.
       const batchUpdate = await tx.stockBatch.updateMany({ where: { id: batch.id, quantityRemaining: { gte: take } }, data: { quantityRemaining: { decrement: take } } });
-      if (batchUpdate.count === 0) throw await this.fifoShortfall(tx, user, item, quantity);
+      if (batchUpdate.count === 0) throw await this.fifoShortfall(tx, user, item, quantity, `Batch ${batch.batchNumber} changed while this was being processed (had ${Number(batch.quantityRemaining)}, needed ${takeNumber}). Please retry.`);
       await tx.stockMovement.create({ data: { companyId: user.companyId, branchId: item.branchId, productId: item.productId, inventoryItemId: item.id, stockBatchId: batch.id, fromWarehouseId: item.warehouseId, warehouseId: item.warehouseId, productionSiteId: item.productionSiteId, uomId: item.uomId, movementType, quantity: take, unitCost, referenceType, referenceId, notes, ...(movementDate ? { movementDate } : {}), createdById: user.id } });
-      issued.push({ batchId: batch.id, quantity: take, unitCost });
-      value += take * unitCost;
-      remaining -= take;
+      issued.push({ batchId: batch.id, quantity: takeNumber, unitCost });
+      value += takeNumber * unitCost;
+      remainingUnits -= takeUnits;
     }
-    if (remaining > 0) throw await this.fifoShortfall(tx, user, item, quantity);
-    const itemUpdate = await tx.inventoryItem.updateMany({ where: { id: item.id, quantityOnHand: { gte: quantity } }, data: { quantityOnHand: { decrement: quantity }, updatedById: user.id } });
+    if (remainingUnits > 0) throw await this.fifoShortfall(tx, user, item, quantity);
+    const exactQuantity = dec(toUnits(quantity));
+    const itemUpdate = await tx.inventoryItem.updateMany({ where: { id: item.id, quantityOnHand: { gte: exactQuantity } }, data: { quantityOnHand: { decrement: exactQuantity }, updatedById: user.id } });
     if (itemUpdate.count === 0) throw new BadRequestException("Insufficient stock — possibly consumed concurrently. Please retry.");
     return { issued, unitCost: value / Math.max(quantity, 1) };
   }
@@ -997,7 +1008,8 @@ export class InventoryService {
   // or REJECTED lots (or a total that drifted from its batches) used to surface
   // as a bare "FIFO batches do not contain enough available stock." — say what
   // is actually short so the store team knows where to look.
-  private async fifoShortfall(tx: Prisma.TransactionClient, user: AuthenticatedUser, item: { id: string }, needed: number) {
+  private async fifoShortfall(tx: Prisma.TransactionClient, user: AuthenticatedUser, item: { id: string }, needed: number, override?: string) {
+    if (override) return new BadRequestException(override);
     const [live, onHand] = await Promise.all([
       tx.stockBatch.findMany({ where: { companyId: user.companyId, inventoryItemId: item.id, deletedAt: null, quantityRemaining: { gt: 0 } }, select: { status: true, quantityRemaining: true } }),
       tx.inventoryItem.findUnique({ where: { id: item.id }, select: { quantityOnHand: true } })
