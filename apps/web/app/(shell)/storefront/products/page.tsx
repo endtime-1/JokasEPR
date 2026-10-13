@@ -65,10 +65,16 @@ function ProductRow({ product, onSaved }: { product: AdminProduct; onSaved: (p: 
     setDraft(next);
     setSaving(true);
     try {
-      await apiFetch<ApiEnvelope<unknown>>(`/public/admin/products/${product.id}`, {
+      const res = await apiFetch<{ publicSlug?: string | null; data?: { publicSlug?: string | null } }>(`/public/admin/products/${product.id}`, {
         method: "PATCH",
         body: JSON.stringify({ isPublic: next.isPublic }),
       });
+      // The server fills in a web address (and category) when a product is first
+      // published — pick it up so the row doesn't show it as blank.
+      const slug = res?.data?.publicSlug ?? res?.publicSlug;
+      if (slug && !next.publicSlug) next.publicSlug = slug;
+      if (next.isPublic && !next.storefrontCategory && /mash|concentrate|feed/i.test(next.name)) next.storefrontCategory = "Feed";
+      setDraft(next);
       onSaved(next);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);

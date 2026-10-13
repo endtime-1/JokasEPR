@@ -4,7 +4,7 @@ import { PublicService } from "./public.service";
 const mockPrisma = {
   company: { findFirst: jest.fn() },
   customer: { create: jest.fn() },
-  product: { findMany: jest.fn() },
+  product: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
   salesOrder: { create: jest.fn() },
   $transaction: jest.fn()
 };
@@ -168,5 +168,33 @@ describe("PublicService.submitContact — actually sends the message somewhere (
     const service = makeService();
 
     await expect(service.submitContact(dto as never)).rejects.toThrow(/call or WhatsApp/);
+  });
+});
+
+describe("PublicService.adminUpdateProduct — publishing", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("gives a product with no web address a unique slug and the Feed category when it is published", async () => {
+    mockPrisma.product.findFirst
+      .mockResolvedValueOnce({ id: "p1", name: "Layer 1 Concentrate", publicSlug: null, storefrontCategory: null }) // ownership
+      .mockResolvedValueOnce({ id: "other" }) // "layer-1-concentrate" already taken
+      .mockResolvedValueOnce(null); // "layer-1-concentrate-2" is free
+    mockPrisma.product.update.mockResolvedValue({ id: "p1", isPublic: true, publicSlug: "layer-1-concentrate-2" });
+
+    await makeService().adminUpdateProduct("company-1", "p1", { isPublic: true } as never);
+
+    expect(mockPrisma.product.update).toHaveBeenCalledWith({
+      where: { id: "p1" },
+      data: { isPublic: true, publicSlug: "layer-1-concentrate-2", storefrontCategory: "Feed" }
+    });
+  });
+
+  it("keeps an existing slug and category when publishing", async () => {
+    mockPrisma.product.findFirst.mockResolvedValueOnce({ id: "p1", name: "Layer 1 Mash", publicSlug: "layer-1-mash", storefrontCategory: "Feed" });
+    mockPrisma.product.update.mockResolvedValue({ id: "p1", isPublic: true, publicSlug: "layer-1-mash" });
+
+    await makeService().adminUpdateProduct("company-1", "p1", { isPublic: true } as never);
+
+    expect(mockPrisma.product.update).toHaveBeenCalledWith({ where: { id: "p1" }, data: { isPublic: true } });
   });
 });

@@ -66,7 +66,7 @@ export class PublicService {
 
   async listProducts(category?: string) {
     const companyId = await this.getStorefrontCompanyId();
-    const where: Record<string, unknown> = { companyId, isPublic: true, deletedAt: null, status: "ACTIVE" };
+    const where: Record<string, unknown> = { companyId, isPublic: true, deletedAt: null, status: "ACTIVE", publicSlug: { not: null } };
     if (category) where.storefrontCategory = category;
 
     const products = await this.prisma.product.findMany({
@@ -326,6 +326,17 @@ export class PublicService {
     if (dto.minOrderQty       !== undefined) data.minOrderQty       = dto.minOrderQty;
     if (dto.unitLabel         !== undefined) data.unitLabel         = dto.unitLabel;
 
+    // Publishing must always leave the product reachable: the ERP's quick
+    // "publish" toggle sends only isPublic, which used to publish a product with
+    // no web address (broken /products/null link, 404 page) and no category
+    // (invisible under every category filter). Fill both in when missing.
+    if (dto.isPublic === true) {
+      const slug = (data.publicSlug as string | undefined) ?? existing.publicSlug;
+      if (!slug) data.publicSlug = await this.uniqueSlug(companyId, existing.name, id);
+      const category = (data.storefrontCategory as string | undefined) ?? existing.storefrontCategory;
+      if (!category && /mash|concentrate|feed|starter|finisher|layer|developer|prelay/i.test(existing.name)) data.storefrontCategory = "Feed";
+    }
+
     const product = await this.prisma.product.update({ where: { id }, data });
 
     if (dto.unitPrice !== undefined && dto.unitPrice > 0) {
@@ -343,6 +354,17 @@ export class PublicService {
     }
 
     return { id: product.id, isPublic: product.isPublic, publicSlug: product.publicSlug };
+  }
+
+  private async uniqueSlug(companyId: string, name: string, productId: string): Promise<string> {
+    const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 150) || "product";
+    let candidate = base;
+    for (let n = 2; n < 50; n++) {
+      const clash = await this.prisma.product.findFirst({ where: { companyId, publicSlug: candidate, NOT: { id: productId } }, select: { id: true } });
+      if (!clash) return candidate;
+      candidate = `${base}-${n}`;
+    }
+    return `${base}-${productId.slice(0, 6)}`;
   }
 
   async adminListOrders(companyId: string, status?: string, search?: string) {
