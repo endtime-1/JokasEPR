@@ -135,6 +135,7 @@ export default function Footer() {
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 px-4 py-5 text-xs text-white/25 sm:flex-row sm:px-6">
           <span>© {new Date().getFullYear()} Akoko Solutions · All rights reserved</span>
           <div className="flex gap-5">
+            <a href="https://www.akokosolutions.com" target="_blank" rel="noopener noreferrer" className="transition hover:text-white/50">Company website</a>
             <Link href="/privacy" className="transition hover:text-white/50">Privacy Policy</Link>
             <Link href="/terms" className="transition hover:text-white/50">Terms of Service</Link>
           </div>

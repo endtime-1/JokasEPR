@@ -33,6 +33,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               url: SITE_ORIGIN,
               logo: `${SITE_ORIGIN}/brand/akoko-icon.png`,
               slogan: "Quality feeds, best production",
+              sameAs: ["https://www.akokosolutions.com"],
               telephone: "+233208120456",
               email: "farmersupport@akokofeeds.com",
               address: { "@type": "PostalAddress", addressLocality: "Kumasi", addressCountry: "GH", postOfficeBoxNumber: "KS3908" },
