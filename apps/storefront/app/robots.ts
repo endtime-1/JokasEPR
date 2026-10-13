@@ -1,6 +1,6 @@
 import type { MetadataRoute } from "next";
 
-const SITE_ORIGIN = (process.env.SITE_URL || process.env.WEB_ORIGIN || "https://jokasfarms.com").replace(/\/$/, "");
+const SITE_ORIGIN = (process.env.SITE_URL || "https://akokofeeds.com").replace(/\/$/, "");
 
 export default function robots(): MetadataRoute.Robots {
   return {
@@ -11,6 +11,6 @@ export default function robots(): MetadataRoute.Robots {
       // /order/* would otherwise expose customer order-reference URLs to bots.
       disallow: ["/cart", "/checkout", "/order"],
     },
-    sitemap: `${SITE_ORIGIN}/shop/sitemap.xml`,
+    sitemap: `${SITE_ORIGIN}/sitemap.xml`,
   };
 }

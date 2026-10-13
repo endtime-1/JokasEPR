@@ -1,8 +1,8 @@
 import type { MetadataRoute } from "next";
 import { api } from "@/lib/api";
 
-const SITE_ORIGIN = (process.env.SITE_URL || process.env.WEB_ORIGIN || "https://jokasfarms.com").replace(/\/$/, "");
-const BASE = `${SITE_ORIGIN}/shop`;
+const SITE_ORIGIN = (process.env.SITE_URL || "https://akokofeeds.com").replace(/\/$/, "");
+const BASE = SITE_ORIGIN;
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const staticRoutes: MetadataRoute.Sitemap = [

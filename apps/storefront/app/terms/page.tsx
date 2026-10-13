@@ -19,7 +19,7 @@ export default function TermsPage() {
         <section>
           <h2 className="text-lg font-bold text-ink">1. Agreement</h2>
           <p className="mt-2">
-            By placing an order on jokasfarms.com you agree to these terms. If you do not
+            By placing an order on akokofeeds.com you agree to these terms. If you do not
             agree, please do not use this site. These terms govern the relationship between
             you (the buyer) and Akoko Solutions (the seller).
           </p>

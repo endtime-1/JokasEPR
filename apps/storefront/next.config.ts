@@ -25,21 +25,17 @@ const securityHeaders = [
       // would have silently dropped ALL security headers in production
       // (this array wouldn't run either, since it'd move into middleware.ts
       // too) — reverted to keep this app's headers actually working.
-      // Revisit if this app's basePath is ever replaced by a reverse-proxy
-      // prefix, or on a future Next.js upgrade that may fix the detection.
+      // The basePath is gone now (the site is served from the root), so a
+      // nonce-based CSP via middleware.ts could be revisited.
       "script-src 'self' 'unsafe-inline'",
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https://images.unsplash.com https://plus.unsplash.com https://www.akokosolutions.com",
-      // (2026-09-04) nginx accepts both jokasfarms.com and www.jokasfarms.com
-      // on the same server block with no canonical redirect. A /shop page
-      // loaded from www.jokasfarms.com has document origin www.jokasfarms.com,
-      // so its own fetches to the bare-domain API don't match 'self' — every
-      // API call was silently CSP-blocked on that host. This app has no
-      // middleware.ts (see the comment above — Next.js never detects one
-      // with basePath set) so it can't redirect www -> apex the way
-      // apps/web's middleware now does; listing both hosts explicitly here
-      // is the fix that's actually deployable for this app.
-      "connect-src 'self' https://jokasfarms.com https://www.jokasfarms.com",
+      // The browser only ever calls same-origin /api/v1/public/* (nginx on
+      // akokofeeds.com forwards just those routes to the API). www. is listed
+      // as a second line of defence behind nginx's www -> apex redirect: a
+      // page that ends up on the other host would otherwise have every API
+      // call silently CSP-blocked (the 2026-09-04 jokasfarms.com bug).
+      "connect-src 'self' https://akokofeeds.com https://www.akokofeeds.com",
       "font-src 'self'",
       "object-src 'none'",
       "frame-ancestors 'none'",
@@ -48,8 +44,8 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
-  // Serve the shop at /shop/* so it shares the same domain as the dashboard
-  basePath: "/shop",
+  // Served from the root of akokofeeds.com (the marketing + sales site). It
+  // used to live at jokasfarms.com/shop; nginx now 301-redirects that here.
   output: "standalone",
   outputFileTracingRoot: path.join(process.cwd(), "../../"),
   images: {

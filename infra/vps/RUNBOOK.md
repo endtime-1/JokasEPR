@@ -198,3 +198,64 @@ no longer needed. (Ask me to write this when you're ready.)
 | Deploy new code | `cd /opt/jokas/app && git pull && bash infra/vps/deploy.sh` |
 | DB console | `mysql -u jokas -p jokas_erp` |
 | Restore a backup | `gunzip -c /opt/jokas/backups/db-STAMP.sql.gz | mysql -u jokas -p jokas_erp` |
+
+---
+
+## Adding akokofeeds.com (public marketing + sales site)
+
+`akokofeeds.com` serves the same `jokas-storefront` process (:3002) from the
+**root** of the domain. `jokasfarms.com/shop` 301-redirects to it. The ERP,
+login and every admin API stay on `jokasfarms.com` only — the new domain's
+nginx forwards just `/api/v1/public/*` (minus `/public/admin`) and product /
+logo images to the API.
+
+**1. DNS** (where akokofeeds.com is managed — safe to do first, it just
+propagates):
+
+| Type | Name | Value |
+|---|---|---|
+| A | `@` | the VPS IP |
+| A | `www` | the VPS IP |
+| AAAA | `@`, `www` | only if the VPS has an IPv6 address you use for jokasfarms.com |
+
+Check from the VPS: `dig +short akokofeeds.com` returns the VPS IP.
+
+**2. nginx + TLS** (as root — a *separate* site file; do not overwrite the
+live jokasfarms file, certbot has rewritten it):
+```bash
+cd /opt/jokas/app && git pull origin vps-migration
+cp infra/vps/nginx-akokofeeds.conf /etc/nginx/sites-available/akokofeeds
+ln -sf /etc/nginx/sites-available/akokofeeds /etc/nginx/sites-enabled/akokofeeds
+nginx -t && systemctl reload nginx
+certbot --nginx -d akokofeeds.com -d www.akokofeeds.com
+```
+After certbot, confirm the `www -> apex` redirect exists in the :443 block of
+`/etc/nginx/sites-available/akokofeeds`.
+
+**3. Deploy** (as `deploy`, never root): `bash infra/vps/deploy.sh` — this
+rebuilds the storefront at the domain root and restarts it with
+`SITE_URL=https://akokofeeds.com`. From this moment `jokasfarms.com/shop`
+stops working until step 4, so do step 4 straight away.
+
+**4. Redirect the old /shop path** — edit the live file (as root):
+`nano /etc/nginx/sites-available/jokas`, replace the block
+`location /shop { proxy_pass http://jokas_storefront; }` (in **both** the :80 and
+:443 server blocks, if certbot duplicated it) with:
+```nginx
+location ~ ^/shop(/.*)?$ {
+    return 301 https://akokofeeds.com$1$is_args$args;
+}
+```
+then `nginx -t && systemctl reload nginx`.
+
+**5. Verify**
+- `https://akokofeeds.com` loads; `https://www.akokofeeds.com` redirects to it.
+- Products show with prices and images; an order can be placed and tracked.
+- `https://jokasfarms.com/shop/products` redirects to `https://akokofeeds.com/products`.
+- `curl -i https://akokofeeds.com/api/v1/auth/login` returns **404** (the ERP API is not exposed on this domain).
+- `https://akokofeeds.com/sitemap.xml` and `/robots.txt` list `akokofeeds.com` URLs.
+
+**Rollback:** put `location /shop { proxy_pass http://jokas_storefront; }` back in
+the jokasfarms nginx file and redeploy the previous commit (the storefront then
+serves under `/shop` again).
+

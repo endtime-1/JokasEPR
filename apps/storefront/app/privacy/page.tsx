@@ -19,7 +19,7 @@ export default function PrivacyPage() {
         <section>
           <h2 className="text-lg font-bold text-ink">1. Who we are</h2>
           <p className="mt-2">
-            Akoko Solutions operates this storefront at jokasfarms.com. We produce and sell
+            Akoko Solutions operates this storefront at akokofeeds.com. We produce and sell
             poultry feeds, farm inputs, and related products. Questions about this policy
             can be sent to{" "}
             <a href="mailto:info@akokosolutionsgh.com" className="text-brand hover:underline">
@@ -40,7 +40,7 @@ export default function PrivacyPage() {
           <p className="mt-2">
             We do not collect card or Mobile Money details through this site. Payment is
             arranged directly with our team by phone after your order is confirmed, and no
-            payment information is ever entered or stored on jokasfarms.com.
+            payment information is ever entered or stored on akokofeeds.com.
           </p>
         </section>
 

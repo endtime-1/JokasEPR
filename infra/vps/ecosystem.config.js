@@ -6,7 +6,7 @@
 // Three long-running Node processes, each supervised + auto-restarted by PM2:
 //   jokas-api        NestJS      127.0.0.1:4001
 //   jokas-web        Next.js     127.0.0.1:3000   (admin dashboard)
-//   jokas-storefront Next.js     127.0.0.1:3002   (customer shop, /shop)
+//   jokas-storefront Next.js     127.0.0.1:3002   (akokofeeds.com marketing + shop)
 //
 // nginx terminates TLS on 443 and reverse-proxies to these three.
 // The API reads the rest of its config (DATABASE_URL, JWT secrets, SMTP, …)
@@ -79,6 +79,8 @@ module.exports = {
         NODE_ENV: "production",
         PORT: "3002",
         HOSTNAME: "127.0.0.1",
+        // Canonical public origin — drives sitemap, robots and canonical URLs.
+        SITE_URL: "https://akokofeeds.com",
       },
     },
   ],
