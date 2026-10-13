@@ -32,39 +32,6 @@ export const CATEGORY_IMAGES: Record<string, string> = {
 export const HERO_BG = AK("projects/project1.jpg");
 
 
-export const MOCK_TESTIMONIALS = [
-  {
-    id: "t1",
-    name: "Kwabena Asante",
-    role: "Poultry Farmer",
-    location: "Kumasi, Ashanti Region",
-    initials: "KA",
-    color: "from-orange-400 to-amber-500",
-    rating: 5,
-    text: "I switched to Akoko Layer 1 and my production jumped immediately. The technical advice team helped me adjust feeding schedules — that alone was worth it. The quality is consistent and I never worry about supply.",
-  },
-  {
-    id: "t2",
-    name: "Abena Mensah",
-    role: "Commercial Egg Producer",
-    location: "Accra, Greater Accra",
-    initials: "AM",
-    color: "from-rose-400 to-orange-400",
-    rating: 5,
-    text: "Started with Akoko Chick Starter then moved to Developer and Pre-Lay on schedule. My pullets hit peak production faster than ever before. The free technical advice is genuinely useful — they really know their nutrition.",
-  },
-  {
-    id: "t3",
-    name: "Emmanuel Ofori",
-    role: "Commercial Poultry Farmer",
-    location: "Tamale, Northern Region",
-    initials: "EO",
-    color: "from-green-400 to-emerald-500",
-    rating: 5,
-    text: "Akoko Super Chick took my broiler chicks from zero to market weight faster than any other feed I've tried. The team called to check on results after delivery — that kind of service is rare in Ghana.",
-  },
-];
-
 export const MOCK_STATS = [
   { value: "6+",   label: "Feed Product Lines", sub: "Chick starter to layer mash" },
   { value: "9",    label: "Distribution Points", sub: "Covering all regions of Ghana" },

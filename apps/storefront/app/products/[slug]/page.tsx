@@ -66,5 +66,22 @@ export default async function ProductDetailPage({
   }
   if (!product) notFound();
 
-  return <ProductDetailClient product={product} />;
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    name: product.name,
+    description: product.publicDescription ?? undefined,
+    image: product.imageUrl ?? undefined,
+    brand: { "@type": "Brand", name: "Akoko Solutions" },
+    ...(product.price != null
+      ? { offers: { "@type": "Offer", priceCurrency: "GHS", price: product.price, availability: "https://schema.org/InStock" } }
+      : {}),
+  };
+
+  return (
+    <>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      <ProductDetailClient product={product} />
+    </>
+  );
 }

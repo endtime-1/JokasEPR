@@ -1,7 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { api } from "@/lib/api";
-import { MOCK_STATS, MOCK_TESTIMONIALS, HOW_IT_WORKS, HERO_BG, CATEGORY_IMAGES, PRODUCT_IMAGES } from "@/lib/mock-data";
+import { MOCK_STATS, HOW_IT_WORKS, HERO_BG, CATEGORY_IMAGES, PRODUCT_IMAGES } from "@/lib/mock-data";
 import { ArrowRight, Star, ChevronDown, ArrowUpRight } from "lucide-react";
 import RevealSection from "@/components/RevealSection";
 import PremiumProductCard from "@/components/PremiumProductCard";
@@ -373,54 +373,6 @@ function HowItWorks() {
   );
 }
 
-/* ─── Testimonials ──────────────────────────────────────────────────── */
-function Testimonials() {
-  return (
-    <section className="bg-cream py-28 lg:py-36">
-      <div className="mx-auto max-w-8xl px-5 sm:px-8">
-        <RevealSection className="mb-16 text-center">
-          <p className="mb-4 text-xs font-semibold uppercase tracking-[0.22em] text-brand">
-            From Our Customers
-          </p>
-          <h2 className="font-display text-[clamp(2.5rem,5vw,4rem)] text-ink">
-            Farmers Across Ghana<br />
-            <em className="text-brand">Trust Akoko.</em>
-          </h2>
-        </RevealSection>
-
-        <div className="grid gap-6 lg:grid-cols-3">
-          {MOCK_TESTIMONIALS.map((t, i) => (
-            <RevealSection key={t.id} className={`reveal-delay-${i + 1}`}>
-              <div className="flex flex-col rounded-4xl bg-white p-8 shadow-panel ring-1 ring-sand">
-                {/* Stars */}
-                <div className="mb-5 flex gap-1">
-                  {Array.from({ length: t.rating }).map((_, j) => (
-                    <Star key={j} size={14} className="fill-brand text-brand" />
-                  ))}
-                </div>
-                {/* Quote */}
-                <p className="flex-1 text-[1.05rem] leading-relaxed text-stone before:content-['“'] after:content-['”']">
-                  {t.text}
-                </p>
-                {/* Author */}
-                <div className="mt-7 flex items-center gap-4 border-t border-sand pt-6">
-                  <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br ${t.color} text-sm font-black text-white shadow-md`}>
-                    {t.initials}
-                  </div>
-                  <div>
-                    <div className="font-bold text-ink">{t.name}</div>
-                    <div className="text-xs text-muted">{t.role} · {t.location}</div>
-                  </div>
-                </div>
-              </div>
-            </RevealSection>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
 /* ─── Final CTA ─────────────────────────────────────────────────────── */
 function FinalCTA() {
   return (
@@ -470,7 +422,6 @@ export default async function HomePage() {
       <CategoryTrio />
       <NumbersSection />
       <HowItWorks />
-      <Testimonials />
       <FinalCTA />
     </>
   );

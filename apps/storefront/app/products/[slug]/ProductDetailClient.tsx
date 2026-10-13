@@ -7,6 +7,7 @@ import { useCart } from "@/lib/cart-context";
 import { Minus, Plus, ShoppingCart, ArrowLeft, Check, Truck, ShieldCheck, RefreshCw } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
+import { whatsappLink } from "@/lib/contact";
 
 const CATEGORY_STYLES: Record<string, { pill: string; bg: string }> = {
   Feed: { pill: "bg-amber-50 text-amber-700 ring-1 ring-amber-200", bg: "from-amber-400 to-orange-500" },
@@ -204,6 +205,15 @@ export default function ProductDetailClient({ product }: { product: PublicProduc
               >
                 {added ? <><Check size={15} /> Added to Order!</> : <><ShoppingCart size={15} /> Add to Order</>}
               </button>
+
+              <a
+                href={whatsappLink(`Hello Akoko Feeds, I would like to order ${qty} x ${product.name}${product.unitLabel ? ` (${product.unitLabel})` : ""}. Please confirm availability and delivery.`)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center gap-2 rounded-xl bg-[#25D366] px-4 py-3.5 text-sm font-bold text-white transition hover:bg-[#1ebe5a] active:scale-95"
+              >
+                WhatsApp
+              </a>
 
               {inCart && (
                 <Link

@@ -3,6 +3,7 @@ import "./globals.css";
 import { CartProvider } from "@/lib/cart-context";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
+import WhatsAppButton from "@/components/WhatsAppButton";
 
 const SITE_ORIGIN = (process.env.SITE_URL || "https://akokofeeds.com").replace(/\/$/, "");
 
@@ -22,10 +23,27 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             has actually confirmed it's running — see the .js .reveal rule in
             globals.css. No-JS or a failed script load leaves content visible. */}
         <script dangerouslySetInnerHTML={{ __html: "document.documentElement.classList.add('js')" }} />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "Organization",
+              name: "Akoko Solutions Limited",
+              url: SITE_ORIGIN,
+              logo: `${SITE_ORIGIN}/brand/akoko-icon.png`,
+              slogan: "Quality feeds, best production",
+              telephone: "+233208120456",
+              email: "akokosolutions24@gmail.com",
+              address: { "@type": "PostalAddress", addressLocality: "Kumasi", addressCountry: "GH", postOfficeBoxNumber: "KS3908" },
+            }),
+          }}
+        />
         <CartProvider>
           <Header />
           <main className="flex-1">{children}</main>
           <Footer />
+          <WhatsAppButton />
         </CartProvider>
       </body>
     </html>
