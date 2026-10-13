@@ -5,6 +5,7 @@ import Image from "next/image";
 import { ShoppingCart, Check } from "lucide-react";
 import type { PublicProduct } from "@/lib/api";
 import { PRODUCT_IMAGES } from "@/lib/mock-data";
+import { bagImageFor } from "@/lib/bags";
 import { useCart } from "@/lib/cart-context";
 import { useState } from "react";
 
@@ -28,7 +29,8 @@ const CATEGORY_STYLES: Record<string, { pill: string; fallbackBg: string; label:
 
 function ProductImage({ product }: { product: PublicProduct }) {
   const [imgError, setImgError] = useState(false);
-  const imgSrc = product.imageUrl ?? PRODUCT_IMAGES[product.publicSlug];
+  const bagSrc = bagImageFor(product.name);
+  const imgSrc = bagSrc ?? product.imageUrl ?? PRODUCT_IMAGES[product.publicSlug];
   const cat = product.storefrontCategory ?? "Feed";
   const style = CATEGORY_STYLES[cat] ?? CATEGORY_STYLES["Feed"];
 
@@ -51,12 +53,12 @@ function ProductImage({ product }: { product: PublicProduct }) {
   }
 
   return (
-    <div className="relative h-52 w-full overflow-hidden">
+    <div className={`relative h-52 w-full overflow-hidden ${bagSrc ? "bg-gradient-to-b from-warm to-warmBorder/40" : ""}`}>
       <Image
         src={imgSrc}
         alt={product.name}
         fill
-        className="object-cover transition-transform duration-500 group-hover:scale-105"
+        className={`${bagSrc ? "object-contain p-2" : "object-cover"} transition-transform duration-500 group-hover:scale-105`}
         onError={() => setImgError(true)}
         sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
       />

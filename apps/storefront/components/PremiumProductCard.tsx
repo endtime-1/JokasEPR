@@ -6,6 +6,7 @@ import { ShoppingCart } from "lucide-react";
 import { useCart } from "@/lib/cart-context";
 import type { PublicProduct } from "@/lib/api";
 import { PRODUCT_IMAGES } from "@/lib/mock-data";
+import { bagImageFor } from "@/lib/bags";
 
 const CATEGORY_COLORS: Record<string, string> = {
   "Feed":           "from-amber-500/80 to-orange-600/80",
@@ -22,7 +23,8 @@ export default function PremiumProductCard({ product, featured = false }: Props)
   const { addItem } = useCart();
   const [imgError, setImgError] = useState(false);
   const [added, setAdded] = useState(false);
-  const imgSrc = product.imageUrl ?? PRODUCT_IMAGES[product.publicSlug];
+  const bagSrc = bagImageFor(product.name);
+  const imgSrc = bagSrc ?? product.imageUrl ?? PRODUCT_IMAGES[product.publicSlug];
   const gradient = CATEGORY_COLORS[product.storefrontCategory ?? ""] ?? "from-brand/80 to-brandDark/80";
 
   function handleAdd(e: React.MouseEvent) {
@@ -40,13 +42,13 @@ export default function PremiumProductCard({ product, featured = false }: Props)
       }`}
     >
       {/* Image */}
-      <div className={`relative overflow-hidden ${featured ? "h-96" : "h-64"}`}>
+      <div className={`relative overflow-hidden ${featured ? "h-96" : "h-64"} ${bagSrc ? "bg-gradient-to-b from-[#fff3e3] to-[#f8d9b0]" : ""}`}>
         {!imgError && imgSrc ? (
           <Image
             src={imgSrc}
             alt={product.name}
             fill
-            className="object-cover"
+            className={bagSrc ? "object-contain p-3 pb-14" : "object-cover"}
             onError={() => setImgError(true)}
           />
         ) : (

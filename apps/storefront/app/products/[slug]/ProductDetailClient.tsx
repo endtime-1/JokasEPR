@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { type PublicProduct } from "@/lib/api";
 import { PRODUCT_IMAGES } from "@/lib/mock-data";
+import { bagImageFor } from "@/lib/bags";
 import { useCart } from "@/lib/cart-context";
 import { Minus, Plus, ShoppingCart, ArrowLeft, Check, Truck, ShieldCheck, RefreshCw } from "lucide-react";
 import Image from "next/image";
@@ -19,7 +20,8 @@ function ProductHeroImage({ product }: { product: PublicProduct }) {
   const [error, setError] = useState(false);
   const cat = product.storefrontCategory ?? "Feed";
   const style = CATEGORY_STYLES[cat] ?? CATEGORY_STYLES["Feed"];
-  const src = product.imageUrl ?? PRODUCT_IMAGES[product.publicSlug];
+  const bagSrc = bagImageFor(product.name);
+  const src = bagSrc ?? product.imageUrl ?? PRODUCT_IMAGES[product.publicSlug];
 
   if (!src || error) {
     return (
@@ -34,12 +36,12 @@ function ProductHeroImage({ product }: { product: PublicProduct }) {
   }
 
   return (
-    <div className="relative min-h-[360px] overflow-hidden rounded-3xl">
+    <div className={`relative min-h-[360px] overflow-hidden rounded-3xl ${bagSrc ? "min-h-[520px] bg-gradient-to-b from-[#fff3e3] to-[#f8d9b0]" : ""}`}>
       <Image
         src={src}
         alt={product.name}
         fill
-        className="object-cover"
+        className={bagSrc ? "object-contain p-6" : "object-cover"}
         onError={() => setError(true)}
         sizes="(max-width: 768px) 100vw, 50vw"
         priority
