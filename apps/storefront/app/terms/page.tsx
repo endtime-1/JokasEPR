@@ -76,8 +76,8 @@ export default function TermsPage() {
               +233 50 545 5090
             </a>{" "}
             or{" "}
-            <a href="mailto:info@akokosolutionsgh.com" className="text-brand hover:underline">
-              info@akokosolutionsgh.com
+            <a href="mailto:farmersupport@akokofeeds.com" className="text-brand hover:underline">
+              farmersupport@akokofeeds.com
             </a>
             . We will arrange a replacement or refund at our discretion.
           </p>
@@ -113,8 +113,8 @@ export default function TermsPage() {
               +233 50 545 5090
             </a>
             {" · "}
-            <a href="mailto:info@akokosolutionsgh.com" className="text-brand hover:underline">
-              info@akokosolutionsgh.com
+            <a href="mailto:farmersupport@akokofeeds.com" className="text-brand hover:underline">
+              farmersupport@akokofeeds.com
             </a>
           </p>
         </section>

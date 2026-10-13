@@ -22,8 +22,8 @@ export default function PrivacyPage() {
             Akoko Solutions operates this storefront at akokofeeds.com. We produce and sell
             poultry feeds, farm inputs, and related products. Questions about this policy
             can be sent to{" "}
-            <a href="mailto:info@akokosolutionsgh.com" className="text-brand hover:underline">
-              info@akokosolutionsgh.com
+            <a href="mailto:farmersupport@akokofeeds.com" className="text-brand hover:underline">
+              farmersupport@akokofeeds.com
             </a>
             .
           </p>
@@ -71,8 +71,8 @@ export default function PrivacyPage() {
             Under the Ghana Data Protection Act 2012 you have the right to access,
             correct, or request deletion of personal data we hold about you. Contact us
             at{" "}
-            <a href="mailto:info@akokosolutionsgh.com" className="text-brand hover:underline">
-              info@akokosolutionsgh.com
+            <a href="mailto:farmersupport@akokofeeds.com" className="text-brand hover:underline">
+              farmersupport@akokofeeds.com
             </a>{" "}
             and we will respond within 14 days.
           </p>

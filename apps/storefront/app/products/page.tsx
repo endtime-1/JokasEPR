@@ -120,7 +120,7 @@ export default async function ProductsPage(props: {
             We offer volume discounts and can accommodate recurring supply arrangements.
           </p>
           <a
-            href="mailto:orders@akokosolutions.com?subject=Bulk Order Enquiry"
+            href="mailto:farmersupport@akokofeeds.com?subject=Bulk Order Enquiry"
             className="mt-6 inline-flex items-center gap-2 rounded-xl bg-brand px-7 py-3 text-sm font-bold text-white shadow-brand transition hover:bg-brandDark"
           >
             Contact Us for Pricing

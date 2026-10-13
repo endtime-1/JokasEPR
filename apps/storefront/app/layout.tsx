@@ -34,7 +34,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               logo: `${SITE_ORIGIN}/brand/akoko-icon.png`,
               slogan: "Quality feeds, best production",
               telephone: "+233208120456",
-              email: "akokosolutions24@gmail.com",
+              email: "farmersupport@akokofeeds.com",
               address: { "@type": "PostalAddress", addressLocality: "Kumasi", addressCountry: "GH", postOfficeBoxNumber: "KS3908" },
             }),
           }}

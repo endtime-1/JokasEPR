@@ -105,9 +105,9 @@ export default function Footer() {
                 </a>
               </li>
               <li>
-                <a href="mailto:info@akokosolutionsgh.com" className="flex items-start gap-3 text-sm text-white/55 transition hover:text-brand">
+                <a href="mailto:farmersupport@akokofeeds.com" className="flex items-start gap-3 text-sm text-white/55 transition hover:text-brand">
                   <Mail size={14} className="mt-0.5 shrink-0 text-brand" />
-                  info@akokosolutionsgh.com
+                  farmersupport@akokofeeds.com
                 </a>
               </li>
               <li className="flex items-start gap-3 text-sm text-white/55">

@@ -114,9 +114,9 @@ export default function ContactPage() {
               {
                 icon: Mail,
                 title: "Email",
-                detail: "info@akokosolutionsgh.com",
+                detail: "farmersupport@akokofeeds.com",
                 note: "Response within 24 hours",
-                href: "mailto:info@akokosolutionsgh.com",
+                href: "mailto:farmersupport@akokofeeds.com",
                 cta: "Send email",
                 accent: "bg-blue-500",
                 iconBg: "bg-blue-50 text-blue-600",
@@ -318,7 +318,7 @@ export default function ContactPage() {
                   ))}
                 </ul>
                 <a
-                  href="mailto:info@akokosolutionsgh.com?subject=Bulk%20Order%20Partnership"
+                  href="mailto:farmersupport@akokofeeds.com?subject=Bulk%20Order%20Partnership"
                   className="mt-6 flex items-center justify-center gap-2 rounded-2xl bg-brand px-6 py-3.5 text-sm font-bold text-white shadow-brand transition hover:bg-brandDark"
                 >
                   <Mail size={14} /> Email for Bulk Pricing
