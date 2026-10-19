@@ -126,6 +126,8 @@ export const BROILER_FIT = "Perfect for small, medium, and large-scale commercia
 export const FEED_DETAILS: FeedDetail[] = [
   { slug: "super-chicks", name: "Super Chicks", group: "Layers", period: "0–4 weeks (first month)",
     body: "Super Chicks is a pre-starter feed ideal for chicks to kick-start their growth and development. Growth during this period is a precursor to maximum production when the bird begins laying. As the chick develops its organs at this stage, it requires a good amount of protein and energy, both of which Super Chicks provides in the right quantities." },
+  { slug: "pre-starter", name: "Pre-Starter", group: "Layers", period: null,
+    body: "Akoko Pre-Starter is available as a mash (100%) and a concentrate (50%) in 50 kg sacks. Ask our farmer-support team where Pre-Starter fits in your flock's feeding programme." },
   { slug: "chicks-starter", name: "Chicks Starter", group: "Layers", period: "4–10 weeks",
     body: "The chicks starter has been carefully formulated to meet the changing nutritional demands, especially protein, of young birds." },
   { slug: "developer", name: "Developer", group: "Layers", period: "10–17 weeks",

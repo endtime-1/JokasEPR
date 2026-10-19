@@ -11,6 +11,7 @@ export interface FeedSeries {
 
 export const FEED_SERIES: FeedSeries[] = [
   { slug: "super-chicks", name: "Super Chicks", bird: "Chicks", tagline: "Kick-starts growth in the first weeks: the right protein and energy for young chicks." },
+  { slug: "pre-starter", name: "Pre-Starter", bird: "Chicks", tagline: "Part of the Akoko chick feeding range, as mash and concentrate." },
   { slug: "chicks-starter", name: "Chicks Starter", bird: "Chicks", tagline: "Formulated for strong and healthy early bird life." },
   { slug: "developer", name: "Developer", bird: "Growers", tagline: "The right nutrients for steady, healthy growth." },
   { slug: "prelayer", name: "Prelayer", bird: "Growers", tagline: "Optimized for higher performance at the onset of lay." },

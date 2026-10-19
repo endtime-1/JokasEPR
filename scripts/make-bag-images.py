@@ -83,6 +83,16 @@ def draw_tick(img, cx, cy, size):
     img.alpha_composite(layer)
 
 
+def save_plain(slug, fname):
+    """Pre-Starter has no checkbox on any printed bag yet, so it shows the plain
+    grower bag with nothing ticked until its own artwork exists."""
+    img = Image.open(os.path.join(SRC, fname)).convert("RGB")
+    img.thumbnail((720, 1100), Image.LANCZOS)
+    for form in ("mash", "concentrate"):
+        img.save(os.path.join(OUT, f"{slug}-{form}.webp"), "WEBP", quality=86, method=6)
+        print("wrote", f"{slug}-{form}")
+
+
 for key, (fname, cfg) in BAGS.items():
     base = Image.open(os.path.join(SRC, fname)).convert("RGBA")
     erase = cfg["erase"]
@@ -101,3 +111,5 @@ for key, (fname, cfg) in BAGS.items():
         out.thumbnail((720, 1100), Image.LANCZOS)
         out.save(os.path.join(OUT, f"{slug}.webp"), "WEBP", quality=86, method=6)
         print("wrote", slug)
+
+save_plain("pre-starter", BAGS["chicks"][0])

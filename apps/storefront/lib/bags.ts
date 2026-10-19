@@ -7,6 +7,7 @@
 // The feeding order: the first week's feed comes first, never alphabetical.
 const SERIES: Array<[RegExp, string]> = [
   [/super[\s-]*chick/, "super-chicks"],
+  [/pre[\s-]*starter/, "pre-starter"],
   [/broiler[\s-]*starter/, "broiler-starter"],
   [/broiler[\s-]*finisher/, "broiler-finisher"],
   [/chicks?[\s-]*(starter|mash|conc)/, "chicks-starter"],
@@ -18,6 +19,7 @@ const SERIES: Array<[RegExp, string]> = [
 
 export const FEED_ORDER = [
   "super-chicks",
+  "pre-starter",
   "chicks-starter",
   "developer",
   "prelayer",
@@ -40,6 +42,7 @@ export function isConcentrate(name: string): boolean {
 
 const DISPLAY_NAME: Record<string, string> = {
   "super-chicks": "Super Chicks",
+  "pre-starter": "Pre-Starter",
   "chicks-starter": "Chicks Starter",
   developer: "Developer",
   prelayer: "Pre-Lay",

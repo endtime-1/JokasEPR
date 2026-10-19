@@ -35,6 +35,7 @@ const UPLOAD_DIR = join(process.cwd(), "uploads", "products");
 // Feeding order. Keep in step with apps/storefront/lib/bags.ts and range.ts.
 const SERIES = [
   { slug: "super-chicks", name: "Super Chicks", re: /super[\s-]*chick/, sku: "SC", tagline: "Pre-starter feed to kick-start growth in the first weeks." },
+  { slug: "pre-starter", name: "Pre-Starter", re: /pre[\s-]*starter/, sku: "PSM", tagline: "Part of the Akoko chick feeding range, as mash and concentrate." },
   { slug: "chicks-starter", name: "Chicks Starter", re: /chicks?[\s-]*(starter|mash|conc)/, sku: "CS", tagline: "Formulated for strong and healthy early bird life." },
   { slug: "developer", name: "Developer", re: /developer/, sku: "DEV", tagline: "Strong bones and a fortified reproductive system for productive layers." },
   { slug: "prelayer", name: "Pre-Lay", re: /pre[\s-]*lay/, sku: "PL", tagline: "Enriched with calcium to prime your flock for exceptional egg production." },
