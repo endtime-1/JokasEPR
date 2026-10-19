@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-export const metadata = { title: "Terms of Service — Akoko Solutions" };
+export const metadata = { title: "Terms of Service" };
 
 export default function TermsPage() {
   return (
@@ -21,7 +21,7 @@ export default function TermsPage() {
           <p className="mt-2">
             By placing an order on akokofeeds.com you agree to these terms. If you do not
             agree, please do not use this site. These terms govern the relationship between
-            you (the buyer) and Akoko Solutions (the seller).
+            you (the buyer) and Akoko Solutions Limited, trading as Akoko Feeds (the seller).
           </p>
         </section>
 
@@ -108,7 +108,7 @@ export default function TermsPage() {
         <section>
           <h2 className="text-lg font-bold text-ink">8. Contact</h2>
           <p className="mt-2">
-            Akoko Solutions, Abrepo Road, Kumasi, Ghana.{" "}
+            Akoko Feeds (Akoko Solutions Limited), Abrepo Barekese Road, Kumasi, Ghana.{" "}
             <a href="tel:+233505455090" className="text-brand hover:underline">
               +233 50 545 5090
             </a>

@@ -29,7 +29,7 @@ export async function generateMetadata({
 
   const description =
     product.publicDescription ??
-    `${product.name} — mill-fresh feed, farm eggs, and soya products direct from Akoko Solutions, Ghana.`;
+    `${product.name} — mill-fresh feed, farm eggs, and soya products direct from Akoko Feeds, Ghana.`;
 
   return {
     title: product.name,
@@ -72,7 +72,7 @@ export default async function ProductDetailPage({
     name: product.name,
     description: product.publicDescription ?? undefined,
     image: product.imageUrl ?? undefined,
-    brand: { "@type": "Brand", name: "Akoko Solutions" },
+    brand: { "@type": "Brand", name: "Akoko Feeds" },
     ...(product.price != null
       ? { offers: { "@type": "Offer", priceCurrency: "GHS", price: product.price, availability: "https://schema.org/InStock" } }
       : {}),

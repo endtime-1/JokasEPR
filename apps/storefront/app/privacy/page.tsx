@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-export const metadata = { title: "Privacy Policy — Akoko Solutions" };
+export const metadata = { title: "Privacy Policy" };
 
 export default function PrivacyPage() {
   return (
@@ -19,7 +19,7 @@ export default function PrivacyPage() {
         <section>
           <h2 className="text-lg font-bold text-ink">1. Who we are</h2>
           <p className="mt-2">
-            Akoko Solutions operates this storefront at akokofeeds.com. We produce and sell
+            Akoko Feeds, a brand of Akoko Solutions Limited, operates this storefront at akokofeeds.com. We produce and sell
             poultry feeds, farm inputs, and related products. Questions about this policy
             can be sent to{" "}
             <a href="mailto:farmersupport@akokofeeds.com" className="text-brand hover:underline">

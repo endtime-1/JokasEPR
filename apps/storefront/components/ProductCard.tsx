@@ -4,7 +4,6 @@ import Link from "next/link";
 import Image from "next/image";
 import { ShoppingCart, Check } from "lucide-react";
 import type { PublicProduct } from "@/lib/api";
-import { PRODUCT_IMAGES } from "@/lib/mock-data";
 import { bagImageFor } from "@/lib/bags";
 import { useCart } from "@/lib/cart-context";
 import { useState } from "react";
@@ -30,7 +29,7 @@ const CATEGORY_STYLES: Record<string, { pill: string; fallbackBg: string; label:
 function ProductImage({ product }: { product: PublicProduct }) {
   const [imgError, setImgError] = useState(false);
   const bagSrc = bagImageFor(product.name);
-  const imgSrc = bagSrc ?? product.imageUrl ?? PRODUCT_IMAGES[product.publicSlug];
+  const imgSrc = bagSrc ?? product.imageUrl;
   const cat = product.storefrontCategory ?? "Feed";
   const style = CATEGORY_STYLES[cat] ?? CATEGORY_STYLES["Feed"];
 
@@ -39,7 +38,7 @@ function ProductImage({ product }: { product: PublicProduct }) {
       <div className={`flex h-52 w-full items-end justify-start bg-gradient-to-br ${style.fallbackBg} p-4`}>
         <div>
           <div className="text-[9px] font-bold uppercase tracking-widest text-white/60">
-            Akoko Solutions
+            Akoko Feeds
           </div>
           <div className="mt-0.5 text-sm font-extrabold uppercase leading-tight text-white">
             {product.name}

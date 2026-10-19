@@ -5,7 +5,6 @@ import { useState } from "react";
 import { ShoppingCart } from "lucide-react";
 import { useCart } from "@/lib/cart-context";
 import type { PublicProduct } from "@/lib/api";
-import { PRODUCT_IMAGES } from "@/lib/mock-data";
 import { bagImageFor } from "@/lib/bags";
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -24,7 +23,7 @@ export default function PremiumProductCard({ product, featured = false }: Props)
   const [imgError, setImgError] = useState(false);
   const [added, setAdded] = useState(false);
   const bagSrc = bagImageFor(product.name);
-  const imgSrc = bagSrc ?? product.imageUrl ?? PRODUCT_IMAGES[product.publicSlug];
+  const imgSrc = bagSrc ?? product.imageUrl;
   const gradient = CATEGORY_COLORS[product.storefrontCategory ?? ""] ?? "from-brand/80 to-brandDark/80";
 
   function handleAdd(e: React.MouseEvent) {

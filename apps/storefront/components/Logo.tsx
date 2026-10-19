@@ -13,7 +13,7 @@ export function LogoMark({ size = 44, className = "" }: { size?: number; classNa
   return (
     <Image
       src="/brand/akoko-mark.svg"
-      alt="Akoko Solutions"
+      alt="Akoko Feeds"
       width={size}
       height={size}
       className={className}
@@ -23,42 +23,32 @@ export function LogoMark({ size = 44, className = "" }: { size?: number; classNa
 }
 
 /**
- * Full logo: mark + "AKOKO / SOLUTIONS" wordmark.
- * variant="lockup"       → the full horizontal SVG lockup (dark text)
- * variant="mark"         → just the badge (square)
- * variant="light-lockup" → badge + white text wordmark, for dark backgrounds
+ * Akoko Feeds logo: hen badge + "AKOKO FEEDS" wordmark.
+ * variant="lockup"       → dark text, for light backgrounds
+ * variant="light-lockup" → white text, for dark / photo backgrounds
+ * variant="mark"         → just the badge
  */
 export function Logo({ variant = "lockup", height = 44, className = "", href = "/" }: LogoProps) {
+  const light = variant === "light-lockup";
   const content =
-    variant === "lockup" ? (
-      /* Full horizontal SVG lockup */
-      <Image
-        src="/brand/akoko-logo.svg"
-        alt="Akoko Solutions"
-        width={Math.round((640 / 190) * height)}
-        height={height}
-        priority
-        className="h-auto"
-        style={{ height }}
-      />
-    ) : variant === "light-lockup" ? (
-      /* Badge + white text, for dark backgrounds */
+    variant === "mark" ? (
+      <LogoMark size={height} />
+    ) : (
       <span className="flex items-center gap-2.5">
         <LogoMark size={height} />
         <span className="flex flex-col leading-none">
-          <span className="text-[17px] font-black tracking-tight text-white">Akoko</span>
-          <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/55">
-            Solutions
+          <span className={`font-display text-[22px] tracking-tight ${light ? "text-white" : "text-ink"}`}>
+            Akoko <span className="text-brand">Feeds</span>
+          </span>
+          <span className={`mt-0.5 text-[9px] font-semibold uppercase tracking-[0.2em] ${light ? "text-white/55" : "text-muted"}`}>
+            Quality Feed, Higher Production
           </span>
         </span>
       </span>
-    ) : (
-      /* Mark only */
-      <LogoMark size={height} />
     );
 
   return (
-    <Link href={href} className={`inline-flex items-center select-none ${className}`}>
+    <Link href={href} aria-label="Akoko Feeds home" className={`inline-flex items-center select-none ${className}`}>
       {content}
     </Link>
   );

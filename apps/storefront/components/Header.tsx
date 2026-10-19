@@ -8,20 +8,13 @@ import { useCart } from "@/lib/cart-context";
 import { Logo, LogoMark } from "./Logo";
 
 const NAV = [
-  { href: "/products",                           label: "Products"    },
-  { href: "/products?category=Feed",             label: "Feed"        },
-  { href: "/products?category=Eggs+%26+Poultry", label: "Eggs & Poultry" },
-  { href: "/about",                              label: "About"       },
-  { href: "/contact",                            label: "Contact"     },
-  { href: "/track",                              label: "Track Order" },
-];
-
-const TICKERS = [
-  "🌾  Quality Feed, Higher Production — We Help Farmers Achieve Optimum Production",
-  "🐓  Akoko Solutions — Your Choice for Profit · Kumasi, Ghana",
-  "🥚  Free Technical Advice with every order — our farm experts are available",
-  "💰  Bulk pricing available · Call +233 505 455 090",
-  "🚚  9 distribution points across Ghana · Abrepo Road, Kumasi headquarters",
+  { href: "/products",       label: "Shop"          },
+  { href: "/feeds",          label: "Our Feeds"     },
+  { href: "/feeding-guide",  label: "Feeding Guide" },
+  { href: "/support",        label: "Support"       },
+  { href: "/retailers",      label: "Retailers"     },
+  { href: "/about",          label: "About"         },
+  { href: "/contact",        label: "Contact"       },
 ];
 
 export default function Header() {
@@ -30,7 +23,6 @@ export default function Header() {
   const isHome       = pathname === "/";
   const [scrolled, setScrolled] = useState(false);
   const [open,     setOpen]     = useState(false);
-  const [tick,     setTick]     = useState(0);
 
   useEffect(() => {
     const fn = () => setScrolled(window.scrollY > 60);
@@ -39,20 +31,15 @@ export default function Header() {
     return () => window.removeEventListener("scroll", fn);
   }, []);
 
-  useEffect(() => {
-    const t = setInterval(() => setTick(i => (i + 1) % TICKERS.length), 4500);
-    return () => clearInterval(t);
-  }, []);
-
   const transparent = isHome && !scrolled && !open;
 
   return (
     <>
-      {/* Ticker */}
+      {/* Announcement bar */}
       <div className={`relative overflow-hidden py-1.5 text-center text-xs font-medium transition-colors duration-300 ${
-        transparent ? "bg-black/30 text-white/80 backdrop-blur-sm" : "bg-ink text-white/70"
+        transparent ? "bg-black/30 text-white/85 backdrop-blur-sm" : "bg-ink text-white/75"
       }`}>
-        <span key={tick} className="animate-fade-in">{TICKERS[tick]}</span>
+        Free technical advice with every order &nbsp;·&nbsp; Delivery across Ghana &nbsp;·&nbsp; Order on WhatsApp +233 208 120 456
       </div>
 
       {/* Header */}

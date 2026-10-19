@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { type PublicProduct } from "@/lib/api";
-import { PRODUCT_IMAGES } from "@/lib/mock-data";
 import { bagImageFor } from "@/lib/bags";
 import { useCart } from "@/lib/cart-context";
 import { Minus, Plus, ShoppingCart, ArrowLeft, Check, Truck, ShieldCheck, RefreshCw } from "lucide-react";
@@ -21,13 +20,13 @@ function ProductHeroImage({ product }: { product: PublicProduct }) {
   const cat = product.storefrontCategory ?? "Feed";
   const style = CATEGORY_STYLES[cat] ?? CATEGORY_STYLES["Feed"];
   const bagSrc = bagImageFor(product.name);
-  const src = bagSrc ?? product.imageUrl ?? PRODUCT_IMAGES[product.publicSlug];
+  const src = bagSrc ?? product.imageUrl;
 
   if (!src || error) {
     return (
       <div className={`flex h-full min-h-[360px] items-end justify-start rounded-3xl bg-gradient-to-br ${style.bg} p-8`}>
         <div>
-          <div className="text-xs font-bold uppercase tracking-widest text-white/60">Akoko Solutions</div>
+          <div className="text-xs font-bold uppercase tracking-widest text-white/60">Akoko Feeds</div>
           <div className="mt-1 text-2xl font-extrabold uppercase leading-tight text-white">{product.name}</div>
           {product.unitLabel && <div className="mt-2 text-sm text-white/50">{product.unitLabel}</div>}
         </div>

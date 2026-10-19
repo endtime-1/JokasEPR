@@ -205,7 +205,7 @@ export default function CheckoutPage() {
               )}
 
               <div className="mt-4 rounded-xl bg-warm p-3 text-xs text-muted">
-                💡 Delivery fees calculated based on your location and order volume.
+                Delivery fees calculated based on your location and order volume.
               </div>
             </div>
           </div>

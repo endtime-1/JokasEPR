@@ -3,21 +3,21 @@ import { Phone, Mail, MapPin } from "lucide-react";
 import { Logo } from "./Logo";
 
 const PRODUCT_LINKS = [
-  { href: "/products?category=Feed", label: "Broiler Starter Mash" },
-  { href: "/products?category=Feed", label: "Layer 1 & 2 Mash" },
-  { href: "/products?category=Feed", label: "Chicks Starter Mash" },
-  { href: "/products?category=Feed", label: "Akoko Mix Feed" },
-  { href: "/products?category=Soya+Products", label: "Soya Cake (50kg)" },
-  { href: "/products?category=Soya+Products", label: "Soya Oil (25L)" },
-  { href: "/products?category=Eggs+%26+Poultry", label: "Fresh Farm Eggs" },
-  { href: "/products?category=Eggs+%26+Poultry", label: "Ready Broiler Chicken" },
+  { href: "/feeds", label: "Super Chicks & Chicks Starter" },
+  { href: "/feeds", label: "Developer & Pre-Lay" },
+  { href: "/feeds", label: "Layer 1 & Layer 2" },
+  { href: "/feeds", label: "Broiler Starter & Finisher" },
+  { href: "/feeding-guide", label: "Feeding Guide" },
+  { href: "/products", label: "Shop & Prices" },
 ];
 
 const COMPANY_LINKS = [
-  { href: "/about", label: "About Akoko" },
-  { href: "/products", label: "All Products" },
+  { href: "/about", label: "About Akoko Feeds" },
+  { href: "/support", label: "Farmer Support & Quality" },
+  { href: "/impact", label: "Our Impact" },
+  { href: "/retailers", label: "Become a Retailer" },
+  { href: "/retailers#locate", label: "Locate a Retailer" },
   { href: "/contact", label: "Contact Us" },
-  { href: "/cart", label: "Your Cart" },
   { href: "/track", label: "Track Your Order" },
 ];
 
@@ -48,7 +48,7 @@ export default function Footer() {
             {/* Real brand logo — light variant */}
             <Logo variant="light-lockup" height={42} />
             <p className="mt-5 max-w-xs text-sm leading-relaxed text-white/50">
-              Akoko Solutions — We Help Farmers Achieve Optimum Production. Quality
+              Akoko Feeds — we help farmers achieve optimum production. Quality
               poultry feed with science-based formulation, free technical advice,
               and nationwide distribution from Kumasi, Ghana.
             </p>
@@ -112,11 +112,11 @@ export default function Footer() {
               </li>
               <li className="flex items-start gap-3 text-sm text-white/55">
                 <MapPin size={14} className="mt-0.5 shrink-0 text-brand" />
-                Abrepo Road, Kumasi, Ghana
+                Ak-277-2296, Abrepo Barekese Road, Kumasi
               </li>
             </ul>
             <a
-              href="https://wa.me/233505455090"
+              href="https://wa.me/233208120456"
               target="_blank"
               rel="noopener noreferrer"
               className="mt-5 flex items-center gap-2 rounded-xl border border-green-500/30 bg-green-500/10 px-4 py-2.5 text-sm font-semibold text-green-400 transition hover:bg-green-500/20"
@@ -133,7 +133,7 @@ export default function Footer() {
       {/* Bottom bar */}
       <div className="border-t border-white/8">
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 px-4 py-5 text-xs text-white/25 sm:flex-row sm:px-6">
-          <span>© {new Date().getFullYear()} Akoko Solutions · All rights reserved</span>
+          <span>© {new Date().getFullYear()} Akoko Feeds, a brand of Akoko Solutions Limited · All rights reserved</span>
           <div className="flex gap-5">
             <a href="https://www.akokosolutions.com" target="_blank" rel="noopener noreferrer" className="transition hover:text-white/50">Company website</a>
             <Link href="/privacy" className="transition hover:text-white/50">Privacy Policy</Link>

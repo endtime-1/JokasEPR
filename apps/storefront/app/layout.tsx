@@ -9,10 +9,10 @@ const SITE_ORIGIN = (process.env.SITE_URL || "https://akokofeeds.com").replace(/
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_ORIGIN),
-  title:       { default: "Akoko Solutions", template: "%s | Akoko Solutions" },
-  description: "Premium poultry feed, fresh farm eggs, ready broiler chickens, and soya products — direct from Akoko Solutions, Ghana.",
-  keywords:    ["poultry feed", "broiler", "layer mash", "soya cake", "farm eggs", "Ghana", "Akoko Solutions"],
-  openGraph:   { siteName: "Akoko Solutions", type: "website" },
+  title:       { default: "Akoko Feeds — Quality Feed, Higher Production", template: "%s | Akoko Feeds" },
+  description: "Premium poultry feed, fresh farm eggs, ready broiler chickens, and soya products — direct from Akoko Feeds, Ghana.",
+  keywords:    ["poultry feed", "broiler", "layer mash", "soya cake", "farm eggs", "Ghana", "Akoko Feeds", "Akoko Solutions"],
+  openGraph:   { siteName: "Akoko Feeds", type: "website" },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -29,7 +29,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             __html: JSON.stringify({
               "@context": "https://schema.org",
               "@type": "Organization",
-              name: "Akoko Solutions Limited",
+              name: "Akoko Feeds",
+              legalName: "Akoko Solutions Limited",
               url: SITE_ORIGIN,
               logo: `${SITE_ORIGIN}/brand/akoko-icon.png`,
               slogan: "Quality feeds, best production",

@@ -29,7 +29,7 @@ const securityHeaders = [
       // nonce-based CSP via middleware.ts could be revisited.
       "script-src 'self' 'unsafe-inline'",
       "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data: blob: https://images.unsplash.com https://plus.unsplash.com https://www.akokosolutions.com",
+      "img-src 'self' data: blob:",
       // The browser only ever calls same-origin /api/v1/public/* (nginx on
       // akokofeeds.com forwards just those routes to the API). www. is listed
       // as a second line of defence behind nginx's www -> apex redirect: a
@@ -48,13 +48,6 @@ const nextConfig: NextConfig = {
   // used to live at jokasfarms.com/shop; nginx now 301-redirects that here.
   output: "standalone",
   outputFileTracingRoot: path.join(process.cwd(), "../../"),
-  images: {
-    remotePatterns: [
-      { protocol: "https", hostname: "images.unsplash.com" },
-      { protocol: "https", hostname: "plus.unsplash.com" },
-      { protocol: "https", hostname: "www.akokosolutions.com" },
-    ],
-  },
   async headers() {
     return [{ source: "/(.*)", headers: securityHeaders }];
   },

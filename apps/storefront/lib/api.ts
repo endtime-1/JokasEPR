@@ -81,6 +81,15 @@ export interface PublicOrder {
   total: number;
 }
 
+export interface RetailerApplicationPayload {
+  name: string;
+  location: string;
+  phone: string;
+  email?: string;
+  isDistributor: boolean;
+  distributorFeed?: string;
+}
+
 export interface ContactPayload {
   name: string;
   phone: string;
@@ -139,5 +148,9 @@ export const api = {
   contact: {
     submit: (payload: ContactPayload): Promise<{ sent: boolean }> =>
       post<{ sent: boolean }>("/contact", payload),
+  },
+  retailers: {
+    apply: (payload: RetailerApplicationPayload): Promise<{ received: boolean }> =>
+      post<{ received: boolean }>("/retailer-application", payload),
   },
 };
