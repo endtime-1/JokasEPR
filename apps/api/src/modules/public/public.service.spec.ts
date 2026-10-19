@@ -4,6 +4,7 @@ import { PublicService } from "./public.service";
 const mockPrisma = {
   company: { findFirst: jest.fn() },
   storefrontLead: { create: jest.fn() },
+  priceList: { updateMany: jest.fn(), findFirst: jest.fn(), update: jest.fn(), create: jest.fn() },
   customer: { create: jest.fn() },
   product: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
   salesOrder: { create: jest.fn() },
@@ -259,5 +260,31 @@ describe("PublicService.adminPublishFeedProducts", () => {
     await makeService().adminPublishFeedProducts("company-1");
 
     expect(mockPrisma.product.update).toHaveBeenCalledWith({ where: { id: "p9" }, data: { isPublic: true, publicSlug: "developer-mash", storefrontCategory: "Feed", unitLabel: "kg", minOrderQty: 50 } });
+  });
+});
+
+describe("PublicService.adminUpdateProduct — price", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("removes the price when the price box is cleared (0), so it does not come back", async () => {
+    mockPrisma.product.findFirst.mockResolvedValueOnce({ id: "p1", name: "Layer 1 Mash", publicSlug: "layer-1-mash", storefrontCategory: "Feed" });
+    mockPrisma.product.update.mockResolvedValue({ id: "p1", isPublic: true, publicSlug: "layer-1-mash" });
+
+    await makeService().adminUpdateProduct("company-1", "p1", { unitPrice: 0 } as never);
+
+    expect(mockPrisma.priceList.updateMany).toHaveBeenCalledWith({
+      where: { productId: "p1", companyId: "company-1", status: "ACTIVE", deletedAt: null },
+      data: { status: "INACTIVE" },
+    });
+    expect(mockPrisma.priceList.create).not.toHaveBeenCalled();
+  });
+
+  it("leaves prices alone when no price is sent", async () => {
+    mockPrisma.product.findFirst.mockResolvedValueOnce({ id: "p1", name: "Layer 1 Mash", publicSlug: "layer-1-mash", storefrontCategory: "Feed" });
+    mockPrisma.product.update.mockResolvedValue({ id: "p1", isPublic: true, publicSlug: "layer-1-mash" });
+
+    await makeService().adminUpdateProduct("company-1", "p1", { unitLabel: "kg" } as never);
+
+    expect(mockPrisma.priceList.updateMany).not.toHaveBeenCalled();
   });
 });

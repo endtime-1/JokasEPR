@@ -386,6 +386,18 @@ export class PublicService {
 
     const product = await this.prisma.product.update({ where: { id }, data });
 
+    // Clearing the price box sends 0: that must REMOVE the price. Before, only
+    // prices above zero were handled, so a cleared price silently came back on
+    // refresh. All of the product's active prices are switched off (kept for
+    // the record, not deleted), so no older price can reappear on the shop.
+    // Typing a price again creates a fresh active one below.
+    if ((dto.unitPrice as number | null | undefined) === null || dto.unitPrice === 0) {
+      await this.prisma.priceList.updateMany({
+        where: { productId: id, companyId, status: "ACTIVE", deletedAt: null },
+        data: { status: "INACTIVE" },
+      });
+    }
+
     if (dto.unitPrice !== undefined && dto.unitPrice > 0) {
       const existingPrice = await this.prisma.priceList.findFirst({
         where: { productId: id, status: "ACTIVE" },
