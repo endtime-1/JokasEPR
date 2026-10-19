@@ -24,7 +24,7 @@ export default function AboutPage() {
     <>
       <PageHero
         eyebrow="About us"
-        title={<>Akoko Feeds. <em className="text-brand">{ABOUT.tagline}.</em></>}
+        title={<>Akoko Feeds. <em className="text-brand">Quality Feed, Higher Production.</em></>}
         lead={ABOUT.lead}
         image="/photos/hero-hen-sunset.webp"
       />

@@ -33,9 +33,9 @@ export function Hero() {
             <span className="text-xs font-semibold uppercase tracking-[0.22em] text-brand">Akoko Feeds · Ghana</span>
           </div>
           <h1 className="animate-fade-up-1 font-display text-[clamp(3rem,7.6vw,6.4rem)] leading-[1.02] tracking-tight text-white">
-            Quality Feed,
+            Your Choice
             <br />
-            <em className="not-italic text-brand">Higher Production.</em>
+            <em className="not-italic text-brand">for Profit.</em>
           </h1>
           <p className="animate-fade-up-2 mt-6 max-w-xl text-[1.1rem] leading-relaxed text-white/75">
             Science-based poultry feed for chicks, growers, layers and broilers. Milled in Kumasi,
