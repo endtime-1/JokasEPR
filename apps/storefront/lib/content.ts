@@ -8,7 +8,7 @@ export const CONTACT = {
     { display: "050 545 5055", tel: "+233505455055" },
     { display: "050 545 5090", tel: "+233505455090" },
   ],
-  whatsappDisplay: "+233 208 120 456",
+  whatsappDisplay: "050 545 5055",
   emailSupport: "farmersupport@akokofeeds.com",
   emailSales: "sales@akokofeeds.com",
   social: "@akokofeeds",
