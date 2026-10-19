@@ -46,7 +46,7 @@ export default function Footer() {
           {/* Brand */}
           <div className="lg:col-span-1">
             {/* Real brand logo — light variant */}
-            <Logo variant="light-lockup" height={42} />
+            <Logo variant="light-lockup" height={64} />
             <p className="mt-5 max-w-xs text-sm leading-relaxed text-white/50">
               Akoko Feeds — we help farmers achieve optimum production. Quality
               poultry feed with science-based formulation, free technical advice,

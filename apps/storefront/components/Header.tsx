@@ -51,9 +51,9 @@ export default function Header() {
         <div className="mx-auto flex max-w-8xl items-center justify-between px-5 py-3 sm:px-8">
           {/* Logo */}
           {transparent ? (
-            <Logo variant="light-lockup" height={38} />
+            <Logo variant="light-lockup" height={64} />
           ) : (
-            <Logo variant="lockup" height={38} />
+            <Logo variant="lockup" height={64} />
           )}
 
           {/* Desktop nav */}

@@ -12,7 +12,8 @@ export const metadata: Metadata = {
   title:       { default: "Akoko Feeds — Quality Feed, Higher Production", template: "%s | Akoko Feeds" },
   description: "Premium poultry feed, fresh farm eggs, ready broiler chickens, and soya products — direct from Akoko Feeds, Ghana.",
   keywords:    ["poultry feed", "broiler", "layer mash", "soya cake", "farm eggs", "Ghana", "Akoko Feeds", "Akoko Solutions"],
-  openGraph:   { siteName: "Akoko Feeds", type: "website" },
+  openGraph:   { siteName: "Akoko Feeds", type: "website", images: ["/brand/akoko-logo-icon.png"] },
+  icons:       { icon: "/brand/akoko-logo-icon.png", apple: "/brand/akoko-logo-icon.png" },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -32,7 +33,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               name: "Akoko Feeds",
               legalName: "Akoko Solutions Limited",
               url: SITE_ORIGIN,
-              logo: `${SITE_ORIGIN}/brand/akoko-icon.png`,
+              logo: `${SITE_ORIGIN}/brand/akoko-logo-icon.png`,
               slogan: "Quality feeds, best production",
               sameAs: ["https://www.akokosolutions.com"],
               telephone: "+233505455055",

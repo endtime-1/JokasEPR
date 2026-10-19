@@ -8,13 +8,14 @@ interface LogoProps {
   href?: string;
 }
 
-/** The standalone hen-badge mark (square, works at any size) */
+/** The Akoko badge (hen mascot + "Akoko Solution Limited" banner), transparent background. */
+const BADGE_ASPECT = 599 / 640;
 export function LogoMark({ size = 44, className = "" }: { size?: number; className?: string }) {
   return (
     <Image
-      src="/brand/akoko-mark.svg"
-      alt="Akoko Feeds"
-      width={size}
+      src="/brand/akoko-logo-badge.webp"
+      alt="Akoko logo"
+      width={Math.round(size * BADGE_ASPECT)}
       height={size}
       className={className}
       priority
