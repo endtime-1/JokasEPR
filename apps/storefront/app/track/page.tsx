@@ -61,8 +61,8 @@ export default function TrackOrderPage() {
 
         <div className="mt-8 rounded-xl bg-warm p-4 text-center text-sm text-muted">
           Can&apos;t find your reference?{" "}
-          <a href="tel:+233505455090" className="inline-flex items-center gap-1 font-semibold text-brand hover:underline">
-            <Phone size={12} /> Call +233 505 455 090
+          <a href="tel:+233505455055" className="inline-flex items-center gap-1 font-semibold text-brand hover:underline">
+            <Phone size={12} /> Call 050 545 5055
           </a>
         </div>
 

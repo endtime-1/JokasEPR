@@ -72,13 +72,13 @@ export default function Header() {
 
           {/* Actions */}
           <div className="flex items-center gap-2">
-            <a href="tel:+233505455090"
+            <a href="tel:+233505455055"
               className={`hidden items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition lg:flex ${
                 transparent
                   ? "text-white/70 hover:bg-white/10 hover:text-white"
                   : "border border-sand text-stone hover:border-brand hover:text-brand"
               }`}>
-              <Phone size={12} /> +233 505 455 090
+              <Phone size={12} /> 050 545 5055
             </a>
 
             {/* Cart */}
@@ -125,9 +125,9 @@ export default function Header() {
                 className="block rounded-xl bg-brand py-3 text-center text-sm font-bold text-white shadow-brand">
                 Order Now
               </Link>
-              <a href="tel:+233505455090"
+              <a href="tel:+233505455055"
                 className="flex items-center justify-center gap-2 rounded-xl border border-sand py-3 text-sm font-medium text-stone">
-                <Phone size={14} /> +233 505 455 090
+                <Phone size={14} /> 050 545 5055
               </a>
             </div>
           </div>

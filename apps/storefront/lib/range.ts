@@ -10,8 +10,8 @@ export interface FeedSeries {
 }
 
 export const FEED_SERIES: FeedSeries[] = [
+  { slug: "super-chicks", name: "Super Chicks", bird: "Chicks", tagline: "Kick-starts growth in the first weeks: the right protein and energy for young chicks." },
   { slug: "chicks-starter", name: "Chicks Starter", bird: "Chicks", tagline: "Formulated for strong and healthy early bird life." },
-  { slug: "super-chicks", name: "Super Chicks", bird: "Chicks", tagline: "Less feed for more weight, with the right nutrients." },
   { slug: "developer", name: "Developer", bird: "Growers", tagline: "The right nutrients for steady, healthy growth." },
   { slug: "prelayer", name: "Prelayer", bird: "Growers", tagline: "Optimized for higher performance at the onset of lay." },
   { slug: "layer-1", name: "Layer 1", bird: "Layers", tagline: "Optimum egg production, egg size and shell improvement." },
@@ -26,6 +26,6 @@ export const bagMash = (slug: string) => `/bags/${slug}-mash.webp`;
 export const bagConcentrate = (slug: string) => `/bags/${slug}-concentrate.webp`;
 
 // The order a layer flock moves through the range, and the broiler pair.
-export const LAYER_PROGRAMME = ["chicks-starter", "super-chicks", "developer", "prelayer", "layer-1", "layer-2"];
+export const LAYER_PROGRAMME = ["super-chicks", "chicks-starter", "developer", "prelayer", "layer-1", "layer-2"];
 export const BROILER_PROGRAMME = ["broiler-starter", "broiler-finisher"];
 export const seriesBySlug = (slug: string) => FEED_SERIES.find((s) => s.slug === slug)!;

@@ -74,7 +74,7 @@ export default function CheckoutPage() {
       const isNetwork = !msg || msg.includes("fetch") || msg.includes("timeout") || msg.includes("network") || msg.startsWith("API error");
       setError(
         isNetwork
-          ? "We couldn't reach our server right now. Please try again, or call us on +233 505 455 090 to place your order."
+          ? "We couldn't reach our server right now. Please try again, or call us on 050 545 5055 to place your order."
           : msg
       );
     } finally {

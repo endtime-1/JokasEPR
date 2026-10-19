@@ -79,6 +79,13 @@ export class PublicController {
 
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions(PERMISSIONS.SALES_MANAGE)
+  @Post("admin/products/publish-feeds")
+  adminPublishFeeds(@CurrentUser() user: AuthenticatedUser) {
+    return this.service.adminPublishFeedProducts(user.companyId);
+  }
+
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions(PERMISSIONS.SALES_MANAGE)
   @Get("admin/leads")
   adminLeads(@CurrentUser() user: AuthenticatedUser, @Query("status") status?: string) {
     return this.service.adminListLeads(user.companyId, status);

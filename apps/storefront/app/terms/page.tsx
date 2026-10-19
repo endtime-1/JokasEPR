@@ -72,8 +72,8 @@ export default function TermsPage() {
           <p className="mt-2">
             If you receive damaged or incorrect goods, contact us within 48 hours of
             delivery at{" "}
-            <a href="tel:+233505455090" className="text-brand hover:underline">
-              +233 50 545 5090
+            <a href="tel:+233505455055" className="text-brand hover:underline">
+              050 545 5055
             </a>{" "}
             or{" "}
             <a href="mailto:farmersupport@akokofeeds.com" className="text-brand hover:underline">
@@ -109,8 +109,8 @@ export default function TermsPage() {
           <h2 className="text-lg font-bold text-ink">8. Contact</h2>
           <p className="mt-2">
             Akoko Feeds (Akoko Solutions Limited), Abrepo Barekese Road, Kumasi, Ghana.{" "}
-            <a href="tel:+233505455090" className="text-brand hover:underline">
-              +233 50 545 5090
+            <a href="tel:+233505455055" className="text-brand hover:underline">
+              050 545 5055
             </a>
             {" · "}
             <a href="mailto:farmersupport@akokofeeds.com" className="text-brand hover:underline">

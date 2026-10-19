@@ -319,7 +319,7 @@ export function AdviceBand() {
               className="flex items-center gap-2 rounded-xl bg-[#25D366] px-6 py-3.5 text-sm font-bold text-white shadow-[0_8px_28px_rgba(37,211,102,0.3)] transition hover:bg-[#1ebe5a] active:scale-95">
               <MessageCircle size={16} /> Chat {WHATSAPP_DISPLAY}
             </a>
-            <a href="tel:+233505455090" className="flex items-center gap-2 rounded-xl border border-sand px-6 py-3.5 text-sm font-semibold text-stone transition hover:border-brand hover:text-brand">
+            <a href="tel:+233505455055" className="flex items-center gap-2 rounded-xl border border-sand px-6 py-3.5 text-sm font-semibold text-stone transition hover:border-brand hover:text-brand">
               <Phone size={15} /> Call us
             </a>
             <a href="mailto:farmersupport@akokofeeds.com" className="flex items-center gap-2 rounded-xl border border-sand px-6 py-3.5 text-sm font-semibold text-stone transition hover:border-brand hover:text-brand">

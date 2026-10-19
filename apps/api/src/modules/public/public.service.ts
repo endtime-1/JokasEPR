@@ -403,6 +403,32 @@ export class PublicService {
     return { id: product.id, isPublic: product.isPublic, publicSlug: product.publicSlug };
   }
 
+  // One click: publish every active finished feed product (mash / concentrate
+  // etc.) to akokofeeds.com. Raw materials and non-feed items are left alone.
+  // Each gets a web address, the Feed category and a "50 kg bag" label if it has none.
+  async adminPublishFeedProducts(companyId: string) {
+    const FEED_NAME = /mash|concentrate|starter|finisher|layer|developer|pre-?lay|super\s*chick|chick/i;
+    const candidates = await this.prisma.product.findMany({
+      where: { companyId, status: "ACTIVE", deletedAt: null, type: "FINISHED_GOOD", isPublic: false },
+      select: { id: true, name: true, publicSlug: true, storefrontCategory: true, unitLabel: true },
+    });
+    const feeds = candidates.filter((p) => FEED_NAME.test(p.name));
+    const published: string[] = [];
+    for (const p of feeds) {
+      await this.prisma.product.update({
+        where: { id: p.id },
+        data: {
+          isPublic: true,
+          publicSlug: p.publicSlug ?? (await this.uniqueSlug(companyId, p.name, p.id)),
+          storefrontCategory: p.storefrontCategory ?? "Feed",
+          unitLabel: p.unitLabel ?? "50 kg bag",
+        },
+      });
+      published.push(p.name);
+    }
+    return { data: { published: published.length, names: published } };
+  }
+
   private async uniqueSlug(companyId: string, name: string, productId: string): Promise<string> {
     const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 150) || "product";
     let candidate = base;

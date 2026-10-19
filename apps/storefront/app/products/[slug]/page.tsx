@@ -59,7 +59,7 @@ export default async function ProductDetailPage({
         <p className="font-semibold text-ink">Product temporarily unavailable</p>
         <p className="mt-1 text-sm text-muted">
           We&apos;re having trouble connecting right now. Please try again shortly, or call us on{" "}
-          <a href="tel:+233505455090" className="text-brand font-semibold hover:underline">+233 505 455 090</a>.
+          <a href="tel:+233505455055" className="text-brand font-semibold hover:underline">050 545 5055</a>.
         </p>
       </div>
     );

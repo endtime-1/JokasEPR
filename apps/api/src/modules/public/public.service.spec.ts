@@ -227,3 +227,25 @@ describe("PublicService.adminUpdateProduct — publishing", () => {
     expect(mockPrisma.product.update).toHaveBeenCalledWith({ where: { id: "p1" }, data: { isPublic: true } });
   });
 });
+
+describe("PublicService.adminPublishFeedProducts", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("publishes finished feed products only, with a slug, the Feed category and a bag label", async () => {
+    mockPrisma.product.findMany.mockResolvedValue([
+      { id: "p1", name: "Layer 1 Mash", publicSlug: null, storefrontCategory: null, unitLabel: null },
+      { id: "p2", name: "Maize", publicSlug: null, storefrontCategory: null, unitLabel: null },
+      { id: "p3", name: "Super Chicks Concentrate", publicSlug: "super-chicks-conc", storefrontCategory: "Feed", unitLabel: "bag" },
+    ]);
+    mockPrisma.product.findFirst.mockResolvedValue(null); // no slug clashes
+    mockPrisma.product.update.mockResolvedValue({});
+
+    const res = await makeService().adminPublishFeedProducts("company-1");
+
+    expect(res.data.published).toBe(2);
+    expect(res.data.names).toEqual(["Layer 1 Mash", "Super Chicks Concentrate"]);
+    expect(mockPrisma.product.update).toHaveBeenCalledWith({ where: { id: "p1" }, data: { isPublic: true, publicSlug: "layer-1-mash", storefrontCategory: "Feed", unitLabel: "50 kg bag" } });
+    expect(mockPrisma.product.update).toHaveBeenCalledWith({ where: { id: "p3" }, data: { isPublic: true, publicSlug: "super-chicks-conc", storefrontCategory: "Feed", unitLabel: "bag" } });
+    expect(mockPrisma.product.update).not.toHaveBeenCalledWith(expect.objectContaining({ where: { id: "p2" } }));
+  });
+});

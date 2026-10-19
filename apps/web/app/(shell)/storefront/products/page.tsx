@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { apiFetch, type ApiEnvelope, getCachedFirst, hasCached } from "../../../../lib/api";
@@ -363,6 +363,9 @@ export default function StorefrontProductsPage() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"ALL" | "PUBLISHED" | "UNPUBLISHED">("ALL");
 
+  const [publishing, setPublishing] = useState(false);
+  const [publishMsg, setPublishMsg] = useState("");
+
   const load = useCallback(() => {
     setLoading(true);
     apiFetch<ApiEnvelope<AdminProduct[]>>("/public/admin/products")
@@ -372,6 +375,21 @@ export default function StorefrontProductsPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  async function publishAllFeeds() {
+    setPublishing(true);
+    setPublishMsg("");
+    try {
+      const res = await apiFetch<ApiEnvelope<{ published: number; names: string[] }>>("/public/admin/products/publish-feeds", { method: "POST" });
+      const n = res.data?.published ?? 0;
+      setPublishMsg(n ? `Published ${n} feed product${n === 1 ? "" : "s"} to akokofeeds.com. Add a price to each so customers can order.` : "No new feed products to publish: they are already live, or none are active finished feeds.");
+      load();
+    } catch {
+      setPublishMsg("Could not publish. Please try again.");
+    } finally {
+      setPublishing(false);
+    }
+  }
 
   function handleSaved(updated: AdminProduct) {
     setProducts((prev) => prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p)));
@@ -401,7 +419,15 @@ export default function StorefrontProductsPage() {
             {publishedCount} of {products.length} products published on the Akoko Solutions website.
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <button
+            onClick={publishAllFeeds}
+            disabled={publishing}
+            title="Publish every active finished feed product to akokofeeds.com"
+            className="rounded-xl bg-brand px-4 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-brandDark disabled:opacity-60"
+          >
+            {publishing ? "Publishing…" : "Publish all feeds"}
+          </button>
           <div className="flex items-center gap-1 rounded-xl border border-line bg-white p-1 shadow-sm">
             {(["ALL", "PUBLISHED", "UNPUBLISHED"] as const).map((f) => (
               <button
@@ -417,6 +443,8 @@ export default function StorefrontProductsPage() {
           </div>
         </div>
       </div>
+
+      {publishMsg && <div className="rounded-xl border border-brand/30 bg-brand/5 px-4 py-3 text-sm text-ink">{publishMsg}</div>}
 
       {/* Search */}
       <div className="relative">

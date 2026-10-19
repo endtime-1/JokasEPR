@@ -32,10 +32,10 @@ export default function Footer() {
             <p className="text-sm text-white/55">Our team is available Mon–Sat 8am–6pm · Sun 6am–12pm</p>
           </div>
           <a
-            href="tel:+233505455090"
+            href="tel:+233505455055"
             className="inline-flex items-center gap-2 rounded-xl bg-brand px-6 py-2.5 text-sm font-bold text-white shadow-brand transition hover:bg-brandDark"
           >
-            <Phone size={14} /> +233 505 455 090
+            <Phone size={14} /> 050 545 5055
           </a>
         </div>
       </div>
@@ -93,15 +93,15 @@ export default function Footer() {
             </h3>
             <ul className="space-y-4">
               <li>
-                <a href="tel:+233505455090" className="flex items-start gap-3 text-sm text-white/55 transition hover:text-brand">
+                <a href="tel:+233505455055" className="flex items-start gap-3 text-sm text-white/55 transition hover:text-brand">
                   <Phone size={14} className="mt-0.5 shrink-0 text-brand" />
-                  +233 505 455 090
+                  050 545 5055
                 </a>
               </li>
               <li>
-                <a href="tel:+233505455055" className="flex items-start gap-3 text-sm text-white/55 transition hover:text-brand">
+                <a href="tel:+233505455090" className="flex items-start gap-3 text-sm text-white/55 transition hover:text-brand">
                   <Phone size={14} className="mt-0.5 shrink-0 text-brand" />
-                  +233 505 455 055
+                  050 545 5090
                 </a>
               </li>
               <li>
