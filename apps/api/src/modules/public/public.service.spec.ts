@@ -248,4 +248,16 @@ describe("PublicService.adminPublishFeedProducts", () => {
     expect(mockPrisma.product.update).toHaveBeenCalledWith({ where: { id: "p3" }, data: { isPublic: true, publicSlug: "super-chicks-conc", storefrontCategory: "Feed", unitLabel: "bag" } });
     expect(mockPrisma.product.update).not.toHaveBeenCalledWith(expect.objectContaining({ where: { id: "p2" } }));
   });
+
+  it("sells by the kg (minimum 50) when the product's stock unit is kilograms", async () => {
+    mockPrisma.product.findMany.mockResolvedValue([
+      { id: "p9", name: "Developer Mash", publicSlug: null, storefrontCategory: null, unitLabel: null, minOrderQty: 1, uom: { name: "Kilogram", code: "KG", symbol: "kg" } },
+    ]);
+    mockPrisma.product.findFirst.mockResolvedValue(null);
+    mockPrisma.product.update.mockResolvedValue({});
+
+    await makeService().adminPublishFeedProducts("company-1");
+
+    expect(mockPrisma.product.update).toHaveBeenCalledWith({ where: { id: "p9" }, data: { isPublic: true, publicSlug: "developer-mash", storefrontCategory: "Feed", unitLabel: "kg", minOrderQty: 50 } });
+  });
 });

@@ -410,18 +410,22 @@ export class PublicService {
     const FEED_NAME = /mash|concentrate|starter|finisher|layer|developer|pre-?lay|super\s*chick|chick/i;
     const candidates = await this.prisma.product.findMany({
       where: { companyId, status: "ACTIVE", deletedAt: null, type: "FINISHED_GOOD", isPublic: false },
-      select: { id: true, name: true, publicSlug: true, storefrontCategory: true, unitLabel: true },
+      select: { id: true, name: true, publicSlug: true, storefrontCategory: true, unitLabel: true, minOrderQty: true, uom: { select: { name: true, code: true, symbol: true } } },
     });
     const feeds = candidates.filter((p) => FEED_NAME.test(p.name));
     const published: string[] = [];
     for (const p of feeds) {
+      // Feed stock is usually counted in KG: then the shop must sell by the kg
+      // (minimum 50 = one bag), or a per-kg price would be charged per "50 kg bag".
+      const inKg = /kg|kilo/i.test(`${p.uom?.name ?? ""} ${p.uom?.code ?? ""} ${p.uom?.symbol ?? ""}`);
       await this.prisma.product.update({
         where: { id: p.id },
         data: {
           isPublic: true,
           publicSlug: p.publicSlug ?? (await this.uniqueSlug(companyId, p.name, p.id)),
           storefrontCategory: p.storefrontCategory ?? "Feed",
-          unitLabel: p.unitLabel ?? "50 kg bag",
+          unitLabel: p.unitLabel ?? (inKg ? "kg" : "50 kg bag"),
+          ...(inKg && (p.minOrderQty == null || Number(p.minOrderQty) <= 1) ? { minOrderQty: 50 } : {}),
         },
       });
       published.push(p.name);

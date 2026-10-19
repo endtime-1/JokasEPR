@@ -1,3 +1,4 @@
+import { sortByFeedOrder } from "@/lib/bags";
 // Server-side (SSR/SSG): call NestJS directly on the internal port — avoids
 // the full round-trip through LiteSpeed and the reverse proxy.
 // Client-side (browser): use a same-origin relative path so the request goes
@@ -132,7 +133,8 @@ export const api = {
         category ? `/products?category=${encodeURIComponent(category)}` : "/products",
         { revalidate: 60 }
       );
-      return raw.map(toPublicProduct);
+      // Feeding order (Super Chicks first), not the API's alphabetical order.
+      return sortByFeedOrder(raw.map(toPublicProduct));
     },
     get: async (slug: string): Promise<PublicProduct> => {
       const raw = await get<RawPublicProduct>(`/products/${slug}`, { revalidate: 60 });
