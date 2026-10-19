@@ -38,6 +38,25 @@ export function isConcentrate(name: string): boolean {
   return /concentrate|\bconc\b|\sc$/.test(name.toLowerCase().trim());
 }
 
+const DISPLAY_NAME: Record<string, string> = {
+  "super-chicks": "Super Chicks",
+  "chicks-starter": "Chicks Starter",
+  developer: "Developer",
+  prelayer: "Pre-Lay",
+  "layer-1": "Layer 1",
+  "layer-2": "Layer 2",
+  "broiler-starter": "Broiler Starter",
+  "broiler-finisher": "Broiler Finisher",
+};
+
+/** The customer-facing name for a feed: "Layer1 M" in the ERP shows as "Layer 1 Mash".
+ *  Anything that is not one of our feeds keeps its own name. */
+export function displayFeedName(name: string): string {
+  const series = feedSeriesOf(name);
+  if (!series) return name;
+  return `${DISPLAY_NAME[series]} ${isConcentrate(name) ? "Concentrate" : "Mash"}`;
+}
+
 /** The ticked bag image for a product name, or null when we have no bag for it. */
 export function bagImageFor(name: string): string | null {
   const series = feedSeriesOf(name);

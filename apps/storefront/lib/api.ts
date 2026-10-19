@@ -1,4 +1,4 @@
-import { sortByFeedOrder } from "@/lib/bags";
+import { displayFeedName, sortByFeedOrder } from "@/lib/bags";
 // Server-side (SSR/SSG): call NestJS directly on the internal port — avoids
 // the full round-trip through LiteSpeed and the reverse proxy.
 // Client-side (browser): use a same-origin relative path so the request goes
@@ -47,7 +47,7 @@ interface RawPublicProduct {
 function toPublicProduct(raw: RawPublicProduct): PublicProduct {
   return {
     id: raw.id,
-    name: raw.name,
+    name: displayFeedName(raw.name),
     publicSlug: raw.slug,
     publicDescription: raw.description,
     storefrontCategory: raw.category,
