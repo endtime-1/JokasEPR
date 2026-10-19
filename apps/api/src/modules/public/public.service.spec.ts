@@ -65,12 +65,17 @@ describe("PublicService.placeOrder — closes $0-order and minOrderQty gaps (M7)
     expect(mockPrisma.salesOrder.create).toHaveBeenCalled();
   });
 
-  it("rejects a $0 order when the product has no active price-list row", async () => {
+  it("accepts an unpriced feed as an ORDER REQUEST, flagged for the team to price", async () => {
     mockPrisma.product.findMany.mockResolvedValue([makeProduct({ priceLists: [] })]);
     const service = makeService();
 
-    await expect(service.placeOrder(makeDto([{ productId: "prod-1", quantity: 5 }]))).rejects.toThrow(BadRequestException);
-    expect(mockPrisma.salesOrder.create).not.toHaveBeenCalled();
+    const result = await service.placeOrder({ customerName: "Jane Doe", customerPhone: "0555555555", deliveryAddress: "123 Main St", notes: "Deliver to Ejisu", lines: [{ productId: "prod-1", quantity: 5 }] } as never);
+
+    expect(result.message).toMatch(/order request/i);
+    const data = mockPrisma.salesOrder.create.mock.calls[0][0].data;
+    expect(data.notes).toMatch(/^PRICE TO BE CONFIRMED: .+Deliver to Ejisu$/);
+    expect(data.status).toBe("PENDING_STOCK_APPROVAL");
+    expect(data.totalAmount).toBe(0);
   });
 
   it("rejects a line quantity below the product's minOrderQty", async () => {
@@ -114,12 +119,14 @@ describe("PublicService.placeOrder — validates the order before creating a per
     expect(mockPrisma.customer.create).not.toHaveBeenCalled();
   });
 
-  it("does not create a customer row when the product has no active price", async () => {
+  it("still creates the customer and order for an unpriced feed (an order request the team prices by phone)", async () => {
     mockPrisma.product.findMany.mockResolvedValue([makeProduct({ priceLists: [] })]);
     const service = makeService();
 
-    await expect(service.placeOrder(makeDto([{ productId: "prod-1", quantity: 5 }]))).rejects.toThrow(BadRequestException);
-    expect(mockPrisma.customer.create).not.toHaveBeenCalled();
+    await service.placeOrder(makeDto([{ productId: "prod-1", quantity: 5 }]));
+
+    expect(mockPrisma.customer.create).toHaveBeenCalled();
+    expect(mockPrisma.salesOrder.create).toHaveBeenCalled();
   });
 
   it("only creates the customer row once every validation check has passed", async () => {

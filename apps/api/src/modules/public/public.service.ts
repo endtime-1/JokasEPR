@@ -226,11 +226,13 @@ export class PublicService {
       const names = belowMinQty.map((i) => `${i.product.name} (min ${Number(i.product.minOrderQty ?? 1)})`).join(", ");
       throw new BadRequestException(`Quantity below minimum order for: ${names}.`);
     }
+    // Feeds without an online price are ORDER REQUESTS, not instant sales: the order
+    // is saved flagged "PRICE TO BE CONFIRMED" and a team member calls the customer,
+    // agrees the price, adds delivery for their location and gives the total. It stays
+    // PENDING_STOCK_APPROVAL, so nothing is invoiced or released until staff review it.
     const unpriced = orderItems.filter((i) => i.unitPrice <= 0);
-    if (unpriced.length) {
-      const names = unpriced.map((i) => i.product.name).join(", ");
-      throw new BadRequestException(`These products are currently unavailable for online ordering: ${names}.`);
-    }
+    const pricingNote = unpriced.length ? `PRICE TO BE CONFIRMED: ${unpriced.map((i) => i.product.name).join(", ")}. ` : "";
+    const orderNotes = (pricingNote + (dto.notes ?? "")).slice(0, 500) || undefined; // column is VARCHAR(500)
 
     const subtotal      = orderItems.reduce((sum, i) => sum + i.total, 0);
     // Both references are fully random — sequential numbers allow order enumeration
@@ -272,7 +274,7 @@ export class PublicService {
             subtotal,
             totalAmount:                subtotal,
             balanceDue:                 subtotal,
-            notes:                      dto.notes,
+            notes:                      orderNotes,
             isStorefrontOrder:          true,
             storefrontRef,
             storefrontCustomerName:     dto.customerName,
@@ -309,7 +311,9 @@ export class PublicService {
       storefrontRef,
       orderNumber,
       status: "PENDING",
-      message: "Your order has been received. Our team will confirm and arrange delivery.",
+      message: unpriced.length
+        ? "Your order request has been received. Our team will contact you to confirm the price and delivery, then give you your total."
+        : "Your order has been received. Our team will confirm and arrange delivery.",
       estimatedResponse: "Within 2 business hours",
     };
   }

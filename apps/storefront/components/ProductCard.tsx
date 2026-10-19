@@ -128,7 +128,7 @@ export default function ProductCard({ product }: { product: PublicProduct }) {
             added ? "bg-green-500" : "bg-brand shadow-brandSm hover:bg-brandDark"
           }`}
         >
-          {added ? <><Check size={14} /> Added!</> : <><ShoppingCart size={14} /> Add to Order</>}
+          {added ? <><Check size={14} /> Added!</> : <><ShoppingCart size={14} /> {product.price != null ? "Add to Order" : "Request this feed"}</>}
         </button>
       </div>
     </Link>

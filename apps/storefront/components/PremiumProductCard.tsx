@@ -87,7 +87,7 @@ export default function PremiumProductCard({ product, featured = false }: Props)
                 className="flex items-center gap-1.5 rounded-xl bg-brand px-4 py-2 text-xs font-bold text-white shadow-brand transition hover:bg-brandDark active:scale-95"
               >
                 <ShoppingCart size={11} />
-                {added ? "Added!" : "Add to Order"}
+                {added ? "Added!" : product.price != null ? "Add to Order" : "Request"}
               </button>
             </div>
           </div>

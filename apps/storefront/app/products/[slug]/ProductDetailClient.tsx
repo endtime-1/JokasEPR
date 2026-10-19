@@ -123,7 +123,7 @@ export default function ProductDetailClient({ product }: { product: PublicProduc
               </div>
             ) : (
               <div className="mt-4 rounded-xl bg-warm px-4 py-3 text-sm text-muted">
-                Price on request — contact us for a custom quote.
+                Price on request: add it to your order and our team will call you to agree the price and delivery.
               </div>
             )}
 
@@ -204,7 +204,7 @@ export default function ProductDetailClient({ product }: { product: PublicProduc
                   added ? "bg-green-500" : "bg-brand hover:bg-brandDark"
                 }`}
               >
-                {added ? <><Check size={15} /> Added to Order!</> : <><ShoppingCart size={15} /> Add to Order</>}
+                {added ? <><Check size={15} /> Added to Order!</> : <><ShoppingCart size={15} /> {product.price != null ? "Add to Order" : "Request this feed"}</>}
               </button>
 
               <a

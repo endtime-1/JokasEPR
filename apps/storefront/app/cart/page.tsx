@@ -151,7 +151,7 @@ export default function CartPage() {
                 </div>
               ) : (
                 <p className="text-xs text-muted leading-relaxed">
-                  Some items are priced on request. Our team confirms the final total when they call you.
+                  Some feeds are priced on request. After you submit, our team contacts you to agree the price, adds delivery for your location, and gives you the final total.
                 </p>
               )}
 
@@ -163,7 +163,7 @@ export default function CartPage() {
                 href="/checkout"
                 className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand py-3.5 text-sm font-bold text-white shadow-brand hover:bg-brandDark"
               >
-                Proceed to Checkout <ArrowRight size={15} />
+                {items.some((i) => i.product.price == null) ? "Submit order request" : "Proceed to Checkout"} <ArrowRight size={15} />
               </Link>
 
               <div className="mt-4 flex items-center justify-center gap-1.5 text-xs text-muted">
