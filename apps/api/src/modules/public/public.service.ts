@@ -4,6 +4,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { EmailService } from "../notifications/email.service";
 import { PlacePublicOrderDto } from "./dto/public-order.dto";
 import { PublicContactDto } from "./dto/public-contact.dto";
+import { RetailerApplicationDto } from "./dto/retailer-application.dto";
 import { UpdatePublicProductDto } from "./dto/update-public-product.dto";
 import { randomBytes } from "crypto";
 
@@ -31,7 +32,11 @@ export class PublicService {
   // configured contact address (falls back to the address the page itself
   // displays) so a real person actually receives it.
   async submitContact(dto: PublicContactDto) {
-    const to = this.config.get<string>("CONTACT_EMAIL", "info@akokosolutionsgh.com");
+    const companyId = await this.getStorefrontCompanyId();
+    // Save first: the enquiry must survive even when SMTP is down or unset.
+    const lead = await this.prisma.storefrontLead.create({
+      data: { companyId, kind: "CONTACT", name: dto.name, phone: dto.phone, email: dto.email, subject: dto.subject, message: dto.message },
+    });
     const html = `
       <p><b>New storefront contact message</b></p>
       <p><b>Name:</b> ${escapeHtml(dto.name)}<br/>
@@ -40,12 +45,54 @@ export class PublicService {
       ${dto.subject ? `<b>Subject:</b> ${escapeHtml(dto.subject)}<br/>` : ""}</p>
       <p>${escapeHtml(dto.message).replace(/\n/g, "<br/>")}</p>
     `;
-    const sent = await this.email.send(to, dto.subject ? `Contact form: ${dto.subject}` : "New storefront contact message", html);
-    if (!sent) {
-      this.logger.error(`Contact form email failed to send to ${to} (SMTP not configured or send failed)`);
-      throw new InternalServerErrorException("Could not send your message right now. Please call or WhatsApp us instead.");
-    }
+    await this.notify(this.config.get<string>("CONTACT_EMAIL", "farmersupport@akokofeeds.com"), dto.subject ? `Contact form: ${dto.subject}` : "New storefront contact message", html, lead.id);
     return { sent: true };
+  }
+
+  // "Become a Retailer" application -> saved, then emailed to sales (with a copy).
+  async submitRetailerApplication(dto: RetailerApplicationDto) {
+    const companyId = await this.getStorefrontCompanyId();
+    const lead = await this.prisma.storefrontLead.create({
+      data: {
+        companyId, kind: "RETAILER", name: dto.name, location: dto.location, phone: dto.phone, email: dto.email,
+        isDistributor: dto.isDistributor, distributorFeed: dto.isDistributor ? dto.distributorFeed : undefined,
+      },
+    });
+    const html = `
+      <p><b>New retailer application (akokofeeds.com)</b></p>
+      <p><b>Name:</b> ${escapeHtml(dto.name)}<br/>
+      <b>Location:</b> ${escapeHtml(dto.location)}<br/>
+      <b>Contact:</b> ${escapeHtml(dto.phone)}<br/>
+      ${dto.email ? `<b>Email:</b> ${escapeHtml(dto.email)}<br/>` : ""}
+      <b>Already a distributor?</b> ${dto.isDistributor ? "Yes" : "No"}<br/>
+      ${dto.isDistributor && dto.distributorFeed ? `<b>Which feed:</b> ${escapeHtml(dto.distributorFeed)}<br/>` : ""}</p>
+    `;
+    await this.notify(this.config.get<string>("SALES_EMAIL", "sales@akokofeeds.com"), `Retailer application: ${dto.name} (${dto.location})`, html, lead.id, this.config.get<string>("SALES_COPY_EMAIL", "akokofeeds@gmail.com"));
+    return { received: true };
+  }
+
+  // Best-effort email: the lead is already saved, so a mail failure is logged,
+  // never shown to the visitor as an error.
+  private async notify(to: string, subject: string, html: string, leadId: string, copyTo?: string) {
+    for (const address of [to, copyTo].filter((a): a is string => !!a)) {
+      const ok = await this.email.send(address, subject, html).catch(() => false);
+      if (!ok) this.logger.error(`Lead ${leadId}: notification email to ${address} failed (SMTP not configured?). The lead is saved in the database.`);
+    }
+  }
+
+  async adminListLeads(companyId: string, status?: string) {
+    const where: Record<string, unknown> = { companyId };
+    if (status && status !== "ALL") where.status = status;
+    const data = await this.prisma.storefrontLead.findMany({ where, orderBy: { createdAt: "desc" }, take: 300 });
+    return { data };
+  }
+
+  async adminUpdateLeadStatus(companyId: string, id: string, status: string) {
+    if (!["NEW", "CONTACTED", "CLOSED"].includes(status)) throw new BadRequestException("Unknown status.");
+    const existing = await this.prisma.storefrontLead.findFirst({ where: { id, companyId } });
+    if (!existing) throw new NotFoundException("Lead not found.");
+    const data = await this.prisma.storefrontLead.update({ where: { id }, data: { status } });
+    return { data };
   }
 
   // Resolve the storefront company. Prefer STOREFRONT_COMPANY_ID env var (explicit).

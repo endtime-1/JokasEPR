@@ -827,6 +827,7 @@ model Company {
   employeeDocuments          EmployeeDocument[]
   disciplinaryRecords        DisciplinaryRecord[]
   hrLetters                 HrLetter[]
+  storefrontLeads           StorefrontLead[]
   grievanceRecords           GrievanceRecord[]
   trainingCourses            TrainingCourse[]
   salaryBands                SalaryBand[]
@@ -7061,6 +7062,28 @@ model HrLetter {
 
   @@unique([companyId, kind, entityId])
   @@index([companyId])
+}
+
+// A message or application sent through akokofeeds.com (contact form, "Become a
+// Retailer"). Saved before any email is attempted so no enquiry is ever lost.
+model StorefrontLead {
+  id              String   @id @default(uuid())
+  companyId       String
+  kind            String   @db.VarChar(20)
+  name            String   @db.VarChar(160)
+  location        String?  @db.VarChar(200)
+  phone           String?  @db.VarChar(40)
+  email           String?  @db.VarChar(160)
+  isDistributor   Boolean?
+  distributorFeed String?  @db.VarChar(200)
+  subject         String?  @db.VarChar(200)
+  message         String?  @db.Text
+  status          String   @default("NEW") @db.VarChar(20)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  company         Company  @relation(fields: [companyId], references: [id])
+
+  @@index([companyId, status, createdAt])
 }
 
 model GrievanceRecord {

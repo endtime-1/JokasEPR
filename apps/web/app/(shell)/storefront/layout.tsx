@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Globe, Package, ShoppingBag, ExternalLink } from "lucide-react";
+import { Globe, Package, ShoppingBag, Inbox, ExternalLink } from "lucide-react";
 
 const TABS = [
   { href: "/storefront",          label: "Overview", icon: Globe       },
   { href: "/storefront/products", label: "Products", icon: Package     },
   { href: "/storefront/orders",   label: "Orders",   icon: ShoppingBag },
+  { href: "/storefront/leads",    label: "Enquiries", icon: Inbox      },
 ];
 
 export default function StorefrontLayout({ children }: { children: React.ReactNode }) {
@@ -42,7 +43,7 @@ export default function StorefrontLayout({ children }: { children: React.ReactNo
             })}
           </nav>
           <a
-            href={process.env.NEXT_PUBLIC_SITE_URL ?? "/"}
+            href={process.env.NEXT_PUBLIC_SITE_URL ?? "https://akokofeeds.com"}
             target="_blank"
             rel="noreferrer"
             className="mb-1 flex shrink-0 items-center gap-1.5 rounded-xl border border-line bg-white px-3 py-1.5 text-xs font-semibold text-ink/50 shadow-sm transition hover:border-brand/30 hover:text-brand"

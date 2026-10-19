@@ -16,6 +16,7 @@ import { StorefrontBrowseRateLimitGuard, StorefrontContactRateLimitGuard, Storef
 import { validateAndCleanImageUpload } from "../../common/utils/validate-image-magic";
 import { PlacePublicOrderDto, UpdateOrderStatusDto } from "./dto/public-order.dto";
 import { PublicContactDto } from "./dto/public-contact.dto";
+import { RetailerApplicationDto } from "./dto/retailer-application.dto";
 import { UpdatePublicProductDto } from "./dto/update-public-product.dto";
 import { PublicService } from "./public.service";
 
@@ -67,7 +68,28 @@ export class PublicController {
     return this.service.submitContact(dto).then((data) => ({ data }));
   }
 
+  @Public()
+  @UseGuards(StorefrontContactRateLimitGuard)
+  @Post("retailer-application")
+  retailerApplication(@Body() dto: RetailerApplicationDto) {
+    return this.service.submitRetailerApplication(dto).then((data) => ({ data }));
+  }
+
   /* ── Storefront admin endpoints (JWT + SALES_MANAGE required) ─── */
+
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions(PERMISSIONS.SALES_MANAGE)
+  @Get("admin/leads")
+  adminLeads(@CurrentUser() user: AuthenticatedUser, @Query("status") status?: string) {
+    return this.service.adminListLeads(user.companyId, status);
+  }
+
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions(PERMISSIONS.SALES_MANAGE)
+  @Patch("admin/leads/:id/status")
+  adminLeadStatus(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body("status") status: string) {
+    return this.service.adminUpdateLeadStatus(user.companyId, id, status);
+  }
 
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions(PERMISSIONS.SALES_MANAGE)

@@ -3,6 +3,7 @@ import { PublicService } from "./public.service";
 
 const mockPrisma = {
   company: { findFirst: jest.fn() },
+  storefrontLead: { create: jest.fn() },
   customer: { create: jest.fn() },
   product: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
   salesOrder: { create: jest.fn() },
@@ -130,44 +131,72 @@ describe("PublicService.placeOrder — validates the order before creating a per
   });
 });
 
-describe("PublicService.submitContact — actually sends the message somewhere (L5)", () => {
+describe("PublicService.submitContact — saves the enquiry, then emails it (L5)", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockConfig.get.mockImplementation((_key: string, fallback?: string) => fallback);
+    mockConfig.get.mockImplementation((key: string, fallback?: string) => (key === "STOREFRONT_COMPANY_ID" ? undefined : fallback));
+    mockPrisma.company.findFirst.mockResolvedValue({ id: "company-1" });
+    mockPrisma.storefrontLead.create.mockResolvedValue({ id: "lead-1" });
   });
 
   const dto = { name: "Jane Doe", phone: "0555555555", message: "Interested in bulk broiler feed." };
 
-  it("emails the submission to the configured contact address", async () => {
+  it("saves the enquiry and emails it to the configured contact address", async () => {
     mockEmail.send.mockResolvedValue(true);
-    const service = makeService();
 
-    const result = await service.submitContact(dto as never);
+    const result = await makeService().submitContact(dto as never);
 
     expect(result.sent).toBe(true);
-    expect(mockEmail.send).toHaveBeenCalledWith(
-      "info@akokosolutionsgh.com",
-      expect.any(String),
-      expect.stringContaining("Jane Doe")
-    );
+    expect(mockPrisma.storefrontLead.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ companyId: "company-1", kind: "CONTACT", name: "Jane Doe", phone: "0555555555" })
+    });
+    expect(mockEmail.send).toHaveBeenCalledWith("farmersupport@akokofeeds.com", expect.any(String), expect.stringContaining("Jane Doe"));
   });
 
   it("escapes HTML in the submitted fields before embedding them in the email body", async () => {
     mockEmail.send.mockResolvedValue(true);
-    const service = makeService();
 
-    await service.submitContact({ ...dto, name: "<img src=x onerror=alert(1)>" } as never);
+    await makeService().submitContact({ ...dto, name: "<img src=x onerror=alert(1)>" } as never);
 
     const html = mockEmail.send.mock.calls[0][2] as string;
     expect(html).not.toContain("<img src=x onerror=alert(1)>");
     expect(html).toContain("&lt;img");
   });
 
-  it("throws instead of falsely claiming success when the email fails to send", async () => {
+  it("still succeeds when the email cannot be sent, because the enquiry is already saved", async () => {
     mockEmail.send.mockResolvedValue(false);
-    const service = makeService();
 
-    await expect(service.submitContact(dto as never)).rejects.toThrow(/call or WhatsApp/);
+    await expect(makeService().submitContact(dto as never)).resolves.toEqual({ sent: true });
+    expect(mockPrisma.storefrontLead.create).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("PublicService.submitRetailerApplication", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockConfig.get.mockImplementation((key: string, fallback?: string) => (key === "STOREFRONT_COMPANY_ID" ? undefined : fallback));
+    mockPrisma.company.findFirst.mockResolvedValue({ id: "company-1" });
+    mockPrisma.storefrontLead.create.mockResolvedValue({ id: "lead-2" });
+  });
+
+  it("saves the application and emails sales plus the copy address", async () => {
+    mockEmail.send.mockResolvedValue(true);
+
+    await makeService().submitRetailerApplication({ name: "Kofi", location: "Ejisu", phone: "0201112222", isDistributor: true, distributorFeed: "Layer 1" } as never);
+
+    expect(mockPrisma.storefrontLead.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ kind: "RETAILER", location: "Ejisu", isDistributor: true, distributorFeed: "Layer 1" })
+    });
+    const recipients = mockEmail.send.mock.calls.map((c) => c[0]);
+    expect(recipients).toEqual(["sales@akokofeeds.com", "akokofeeds@gmail.com"]);
+  });
+
+  it("does not store a feed when the applicant is not a distributor", async () => {
+    mockEmail.send.mockResolvedValue(true);
+
+    await makeService().submitRetailerApplication({ name: "Ama", location: "Kumasi", phone: "0244445555", isDistributor: false, distributorFeed: "ignored" } as never);
+
+    expect(mockPrisma.storefrontLead.create).toHaveBeenCalledWith({ data: expect.objectContaining({ isDistributor: false, distributorFeed: undefined }) });
   });
 });
 
