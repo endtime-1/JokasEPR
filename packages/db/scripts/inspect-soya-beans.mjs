@@ -61,6 +61,46 @@ async function main() {
   console.log(`    ${pad("batch", 16)} ${pad("beans used (product)", 26)} ${"kg used".padStart(10)}  ${pad("intake", 16)} ${pad("status", 10)} created`);
   for (const b of batches) console.log(`    ${pad(b.batchNumber, 16)} ${pad(b.beanProduct.name, 26)} ${String(n(b.beansUsedKg)).padStart(10)}  ${pad(b.intake?.receiptNumber ?? "-", 16)} ${pad(b.status, 10)} ${d(b.createdAt)}`);
 
+  // ---- what each batch PRODUCED, and under which product (the likely place for the mix-up) ----
+  const cakes = await prisma.soyaCakeOutput.findMany({
+    where: { deletedAt: null, createdAt: { gte: since } },
+    include: { product: { select: { name: true } }, warehouse: { select: { name: true } }, productionBatch: { select: { batchNumber: true } } },
+    orderBy: { createdAt: "asc" },
+  });
+  console.log(`\n  CAKE OUTPUTS (${cakes.length}) - the product the cake was recorded as:\n`);
+  console.log(`    ${pad("batch", 16)} ${pad("cake recorded as", 22)} ${pad("store", 20)} ${"kg".padStart(10)}  lot left / received`);
+  for (const c of cakes) {
+    const lot = await prisma.stockBatch.findFirst({ where: { companyId: c.companyId, batchNumber: `${c.productionBatch.batchNumber}-CAKE`, deletedAt: null }, select: { quantityReceived: true, quantityRemaining: true, product: { select: { name: true } } } });
+    console.log(`    ${pad(c.productionBatch.batchNumber, 16)} ${pad(c.product.name, 22)} ${pad(c.warehouse.name, 20)} ${String(n(c.quantityKg)).padStart(10)}  ${lot ? `${n(lot.quantityRemaining)} / ${n(lot.quantityReceived)} (lot product: ${lot.product.name})` : "(no lot found)"}`);
+  }
+
+  const oils = await prisma.soyaOilOutput.findMany({
+    where: { deletedAt: null, createdAt: { gte: since } },
+    include: { product: { select: { name: true } }, warehouse: { select: { name: true } }, productionBatch: { select: { batchNumber: true } } },
+    orderBy: { createdAt: "asc" },
+  });
+  console.log(`\n  OIL OUTPUTS (${oils.length}):\n`);
+  for (const o of oils) console.log(`    ${pad(o.productionBatch.batchNumber, 16)} ${pad(o.product.name, 22)} ${pad(o.warehouse.name, 20)} ${String(n(o.quantityLitres)).padStart(10)} L`);
+
+  const transfers = await prisma.soyaInternalTransfer.findMany({
+    where: { deletedAt: null, createdAt: { gte: since } },
+    include: { product: { select: { name: true } } },
+    orderBy: { createdAt: "asc" },
+  });
+  console.log(`\n  SOYA TRANSFERS (${transfers.length}) - cake/oil moved between stores:\n`);
+  for (const t of transfers) console.log(`    ${pad(t.outputType, 6)} ${pad(t.product.name, 22)} ${String(n(t.quantity)).padStart(10)}   ${pad(t.status, 10)} ${d(t.createdAt)}`);
+
+  // ---- everything that has ever touched Hipro Soya in a cake store ----
+  const hipro = products.find((p) => /hi-?pro/i.test(p.name));
+  if (hipro) {
+    const cakeStores = await prisma.warehouse.findMany({ where: { name: { contains: "cake" }, deletedAt: null }, select: { id: true, name: true } });
+    for (const w of cakeStores) {
+      const moves = await prisma.stockMovement.groupBy({ by: ["movementType"], where: { productId: hipro.id, deletedAt: null, OR: [{ warehouseId: w.id }, { toWarehouseId: w.id }, { fromWarehouseId: w.id }] }, _sum: { quantity: true }, _count: true });
+      console.log(`\n  Movements of "${hipro.name}" touching ${w.name} (all time):`);
+      for (const m of moves) console.log(`    ${pad(m.movementType, 22)} ${String(m._count).padStart(4)} movements   ${String(n(m._sum.quantity)).padStart(12)} kg`);
+    }
+  }
+
   console.log(`\n  Nothing was changed.\n`);
   await prisma.$disconnect();
 }
