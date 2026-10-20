@@ -852,6 +852,42 @@ export class HRController {
     return this.svc.updateJobPosting(user, id, dto, ctx(req));
   }
 
+  @Post("job-postings/:id/flyer")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  @UseInterceptors(
+    FileInterceptor("flyer", {
+      storage: diskStorage({
+        destination: (_req, _file, cb) => {
+          const dest = join(process.cwd(), "uploads", "jobs");
+          mkdirSync(dest, { recursive: true });
+          cb(null, dest);
+        },
+        filename: (_req, file, cb) => {
+          const ext = extname(file.originalname).toLowerCase();
+          cb(null, `job-${Date.now()}-${Math.round(Math.random() * 1e6)}${[".jpg", ".jpeg", ".png", ".webp", ".gif"].includes(ext) ? ext : ".jpg"}`);
+        },
+      }),
+      limits: { fileSize: 10 * 1024 * 1024 },
+      fileFilter: (_req, file, cb) => {
+        if (file.mimetype.startsWith("image/")) cb(null, true);
+        else cb(new BadRequestException("The flyer must be an image (JPG, PNG or WebP)") as never, false);
+      },
+    }),
+  )
+  uploadJobFlyer(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @UploadedFile() file: Express.Multer.File, @Req() req: Request) {
+    if (!file) throw new BadRequestException("No file uploaded");
+    if (!validateAndCleanImageUpload(file.path)) {
+      throw new BadRequestException("Invalid image. Upload a JPEG, PNG, WebP or GIF.");
+    }
+    return this.svc.setJobFlyer(user, id, file.filename, ctx(req));
+  }
+
+  @Delete("job-postings/:id/flyer")
+  @RequirePermissions(PERMISSIONS.HR_MANAGE)
+  removeJobFlyer(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Req() req: Request) {
+    return this.svc.setJobFlyer(user, id, null, ctx(req));
+  }
+
   @Patch("job-postings/:id/close")
   @RequirePermissions(PERMISSIONS.HR_MANAGE)
   closeJobPosting(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Req() req: Request) {

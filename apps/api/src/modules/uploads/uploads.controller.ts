@@ -24,6 +24,13 @@ export class UploadsController {
     this.send(res, "products", filename);
   }
 
+  // Job flyers are meant to be seen by applicants, so they are public like product images.
+  @Public()
+  @Get("jobs/:filename")
+  serveJobFlyer(@Param("filename") filename: string, @Res() res: Response) {
+    this.send(res, "jobs", filename);
+  }
+
   // Company logo: shown on customer-facing PDFs (invoices, receipts,
   // quotes) and the storefront header — public like product images, and
   // not sensitive (a business's own logo, meant to be seen by customers).

@@ -3794,7 +3794,7 @@ export function SalaryBandsPage() {
 const APP_STATUSES = ["RECEIVED", "SHORTLISTED", "INTERVIEW", "OFFER", "HIRED", "REJECTED"];
 // Where applicants apply. The shop domain serves /careers/<job reference>.
 const CAREERS_ORIGIN = (process.env.NEXT_PUBLIC_STOREFRONT_URL || "https://akokofeeds.com").replace(/\/$/, "");
-type JobRow = { id: string; reference: string; title: string; status: string; department?: string; location?: string; employmentType?: string; closingDate?: string; _count?: { applications: number } };
+type JobRow = { id: string; reference: string; title: string; status: string; department?: string; location?: string; employmentType?: string; closingDate?: string; flyerUrl?: string | null; _count?: { applications: number } };
 type AppRow = {
   id: string; reference: string; applicantName: string; applicantEmail?: string; applicantPhone?: string; status: string; jobPostingId: string;
   interviewDate?: string; jobPosting?: { title: string }; gender?: string; dateOfBirth?: string; address?: string; education?: string;
@@ -3886,6 +3886,21 @@ export function RecruitmentPage() {
     try { await apiFetch(`/hr/job-postings/${id}/close`, { method: "PATCH" }); await load(); } catch (err: any) { setError(err.message ?? "Could not close the job"); }
   }
 
+  async function uploadFlyer(id: string, file: File | undefined) {
+    if (!file) return;
+    setError("");
+    try {
+      const body = new FormData();
+      body.append("flyer", file, file.name);
+      await apiFetch(`/hr/job-postings/${id}/flyer`, { method: "POST", body });
+      await load();
+    } catch (err: any) { setError(err.message ?? "Could not upload the flyer"); }
+  }
+
+  async function removeFlyer(id: string) {
+    try { await apiFetch(`/hr/job-postings/${id}/flyer`, { method: "DELETE" }); await load(); } catch (err: any) { setError(err.message ?? "Could not remove the flyer"); }
+  }
+
   async function copyLink(j: JobRow) {
     const url = `${CAREERS_ORIGIN}/careers/${j.reference}`;
     try { await navigator.clipboard.writeText(url); setCopied(j.id); setTimeout(() => setCopied(""), 2000); }
@@ -3972,6 +3987,14 @@ export function RecruitmentPage() {
                   <p className="text-xs text-ink/60">{j.reference} · <StatusBadge status={j.status} /> · {j._count?.applications ?? 0} applicant(s)</p>
                   {j.closingDate && <p className="text-xs text-ink/50">Apply by {fmtDate(j.closingDate)}</p>}
                 </button>
+                {j.flyerUrl && <img src={j.flyerUrl} alt="Job flyer" className="mt-2 max-h-40 rounded border border-line" />}
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <label className="cursor-pointer rounded border border-line px-2 py-1 text-[11px] font-medium hover:bg-field">
+                    {j.flyerUrl ? "Replace flyer" : "Upload flyer"}
+                    <input type="file" accept="image/*" className="sr-only" onChange={(e) => { void uploadFlyer(j.id, e.target.files?.[0]); e.target.value = ""; }} />
+                  </label>
+                  {j.flyerUrl && <button onClick={() => removeFlyer(j.id)} className="rounded border border-line px-2 py-1 text-[11px] font-medium text-ink/60 hover:bg-field">Remove flyer</button>}
+                </div>
                 {j.status === "OPEN" && (
                   <div className="mt-2 flex flex-wrap gap-2">
                     <button onClick={() => copyLink(j)} className="rounded border border-brand/40 px-2 py-1 text-[11px] font-semibold text-brand hover:bg-brand/5">{copied === j.id ? "Link copied ✓" : "Copy apply link"}</button>

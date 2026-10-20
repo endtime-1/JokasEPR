@@ -2660,6 +2660,15 @@ export class HRService {
     return { data: updated };
   }
 
+  async setJobFlyer(user: AuthenticatedUser, id: string, filename: string | null, ctx: RequestContext) {
+    const row = await this.prisma.jobPosting.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
+    if (!row) throw new NotFoundException("Job posting not found");
+    const flyerUrl = filename ? `/api/v1/uploads/jobs/${filename}` : null;
+    await this.prisma.jobPosting.update({ where: { id }, data: { flyerUrl, updatedById: user.id } });
+    await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "JobPosting", entityId: id, action: "UPDATE", summary: filename ? "Flyer uploaded" : "Flyer removed", ...ctx });
+    return { data: { flyerUrl } };
+  }
+
   async closeJobPosting(user: AuthenticatedUser, id: string, ctx: RequestContext) {
     const row = await this.prisma.jobPosting.findFirst({ where: { id, companyId: user.companyId, deletedAt: null } });
     if (!row) throw new NotFoundException("Job posting not found");

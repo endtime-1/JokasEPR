@@ -130,7 +130,7 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 
 export interface PublicJob {
   reference: string; title: string; department: string | null; location: string | null; employmentType: string | null;
-  description: string; requirements: string | null; closingDate: string | null; postedAt: string;
+  description: string; requirements: string | null; closingDate: string | null; postedAt: string; flyerUrl: string | null;
 }
 
 async function postForm<T>(path: string, body: FormData): Promise<T> {

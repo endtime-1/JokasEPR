@@ -11,7 +11,12 @@ async function load(ref: string): Promise<PublicJob | null> {
 
 export async function generateMetadata({ params }: { params: Promise<{ ref: string }> }) {
   const job = await load((await params).ref);
-  return job ? { title: `${job.title} (Job)`, description: job.description.slice(0, 160) } : { title: "Job closed" };
+  if (!job) return { title: "Job closed" };
+  // The flyer is the preview picture when the link is shared on WhatsApp / Facebook.
+  return {
+    title: `${job.title} (Job)`, description: job.description.slice(0, 160),
+    ...(job.flyerUrl ? { openGraph: { images: [job.flyerUrl] } } : {}),
+  };
 }
 
 export default async function JobPage({ params }: { params: Promise<{ ref: string }> }) {
@@ -39,6 +44,10 @@ export default async function JobPage({ params }: { params: Promise<{ ref: strin
           {job.employmentType && <span>{job.employmentType}</span>}
           {job.closingDate && <span className="inline-flex items-center gap-1.5"><CalendarDays size={14} />Apply by {new Date(job.closingDate).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}</span>}
         </p>
+        {job.flyerUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={job.flyerUrl} alt={`${job.title} flyer`} className="mt-8 w-full rounded-3xl bg-white ring-1 ring-sand" />
+        )}
         <div className="mt-8 space-y-6 rounded-3xl bg-white p-7 ring-1 ring-sand sm:p-9">
           <div><h2 className="font-display text-2xl text-ink">About the job</h2><p className="mt-2 whitespace-pre-line leading-relaxed text-stone">{job.description}</p></div>
           {job.requirements && <div><h2 className="font-display text-2xl text-ink">Requirements</h2><p className="mt-2 whitespace-pre-line leading-relaxed text-stone">{job.requirements}</p></div>}

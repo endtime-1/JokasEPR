@@ -100,10 +100,10 @@ export class PublicService {
     return { companyId, deletedAt: null, status: "OPEN", OR: [{ closingDate: null }, { closingDate: { gte: today } }] };
   }
 
-  private toPublicJob(j: { reference: string; title: string; department: string | null; location: string | null; employmentType: string | null; description: string; requirements: string | null; closingDate: Date | null; createdAt: Date }) {
+  private toPublicJob(j: { reference: string; title: string; department: string | null; location: string | null; employmentType: string | null; description: string; requirements: string | null; closingDate: Date | null; createdAt: Date; flyerUrl: string | null }) {
     return {
       reference: j.reference, title: j.title, department: j.department, location: j.location, employmentType: j.employmentType,
-      description: j.description, requirements: j.requirements, closingDate: j.closingDate, postedAt: j.createdAt,
+      description: j.description, requirements: j.requirements, closingDate: j.closingDate, postedAt: j.createdAt, flyerUrl: j.flyerUrl,
     };
   }
 

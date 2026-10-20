@@ -7149,6 +7149,7 @@ model JobPosting {
   requirements String?   @db.Text
   location     String?   @db.VarChar(160)
   employmentType String? @db.VarChar(40)
+  flyerUrl     String?   @db.VarChar(500)
   status       String    @default("OPEN") @db.VarChar(30)
   closingDate  DateTime?
   createdById  String?
