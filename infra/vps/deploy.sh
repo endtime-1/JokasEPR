@@ -133,6 +133,15 @@ ln -s "$SHARED_UPLOADS" apps/api/uploads
 # On the VPS `prisma migrate deploy` works normally (the indefinite hang was
 # Hostinger-shared-hosting-specific). Migration history must have been
 # reconciled once first — see infra/vps/reconcile-migrations.sh / RUNBOOK.
+log "Database safety dump before migrating (kept in /opt/jokas/shared/predeploy)"
+if command -v mysqldump >/dev/null 2>&1; then
+  mkdir -p /opt/jokas/shared/predeploy
+  _u="${DATABASE_URL#mysql://}"; _cred="${_u%%@*}"; _rest="${_u#*@}"
+  _hp="${_rest%%/*}"; _db="${_rest#*/}"; _db="${_db%%\?*}"
+  mysqldump --single-transaction -h "${_hp%%:*}" -P "${_hp##*:}" -u "${_cred%%:*}" -p"${_cred#*:}" "$_db" 2>/dev/null | gzip > "/opt/jokas/shared/predeploy/pre-$DEPLOY_SHA-$(date +%Y%m%d%H%M).sql.gz"     || echo "  WARNING: pre-deploy dump failed — continuing"
+  ls -1t /opt/jokas/shared/predeploy/*.sql.gz 2>/dev/null | tail -n +6 | xargs -r rm -f
+fi
+
 log "Apply database migrations"
 pnpm --filter @jokas/db exec prisma migrate deploy
 
@@ -257,6 +266,9 @@ for _ in $(seq 1 45); do
     && curl -fsS -m 2 -o /dev/null http://127.0.0.1:3000/ 2>/dev/null && break
   sleep 2
 done
-curl -fsS -m 5 http://127.0.0.1:4001/health && echo "  api  OK" || echo "  api  FAIL"
+FAILED=0
+curl -fsS -m 5 http://127.0.0.1:4001/health && echo "  api  OK" || { echo "  api  FAIL"; FAILED=1; }
 curl -fsS -m 5 -o /dev/null -w "  web  HTTP %{http_code}\n"  http://127.0.0.1:3000/ || true
 curl -fsS -m 5 -o /dev/null -w "  shop HTTP %{http_code}\n"  http://127.0.0.1:3002/ || true
+[ "$FAILED" = "0" ] || { echo -e "
+[1;31m==> Health check FAILED — check: pm2 logs jokas-api[0m"; exit 1; }
