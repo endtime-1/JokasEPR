@@ -163,6 +163,16 @@ describe("SoyaProcessingService.createBatch — costs from the linked intake and
     );
   });
 
+  it("refuses Hipro Soya as the cake product (it is a purchased meal, never produced here)", async () => {
+    mockPrisma.soyaBeanIntake.findFirst.mockResolvedValue({ id: "intake-1", unitCost: 5 });
+    mockPrisma.product.findFirst.mockImplementation(({ where }: { where: { id: string } }) =>
+      Promise.resolve(where.id === "prod-cake" ? { id: "prod-cake", uomId: "uom-1", name: "Hipro Soya", sku: "RM17" } : { id: where.id, uomId: "uom-1", name: "Other", sku: "X" })
+    );
+
+    await expect(makeService().createBatch(makeUser(), makeDto({ batchNumber: "SPB-HIPRO" }), {})).rejects.toThrow(/Local Soya/);
+    expect(mockTx.soyaCakeOutput.create).not.toHaveBeenCalled();
+  });
+
   it("best-effort consumes bean StockBatch lots without blocking the batch when no lot data exists yet", async () => {
     // Pre-existing stock predates H3 — zero StockBatch rows for it is
     // expected and must not block production the way feed-production's

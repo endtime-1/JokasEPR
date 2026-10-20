@@ -42,6 +42,9 @@ export function SoyaBatchScreen() {
   const whOptions:   SelectOption[]  = useMemo(() => (opts?.warehouses ?? []).map((w)  => ({ label: `${w.name}`, value: w.id })), [opts]);
   const allProducts                  = useMemo(() => opts?.products ?? [], [opts]);
   const prodOptions: SelectOption[]  = useMemo(() => allProducts.map((p) => ({ label: `${p.name} (${p.sku})`, value: p.id })), [allProducts]);
+  // Hipro Soya is a purchased meal, never produced by our own processing. Offering it
+  // as the cake product let local cake be posted as Hipro (2026-10-19), so it is left out.
+  const cakeOptions: SelectOption[]  = useMemo(() => allProducts.filter((p) => !/hi-?pro/i.test(`${p.name} ${p.sku}`)).map((p) => ({ label: `${p.name} (${p.sku})`, value: p.id })), [allProducts]);
   const intakeOptions: SelectOption[] = useMemo(
     () => [
       { label: "— No intake linked —", value: "" },
@@ -163,7 +166,7 @@ export function SoyaBatchScreen() {
               required error={errors.oilProductId} placeholder="Oil product…" />
           </View>
           <View style={styles.col2}>
-            <SelectField label="Cake Product" value={cakeProductId} options={prodOptions}
+            <SelectField label="Cake Product" value={cakeProductId} options={cakeOptions}
               onChange={(v) => { setCakeProductId(v); setErrors((e) => ({ ...e, cakeProductId: "" })); }}
               required error={errors.cakeProductId} placeholder="Cake product…" />
           </View>

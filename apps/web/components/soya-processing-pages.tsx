@@ -100,10 +100,22 @@ function soyaKind(product: Option): SoyaKind | null {
   return "CAKE";
 }
 
+// "Hipro Soya" is a PURCHASED soya meal. Our own processing never produces it,
+// but the cake picker used to pre-select the first soya product alphabetically
+// (Hipro), so a form left unchanged posted local cake as Hipro (2026-10-19:
+// 51,700 kg across 8 batches). Hipro is now excluded from the cake choices and
+// "Local Soya" is first, so it is the default.
+const isHipro = (product: Option) => /hi-?pro/i.test(`${product.name ?? ""} ${product.sku ?? ""}`);
+const isLocalSoya = (product: Option) => /local/i.test(`${product.name ?? ""}`);
+
 function soyaProducts(options: SoyaOptions, kind: SoyaKind) {
   return options.products
     .filter((product) => soyaKind(product) === kind)
-    .sort((a, b) => Number(b.sku === SOYA_SEED_SKU[kind]) - Number(a.sku === SOYA_SEED_SKU[kind]));
+    .filter((product) => kind !== "CAKE" || !isHipro(product))
+    .sort((a, b) =>
+      Number(b.sku === SOYA_SEED_SKU[kind]) - Number(a.sku === SOYA_SEED_SKU[kind]) ||
+      (kind === "CAKE" ? Number(isLocalSoya(b)) - Number(isLocalSoya(a)) : 0)
+    );
 }
 
 export function SoyaIntakesPage({ create = false }: { create?: boolean }) {

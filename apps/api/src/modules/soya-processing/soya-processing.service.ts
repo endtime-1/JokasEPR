@@ -361,6 +361,13 @@ export class SoyaProcessingService {
     await this.assertSoyaWarehousePurpose(user, dto.cakeWarehouseId, "soya.output", dto.purposeOverrideReason, context);
     const site = await this.getProductionSite(user.companyId, dto.productionSiteId);
     const [beanProduct, oilProduct, cakeProduct] = await Promise.all([this.getProduct(user.companyId, dto.beanProductId), this.getProduct(user.companyId, dto.oilProductId), this.getProduct(user.companyId, dto.cakeProductId)]);
+    // Cake our own plant produces is "Local Soya". Hipro Soya is a PURCHASED soya
+    // meal, never an output of this process. The cake picker used to pre-select the
+    // first soya product alphabetically (Hipro), so unchanged forms posted tens of
+    // thousands of kg of local cake as Hipro (2026-10-19). Refuse it outright.
+    if (/hi-?pro/i.test(`${cakeProduct.name ?? ""} ${cakeProduct.sku ?? ""}`)) {
+      throw new BadRequestException("Cake from our own soya processing is recorded as Local Soya. Hipro Soya is a purchased product and can't be chosen as the cake product.");
+    }
     const beanInventory = await this.getInventory(user.companyId, dto.rawWarehouseId, dto.beanProductId);
     if (!beanInventory || Number(beanInventory.quantityOnHand) < dto.beansUsedKg) {
       throw new BadRequestException("Soya bean stock is not sufficient for this processing batch.");
