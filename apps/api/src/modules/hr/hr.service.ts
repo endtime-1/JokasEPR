@@ -1223,7 +1223,8 @@ export class HRService {
         ...(query.status ? { status: validateEnumFilter(query.status, Object.values(LeaveStatus)) as never } : {}),
       },
       orderBy: { createdAt: "desc" },
-      take: 50,
+      take: query.take ?? 200,
+      skip: ((query.page ?? 1) - 1) * (query.take ?? 200),
       include: { employee: { select: { fullName: true, code: true, branch: { select: { name: true } } } } },
     });
     return { data: rows };

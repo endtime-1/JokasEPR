@@ -1,4 +1,4 @@
-﻿import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req, Res, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req, Res, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
 import { Request, Response } from "express";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { diskStorage } from "multer";
@@ -446,7 +446,10 @@ export class HRController {
   @Post("letters/:kind/:id/pdf")
   @RequirePermissions(PERMISSIONS.HR_READ)
   renderLetter(@CurrentUser() user: AuthenticatedUser, @Param("kind") kind: string, @Param("id") id: string, @Body() dto: RenderLetterDto, @Query("inline") inline: string | undefined, @Res() res: Response) {
-    return this.svc.streamLetterPdf(user, this.letterKind(kind), id, dto, res, inline === "1");
+    // Custom wording on the company letterhead is an HR_MANAGE action; a read-only user
+    // only gets the saved (or generated) text, whatever they send.
+    const canEdit = user.permissions.includes(PERMISSIONS.HR_MANAGE) || user.hasGlobalAccess;
+    return this.svc.streamLetterPdf(user, this.letterKind(kind), id, canEdit ? dto : {}, res, inline === "1");
   }
 
   @Get("employees/:id/appointment-letter")

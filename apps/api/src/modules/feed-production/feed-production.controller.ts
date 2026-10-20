@@ -176,6 +176,12 @@ export class FeedProductionController {
     return this.feedProductionService.deleteOrder(user, id, { ipAddress, userAgent });
   }
 
+  @Get("orders/:id")
+  @RequirePermissions(PERMISSIONS.FEED_READ)
+  orderDetail(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
+    return this.feedProductionService.getOrder(user, id);
+  }
+
   @Get("orders/:id/raw-material-availability")
   @RequirePermissions(PERMISSIONS.FEED_READ)
   orderAvailability(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Query() query: FeedProductionQueryDto) {

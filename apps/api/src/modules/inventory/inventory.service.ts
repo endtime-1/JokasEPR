@@ -1000,7 +1000,7 @@ export class InventoryService {
     const exactQuantity = dec(toUnits(quantity));
     const itemUpdate = await tx.inventoryItem.updateMany({ where: { id: item.id, quantityOnHand: { gte: exactQuantity } }, data: { quantityOnHand: { decrement: exactQuantity }, updatedById: user.id } });
     if (itemUpdate.count === 0) throw new BadRequestException("Insufficient stock — possibly consumed concurrently. Please retry.");
-    return { issued, unitCost: value / Math.max(quantity, 1) };
+    return { issued, unitCost: (quantity > 0 ? value / quantity : 0) };
   }
 
   // The stock total (InventoryItem.quantityOnHand) can be higher than what FIFO

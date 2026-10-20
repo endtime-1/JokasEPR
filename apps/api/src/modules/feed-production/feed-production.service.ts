@@ -603,6 +603,22 @@ export class FeedProductionService {
     return { data };
   }
 
+  // One order with its formula, finished product, production site and batches (the
+  // mobile app's order detail screen calls this; the route did not exist before).
+  async getOrder(user: AuthenticatedUser, id: string) {
+    const data = await this.prisma.feedProductionOrder.findFirst({
+      where: { ...this.orderWhere(user, {} as FeedProductionQueryDto), id },
+      include: {
+        productionSite: { select: { id: true, code: true, name: true } },
+        formula: { select: { id: true, code: true, name: true, feedType: true } },
+        finishedProduct: { select: { id: true, name: true, sku: true } },
+        batches: { where: { deletedAt: null }, select: { id: true, batchNumber: true, status: true, producedQuantityKg: true } }
+      }
+    });
+    if (!data) throw new NotFoundException("Production order not found.");
+    return { data };
+  }
+
   async createOrder(user: AuthenticatedUser, dto: CreateFeedProductionOrderDto, context: RequestContext) {
     this.assertProductionSiteAccess(user, dto.productionSiteId);
     const [site, formula] = await Promise.all([

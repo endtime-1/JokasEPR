@@ -12,9 +12,9 @@ const RECORD_SOURCES: { type: QrEntityType; href: string; hint: string }[] = [
   { type: "SOYA_PROCESSING_BATCH", href: "/soya-processing",                   hint: "Find batch IDs in Soya Processing → Batches" },
   { type: "FLOCK_BATCH",           href: "/poultry",                           hint: "Find batch IDs in Poultry → Flock Batches" },
   { type: "SALES_INVOICE",         href: "/sales/invoices",                    hint: "Find invoice IDs in Sales → Invoices" },
-  { type: "DELIVERY_NOTE",         href: "/sales/deliveries",                  hint: "Find note IDs in Sales → Delivery Notes" },
+  { type: "DELIVERY_NOTE",         href: "/sales/delivery-notes",                hint: "Find note IDs in Sales → Delivery Notes" },
   { type: "PURCHASE_ORDER",        href: "/procurement/purchase-orders",       hint: "Find order IDs in Procurement → Purchase Orders" },
-  { type: "GOODS_RECEIVED_NOTE",   href: "/procurement/goods-received-notes",  hint: "Find GRN IDs in Procurement → Goods Received" },
+  { type: "GOODS_RECEIVED_NOTE",   href: "/procurement/grns",  hint: "Find GRN IDs in Procurement → Goods Received" },
 ];
 
 export default function QrLabelsPage() {
