@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -209,6 +209,20 @@ function useHROptions() {
   return { opts, optionsError };
 }
 
+/** Branch selector for the HR lists ("" = every branch). counts adds "(n)" per branch;
+ *  includeNone adds an option for employees that belong to no branch. */
+function BranchFilter({ value, onChange, counts, includeNone = false }: { value: string; onChange: (v: string) => void; counts?: Record<string, number>; includeNone?: boolean }) {
+  const { opts } = useHROptions();
+  if (!opts.branches.length) return null;
+  return (
+    <select value={value} onChange={(e) => onChange(e.target.value)} aria-label="Branch" className="rounded-md border border-line px-3 py-2 text-sm">
+      <option value="">All Branches</option>
+      {opts.branches.map((b) => <option key={b.id} value={b.id}>{b.name}{counts ? ` (${counts[b.id] ?? 0})` : ""}</option>)}
+      {includeNone && <option value="__none">No branch{counts ? ` (${counts.__none ?? 0})` : ""}</option>}
+    </select>
+  );
+}
+
 // â"€â"€â"€ Dashboard â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 type DashData = {
@@ -383,7 +397,7 @@ export function HRDashboardPage() {
 
 // â"€â"€â"€ Employee List â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
-type Employee = { id: string; code: string; fullName: string; phone?: string; email?: string; status: string; startDate: string; photoUrl?: string; employeeRole?: { name: string }; branch?: { name: string }; farm?: { name: string } };
+type Employee = { id: string; code: string; branchId?: string | null; fullName: string; phone?: string; email?: string; status: string; startDate: string; photoUrl?: string; employeeRole?: { name: string }; branch?: { name: string }; farm?: { name: string } };
 
 export function EmployeeListPage() {
   const router = useRouter();
@@ -393,6 +407,7 @@ export function EmployeeListPage() {
   const [rows, setRows] = useState<Employee[]>(_cached?.data ?? []);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
+  const [branch, setBranch] = useState("");
   const [loading, setLoading] = useState(!(_cached?.data?.length));
   const [deleteError, setDeleteError] = useState("");
   const [loadError, setLoadError] = useState("");
@@ -414,6 +429,12 @@ export function EmployeeListPage() {
   // even if Next.js keeps the component instance alive across soft navigations.
   useEffect(() => { load(); }, [search, status, pathname]);
   useApiRecovery(rows.length === 0, load);
+
+  // Branch split happens here (the list is already fully loaded), so the counts per
+  // branch stay visible in the picker while one branch is selected.
+  const branchCounts: Record<string, number> = {};
+  for (const r of rows) { const k = r.branchId ?? "__none"; branchCounts[k] = (branchCounts[k] ?? 0) + 1; }
+  const visibleRows = branch ? rows.filter((r) => (branch === "__none" ? !r.branchId : r.branchId === branch)) : rows;
 
   async function deleteEmployee() {
     if (!confirmTarget) return;
@@ -451,6 +472,8 @@ export function EmployeeListPage() {
             <option value="">All Statuses</option>
             {["ACTIVE", "ON_LEAVE", "SUSPENDED", "TERMINATED", "RESIGNED"].map((s) => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
           </select>
+          <BranchFilter value={branch} onChange={setBranch} counts={branchCounts} includeNone />
+          {branch && <span className="self-center text-xs text-ink/50">Showing {visibleRows.length} of {rows.length} employees</span>}
         </div>
         <DataTable
           columns={[
@@ -487,7 +510,7 @@ export function EmployeeListPage() {
               </div>
             )},
           ]}
-          rows={rows as Record<string, any>[]}
+          rows={visibleRows as Record<string, any>[]}
           loading={loading}
           empty="No employees found" csvFilename="employees"
         />
@@ -1388,12 +1411,13 @@ export function EmployeeDetailPage({ id }: { id: string }) {
 
 // â"€â"€â"€ Attendance Page â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
-type AttendanceRow = { id: string; date: string; status: string; hoursWorked?: number; employee: { fullName: string; code: string }; shift?: { name: string } };
+type AttendanceRow = { id: string; date: string; status: string; hoursWorked?: number; employee: { fullName: string; code: string; branch?: { name: string } | null }; shift?: { name: string } };
 
 export function AttendancePage() {
   const [rows, setRows] = useState<AttendanceRow[]>(() => getCachedFirst<ApiEnvelope<AttendanceRow[]>>("/hr/attendance")?.data ?? []);
   const { opts, optionsError } = useHROptions();
   const [dateFilter, setDateFilter] = useState(new Date().toISOString().slice(0, 10));
+  const [branchFilter, setBranchFilter] = useState("");
   const [form, setForm] = useState({ employeeId: "", date: new Date().toISOString().slice(0, 10), checkInTime: "", checkOutTime: "", status: "PRESENT", shiftId: "", notes: "" });
   const [loading, setLoading] = useState(!hasCached("/hr/attendance"));
   const [saving, setSaving] = useState(false);
@@ -1405,11 +1429,12 @@ export function AttendancePage() {
 
   function load() {
     setLoadError("");
-    latestRequest.start(dateFilter);
-    apiFetch<ApiEnvelope<AttendanceRow[]>>(`/hr/attendance?dateFrom=${dateFilter}&dateTo=${dateFilter}`).then((r) => { if (!latestRequest.isCurrent(dateFilter)) return; const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); }).catch((err: any) => { if (latestRequest.isCurrent(dateFilter)) setLoadError(err?.message ?? "Failed to load."); }).finally(() => { if (latestRequest.isCurrent(dateFilter)) setLoading(false); });
+    const attKey = `${dateFilter}|${branchFilter}`;
+    latestRequest.start(attKey);
+    apiFetch<ApiEnvelope<AttendanceRow[]>>(`/hr/attendance?dateFrom=${dateFilter}&dateTo=${dateFilter}${branchFilter ? `&branchId=${branchFilter}` : ""}`).then((r) => { if (!latestRequest.isCurrent(attKey)) return; const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); }).catch((err: any) => { if (latestRequest.isCurrent(attKey)) setLoadError(err?.message ?? "Failed to load."); }).finally(() => { if (latestRequest.isCurrent(attKey)) setLoading(false); });
   }
 
-  useEffect(() => { load(); }, [dateFilter]);
+  useEffect(() => { load(); }, [dateFilter, branchFilter]);
   useApiRecovery(rows.length === 0, load);
 
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm((p) => ({ ...p, [k]: e.target.value }));
@@ -1495,11 +1520,13 @@ export function AttendancePage() {
         <div className="flex gap-3">
           <label className="text-sm font-medium">Date:</label>
           <input type="date" value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} className="rounded-md border border-line px-3 py-1.5 text-sm" />
+          <BranchFilter value={branchFilter} onChange={setBranchFilter} />
         </div>
 
         <DataTable
           columns={[
             { key: "employee", label: "Employee", render: (r) => `${r.employee?.fullName} (${r.employee?.code})` },
+            { key: "branch", label: "Branch", render: (r) => r.employee?.branch?.name ?? "—" },
             { key: "date", label: "Date", render: (r) => fmt(r.date as string) },
             { key: "shift", label: "Shift", render: (r) => r.shift?.name ?? "—" },
             { key: "checkIn", label: "Check In", render: (r) => r.checkInTime ? new Date(r.checkInTime as string).toLocaleTimeString("en-GH", { hour: "2-digit", minute: "2-digit" }) : "—" },
@@ -1838,6 +1865,7 @@ type PrefillResult = { basicSalary: number; overtimePay: number; taxDeduction: n
 export function PayrollPage() {
   const [rows, setRows] = useState<PayrollRow[]>(() => getCachedFirst<ApiEnvelope<PayrollRow[]>>("/hr/payroll")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/hr/payroll"));
+  const [branchFilter, setBranchFilter] = useState("");
   const { opts, optionsError } = useHROptions();
   const [form, setForm] = useState({ employeeId: "", period: "", periodStart: "", periodEnd: "", basicSalary: "", allowances: "0", deductions: "0", overtimePay: "0", taxDeduction: "0", ssnit: "0", employerSsnit: "0", pensionTier2: "0", paymentMethod: "BANK_TRANSFER", notes: "" });
   const [saving, setSaving] = useState(false);
@@ -1854,10 +1882,10 @@ export function PayrollPage() {
 
   function load() {
     setLoadError("");
-    apiFetch<ApiEnvelope<PayrollRow[]>>("/hr/payroll").then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); }).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
+    apiFetch<ApiEnvelope<PayrollRow[]>>(`/hr/payroll${branchFilter ? `?branchId=${branchFilter}` : ""}`).then((r) => { const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); }).catch((err: any) => setLoadError(err?.message ?? "Failed to load.")).finally(() => setLoading(false));
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [branchFilter]);
   useApiRecovery(rows.length === 0, load);
 
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm((p) => ({ ...p, [k]: e.target.value }));
@@ -2017,10 +2045,14 @@ export function PayrollPage() {
           </div>
         )}
 
+        <div className="flex flex-wrap gap-3">
+          <BranchFilter value={branchFilter} onChange={setBranchFilter} />
+        </div>
         <DataTable
           columns={[
             { key: "reference", label: "Reference" },
             { key: "employee", label: "Employee", render: (r) => (r.employee as any)?.fullName ?? "—" },
+            { key: "branch", label: "Branch", render: (r) => (r.branch as any)?.name ?? "—" },
             { key: "period", label: "Period" },
             { key: "grossPay", label: "Gross", render: (r) => money(r.grossPay) },
             { key: "netPay", label: "Net Pay", render: (r) => money(r.netPay) },
@@ -2401,7 +2433,7 @@ export function TaskDetailPage({ id }: { id: string }) {
 type LeaveRow = {
   id: string; reference: string; leaveType: string; startDate: string; endDate: string; daysRequested: number;
   status: string; reason?: string; reviewNote?: string; createdAt: string;
-  employee?: { fullName: string; code: string };
+  employee?: { fullName: string; code: string; branch?: { name: string } | null };
   reviewer?: { fullName: string };
 };
 
@@ -2409,6 +2441,7 @@ export function LeaveRequestsPage() {
   const [rows, setRows] = useState<LeaveRow[]>(() => getCachedFirst<ApiEnvelope<LeaveRow[]>>("/hr/leave-requests")?.data ?? []);
   const [loading, setLoading] = useState(!hasCached("/hr/leave-requests"));
   const [statusFilter, setStatusFilter] = useState("");
+  const [branchFilter, setBranchFilter] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ leaveType: "ANNUAL", startDate: "", endDate: "", daysRequested: "1", reason: "" });
   const [saving, setSaving] = useState(false);
@@ -2425,12 +2458,13 @@ export function LeaveRequestsPage() {
     setLoadError("");
     const params = new URLSearchParams();
     if (statusFilter) params.set("status", statusFilter);
+    if (branchFilter) params.set("branchId", branchFilter);
     const key = params.toString();
     latestRequest.start(key);
     apiFetch<ApiEnvelope<LeaveRow[]>>(`/hr/leave-requests?${params}`).then((r) => { if (!latestRequest.isCurrent(key)) return; const fresh = r.data ?? []; setRows((prev) => fresh.length === 0 && prev.length > 0 ? prev : fresh); }).catch((err: any) => { if (latestRequest.isCurrent(key)) setLoadError(err?.message ?? "Failed to load."); }).finally(() => { if (latestRequest.isCurrent(key)) setLoading(false); });
   }
 
-  useEffect(() => { load(); }, [statusFilter]);
+  useEffect(() => { load(); }, [statusFilter, branchFilter]);
   useApiRecovery(rows.length === 0, load);
 
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -2542,12 +2576,14 @@ export function LeaveRequestsPage() {
             <option value="">All Statuses</option>
             {["PENDING", "APPROVED", "REJECTED", "CANCELLED"].map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
+          <BranchFilter value={branchFilter} onChange={setBranchFilter} />
         </div>
 
         <DataTable
           columns={[
             { key: "reference", label: "Reference" },
             { key: "employee", label: "Employee", render: (r) => r.employee ? `${r.employee.fullName} (${r.employee.code})` : "—" },
+            { key: "branch", label: "Branch", render: (r) => (r.employee as any)?.branch?.name ?? "—" },
             { key: "leaveType", label: "Type", render: (r) => (r.leaveType as string).replace(/_/g, " ") },
             { key: "startDate", label: "From", render: (r) => fmt(r.startDate as string) },
             { key: "endDate", label: "To", render: (r) => fmt(r.endDate as string) },

@@ -1,4 +1,4 @@
-﻿import { BadRequestException, ConflictException, ForbiddenException, Injectable, InternalServerErrorException, Logger, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, InternalServerErrorException, Logger, NotFoundException } from "@nestjs/common";
 import { Response } from "express";
 import { AuthenticatedUser, PERMISSIONS } from "@jokas/shared";
 import { Prisma, EmployeeStatus, TaskStatus, PayrollStatus, HRPerformanceStatus, LeaveStatus } from "@prisma/client";
@@ -115,6 +115,13 @@ export class HRService {
   // Applied to the most sensitive surfaces (employee records, payroll,
   // disciplinary, grievances) following the same OR-null-or-allowed
   // convention used elsewhere (quality.service.ts, finance.service.ts).
+  // The usual employee scope, plus an optional branch chosen on screen
+  // ("show me this branch only") — so HR lists can be split by branch.
+  private employeeInBranch(user: AuthenticatedUser, branchId?: string): Record<string, unknown> {
+    const scope = this.employeeScope(user);
+    return branchId ? { AND: [scope, { branchId }] } : scope;
+  }
+
   private employeeScope(user: AuthenticatedUser): Record<string, unknown> {
     if (user.hasGlobalAccess) return {};
     const and: Record<string, unknown>[] = [];
@@ -481,7 +488,7 @@ export class HRService {
 
   async listAttendance(user: AuthenticatedUser, query: HRQueryDto) {
     // AttendanceRecord has no location fields of its own — scoped via its employee relation.
-    const where: Record<string, unknown> = { companyId: user.companyId, employee: this.employeeScope(user) };
+    const where: Record<string, unknown> = { companyId: user.companyId, employee: this.employeeInBranch(user, query.branchId) };
     if (query.employeeId) where.employeeId = query.employeeId;
     if (query.status) where.status = query.status;
     if (query.dateFrom || query.dateTo) {
@@ -497,7 +504,7 @@ export class HRService {
         id: true, companyId: true, employeeId: true, date: true, status: true,
         checkInTime: true, checkOutTime: true, hoursWorked: true, overtimeHours: true,
         shiftId: true, notes: true, recordedById: true, createdAt: true, updatedAt: true,
-        employee: { select: { fullName: true, code: true } },
+        employee: { select: { fullName: true, code: true, branch: { select: { name: true } } } },
         shift: { select: { name: true, startTime: true, endTime: true } },
       },
       orderBy: [{ date: "desc" }, { createdAt: "desc" }],
@@ -833,7 +840,7 @@ export class HRService {
         // fields) — scope via the linked employee's full location instead,
         // which is also more correct since payroll scope should follow the
         // employee's actual assignment.
-        employee: this.employeeScope(user),
+        employee: this.employeeInBranch(user, query.branchId),
         ...(query.status ? { status: validateEnumFilter(query.status, Object.values(PayrollStatus)) as never } : {}),
         ...(query.period ? { period: query.period } : {}),
       },
@@ -1212,12 +1219,12 @@ export class HRService {
         // uses — a scope-restricted user could see every leave request
         // company-wide instead of just their assigned branch/farm.
         employeeId: { not: null },
-        employee: this.employeeScope(user),
+        employee: this.employeeInBranch(user, query.branchId),
         ...(query.status ? { status: validateEnumFilter(query.status, Object.values(LeaveStatus)) as never } : {}),
       },
       orderBy: { createdAt: "desc" },
       take: 50,
-      include: { employee: { select: { fullName: true, code: true } } },
+      include: { employee: { select: { fullName: true, code: true, branch: { select: { name: true } } } } },
     });
     return { data: rows };
   }

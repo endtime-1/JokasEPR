@@ -121,6 +121,24 @@ describe("HRService — branch/farm/warehouse/site scoping (H6)", () => {
     expect(where.employee.AND).toEqual([{ OR: [{ branchId: null }, { branchId: { in: ["branch-1"] } }] }]);
   });
 
+  it("attendance, payroll and leave lists can be split by one branch (on top of the user's own scope)", async () => {
+    mockPrisma.attendanceRecord.findMany.mockResolvedValue([]);
+    mockPrisma.payrollRecord.findMany.mockResolvedValue([]);
+    mockPrisma.leaveRequest.findMany.mockResolvedValue([]);
+    const service = makeService();
+    const user = makeUser({ branchIds: ["branch-1", "branch-2"] });
+    const query = { branchId: "branch-2" } as never;
+    const scope = { AND: [{ OR: [{ branchId: null }, { branchId: { in: ["branch-1", "branch-2"] } }] }] };
+
+    await service.listAttendance(user, query);
+    await service.listPayroll(user, query);
+    await service.listLeaveRequests(user, query);
+
+    for (const call of [mockPrisma.attendanceRecord.findMany, mockPrisma.payrollRecord.findMany, mockPrisma.leaveRequest.findMany]) {
+      expect(call.mock.calls[0][0].where.employee).toEqual({ AND: [scope, { branchId: "branch-2" }] });
+    }
+  });
+
   it("listDisciplinary and listGrievances scope through the employee relation", async () => {
     mockPrisma.disciplinaryRecord.findMany.mockResolvedValue([]);
     mockPrisma.grievanceRecord.findMany.mockResolvedValue([]);
