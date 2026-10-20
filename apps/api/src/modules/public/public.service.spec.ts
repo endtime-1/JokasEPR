@@ -3,11 +3,11 @@ import { PublicService } from "./public.service";
 
 const mockPrisma = {
   company: { findFirst: jest.fn() },
-  storefrontLead: { create: jest.fn() },
-  priceList: { updateMany: jest.fn(), findFirst: jest.fn(), update: jest.fn(), create: jest.fn() },
+  storefrontLead: { create: jest.fn(), count: jest.fn().mockResolvedValue(0) },
+  priceList: { updateMany: jest.fn(), findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), update: jest.fn(), create: jest.fn() },
   customer: { create: jest.fn() },
   product: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
-  salesOrder: { create: jest.fn() },
+  salesOrder: { create: jest.fn(), count: jest.fn().mockResolvedValue(0) },
   $transaction: jest.fn()
 };
 // placeOrder() wraps customer+order creation in one $transaction (M19
@@ -270,28 +270,149 @@ describe("PublicService.adminPublishFeedProducts", () => {
   });
 });
 
-describe("PublicService.adminUpdateProduct — price", () => {
-  beforeEach(() => jest.clearAllMocks());
+describe("PublicService.adminUpdateProduct — price (the shop never touches Sales price lists)", () => {
+  const publicProduct = { id: "p1", name: "Layer 1 Mash", publicSlug: "layer-1-mash", storefrontCategory: "Feed" };
+  const salesPrice = { id: "pl-sales", name: "Retail", unitPrice: 25, customerGroupId: null, branchId: null, validFrom: new Date("2026-01-01") };
 
-  it("removes the price when the price box is cleared (0), so it does not come back", async () => {
-    mockPrisma.product.findFirst.mockResolvedValueOnce({ id: "p1", name: "Layer 1 Mash", publicSlug: "layer-1-mash", storefrontCategory: "Feed" });
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPrisma.product.findFirst.mockResolvedValue(publicProduct);
     mockPrisma.product.update.mockResolvedValue({ id: "p1", isPublic: true, publicSlug: "layer-1-mash" });
+    mockPrisma.priceList.findMany.mockResolvedValue([]);
+  });
+
+  it("clearing a shop price writes a 0 Storefront row and leaves the Sales price list alone, so it does not come back", async () => {
+    mockPrisma.priceList.findMany.mockResolvedValue([salesPrice]);
 
     await makeService().adminUpdateProduct("company-1", "p1", { unitPrice: 0 } as never);
 
-    expect(mockPrisma.priceList.updateMany).toHaveBeenCalledWith({
-      where: { productId: "p1", companyId: "company-1", status: "ACTIVE", deletedAt: null },
-      data: { status: "INACTIVE" },
-    });
+    expect(mockPrisma.priceList.create).toHaveBeenCalledWith({ data: expect.objectContaining({ productId: "p1", name: "Storefront Price", unitPrice: 0 }) });
+    expect(mockPrisma.priceList.updateMany).not.toHaveBeenCalled();
+    expect(mockPrisma.priceList.update).not.toHaveBeenCalled();
+  });
+
+  it("clearing again updates the existing Storefront row instead of adding another", async () => {
+    mockPrisma.priceList.findMany.mockResolvedValue([
+      { id: "pl-shop", name: "Storefront Price", unitPrice: 30, customerGroupId: null, branchId: null, validFrom: new Date("2026-02-01") },
+      salesPrice,
+    ]);
+
+    await makeService().adminUpdateProduct("company-1", "p1", { unitPrice: 0 } as never);
+
+    expect(mockPrisma.priceList.update).toHaveBeenCalledWith({ where: { id: "pl-shop" }, data: { unitPrice: 0 } });
     expect(mockPrisma.priceList.create).not.toHaveBeenCalled();
   });
 
-  it("leaves prices alone when no price is sent", async () => {
-    mockPrisma.product.findFirst.mockResolvedValueOnce({ id: "p1", name: "Layer 1 Mash", publicSlug: "layer-1-mash", storefrontCategory: "Feed" });
-    mockPrisma.product.update.mockResolvedValue({ id: "p1", isPublic: true, publicSlug: "layer-1-mash" });
+  it("setting a price creates the Storefront row (no existing prices)", async () => {
+    await makeService().adminUpdateProduct("company-1", "p1", { unitPrice: 42 } as never);
 
+    expect(mockPrisma.priceList.create).toHaveBeenCalledWith({ data: expect.objectContaining({ name: "Storefront Price", unitPrice: 42 }) });
+  });
+
+  it("does nothing when the price shown is saved unchanged (no copy of a Sales price)", async () => {
+    mockPrisma.priceList.findMany.mockResolvedValue([salesPrice]);
+
+    await makeService().adminUpdateProduct("company-1", "p1", { unitPrice: 25, unitLabel: "kg" } as never);
+
+    expect(mockPrisma.priceList.create).not.toHaveBeenCalled();
+    expect(mockPrisma.priceList.update).not.toHaveBeenCalled();
+  });
+
+  it("leaves prices alone when no price is sent", async () => {
     await makeService().adminUpdateProduct("company-1", "p1", { unitLabel: "kg" } as never);
 
-    expect(mockPrisma.priceList.updateMany).not.toHaveBeenCalled();
+    expect(mockPrisma.priceList.findMany).not.toHaveBeenCalled();
+    expect(mockPrisma.priceList.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("PublicService shop price lookup", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockConfig.get.mockImplementation((key: string, fallback?: string) => (key === "STOREFRONT_COMPANY_ID" ? undefined : fallback));
+    mockPrisma.company.findFirst.mockResolvedValue({ id: "company-1" });
+  });
+
+  const listed = (priceLists: unknown[]) => {
+    mockPrisma.product.findMany.mockResolvedValue([{ id: "p1", name: "Layer 1 Mash", publicSlug: "layer-1-mash", minOrderQty: 1, unitLabel: "kg", priceLists }]);
+    return makeService().listProducts();
+  };
+
+  it("ignores customer-group and branch prices, so a wholesale price is never shown to the public", async () => {
+    const out = await listed([
+      { name: "Wholesale", unitPrice: 5, customerGroupId: "grp-1", branchId: null, validFrom: new Date("2026-03-01") },
+      { name: "Kumasi branch", unitPrice: 6, customerGroupId: null, branchId: "br-1", validFrom: new Date("2026-02-01") },
+      { name: "Retail", unitPrice: 25, customerGroupId: null, branchId: null, validFrom: new Date("2026-01-01") },
+    ]);
+    expect(out[0].unitPrice).toBe(25);
+  });
+
+  it("a Storefront row of 0 means no online price (no fall back to the Sales price)", async () => {
+    const out = await listed([
+      { name: "Storefront Price", unitPrice: 0, customerGroupId: null, branchId: null, validFrom: new Date("2026-04-01") },
+      { name: "Retail", unitPrice: 25, customerGroupId: null, branchId: null, validFrom: new Date("2026-01-01") },
+    ]);
+    expect(out[0].unitPrice).toBeNull();
+  });
+
+  it("ignores a price that has expired or has not started yet", async () => {
+    const out = await listed([
+      { name: "Old", unitPrice: 9, customerGroupId: null, branchId: null, validFrom: new Date("2020-01-01"), validTo: new Date("2021-01-01") },
+      { name: "Future", unitPrice: 99, customerGroupId: null, branchId: null, validFrom: new Date("2999-01-01") },
+    ]);
+    expect(out[0].unitPrice).toBeNull();
+  });
+});
+
+describe("PublicService.placeOrder — hardening", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPrisma.company.findFirst.mockResolvedValue(makeCompany());
+    mockPrisma.customer.create.mockResolvedValue({ id: "cust-1" });
+    mockPrisma.salesOrder.create.mockResolvedValue({});
+    mockPrisma.salesOrder.count.mockResolvedValue(0);
+  });
+
+  it("merges two lines for the same feed instead of failing as 'unavailable'", async () => {
+    mockPrisma.product.findMany.mockResolvedValue([makeProduct()]);
+
+    await makeService().placeOrder(makeDto([{ productId: "prod-1", quantity: 2 }, { productId: "prod-1", quantity: 3 }]));
+
+    const items = mockPrisma.salesOrder.create.mock.calls[0][0].data.items.create;
+    expect(items).toHaveLength(1);
+    expect(items[0].quantity).toBe(5);
+  });
+
+  it("only looks up products that are active, not deleted, and have a web address", async () => {
+    mockPrisma.product.findMany.mockResolvedValue([makeProduct()]);
+
+    await makeService().placeOrder(makeDto([{ productId: "prod-1", quantity: 2 }]));
+
+    expect(mockPrisma.product.findMany.mock.calls[0][0].where).toEqual(expect.objectContaining({ isPublic: true, status: "ACTIVE", deletedAt: null, publicSlug: { not: null } }));
+  });
+
+  it("stops one phone number placing more than 5 orders an hour", async () => {
+    mockPrisma.salesOrder.count.mockResolvedValue(5);
+    mockPrisma.product.findMany.mockResolvedValue([makeProduct()]);
+
+    await expect(makeService().placeOrder(makeDto([{ productId: "prod-1", quantity: 2 }]))).rejects.toThrow(/Too many orders/);
+    expect(mockPrisma.salesOrder.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("PublicService leads — spam cap", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockConfig.get.mockImplementation((key: string, fallback?: string) => (key === "STOREFRONT_COMPANY_ID" ? undefined : fallback));
+    mockPrisma.company.findFirst.mockResolvedValue({ id: "company-1" });
+    mockPrisma.storefrontLead.create.mockResolvedValue({ id: "lead-1" });
+    mockEmail.send.mockResolvedValue(true);
+  });
+
+  it("stops one phone number sending more than 5 messages an hour", async () => {
+    mockPrisma.storefrontLead.count.mockResolvedValue(5);
+
+    await expect(makeService().submitContact({ name: "Spam", phone: "0555555555", message: "x" } as never)).rejects.toThrow(/Too many messages/);
+    expect(mockPrisma.storefrontLead.create).not.toHaveBeenCalled();
   });
 });

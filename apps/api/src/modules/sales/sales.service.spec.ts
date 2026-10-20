@@ -673,6 +673,14 @@ describe("SalesService — two-step confirm then release (make-to-order)", () =>
       expect((result.data as { invoice: { invoiceNumber: string } }).invoice.invoiceNumber).toBe("INV-001");
     });
 
+    it("refuses to confirm an order with unpriced items (a web order request must be priced first)", async () => {
+      mockPrisma.salesOrder.findFirst.mockResolvedValue(pendingOrder({ totalAmount: 0, subtotal: 0, items: [{ productId: "prod-1", quantity: 50, unitPrice: 0 }] }));
+      const service = makeService();
+
+      await expect(service.confirmOrder(user(), "so-1", {})).rejects.toThrow(/no price/);
+      expect(mockTx.invoice.create).not.toHaveBeenCalled();
+    });
+
     it("rejects confirming an order that is already confirmed", async () => {
       mockPrisma.salesOrder.findFirst.mockResolvedValue(pendingOrder({ status: "APPROVED" }));
       const service = makeService();

@@ -604,6 +604,13 @@ export class SalesService {
       throw new BadRequestException(`Only a pending order can be confirmed — this one is ${order.status.toLowerCase().replace(/_/g, " ")}.`);
     }
     if (!order.items.length) throw new BadRequestException("This order has no line items to invoice.");
+    // A web "order request" (price to be confirmed) arrives with zero prices. Confirming it
+    // would issue a GHS 0 invoice and lock the order at 0 (an approved order can't be
+    // edited), so it must be priced first: edit the order, set every line's price after
+    // agreeing it with the customer, then confirm.
+    if (order.items.some((i) => Number(i.unitPrice) <= 0) || Number(order.totalAmount) <= 0) {
+      throw new BadRequestException("This order still has items with no price. Edit the order and set a price for every item (agree it with the customer first), then confirm.");
+    }
     await this.assertCreditLimit(order.customerId, Number(order.totalAmount));
 
     const data = await withDbRetry(() => this.prisma.$transaction(async (tx) => {

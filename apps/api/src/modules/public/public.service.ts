@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, InternalServerErrorException, Logger, NotFoundException } from "@nestjs/common";
+import { BadRequestException, HttpException, HttpStatus, Injectable, InternalServerErrorException, Logger, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { PrismaService } from "../prisma/prisma.service";
 import { EmailService } from "../notifications/email.service";
@@ -7,6 +7,24 @@ import { PublicContactDto } from "./dto/public-contact.dto";
 import { RetailerApplicationDto } from "./dto/retailer-application.dto";
 import { UpdatePublicProductDto } from "./dto/update-public-product.dto";
 import { randomBytes } from "crypto";
+
+// The shop reads prices from the product's price lists, but must never touch the
+// ones Sales uses. Its OWN price is a list named "Storefront Price" (for everyone: no
+// customer group, no branch). A price of 0 on that row means "no online price": the
+// feed becomes request-only and the shop does NOT fall back to a Sales price.
+// Without a Storefront row it falls back to the newest general (all customers, all
+// branches, currently valid) price list, never a customer-group or branch price.
+const STOREFRONT_PRICE_NAME = "Storefront Price";
+const SHOP_PRICE_SELECT = { id: true, name: true, unitPrice: true, customerGroupId: true, branchId: true, validFrom: true, validTo: true } as const;
+type ShopPriceRow = { name?: string; unitPrice: unknown; customerGroupId?: string | null; branchId?: string | null; validFrom?: Date | null; validTo?: Date | null };
+
+function pickShopPrice(rows: ShopPriceRow[]): number | null {
+  const now = new Date();
+  const live = rows.filter((r) => !r.customerGroupId && !r.branchId && (!r.validFrom || r.validFrom <= now) && (!r.validTo || r.validTo > now));
+  const row = live.find((r) => r.name === STOREFRONT_PRICE_NAME) ?? live[0];
+  const price = row ? Number(row.unitPrice) : 0;
+  return price > 0 ? price : null;
+}
 
 function escapeHtml(value: string): string {
   return value
@@ -33,6 +51,7 @@ export class PublicService {
   // displays) so a real person actually receives it.
   async submitContact(dto: PublicContactDto) {
     const companyId = await this.getStorefrontCompanyId();
+    await this.assertLeadNotSpam(companyId, dto.phone);
     // Save first: the enquiry must survive even when SMTP is down or unset.
     const lead = await this.prisma.storefrontLead.create({
       data: { companyId, kind: "CONTACT", name: dto.name, phone: dto.phone, email: dto.email, subject: dto.subject, message: dto.message },
@@ -52,6 +71,7 @@ export class PublicService {
   // "Become a Retailer" application -> saved, then emailed to sales (with a copy).
   async submitRetailerApplication(dto: RetailerApplicationDto) {
     const companyId = await this.getStorefrontCompanyId();
+    await this.assertLeadNotSpam(companyId, dto.phone);
     const lead = await this.prisma.storefrontLead.create({
       data: {
         companyId, kind: "RETAILER", name: dto.name, location: dto.location, phone: dto.phone, email: dto.email,
@@ -71,13 +91,19 @@ export class PublicService {
     return { received: true };
   }
 
+  // One phone number can send only a few enquiries an hour (a bot rotating IPs still hits this).
+  private async assertLeadNotSpam(companyId: string, phone: string) {
+    const recent = await this.prisma.storefrontLead.count({ where: { companyId, phone, createdAt: { gte: new Date(Date.now() - 3600_000) } } });
+    if (recent >= 5) throw new HttpException("Too many messages from this phone number. Please call or WhatsApp us on 050 545 5055.", HttpStatus.TOO_MANY_REQUESTS);
+  }
+
   // Best-effort email: the lead is already saved, so a mail failure is logged,
   // never shown to the visitor as an error.
   private async notify(to: string, subject: string, html: string, leadId: string, copyTo?: string) {
-    for (const address of [to, copyTo].filter((a): a is string => !!a)) {
+    await Promise.all([to, copyTo].filter((a): a is string => !!a).map(async (address) => {
       const ok = await this.email.send(address, subject, html).catch(() => false);
       if (!ok) this.logger.error(`Lead ${leadId}: notification email to ${address} failed (SMTP not configured?). The lead is saved in the database.`);
-    }
+    }));
   }
 
   async adminListLeads(companyId: string, status?: string) {
@@ -122,10 +148,9 @@ export class PublicService {
         id: true, name: true, publicSlug: true, publicDescription: true,
         publicImageUrl: true, storefrontCategory: true, minOrderQty: true, unitLabel: true,
         priceLists: {
-          where: { status: "ACTIVE" },
-          select: { unitPrice: true },
+          where: { status: "ACTIVE", deletedAt: null },
+          select: SHOP_PRICE_SELECT,
           orderBy: { validFrom: "desc" },
-          take: 1,
         },
       },
       orderBy: [{ storefrontCategory: "asc" }, { name: "asc" }],
@@ -140,7 +165,7 @@ export class PublicService {
       imageUrl: p.publicImageUrl, category: p.storefrontCategory,
       minOrderQty: p.minOrderQty ? Number(p.minOrderQty) : 1,
       unitLabel: p.unitLabel ?? "unit",
-      unitPrice: p.priceLists[0]?.unitPrice ? Number(p.priceLists[0].unitPrice) : null,
+      unitPrice: pickShopPrice(p.priceLists),
     }));
   }
 
@@ -152,10 +177,9 @@ export class PublicService {
         id: true, name: true, publicSlug: true, publicDescription: true,
         publicImageUrl: true, storefrontCategory: true, minOrderQty: true, unitLabel: true,
         priceLists: {
-          where: { status: "ACTIVE" },
-          select: { unitPrice: true },
+          where: { status: "ACTIVE", deletedAt: null },
+          select: SHOP_PRICE_SELECT,
           orderBy: { validFrom: "desc" },
-          take: 1,
         },
       },
     });
@@ -167,7 +191,7 @@ export class PublicService {
       imageUrl: p.publicImageUrl, category: p.storefrontCategory,
       minOrderQty: p.minOrderQty ? Number(p.minOrderQty) : 1,
       unitLabel: p.unitLabel ?? "unit",
-      unitPrice: p.priceLists[0]?.unitPrice ? Number(p.priceLists[0].unitPrice) : null,
+      unitPrice: pickShopPrice(p.priceLists),
     };
   }
 
@@ -187,8 +211,8 @@ export class PublicService {
     const company = await this.prisma.company.findFirst({
       where: { id: companyId, status: "ACTIVE" },
       include: {
-        branches:   { where: { status: "ACTIVE" }, take: 1 },
-        warehouses: { where: { status: "ACTIVE" }, take: 1 },
+        branches:   { where: { status: "ACTIVE" }, orderBy: { createdAt: "asc" }, take: 1 },
+        warehouses: { where: { status: "ACTIVE" }, orderBy: { createdAt: "asc" }, take: 1 },
       },
     });
 
@@ -199,21 +223,37 @@ export class PublicService {
     const branch    = company.branches[0];
     const warehouse = company.warehouses[0];
 
-    const productIds = dto.lines.map((l) => l.productId);
+    // Anti-spam on top of the per-IP limit: one phone number can only place a few
+    // orders an hour, however many IPs a bot rotates through.
+    const recentByPhone = await this.prisma.salesOrder.count({
+      where: { companyId: company.id, isStorefrontOrder: true, storefrontCustomerPhone: dto.customerPhone, createdAt: { gte: new Date(Date.now() - 3600_000) } },
+    });
+    if (recentByPhone >= 5) {
+      throw new HttpException("Too many orders from this phone number. Please call or WhatsApp us on 050 545 5055.", HttpStatus.TOO_MANY_REQUESTS);
+    }
+
+    // Two lines for the same feed are one line (they used to fail as "unavailable").
+    const merged = new Map<string, number>();
+    for (const l of dto.lines) merged.set(l.productId, (merged.get(l.productId) ?? 0) + l.quantity);
+    const lines = [...merged.entries()].map(([productId, quantity]) => ({ productId, quantity }));
+    if (lines.some((l) => l.quantity > 10000)) throw new BadRequestException("That quantity is too large for one order line. Please contact us for a bulk order.");
+
+    const productIds = lines.map((l) => l.productId);
     const products   = await this.prisma.product.findMany({
-      where: { id: { in: productIds }, isPublic: true, companyId: company.id },
+      // Only products that are actually on sale: a deleted or deactivated product can't be ordered by ID.
+      where: { id: { in: productIds }, isPublic: true, status: "ACTIVE", deletedAt: null, publicSlug: { not: null }, companyId: company.id },
       include: {
-        priceLists: { where: { status: "ACTIVE" }, orderBy: { validFrom: "desc" }, take: 1 },
+        priceLists: { where: { status: "ACTIVE", deletedAt: null }, orderBy: { validFrom: "desc" } },
       },
     });
 
-    if (products.length !== dto.lines.length) {
+    if (products.length !== lines.length) {
       throw new BadRequestException("One or more products are unavailable.");
     }
 
-    const orderItems = dto.lines.map((line) => {
+    const orderItems = lines.map((line) => {
       const product  = products.find((p) => p.id === line.productId)!;
-      const unitPrice = Number(product.priceLists[0]?.unitPrice ?? 0);
+      const unitPrice = pickShopPrice(product.priceLists) ?? 0;
       return { product, line, unitPrice, total: unitPrice * line.quantity };
     });
 
@@ -345,10 +385,9 @@ export class PublicService {
         publicDescription: true, publicImageUrl: true, storefrontCategory: true,
         minOrderQty: true, unitLabel: true,
         priceLists: {
-          where: { status: "ACTIVE" },
-          select: { unitPrice: true },
+          where: { status: "ACTIVE", deletedAt: null },
+          select: SHOP_PRICE_SELECT,
           orderBy: { validFrom: "desc" },
-          take: 1,
         },
       },
       orderBy: [{ storefrontCategory: "asc" }, { name: "asc" }],
@@ -360,7 +399,7 @@ export class PublicService {
       publicImageUrl: p.publicImageUrl, storefrontCategory: p.storefrontCategory,
       minOrderQty: p.minOrderQty ? Number(p.minOrderQty) : 1,
       unitLabel: p.unitLabel,
-      unitPrice: p.priceLists[0]?.unitPrice ? Number(p.priceLists[0].unitPrice) : null,
+      unitPrice: pickShopPrice(p.priceLists),
     }));
   }
 
@@ -390,29 +429,27 @@ export class PublicService {
 
     const product = await this.prisma.product.update({ where: { id }, data });
 
-    // Clearing the price box sends 0: that must REMOVE the price. Before, only
-    // prices above zero were handled, so a cleared price silently came back on
-    // refresh. All of the product's active prices are switched off (kept for
-    // the record, not deleted), so no older price can reappear on the shop.
-    // Typing a price again creates a fresh active one below.
-    if ((dto.unitPrice as number | null | undefined) === null || dto.unitPrice === 0) {
-      await this.prisma.priceList.updateMany({
+    // Editing or clearing the shop price only ever touches the shop's OWN price row
+    // ("Storefront Price"), never the price lists Sales uses. Clearing sends 0 (or null):
+    // that sets the shop row to 0, which means "no online price" and stops the shop
+    // falling back to a Sales price, so a cleared price stays cleared.
+    if (dto.unitPrice !== undefined) {
+      const price = Number(dto.unitPrice ?? 0);
+      const rows = await this.prisma.priceList.findMany({
         where: { productId: id, companyId, status: "ACTIVE", deletedAt: null },
-        data: { status: "INACTIVE" },
-      });
-    }
-
-    if (dto.unitPrice !== undefined && dto.unitPrice > 0) {
-      const existingPrice = await this.prisma.priceList.findFirst({
-        where: { productId: id, status: "ACTIVE" },
+        select: SHOP_PRICE_SELECT,
         orderBy: { validFrom: "desc" },
       });
-      if (existingPrice) {
-        await this.prisma.priceList.update({ where: { id: existingPrice.id }, data: { unitPrice: dto.unitPrice } });
-      } else {
-        await this.prisma.priceList.create({
-          data: { companyId, productId: id, name: "Storefront Price", unitPrice: dto.unitPrice, currency: "GHS", status: "ACTIVE" },
-        });
+      const effective = pickShopPrice(rows) ?? 0;
+      if (price !== effective) {
+        const own = rows.find((r) => r.name === STOREFRONT_PRICE_NAME && !r.customerGroupId && !r.branchId);
+        if (own) {
+          await this.prisma.priceList.update({ where: { id: own.id }, data: { unitPrice: price } });
+        } else {
+          await this.prisma.priceList.create({
+            data: { companyId, productId: id, name: STOREFRONT_PRICE_NAME, unitPrice: price, currency: "GHS", status: "ACTIVE" },
+          });
+        }
       }
     }
 
