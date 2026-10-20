@@ -8,12 +8,11 @@ import { CheckCircle2, Loader2, Phone, ArrowRight, Package } from "lucide-react"
 import { LogoIcon } from "@/components/Logo";
 
 const STATUS_CONFIG: Record<string, { label: string; step: number; color: string; bg: string }> = {
-  DRAFT:      { label: "Pending Review",       step: 0, color: "text-amber-600",   bg: "bg-amber-50" },
-  PENDING:    { label: "Pending Review",       step: 0, color: "text-amber-600",   bg: "bg-amber-50" },
-  CONFIRMED:  { label: "Order Confirmed",      step: 1, color: "text-blue-600",    bg: "bg-blue-50" },
-  PROCESSING: { label: "Being Prepared",       step: 2, color: "text-purple-600",  bg: "bg-purple-50" },
-  READY:      { label: "Ready for Delivery",   step: 3, color: "text-emerald-600", bg: "bg-emerald-50" },
-  DELIVERED:  { label: "Delivered",            step: 4, color: "text-green-700",   bg: "bg-green-50" },
+  DRAFT:                  { label: "Received",             step: 0, color: "text-amber-600",   bg: "bg-amber-50" },
+  PENDING_STOCK_APPROVAL: { label: "Pending Confirmation", step: 0, color: "text-amber-600",   bg: "bg-amber-50" },
+  APPROVED:               { label: "Confirmed — Preparing", step: 2, color: "text-purple-600", bg: "bg-purple-50" },
+  FULFILLED:              { label: "Delivered",            step: 4, color: "text-green-700",   bg: "bg-green-50" },
+  CANCELLED:              { label: "Cancelled",            step: 0, color: "text-red-600",     bg: "bg-red-50" },
 };
 
 const STEPS = ["Received", "Confirmed", "Prepared", "Ready", "Delivered"];
@@ -28,7 +27,7 @@ export default function OrderStatusPage() {
     api.orders
       .status(ref)
       .then(setOrder)
-      .catch(() => setError("Order not found. Please check your reference number."))
+      .catch((e: Error) => setError(/not found|404/i.test(e.message) ? "Order not found. Please check your reference number." : "We couldn't load your order just now. Please try again shortly, or call us on 050 545 5055."))
       .finally(() => setLoading(false));
   }, [ref]);
 
@@ -55,7 +54,7 @@ export default function OrderStatusPage() {
 
   if (!order) return null;
 
-  const status = STATUS_CONFIG[order.status] ?? STATUS_CONFIG["PENDING"];
+  const status = STATUS_CONFIG[order.status] ?? STATUS_CONFIG["DRAFT"];
 
   return (
     <div className="bg-white">
@@ -137,7 +136,7 @@ export default function OrderStatusPage() {
           </ul>
           {order.total > 0 && (
             <div className="flex items-center justify-between border-t border-dashed border-gray-200 pt-3 font-bold">
-              <span className="text-sm text-ink">Total</span>
+              <span className="text-sm text-ink">{order.lines.some((l) => l.unitPrice <= 0) ? "Total so far (price to be confirmed)" : "Total"}</span>
               <span className="text-lg text-brandDark">GHS {order.total.toFixed(2)}</span>
             </div>
           )}

@@ -29,7 +29,7 @@ export default function Footer() {
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-4 py-5 sm:flex-row sm:px-6">
           <div>
             <p className="font-semibold text-white">Prefer to order by phone?</p>
-            <p className="text-sm text-white/55">Our team is available Mon–Sat 8am–6pm · Sun 6am–12pm</p>
+            <p className="text-sm text-white/55">Call or WhatsApp our team to place your order</p>
           </div>
           <a
             href="tel:+233505455055"

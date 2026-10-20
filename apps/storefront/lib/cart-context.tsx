@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useReducer, useCallback, useEffect, ReactNode } from "react";
+import { createContext, useContext, useReducer, useCallback, useEffect, useState, ReactNode } from "react";
 import { api, type PublicProduct } from "./api";
 
 export interface CartItem {
@@ -17,6 +17,7 @@ type Action =
   | { type: "UPDATE"; productId: string; qty: number }
   | { type: "REMOVE"; productId: string }
   | { type: "CLEAR" }
+  | { type: "HYDRATE"; state: CartState }
   | { type: "SYNC_PRODUCTS"; products: PublicProduct[] };
 
 // Mirrors PublicOrderLineDto's server-side cap (public-order.dto.ts) — clamping here
@@ -26,6 +27,9 @@ const MAX_LINE_QTY = 10000;
 
 function reducer(state: CartState, action: Action): CartState {
   switch (action.type) {
+    case "HYDRATE":
+      // Merge, so anything added before the saved cart was read is not lost.
+      return { items: [...action.state.items.filter((s) => !state.items.some((i) => i.product.id === s.product.id)), ...state.items] };
     case "ADD": {
       const existing = state.items.find((i) => i.product.id === action.product.id);
       if (existing) {
@@ -106,15 +110,24 @@ function loadCart(): CartState {
 }
 
 export function CartProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(reducer, undefined, loadCart);
+  const [state, dispatch] = useReducer(reducer, { items: [] });
+  const [hydrated, setHydrated] = useState(false);
+
+  // Read the saved cart after mount, not during render: the server renders an empty
+  // cart, so reading localStorage in the initializer caused a hydration mismatch.
+  useEffect(() => {
+    dispatch({ type: "HYDRATE", state: loadCart() });
+    setHydrated(true);
+  }, []);
 
   useEffect(() => {
+    if (!hydrated) return;
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, savedAt: Date.now() }));
     } catch {
       // localStorage unavailable (private mode, quota exceeded)
     }
-  }, [state]);
+  }, [state, hydrated]);
 
   const addItem = useCallback((product: PublicProduct, qty: number) =>
     dispatch({ type: "ADD", product, qty }), []);

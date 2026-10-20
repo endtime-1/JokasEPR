@@ -1,5 +1,9 @@
 import type { Metadata } from "next";
+import { Inter, DM_Serif_Display } from "next/font/google";
 import "./globals.css";
+
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
+const displayFont = DM_Serif_Display({ subsets: ["latin"], weight: "400", style: ["normal", "italic"], variable: "--font-display", display: "swap" });
 import { CartProvider } from "@/lib/cart-context";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
@@ -10,15 +14,15 @@ const SITE_ORIGIN = (process.env.SITE_URL || "https://akokofeeds.com").replace(/
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_ORIGIN),
   title:       { default: "Akoko Feeds — Quality Feed, Higher Production", template: "%s | Akoko Feeds" },
-  description: "Premium poultry feed, fresh farm eggs, ready broiler chickens, and soya products — direct from Akoko Feeds, Ghana.",
-  keywords:    ["poultry feed", "broiler", "layer mash", "soya cake", "farm eggs", "Ghana", "Akoko Feeds", "Akoko Solutions"],
+  description: "Quality poultry feeds for every stage of your birds — from Pre-Starter to Layer 2. Your Choice for Profit. Akoko Feeds, Ghana.",
+  keywords:    ["poultry feed", "broiler feed", "layer mash", "chick feed", "Ghana", "Akoko Feeds", "Akoko Solutions"],
   openGraph:   { siteName: "Akoko Feeds", type: "website", images: ["/brand/akoko-logo-icon.png"] },
   icons:       { icon: "/brand/akoko-logo-icon.png", apple: "/brand/akoko-logo-icon.png" },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className={`${inter.variable} ${displayFont.variable}`}>
       <body className="flex min-h-screen flex-col bg-cream">
         {/* Runs before paint so .reveal's opacity:0 only ever applies once JS
             has actually confirmed it's running — see the .js .reveal rule in
@@ -34,7 +38,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               legalName: "Akoko Solutions Limited",
               url: SITE_ORIGIN,
               logo: `${SITE_ORIGIN}/brand/akoko-logo-icon.png`,
-              slogan: "Quality feeds, best production",
+              slogan: "Your Choice for Profit",
               sameAs: ["https://www.akokosolutions.com"],
               telephone: "+233505455055",
               email: "farmersupport@akokofeeds.com",

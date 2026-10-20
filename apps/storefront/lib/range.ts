@@ -14,7 +14,7 @@ export const FEED_SERIES: FeedSeries[] = [
   { slug: "pre-starter", name: "Pre-Starter", bird: "Chicks", tagline: "Part of the Akoko chick feeding range, as mash and concentrate." },
   { slug: "chicks-starter", name: "Chicks Starter", bird: "Chicks", tagline: "Formulated for strong and healthy early bird life." },
   { slug: "developer", name: "Developer", bird: "Growers", tagline: "The right nutrients for steady, healthy growth." },
-  { slug: "prelayer", name: "Prelayer", bird: "Growers", tagline: "Optimized for higher performance at the onset of lay." },
+  { slug: "prelayer", name: "Pre-Lay", bird: "Growers", tagline: "Optimized for higher performance at the onset of lay." },
   { slug: "layer-1", name: "Layer 1", bird: "Layers", tagline: "Optimum egg production, egg size and shell improvement." },
   { slug: "layer-2", name: "Layer 2", bird: "Layers", tagline: "Specially formulated for older birds; prolongs the laying cycle." },
   { slug: "broiler-starter", name: "Broiler Starter", bird: "Broilers", tagline: "For optimum meat yield." },

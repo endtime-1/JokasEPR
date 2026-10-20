@@ -34,12 +34,12 @@ export default function PremiumProductCard({ product, featured = false }: Props)
   }
 
   return (
-    <Link
-      href={`/products/${product.publicSlug}`}
+    <div
       className={`product-card group relative block overflow-hidden rounded-3xl bg-white/6 ring-1 ring-white/10 transition-all duration-500 hover:-translate-y-1 hover:shadow-[0_24px_60px_rgba(0,0,0,0.5)] ${
         featured ? "row-span-2" : ""
       }`}
     >
+      <Link href={`/products/${product.publicSlug}`} aria-label={product.name} className="absolute inset-0 z-10" />
       {/* Image */}
       <div className={`relative overflow-hidden ${featured ? "h-96" : "h-64"} ${bagSrc ? "bg-gradient-to-b from-[#fff3e3] to-[#f8d9b0]" : ""}`}>
         {!imgError && imgSrc ? (
@@ -54,7 +54,7 @@ export default function PremiumProductCard({ product, featured = false }: Props)
           <div className={`absolute inset-0 bg-gradient-to-br ${gradient}`} />
         )}
         {/* Overlay panel — slides up on hover */}
-        <div className="product-card-overlay absolute inset-x-0 bottom-0 rounded-t-2xl bg-ink/92 p-5 backdrop-blur-sm">
+        <div className="product-card-overlay pointer-events-none absolute inset-x-0 bottom-0 rounded-t-2xl bg-ink/92 p-5 backdrop-blur-sm">
           {/* Always-visible bottom strip: name + category */}
           <div className="flex items-start justify-between gap-2">
             <div>
@@ -67,9 +67,9 @@ export default function PremiumProductCard({ product, featured = false }: Props)
             </div>
             <div className="shrink-0 text-right">
               <div className="font-black text-brand text-lg">
-                GHS {product.price != null ? (product.price % 1 === 0 ? product.price.toLocaleString() : product.price.toFixed(2)) : "—"}
+                {product.price != null ? `GHS ${product.price % 1 === 0 ? product.price.toLocaleString() : product.price.toFixed(2)}` : "Price on request"}
               </div>
-              <div className="text-[10px] text-white/40">per {product.unitLabel}</div>
+              {product.price != null && <div className="text-[10px] text-white/40">per {product.unitLabel}</div>}
             </div>
           </div>
 
@@ -84,7 +84,7 @@ export default function PremiumProductCard({ product, featured = false }: Props)
               </span>
               <button
                 onClick={handleAdd}
-                className="flex items-center gap-1.5 rounded-xl bg-brand px-4 py-2 text-xs font-bold text-white shadow-brand transition hover:bg-brandDark active:scale-95"
+                className="pointer-events-auto relative z-20 flex items-center gap-1.5 rounded-xl bg-brand px-4 py-2 text-xs font-bold text-white shadow-brand transition hover:bg-brandDark active:scale-95"
               >
                 <ShoppingCart size={11} />
                 {added ? "Added!" : product.price != null ? "Add to Order" : "Request"}
@@ -93,6 +93,6 @@ export default function PremiumProductCard({ product, featured = false }: Props)
           </div>
         </div>
       </div>
-    </Link>
+    </div>
   );
 }

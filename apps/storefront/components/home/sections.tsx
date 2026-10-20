@@ -39,7 +39,7 @@ export function Hero() {
           </h1>
           <p className="animate-fade-up-2 mt-6 max-w-xl text-[1.1rem] leading-relaxed text-white/75">
             Science-based poultry feed for chicks, growers, layers and broilers. Milled in Kumasi,
-            delivered across Ghana, with free technical advice on every order.
+            with distribution points across Ashanti and Bono, and free technical advice on every order.
           </p>
 
           <div className="animate-fade-up-3 mt-9 flex flex-wrap items-center gap-3.5">
@@ -64,7 +64,7 @@ export function Hero() {
           </div>
 
           <div className="animate-fade-up-3 mt-9 flex flex-wrap gap-2.5">
-            {["Free technical advice", "50 kg bags", "Delivery across Ghana", "Made in Kumasi"].map((t) => (
+            {["Free technical advice", "50 kg bags", "9 distribution points", "Made in Kumasi"].map((t) => (
               <span key={t} className="glass rounded-full px-3.5 py-1.5 text-[11px] font-semibold text-white/85">{t}</span>
             ))}
           </div>

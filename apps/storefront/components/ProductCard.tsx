@@ -81,10 +81,10 @@ export default function ProductCard({ product }: { product: PublicProduct }) {
   }
 
   return (
-    <Link
-      href={`/products/${product.publicSlug}`}
-      className="group flex flex-col overflow-hidden rounded-2xl bg-white shadow-card transition-all duration-200 hover:-translate-y-1 hover:shadow-cardHover"
+    <div
+      className="group relative flex flex-col overflow-hidden rounded-2xl bg-white shadow-card transition-all duration-200 hover:-translate-y-1 hover:shadow-cardHover"
     >
+      <Link href={`/products/${product.publicSlug}`} aria-label={product.name} className="absolute inset-0 z-10" />
       <ProductImage product={product} />
 
       <div className="flex flex-1 flex-col p-5">
@@ -124,13 +124,13 @@ export default function ProductCard({ product }: { product: PublicProduct }) {
 
         <button
           onClick={handleAdd}
-          className={`mt-3 flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold text-white transition-all active:scale-95 ${
+          className={`relative z-20 mt-3 flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold text-white transition-all active:scale-95 ${
             added ? "bg-green-500" : "bg-brand shadow-brandSm hover:bg-brandDark"
           }`}
         >
           {added ? <><Check size={14} /> Added!</> : <><ShoppingCart size={14} /> {product.price != null ? "Add to Order" : "Request this feed"}</>}
         </button>
       </div>
-    </Link>
+    </div>
   );
 }

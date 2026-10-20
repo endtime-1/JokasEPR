@@ -2,14 +2,11 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── Fonts ─────────────────────────────────────────────────────────── */
-@import url("https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700;14..32,800;14..32,900&display=swap");
-
 /* ── Reset ──────────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
 body {
-  font-family: "Inter", system-ui, sans-serif;
+  font-family: var(--font-inter), "Inter", system-ui, sans-serif;
   background: #faf8f4;
   color: #0a0b0d;
   -webkit-font-smoothing: antialiased;
@@ -92,6 +89,10 @@ body {
   transition: transform 0.7s cubic-bezier(0.16,1,0.3,1);
 }
 .product-card:hover img { transform: scale(1.06); }
+@media (hover: none) {
+  .product-card-overlay { transform: none; }
+  .product-card-detail { opacity: 1; transform: none; }
+}
 
 /* ── Diagonal separator ─────────────────────────────────────────────── */
 .diagonal-bottom { clip-path: polygon(0 0, 100% 0, 100% calc(100% - 4rem), 0 100%); }

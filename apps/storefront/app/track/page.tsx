@@ -12,7 +12,7 @@ export default function TrackOrderPage() {
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    const trimmed = ref.trim();
+    const trimmed = ref.trim().toUpperCase();
     if (!trimmed) {
       setError("Enter your order reference number.");
       return;
@@ -45,7 +45,7 @@ export default function TrackOrderPage() {
               type="text"
               value={ref}
               onChange={(e) => { setRef(e.target.value); setError(""); }}
-              placeholder="e.g. AKO-2026-0042"
+              placeholder="e.g. AKO-1A2B3C4D5E6F"
               className="w-full rounded-xl border border-gray-200 px-4 py-3 font-mono text-sm uppercase tracking-wide transition focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15"
             />
             {error && <p className="mt-1.5 text-xs font-medium text-red-600">{error}</p>}

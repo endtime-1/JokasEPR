@@ -39,7 +39,7 @@ export default function Header() {
       <div className={`relative overflow-hidden py-1.5 text-center text-xs font-medium transition-colors duration-300 ${
         transparent ? "bg-black/30 text-white/85 backdrop-blur-sm" : "bg-ink text-white/75"
       }`}>
-        Free technical advice with every order &nbsp;·&nbsp; Delivery across Ghana &nbsp;·&nbsp; Order on WhatsApp 050 545 5055
+        Free technical advice with every order &nbsp;·&nbsp; Order on WhatsApp 050 545 5055
       </div>
 
       {/* Header */}
@@ -99,7 +99,7 @@ export default function Header() {
               Order Now
             </Link>
 
-            <button onClick={() => setOpen(!open)} aria-label="Menu"
+            <button onClick={() => setOpen(!open)} aria-label="Menu" aria-expanded={open}
               className={`flex h-9 w-9 items-center justify-center rounded-xl transition lg:hidden ${
                 transparent ? "text-white hover:bg-white/12" : "text-stone hover:bg-warm"
               }`}>

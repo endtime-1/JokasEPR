@@ -1,24 +1,24 @@
 export const MOCK_STATS = [
-  { value: "6+",   label: "Feed Product Lines", sub: "Chick starter to layer mash" },
-  { value: "9",    label: "Distribution Points", sub: "Covering all regions of Ghana" },
-  { value: "Free", label: "Technical Advice",   sub: "With every purchase" },
-  { value: "2015", label: "In Business Since",  sub: "Established in Kumasi, Ghana" },
+  { value: "9",    label: "Feed Products",       sub: "Pre-Starter to Layer 2" },
+  { value: "9",    label: "Distribution Points", sub: "Across Ashanti & Bono" },
+  { value: "Free", label: "Technical Advice",    sub: "With every purchase" },
+  { value: "50kg", label: "Bag Size",            sub: "Every feed, one standard bag" },
 ];
 
 export const HOW_IT_WORKS = [
   {
     step: "01",
-    title: "Browse & Select",
-    desc: "Browse our catalog, choose products and quantities. All prices are shown in GHS with minimum order quantities.",
+    title: "Choose Your Feed",
+    desc: "Browse our range and add the feeds and quantities you need to your order.",
   },
   {
     step: "02",
-    title: "Place Your Order",
-    desc: "Fill in your delivery details and submit. You'll receive a unique order reference code immediately.",
+    title: "Send Your Request",
+    desc: "Fill in your details and submit. You'll receive a unique order reference code immediately.",
   },
   {
     step: "03",
-    title: "We Confirm & Deliver",
-    desc: "Our team calls you within 24 hours to confirm and arrange delivery or pickup at our farm.",
+    title: "We Confirm With You",
+    desc: "Our team calls you to agree the price, delivery or pickup, and the total before anything is final.",
   },
 ];

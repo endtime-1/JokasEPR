@@ -21,11 +21,15 @@ const IDEMPOTENCY_KEY_STORAGE = "checkout:idempotencyKey";
 // key so the backend can recognize a resend instead of placing a duplicate
 // order. Persisted in sessionStorage (not component state) so it survives a
 // page reload after a dropped response too, not just an in-place retry.
-function getIdempotencyKey(): string {
-  const existing = window.sessionStorage.getItem(IDEMPOTENCY_KEY_STORAGE);
-  if (existing) return existing;
+function getIdempotencyKey(cartHash: string): string {
+  // The key is tied to the cart contents: if the customer changes the cart after a
+  // failed attempt, they get a fresh key (otherwise the server would replay the old order).
+  try {
+    const existing = JSON.parse(window.sessionStorage.getItem(IDEMPOTENCY_KEY_STORAGE) ?? "null");
+    if (existing && existing.hash === cartHash && existing.key) return existing.key as string;
+  } catch { /* fall through to a new key */ }
   const key = crypto.randomUUID();
-  window.sessionStorage.setItem(IDEMPOTENCY_KEY_STORAGE, key);
+  window.sessionStorage.setItem(IDEMPOTENCY_KEY_STORAGE, JSON.stringify({ hash: cartHash, key }));
   return key;
 }
 
@@ -64,7 +68,7 @@ export default function CheckoutPage() {
           productId: i.product.id,
           quantity: i.qty,
         })),
-        idempotencyKey: getIdempotencyKey(),
+        idempotencyKey: getIdempotencyKey(items.map((i) => `${i.product.id}:${i.qty}`).sort().join("|")),
       });
       window.sessionStorage.removeItem(IDEMPOTENCY_KEY_STORAGE);
       clear();

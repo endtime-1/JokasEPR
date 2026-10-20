@@ -121,7 +121,9 @@ async function post<T>(path: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(15000),
   });
-  const json = await res.json();
+  // A proxy error page (e.g. nginx 502 while the API restarts) is HTML, not JSON.
+  const json = await res.json().catch(() => null);
+  if (!json) throw new Error("We couldn't reach our server just now. Please try again, or call or WhatsApp us on 050 545 5055.");
   if (!res.ok) throw new Error(json.message ?? `API error ${res.status}`);
   return json.data as T;
 }
