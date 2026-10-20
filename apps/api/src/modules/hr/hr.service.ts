@@ -2638,6 +2638,7 @@ export class HRService {
       where: { companyId: user.companyId, deletedAt: null, ...(query.status ? { status: query.status } : {}) },
       orderBy: { createdAt: "desc" },
       take: 100,
+      include: { _count: { select: { applications: { where: { deletedAt: null } } } } },
     });
     return { data: rows };
   }
@@ -2691,7 +2692,7 @@ export class HRService {
     const posting = await this.prisma.jobPosting.findFirst({ where: { id: jobPostingId, companyId: user.companyId, deletedAt: null } });
     if (!posting) throw new NotFoundException("Job posting not found");
     const ref = await nextRef(this.prisma, user.companyId, "APP");
-    const row = await this.prisma.jobApplication.create({ data: { companyId: user.companyId, jobPostingId, reference: ref, createdById: user.id, ...dto } });
+    const row = await this.prisma.jobApplication.create({ data: { companyId: user.companyId, jobPostingId, reference: ref, createdById: user.id, source: "STAFF", ...dto, dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined } });
     await this.audit.write({ companyId: user.companyId, actorUserId: user.id, entityType: "JobApplication", entityId: row.id, action: "CREATE", ...ctx });
     return { data: row };
   }

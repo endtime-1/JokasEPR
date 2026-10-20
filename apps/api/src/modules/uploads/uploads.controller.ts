@@ -78,6 +78,29 @@ export class UploadsController {
     });
   }
 
+  // Applicants' CVs (uploaded from the public careers page): staff only, and only
+  // for an application that belongs to the requester's own company.
+  @UseGuards(JwtAuthGuard)
+  @Get("cv/:filename")
+  async serveCvFile(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("filename") filename: string,
+    @Res() res: Response
+  ) {
+    if (!/^[a-zA-Z0-9_-]+\.(jpg|jpeg|png|webp|gif|pdf|doc|docx)$/i.test(filename)) throw new NotFoundException();
+    const owned = await this.prisma.jobApplication.findFirst({
+      where: { companyId: user.companyId, deletedAt: null, resumeUrl: `/api/v1/uploads/cv/${filename}` },
+      select: { id: true }
+    });
+    if (!owned) throw new NotFoundException("File not found.");
+    const resolved = resolve(this.uploadsDir, "cv", filename);
+    if (!resolved.startsWith(resolve(this.uploadsDir))) throw new NotFoundException();
+    if (!existsSync(resolved)) throw new NotFoundException("File not found.");
+    res.sendFile(resolved, (err) => {
+      if (err && !res.headersSent) res.status(500).end();
+    });
+  }
+
   private send(res: Response, type: string, filename: string) {
     if (!SAFE_FILENAME_RE.test(filename)) throw new NotFoundException();
 

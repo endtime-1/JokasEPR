@@ -3792,8 +3792,17 @@ export function SalaryBandsPage() {
 // ─── HR-G: Recruitment ────────────────────────────────────────────────────────
 
 const APP_STATUSES = ["RECEIVED", "SHORTLISTED", "INTERVIEW", "OFFER", "HIRED", "REJECTED"];
-type JobRow = { id: string; reference: string; title: string; status: string; department?: string; closingDate?: string };
-type AppRow = { id: string; reference: string; applicantName: string; status: string; jobPostingId: string; interviewDate?: string; jobPosting?: { title: string } };
+// Where applicants apply. The shop domain serves /careers/<job reference>.
+const CAREERS_ORIGIN = (process.env.NEXT_PUBLIC_STOREFRONT_URL || "https://akokofeeds.com").replace(/\/$/, "");
+type JobRow = { id: string; reference: string; title: string; status: string; department?: string; location?: string; employmentType?: string; closingDate?: string; _count?: { applications: number } };
+type AppRow = {
+  id: string; reference: string; applicantName: string; applicantEmail?: string; applicantPhone?: string; status: string; jobPostingId: string;
+  interviewDate?: string; jobPosting?: { title: string }; gender?: string; dateOfBirth?: string; address?: string; education?: string;
+  yearsExperience?: number; currentEmployer?: string; expectedSalary?: string; availability?: string; coverLetter?: string;
+  resumeUrl?: string; source?: string; notes?: string; createdAt?: string;
+};
+const EMPTY_JOB = { title: "", department: "", location: "", employmentType: "Full-time", description: "", requirements: "", closingDate: "" };
+const EMPTY_APP = { firstName: "", lastName: "", applicantEmail: "", applicantPhone: "", gender: "", dateOfBirth: "", address: "", education: "", yearsExperience: "", currentEmployer: "", expectedSalary: "", availability: "", coverLetter: "" };
 
 export function RecruitmentPage() {
   const [jobs, setJobs] = useState<JobRow[]>(() => getCachedFirst<ApiEnvelope<JobRow[]>>("/hr/job-postings")?.data ?? []);
@@ -3801,14 +3810,17 @@ export function RecruitmentPage() {
   const [selectedJob, setSelectedJob] = useState<string>("");
   const [showJobForm, setShowJobForm] = useState(false);
   const [showAppForm, setShowAppForm] = useState(false);
-  const [jobForm, setJobForm] = useState({ title: "", department: "", description: "", requirements: "", closingDate: "" });
-  const [appForm, setAppForm] = useState({ applicantName: "", applicantEmail: "", applicantPhone: "" });
+  const [jobForm, setJobForm] = useState(EMPTY_JOB);
+  const [appForm, setAppForm] = useState(EMPTY_APP);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [confirmHireId, setConfirmHireId] = useState<string | null>(null);
   const [hiring, setHiring] = useState(false);
-  const fj = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setJobForm((p) => ({ ...p, [k]: e.target.value }));
-  const fa = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) => setAppForm((p) => ({ ...p, [k]: e.target.value }));
+  const [detail, setDetail] = useState<AppRow | null>(null);
+  const [copied, setCopied] = useState("");
+  const fj = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setJobForm((p) => ({ ...p, [k]: e.target.value }));
+  const fa = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setAppForm((p) => ({ ...p, [k]: e.target.value }));
+  const inputCls = "w-full rounded-md border border-line px-3 py-2 text-sm";
 
   async function load() {
     const [jr, ar] = await Promise.all([
@@ -3820,16 +3832,22 @@ export function RecruitmentPage() {
   }
   useEffect(() => { load().catch(() => undefined); }, []);
   // jobs/apps can diverge when one was pre-populated from cache and the
-  // other wasn't (getCachedFirst) — the AND here meant a live-fetch failure
-  // only triggered retry if BOTH looked empty, so a cached-nonempty jobs
-  // list masked a genuinely-empty, never-loaded apps list forever.
+  // other wasn't (getCachedFirst), so retry when EITHER looks empty.
   useApiRecovery(jobs.length === 0 || apps.length === 0, () => load().catch(() => undefined));
 
   async function saveJob(e: React.FormEvent) {
     e.preventDefault(); setSaving(true); setError("");
     try {
-      await apiFetch("/hr/job-postings", { method: "POST", body: JSON.stringify({ ...jobForm, closingDate: jobForm.closingDate || undefined }) });
-      setJobForm({ title: "", department: "", description: "", requirements: "", closingDate: "" });
+      await apiFetch("/hr/job-postings", {
+        method: "POST",
+        body: JSON.stringify({
+          ...jobForm,
+          department: jobForm.department || undefined, location: jobForm.location || undefined,
+          employmentType: jobForm.employmentType || undefined, requirements: jobForm.requirements || undefined,
+          closingDate: jobForm.closingDate || undefined,
+        }),
+      });
+      setJobForm(EMPTY_JOB);
       setShowJobForm(false); await load();
     } catch (err: any) { setError(err.message ?? "Error"); }
     finally { setSaving(false); }
@@ -3838,61 +3856,109 @@ export function RecruitmentPage() {
   async function saveApp(e: React.FormEvent) {
     e.preventDefault(); if (!selectedJob) return; setSaving(true); setError("");
     try {
-      await apiFetch(`/hr/job-postings/${selectedJob}/applications`, { method: "POST", body: JSON.stringify(appForm) });
-      setAppForm({ applicantName: "", applicantEmail: "", applicantPhone: "" });
+      const years = appForm.yearsExperience.trim() === "" ? undefined : Number(appForm.yearsExperience);
+      await apiFetch(`/hr/job-postings/${selectedJob}/applications`, {
+        method: "POST",
+        body: JSON.stringify({
+          applicantName: `${appForm.firstName.trim()} ${appForm.lastName.trim()}`.trim(),
+          applicantEmail: appForm.applicantEmail || undefined, applicantPhone: appForm.applicantPhone || undefined,
+          gender: appForm.gender || undefined, dateOfBirth: appForm.dateOfBirth || undefined, address: appForm.address || undefined,
+          education: appForm.education || undefined, yearsExperience: years, currentEmployer: appForm.currentEmployer || undefined,
+          expectedSalary: appForm.expectedSalary || undefined, availability: appForm.availability || undefined,
+          coverLetter: appForm.coverLetter || undefined,
+        }),
+      });
+      setAppForm(EMPTY_APP);
       setShowAppForm(false); await load();
     } catch (err: any) { setError(err.message ?? "Error"); }
     finally { setSaving(false); }
   }
 
   async function moveStatus(appId: string, status: string) {
-    try { await apiFetch(`/hr/applications/${appId}/status`, { method: "PATCH", body: JSON.stringify({ status }) }); await load(); } catch { /* noop */ }
+    try {
+      await apiFetch(`/hr/applications/${appId}/status`, { method: "PATCH", body: JSON.stringify({ status }) });
+      setDetail((d) => (d && d.id === appId ? { ...d, status } : d));
+      await load();
+    } catch (err: any) { setError(err.message ?? "Could not change the status"); }
+  }
+
+  async function closeJob(id: string) {
+    try { await apiFetch(`/hr/job-postings/${id}/close`, { method: "PATCH" }); await load(); } catch (err: any) { setError(err.message ?? "Could not close the job"); }
+  }
+
+  async function copyLink(j: JobRow) {
+    const url = `${CAREERS_ORIGIN}/careers/${j.reference}`;
+    try { await navigator.clipboard.writeText(url); setCopied(j.id); setTimeout(() => setCopied(""), 2000); }
+    catch { window.prompt("Copy this link:", url); }
   }
 
   async function hire() {
     if (!confirmHireId) return;
     setHiring(true);
-    try { await apiFetch(`/hr/applications/${confirmHireId}/hire`, { method: "POST" }); await load(); } catch (err: any) { alert(err.message); }
+    try { await apiFetch(`/hr/applications/${confirmHireId}/hire`, { method: "POST" }); setDetail(null); await load(); } catch (err: any) { alert(err.message); }
     finally { setHiring(false); setConfirmHireId(null); }
   }
 
   const filteredApps = selectedJob ? apps.filter((a) => a.jobPostingId === selectedJob) : apps;
+  const fmtDate = (d?: string) => (d ? new Date(d).toLocaleDateString("en-GB") : "");
 
   return (
-    
+
       <div className="space-y-5">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-bold">Recruitment</h1>
           <div className="flex gap-2">
             <button onClick={() => { setShowJobForm((p) => !p); setError(""); }} className="rounded-md border border-line px-4 py-2 text-sm font-medium hover:bg-field">+ Post Job</button>
-            {selectedJob && <button onClick={() => { setShowAppForm((p) => !p); setError(""); }} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white">+ Add Application</button>}
+            {selectedJob && <button onClick={() => { setShowAppForm((p) => !p); setError(""); }} className="rounded-md border border-line px-4 py-2 text-sm font-medium hover:bg-field">+ Add applicant manually</button>}
           </div>
         </div>
         <HRNav />
+        <p className="rounded-md bg-brand/5 px-4 py-3 text-sm text-ink/70">
+          Share a job&apos;s <b>apply link</b> (button on each job below). Applicants fill in the form and upload their CV on the website, and their details appear here under <b>RECEIVED</b>.
+        </p>
         {error && <p className="text-sm text-red-600">{error}</p>}
 
         {showJobForm && (
           <form onSubmit={saveJob} className="rounded-lg border border-line bg-surface p-5 space-y-4">
             <p className="font-semibold">New Job Posting</p>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div><label className="mb-1 block text-xs font-medium">Job Title *</label><input required value={jobForm.title} onChange={fj("title")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div><label className="mb-1 block text-xs font-medium">Department</label><input value={jobForm.department} onChange={fj("department")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div><label className="mb-1 block text-xs font-medium">Closing Date</label><input type="date" value={jobForm.closingDate} onChange={fj("closingDate")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Job Title *</label><input required value={jobForm.title} onChange={fj("title")} className={inputCls} /></div>
+              <div><label className="mb-1 block text-xs font-medium">Department</label><input value={jobForm.department} onChange={fj("department")} className={inputCls} /></div>
+              <div><label className="mb-1 block text-xs font-medium">Location</label><input value={jobForm.location} onChange={fj("location")} placeholder="e.g. Kumasi" className={inputCls} /></div>
+              <div><label className="mb-1 block text-xs font-medium">Type</label>
+                <select value={jobForm.employmentType} onChange={fj("employmentType")} className={inputCls}>
+                  <option>Full-time</option><option>Part-time</option><option>Contract</option><option>Internship</option>
+                </select>
+              </div>
+              <div><label className="mb-1 block text-xs font-medium">Apply by (closing date)</label><input type="date" value={jobForm.closingDate} onChange={fj("closingDate")} className={inputCls} /></div>
             </div>
-            <div><label className="mb-1 block text-xs font-medium">Description *</label><textarea required value={jobForm.description} onChange={fj("description")} rows={3} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+            <div><label className="mb-1 block text-xs font-medium">Description *</label><textarea required value={jobForm.description} onChange={fj("description")} rows={4} className={inputCls} /></div>
+            <div><label className="mb-1 block text-xs font-medium">Requirements</label><textarea value={jobForm.requirements} onChange={fj("requirements")} rows={3} className={inputCls} /></div>
             <button type="submit" disabled={saving} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Saving…" : "Post Job"}</button>
           </form>
         )}
 
         {showAppForm && selectedJob && (
           <form onSubmit={saveApp} className="rounded-lg border border-line bg-surface p-5 space-y-4">
-            <p className="font-semibold">New Application</p>
+            <p className="font-semibold">Add an applicant (e.g. someone who handed in a CV or applied by phone)</p>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-              <div><label className="mb-1 block text-xs font-medium">Name *</label><input required value={appForm.applicantName} onChange={fa("applicantName")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div><label className="mb-1 block text-xs font-medium">Email</label><input type="email" value={appForm.applicantEmail} onChange={fa("applicantEmail")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div><label className="mb-1 block text-xs font-medium">Phone</label><input value={appForm.applicantPhone} onChange={fa("applicantPhone")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+              <div><label className="mb-1 block text-xs font-medium">First name *</label><input required value={appForm.firstName} onChange={fa("firstName")} className={inputCls} /></div>
+              <div><label className="mb-1 block text-xs font-medium">Last name *</label><input required value={appForm.lastName} onChange={fa("lastName")} className={inputCls} /></div>
+              <div><label className="mb-1 block text-xs font-medium">Phone</label><input value={appForm.applicantPhone} onChange={fa("applicantPhone")} className={inputCls} /></div>
+              <div><label className="mb-1 block text-xs font-medium">Email</label><input type="email" value={appForm.applicantEmail} onChange={fa("applicantEmail")} className={inputCls} /></div>
+              <div><label className="mb-1 block text-xs font-medium">Gender</label>
+                <select value={appForm.gender} onChange={fa("gender")} className={inputCls}><option value="">—</option><option>Male</option><option>Female</option><option>Other</option></select>
+              </div>
+              <div><label className="mb-1 block text-xs font-medium">Date of birth</label><input type="date" value={appForm.dateOfBirth} onChange={fa("dateOfBirth")} className={inputCls} /></div>
+              <div className="sm:col-span-3"><label className="mb-1 block text-xs font-medium">Address</label><input value={appForm.address} onChange={fa("address")} className={inputCls} /></div>
+              <div><label className="mb-1 block text-xs font-medium">Highest education</label><input value={appForm.education} onChange={fa("education")} className={inputCls} /></div>
+              <div><label className="mb-1 block text-xs font-medium">Years of experience</label><input type="number" min={0} max={60} value={appForm.yearsExperience} onChange={fa("yearsExperience")} className={inputCls} /></div>
+              <div><label className="mb-1 block text-xs font-medium">Current / last employer</label><input value={appForm.currentEmployer} onChange={fa("currentEmployer")} className={inputCls} /></div>
+              <div><label className="mb-1 block text-xs font-medium">Expected salary</label><input value={appForm.expectedSalary} onChange={fa("expectedSalary")} className={inputCls} /></div>
+              <div><label className="mb-1 block text-xs font-medium">Available from</label><input value={appForm.availability} onChange={fa("availability")} className={inputCls} /></div>
             </div>
-            <button type="submit" disabled={saving} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Saving…" : "Submit"}</button>
+            <div><label className="mb-1 block text-xs font-medium">Notes / cover letter</label><textarea value={appForm.coverLetter} onChange={fa("coverLetter")} rows={3} className={inputCls} /></div>
+            <button type="submit" disabled={saving} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Saving…" : "Save applicant"}</button>
           </form>
         )}
 
@@ -3900,10 +3966,20 @@ export function RecruitmentPage() {
           <div className="space-y-2">
             <p className="text-xs font-semibold text-ink/60 uppercase tracking-wide">Job Postings ({jobs.length})</p>
             {jobs.map((j) => (
-              <button key={j.id} onClick={() => setSelectedJob(j.id === selectedJob ? "" : j.id)} className={`w-full rounded-lg border p-3 text-left text-sm hover:border-brand/40 transition-colors ${selectedJob === j.id ? "border-brand bg-brand/5" : "border-line bg-surface"}`}>
-                <p className="font-medium">{j.title}</p>
-                <p className="text-xs text-ink/60">{j.reference} · <StatusBadge status={j.status} /></p>
-              </button>
+              <div key={j.id} className={`rounded-lg border p-3 text-sm transition-colors ${selectedJob === j.id ? "border-brand bg-brand/5" : "border-line bg-surface"}`}>
+                <button onClick={() => setSelectedJob(j.id === selectedJob ? "" : j.id)} className="w-full text-left hover:text-brand">
+                  <p className="font-medium">{j.title}</p>
+                  <p className="text-xs text-ink/60">{j.reference} · <StatusBadge status={j.status} /> · {j._count?.applications ?? 0} applicant(s)</p>
+                  {j.closingDate && <p className="text-xs text-ink/50">Apply by {fmtDate(j.closingDate)}</p>}
+                </button>
+                {j.status === "OPEN" && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button onClick={() => copyLink(j)} className="rounded border border-brand/40 px-2 py-1 text-[11px] font-semibold text-brand hover:bg-brand/5">{copied === j.id ? "Link copied ✓" : "Copy apply link"}</button>
+                    <a href={`${CAREERS_ORIGIN}/careers/${j.reference}`} target="_blank" rel="noreferrer" className="rounded border border-line px-2 py-1 text-[11px] font-medium hover:bg-field">Open page</a>
+                    <button onClick={() => closeJob(j.id)} className="rounded border border-line px-2 py-1 text-[11px] font-medium text-ink/60 hover:bg-field">Close job</button>
+                  </div>
+                )}
+              </div>
             ))}
             {jobs.length === 0 && <p className="text-sm text-ink/50">No postings</p>}
           </div>
@@ -3917,8 +3993,11 @@ export function RecruitmentPage() {
                     <p className="text-xs font-semibold text-ink/60 uppercase tracking-wide">{s} ({col.length})</p>
                     {col.map((a) => (
                       <div key={a.id} className="rounded-lg border border-line bg-surface p-3 space-y-1">
-                        <p className="text-sm font-medium">{a.applicantName}</p>
-                        <p className="text-xs text-ink/50">{a.reference}</p>
+                        <button onClick={() => setDetail(a)} className="block w-full text-left">
+                          <p className="text-sm font-medium text-brand hover:underline">{a.applicantName}</p>
+                          <p className="text-xs text-ink/50">{a.reference}{a.source === "ONLINE" ? " · online" : ""}</p>
+                          {!selectedJob && a.jobPosting?.title && <p className="text-xs text-ink/60">{a.jobPosting.title}</p>}
+                        </button>
                         <div className="flex flex-wrap gap-1 pt-1">
                           {APP_STATUSES.filter((st) => st !== a.status && st !== "HIRED").map((st) => (
                             <button key={st} onClick={() => moveStatus(a.id, st)} className="rounded px-2 py-0.5 text-[10px] font-medium border border-line hover:bg-field">{st}</button>
@@ -3933,6 +4012,44 @@ export function RecruitmentPage() {
             </div>
           </div>
         </div>
+
+        {detail && (
+          <div className="fixed inset-0 z-50 flex items-start justify-end bg-black/40" onClick={() => setDetail(null)}>
+            <div className="h-full w-full max-w-lg overflow-y-auto bg-surface p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-bold">{detail.applicantName}</h2>
+                  <p className="text-xs text-ink/60">{detail.reference} · {detail.jobPosting?.title} · <StatusBadge status={detail.status} /></p>
+                </div>
+                <button onClick={() => setDetail(null)} className="rounded border border-line px-2 py-1 text-sm hover:bg-field">Close</button>
+              </div>
+              <dl className="mt-5 grid grid-cols-3 gap-x-3 gap-y-3 text-sm">
+                {([
+                  ["Phone", detail.applicantPhone], ["Email", detail.applicantEmail], ["Gender", detail.gender],
+                  ["Date of birth", fmtDate(detail.dateOfBirth)], ["Address", detail.address], ["Education", detail.education],
+                  ["Experience", detail.yearsExperience != null ? `${detail.yearsExperience} year(s)` : ""], ["Current employer", detail.currentEmployer],
+                  ["Expected salary", detail.expectedSalary], ["Available from", detail.availability],
+                  ["Applied", fmtDate(detail.createdAt)], ["Source", detail.source === "ONLINE" ? "Website application" : "Added by staff"],
+                ] as [string, string | undefined][]).filter(([, v]) => v).map(([k, v]) => (
+                  <div key={k} className="col-span-3 grid grid-cols-3 gap-3"><dt className="text-ink/50">{k}</dt><dd className="col-span-2 font-medium">{v}</dd></div>
+                ))}
+              </dl>
+              {detail.coverLetter && <div className="mt-4"><p className="text-xs font-semibold uppercase text-ink/50">Why a good fit / notes</p><p className="mt-1 whitespace-pre-line text-sm">{detail.coverLetter}</p></div>}
+              <div className="mt-4">
+                {detail.resumeUrl
+                  ? <a href={detail.resumeUrl} target="_blank" rel="noreferrer" className="inline-block rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white">View / download CV</a>
+                  : <p className="text-sm text-ink/50">No CV attached.</p>}
+              </div>
+              <div className="mt-6 flex flex-wrap gap-2 border-t border-line pt-4">
+                {APP_STATUSES.filter((st) => st !== detail.status && st !== "HIRED").map((st) => (
+                  <button key={st} onClick={() => moveStatus(detail.id, st)} className="rounded border border-line px-3 py-1.5 text-xs font-medium hover:bg-field">Move to {st}</button>
+                ))}
+                {detail.status !== "HIRED" && <button onClick={() => setConfirmHireId(detail.id)} className="rounded border border-green-300 px-3 py-1.5 text-xs font-semibold text-green-700 hover:bg-green-50">Hire</button>}
+              </div>
+            </div>
+          </div>
+        )}
+
         <ConfirmModal
           open={!!confirmHireId}
           onClose={() => setConfirmHireId(null)}

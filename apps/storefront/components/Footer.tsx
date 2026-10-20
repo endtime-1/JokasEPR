@@ -16,6 +16,7 @@ const COMPANY_LINKS = [
   { href: "/support", label: "Farmer Support & Quality" },
   { href: "/impact", label: "Our Impact" },
   { href: "/retailers", label: "Become a Retailer" },
+  { href: "/careers", label: "Careers" },
   { href: "/retailers#locate", label: "Locate a Retailer" },
   { href: "/contact", label: "Contact Us" },
   { href: "/track", label: "Track Your Order" },

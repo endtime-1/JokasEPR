@@ -8,6 +8,8 @@ const mockPrisma = {
   customer: { create: jest.fn() },
   product: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
   salesOrder: { create: jest.fn(), count: jest.fn().mockResolvedValue(0) },
+  jobPosting: { findMany: jest.fn(), findFirst: jest.fn() },
+  jobApplication: { count: jest.fn(), findFirst: jest.fn(), create: jest.fn() },
   $transaction: jest.fn()
 };
 // placeOrder() wraps customer+order creation in one $transaction (M19
@@ -17,6 +19,7 @@ const mockPrisma = {
 // object literal (not inline) since referencing mockPrisma inside its own
 // initializer breaks TS's type inference for the object.
 mockPrisma.$transaction.mockImplementation((fn: (tx: unknown) => unknown) => fn(mockPrisma));
+jest.mock("../../common/next-ref", () => ({ nextRef: jest.fn().mockResolvedValue("APP-2026-0001") }));
 const mockConfig = { get: jest.fn().mockReturnValue("company-1") };
 const mockEmail = { send: jest.fn().mockResolvedValue(true) };
 
@@ -414,5 +417,52 @@ describe("PublicService leads — spam cap", () => {
 
     await expect(makeService().submitContact({ name: "Spam", phone: "0555555555", message: "x" } as never)).rejects.toThrow(/Too many messages/);
     expect(mockPrisma.storefrontLead.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("PublicService careers", () => {
+  const job = { id: "job-1", reference: "JOB-2026-0001", title: "Farm Supervisor", department: null, location: null, employmentType: null, description: "d", requirements: null, closingDate: null, createdAt: new Date() };
+  const dto = { firstName: "Ama", lastName: "Mensah", phone: "0244000000", address: "Kumasi" };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockConfig.get.mockImplementation((key: string, fallback?: string) => (key === "STOREFRONT_COMPANY_ID" ? undefined : fallback));
+    mockPrisma.company.findFirst.mockResolvedValue({ id: "company-1" });
+    mockEmail.send.mockResolvedValue(true);
+  });
+
+  it("only offers jobs that are open and not past their closing date", async () => {
+    mockPrisma.jobPosting.findMany.mockResolvedValue([job]);
+    const out = await makeService().listOpenJobs();
+    expect(out[0].reference).toBe("JOB-2026-0001");
+    const where = mockPrisma.jobPosting.findMany.mock.calls[0][0].where;
+    expect(where).toEqual(expect.objectContaining({ status: "OPEN", deletedAt: null }));
+    expect(where.OR).toEqual([{ closingDate: null }, { closingDate: { gte: expect.any(Date) } }]);
+  });
+
+  it("saves an online application as RECEIVED for the job and emails HR", async () => {
+    mockPrisma.jobPosting.findFirst.mockResolvedValue(job);
+    mockPrisma.jobApplication.count.mockResolvedValue(0);
+    mockPrisma.jobApplication.findFirst.mockResolvedValue(null);
+    mockPrisma.jobApplication.create.mockResolvedValue({ id: "app-1" });
+    const out = await makeService().applyForJob("job-2026-0001", dto as never, "cv-1.pdf");
+    expect(out.reference).toBe("APP-2026-0001");
+    expect(mockPrisma.jobApplication.create.mock.calls[0][0].data).toEqual(expect.objectContaining({
+      jobPostingId: "job-1", source: "ONLINE", applicantName: "Ama Mensah", applicantPhone: "0244000000", resumeUrl: "/api/v1/uploads/cv/cv-1.pdf",
+    }));
+    expect(mockEmail.send).toHaveBeenCalled();
+  });
+
+  it("refuses a second application for the same job from the same phone", async () => {
+    mockPrisma.jobPosting.findFirst.mockResolvedValue(job);
+    mockPrisma.jobApplication.count.mockResolvedValue(0);
+    mockPrisma.jobApplication.findFirst.mockResolvedValue({ reference: "APP-2026-0009" });
+    await expect(makeService().applyForJob("JOB-2026-0001", dto as never)).rejects.toThrow(/already have an application/);
+    expect(mockPrisma.jobApplication.create).not.toHaveBeenCalled();
+  });
+
+  it("says the job is closed when it is not open", async () => {
+    mockPrisma.jobPosting.findFirst.mockResolvedValue(null);
+    await expect(makeService().applyForJob("JOB-2026-0001", dto as never)).rejects.toThrow(/no longer open/);
   });
 });

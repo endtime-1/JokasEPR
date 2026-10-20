@@ -510,6 +510,8 @@ export class CreateJobPostingDto {
   @IsString() description!: string;
   @IsOptional() @IsString() requirements?: string;
   @IsOptional() @IsDateString() closingDate?: string;
+  @IsOptional() @IsString() @MaxLength(160) location?: string;
+  @IsOptional() @IsString() @MaxLength(40) employmentType?: string;
 }
 
 export class UpdateJobPostingDto {
@@ -520,6 +522,8 @@ export class UpdateJobPostingDto {
   @IsOptional() @IsString() description?: string;
   @IsOptional() @IsString() requirements?: string;
   @IsOptional() @IsDateString() closingDate?: string;
+  @IsOptional() @IsString() @MaxLength(160) location?: string;
+  @IsOptional() @IsString() @MaxLength(40) employmentType?: string;
 }
 
 // ── HR-G: Job Applications ────────────────────────────────────────────────────
@@ -528,6 +532,14 @@ export class CreateJobApplicationDto {
   @IsString() @MaxLength(160) applicantName!: string;
   @IsOptional() @IsString() @MaxLength(160) applicantEmail?: string;
   @IsOptional() @IsString() @MaxLength(40) applicantPhone?: string;
+  @IsOptional() @IsString() @MaxLength(20) gender?: string;
+  @IsOptional() @IsDateString() dateOfBirth?: string;
+  @IsOptional() @IsString() @MaxLength(300) address?: string;
+  @IsOptional() @IsString() @MaxLength(120) education?: string;
+  @IsOptional() @IsInt() @Min(0) @Max(60) yearsExperience?: number;
+  @IsOptional() @IsString() @MaxLength(160) currentEmployer?: string;
+  @IsOptional() @IsString() @MaxLength(60) expectedSalary?: string;
+  @IsOptional() @IsString() @MaxLength(120) availability?: string;
   @IsOptional() @IsString() @MaxLength(500) resumeUrl?: string;
   @IsOptional() @IsString() coverLetter?: string;
   @IsOptional() @IsString() @MaxLength(5000) notes?: string;

@@ -7147,6 +7147,8 @@ model JobPosting {
   salaryBandId String?
   description  String    @db.Text
   requirements String?   @db.Text
+  location     String?   @db.VarChar(160)
+  employmentType String? @db.VarChar(40)
   status       String    @default("OPEN") @db.VarChar(30)
   closingDate  DateTime?
   createdById  String?
@@ -7171,6 +7173,15 @@ model JobApplication {
   applicantName       String    @db.VarChar(160)
   applicantEmail      String?   @db.VarChar(160)
   applicantPhone      String?   @db.VarChar(40)
+  gender              String?   @db.VarChar(20)
+  dateOfBirth         DateTime?
+  address             String?   @db.VarChar(300)
+  education           String?   @db.VarChar(120)
+  yearsExperience     Int?
+  currentEmployer     String?   @db.VarChar(160)
+  expectedSalary      String?   @db.VarChar(60)
+  availability        String?   @db.VarChar(120)
+  source              String    @default("STAFF") @db.VarChar(20)
   resumeUrl           String?   @db.VarChar(500)
   coverLetter         String?   @db.Text
   status              String    @default("RECEIVED") @db.VarChar(30)

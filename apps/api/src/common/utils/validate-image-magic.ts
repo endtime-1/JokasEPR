@@ -85,3 +85,19 @@ export function validateAndCleanDocumentUpload(filePath: string): boolean {
   }
   return true;
 }
+
+/**
+ * CV upload: PDF, a photo of a CV, or a Word file (.doc / .docx), checked by content
+ * (docx = zip "PK", doc = OLE2 "D0 CF 11 E0"). Deletes the file when it is none of those.
+ */
+export function validateAndCleanCvUpload(filePath: string): boolean {
+  if (detectDocumentType(filePath)) return true;
+  try {
+    const buf = readFileSync(filePath);
+    const zip = buf.length >= 4 && buf[0] === 0x50 && buf[1] === 0x4b && buf[2] === 0x03 && buf[3] === 0x04;
+    const ole = buf.length >= 4 && buf[0] === 0xd0 && buf[1] === 0xcf && buf[2] === 0x11 && buf[3] === 0xe0;
+    if (zip || ole) return true;
+  } catch { /* fall through */ }
+  try { unlinkSync(filePath); } catch { /* best-effort cleanup */ }
+  return false;
+}

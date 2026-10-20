@@ -5,6 +5,8 @@ import { EmailService } from "../notifications/email.service";
 import { PlacePublicOrderDto } from "./dto/public-order.dto";
 import { PublicContactDto } from "./dto/public-contact.dto";
 import { RetailerApplicationDto } from "./dto/retailer-application.dto";
+import { PublicJobApplicationDto } from "./dto/public-job-application.dto";
+import { nextRef } from "../../common/next-ref";
 import { UpdatePublicProductDto } from "./dto/update-public-product.dto";
 import { randomBytes } from "crypto";
 
@@ -89,6 +91,74 @@ export class PublicService {
     `;
     await this.notify(this.config.get<string>("SALES_EMAIL", "sales@akokofeeds.com"), `Retailer application: ${dto.name} (${dto.location})`, html, lead.id, this.config.get<string>("SALES_COPY_EMAIL", "akokofeeds@gmail.com"));
     return { received: true };
+  }
+
+  // ── Careers ────────────────────────────────────────────────────────────────
+
+  private openJobWhere(companyId: string) {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    return { companyId, deletedAt: null, status: "OPEN", OR: [{ closingDate: null }, { closingDate: { gte: today } }] };
+  }
+
+  private toPublicJob(j: { reference: string; title: string; department: string | null; location: string | null; employmentType: string | null; description: string; requirements: string | null; closingDate: Date | null; createdAt: Date }) {
+    return {
+      reference: j.reference, title: j.title, department: j.department, location: j.location, employmentType: j.employmentType,
+      description: j.description, requirements: j.requirements, closingDate: j.closingDate, postedAt: j.createdAt,
+    };
+  }
+
+  async listOpenJobs() {
+    const companyId = await this.getStorefrontCompanyId();
+    const rows = await this.prisma.jobPosting.findMany({ where: this.openJobWhere(companyId), orderBy: { createdAt: "desc" }, take: 50 });
+    return rows.map((r) => this.toPublicJob(r));
+  }
+
+  async getOpenJob(ref: string) {
+    const companyId = await this.getStorefrontCompanyId();
+    const row = await this.prisma.jobPosting.findFirst({ where: { ...this.openJobWhere(companyId), reference: ref.trim().toUpperCase() } });
+    if (!row) throw new NotFoundException("This job is no longer open.");
+    return this.toPublicJob(row);
+  }
+
+  // The application goes straight into HR > Recruitment (status RECEIVED), and HR is emailed.
+  async applyForJob(ref: string, dto: PublicJobApplicationDto, cvFilename?: string) {
+    const companyId = await this.getStorefrontCompanyId();
+    const job = await this.prisma.jobPosting.findFirst({ where: { ...this.openJobWhere(companyId), reference: ref.trim().toUpperCase() } });
+    if (!job) throw new NotFoundException("This job is no longer open.");
+
+    const hourAgo = new Date(Date.now() - 3600_000);
+    const recent = await this.prisma.jobApplication.count({ where: { companyId, source: "ONLINE", applicantPhone: dto.phone, createdAt: { gte: hourAgo } } });
+    if (recent >= 5) throw new HttpException("Too many applications from this phone number. Please try again later.", HttpStatus.TOO_MANY_REQUESTS);
+    const dup = await this.prisma.jobApplication.findFirst({ where: { companyId, jobPostingId: job.id, deletedAt: null, applicantPhone: dto.phone } });
+    if (dup) throw new BadRequestException(`We already have an application for this job from ${dto.phone} (reference ${dup.reference}). We will be in touch.`);
+
+    let dateOfBirth: Date | undefined;
+    if (dto.dateOfBirth) {
+      const d = new Date(dto.dateOfBirth);
+      if (Number.isNaN(d.getTime()) || d > new Date()) throw new BadRequestException("Please enter a valid date of birth.");
+      dateOfBirth = d;
+    }
+    const reference = await nextRef(this.prisma, companyId, "APP");
+    const name = `${dto.firstName.trim()} ${dto.lastName.trim()}`;
+    const row = await this.prisma.jobApplication.create({
+      data: {
+        companyId, jobPostingId: job.id, reference, source: "ONLINE", applicantName: name,
+        applicantEmail: dto.email, applicantPhone: dto.phone, gender: dto.gender, dateOfBirth, address: dto.address,
+        education: dto.education, yearsExperience: dto.yearsExperience, currentEmployer: dto.currentEmployer,
+        expectedSalary: dto.expectedSalary, availability: dto.availability, coverLetter: dto.coverLetter,
+        resumeUrl: cvFilename ? `/api/v1/uploads/cv/${cvFilename}` : undefined,
+      },
+    });
+    const html = `
+      <p><b>New job application (akokofeeds.com)</b></p>
+      <p><b>Job:</b> ${escapeHtml(job.title)} (${escapeHtml(job.reference)})<br/>
+      <b>Applicant:</b> ${escapeHtml(name)}<br/>
+      <b>Phone:</b> ${escapeHtml(dto.phone)}<br/>
+      ${dto.email ? `<b>Email:</b> ${escapeHtml(dto.email)}<br/>` : ""}
+      <b>Reference:</b> ${escapeHtml(reference)}</p>
+      <p>Open it in the ERP under HR, then Recruitment.</p>`;
+    await this.notify(this.config.get<string>("HR_EMAIL", this.config.get<string>("SALES_COPY_EMAIL", "akokofeeds@gmail.com")), `Job application: ${name} - ${job.title}`, html, row.id);
+    return { reference, jobTitle: job.title };
   }
 
   // One phone number can send only a few enquiries an hour (a bot rotating IPs still hits this).

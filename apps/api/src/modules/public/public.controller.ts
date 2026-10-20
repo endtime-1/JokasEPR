@@ -13,10 +13,11 @@ import { RequirePermissions } from "../../common/decorators/permissions.decorato
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { PermissionsGuard } from "../../common/guards/permissions.guard";
 import { StorefrontBrowseRateLimitGuard, StorefrontContactRateLimitGuard, StorefrontOrderRateLimitGuard } from "../../common/guards/storefront-rate-limit.guard";
-import { validateAndCleanImageUpload } from "../../common/utils/validate-image-magic";
+import { validateAndCleanCvUpload, validateAndCleanImageUpload } from "../../common/utils/validate-image-magic";
 import { PlacePublicOrderDto, UpdateOrderStatusDto } from "./dto/public-order.dto";
 import { PublicContactDto } from "./dto/public-contact.dto";
 import { RetailerApplicationDto } from "./dto/retailer-application.dto";
+import { PublicJobApplicationDto } from "./dto/public-job-application.dto";
 import { UpdatePublicProductDto } from "./dto/update-public-product.dto";
 import { PublicService } from "./public.service";
 
@@ -73,6 +74,51 @@ export class PublicController {
   @Post("retailer-application")
   retailerApplication(@Body() dto: RetailerApplicationDto) {
     return this.service.submitRetailerApplication(dto).then((data) => ({ data }));
+  }
+
+  // Careers: open jobs + a public application form (saved straight to HR > Recruitment)
+
+  @Public()
+  @UseGuards(StorefrontBrowseRateLimitGuard)
+  @Get("jobs")
+  jobs() {
+    return this.service.listOpenJobs().then((data) => ({ data }));
+  }
+
+  @Public()
+  @UseGuards(StorefrontBrowseRateLimitGuard)
+  @Get("jobs/:ref")
+  job(@Param("ref") ref: string) {
+    return this.service.getOpenJob(ref).then((data) => ({ data }));
+  }
+
+  @Public()
+  @UseGuards(StorefrontContactRateLimitGuard)
+  @UseInterceptors(
+    FileInterceptor("cv", {
+      storage: diskStorage({
+        destination: (_req, _file, cb) => {
+          const dir = join(process.cwd(), "uploads", "cv");
+          mkdirSync(dir, { recursive: true });
+          cb(null, dir);
+        },
+        filename: (_req, file, cb) => {
+          cb(null, `cv-${Date.now()}-${Math.random().toString(36).slice(2)}${extname(file.originalname).toLowerCase()}`);
+        },
+      }),
+      limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+      fileFilter: (_req, file, cb) => {
+        if ([".pdf", ".doc", ".docx", ".jpg", ".jpeg", ".png"].includes(extname(file.originalname).toLowerCase())) cb(null, true);
+        else cb(new BadRequestException("Please upload your CV as a PDF, Word document or photo (JPG/PNG)."), false);
+      },
+    })
+  )
+  @Post("jobs/:ref/apply")
+  async applyForJob(@Param("ref") ref: string, @Body() dto: PublicJobApplicationDto, @UploadedFile() file?: Express.Multer.File) {
+    if (file && !validateAndCleanCvUpload(file.path)) {
+      throw new BadRequestException("That file could not be read. Please upload a PDF, Word document or photo.");
+    }
+    return this.service.applyForJob(ref, dto, file?.filename).then((data) => ({ data }));
   }
 
   /* ── Storefront admin endpoints (JWT + SALES_MANAGE required) ─── */

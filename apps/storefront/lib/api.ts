@@ -128,7 +128,26 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   return json.data as T;
 }
 
+export interface PublicJob {
+  reference: string; title: string; department: string | null; location: string | null; employmentType: string | null;
+  description: string; requirements: string | null; closingDate: string | null; postedAt: string;
+}
+
+async function postForm<T>(path: string, body: FormData): Promise<T> {
+  const res = await fetch(`${BASE}/public${path}`, { method: "POST", body, signal: AbortSignal.timeout(60000) });
+  const json = await res.json().catch(() => null);
+  if (!json) throw new Error("We couldn't reach our server just now. Please try again, or call or WhatsApp us on 050 545 5055.");
+  if (!res.ok) throw new Error(Array.isArray(json.message) ? json.message[0] : json.message ?? `API error ${res.status}`);
+  return json.data as T;
+}
+
 export const api = {
+  jobs: {
+    list: (): Promise<PublicJob[]> => get<PublicJob[]>("/jobs", { revalidate: 60 }),
+    get: (ref: string): Promise<PublicJob> => get<PublicJob>(`/jobs/${encodeURIComponent(ref)}`, { revalidate: 60 }),
+    apply: (ref: string, form: FormData): Promise<{ reference: string; jobTitle: string }> =>
+      postForm<{ reference: string; jobTitle: string }>(`/jobs/${encodeURIComponent(ref)}/apply`, form),
+  },
   products: {
     list: async (category?: string): Promise<PublicProduct[]> => {
       const raw = await get<RawPublicProduct[]>(
