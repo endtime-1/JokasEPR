@@ -105,73 +105,16 @@ function fmt(d?: string | Date | null) {
 
 function StatCard({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
   return (
-    <div className="rounded-lg border border-line bg-white p-5 shadow-sm">
-      <p className="text-xs uppercase tracking-wide text-ink/60">{label}</p>
-      <p className="mt-1 text-2xl font-bold text-ink">{value}</p>
-      {sub && <p className="mt-0.5 text-xs text-ink/50">{sub}</p>}
+    <div className="app-card p-5">
+      <p className="text-[11.5px] font-semibold uppercase tracking-[0.06em] text-muted">{label}</p>
+      <p className="mt-1.5 font-display text-2xl font-extrabold tabular-nums text-ink">{value}</p>
+      {sub && <p className="mt-0.5 text-xs text-muted">{sub}</p>}
     </div>
   );
 }
 
 // â"€â"€â"€ Nav â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
-const hrNav = [
-  { href: "/hr", label: "Dashboard" },
-  { href: "/hr/employees", label: "Employees" },
-  { href: "/hr/employee-roles", label: "Roles" },
-  { href: "/hr/attendance", label: "Attendance" },
-  { href: "/hr/shifts", label: "Shifts" },
-  { href: "/hr/tasks", label: "Task Board" },
-  { href: "/hr/leave-requests", label: "Leave Requests" },
-  { href: "/hr/leave-policies", label: "Leave Policies" },
-  { href: "/hr/leave-balance", label: "Leave Balance" },
-  { href: "/hr/public-holidays", label: "Public Holidays" },
-  { href: "/hr/payroll", label: "Payroll" },
-  { href: "/hr/training", label: "Training" },
-  { href: "/hr/performance", label: "Performance" },
-  { href: "/hr/disciplinary", label: "Disciplinary" },
-  { href: "/hr/grievances", label: "Grievances" },
-  { href: "/hr/org-chart", label: "Org Chart" },
-  { href: "/hr/training-courses", label: "Training Catalog" },
-  { href: "/hr/salary-bands", label: "Salary Bands" },
-  { href: "/hr/recruitment", label: "Recruitment" },
-  { href: "/hr/onboarding", label: "Onboarding" },
-  { href: "/hr/approval-workflows", label: "Approval Workflows" },
-  { href: "/hr/compliance", label: "Compliance" },
-  { href: "/hr/reports/productivity", label: "Productivity Report" },
-];
-
-function HRNav() {
-  const pathname = usePathname();
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const el = containerRef.current?.querySelector<HTMLElement>("[data-active]");
-    el?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
-  }, [pathname]);
-
-  return (
-    <div ref={containerRef} className="flex flex-wrap gap-1 rounded-xl border border-line bg-field/60 p-1">
-      {hrNav.map((n) => {
-        const active = n.href === "/hr" ? pathname === "/hr" : pathname === n.href || pathname.startsWith(n.href + "/");
-        return (
-          <Link
-            key={n.href}
-            href={n.href}
-            {...(active ? { "data-active": "" } : {})}
-            className={`rounded-lg px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-all ${
-              active
-                ? "bg-white text-brand shadow-sm font-semibold"
-                : "text-ink/55 hover:text-ink"
-            }`}
-          >
-            {n.label}
-          </Link>
-        );
-      })}
-    </div>
-  );
-}
 
 // â"€â"€â"€ Options hook â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
@@ -215,7 +158,7 @@ function BranchFilter({ value, onChange, counts, includeNone = false }: { value:
   const { opts } = useHROptions();
   if (!opts.branches.length) return null;
   return (
-    <select value={value} onChange={(e) => onChange(e.target.value)} aria-label="Branch" className="rounded-md border border-line px-3 py-2 text-sm">
+    <select value={value} onChange={(e) => onChange(e.target.value)} aria-label="Branch" className="app-control py-2">
       <option value="">All Branches</option>
       {opts.branches.map((b) => <option key={b.id} value={b.id}>{b.name}{counts ? ` (${counts[b.id] ?? 0})` : ""}</option>)}
       {includeNone && <option value="__none">No branch{counts ? ` (${counts.__none ?? 0})` : ""}</option>}
@@ -259,139 +202,167 @@ export function HRDashboardPage() {
   // very first failure.
   useApiRecovery(!!loadError, () => setRefresh((r) => r + 1));
 
+  const attendancePct = Math.max(0, Math.min(100, Math.round(Number(data?.attendanceRate ?? 0))));
   const kpis = [
-    { label: "Total Employees", value: data?.totalEmployees, icon: Users, color: "text-sky-400" },
-    { label: "Active", value: data?.activeEmployees, icon: UserCheck, color: "text-emerald-400" },
-    { label: "On Leave", value: data?.onLeave, icon: CalendarDays, color: "text-yellow-400" },
-    { label: "Present Today", value: data?.presentToday, icon: ClipboardList, color: "text-blue-400" },
-    { label: "Open Tasks", value: data?.openTasks, icon: AlertTriangle, color: "text-purple-400" },
-    { label: "Urgent Tasks", value: data?.urgentTasks, icon: CircleAlert, color: "text-red-400" },
-    { label: "Leave Requests", value: data?.openLeaveRequests, icon: FileText, color: "text-teal-400" },
-    { label: "Pending Payroll", value: data?.pendingPayroll, icon: DollarSign, color: "text-orange-400" },
+    { label: "Employees", value: data?.totalEmployees, sub: `${data?.activeEmployees ?? 0} active`, icon: Users, href: "/hr/employees" },
+    { label: "Present today", value: data?.presentToday, sub: `${data?.absentToday ?? 0} absent`, icon: UserCheck, href: "/hr/attendance" },
+    { label: "On leave", value: data?.onLeave, sub: `${data?.openLeaveRequests ?? 0} request(s) waiting`, icon: CalendarDays, href: "/hr/leave-requests" },
+    { label: "Open tasks", value: data?.openTasks, sub: `${data?.urgentTasks ?? 0} urgent`, icon: ClipboardList, href: "/hr/tasks" },
+  ];
+  const attention = [
+    { label: "Leave requests waiting", n: data?.openLeaveRequests ?? 0, href: "/hr/leave-requests", icon: FileText, tone: "bg-blue-50 text-blue-700" },
+    { label: "Urgent tasks", n: data?.urgentTasks ?? 0, href: "/hr/tasks", icon: CircleAlert, tone: "bg-red-50 text-red-700" },
+    { label: "Payroll to process", n: data?.pendingPayroll ?? 0, href: "/hr/payroll", icon: DollarSign, tone: "bg-amber-50 text-amber-700" },
+    { label: "Absent today", n: data?.absentToday ?? 0, href: "/hr/attendance", icon: AlertTriangle, tone: "bg-amber-50 text-amber-700" },
   ];
 
   return (
-    
-      <div className="space-y-6">
-        {loadError && (
-          <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            <span>{loadError}</span>
-            <button type="button" className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold hover:bg-red-50" onClick={() => setRefresh((r) => r + 1)}>Retry</button>
-          </div>
-        )}
-        {/* ── Hero ─────────────────────────────────────────────────────────── */}
-        <div className="overflow-hidden rounded-2xl bg-sidebar shadow-panel">
-          <div className="flex flex-wrap items-start justify-between gap-4 px-6 py-5">
-            <div>
-              <p className="text-[11px] font-bold uppercase tracking-widest text-white/40">Human Resources</p>
-              <h1 className="mt-1 text-2xl font-bold text-white">HR & Workforce</h1>
-              <p className="mt-1 text-sm text-white/55">Employees, attendance, payroll & task management</p>
-            </div>
-            <Link
-              href="/hr/employees/create"
-              className="flex items-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-sm font-bold text-white shadow-lg transition hover:bg-brandDark"
-            >
-              <UserPlus className="h-4 w-4" aria-hidden />
-              New Employee
-            </Link>
-          </div>
+    <div className="space-y-6">
+      {loadError && (
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <span>{loadError}</span>
+          <button type="button" className="app-button-secondary shrink-0 !min-h-8 px-3 text-xs" onClick={() => setRefresh((r) => r + 1)}>Retry</button>
+        </div>
+      )}
 
-          {/* KPI strip */}
-          <div className="grid grid-cols-2 gap-px border-t border-white/10 bg-white/10 sm:grid-cols-4 lg:grid-cols-8">
-            {kpis.map(({ label, value, icon: Icon, color }) => (
-              <div key={label} className="flex flex-col items-center bg-sidebar px-3 py-4 text-center">
-                <Icon className={`mb-1.5 h-5 w-5 ${color}`} aria-hidden />
-                {data
-                  ? <p className="text-2xl font-bold text-white">{value ?? 0}</p>
-                  : <div className="h-7 w-10 animate-pulse rounded-md bg-white/10" />
-                }
-                <p className="mt-0.5 text-[10px] leading-tight text-white/40">{label}</p>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="app-kicker">Human Resources</p>
+          <h1 className="mt-1 text-2xl font-extrabold tracking-tight">HR &amp; Workforce</h1>
+          <p className="mt-1 text-sm text-muted">Employees, attendance, leave, payroll and hiring in one place.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/hr/recruitment" className="app-button-secondary">Recruitment</Link>
+          <Link href="/hr/employees/create" className="app-button-primary">
+            <UserPlus className="h-4 w-4" aria-hidden /> New employee
+          </Link>
+        </div>
+      </div>
+
+      <section className="grid grid-cols-2 gap-4 lg:grid-cols-4" aria-label="Key figures">
+        {kpis.map(({ label, value, sub, icon: Icon, href }) => (
+          <Link key={label} href={href} className="app-card group p-5 transition hover:-translate-y-0.5 hover:shadow-soft">
+            <div className="flex items-center justify-between">
+              <p className="text-[11.5px] font-semibold uppercase tracking-[0.06em] text-muted">{label}</p>
+              <span className="grid h-9 w-9 place-items-center rounded-xl bg-brandTint text-brand"><Icon className="h-4 w-4" aria-hidden /></span>
+            </div>
+            {data
+              ? <p className="mt-3 font-display text-3xl font-extrabold tabular-nums text-ink">{value ?? 0}</p>
+              : <div className="mt-3 h-8 w-16 animate-pulse rounded-md bg-ink/10" />}
+            <p className="mt-1 text-xs text-muted">{sub}</p>
+          </Link>
+        ))}
+      </section>
+
+      <section className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="app-card p-5 lg:col-span-2">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-base font-bold">Attendance today</h2>
+              <p className="text-xs text-muted">Share of the active workforce that has checked in</p>
+            </div>
+            <span className="font-display text-3xl font-extrabold tabular-nums text-ink">{attendancePct}%</span>
+          </div>
+          <div className="mt-4 h-3 overflow-hidden rounded-full border border-line bg-field" role="img" aria-label={`${attendancePct} percent present`}>
+            <div className="h-full rounded-full bg-brand transition-all" style={{ width: `${attendancePct}%` }} />
+          </div>
+          <div className="mt-4 grid grid-cols-3 gap-3 text-center">
+            {[["Present", data?.presentToday], ["Absent", data?.absentToday], ["On leave", data?.onLeave]].map(([l, v]) => (
+              <div key={String(l)} className="rounded-xl border border-line bg-field px-3 py-3">
+                <p className="font-display text-xl font-extrabold tabular-nums">{Number(v ?? 0)}</p>
+                <p className="text-xs text-muted">{l as string}</p>
               </div>
             ))}
           </div>
         </div>
 
-        {/* ── Tab nav ──────────────────────────────────────────────────────── */}
-        <HRNav />
-
-        {/* ── Recent data ──────────────────────────────────────────────────── */}
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-
-          {/* Recent Employees */}
-          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-              <div>
-                <h2 className="text-sm font-semibold text-slate-800">Recent Employees</h2>
-                <p className="text-xs text-slate-400">Latest additions to the workforce</p>
-              </div>
-              <Link href="/hr/employees" className="text-xs font-semibold text-brand hover:underline">View all →</Link>
-            </div>
-            <ul className="divide-y divide-slate-50">
-              {!data && [1, 2, 3].map((i) => (
-                <li key={i} className="flex items-center gap-3 px-5 py-3.5">
-                  <div className="h-9 w-9 animate-pulse rounded-full bg-slate-100" />
-                  <div className="flex-1 space-y-1.5">
-                    <div className="h-3.5 w-36 animate-pulse rounded bg-slate-100" />
-                    <div className="h-3 w-24 animate-pulse rounded bg-slate-100" />
-                  </div>
-                </li>
-              ))}
-              {data?.recentEmployees.map((emp) => (
-                <li key={emp.id} className="flex items-center gap-3 px-5 py-3.5">
-                  <EmployeeAvatar url={emp.photoUrl} name={emp.fullName} size="h-9 w-9" text="text-sm" />
-                  <div className="min-w-0 flex-1">
-                    <Link href={`/hr/employees/${emp.id}`} className="text-sm font-medium text-slate-800 hover:text-brand hover:underline">
-                      {emp.fullName}
-                    </Link>
-                    <p className="text-xs text-slate-400">{emp.code} · {emp.employeeRole?.name ?? "No role"} · {emp.branch?.name ?? ""}</p>
-                  </div>
-                  <StatusBadge status={emp.status} />
-                </li>
-              ))}
-              {data?.recentEmployees.length === 0 && (
-                <li className="flex h-20 items-center justify-center text-sm text-slate-400">No employees yet</li>
-              )}
-            </ul>
-          </div>
-
-          {/* Recent Tasks */}
-          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-              <div>
-                <h2 className="text-sm font-semibold text-slate-800">Recent Tasks</h2>
-                <p className="text-xs text-slate-400">Active operational tasks</p>
-              </div>
-              <Link href="/hr/tasks" className="text-xs font-semibold text-brand hover:underline">Task board →</Link>
-            </div>
-            <ul className="divide-y divide-slate-50">
-              {!data && [1, 2, 3].map((i) => (
-                <li key={i} className="flex items-center gap-3 px-5 py-3.5">
-                  <div className="flex-1 space-y-1.5">
-                    <div className="h-3.5 w-48 animate-pulse rounded bg-slate-100" />
-                    <div className="h-3 w-24 animate-pulse rounded bg-slate-100" />
-                  </div>
-                </li>
-              ))}
-              {data?.recentTasks.map((task) => (
-                <li key={task.id} className="flex items-center gap-3 px-5 py-3.5">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-slate-800">{task.title}</p>
-                    <p className="text-xs text-slate-400">{task.dueDate ? `Due ${fmt(task.dueDate)}` : "No due date"}</p>
-                  </div>
-                  <div className="flex shrink-0 flex-col items-end gap-1">
-                    <StatusBadge status={task.priority} />
-                    <StatusBadge status={task.status} />
-                  </div>
-                </li>
-              ))}
-              {data?.recentTasks.length === 0 && (
-                <li className="flex h-20 items-center justify-center text-sm text-slate-400">No tasks yet</li>
-              )}
-            </ul>
-          </div>
+        <div className="app-card p-5">
+          <h2 className="text-base font-bold">Needs attention</h2>
+          <ul className="mt-3 space-y-1">
+            {attention.map(({ label, n, href, icon: Icon, tone }) => (
+              <li key={label}>
+                <Link href={href} className="flex items-center gap-3 rounded-xl px-2 py-2.5 transition hover:bg-field">
+                  <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl ${tone}`}><Icon className="h-4 w-4" aria-hidden /></span>
+                  <span className="flex-1 text-sm font-medium">{label}</span>
+                  <span className="font-display text-lg font-extrabold tabular-nums">{n}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
         </div>
-      </div>
-    
+      </section>
+
+      <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="app-card overflow-hidden">
+          <div className="flex items-center justify-between border-b border-line px-5 py-4">
+            <div>
+              <h2 className="text-base font-bold">Recent employees</h2>
+              <p className="text-xs text-muted">Latest additions to the workforce</p>
+            </div>
+            <Link href="/hr/employees" className="text-xs font-semibold text-brand hover:underline">View all</Link>
+          </div>
+          <ul className="divide-y divide-line">
+            {!data && [1, 2, 3].map((i) => (
+              <li key={i} className="flex items-center gap-3 px-5 py-3.5">
+                <div className="h-9 w-9 animate-pulse rounded-full bg-ink/10" />
+                <div className="flex-1 space-y-1.5">
+                  <div className="h-3.5 w-36 animate-pulse rounded bg-ink/10" />
+                  <div className="h-3 w-24 animate-pulse rounded bg-ink/10" />
+                </div>
+              </li>
+            ))}
+            {data?.recentEmployees.map((emp) => (
+              <li key={emp.id} className="flex items-center gap-3 px-5 py-3.5">
+                <EmployeeAvatar url={emp.photoUrl} name={emp.fullName} size="h-9 w-9" text="text-sm" />
+                <div className="min-w-0 flex-1">
+                  <Link href={`/hr/employees/${emp.id}`} className="text-sm font-semibold hover:text-brand hover:underline">{emp.fullName}</Link>
+                  <p className="text-xs text-muted">{emp.code} · {emp.employeeRole?.name ?? "No role"}{emp.branch?.name ? ` · ${emp.branch.name}` : ""}</p>
+                </div>
+                <StatusBadge status={emp.status} />
+              </li>
+            ))}
+            {data?.recentEmployees.length === 0 && (
+              <li className="flex h-20 items-center justify-center text-sm text-muted">No employees yet</li>
+            )}
+          </ul>
+        </div>
+
+        <div className="app-card overflow-hidden">
+          <div className="flex items-center justify-between border-b border-line px-5 py-4">
+            <div>
+              <h2 className="text-base font-bold">Recent tasks</h2>
+              <p className="text-xs text-muted">Active operational tasks</p>
+            </div>
+            <Link href="/hr/tasks" className="text-xs font-semibold text-brand hover:underline">Task board</Link>
+          </div>
+          <ul className="divide-y divide-line">
+            {!data && [1, 2, 3].map((i) => (
+              <li key={i} className="flex items-center gap-3 px-5 py-3.5">
+                <div className="flex-1 space-y-1.5">
+                  <div className="h-3.5 w-48 animate-pulse rounded bg-ink/10" />
+                  <div className="h-3 w-24 animate-pulse rounded bg-ink/10" />
+                </div>
+              </li>
+            ))}
+            {data?.recentTasks.map((task) => (
+              <li key={task.id} className="flex items-center gap-3 px-5 py-3.5">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold">{task.title}</p>
+                  <p className="text-xs text-muted">{task.dueDate ? `Due ${fmt(task.dueDate)}` : "No due date"}</p>
+                </div>
+                <div className="flex shrink-0 flex-col items-end gap-1">
+                  <StatusBadge status={task.priority} />
+                  <StatusBadge status={task.status} />
+                </div>
+              </li>
+            ))}
+            {data?.recentTasks.length === 0 && (
+              <li className="flex h-20 items-center justify-center text-sm text-muted">No tasks yet</li>
+            )}
+          </ul>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -455,10 +426,9 @@ export function EmployeeListPage() {
     
       <div className="space-y-5">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-bold">Employees</h1>
-          <Link href="/hr/employees/create" className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white hover:opacity-90">+ New Employee</Link>
+          <h1 className="text-2xl font-extrabold tracking-tight">Employees</h1>
+          <Link href="/hr/employees/create" className="app-button-primary">+ New Employee</Link>
         </div>
-        <HRNav />
         {loadError && (
           <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             <span>{loadError}</span>
@@ -467,8 +437,8 @@ export function EmployeeListPage() {
         )}
         {deleteError && <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{deleteError}</div>}
         <div className="flex flex-wrap gap-3">
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name, code, phone..." className="w-64 rounded-md border border-line px-3 py-2 text-sm" />
-          <select value={status} onChange={(e) => setStatus(e.target.value)} className="rounded-md border border-line px-3 py-2 text-sm">
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name, code, phone..." className="w-64 app-control py-2" />
+          <select value={status} onChange={(e) => setStatus(e.target.value)} className="app-control py-2">
             <option value="">All Statuses</option>
             {["ACTIVE", "ON_LEAVE", "SUSPENDED", "TERMINATED", "RESIGNED"].map((s) => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
           </select>
@@ -596,7 +566,7 @@ export function CreateEmployeePage() {
       <div className="mx-auto max-w-3xl space-y-5">
         <div className="flex items-center gap-3">
           <Link href="/hr/employees" className="text-sm text-ink/60 hover:text-ink">â† Employees</Link>
-          <h1 className="text-xl font-bold">New Employee</h1>
+          <h1 className="text-2xl font-extrabold tracking-tight">New Employee</h1>
         </div>
         {error && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
         {optionsError && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{optionsError}</div>}
@@ -605,7 +575,7 @@ export function CreateEmployeePage() {
         <form onSubmit={submit} className="space-y-5">
 
           {/* Personal Information */}
-          <div className="rounded-xl border border-line bg-white p-6 shadow-sm">
+          <div className="app-card p-6 shadow-sm">
             <div className="mb-5 flex items-center gap-3 border-b border-line pb-4">
               <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand/8 text-brand">
                 <Users className="h-4 w-4" />
@@ -631,11 +601,11 @@ export function CreateEmployeePage() {
                 <p className="text-sm font-semibold">Passport / Profile Photo</p>
                 <p className="mt-0.5 text-xs text-ink/50">Optional — can be changed later from the employee profile.</p>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-medium text-ink/70 hover:border-brand/40 hover:bg-brand/5 hover:text-brand">
+                  <label className="inline-flex cursor-pointer items-center gap-1.5 app-button-secondary !min-h-8 px-3 text-xs font-medium text-ink/70 hover:border-brand/40 hover:bg-brand/5 hover:text-brand">
                     <Camera className="h-3.5 w-3.5" />Take Photo
                     <input type="file" accept="image/*" capture="user" className="sr-only" onChange={(e) => { const file = e.target.files?.[0]; if (!file) return; setPassportFile(file); const rd = new FileReader(); rd.onload = () => setPassportPreview(rd.result as string); rd.readAsDataURL(file); }} />
                   </label>
-                  <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-medium text-ink/70 hover:border-brand/40 hover:bg-brand/5 hover:text-brand">
+                  <label className="inline-flex cursor-pointer items-center gap-1.5 app-button-secondary !min-h-8 px-3 text-xs font-medium text-ink/70 hover:border-brand/40 hover:bg-brand/5 hover:text-brand">
                     <Upload className="h-3.5 w-3.5" />Upload from Device
                     <input type="file" accept="image/*" className="sr-only" onChange={(e) => { const file = e.target.files?.[0]; if (!file) return; setPassportFile(file); const rd = new FileReader(); rd.onload = () => setPassportPreview(rd.result as string); rd.readAsDataURL(file); }} />
                   </label>
@@ -646,63 +616,63 @@ export function CreateEmployeePage() {
             </div>
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Employee Code <span className="text-red-500">*</span></label><input required value={form.code} onChange={f("code")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15" /></div>
+              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Employee Code <span className="text-red-500">*</span></label><input required value={form.code} onChange={f("code")} className="w-full min-h-10 app-control py-2 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15" /></div>
               <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Role</label>
-                <select value={form.employeeRoleId} onChange={f("employeeRoleId")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none">
+                <select value={form.employeeRoleId} onChange={f("employeeRoleId")} className="w-full min-h-10 app-control py-2 focus:border-brand focus:outline-none">
                   <option value="">— None —</option>
                   {opts.employeeRoles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
                 </select>
               </div>
-              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">National ID</label><input value={form.nationalId} onChange={f("nationalId")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15" /></div>
+              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">National ID</label><input value={form.nationalId} onChange={f("nationalId")} className="w-full min-h-10 app-control py-2 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15" /></div>
             </div>
             <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">First Name <span className="text-red-500">*</span></label><input required value={form.firstName} onChange={f("firstName")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15" /></div>
-              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Last Name <span className="text-red-500">*</span></label><input required value={form.lastName} onChange={f("lastName")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15" /></div>
+              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">First Name <span className="text-red-500">*</span></label><input required value={form.firstName} onChange={f("firstName")} className="w-full min-h-10 app-control py-2 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15" /></div>
+              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Last Name <span className="text-red-500">*</span></label><input required value={form.lastName} onChange={f("lastName")} className="w-full min-h-10 app-control py-2 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15" /></div>
             </div>
             <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
               <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Gender</label>
-                <select value={form.gender} onChange={f("gender")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none">
+                <select value={form.gender} onChange={f("gender")} className="w-full min-h-10 app-control py-2 focus:border-brand focus:outline-none">
                   <option value="">—</option>
                   {["MALE", "FEMALE", "OTHER"].map((g) => <option key={g}>{g}</option>)}
                 </select>
               </div>
-              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Date of Birth</label><input type="date" value={form.dateOfBirth} onChange={f("dateOfBirth")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none" /></div>
-              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Phone</label><input value={form.phone} onChange={f("phone")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none" /></div>
+              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Date of Birth</label><input type="date" value={form.dateOfBirth} onChange={f("dateOfBirth")} className="w-full min-h-10 app-control py-2 focus:border-brand focus:outline-none" /></div>
+              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Phone</label><input value={form.phone} onChange={f("phone")} className="w-full min-h-10 app-control py-2 focus:border-brand focus:outline-none" /></div>
             </div>
             <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Email</label><input type="email" value={form.email} onChange={f("email")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none" /></div>
-              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Address</label><textarea value={form.address} onChange={f("address")} rows={3} className="w-full rounded-lg border border-line px-3 py-2 text-sm resize-none focus:border-brand focus:outline-none" /></div>
+              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Email</label><input type="email" value={form.email} onChange={f("email")} className="w-full min-h-10 app-control py-2 focus:border-brand focus:outline-none" /></div>
+              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Address</label><textarea value={form.address} onChange={f("address")} rows={3} className="w-full app-control py-2 resize-none focus:border-brand focus:outline-none" /></div>
             </div>
           </div>
 
           {/* Assignment */}
-          <div className="rounded-xl border border-line bg-white p-6 shadow-sm">
+          <div className="app-card p-6 shadow-sm">
             <div className="mb-5 flex items-center gap-3 border-b border-line pb-4">
               <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand/8 text-brand"><UserCheck className="h-4 w-4" /></div>
               <div><p className="font-semibold text-ink">Assignment</p><p className="text-xs text-ink/50">Where this employee is based</p></div>
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Start Date <span className="text-red-500">*</span></label><input required type="date" value={form.startDate} onChange={f("startDate")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none" /></div>
+              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Start Date <span className="text-red-500">*</span></label><input required type="date" value={form.startDate} onChange={f("startDate")} className="w-full min-h-10 app-control py-2 focus:border-brand focus:outline-none" /></div>
               <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Branch</label>
-                <select value={form.branchId} onChange={f("branchId")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none">
+                <select value={form.branchId} onChange={f("branchId")} className="w-full min-h-10 app-control py-2 focus:border-brand focus:outline-none">
                   <option value="">— None —</option>
                   {opts.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
                 </select>
               </div>
               <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Farm</label>
-                <select value={form.farmId} onChange={f("farmId")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none">
+                <select value={form.farmId} onChange={f("farmId")} className="w-full min-h-10 app-control py-2 focus:border-brand focus:outline-none">
                   <option value="">— None —</option>
                   {opts.farms.map((f_) => <option key={f_.id} value={f_.id}>{f_.name}</option>)}
                 </select>
               </div>
               <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Warehouse</label>
-                <select value={form.warehouseId} onChange={f("warehouseId")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none">
+                <select value={form.warehouseId} onChange={f("warehouseId")} className="w-full min-h-10 app-control py-2 focus:border-brand focus:outline-none">
                   <option value="">— None —</option>
                   {opts.warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
                 </select>
               </div>
               <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Production Site</label>
-                <select value={form.productionSiteId} onChange={f("productionSiteId")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none">
+                <select value={form.productionSiteId} onChange={f("productionSiteId")} className="w-full min-h-10 app-control py-2 focus:border-brand focus:outline-none">
                   <option value="">— None —</option>
                   {opts.productionSites.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
@@ -711,30 +681,30 @@ export function CreateEmployeePage() {
           </div>
 
           {/* Payroll & Banking */}
-          <div className="rounded-xl border border-line bg-white p-6 shadow-sm">
+          <div className="app-card p-6 shadow-sm">
             <div className="mb-5 flex items-center gap-3 border-b border-line pb-4">
               <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand/8 text-brand"><DollarSign className="h-4 w-4" /></div>
               <div><p className="font-semibold text-ink">Payroll & Banking</p><p className="text-xs text-ink/50">Salary and bank account for payroll processing</p></div>
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Basic Salary (GHS)</label><input type="number" min={0} step={0.01} value={form.basicSalary} onChange={f("basicSalary")} placeholder="0.00" className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none" /></div>
-              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Bank Name</label><input value={form.bankName} onChange={f("bankName")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none" /></div>
-              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Bank Account Number</label><input value={form.bankAccount} onChange={f("bankAccount")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none" /></div>
-              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">SSNIT Number</label><input value={form.ssnitNumber} onChange={f("ssnitNumber")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none" /></div>
-              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">TIN Number</label><input value={form.tinNumber} onChange={f("tinNumber")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none" /></div>
+              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Basic Salary (GHS)</label><input type="number" min={0} step={0.01} value={form.basicSalary} onChange={f("basicSalary")} placeholder="0.00" className="w-full min-h-10 app-control py-2 focus:border-brand focus:outline-none" /></div>
+              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Bank Name</label><input value={form.bankName} onChange={f("bankName")} className="w-full min-h-10 app-control py-2 focus:border-brand focus:outline-none" /></div>
+              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Bank Account Number</label><input value={form.bankAccount} onChange={f("bankAccount")} className="w-full min-h-10 app-control py-2 focus:border-brand focus:outline-none" /></div>
+              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">SSNIT Number</label><input value={form.ssnitNumber} onChange={f("ssnitNumber")} className="w-full min-h-10 app-control py-2 focus:border-brand focus:outline-none" /></div>
+              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">TIN Number</label><input value={form.tinNumber} onChange={f("tinNumber")} className="w-full min-h-10 app-control py-2 focus:border-brand focus:outline-none" /></div>
             </div>
           </div>
 
           {/* Emergency & Notes */}
-          <div className="rounded-xl border border-line bg-white p-6 shadow-sm">
+          <div className="app-card p-6 shadow-sm">
             <div className="mb-5 flex items-center gap-3 border-b border-line pb-4">
               <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-amber-50 text-amber-600"><AlertTriangle className="h-4 w-4" /></div>
               <div><p className="font-semibold text-ink">Emergency Contact & Notes</p></div>
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Emergency Contact Name</label><input value={form.emergencyContactName} onChange={f("emergencyContactName")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none" /></div>
-              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Emergency Contact Phone</label><input value={form.emergencyContactPhone} onChange={f("emergencyContactPhone")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none" /></div>
-              <div className="col-span-2"><label className="mb-1.5 block text-xs font-semibold text-ink/70">Notes</label><textarea value={form.notes} onChange={f("notes")} rows={3} className="w-full rounded-lg border border-line px-3 py-2 text-sm resize-none focus:border-brand focus:outline-none" /></div>
+              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Emergency Contact Name</label><input value={form.emergencyContactName} onChange={f("emergencyContactName")} className="w-full min-h-10 app-control py-2 focus:border-brand focus:outline-none" /></div>
+              <div><label className="mb-1.5 block text-xs font-semibold text-ink/70">Emergency Contact Phone</label><input value={form.emergencyContactPhone} onChange={f("emergencyContactPhone")} className="w-full min-h-10 app-control py-2 focus:border-brand focus:outline-none" /></div>
+              <div className="col-span-2"><label className="mb-1.5 block text-xs font-semibold text-ink/70">Notes</label><textarea value={form.notes} onChange={f("notes")} rows={3} className="w-full app-control py-2 resize-none focus:border-brand focus:outline-none" /></div>
             </div>
           </div>
 
@@ -970,7 +940,7 @@ function LetterEditor({ kind, id, onClose }: { kind: LetterKind; id: string; onC
           <div className="flex min-h-0 flex-col gap-3">
             <div>
               <label className="mb-1 block text-xs font-semibold text-ink/70">Title</label>
-              <input value={title} onChange={(e) => setTitle(e.target.value)} disabled={loading} className="w-full rounded-md border border-line px-3 py-2 text-sm" />
+              <input value={title} onChange={(e) => setTitle(e.target.value)} disabled={loading} className="w-full app-control py-2" />
             </div>
             <div className="flex min-h-0 flex-1 flex-col">
               <div className="mb-1 flex items-center gap-2">
@@ -978,7 +948,7 @@ function LetterEditor({ kind, id, onClose }: { kind: LetterKind; id: string; onC
                 <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyFormat("bold")} disabled={loading} title="Bold the selected text" className="rounded border border-line bg-white px-2.5 py-0.5 text-xs font-extrabold hover:bg-field disabled:opacity-50">B</button>
                 <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyFormat("heading")} disabled={loading} title="Make the selected line(s) a bold heading" className="rounded border border-line bg-white px-2.5 py-0.5 text-xs font-semibold hover:bg-field disabled:opacity-50">Heading</button>
               </div>
-              <textarea ref={bodyRef} value={body} onChange={(e) => setBody(e.target.value)} disabled={loading} rows={20} className="min-h-[320px] w-full flex-1 rounded-md border border-line px-3 py-2 font-mono text-xs leading-relaxed" />
+              <textarea ref={bodyRef} value={body} onChange={(e) => setBody(e.target.value)} disabled={loading} rows={20} className="min-h-[320px] w-full flex-1 app-control py-2 font-mono text-xs leading-relaxed" />
               <p className="mt-1 text-xs text-ink/50">Select text and press B to make it bold (shown as **text**). Heading makes a whole line bold. Leave a blank line between paragraphs.</p>
             </div>
           </div>
@@ -989,7 +959,7 @@ function LetterEditor({ kind, id, onClose }: { kind: LetterKind; id: string; onC
         <div className="border-t border-line px-5 py-3">
           <div className="flex flex-wrap items-center gap-3">
             <h3 className="text-sm font-bold">Signed copy</h3>
-            <label className={`cursor-pointer rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-semibold hover:bg-field ${uploading ? "opacity-50" : ""}`}>
+            <label className={`cursor-pointer app-button-secondary !min-h-8 px-3 text-xs font-semibold hover:bg-field ${uploading ? "opacity-50" : ""}`}>
               {uploading ? "Uploading…" : signed.length ? "Upload another" : "Upload signed copy"}
               <input type="file" accept="image/*,application/pdf" className="sr-only" disabled={uploading || loading} onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadSigned(f); e.target.value = ""; }} />
             </label>
@@ -1009,9 +979,9 @@ function LetterEditor({ kind, id, onClose }: { kind: LetterKind; id: string; onC
         </div>
         <div className="flex flex-wrap justify-end gap-2 border-t border-line px-5 py-3">
           {saved && <button onClick={resetToDefault} disabled={loading || busy} className="mr-auto rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-100 disabled:opacity-50">Reset to default</button>}
-          <button onClick={save} disabled={loading || busy} className="rounded-lg border border-line bg-white px-4 py-2 text-sm font-semibold hover:bg-field disabled:opacity-50">Save changes</button>
-          <button onClick={() => refreshPreview(title, body)} disabled={loading || busy} className="rounded-lg border border-line bg-white px-4 py-2 text-sm font-semibold hover:bg-field disabled:opacity-50">Update preview</button>
-          <button onClick={download} disabled={loading || busy} className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brandDark disabled:opacity-50">Download PDF</button>
+          <button onClick={save} disabled={loading || busy} className="app-button-secondary !min-h-8 px-3 text-sm font-semibold hover:bg-field disabled:opacity-50">Save changes</button>
+          <button onClick={() => refreshPreview(title, body)} disabled={loading || busy} className="app-button-secondary !min-h-8 px-3 text-sm font-semibold hover:bg-field disabled:opacity-50">Update preview</button>
+          <button onClick={download} disabled={loading || busy} className="app-button-primary hover:bg-brandDark disabled:opacity-50">Download PDF</button>
         </div>
       </div>
     </div>
@@ -1079,7 +1049,7 @@ export function EmployeeDetailPage({ id }: { id: string }) {
     
       <div className="flex flex-col items-center justify-center gap-4 p-12 text-center">
         <p className="text-sm text-red-600">{loadError}</p>
-        <button type="button" onClick={load} className="rounded-lg bg-brand px-5 py-2 text-sm font-semibold text-white hover:opacity-90">Retry</button>
+        <button type="button" onClick={load} className="app-button-primary">Retry</button>
         <Link href="/hr/employees" className="text-sm text-ink/50 hover:text-ink">← Back to Employees</Link>
       </div>
     
@@ -1156,11 +1126,11 @@ export function EmployeeDetailPage({ id }: { id: string }) {
       <div className="space-y-5">
         <div className="flex flex-wrap items-center gap-3">
           <Link href="/hr/employees" className="text-sm text-ink/60 hover:text-ink">â† Employees</Link>
-          <h1 className="text-xl font-bold">{data.fullName}</h1>
+          <h1 className="text-2xl font-extrabold tracking-tight">{data.fullName}</h1>
           <StatusBadge status={data.status} />
           <div className="ml-auto flex items-center gap-2">
-            <button onClick={() => setLetterKind("appointment")} className="rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-semibold text-ink/70 hover:bg-field flex items-center gap-1"><FileText size={12} /> Appointment Letter</button>
-            <button onClick={() => setLetterKind("employment-certificate")} className="rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-semibold text-ink/70 hover:bg-field flex items-center gap-1"><FileText size={12} /> Employment Certificate</button>
+            <button onClick={() => setLetterKind("appointment")} className="app-button-secondary !min-h-8 px-3 text-xs font-semibold text-ink/70 hover:bg-field flex items-center gap-1"><FileText size={12} /> Appointment Letter</button>
+            <button onClick={() => setLetterKind("employment-certificate")} className="app-button-secondary !min-h-8 px-3 text-xs font-semibold text-ink/70 hover:bg-field flex items-center gap-1"><FileText size={12} /> Employment Certificate</button>
           </div>
         </div>
 
@@ -1169,7 +1139,7 @@ export function EmployeeDetailPage({ id }: { id: string }) {
         {optionsError && <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{optionsError}</div>}
 
         {/* Profile strip */}
-        <div className="flex flex-wrap items-center gap-5 rounded-xl border border-line bg-white px-5 py-4 shadow-sm">
+        <div className="flex flex-wrap items-center gap-5 app-card px-5 py-4 shadow-sm">
           <div className="relative shrink-0">
             <EmployeeAvatar url={data.photoUrl} name={data.fullName} size="h-20 w-20" text="text-2xl" ring="ring-2 ring-brand/20 ring-offset-1" />
             <label className={`absolute -bottom-1 -right-1 grid h-7 w-7 cursor-pointer place-items-center rounded-full border-2 border-white shadow-sm transition ${photoUploading ? "bg-ink/20" : "bg-brand hover:bg-brandDark"}`} title="Change photo">
@@ -1208,7 +1178,7 @@ export function EmployeeDetailPage({ id }: { id: string }) {
 
         {tab === "overview" && (
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-            <div className="rounded-xl border border-line bg-white p-5 shadow-sm space-y-1">
+            <div className="app-card p-5 shadow-sm space-y-1">
               <h2 className="mb-3 font-semibold text-ink">Personal Details</h2>
               {([
                 ["Code", data.code],
@@ -1227,7 +1197,7 @@ export function EmployeeDetailPage({ id }: { id: string }) {
                 </div>
               ))}
             </div>
-            <div className="rounded-xl border border-line bg-white p-5 shadow-sm space-y-1">
+            <div className="app-card p-5 shadow-sm space-y-1">
               <h2 className="mb-3 font-semibold text-ink">Employment & Payroll</h2>
               {([
                 ["Role", data.employeeRole?.name],
@@ -1255,54 +1225,54 @@ export function EmployeeDetailPage({ id }: { id: string }) {
             {editError && <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{editError}</div>}
             {editSuccess && <div className="rounded-md bg-green-50 p-3 text-sm text-green-700">Saved successfully</div>}
             <form onSubmit={saveEdit} className="space-y-5">
-              <div className="rounded-lg border border-line bg-white p-5 space-y-4">
+              <div className="app-card p-5 space-y-4">
                 <h2 className="font-semibold">Personal Details</h2>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div><label className="mb-1 block text-xs font-medium">First Name</label><input value={editForm.firstName} onChange={ef("firstName")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-                  <div><label className="mb-1 block text-xs font-medium">Last Name</label><input value={editForm.lastName} onChange={ef("lastName")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+                  <div><label className="mb-1 block text-xs font-medium">First Name</label><input value={editForm.firstName} onChange={ef("firstName")} className="w-full app-control py-2" /></div>
+                  <div><label className="mb-1 block text-xs font-medium">Last Name</label><input value={editForm.lastName} onChange={ef("lastName")} className="w-full app-control py-2" /></div>
                 </div>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                   <div><label className="mb-1 block text-xs font-medium">Gender</label>
-                    <select value={editForm.gender} onChange={ef("gender")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
+                    <select value={editForm.gender} onChange={ef("gender")} className="w-full app-control py-2">
                       <option value="">—</option>
                       {["MALE", "FEMALE", "OTHER"].map((g) => <option key={g} value={g}>{g}</option>)}
                     </select>
                   </div>
-                  <div><label className="mb-1 block text-xs font-medium">Date of Birth</label><input type="date" value={editForm.dateOfBirth} onChange={ef("dateOfBirth")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+                  <div><label className="mb-1 block text-xs font-medium">Date of Birth</label><input type="date" value={editForm.dateOfBirth} onChange={ef("dateOfBirth")} className="w-full app-control py-2" /></div>
                   <div><label className="mb-1 block text-xs font-medium">Status</label>
-                    <select value={editForm.status} onChange={ef("status")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
+                    <select value={editForm.status} onChange={ef("status")} className="w-full app-control py-2">
                       <option value="">— Unchanged —</option>
                       {["ACTIVE", "ON_LEAVE", "SUSPENDED", "TERMINATED", "RESIGNED"].map((s) => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
                     </select>
                   </div>
                 </div>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div><label className="mb-1 block text-xs font-medium">Phone</label><input value={editForm.phone} onChange={ef("phone")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-                  <div><label className="mb-1 block text-xs font-medium">Email</label><input type="email" value={editForm.email} onChange={ef("email")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+                  <div><label className="mb-1 block text-xs font-medium">Phone</label><input value={editForm.phone} onChange={ef("phone")} className="w-full app-control py-2" /></div>
+                  <div><label className="mb-1 block text-xs font-medium">Email</label><input type="email" value={editForm.email} onChange={ef("email")} className="w-full app-control py-2" /></div>
                 </div>
-                <div><label className="mb-1 block text-xs font-medium">Address</label><textarea value={editForm.address} onChange={ef("address")} rows={2} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+                <div><label className="mb-1 block text-xs font-medium">Address</label><textarea value={editForm.address} onChange={ef("address")} rows={2} className="w-full app-control py-2" /></div>
               </div>
 
-              <div className="rounded-lg border border-line bg-white p-5 space-y-4">
+              <div className="app-card p-5 space-y-4">
                 <h2 className="font-semibold">Assignment & Payroll</h2>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div><label className="mb-1 block text-xs font-medium">Role</label>
-                    <select value={editForm.employeeRoleId} onChange={ef("employeeRoleId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
+                    <select value={editForm.employeeRoleId} onChange={ef("employeeRoleId")} className="w-full app-control py-2">
                       <option value="">— None —</option>
                       {opts.employeeRoles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
                     </select>
                   </div>
-                  <div><label className="mb-1 block text-xs font-medium">Basic Salary (GHS)</label><input type="number" min={0} step={0.01} value={editForm.basicSalary} onChange={ef("basicSalary")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+                  <div><label className="mb-1 block text-xs font-medium">Basic Salary (GHS)</label><input type="number" min={0} step={0.01} value={editForm.basicSalary} onChange={ef("basicSalary")} className="w-full app-control py-2" /></div>
                 </div>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div><label className="mb-1 block text-xs font-medium">Branch</label>
-                    <select value={editForm.branchId} onChange={ef("branchId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
+                    <select value={editForm.branchId} onChange={ef("branchId")} className="w-full app-control py-2">
                       <option value="">— None —</option>
                       {opts.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
                     </select>
                   </div>
                   <div><label className="mb-1 block text-xs font-medium">Farm</label>
-                    <select value={editForm.farmId} onChange={ef("farmId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
+                    <select value={editForm.farmId} onChange={ef("farmId")} className="w-full app-control py-2">
                       <option value="">— None —</option>
                       {opts.farms.map((f_) => <option key={f_.id} value={f_.id}>{f_.name}</option>)}
                     </select>
@@ -1310,34 +1280,34 @@ export function EmployeeDetailPage({ id }: { id: string }) {
                 </div>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div><label className="mb-1 block text-xs font-medium">Warehouse</label>
-                    <select value={editForm.warehouseId} onChange={ef("warehouseId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
+                    <select value={editForm.warehouseId} onChange={ef("warehouseId")} className="w-full app-control py-2">
                       <option value="">— None —</option>
                       {opts.warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
                     </select>
                   </div>
                   <div><label className="mb-1 block text-xs font-medium">Production Site</label>
-                    <select value={editForm.productionSiteId} onChange={ef("productionSiteId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
+                    <select value={editForm.productionSiteId} onChange={ef("productionSiteId")} className="w-full app-control py-2">
                       <option value="">— None —</option>
                       {opts.productionSites.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                     </select>
                   </div>
                 </div>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div><label className="mb-1 block text-xs font-medium">Bank Name</label><input value={editForm.bankName} onChange={ef("bankName")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-                  <div><label className="mb-1 block text-xs font-medium">Bank Account</label><input value={editForm.bankAccount} onChange={ef("bankAccount")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+                  <div><label className="mb-1 block text-xs font-medium">Bank Name</label><input value={editForm.bankName} onChange={ef("bankName")} className="w-full app-control py-2" /></div>
+                  <div><label className="mb-1 block text-xs font-medium">Bank Account</label><input value={editForm.bankAccount} onChange={ef("bankAccount")} className="w-full app-control py-2" /></div>
                 </div>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div><label className="mb-1 block text-xs font-medium">SSNIT Number</label><input value={editForm.ssnitNumber} onChange={ef("ssnitNumber")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-                  <div><label className="mb-1 block text-xs font-medium">TIN Number</label><input value={editForm.tinNumber} onChange={ef("tinNumber")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+                  <div><label className="mb-1 block text-xs font-medium">SSNIT Number</label><input value={editForm.ssnitNumber} onChange={ef("ssnitNumber")} className="w-full app-control py-2" /></div>
+                  <div><label className="mb-1 block text-xs font-medium">TIN Number</label><input value={editForm.tinNumber} onChange={ef("tinNumber")} className="w-full app-control py-2" /></div>
                 </div>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div><label className="mb-1 block text-xs font-medium">Emergency Contact</label><input value={editForm.emergencyContactName} onChange={ef("emergencyContactName")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-                  <div><label className="mb-1 block text-xs font-medium">Emergency Phone</label><input value={editForm.emergencyContactPhone} onChange={ef("emergencyContactPhone")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+                  <div><label className="mb-1 block text-xs font-medium">Emergency Contact</label><input value={editForm.emergencyContactName} onChange={ef("emergencyContactName")} className="w-full app-control py-2" /></div>
+                  <div><label className="mb-1 block text-xs font-medium">Emergency Phone</label><input value={editForm.emergencyContactPhone} onChange={ef("emergencyContactPhone")} className="w-full app-control py-2" /></div>
                 </div>
-                <div><label className="mb-1 block text-xs font-medium">Notes</label><textarea value={editForm.notes} onChange={ef("notes")} rows={2} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+                <div><label className="mb-1 block text-xs font-medium">Notes</label><textarea value={editForm.notes} onChange={ef("notes")} rows={2} className="w-full app-control py-2" /></div>
               </div>
 
-              <button type="submit" disabled={editSaving} className="rounded-md bg-brand px-6 py-2 text-sm font-semibold text-white disabled:opacity-50">
+              <button type="submit" disabled={editSaving} className="app-button-primary">
                 {editSaving ? "Saving..." : "Save Changes"}
               </button>
             </form>
@@ -1461,10 +1431,9 @@ export function AttendancePage() {
     
       <div className="space-y-5">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-bold">Attendance</h1>
-          <button onClick={() => setShowForm((p) => !p)} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white">{showForm ? "Cancel" : "+ Record Attendance"}</button>
+          <h1 className="text-2xl font-extrabold tracking-tight">Attendance</h1>
+          <button onClick={() => setShowForm((p) => !p)} className="app-button-primary">{showForm ? "Cancel" : "+ Record Attendance"}</button>
         </div>
-        <HRNav />
         {loadError && (
           <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             <span>{loadError}</span>
@@ -1474,44 +1443,44 @@ export function AttendancePage() {
         {optionsError && <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{optionsError}</div>}
 
         {showForm && (
-          <div className="rounded-lg border border-line bg-white p-5">
+          <div className="app-card p-5">
             <h2 className="mb-4 font-semibold">Record Attendance</h2>
             {error && <div className="mb-3 rounded bg-red-50 p-2 text-sm text-red-700">{error}</div>}
             <form onSubmit={submit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className="mb-1 block text-xs font-medium">Employee *</label>
-                <select required value={form.employeeId} onChange={f("employeeId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
+                <select required value={form.employeeId} onChange={f("employeeId")} className="w-full app-control py-2">
                   <option value="">— Select —</option>
                   {opts.employees.map((e) => <option key={e.id} value={e.id}>{e.fullName} ({e.code})</option>)}
                 </select>
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium">Date *</label>
-                <input required type="date" value={form.date} onChange={f("date")} className="w-full rounded-md border border-line px-3 py-2 text-sm" />
+                <input required type="date" value={form.date} onChange={f("date")} className="w-full app-control py-2" />
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium">Status *</label>
-                <select required value={form.status} onChange={f("status")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
+                <select required value={form.status} onChange={f("status")} className="w-full app-control py-2">
                   {["PRESENT", "ABSENT", "LATE", "HALF_DAY", "ON_LEAVE", "PUBLIC_HOLIDAY"].map((s) => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
                 </select>
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium">Shift</label>
-                <select value={form.shiftId} onChange={f("shiftId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
+                <select value={form.shiftId} onChange={f("shiftId")} className="w-full app-control py-2">
                   <option value="">— None —</option>
                   {opts.shifts.map((s) => <option key={s.id} value={s.id}>{s.name} ({s.startTime}—{s.endTime})</option>)}
                 </select>
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium">Check In Time</label>
-                <input type="time" value={form.checkInTime} onChange={f("checkInTime")} className="w-full rounded-md border border-line px-3 py-2 text-sm" />
+                <input type="time" value={form.checkInTime} onChange={f("checkInTime")} className="w-full app-control py-2" />
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium">Check Out Time</label>
-                <input type="time" value={form.checkOutTime} onChange={f("checkOutTime")} className="w-full rounded-md border border-line px-3 py-2 text-sm" />
+                <input type="time" value={form.checkOutTime} onChange={f("checkOutTime")} className="w-full app-control py-2" />
               </div>
               <div className="col-span-2">
-                <button type="submit" disabled={saving} className="rounded-md bg-brand px-5 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Saving..." : "Record"}</button>
+                <button type="submit" disabled={saving} className="app-button-primary">{saving ? "Saving..." : "Record"}</button>
               </div>
             </form>
           </div>
@@ -1594,8 +1563,7 @@ export function ShiftSchedulePage() {
   return (
     
       <div className="space-y-5">
-        <h1 className="text-xl font-bold">Shift Schedule</h1>
-        <HRNav />
+        <h1 className="text-2xl font-extrabold tracking-tight">Shift Schedule</h1>
         {loadError && (
           <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             <span>{loadError}</span>
@@ -1604,23 +1572,23 @@ export function ShiftSchedulePage() {
         )}
         {optionsError && <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{optionsError}</div>}
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          <div className="rounded-lg border border-line bg-white p-5">
+          <div className="app-card p-5">
             <h2 className="mb-4 font-semibold">Add Shift</h2>
             {error && <div className="mb-3 rounded bg-red-50 p-2 text-xs text-red-700">{error}</div>}
             <form onSubmit={submit} className="space-y-3">
-              <div><label className="mb-1 block text-xs font-medium">Code *</label><input required value={form.code} onChange={f("code")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div><label className="mb-1 block text-xs font-medium">Name *</label><input required value={form.name} onChange={f("name")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Code *</label><input required value={form.code} onChange={f("code")} className="w-full app-control py-2" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Name *</label><input required value={form.name} onChange={f("name")} className="w-full app-control py-2" /></div>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <div><label className="mb-1 block text-xs font-medium">Start</label><input required type="time" value={form.startTime} onChange={f("startTime")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-                <div><label className="mb-1 block text-xs font-medium">End</label><input required type="time" value={form.endTime} onChange={f("endTime")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+                <div><label className="mb-1 block text-xs font-medium">Start</label><input required type="time" value={form.startTime} onChange={f("startTime")} className="w-full app-control py-2" /></div>
+                <div><label className="mb-1 block text-xs font-medium">End</label><input required type="time" value={form.endTime} onChange={f("endTime")} className="w-full app-control py-2" /></div>
               </div>
               <div><label className="mb-1 block text-xs font-medium">Branch</label>
-                <select value={form.branchId} onChange={f("branchId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
+                <select value={form.branchId} onChange={f("branchId")} className="w-full app-control py-2">
                   <option value="">— All Branches —</option>
                   {opts.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
                 </select>
               </div>
-              <button type="submit" disabled={saving} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Saving..." : "Add Shift"}</button>
+              <button type="submit" disabled={saving} className="app-button-primary">{saving ? "Saving..." : "Add Shift"}</button>
             </form>
           </div>
           <div className="lg:col-span-2">
@@ -1707,10 +1675,9 @@ export function TaskBoardPage() {
     
       <div className="space-y-5">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-bold">Task Board</h1>
-          <Link href="/hr/tasks/create" className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white hover:opacity-90">+ New Task</Link>
+          <h1 className="text-2xl font-extrabold tracking-tight">Task Board</h1>
+          <Link href="/hr/tasks/create" className="app-button-primary">+ New Task</Link>
         </div>
-        <HRNav />
         {loadError && (
           <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             <span>{loadError}</span>
@@ -1719,11 +1686,11 @@ export function TaskBoardPage() {
         )}
         {moveError && <div className="rounded-md bg-red-50 p-2 text-sm text-red-700">{moveError}</div>}
         <div className="flex gap-3">
-          <select value={status} onChange={(e) => setStatus(e.target.value)} className="rounded-md border border-line px-3 py-2 text-sm">
+          <select value={status} onChange={(e) => setStatus(e.target.value)} className="app-control py-2">
             <option value="">All Statuses</option>
             {["OPEN", "IN_PROGRESS", "ON_HOLD", "COMPLETED", "CANCELLED"].map((s) => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
           </select>
-          <select value={priority} onChange={(e) => setPriority(e.target.value)} className="rounded-md border border-line px-3 py-2 text-sm">
+          <select value={priority} onChange={(e) => setPriority(e.target.value)} className="app-control py-2">
             <option value="">All Priorities</option>
             {["LOW", "MEDIUM", "HIGH", "URGENT"].map((p) => <option key={p} value={p}>{p}</option>)}
           </select>
@@ -1808,26 +1775,26 @@ export function CreateTaskPage() {
       <div className="mx-auto max-w-2xl space-y-5">
         <div className="flex items-center gap-3">
           <Link href="/hr/tasks" className="text-sm text-ink/60 hover:text-ink">â† Tasks</Link>
-          <h1 className="text-xl font-bold">New Task</h1>
+          <h1 className="text-2xl font-extrabold tracking-tight">New Task</h1>
         </div>
         {error && <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</div>}
         {optionsError && <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{optionsError}</div>}
         <form onSubmit={submit} className="space-y-5">
-          <div className="rounded-lg border border-line bg-white p-5 space-y-4">
-            <div><label className="mb-1 block text-xs font-medium">Title *</label><input required value={form.title} onChange={f("title")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-            <div><label className="mb-1 block text-xs font-medium">Description</label><textarea value={form.description} onChange={f("description")} rows={3} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+          <div className="app-card p-5 space-y-4">
+            <div><label className="mb-1 block text-xs font-medium">Title *</label><input required value={form.title} onChange={f("title")} className="w-full app-control py-2" /></div>
+            <div><label className="mb-1 block text-xs font-medium">Description</label><textarea value={form.description} onChange={f("description")} rows={3} className="w-full app-control py-2" /></div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div><label className="mb-1 block text-xs font-medium">Task Type</label><input value={form.taskType} onChange={f("taskType")} placeholder="e.g. Feeding, Cleaning..." className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Task Type</label><input value={form.taskType} onChange={f("taskType")} placeholder="e.g. Feeding, Cleaning..." className="w-full app-control py-2" /></div>
               <div><label className="mb-1 block text-xs font-medium">Priority</label>
-                <select value={form.priority} onChange={f("priority")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
+                <select value={form.priority} onChange={f("priority")} className="w-full app-control py-2">
                   {["LOW", "MEDIUM", "HIGH", "URGENT"].map((p) => <option key={p} value={p}>{p}</option>)}
                 </select>
               </div>
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div><label className="mb-1 block text-xs font-medium">Due Date</label><input type="date" value={form.dueDate} onChange={f("dueDate")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Due Date</label><input type="date" value={form.dueDate} onChange={f("dueDate")} className="w-full app-control py-2" /></div>
               <div><label className="mb-1 block text-xs font-medium">Branch</label>
-                <select value={form.branchId} onChange={f("branchId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
+                <select value={form.branchId} onChange={f("branchId")} className="w-full app-control py-2">
                   <option value="">— None —</option>
                   {opts.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
                 </select>
@@ -1835,7 +1802,7 @@ export function CreateTaskPage() {
             </div>
           </div>
 
-          <div className="rounded-lg border border-line bg-white p-5 space-y-3">
+          <div className="app-card p-5 space-y-3">
             <h2 className="font-semibold">Assign Employees</h2>
             <div className="max-h-48 overflow-y-auto space-y-1">
               {opts.employees.map((emp) => (
@@ -1848,7 +1815,7 @@ export function CreateTaskPage() {
             </div>
           </div>
 
-          <button type="submit" disabled={saving} className="rounded-md bg-brand px-6 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Creating..." : "Create Task"}</button>
+          <button type="submit" disabled={saving} className="app-button-primary">{saving ? "Creating..." : "Create Task"}</button>
         </form>
       </div>
     
@@ -1945,14 +1912,13 @@ export function PayrollPage() {
     
       <div className="space-y-5">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-bold">Payroll Records</h1>
+          <h1 className="text-2xl font-extrabold tracking-tight">Payroll Records</h1>
           <div className="flex gap-2">
-            <button onClick={() => { setShowBulk(p => !p); setBulkResult(""); }} className="rounded-md border border-line px-4 py-2 text-sm font-medium hover:bg-field">Bulk Run</button>
-            <a href={`/api/v1/hr/payroll/bank-export?period=${bulkForm.period || form.period || ""}`} target="_blank" rel="noreferrer" className="rounded-md border border-line px-4 py-2 text-sm font-medium hover:bg-field">Export Bank CSV</a>
-            <button onClick={() => { setShowForm(p => !p); setError(""); setPayeEst(null); }} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white">{showForm ? "Cancel" : "+ Add Payroll"}</button>
+            <button onClick={() => { setShowBulk(p => !p); setBulkResult(""); }} className="app-button-secondary">Bulk Run</button>
+            <a href={`/api/v1/hr/payroll/bank-export?period=${bulkForm.period || form.period || ""}`} target="_blank" rel="noreferrer" className="app-button-secondary">Export Bank CSV</a>
+            <button onClick={() => { setShowForm(p => !p); setError(""); setPayeEst(null); }} className="app-button-primary">{showForm ? "Cancel" : "+ Add Payroll"}</button>
           </div>
         </div>
-        <HRNav />
         {loadError && (
           <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             <span>{loadError}</span>
@@ -1967,19 +1933,19 @@ export function PayrollPage() {
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div>
                 <label className="mb-1.5 block text-xs font-semibold text-ink/70">Period (YYYY-MM) *</label>
-                <input required value={bulkForm.period} onChange={fb("period")} placeholder="2026-01" className="w-full rounded-lg border border-line px-3 py-2 text-sm" />
+                <input required value={bulkForm.period} onChange={fb("period")} placeholder="2026-01" className="w-full app-control py-2" />
               </div>
               <div>
                 <label className="mb-1.5 block text-xs font-semibold text-ink/70">Period Start *</label>
-                <input required type="date" value={bulkForm.periodStart} onChange={fb("periodStart")} className="w-full rounded-lg border border-line px-3 py-2 text-sm" />
+                <input required type="date" value={bulkForm.periodStart} onChange={fb("periodStart")} className="w-full app-control py-2" />
               </div>
               <div>
                 <label className="mb-1.5 block text-xs font-semibold text-ink/70">Period End *</label>
-                <input required type="date" value={bulkForm.periodEnd} onChange={fb("periodEnd")} className="w-full rounded-lg border border-line px-3 py-2 text-sm" />
+                <input required type="date" value={bulkForm.periodEnd} onChange={fb("periodEnd")} className="w-full app-control py-2" />
               </div>
               <div>
                 <label className="mb-1.5 block text-xs font-semibold text-ink/70">Branch (optional)</label>
-                <select value={bulkForm.branchId} onChange={fb("branchId")} className="w-full rounded-lg border border-line px-3 py-2 text-sm">
+                <select value={bulkForm.branchId} onChange={fb("branchId")} className="w-full app-control py-2">
                   <option value="">All branches</option>
                   {opts.branches?.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}
                 </select>
@@ -1993,20 +1959,20 @@ export function PayrollPage() {
         )}
 
         {showForm && (
-          <div className="rounded-lg border border-line bg-white p-5">
+          <div className="app-card p-5">
             <h2 className="mb-4 font-semibold">New Payroll Record</h2>
             {error && <div className="mb-3 rounded bg-red-50 p-2 text-sm text-red-700">{error}</div>}
             <form onSubmit={submit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className="mb-1 block text-xs font-medium">Employee *</label>
-                <select required value={form.employeeId} onChange={f("employeeId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
+                <select required value={form.employeeId} onChange={f("employeeId")} className="w-full app-control py-2">
                   <option value="">— Select —</option>
                   {opts.employees.map((e) => <option key={e.id} value={e.id}>{e.fullName}</option>)}
                 </select>
               </div>
-              <div><label className="mb-1 block text-xs font-medium">Period (e.g. 2026-01) *</label><input required value={form.period} onChange={f("period")} placeholder="2026-01" className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div><label className="mb-1 block text-xs font-medium">Period Start *</label><input required type="date" value={form.periodStart} onChange={f("periodStart")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div><label className="mb-1 block text-xs font-medium">Period End *</label><input required type="date" value={form.periodEnd} onChange={f("periodEnd")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Period (e.g. 2026-01) *</label><input required value={form.period} onChange={f("period")} placeholder="2026-01" className="w-full app-control py-2" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Period Start *</label><input required type="date" value={form.periodStart} onChange={f("periodStart")} className="w-full app-control py-2" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Period End *</label><input required type="date" value={form.periodEnd} onChange={f("periodEnd")} className="w-full app-control py-2" /></div>
               <div className="col-span-2 flex items-center gap-3">
                 <button type="button" onClick={prefillFromAttendance} disabled={prefillLoading || !form.employeeId || !form.period} className="rounded-md border border-brand px-3 py-2 text-xs font-semibold text-brand hover:bg-brand/5 disabled:opacity-50">
                   {prefillLoading ? "Loading..." : "Prefill from Attendance"}
@@ -2021,14 +1987,14 @@ export function PayrollPage() {
                   PAYE bands last confirmed for tax year {payeEst.payeBandsTaxYear} — verify against the current GRA schedule before relying on this estimate.
                 </div>
               )}
-              <div><label className="mb-1 block text-xs font-medium">Basic Salary *</label><input required type="number" min={0} step={0.01} value={form.basicSalary} onChange={f("basicSalary")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div><label className="mb-1 block text-xs font-medium">Overtime Pay</label><input type="number" min={0} step={0.01} value={form.overtimePay} onChange={f("overtimePay")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div><label className="mb-1 block text-xs font-medium">Allowances</label><input type="number" min={0} step={0.01} value={form.allowances} onChange={f("allowances")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div><label className="mb-1 block text-xs font-medium">Deductions</label><input type="number" min={0} step={0.01} value={form.deductions} onChange={f("deductions")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div><label className="mb-1 block text-xs font-medium">Tax (PAYE)</label><input type="number" min={0} step={0.01} value={form.taxDeduction} onChange={f("taxDeduction")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div><label className="mb-1 block text-xs font-medium">Employee SSNIT (5.5%)</label><input type="number" min={0} step={0.01} value={form.ssnit} onChange={f("ssnit")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Basic Salary *</label><input required type="number" min={0} step={0.01} value={form.basicSalary} onChange={f("basicSalary")} className="w-full app-control py-2" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Overtime Pay</label><input type="number" min={0} step={0.01} value={form.overtimePay} onChange={f("overtimePay")} className="w-full app-control py-2" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Allowances</label><input type="number" min={0} step={0.01} value={form.allowances} onChange={f("allowances")} className="w-full app-control py-2" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Deductions</label><input type="number" min={0} step={0.01} value={form.deductions} onChange={f("deductions")} className="w-full app-control py-2" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Tax (PAYE)</label><input type="number" min={0} step={0.01} value={form.taxDeduction} onChange={f("taxDeduction")} className="w-full app-control py-2" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Employee SSNIT (5.5%)</label><input type="number" min={0} step={0.01} value={form.ssnit} onChange={f("ssnit")} className="w-full app-control py-2" /></div>
               <div><label className="mb-1 block text-xs font-medium">Payment Method</label>
-                <select value={form.paymentMethod} onChange={f("paymentMethod")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
+                <select value={form.paymentMethod} onChange={f("paymentMethod")} className="w-full app-control py-2">
                   {["CASH", "BANK_TRANSFER", "MOBILE_MONEY", "CHEQUE"].map((m) => <option key={m} value={m}>{m.replace(/_/g, " ")}</option>)}
                 </select>
               </div>
@@ -2039,7 +2005,7 @@ export function PayrollPage() {
                 </div>
               </div>
               <div className="col-span-2">
-                <button type="submit" disabled={saving} className="rounded-md bg-brand px-5 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Saving..." : "Save Record"}</button>
+                <button type="submit" disabled={saving} className="app-button-primary">{saving ? "Saving..." : "Save Record"}</button>
               </div>
             </form>
           </div>
@@ -2124,10 +2090,9 @@ export function TrainingPage() {
     
       <div className="space-y-5">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-bold">Training Records</h1>
-          <button onClick={() => setShowForm((p) => !p)} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white">{showForm ? "Cancel" : "+ Add Training"}</button>
+          <h1 className="text-2xl font-extrabold tracking-tight">Training Records</h1>
+          <button onClick={() => setShowForm((p) => !p)} className="app-button-primary">{showForm ? "Cancel" : "+ Add Training"}</button>
         </div>
-        <HRNav />
         {loadError && (
           <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             <span>{loadError}</span>
@@ -2136,29 +2101,29 @@ export function TrainingPage() {
         )}
         {optionsError && <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{optionsError}</div>}
         {showForm && (
-          <div className="rounded-lg border border-line bg-white p-5">
+          <div className="app-card p-5">
             <h2 className="mb-4 font-semibold">New Training Record</h2>
             {error && <div className="mb-3 rounded bg-red-50 p-2 text-sm text-red-700">{error}</div>}
             <form onSubmit={submit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div><label className="mb-1 block text-xs font-medium">Employee *</label>
-                <select required value={form.employeeId} onChange={f("employeeId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
+                <select required value={form.employeeId} onChange={f("employeeId")} className="w-full app-control py-2">
                   <option value="">— Select —</option>
                   {opts.employees.map((e) => <option key={e.id} value={e.id}>{e.fullName}</option>)}
                 </select>
               </div>
-              <div><label className="mb-1 block text-xs font-medium">Training Title *</label><input required value={form.title} onChange={f("title")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div><label className="mb-1 block text-xs font-medium">Trainer</label><input value={form.trainer} onChange={f("trainer")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div className="col-span-2"><label className="mb-1 block text-xs font-medium">Description</label><textarea value={form.description} onChange={f("description")} rows={2} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div><label className="mb-1 block text-xs font-medium">Training Date *</label><input required type="date" value={form.trainingDate} onChange={f("trainingDate")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div><label className="mb-1 block text-xs font-medium">Duration (hours)</label><input type="number" min={0} step={0.5} value={form.durationHours} onChange={f("durationHours")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Training Title *</label><input required value={form.title} onChange={f("title")} className="w-full app-control py-2" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Trainer</label><input value={form.trainer} onChange={f("trainer")} className="w-full app-control py-2" /></div>
+              <div className="col-span-2"><label className="mb-1 block text-xs font-medium">Description</label><textarea value={form.description} onChange={f("description")} rows={2} className="w-full app-control py-2" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Training Date *</label><input required type="date" value={form.trainingDate} onChange={f("trainingDate")} className="w-full app-control py-2" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Duration (hours)</label><input type="number" min={0} step={0.5} value={form.durationHours} onChange={f("durationHours")} className="w-full app-control py-2" /></div>
               <div><label className="mb-1 block text-xs font-medium">Outcome</label>
-                <select value={form.outcome} onChange={f("outcome")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
+                <select value={form.outcome} onChange={f("outcome")} className="w-full app-control py-2">
                   {["PASSED", "FAILED", "ONGOING", "CANCELLED"].map((o) => <option key={o} value={o}>{o}</option>)}
                 </select>
               </div>
-              <div><label className="mb-1 block text-xs font-medium">Certificate</label><input value={form.certificate} onChange={f("certificate")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Certificate</label><input value={form.certificate} onChange={f("certificate")} className="w-full app-control py-2" /></div>
               <div className="col-span-2">
-                <button type="submit" disabled={saving} className="rounded-md bg-brand px-5 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Saving..." : "Save Record"}</button>
+                <button type="submit" disabled={saving} className="app-button-primary">{saving ? "Saving..." : "Save Record"}</button>
               </div>
             </form>
           </div>
@@ -2235,10 +2200,9 @@ export function PerformancePage() {
     
       <div className="space-y-5">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-bold">Employee Performance</h1>
-          <button onClick={() => setShowForm((p) => !p)} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white">{showForm ? "Cancel" : "+ Add Review"}</button>
+          <h1 className="text-2xl font-extrabold tracking-tight">Employee Performance</h1>
+          <button onClick={() => setShowForm((p) => !p)} className="app-button-primary">{showForm ? "Cancel" : "+ Add Review"}</button>
         </div>
-        <HRNav />
         {loadError && (
           <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             <span>{loadError}</span>
@@ -2247,31 +2211,31 @@ export function PerformancePage() {
         )}
         {optionsError && <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{optionsError}</div>}
         {showForm && (
-          <div className="rounded-lg border border-line bg-white p-5">
+          <div className="app-card p-5">
             <h2 className="mb-4 font-semibold">New Performance Review</h2>
             {error && <div className="mb-3 rounded bg-red-50 p-2 text-sm text-red-700">{error}</div>}
             <form onSubmit={submit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div><label className="mb-1 block text-xs font-medium">Employee *</label>
-                <select required value={form.employeeId} onChange={f("employeeId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
+                <select required value={form.employeeId} onChange={f("employeeId")} className="w-full app-control py-2">
                   <option value="">— Select —</option>
                   {opts.employees.map((e) => <option key={e.id} value={e.id}>{e.fullName}</option>)}
                 </select>
               </div>
-              <div><label className="mb-1 block text-xs font-medium">Period (e.g. 2025-Q1) *</label><input required value={form.period} onChange={f("period")} placeholder="2025-Q1" className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Period (e.g. 2025-Q1) *</label><input required value={form.period} onChange={f("period")} placeholder="2025-Q1" className="w-full app-control py-2" /></div>
               <div className="col-span-2">
                 <label className="mb-1 block text-xs font-medium">Overall Rating</label>
-                <select value={form.overallRating} onChange={f("overallRating")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
+                <select value={form.overallRating} onChange={f("overallRating")} className="w-full app-control py-2">
                   {["OUTSTANDING", "EXCEEDS_EXPECTATIONS", "MEETS_EXPECTATIONS", "NEEDS_IMPROVEMENT", "UNSATISFACTORY"].map((r) => <option key={r} value={r}>{r.replace(/_/g, " ")}</option>)}
                 </select>
               </div>
-              <div><label className="mb-1 block text-xs font-medium">Attendance Score (0-100)</label><input type="number" min={0} max={100} value={form.attendanceScore} onChange={f("attendanceScore")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div><label className="mb-1 block text-xs font-medium">Task Completion (0-100)</label><input type="number" min={0} max={100} value={form.taskCompletionScore} onChange={f("taskCompletionScore")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div><label className="mb-1 block text-xs font-medium">Quality Score (0-100)</label><input type="number" min={0} max={100} value={form.qualityScore} onChange={f("qualityScore")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div><label className="mb-1 block text-xs font-medium">Teamwork (0-100)</label><input type="number" min={0} max={100} value={form.teamworkScore} onChange={f("teamworkScore")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div className="col-span-2"><label className="mb-1 block text-xs font-medium">Comments</label><textarea value={form.comments} onChange={f("comments")} rows={3} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div className="col-span-2"><label className="mb-1 block text-xs font-medium">Goals for Next Period</label><textarea value={form.goals} onChange={f("goals")} rows={2} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Attendance Score (0-100)</label><input type="number" min={0} max={100} value={form.attendanceScore} onChange={f("attendanceScore")} className="w-full app-control py-2" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Task Completion (0-100)</label><input type="number" min={0} max={100} value={form.taskCompletionScore} onChange={f("taskCompletionScore")} className="w-full app-control py-2" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Quality Score (0-100)</label><input type="number" min={0} max={100} value={form.qualityScore} onChange={f("qualityScore")} className="w-full app-control py-2" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Teamwork (0-100)</label><input type="number" min={0} max={100} value={form.teamworkScore} onChange={f("teamworkScore")} className="w-full app-control py-2" /></div>
+              <div className="col-span-2"><label className="mb-1 block text-xs font-medium">Comments</label><textarea value={form.comments} onChange={f("comments")} rows={3} className="w-full app-control py-2" /></div>
+              <div className="col-span-2"><label className="mb-1 block text-xs font-medium">Goals for Next Period</label><textarea value={form.goals} onChange={f("goals")} rows={2} className="w-full app-control py-2" /></div>
               <div className="col-span-2">
-                <button type="submit" disabled={saving} className="rounded-md bg-brand px-5 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Saving..." : "Save Review"}</button>
+                <button type="submit" disabled={saving} className="app-button-primary">{saving ? "Saving..." : "Save Review"}</button>
               </div>
             </form>
           </div>
@@ -2352,7 +2316,7 @@ export function TaskDetailPage({ id }: { id: string }) {
     
       <div className="flex flex-col items-center justify-center gap-4 p-12 text-center">
         <p className="text-sm text-red-600">{taskLoadError}</p>
-        <button type="button" onClick={load} className="rounded-lg bg-brand px-5 py-2 text-sm font-semibold text-white hover:opacity-90">Retry</button>
+        <button type="button" onClick={load} className="app-button-primary">Retry</button>
         <Link href="/hr/tasks" className="text-sm text-ink/50 hover:text-ink">← Back to Tasks</Link>
       </div>
     
@@ -2365,14 +2329,14 @@ export function TaskDetailPage({ id }: { id: string }) {
       <div className="space-y-5">
         <div className="flex items-center gap-3">
           <Link href="/hr/tasks" className="text-sm text-ink/60 hover:text-ink">&larr; Task Board</Link>
-          <h1 className="text-xl font-bold">{data.title}</h1>
+          <h1 className="text-2xl font-extrabold tracking-tight">{data.title}</h1>
           <StatusBadge status={data.status} />
           <StatusBadge status={data.priority} />
         </div>
 
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
           <div className="lg:col-span-2 space-y-5">
-            <div className="rounded-lg border border-line bg-white p-5 space-y-3">
+            <div className="app-card p-5 space-y-3">
               <h2 className="font-semibold">Task Details</h2>
               {data.description && <p className="text-sm text-ink/80">{data.description}</p>}
               <dl className="grid grid-cols-1 gap-y-2 text-sm sm:grid-cols-2">
@@ -2386,12 +2350,12 @@ export function TaskDetailPage({ id }: { id: string }) {
               {data.notes && <p className="text-xs text-ink/60 border-t border-line pt-2">{data.notes}</p>}
             </div>
 
-            <div className="rounded-lg border border-line bg-white p-5 space-y-3">
+            <div className="app-card p-5 space-y-3">
               <h2 className="font-semibold">Assignments</h2>
               {data.assignments.length === 0 && <p className="text-sm text-ink/50">No employees assigned</p>}
               <ul className="space-y-2">
                 {data.assignments.map((a) => (
-                  <li key={a.id} className="flex items-center justify-between rounded-md border border-line px-3 py-2">
+                  <li key={a.id} className="flex items-center justify-between app-control py-2">
                     <div>
                       <p className="text-sm font-medium">{a.employee.fullName}</p>
                       <p className="text-xs text-ink/50">{a.employee.code}</p>
@@ -2403,21 +2367,21 @@ export function TaskDetailPage({ id }: { id: string }) {
             </div>
           </div>
 
-          <div className="rounded-lg border border-line bg-white p-5 space-y-4 h-fit">
+          <div className="app-card p-5 space-y-4 h-fit">
             <h2 className="font-semibold">Update Status</h2>
             <form onSubmit={updateStatus} className="space-y-3">
               <div>
                 <label className="mb-1 block text-xs font-medium">New Status</label>
-                <select value={statusValue} onChange={(e) => setStatusValue(e.target.value)} className="w-full rounded-md border border-line px-3 py-2 text-sm">
+                <select value={statusValue} onChange={(e) => setStatusValue(e.target.value)} className="w-full app-control py-2">
                   {["OPEN", "IN_PROGRESS", "ON_HOLD", "COMPLETED", "CANCELLED"].map((s) => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
                 </select>
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium">Notes (optional)</label>
-                <textarea value={statusNotes} onChange={(e) => setStatusNotes(e.target.value)} rows={2} className="w-full rounded-md border border-line px-3 py-2 text-sm" />
+                <textarea value={statusNotes} onChange={(e) => setStatusNotes(e.target.value)} rows={2} className="w-full app-control py-2" />
               </div>
               {statusError && <p className="text-xs text-red-600">{statusError}</p>}
-              <button type="submit" disabled={saving || statusValue === data.status} className="w-full rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+              <button type="submit" disabled={saving || statusValue === data.status} className="w-full app-button-primary">
                 {saving ? "Saving..." : "Update Status"}
               </button>
             </form>
@@ -2517,12 +2481,11 @@ export function LeaveRequestsPage() {
     
       <div className="space-y-5">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-bold">Leave Requests</h1>
-          <button onClick={() => setShowForm((p) => !p)} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white">
+          <h1 className="text-2xl font-extrabold tracking-tight">Leave Requests</h1>
+          <button onClick={() => setShowForm((p) => !p)} className="app-button-primary">
             {showForm ? "Cancel" : "+ Request Leave"}
           </button>
         </div>
-        <HRNav />
         {loadError && (
           <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             <span>{loadError}</span>
@@ -2531,29 +2494,29 @@ export function LeaveRequestsPage() {
         )}
 
         {showForm && (
-          <div className="rounded-lg border border-line bg-white p-5">
+          <div className="app-card p-5">
             <h2 className="mb-4 font-semibold">New Leave Request</h2>
             {error && <div className="mb-3 rounded bg-red-50 p-2 text-sm text-red-700">{error}</div>}
             <form onSubmit={submit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div><label className="mb-1 block text-xs font-medium">Leave Type *</label>
-                <select required value={form.leaveType} onChange={f("leaveType")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
+                <select required value={form.leaveType} onChange={f("leaveType")} className="w-full app-control py-2">
                   {["ANNUAL", "SICK", "MATERNITY", "PATERNITY", "COMPASSIONATE", "UNPAID"].map((t) => <option key={t} value={t}>{t.replace(/_/g, " ")}</option>)}
                 </select>
               </div>
               <div><label className="mb-1 block text-xs font-medium">Days Requested *</label>
-                <input required type="number" min={1} value={form.daysRequested} onChange={f("daysRequested")} className="w-full rounded-md border border-line px-3 py-2 text-sm" />
+                <input required type="number" min={1} value={form.daysRequested} onChange={f("daysRequested")} className="w-full app-control py-2" />
               </div>
               <div><label className="mb-1 block text-xs font-medium">Start Date *</label>
-                <input required type="date" value={form.startDate} onChange={f("startDate")} className="w-full rounded-md border border-line px-3 py-2 text-sm" />
+                <input required type="date" value={form.startDate} onChange={f("startDate")} className="w-full app-control py-2" />
               </div>
               <div><label className="mb-1 block text-xs font-medium">End Date *</label>
-                <input required type="date" value={form.endDate} onChange={f("endDate")} className="w-full rounded-md border border-line px-3 py-2 text-sm" />
+                <input required type="date" value={form.endDate} onChange={f("endDate")} className="w-full app-control py-2" />
               </div>
               <div className="col-span-2"><label className="mb-1 block text-xs font-medium">Reason</label>
-                <textarea value={form.reason} onChange={f("reason")} rows={2} className="w-full rounded-md border border-line px-3 py-2 text-sm" />
+                <textarea value={form.reason} onChange={f("reason")} rows={2} className="w-full app-control py-2" />
               </div>
               <div className="col-span-2">
-                <button type="submit" disabled={saving} className="rounded-md bg-brand px-5 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Submitting..." : "Submit Request"}</button>
+                <button type="submit" disabled={saving} className="app-button-primary">{saving ? "Submitting..." : "Submit Request"}</button>
               </div>
             </form>
           </div>
@@ -2562,7 +2525,7 @@ export function LeaveRequestsPage() {
         {reviewingId && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
             <h3 className="mb-2 text-sm font-semibold text-amber-800">Review Note (optional)</h3>
-            <textarea value={reviewNote} onChange={(e) => setReviewNote(e.target.value)} rows={2} placeholder="Add a note for the employee..." className="mb-3 w-full rounded-md border border-line px-3 py-2 text-sm" />
+            <textarea value={reviewNote} onChange={(e) => setReviewNote(e.target.value)} rows={2} placeholder="Add a note for the employee..." className="mb-3 w-full app-control py-2" />
             <div className="flex gap-2">
               <button onClick={() => review(reviewingId, "APPROVED")} className="rounded-md bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700">Approve</button>
               <button onClick={() => review(reviewingId, "REJECTED")} className="rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700">Reject</button>
@@ -2572,7 +2535,7 @@ export function LeaveRequestsPage() {
         )}
 
         <div className="flex gap-3">
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="rounded-md border border-line px-3 py-2 text-sm">
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="app-control py-2">
             <option value="">All Statuses</option>
             {["PENDING", "APPROVED", "REJECTED", "CANCELLED"].map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
@@ -2686,8 +2649,7 @@ export function EmployeeRolesPage() {
   return (
     
       <div className="space-y-5">
-        <h1 className="text-xl font-bold">Employee Roles</h1>
-        <HRNav />
+        <h1 className="text-2xl font-extrabold tracking-tight">Employee Roles</h1>
         {loadError && (
           <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             <span>{loadError}</span>
@@ -2697,13 +2659,13 @@ export function EmployeeRolesPage() {
         {error && <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</div>}
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          <div className="rounded-lg border border-line bg-white p-5">
+          <div className="app-card p-5">
             <h2 className="mb-4 font-semibold">Add Role</h2>
             <form onSubmit={create} className="space-y-3">
-              <div><label className="mb-1 block text-xs font-medium">Code *</label><input required value={form.code} onChange={f("code")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div><label className="mb-1 block text-xs font-medium">Name *</label><input required value={form.name} onChange={f("name")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div><label className="mb-1 block text-xs font-medium">Description</label><textarea value={form.description} onChange={f("description")} rows={2} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <button type="submit" disabled={saving} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Saving..." : "Add Role"}</button>
+              <div><label className="mb-1 block text-xs font-medium">Code *</label><input required value={form.code} onChange={f("code")} className="w-full app-control py-2" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Name *</label><input required value={form.name} onChange={f("name")} className="w-full app-control py-2" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Description</label><textarea value={form.description} onChange={f("description")} rows={2} className="w-full app-control py-2" /></div>
+              <button type="submit" disabled={saving} className="app-button-primary">{saving ? "Saving..." : "Add Role"}</button>
             </form>
           </div>
 
@@ -2712,10 +2674,10 @@ export function EmployeeRolesPage() {
               <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4">
                 <h3 className="mb-3 text-sm font-semibold text-amber-800">Editing Role</h3>
                 <form onSubmit={saveEdit} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div><label className="mb-1 block text-xs font-medium">Name *</label><input required value={editForm.name} onChange={ef("name")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-                  <div><label className="mb-1 block text-xs font-medium">Description</label><input value={editForm.description} onChange={ef("description")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+                  <div><label className="mb-1 block text-xs font-medium">Name *</label><input required value={editForm.name} onChange={ef("name")} className="w-full app-control py-2" /></div>
+                  <div><label className="mb-1 block text-xs font-medium">Description</label><input value={editForm.description} onChange={ef("description")} className="w-full app-control py-2" /></div>
                   <div className="col-span-2 flex gap-2">
-                    <button type="submit" disabled={saving} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Saving..." : "Save"}</button>
+                    <button type="submit" disabled={saving} className="app-button-primary">{saving ? "Saving..." : "Save"}</button>
                     <button type="button" onClick={() => setEditingId(null)} className="rounded-md border border-line px-4 py-2 text-sm">Cancel</button>
                   </div>
                 </form>
@@ -2810,10 +2772,9 @@ export function LeavePoliciesPage() {
     
       <div className="space-y-5">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-bold">Leave Policies</h1>
-          <button onClick={openCreate} className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand/90">+ Add Policy</button>
+          <h1 className="text-2xl font-extrabold tracking-tight">Leave Policies</h1>
+          <button onClick={openCreate} className="app-button-primary">+ Add Policy</button>
         </div>
-        <HRNav />
         {loadError && (
           <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             <span>{loadError}</span>
@@ -2821,34 +2782,34 @@ export function LeavePoliciesPage() {
           </div>
         )}
         {showForm && (
-          <form onSubmit={submit} className="rounded-lg border border-line bg-white p-5 space-y-4">
+          <form onSubmit={submit} className="app-card p-5 space-y-4">
             <p className="font-semibold">{editing ? "Edit Policy" : "New Leave Policy"}</p>
             {error && <div className="rounded bg-red-50 p-2 text-sm text-red-700">{error}</div>}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className="mb-1.5 block text-xs font-semibold text-ink/70">Policy Name <span className="text-red-500">*</span></label>
-                <input required value={form.name} onChange={f("name")} placeholder="e.g. Annual Leave — All Staff" className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15" />
+                <input required value={form.name} onChange={f("name")} placeholder="e.g. Annual Leave — All Staff" className="w-full min-h-10 app-control py-2 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15" />
               </div>
               {!editing && (
                 <div>
                   <label className="mb-1.5 block text-xs font-semibold text-ink/70">Leave Type <span className="text-red-500">*</span></label>
-                  <select required value={form.leaveType} onChange={f("leaveType")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15">
+                  <select required value={form.leaveType} onChange={f("leaveType")} className="w-full min-h-10 app-control py-2 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15">
                     {["ANNUAL","SICK","MATERNITY","PATERNITY","COMPASSIONATE","UNPAID"].map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
                 </div>
               )}
               <div>
                 <label className="mb-1.5 block text-xs font-semibold text-ink/70">Days Per Year <span className="text-red-500">*</span></label>
-                <input required type="number" min={1} value={form.daysPerYear} onChange={f("daysPerYear")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15" />
+                <input required type="number" min={1} value={form.daysPerYear} onChange={f("daysPerYear")} className="w-full min-h-10 app-control py-2 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15" />
               </div>
               <div>
                 <label className="mb-1.5 block text-xs font-semibold text-ink/70">Carry-Over Days</label>
-                <input type="number" min={0} value={form.carryOverDays} onChange={f("carryOverDays")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15" />
+                <input type="number" min={0} value={form.carryOverDays} onChange={f("carryOverDays")} className="w-full min-h-10 app-control py-2 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15" />
               </div>
               {!editing && (
                 <div>
                   <label className="mb-1.5 block text-xs font-semibold text-ink/70">Role (leave blank for all roles)</label>
-                  <select value={form.employeeRoleId} onChange={f("employeeRoleId")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15">
+                  <select value={form.employeeRoleId} onChange={f("employeeRoleId")} className="w-full min-h-10 app-control py-2 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15">
                     <option value="">All roles</option>
                     {opts.employeeRoles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                   </select>
@@ -2857,7 +2818,7 @@ export function LeavePoliciesPage() {
               {editing && (
                 <div>
                   <label className="mb-1.5 block text-xs font-semibold text-ink/70">Status</label>
-                  <select value={form.isActive} onChange={f("isActive")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15">
+                  <select value={form.isActive} onChange={f("isActive")} className="w-full min-h-10 app-control py-2 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15">
                     <option value="true">Active</option>
                     <option value="false">Inactive</option>
                   </select>
@@ -2865,7 +2826,7 @@ export function LeavePoliciesPage() {
               )}
             </div>
             <div className="flex gap-2">
-              <button type="submit" disabled={saving} className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Saving..." : "Save Policy"}</button>
+              <button type="submit" disabled={saving} className="app-button-primary">{saving ? "Saving..." : "Save Policy"}</button>
               <button type="button" onClick={() => setShowForm(false)} className="rounded-lg border border-line px-4 py-2 text-sm font-medium">Cancel</button>
             </div>
           </form>
@@ -2958,10 +2919,9 @@ export function LeaveBalancePage() {
     
       <div className="space-y-5">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-bold">Leave Balance</h1>
+          <h1 className="text-2xl font-extrabold tracking-tight">Leave Balance</h1>
           <button onClick={() => setShowInit(p => !p)} className="rounded-lg border border-line px-4 py-2 text-sm font-medium hover:bg-field">Initialize Balances</button>
         </div>
-        <HRNav />
         {loadError && (
           <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             <span>{loadError}</span>
@@ -2973,17 +2933,17 @@ export function LeaveBalancePage() {
             <p className="text-sm font-semibold text-amber-800">Initialize leave balances from active policies</p>
             <p className="text-xs text-amber-700">This creates LeaveBalance records for all active employees based on your current leave policies. Existing records are skipped.</p>
             <div className="flex items-center gap-3">
-              <input type="number" value={initYear} onChange={(e) => setInitYear(e.target.value)} min={2020} max={2099} className="w-24 rounded-lg border border-line px-3 py-2 text-sm" />
+              <input type="number" value={initYear} onChange={(e) => setInitYear(e.target.value)} min={2020} max={2099} className="w-24 app-control py-2" />
               <button onClick={initializeBalances} disabled={initSaving} className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{initSaving ? "Initializing..." : "Initialize"}</button>
             </div>
             {initResult && <p className="text-sm text-amber-800">{initResult}</p>}
           </div>
         )}
         <div className="flex gap-3">
-          <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} className="rounded-lg border border-line px-3 py-2 text-sm">
+          <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} className="app-control py-2">
             {[currentYear + 1, currentYear, currentYear - 1].map(y => <option key={y} value={String(y)}>{y}</option>)}
           </select>
-          <select value={employeeFilter} onChange={(e) => setEmployeeFilter(e.target.value)} className="rounded-lg border border-line px-3 py-2 text-sm min-w-[180px]">
+          <select value={employeeFilter} onChange={(e) => setEmployeeFilter(e.target.value)} className="app-control py-2 min-w-[180px]">
             <option value="">All employees</option>
             {opts.employees.map(e => <option key={e.id} value={e.id}>{e.fullName}</option>)}
           </select>
@@ -3074,13 +3034,12 @@ export function PublicHolidaysPage() {
     
       <div className="space-y-5">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-bold">Public Holidays</h1>
+          <h1 className="text-2xl font-extrabold tracking-tight">Public Holidays</h1>
           <div className="flex gap-2">
             <button onClick={seedGhana} disabled={seeding} className="rounded-lg border border-brand px-4 py-2 text-sm font-semibold text-brand hover:bg-brand/5 disabled:opacity-50">{seeding ? "Seeding..." : "Seed Ghana Holidays"}</button>
-            <button onClick={() => { setShowForm(p => !p); setError(""); }} className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand/90">+ Add Holiday</button>
+            <button onClick={() => { setShowForm(p => !p); setError(""); }} className="app-button-primary">+ Add Holiday</button>
           </div>
         </div>
-        <HRNav />
         {seedMsg && <div className="rounded-md bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700">{seedMsg}</div>}
         {loadError && (
           <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -3089,34 +3048,34 @@ export function PublicHolidaysPage() {
           </div>
         )}
         {showForm && (
-          <form onSubmit={submit} className="rounded-lg border border-line bg-white p-5 space-y-4">
+          <form onSubmit={submit} className="app-card p-5 space-y-4">
             <p className="font-semibold">Add Public Holiday</p>
             {error && <div className="rounded bg-red-50 p-2 text-sm text-red-700">{error}</div>}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <div>
                 <label className="mb-1.5 block text-xs font-semibold text-ink/70">Holiday Name <span className="text-red-500">*</span></label>
-                <input required value={form.name} onChange={f("name")} placeholder="e.g. Founders' Day" className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15" />
+                <input required value={form.name} onChange={f("name")} placeholder="e.g. Founders' Day" className="w-full min-h-10 app-control py-2 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15" />
               </div>
               <div>
                 <label className="mb-1.5 block text-xs font-semibold text-ink/70">Date <span className="text-red-500">*</span></label>
-                <input required type="date" value={form.date} onChange={f("date")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15" />
+                <input required type="date" value={form.date} onChange={f("date")} className="w-full min-h-10 app-control py-2 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15" />
               </div>
               <div>
                 <label className="mb-1.5 block text-xs font-semibold text-ink/70">Recurring Annually</label>
-                <select value={form.isRecurring} onChange={f("isRecurring")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15">
+                <select value={form.isRecurring} onChange={f("isRecurring")} className="w-full min-h-10 app-control py-2 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15">
                   <option value="true">Yes</option>
                   <option value="false">No (one-off)</option>
                 </select>
               </div>
             </div>
             <div className="flex gap-2">
-              <button type="submit" disabled={saving} className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Saving..." : "Save Holiday"}</button>
+              <button type="submit" disabled={saving} className="app-button-primary">{saving ? "Saving..." : "Save Holiday"}</button>
               <button type="button" onClick={() => setShowForm(false)} className="rounded-lg border border-line px-4 py-2 text-sm font-medium">Cancel</button>
             </div>
           </form>
         )}
         <div>
-          <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} className="rounded-lg border border-line px-3 py-2 text-sm">
+          <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} className="app-control py-2">
             {[currentYear - 1, currentYear, currentYear + 1].map(y => <option key={y} value={String(y)}>{y}</option>)}
           </select>
         </div>
@@ -3210,10 +3169,9 @@ export function DisciplinaryPage() {
     
       <div className="space-y-5">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-bold">Disciplinary Records</h1>
-          <button onClick={() => { setShowForm(p => !p); setError(""); }} className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white">+ Record Action</button>
+          <h1 className="text-2xl font-extrabold tracking-tight">Disciplinary Records</h1>
+          <button onClick={() => { setShowForm(p => !p); setError(""); }} className="app-button-primary">+ Record Action</button>
         </div>
-        <HRNav />
         {loadError && (
           <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             <span>{loadError}</span>
@@ -3221,38 +3179,38 @@ export function DisciplinaryPage() {
           </div>
         )}
         {showForm && (
-          <form onSubmit={submit} className="rounded-lg border border-line bg-white p-5 space-y-4">
+          <form onSubmit={submit} className="app-card p-5 space-y-4">
             <p className="font-semibold">New Disciplinary Action</p>
             {error && <div className="rounded bg-red-50 p-2 text-sm text-red-700">{error}</div>}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className="mb-1.5 block text-xs font-semibold text-ink/70">Employee *</label>
-                <select required value={form.employeeId} onChange={f("employeeId")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm">
+                <select required value={form.employeeId} onChange={f("employeeId")} className="w-full min-h-10 app-control py-2">
                   <option value="">— Select —</option>
                   {opts.employees.map(e => <option key={e.id} value={e.id}>{e.fullName}</option>)}
                 </select>
               </div>
               <div>
                 <label className="mb-1.5 block text-xs font-semibold text-ink/70">Incident Date *</label>
-                <input required type="date" value={form.incidentDate} onChange={f("incidentDate")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm" />
+                <input required type="date" value={form.incidentDate} onChange={f("incidentDate")} className="w-full min-h-10 app-control py-2" />
               </div>
               <div>
                 <label className="mb-1.5 block text-xs font-semibold text-ink/70">Category *</label>
-                <select required value={form.category} onChange={f("category")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm">
+                <select required value={form.category} onChange={f("category")} className="w-full min-h-10 app-control py-2">
                   {DISC_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
               <div className="col-span-2">
                 <label className="mb-1.5 block text-xs font-semibold text-ink/70">Description *</label>
-                <textarea required value={form.description} onChange={f("description")} rows={3} className="w-full rounded-lg border border-line px-3 py-2 text-sm" />
+                <textarea required value={form.description} onChange={f("description")} rows={3} className="w-full app-control py-2" />
               </div>
               <div className="col-span-2">
                 <label className="mb-1.5 block text-xs font-semibold text-ink/70">Action Taken *</label>
-                <textarea required value={form.actionTaken} onChange={f("actionTaken")} rows={2} className="w-full rounded-lg border border-line px-3 py-2 text-sm" />
+                <textarea required value={form.actionTaken} onChange={f("actionTaken")} rows={2} className="w-full app-control py-2" />
               </div>
             </div>
             <div className="flex gap-2">
-              <button type="submit" disabled={saving} className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Saving..." : "Record Action"}</button>
+              <button type="submit" disabled={saving} className="app-button-primary">{saving ? "Saving..." : "Record Action"}</button>
               <button type="button" onClick={() => setShowForm(false)} className="rounded-lg border border-line px-4 py-2 text-sm">Cancel</button>
             </div>
           </form>
@@ -3383,10 +3341,9 @@ export function GrievancesPage() {
     
       <div className="space-y-5">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-bold">Grievances</h1>
-          <button onClick={() => { setShowForm(p => !p); setError(""); }} className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white">+ Submit Grievance</button>
+          <h1 className="text-2xl font-extrabold tracking-tight">Grievances</h1>
+          <button onClick={() => { setShowForm(p => !p); setError(""); }} className="app-button-primary">+ Submit Grievance</button>
         </div>
-        <HRNav />
         {loadError && (
           <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             <span>{loadError}</span>
@@ -3394,34 +3351,34 @@ export function GrievancesPage() {
           </div>
         )}
         {showForm && (
-          <form onSubmit={submit} className="rounded-lg border border-line bg-white p-5 space-y-4">
+          <form onSubmit={submit} className="app-card p-5 space-y-4">
             <p className="font-semibold">New Grievance</p>
             {error && <div className="rounded bg-red-50 p-2 text-sm text-red-700">{error}</div>}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className="mb-1.5 block text-xs font-semibold text-ink/70">Employee *</label>
-                <select required value={form.employeeId} onChange={f("employeeId")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm">
+                <select required value={form.employeeId} onChange={f("employeeId")} className="w-full min-h-10 app-control py-2">
                   <option value="">— Select —</option>
                   {opts.employees.map(e => <option key={e.id} value={e.id}>{e.fullName}</option>)}
                 </select>
               </div>
               <div>
                 <label className="mb-1.5 block text-xs font-semibold text-ink/70">Date *</label>
-                <input required type="date" value={form.submittedDate} onChange={f("submittedDate")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm" />
+                <input required type="date" value={form.submittedDate} onChange={f("submittedDate")} className="w-full min-h-10 app-control py-2" />
               </div>
               <div>
                 <label className="mb-1.5 block text-xs font-semibold text-ink/70">Category *</label>
-                <select required value={form.category} onChange={f("category")} className="w-full min-h-10 rounded-lg border border-line px-3 py-2 text-sm">
+                <select required value={form.category} onChange={f("category")} className="w-full min-h-10 app-control py-2">
                   {GRIEVANCE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
               <div className="col-span-2">
                 <label className="mb-1.5 block text-xs font-semibold text-ink/70">Description *</label>
-                <textarea required value={form.description} onChange={f("description")} rows={3} className="w-full rounded-lg border border-line px-3 py-2 text-sm" />
+                <textarea required value={form.description} onChange={f("description")} rows={3} className="w-full app-control py-2" />
               </div>
             </div>
             <div className="flex gap-2">
-              <button type="submit" disabled={saving} className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Saving..." : "Submit"}</button>
+              <button type="submit" disabled={saving} className="app-button-primary">{saving ? "Saving..." : "Submit"}</button>
               <button type="button" onClick={() => setShowForm(false)} className="rounded-lg border border-line px-4 py-2 text-sm">Cancel</button>
             </div>
           </form>
@@ -3434,7 +3391,7 @@ export function GrievancesPage() {
         {resolveId && (
           <div className="rounded-lg border border-green-200 bg-green-50 p-4 space-y-2">
             <p className="text-sm font-semibold text-green-800">Resolve Grievance</p>
-            <textarea value={resolution} onChange={e => setResolution(e.target.value)} placeholder="Describe the resolution..." rows={3} className="w-full rounded-lg border border-line px-3 py-2 text-sm" />
+            <textarea value={resolution} onChange={e => setResolution(e.target.value)} placeholder="Describe the resolution..." rows={3} className="w-full app-control py-2" />
             <div className="flex gap-2">
               <button onClick={() => resolve(resolveId)} disabled={resolving || !resolution.trim()} className="rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{resolving ? "Resolving..." : "Mark Resolved"}</button>
               <button onClick={() => { setResolveId(""); setResolution(""); }} className="rounded-lg border border-line px-4 py-2 text-sm">Cancel</button>
@@ -3508,13 +3465,12 @@ export function ProductivityReportPage() {
   return (
 
       <div className="space-y-5">
-        <h1 className="text-xl font-bold">Worker Productivity Report</h1>
-        <HRNav />
+        <h1 className="text-2xl font-extrabold tracking-tight">Worker Productivity Report</h1>
 
         <div className="flex items-end gap-3">
-          <div><label className="mb-1 block text-xs font-medium">From</label><input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="rounded-md border border-line px-3 py-2 text-sm" /></div>
-          <div><label className="mb-1 block text-xs font-medium">To</label><input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="rounded-md border border-line px-3 py-2 text-sm" /></div>
-          <button onClick={load} disabled={loading} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{loading ? "Loading..." : "Generate"}</button>
+          <div><label className="mb-1 block text-xs font-medium">From</label><input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="app-control py-2" /></div>
+          <div><label className="mb-1 block text-xs font-medium">To</label><input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="app-control py-2" /></div>
+          <button onClick={load} disabled={loading} className="app-button-primary">{loading ? "Loading..." : "Generate"}</button>
         </div>
 
         {data && (
@@ -3563,7 +3519,7 @@ function buildTree(nodes: OrgNode[]): OrgNode & { children: any[] } {
 function OrgCard({ node }: { node: OrgNode & { children: any[] } }) {
   return (
     <div className="flex flex-col items-center gap-2">
-      <div className="rounded-xl border border-line bg-surface p-3 shadow-sm w-44 text-center">
+      <div className="app-card p-3 shadow-sm w-44 text-center">
         <div className="mx-auto mb-1 w-fit">
           <EmployeeAvatar url={node.photoUrl} name={node.fullName || "?"} size="h-10 w-10" text="text-sm" />
         </div>
@@ -3604,10 +3560,9 @@ export function OrgChartPage() {
     
       <div className="space-y-5">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-bold">Organisation Chart</h1>
+          <h1 className="text-2xl font-extrabold tracking-tight">Organisation Chart</h1>
           <span className="text-sm text-ink/60">{nodes.length} employees</span>
         </div>
-        <HRNav />
         {loading && <p className="text-sm text-ink/50">Loading org chart…</p>}
         {!loading && nodes.length === 0 && <EmptyState icon={Users} title="No active employees found" />}
         {tree.children.length > 0 && (
@@ -3670,24 +3625,23 @@ export function TrainingCatalogPage() {
     
       <div className="space-y-5">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-bold">Training Catalog</h1>
-          <button onClick={() => { setShowForm((p) => !p); setError(""); }} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white">{showForm ? "Cancel" : "+ Add Course"}</button>
+          <h1 className="text-2xl font-extrabold tracking-tight">Training Catalog</h1>
+          <button onClick={() => { setShowForm((p) => !p); setError(""); }} className="app-button-primary">{showForm ? "Cancel" : "+ Add Course"}</button>
         </div>
-        <HRNav />
 
         {showForm && (
-          <form onSubmit={handleSubmit} className="rounded-lg border border-line bg-surface p-5 space-y-4">
+          <form onSubmit={handleSubmit} className="app-card p-5 space-y-4">
             <p className="font-semibold">New Training Course</p>
             {error && <p className="text-sm text-red-600">{error}</p>}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-              <div><label className="mb-1 block text-xs font-medium">Code *</label><input required value={form.code} onChange={f("code")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div className="sm:col-span-2"><label className="mb-1 block text-xs font-medium">Title *</label><input required value={form.title} onChange={f("title")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div><label className="mb-1 block text-xs font-medium">Category</label><input value={form.category} onChange={f("category")} placeholder="e.g. Safety" className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div><label className="mb-1 block text-xs font-medium">Duration (hrs)</label><input type="number" step="0.5" min="0" value={form.durationHours} onChange={f("durationHours")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div><label className="mb-1 block text-xs font-medium">Provider</label><input value={form.provider} onChange={f("provider")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div className="sm:col-span-3"><label className="mb-1 block text-xs font-medium">Description</label><textarea value={form.description} onChange={f("description")} rows={2} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Code *</label><input required value={form.code} onChange={f("code")} className="w-full app-control py-2" /></div>
+              <div className="sm:col-span-2"><label className="mb-1 block text-xs font-medium">Title *</label><input required value={form.title} onChange={f("title")} className="w-full app-control py-2" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Category</label><input value={form.category} onChange={f("category")} placeholder="e.g. Safety" className="w-full app-control py-2" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Duration (hrs)</label><input type="number" step="0.5" min="0" value={form.durationHours} onChange={f("durationHours")} className="w-full app-control py-2" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Provider</label><input value={form.provider} onChange={f("provider")} className="w-full app-control py-2" /></div>
+              <div className="sm:col-span-3"><label className="mb-1 block text-xs font-medium">Description</label><textarea value={form.description} onChange={f("description")} rows={2} className="w-full app-control py-2" /></div>
             </div>
-            <button type="submit" disabled={saving} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Saving…" : "Save Course"}</button>
+            <button type="submit" disabled={saving} className="app-button-primary">{saving ? "Saving…" : "Save Course"}</button>
           </form>
         )}
 
@@ -3746,29 +3700,28 @@ export function SalaryBandsPage() {
     
       <div className="space-y-5">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-bold">Salary Bands</h1>
-          <button onClick={() => { setShowForm((p) => !p); setError(""); }} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white">{showForm ? "Cancel" : "+ Add Band"}</button>
+          <h1 className="text-2xl font-extrabold tracking-tight">Salary Bands</h1>
+          <button onClick={() => { setShowForm((p) => !p); setError(""); }} className="app-button-primary">{showForm ? "Cancel" : "+ Add Band"}</button>
         </div>
-        <HRNav />
 
         {showForm && (
-          <form onSubmit={handleSubmit} className="rounded-lg border border-line bg-surface p-5 space-y-4">
+          <form onSubmit={handleSubmit} className="app-card p-5 space-y-4">
             <p className="font-semibold">New Salary Band</p>
             {error && <p className="text-sm text-red-600">{error}</p>}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-              <div><label className="mb-1 block text-xs font-medium">Grade *</label><input required value={form.grade} onChange={f("grade")} placeholder="e.g. L2" className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Grade *</label><input required value={form.grade} onChange={f("grade")} placeholder="e.g. L2" className="w-full app-control py-2" /></div>
               <div><label className="mb-1 block text-xs font-medium">Role</label>
-                <select value={form.employeeRoleId} onChange={f("employeeRoleId")} className="w-full rounded-md border border-line px-3 py-2 text-sm">
+                <select value={form.employeeRoleId} onChange={f("employeeRoleId")} className="w-full app-control py-2">
                   <option value="">— Any Role —</option>
                   {opts.employeeRoles.map((r: any) => <option key={r.id} value={r.id}>{r.name}</option>)}
                 </select>
               </div>
-              <div><label className="mb-1 block text-xs font-medium">Effective Date *</label><input required type="date" value={form.effectiveDate} onChange={f("effectiveDate")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div><label className="mb-1 block text-xs font-medium">Min Salary (GHS) *</label><input required type="number" min="0" value={form.minSalary} onChange={f("minSalary")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div><label className="mb-1 block text-xs font-medium">Mid Salary (GHS)</label><input type="number" min="0" value={form.midSalary} onChange={f("midSalary")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div><label className="mb-1 block text-xs font-medium">Max Salary (GHS) *</label><input required type="number" min="0" value={form.maxSalary} onChange={f("maxSalary")} className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Effective Date *</label><input required type="date" value={form.effectiveDate} onChange={f("effectiveDate")} className="w-full app-control py-2" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Min Salary (GHS) *</label><input required type="number" min="0" value={form.minSalary} onChange={f("minSalary")} className="w-full app-control py-2" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Mid Salary (GHS)</label><input type="number" min="0" value={form.midSalary} onChange={f("midSalary")} className="w-full app-control py-2" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Max Salary (GHS) *</label><input required type="number" min="0" value={form.maxSalary} onChange={f("maxSalary")} className="w-full app-control py-2" /></div>
             </div>
-            <button type="submit" disabled={saving} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Saving…" : "Save"}</button>
+            <button type="submit" disabled={saving} className="app-button-primary">{saving ? "Saving…" : "Save"}</button>
           </form>
         )}
 
@@ -3820,7 +3773,7 @@ export function RecruitmentPage() {
   const [copied, setCopied] = useState("");
   const fj = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setJobForm((p) => ({ ...p, [k]: e.target.value }));
   const fa = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setAppForm((p) => ({ ...p, [k]: e.target.value }));
-  const inputCls = "w-full rounded-md border border-line px-3 py-2 text-sm";
+  const inputCls = "w-full app-control py-2";
 
   async function load() {
     const [jr, ar] = await Promise.all([
@@ -3921,20 +3874,19 @@ export function RecruitmentPage() {
 
       <div className="space-y-5">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-bold">Recruitment</h1>
+          <h1 className="text-2xl font-extrabold tracking-tight">Recruitment</h1>
           <div className="flex gap-2">
-            <button onClick={() => { setShowJobForm((p) => !p); setError(""); }} className="rounded-md border border-line px-4 py-2 text-sm font-medium hover:bg-field">+ Post Job</button>
-            {selectedJob && <button onClick={() => { setShowAppForm((p) => !p); setError(""); }} className="rounded-md border border-line px-4 py-2 text-sm font-medium hover:bg-field">+ Add applicant manually</button>}
+            <button onClick={() => { setShowJobForm((p) => !p); setError(""); }} className="app-button-secondary">+ Post Job</button>
+            {selectedJob && <button onClick={() => { setShowAppForm((p) => !p); setError(""); }} className="app-button-secondary">+ Add applicant manually</button>}
           </div>
         </div>
-        <HRNav />
         <p className="rounded-md bg-brand/5 px-4 py-3 text-sm text-ink/70">
           Share a job&apos;s <b>apply link</b> (button on each job below). Applicants fill in the form and upload their CV on the website, and their details appear here under <b>RECEIVED</b>.
         </p>
         {error && <p className="text-sm text-red-600">{error}</p>}
 
         {showJobForm && (
-          <form onSubmit={saveJob} className="rounded-lg border border-line bg-surface p-5 space-y-4">
+          <form onSubmit={saveJob} className="app-card p-5 space-y-4">
             <p className="font-semibold">New Job Posting</p>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div><label className="mb-1 block text-xs font-medium">Job Title *</label><input required value={jobForm.title} onChange={fj("title")} className={inputCls} /></div>
@@ -3949,12 +3901,12 @@ export function RecruitmentPage() {
             </div>
             <div><label className="mb-1 block text-xs font-medium">Description *</label><textarea required value={jobForm.description} onChange={fj("description")} rows={4} className={inputCls} /></div>
             <div><label className="mb-1 block text-xs font-medium">Requirements</label><textarea value={jobForm.requirements} onChange={fj("requirements")} rows={3} className={inputCls} /></div>
-            <button type="submit" disabled={saving} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Saving…" : "Post Job"}</button>
+            <button type="submit" disabled={saving} className="app-button-primary">{saving ? "Saving…" : "Post Job"}</button>
           </form>
         )}
 
         {showAppForm && selectedJob && (
-          <form onSubmit={saveApp} className="rounded-lg border border-line bg-surface p-5 space-y-4">
+          <form onSubmit={saveApp} className="app-card p-5 space-y-4">
             <p className="font-semibold">Add an applicant (e.g. someone who handed in a CV or applied by phone)</p>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <div><label className="mb-1 block text-xs font-medium">First name *</label><input required value={appForm.firstName} onChange={fa("firstName")} className={inputCls} /></div>
@@ -3973,7 +3925,7 @@ export function RecruitmentPage() {
               <div><label className="mb-1 block text-xs font-medium">Available from</label><input value={appForm.availability} onChange={fa("availability")} className={inputCls} /></div>
             </div>
             <div><label className="mb-1 block text-xs font-medium">Notes / cover letter</label><textarea value={appForm.coverLetter} onChange={fa("coverLetter")} rows={3} className={inputCls} /></div>
-            <button type="submit" disabled={saving} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Saving…" : "Save applicant"}</button>
+            <button type="submit" disabled={saving} className="app-button-primary">{saving ? "Saving…" : "Save applicant"}</button>
           </form>
         )}
 
@@ -4015,7 +3967,7 @@ export function RecruitmentPage() {
                   <div key={s} className="min-w-44 flex-shrink-0 space-y-2">
                     <p className="text-xs font-semibold text-ink/60 uppercase tracking-wide">{s} ({col.length})</p>
                     {col.map((a) => (
-                      <div key={a.id} className="rounded-lg border border-line bg-surface p-3 space-y-1">
+                      <div key={a.id} className="app-card p-3 space-y-1">
                         <button onClick={() => setDetail(a)} className="block w-full text-left">
                           <p className="text-sm font-medium text-brand hover:underline">{a.applicantName}</p>
                           <p className="text-xs text-ink/50">{a.reference}{a.source === "ONLINE" ? " · online" : ""}</p>
@@ -4060,7 +4012,7 @@ export function RecruitmentPage() {
               {detail.coverLetter && <div className="mt-4"><p className="text-xs font-semibold uppercase text-ink/50">Why a good fit / notes</p><p className="mt-1 whitespace-pre-line text-sm">{detail.coverLetter}</p></div>}
               <div className="mt-4">
                 {detail.resumeUrl
-                  ? <a href={detail.resumeUrl} target="_blank" rel="noreferrer" className="inline-block rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white">View / download CV</a>
+                  ? <a href={detail.resumeUrl} target="_blank" rel="noreferrer" className="inline-block app-button-primary">View / download CV</a>
                   : <p className="text-sm text-ink/50">No CV attached.</p>}
               </div>
               <div className="mt-6 flex flex-wrap gap-2 border-t border-line pt-4">
@@ -4144,26 +4096,25 @@ export function OnboardingPage() {
   return (
     
       <div className="space-y-5">
-        <h1 className="text-xl font-bold">Onboarding Checklists</h1>
-        <HRNav />
+        <h1 className="text-2xl font-extrabold tracking-tight">Onboarding Checklists</h1>
 
         <div className="flex items-end gap-4">
           <div className="flex-1">
             <label className="mb-1 block text-xs font-semibold text-ink/70">Select Employee</label>
-            <select value={employeeId} onChange={handleEmployeeChange} className="w-full rounded-lg border border-line px-3 py-2 text-sm">
+            <select value={employeeId} onChange={handleEmployeeChange} className="w-full app-control py-2">
               <option value="">— Pick an employee —</option>
               {opts.employees.map((e: any) => <option key={e.id} value={e.id}>{e.fullName} ({e.code})</option>)}
             </select>
           </div>
-          {employeeId && <button onClick={() => setConfirmTemplate(true)} disabled={saving} className="rounded-md border border-line px-4 py-2 text-sm font-medium hover:bg-field disabled:opacity-50">Load Template</button>}
+          {employeeId && <button onClick={() => setConfirmTemplate(true)} disabled={saving} className="app-button-secondary disabled:opacity-50">Load Template</button>}
         </div>
 
         {employeeId && (
           <>
             {items.length > 0 && <div className="text-sm text-ink/70">{done}/{items.length} completed</div>}
             <form onSubmit={addItem} className="flex gap-2">
-              <input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="Add checklist item…" className="flex-1 rounded-lg border border-line px-3 py-2 text-sm" />
-              <button type="submit" disabled={saving || !newTitle.trim()} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Add</button>
+              <input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="Add checklist item…" className="flex-1 app-control py-2" />
+              <button type="submit" disabled={saving || !newTitle.trim()} className="app-button-primary">Add</button>
             </form>
 
             {loading && <p className="text-sm text-ink/50">Loading…</p>}
@@ -4235,28 +4186,27 @@ export function ApprovalWorkflowPage() {
     
       <div className="space-y-5">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-bold">Approval Workflows</h1>
-          <button onClick={() => { setShowForm((p) => !p); setError(""); }} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white">{showForm ? "Cancel" : "+ Add Chain"}</button>
+          <h1 className="text-2xl font-extrabold tracking-tight">Approval Workflows</h1>
+          <button onClick={() => { setShowForm((p) => !p); setError(""); }} className="app-button-primary">{showForm ? "Cancel" : "+ Add Chain"}</button>
         </div>
-        <HRNav />
 
         {showForm && (
-          <form onSubmit={handleSubmit} className="rounded-lg border border-line bg-surface p-5 space-y-4">
+          <form onSubmit={handleSubmit} className="app-card p-5 space-y-4">
             <p className="font-semibold">New Approval Chain</p>
             {error && <p className="text-sm text-red-600">{error}</p>}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div><label className="mb-1 block text-xs font-medium">Entity Type *</label><input required value={form.entityType} onChange={f("entityType")} placeholder="e.g. LEAVE, PAYROLL" className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div><label className="mb-1 block text-xs font-medium">Min Amount (GHS)</label><input type="number" min="0" value={form.minAmount} onChange={f("minAmount")} placeholder="Optional threshold" className="w-full rounded-md border border-line px-3 py-2 text-sm" /></div>
-              <div className="col-span-2"><label className="mb-1 block text-xs font-medium">Steps (JSON array) *</label><textarea required value={form.steps} onChange={f("steps")} rows={3} className="w-full rounded-md border border-line px-3 py-2 text-sm font-mono text-xs" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Entity Type *</label><input required value={form.entityType} onChange={f("entityType")} placeholder="e.g. LEAVE, PAYROLL" className="w-full app-control py-2" /></div>
+              <div><label className="mb-1 block text-xs font-medium">Min Amount (GHS)</label><input type="number" min="0" value={form.minAmount} onChange={f("minAmount")} placeholder="Optional threshold" className="w-full app-control py-2" /></div>
+              <div className="col-span-2"><label className="mb-1 block text-xs font-medium">Steps (JSON array) *</label><textarea required value={form.steps} onChange={f("steps")} rows={3} className="w-full app-control py-2 font-mono text-xs" /></div>
             </div>
-            <button type="submit" disabled={saving} className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Saving…" : "Save"}</button>
+            <button type="submit" disabled={saving} className="app-button-primary">{saving ? "Saving…" : "Save"}</button>
           </form>
         )}
 
         {loading && <p className="text-sm text-ink/50">Loading…</p>}
         <div className="space-y-3">
           {chains.map((c) => (
-            <div key={c.id} className="rounded-lg border border-line bg-surface p-4">
+            <div key={c.id} className="app-card p-4">
               <div className="flex items-center justify-between mb-2">
                 <p className="font-semibold">{c.entityType}</p>
                 <StatusBadge status={c.isActive ? "ACTIVE" : "INACTIVE"} />
@@ -4312,20 +4262,19 @@ export function ComplianceReportPage() {
   return (
     
       <div className="space-y-5">
-        <h1 className="text-xl font-bold">Compliance Reports</h1>
-        <HRNav />
+        <h1 className="text-2xl font-extrabold tracking-tight">Compliance Reports</h1>
 
-        <div className="rounded-lg border border-line bg-surface p-5 space-y-4">
+        <div className="app-card p-5 space-y-4">
           <p className="font-semibold">Generate Report</p>
           {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex items-end gap-4 flex-wrap">
             <div>
               <label className="mb-1 block text-xs font-medium">Period (YYYY-MM)</label>
-              <input value={period} onChange={(e) => setPeriod(e.target.value)} placeholder="2026-01" className="rounded-md border border-line px-3 py-2 text-sm w-40" />
+              <input value={period} onChange={(e) => setPeriod(e.target.value)} placeholder="2026-01" className="app-control py-2 w-40" />
             </div>
-            <button onClick={() => generate("ssnit")} disabled={!!generating || !period} className="rounded-md border border-line px-4 py-2 text-sm font-medium hover:bg-field disabled:opacity-50">{generating === "ssnit" ? "Generating…" : "SSNIT Report"}</button>
-            <button onClick={() => generate("paye")} disabled={!!generating || !period} className="rounded-md border border-line px-4 py-2 text-sm font-medium hover:bg-field disabled:opacity-50">{generating === "paye" ? "Generating…" : "PAYE Report"}</button>
-            <button onClick={() => generate("headcount")} disabled={!!generating || !period} className="rounded-md border border-line px-4 py-2 text-sm font-medium hover:bg-field disabled:opacity-50">{generating === "headcount" ? "Generating…" : "Headcount Report"}</button>
+            <button onClick={() => generate("ssnit")} disabled={!!generating || !period} className="app-button-secondary disabled:opacity-50">{generating === "ssnit" ? "Generating…" : "SSNIT Report"}</button>
+            <button onClick={() => generate("paye")} disabled={!!generating || !period} className="app-button-secondary disabled:opacity-50">{generating === "paye" ? "Generating…" : "PAYE Report"}</button>
+            <button onClick={() => generate("headcount")} disabled={!!generating || !period} className="app-button-secondary disabled:opacity-50">{generating === "headcount" ? "Generating…" : "Headcount Report"}</button>
           </div>
 
           {result && (
