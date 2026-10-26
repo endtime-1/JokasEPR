@@ -82,6 +82,9 @@ export function endOfDay(d: Date): Date {
   return e;
 }
 
+/** The chart of accounts is set up in a way that stops automatic posting (a standard code used for something else). */
+export class LedgerSetupError extends Error {}
+
 @Injectable()
 export class LedgerService {
   private readonly logger = new Logger(LedgerService.name);
@@ -123,7 +126,13 @@ export class LedgerService {
 
   async ensureAccounts(db: Db, companyId: string, codes: string[]): Promise<Map<string, string>> {
     const unique = [...new Set(codes)];
-    const found = await db.account.findMany({ where: { companyId, code: { in: unique }, deletedAt: null }, select: { id: true, code: true } });
+    const found = await db.account.findMany({ where: { companyId, code: { in: unique }, deletedAt: null }, select: { id: true, code: true, type: true } });
+    // A standard code that already exists as the wrong kind of account would receive the entry and corrupt the
+    // reports, so refuse it (see LedgerSetupError: the caller skips the posting instead of blocking the sale).
+    for (const a of found) {
+      const def = DEFAULT_ACCOUNTS[a.code];
+      if (def && a.type !== def.type) throw new LedgerSetupError(`Account ${a.code} must be ${def.name} (${def.type.toLowerCase()}), but it is set up as a ${String(a.type).toLowerCase()} account.`);
+    }
     const map = new Map(found.map((a) => [a.code, a.id]));
     for (const code of unique) {
       if (map.has(code)) continue;
@@ -164,7 +173,16 @@ export class LedgerService {
 
     await this.assertOpenPeriod(db, input.companyId, input.entryDate);
     const codes = lines.filter((l) => l.code).map((l) => l.code!) as string[];
-    const accounts = await this.ensureAccounts(db, input.companyId, codes);
+    let accounts: Map<string, string>;
+    try {
+      accounts = await this.ensureAccounts(db, input.companyId, codes);
+    } catch (err) {
+      if (!(err instanceof LedgerSetupError)) throw err;
+      // A chart-of-accounts problem must not stop a sale or a payment. It is reported on Ledger Setup, and the
+      // record can be posted later with "Post existing records" once the account is fixed.
+      this.logger.warn(`Ledger entry for ${input.sourceModule} ${input.sourceId} not posted: ${err.message}`);
+      return null;
+    }
     const reference = await nextRef(db as never, input.companyId, "JE");
 
     try {
@@ -400,12 +418,19 @@ export class LedgerService {
 
   /** Does the ledger agree with the sub-ledgers (invoices owed to us, bills we owe)? */
   async health(companyId: string) {
-    const [tb, arSub, apSub, postedSources] = await Promise.all([
+    const [tb, arSub, apSub, postedSources, existing] = await Promise.all([
       this.trialBalance(companyId),
       this.prisma.invoice.aggregate({ where: { companyId, deletedAt: null, status: { notIn: ["DRAFT", "VOID"] } }, _sum: { balanceDue: true } }),
       this.prisma.supplierInvoice.aggregate({ where: { companyId, deletedAt: null }, _sum: { balanceDue: true } }),
       this.prisma.journalEntry.groupBy({ by: ["sourceModule"], where: { companyId, deletedAt: null, sourceModule: { not: null } }, _count: true }),
+      this.prisma.account.findMany({ where: { companyId, code: { in: Object.keys(DEFAULT_ACCOUNTS) }, deletedAt: null }, select: { code: true, name: true, type: true } }),
     ]);
+    // Automatic postings use these account codes. If the company already had an account with the same code but
+    // a different kind (say 1100 as an expense), postings would land in the wrong place, so flag it.
+    const standardAccounts = Object.entries(DEFAULT_ACCOUNTS).map(([code, def]) => {
+      const found = existing.find((a) => a.code === code);
+      return { code, expectedName: def.name, expectedType: def.type, name: found?.name ?? null, type: found?.type ?? null, status: !found ? "NOT_CREATED_YET" : found.type === def.type ? "OK" : "WRONG_TYPE" };
+    });
     const bal = (code: string) => {
       const r = tb.rows.find((x) => x.code === code);
       return r ? roundMoney(r.balanceDebit - r.balanceCredit) : 0;
@@ -419,6 +444,7 @@ export class LedgerService {
       receivables: { ledger: arLedger, subledger: arSubledger, difference: roundMoney(arLedger - arSubledger) },
       payables: { ledger: apLedger, subledger: apSubledger, difference: roundMoney(apLedger - apSubledger) },
       postedBySource: Object.fromEntries(postedSources.map((s) => [s.sourceModule ?? "MANUAL", s._count])),
+      standardAccounts,
     };
   }
 }

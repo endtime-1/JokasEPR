@@ -4,6 +4,7 @@ import { GL, LedgerService, cashAccountFor } from "./ledger.service";
 jest.mock("../../common/next-ref", () => ({ nextRef: jest.fn().mockResolvedValue("JE-2026-0001") }));
 
 const accounts = new Map<string, string>();
+const typeOf = (code: string) => ({ "1": "ASSET", "2": "LIABILITY", "3": "EQUITY", "4": "REVENUE", "5": "EXPENSE", "6": "EXPENSE" } as Record<string, string>)[code[0]];
 const db = {
   account: { findMany: jest.fn(), create: jest.fn(), findFirst: jest.fn() },
   journalEntry: { findFirst: jest.fn(), create: jest.fn(), updateMany: jest.fn(), groupBy: jest.fn() },
@@ -28,7 +29,7 @@ beforeEach(() => {
   accounts.clear();
   db.systemSetting.findFirst.mockResolvedValue(null);
   db.journalEntry.findFirst.mockResolvedValue(null);
-  db.account.findMany.mockImplementation(({ where }: { where: { code: { in: string[] } } }) => Promise.resolve(where.code.in.filter((c) => accounts.has(c)).map((c) => ({ id: accounts.get(c), code: c }))));
+  db.account.findMany.mockImplementation(({ where }: { where: { code: { in: string[] } } }) => Promise.resolve(where.code.in.filter((c) => accounts.has(c)).map((c) => ({ id: accounts.get(c), code: c, type: typeOf(c) }))));
   db.account.create.mockImplementation(({ data }: { data: { code: string } }) => { const id = `acc-${data.code}`; accounts.set(data.code, id); return Promise.resolve({ id }); });
   db.journalEntry.create.mockImplementation(({ data }: { data: object }) => Promise.resolve({ id: "je-1", reference: "JE-2026-0001", ...data }));
 });
@@ -215,6 +216,8 @@ describe("LedgerService reports", () => {
     db.supplierInvoice.aggregate.mockResolvedValue({ _sum: { balanceDue: 100 } });
     db.journalEntry.groupBy.mockResolvedValue([{ sourceModule: "SALES_INVOICE", _count: 4 }]);
     const h = await svc().health("c1");
+    // (the account list is shared with the report mocks, so only check that the check ran)
+    expect(Array.isArray(h.standardAccounts)).toBe(true);
     expect(h.receivables).toEqual({ ledger: 600, subledger: 600, difference: 0 });
     expect(h.payables).toEqual({ ledger: 100, subledger: 100, difference: 0 });
     expect(h.postedBySource).toEqual({ SALES_INVOICE: 4 });
@@ -225,5 +228,28 @@ describe("period lock settings", () => {
   it("only a past date can close the books, and null reopens them", async () => {
     await expect(svc().setLockedThrough("c1", "u1", "2999-01-01")).rejects.toThrow(BadRequestException);
     await expect(svc().setLockedThrough("c1", "u1", "not-a-date")).rejects.toThrow(/valid date/);
+  });
+});
+
+describe("standard account check", () => {
+  it("flags a standard code that already exists with the wrong kind of account", async () => {
+    db.journalEntryLine.groupBy.mockResolvedValue([]);
+    db.invoice.aggregate.mockResolvedValue({ _sum: { balanceDue: 0 } });
+    db.supplierInvoice.aggregate.mockResolvedValue({ _sum: { balanceDue: 0 } });
+    db.journalEntry.groupBy.mockResolvedValue([]);
+    db.account.findMany.mockResolvedValue([{ code: "1100", name: "Office rent", type: "EXPENSE" }, { code: "4000", name: "Sales Revenue", type: "REVENUE" }]);
+    const h = await svc().health("c1");
+    expect(h.standardAccounts.find((a) => a.code === "1100")?.status).toBe("WRONG_TYPE");
+    expect(h.standardAccounts.find((a) => a.code === "4000")?.status).toBe("OK");
+    expect(h.standardAccounts.find((a) => a.code === "2000")?.status).toBe("NOT_CREATED_YET");
+  });
+});
+
+describe("a misconfigured chart of accounts does not block the business", () => {
+  it("skips the posting (instead of failing the sale) when a standard code is already a different kind of account", async () => {
+    db.account.findMany.mockResolvedValue([{ id: "x", code: "1100", type: "EXPENSE" }]);
+    const out = await svc().salesInvoice(db as never, ctx, { id: "inv-1", invoiceNumber: "INV-1", invoiceDate: new Date("2026-10-01"), totalAmount: 100 });
+    expect(out).toBeNull();
+    expect(db.journalEntry.create).not.toHaveBeenCalled();
   });
 });

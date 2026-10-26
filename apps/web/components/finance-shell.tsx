@@ -75,7 +75,10 @@ const sections: NavSection[] = [
     items: [
       { href: "/finance/journal-entries", label: "Journal Entries", icon: BookOpen },
       { href: "/finance/petty-cash", label: "Petty Cash", icon: PiggyBank },
-      { href: "/finance/chart-of-accounts", label: "Chart of Accounts", icon: Scale }
+      { href: "/finance/chart-of-accounts", label: "Chart of Accounts", icon: Scale },
+      { href: "/finance/ledger/trial-balance", label: "Trial Balance", icon: Scale },
+      { href: "/finance/ledger/general-ledger", label: "General Ledger", icon: BookOpen },
+      { href: "/finance/ledger/setup", label: "Ledger Setup", icon: Scale }
     ]
   },
   {
@@ -92,7 +95,9 @@ const sections: NavSection[] = [
     title: "Reports",
     iconColor: "text-orange-400",
     items: [
-      { href: "/finance/reports/profit-loss", label: "Profit & Loss", icon: TrendingUp },
+      { href: "/finance/ledger/income-statement", label: "Income Statement", icon: TrendingUp },
+      { href: "/finance/ledger/balance-sheet", label: "Balance Sheet", icon: FileChartColumn },
+      { href: "/finance/reports/profit-loss", label: "Profit & Loss (cash)", icon: TrendingUp },
       { href: "/finance/reports/cash-flow", label: "Cash Flow", icon: ChartBar },
       { href: "/finance/reports/product-profitability", label: "Product P&L", icon: FileChartColumn },
       { href: "/finance/reports/batch-profitability", label: "Batch P&L", icon: FileText }
