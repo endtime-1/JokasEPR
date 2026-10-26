@@ -253,17 +253,17 @@ export function PoultryExecutivePage() {
 
 const M = { top: 4, right: 12, bottom: 0, left: -8 };
 const AX = { fontSize: 10, fill: "#9a8e83" };
-const Grid = () => <CartesianGrid strokeDasharray="4 5" stroke="#eadfd2" vertical={false} />;
+const Grid = () => <CartesianGrid strokeDasharray="4 5" stroke="rgb(var(--c-line))" vertical={false} />;
 const X = () => <XAxis dataKey="date" tick={AX} minTickGap={20} />;
 const Y = () => <YAxis tick={AX} width={44} />;
-const Tip = () => <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />;
+const Tip = () => <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, background: "rgb(var(--c-surface))", border: "1px solid rgb(var(--c-line))", color: "rgb(var(--c-ink))" }} />;
 const crateLabel = (eggs: number) => `${eggs.toLocaleString()} (${(eggs / EGGS_PER_CRATE).toLocaleString(undefined, { maximumFractionDigits: 1 })} crates)`;
 const EggTip = () => (
-  <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} formatter={(value: any) => [crateLabel(Number(value)), "Eggs"]} />
+  <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, background: "rgb(var(--c-surface))", border: "1px solid rgb(var(--c-line))", color: "rgb(var(--c-ink))" }} formatter={(value: any) => [crateLabel(Number(value)), "Eggs"]} />
 );
 const FarmCompareTip = () => (
   <Tooltip
-    contentStyle={{ fontSize: 12, borderRadius: 8 }}
+    contentStyle={{ fontSize: 12, borderRadius: 8, background: "rgb(var(--c-surface))", border: "1px solid rgb(var(--c-line))", color: "rgb(var(--c-ink))" }}
     formatter={(value: any, name: any) => (name === "Eggs" ? [crateLabel(Number(value)), name] : [`${value}%`, name])}
   />
 );

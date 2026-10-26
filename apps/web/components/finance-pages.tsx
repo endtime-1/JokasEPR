@@ -105,12 +105,12 @@ function PnLBarChart({ data }: { data: ChartMonth[] }) {
               {/* Expense bar */}
               <rect x={x + 30} y={H - eh} width={22} height={eh} fill="#f58220" rx={3} opacity={0.85} />
               {/* Label */}
-              <text x={x + 32} y={H + 18} textAnchor="middle" fontSize={10} fill="#64748b">{d.label}</text>
+              <text x={x + 32} y={H + 18} textAnchor="middle" fontSize={10} fill="rgb(var(--c-muted))">{d.label}</text>
             </g>
           );
         })}
         {/* Baseline */}
-        <line x1={0} y1={H} x2={data.length * 64} y2={H} stroke="#e2e8f0" strokeWidth={1} />
+        <line x1={0} y1={H} x2={data.length * 64} y2={H} stroke="rgb(var(--c-line))" strokeWidth={1} />
       </svg>
       <div className="mt-1 flex items-center gap-4 text-[11px] text-slate-500">
         <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-emerald-600 opacity-85" />Revenue</span>
@@ -137,7 +137,7 @@ function DonutChart({ data }: { data: DonutSlice[] }) {
   return (
     <div className="flex items-center gap-4">
       <svg viewBox="0 0 112 112" className="h-28 w-28 shrink-0" aria-hidden>
-        <circle cx={cx} cy={cy} r={r} fill="none" stroke="#f1f5f9" strokeWidth={18} />
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgb(var(--c-line))" strokeWidth={18} />
         {data.map((d, i) => {
           const dash = (d.amount / total) * circ;
           const gap = circ - dash;
@@ -155,7 +155,7 @@ function DonutChart({ data }: { data: DonutSlice[] }) {
           offset += dash;
           return el;
         })}
-        {data.length === 0 && <circle cx={cx} cy={cy} r={r} fill="none" stroke="#e2e8f0" strokeWidth={18} />}
+        {data.length === 0 && <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgb(var(--c-line))" strokeWidth={18} />}
       </svg>
       <ul className="space-y-1.5 text-xs">
         {data.map((d, i) => (

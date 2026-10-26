@@ -390,10 +390,10 @@ function ChartSection({ section }: { section: Extract<Section, { type: "line-cha
           <ResponsiveContainer width="100%" height="100%">
             {section.type === "line-chart" ? (
               <LineChart data={section.data} margin={{ top: 4, right: 12, bottom: 0, left: -8 }}>
-                <CartesianGrid strokeDasharray="4 5" stroke="#eadfd2" vertical={false} />
+                <CartesianGrid strokeDasharray="4 5" stroke="rgb(var(--c-line))" vertical={false} />
                 <XAxis dataKey={section.xKey} tick={{ fontSize: 10, fill: "#9a8e83" }} tickFormatter={fmtAxisDate} minTickGap={24} />
                 <YAxis tick={{ fontSize: 10, fill: "#9a8e83" }} width={48} />
-                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, background: "rgb(var(--c-surface))", border: "1px solid rgb(var(--c-line))", color: "rgb(var(--c-ink))" }} />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
                 {section.series.map((se) => (
                   <Line key={se.key} type="monotone" dataKey={se.key} name={se.name} stroke={se.color ?? "#2F6F6A"} strokeWidth={2} dot={false} />
@@ -401,10 +401,10 @@ function ChartSection({ section }: { section: Extract<Section, { type: "line-cha
               </LineChart>
             ) : (
               <BarChart data={section.data} margin={{ top: 4, right: 12, bottom: 0, left: -8 }}>
-                <CartesianGrid strokeDasharray="4 5" stroke="#eadfd2" vertical={false} />
+                <CartesianGrid strokeDasharray="4 5" stroke="rgb(var(--c-line))" vertical={false} />
                 <XAxis dataKey={section.xKey} tick={{ fontSize: 10, fill: "#9a8e83" }} tickFormatter={fmtAxisDate} minTickGap={24} />
                 <YAxis tick={{ fontSize: 10, fill: "#9a8e83" }} width={48} />
-                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, background: "rgb(var(--c-surface))", border: "1px solid rgb(var(--c-line))", color: "rgb(var(--c-ink))" }} />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
                 {section.series.map((se) => (
                   <Bar key={se.key} dataKey={se.key} name={se.name} fill={se.color ?? "#2F6F6A"} radius={[3, 3, 0, 0]} />

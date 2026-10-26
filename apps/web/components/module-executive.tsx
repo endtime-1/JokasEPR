@@ -157,19 +157,19 @@ export function ModuleExecutivePage({ module }: { module: keyof typeof CONFIG })
                     <ResponsiveContainer width="100%" height="100%">
                       {c.kind === "line" ? (
                         <LineChart data={rows} margin={{ top: 4, right: 12, bottom: 0, left: -8 }}>
-                          <CartesianGrid strokeDasharray="4 5" stroke="#eadfd2" vertical={false} />
+                          <CartesianGrid strokeDasharray="4 5" stroke="rgb(var(--c-line))" vertical={false} />
                           <XAxis dataKey={c.xKey} tick={{ fontSize: 10, fill: "#9a8e83" }} minTickGap={20} />
                           <YAxis tick={{ fontSize: 10, fill: "#9a8e83" }} width={48} />
-                          <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+                          <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, background: "rgb(var(--c-surface))", border: "1px solid rgb(var(--c-line))", color: "rgb(var(--c-ink))" }} />
                           <Legend wrapperStyle={{ fontSize: 11 }} />
                           {c.series.map((s) => <Line key={s.key} type="monotone" dataKey={s.key} name={s.name} stroke={s.color ?? "#2F6F6A"} strokeWidth={2} dot={false} />)}
                         </LineChart>
                       ) : (
                         <BarChart data={rows} margin={{ top: 4, right: 12, bottom: 0, left: -8 }}>
-                          <CartesianGrid strokeDasharray="4 5" stroke="#eadfd2" vertical={false} />
+                          <CartesianGrid strokeDasharray="4 5" stroke="rgb(var(--c-line))" vertical={false} />
                           <XAxis dataKey={c.xKey} tick={{ fontSize: 10, fill: "#9a8e83" }} minTickGap={12} />
                           <YAxis tick={{ fontSize: 10, fill: "#9a8e83" }} width={48} />
-                          <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+                          <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, background: "rgb(var(--c-surface))", border: "1px solid rgb(var(--c-line))", color: "rgb(var(--c-ink))" }} />
                           <Legend wrapperStyle={{ fontSize: 11 }} />
                           {c.series.map((s) => <Bar key={s.key} dataKey={s.key} name={s.name} fill={s.color ?? "#2F6F6A"} radius={[3, 3, 0, 0]} />)}
                         </BarChart>

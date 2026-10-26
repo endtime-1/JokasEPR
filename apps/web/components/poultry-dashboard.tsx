@@ -249,9 +249,9 @@ function TrendChart({ points, color, label, unit = "" }: {
           </defs>
           {[0.5, 1].map((t) => (
             <line key={t} x1={PL} y1={PB - t * chartH} x2={W - 10} y2={PB - t * chartH}
-              stroke="#eadfd2" strokeWidth="1" strokeDasharray="4 6" />
+              stroke="rgb(var(--c-line))" strokeWidth="1" strokeDasharray="4 6" />
           ))}
-          <line x1={PL} y1={PB} x2={W - 10} y2={PB} stroke="#eadfd2" strokeWidth="1.5" />
+          <line x1={PL} y1={PB} x2={W - 10} y2={PB} stroke="rgb(var(--c-line))" strokeWidth="1.5" />
           {pts.length > 1 && (
             <>
               <polygon points={`${pts[0].x},${PB} ${ptStr} ${pts[pts.length - 1].x},${PB}`} fill={`url(#${gradId})`} />
