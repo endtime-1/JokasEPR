@@ -33,6 +33,7 @@ export type RecordsStackParams = {
   SoyaProcessing: undefined;
   AttendanceCheckIn: undefined;
   ProspectVisit: undefined;
+  FieldVisits: undefined;
   QualityCheck: undefined;
   HiproPredict: undefined;
   StockAdjustment: undefined;

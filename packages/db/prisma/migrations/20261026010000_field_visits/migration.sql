@@ -1,0 +1,33 @@
+-- Owner request (2026-10-26): prove that sales / marketing reps are really at the places
+-- they say they are visiting. A planned visit, then a GPS check-in compared to the pin.
+CREATE TABLE `FieldVisit` (
+  `id`            VARCHAR(191) NOT NULL,
+  `companyId`     VARCHAR(191) NOT NULL,
+  `branchId`      VARCHAR(191) NULL,
+  `repId`         VARCHAR(191) NOT NULL,
+  `customerId`    VARCHAR(191) NULL,
+  `placeName`     VARCHAR(200) NOT NULL,
+  `address`       VARCHAR(300) NULL,
+  `purpose`       VARCHAR(300) NULL,
+  `plannedFor`    DATETIME(3) NOT NULL,
+  `plannedLat`    DECIMAL(10,7) NULL,
+  `plannedLon`    DECIMAL(10,7) NULL,
+  `status`        VARCHAR(20) NOT NULL DEFAULT 'PLANNED',
+  `checkedInAt`   DATETIME(3) NULL,
+  `checkInLat`    DECIMAL(10,7) NULL,
+  `checkInLon`    DECIMAL(10,7) NULL,
+  `accuracyM`     INTEGER NULL,
+  `distanceM`     INTEGER NULL,
+  `verification`  VARCHAR(20) NULL,
+  `checkInSource` VARCHAR(10) NULL,
+  `checkInNote`   VARCHAR(500) NULL,
+  `createdById`   VARCHAR(191) NULL,
+  `createdAt`     DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `updatedAt`     DATETIME(3) NOT NULL,
+  `deletedAt`     DATETIME(3) NULL,
+  PRIMARY KEY (`id`),
+  INDEX `FieldVisit_companyId_plannedFor_idx` (`companyId`, `plannedFor`),
+  INDEX `FieldVisit_companyId_repId_plannedFor_idx` (`companyId`, `repId`, `plannedFor`),
+  INDEX `FieldVisit_companyId_status_idx` (`companyId`, `status`),
+  INDEX `FieldVisit_deletedAt_idx` (`deletedAt`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;

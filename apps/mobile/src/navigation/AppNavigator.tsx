@@ -22,6 +22,7 @@ import { ProductionRecordScreen } from "../features/production/ProductionRecordS
 import { SoyaProcessingScreen } from "../features/soya/SoyaProcessingScreen";
 import { AttendanceCheckInScreen } from "../features/hr/AttendanceCheckInScreen";
 import { ProspectVisitScreen } from "../features/sales/ProspectVisitScreen";
+import { FieldVisitsScreen } from "../features/sales/FieldVisitsScreen";
 import { QualityCheckScreen } from "../features/quality/QualityCheckScreen";
 import { HiproPredictiveScreen } from "../features/feed/HiproPredictiveScreen";
 import { ScannerScreen } from "../features/scanner/ScannerScreen";
@@ -284,6 +285,7 @@ function RecordsNavigator() {
       <RecordsStack.Screen name="SoyaProcessing"   component={SoyaProcessingScreen}    options={{ title: "Soya Processing"      }} />
       <RecordsStack.Screen name="AttendanceCheckIn" component={AttendanceCheckInScreen} options={{ title: "Attendance Check-In"  }} />
       <RecordsStack.Screen name="ProspectVisit"    component={P.ProspectVisit}     options={{ title: "Prospect Visit"       }} />
+      <RecordsStack.Screen name="FieldVisits"      component={FieldVisitsScreen}   options={{ title: "Field Visits"         }} />
       <RecordsStack.Screen name="QualityCheck"     component={P.QualityCheck}      options={{ title: "Quality Inspection"   }} />
       <RecordsStack.Screen name="HiproPredict"     component={P.HiproPredict}      options={{ title: "Feed Predictive"      }} />
       <RecordsStack.Screen name="HealthObservation"   component={HealthObservationScreen}  options={{ title: "Health Observation" }} />

@@ -2701,6 +2701,40 @@ model ProspectVisit {
   @@index([deletedAt])
 }
 
+// A planned (or ad-hoc) field visit by a rep, and the proof they were there: the
+// location captured when they check in, compared with the planned pin.
+model FieldVisit {
+  id             String    @id @default(uuid())
+  companyId      String
+  branchId       String?
+  repId          String
+  customerId     String?
+  placeName      String    @db.VarChar(200)
+  address        String?   @db.VarChar(300)
+  purpose        String?   @db.VarChar(300)
+  plannedFor     DateTime
+  plannedLat     Decimal?  @db.Decimal(10, 7)
+  plannedLon     Decimal?  @db.Decimal(10, 7)
+  status         String    @default("PLANNED") @db.VarChar(20)
+  checkedInAt    DateTime?
+  checkInLat     Decimal?  @db.Decimal(10, 7)
+  checkInLon     Decimal?  @db.Decimal(10, 7)
+  accuracyM      Int?
+  distanceM      Int?
+  verification   String?   @db.VarChar(20)
+  checkInSource  String?   @db.VarChar(10)
+  checkInNote    String?   @db.VarChar(500)
+  createdById    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  @@index([companyId, plannedFor])
+  @@index([companyId, repId, plannedFor])
+  @@index([companyId, status])
+  @@index([deletedAt])
+}
+
 model DeliveryNote {
   id             String             @id @default(uuid())
   companyId      String

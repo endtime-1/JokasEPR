@@ -81,6 +81,7 @@ const GROUPS: Group[] = [
       { icon: "cart-plus",           label: "Sales Order",      desc: "Create a new customer sales order",          screen: "SalesOrder",        roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#10B981" },
       { icon: "format-list-bulleted", label: "Order History",   desc: "View and filter all sales orders",           screen: "SalesOrderHistory", roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#16a34a" },
       { icon: "account-group",       label: "Customer Directory",desc: "Search and view customer profiles",         screen: "CustomerList",      roles: ["OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#7c3aed" },
+      { icon: "map-marker-check",    label: "Field Visits",     desc: "Check in at a planned visit to prove you are there", screen: "FieldVisits",  roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#16a34a" },
       { icon: "map-marker-plus",     label: "Prospect Visit",   desc: "Log a field visit with GPS location",        screen: "ProspectVisit",     roles: ["WORKER","OFFICER","MANAGER","CEO","SUPER_ADMIN"], color: "#D97706" },
     ],
   },

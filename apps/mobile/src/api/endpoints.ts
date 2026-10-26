@@ -226,6 +226,21 @@ export const submitProspectVisit = (payload: Record<string, unknown>) =>
 export const fetchMyProspectVisits = (dateFrom?: string) =>
   apiFetch<ApiEnvelope<ProspectVisit[]>>(`/sales/prospect-visits/my?limit=50${dateFrom ? `&dateFrom=${dateFrom}` : ""}`);
 
+// Field visits (proof of presence)
+export type FieldVisit = {
+  id: string; placeName: string; address?: string | null; purpose?: string | null; plannedFor: string;
+  plannedLat?: number | string | null; plannedLon?: number | string | null;
+  status: string; displayStatus: string; verification?: string | null; distanceM?: number | null; accuracyM?: number | null;
+};
+
+export const fetchMyFieldVisits = () => {
+  const d = new Date().toISOString().slice(0, 10);
+  return apiFetch<ApiEnvelope<FieldVisit[]>>(`/sales/field-visits/my?dateFrom=${d}&dateTo=${d}`);
+};
+
+export const fieldVisitCheckIn = (id: string, payload: { latitude: number; longitude: number; accuracyM?: number; source: "MOBILE" | "WEB" }) =>
+  apiFetch<ApiEnvelope<FieldVisit>>(`/sales/field-visits/${id}/check-in`, { method: "POST", body: JSON.stringify(payload) });
+
 // Attendance (self check-in)
 export const submitAttendanceMe = (payload: Record<string, unknown>) =>
   apiFetch<ApiEnvelope<unknown>>("/hr/attendance/me", { method: "POST", body: JSON.stringify(payload) });

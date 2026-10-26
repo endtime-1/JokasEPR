@@ -90,10 +90,11 @@ const salesNavLinks = [
   { href: "/sales/delivery-notes",label: "Delivery Notes" },
   { href: "/sales/statements",    label: "Statements" },
   { href: "/sales/price-lists",   label: "Price Lists" },
+  { href: "/sales/field-visits",  label: "Field Visits" },
   { href: "/sales/reports",       label: "Reports" },
 ];
 
-function SalesNav() {
+export function SalesNav() {
   const pathname = usePathname();
   return (
     <div className="mb-6 flex flex-wrap gap-1.5">
