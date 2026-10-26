@@ -137,11 +137,11 @@ textarea::placeholder {
 
 @layer components {
   .app-card {
-    @apply rounded-2xl border border-line bg-white shadow-panel;
+    @apply rounded-2xl border border-line bg-surface shadow-panel;
   }
 
   .app-control {
-    @apply min-h-10 rounded-lg border border-line bg-white px-3 text-sm text-ink transition
+    @apply min-h-10 rounded-lg border border-line bg-surface px-3 text-sm text-ink transition
            focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15;
   }
 
@@ -157,7 +157,7 @@ textarea::placeholder {
   }
 
   .app-button-secondary {
-    @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-line bg-white px-4
+    @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-line bg-surface px-4
            text-sm font-semibold text-ink transition hover:border-brand/40 hover:bg-field active:scale-[0.98]
            disabled:cursor-not-allowed disabled:opacity-60;
   }
@@ -188,9 +188,16 @@ textarea::placeholder {
 
   /* Stat card */
   .app-stat-card {
-    @apply rounded-2xl border border-line bg-white shadow-panel p-4 transition hover:-translate-y-0.5 hover:shadow-soft;
+    @apply rounded-2xl border border-line bg-surface shadow-panel p-4 transition hover:-translate-y-0.5 hover:shadow-soft;
   }
 }
+
+/* Alert boxes are @apply-built too, so give them their dark colours directly. */
+[data-theme="dark"] .app-alert-error { background-color: rgb(239 68 68 / 0.12); border-color: rgb(239 68 68 / 0.35); color: rgb(252 165 165); }
+[data-theme="dark"] .app-alert-success { background-color: rgb(16 185 129 / 0.12); border-color: rgb(16 185 129 / 0.35); color: rgb(110 231 183); }
+[data-theme="dark"] .app-alert-warning { background-color: rgb(245 158 11 / 0.12); border-color: rgb(245 158 11 / 0.35); color: rgb(252 211 77); }
+[data-theme="dark"] .app-alert-info { background-color: rgb(59 130 246 / 0.12); border-color: rgb(59 130 246 / 0.35); color: rgb(147 197 253); }
+[data-theme="dark"] .app-control[aria-invalid="true"], [data-theme="dark"] .app-control.is-error { border-color: rgb(248 113 113); }
 
 /* Print styles */
 @media print {

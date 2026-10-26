@@ -2,14 +2,13 @@
    so dark mode works across every page without editing each one. Screen only: print stays light. */
 @media screen {
 [data-theme="dark"] .bg-white{background-color:rgb(var(--c-surface))}
-[data-theme="dark"] [class*="bg-white/"]{background-color:rgb(var(--c-surface) / .85)}
+[data-theme="dark"] .bg-white\/60{background-color:rgb(var(--c-surface) / .6)}
+[data-theme="dark"] .bg-white\/80{background-color:rgb(var(--c-surface) / .8)}
+[data-theme="dark"] .bg-white\/95{background-color:rgb(var(--c-surface) / .95)}
 [data-theme="dark"] .bg-ink{background-color:rgb(var(--c-sidebar))}
 [data-theme="dark"] .border-white{border-color:rgb(var(--c-surface))}
 [data-theme="dark"] .text-black{color:rgb(var(--c-ink))}
 [data-theme="dark"] .bg-brand.text-white,[data-theme="dark"] .bg-brand .text-white,[data-theme="dark"] .app-button-primary{color:#1a0e00}
-[data-theme="dark"] .from-white{--tw-gradient-from:rgb(var(--c-surface)) var(--tw-gradient-from-position);--tw-gradient-to:rgb(var(--c-surface) / 0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to)}
-[data-theme="dark"] .to-white{--tw-gradient-to:rgb(var(--c-surface)) var(--tw-gradient-to-position)}
-[data-theme="dark"] .via-white{--tw-gradient-stops:var(--tw-gradient-from),rgb(var(--c-surface)) var(--tw-gradient-via-position),var(--tw-gradient-to)}
 [data-theme="dark"] .bg-slate-50{background-color:rgb(var(--c-field))}
 [data-theme="dark"] .bg-slate-100{background-color:rgb(var(--c-line))}
 [data-theme="dark"] .bg-slate-200{background-color:rgb(var(--c-line) / .9)}
@@ -93,8 +92,6 @@
 [data-theme="dark"] .border-red-100{border-color:rgb(239 68 68 / .35)}
 [data-theme="dark"] .border-red-200{border-color:rgb(239 68 68 / .35)}
 [data-theme="dark"] .border-red-300{border-color:rgb(239 68 68 / .35)}
-[data-theme="dark"] .from-red-50{--tw-gradient-from:rgb(239 68 68 / .12) var(--tw-gradient-from-position);--tw-gradient-to:rgb(239 68 68 / 0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to)}
-[data-theme="dark"] .to-red-50{--tw-gradient-to:rgb(239 68 68 / .12) var(--tw-gradient-to-position)}
 [data-theme="dark"] .ring-red-200{--tw-ring-color:rgb(239 68 68 / .35)}
 [data-theme="dark"] .bg-rose-50{background-color:rgb(244 63 94 / .12)}
 [data-theme="dark"] .bg-rose-100{background-color:rgb(244 63 94 / .18)}
@@ -109,8 +106,6 @@
 [data-theme="dark"] .border-rose-100{border-color:rgb(244 63 94 / .35)}
 [data-theme="dark"] .border-rose-200{border-color:rgb(244 63 94 / .35)}
 [data-theme="dark"] .border-rose-300{border-color:rgb(244 63 94 / .35)}
-[data-theme="dark"] .from-rose-50{--tw-gradient-from:rgb(244 63 94 / .12) var(--tw-gradient-from-position);--tw-gradient-to:rgb(244 63 94 / 0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to)}
-[data-theme="dark"] .to-rose-50{--tw-gradient-to:rgb(244 63 94 / .12) var(--tw-gradient-to-position)}
 [data-theme="dark"] .ring-rose-200{--tw-ring-color:rgb(244 63 94 / .35)}
 [data-theme="dark"] .bg-pink-50{background-color:rgb(236 72 153 / .12)}
 [data-theme="dark"] .bg-pink-100{background-color:rgb(236 72 153 / .18)}
@@ -125,8 +120,6 @@
 [data-theme="dark"] .border-pink-100{border-color:rgb(236 72 153 / .35)}
 [data-theme="dark"] .border-pink-200{border-color:rgb(236 72 153 / .35)}
 [data-theme="dark"] .border-pink-300{border-color:rgb(236 72 153 / .35)}
-[data-theme="dark"] .from-pink-50{--tw-gradient-from:rgb(236 72 153 / .12) var(--tw-gradient-from-position);--tw-gradient-to:rgb(236 72 153 / 0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to)}
-[data-theme="dark"] .to-pink-50{--tw-gradient-to:rgb(236 72 153 / .12) var(--tw-gradient-to-position)}
 [data-theme="dark"] .ring-pink-200{--tw-ring-color:rgb(236 72 153 / .35)}
 [data-theme="dark"] .bg-orange-50{background-color:rgb(249 115 22 / .12)}
 [data-theme="dark"] .bg-orange-100{background-color:rgb(249 115 22 / .18)}
@@ -141,8 +134,6 @@
 [data-theme="dark"] .border-orange-100{border-color:rgb(249 115 22 / .35)}
 [data-theme="dark"] .border-orange-200{border-color:rgb(249 115 22 / .35)}
 [data-theme="dark"] .border-orange-300{border-color:rgb(249 115 22 / .35)}
-[data-theme="dark"] .from-orange-50{--tw-gradient-from:rgb(249 115 22 / .12) var(--tw-gradient-from-position);--tw-gradient-to:rgb(249 115 22 / 0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to)}
-[data-theme="dark"] .to-orange-50{--tw-gradient-to:rgb(249 115 22 / .12) var(--tw-gradient-to-position)}
 [data-theme="dark"] .ring-orange-200{--tw-ring-color:rgb(249 115 22 / .35)}
 [data-theme="dark"] .bg-amber-50{background-color:rgb(245 158 11 / .12)}
 [data-theme="dark"] .bg-amber-100{background-color:rgb(245 158 11 / .18)}
@@ -157,8 +148,6 @@
 [data-theme="dark"] .border-amber-100{border-color:rgb(245 158 11 / .35)}
 [data-theme="dark"] .border-amber-200{border-color:rgb(245 158 11 / .35)}
 [data-theme="dark"] .border-amber-300{border-color:rgb(245 158 11 / .35)}
-[data-theme="dark"] .from-amber-50{--tw-gradient-from:rgb(245 158 11 / .12) var(--tw-gradient-from-position);--tw-gradient-to:rgb(245 158 11 / 0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to)}
-[data-theme="dark"] .to-amber-50{--tw-gradient-to:rgb(245 158 11 / .12) var(--tw-gradient-to-position)}
 [data-theme="dark"] .ring-amber-200{--tw-ring-color:rgb(245 158 11 / .35)}
 [data-theme="dark"] .bg-yellow-50{background-color:rgb(234 179 8 / .12)}
 [data-theme="dark"] .bg-yellow-100{background-color:rgb(234 179 8 / .18)}
@@ -173,8 +162,6 @@
 [data-theme="dark"] .border-yellow-100{border-color:rgb(234 179 8 / .35)}
 [data-theme="dark"] .border-yellow-200{border-color:rgb(234 179 8 / .35)}
 [data-theme="dark"] .border-yellow-300{border-color:rgb(234 179 8 / .35)}
-[data-theme="dark"] .from-yellow-50{--tw-gradient-from:rgb(234 179 8 / .12) var(--tw-gradient-from-position);--tw-gradient-to:rgb(234 179 8 / 0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to)}
-[data-theme="dark"] .to-yellow-50{--tw-gradient-to:rgb(234 179 8 / .12) var(--tw-gradient-to-position)}
 [data-theme="dark"] .ring-yellow-200{--tw-ring-color:rgb(234 179 8 / .35)}
 [data-theme="dark"] .bg-lime-50{background-color:rgb(132 204 22 / .12)}
 [data-theme="dark"] .bg-lime-100{background-color:rgb(132 204 22 / .18)}
@@ -189,8 +176,6 @@
 [data-theme="dark"] .border-lime-100{border-color:rgb(132 204 22 / .35)}
 [data-theme="dark"] .border-lime-200{border-color:rgb(132 204 22 / .35)}
 [data-theme="dark"] .border-lime-300{border-color:rgb(132 204 22 / .35)}
-[data-theme="dark"] .from-lime-50{--tw-gradient-from:rgb(132 204 22 / .12) var(--tw-gradient-from-position);--tw-gradient-to:rgb(132 204 22 / 0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to)}
-[data-theme="dark"] .to-lime-50{--tw-gradient-to:rgb(132 204 22 / .12) var(--tw-gradient-to-position)}
 [data-theme="dark"] .ring-lime-200{--tw-ring-color:rgb(132 204 22 / .35)}
 [data-theme="dark"] .bg-green-50{background-color:rgb(34 197 94 / .12)}
 [data-theme="dark"] .bg-green-100{background-color:rgb(34 197 94 / .18)}
@@ -205,8 +190,6 @@
 [data-theme="dark"] .border-green-100{border-color:rgb(34 197 94 / .35)}
 [data-theme="dark"] .border-green-200{border-color:rgb(34 197 94 / .35)}
 [data-theme="dark"] .border-green-300{border-color:rgb(34 197 94 / .35)}
-[data-theme="dark"] .from-green-50{--tw-gradient-from:rgb(34 197 94 / .12) var(--tw-gradient-from-position);--tw-gradient-to:rgb(34 197 94 / 0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to)}
-[data-theme="dark"] .to-green-50{--tw-gradient-to:rgb(34 197 94 / .12) var(--tw-gradient-to-position)}
 [data-theme="dark"] .ring-green-200{--tw-ring-color:rgb(34 197 94 / .35)}
 [data-theme="dark"] .bg-emerald-50{background-color:rgb(16 185 129 / .12)}
 [data-theme="dark"] .bg-emerald-100{background-color:rgb(16 185 129 / .18)}
@@ -221,8 +204,6 @@
 [data-theme="dark"] .border-emerald-100{border-color:rgb(16 185 129 / .35)}
 [data-theme="dark"] .border-emerald-200{border-color:rgb(16 185 129 / .35)}
 [data-theme="dark"] .border-emerald-300{border-color:rgb(16 185 129 / .35)}
-[data-theme="dark"] .from-emerald-50{--tw-gradient-from:rgb(16 185 129 / .12) var(--tw-gradient-from-position);--tw-gradient-to:rgb(16 185 129 / 0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to)}
-[data-theme="dark"] .to-emerald-50{--tw-gradient-to:rgb(16 185 129 / .12) var(--tw-gradient-to-position)}
 [data-theme="dark"] .ring-emerald-200{--tw-ring-color:rgb(16 185 129 / .35)}
 [data-theme="dark"] .bg-teal-50{background-color:rgb(20 184 166 / .12)}
 [data-theme="dark"] .bg-teal-100{background-color:rgb(20 184 166 / .18)}
@@ -237,8 +218,6 @@
 [data-theme="dark"] .border-teal-100{border-color:rgb(20 184 166 / .35)}
 [data-theme="dark"] .border-teal-200{border-color:rgb(20 184 166 / .35)}
 [data-theme="dark"] .border-teal-300{border-color:rgb(20 184 166 / .35)}
-[data-theme="dark"] .from-teal-50{--tw-gradient-from:rgb(20 184 166 / .12) var(--tw-gradient-from-position);--tw-gradient-to:rgb(20 184 166 / 0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to)}
-[data-theme="dark"] .to-teal-50{--tw-gradient-to:rgb(20 184 166 / .12) var(--tw-gradient-to-position)}
 [data-theme="dark"] .ring-teal-200{--tw-ring-color:rgb(20 184 166 / .35)}
 [data-theme="dark"] .bg-cyan-50{background-color:rgb(6 182 212 / .12)}
 [data-theme="dark"] .bg-cyan-100{background-color:rgb(6 182 212 / .18)}
@@ -253,8 +232,6 @@
 [data-theme="dark"] .border-cyan-100{border-color:rgb(6 182 212 / .35)}
 [data-theme="dark"] .border-cyan-200{border-color:rgb(6 182 212 / .35)}
 [data-theme="dark"] .border-cyan-300{border-color:rgb(6 182 212 / .35)}
-[data-theme="dark"] .from-cyan-50{--tw-gradient-from:rgb(6 182 212 / .12) var(--tw-gradient-from-position);--tw-gradient-to:rgb(6 182 212 / 0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to)}
-[data-theme="dark"] .to-cyan-50{--tw-gradient-to:rgb(6 182 212 / .12) var(--tw-gradient-to-position)}
 [data-theme="dark"] .ring-cyan-200{--tw-ring-color:rgb(6 182 212 / .35)}
 [data-theme="dark"] .bg-sky-50{background-color:rgb(14 165 233 / .12)}
 [data-theme="dark"] .bg-sky-100{background-color:rgb(14 165 233 / .18)}
@@ -269,8 +246,6 @@
 [data-theme="dark"] .border-sky-100{border-color:rgb(14 165 233 / .35)}
 [data-theme="dark"] .border-sky-200{border-color:rgb(14 165 233 / .35)}
 [data-theme="dark"] .border-sky-300{border-color:rgb(14 165 233 / .35)}
-[data-theme="dark"] .from-sky-50{--tw-gradient-from:rgb(14 165 233 / .12) var(--tw-gradient-from-position);--tw-gradient-to:rgb(14 165 233 / 0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to)}
-[data-theme="dark"] .to-sky-50{--tw-gradient-to:rgb(14 165 233 / .12) var(--tw-gradient-to-position)}
 [data-theme="dark"] .ring-sky-200{--tw-ring-color:rgb(14 165 233 / .35)}
 [data-theme="dark"] .bg-blue-50{background-color:rgb(59 130 246 / .12)}
 [data-theme="dark"] .bg-blue-100{background-color:rgb(59 130 246 / .18)}
@@ -285,8 +260,6 @@
 [data-theme="dark"] .border-blue-100{border-color:rgb(59 130 246 / .35)}
 [data-theme="dark"] .border-blue-200{border-color:rgb(59 130 246 / .35)}
 [data-theme="dark"] .border-blue-300{border-color:rgb(59 130 246 / .35)}
-[data-theme="dark"] .from-blue-50{--tw-gradient-from:rgb(59 130 246 / .12) var(--tw-gradient-from-position);--tw-gradient-to:rgb(59 130 246 / 0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to)}
-[data-theme="dark"] .to-blue-50{--tw-gradient-to:rgb(59 130 246 / .12) var(--tw-gradient-to-position)}
 [data-theme="dark"] .ring-blue-200{--tw-ring-color:rgb(59 130 246 / .35)}
 [data-theme="dark"] .bg-indigo-50{background-color:rgb(99 102 241 / .12)}
 [data-theme="dark"] .bg-indigo-100{background-color:rgb(99 102 241 / .18)}
@@ -301,8 +274,6 @@
 [data-theme="dark"] .border-indigo-100{border-color:rgb(99 102 241 / .35)}
 [data-theme="dark"] .border-indigo-200{border-color:rgb(99 102 241 / .35)}
 [data-theme="dark"] .border-indigo-300{border-color:rgb(99 102 241 / .35)}
-[data-theme="dark"] .from-indigo-50{--tw-gradient-from:rgb(99 102 241 / .12) var(--tw-gradient-from-position);--tw-gradient-to:rgb(99 102 241 / 0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to)}
-[data-theme="dark"] .to-indigo-50{--tw-gradient-to:rgb(99 102 241 / .12) var(--tw-gradient-to-position)}
 [data-theme="dark"] .ring-indigo-200{--tw-ring-color:rgb(99 102 241 / .35)}
 [data-theme="dark"] .bg-violet-50{background-color:rgb(139 92 246 / .12)}
 [data-theme="dark"] .bg-violet-100{background-color:rgb(139 92 246 / .18)}
@@ -317,8 +288,6 @@
 [data-theme="dark"] .border-violet-100{border-color:rgb(139 92 246 / .35)}
 [data-theme="dark"] .border-violet-200{border-color:rgb(139 92 246 / .35)}
 [data-theme="dark"] .border-violet-300{border-color:rgb(139 92 246 / .35)}
-[data-theme="dark"] .from-violet-50{--tw-gradient-from:rgb(139 92 246 / .12) var(--tw-gradient-from-position);--tw-gradient-to:rgb(139 92 246 / 0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to)}
-[data-theme="dark"] .to-violet-50{--tw-gradient-to:rgb(139 92 246 / .12) var(--tw-gradient-to-position)}
 [data-theme="dark"] .ring-violet-200{--tw-ring-color:rgb(139 92 246 / .35)}
 [data-theme="dark"] .bg-purple-50{background-color:rgb(168 85 247 / .12)}
 [data-theme="dark"] .bg-purple-100{background-color:rgb(168 85 247 / .18)}
@@ -333,8 +302,6 @@
 [data-theme="dark"] .border-purple-100{border-color:rgb(168 85 247 / .35)}
 [data-theme="dark"] .border-purple-200{border-color:rgb(168 85 247 / .35)}
 [data-theme="dark"] .border-purple-300{border-color:rgb(168 85 247 / .35)}
-[data-theme="dark"] .from-purple-50{--tw-gradient-from:rgb(168 85 247 / .12) var(--tw-gradient-from-position);--tw-gradient-to:rgb(168 85 247 / 0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to)}
-[data-theme="dark"] .to-purple-50{--tw-gradient-to:rgb(168 85 247 / .12) var(--tw-gradient-to-position)}
 [data-theme="dark"] .ring-purple-200{--tw-ring-color:rgb(168 85 247 / .35)}
 [data-theme="dark"] .bg-fuchsia-50{background-color:rgb(217 70 239 / .12)}
 [data-theme="dark"] .bg-fuchsia-100{background-color:rgb(217 70 239 / .18)}
@@ -349,7 +316,42 @@
 [data-theme="dark"] .border-fuchsia-100{border-color:rgb(217 70 239 / .35)}
 [data-theme="dark"] .border-fuchsia-200{border-color:rgb(217 70 239 / .35)}
 [data-theme="dark"] .border-fuchsia-300{border-color:rgb(217 70 239 / .35)}
-[data-theme="dark"] .from-fuchsia-50{--tw-gradient-from:rgb(217 70 239 / .12) var(--tw-gradient-from-position);--tw-gradient-to:rgb(217 70 239 / 0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to)}
-[data-theme="dark"] .to-fuchsia-50{--tw-gradient-to:rgb(217 70 239 / .12) var(--tw-gradient-to-position)}
 [data-theme="dark"] .ring-fuchsia-200{--tw-ring-color:rgb(217 70 239 / .35)}
+[data-theme="dark"] .from-white{--tw-gradient-from:rgb(var(--c-surface)) var(--tw-gradient-from-position);--tw-gradient-to:rgb(var(--c-surface) / 0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to)}
+[data-theme="dark"] .from-red-50{--tw-gradient-from:rgb(239 68 68 / .12) var(--tw-gradient-from-position);--tw-gradient-to:rgb(239 68 68 / 0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to)}
+[data-theme="dark"] .from-rose-50{--tw-gradient-from:rgb(244 63 94 / .12) var(--tw-gradient-from-position);--tw-gradient-to:rgb(244 63 94 / 0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to)}
+[data-theme="dark"] .from-pink-50{--tw-gradient-from:rgb(236 72 153 / .12) var(--tw-gradient-from-position);--tw-gradient-to:rgb(236 72 153 / 0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to)}
+[data-theme="dark"] .from-orange-50{--tw-gradient-from:rgb(249 115 22 / .12) var(--tw-gradient-from-position);--tw-gradient-to:rgb(249 115 22 / 0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to)}
+[data-theme="dark"] .from-amber-50{--tw-gradient-from:rgb(245 158 11 / .12) var(--tw-gradient-from-position);--tw-gradient-to:rgb(245 158 11 / 0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to)}
+[data-theme="dark"] .from-yellow-50{--tw-gradient-from:rgb(234 179 8 / .12) var(--tw-gradient-from-position);--tw-gradient-to:rgb(234 179 8 / 0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to)}
+[data-theme="dark"] .from-lime-50{--tw-gradient-from:rgb(132 204 22 / .12) var(--tw-gradient-from-position);--tw-gradient-to:rgb(132 204 22 / 0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to)}
+[data-theme="dark"] .from-green-50{--tw-gradient-from:rgb(34 197 94 / .12) var(--tw-gradient-from-position);--tw-gradient-to:rgb(34 197 94 / 0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to)}
+[data-theme="dark"] .from-emerald-50{--tw-gradient-from:rgb(16 185 129 / .12) var(--tw-gradient-from-position);--tw-gradient-to:rgb(16 185 129 / 0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to)}
+[data-theme="dark"] .from-teal-50{--tw-gradient-from:rgb(20 184 166 / .12) var(--tw-gradient-from-position);--tw-gradient-to:rgb(20 184 166 / 0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to)}
+[data-theme="dark"] .from-cyan-50{--tw-gradient-from:rgb(6 182 212 / .12) var(--tw-gradient-from-position);--tw-gradient-to:rgb(6 182 212 / 0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to)}
+[data-theme="dark"] .from-sky-50{--tw-gradient-from:rgb(14 165 233 / .12) var(--tw-gradient-from-position);--tw-gradient-to:rgb(14 165 233 / 0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to)}
+[data-theme="dark"] .from-blue-50{--tw-gradient-from:rgb(59 130 246 / .12) var(--tw-gradient-from-position);--tw-gradient-to:rgb(59 130 246 / 0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to)}
+[data-theme="dark"] .from-indigo-50{--tw-gradient-from:rgb(99 102 241 / .12) var(--tw-gradient-from-position);--tw-gradient-to:rgb(99 102 241 / 0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to)}
+[data-theme="dark"] .from-violet-50{--tw-gradient-from:rgb(139 92 246 / .12) var(--tw-gradient-from-position);--tw-gradient-to:rgb(139 92 246 / 0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to)}
+[data-theme="dark"] .from-purple-50{--tw-gradient-from:rgb(168 85 247 / .12) var(--tw-gradient-from-position);--tw-gradient-to:rgb(168 85 247 / 0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to)}
+[data-theme="dark"] .from-fuchsia-50{--tw-gradient-from:rgb(217 70 239 / .12) var(--tw-gradient-from-position);--tw-gradient-to:rgb(217 70 239 / 0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to)}
+[data-theme="dark"] .via-white{--tw-gradient-stops:var(--tw-gradient-from),rgb(var(--c-surface)) var(--tw-gradient-via-position),var(--tw-gradient-to)}
+[data-theme="dark"] .to-white{--tw-gradient-to:rgb(var(--c-surface)) var(--tw-gradient-to-position)}
+[data-theme="dark"] .to-red-50{--tw-gradient-to:rgb(239 68 68 / .12) var(--tw-gradient-to-position)}
+[data-theme="dark"] .to-rose-50{--tw-gradient-to:rgb(244 63 94 / .12) var(--tw-gradient-to-position)}
+[data-theme="dark"] .to-pink-50{--tw-gradient-to:rgb(236 72 153 / .12) var(--tw-gradient-to-position)}
+[data-theme="dark"] .to-orange-50{--tw-gradient-to:rgb(249 115 22 / .12) var(--tw-gradient-to-position)}
+[data-theme="dark"] .to-amber-50{--tw-gradient-to:rgb(245 158 11 / .12) var(--tw-gradient-to-position)}
+[data-theme="dark"] .to-yellow-50{--tw-gradient-to:rgb(234 179 8 / .12) var(--tw-gradient-to-position)}
+[data-theme="dark"] .to-lime-50{--tw-gradient-to:rgb(132 204 22 / .12) var(--tw-gradient-to-position)}
+[data-theme="dark"] .to-green-50{--tw-gradient-to:rgb(34 197 94 / .12) var(--tw-gradient-to-position)}
+[data-theme="dark"] .to-emerald-50{--tw-gradient-to:rgb(16 185 129 / .12) var(--tw-gradient-to-position)}
+[data-theme="dark"] .to-teal-50{--tw-gradient-to:rgb(20 184 166 / .12) var(--tw-gradient-to-position)}
+[data-theme="dark"] .to-cyan-50{--tw-gradient-to:rgb(6 182 212 / .12) var(--tw-gradient-to-position)}
+[data-theme="dark"] .to-sky-50{--tw-gradient-to:rgb(14 165 233 / .12) var(--tw-gradient-to-position)}
+[data-theme="dark"] .to-blue-50{--tw-gradient-to:rgb(59 130 246 / .12) var(--tw-gradient-to-position)}
+[data-theme="dark"] .to-indigo-50{--tw-gradient-to:rgb(99 102 241 / .12) var(--tw-gradient-to-position)}
+[data-theme="dark"] .to-violet-50{--tw-gradient-to:rgb(139 92 246 / .12) var(--tw-gradient-to-position)}
+[data-theme="dark"] .to-purple-50{--tw-gradient-to:rgb(168 85 247 / .12) var(--tw-gradient-to-position)}
+[data-theme="dark"] .to-fuchsia-50{--tw-gradient-to:rgb(217 70 239 / .12) var(--tw-gradient-to-position)}
 }
