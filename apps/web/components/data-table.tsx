@@ -225,16 +225,16 @@ export function DataTable<T extends Record<string, unknown>>({
       {/* Table */}
       <div className="overflow-x-auto">
         <table className="w-full min-w-[760px] border-collapse text-left text-sm">
-          <thead className="border-b border-line bg-field/60 text-xs uppercase text-ink/55">
+          <thead className="border-b border-line bg-field text-[11.5px] uppercase tracking-[0.06em] text-muted">
             <tr>
               {columns.map((col) => (
                 <th
                   key={col.key}
-                  className={`px-4 py-3 font-bold ${
+                  className={`px-4 py-3 font-semibold ${
                     col.sortable !== false
                       ? "cursor-pointer select-none hover:bg-field/80"
                       : ""
-                  } ${col.key === "actions" ? "sticky right-0 z-10 border-l border-line bg-field/60" : ""}`}
+                  } ${col.key === "actions" ? "sticky right-0 z-10 border-l border-line bg-field" : ""}`}
                   onClick={col.sortable !== false ? () => toggleSort(col.key) : undefined}
                   aria-sort={
                     sortKey === col.key

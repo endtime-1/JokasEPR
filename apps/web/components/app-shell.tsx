@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "./auth-context";
 import { BrandLogo } from "./brand-logo";
 import { NotificationBell } from "./notification-bell";
+import { ThemeToggle } from "./theme-toggle";
 import {
   AlertTriangle,
   BellRing,
@@ -180,17 +181,17 @@ function NavLink({
       ref={linkRef}
       href={item.href}
       onClick={onClick}
-      className={`group relative flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-150 ${
+      className={`group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-150 ${
         active
-          ? "bg-brand text-white shadow-lg shadow-brand/25"
+          ? "bg-white/10 text-white"
           : "text-white/65 hover:bg-white/8 hover:text-white"
       }`}
     >
       {active && (
-        <span className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-r-full bg-white/60" />
+        <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-brand" />
       )}
       <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg transition-all ${
-        active ? "bg-white/20" : "bg-white/6 group-hover:bg-white/12"
+        active ? "bg-brand text-white" : "bg-white/6 group-hover:bg-white/12"
       }`}>
         <Icon aria-hidden className="h-4 w-4" />
       </span>
@@ -422,11 +423,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <>
         {apiDownBannerEl}
         {dataErrorToastEl}
-        <div className="min-h-screen bg-[#f0f2f5] text-ink lg:grid lg:grid-cols-[300px_1fr]">
+        <div className="min-h-screen bg-canvas text-ink lg:grid lg:grid-cols-[300px_1fr]">
         <aside className="hidden lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:overflow-hidden"
-          style={{ background: "linear-gradient(160deg, #1a2235 0%, #0f1623 60%, #141c2e 100%)" }}>
+          style={{ background: "rgb(var(--c-sidebar))" }}>
           <div className="relative flex h-full flex-col px-5 py-6">
-            <div className="pointer-events-none absolute -top-10 left-4 h-32 w-32 rounded-full bg-brand/12 blur-2xl" />
             <div className="mb-5 h-11 w-44 animate-pulse rounded-xl bg-white/10" />
             <div className="mb-4 h-20 animate-pulse rounded-2xl bg-white/8" />
             <div className="mb-4 h-px bg-white/8" />
@@ -438,7 +438,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </aside>
         <div className="min-w-0">
-          <header className="sticky top-0 z-20 border-b border-black/6 bg-white/80 shadow-sm backdrop-blur-md">
+          <header className="sticky top-0 z-20 border-b border-line bg-surface/80 backdrop-blur-md">
             <div className="flex items-center justify-between gap-4 px-5 py-3.5 lg:px-8">
               <div className="h-5 w-48 animate-pulse rounded-md bg-ink/8" />
               <div className="h-9 w-9 animate-pulse rounded-xl bg-ink/8" />
@@ -503,10 +503,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="rounded-2xl border border-white/10 bg-white/6 p-3.5 backdrop-blur-sm">
       <div className="flex items-center gap-3">
         <div className="relative">
-          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-brand to-[#c65f0f] text-[13px] font-bold text-white shadow-lg shadow-brand/30">
+          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-brand to-brandDark text-[13px] font-bold text-white shadow-lg shadow-brand/30">
             {initials(profile?.fullName)}
           </div>
-          <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-[#1a2235] bg-emerald-400" />
+          <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-sidebar bg-emerald-400" />
         </div>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-white">{profile?.fullName ?? "Loading…"}</p>
@@ -532,7 +532,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <Link href="/dashboard" onClick={onNavigate} className="flex min-w-0 items-center gap-3">
           <div className="relative shrink-0">
             <BrandLogo className="h-11 w-11 rounded-xl shadow-lg shadow-brand/20" />
-            <span className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full border-2 border-[#1a2235] bg-emerald-400 shadow-sm" />
+            <span className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full border-2 border-sidebar bg-emerald-400 shadow-sm" />
           </div>
           <div className="min-w-0">
             <p className="text-[10px] font-bold uppercase tracking-widest text-brand/80">Jokas ERP</p>
@@ -552,7 +552,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* Nav */}
       <div data-nav-scroll="" className="relative flex-1 overflow-y-auto">
         {renderNav(onNavigate)}
-        <div className="pointer-events-none sticky bottom-0 h-8 bg-gradient-to-t from-[#1a2235] to-transparent" />
+        <div className="pointer-events-none sticky bottom-0 h-8 bg-gradient-to-t from-sidebar to-transparent" />
       </div>
 
       {/* Sign out */}
@@ -574,13 +574,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <>
       {apiDownBannerEl}
       {dataErrorToastEl}
-      <div className="min-h-screen bg-[#f0f2f5] text-ink lg:grid lg:grid-cols-[300px_1fr]">
+      <div className="min-h-screen bg-canvas text-ink lg:grid lg:grid-cols-[300px_1fr]">
       {/* ── Desktop sidebar ─────────────────────────────────────────────── */}
       <aside className="hidden lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:overflow-hidden"
-        style={{ background: "linear-gradient(160deg, #1a2235 0%, #0f1623 60%, #141c2e 100%)" }}>
-        {/* Decorative brand glow */}
-        <div className="pointer-events-none absolute -top-10 left-4 h-32 w-32 rounded-full bg-brand/12 blur-2xl" />
-        <div className="pointer-events-none absolute bottom-20 right-0 h-24 w-24 rounded-full bg-brand/6 blur-2xl" />
+        style={{ background: "rgb(var(--c-sidebar))" }}>
         <div className="relative flex h-full flex-col px-5 py-6">
           {sidebarContent()}
         </div>
@@ -596,9 +593,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           />
           <aside
             className="fixed inset-y-0 left-0 z-50 flex w-[300px] animate-slide-in flex-col overflow-hidden lg:hidden"
-            style={{ background: "linear-gradient(160deg, #1a2235 0%, #0f1623 60%, #141c2e 100%)" }}
+            style={{ background: "rgb(var(--c-sidebar))" }}
           >
-            <div className="pointer-events-none absolute -top-10 left-4 h-32 w-32 rounded-full bg-brand/12 blur-2xl" />
             <div className="relative flex h-full flex-col px-5 py-6">
               <button
                 className="absolute right-4 top-5 grid h-8 w-8 place-items-center rounded-lg text-white/40 transition hover:bg-white/10 hover:text-white"
@@ -616,7 +612,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* ── Main content area ────────────────────────────────────────────── */}
       <div className="min-w-0">
         {/* Header */}
-        <header className="sticky top-0 z-20 border-b border-black/6 bg-white/80 shadow-sm shadow-black/4 backdrop-blur-md">
+        <header className="sticky top-0 z-20 border-b border-line bg-surface/80 backdrop-blur-md">
           <div className="flex items-center justify-between gap-4 px-5 py-3.5 lg:px-8">
             <div className="flex items-center gap-3">
               {/* Hamburger — mobile only */}
@@ -665,6 +661,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <Search aria-hidden className="h-4 w-4" />
               </button>
 
+              <ThemeToggle />
               <NotificationBell />
             </div>
           </div>

@@ -1,24 +1,37 @@
 import type { Config } from "tailwindcss";
 
+// Colours come from CSS variables (see app/globals.css) as "r g b" triplets, so every utility
+// (text-ink, border-line, bg-brand/10 ...) follows the light / dark theme and keeps opacity modifiers.
+const token = (name: string) => `rgb(var(--c-${name}) / <alpha-value>)`;
+
 const config: Config = {
   content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}", "./lib/**/*.{ts,tsx}"],
+  darkMode: ["selector", '[data-theme="dark"]'],
   theme: {
     extend: {
       colors: {
-        ink: "#1f2933",
-        field: "#fff8f1",
-        line: "#eadfd2",
-        brand: "#f58220",
-        brandDark: "#c65f0f",
-        caution: "#b45309",
-        sidebar: "#1a2235"
+        canvas: token("canvas"),
+        surface: token("surface"),
+        ink: token("ink"),
+        muted: token("muted"),
+        field: token("field"),
+        line: token("line"),
+        brand: token("brand"),
+        brandDark: token("brand-dark"),
+        brandTint: token("brand-tint"),
+        caution: token("caution"),
+        sidebar: token("sidebar")
+      },
+      fontFamily: {
+        sans: ["var(--font-inter)", "ui-sans-serif", "system-ui", "sans-serif"],
+        display: ["var(--font-display)", "var(--font-inter)", "ui-sans-serif", "system-ui", "sans-serif"]
       },
       boxShadow: {
-        panel: "0 18px 44px rgba(31, 41, 51, 0.08)",
-        soft: "0 8px 22px rgba(31, 41, 51, 0.07)",
-        card: "0 2px 8px rgba(31, 41, 51, 0.06), 0 0 0 1px rgba(234, 223, 210, 0.6)",
-        toast: "0 8px 32px rgba(31, 41, 51, 0.18)",
-        modal: "0 24px 64px rgba(31, 41, 51, 0.16)"
+        panel: "var(--shadow-panel)",
+        soft: "var(--shadow-soft)",
+        card: "var(--shadow-card)",
+        toast: "0 8px 32px rgba(0, 0, 0, 0.22)",
+        modal: "0 24px 64px rgba(0, 0, 0, 0.28)"
       },
       keyframes: {
         "fade-in": {
