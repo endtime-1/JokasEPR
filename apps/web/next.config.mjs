@@ -62,7 +62,7 @@ const nextConfig = {
       },
       {
         key: "Permissions-Policy",
-        value: "camera=(), microphone=(), geolocation=()",
+        value: "camera=(), microphone=(), geolocation=(self)",
       },
       {
         // (L2) Forces HTTPS for a year on repeat visits, including subdomains.
